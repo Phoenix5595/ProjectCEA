@@ -4,7 +4,6 @@ import SetpointEditor from '../components/SetpointEditor'
 import PIDEditor from '../components/PIDEditor'
 import RoomScheduleEditor from '../components/RoomScheduleEditor'
 import LightManager from '../components/LightManager'
-import ScheduleManager from '../components/ScheduleManager'
 import { apiClient } from '../services/api'
 import { getLocationDisplayName, getLocationBackendName } from '../config/zones'
 
@@ -13,7 +12,7 @@ export default function ZoneConfig() {
   // URL should have backend location name (from zones config), but convert display name if needed
   // React Router automatically decodes URL params, so we just need to map if it's a display name
   const location = locationParam ? getLocationBackendName(locationParam) : null
-  const [activeTab, setActiveTab] = useState<'setpoints' | 'pid' | 'schedules'>('setpoints')
+  const [activeTab, setActiveTab] = useState<'setpoints' | 'pid'>('setpoints')
   const [lights, setLights] = useState<any[]>([])
 
   useEffect(() => {
@@ -99,16 +98,6 @@ export default function ZoneConfig() {
               >
                 PID Parameters
               </button>
-              <button
-                onClick={() => setActiveTab('schedules')}
-                className={`px-6 py-3 font-semibold ${
-                  activeTab === 'schedules'
-                    ? 'border-b-2 border-blue-600 text-blue-700 bg-blue-50'
-                    : 'text-gray-700 hover:text-gray-900 hover:bg-gray-50'
-                }`}
-              >
-                Schedules
-              </button>
             </nav>
           </div>
 
@@ -150,14 +139,6 @@ export default function ZoneConfig() {
             )}
             {activeTab === 'pid' && (
               <PIDEditor />
-            )}
-            {activeTab === 'schedules' && location && (
-              <div className="space-y-8">
-                <section>
-                  <h2 className="text-xl font-semibold mb-4 text-gray-900">Device Schedules</h2>
-                  <ScheduleManager location={location} cluster={cluster!} />
-                </section>
-              </div>
             )}
           </div>
         </div>
