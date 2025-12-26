@@ -19,11 +19,6 @@ interface LightName {
   cluster: string
 }
 
-interface ChannelsResponse {
-  channels: Record<string, ChannelInfo>
-  light_names: LightName[]
-}
-
 const DEVICE_TYPES = [
   'heater',
   'dehumidifier',
@@ -232,7 +227,7 @@ export default function DeviceManager() {
                           className="w-full px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
                         >
                           <option value="">Select light</option>
-                          {lightNames.map((light) => (
+                          {Array.from(new Map(lightNames.map(light => [light.name, light])).values()).map((light) => (
                             <option key={`${light.location}-${light.cluster}-${light.device_name}`} value={light.name}>
                               {light.name}
                             </option>

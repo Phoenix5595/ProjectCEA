@@ -106,6 +106,32 @@ class ApiClient {
     return response.data;
   }
 
+  async getChannels(): Promise<{ channels: Record<string, any>; light_names: any[] }> {
+    const response = await this.automationClient.get('/api/devices/channels');
+    return response.data;
+  }
+
+  async updateChannelDevice(
+    channel: number,
+    deviceName: string,
+    deviceType: string,
+    location: string,
+    cluster: string,
+    lightName?: string
+  ): Promise<any> {
+    const response = await this.automationClient.post(
+      `/api/devices/channels/${channel}`,
+      {
+        device_name: deviceName,
+        device_type: deviceType,
+        location: location,
+        cluster: cluster,
+        light_name: lightName
+      }
+    );
+    return response.data;
+  }
+
   // PID Parameters (automation service)
   async getAllPIDParameters(): Promise<Record<string, PIDParameters>> {
     const response = await this.automationClient.get('/api/pid/parameters');
