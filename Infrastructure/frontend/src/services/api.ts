@@ -209,6 +209,49 @@ class ApiClient {
   async saveRoomSchedule(location: string, cluster: string, schedule: any): Promise<void> {
     await this.automationClient.post(`/api/room-schedule/${location}/${cluster}`, schedule);
   }
+
+  // Device Control (automation service)
+  async controlDevice(
+    location: string,
+    cluster: string,
+    device: string,
+    state: number,
+    reason?: string
+  ): Promise<any> {
+    const response = await this.automationClient.post(
+      `/api/devices/${location}/${cluster}/${device}/control`,
+      {
+        state,
+        reason: reason || 'Manual override'
+      }
+    );
+    return response.data;
+  }
+
+  async setDeviceMode(
+    location: string,
+    cluster: string,
+    device: string,
+    mode: 'manual' | 'auto' | 'scheduled'
+  ): Promise<any> {
+    const response = await this.automationClient.post(
+      `/api/devices/${location}/${cluster}/${device}/mode`,
+      { mode }
+    );
+    return response.data;
+  }
+
+  // Helper to get all lights for a zone
+  async getLightsForZone(location: string, cluster: string): Promise<Array<{ device_name: string; display_name?: string; dimming_enabled?: boolean }>> {
+    const devices = await this.getDevicesForLocationClusterWithDetails(location, cluster);
+    return Object.entries(devices)
+      .filter(([_, device]: [string, any]) => device.device_type === 'light')
+      .map(([deviceName, device]: [string, any]) => ({
+        device_name: deviceName,
+        display_name: device.display_name,
+        dimming_enabled: device.dimming_enabled
+      }));
+  }
 }
 
 export const apiClient = new ApiClient();

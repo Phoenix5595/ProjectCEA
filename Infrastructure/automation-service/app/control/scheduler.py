@@ -94,8 +94,15 @@ class Scheduler:
         """
         is_active, schedule_id = self.is_schedule_active(location, cluster, device_name, current_time)
         if is_active:
-            # For now, assume active schedule means ON
-            # Could be extended to support ON/OFF states in schedule
+            # Check if this is a NIGHT mode schedule - those should turn devices OFF
+            for schedule in self.schedules:
+                if schedule.get('id') == schedule_id:
+                    mode = schedule.get('mode', '').upper()
+                    if mode == 'NIGHT':
+                        return 0  # NIGHT mode schedules turn devices OFF
+                    # For DAY mode or no mode, return ON
+                    return 1
+            # If schedule not found by ID, default to ON (backward compatibility)
             return 1
         return None
     

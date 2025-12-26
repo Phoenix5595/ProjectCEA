@@ -59,14 +59,6 @@ devices:
       Heater Flower:
         channel: 0
         device_type: heater
-      light:
-        channel: 11
-        device_type: light
-        display_name: Apache
-        pid_enabled: false
-        interlock_with: []
-        dimming_enabled: true
-        dimming_type: dfr0971
   Veg Room:
     main:
       exhaust_fan:

@@ -77,13 +77,20 @@ This document describes the normalized database schema for the CEA (Controlled E
    - `end_date` (DATE, optional)
    - `room_id` (FK → room)
 
-2. **setpoints**
-   - `setpoint_id` (PK, SERIAL)
-   - `room_id` (FK → room)
-   - `variable` (TEXT)
-   - `target` (REAL)
-   - `updated_at` (TIMESTAMPTZ)
-   - UNIQUE(room_id, variable)
+2. **setpoints** (Created and managed by automation-service)
+   - `id` (PK, BIGSERIAL)
+   - `location` (TEXT) - e.g., "Flower Room"
+   - `cluster` (TEXT) - e.g., "back", "front", "main"
+   - `temperature` (REAL) - Temperature setpoint in Celsius
+   - `humidity` (REAL) - Humidity setpoint in percent
+   - `co2` (REAL) - CO2 setpoint in ppm
+   - `vpd` (REAL) - VPD setpoint in kPa
+   - `mode` (TEXT) - "DAY", "NIGHT", "TRANSITION", or NULL (legacy/default)
+   - `updated_at` (TIMESTAMPTZ) - Last update timestamp
+   - UNIQUE(location, cluster, mode)
+   
+   **Note**: This table is created automatically by the automation-service on startup. 
+   See `Infrastructure/database/SETPOINTS_TABLE_EXPLANATION.md` for details.
 
 3. **actuator_events**
    - `event_id` (PK, SERIAL)

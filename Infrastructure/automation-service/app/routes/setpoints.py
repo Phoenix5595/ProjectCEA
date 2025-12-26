@@ -193,6 +193,46 @@ async def update_setpoints(
                 # Not in failsafe, set mode to 'auto'
                 automation_redis.write_mode(location, cluster, 'auto', source='api')
     
+    # Log to config_versions for audit trail
+    # Calculate changes dictionary with old/new values for fields that changed
+    changes = {}
+    if setpoints.temperature is not None:
+        old_temp = existing.get('temperature') if existing else None
+        if old_temp != final_temp:
+            changes['temperature'] = {'old': old_temp, 'new': final_temp}
+    
+    if setpoints.humidity is not None:
+        old_hum = existing.get('humidity') if existing else None
+        if old_hum != final_hum:
+            changes['humidity'] = {'old': old_hum, 'new': final_hum}
+    
+    if setpoints.co2 is not None:
+        old_co2 = existing.get('co2') if existing else None
+        if old_co2 != final_co2:
+            changes['co2'] = {'old': old_co2, 'new': final_co2}
+    
+    if setpoints.vpd is not None:
+        old_vpd = existing.get('vpd') if existing else None
+        if old_vpd != final_vpd:
+            changes['vpd'] = {'old': old_vpd, 'new': final_vpd}
+    
+    if setpoints.mode is not None:
+        old_mode = existing.get('mode') if existing else None
+        if old_mode != setpoints.mode:
+            changes['mode'] = {'old': old_mode, 'new': setpoints.mode}
+    
+    # Only log if there were actual changes
+    if changes:
+        mode_str = f" (mode: {setpoints.mode})" if setpoints.mode else ""
+        await database.log_config_version(
+            config_type='setpoint',
+            author='api',
+            comment=f"Setpoint update for {location}/{cluster}{mode_str}",
+            location=location,
+            cluster=cluster,
+            changes=changes
+        )
+    
     return {
         "location": location,
         "cluster": cluster,

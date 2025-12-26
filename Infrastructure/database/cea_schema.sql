@@ -147,15 +147,10 @@ CREATE TABLE IF NOT EXISTS crop_batch (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Setpoints: Room-level setpoints with timestamps
-CREATE TABLE IF NOT EXISTS setpoints (
-    setpoint_id SERIAL PRIMARY KEY,
-    room_id INTEGER NOT NULL REFERENCES room(room_id) ON DELETE CASCADE,
-    variable TEXT NOT NULL,
-    target REAL NOT NULL,
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE(room_id, variable)
-);
+-- Setpoints: Managed by automation-service
+-- NOTE: The setpoints table is created and managed by the automation-service with structure:
+-- (location, cluster, temperature, humidity, co2, vpd, mode, updated_at)
+-- See Infrastructure/database/SETPOINTS_TABLE_EXPLANATION.md for details.
 
 -- Actuator Events: Device control events
 CREATE TABLE IF NOT EXISTS actuator_events (

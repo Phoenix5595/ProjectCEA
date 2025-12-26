@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import ManualLightControl from './ManualLightControl'
 
 interface CircularTimePickerProps {
   dayStartTime: string
@@ -11,6 +12,10 @@ interface CircularTimePickerProps {
   rampDownDuration?: number | null
   onRampUpChange?: (duration: number | null) => void
   onRampDownChange?: (duration: number | null) => void
+  showPresetButtons?: boolean
+  lockedPhotoperiodHours?: number | null
+  location?: string
+  cluster?: string
 }
 
 export default function CircularTimePicker({
@@ -23,7 +28,11 @@ export default function CircularTimePicker({
   rampUpDuration,
   rampDownDuration,
   onRampUpChange,
-  onRampDownChange
+  onRampDownChange,
+  showPresetButtons = true,
+  lockedPhotoperiodHours = null,
+  location,
+  cluster
 }: CircularTimePickerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [isDragging, setIsDragging] = useState<'start' | 'end' | 'period' | null>(null)
@@ -308,6 +317,21 @@ export default function CircularTimePicker({
     drawClock()
   }, [dayStartTime, dayEndTime, period])
 
+  // Enforce locked photoperiod duration
+  useEffect(() => {
+    if (lockedPhotoperiodHours !== null && lockedPhotoperiodHours !== undefined) {
+      const startMinutes = timeToMinutes(dayStartTime)
+      const lockedDurationMinutes = lockedPhotoperiodHours * 60
+      const expectedEndMinutes = (startMinutes + lockedDurationMinutes) % 1440
+      const expectedEndTime = minutesToTime(expectedEndMinutes)
+      
+      // Only update if end time doesn't match expected
+      if (dayEndTime !== expectedEndTime) {
+        onDayEndChange(expectedEndTime)
+      }
+    }
+  }, [dayStartTime, lockedPhotoperiodHours, dayEndTime, onDayEndChange])
+
   function handleMouseDown(event: React.MouseEvent) {
     const canvas = canvasRef.current
     if (!canvas) return
@@ -385,6 +409,22 @@ export default function CircularTimePicker({
       isBetweenMarkers = normClick >= normStart || normClick <= normEnd
     }
 
+    // If photoperiod is locked, only allow dragging the period as a whole
+    if (lockedPhotoperiodHours !== null && lockedPhotoperiodHours !== undefined) {
+      // Only allow dragging the period (middle slider or arc)
+      if (midPixelDist < midSliderThreshold && isBetweenMarkers) {
+        // Click is on middle yellow slider - drag the entire period
+        setIsDragging('period')
+        setDragOffset(clickMinutes - startMinutes)
+      } else if (isOnArc && isBetweenMarkers) {
+        // Click is on the arc - drag the entire period
+        setIsDragging('period')
+        setDragOffset(clickMinutes - startMinutes)
+      }
+      // Ignore clicks on start/end markers when locked
+      return
+    }
+
     // Determine which marker is closer using pixel distance
     // Check middle slider first (highest priority)
     if (midPixelDist < midSliderThreshold && isBetweenMarkers) {
@@ -428,22 +468,38 @@ export default function CircularTimePicker({
       const time = minutesToTime(minutes)
 
       if (isDragging === 'start') {
-        onDayStartChange(time)
+        // Only allow if photoperiod is not locked
+        if (lockedPhotoperiodHours === null || lockedPhotoperiodHours === undefined) {
+          onDayStartChange(time)
+        }
       } else if (isDragging === 'end') {
-        onDayEndChange(time)
+        // Only allow if photoperiod is not locked
+        if (lockedPhotoperiodHours === null || lockedPhotoperiodHours === undefined) {
+          onDayEndChange(time)
+        }
       } else if (isDragging === 'period') {
         // Move entire period by maintaining the offset
         const newStartMinutes = minutes - dragOffset
-        const startMinutes = timeToMinutes(dayStartTime)
-        const endMinutes = timeToMinutes(dayEndTime)
-        const periodDuration = endMinutes - startMinutes < 0 ? endMinutes - startMinutes + 1440 : endMinutes - startMinutes
         
         // Normalize to 0-1439 range
         let normalizedStart = newStartMinutes % 1440
         if (normalizedStart < 0) normalizedStart += 1440
         
-        let normalizedEnd = (normalizedStart + periodDuration) % 1440
-        if (normalizedEnd < 0) normalizedEnd += 1440
+        // Calculate end time
+        let normalizedEnd: number
+        if (lockedPhotoperiodHours !== null && lockedPhotoperiodHours !== undefined) {
+          // Use locked duration
+          const lockedDurationMinutes = lockedPhotoperiodHours * 60
+          normalizedEnd = (normalizedStart + lockedDurationMinutes) % 1440
+          if (normalizedEnd < 0) normalizedEnd += 1440
+        } else {
+          // Use current duration
+          const startMinutes = timeToMinutes(dayStartTime)
+          const endMinutes = timeToMinutes(dayEndTime)
+          const periodDuration = endMinutes - startMinutes < 0 ? endMinutes - startMinutes + 1440 : endMinutes - startMinutes
+          normalizedEnd = (normalizedStart + periodDuration) % 1440
+          if (normalizedEnd < 0) normalizedEnd += 1440
+        }
         
         onDayStartChange(minutesToTime(normalizedStart))
         onDayEndChange(minutesToTime(normalizedEnd))
@@ -471,28 +527,30 @@ export default function CircularTimePicker({
         </label>
       )}
       <div className="flex items-start gap-6">
-        <div className="flex flex-col gap-2 pt-4">
-          <button
-            onClick={() => {
-              onDayStartChange('17:00')
-              onDayEndChange('11:00')
-            }}
-            className="px-4 py-2 bg-green-600 text-white font-semibold rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 shadow-md transition-colors"
-            title="Set to Veg schedule: 17:00 - 11:00"
-          >
-            Veg
-          </button>
-          <button
-            onClick={() => {
-              onDayStartChange('17:00')
-              onDayEndChange('05:00')
-            }}
-            className="px-4 py-2 bg-purple-600 text-white font-semibold rounded-md hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-purple-500 shadow-md transition-colors"
-            title="Set to Flower schedule: 17:00 - 05:00"
-          >
-            Flower
-          </button>
-        </div>
+        {showPresetButtons && (
+          <div className="flex flex-col gap-2 pt-4">
+            <button
+              onClick={() => {
+                onDayStartChange('17:00')
+                onDayEndChange('11:00')
+              }}
+              className="px-4 py-2 bg-green-600 text-white font-semibold rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 shadow-md transition-colors"
+              title="Set to Veg schedule: 17:00 - 11:00"
+            >
+              Veg
+            </button>
+            <button
+              onClick={() => {
+                onDayStartChange('17:00')
+                onDayEndChange('05:00')
+              }}
+              className="px-4 py-2 bg-purple-600 text-white font-semibold rounded-md hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-purple-500 shadow-md transition-colors"
+              title="Set to Flower schedule: 17:00 - 05:00"
+            >
+              Flower
+            </button>
+          </div>
+        )}
         <div className="relative">
           <canvas
             ref={canvasRef}
@@ -511,11 +569,21 @@ export default function CircularTimePicker({
               <input
                 type="time"
                 value={dayStartTime}
-                onChange={(e) => onDayStartChange(e.target.value)}
-                className="border-2 border-gray-400 rounded-md px-3 py-2 bg-white text-gray-900 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 w-full"
+                onChange={(e) => {
+                  if (lockedPhotoperiodHours === null || lockedPhotoperiodHours === undefined) {
+                    onDayStartChange(e.target.value)
+                  }
+                }}
+                disabled={lockedPhotoperiodHours !== null && lockedPhotoperiodHours !== undefined}
+                className={`border-2 border-gray-400 rounded-md px-3 py-2 bg-white text-gray-900 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 w-full ${
+                  lockedPhotoperiodHours !== null && lockedPhotoperiodHours !== undefined
+                    ? 'opacity-50 cursor-not-allowed bg-gray-100'
+                    : ''
+                }`}
               />
               <p className="text-xs text-gray-500">
                 <span className="text-red-600 font-medium">●</span> Red marker
+                {lockedPhotoperiodHours !== null && lockedPhotoperiodHours !== undefined && ' (locked)'}
               </p>
             </div>
             {onRampUpChange && rampUpDuration !== undefined && (
@@ -542,11 +610,21 @@ export default function CircularTimePicker({
               <input
                 type="time"
                 value={dayEndTime}
-                onChange={(e) => onDayEndChange(e.target.value)}
-                className="border-2 border-gray-400 rounded-md px-3 py-2 bg-white text-gray-900 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 w-full"
+                onChange={(e) => {
+                  if (lockedPhotoperiodHours === null || lockedPhotoperiodHours === undefined) {
+                    onDayEndChange(e.target.value)
+                  }
+                }}
+                disabled={lockedPhotoperiodHours !== null && lockedPhotoperiodHours !== undefined}
+                className={`border-2 border-gray-400 rounded-md px-3 py-2 bg-white text-gray-900 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 w-full ${
+                  lockedPhotoperiodHours !== null && lockedPhotoperiodHours !== undefined
+                    ? 'opacity-50 cursor-not-allowed bg-gray-100'
+                    : ''
+                }`}
               />
               <p className="text-xs text-gray-500">
                 <span className="text-purple-800 font-medium">●</span> Purple marker
+                {lockedPhotoperiodHours !== null && lockedPhotoperiodHours !== undefined && ' (locked)'}
               </p>
             </div>
             {onRampDownChange && rampDownDuration !== undefined && (
@@ -573,6 +651,11 @@ export default function CircularTimePicker({
               {calculatePhotoperiod().toFixed(1)} hours
             </div>
           </div>
+          {location && cluster && (
+            <div className="pt-2 mt-1 flex justify-end items-end self-end">
+              <ManualLightControl location={location} cluster={cluster} compact={true} />
+            </div>
+          )}
         </div>
       </div>
       <p className="text-xs text-gray-500 mt-4 text-center max-w-2xl">

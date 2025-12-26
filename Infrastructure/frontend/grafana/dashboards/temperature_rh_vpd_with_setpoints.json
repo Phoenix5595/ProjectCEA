@@ -1,0 +1,400 @@
+{
+  "id": 4,
+  "type": "timeseries",
+  "title": "Temperature, RH & VPD - Main Graph",
+  "gridPos": {
+    "x": 4,
+    "y": 0,
+    "h": 24,
+    "w": 20
+  },
+  "fieldConfig": {
+    "defaults": {
+      "custom": {
+        "drawStyle": "line",
+        "lineInterpolation": "linear",
+        "barAlignment": 0,
+        "barWidthFactor": 0.6,
+        "lineWidth": 1,
+        "fillOpacity": 0,
+        "gradientMode": "none",
+        "spanNulls": false,
+        "insertNulls": false,
+        "showPoints": "auto",
+        "showValues": false,
+        "pointSize": 5,
+        "stacking": {
+          "mode": "none",
+          "group": "A"
+        },
+        "axisPlacement": "auto",
+        "axisLabel": "",
+        "axisColorMode": "series",
+        "axisBorderShow": true,
+        "scaleDistribution": {
+          "type": "linear"
+        },
+        "axisCenteredZero": false,
+        "hideFrom": {
+          "tooltip": false,
+          "viz": false,
+          "legend": false
+        },
+        "thresholdsStyle": {
+          "mode": "off"
+        },
+        "axisSoftMax": 2,
+        "axisSoftMin": 15,
+        "lineStyle": {
+          "fill": "solid"
+        }
+      },
+      "color": {
+        "mode": "palette-classic"
+      },
+      "mappings": [],
+      "thresholds": {
+        "mode": "absolute",
+        "steps": [
+          {
+            "color": "green",
+            "value": null
+          },
+          {
+            "color": "red",
+            "value": 80
+          }
+        ]
+      },
+      "decimals": 2,
+      "fieldMinMax": true,
+      "unit": "celsius"
+    },
+    "overrides": [
+      {
+        "matcher": {
+          "id": "byName",
+          "options": "dry_bulb_f"
+        },
+        "properties": [
+          {
+            "id": "displayName",
+            "value": "Dry Bulb (°C) - Front"
+          }
+        ]
+      },
+      {
+        "matcher": {
+          "id": "byName",
+          "options": "wet_bulb_f"
+        },
+        "properties": [
+          {
+            "id": "displayName",
+            "value": "Wet Bulb (°C) - Front"
+          }
+        ]
+      },
+      {
+        "matcher": {
+          "id": "byName",
+          "options": "rh_f"
+        },
+        "properties": [
+          {
+            "id": "displayName",
+            "value": "RH (%) - Front"
+          },
+          {
+            "id": "unit",
+            "value": "percent"
+          },
+          {
+            "id": "decimals",
+            "value": 1
+          },
+          {
+            "id": "custom.axisPlacement",
+            "value": "right"
+          },
+          {
+            "id": "custom.axisSoftMax",
+            "value": 100
+          }
+        ]
+      },
+      {
+        "matcher": {
+          "id": "byName",
+          "options": "vpd_f"
+        },
+        "properties": [
+          {
+            "id": "displayName",
+            "value": "VPD (kPa) - Front"
+          },
+          {
+            "id": "unit",
+            "value": "kpa"
+          },
+          {
+            "id": "decimals",
+            "value": 2
+          }
+        ]
+      },
+      {
+        "matcher": {
+          "id": "byName",
+          "options": "dry_bulb_b"
+        },
+        "properties": [
+          {
+            "id": "displayName",
+            "value": "Dry Bulb (°C) - Back"
+          }
+        ]
+      },
+      {
+        "matcher": {
+          "id": "byName",
+          "options": "wet_bulb_b"
+        },
+        "properties": [
+          {
+            "id": "displayName",
+            "value": "Wet Bulb (°C) - Back"
+          }
+        ]
+      },
+      {
+        "matcher": {
+          "id": "byName",
+          "options": "rh_b"
+        },
+        "properties": [
+          {
+            "id": "displayName",
+            "value": "RH (%) - Back"
+          },
+          {
+            "id": "unit",
+            "value": "percent"
+          },
+          {
+            "id": "decimals",
+            "value": 1
+          },
+          {
+            "id": "custom.axisPlacement",
+            "value": "right"
+          },
+          {
+            "id": "custom.axisSoftMax",
+            "value": 100
+          }
+        ]
+      },
+      {
+        "matcher": {
+          "id": "byName",
+          "options": "vpd_b"
+        },
+        "properties": [
+          {
+            "id": "displayName",
+            "value": "VPD (kPa) - Back"
+          },
+          {
+            "id": "unit",
+            "value": "kpa"
+          },
+          {
+            "id": "decimals",
+            "value": 2
+          }
+        ]
+      },
+      {
+        "matcher": {
+          "id": "byName",
+          "options": "Wet Bulb (°C) - Back"
+        },
+        "properties": [
+          {
+            "id": "color",
+            "value": {
+              "mode": "fixed",
+              "fixedColor": "green"
+            }
+          }
+        ]
+      },
+      {
+        "matcher": {
+          "id": "byName",
+          "options": "Dry Bulb (°C) - Back"
+        },
+        "properties": [
+          {
+            "id": "color",
+            "value": {
+              "mode": "fixed",
+              "fixedColor": "orange"
+            }
+          }
+        ]
+      },
+      {
+        "matcher": {
+          "id": "byName",
+          "options": "Temp Setpoint - Back"
+        },
+        "properties": [
+          {
+            "id": "color",
+            "value": {
+              "mode": "fixed",
+              "fixedColor": "red"
+            }
+          },
+          {
+            "id": "custom.lineStyle",
+            "value": {
+              "dash": [10, 10],
+              "fill": "dash"
+            }
+          },
+          {
+            "id": "custom.lineWidth",
+            "value": 2
+          }
+        ]
+      },
+      {
+        "matcher": {
+          "id": "byName",
+          "options": "Temp Setpoint - Front"
+        },
+        "properties": [
+          {
+            "id": "color",
+            "value": {
+              "mode": "fixed",
+              "fixedColor": "purple"
+            }
+          },
+          {
+            "id": "custom.lineStyle",
+            "value": {
+              "dash": [10, 10],
+              "fill": "dash"
+            }
+          },
+          {
+            "id": "custom.lineWidth",
+            "value": 2
+          }
+        ]
+      },
+      {
+        "matcher": {
+          "id": "byName",
+          "options": "VPD Setpoint - Back"
+        },
+        "properties": [
+          {
+            "id": "color",
+            "value": {
+              "mode": "fixed",
+              "fixedColor": "blue"
+            }
+          },
+          {
+            "id": "custom.lineStyle",
+            "value": {
+              "dash": [10, 10],
+              "fill": "dash"
+            }
+          },
+          {
+            "id": "custom.lineWidth",
+            "value": 2
+          },
+          {
+            "id": "unit",
+            "value": "kpa"
+          }
+        ]
+      },
+      {
+        "matcher": {
+          "id": "byName",
+          "options": "VPD Setpoint - Front"
+        },
+        "properties": [
+          {
+            "id": "color",
+            "value": {
+              "mode": "fixed",
+              "fixedColor": "cyan"
+            }
+          },
+          {
+            "id": "custom.lineStyle",
+            "value": {
+              "dash": [10, 10],
+              "fill": "dash"
+            }
+          },
+          {
+            "id": "custom.lineWidth",
+            "value": 2
+          },
+          {
+            "id": "unit",
+            "value": "kpa"
+          }
+        ]
+      }
+    ]
+  },
+  "pluginVersion": "12.3.1",
+  "targets": [
+    {
+      "format": "time_series",
+      "rawSql": "SELECT time AS \"time\", sensor_name AS metric, value FROM measurement_with_metadata WHERE sensor_name IN ('dry_bulb_f', 'wet_bulb_f', 'rh_f', 'vpd_f', 'dry_bulb_b', 'wet_bulb_b', 'rh_b', 'vpd_b') AND time >= $__timeFrom() AND time <= $__timeTo() ORDER BY time, sensor_name",
+      "refId": "A"
+    },
+    {
+      "format": "time_series",
+      "rawSql": "WITH time_series AS (\n  SELECT generate_series($__timeFrom()::timestamp, $__timeTo()::timestamp, INTERVAL '5 minute') AS time\n),\nback_temp_setpoint AS (\n  SELECT temperature AS value FROM setpoints \n  WHERE location = 'Flower Room' AND cluster = 'back' \n  AND (mode IS NULL OR mode = 'DAY')\n  ORDER BY updated_at DESC LIMIT 1\n),\nfront_temp_setpoint AS (\n  SELECT temperature AS value FROM setpoints \n  WHERE location = 'Flower Room' AND cluster = 'front' \n  AND (mode IS NULL OR mode = 'DAY')\n  ORDER BY updated_at DESC LIMIT 1\n)\nSELECT \n  ts.time AS \"time\",\n  'Temp Setpoint - Back' AS metric,\n  bt.value AS value\nFROM time_series ts\nCROSS JOIN back_temp_setpoint bt\nWHERE bt.value IS NOT NULL\nUNION ALL\nSELECT \n  ts.time AS \"time\",\n  'Temp Setpoint - Front' AS metric,\n  ft.value AS value\nFROM time_series ts\nCROSS JOIN front_temp_setpoint ft\nWHERE ft.value IS NOT NULL",
+      "refId": "B",
+      "hide": false
+    },
+    {
+      "format": "time_series",
+      "rawSql": "WITH time_series AS (\n  SELECT generate_series($__timeFrom()::timestamp, $__timeTo()::timestamp, INTERVAL '5 minute') AS time\n),\nback_vpd_setpoint AS (\n  SELECT vpd AS value FROM setpoints \n  WHERE location = 'Flower Room' AND cluster = 'back' \n  AND (mode IS NULL OR mode = 'DAY')\n  AND vpd IS NOT NULL\n  ORDER BY updated_at DESC LIMIT 1\n),\nfront_vpd_setpoint AS (\n  SELECT vpd AS value FROM setpoints \n  WHERE location = 'Flower Room' AND cluster = 'front' \n  AND (mode IS NULL OR mode = 'DAY')\n  AND vpd IS NOT NULL\n  ORDER BY updated_at DESC LIMIT 1\n)\nSELECT \n  ts.time AS \"time\",\n  'VPD Setpoint - Back' AS metric,\n  bv.value AS value\nFROM time_series ts\nCROSS JOIN back_vpd_setpoint bv\nWHERE bv.value IS NOT NULL\nUNION ALL\nSELECT \n  ts.time AS \"time\",\n  'VPD Setpoint - Front' AS metric,\n  fv.value AS value\nFROM time_series ts\nCROSS JOIN front_vpd_setpoint fv\nWHERE fv.value IS NOT NULL",
+      "refId": "C",
+      "hide": false
+    }
+  ],
+  "datasource": {
+    "type": "grafana-postgresql-datasource",
+    "uid": "bf6vebq5ipybke"
+  },
+  "options": {
+    "tooltip": {
+      "mode": "multi",
+      "sort": "none",
+      "hideZeros": false
+    },
+    "legend": {
+      "showLegend": true,
+      "displayMode": "list",
+      "placement": "bottom",
+      "calcs": []
+    }
+  }
+}
+

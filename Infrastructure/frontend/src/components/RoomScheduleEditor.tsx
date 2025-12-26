@@ -142,6 +142,10 @@ export default function RoomScheduleEditor({ location, cluster, period }: RoomSc
               rampDownDuration={rampDownDuration}
               onRampUpChange={setRampUpDuration}
               onRampDownChange={setRampDownDuration}
+              showPresetButtons={location !== 'Veg Room'}
+              lockedPhotoperiodHours={location === 'Veg Room' ? 18 : null}
+              location={location}
+              cluster={cluster}
             />
           </div>
 
@@ -174,6 +178,8 @@ export default function RoomScheduleEditor({ location, cluster, period }: RoomSc
               }}
               label="Night Period"
               period="night"
+              location={location}
+              cluster={cluster}
             />
           </div>
 
