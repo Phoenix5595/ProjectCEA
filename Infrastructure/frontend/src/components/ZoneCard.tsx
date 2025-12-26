@@ -1,6 +1,7 @@
 import { Zone, getLocationDisplayName } from '../config/zones'
 import type { SensorDataResponse } from '../types/sensor'
 import type { Device } from '../types/device'
+import type { Setpoint } from '../types/setpoint'
 import { formatTemperature, formatHumidity, formatCO2, formatVPD } from '../utils/formatters'
 
 interface RoomSchedule {
@@ -17,9 +18,10 @@ interface ZoneCardProps {
   sensorData: SensorDataResponse
   devices: Device[]
   schedule?: RoomSchedule
+  setpoint?: Setpoint
 }
 
-export default function ZoneCard({ zone, sensorData, devices, schedule }: ZoneCardProps) {
+export default function ZoneCard({ zone, sensorData, devices, schedule, setpoint }: ZoneCardProps) {
   // Extract latest sensor values
   const getLatestValue = (sensorName: string): number | null => {
     const sensor = sensorData[sensorName]
@@ -62,18 +64,30 @@ export default function ZoneCard({ zone, sensorData, devices, schedule }: ZoneCa
         <div>
           <div className="text-sm font-medium text-gray-700 mb-1">Temperature</div>
           <div className="text-2xl font-bold text-gray-900">{formatTemperature(temperature)}</div>
+          {setpoint?.temperature !== null && setpoint?.temperature !== undefined && (
+            <div className="text-xs text-gray-500 mt-1">Setpoint: {formatTemperature(setpoint.temperature)}</div>
+          )}
         </div>
         <div>
           <div className="text-sm font-medium text-gray-700 mb-1">Humidity</div>
           <div className="text-2xl font-bold text-gray-900">{formatHumidity(humidity)}</div>
+          {setpoint?.humidity !== null && setpoint?.humidity !== undefined && (
+            <div className="text-xs text-gray-500 mt-1">Setpoint: {formatHumidity(setpoint.humidity)}</div>
+          )}
         </div>
         <div>
           <div className="text-sm font-medium text-gray-700 mb-1">CO₂</div>
           <div className="text-2xl font-bold text-gray-900">{formatCO2(co2)}</div>
+          {setpoint?.co2 !== null && setpoint?.co2 !== undefined && (
+            <div className="text-xs text-gray-500 mt-1">Setpoint: {formatCO2(setpoint.co2)}</div>
+          )}
         </div>
         <div>
           <div className="text-sm font-medium text-gray-700 mb-1">VPD</div>
           <div className="text-2xl font-bold text-gray-900">{formatVPD(vpd)}</div>
+          {setpoint?.vpd !== null && setpoint?.vpd !== undefined && (
+            <div className="text-xs text-gray-500 mt-1">Setpoint: {formatVPD(setpoint.vpd)}</div>
+          )}
         </div>
       </div>
 

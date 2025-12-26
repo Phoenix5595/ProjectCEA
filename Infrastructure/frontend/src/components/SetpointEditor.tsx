@@ -27,7 +27,9 @@ export default function SetpointEditor({ location, cluster, onUpdate, mode = nul
 
   async function loadSetpoint(mode: 'DAY' | 'NIGHT' | null) {
     try {
+      console.log('Loading setpoint:', { location, cluster, mode })
       const setpoint = await apiClient.getSetpoints(location, cluster, mode || undefined)
+      console.log('Loaded setpoint:', setpoint)
       const newFormData = {
         temperature: setpoint.temperature ?? undefined,
         co2: setpoint.co2 ?? undefined,
@@ -50,6 +52,18 @@ export default function SetpointEditor({ location, cluster, onUpdate, mode = nul
       setErrors({})
     } catch (error) {
       console.error('Error loading setpoint:', error)
+      // On error, clear the form to show empty state
+      setFormData({})
+      setInputValues({
+        temperature: '',
+        co2: '',
+        vpd: '',
+      })
+      setSavedValues({
+        temperature: null,
+        co2: null,
+        vpd: null,
+      })
     }
   }
 
@@ -126,7 +140,13 @@ export default function SetpointEditor({ location, cluster, onUpdate, mode = nul
 
     setLoading(true)
     try {
-      await apiClient.updateSetpoints(location, cluster, formData)
+      // Ensure mode is included in the update
+      const updateData = {
+        ...formData,
+        mode: mode || undefined
+      }
+      console.log('Saving setpoints:', { location, cluster, mode, updateData })
+      await apiClient.updateSetpoints(location, cluster, updateData)
       // Update saved values after successful save
       setSavedValues({
         temperature: formData.temperature ?? null,
@@ -134,6 +154,8 @@ export default function SetpointEditor({ location, cluster, onUpdate, mode = nul
         vpd: formData.vpd ?? null,
       })
       alert('Setpoints updated successfully')
+      // Reload the setpoint to show the saved values
+      await loadSetpoint(mode)
       onUpdate()
     } catch (error: any) {
       const errorMessage = error.response?.data?.detail || error.message || 'Unknown error';

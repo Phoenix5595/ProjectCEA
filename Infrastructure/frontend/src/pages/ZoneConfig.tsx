@@ -13,7 +13,7 @@ export default function ZoneConfig() {
   // URL should have backend location name (from zones config), but convert display name if needed
   // React Router automatically decodes URL params, so we just need to map if it's a display name
   const location = locationParam ? getLocationBackendName(locationParam) : null
-  const [activeTab, setActiveTab] = useState<'day' | 'night' | 'pid' | 'schedules'>('day')
+  const [activeTab, setActiveTab] = useState<'setpoints' | 'pid' | 'schedules'>('setpoints')
   const [lights, setLights] = useState<any[]>([])
 
   useEffect(() => {
@@ -80,24 +80,14 @@ export default function ZoneConfig() {
           <div className="border-b border-gray-200">
             <nav className="flex">
               <button
-                onClick={() => setActiveTab('day')}
+                onClick={() => setActiveTab('setpoints')}
                 className={`px-6 py-3 font-semibold ${
-                  activeTab === 'day'
+                  activeTab === 'setpoints'
                     ? 'border-b-2 border-blue-600 text-blue-700 bg-blue-50'
                     : 'text-gray-700 hover:text-gray-900 hover:bg-gray-50'
                 }`}
               >
-                Day
-              </button>
-              <button
-                onClick={() => setActiveTab('night')}
-                className={`px-6 py-3 font-semibold ${
-                  activeTab === 'night'
-                    ? 'border-b-2 border-blue-600 text-blue-700 bg-blue-50'
-                    : 'text-gray-700 hover:text-gray-900 hover:bg-gray-50'
-                }`}
-              >
-                Night
+                Setpoints & Schedule
               </button>
               <button
                 onClick={() => setActiveTab('pid')}
@@ -123,41 +113,47 @@ export default function ZoneConfig() {
           </div>
 
           <div className="p-6">
-            {activeTab === 'day' && location && (
+            {activeTab === 'setpoints' && location && (
               <div className="space-y-8">
                 <section>
                   <h2 className="text-xl font-semibold mb-4 text-gray-900">Setpoints</h2>
-                  <SetpointEditor
-                    location={location}
-                    cluster={cluster!}
-                    mode="DAY"
-                    onUpdate={loadSetpoints}
-                  />
+                  <div className="grid grid-cols-2 gap-6">
+                    <div>
+                      <h3 className="text-lg font-semibold mb-3 text-gray-800">Day</h3>
+                      <SetpointEditor
+                        location={location}
+                        cluster={cluster!}
+                        mode="DAY"
+                        onUpdate={loadSetpoints}
+                      />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-semibold mb-3 text-gray-800">Night</h3>
+                      <SetpointEditor
+                        location={location}
+                        cluster={cluster!}
+                        mode="NIGHT"
+                        onUpdate={loadSetpoints}
+                      />
+                    </div>
+                  </div>
                 </section>
                 <section className="border-t border-gray-200 pt-6">
                   <h2 className="text-xl font-semibold mb-4 text-gray-900">Schedule</h2>
-                  <RoomScheduleEditor location={location} cluster={cluster!} period="day" />
+                  <div className="grid grid-cols-2 gap-6">
+                    <div>
+                      <h3 className="text-lg font-semibold mb-3 text-gray-800">Day</h3>
+                      <RoomScheduleEditor location={location} cluster={cluster!} period="day" />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-semibold mb-3 text-gray-800">Night</h3>
+                      <RoomScheduleEditor location={location} cluster={cluster!} period="night" />
+                    </div>
+                  </div>
                 </section>
                 <section className="border-t border-gray-200 pt-6">
                   <h2 className="text-xl font-semibold mb-4 text-gray-900">Lights</h2>
                   <LightManager location={location} cluster={cluster!} lights={lights} />
-                </section>
-              </div>
-            )}
-            {activeTab === 'night' && location && (
-              <div className="space-y-8">
-                <section>
-                  <h2 className="text-xl font-semibold mb-4 text-gray-900">Setpoints</h2>
-                  <SetpointEditor
-                    location={location}
-                    cluster={cluster!}
-                    mode="NIGHT"
-                    onUpdate={loadSetpoints}
-                  />
-                </section>
-                <section className="border-t border-gray-200 pt-6">
-                  <h2 className="text-xl font-semibold mb-4 text-gray-900">Schedule</h2>
-                  <RoomScheduleEditor location={location} cluster={cluster!} period="night" />
                 </section>
               </div>
             )}

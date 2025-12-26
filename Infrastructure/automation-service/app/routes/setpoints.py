@@ -70,7 +70,15 @@ async def get_setpoints(
     """
     setpoints = await database.get_setpoint(location, cluster, mode)
     if not setpoints:
-        raise HTTPException(status_code=404, detail="Setpoints not found")
+        # Return empty setpoint object instead of 404, so frontend can always display the form
+        # This allows the form to show empty fields when no setpoint exists yet
+        return {
+            'temperature': None,
+            'humidity': None,
+            'co2': None,
+            'vpd': None,
+            'mode': mode
+        }
     return setpoints
 
 
@@ -178,12 +186,12 @@ async def update_setpoints(
     # Set mode to 'auto' if not in failsafe (only for legacy mode=NULL setpoints)
     if setpoints.mode is None:
         automation_redis = database._automation_redis if database else None
-    if automation_redis and automation_redis.redis_enabled:
-        # Check if in failsafe mode
-        failsafe = automation_redis.read_failsafe(location, cluster)
-        if not failsafe:
-            # Not in failsafe, set mode to 'auto'
-            automation_redis.write_mode(location, cluster, 'auto', source='api')
+        if automation_redis and automation_redis.redis_enabled:
+            # Check if in failsafe mode
+            failsafe = automation_redis.read_failsafe(location, cluster)
+            if not failsafe:
+                # Not in failsafe, set mode to 'auto'
+                automation_redis.write_mode(location, cluster, 'auto', source='api')
     
     return {
         "location": location,

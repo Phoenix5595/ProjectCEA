@@ -16,10 +16,13 @@ interface RoomSchedule {
   ramp_down_duration: number | null
 }
 
+import type { Setpoint } from '../types/setpoint'
+
 export default function Dashboard() {
   const [sensorData, setSensorData] = useState<Record<string, SensorDataResponse>>({})
   const [devices, setDevices] = useState<Device[]>([])
   const [schedules, setSchedules] = useState<Record<string, RoomSchedule>>({})
+  const [setpoints, setSetpoints] = useState<Record<string, Setpoint>>({})
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -109,6 +112,31 @@ export default function Dashboard() {
         }
       })
       setSchedules(scheduleMap)
+
+      // Load setpoints for each zone (get all modes, then determine current mode)
+      const setpointPromises = ZONES.map(async (zone) => {
+        try {
+          // Get all setpoints for this zone (all modes)
+          const allSetpoints = await apiClient.getAllSetpointsForLocationCluster(zone.location, zone.cluster)
+          // For now, use the first available setpoint or default to null mode
+          // TODO: Determine current mode based on schedule/time
+          const currentSetpoint = allSetpoints.find(sp => sp.mode === null) || allSetpoints[0] || null
+          return { zone, setpoint: currentSetpoint }
+        } catch (error) {
+          console.error(`Error loading setpoints for ${zone.location}/${zone.cluster}:`, error)
+          return { zone, setpoint: null }
+        }
+      })
+
+      const setpointResults = await Promise.all(setpointPromises)
+      const setpointMap: Record<string, Setpoint> = {}
+      setpointResults.forEach(({ zone, setpoint }) => {
+        if (setpoint) {
+          const key = `${zone.location}:${zone.cluster}`
+          setpointMap[key] = setpoint
+        }
+      })
+      setSetpoints(setpointMap)
     } catch (error) {
       console.error('Error loading initial data:', error)
     } finally {
@@ -158,6 +186,7 @@ export default function Dashboard() {
                   sensorData={sensorData[zoneKey] || {}}
                   devices={zoneDevices}
                   schedule={schedules[zoneKey]}
+                  setpoint={setpoints[zoneKey]}
                 />
               </Link>
             )
