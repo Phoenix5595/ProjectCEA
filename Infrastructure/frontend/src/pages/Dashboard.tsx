@@ -18,11 +18,16 @@ interface RoomSchedule {
 
 import type { Setpoint } from '../types/setpoint'
 
+interface ZoneSetpoints {
+  day?: Setpoint
+  night?: Setpoint
+}
+
 export default function Dashboard() {
   const [activeTab, setActiveTab] = useState<'zones' | 'devices'>('zones')
   const [devices, setDevices] = useState<Device[]>([])
   const [schedules, setSchedules] = useState<Record<string, RoomSchedule>>({})
-  const [setpoints, setSetpoints] = useState<Record<string, Setpoint>>({})
+  const [setpoints, setSetpoints] = useState<Record<string, ZoneSetpoints>>({})
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -76,27 +81,28 @@ export default function Dashboard() {
       })
       setSchedules(scheduleMap)
 
-      // Load setpoints for each zone (get all modes, then determine current mode)
+      // Load setpoints for each zone (get DAY and NIGHT setpoints)
       const setpointPromises = ZONES.map(async (zone) => {
         try {
           // Get all setpoints for this zone (all modes)
           const allSetpoints = await apiClient.getAllSetpointsForLocationCluster(zone.location, zone.cluster)
-          // For now, use the first available setpoint or default to null mode
-          // TODO: Determine current mode based on schedule/time
-          const currentSetpoint = allSetpoints.find(sp => sp.mode === null) || allSetpoints[0] || null
-          return { zone, setpoint: currentSetpoint }
+          // Extract DAY and NIGHT setpoints
+          const daySetpoint = allSetpoints.find(sp => sp.mode === 'DAY')
+          const nightSetpoint = allSetpoints.find(sp => sp.mode === 'NIGHT')
+          return { zone, daySetpoint, nightSetpoint }
         } catch (error) {
           console.error(`Error loading setpoints for ${zone.location}/${zone.cluster}:`, error)
-          return { zone, setpoint: null }
+          return { zone, daySetpoint: undefined, nightSetpoint: undefined }
         }
       })
 
       const setpointResults = await Promise.all(setpointPromises)
-      const setpointMap: Record<string, Setpoint> = {}
-      setpointResults.forEach(({ zone, setpoint }) => {
-        if (setpoint) {
-          const key = `${zone.location}:${zone.cluster}`
-          setpointMap[key] = setpoint
+      const setpointMap: Record<string, ZoneSetpoints> = {}
+      setpointResults.forEach(({ zone, daySetpoint, nightSetpoint }) => {
+        const key = `${zone.location}:${zone.cluster}`
+        setpointMap[key] = {
+          day: daySetpoint,
+          night: nightSetpoint
         }
       })
       setSetpoints(setpointMap)
@@ -106,7 +112,6 @@ export default function Dashboard() {
       setLoading(false)
     }
   }
-
 
   if (loading) {
     return (
@@ -170,7 +175,7 @@ export default function Dashboard() {
                           sensorData={{}}
                           devices={zoneDevices}
                           schedule={schedules[zoneKey]}
-                          setpoint={setpoints[zoneKey]}
+                          setpoints={setpoints[zoneKey]}
                         />
                       </Link>
                     )
