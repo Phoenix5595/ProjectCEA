@@ -5,7 +5,7 @@ from typing import Optional
 from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 import os
 
 from app.config import ConfigLoader
@@ -580,16 +580,38 @@ if os.path.exists(frontend_dist_path):
     # Mount static assets (JS, CSS, images) - these are in the assets subdirectory
     app.mount("/assets", StaticFiles(directory=os.path.join(frontend_dist_path, "assets")), name="static-assets")
     
-    # Serve logo.png - must be registered before catch-all route
+    # Serve logo.png and favicon routes - must be registered before catch-all route
     logo_path = os.path.join(frontend_dist_path, "logo.png")
     # Use absolute path to ensure it works
     logo_path = os.path.abspath(logo_path)
-    logger.info(f"Registering /logo.png route, path: {logo_path}, exists: {os.path.exists(logo_path)}")
+    logger.info(f"Registering favicon routes, path: {logo_path}, exists: {os.path.exists(logo_path)}")
     if os.path.exists(logo_path):
         @app.api_route("/logo.png", methods=["GET", "HEAD"], name="logo")
         async def serve_logo():
             """Serve logo.png favicon."""
             logger.info(f"Serving logo from: {logo_path}")
+            return FileResponse(logo_path, media_type="image/png")
+        
+        @app.api_route("/favicon.ico", methods=["GET", "HEAD"], name="favicon_ico")
+        async def serve_favicon_ico():
+            """Serve favicon.ico (browser default request)."""
+            # Try to serve actual favicon.ico file first, fallback to logo.png
+            favicon_path = os.path.join(frontend_dist_path, "favicon.ico")
+            favicon_path = os.path.abspath(favicon_path)
+            if os.path.exists(favicon_path):
+                logger.info(f"Serving favicon.ico from: {favicon_path}")
+                response = FileResponse(favicon_path, media_type="image/x-icon")
+            else:
+                logger.info(f"Serving favicon.ico from logo: {logo_path}")
+                response = FileResponse(logo_path, media_type="image/x-icon")
+            # Add cache headers to help with browser caching
+            response.headers["Cache-Control"] = "public, max-age=86400"
+            return response
+        
+        @app.api_route("/favicon.png", methods=["GET", "HEAD"], name="favicon_png")
+        async def serve_favicon_png():
+            """Serve favicon.png."""
+            logger.info(f"Serving favicon.png from: {logo_path}")
             return FileResponse(logo_path, media_type="image/png")
     else:
         logger.warning(f"Logo file not found at: {logo_path}")
@@ -613,10 +635,11 @@ if os.path.exists(frontend_dist_path):
     @app.get("/{path:path}")
     async def serve_frontend_routes(path: str):
         """Serve frontend routes (SPA fallback)."""
-        # Serve logo.png immediately if requested
-        if path == "logo.png":
+        # Serve favicon files immediately if requested (fallback)
+        if path in ["logo.png", "favicon.ico", "favicon.png"]:
             logo_file = os.path.join(frontend_dist_path, "logo.png")
             if os.path.exists(logo_file):
+                # Serve PNG file even for .ico requests (browsers handle this fine)
                 return FileResponse(logo_file, media_type="image/png")
         
         # Don't serve frontend for API routes, WebSocket, or FastAPI docs
