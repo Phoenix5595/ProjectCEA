@@ -1,0 +1,35 @@
+# Weather Service Configuration
+# Configuration for YUL Airport Weather Station
+
+# Weather API configuration
+weather:
+  station_icao: "CYUL"  # YUL airport ICAO code
+  poll_interval: 900  # 15 minutes in seconds
+  api_url: "https://aviationweather.gov/api/data/metar"
+
+# Database configuration
+# Note: password should be provided via POSTGRES_PASSWORD environment variable
+# If not provided, password must be set in this config file
+database:
+  host: "localhost"
+  database: "cea_sensors"
+  user: "cea_user"
+  # password: "your_password_here"  # Use POSTGRES_PASSWORD env var instead
+  port: 5432
+
+# Room and device configuration
+room:
+  name: "Outside"
+  device_name: "Weather Station YUL"
+
+
+
+
+
+
+
+
+
+
+
+

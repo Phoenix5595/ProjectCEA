@@ -1,0 +1,15 @@
+[Unit]
+Description=CAN Interface Setup (can0)
+After=network.target
+Before=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/bash "/home/antoine/Project CEA/Infrastructure/can-processor-service/setup_can.sh"
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+

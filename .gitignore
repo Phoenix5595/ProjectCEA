@@ -10,6 +10,8 @@ build/
 
 # Cursor / IDE metadata
 .cursor/
+.vscode/
+*.code-workspace
 
 # Secrets / keys (never commit)
 .ssh/

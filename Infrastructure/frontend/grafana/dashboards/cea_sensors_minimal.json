@@ -1,0 +1,48 @@
+{
+  "title": "CEA Sensors - Minimal Test",
+  "dashboard": {
+    "title": "CEA Sensors - Minimal Test",
+    "tags": ["cea", "test"],
+    "timezone": "browser",
+    "schemaVersion": 38,
+    "version": 0,
+    "refresh": "10s",
+    "panels": [
+      {
+        "id": 1,
+        "title": "Temperature Test",
+        "type": "timeseries",
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 0,
+          "y": 0
+        },
+        "targets": [
+          {
+            "datasource": null,
+            "rawSql": "SELECT time, value FROM measurement_with_metadata WHERE sensor_name = 'dry_bulb_b' AND time >= $__timeFrom() AND time <= $__timeTo() ORDER BY time",
+            "format": "time_series",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "celsius"
+          }
+        }
+      }
+    ],
+    "time": {
+      "from": "now-6h",
+      "to": "now"
+    },
+    "templating": {
+      "list": []
+    },
+    "annotations": {
+      "list": []
+    }
+  }
+}
+

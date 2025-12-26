@@ -1,0 +1,23 @@
+# DFR0971 Test Configuration
+# Configuration file for testing the DFR0971 2-Channel I2C 0-10V DAC Module
+
+# Hardware Configuration
+hardware:
+  i2c_bus: 1              # I2C bus number (usually 1 on Raspberry Pi)
+  i2c_address: 0x58      # I2C address of DFR0971 (default: 0x58)
+  board_name: "Test Board"  # Optional name for the board
+  simulation: false       # Set to true to test without hardware
+
+# Test Parameters
+test:
+  # Default test values
+  test_voltage: 5.0      # Voltage for basic tests (0-10V)
+  test_intensity: 50.0   # Intensity for basic tests (0-100%)
+  
+  # Ramp test parameters
+  ramp:
+    step_size: 5.0       # Intensity step size for ramp test (%)
+    delay: 1           # Delay between steps (seconds)
+    start_intensity: 0.0 # Starting intensity (%)
+    end_intensity: 100.0 # Ending intensity (%)
+

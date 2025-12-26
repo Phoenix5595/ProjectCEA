@@ -1,0 +1,39 @@
+[Unit]
+Description=CEA Weather Service
+After=redis-server.service postgresql.service network-online.target
+Requires=redis-server.service postgresql.service
+OnFailure=service-error-handler@%n.service
+
+[Service]
+Type=simple
+User=antoine
+Group=antoine
+WorkingDirectory=/home/antoine/Project CEA/Infrastructure/weather-service
+Environment="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/local/bin"
+Environment="POSTGRES_HOST=localhost"
+Environment="POSTGRES_DB=cea_sensors"
+Environment="POSTGRES_USER=cea_user"
+# POSTGRES_PASSWORD must be set via systemd environment file or override
+# Create /etc/systemd/system/weather-service.service.d/override.conf with:
+# [Service]
+# Environment="POSTGRES_PASSWORD=your_password_here"
+ExecStart=/usr/bin/python3 -m uvicorn app.main:app --host 0.0.0.0 --port 8003
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+
+
+
+
+
+
+
+
+
+
+
+

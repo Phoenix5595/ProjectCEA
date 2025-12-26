@@ -1,0 +1,27 @@
+# Soil Sensor RS485 Service Configuration
+# Configuration for DFRobot RS485 4-in-1 Soil Sensors
+
+# RS485 serial port configuration
+rs485:
+  port: /dev/serial0  # GPIO UART (or /dev/ttyUSB0 for USB adapter)
+  baudrate: 9600      # Modbus RTU baudrate
+  timeout: 1.0        # Serial read timeout in seconds
+
+# Polling configuration
+polling:
+  interval_seconds: 5  # Polling interval in seconds
+
+# Sensor configurations
+# Each sensor must have a unique Modbus slave ID
+sensors:
+  - modbus_id: 1                    # Modbus slave ID (must be unique per sensor)
+    name: "soil_sensor_front_bed"    # Base name for sensor (snake_case)
+    bed_name: "Front Bed"           # Bed name (maps to rack.name in database)
+    room_name: "Flower Room"        # Room name
+
+# To add more sensors, add additional entries to the sensors list:
+#  - modbus_id: 2
+#    name: "soil_sensor_back_bed"
+#    bed_name: "Back Bed"
+#    room_name: "Flower Room"
+
