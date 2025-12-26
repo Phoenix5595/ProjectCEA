@@ -24,3 +24,10 @@
 ## Naming
 - Use sensor display mappings from frontend when showing names; backend keys remain unchanged.
 
+## Setpoint visualization (temperature/VPD panel)
+- Use day/night switching from the `schedules` table (`location='Flower Room'`, `cluster='main'`, `mode='DAY'` / `mode='NIGHT'`, `enabled=true`; honor `day_of_week` when present).
+- Compare schedule windows with `tp.time::time` so overnight ranges are handled and syntax stays valid.
+- Generate 5-minute time points between `$__timeFrom()` and `$__timeTo()` and pick the latest setpoint per mode where `updated_at <= time`.
+- Only `DAY` and `NIGHT` modes are considered; legacy `NULL`/`TRANSITION` values are ignored.
+- Default to NIGHT when no DAY schedule matches; ensure a DAY overlay series returns `100` during day and `NULL` otherwise and is styled as a translucent yellow fill.
+

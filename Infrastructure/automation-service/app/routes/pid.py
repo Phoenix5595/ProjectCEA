@@ -19,7 +19,7 @@ class PIDParameterUpdate(BaseModel):
     kp: Optional[float] = None
     ki: Optional[float] = None
     kd: Optional[float] = None
-    source: str = "api"  # 'api', 'node-red', 'config'
+    source: str = "api"  # 'api', 'config'
     updated_by: Optional[str] = None
 
 

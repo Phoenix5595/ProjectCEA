@@ -266,7 +266,7 @@ class AutomationRedisClient:
             temperature: Temperature setpoint (optional)
             humidity: Humidity setpoint (optional)
             co2: CO2 setpoint (optional)
-            source: Source of setpoint ('api', 'node-red', 'schedule', 'failsafe')
+            source: Source of setpoint ('api', 'schedule', 'failsafe')
         
         Returns:
             True if successful, False otherwise
@@ -403,7 +403,7 @@ class AutomationRedisClient:
             location: Location name
             cluster: Cluster name
             mode: Mode ('auto', 'manual', 'override', 'failsafe')
-            source: Source of mode change ('api', 'node-red', 'system')
+            source: Source of mode change ('api', 'system')
         
         Returns:
             True if successful, False otherwise
@@ -869,7 +869,7 @@ class AutomationRedisClient:
             kp: Proportional gain
             ki: Integral gain
             kd: Derivative gain
-            source: Source of parameters ('api', 'node-red', 'config')
+            source: Source of parameters ('api', 'config')
             updated_at: Timestamp in milliseconds (default: current time)
         
         Returns:

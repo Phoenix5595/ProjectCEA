@@ -1,157 +1,39 @@
 # Displaying Setpoints in Grafana Dashboards
 
-## Overview
+This guide documents how the `temperature_rh_vpd_with_setpoints.json` panel shows setpoints with day/night schedule awareness and a DAY overlay.
 
-This guide explains how to display temperature and VPD setpoints on Grafana graphs. Setpoints are stored in the `setpoints` table in the `cea_sensors` database (same database used by Grafana).
+## What the panel does
+- Query A: sensor measurements (temperature, RH, VPD) from `measurement_with_metadata`.
+- Query B: temperature setpoint for `location = 'Flower Room'`, `cluster = 'main'`, switching between DAY and NIGHT based on schedules.
+- Query C: VPD setpoint for the same room/cluster and schedule logic.
+- Query D: DAY overlay (yellow fill) so the active daylight period is visually highlighted.
+- Modes supported: `DAY` and `NIGHT` only; `NULL`/`TRANSITION` are ignored.
 
-## Basic Approach
+## How the setpoint queries work
+1. Build `time_points` with `generate_series($__timeFrom()::timestamp, $__timeTo()::timestamp, INTERVAL '5 minute')`.
+2. Compute `day_flag` from the `schedules` table:
+   - `location = 'Flower Room'`, `cluster = 'main'`, `mode = 'DAY'`, `enabled = true`.
+   - Optional `day_of_week` respected: `day_of_week IS NULL OR day_of_week = EXTRACT(DOW FROM tp.time)`.
+   - Time window handles overnight spans via `tp.time::time` comparisons:
+     - `start_time <= end_time`: simple between.
+     - `start_time > end_time`: overnight, so `>= start_time OR < end_time`.
+3. For each timestamp, pick the latest setpoint where `updated_at <= time`:
+   - If `day_flag` is true, use the most recent `mode = 'DAY'` value.
+   - Otherwise, use the most recent `mode = 'NIGHT'` value (default to night when no day schedule matches).
+4. Results are dashed lines (red for temperature, blue for VPD). The overlay returns `100` during DAY and `NULL` otherwise and is styled as a translucent yellow fill.
 
-The panel JSON file `temperature_rh_vpd_with_setpoints.json` includes:
-- **Query A**: Original sensor data (temperature, RH, VPD)
-- **Query B**: Temperature setpoints for Back and Front clusters
-- **Query C**: VPD setpoints for Back and Front clusters
+## Table expectations
+- `setpoints` (automation-service schema): `location`, `cluster` (here: `main`), `mode` (`DAY`/`NIGHT`), `temperature`, `vpd`, `updated_at`.
+- `schedules`: `location`, `cluster`, `mode` (`DAY`/`NIGHT`), `enabled`, `start_time`, `end_time`, optional `day_of_week`.
 
-## How It Works
-
-The setpoint queries:
-1. Generate a time series for the selected time range (every 5 minutes)
-2. Query the most recent setpoint values from the `setpoints` table
-3. Display them as constant horizontal reference lines (dashed)
-
-## Current Limitations
-
-The current implementation shows the **most recent setpoint** for the DAY mode (or NULL mode if DAY doesn't exist). This means:
-- ✅ Works well if setpoints don't change during the time period
-- ⚠️ May not reflect NIGHT mode setpoints if viewing night-time data
-- ⚠️ Doesn't show historical setpoint changes
-
-## Database Schema
-
-The `setpoints` table structure:
-- `location` (TEXT): e.g., "Flower Room"
-- `cluster` (TEXT): e.g., "back", "front"
-- `mode` (TEXT): "DAY", "NIGHT", "TRANSITION", or NULL (legacy)
-- `temperature` (REAL): Temperature setpoint in Celsius
-- `vpd` (REAL): VPD setpoint in kPa
-- `updated_at` (TIMESTAMPTZ): When the setpoint was last updated
-
-## Using the Panel
-
-1. **Import the panel JSON** into your Grafana dashboard
-2. **Adjust location/cluster** if needed:
-   - The queries assume "Flower Room" with clusters "back" and "front"
-   - Modify the `location` and `cluster` values in queries B and C if different
-
-3. **Customize appearance**:
-   - Setpoints are displayed as dashed lines
-   - Colors: Red/Purple for temperature, Blue/Cyan for VPD
-   - You can modify colors in the fieldConfig overrides
-
-## Advanced: Historical Setpoint Changes
-
-To show setpoints that change over time (e.g., DAY vs NIGHT), you would need to:
-
-1. **Query setpoints for both DAY and NIGHT modes**
-2. **Use schedule times** to determine which setpoint was active at each time
-3. **Create a time-series** that switches between setpoints based on schedule
-
-Example enhanced query (for temperature setpoint with DAY/NIGHT support):
-
-```sql
-WITH time_series AS (
-  SELECT generate_series($__timeFrom()::timestamp, $__timeTo()::timestamp, INTERVAL '5 minute') AS time
-),
-day_schedule AS (
-  SELECT start_time, end_time 
-  FROM schedules 
-  WHERE location = 'Flower Room' 
-    AND cluster = 'back' 
-    AND mode = 'DAY' 
-    AND enabled = true
-  LIMIT 1
-),
-night_schedule AS (
-  SELECT start_time, end_time 
-  FROM schedules 
-  WHERE location = 'Flower Room' 
-    AND cluster = 'back' 
-    AND mode = 'NIGHT' 
-    AND enabled = true
-  LIMIT 1
-),
-day_setpoint AS (
-  SELECT temperature AS value 
-  FROM setpoints 
-  WHERE location = 'Flower Room' 
-    AND cluster = 'back' 
-    AND mode = 'DAY'
-  ORDER BY updated_at DESC 
-  LIMIT 1
-),
-night_setpoint AS (
-  SELECT temperature AS value 
-  FROM setpoints 
-  WHERE location = 'Flower Room' 
-    AND cluster = 'back' 
-    AND mode = 'NIGHT'
-  ORDER BY updated_at DESC 
-  LIMIT 1
-)
-SELECT 
-  ts.time AS "time",
-  'Temp Setpoint - Back' AS metric,
-  CASE 
-    WHEN EXTRACT(HOUR FROM ts.time) >= EXTRACT(HOUR FROM (SELECT start_time FROM day_schedule))
-     AND EXTRACT(HOUR FROM ts.time) < EXTRACT(HOUR FROM (SELECT end_time FROM day_schedule))
-    THEN (SELECT value FROM day_setpoint)
-    ELSE (SELECT value FROM night_setpoint)
-  END AS value
-FROM time_series ts
-WHERE (SELECT value FROM day_setpoint) IS NOT NULL 
-   OR (SELECT value FROM night_setpoint) IS NOT NULL
-```
-
-**Note**: This is more complex and may need adjustment based on your specific schedule setup.
-
-## Alternative: Using control_history
-
-The `control_history` table records setpoint values with each control action. You could query this to see what setpoints were actually used:
-
-```sql
-SELECT 
-  timestamp AS "time",
-  'Temp Setpoint (from control)' AS metric,
-  setpoint AS value
-FROM control_history
-WHERE location = 'Flower Room' 
-  AND cluster = 'back'
-  AND setpoint IS NOT NULL
-  AND timestamp >= $__timeFrom()
-  AND timestamp <= $__timeTo()
-ORDER BY timestamp
-```
-
-This shows the setpoint values that were actually used during control actions, but may have gaps if there were no control actions during certain periods.
+## Using or adapting the panel
+- If your room/cluster differ, replace `'Flower Room'` / `'main'` in queries B/C/D.
+- Increase/decrease the interval in `generate_series` for coarser or finer stepping.
+- Keep the `tp.time::time` casts to avoid SQL syntax errors and to correctly support overnight day windows.
+- Ensure schedules cover the day you are viewing; when no DAY schedule matches, the queries fall back to NIGHT setpoints.
 
 ## Troubleshooting
-
-1. **No setpoints showing**: 
-   - Check that setpoints exist in the database: `SELECT * FROM setpoints WHERE location = 'Flower Room';`
-   - Verify the location and cluster names match exactly
-
-2. **Wrong setpoints showing**:
-   - Check which mode is active: `SELECT * FROM setpoints WHERE location = 'Flower Room' AND cluster = 'back';`
-   - The query prioritizes DAY mode, then NULL mode
-
-3. **Performance issues**:
-   - The `generate_series` creates many data points for long time ranges
-   - Consider increasing the interval (e.g., `INTERVAL '10 minute'` or `INTERVAL '1 hour'`)
-
-## Customization
-
-To customize for different rooms/clusters, modify:
-- `location = 'Flower Room'` → your room name
-- `cluster = 'back'` or `cluster = 'front'` → your cluster name
-- Colors in the fieldConfig overrides section
-- Line styles (dash patterns, width) in the overrides
+- No setpoint lines: confirm DAY/NIGHT rows exist in `setpoints` for `location='Flower Room'` and `cluster='main'`; verify schedules are enabled and times cover the range.
+- Wrong value: check `updated_at` ordering and `mode` on the latest setpoints; only DAY/NIGHT are considered.
+- Syntax error near `tp`: verify comparisons use `tp.time::time` (already applied in the panel JSON).
 

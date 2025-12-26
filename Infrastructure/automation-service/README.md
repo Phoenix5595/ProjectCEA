@@ -24,7 +24,7 @@ The automation backend is designed with the following principles:
 3. **Survive UI Failures**: Control continues even if UI crashes or is unavailable
 4. **Separation of Concerns**: Clear boundaries between control logic, live state, and persistent configuration
 5. **Future Expansion**: Architecture supports additional zones, sensors, and devices
-6. **No External Dependencies**: No Node-RED, no REST API for control operations
+6. **No External Dependencies**: No external automation tools required
 
 ## Architecture
 
@@ -826,7 +826,7 @@ The automation service integrates with:
 - **Soil Sensor Service**: Publishes sensor data to Redis
 - **Frontend**: React frontend for configuration and monitoring (served from `Infrastructure/frontend/dist/`)
 
-**Note**: The automation service does not integrate with Node-RED or any external automation tools. It operates autonomously.
+**Note**: The automation service operates autonomously without external automation tools.
 
 ## Summary
 

@@ -308,7 +308,7 @@ export default function ManualLightControl({ location, cluster, compact = false 
   })
   
   return (
-    <div className={compact ? "" : "mt-4 pt-4 border-t border-gray-200"} style={{ minHeight: compact ? 'auto' : '100px', backgroundColor: '#f9fafb', padding: compact ? '8px' : '12px', borderRadius: '4px', width: compact ? 'auto' : '100%' }}>
+    <div className={compact ? "" : "mt-4 pt-4 border-t border-gray-200"} style={{ minHeight: compact ? 'auto' : '100px', backgroundColor: '#f9fafb', padding: compact ? '8px' : '12px', borderRadius: '4px', width: compact ? 'fit-content' : '100%', display: 'inline-block' }}>
       {!compact && <div className="text-sm font-medium text-gray-700 mb-2">Manual Control</div>}
       {compact && <div className="text-xs font-medium text-gray-700 mb-1.5">Manual Control</div>}
       {loadingDetails && (

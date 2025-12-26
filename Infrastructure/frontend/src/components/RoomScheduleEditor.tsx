@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { apiClient } from '../services/api'
 import CircularTimePicker from './CircularTimePicker'
+import ManualLightControl from './ManualLightControl'
 
 interface RoomScheduleEditorProps {
   location: string
@@ -144,22 +145,25 @@ export default function RoomScheduleEditor({ location, cluster, period }: RoomSc
               onRampDownChange={setRampDownDuration}
               showPresetButtons={location !== 'Veg Room'}
               lockedPhotoperiodHours={location === 'Veg Room' ? 18 : null}
-              location={location}
-              cluster={cluster}
             />
           </div>
 
-          <div className="mt-6">
-            <button
-              onClick={handleSave}
-              disabled={saving}
-              className="bg-blue-700 text-white font-semibold px-6 py-2 rounded-md hover:bg-blue-800 disabled:opacity-50 disabled:cursor-not-allowed shadow-md"
-            >
-              {saving ? 'Saving...' : 'Save Schedule'}
-            </button>
-            <p className="text-xs text-gray-500 mt-2">
-              This will create schedules for all devices in this room. Existing schedules will be replaced.
-            </p>
+          <div className="mt-6 flex items-start justify-between gap-6">
+            <div>
+              <button
+                onClick={handleSave}
+                disabled={saving}
+                className="bg-blue-700 text-white font-semibold px-6 py-2 rounded-md hover:bg-blue-800 disabled:opacity-50 disabled:cursor-not-allowed shadow-md"
+              >
+                {saving ? 'Saving...' : 'Save Schedule'}
+              </button>
+              <p className="text-xs text-gray-500 mt-2">
+                This will create schedules for all devices in this room. Existing schedules will be replaced.
+              </p>
+            </div>
+            <div className="flex-shrink-0">
+              <ManualLightControl location={location} cluster={cluster} compact={true} />
+            </div>
           </div>
         </div>
       ) : (
@@ -178,22 +182,25 @@ export default function RoomScheduleEditor({ location, cluster, period }: RoomSc
               }}
               label="Night Period"
               period="night"
-              location={location}
-              cluster={cluster}
             />
           </div>
 
-          <div className="mt-6">
-            <button
-              onClick={handleSave}
-              disabled={saving}
-              className="bg-blue-700 text-white font-semibold px-6 py-2 rounded-md hover:bg-blue-800 disabled:opacity-50 disabled:cursor-not-allowed shadow-md"
-            >
-              {saving ? 'Saving...' : 'Save Night Schedule'}
-            </button>
-            <p className="text-xs text-gray-500 mt-2">
-              This will create schedules for all devices in this room. Existing schedules will be replaced.
-            </p>
+          <div className="mt-6 flex items-start justify-between gap-6">
+            <div>
+              <button
+                onClick={handleSave}
+                disabled={saving}
+                className="bg-blue-700 text-white font-semibold px-6 py-2 rounded-md hover:bg-blue-800 disabled:opacity-50 disabled:cursor-not-allowed shadow-md"
+              >
+                {saving ? 'Saving...' : 'Save Night Schedule'}
+              </button>
+              <p className="text-xs text-gray-500 mt-2">
+                This will create schedules for all devices in this room. Existing schedules will be replaced.
+              </p>
+            </div>
+            <div className="flex-shrink-0">
+              <ManualLightControl location={location} cluster={cluster} compact={true} />
+            </div>
           </div>
         </div>
       )}

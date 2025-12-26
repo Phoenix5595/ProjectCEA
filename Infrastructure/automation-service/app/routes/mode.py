@@ -10,7 +10,7 @@ router = APIRouter()
 
 class ModeUpdate(BaseModel):
     mode: str  # 'auto', 'manual', 'override', 'failsafe'
-    source: str = "api"  # 'api', 'node-red', 'system'
+    source: str = "api"  # 'api', 'system'
 
 
 def get_database() -> DatabaseManager:

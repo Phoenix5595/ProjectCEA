@@ -35,6 +35,7 @@ class BackgroundTasks:
         self._task: Optional[asyncio.Task] = None
         self._heartbeat_task: Optional[asyncio.Task] = None
         self._auto_persist_task: Optional[asyncio.Task] = None
+        self._setpoint_history_task: Optional[asyncio.Task] = None
     
     async def start(self) -> None:
         """Start background control loop and tasks."""
@@ -46,15 +47,16 @@ class BackgroundTasks:
         self._task = asyncio.create_task(self._control_loop())
         self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
         self._auto_persist_task = asyncio.create_task(self._auto_persist_loop())
+        self._setpoint_history_task = asyncio.create_task(self._setpoint_history_loop())
         logger.info(f"Background control loop started (interval: {self.update_interval}s)")
-        logger.info("Heartbeat and auto-persist tasks started")
+        logger.info("Heartbeat, auto-persist, and setpoint history tasks started")
     
     async def stop(self) -> None:
         """Stop background control loop and tasks."""
         self._running = False
         
         # Cancel all tasks
-        tasks = [self._task, self._heartbeat_task, self._auto_persist_task]
+        tasks = [self._task, self._heartbeat_task, self._auto_persist_task, self._setpoint_history_task]
         for task in tasks:
             if task:
                 task.cancel()
@@ -145,7 +147,6 @@ class BackgroundTasks:
                     continue
                 
                 # Sync setpoints from Redis to DB (if changed)
-                # This is mainly for setpoints that were set via Node-RED override
                 # The database is already the source of truth for API-set setpoints
                 
                 # Sync PID parameters from Redis to DB (if changed)
@@ -174,4 +175,47 @@ class BackgroundTasks:
                 break
             except Exception as e:
                 logger.error(f"Error in auto-persist loop: {e}", exc_info=True)
+    
+    async def _setpoint_history_loop(self) -> None:
+        """Setpoint history task - logs current setpoints to history table every 5 minutes."""
+        history_interval = 300  # Log every 5 minutes (300 seconds)
+        
+        while self._running:
+            try:
+                await asyncio.sleep(history_interval)
+                
+                if not self.database._db_connected:
+                    continue
+                
+                # Get all current setpoints and log them to history
+                try:
+                    pool = await self.database._get_pool()
+                    async with pool.acquire() as conn:
+                        # Get all distinct location/cluster/mode combinations with latest setpoints
+                        rows = await conn.fetch("""
+                            SELECT DISTINCT ON (location, cluster, mode)
+                                location, cluster, mode, temperature, humidity, co2, vpd
+                            FROM setpoints
+                            WHERE temperature IS NOT NULL OR humidity IS NOT NULL OR co2 IS NOT NULL OR vpd IS NOT NULL
+                            ORDER BY location, cluster, mode, updated_at DESC
+                        """)
+                        
+                        # Insert current setpoints into history
+                        for row in rows:
+                            await conn.execute("""
+                                INSERT INTO setpoint_history (timestamp, location, cluster, mode, temperature, humidity, co2, vpd)
+                                VALUES (NOW(), $1, $2, $3, $4, $5, $6, $7)
+                            """, row['location'], row['cluster'], row['mode'], 
+                                row['temperature'], row['humidity'], row['co2'], row['vpd'])
+                        
+                        if rows:
+                            logger.debug(f"Logged {len(rows)} setpoint snapshots to history")
+                
+                except Exception as e:
+                    logger.error(f"Error logging setpoint history: {e}", exc_info=True)
+                
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"Error in setpoint history loop: {e}", exc_info=True)
 

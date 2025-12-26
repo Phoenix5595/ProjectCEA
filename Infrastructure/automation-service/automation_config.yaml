@@ -139,8 +139,6 @@ control:
         co2: 1000.0
   update_interval: 1
   last_good_hold_period: 30
-  rate_limit:
-    node_red_max_per_second: 1
   pid_limits:
     heater:
       kp_min: 0.0

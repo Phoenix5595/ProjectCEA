@@ -171,8 +171,7 @@ class DatabaseManager:
                     co2 REAL CHECK (co2 IS NULL OR (co2 >= 0 AND co2 <= 10000)),
                     vpd REAL CHECK (vpd IS NULL OR (vpd >= 0 AND vpd <= 10)),
                     mode TEXT CHECK (mode IS NULL OR mode IN ('DAY', 'NIGHT', 'TRANSITION')),
-                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                    UNIQUE(location, cluster, mode)
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
                 )
             """)
             
@@ -191,19 +190,29 @@ class DatabaseManager:
             except Exception:
                 pass  # Column might already exist
             
-            # Drop old unique constraint if it exists and create new one
+            # Drop unique constraint/index to allow history inserts, then add a non-unique index
             try:
                 await conn.execute("""
                     ALTER TABLE setpoints DROP CONSTRAINT IF EXISTS setpoints_location_cluster_key
                 """)
             except Exception:
                 pass  # Constraint might not exist
-            
-            # Create new unique constraint with mode
             try:
                 await conn.execute("""
-                    CREATE UNIQUE INDEX IF NOT EXISTS setpoints_location_cluster_mode_key 
-                    ON setpoints(location, cluster, mode)
+                    ALTER TABLE setpoints DROP CONSTRAINT IF EXISTS setpoints_location_cluster_mode_key
+                """)
+            except Exception:
+                pass
+            try:
+                await conn.execute("""
+                    DROP INDEX IF EXISTS setpoints_location_cluster_mode_key
+                """)
+            except Exception:
+                pass
+            try:
+                await conn.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_setpoints_loc_cluster_mode_updated_at
+                    ON setpoints(location, cluster, mode, updated_at DESC)
                 """)
             except Exception:
                 pass  # Index might already exist
@@ -494,9 +503,39 @@ class DatabaseManager:
                     co2 REAL CHECK (co2 IS NULL OR (co2 >= 0 AND co2 <= 10000)),
                     vpd REAL CHECK (vpd IS NULL OR (vpd >= 0 AND vpd <= 10)),
                     mode TEXT CHECK (mode IS NULL OR mode IN ('DAY', 'NIGHT', 'TRANSITION')),
-                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                    UNIQUE(location, cluster, mode)
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
                 )
+            """)
+            
+            # Setpoint history table (time-series for Grafana)
+            await conn.execute("""
+                CREATE TABLE IF NOT EXISTS setpoint_history (
+                    id BIGSERIAL PRIMARY KEY,
+                    timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW() CHECK (timestamp >= '2020-01-01'::timestamptz AND timestamp <= NOW() + INTERVAL '1 day'),
+                    location TEXT NOT NULL,
+                    cluster TEXT NOT NULL,
+                    mode TEXT CHECK (mode IS NULL OR mode IN ('DAY', 'NIGHT', 'TRANSITION')),
+                    temperature REAL CHECK (temperature IS NULL OR (temperature >= -50 AND temperature <= 100)),
+                    humidity REAL CHECK (humidity IS NULL OR (humidity >= 0 AND humidity <= 100)),
+                    co2 REAL CHECK (co2 IS NULL OR (co2 >= 0 AND co2 <= 10000)),
+                    vpd REAL CHECK (vpd IS NULL OR (vpd >= 0 AND vpd <= 10))
+                )
+            """)
+            # Create hypertable if TimescaleDB extension is available
+            try:
+                await conn.execute("""
+                    SELECT create_hypertable('setpoint_history', 'timestamp', if_not_exists => TRUE)
+                """)
+            except Exception:
+                logger.warning("TimescaleDB extension not available for setpoint_history, using regular table")
+            
+            await conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_setpoint_history_location 
+                ON setpoint_history(location, cluster, mode)
+            """)
+            await conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_setpoint_history_timestamp 
+                ON setpoint_history(timestamp DESC)
             """)
             
             # Add mode and vpd columns if they don't exist (for existing databases)
@@ -975,6 +1014,8 @@ class DatabaseManager:
                     SELECT temperature, humidity, co2, vpd, mode
                     FROM setpoints
                     WHERE location = $1 AND cluster = $2 AND (mode = $3 OR (mode IS NULL AND $3 IS NULL))
+                    ORDER BY updated_at DESC
+                    LIMIT 1
                 """, location, cluster, db_mode)
                 
                 if row:
@@ -1024,7 +1065,7 @@ class DatabaseManager:
             co2: CO2 setpoint (optional)
             vpd: VPD setpoint (optional)
             mode: Mode (DAY/NIGHT/TRANSITION) or None for legacy/default setpoint
-            source: Source of setpoint ('api', 'node-red', 'schedule', 'failsafe', 'cli')
+            source: Source of setpoint ('api', 'schedule', 'failsafe', 'cli')
         
         Returns:
             True if successful, False otherwise
@@ -1045,11 +1086,13 @@ class DatabaseManager:
             pool = await self._get_pool()
             async with pool.acquire() as conn:
                 async with conn.transaction():
-                    # Get existing setpoints for this mode (or mode=NULL for legacy) within transaction
+                    # Get latest existing setpoints for this mode (or mode=NULL for legacy) within transaction
                     row = await conn.fetchrow("""
                         SELECT temperature, humidity, co2, vpd, mode
                         FROM setpoints
                         WHERE location = $1 AND cluster = $2 AND (mode = $3 OR (mode IS NULL AND $3 IS NULL))
+                        ORDER BY updated_at DESC
+                        LIMIT 1
                     """, location, cluster, db_mode)
                     
                     if row:
@@ -1061,36 +1104,30 @@ class DatabaseManager:
                             'mode': row['mode']
                         }
                     
-                    if existing:
-                        # Update existing
-                        temp = temperature if temperature is not None else existing.get('temperature')
-                        hum = humidity if humidity is not None else existing.get('humidity')
-                        co2_val = co2 if co2 is not None else existing.get('co2')
-                        vpd_val = vpd if vpd is not None else existing.get('vpd')
-                        
-                        await conn.execute("""
-                            UPDATE setpoints
-                            SET temperature = $1, humidity = $2, co2 = $3, vpd = $4, updated_at = NOW()
-                            WHERE location = $5 AND cluster = $6 AND (mode = $7 OR (mode IS NULL AND $7 IS NULL))
-                        """, temp, hum, co2_val, vpd_val, location, cluster, db_mode)
-                    else:
-                        # Insert new
-                        await conn.execute("""
-                            INSERT INTO setpoints (location, cluster, temperature, humidity, co2, vpd, mode, updated_at)
-                            VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
-                        """, location, cluster, temperature, humidity, co2, vpd, db_mode)
+                    # Merge incoming values with latest existing so we always insert a complete row
+                    temp = temperature if temperature is not None else (existing.get('temperature') if existing else None)
+                    hum = humidity if humidity is not None else (existing.get('humidity') if existing else None)
+                    co2_val = co2 if co2 is not None else (existing.get('co2') if existing else None)
+                    vpd_val = vpd if vpd is not None else (existing.get('vpd') if existing else None)
+                    
+                    # Insert a new row to preserve history (no overwrite)
+                    await conn.execute("""
+                        INSERT INTO setpoints (location, cluster, temperature, humidity, co2, vpd, mode, updated_at)
+                        VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+                    """, location, cluster, temp, hum, co2_val, vpd_val, db_mode)
+                    
+                    # Log to setpoint_history for time-series queries (Grafana)
+                    await conn.execute("""
+                        INSERT INTO setpoint_history (timestamp, location, cluster, mode, temperature, humidity, co2, vpd)
+                        VALUES (NOW(), $1, $2, $3, $4, $5, $6, $7)
+                    """, location, cluster, db_mode, temp, hum, co2_val, vpd_val)
                 
                 # Write to Redis with source tracking (only for legacy mode=NULL)
                 # This happens after the transaction commits successfully
                 if db_mode is None and self._automation_redis and self._automation_redis.redis_enabled:
-                    final_temp = temperature if temperature is not None else (existing.get('temperature') if existing else None)
-                    final_hum = humidity if humidity is not None else (existing.get('humidity') if existing else None)
-                    final_co2 = co2 if co2 is not None else (existing.get('co2') if existing else None)
-                    final_vpd = vpd if vpd is not None else (existing.get('vpd') if existing else None)
-                    
                     self._automation_redis.write_setpoint(
                         location, cluster,
-                        final_temp, final_hum, final_co2,
+                        temp, hum, co2_val,
                         source=source
                     )
                 
@@ -1119,10 +1156,10 @@ class DatabaseManager:
             pool = await self._get_pool()
             async with pool.acquire() as conn:
                 rows = await conn.fetch("""
-                    SELECT temperature, humidity, co2, vpd, mode
+                    SELECT DISTINCT ON (mode) temperature, humidity, co2, vpd, mode, updated_at
                     FROM setpoints
                     WHERE location = $1 AND cluster = $2
-                    ORDER BY mode NULLS FIRST
+                    ORDER BY mode NULLS FIRST, updated_at DESC
                 """, location, cluster)
                 
                 return [
@@ -1131,7 +1168,8 @@ class DatabaseManager:
                         'humidity': row['humidity'],
                         'co2': row['co2'],
                         'vpd': row['vpd'],
-                        'mode': row['mode']
+                        'mode': row['mode'],
+                        'updated_at': row['updated_at']
                     }
                     for row in rows
                 ]
@@ -1301,7 +1339,7 @@ class DatabaseManager:
             kp: Proportional gain
             ki: Integral gain
             kd: Derivative gain
-            source: Source of update ('api', 'node-red', 'config')
+            source: Source of update ('api', 'config')
             updated_by: Optional identifier of who made the update
         
         Returns:

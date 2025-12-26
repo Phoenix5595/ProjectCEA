@@ -87,10 +87,11 @@ This document describes the normalized database schema for the CEA (Controlled E
    - `vpd` (REAL) - VPD setpoint in kPa
    - `mode` (TEXT) - "DAY", "NIGHT", "TRANSITION", or NULL (legacy/default)
    - `updated_at` (TIMESTAMPTZ) - Last update timestamp
-   - UNIQUE(location, cluster, mode)
    
    **Note**: This table is created automatically by the automation-service on startup. 
    See `Infrastructure/database/SETPOINTS_TABLE_EXPLANATION.md` for details.
+   
+   **History requirement**: Setpoint writes must append (INSERT) instead of overwrite so historical values are preserved. Readers must `ORDER BY updated_at DESC LIMIT 1` to get the latest per mode; time-series (Grafana) should pick the latest row where `updated_at <= time` to show past setpoints correctly.
 
 3. **actuator_events**
    - `event_id` (PK, SERIAL)

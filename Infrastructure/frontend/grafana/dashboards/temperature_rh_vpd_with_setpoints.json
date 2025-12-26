@@ -248,7 +248,7 @@
       {
         "matcher": {
           "id": "byName",
-          "options": "Temp Setpoint - Back"
+          "options": "Temp Setpoint - Main"
         },
         "properties": [
           {
@@ -274,33 +274,7 @@
       {
         "matcher": {
           "id": "byName",
-          "options": "Temp Setpoint - Front"
-        },
-        "properties": [
-          {
-            "id": "color",
-            "value": {
-              "mode": "fixed",
-              "fixedColor": "purple"
-            }
-          },
-          {
-            "id": "custom.lineStyle",
-            "value": {
-              "dash": [10, 10],
-              "fill": "dash"
-            }
-          },
-          {
-            "id": "custom.lineWidth",
-            "value": 2
-          }
-        ]
-      },
-      {
-        "matcher": {
-          "id": "byName",
-          "options": "VPD Setpoint - Back"
+          "options": "VPD Setpoint - Main"
         },
         "properties": [
           {
@@ -330,30 +304,55 @@
       {
         "matcher": {
           "id": "byName",
-          "options": "VPD Setpoint - Front"
+          "options": "DAY Period Overlay"
         },
         "properties": [
           {
             "id": "color",
             "value": {
               "mode": "fixed",
-              "fixedColor": "cyan"
+              "fixedColor": "yellow"
             }
           },
           {
-            "id": "custom.lineStyle",
-            "value": {
-              "dash": [10, 10],
-              "fill": "dash"
-            }
+            "id": "custom.drawStyle",
+            "value": "line"
+          },
+          {
+            "id": "custom.fillOpacity",
+            "value": 15
+          },
+          {
+            "id": "custom.gradientMode",
+            "value": "opacity"
           },
           {
             "id": "custom.lineWidth",
-            "value": 2
+            "value": 0
+          },
+          {
+            "id": "custom.axisPlacement",
+            "value": "right"
+          },
+          {
+            "id": "custom.axisSoftMax",
+            "value": 100
+          },
+          {
+            "id": "custom.axisSoftMin",
+            "value": 0
+          },
+          {
+            "id": "hideFrom",
+            "value": {
+              "tooltip": true,
+              "viz": false,
+              "legend": true
+            }
           },
           {
             "id": "unit",
-            "value": "kpa"
+            "value": "percent"
           }
         ]
       }
@@ -368,14 +367,20 @@
     },
     {
       "format": "time_series",
-      "rawSql": "WITH time_series AS (\n  SELECT generate_series($__timeFrom()::timestamp, $__timeTo()::timestamp, INTERVAL '5 minute') AS time\n),\nback_temp_setpoint AS (\n  SELECT temperature AS value FROM setpoints \n  WHERE location = 'Flower Room' AND cluster = 'back' \n  AND (mode IS NULL OR mode = 'DAY')\n  ORDER BY updated_at DESC LIMIT 1\n),\nfront_temp_setpoint AS (\n  SELECT temperature AS value FROM setpoints \n  WHERE location = 'Flower Room' AND cluster = 'front' \n  AND (mode IS NULL OR mode = 'DAY')\n  ORDER BY updated_at DESC LIMIT 1\n)\nSELECT \n  ts.time AS \"time\",\n  'Temp Setpoint - Back' AS metric,\n  bt.value AS value\nFROM time_series ts\nCROSS JOIN back_temp_setpoint bt\nWHERE bt.value IS NOT NULL\nUNION ALL\nSELECT \n  ts.time AS \"time\",\n  'Temp Setpoint - Front' AS metric,\n  ft.value AS value\nFROM time_series ts\nCROSS JOIN front_temp_setpoint ft\nWHERE ft.value IS NOT NULL",
+      "rawSql": "SELECT \n  timestamp AS \"time\",\n  'Temp Setpoint - Main' AS metric,\n  temperature AS value\nFROM setpoint_history\nWHERE location = 'Flower Room' \n  AND cluster = 'main' \n  AND mode IN ('DAY', 'NIGHT')\n  AND temperature IS NOT NULL\n  AND timestamp >= $__timeFrom()\n  AND timestamp <= $__timeTo()\nORDER BY timestamp",
       "refId": "B",
       "hide": false
     },
     {
       "format": "time_series",
-      "rawSql": "WITH time_series AS (\n  SELECT generate_series($__timeFrom()::timestamp, $__timeTo()::timestamp, INTERVAL '5 minute') AS time\n),\nback_vpd_setpoint AS (\n  SELECT vpd AS value FROM setpoints \n  WHERE location = 'Flower Room' AND cluster = 'back' \n  AND (mode IS NULL OR mode = 'DAY')\n  AND vpd IS NOT NULL\n  ORDER BY updated_at DESC LIMIT 1\n),\nfront_vpd_setpoint AS (\n  SELECT vpd AS value FROM setpoints \n  WHERE location = 'Flower Room' AND cluster = 'front' \n  AND (mode IS NULL OR mode = 'DAY')\n  AND vpd IS NOT NULL\n  ORDER BY updated_at DESC LIMIT 1\n)\nSELECT \n  ts.time AS \"time\",\n  'VPD Setpoint - Back' AS metric,\n  bv.value AS value\nFROM time_series ts\nCROSS JOIN back_vpd_setpoint bv\nWHERE bv.value IS NOT NULL\nUNION ALL\nSELECT \n  ts.time AS \"time\",\n  'VPD Setpoint - Front' AS metric,\n  fv.value AS value\nFROM time_series ts\nCROSS JOIN front_vpd_setpoint fv\nWHERE fv.value IS NOT NULL",
+      "rawSql": "SELECT \n  timestamp AS \"time\",\n  'VPD Setpoint - Main' AS metric,\n  vpd AS value\nFROM setpoint_history\nWHERE location = 'Flower Room' \n  AND cluster = 'main' \n  AND mode IN ('DAY', 'NIGHT')\n  AND vpd IS NOT NULL\n  AND timestamp >= $__timeFrom()\n  AND timestamp <= $__timeTo()\nORDER BY timestamp",
       "refId": "C",
+      "hide": false
+    },
+    {
+      "format": "time_series",
+      "rawSql": "WITH time_points AS (\n  SELECT generate_series($__timeFrom()::timestamp, $__timeTo()::timestamp, INTERVAL '5 minute') AS time\n)\nSELECT \n  tp.time AS \"time\",\n  'DAY Period Overlay' AS metric,\n  CASE \n    WHEN EXISTS (\n      SELECT 1 FROM schedules \n      WHERE location = 'Flower Room' \n        AND cluster = 'main'\n        AND mode = 'DAY'\n        AND enabled = true\n        AND (day_of_week IS NULL OR day_of_week = EXTRACT(DOW FROM tp.time))\n        AND (\n          (start_time <= end_time AND tp.time::time >= start_time AND tp.time::time < end_time)\n          OR (start_time > end_time AND (tp.time::time >= start_time OR tp.time::time < end_time))\n        )\n    ) THEN 100\n    ELSE NULL\n  END AS value\nFROM time_points tp",
+      "refId": "D",
       "hide": false
     }
   ],

@@ -285,7 +285,6 @@ async def update_device_mapping(
     """Update device mapping for a device.
     
     Backend validates and persists all device mappings.
-    Node-RED can only edit mappings via this API, not directly.
     
     Returns:
         Updated device mapping

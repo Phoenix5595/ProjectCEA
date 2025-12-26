@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef } from 'react'
-import ManualLightControl from './ManualLightControl'
 
 interface CircularTimePickerProps {
   dayStartTime: string
@@ -14,8 +13,6 @@ interface CircularTimePickerProps {
   onRampDownChange?: (duration: number | null) => void
   showPresetButtons?: boolean
   lockedPhotoperiodHours?: number | null
-  location?: string
-  cluster?: string
 }
 
 export default function CircularTimePicker({
@@ -30,9 +27,7 @@ export default function CircularTimePicker({
   onRampUpChange,
   onRampDownChange,
   showPresetButtons = true,
-  lockedPhotoperiodHours = null,
-  location,
-  cluster
+  lockedPhotoperiodHours = null
 }: CircularTimePickerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [isDragging, setIsDragging] = useState<'start' | 'end' | 'period' | null>(null)
@@ -651,11 +646,6 @@ export default function CircularTimePicker({
               {calculatePhotoperiod().toFixed(1)} hours
             </div>
           </div>
-          {location && cluster && (
-            <div className="pt-2 mt-1 flex justify-end items-end self-end">
-              <ManualLightControl location={location} cluster={cluster} compact={true} />
-            </div>
-          )}
         </div>
       </div>
       <p className="text-xs text-gray-500 mt-4 text-center max-w-2xl">
