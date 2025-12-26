@@ -389,6 +389,9 @@ async def update_device_config(
     # Reload config to get updated values
     config.reload()
     
+    # Get fresh device configs after reload
+    device_configs = config.get_devices()
+    
     # Return updated device info
     device_info = device_configs[location][cluster][device]
     return {

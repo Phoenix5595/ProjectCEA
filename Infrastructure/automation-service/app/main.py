@@ -574,9 +574,6 @@ app.add_websocket_route("/ws", websocket.websocket_endpoint)
 # Try multiple path resolution methods
 _base_path = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
 frontend_dist_path = os.path.abspath(os.path.join(_base_path, "frontend", "dist"))
-# Fallback to hardcoded path if relative doesn't work
-if not os.path.exists(frontend_dist_path):
-    frontend_dist_path = "/home/antoine/Project CEA/Infrastructure/frontend/dist"
 
 logger.info(f"Frontend dist path: {frontend_dist_path}, exists: {os.path.exists(frontend_dist_path)}")
 if os.path.exists(frontend_dist_path):
@@ -589,7 +586,7 @@ if os.path.exists(frontend_dist_path):
     logo_path = os.path.abspath(logo_path)
     logger.info(f"Registering /logo.png route, path: {logo_path}, exists: {os.path.exists(logo_path)}")
     if os.path.exists(logo_path):
-        @app.get("/logo.png")
+        @app.get("/logo.png", name="logo")
         async def serve_logo():
             """Serve logo.png favicon."""
             logger.info(f"Serving logo from: {logo_path}")
