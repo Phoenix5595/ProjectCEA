@@ -19,7 +19,7 @@
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
-  "id": 34,
+  "id": 0,
   "links": [],
   "liveNow": true,
   "panels": [
@@ -87,7 +87,7 @@
         "showHeader": true,
         "sortBy": []
       },
-      "pluginVersion": "12.3.0",
+      "pluginVersion": "12.3.1",
       "targets": [
         {
           "format": "table",
@@ -114,6 +114,7 @@
             "axisColorMode": "series",
             "axisLabel": "",
             "axisPlacement": "auto",
+            "axisMin": 0,
             "axisSoftMax": 2,
             "axisSoftMin": 15,
             "barAlignment": 0,
@@ -138,7 +139,7 @@
             },
             "showPoints": "auto",
             "showValues": false,
-            "spanNulls": false,
+            "spanNulls": true,
             "stacking": {
               "group": "A",
               "mode": "none"
@@ -309,6 +310,173 @@
                 "value": 2
               }
             ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Wet Bulb (°C) - Back"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "green",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Dry Bulb (°C) - Back"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "orange",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Temp Setpoint - Main"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "red",
+                  "mode": "fixed"
+                }
+              },
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "dash": [
+                    0,
+                    5
+                  ],
+                  "fill": "dot"
+                }
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 2
+              },
+              {
+                "id": "custom.lineInterpolation",
+                "value": "stepBefore"
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "VPD Setpoint - Main"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "blue",
+                  "mode": "fixed"
+                }
+              },
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "dash": [
+                    0,
+                    5
+                  ],
+                  "fill": "dot"
+                }
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 2
+              },
+              {
+                "id": "unit",
+                "value": "kpa"
+              },
+              {
+                "id": "custom.lineInterpolation",
+                "value": "stepBefore"
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "DAY Period Overlay"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "yellow",
+                  "mode": "fixed"
+                }
+              },
+              {
+                "id": "custom.drawStyle",
+                "value": "line"
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 15
+              },
+              {
+                "id": "custom.gradientMode",
+                "value": "none"
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 0
+              },
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              },
+              {
+                "id": "custom.axisSoftMax",
+                "value": 100
+              },
+              {
+                "id": "custom.axisSoftMin",
+                "value": 0
+              },
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "custom.hideFrom",
+                "value": {
+                  "legend": true,
+                  "tooltip": true,
+                  "viz": false
+                }
+              },
+              {
+                "id": "custom.axisPlacement",
+                "value": "hidden"
+              }
+            ]
           }
         ]
       },
@@ -332,12 +500,30 @@
           "sort": "none"
         }
       },
-      "pluginVersion": "12.3.0",
+      "pluginVersion": "12.3.1",
       "targets": [
         {
           "format": "time_series",
           "rawSql": "SELECT time AS \"time\", sensor_name AS metric, value FROM measurement_with_metadata WHERE sensor_name IN ('dry_bulb_f', 'wet_bulb_f', 'rh_f', 'vpd_f', 'dry_bulb_b', 'wet_bulb_b', 'rh_b', 'vpd_b') AND time >= $__timeFrom() AND time <= $__timeTo() ORDER BY time, sensor_name",
           "refId": "A"
+        },
+        {
+          "format": "time_series",
+          "hide": false,
+          "rawSql": "WITH filtered_setpoints AS (\n  SELECT \n    sh.timestamp,\n    sh.temperature\n  FROM setpoint_history sh\n  WHERE sh.location = 'Flower Room' \n    AND sh.cluster = 'main' \n    AND sh.temperature IS NOT NULL\n    AND sh.timestamp >= $__timeFrom()\n    AND sh.timestamp <= $__timeTo()\n    AND (\n      (sh.mode = 'DAY' AND EXISTS (\n        SELECT 1 FROM schedules s\n        WHERE s.location = 'Flower Room'\n          AND s.cluster = 'main'\n          AND s.mode = 'DAY'\n          AND s.enabled = true\n          AND (s.day_of_week IS NULL OR s.day_of_week = EXTRACT(DOW FROM sh.timestamp))\n          AND (\n            (s.start_time <= s.end_time AND sh.timestamp::time >= s.start_time AND sh.timestamp::time < s.end_time)\n            OR (s.start_time > s.end_time AND (sh.timestamp::time >= s.start_time OR sh.timestamp::time < s.end_time))\n          )\n      ))\n      OR\n      (sh.mode = 'NIGHT' AND NOT EXISTS (\n        SELECT 1 FROM schedules s\n        WHERE s.location = 'Flower Room'\n          AND s.cluster = 'main'\n          AND s.mode = 'DAY'\n          AND s.enabled = true\n          AND (s.day_of_week IS NULL OR s.day_of_week = EXTRACT(DOW FROM sh.timestamp))\n          AND (\n            (s.start_time <= s.end_time AND sh.timestamp::time >= s.start_time AND sh.timestamp::time < s.end_time)\n            OR (s.start_time > s.end_time AND (sh.timestamp::time >= s.start_time OR sh.timestamp::time < s.end_time))\n          )\n      ))\n    )\n),\nlast_setpoint AS (\n  SELECT temperature, timestamp\n  FROM filtered_setpoints\n  ORDER BY timestamp DESC\n  LIMIT 1\n)\nSELECT timestamp AS \"time\", 'Temp Setpoint - Main' AS metric, temperature AS value\nFROM filtered_setpoints\nUNION ALL\nSELECT $__timeTo() AS \"time\", 'Temp Setpoint - Main' AS metric, temperature AS value\nFROM last_setpoint\nWHERE temperature IS NOT NULL\nORDER BY \"time\"",
+          "refId": "B"
+        },
+        {
+          "format": "time_series",
+          "hide": false,
+          "rawSql": "WITH filtered_setpoints AS (\n  SELECT \n    sh.timestamp,\n    sh.vpd\n  FROM setpoint_history sh\n  WHERE sh.location = 'Flower Room' \n    AND sh.cluster = 'main' \n    AND sh.vpd IS NOT NULL\n    AND sh.timestamp >= $__timeFrom()\n    AND sh.timestamp <= $__timeTo()\n    AND (\n      (sh.mode = 'DAY' AND EXISTS (\n        SELECT 1 FROM schedules s\n        WHERE s.location = 'Flower Room'\n          AND s.cluster = 'main'\n          AND s.mode = 'DAY'\n          AND s.enabled = true\n          AND (s.day_of_week IS NULL OR s.day_of_week = EXTRACT(DOW FROM sh.timestamp))\n          AND (\n            (s.start_time <= s.end_time AND sh.timestamp::time >= s.start_time AND sh.timestamp::time < s.end_time)\n            OR (s.start_time > s.end_time AND (sh.timestamp::time >= s.start_time OR sh.timestamp::time < s.end_time))\n          )\n      ))\n      OR\n      (sh.mode = 'NIGHT' AND NOT EXISTS (\n        SELECT 1 FROM schedules s\n        WHERE s.location = 'Flower Room'\n          AND s.cluster = 'main'\n          AND s.mode = 'DAY'\n          AND s.enabled = true\n          AND (s.day_of_week IS NULL OR s.day_of_week = EXTRACT(DOW FROM sh.timestamp))\n          AND (\n            (s.start_time <= s.end_time AND sh.timestamp::time >= s.start_time AND sh.timestamp::time < s.end_time)\n            OR (s.start_time > s.end_time AND (sh.timestamp::time >= s.start_time OR sh.timestamp::time < s.end_time))\n          )\n      ))\n    )\n),\nlast_setpoint AS (\n  SELECT vpd, timestamp\n  FROM filtered_setpoints\n  ORDER BY timestamp DESC\n  LIMIT 1\n)\nSELECT timestamp AS \"time\", 'VPD Setpoint - Main' AS metric, vpd AS value\nFROM filtered_setpoints\nUNION ALL\nSELECT $__timeTo() AS \"time\", 'VPD Setpoint - Main' AS metric, vpd AS value\nFROM last_setpoint\nWHERE vpd IS NOT NULL\nORDER BY \"time\"",
+          "refId": "C"
+        },
+        {
+          "format": "time_series",
+          "hide": false,
+          "rawSql": "WITH time_points AS (\n  SELECT generate_series($__timeFrom()::timestamp, $__timeTo()::timestamp, INTERVAL '5 minute') AS time\n)\nSELECT \n  tp.time AS \"time\",\n  'DAY Period Overlay' AS metric,\n  CASE \n    WHEN EXISTS (\n      SELECT 1 FROM schedules \n      WHERE location = 'Flower Room' \n        AND cluster = 'main'\n        AND mode = 'DAY'\n        AND enabled = true\n        AND (day_of_week IS NULL OR day_of_week = EXTRACT(DOW FROM tp.time))\n        AND (\n          (start_time <= end_time AND tp.time::time >= start_time AND tp.time::time < end_time)\n          OR (start_time > end_time AND (tp.time::time >= start_time OR tp.time::time < end_time))\n        )\n    ) THEN 100\n    ELSE NULL\n  END AS value\nFROM time_points tp",
+          "refId": "D"
         }
       ],
       "title": "Temperature, RH & VPD - Main Graph",
@@ -407,7 +593,7 @@
         "showHeader": true,
         "sortBy": []
       },
-      "pluginVersion": "12.3.0",
+      "pluginVersion": "12.3.1",
       "targets": [
         {
           "format": "table",
@@ -482,7 +668,7 @@
         "showHeader": true,
         "sortBy": []
       },
-      "pluginVersion": "12.3.0",
+      "pluginVersion": "12.3.1",
       "targets": [
         {
           "format": "table",
@@ -494,6 +680,10 @@
       "type": "table"
     },
     {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "bf6vebq5ipybke"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -559,7 +749,7 @@
             "properties": [
               {
                 "id": "displayName",
-                "value": "Pressure (hPa)"
+                "value": "Pressure (hPa) - Back"
               },
               {
                 "id": "unit",
@@ -572,6 +762,22 @@
               {
                 "id": "custom.axisPlacement",
                 "value": "right"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "co2_b"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "CO₂ - Back"
+              },
+              {
+                "id": "unit",
+                "value": "ppm"
               }
             ]
           }
@@ -587,7 +793,7 @@
       "options": {
         "legend": {
           "calcs": [],
-          "displayMode": "table",
+          "displayMode": "list",
           "placement": "bottom",
           "showLegend": true
         },
@@ -597,7 +803,7 @@
           "sort": "none"
         }
       },
-      "pluginVersion": "12.3.0",
+      "pluginVersion": "12.3.1",
       "targets": [
         {
           "format": "time_series",
@@ -712,7 +918,7 @@
         "showHeader": true,
         "sortBy": []
       },
-      "pluginVersion": "12.3.0",
+      "pluginVersion": "12.3.1",
       "targets": [
         {
           "format": "table",
@@ -736,7 +942,7 @@
     "list": []
   },
   "time": {
-    "from": "now-12h",
+    "from": "now-24h",
     "to": "now"
   },
   "timepicker": {
@@ -757,18 +963,6 @@
   "timezone": "browser",
   "title": "Siberian Jungle : Flower Sector",
   "uid": "7467103e-9964-4e06-9fc8-c43610129ba9",
-  "version": 9
+  "version": 16
 }
-
-
-
-
-
-
-
-
-
-
-
-
 

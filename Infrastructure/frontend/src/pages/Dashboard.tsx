@@ -3,7 +3,6 @@ import { Link } from 'react-router-dom'
 import { ZONES } from '../config/zones'
 import { apiClient } from '../services/api'
 import { wsClient } from '../services/websocket'
-import type { SensorDataResponse } from '../types/sensor'
 import type { Device } from '../types/device'
 import ZoneCard from '../components/ZoneCard'
 import DeviceManager from '../components/DeviceManager'
@@ -21,7 +20,6 @@ import type { Setpoint } from '../types/setpoint'
 
 export default function Dashboard() {
   const [activeTab, setActiveTab] = useState<'zones' | 'devices'>('zones')
-  const [sensorData, setSensorData] = useState<Record<string, SensorDataResponse>>({})
   const [devices, setDevices] = useState<Device[]>([])
   const [schedules, setSchedules] = useState<Record<string, RoomSchedule>>({})
   const [setpoints, setSetpoints] = useState<Record<string, Setpoint>>({})
@@ -30,23 +28,6 @@ export default function Dashboard() {
   useEffect(() => {
     // Connect WebSocket
     wsClient.connect()
-
-    // Subscribe to sensor updates
-    const unsubscribeSensor = wsClient.on('sensor_update', (message) => {
-      const { location, cluster, sensor, value } = message
-      const zoneKey = `${location}:${cluster}`
-      setSensorData(prev => ({
-        ...prev,
-        [zoneKey]: {
-          ...prev[zoneKey],
-          [sensor]: {
-            data: [{ time: new Date().toISOString(), value }],
-            unit: getUnitForSensor(sensor),
-            sensor_name: sensor
-          }
-        }
-      }))
-    })
 
     // Subscribe to device updates
     const unsubscribeDevice = wsClient.on('device_update', (message) => {
@@ -63,7 +44,6 @@ export default function Dashboard() {
     loadInitialData()
 
     return () => {
-      unsubscribeSensor()
       unsubscribeDevice()
       wsClient.disconnect()
     }
@@ -74,25 +54,6 @@ export default function Dashboard() {
       // Load devices
       const devicesData = await apiClient.getAllDevices()
       setDevices(devicesData)
-
-      // Load sensor data for each zone
-      const sensorPromises = ZONES.map(async (zone) => {
-        try {
-          const data = await apiClient.getLiveSensorData(zone.location, zone.cluster)
-          return { zone, data }
-        } catch (error) {
-          console.error(`Error loading sensor data for ${zone.location}/${zone.cluster}:`, error)
-          return { zone, data: {} }
-        }
-      })
-
-      const sensorResults = await Promise.all(sensorPromises)
-      const sensorDataMap: Record<string, SensorDataResponse> = {}
-      sensorResults.forEach(({ zone, data }) => {
-        const key = `${zone.location}:${zone.cluster}`
-        sensorDataMap[key] = data
-      })
-      setSensorData(sensorDataMap)
 
       // Load schedules for each zone
       const schedulePromises = ZONES.map(async (zone) => {
@@ -146,14 +107,6 @@ export default function Dashboard() {
     }
   }
 
-  function getUnitForSensor(sensor: string): string {
-    if (sensor.includes('temp') || sensor.includes('bulb')) return '°C'
-    if (sensor.includes('rh') || sensor.includes('humidity')) return '%'
-    if (sensor.includes('co2')) return 'ppm'
-    if (sensor.includes('vpd')) return 'kPa'
-    if (sensor.includes('pressure')) return 'hPa'
-    return ''
-  }
 
   if (loading) {
     return (
@@ -214,7 +167,7 @@ export default function Dashboard() {
                       >
                         <ZoneCard
                           zone={zone}
-                          sensorData={sensorData[zoneKey] || {}}
+                          sensorData={{}}
                           devices={zoneDevices}
                           schedule={schedules[zoneKey]}
                           setpoint={setpoints[zoneKey]}
