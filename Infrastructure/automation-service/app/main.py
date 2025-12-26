@@ -586,7 +586,7 @@ if os.path.exists(frontend_dist_path):
     logo_path = os.path.abspath(logo_path)
     logger.info(f"Registering /logo.png route, path: {logo_path}, exists: {os.path.exists(logo_path)}")
     if os.path.exists(logo_path):
-        @app.get("/logo.png", name="logo")
+        @app.api_route("/logo.png", methods=["GET", "HEAD"], name="logo")
         async def serve_logo():
             """Serve logo.png favicon."""
             logger.info(f"Serving logo from: {logo_path}")
