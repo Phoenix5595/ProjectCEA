@@ -140,16 +140,7 @@ export default function ZoneConfig() {
                 </section>
                 <section className="border-t border-gray-200 pt-6">
                   <h2 className="text-xl font-semibold mb-4 text-gray-900">Schedule</h2>
-                  <div className="grid grid-cols-2 gap-6">
-                    <div>
-                      <h3 className="text-lg font-semibold mb-3 text-gray-800">Day</h3>
-                      <RoomScheduleEditor location={location} cluster={cluster!} period="day" />
-                    </div>
-                    <div>
-                      <h3 className="text-lg font-semibold mb-3 text-gray-800">Night</h3>
-                      <RoomScheduleEditor location={location} cluster={cluster!} period="night" />
-                    </div>
-                  </div>
+                  <RoomScheduleEditor location={location} cluster={cluster!} period="day" />
                 </section>
                 <section className="border-t border-gray-200 pt-6">
                   <h2 className="text-xl font-semibold mb-4 text-gray-900">Lights</h2>

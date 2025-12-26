@@ -136,7 +136,7 @@ export default function RoomScheduleEditor({ location, cluster, period }: RoomSc
                 setDayEndTime(time)
                 setNightStartTime(time) // Sync night start time
               }}
-              label="Day Period"
+              label="Day & Night Schedule"
               period="day"
               rampUpDuration={rampUpDuration}
               rampDownDuration={rampDownDuration}
@@ -151,7 +151,7 @@ export default function RoomScheduleEditor({ location, cluster, period }: RoomSc
               disabled={saving}
               className="bg-blue-700 text-white font-semibold px-6 py-2 rounded-md hover:bg-blue-800 disabled:opacity-50 disabled:cursor-not-allowed shadow-md"
             >
-              {saving ? 'Saving...' : 'Save Day Schedule'}
+              {saving ? 'Saving...' : 'Save Schedule'}
             </button>
             <p className="text-xs text-gray-500 mt-2">
               This will create schedules for all devices in this room. Existing schedules will be replaced.
