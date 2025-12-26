@@ -571,10 +571,31 @@ app.add_websocket_route("/ws", websocket.websocket_endpoint)
 
 # Serve static frontend files
 # Frontend is in Infrastructure/frontend/dist (sibling to automation-service)
-frontend_dist_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "frontend", "dist")
+# Try multiple path resolution methods
+_base_path = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+frontend_dist_path = os.path.abspath(os.path.join(_base_path, "frontend", "dist"))
+# Fallback to hardcoded path if relative doesn't work
+if not os.path.exists(frontend_dist_path):
+    frontend_dist_path = "/home/antoine/Project CEA/Infrastructure/frontend/dist"
+
+logger.info(f"Frontend dist path: {frontend_dist_path}, exists: {os.path.exists(frontend_dist_path)}")
 if os.path.exists(frontend_dist_path):
     # Mount static assets (JS, CSS, images) - these are in the assets subdirectory
     app.mount("/assets", StaticFiles(directory=os.path.join(frontend_dist_path, "assets")), name="static-assets")
+    
+    # Serve logo.png - must be registered before catch-all route
+    logo_path = os.path.join(frontend_dist_path, "logo.png")
+    # Use absolute path to ensure it works
+    logo_path = os.path.abspath(logo_path)
+    logger.info(f"Registering /logo.png route, path: {logo_path}, exists: {os.path.exists(logo_path)}")
+    if os.path.exists(logo_path):
+        @app.get("/logo.png")
+        async def serve_logo():
+            """Serve logo.png favicon."""
+            logger.info(f"Serving logo from: {logo_path}")
+            return FileResponse(logo_path, media_type="image/png")
+    else:
+        logger.warning(f"Logo file not found at: {logo_path}")
     
     # Serve index.html for root and all non-API routes (SPA fallback)
     @app.get("/")
@@ -595,12 +616,35 @@ if os.path.exists(frontend_dist_path):
     @app.get("/{path:path}")
     async def serve_frontend_routes(path: str):
         """Serve frontend routes (SPA fallback)."""
+        # Serve logo.png immediately if requested
+        if path == "logo.png":
+            logo_file = os.path.join(frontend_dist_path, "logo.png")
+            if os.path.exists(logo_file):
+                return FileResponse(logo_file, media_type="image/png")
+        
         # Don't serve frontend for API routes, WebSocket, or FastAPI docs
         # FastAPI should match API routes first, but this is a safety check
         if path.startswith("api/") or path.startswith("ws") or path in ["docs", "openapi.json", "redoc"]:
             from fastapi.responses import JSONResponse
             return JSONResponse({"error": "Not found"}, status_code=404)
         
+        # Serve other static files from dist root (favicon, etc.)
+        if path and '.' in path and not path.startswith('api/') and not path.startswith('ws'):
+            static_file_path = os.path.abspath(os.path.join(frontend_dist_path, path))
+            if os.path.exists(static_file_path) and os.path.isfile(static_file_path):
+                # Determine media type based on extension
+                if path.endswith('.png'):
+                    return FileResponse(static_file_path, media_type="image/png")
+                elif path.endswith('.ico'):
+                    return FileResponse(static_file_path, media_type="image/x-icon")
+                elif path.endswith('.svg'):
+                    return FileResponse(static_file_path, media_type="image/svg+xml")
+                elif path.endswith('.jpg') or path.endswith('.jpeg'):
+                    return FileResponse(static_file_path, media_type="image/jpeg")
+                else:
+                    return FileResponse(static_file_path)
+        
+        # Serve index.html for SPA routes
         index_path = os.path.join(frontend_dist_path, "index.html")
         if os.path.exists(index_path):
             return FileResponse(index_path)
