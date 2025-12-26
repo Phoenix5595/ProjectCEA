@@ -1,0 +1,32 @@
+node_modules/
+.env
+.env.*
+__pycache__/
+*.pyc
+dist/
+build/
+*.log
+.DS_Store
+
+# Cursor / IDE metadata
+.cursor/
+
+# Secrets / keys (never commit)
+.ssh/
+id_rsa
+id_rsa.pub
+id_ed25519
+id_ed25519.pub
+*.pem
+*.key
+*_rsa
+*_ed25519
+
+# Accidentally committed key files (legacy filenames in this repo)
+/ssh-keygen -t ed25519 -C "antoine.olivier.dion@gmail.com"
+/ssh-keygen -t ed25519 -C "antoine.olivier.dion@gmail.com".pub
+/eval "$(ssh-agent -s)"
+/eval "$(ssh-agent -s)".pub
+/n
+/n.pub
+
