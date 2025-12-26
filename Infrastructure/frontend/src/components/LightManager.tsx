@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react'
 import { apiClient } from '../services/api'
 import type { LightStatus } from '../types/light'
-import type { Setpoint } from '../types/setpoint'
 
 interface LightDevice {
   device_name: string
@@ -22,32 +21,15 @@ export default function LightManager({ location, cluster, lights }: LightManager
   const [inputValues, setInputValues] = useState<Record<string, string>>({}) // Store input values as strings to prevent focus loss
   const [loading, setLoading] = useState<Record<string, boolean>>({})
   const [errors, setErrors] = useState<Record<string, string>>({})
-  const [daySetpoint, setDaySetpoint] = useState<Setpoint | null>(null)
-  const [nightSetpoint, setNightSetpoint] = useState<Setpoint | null>(null)
 
   useEffect(() => {
     // Load initial light statuses
     loadLightStatuses()
-    // Load setpoints
-    loadSetpoints()
     
     // Refresh every 5 seconds
     const interval = setInterval(loadLightStatuses, 5000)
     return () => clearInterval(interval)
   }, [location, cluster, lights])
-
-  async function loadSetpoints() {
-    try {
-      const [day, night] = await Promise.all([
-        apiClient.getSetpoints(location, cluster, 'DAY').catch(() => null),
-        apiClient.getSetpoints(location, cluster, 'NIGHT').catch(() => null)
-      ])
-      setDaySetpoint(day)
-      setNightSetpoint(night)
-    } catch (error) {
-      console.error('Error loading setpoints:', error)
-    }
-  }
 
   async function loadLightStatuses() {
     const dimmableLights = lights.filter(l => l.dimming_enabled)
@@ -123,16 +105,9 @@ export default function LightManager({ location, cluster, lights }: LightManager
     <div className="space-y-6">
       <div className="border border-gray-200 rounded-lg overflow-hidden bg-white">
         {/* Header Row */}
-        <div className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr_3fr_1fr] border-b border-gray-200 bg-gray-50">
+        <div className="grid grid-cols-[2fr_1fr_1fr_3fr_1fr] border-b border-gray-200 bg-gray-50">
           <div className="px-4 py-3 text-left text-sm font-semibold text-gray-900 border-r border-gray-200">
             Device
-          </div>
-          <div className="px-4 py-3 text-center text-sm font-semibold text-gray-900 border-r border-gray-200">
-            <div>Setpoint</div>
-            <div className="grid grid-cols-2 border-t border-gray-300 mt-1 pt-1">
-              <div className="text-xs font-medium">Day</div>
-              <div className="text-xs font-medium">Night</div>
-            </div>
           </div>
           <div className="px-4 py-3 text-center text-sm font-semibold text-gray-900 border-r border-gray-200">
             Intensity
@@ -160,36 +135,18 @@ export default function LightManager({ location, cluster, lights }: LightManager
             : `Device:Board ${light.dimming_board_id ?? '?'}, Channel ${light.dimming_channel ?? '?'}`
 
           return (
-            <div key={light.device_name} className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr_3fr_1fr] border-b border-gray-200 hover:bg-gray-50">
-            <div className="px-4 py-3 text-sm text-gray-900 border-r border-gray-200">
-              <div className="font-medium">{displayName}</div>
-              <div className="text-xs text-gray-600 mt-1">{deviceInfo}</div>
-              {error && (
-                <div className="text-xs text-red-600 mt-1">{error}</div>
-              )}
-              {isLoading && (
-                <div className="text-xs text-gray-500 mt-1">Updating...</div>
-              )}
-            </div>
-            <div className="px-4 py-3 text-center border-r border-gray-200">
-              <div className="grid grid-cols-2 gap-2">
-                <div className="text-xs">
-                  {daySetpoint?.temperature !== null && daySetpoint?.temperature !== undefined ? (
-                    <div className="font-semibold text-gray-900">{daySetpoint.temperature.toFixed(1)}°C</div>
-                  ) : (
-                    <div className="text-gray-400">-</div>
-                  )}
-                </div>
-                <div className="text-xs">
-                  {nightSetpoint?.temperature !== null && nightSetpoint?.temperature !== undefined ? (
-                    <div className="font-semibold text-gray-900">{nightSetpoint.temperature.toFixed(1)}°C</div>
-                  ) : (
-                    <div className="text-gray-400">-</div>
-                  )}
-                </div>
+            <div key={light.device_name} className="grid grid-cols-[2fr_1fr_1fr_3fr_1fr] border-b border-gray-200 hover:bg-gray-50">
+              <div className="px-4 py-3 text-sm text-gray-900 border-r border-gray-200">
+                <div className="font-medium">{displayName}</div>
+                <div className="text-xs text-gray-600 mt-1">{deviceInfo}</div>
+                {error && (
+                  <div className="text-xs text-red-600 mt-1">{error}</div>
+                )}
+                {isLoading && (
+                  <div className="text-xs text-gray-500 mt-1">Updating...</div>
+                )}
               </div>
-            </div>
-            <div className="px-4 py-3 text-center border-r border-gray-200 flex items-center justify-center">
+              <div className="px-4 py-3 text-center border-r border-gray-200 flex items-center justify-center">
               {status ? (
                 <div className="text-sm font-semibold text-gray-900">
                   {status.intensity.toFixed(1)}%
