@@ -6,6 +6,7 @@ import { wsClient } from '../services/websocket'
 import type { SensorDataResponse } from '../types/sensor'
 import type { Device } from '../types/device'
 import ZoneCard from '../components/ZoneCard'
+import DeviceManager from '../components/DeviceManager'
 
 interface RoomSchedule {
   day_start_time: string
@@ -19,6 +20,7 @@ interface RoomSchedule {
 import type { Setpoint } from '../types/setpoint'
 
 export default function Dashboard() {
+  const [activeTab, setActiveTab] = useState<'zones' | 'devices'>('zones')
   const [sensorData, setSensorData] = useState<Record<string, SensorDataResponse>>({})
   const [devices, setDevices] = useState<Device[]>([])
   const [schedules, setSchedules] = useState<Record<string, RoomSchedule>>({})
@@ -169,28 +171,64 @@ export default function Dashboard() {
       <div className="max-w-7xl mx-auto">
         <h1 className="text-3xl font-bold mb-8 text-gray-900">CEA Automation Dashboard</h1>
         
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {ZONES.map((zone) => {
-            const zoneKey = `${zone.location}:${zone.cluster}`
-            const zoneDevices = devices.filter(
-              d => d.location === zone.location && d.cluster === zone.cluster
-            )
-            return (
-              <Link
-                key={zoneKey}
-                to={`/zone/${encodeURIComponent(zone.location)}/${encodeURIComponent(zone.cluster)}`}
-                className="block"
+        <div className="bg-white rounded-lg shadow-md border border-gray-200">
+          <div className="border-b border-gray-200">
+            <nav className="flex">
+              <button
+                onClick={() => setActiveTab('zones')}
+                className={`px-6 py-3 font-semibold ${
+                  activeTab === 'zones'
+                    ? 'border-b-2 border-blue-600 text-blue-700 bg-blue-50'
+                    : 'text-gray-700 hover:text-gray-900 hover:bg-gray-50'
+                }`}
               >
-                <ZoneCard
-                  zone={zone}
-                  sensorData={sensorData[zoneKey] || {}}
-                  devices={zoneDevices}
-                  schedule={schedules[zoneKey]}
-                  setpoint={setpoints[zoneKey]}
-                />
-              </Link>
-            )
-          })}
+                Zones
+              </button>
+              <button
+                onClick={() => setActiveTab('devices')}
+                className={`px-6 py-3 font-semibold ${
+                  activeTab === 'devices'
+                    ? 'border-b-2 border-blue-600 text-blue-700 bg-blue-50'
+                    : 'text-gray-700 hover:text-gray-900 hover:bg-gray-50'
+                }`}
+              >
+                Devices
+              </button>
+            </nav>
+          </div>
+
+          <div>
+            {activeTab === 'zones' && (
+              <div className="p-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {ZONES.map((zone) => {
+                    const zoneKey = `${zone.location}:${zone.cluster}`
+                    const zoneDevices = devices.filter(
+                      d => d.location === zone.location && d.cluster === zone.cluster
+                    )
+                    return (
+                      <Link
+                        key={zoneKey}
+                        to={`/zone/${encodeURIComponent(zone.location)}/${encodeURIComponent(zone.cluster)}`}
+                        className="block"
+                      >
+                        <ZoneCard
+                          zone={zone}
+                          sensorData={sensorData[zoneKey] || {}}
+                          devices={zoneDevices}
+                          schedule={schedules[zoneKey]}
+                          setpoint={setpoints[zoneKey]}
+                        />
+                      </Link>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+            {activeTab === 'devices' && (
+              <DeviceManager />
+            )}
+          </div>
         </div>
       </div>
     </div>

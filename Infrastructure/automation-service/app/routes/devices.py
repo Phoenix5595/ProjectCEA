@@ -2,10 +2,14 @@
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
+import yaml
+import logging
 from app.control.relay_manager import RelayManager
 from app.database import DatabaseManager
 from app.config import ConfigLoader
 from app.validation import validate_device_mapping
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -24,6 +28,11 @@ class DeviceMappingUpdate(BaseModel):
     active_high: bool = True
     safe_state: int = 0
     mcp_board_id: Optional[int] = None
+
+
+class DeviceConfigUpdate(BaseModel):
+    display_name: Optional[str] = None
+    device_type: Optional[str] = None
 
 
 # These will be overridden by main app
@@ -325,5 +334,237 @@ async def update_device_mapping(
         "cluster": cluster,
         "device_name": device,
         **updated
+    }
+
+
+@router.post("/api/devices/{location}/{cluster}/{device}/config")
+async def update_device_config(
+    location: str,
+    cluster: str,
+    device: str,
+    config_update: DeviceConfigUpdate,
+    config: ConfigLoader = Depends(get_config)
+) -> Dict[str, Any]:
+    """Update device configuration (display_name, device_type).
+    
+    Args:
+        location: Location name
+        cluster: Cluster name
+        device: Device name
+        config_update: Configuration update request
+    
+    Returns:
+        Updated device configuration
+    """
+    # Validate device exists
+    device_configs = config.get_devices()
+    if location not in device_configs:
+        raise HTTPException(status_code=404, detail=f"Location {location} not found")
+    if cluster not in device_configs.get(location, {}):
+        raise HTTPException(status_code=404, detail=f"Cluster {cluster} not found in {location}")
+    if device not in device_configs[location][cluster]:
+        raise HTTPException(status_code=404, detail=f"Device {device} not found in {location}/{cluster}")
+    
+    # Validate device_type if provided
+    if config_update.device_type is not None:
+        valid_types = ['heater', 'fan', 'dehumidifier', 'humidifier', 'light', 'pump', 'co2', 'vent']
+        if config_update.device_type not in valid_types:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid device_type. Must be one of: {', '.join(valid_types)}"
+            )
+    
+    # Update config
+    success = config.update_device_config(
+        location,
+        cluster,
+        device,
+        display_name=config_update.display_name,
+        device_type=config_update.device_type
+    )
+    
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to update device configuration")
+    
+    # Reload config to get updated values
+    config.reload()
+    
+    # Return updated device info
+    device_info = device_configs[location][cluster][device]
+    return {
+        "location": location,
+        "cluster": cluster,
+        "device_name": device,
+        "display_name": device_info.get("display_name"),
+        "device_type": device_info.get("device_type"),
+        "success": True
+    }
+
+
+@router.get("/api/devices/channels")
+async def get_all_channels(
+    config: ConfigLoader = Depends(get_config)
+) -> Dict[str, Any]:
+    """Get all 16 MCP channels (0-15) with their current device assignments.
+    
+    Returns:
+        Dict with channel numbers as keys and device info as values
+    """
+    channels = {}
+    device_configs = config.get_devices()
+    
+    # Initialize all 16 channels as empty
+    for channel in range(16):
+        channels[str(channel)] = {
+            "channel": channel,
+            "device_name": None,
+            "display_name": None,
+            "device_type": None,
+            "location": None,
+            "cluster": None,
+            "light_name": None  # If device_type is light, this is the display_name
+        }
+    
+    # Get all light names from config
+    light_names = []
+    for location, clusters in device_configs.items():
+        for cluster, devices in clusters.items():
+            for device_name, device_info in devices.items():
+                if device_info.get("device_type") == "light":
+                    display_name = device_info.get("display_name")
+                    if display_name:
+                        light_names.append({
+                            "name": display_name,
+                            "device_name": device_name,
+                            "location": location,
+                            "cluster": cluster
+                        })
+    
+    # Populate channels with existing devices
+    for location, clusters in device_configs.items():
+        for cluster, devices in clusters.items():
+            for device_name, device_info in devices.items():
+                channel = device_info.get("channel")
+                if channel is not None and 0 <= channel < 16:
+                    device_type = device_info.get("device_type")
+                    display_name = device_info.get("display_name")
+                    
+                    channels[str(channel)] = {
+                        "channel": channel,
+                        "device_name": device_name,
+                        "display_name": display_name,
+                        "device_type": device_type,
+                        "location": location,
+                        "cluster": cluster,
+                        "light_name": display_name if device_type == "light" else None
+                    }
+    
+    return {
+        "channels": channels,
+        "light_names": light_names
+    }
+
+
+class ChannelDeviceUpdate(BaseModel):
+    device_name: str
+    device_type: str
+    location: str
+    cluster: str
+    light_name: Optional[str] = None  # If device_type is "light", specify which light
+
+
+@router.post("/api/devices/channels/{channel}")
+async def update_channel_device(
+    channel: int,
+    update: ChannelDeviceUpdate,
+    config: ConfigLoader = Depends(get_config)
+) -> Dict[str, Any]:
+    """Update or create a device for a specific MCP channel.
+    
+    Args:
+        channel: MCP channel number (0-15)
+        update: Device update request
+    
+    Returns:
+        Updated channel device info
+    """
+    if channel < 0 or channel > 15:
+        raise HTTPException(status_code=400, detail="Channel must be between 0 and 15")
+    
+    # Validate device_type
+    valid_types = ['heater', 'dehumidifier', 'extraction fan', 'fan', 'humidifier', 'co2 tank', 'light']
+    if update.device_type not in valid_types:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid device_type. Must be one of: {', '.join(valid_types)}"
+        )
+    
+    # Normalize device_type for config (remove spaces, handle special cases)
+    normalized_type = update.device_type.replace(' ', '_')
+    if normalized_type == 'co2_tank':
+        normalized_type = 'co2'
+    elif normalized_type == 'extraction_fan':
+        normalized_type = 'fan'
+    
+    # Get the full config
+    full_config = config._config
+    
+    # Ensure devices structure exists
+    if 'devices' not in full_config:
+        full_config['devices'] = {}
+    if update.location not in full_config['devices']:
+        full_config['devices'][update.location] = {}
+    if update.cluster not in full_config['devices'][update.location]:
+        full_config['devices'][update.location][update.cluster] = {}
+    
+    device_configs = full_config['devices']
+    
+    # Remove device from old channel if it exists (same channel, different device)
+    for loc, clusters in device_configs.items():
+        for clust, devices in clusters.items():
+            for dev_name, dev_info in list(devices.items()):
+                if dev_info.get("channel") == channel and (loc != update.location or clust != update.cluster or dev_name != update.device_name):
+                    # Remove old device if channel is being reassigned
+                    del devices[dev_name]
+    
+    # Create or update device
+    device_info = {
+        "channel": channel,
+        "device_type": normalized_type
+    }
+    
+    # If it's a light and light_name is provided, set display_name
+    if update.device_type == "light" and update.light_name:
+        device_info["display_name"] = update.light_name
+    elif update.device_type == "light":
+        # Try to find existing light with this name
+        device_info["display_name"] = update.device_name
+    
+    # Set default values for lights
+    if normalized_type == "light":
+        device_info["pid_enabled"] = False
+        device_info["interlock_with"] = []
+        device_info["dimming_enabled"] = True
+        device_info["dimming_type"] = "dfr0971"
+    
+    device_configs[update.location][update.cluster][update.device_name] = device_info
+    
+    # Write back to YAML
+    try:
+        with open(config.config_path, 'w') as f:
+            yaml.dump(full_config, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
+        config.reload()
+    except Exception as e:
+        logger.error(f"Error writing config: {e}")
+        raise HTTPException(status_code=500, detail="Failed to update configuration file")
+    
+    return {
+        "channel": channel,
+        "device_name": update.device_name,
+        "display_name": device_info.get("display_name"),
+        "device_type": normalized_type,
+        "location": update.location,
+        "cluster": update.cluster,
+        "success": True
     }
 

@@ -155,4 +155,52 @@ class ConfigLoader:
         self.load()
         logger.info("Configuration reloaded")
         # Note: Incremental reload - changes applied as loaded, not atomic
+    
+    def update_device_config(
+        self,
+        location: str,
+        cluster: str,
+        device_name: str,
+        display_name: Optional[str] = None,
+        device_type: Optional[str] = None
+    ) -> bool:
+        """Update device configuration (display_name, device_type) in YAML file.
+        
+        Args:
+            location: Location name
+            cluster: Cluster name
+            device_name: Device name
+            display_name: Optional display name to set
+            device_type: Optional device type to set
+        
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            # Ensure devices structure exists
+            if 'devices' not in self._config:
+                self._config['devices'] = {}
+            if location not in self._config['devices']:
+                self._config['devices'][location] = {}
+            if cluster not in self._config['devices'][location]:
+                self._config['devices'][location][cluster] = {}
+            if device_name not in self._config['devices'][location][cluster]:
+                raise ValueError(f"Device {device_name} not found in {location}/{cluster}")
+            
+            # Update fields
+            device_config = self._config['devices'][location][cluster][device_name]
+            if display_name is not None:
+                device_config['display_name'] = display_name
+            if device_type is not None:
+                device_config['device_type'] = device_type
+            
+            # Write back to YAML file
+            with open(self.config_path, 'w') as f:
+                yaml.dump(self._config, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
+            
+            logger.info(f"Updated device config: {location}/{cluster}/{device_name}")
+            return True
+        except Exception as e:
+            logger.error(f"Error updating device config: {e}")
+            return False
 

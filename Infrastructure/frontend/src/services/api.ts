@@ -89,6 +89,23 @@ class ApiClient {
     return response.data;
   }
 
+  async updateDeviceConfig(
+    location: string,
+    cluster: string,
+    device: string,
+    displayName?: string,
+    deviceType?: string
+  ): Promise<any> {
+    const response = await this.automationClient.post(
+      `/api/devices/${location}/${cluster}/${device}/config`,
+      {
+        display_name: displayName,
+        device_type: deviceType
+      }
+    );
+    return response.data;
+  }
+
   // PID Parameters (automation service)
   async getAllPIDParameters(): Promise<Record<string, PIDParameters>> {
     const response = await this.automationClient.get('/api/pid/parameters');
