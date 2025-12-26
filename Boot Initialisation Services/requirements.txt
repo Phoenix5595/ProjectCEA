@@ -1,0 +1,6 @@
+# Boot initialisation and CAN bring-up requirements
+# Install system-wide via apt (no virtualenv needed)
+iproute2      # provides the ip command used by setup scripts
+can-utils     # optional: candump/cansend for diagnostics
+python3-can   # shared with the CAN scanner for bus access
+

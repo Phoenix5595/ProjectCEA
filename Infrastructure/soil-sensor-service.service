@@ -1,0 +1,26 @@
+[Unit]
+Description=CEA Soil Sensor Service
+After=redis-server.service postgresql.service network-online.target
+Requires=redis-server.service postgresql.service
+OnFailure=service-error-handler@%n.service
+
+[Service]
+Type=simple
+User=antoine
+Group=antoine
+WorkingDirectory=/home/antoine/Project CEA/Infrastructure/soil-sensor-service
+Environment="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/local/bin"
+Environment="REDIS_URL=redis://localhost:6379"
+Environment="POSTGRES_HOST=localhost"
+Environment="POSTGRES_DB=cea_sensors"
+Environment="POSTGRES_USER=cea_user"
+Environment="POSTGRES_PASSWORD=Lenin1917"
+ExecStart=/usr/bin/python3 -m uvicorn app.main:app --host 0.0.0.0 --port 8002
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+

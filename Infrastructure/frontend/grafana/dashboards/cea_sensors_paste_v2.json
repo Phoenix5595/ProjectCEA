@@ -1,0 +1,396 @@
+{
+  "title": "CEA Sensors Dashboard V2",
+  "tags": [
+    "cea",
+    "sensors",
+    "timescaledb"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 38,
+  "version": 0,
+  "refresh": "1s",
+  "panels": [
+    {
+      "id": 1,
+      "title": "Temperature, RH & VPD - Main Graph",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 24,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "targets": [
+        {
+          "datasource": null,
+          "rawSql": "SELECT time AS \"time\", sensor_name AS metric, value FROM measurement_with_metadata WHERE sensor_name IN ('dry_bulb_b', 'wet_bulb_b', 'rh_b', 'vpd_b') AND time >= $__timeFrom() AND time <= $__timeTo() ORDER BY time, sensor_name",
+          "format": "time_series",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "celsius",
+          "decimals": 2
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "dry_bulb_b"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Dry Bulb (°C)"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "wet_bulb_b"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Wet Bulb (°C)"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "rh_b"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "RH (%)"
+              },
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              },
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              },
+              {
+                "id": "custom.axisSoftMax",
+                "value": 100
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "vpd_b"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "VPD (kPa)"
+              },
+              {
+                "id": "unit",
+                "value": "kpa"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 2,
+      "title": "CO2 & Pressure",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 24
+      },
+      "targets": [
+        {
+          "datasource": null,
+          "rawSql": "SELECT time AS \"time\", sensor_name AS metric, value FROM measurement_with_metadata WHERE (sensor_name LIKE 'co2_%' OR sensor_name = 'pressure_b') AND time >= $__timeFrom() AND time <= $__timeTo() ORDER BY time, sensor_name",
+          "format": "time_series",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ppm",
+          "decimals": 0,
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 0,
+            "spanNulls": true,
+            "showPoints": "never"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "pressure_b"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Pressure (hPa)"
+              },
+              {
+                "id": "unit",
+                "value": "hpa"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              },
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 3,
+      "title": "Statistics - Main Graph Sensors",
+      "type": "table",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 32
+      },
+      "targets": [
+        {
+          "datasource": null,
+          "rawSql": "SELECT CASE sensor_name WHEN 'dry_bulb_b' THEN 'Dry Bulb (°C)' WHEN 'wet_bulb_b' THEN 'Wet Bulb (°C)' WHEN 'rh_b' THEN 'RH (%)' WHEN 'vpd_b' THEN 'VPD (kPa)' ELSE sensor_name END AS \"Sensor\", MIN(value) AS \"Min\", MAX(value) AS \"Max\", AVG(value) AS \"Average\", STDDEV(value) AS \"Std Dev\" FROM measurement_with_metadata WHERE sensor_name IN ('dry_bulb_b', 'wet_bulb_b', 'rh_b', 'vpd_b') AND time >= $__timeFrom() AND time <= $__timeTo() GROUP BY sensor_name ORDER BY sensor_name",
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 2
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Sensor"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 200
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Min"
+            },
+            "properties": [
+              {
+                "id": "decimals",
+                "value": 2
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Max"
+            },
+            "properties": [
+              {
+                "id": "decimals",
+                "value": 2
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Average"
+            },
+            "properties": [
+              {
+                "id": "decimals",
+                "value": 2
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Std Dev"
+            },
+            "properties": [
+              {
+                "id": "decimals",
+                "value": 2
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "sortBy": []
+      },
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {},
+            "indexByName": {},
+            "renameByName": {
+              "Sensor": "Field",
+              "Value": "",
+              "Time": ""
+            }
+          }
+        },
+        {
+          "id": "transpose",
+          "options": {}
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Current Values - Live",
+      "type": "table",
+      "description": "Latest sensor readings (updates every 1 second)",
+      "gridPos": {
+        "h": 4,
+        "w": 24,
+        "x": 0,
+        "y": 40
+      },
+      "targets": [
+        {
+          "datasource": null,
+          "rawSql": "SELECT s.name AS \"Sensor\", m.value AS \"Value\", TO_CHAR(m.time, 'YYYY/MM/DD HH24:MI:SS') AS \"Time\" FROM (SELECT sensor_id, MAX(time) as max_time FROM measurement WHERE time >= NOW() - INTERVAL '10 minutes' GROUP BY sensor_id) latest JOIN measurement m ON m.sensor_id = latest.sensor_id AND m.time = latest.max_time JOIN sensor s ON m.sensor_id = s.sensor_id ORDER BY CASE WHEN s.name LIKE 'dry_bulb%' THEN 1 WHEN s.name LIKE 'wet_bulb%' THEN 2 WHEN s.name LIKE 'rh%' AND s.name NOT LIKE 'secondary_rh%' THEN 3 WHEN s.name LIKE 'vpd%' THEN 4 WHEN s.name LIKE 'co2%' THEN 5 WHEN s.name LIKE 'pressure%' THEN 6 WHEN s.name LIKE 'secondary_temp%' THEN 7 WHEN s.name LIKE 'secondary_rh%' THEN 8 WHEN s.name LIKE 'water_level%' THEN 9 ELSE 10 END, s.name",
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "green"
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Sensor"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 200
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Time"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 200
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "sortBy": []
+      },
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {},
+            "indexByName": {},
+            "renameByName": {
+              "Sensor": "Field"
+            }
+          }
+        },
+        {
+          "id": "transpose",
+          "options": {}
+        }
+      ]
+    }
+  ],
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "templating": {
+    "list": []
+  },
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "graphTooltip": 0,
+  "links": []
+}
+

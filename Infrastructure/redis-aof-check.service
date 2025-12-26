@@ -1,0 +1,17 @@
+[Unit]
+Description=Redis AOF Corruption Check and Fix
+Before=redis-server.service
+Wants=redis-server.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/redis-aof-fix.sh
+RemainAfterExit=yes
+StandardOutput=journal
+StandardError=journal
+# If called from OnFailure (Redis failed), try to restart Redis after fixing
+ExecStartPost=/bin/bash -c 'if systemctl is-failed redis-server.service >/dev/null 2>&1; then sleep 2; systemctl start redis-server.service || true; fi'
+
+[Install]
+WantedBy=multi-user.target
+

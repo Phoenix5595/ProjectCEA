@@ -1,0 +1,202 @@
+# Automation Service Configuration
+# Copy this file to automation_config.yaml and fill in your device mappings
+
+# Hardware Configuration
+hardware:
+  i2c_bus: 1              # Raspberry Pi I2C bus (usually 1)
+  i2c_address: 0x20       # MCP23017 I2C address (0x20-0x27, check with: i2cdetect -y 1)
+  simulation: false        # Set to true for testing without hardware
+
+# Device Configuration
+# Map each device to its MCP23017 channel (0-15)
+# Each location can have multiple clusters (e.g., "Flower Room" has "front" and "back")
+devices:
+  "Flower Room":
+    front:
+      # Example: Heater on channel 0
+      heater_1:
+        channel: 0                    # MCP23017 channel (0-15)
+        device_type: "heater"         # Device type for control logic
+        pid_enabled: true              # Use PID control (for heaters, CO2)
+        interlock_with:                # Devices that must be OFF for this to turn ON
+          - "exhaust_fan"
+      
+      # Example: Exhaust fan on channel 1
+      exhaust_fan:
+        channel: 1
+        device_type: "fan"
+        pid_enabled: false
+        interlock_with: []
+      
+      # Example: Dehumidifier on channel 2
+      dehumidifier_1:
+        channel: 2
+        device_type: "dehumidifier"
+        pid_enabled: false
+        interlock_with: []
+      
+      # Example: Grow light on channel 3
+      light_1:
+        channel: 3
+        device_type: "light"
+        pid_enabled: false
+        interlock_with: []
+      
+      # Example: Water pump on channel 4
+      pump_1:
+        channel: 4
+        device_type: "pump"
+        pid_enabled: false
+        interlock_with: []
+      
+      # Example: CO2 enrichment on channel 5
+      co2_1:
+        channel: 5
+        device_type: "co2"
+        pid_enabled: true              # CO2 uses PID control
+        interlock_with: []
+      
+      # Add more devices as needed...
+      # device_name:
+      #   channel: X
+      #   device_type: "heater" | "fan" | "dehumidifier" | "humidifier" | "light" | "pump" | "co2" | "vent"
+      #   pid_enabled: true | false
+      #   interlock_with: []  # List of device names that must be OFF
+    
+    back:
+      # Same structure as front
+      heater_1:
+        channel: 6
+        device_type: "heater"
+        pid_enabled: true
+        interlock_with:
+          - "exhaust_fan"
+      
+      exhaust_fan:
+        channel: 7
+        device_type: "fan"
+        pid_enabled: false
+        interlock_with: []
+      
+      # Add more devices...
+  
+  "Veg Room":
+    main:
+      # Devices for Veg Room main cluster
+      heater_1:
+        channel: 8
+        device_type: "heater"
+        pid_enabled: true
+        interlock_with:
+          - "exhaust_fan"
+      
+      exhaust_fan:
+        channel: 9
+        device_type: "fan"
+        pid_enabled: false
+        interlock_with: []
+      
+      # Add more devices...
+  
+  # Add more locations as needed...
+  # "Lab":
+  #   main:
+  #     device_name:
+  #       channel: X
+  #       ...
+
+# Control Parameters
+control:
+  # PID Controller Tuning
+  # Adjust these values based on your system response
+  pid:
+    # Heater PID parameters (temperature control)
+    heater_kp: 25.0      # Proportional gain (higher = faster response, but may overshoot)
+    heater_ki: 0.02      # Integral gain (eliminates steady-state error)
+    heater_kd: 0.0       # Derivative gain (reduces overshoot, usually 0 for heaters)
+    
+    # CO2 PID parameters
+    co2_kp: 10.0
+    co2_ki: 0.01
+    co2_kd: 0.0
+    
+    # Default PID parameters (used if device-specific not set)
+    default_kp: 10.0
+    default_ki: 0.01
+    default_kd: 0.0
+  
+  # Safety Limits (emergency shutoff)
+  # These are hard limits that will prevent devices from operating
+  safety_limits:
+    max_temperature: 35.0    # °C - Heater will not turn on above this
+    min_temperature: 10.0    # °C - Heater will not turn on below this
+    max_humidity: 90.0       # % - Humidifier will not turn on above this
+    min_humidity: 30.0       # % - Dehumidifier will not turn on below this
+    max_co2: 2000.0         # ppm - CO2 system will not turn on above this
+    min_co2: 400.0          # ppm - CO2 system will not turn on below this
+  
+  # Default Setpoints (target values for automatic control)
+  # These can be changed via API, but these are the initial values
+  default_setpoints:
+    "Flower Room":
+      front:
+        temperature: 25.0    # °C target temperature
+        humidity: 65.0       # % target humidity
+        co2: 1200.0         # ppm target CO2
+      back:
+        temperature: 25.0
+        humidity: 65.0
+        co2: 1200.0
+    "Veg Room":
+      main:
+        temperature: 22.0
+        humidity: 70.0
+        co2: 1000.0
+  
+  # Control Loop Settings
+  update_interval: 5        # seconds - How often automatic control runs (5-10 seconds recommended)
+
+# Interlock Rules (Safety)
+# These are global rules that prevent conflicting device states
+# Format: When device A is ON, device B must be OFF
+interlocks:
+  # Example: When exhaust fan is ON, heater must be OFF
+  # (This is also configured per-device with interlock_with, but global rules apply to all)
+  - when_device: "exhaust_fan"
+    then_device: "heater_1"
+    action: "force_off"      # Force heater OFF when exhaust fan turns ON
+
+# Sensor Mapping (Optional - for reading sensor data)
+# Maps your location/cluster to sensor data sources
+# The automation service will read from the shared can_messages.db database
+sensors:
+  "Flower Room":
+    front:
+      # Sensor names match your existing sensor naming (dry_bulb_f, rh_f, co2_f, etc.)
+      # The service will automatically read these from the database
+      temperature_sensor: "dry_bulb_f"    # Sensor name for temperature readings
+      humidity_sensor: "rh_f"              # Sensor name for humidity readings
+      co2_sensor: "co2_f"                 # Sensor name for CO2 readings
+    back:
+      temperature_sensor: "dry_bulb_b"
+      humidity_sensor: "rh_b"
+      co2_sensor: "co2_b"
+  "Veg Room":
+    main:
+      temperature_sensor: "dry_bulb_v"
+      humidity_sensor: "rh_v"
+      co2_sensor: "co2_v"
+
+# Notes:
+# - Channel numbers are 0-15 (MCP23017 has 16 channels)
+# - Each device must have a unique channel within the same location/cluster
+# - Device names can be anything (heater_1, main_heater, etc.)
+# - device_type determines control behavior:
+#   - "heater": PID control for temperature
+#   - "co2": PID control for CO2 level
+#   - "fan", "dehumidifier", "humidifier": Threshold-based control
+#   - "light", "pump", "vent": On/off control (usually scheduled)
+# - interlock_with: List of device names in the same location/cluster that must be OFF
+# - pid_enabled: true for devices that need smooth control (heaters, CO2)
+
+

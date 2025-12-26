@@ -1,0 +1,28 @@
+[Unit]
+Description=CAN Processor - Unified CAN Bus Service
+After=can-setup.service redis-server.service postgresql.service network-online.target
+Requires=can-setup.service redis-server.service postgresql.service
+Wants=network-online.target
+OnFailure=service-error-handler@%n.service
+
+[Service]
+Type=simple
+User=antoine
+Group=antoine
+WorkingDirectory=/home/antoine/Project CEA/Infrastructure/can-processor-service
+Environment="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/local/bin"
+Environment="REDIS_URL=redis://localhost:6379"
+Environment="POSTGRES_HOST=localhost"
+Environment="POSTGRES_DB=cea_sensors"
+Environment="POSTGRES_USER=cea_user"
+Environment="POSTGRES_PASSWORD=Lenin1917"
+Environment="CAN_PROCESSOR_DISPLAY=1"
+ExecStart=/usr/bin/python3 -m app.main --verbose
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+
