@@ -3,7 +3,8 @@
 export type Mode = 'DAY' | 'NIGHT' | 'TRANSITION' | null;
 
 export interface Setpoint {
-  temperature?: number;
+  heating_setpoint?: number;
+  cooling_setpoint?: number;
   humidity?: number;
   co2?: number;
   vpd?: number;
@@ -11,7 +12,8 @@ export interface Setpoint {
 }
 
 export interface SetpointUpdate {
-  temperature?: number;
+  heating_setpoint?: number;
+  cooling_setpoint?: number;
   humidity?: number;
   co2?: number;
   vpd?: number;

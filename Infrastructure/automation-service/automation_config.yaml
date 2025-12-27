@@ -113,6 +113,9 @@ control:
     heater_kp: 25.0
     heater_ki: 0.02
     heater_kd: 0.0
+    fan_kp: 25.0
+    fan_ki: 0.02
+    fan_kd: 0.0
     co2_kp: 10.0
     co2_ki: 0.01
     co2_kd: 0.0
@@ -129,18 +132,27 @@ control:
   default_setpoints:
     Flower Room:
       main:
-        temperature: 25.0
+        heating_setpoint: 25.0
+        cooling_setpoint: null
         humidity: 65.0
         co2: 1200.0
     Veg Room:
       main:
-        temperature: 25.0
+        heating_setpoint: 25.0
+        cooling_setpoint: null
         humidity: 68.0
         co2: 1000.0
   update_interval: 1
   last_good_hold_period: 30
   pid_limits:
     heater:
+      kp_min: 0.0
+      kp_max: 100.0
+      ki_min: 0.0
+      ki_max: 1.0
+      kd_min: 0.0
+      kd_max: 10.0
+    fan:
       kp_min: 0.0
       kp_max: 100.0
       ki_min: 0.0

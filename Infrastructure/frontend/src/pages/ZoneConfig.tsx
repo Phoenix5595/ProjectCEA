@@ -1,9 +1,9 @@
 import { useParams, Link } from 'react-router-dom'
 import { useState, useEffect } from 'react'
-import SetpointEditor from '../components/SetpointEditor'
 import PIDEditor from '../components/PIDEditor'
 import RoomScheduleEditor from '../components/RoomScheduleEditor'
 import LightManager from '../components/LightManager'
+import ClimateScheduleEditor from '../components/ClimateScheduleEditor'
 import { apiClient } from '../services/api'
 import { getLocationDisplayName, getLocationBackendName } from '../config/zones'
 
@@ -12,7 +12,7 @@ export default function ZoneConfig() {
   // URL should have backend location name (from zones config), but convert display name if needed
   // React Router automatically decodes URL params, so we just need to map if it's a display name
   const location = locationParam ? getLocationBackendName(locationParam) : null
-  const [activeTab, setActiveTab] = useState<'setpoints' | 'pid'>('setpoints')
+  const [activeTab, setActiveTab] = useState<'climate' | 'lights' | 'pid'>('climate')
   const [lights, setLights] = useState<any[]>([])
 
   useEffect(() => {
@@ -56,9 +56,6 @@ export default function ZoneConfig() {
     }
   }
 
-  async function loadSetpoints() {
-    // SetpointEditor handles its own loading
-  }
 
   if (!location || !cluster) {
     return <div className="text-gray-900">Invalid zone</div>
@@ -79,14 +76,24 @@ export default function ZoneConfig() {
           <div className="border-b border-gray-200">
             <nav className="flex">
               <button
-                onClick={() => setActiveTab('setpoints')}
+                onClick={() => setActiveTab('climate')}
                 className={`px-6 py-3 font-semibold ${
-                  activeTab === 'setpoints'
+                  activeTab === 'climate'
                     ? 'border-b-2 border-blue-600 text-blue-700 bg-blue-50'
                     : 'text-gray-700 hover:text-gray-900 hover:bg-gray-50'
                 }`}
               >
-                Setpoints & Schedule
+                Climate
+              </button>
+              <button
+                onClick={() => setActiveTab('lights')}
+                className={`px-6 py-3 font-semibold ${
+                  activeTab === 'lights'
+                    ? 'border-b-2 border-blue-600 text-blue-700 bg-blue-50'
+                    : 'text-gray-700 hover:text-gray-900 hover:bg-gray-50'
+                }`}
+              >
+                Lights
               </button>
               <button
                 onClick={() => setActiveTab('pid')}
@@ -102,37 +109,17 @@ export default function ZoneConfig() {
           </div>
 
           <div className="p-6">
-            {activeTab === 'setpoints' && location && (
+            {activeTab === 'climate' && location && (
+              <ClimateScheduleEditor location={location} cluster={cluster!} />
+            )}
+            {activeTab === 'lights' && location && (
               <div className="space-y-8">
                 <section>
-                  <h2 className="text-xl font-semibold mb-4 text-gray-900">Setpoints</h2>
-                  <div className="grid grid-cols-2 gap-6">
-                    <div>
-                      <h3 className="text-lg font-semibold mb-3 text-gray-800">Day</h3>
-                      <SetpointEditor
-                        location={location}
-                        cluster={cluster!}
-                        mode="DAY"
-                        onUpdate={loadSetpoints}
-                      />
-                    </div>
-                    <div>
-                      <h3 className="text-lg font-semibold mb-3 text-gray-800">Night</h3>
-                      <SetpointEditor
-                        location={location}
-                        cluster={cluster!}
-                        mode="NIGHT"
-                        onUpdate={loadSetpoints}
-                      />
-                    </div>
-                  </div>
-                </section>
-                <section className="border-t border-gray-200 pt-6">
-                  <h2 className="text-xl font-semibold mb-4 text-gray-900">Schedule</h2>
+                  <h2 className="text-xl font-semibold mb-4 text-gray-900">Light Schedule</h2>
                   <RoomScheduleEditor location={location} cluster={cluster!} period="day" />
                 </section>
                 <section className="border-t border-gray-200 pt-6">
-                  <h2 className="text-xl font-semibold mb-4 text-gray-900">Lights</h2>
+                  <h2 className="text-xl font-semibold mb-4 text-gray-900">Light Management</h2>
                   <LightManager location={location} cluster={cluster!} lights={lights} />
                 </section>
               </div>

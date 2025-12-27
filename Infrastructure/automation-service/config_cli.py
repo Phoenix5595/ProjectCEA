@@ -10,7 +10,7 @@ for audit trail.
 
 Usage:
     config-cli setpoint get <location> <cluster>
-    config-cli setpoint set <location> <cluster> --temp <value> --humidity <value> --co2 <value> [--dry-run]
+    config-cli setpoint set <location> <cluster> --heating-setpoint <value> [--cooling-setpoint <value>] --humidity <value> --co2 <value> [--dry-run]
     config-cli pid get <device_type>
     config-cli pid set <device_type> --kp <value> --ki <value> --kd <value> [--dry-run]
     config-cli schedule list [--location <loc>] [--cluster <clust>]
@@ -215,8 +215,10 @@ async def cmd_setpoint_get(db: DatabaseManager, location: str, cluster: str, mod
     
     print(f"Setpoints for {location}/{cluster}:")
     
-    if setpoint.get('temperature') is not None:
-        print(f"  Temperature: {setpoint['temperature']}°C")
+    if setpoint.get('heating_setpoint') is not None:
+        print(f"  Heating Setpoint: {setpoint['heating_setpoint']}°C")
+    if setpoint.get('cooling_setpoint') is not None:
+        print(f"  Cooling Setpoint: {setpoint['cooling_setpoint']}°C")
     if setpoint.get('humidity') is not None:
         print(f"  Humidity: {setpoint['humidity']}%")
     if setpoint.get('co2') is not None:
@@ -231,7 +233,8 @@ async def cmd_setpoint_set(
     db: DatabaseManager,
     location: str,
     cluster: str,
-    temperature: Optional[float],
+    heating_setpoint: Optional[float],
+    cooling_setpoint: Optional[float],
     humidity: Optional[float],
     co2: Optional[float],
     vpd: Optional[float],
@@ -245,7 +248,8 @@ async def cmd_setpoint_set(
         db: Database manager
         location: Location name
         cluster: Cluster name
-        temperature: Temperature setpoint (optional)
+        heating_setpoint: Heating setpoint (optional)
+        cooling_setpoint: Cooling setpoint (optional)
         humidity: Humidity setpoint (optional)
         co2: CO2 setpoint (optional)
         vpd: VPD setpoint (optional)
@@ -268,12 +272,19 @@ async def cmd_setpoint_set(
     changes = {}
     errors = []
     
-    if temperature is not None:
-        is_valid, error = validate_setpoint('temperature', temperature)
+    if heating_setpoint is not None:
+        is_valid, error = validate_setpoint('temperature', heating_setpoint)
         if not is_valid:
             errors.append(error)
         else:
-            changes['temperature'] = temperature
+            changes['heating_setpoint'] = heating_setpoint
+    
+    if cooling_setpoint is not None:
+        is_valid, error = validate_setpoint('temperature', cooling_setpoint)
+        if not is_valid:
+            errors.append(error)
+        else:
+            changes['cooling_setpoint'] = cooling_setpoint
     
     if humidity is not None:
         is_valid, error = validate_setpoint('humidity', humidity)
@@ -320,11 +331,11 @@ async def cmd_setpoint_set(
             else:
                 print(f"  {key}: (not set) → {value}")
         else:
-        old_val = existing.get(key) if existing else None
-        if old_val is not None:
-            print(f"  {key}: {old_val} → {value}")
-        else:
-            print(f"  {key}: (not set) → {value}")
+            old_val = existing.get(key) if existing else None
+            if old_val is not None:
+                print(f"  {key}: {old_val} → {value}")
+            else:
+                print(f"  {key}: (not set) → {value}")
     
     if dry_run:
         print("\n[DRY RUN] Changes not applied")
@@ -333,7 +344,8 @@ async def cmd_setpoint_set(
     # Apply changes
     success = await db.set_setpoint(
         location, cluster,
-        changes.get('temperature'),
+        changes.get('heating_setpoint'),
+        changes.get('cooling_setpoint'),
         changes.get('humidity'),
         changes.get('co2'),
         changes.get('vpd'),
@@ -898,7 +910,7 @@ async def main():
             elif args.setpoint_cmd == 'set':
                 await cmd_setpoint_set(
                     db, args.location, args.cluster,
-                    args.temp, args.humidity, args.co2, args.vpd, args.mode,
+                    args.heating_setpoint, args.cooling_setpoint, args.humidity, args.co2, args.vpd, args.mode,
                     args.dry_run, args.author
                 )
         

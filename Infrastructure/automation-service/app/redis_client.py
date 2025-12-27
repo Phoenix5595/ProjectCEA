@@ -208,29 +208,39 @@ class AutomationRedisClient:
             cluster: Cluster name
         
         Returns:
-            Dict with temperature, humidity, co2, source, timestamp_ms, or None if not found
+            Dict with heating_setpoint, cooling_setpoint, humidity, co2, source, timestamp_ms, or None if not found
         """
         if not self.redis_enabled or not self.redis_client:
             return None
         
         try:
             # Try reading individual keys first
+            heat_key = f"setpoint:{location}:{cluster}:heating_setpoint"
+            cool_key = f"setpoint:{location}:{cluster}:cooling_setpoint"
+            # Backward compatibility: also check old temperature key
             temp_key = f"setpoint:{location}:{cluster}:temperature"
             hum_key = f"setpoint:{location}:{cluster}:humidity"
             co2_key = f"setpoint:{location}:{cluster}:co2"
             source_key = f"setpoint:{location}:{cluster}:source"
             
-            temp = self.redis_client.get(temp_key)
+            heat = self.redis_client.get(heat_key)
+            cool = self.redis_client.get(cool_key)
+            temp = self.redis_client.get(temp_key)  # Legacy support
             hum = self.redis_client.get(hum_key)
             co2 = self.redis_client.get(co2_key)
             source_data = self.redis_client.get(source_key)
             
-            if temp is None and hum is None and co2 is None:
+            if heat is None and cool is None and temp is None and hum is None and co2 is None:
                 return None
             
             result = {}
-            if temp is not None:
-                result['temperature'] = float(temp)
+            if heat is not None:
+                result['heating_setpoint'] = float(heat)
+            elif temp is not None:
+                # Backward compatibility: migrate old temperature key to heating_setpoint
+                result['heating_setpoint'] = float(temp)
+            if cool is not None:
+                result['cooling_setpoint'] = float(cool)
             if hum is not None:
                 result['humidity'] = float(hum)
             if co2 is not None:
@@ -253,7 +263,8 @@ class AutomationRedisClient:
         self,
         location: str,
         cluster: str,
-        temperature: Optional[float] = None,
+        heating_setpoint: Optional[float] = None,
+        cooling_setpoint: Optional[float] = None,
         humidity: Optional[float] = None,
         co2: Optional[float] = None,
         source: str = 'api'
@@ -263,7 +274,8 @@ class AutomationRedisClient:
         Args:
             location: Location name
             cluster: Cluster name
-            temperature: Temperature setpoint (optional)
+            heating_setpoint: Heating setpoint (optional)
+            cooling_setpoint: Cooling setpoint (optional)
             humidity: Humidity setpoint (optional)
             co2: CO2 setpoint (optional)
             source: Source of setpoint ('api', 'schedule', 'failsafe')
@@ -280,8 +292,10 @@ class AutomationRedisClient:
             
             pipe = self.redis_client.pipeline()
             
-            if temperature is not None:
-                pipe.setex(f"setpoint:{location}:{cluster}:temperature", setpoint_ttl, str(temperature))
+            if heating_setpoint is not None:
+                pipe.setex(f"setpoint:{location}:{cluster}:heating_setpoint", setpoint_ttl, str(heating_setpoint))
+            if cooling_setpoint is not None:
+                pipe.setex(f"setpoint:{location}:{cluster}:cooling_setpoint", setpoint_ttl, str(cooling_setpoint))
             if humidity is not None:
                 pipe.setex(f"setpoint:{location}:{cluster}:humidity", setpoint_ttl, str(humidity))
             if co2 is not None:
@@ -298,6 +312,63 @@ class AutomationRedisClient:
             return True
         except Exception as e:
             logger.warning(f"Error writing setpoint to Redis: {e}")
+            return False
+    
+    def write_effective_setpoints(
+        self,
+        location: str,
+        cluster: str,
+        effective_heating_setpoint: Optional[float] = None,
+        effective_cooling_setpoint: Optional[float] = None,
+        effective_humidity_setpoint: Optional[float] = None,
+        effective_co2_setpoint: Optional[float] = None,
+        effective_vpd_setpoint: Optional[float] = None
+    ) -> bool:
+        """Write effective setpoints to Redis.
+        
+        Effective setpoints are the actual values being used by the control system,
+        accounting for ramp transitions. These are updated every control step.
+        
+        Args:
+            location: Location name
+            cluster: Cluster name
+            effective_heating_setpoint: Effective heating setpoint (actual value being used)
+            effective_cooling_setpoint: Effective cooling setpoint (actual value being used)
+            effective_humidity_setpoint: Effective humidity setpoint (actual value being used)
+            effective_co2_setpoint: Effective CO2 setpoint (actual value being used)
+            effective_vpd_setpoint: Effective VPD setpoint (actual value being used)
+        
+        Returns:
+            True if successful, False otherwise
+        """
+        if not self.redis_enabled or not self.redis_client:
+            return False
+        
+        try:
+            timestamp_ms = int(datetime.now().timestamp() * 1000)
+            # Effective setpoints have longer TTL since they're updated every second
+            setpoint_ttl = 300  # 5 minutes TTL (covers control loop intervals)
+            
+            pipe = self.redis_client.pipeline()
+            
+            if effective_heating_setpoint is not None:
+                pipe.setex(f"effective_setpoint:{location}:{cluster}:heating_setpoint", setpoint_ttl, str(effective_heating_setpoint))
+            if effective_cooling_setpoint is not None:
+                pipe.setex(f"effective_setpoint:{location}:{cluster}:cooling_setpoint", setpoint_ttl, str(effective_cooling_setpoint))
+            if effective_humidity_setpoint is not None:
+                pipe.setex(f"effective_setpoint:{location}:{cluster}:humidity", setpoint_ttl, str(effective_humidity_setpoint))
+            if effective_co2_setpoint is not None:
+                pipe.setex(f"effective_setpoint:{location}:{cluster}:co2", setpoint_ttl, str(effective_co2_setpoint))
+            if effective_vpd_setpoint is not None:
+                pipe.setex(f"effective_setpoint:{location}:{cluster}:vpd", setpoint_ttl, str(effective_vpd_setpoint))
+            
+            # Write timestamp
+            pipe.setex(f"effective_setpoint:{location}:{cluster}:timestamp", setpoint_ttl, str(timestamp_ms))
+            
+            pipe.execute()
+            return True
+        except Exception as e:
+            logger.warning(f"Error writing effective setpoints to Redis: {e}")
             return False
     
     def read_setpoint_source(self, location: str, cluster: str) -> Optional[Dict[str, Any]]:

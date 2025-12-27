@@ -1,10 +1,12 @@
 """Schedule management endpoints."""
 import logging
+from datetime import time as dt_time
 from fastapi import APIRouter, HTTPException, Depends, Query
 from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
 from app.database import DatabaseManager
 from app.config import ConfigLoader
+from app.validation import validate_setpoint
 
 logger = logging.getLogger(__name__)
 
@@ -258,7 +260,8 @@ async def get_room_schedule(
 ) -> Dict[str, Any]:
     """Get room-level schedule configuration.
     
-    Infers room schedule from existing device schedules in the room.
+    First tries to get from config_versions (most recent saved configuration),
+    then falls back to inferring from existing device schedules.
     
     Args:
         location: Location name
@@ -267,8 +270,48 @@ async def get_room_schedule(
     Returns:
         Room schedule configuration
     """
-    # Get all schedules for this room
-    schedules = await database.get_schedules(location, cluster)
+    # First, try to get from schedules table (room_schedule entry)
+    pool = await database._get_pool()
+    try:
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow("""
+                SELECT start_time, end_time, ramp_up_duration, ramp_down_duration
+                FROM schedules
+                WHERE location = $1 AND cluster = $2 AND device_name = 'room_schedule'
+                ORDER BY created_at DESC
+                LIMIT 1
+            """, location, cluster)
+            
+            if row:
+                # Convert time objects to HH:MM strings
+                def format_time(time_val):
+                    if isinstance(time_val, str):
+                        return time_val
+                    if hasattr(time_val, 'hour') and hasattr(time_val, 'minute'):
+                        return f"{time_val.hour:02d}:{time_val.minute:02d}"
+                    return str(time_val)
+                
+                day_start = format_time(row['start_time'])
+                day_end = format_time(row['end_time'])
+                # Night times are inferred from day times (night starts when day ends)
+                night_start = day_end
+                night_end = day_start
+                
+                return {
+                    "day_start_time": day_start,
+                    "day_end_time": day_end,
+                    "night_start_time": night_start,
+                    "night_end_time": night_end,
+                    "ramp_up_duration": row['ramp_up_duration'] if row['ramp_up_duration'] is not None else 30,
+                    "ramp_down_duration": row['ramp_down_duration'] if row['ramp_down_duration'] is not None else 15
+                }
+    except Exception as e:
+        logger.warning(f"Error retrieving room schedule from database: {e}. Falling back to inferring from schedules.")
+    
+    # Fallback: Get all schedules for this room and infer configuration
+    # Filter out room_schedule and climate entries
+    all_schedules = await database.get_schedules(location, cluster)
+    schedules = [s for s in all_schedules if s.get('device_name') not in ['room_schedule', 'climate']]
     
     if not schedules:
         # Return defaults if no schedules exist
@@ -288,7 +331,7 @@ async def get_room_schedule(
     
     for schedule in schedules:
         target_intensity = schedule.get('target_intensity')
-        mode = schedule.get('mode', '').upper()
+        mode = (schedule.get('mode') or '').upper()
         
         # Prefer schedules with mode='DAY' or 'NIGHT' for clarity
         if mode == 'DAY' or (target_intensity is not None and target_intensity > 0):
@@ -453,9 +496,9 @@ async def save_room_schedule(
             detail=f"No devices found for {location}/{cluster}"
         )
     
-    # Get existing schedules for this room to delete them
+    # Get existing schedules for this room to delete them (exclude room_schedule and climate entries)
     existing_schedules = await database.get_schedules(location, cluster)
-    schedule_ids_to_delete = [s['id'] for s in existing_schedules if s.get('id')]
+    schedule_ids_to_delete = [s['id'] for s in existing_schedules if s.get('id') and s.get('device_name') not in ['room_schedule', 'climate']]
     
     # Use transaction to ensure atomicity: delete old schedules and create new ones
     pool = await database._get_pool()
@@ -463,10 +506,51 @@ async def save_room_schedule(
     try:
         async with pool.acquire() as conn:
             async with conn.transaction():
-                # Delete existing schedules in bulk within transaction
+                # Delete existing schedules in bulk within transaction (but not room_schedule entry)
                 if schedule_ids_to_delete:
-                    await database.delete_schedules_bulk(schedule_ids_to_delete, conn)
-                    logger.info(f"Deleted {len(schedule_ids_to_delete)} existing schedules for {location}/{cluster}")
+                    # Filter out room_schedule entries - we'll update them instead
+                    room_schedule_ids = await conn.fetch("""
+                        SELECT id FROM schedules
+                        WHERE location = $1 AND cluster = $2 AND device_name = 'room_schedule'
+                    """, location, cluster)
+                    room_schedule_id_set = {r['id'] for r in room_schedule_ids}
+                    filtered_ids = [sid for sid in schedule_ids_to_delete if sid not in room_schedule_id_set]
+                    if filtered_ids:
+                        await database.delete_schedules_bulk(filtered_ids, conn)
+                        logger.info(f"Deleted {len(filtered_ids)} existing schedules for {location}/{cluster}")
+                
+                # Save/update room schedule configuration in schedules table
+                from datetime import time as dt_time
+                day_start_parts = schedule.day_start_time.split(':')
+                day_start_time_obj = dt_time(int(day_start_parts[0]), int(day_start_parts[1]))
+                day_end_parts = schedule.day_end_time.split(':')
+                day_end_time_obj = dt_time(int(day_end_parts[0]), int(day_end_parts[1]))
+                
+                existing_room_schedule = await conn.fetchrow("""
+                    SELECT id FROM schedules
+                    WHERE location = $1 AND cluster = $2 AND device_name = 'room_schedule'
+                    LIMIT 1
+                """, location, cluster)
+                
+                if existing_room_schedule:
+                    # Update existing room schedule
+                    await conn.execute("""
+                        UPDATE schedules
+                        SET start_time = $1, end_time = $2,
+                            ramp_up_duration = $3, ramp_down_duration = $4,
+                            created_at = NOW()
+                        WHERE id = $5
+                    """, day_start_time_obj, day_end_time_obj,
+                        schedule.ramp_up_duration, schedule.ramp_down_duration,
+                        existing_room_schedule['id'])
+                else:
+                    # Create new room schedule entry
+                    await conn.execute("""
+                        INSERT INTO schedules (name, location, cluster, device_name, start_time, end_time, enabled, ramp_up_duration, ramp_down_duration)
+                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                    """, f"Room Schedule {location}/{cluster}", location, cluster, "room_schedule",
+                        day_start_time_obj, day_end_time_obj, True,
+                        schedule.ramp_up_duration, schedule.ramp_down_duration)
                 
                 # Create schedules for all devices within transaction
                 for device_name, device_info in room_devices.items():
@@ -600,5 +684,281 @@ async def save_room_schedule(
         "cluster": cluster,
         "schedules_created": schedules_created,
         "devices_configured": len(room_devices)
+    }
+
+
+class ClimateScheduleSetpoint(BaseModel):
+    """Setpoint data for a specific mode."""
+    heating_setpoint: Optional[float] = None
+    cooling_setpoint: Optional[float] = None
+    humidity: Optional[float] = None
+    co2: Optional[float] = None
+    vpd: Optional[float] = None
+    ramp_in_duration: Optional[int] = None  # Minutes to ramp in when entering this mode (0 = instant)
+
+
+class ClimateScheduleCreate(BaseModel):
+    """Climate schedule with pre-day/pre-night durations and setpoints for all modes."""
+    day_start_time: str  # "HH:MM" format (from light schedule)
+    day_end_time: str  # "HH:MM" format (from light schedule)
+    pre_day_duration: int  # Minutes before day starts
+    pre_night_duration: int  # Minutes after night starts
+    setpoints: Dict[str, ClimateScheduleSetpoint]  # Keys: 'DAY', 'NIGHT', 'PRE_DAY', 'PRE_NIGHT'
+
+
+@router.get("/api/climate-schedule/{location}/{cluster}")
+async def get_climate_schedule(
+    location: str,
+    cluster: str,
+    database: DatabaseManager = Depends(get_database)
+) -> Dict[str, Any]:
+    """Get climate schedule and all setpoints for a location/cluster.
+    
+    Args:
+        location: Location name
+        cluster: Cluster name
+    
+    Returns:
+        Dict with day_start_time, day_end_time, pre_day_duration, pre_night_duration,
+        and setpoints for all modes (DAY, NIGHT, PRE_DAY, PRE_NIGHT)
+    """
+    # Get light schedule for day times
+    light_schedule = await database.get_light_schedule(location, cluster)
+    if not light_schedule:
+        # Return defaults if no light schedule found
+        return {
+            "day_start_time": "06:00",
+            "day_end_time": "20:00",
+            "pre_day_duration": 0,
+            "pre_night_duration": 0,
+            "setpoints": {
+                "DAY": {},
+                "NIGHT": {},
+                "PRE_DAY": {},
+                "PRE_NIGHT": {}
+            }
+        }
+    
+    # Get climate schedule (pre-day/pre-night durations)
+    climate_schedule = await database.get_climate_schedule(location, cluster)
+    
+    # Get setpoints for all modes
+    setpoints = {}
+    for mode in ['DAY', 'NIGHT', 'PRE_DAY', 'PRE_NIGHT']:
+        setpoint_data = await database.get_setpoint(location, cluster, mode)
+        if setpoint_data:
+            setpoints[mode] = {
+                "heating_setpoint": setpoint_data.get('heating_setpoint'),
+                "cooling_setpoint": setpoint_data.get('cooling_setpoint'),
+                "humidity": setpoint_data.get('humidity'),
+                "co2": setpoint_data.get('co2'),
+                "vpd": setpoint_data.get('vpd'),
+                "ramp_in_duration": setpoint_data.get('ramp_in_duration', 0) or 0
+            }
+        else:
+            setpoints[mode] = {}
+    
+    return {
+        "day_start_time": light_schedule.get('day_start_time'),
+        "day_end_time": light_schedule.get('day_end_time'),
+        "pre_day_duration": climate_schedule.get('pre_day_duration', 0) if climate_schedule else 0,
+        "pre_night_duration": climate_schedule.get('pre_night_duration', 0) if climate_schedule else 0,
+        "setpoints": setpoints
+    }
+
+
+@router.post("/api/climate-schedule/{location}/{cluster}")
+async def save_climate_schedule(
+    location: str,
+    cluster: str,
+    schedule: ClimateScheduleCreate,
+    database: DatabaseManager = Depends(get_database),
+    config: ConfigLoader = Depends(get_config)
+) -> Dict[str, Any]:
+    """Save climate schedule and setpoints atomically.
+    
+    This endpoint atomically saves:
+    - Climate schedule (pre_day_duration, pre_night_duration)
+    - Setpoints for all modes (DAY, NIGHT, PRE_DAY, PRE_NIGHT)
+    
+    Args:
+        location: Location name
+        cluster: Cluster name
+        schedule: Climate schedule data
+    
+    Returns:
+        Success response with warnings (if any)
+    """
+    from app.control.scheduler import Scheduler
+    
+    # Validate conflict rules using scheduler
+    scheduler = Scheduler([])
+    is_valid, error_msg = scheduler.validate_climate_schedule_conflicts(
+        schedule.day_start_time,
+        schedule.day_end_time,
+        schedule.pre_day_duration,
+        schedule.pre_night_duration
+    )
+    
+    if not is_valid:
+        raise HTTPException(
+            status_code=400,
+            detail=error_msg
+        )
+    
+    # Validate durations
+    if schedule.pre_day_duration < 0 or schedule.pre_day_duration > 240:
+        raise HTTPException(
+            status_code=400,
+            detail=f"pre_day_duration must be between 0 and 240 minutes"
+        )
+    
+    if schedule.pre_night_duration < 0 or schedule.pre_night_duration > 240:
+        raise HTTPException(
+            status_code=400,
+            detail=f"pre_night_duration must be between 0 and 240 minutes"
+        )
+    
+    warnings = []
+    
+    # Validate setpoints and check for VPD ramp warnings
+    for mode, setpoint_data in schedule.setpoints.items():
+        if mode not in ['DAY', 'NIGHT', 'PRE_DAY', 'PRE_NIGHT']:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid mode in setpoints: {mode}. Valid modes: DAY, NIGHT, PRE_DAY, PRE_NIGHT"
+            )
+        
+        # Validate ramp_in_duration
+        ramp_in = setpoint_data.ramp_in_duration or 0
+        if ramp_in < 0 or ramp_in > 240:
+            raise HTTPException(
+                status_code=400,
+                detail=f"ramp_in_duration for {mode} must be between 0 and 240 minutes"
+            )
+        
+        # VPD ramp warning
+        if setpoint_data.vpd is not None and ramp_in > 15:
+            warnings.append(f"VPD ramp_in_duration for {mode} is {ramp_in} minutes (>15 min). This may cause stomatal shock, humidity overshoot, or condensation events.")
+        
+        # Validate setpoint values if provided
+        if setpoint_data.heating_setpoint is not None:
+            is_valid, error = validate_setpoint('temperature', setpoint_data.heating_setpoint, config)
+            if not is_valid:
+                raise HTTPException(status_code=400, detail=f"{mode}.heating_setpoint: {error}")
+        
+        if setpoint_data.cooling_setpoint is not None:
+            is_valid, error = validate_setpoint('temperature', setpoint_data.cooling_setpoint, config)
+            if not is_valid:
+                raise HTTPException(status_code=400, detail=f"{mode}.cooling_setpoint: {error}")
+        
+        if setpoint_data.humidity is not None:
+            is_valid, error = validate_setpoint('humidity', setpoint_data.humidity, config)
+            if not is_valid:
+                raise HTTPException(status_code=400, detail=f"{mode}.humidity: {error}")
+        
+        if setpoint_data.co2 is not None:
+            is_valid, error = validate_setpoint('co2', setpoint_data.co2, config)
+            if not is_valid:
+                raise HTTPException(status_code=400, detail=f"{mode}.co2: {error}")
+        
+        if setpoint_data.vpd is not None:
+            is_valid, error = validate_setpoint('vpd', setpoint_data.vpd, config)
+            if not is_valid:
+                raise HTTPException(status_code=400, detail=f"{mode}.vpd: {error}")
+    
+    # Atomic save: use database transaction
+    try:
+        pool = await database._get_pool()
+        async with pool.acquire() as conn:
+            async with conn.transaction():
+                # Save climate schedule (update or create schedule with pre_day_duration/pre_night_duration)
+                # Find existing climate schedule or create new one
+                existing = await conn.fetchrow("""
+                    SELECT id FROM schedules
+                    WHERE location = $1 AND cluster = $2
+                      AND (pre_day_duration IS NOT NULL OR pre_night_duration IS NOT NULL)
+                    LIMIT 1
+                """, location, cluster)
+                
+                if existing:
+                    # Update existing
+                    await conn.execute("""
+                        UPDATE schedules
+                        SET pre_day_duration = $1, pre_night_duration = $2
+                        WHERE id = $3
+                    """, schedule.pre_day_duration, schedule.pre_night_duration, existing['id'])
+                else:
+                    # Create new (use a dummy device_name for climate schedules)
+                    # Convert time strings to TIME objects (handle both "HH:MM" and "HH:MM:SS" formats)
+                    start_parts = schedule.day_start_time.split(':')
+                    end_parts = schedule.day_end_time.split(':')
+                    start_time_obj = dt_time(int(start_parts[0]), int(start_parts[1]), int(start_parts[2]) if len(start_parts) > 2 else 0)
+                    end_time_obj = dt_time(int(end_parts[0]), int(end_parts[1]), int(end_parts[2]) if len(end_parts) > 2 else 0)
+                    
+                    await conn.execute("""
+                        INSERT INTO schedules (name, location, cluster, device_name, start_time, end_time, enabled, pre_day_duration, pre_night_duration)
+                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                    """, f"Climate Schedule {location}/{cluster}", location, cluster, "climate", 
+                        start_time_obj, end_time_obj, True,
+                        schedule.pre_day_duration, schedule.pre_night_duration)
+                
+                # Save setpoints for all modes
+                for mode, setpoint_data in schedule.setpoints.items():
+                    # Check if setpoint exists
+                    existing_setpoint = await conn.fetchrow("""
+                        SELECT id FROM setpoints
+                        WHERE location = $1 AND cluster = $2 AND mode = $3
+                        ORDER BY updated_at DESC
+                        LIMIT 1
+                    """, location, cluster, mode)
+                    
+                    # Build update dict
+                    updates = {}
+                    if setpoint_data.heating_setpoint is not None:
+                        updates['heating_setpoint'] = setpoint_data.heating_setpoint
+                    if setpoint_data.cooling_setpoint is not None:
+                        updates['cooling_setpoint'] = setpoint_data.cooling_setpoint
+                    if setpoint_data.humidity is not None:
+                        updates['humidity'] = setpoint_data.humidity
+                    if setpoint_data.co2 is not None:
+                        updates['co2'] = setpoint_data.co2
+                    if setpoint_data.vpd is not None:
+                        updates['vpd'] = setpoint_data.vpd
+                    if setpoint_data.ramp_in_duration is not None:
+                        updates['ramp_in_duration'] = setpoint_data.ramp_in_duration
+                    
+                    if updates:
+                        if existing_setpoint:
+                            # Update existing
+                            set_clauses = [f"{k} = ${i+1}" for i, k in enumerate(updates.keys())]
+                            values = list(updates.values()) + [existing_setpoint['id']]
+                            await conn.execute(f"""
+                                UPDATE setpoints
+                                SET {', '.join(set_clauses)}, updated_at = NOW()
+                                WHERE id = ${len(updates) + 1}
+                            """, *values)
+                        else:
+                            # Insert new
+                            columns = ['location', 'cluster', 'mode'] + list(updates.keys())
+                            placeholders = [f"${i+1}" for i in range(len(columns))]
+                            values = [location, cluster, mode] + list(updates.values())
+                            await conn.execute(f"""
+                                INSERT INTO setpoints ({', '.join(columns)}, updated_at)
+                                VALUES ({', '.join(placeholders)}, NOW())
+                            """, *values)
+    
+    except Exception as e:
+        logger.error(f"Error saving climate schedule: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to save climate schedule: {str(e)}"
+        )
+    
+    return {
+        "success": True,
+        "location": location,
+        "cluster": cluster,
+        "warnings": warnings
     }
 

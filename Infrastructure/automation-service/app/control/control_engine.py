@@ -1,5 +1,6 @@
 """Control engine that orchestrates rules, schedules, and PID control."""
 import logging
+import asyncio
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple, Any
 from app.control.relay_manager import RelayManager
@@ -51,6 +52,30 @@ class ControlEngine:
         # Track automation context for logging
         self._automation_context: Dict[Tuple[str, str, str], Dict[str, Any]] = {}
         
+        # Track current climate mode per location/cluster
+        self._current_climate_mode: Dict[Tuple[str, str], str] = {}
+        
+        # Track ramp state per location/cluster/setpoint_type
+        # Format: (location, cluster, setpoint_type) -> {
+        #   'current_effective_setpoint': float,
+        #   'ramp_start_timestamp': datetime,
+        #   'ramp_duration': int (minutes),
+        #   'target_setpoint': float,
+        #   'last_logged_setpoint': float  # Last setpoint value logged to DB
+        # }
+        self._ramp_state: Dict[Tuple[str, str, str], Dict[str, Any]] = {}
+        
+        # Track effective setpoints per location/cluster
+        # Format: (location, cluster) -> {
+        #   'effective_heating_setpoint': float,
+        #   'effective_cooling_setpoint': float,
+        #   'nominal_heating_setpoint': float,
+        #   'nominal_cooling_setpoint': float,
+        #   'ramp_progress_heating': float or None,
+        #   'ramp_progress_cooling': float or None
+        # }
+        self._effective_setpoints: Dict[Tuple[str, str], Dict[str, Any]] = {}
+        
         logger.info("Control engine initialized")
     
     async def run_control_loop(self) -> None:
@@ -68,6 +93,60 @@ class ControlEngine:
             for cluster, cluster_devices in clusters.items():
                 # Get sensor values for this location/cluster
                 sensor_values = await self._get_sensor_values(location, cluster, sensor_mapping)
+                
+                # Determine current mode and get setpoints
+                light_schedule = await self.database.get_light_schedule(location, cluster)
+                climate_schedule = await self.database.get_climate_schedule(location, cluster)
+                
+                current_mode = None
+                if light_schedule and climate_schedule:
+                    mode_result = self.scheduler.get_climate_mode(
+                        location, cluster, current_time,
+                        light_schedule.get('day_start_time'),
+                        light_schedule.get('day_end_time'),
+                        climate_schedule.get('pre_day_duration'),
+                        climate_schedule.get('pre_night_duration')
+                    )
+                    if mode_result:
+                        current_mode, _, _ = mode_result
+                
+                # Get setpoint data for current mode
+                setpoint_data = await self.database.get_setpoint(location, cluster, current_mode)
+                if not setpoint_data and current_mode:
+                    # Fallback to legacy mode=None if mode-based setpoint not found
+                    setpoint_data = await self.database.get_setpoint(location, cluster, None)
+                
+                if setpoint_data:
+                    # Compute effective setpoints
+                    effective_data = await self._compute_effective_setpoints(
+                        location, cluster, current_time, current_mode, setpoint_data, sensor_values
+                    )
+                    
+                    # Store in context
+                    self._effective_setpoints[(location, cluster)] = effective_data
+                    
+                    # Log to database immediately (before device processing)
+                    await self.database.log_effective_setpoints(
+                        location=location,
+                        cluster=cluster,
+                        mode=current_mode,
+                        effective_heating_setpoint=effective_data['effective_heating_setpoint'],
+                        effective_cooling_setpoint=effective_data['effective_cooling_setpoint'],
+                        effective_humidity_setpoint=effective_data['effective_humidity_setpoint'],
+                        effective_co2_setpoint=effective_data['effective_co2_setpoint'],
+                        effective_vpd_setpoint=effective_data['effective_vpd_setpoint'],
+                        nominal_heating_setpoint=effective_data['nominal_heating_setpoint'],
+                        nominal_cooling_setpoint=effective_data['nominal_cooling_setpoint'],
+                        nominal_humidity_setpoint=effective_data['nominal_humidity_setpoint'],
+                        nominal_co2_setpoint=effective_data['nominal_co2_setpoint'],
+                        nominal_vpd_setpoint=effective_data['nominal_vpd_setpoint'],
+                        ramp_progress_heating=effective_data['ramp_progress_heating'],
+                        ramp_progress_cooling=effective_data['ramp_progress_cooling'],
+                        ramp_progress_humidity=effective_data['ramp_progress_humidity'],
+                        ramp_progress_co2=effective_data['ramp_progress_co2'],
+                        ramp_progress_vpd=effective_data['ramp_progress_vpd'],
+                        timestamp=current_time
+                    )
                 
                 # Process each device
                 for device_name, device_info in cluster_devices.items():
@@ -304,6 +383,208 @@ class ControlEngine:
                 sensor_values, current_time, context
             )
     
+    def _get_sensor_for_setpoint_type(
+        self,
+        location: str,
+        cluster: str,
+        setpoint_type: str
+    ) -> Optional[str]:
+        """Get sensor name for a setpoint type.
+        
+        Args:
+            location: Location name
+            cluster: Cluster name
+            setpoint_type: Setpoint type (e.g., 'heating_setpoint', 'cooling_setpoint', 'vpd_setpoint', 'co2')
+        
+        Returns:
+            Sensor name or None if not found
+        """
+        sensor_mapping = self.config.get_sensor_mapping()
+        location_sensors = sensor_mapping.get(location, {})
+        cluster_sensors = location_sensors.get(cluster, {})
+        
+        # Map setpoint types to sensor names
+        if setpoint_type in ['heating_setpoint', 'cooling_setpoint']:
+            return cluster_sensors.get('temperature_sensor')
+        elif setpoint_type == 'vpd' or setpoint_type == 'vpd_setpoint':
+            return cluster_sensors.get('vpd_sensor')
+        elif setpoint_type == 'co2':
+            return cluster_sensors.get('co2_sensor')
+        elif setpoint_type == 'humidity' or setpoint_type == 'humidity_setpoint':
+            return cluster_sensors.get('humidity_sensor')
+        else:
+            logger.warning(f"Unknown setpoint_type: {setpoint_type}")
+            return None
+    
+    async def _compute_effective_setpoints(
+        self,
+        location: str,
+        cluster: str,
+        current_time: datetime,
+        current_mode: Optional[str],
+        setpoint_data: Dict[str, Any],
+        sensor_values: Optional[Dict[str, Optional[float]]] = None
+    ) -> Dict[str, Any]:
+        """Compute effective setpoints accounting for ramp transitions.
+        
+        Args:
+            location: Location name
+            cluster: Cluster name
+            current_time: Current timestamp
+            current_mode: Current climate mode (DAY/NIGHT/PRE_DAY/PRE_NIGHT)
+            setpoint_data: Setpoint data from database
+            sensor_values: Optional sensor values for ramp start initialization
+        
+        Returns:
+            Dict with effective/nominal setpoints and ramp progress values
+        """
+        result = {
+            'effective_heating_setpoint': None,
+            'effective_cooling_setpoint': None,
+            'effective_humidity_setpoint': None,
+            'effective_co2_setpoint': None,
+            'effective_vpd_setpoint': None,
+            'nominal_heating_setpoint': None,
+            'nominal_cooling_setpoint': None,
+            'nominal_humidity_setpoint': None,
+            'nominal_co2_setpoint': None,
+            'nominal_vpd_setpoint': None,
+            'ramp_progress_heating': None,
+            'ramp_progress_cooling': None,
+            'ramp_progress_humidity': None,
+            'ramp_progress_co2': None,
+            'ramp_progress_vpd': None
+        }
+        
+        # Get nominal setpoints
+        nominal_heating = setpoint_data.get('heating_setpoint')
+        nominal_cooling = setpoint_data.get('cooling_setpoint')
+        nominal_humidity = setpoint_data.get('humidity')
+        nominal_co2 = setpoint_data.get('co2')
+        nominal_vpd = setpoint_data.get('vpd')
+        ramp_in_duration = setpoint_data.get('ramp_in_duration', 0) or 0
+        
+        result['nominal_heating_setpoint'] = nominal_heating
+        result['nominal_cooling_setpoint'] = nominal_cooling
+        result['nominal_humidity_setpoint'] = nominal_humidity
+        result['nominal_co2_setpoint'] = nominal_co2
+        result['nominal_vpd_setpoint'] = nominal_vpd
+        
+        # Check if mode changed (for ramp state initialization)
+        climate_mode_key = (location, cluster)
+        previous_mode = self._current_climate_mode.get(climate_mode_key)
+        mode_changed = (previous_mode is not None and previous_mode != current_mode)
+        
+        # Store current mode
+        if current_mode is not None:
+            self._current_climate_mode[climate_mode_key] = current_mode
+        
+        # Compute effective setpoints independently for all setpoint types
+        setpoint_types = [
+            ('heating_setpoint', nominal_heating),
+            ('cooling_setpoint', nominal_cooling),
+            ('humidity', nominal_humidity),
+            ('co2', nominal_co2),
+            ('vpd', nominal_vpd)
+        ]
+        
+        for setpoint_type, nominal_value in setpoint_types:
+            if nominal_value is None:
+                continue
+            
+            ramp_key = (location, cluster, setpoint_type)
+            
+            # Initialize or update ramp state if mode changed
+            if mode_changed:
+                # Mode changed: capture current effective setpoint as ramp start
+                current_effective = self._ramp_state.get(ramp_key, {}).get('current_effective_setpoint')
+                if current_effective is None:
+                    # No previous ramp state, use current sensor value as start
+                    if sensor_values:
+                        sensor_name = self._get_sensor_for_setpoint_type(location, cluster, setpoint_type)
+                        if sensor_name:
+                            current_effective = sensor_values.get(sensor_name)
+                if current_effective is None:
+                    current_effective = nominal_value  # Fallback to target
+                
+                # Start new ramp
+                self._ramp_state[ramp_key] = {
+                    'current_effective_setpoint': current_effective,
+                    'ramp_start_timestamp': current_time,
+                    'ramp_duration': ramp_in_duration,
+                    'target_setpoint': nominal_value
+                }
+            elif ramp_key not in self._ramp_state:
+                # First time: initialize ramp state
+                start_value = nominal_value
+                if sensor_values:
+                    sensor_name = self._get_sensor_for_setpoint_type(location, cluster, setpoint_type)
+                    if sensor_name:
+                        start_value = sensor_values.get(sensor_name) or nominal_value
+                
+                self._ramp_state[ramp_key] = {
+                    'current_effective_setpoint': start_value,
+                    'ramp_start_timestamp': current_time,
+                    'ramp_duration': ramp_in_duration,
+                    'target_setpoint': nominal_value
+                }
+            else:
+                # Update target if it changed (but don't restart ramp)
+                ramp_state = self._ramp_state[ramp_key]
+                if ramp_state['target_setpoint'] != nominal_value:
+                    # Target changed: restart ramp from current effective
+                    ramp_state['current_effective_setpoint'] = ramp_state.get('current_effective_setpoint', nominal_value)
+                    ramp_state['ramp_start_timestamp'] = current_time
+                    ramp_state['ramp_duration'] = ramp_in_duration
+                    ramp_state['target_setpoint'] = nominal_value
+            
+            # Calculate effective setpoint (with ramp)
+            ramp_state = self._ramp_state[ramp_key]
+            start_setpoint = ramp_state['current_effective_setpoint']
+            ramp_start = ramp_state['ramp_start_timestamp']
+            ramp_duration_min = ramp_state['ramp_duration']
+            target = ramp_state['target_setpoint']
+            
+            if ramp_duration_min > 0:
+                # Calculate ramp progress
+                elapsed_seconds = (current_time - ramp_start).total_seconds()
+                elapsed_minutes = elapsed_seconds / 60.0
+                progress = min(max(elapsed_minutes / ramp_duration_min, 0.0), 1.0)
+                
+                if progress >= 1.0:
+                    # Ramp complete
+                    effective = target
+                    ramp_progress = None
+                else:
+                    # Still ramping
+                    effective = start_setpoint + (target - start_setpoint) * progress
+                    ramp_progress = progress
+                    ramp_state['current_effective_setpoint'] = effective
+            else:
+                # No ramp or instant transition
+                effective = target
+                ramp_progress = None
+                ramp_state['current_effective_setpoint'] = effective
+            
+            # Store results
+            if setpoint_type == 'heating_setpoint':
+                result['effective_heating_setpoint'] = effective
+                result['ramp_progress_heating'] = ramp_progress
+            elif setpoint_type == 'cooling_setpoint':
+                result['effective_cooling_setpoint'] = effective
+                result['ramp_progress_cooling'] = ramp_progress
+            elif setpoint_type == 'humidity':
+                result['effective_humidity_setpoint'] = effective
+                result['ramp_progress_humidity'] = ramp_progress
+            elif setpoint_type == 'co2':
+                result['effective_co2_setpoint'] = effective
+                result['ramp_progress_co2'] = ramp_progress
+            elif setpoint_type == 'vpd':
+                result['effective_vpd_setpoint'] = effective
+                result['ramp_progress_vpd'] = ramp_progress
+        
+        return result
+    
     async def _process_pid_control(
         self,
         location: str,
@@ -314,7 +595,7 @@ class ControlEngine:
         current_time: datetime,
         context: Dict[str, Any]
     ) -> None:
-        """Process PID control for a device.
+        """Process priority-based multi-setpoint PID control for a device.
         
         Args:
             location: Location name
@@ -325,97 +606,168 @@ class ControlEngine:
             current_time: Current time
             context: Automation context dict
         """
-        key = (location, cluster, device_name)
         device_type = device_info.get('device_type', '')
         
-        # Get setpoint
-        setpoint_data = await self.database.get_setpoint(location, cluster)
-        if not setpoint_data:
-            return  # No setpoint configured
+        # Get climate mode (PRE_DAY, DAY, PRE_NIGHT, NIGHT)
+        climate_mode_key = (location, cluster)
+        current_mode = None
+        mode_start_min = None
+        mode_end_min = None
         
-        # Determine which sensor to use based on device type
-        sensor_name = None
-        setpoint_value = None
+        # Get light schedule and climate schedule to determine mode
+        light_schedule = await self.database.get_light_schedule(location, cluster)
+        climate_schedule = await self.database.get_climate_schedule(location, cluster)
         
-        if device_type == 'heater':
-            sensor_mapping = self.config.get_sensor_mapping()
-            location_sensors = sensor_mapping.get(location, {})
-            cluster_sensors = location_sensors.get(cluster, {})
-            sensor_name = cluster_sensors.get('temperature_sensor')
-            setpoint_value = setpoint_data.get('temperature')
-        elif device_type == 'co2':
-            sensor_mapping = self.config.get_sensor_mapping()
-            location_sensors = sensor_mapping.get(location, {})
-            cluster_sensors = location_sensors.get(cluster, {})
-            sensor_name = cluster_sensors.get('co2_sensor')
-            setpoint_value = setpoint_data.get('co2')
-        
-        if not sensor_name or setpoint_value is None:
-            return  # Missing sensor or setpoint
-        
-        current_value = sensor_values.get(sensor_name)
-        
-        # Use last good value if sensor value is None
-        if current_value is None:
-            if self.database._automation_redis and self.database._automation_redis.redis_enabled:
-                last_good = self.database._automation_redis.read_last_good_value(cluster, sensor_name)
-                if last_good:
-                    hold_period = self.config.get('control.last_good_hold_period', 30)
-                    is_valid, age = self.database._automation_redis.check_last_good_age(cluster, sensor_name, hold_period)
-                    if is_valid:
-                        current_value = last_good['value']
-                        logger.debug(f"Using last good value for {sensor_name}: {current_value} (age: {age:.1f}s)")
-                    else:
-                        # Last good value expired, trigger failsafe
-                        if self.alarm_manager:
-                            self.alarm_manager.raise_alarm(
-                                location, cluster, f"{sensor_name}_offline",
-                                'critical', f"Sensor {sensor_name} offline for {age:.1f}s"
-                            )
-                        return
-                else:
-                    # No last good value, trigger alarm
-                    if self.alarm_manager:
-                        self.alarm_manager.raise_alarm(
-                            location, cluster, f"{sensor_name}_offline",
-                            'critical', f"Sensor {sensor_name} offline, no last good value"
-                        )
-                    return
-            else:
-                return  # Missing sensor value and no Redis, skip control
-        
-        # Update last good value if sensor is valid
-        if self.database._automation_redis and self.database._automation_redis.redis_enabled:
-            self.database._automation_redis.write_last_good_value(cluster, sensor_name, current_value)
-        
-        # Get or create PID controller
-        if key not in self._pid_controllers:
-            pid_params = self.config.get_pid_params_for_device(device_type)
-            pwm_period = device_info.get('pwm_period', 100)  # Default 100 seconds
-            self._pid_controllers[key] = PIDController(
-                kp=pid_params['kp'],
-                ki=pid_params['ki'],
-                kd=pid_params['kd'],
-                pwm_period=pwm_period,
-                database=self.database,
-                device_type=device_type
+        if light_schedule and climate_schedule:
+            mode_result = self.scheduler.get_climate_mode(
+                location, cluster, current_time,
+                light_schedule.get('day_start_time'),
+                light_schedule.get('day_end_time'),
+                climate_schedule.get('pre_day_duration'),
+                climate_schedule.get('pre_night_duration')
             )
+            if mode_result:
+                current_mode, mode_start_min, mode_end_min = mode_result
+                # Store current mode
+                self._current_climate_mode[climate_mode_key] = current_mode
+        else:
+            # Fallback: use legacy mode=None setpoint
+            current_mode = None
         
-        pid_controller = self._pid_controllers[key]
+        # Check if mode changed (for PID integrator reset)
+        previous_mode = self._current_climate_mode.get(climate_mode_key)
+        mode_changed = (previous_mode is not None and previous_mode != current_mode)
         
-        # Reload PID parameters from Redis/DB if changed
-        pid_controller.reload_parameters()
+        # Get setpoint data for current mode (needed for PID setpoint priority evaluation)
+        setpoint_data = await self.database.get_setpoint(location, cluster, current_mode)
+        if not setpoint_data:
+            # Fallback to legacy mode=None if mode-based setpoint not found
+            if current_mode:
+                setpoint_data = await self.database.get_setpoint(location, cluster, None)
+            if not setpoint_data:
+                return  # No setpoint configured
         
-        # Compute PID output
-        pid_output = pid_controller.compute(setpoint_value, current_value, dt=1.0)
-        context['pid_output'] = pid_output
-        # Store PID K values for logging
-        context['pid_kp'] = pid_controller.kp
-        context['pid_ki'] = pid_controller.ki
-        context['pid_kd'] = pid_controller.kd
+        # Get priority-based setpoints for this device
+        pid_setpoints = self.config.get_pid_setpoints_for_device(
+            location, cluster, device_name, device_type
+        )
         
-        # Get PWM state
-        pwm_state = pid_controller.get_pwm_state(pid_output, current_time)
+        if not pid_setpoints:
+            return  # No setpoints configured for this device
+        
+        # Use pre-computed effective setpoints from context (computed at location/cluster level)
+        effective_data = self._effective_setpoints.get((location, cluster), {})
+        
+        # Evaluate setpoints in priority order (already sorted by priority)
+        selected_pid_output = None
+        selected_setpoint_type = None
+        
+        for setpoint_type, priority in pid_setpoints:
+            # Get setpoint value - use effective if available, otherwise nominal
+            if setpoint_type == 'heating_setpoint':
+                setpoint_value = effective_data.get('effective_heating_setpoint')
+                if setpoint_value is None:
+                    setpoint_value = setpoint_data.get('heating_setpoint')
+            elif setpoint_type == 'cooling_setpoint':
+                setpoint_value = effective_data.get('effective_cooling_setpoint')
+                if setpoint_value is None:
+                    setpoint_value = setpoint_data.get('cooling_setpoint')
+            else:
+                # For other setpoint types (humidity, co2, vpd), use nominal value
+                # (these don't have ramp transitions in the current implementation)
+                setpoint_value = setpoint_data.get(setpoint_type)
+            
+            if setpoint_value is None:
+                continue  # Skip if setpoint not configured
+            
+            # Get sensor name for this setpoint type
+            sensor_name = self._get_sensor_for_setpoint_type(location, cluster, setpoint_type)
+            if not sensor_name:
+                continue  # Skip if sensor not configured
+            
+            # Get current sensor value
+            current_value = sensor_values.get(sensor_name)
+            
+            # Use last good value if sensor value is None
+            if current_value is None:
+                if self.database._automation_redis and self.database._automation_redis.redis_enabled:
+                    last_good = self.database._automation_redis.read_last_good_value(cluster, sensor_name)
+                    if last_good:
+                        hold_period = self.config.get('control.last_good_hold_period', 30)
+                        is_valid, age = self.database._automation_redis.check_last_good_age(cluster, sensor_name, hold_period)
+                        if is_valid:
+                            current_value = last_good['value']
+                            logger.debug(f"Using last good value for {sensor_name}: {current_value} (age: {age:.1f}s)")
+                        else:
+                            # Last good value expired, skip this setpoint and try next
+                            continue
+                    else:
+                        # No last good value, skip this setpoint and try next
+                        continue
+                else:
+                    # Missing sensor value and no Redis, skip this setpoint
+                    continue
+            
+            # Update last good value if sensor is valid
+            if self.database._automation_redis and self.database._automation_redis.redis_enabled:
+                self.database._automation_redis.write_last_good_value(cluster, sensor_name, current_value)
+            
+            # Get or create PID controller for this setpoint type
+            # Key includes setpoint_type for state isolation
+            pid_key = (location, cluster, device_name, setpoint_type)
+            if pid_key not in self._pid_controllers:
+                pid_params = self.config.get_pid_params_for_device(device_type)
+                pwm_period = device_info.get('pwm_period', 100)  # Default 100 seconds
+                self._pid_controllers[pid_key] = PIDController(
+                    kp=pid_params['kp'],
+                    ki=pid_params['ki'],
+                    kd=pid_params['kd'],
+                    pwm_period=pwm_period,
+                    database=self.database,
+                    device_type=device_type
+                )
+            
+            pid_controller = self._pid_controllers[pid_key]
+            
+            # Reset PID integrator on mode switch (prevents wind-up)
+            if mode_changed:
+                pid_controller.reset_integrator()
+                logger.debug(f"Reset PID integrator for {location}/{cluster}/{device_name}/{setpoint_type} on mode change: {previous_mode} -> {current_mode}")
+            
+            # Reload PID parameters from Redis/DB if changed
+            pid_controller.reload_parameters()
+            
+            # Compute PID output
+            error = setpoint_value - current_value
+            pid_output = pid_controller.compute(setpoint_value, current_value, dt=1.0)
+            
+            # Check if PID output indicates action is needed (threshold check)
+            # For fans with cooling_setpoint: when error < 0 (temp > cooling_setpoint), fan should increase speed
+            # For heaters with heating_setpoint: when error > 0 (temp < heating_setpoint), heater should increase
+            # Use a small threshold to avoid unnecessary switching
+            threshold = 0.5  # 0.5% minimum output to consider action needed
+            
+            if pid_output > threshold:
+                # This setpoint needs action - use it and break (ignore lower priority setpoints)
+                selected_pid_output = pid_output
+                selected_setpoint_type = setpoint_type
+                
+                # Store PID values for logging
+                context['pid_output'] = pid_output
+                context['pid_kp'] = pid_controller.kp
+                context['pid_ki'] = pid_controller.ki
+                context['pid_kd'] = pid_controller.kd
+                context['active_setpoint_type'] = setpoint_type
+                context['active_setpoint_priority'] = priority
+                break
+        
+        # If no setpoint needed action, exit
+        if selected_pid_output is None:
+            return
+        
+        # Get PWM state using selected PID output
+        pid_controller = self._pid_controllers[(location, cluster, device_name, selected_setpoint_type)]
+        pwm_state = pid_controller.get_pwm_state(selected_pid_output, current_time)
         duty_cycle = pid_controller.get_duty_cycle()
         context['duty_cycle_percent'] = duty_cycle
         context['control_reason'] = 'pid'
@@ -427,7 +779,7 @@ class ControlEngine:
         if new_state != current_state:
             await self._set_device_state(
                 location, cluster, device_name, new_state,
-                'auto', 'pid', sensor_values, setpoint_value
+                'auto', 'pid', sensor_values, setpoint_data.get(selected_setpoint_type)
             )
     
     async def _process_vpd_control(

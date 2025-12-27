@@ -201,6 +201,16 @@ class ApiClient {
   }
 
   // Room Schedule (automation service)
+  async getClimateSchedule(location: string, cluster: string): Promise<any> {
+    const response = await this.automationClient.get(`/api/climate-schedule/${location}/${cluster}`);
+    return response.data;
+  }
+
+  async saveClimateSchedule(location: string, cluster: string, schedule: any): Promise<any> {
+    const response = await this.automationClient.post(`/api/climate-schedule/${location}/${cluster}`, schedule);
+    return response.data;
+  }
+
   async getRoomSchedule(location: string, cluster: string): Promise<any> {
     const response = await this.automationClient.get(`/api/room-schedule/${location}/${cluster}`);
     return response.data;

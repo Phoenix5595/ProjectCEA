@@ -327,7 +327,8 @@ async def sync_config_to_database(config: ConfigLoader, database: DatabaseManage
         for cluster, setpoints in clusters.items():
             await database.set_setpoint(
                 location, cluster,
-                setpoints.get('temperature'),
+                setpoints.get('heating_setpoint'),
+                setpoints.get('cooling_setpoint'),
                 setpoints.get('humidity'),
                 setpoints.get('co2'),
                 source='config'
@@ -358,21 +359,14 @@ async def populate_redis_from_database(database: DatabaseManager, config: Config
     
     redis_client = database._automation_redis
     
-    # Populate setpoints
+    # Note: User-set (nominal) setpoints are NOT populated to Redis
+    # Only effective setpoints (computed at runtime) are written to Redis
+    
+    # Set default mode to 'auto' for all locations/clusters
     default_setpoints = config.get_default_setpoints()
     for location, clusters in default_setpoints.items():
         for cluster, setpoints in clusters.items():
-            setpoint_data = await database.get_setpoint(location, cluster)
-            if setpoint_data:
-                redis_client.write_setpoint(
-                    location, cluster,
-                    setpoint_data.get('temperature'),
-                    setpoint_data.get('humidity'),
-                    setpoint_data.get('co2'),
-                    source='api'
-                )
-                # Set default mode to 'auto'
-                redis_client.write_mode(location, cluster, 'auto', source='system')
+            redis_client.write_mode(location, cluster, 'auto', source='system')
     
     # Populate PID parameters
     device_types = ['heater', 'co2']

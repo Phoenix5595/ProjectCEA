@@ -3,7 +3,7 @@ import { apiClient } from '../services/api'
 import { validatePIDParameter } from '../utils/validation'
 import type { PIDParameters, PIDParameterUpdate } from '../types/pid'
 
-const DEVICE_TYPES = ['heater', 'co2'] // Fans excluded (ON/OFF only)
+const DEVICE_TYPES = ['heater', 'fan', 'co2']
 
 export default function PIDEditor() {
   const [selectedDeviceType, setSelectedDeviceType] = useState<string>('heater')
@@ -81,7 +81,7 @@ export default function PIDEditor() {
           ))}
         </select>
         <p className="text-sm text-gray-500 mt-1">
-          Note: Fans and dehumidifiers are ON/OFF only (no PID control)
+          Note: Fans can use PID control for temperature cooling. Dehumidifiers are ON/OFF only.
         </p>
       </div>
 

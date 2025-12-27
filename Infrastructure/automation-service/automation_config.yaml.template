@@ -115,6 +115,11 @@ control:
     heater_ki: 0.02      # Integral gain (eliminates steady-state error)
     heater_kd: 0.0       # Derivative gain (reduces overshoot, usually 0 for heaters)
     
+    # Fan PID parameters (temperature cooling control)
+    fan_kp: 25.0         # Proportional gain (same as heater for temperature control)
+    fan_ki: 0.02         # Integral gain
+    fan_kd: 0.0          # Derivative gain
+    
     # CO2 PID parameters
     co2_kp: 10.0
     co2_ki: 0.01
@@ -140,16 +145,19 @@ control:
   default_setpoints:
     "Flower Room":
       front:
-        temperature: 25.0    # °C target temperature
-        humidity: 65.0       # % target humidity
-        co2: 1200.0         # ppm target CO2
+        heating_setpoint: 25.0    # °C target temperature for heating
+        cooling_setpoint: null    # °C target temperature for cooling (optional)
+        humidity: 65.0            # % target humidity
+        co2: 1200.0               # ppm target CO2
       back:
-        temperature: 25.0
+        heating_setpoint: 25.0
+        cooling_setpoint: null
         humidity: 65.0
         co2: 1200.0
     "Veg Room":
       main:
-        temperature: 22.0
+        heating_setpoint: 22.0
+        cooling_setpoint: null
         humidity: 70.0
         co2: 1000.0
   

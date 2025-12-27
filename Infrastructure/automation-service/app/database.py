@@ -166,7 +166,8 @@ class DatabaseManager:
                     id BIGSERIAL PRIMARY KEY,
                     location TEXT NOT NULL,
                     cluster TEXT NOT NULL,
-                    temperature REAL CHECK (temperature IS NULL OR (temperature >= -50 AND temperature <= 100)),
+                    heating_setpoint REAL CHECK (heating_setpoint IS NULL OR (heating_setpoint >= -50 AND heating_setpoint <= 100)),
+                    cooling_setpoint REAL CHECK (cooling_setpoint IS NULL OR (cooling_setpoint >= -50 AND cooling_setpoint <= 100)),
                     humidity REAL CHECK (humidity IS NULL OR (humidity >= 0 AND humidity <= 100)),
                     co2 REAL CHECK (co2 IS NULL OR (co2 >= 0 AND co2 <= 10000)),
                     vpd REAL CHECK (vpd IS NULL OR (vpd >= 0 AND vpd <= 10)),
@@ -174,6 +175,32 @@ class DatabaseManager:
                     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
                 )
             """)
+            
+            # Migration: Rename temperature to heating_setpoint if temperature column exists
+            try:
+                # Check if temperature column exists
+                result = await conn.fetchval("""
+                    SELECT column_name 
+                    FROM information_schema.columns 
+                    WHERE table_name = 'setpoints' AND column_name = 'temperature'
+                """)
+                if result:
+                    # Rename temperature to heating_setpoint
+                    await conn.execute("""
+                        ALTER TABLE setpoints RENAME COLUMN temperature TO heating_setpoint
+                    """)
+                    logger.info("Migrated temperature column to heating_setpoint")
+            except Exception as e:
+                logger.warning(f"Migration check for temperature column failed: {e}")
+            
+            # Add cooling_setpoint column if it doesn't exist
+            try:
+                await conn.execute("""
+                    ALTER TABLE setpoints ADD COLUMN IF NOT EXISTS cooling_setpoint REAL 
+                    CHECK (cooling_setpoint IS NULL OR (cooling_setpoint >= -50 AND cooling_setpoint <= 100))
+                """)
+            except Exception:
+                pass  # Column might already exist
             
             # Add mode and vpd columns if they don't exist (for existing databases)
             try:
@@ -189,6 +216,36 @@ class DatabaseManager:
                 """)
             except Exception:
                 pass  # Column might already exist
+            
+            # Add ramp_in_duration column for setpoint ramping (for existing databases)
+            try:
+                await conn.execute("""
+                    ALTER TABLE setpoints ADD COLUMN IF NOT EXISTS ramp_in_duration INTEGER
+                    CHECK (ramp_in_duration IS NULL OR (ramp_in_duration >= 0 AND ramp_in_duration <= 240))
+                """)
+            except Exception:
+                pass  # Column might already exist
+            
+            # Update mode constraint to include PRE_DAY and PRE_NIGHT
+            # Note: We can't directly modify CHECK constraints, so we add a new constraint
+            # PostgreSQL will enforce both, but the new one is more permissive
+            # For existing databases, we'll rely on application-level validation
+            try:
+                # Try to drop the old constraint if it exists (PostgreSQL auto-names it)
+                # We'll add a new constraint that allows PRE_DAY and PRE_NIGHT
+                await conn.execute("""
+                    ALTER TABLE setpoints DROP CONSTRAINT IF EXISTS setpoints_mode_check
+                """)
+            except Exception:
+                pass  # Constraint might not exist or have different name
+            try:
+                await conn.execute("""
+                    ALTER TABLE setpoints ADD CONSTRAINT setpoints_mode_check 
+                    CHECK (mode IS NULL OR mode IN ('DAY', 'NIGHT', 'TRANSITION', 'PRE_DAY', 'PRE_NIGHT'))
+                """)
+            except Exception:
+                # If constraint already exists with new values, that's fine
+                pass
             
             # Drop unique constraint/index to allow history inserts, then add a non-unique index
             try:
@@ -229,7 +286,7 @@ class DatabaseManager:
                     start_time TIME NOT NULL,
                     end_time TIME NOT NULL,
                     enabled BOOLEAN DEFAULT TRUE,
-                    mode TEXT,  -- DAY, NIGHT, or TRANSITION for mode-based scheduling
+                    mode TEXT,  -- DAY, NIGHT, TRANSITION, PRE_DAY, or PRE_NIGHT for mode-based scheduling
                     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
                 )
             """)
@@ -251,6 +308,19 @@ class DatabaseManager:
                 """)
                 await conn.execute("""
                     ALTER TABLE schedules ADD COLUMN IF NOT EXISTS ramp_down_duration INTEGER
+                """)
+            except Exception:
+                pass  # Columns might already exist
+            
+            # Add pre-day and pre-night duration columns for climate schedules (for existing databases)
+            try:
+                await conn.execute("""
+                    ALTER TABLE schedules ADD COLUMN IF NOT EXISTS pre_day_duration INTEGER
+                    CHECK (pre_day_duration IS NULL OR (pre_day_duration >= 0 AND pre_day_duration <= 240))
+                """)
+                await conn.execute("""
+                    ALTER TABLE schedules ADD COLUMN IF NOT EXISTS pre_night_duration INTEGER
+                    CHECK (pre_night_duration IS NULL OR (pre_night_duration >= 0 AND pre_night_duration <= 240))
                 """)
             except Exception:
                 pass  # Columns might already exist
@@ -318,6 +388,75 @@ class DatabaseManager:
             await conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_automation_state_device 
                 ON automation_state(location, cluster, device_name)
+            """)
+            
+            # Effective setpoints table (TimescaleDB hypertable)
+            await conn.execute("""
+                CREATE TABLE IF NOT EXISTS effective_setpoints (
+                    timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    location TEXT NOT NULL,
+                    cluster TEXT NOT NULL,
+                    mode TEXT,
+                    effective_heating_setpoint REAL,
+                    effective_cooling_setpoint REAL,
+                    effective_humidity_setpoint REAL,
+                    effective_co2_setpoint REAL,
+                    effective_vpd_setpoint REAL,
+                    nominal_heating_setpoint REAL,
+                    nominal_cooling_setpoint REAL,
+                    nominal_humidity_setpoint REAL,
+                    nominal_co2_setpoint REAL,
+                    nominal_vpd_setpoint REAL,
+                    ramp_progress_heating REAL,
+                    ramp_progress_cooling REAL,
+                    ramp_progress_humidity REAL,
+                    ramp_progress_co2 REAL,
+                    ramp_progress_vpd REAL
+                )
+            """)
+            # Create hypertable if TimescaleDB extension is available
+            try:
+                await conn.execute("""
+                    SELECT create_hypertable('effective_setpoints', 'timestamp', if_not_exists => TRUE)
+                """)
+            except Exception:
+                logger.warning("TimescaleDB extension not available for effective_setpoints, using regular table")
+            
+            # Migration: Add columns for humidity, co2, and vpd if they don't exist
+            try:
+                # Check if effective_humidity_setpoint column exists
+                column_check = await conn.fetchval("""
+                    SELECT column_name 
+                    FROM information_schema.columns 
+                    WHERE table_name = 'effective_setpoints' 
+                    AND column_name = 'effective_humidity_setpoint'
+                """)
+                
+                if column_check is None:
+                    # Add new columns for humidity, co2, and vpd
+                    await conn.execute("""
+                        ALTER TABLE effective_setpoints
+                        ADD COLUMN IF NOT EXISTS effective_humidity_setpoint REAL,
+                        ADD COLUMN IF NOT EXISTS effective_co2_setpoint REAL,
+                        ADD COLUMN IF NOT EXISTS effective_vpd_setpoint REAL,
+                        ADD COLUMN IF NOT EXISTS nominal_humidity_setpoint REAL,
+                        ADD COLUMN IF NOT EXISTS nominal_co2_setpoint REAL,
+                        ADD COLUMN IF NOT EXISTS nominal_vpd_setpoint REAL,
+                        ADD COLUMN IF NOT EXISTS ramp_progress_humidity REAL,
+                        ADD COLUMN IF NOT EXISTS ramp_progress_co2 REAL,
+                        ADD COLUMN IF NOT EXISTS ramp_progress_vpd REAL
+                    """)
+                    logger.info("Added humidity, co2, and vpd columns to effective_setpoints table")
+            except Exception as e:
+                logger.warning(f"Error adding columns to effective_setpoints: {e}")
+            
+            await conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_effective_setpoints_location 
+                ON effective_setpoints(location, cluster)
+            """)
+            await conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_effective_setpoints_timestamp 
+                ON effective_setpoints(timestamp DESC)
             """)
             
             # PID parameters table
@@ -498,7 +637,8 @@ class DatabaseManager:
                     id BIGSERIAL PRIMARY KEY,
                     location TEXT NOT NULL,
                     cluster TEXT NOT NULL,
-                    temperature REAL CHECK (temperature IS NULL OR (temperature >= -50 AND temperature <= 100)),
+                    heating_setpoint REAL CHECK (heating_setpoint IS NULL OR (heating_setpoint >= -50 AND heating_setpoint <= 100)),
+                    cooling_setpoint REAL CHECK (cooling_setpoint IS NULL OR (cooling_setpoint >= -50 AND cooling_setpoint <= 100)),
                     humidity REAL CHECK (humidity IS NULL OR (humidity >= 0 AND humidity <= 100)),
                     co2 REAL CHECK (co2 IS NULL OR (co2 >= 0 AND co2 <= 10000)),
                     vpd REAL CHECK (vpd IS NULL OR (vpd >= 0 AND vpd <= 10)),
@@ -514,8 +654,9 @@ class DatabaseManager:
                     timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW() CHECK (timestamp >= '2020-01-01'::timestamptz AND timestamp <= NOW() + INTERVAL '1 day'),
                     location TEXT NOT NULL,
                     cluster TEXT NOT NULL,
-                    mode TEXT CHECK (mode IS NULL OR mode IN ('DAY', 'NIGHT', 'TRANSITION')),
-                    temperature REAL CHECK (temperature IS NULL OR (temperature >= -50 AND temperature <= 100)),
+                    mode TEXT CHECK (mode IS NULL OR mode IN ('DAY', 'NIGHT', 'TRANSITION', 'PRE_DAY', 'PRE_NIGHT')),
+                    heating_setpoint REAL CHECK (heating_setpoint IS NULL OR (heating_setpoint >= -50 AND heating_setpoint <= 100)),
+                    cooling_setpoint REAL CHECK (cooling_setpoint IS NULL OR (cooling_setpoint >= -50 AND cooling_setpoint <= 100)),
                     humidity REAL CHECK (humidity IS NULL OR (humidity >= 0 AND humidity <= 100)),
                     co2 REAL CHECK (co2 IS NULL OR (co2 >= 0 AND co2 <= 10000)),
                     vpd REAL CHECK (vpd IS NULL OR (vpd >= 0 AND vpd <= 10))
@@ -537,6 +678,56 @@ class DatabaseManager:
                 CREATE INDEX IF NOT EXISTS idx_setpoint_history_timestamp 
                 ON setpoint_history(timestamp DESC)
             """)
+            
+            # Migration: Rename temperature to heating_setpoint if temperature column exists (second location)
+            try:
+                # Check if temperature column exists in setpoints
+                result = await conn.fetchval("""
+                    SELECT column_name 
+                    FROM information_schema.columns 
+                    WHERE table_name = 'setpoints' AND column_name = 'temperature'
+                """)
+                if result:
+                    # Rename temperature to heating_setpoint
+                    await conn.execute("""
+                        ALTER TABLE setpoints RENAME COLUMN temperature TO heating_setpoint
+                    """)
+                    logger.info("Migrated temperature column to heating_setpoint (second location)")
+            except Exception as e:
+                logger.warning(f"Migration check for temperature column failed (second location): {e}")
+            
+            # Migration: Rename temperature to heating_setpoint in setpoint_history if it exists
+            try:
+                result = await conn.fetchval("""
+                    SELECT column_name 
+                    FROM information_schema.columns 
+                    WHERE table_name = 'setpoint_history' AND column_name = 'temperature'
+                """)
+                if result:
+                    await conn.execute("""
+                        ALTER TABLE setpoint_history RENAME COLUMN temperature TO heating_setpoint
+                    """)
+                    logger.info("Migrated temperature column to heating_setpoint in setpoint_history")
+            except Exception as e:
+                logger.warning(f"Migration check for temperature column in setpoint_history failed: {e}")
+            
+            # Add cooling_setpoint column to setpoints if it doesn't exist
+            try:
+                await conn.execute("""
+                    ALTER TABLE setpoints ADD COLUMN IF NOT EXISTS cooling_setpoint REAL 
+                    CHECK (cooling_setpoint IS NULL OR (cooling_setpoint >= -50 AND cooling_setpoint <= 100))
+                """)
+            except Exception:
+                pass  # Column might already exist
+            
+            # Add cooling_setpoint column to setpoint_history if it doesn't exist
+            try:
+                await conn.execute("""
+                    ALTER TABLE setpoint_history ADD COLUMN IF NOT EXISTS cooling_setpoint REAL 
+                    CHECK (cooling_setpoint IS NULL OR (cooling_setpoint >= -50 AND cooling_setpoint <= 100))
+                """)
+            except Exception:
+                pass  # Column might already exist
             
             # Add mode and vpd columns if they don't exist (for existing databases)
             try:
@@ -582,7 +773,7 @@ class DatabaseManager:
                     start_time TIME NOT NULL,
                     end_time TIME NOT NULL,
                     enabled BOOLEAN DEFAULT TRUE,
-                    mode TEXT,  -- DAY, NIGHT, or TRANSITION for mode-based scheduling
+                    mode TEXT,  -- DAY, NIGHT, TRANSITION, PRE_DAY, or PRE_NIGHT for mode-based scheduling
                     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
                 )
             """)
@@ -604,6 +795,19 @@ class DatabaseManager:
                 """)
                 await conn.execute("""
                     ALTER TABLE schedules ADD COLUMN IF NOT EXISTS ramp_down_duration INTEGER
+                """)
+            except Exception:
+                pass  # Columns might already exist
+            
+            # Add pre-day and pre-night duration columns for climate schedules (for existing databases)
+            try:
+                await conn.execute("""
+                    ALTER TABLE schedules ADD COLUMN IF NOT EXISTS pre_day_duration INTEGER
+                    CHECK (pre_day_duration IS NULL OR (pre_day_duration >= 0 AND pre_day_duration <= 240))
+                """)
+                await conn.execute("""
+                    ALTER TABLE schedules ADD COLUMN IF NOT EXISTS pre_night_duration INTEGER
+                    CHECK (pre_night_duration IS NULL OR (pre_night_duration >= 0 AND pre_night_duration <= 240))
                 """)
             except Exception:
                 pass  # Columns might already exist
@@ -671,6 +875,75 @@ class DatabaseManager:
             await conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_automation_state_device 
                 ON automation_state(location, cluster, device_name)
+            """)
+            
+            # Effective setpoints table (TimescaleDB hypertable)
+            await conn.execute("""
+                CREATE TABLE IF NOT EXISTS effective_setpoints (
+                    timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    location TEXT NOT NULL,
+                    cluster TEXT NOT NULL,
+                    mode TEXT,
+                    effective_heating_setpoint REAL,
+                    effective_cooling_setpoint REAL,
+                    effective_humidity_setpoint REAL,
+                    effective_co2_setpoint REAL,
+                    effective_vpd_setpoint REAL,
+                    nominal_heating_setpoint REAL,
+                    nominal_cooling_setpoint REAL,
+                    nominal_humidity_setpoint REAL,
+                    nominal_co2_setpoint REAL,
+                    nominal_vpd_setpoint REAL,
+                    ramp_progress_heating REAL,
+                    ramp_progress_cooling REAL,
+                    ramp_progress_humidity REAL,
+                    ramp_progress_co2 REAL,
+                    ramp_progress_vpd REAL
+                )
+            """)
+            # Create hypertable if TimescaleDB extension is available
+            try:
+                await conn.execute("""
+                    SELECT create_hypertable('effective_setpoints', 'timestamp', if_not_exists => TRUE)
+                """)
+            except Exception:
+                logger.warning("TimescaleDB extension not available for effective_setpoints, using regular table")
+            
+            # Migration: Add columns for humidity, co2, and vpd if they don't exist
+            try:
+                # Check if effective_humidity_setpoint column exists
+                column_check = await conn.fetchval("""
+                    SELECT column_name 
+                    FROM information_schema.columns 
+                    WHERE table_name = 'effective_setpoints' 
+                    AND column_name = 'effective_humidity_setpoint'
+                """)
+                
+                if column_check is None:
+                    # Add new columns for humidity, co2, and vpd
+                    await conn.execute("""
+                        ALTER TABLE effective_setpoints
+                        ADD COLUMN IF NOT EXISTS effective_humidity_setpoint REAL,
+                        ADD COLUMN IF NOT EXISTS effective_co2_setpoint REAL,
+                        ADD COLUMN IF NOT EXISTS effective_vpd_setpoint REAL,
+                        ADD COLUMN IF NOT EXISTS nominal_humidity_setpoint REAL,
+                        ADD COLUMN IF NOT EXISTS nominal_co2_setpoint REAL,
+                        ADD COLUMN IF NOT EXISTS nominal_vpd_setpoint REAL,
+                        ADD COLUMN IF NOT EXISTS ramp_progress_humidity REAL,
+                        ADD COLUMN IF NOT EXISTS ramp_progress_co2 REAL,
+                        ADD COLUMN IF NOT EXISTS ramp_progress_vpd REAL
+                    """)
+                    logger.info("Added humidity, co2, and vpd columns to effective_setpoints table")
+            except Exception as e:
+                logger.warning(f"Error adding columns to effective_setpoints: {e}")
+            
+            await conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_effective_setpoints_location 
+                ON effective_setpoints(location, cluster)
+            """)
+            await conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_effective_setpoints_timestamp 
+                ON effective_setpoints(timestamp DESC)
             """)
             
             # PID parameters table
@@ -996,10 +1269,11 @@ class DatabaseManager:
             redis_setpoint = self._automation_redis.read_setpoint(location, cluster)
             if redis_setpoint:
                 # Check if we have all required values
-                if 'temperature' in redis_setpoint or 'humidity' in redis_setpoint or 'co2' in redis_setpoint:
+                if 'heating_setpoint' in redis_setpoint or 'cooling_setpoint' in redis_setpoint or 'humidity' in redis_setpoint or 'co2' in redis_setpoint:
                     # Return what we have from Redis (may be partial if TTL expired on some keys)
                     return {
-                        'temperature': redis_setpoint.get('temperature'),
+                        'heating_setpoint': redis_setpoint.get('heating_setpoint'),
+                        'cooling_setpoint': redis_setpoint.get('cooling_setpoint'),
                         'humidity': redis_setpoint.get('humidity'),
                         'co2': redis_setpoint.get('co2'),
                         'vpd': redis_setpoint.get('vpd'),
@@ -1011,7 +1285,7 @@ class DatabaseManager:
             pool = await self._get_pool()
             async with pool.acquire() as conn:
                 row = await conn.fetchrow("""
-                    SELECT temperature, humidity, co2, vpd, mode
+                    SELECT heating_setpoint, cooling_setpoint, humidity, co2, vpd, mode, ramp_in_duration
                     FROM setpoints
                     WHERE location = $1 AND cluster = $2 AND (mode = $3 OR (mode IS NULL AND $3 IS NULL))
                     ORDER BY updated_at DESC
@@ -1020,22 +1294,17 @@ class DatabaseManager:
                 
                 if row:
                     setpoint_data = {
-                        'temperature': row['temperature'],
+                        'heating_setpoint': row['heating_setpoint'],
+                        'cooling_setpoint': row['cooling_setpoint'],
                         'humidity': row['humidity'],
                         'co2': row['co2'],
                         'vpd': row['vpd'],
-                        'mode': row['mode']
+                        'mode': row['mode'],
+                        'ramp_in_duration': row['ramp_in_duration']
                     }
                     
-                    # Cache in Redis for future reads (only for legacy mode=NULL)
-                    if db_mode is None and self._automation_redis and self._automation_redis.redis_enabled:
-                        self._automation_redis.write_setpoint(
-                            location, cluster,
-                            setpoint_data['temperature'],
-                            setpoint_data['humidity'],
-                            setpoint_data['co2'],
-                            source='api'  # From database, so source is 'api'
-                        )
+                    # Note: User-set (nominal) setpoints are NOT cached in Redis
+                    # Only effective setpoints are written to Redis (updated every control step)
                     
                     return setpoint_data
         except Exception as e:
@@ -1046,21 +1315,26 @@ class DatabaseManager:
         self, 
         location: str, 
         cluster: str, 
-        temperature: Optional[float] = None,
+        heating_setpoint: Optional[float] = None,
+        cooling_setpoint: Optional[float] = None,
         humidity: Optional[float] = None,
         co2: Optional[float] = None,
         vpd: Optional[float] = None,
         mode: Optional[str] = None,
+        ramp_in_duration: Optional[int] = None,
         source: str = 'api'
     ) -> bool:
         """Set setpoints for location/cluster.
         
-        Validates setpoints, then writes to both database and Redis.
+        Validates setpoints, then writes to database only.
+        Note: User-set (nominal) setpoints are NOT written to Redis.
+        Only effective setpoints (computed at runtime) are written to Redis.
         
         Args:
             location: Location name
             cluster: Cluster name
-            temperature: Temperature setpoint (optional)
+            heating_setpoint: Heating setpoint (optional)
+            cooling_setpoint: Cooling setpoint (optional)
             humidity: Humidity setpoint (optional)
             co2: CO2 setpoint (optional)
             vpd: VPD setpoint (optional)
@@ -1088,7 +1362,7 @@ class DatabaseManager:
                 async with conn.transaction():
                     # Get latest existing setpoints for this mode (or mode=NULL for legacy) within transaction
                     row = await conn.fetchrow("""
-                        SELECT temperature, humidity, co2, vpd, mode
+                        SELECT heating_setpoint, cooling_setpoint, humidity, co2, vpd, mode, ramp_in_duration
                         FROM setpoints
                         WHERE location = $1 AND cluster = $2 AND (mode = $3 OR (mode IS NULL AND $3 IS NULL))
                         ORDER BY updated_at DESC
@@ -1097,39 +1371,37 @@ class DatabaseManager:
                     
                     if row:
                         existing = {
-                            'temperature': row['temperature'],
+                            'heating_setpoint': row['heating_setpoint'],
+                            'cooling_setpoint': row['cooling_setpoint'],
                             'humidity': row['humidity'],
                             'co2': row['co2'],
                             'vpd': row['vpd'],
-                            'mode': row['mode']
+                            'mode': row['mode'],
+                            'ramp_in_duration': row['ramp_in_duration']
                         }
                     
                     # Merge incoming values with latest existing so we always insert a complete row
-                    temp = temperature if temperature is not None else (existing.get('temperature') if existing else None)
+                    heat = heating_setpoint if heating_setpoint is not None else (existing.get('heating_setpoint') if existing else None)
+                    cool = cooling_setpoint if cooling_setpoint is not None else (existing.get('cooling_setpoint') if existing else None)
                     hum = humidity if humidity is not None else (existing.get('humidity') if existing else None)
                     co2_val = co2 if co2 is not None else (existing.get('co2') if existing else None)
                     vpd_val = vpd if vpd is not None else (existing.get('vpd') if existing else None)
+                    ramp_in = ramp_in_duration if ramp_in_duration is not None else (existing.get('ramp_in_duration') if existing else None)
                     
                     # Insert a new row to preserve history (no overwrite)
                     await conn.execute("""
-                        INSERT INTO setpoints (location, cluster, temperature, humidity, co2, vpd, mode, updated_at)
-                        VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
-                    """, location, cluster, temp, hum, co2_val, vpd_val, db_mode)
+                        INSERT INTO setpoints (location, cluster, heating_setpoint, cooling_setpoint, humidity, co2, vpd, mode, ramp_in_duration, updated_at)
+                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
+                    """, location, cluster, heat, cool, hum, co2_val, vpd_val, db_mode, ramp_in)
                     
                     # Log to setpoint_history for time-series queries (Grafana)
                     await conn.execute("""
-                        INSERT INTO setpoint_history (timestamp, location, cluster, mode, temperature, humidity, co2, vpd)
-                        VALUES (NOW(), $1, $2, $3, $4, $5, $6, $7)
-                    """, location, cluster, db_mode, temp, hum, co2_val, vpd_val)
+                        INSERT INTO setpoint_history (timestamp, location, cluster, mode, heating_setpoint, cooling_setpoint, humidity, co2, vpd)
+                        VALUES (NOW(), $1, $2, $3, $4, $5, $6, $7, $8)
+                    """, location, cluster, db_mode, heat, cool, hum, co2_val, vpd_val)
                 
-                # Write to Redis with source tracking (only for legacy mode=NULL)
-                # This happens after the transaction commits successfully
-                if db_mode is None and self._automation_redis and self._automation_redis.redis_enabled:
-                    self._automation_redis.write_setpoint(
-                        location, cluster,
-                        temp, hum, co2_val,
-                        source=source
-                    )
+                # Note: User-set (nominal) setpoints are NOT written to Redis
+                # Only effective setpoints (computed at runtime) are written to Redis
                 
                 return True
         except asyncpg.PostgresConnectionError as e:
@@ -1140,6 +1412,148 @@ class DatabaseManager:
             return False
         except Exception as e:
             logger.error(f"Error setting setpoint: {e}", exc_info=True)
+            return False
+    
+    async def log_effective_setpoint(
+        self,
+        location: str,
+        cluster: str,
+        mode: Optional[str],
+        heating_setpoint: Optional[float] = None,
+        cooling_setpoint: Optional[float] = None,
+        humidity: Optional[float] = None,
+        co2: Optional[float] = None,
+        vpd: Optional[float] = None,
+        timestamp: Optional[datetime] = None
+    ) -> bool:
+        """Log effective setpoint to setpoint_history (for ramp tracking).
+        
+        .. deprecated:: Use log_effective_setpoints (plural) instead.
+        
+        This is called during ramps to log the effective setpoint at each change.
+        This method is deprecated in favor of log_effective_setpoints which logs
+        both heating and cooling setpoints together at the location/cluster level.
+        
+        Args:
+            location: Location name
+            cluster: Cluster name
+            mode: Mode (DAY/NIGHT/PRE_DAY/PRE_NIGHT/TRANSITION) or None
+            heating_setpoint: Effective heating setpoint
+            cooling_setpoint: Effective cooling setpoint
+            humidity: Effective humidity setpoint
+            co2: Effective CO2 setpoint
+            vpd: Effective VPD setpoint
+            timestamp: Timestamp (default: NOW())
+        
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            pool = await self._get_pool()
+            async with pool.acquire() as conn:
+                db_mode = mode if mode else None
+                ts = timestamp or datetime.now()
+                
+                await conn.execute("""
+                    INSERT INTO setpoint_history (timestamp, location, cluster, mode, heating_setpoint, cooling_setpoint, humidity, co2, vpd)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                """, ts, location, cluster, db_mode, heating_setpoint, cooling_setpoint, humidity, co2, vpd)
+                
+                return True
+        except Exception as e:
+            logger.error(f"Error logging effective setpoint: {e}")
+            return False
+    
+    async def log_effective_setpoints(
+        self,
+        location: str,
+        cluster: str,
+        mode: Optional[str],
+        effective_heating_setpoint: Optional[float] = None,
+        effective_cooling_setpoint: Optional[float] = None,
+        effective_humidity_setpoint: Optional[float] = None,
+        effective_co2_setpoint: Optional[float] = None,
+        effective_vpd_setpoint: Optional[float] = None,
+        nominal_heating_setpoint: Optional[float] = None,
+        nominal_cooling_setpoint: Optional[float] = None,
+        nominal_humidity_setpoint: Optional[float] = None,
+        nominal_co2_setpoint: Optional[float] = None,
+        nominal_vpd_setpoint: Optional[float] = None,
+        ramp_progress_heating: Optional[float] = None,
+        ramp_progress_cooling: Optional[float] = None,
+        ramp_progress_humidity: Optional[float] = None,
+        ramp_progress_co2: Optional[float] = None,
+        ramp_progress_vpd: Optional[float] = None,
+        timestamp: Optional[datetime] = None
+    ) -> bool:
+        """Log effective setpoints to effective_setpoints table.
+        
+        This method logs both effective and nominal setpoints at the location/cluster
+        level, along with ramp progress information. Called at every control step to
+        provide a complete historical record of what the system was targeting.
+        
+        Args:
+            location: Location name
+            cluster: Cluster name
+            mode: Current mode (DAY/NIGHT/PRE_DAY/PRE_NIGHT) or None
+            effective_heating_setpoint: Effective heating setpoint value (actual value being used)
+            effective_cooling_setpoint: Effective cooling setpoint value (actual value being used)
+            effective_humidity_setpoint: Effective humidity setpoint value (actual value being used)
+            effective_co2_setpoint: Effective CO2 setpoint value (actual value being used)
+            effective_vpd_setpoint: Effective VPD setpoint value (actual value being used)
+            nominal_heating_setpoint: Nominal heating setpoint from database (reference value)
+            nominal_cooling_setpoint: Nominal cooling setpoint from database (reference value)
+            nominal_humidity_setpoint: Nominal humidity setpoint from database (reference value)
+            nominal_co2_setpoint: Nominal CO2 setpoint from database (reference value)
+            nominal_vpd_setpoint: Nominal VPD setpoint from database (reference value)
+            ramp_progress_heating: Ramp progress for heating (0.0-1.0 or None if not ramping)
+            ramp_progress_cooling: Ramp progress for cooling (0.0-1.0 or None if not ramping)
+            ramp_progress_humidity: Ramp progress for humidity (0.0-1.0 or None if not ramping)
+            ramp_progress_co2: Ramp progress for CO2 (0.0-1.0 or None if not ramping)
+            ramp_progress_vpd: Ramp progress for VPD (0.0-1.0 or None if not ramping)
+            timestamp: Optional timestamp (defaults to NOW())
+        
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            pool = await self._get_pool()
+            async with pool.acquire() as conn:
+                ts = timestamp or datetime.now()
+                db_mode = mode if mode else None
+                
+                await conn.execute("""
+                    INSERT INTO effective_setpoints 
+                    (timestamp, location, cluster, mode, 
+                     effective_heating_setpoint, effective_cooling_setpoint,
+                     effective_humidity_setpoint, effective_co2_setpoint, effective_vpd_setpoint,
+                     nominal_heating_setpoint, nominal_cooling_setpoint,
+                     nominal_humidity_setpoint, nominal_co2_setpoint, nominal_vpd_setpoint,
+                     ramp_progress_heating, ramp_progress_cooling,
+                     ramp_progress_humidity, ramp_progress_co2, ramp_progress_vpd)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+                """, ts, location, cluster, db_mode,
+                    effective_heating_setpoint, effective_cooling_setpoint,
+                    effective_humidity_setpoint, effective_co2_setpoint, effective_vpd_setpoint,
+                    nominal_heating_setpoint, nominal_cooling_setpoint,
+                    nominal_humidity_setpoint, nominal_co2_setpoint, nominal_vpd_setpoint,
+                    ramp_progress_heating, ramp_progress_cooling,
+                    ramp_progress_humidity, ramp_progress_co2, ramp_progress_vpd)
+                
+                # Write effective setpoints to Redis for fast access
+                if self._automation_redis and self._automation_redis.redis_enabled:
+                    self._automation_redis.write_effective_setpoints(
+                        location, cluster,
+                        effective_heating_setpoint,
+                        effective_cooling_setpoint,
+                        effective_humidity_setpoint,
+                        effective_co2_setpoint,
+                        effective_vpd_setpoint
+                    )
+                
+                return True
+        except Exception as e:
+            logger.error(f"Error logging effective setpoints: {e}")
             return False
     
     async def get_all_setpoints_for_location_cluster(self, location: str, cluster: str) -> List[Dict[str, Any]]:
@@ -1156,7 +1570,7 @@ class DatabaseManager:
             pool = await self._get_pool()
             async with pool.acquire() as conn:
                 rows = await conn.fetch("""
-                    SELECT DISTINCT ON (mode) temperature, humidity, co2, vpd, mode, updated_at
+                    SELECT DISTINCT ON (mode) heating_setpoint, cooling_setpoint, humidity, co2, vpd, mode, updated_at
                     FROM setpoints
                     WHERE location = $1 AND cluster = $2
                     ORDER BY mode NULLS FIRST, updated_at DESC
@@ -1164,7 +1578,8 @@ class DatabaseManager:
                 
                 return [
                     {
-                        'temperature': row['temperature'],
+                        'heating_setpoint': row['heating_setpoint'],
+                        'cooling_setpoint': row['cooling_setpoint'],
                         'humidity': row['humidity'],
                         'co2': row['co2'],
                         'vpd': row['vpd'],
@@ -1454,7 +1869,8 @@ class DatabaseManager:
                     rows = await conn.fetch("""
                         SELECT id, name, location, cluster, device_name, day_of_week,
                                start_time, end_time, enabled, mode, target_intensity,
-                               ramp_up_duration, ramp_down_duration, created_at
+                               ramp_up_duration, ramp_down_duration, pre_day_duration,
+                               pre_night_duration, created_at
                         FROM schedules
                         WHERE location = $1 AND cluster = $2
                         ORDER BY start_time
@@ -1463,7 +1879,8 @@ class DatabaseManager:
                     rows = await conn.fetch("""
                         SELECT id, name, location, cluster, device_name, day_of_week,
                                start_time, end_time, enabled, mode, target_intensity,
-                               ramp_up_duration, ramp_down_duration, created_at
+                               ramp_up_duration, ramp_down_duration, pre_day_duration,
+                               pre_night_duration, created_at
                         FROM schedules
                         WHERE location = $1
                         ORDER BY start_time
@@ -1472,7 +1889,8 @@ class DatabaseManager:
                     rows = await conn.fetch("""
                         SELECT id, name, location, cluster, device_name, day_of_week,
                                start_time, end_time, enabled, mode, target_intensity,
-                               ramp_up_duration, ramp_down_duration, created_at
+                               ramp_up_duration, ramp_down_duration, pre_day_duration,
+                               pre_night_duration, created_at
                         FROM schedules
                         ORDER BY location, cluster, start_time
                     """)
@@ -1480,6 +1898,94 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Error getting schedules: {e}")
             return []
+    
+    async def get_climate_schedule(
+        self,
+        location: str,
+        cluster: str
+    ) -> Optional[Dict[str, Any]]:
+        """Get climate schedule data (pre-day/pre-night durations) for a location/cluster.
+        
+        Climate schedules are stored in schedules table with pre_day_duration/pre_night_duration.
+        This method finds the first schedule with these fields set (or returns defaults).
+        
+        Args:
+            location: Location name
+            cluster: Cluster name
+        
+        Returns:
+            Dict with pre_day_duration, pre_night_duration, day_start_time, day_end_time
+            or None if not found
+        """
+        try:
+            pool = await self._get_pool()
+            async with pool.acquire() as conn:
+                # Get climate schedule (any schedule with pre_day_duration or pre_night_duration set)
+                row = await conn.fetchrow("""
+                    SELECT pre_day_duration, pre_night_duration
+                    FROM schedules
+                    WHERE location = $1 AND cluster = $2
+                      AND (pre_day_duration IS NOT NULL OR pre_night_duration IS NOT NULL)
+                    ORDER BY updated_at DESC
+                    LIMIT 1
+                """, location, cluster)
+                
+                if row:
+                    return {
+                        'pre_day_duration': row['pre_day_duration'] or 0,
+                        'pre_night_duration': row['pre_night_duration'] or 0
+                    }
+                
+                # If no climate schedule found, return defaults
+                return {
+                    'pre_day_duration': 0,
+                    'pre_night_duration': 0
+                }
+        except Exception as e:
+            logger.error(f"Error getting climate schedule: {e}")
+            return {
+                'pre_day_duration': 0,
+                'pre_night_duration': 0
+            }
+    
+    async def get_light_schedule(
+        self,
+        location: str,
+        cluster: str
+    ) -> Optional[Dict[str, Any]]:
+        """Get light schedule (day start/end times) for a location/cluster.
+        
+        Finds the first enabled DAY mode schedule for any light device.
+        
+        Args:
+            location: Location name
+            cluster: Cluster name
+        
+        Returns:
+            Dict with day_start_time, day_end_time or None if not found
+        """
+        try:
+            pool = await self._get_pool()
+            async with pool.acquire() as conn:
+                # Get first enabled DAY mode schedule (for lights)
+                row = await conn.fetchrow("""
+                    SELECT start_time, end_time
+                    FROM schedules
+                    WHERE location = $1 AND cluster = $2
+                      AND enabled = TRUE
+                      AND mode = 'DAY'
+                    ORDER BY start_time
+                    LIMIT 1
+                """, location, cluster)
+                
+                if row:
+                    return {
+                        'day_start_time': str(row['start_time']),
+                        'day_end_time': str(row['end_time'])
+                    }
+        except Exception as e:
+            logger.error(f"Error getting light schedule: {e}")
+        return None
     
     async def create_schedule(
         self,

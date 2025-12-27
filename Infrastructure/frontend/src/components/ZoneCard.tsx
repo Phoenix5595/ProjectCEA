@@ -50,10 +50,16 @@ export default function ZoneCard({ zone, devices, schedule, setpoints }: ZoneCar
             <div className="mb-4 pb-3 border-b border-gray-200">
               <div className="text-xs font-medium text-blue-600 mb-2">DAY</div>
               <div className="grid grid-cols-2 gap-3">
-                {setpoints.day.temperature !== null && setpoints.day.temperature !== undefined && (
+                {setpoints.day.heating_setpoint !== null && setpoints.day.heating_setpoint !== undefined && (
                   <div>
-                    <div className="text-xs text-gray-600 mb-1">Temperature</div>
-                    <div className="text-lg font-bold text-gray-900">{formatTemperature(setpoints.day.temperature)}</div>
+                    <div className="text-xs text-gray-600 mb-1">Heating Setpoint</div>
+                    <div className="text-lg font-bold text-gray-900">{formatTemperature(setpoints.day.heating_setpoint)}</div>
+                  </div>
+                )}
+                {setpoints.day.cooling_setpoint !== null && setpoints.day.cooling_setpoint !== undefined && (
+                  <div>
+                    <div className="text-xs text-gray-600 mb-1">Cooling Setpoint</div>
+                    <div className="text-lg font-bold text-gray-900">{formatTemperature(setpoints.day.cooling_setpoint)}</div>
                   </div>
                 )}
                 {setpoints.day.humidity !== null && setpoints.day.humidity !== undefined && (
@@ -82,10 +88,16 @@ export default function ZoneCard({ zone, devices, schedule, setpoints }: ZoneCar
             <div>
               <div className="text-xs font-medium text-indigo-600 mb-2">NIGHT</div>
               <div className="grid grid-cols-2 gap-3">
-                {setpoints.night.temperature !== null && setpoints.night.temperature !== undefined && (
+                {setpoints.night.heating_setpoint !== null && setpoints.night.heating_setpoint !== undefined && (
                   <div>
-                    <div className="text-xs text-gray-600 mb-1">Temperature</div>
-                    <div className="text-lg font-bold text-gray-900">{formatTemperature(setpoints.night.temperature)}</div>
+                    <div className="text-xs text-gray-600 mb-1">Heating Setpoint</div>
+                    <div className="text-lg font-bold text-gray-900">{formatTemperature(setpoints.night.heating_setpoint)}</div>
+                  </div>
+                )}
+                {setpoints.night.cooling_setpoint !== null && setpoints.night.cooling_setpoint !== undefined && (
+                  <div>
+                    <div className="text-xs text-gray-600 mb-1">Cooling Setpoint</div>
+                    <div className="text-lg font-bold text-gray-900">{formatTemperature(setpoints.night.cooling_setpoint)}</div>
                   </div>
                 )}
                 {setpoints.night.humidity !== null && setpoints.night.humidity !== undefined && (

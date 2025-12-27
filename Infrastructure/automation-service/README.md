@@ -129,16 +129,23 @@ Live, volatile state storage. Redis is the "truth of now."
 Persistent configuration storage. Survives reboots and provides audit trail.
 
 **Contains:**
-- Setpoints (temperature, humidity, CO₂, VPD per location/cluster, per mode)
+- Setpoints (heating_setpoint, cooling_setpoint, humidity, CO₂, VPD per location/cluster, per mode)
 - Schedules (time-based mode transitions)
 - PID constants (Kp, Ki, Kd per device type)
 - Safety limits
 - Zone definitions
 
+**Setpoints**: 
+- `heating_setpoint`: Target temperature for heating devices (heaters)
+- `cooling_setpoint`: Target temperature for cooling devices (extraction fans)
+- Both are optional and can be configured independently
+
 **VPD Setpoints**: VPD (Vapor Pressure Deficit) is calculated from temperature and relative humidity, but controlled via dehumidifying devices (fans, extraction fans, dehumidifiers). When VPD is below setpoint, dehumidifying devices turn ON.
 
+**Priority-Based Multi-Setpoint Control**: Devices can use multiple setpoints with priorities (lower number = higher priority). Only the highest-priority active PID drives the actuator, preventing conflicts. Configure via `pid_setpoints` in device config.
+
 **Tables:**
-- `setpoints` - Setpoints per location/cluster/mode (mode can be NULL for legacy setpoints). Includes temperature, humidity, CO₂, and VPD setpoints.
+- `setpoints` - Setpoints per location/cluster/mode (mode can be NULL for legacy setpoints). Includes heating_setpoint, cooling_setpoint, humidity, CO₂, and VPD setpoints.
 - `schedules` - Time-based schedules with mode field (DAY/NIGHT/TRANSITION)
 - `pid_parameters` - PID constants per device type
 - `config_versions` - Audit trail of all config changes (version_id, timestamp, author, comment, changes)

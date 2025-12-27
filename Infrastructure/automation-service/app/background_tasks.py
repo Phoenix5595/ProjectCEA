@@ -194,19 +194,19 @@ class BackgroundTasks:
                         # Get all distinct location/cluster/mode combinations with latest setpoints
                         rows = await conn.fetch("""
                             SELECT DISTINCT ON (location, cluster, mode)
-                                location, cluster, mode, temperature, humidity, co2, vpd
+                                location, cluster, mode, heating_setpoint, cooling_setpoint, humidity, co2, vpd
                             FROM setpoints
-                            WHERE temperature IS NOT NULL OR humidity IS NOT NULL OR co2 IS NOT NULL OR vpd IS NOT NULL
+                            WHERE heating_setpoint IS NOT NULL OR cooling_setpoint IS NOT NULL OR humidity IS NOT NULL OR co2 IS NOT NULL OR vpd IS NOT NULL
                             ORDER BY location, cluster, mode, updated_at DESC
                         """)
                         
                         # Insert current setpoints into history
                         for row in rows:
                             await conn.execute("""
-                                INSERT INTO setpoint_history (timestamp, location, cluster, mode, temperature, humidity, co2, vpd)
-                                VALUES (NOW(), $1, $2, $3, $4, $5, $6, $7)
+                                INSERT INTO setpoint_history (timestamp, location, cluster, mode, heating_setpoint, cooling_setpoint, humidity, co2, vpd)
+                                VALUES (NOW(), $1, $2, $3, $4, $5, $6, $7, $8)
                             """, row['location'], row['cluster'], row['mode'], 
-                                row['temperature'], row['humidity'], row['co2'], row['vpd'])
+                                row['heating_setpoint'], row['cooling_setpoint'], row['humidity'], row['co2'], row['vpd'])
                         
                         if rows:
                             logger.debug(f"Logged {len(rows)} setpoint snapshots to history")

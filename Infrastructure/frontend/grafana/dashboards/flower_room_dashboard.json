@@ -510,7 +510,7 @@
         {
           "format": "time_series",
           "hide": false,
-          "rawSql": "WITH filtered_setpoints AS (\n  SELECT \n    sh.timestamp,\n    sh.temperature\n  FROM setpoint_history sh\n  WHERE sh.location = 'Flower Room' \n    AND sh.cluster = 'main' \n    AND sh.temperature IS NOT NULL\n    AND sh.timestamp >= $__timeFrom()\n    AND sh.timestamp <= $__timeTo()\n    AND (\n      (sh.mode = 'DAY' AND EXISTS (\n        SELECT 1 FROM schedules s\n        WHERE s.location = 'Flower Room'\n          AND s.cluster = 'main'\n          AND s.mode = 'DAY'\n          AND s.enabled = true\n          AND (s.day_of_week IS NULL OR s.day_of_week = EXTRACT(DOW FROM sh.timestamp))\n          AND (\n            (s.start_time <= s.end_time AND sh.timestamp::time >= s.start_time AND sh.timestamp::time < s.end_time)\n            OR (s.start_time > s.end_time AND (sh.timestamp::time >= s.start_time OR sh.timestamp::time < s.end_time))\n          )\n      ))\n      OR\n      (sh.mode = 'NIGHT' AND NOT EXISTS (\n        SELECT 1 FROM schedules s\n        WHERE s.location = 'Flower Room'\n          AND s.cluster = 'main'\n          AND s.mode = 'DAY'\n          AND s.enabled = true\n          AND (s.day_of_week IS NULL OR s.day_of_week = EXTRACT(DOW FROM sh.timestamp))\n          AND (\n            (s.start_time <= s.end_time AND sh.timestamp::time >= s.start_time AND sh.timestamp::time < s.end_time)\n            OR (s.start_time > s.end_time AND (sh.timestamp::time >= s.start_time OR sh.timestamp::time < s.end_time))\n          )\n      ))\n    )\n),\nlast_setpoint AS (\n  SELECT temperature, timestamp\n  FROM filtered_setpoints\n  ORDER BY timestamp DESC\n  LIMIT 1\n)\nSELECT timestamp AS \"time\", 'Temp Setpoint - Main' AS metric, temperature AS value\nFROM filtered_setpoints\nUNION ALL\nSELECT $__timeTo() AS \"time\", 'Temp Setpoint - Main' AS metric, temperature AS value\nFROM last_setpoint\nWHERE temperature IS NOT NULL\nORDER BY \"time\"",
+          "rawSql": "WITH filtered_setpoints AS (\n  SELECT \n    es.timestamp,\n    es.effective_heating_setpoint AS heating_setpoint\n  FROM effective_setpoints es\n  WHERE es.location = 'Flower Room' \n    AND es.cluster = 'main' \n    AND es.effective_heating_setpoint IS NOT NULL\n    AND es.timestamp >= $__timeFrom()\n    AND es.timestamp <= $__timeTo()\n    AND (\n      (es.mode = 'DAY' AND EXISTS (\n        SELECT 1 FROM schedules s\n        WHERE s.location = 'Flower Room'\n          AND s.cluster = 'main'\n          AND s.mode = 'DAY'\n          AND s.enabled = true\n          AND (s.day_of_week IS NULL OR s.day_of_week = EXTRACT(DOW FROM es.timestamp))\n          AND (\n            (s.start_time <= s.end_time AND es.timestamp::time >= s.start_time AND es.timestamp::time < s.end_time)\n            OR (s.start_time > s.end_time AND (es.timestamp::time >= s.start_time OR es.timestamp::time < s.end_time))\n          )\n      ))\n      OR\n      (es.mode = 'NIGHT' AND NOT EXISTS (\n        SELECT 1 FROM schedules s\n        WHERE s.location = 'Flower Room'\n          AND s.cluster = 'main'\n          AND s.mode = 'DAY'\n          AND s.enabled = true\n          AND (s.day_of_week IS NULL OR s.day_of_week = EXTRACT(DOW FROM es.timestamp))\n          AND (\n            (s.start_time <= s.end_time AND es.timestamp::time >= s.start_time AND es.timestamp::time < s.end_time)\n            OR (s.start_time > s.end_time AND (es.timestamp::time >= s.start_time OR es.timestamp::time < s.end_time))\n          )\n      ))\n    )\n),\nlast_setpoint AS (\n  SELECT heating_setpoint, timestamp\n  FROM filtered_setpoints\n  ORDER BY timestamp DESC\n  LIMIT 1\n)\nSELECT timestamp AS \"time\", 'Heating Setpoint - Main' AS metric, heating_setpoint AS value\nFROM filtered_setpoints\nUNION ALL\nSELECT $__timeTo() AS \"time\", 'Heating Setpoint - Main' AS metric, heating_setpoint AS value\nFROM last_setpoint\nWHERE heating_setpoint IS NOT NULL\nORDER BY \"time\"",
           "refId": "B"
         },
         {
@@ -927,6 +927,125 @@
         }
       ],
       "title": "Statistics - Main Graph Sensors",
+      "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "bf6vebq5ipybke"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "footer": {
+              "reducers": []
+            },
+            "inspect": false
+          },
+          "decimals": 2,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Sensor"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 250
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Min"
+            },
+            "properties": [
+              {
+                "id": "decimals",
+                "value": 2
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Max"
+            },
+            "properties": [
+              {
+                "id": "decimals",
+                "value": 2
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Average"
+            },
+            "properties": [
+              {
+                "id": "decimals",
+                "value": 2
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Std Dev"
+            },
+            "properties": [
+              {
+                "id": "decimals",
+                "value": 2
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 40
+      },
+      "id": 7,
+      "options": {
+        "cellHeight": "sm",
+        "showHeader": true,
+        "sortBy": []
+      },
+      "pluginVersion": "12.3.1",
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT CASE sensor_name WHEN 'dry_bulb_f' THEN 'Dry Bulb (°C) - Front' WHEN 'dry_bulb_b' THEN 'Dry Bulb (°C) - Back' WHEN 'wet_bulb_f' THEN 'Wet Bulb (°C) - Front' WHEN 'wet_bulb_b' THEN 'Wet Bulb (°C) - Back' WHEN 'rh_f' THEN 'RH (%) - Front' WHEN 'rh_b' THEN 'RH (%) - Back' WHEN 'vpd_f' THEN 'VPD (kPa) - Front' WHEN 'vpd_b' THEN 'VPD (kPa) - Back' WHEN 'co2_f' THEN 'CO2 (ppm) - Front' WHEN 'co2_b' THEN 'CO2 (ppm) - Back' WHEN 'pressure_f' THEN 'Pressure (hPa) - Front' WHEN 'pressure_b' THEN 'Pressure (hPa) - Back' WHEN 'secondary_temp_f' THEN 'Secondary Temp (°C) - Front' WHEN 'secondary_temp_b' THEN 'Secondary Temp (°C) - Back' WHEN 'secondary_rh_f' THEN 'Secondary RH (%) - Front' WHEN 'secondary_rh_b' THEN 'Secondary RH (%) - Back' WHEN 'water_level_f' THEN 'Water Level (mm) - Front' WHEN 'water_level_b' THEN 'Water Level (mm) - Back' ELSE sensor_name END AS \\\"Sensor\\\", MIN(value) AS \\\"Min\\\", MAX(value) AS \\\"Max\\\", AVG(value) AS \\\"Average\\\", STDDEV(value) AS \\\"Std Dev\\\" FROM measurement_with_metadata WHERE time >= $__timeFrom() AND time <= $__timeTo() GROUP BY sensor_name ORDER BY CASE WHEN sensor_name LIKE 'dry_bulb%' THEN 1 WHEN sensor_name LIKE 'wet_bulb%' THEN 2 WHEN sensor_name LIKE 'rh%' AND sensor_name NOT LIKE 'secondary_rh%' THEN 3 WHEN sensor_name LIKE 'vpd%' THEN 4 WHEN sensor_name LIKE 'co2%' THEN 5 WHEN sensor_name LIKE 'pressure%' THEN 6 WHEN sensor_name LIKE 'secondary_temp%' THEN 7 WHEN sensor_name LIKE 'secondary_rh%' THEN 8 WHEN sensor_name LIKE 'water_level%' THEN 9 ELSE 10 END, sensor_name",
+          "refId": "A"
+        }
+      ],
+      "title": "Statistics - All Available Sensors",
       "type": "table"
     }
   ],

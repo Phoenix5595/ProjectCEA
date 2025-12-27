@@ -149,6 +149,61 @@ class ConfigLoader:
         
         return {'kp': kp, 'ki': ki, 'kd': kd}
     
+    def get_pid_setpoints_for_device(
+        self,
+        location: str,
+        cluster: str,
+        device_name: str,
+        device_type: str
+    ) -> List[tuple]:
+        """Get PID setpoints for a device with priorities.
+        
+        Args:
+            location: Location name
+            cluster: Cluster name
+            device_name: Device name
+            device_type: Device type (e.g., 'heater', 'fan', 'co2')
+        
+        Returns:
+            List of (setpoint_type, priority) tuples sorted by priority (ascending)
+            Lower priority number = higher priority
+        """
+        devices = self.get_devices()
+        device_info = devices.get(location, {}).get(cluster, {}).get(device_name, {})
+        
+        # Check if pid_setpoints is explicitly configured
+        pid_setpoints = device_info.get('pid_setpoints')
+        
+        if pid_setpoints:
+            # Validate that it's a dict with integer priorities
+            if not isinstance(pid_setpoints, dict):
+                logger.warning(f"Invalid pid_setpoints format for {location}/{cluster}/{device_name}, using defaults")
+                pid_setpoints = None
+            else:
+                # Validate priorities are positive integers
+                for setpoint_type, priority in pid_setpoints.items():
+                    if not isinstance(priority, int) or priority < 1:
+                        logger.warning(f"Invalid priority {priority} for {setpoint_type} in {location}/{cluster}/{device_name}, using defaults")
+                        pid_setpoints = None
+                        break
+        
+        # Use defaults if not configured
+        if not pid_setpoints:
+            if device_type == 'heater':
+                pid_setpoints = {'heating_setpoint': 1}
+            elif device_type == 'fan':
+                pid_setpoints = {'cooling_setpoint': 1}
+            elif device_type == 'co2':
+                pid_setpoints = {'co2': 1}
+            else:
+                # Unknown device type, return empty list
+                logger.warning(f"No default pid_setpoints for device_type '{device_type}', returning empty list")
+                return []
+        
+        # Sort by priority (ascending: lower number = higher priority)
+        sorted_setpoints = sorted(pid_setpoints.items(), key=lambda x: x[1])
+        return sorted_setpoints
+    
     def reload(self) -> None:
         """Reload configuration from files (incremental reload)."""
         old_config = self._config.copy()

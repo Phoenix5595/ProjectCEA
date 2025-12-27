@@ -15,11 +15,13 @@ router = APIRouter()
 
 
 class SetpointUpdate(BaseModel):
-    temperature: Optional[float] = None
+    heating_setpoint: Optional[float] = None
+    cooling_setpoint: Optional[float] = None
     humidity: Optional[float] = None
     co2: Optional[float] = None
     vpd: Optional[float] = None
     mode: Optional[str] = None
+    ramp_in_duration: Optional[int] = None  # Minutes to ramp in when entering this mode (0 = instant)
 
 
 # This will be overridden by main app
@@ -73,7 +75,8 @@ async def get_setpoints(
         # Return empty setpoint object instead of 404, so frontend can always display the form
         # This allows the form to show empty fields when no setpoint exists yet
         return {
-            'temperature': None,
+            'heating_setpoint': None,
+            'cooling_setpoint': None,
             'humidity': None,
             'co2': None,
             'vpd': None,
@@ -127,8 +130,13 @@ async def update_setpoints(
     # Validate setpoints if provided
     validation_errors = []
     
-    if setpoints.temperature is not None:
-        is_valid, error = validate_setpoint('temperature', setpoints.temperature, config)
+    if setpoints.heating_setpoint is not None:
+        is_valid, error = validate_setpoint('temperature', setpoints.heating_setpoint, config)
+        if not is_valid:
+            validation_errors.append(error)
+    
+    if setpoints.cooling_setpoint is not None:
+        is_valid, error = validate_setpoint('temperature', setpoints.cooling_setpoint, config)
         if not is_valid:
             validation_errors.append(error)
     
@@ -154,20 +162,36 @@ async def update_setpoints(
     existing = await database.get_setpoint(location, cluster, setpoints.mode)
     
     # Merge with existing values
-    final_temp = setpoints.temperature if setpoints.temperature is not None else (existing.get('temperature') if existing else None)
+    final_heat = setpoints.heating_setpoint if setpoints.heating_setpoint is not None else (existing.get('heating_setpoint') if existing else None)
+    final_cool = setpoints.cooling_setpoint if setpoints.cooling_setpoint is not None else (existing.get('cooling_setpoint') if existing else None)
     final_hum = setpoints.humidity if setpoints.humidity is not None else (existing.get('humidity') if existing else None)
     final_co2 = setpoints.co2 if setpoints.co2 is not None else (existing.get('co2') if existing else None)
     final_vpd = setpoints.vpd if setpoints.vpd is not None else (existing.get('vpd') if existing else None)
+    final_ramp_in = setpoints.ramp_in_duration if setpoints.ramp_in_duration is not None else (existing.get('ramp_in_duration') if existing else None)
+    
+    # Validate ramp_in_duration if provided
+    if final_ramp_in is not None and (final_ramp_in < 0 or final_ramp_in > 240):
+        raise HTTPException(
+            status_code=400,
+            detail="ramp_in_duration must be between 0 and 240 minutes"
+        )
+    
+    # VPD ramp warning
+    warnings = []
+    if final_vpd is not None and final_ramp_in and final_ramp_in > 15:
+        warnings.append(f"VPD ramp_in_duration is {final_ramp_in} minutes (>15 min). This may cause stomatal shock, humidity overshoot, or condensation events.")
     
     # Write to database and Redis with source='api'
     try:
         success = await database.set_setpoint(
             location, cluster,
-            final_temp,
+            final_heat,
+            final_cool,
             final_hum,
             final_co2,
             final_vpd,
             setpoints.mode,
+            final_ramp_in,
             source='api'
         )
         
@@ -196,10 +220,15 @@ async def update_setpoints(
     # Log to config_versions for audit trail
     # Calculate changes dictionary with old/new values for fields that changed
     changes = {}
-    if setpoints.temperature is not None:
-        old_temp = existing.get('temperature') if existing else None
-        if old_temp != final_temp:
-            changes['temperature'] = {'old': old_temp, 'new': final_temp}
+    if setpoints.heating_setpoint is not None:
+        old_heat = existing.get('heating_setpoint') if existing else None
+        if old_heat != final_heat:
+            changes['heating_setpoint'] = {'old': old_heat, 'new': final_heat}
+    
+    if setpoints.cooling_setpoint is not None:
+        old_cool = existing.get('cooling_setpoint') if existing else None
+        if old_cool != final_cool:
+            changes['cooling_setpoint'] = {'old': old_cool, 'new': final_cool}
     
     if setpoints.humidity is not None:
         old_hum = existing.get('humidity') if existing else None
@@ -221,6 +250,11 @@ async def update_setpoints(
         if old_mode != setpoints.mode:
             changes['mode'] = {'old': old_mode, 'new': setpoints.mode}
     
+    if setpoints.ramp_in_duration is not None:
+        old_ramp_in = existing.get('ramp_in_duration') if existing else None
+        if old_ramp_in != final_ramp_in:
+            changes['ramp_in_duration'] = {'old': old_ramp_in, 'new': final_ramp_in}
+    
     # Only log if there were actual changes
     if changes:
         mode_str = f" (mode: {setpoints.mode})" if setpoints.mode else ""
@@ -238,11 +272,14 @@ async def update_setpoints(
         "cluster": cluster,
         "mode": setpoints.mode,
         "setpoints": {
-            "temperature": final_temp,
+            "heating_setpoint": final_heat,
+            "cooling_setpoint": final_cool,
             "humidity": final_hum,
             "co2": final_co2,
-            "vpd": final_vpd
+            "vpd": final_vpd,
+            "ramp_in_duration": final_ramp_in
         },
+        "warnings": warnings,
         "success": True
     }
 
