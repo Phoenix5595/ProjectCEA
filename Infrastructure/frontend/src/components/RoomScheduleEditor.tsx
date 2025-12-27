@@ -118,7 +118,7 @@ export default function RoomScheduleEditor({ location, cluster, period }: RoomSc
   }
 
   if (loading) {
-    return <div className="text-gray-600">Loading schedule...</div>
+    return <div className="text-gray-600 dark:text-gray-400">Loading schedule...</div>
   }
 
   return (
@@ -153,11 +153,11 @@ export default function RoomScheduleEditor({ location, cluster, period }: RoomSc
               <button
                 onClick={handleSave}
                 disabled={saving}
-                className="bg-blue-700 text-white font-semibold px-6 py-2 rounded-md hover:bg-blue-800 disabled:opacity-50 disabled:cursor-not-allowed shadow-md"
+                className="bg-blue-700 dark:bg-blue-600 text-white font-semibold px-6 py-2 rounded-md hover:bg-blue-800 dark:hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-md"
               >
                 {saving ? 'Saving...' : 'Save Schedule'}
               </button>
-              <p className="text-xs text-gray-500 mt-2">
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
                 This will create schedules for all devices in this room. Existing schedules will be replaced.
               </p>
             </div>
@@ -190,11 +190,11 @@ export default function RoomScheduleEditor({ location, cluster, period }: RoomSc
               <button
                 onClick={handleSave}
                 disabled={saving}
-                className="bg-blue-700 text-white font-semibold px-6 py-2 rounded-md hover:bg-blue-800 disabled:opacity-50 disabled:cursor-not-allowed shadow-md"
+                className="bg-blue-700 dark:bg-blue-600 text-white font-semibold px-6 py-2 rounded-md hover:bg-blue-800 dark:hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-md"
               >
                 {saving ? 'Saving...' : 'Save Night Schedule'}
               </button>
-              <p className="text-xs text-gray-500 mt-2">
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
                 This will create schedules for all devices in this room. Existing schedules will be replaced.
               </p>
             </div>

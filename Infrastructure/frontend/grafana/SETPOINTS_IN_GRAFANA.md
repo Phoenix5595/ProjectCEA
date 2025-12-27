@@ -5,7 +5,7 @@ This guide documents how the `temperature_rh_vpd_with_setpoints.json` panel show
 ## What the panel does
 - Query A: sensor measurements (temperature, RH, VPD) from `measurement_with_metadata`.
 - Query B: effective heating setpoint for `location = 'Flower Room'`, `cluster = 'main'`, switching between DAY and NIGHT based on schedules. Uses `effective_setpoints` table which contains the actual setpoint values being used (accounting for ramp transitions).
-- Query C: VPD setpoint for the same room/cluster and schedule logic. Uses `setpoint_history` table (VPD setpoints are not tracked in `effective_setpoints`).
+- Query C: effective VPD setpoint for the same room/cluster and schedule logic. Uses `effective_setpoints` table which contains the actual VPD setpoint values being used (accounting for ramp transitions).
 - Query D: DAY overlay (yellow fill) so the active daylight period is visually highlighted.
 - Modes supported: `DAY`, `NIGHT`, `PRE_DAY`, `PRE_NIGHT`; `NULL`/`TRANSITION` are ignored.
 
@@ -23,11 +23,12 @@ The effective setpoint queries use the `effective_setpoints` table which logs th
 4. The `nominal_heating_setpoint` and `nominal_cooling_setpoint` columns contain the target values from the `setpoints` table (for reference).
 
 ### VPD Setpoints
-VPD setpoints use the `setpoint_history` table (legacy) since VPD is not tracked in `effective_setpoints`:
+VPD setpoints use the `effective_setpoints` table which contains the actual VPD setpoint values being used:
 
-1. Query `setpoint_history` table filtered by location, cluster, and time range.
+1. Query `effective_setpoints` table filtered by location, cluster, and time range.
 2. Filter by mode based on schedule matching (same logic as above).
-3. Results are dashed lines (red for temperature, blue for VPD). The overlay returns `100` during DAY and `NULL` otherwise and is styled as a translucent yellow fill.
+3. Use `effective_vpd_setpoint` column which contains the actual VPD setpoint value being used (accounting for ramp transitions).
+4. Results are dashed lines (red for temperature, blue for VPD). The overlay returns `100` during DAY and `NULL` otherwise and is styled as a translucent yellow fill.
 
 ### Key Differences
 - **Nominal setpoints** (`setpoints` table): Target values configured by user, unchanged during ramps.
@@ -36,8 +37,8 @@ VPD setpoints use the `setpoint_history` table (legacy) since VPD is not tracked
 
 ## Table expectations
 - `setpoints` (automation-service schema): `location`, `cluster` (here: `main`), `mode` (`DAY`/`NIGHT`/`PRE_DAY`/`PRE_NIGHT`), `heating_setpoint`, `cooling_setpoint`, `vpd`, `updated_at`. Contains nominal (target) setpoints.
-- `effective_setpoints` (automation-service schema): `location`, `cluster`, `mode`, `effective_heating_setpoint`, `effective_cooling_setpoint`, `nominal_heating_setpoint`, `nominal_cooling_setpoint`, `ramp_progress_heating`, `ramp_progress_cooling`, `timestamp`. Contains actual setpoints being used (accounting for ramps), logged at every control step.
-- `setpoint_history` (legacy): Historical setpoint changes, used for VPD setpoints and backward compatibility.
+- `effective_setpoints` (automation-service schema): `location`, `cluster`, `mode`, `effective_heating_setpoint`, `effective_cooling_setpoint`, `effective_vpd_setpoint`, `nominal_heating_setpoint`, `nominal_cooling_setpoint`, `nominal_vpd_setpoint`, `ramp_progress_heating`, `ramp_progress_cooling`, `ramp_progress_vpd`, `timestamp`. Contains actual setpoints being used (accounting for ramps), logged at every control step. Both heating and VPD effective setpoints are tracked.
+- `setpoint_history` (legacy): Historical setpoint changes, used for backward compatibility only.
 - `schedules`: `location`, `cluster`, `mode` (`DAY`/`NIGHT`), `enabled`, `start_time`, `end_time`, optional `day_of_week`.
 
 ## Using or adapting the panel

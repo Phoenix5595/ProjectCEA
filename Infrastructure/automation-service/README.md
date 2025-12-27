@@ -502,6 +502,8 @@ sudo journalctl -u automation-service.service -f
 sudo systemctl restart automation-service.service
 ```
 
+After rebuilding the frontend (served from `dist/`), restart this service so the new assets are served.
+
 ### Fixed Tick Rate
 
 The control loop runs at a fixed interval (configurable: 1-5 seconds, default: 2 seconds).
@@ -796,6 +798,11 @@ The automation service provides REST API endpoints for configuration management 
 - `GET /api/setpoints/{location}/{cluster}/all-modes` - Get all setpoints for all modes
 - `POST /api/setpoints/{location}/{cluster}` - Update setpoints (supports mode and vpd fields)
 
+**Setpoint Modes & Ramps (Climate):**
+- Supported modes: DAY, NIGHT, PRE_DAY, PRE_NIGHT.
+- `ramp_in_duration` validated 0-240 minutes; PRE_DAY/PRE_NIGHT take precedence during their periods.
+- Time strings accepted as `HH:MM` or `HH:MM:SS` and parsed server-side.
+
 **PID Parameters:**
 - `GET /api/pid/parameters/{device_type}` - Get PID parameters
 - `POST /api/pid/parameters/{device_type}` - Update PID parameters
@@ -834,6 +841,10 @@ The automation service integrates with:
 - **Frontend**: React frontend for configuration and monitoring (served from `Infrastructure/frontend/dist/`)
 
 **Note**: The automation service operates autonomously without external automation tools.
+
+## Schema Audit (current)
+
+- Reviewed `schedules`, `setpoints`, `pid_parameters`, `config_versions`, `effective_setpoints`. No unused tables/columns identified for removal. Keep `ramp_in_duration` on setpoints in sync with the UI.
 
 ## Summary
 

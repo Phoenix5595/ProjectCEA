@@ -37,47 +37,47 @@ export default function ZoneCard({ zone, devices, schedule, setpoints }: ZoneCar
   const zoneTitle = zone.cluster === 'main' ? displayLocation : `${displayLocation} - ${zone.cluster}`
 
   return (
-    <div className="bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition-shadow border border-gray-200">
-      <h2 className="text-xl font-bold mb-4 text-gray-900">
+    <div className="bg-white dark:bg-gray-900 rounded-lg shadow-md p-6 hover:shadow-lg transition-shadow border border-gray-200 dark:border-gray-800">
+      <h2 className="text-xl font-bold mb-4 text-gray-900 dark:text-gray-100">
         {zoneTitle}
       </h2>
       
       {setpoints && (setpoints.day || setpoints.night) && (
         <div className="mb-4">
-          <div className="text-sm font-semibold text-gray-700 mb-3">Setpoints</div>
+          <div className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Setpoints</div>
           
           {setpoints.day && (
-            <div className="mb-4 pb-3 border-b border-gray-200">
-              <div className="text-xs font-medium text-blue-600 mb-2">DAY</div>
+            <div className="mb-4 pb-3 border-b border-gray-200 dark:border-gray-800">
+              <div className="text-xs font-medium text-blue-600 dark:text-blue-400 mb-2">DAY</div>
               <div className="grid grid-cols-2 gap-3">
                 {setpoints.day.heating_setpoint !== null && setpoints.day.heating_setpoint !== undefined && (
                   <div>
-                    <div className="text-xs text-gray-600 mb-1">Heating Setpoint</div>
-                    <div className="text-lg font-bold text-gray-900">{formatTemperature(setpoints.day.heating_setpoint)}</div>
+                    <div className="text-xs text-gray-600 dark:text-gray-400 mb-1">Heating Setpoint</div>
+                    <div className="text-lg font-bold text-gray-900 dark:text-gray-100">{formatTemperature(setpoints.day.heating_setpoint)}</div>
                   </div>
                 )}
                 {setpoints.day.cooling_setpoint !== null && setpoints.day.cooling_setpoint !== undefined && (
                   <div>
-                    <div className="text-xs text-gray-600 mb-1">Cooling Setpoint</div>
-                    <div className="text-lg font-bold text-gray-900">{formatTemperature(setpoints.day.cooling_setpoint)}</div>
+                    <div className="text-xs text-gray-600 dark:text-gray-400 mb-1">Cooling Setpoint</div>
+                    <div className="text-lg font-bold text-gray-900 dark:text-gray-100">{formatTemperature(setpoints.day.cooling_setpoint)}</div>
                   </div>
                 )}
                 {setpoints.day.humidity !== null && setpoints.day.humidity !== undefined && (
                   <div>
-                    <div className="text-xs text-gray-600 mb-1">Humidity</div>
-                    <div className="text-lg font-bold text-gray-900">{formatHumidity(setpoints.day.humidity)}</div>
+                    <div className="text-xs text-gray-600 dark:text-gray-400 mb-1">Humidity</div>
+                    <div className="text-lg font-bold text-gray-900 dark:text-gray-100">{formatHumidity(setpoints.day.humidity)}</div>
                   </div>
                 )}
                 {setpoints.day.co2 !== null && setpoints.day.co2 !== undefined && (
                   <div>
-                    <div className="text-xs text-gray-600 mb-1">CO₂</div>
-                    <div className="text-lg font-bold text-gray-900">{formatCO2(setpoints.day.co2)}</div>
+                    <div className="text-xs text-gray-600 dark:text-gray-400 mb-1">CO₂</div>
+                    <div className="text-lg font-bold text-gray-900 dark:text-gray-100">{formatCO2(setpoints.day.co2)}</div>
                   </div>
                 )}
                 {setpoints.day.vpd !== null && setpoints.day.vpd !== undefined && (
                   <div>
-                    <div className="text-xs text-gray-600 mb-1">VPD</div>
-                    <div className="text-lg font-bold text-gray-900">{formatVPD(setpoints.day.vpd)}</div>
+                    <div className="text-xs text-gray-600 dark:text-gray-400 mb-1">VPD</div>
+                    <div className="text-lg font-bold text-gray-900 dark:text-gray-100">{formatVPD(setpoints.day.vpd)}</div>
                   </div>
                 )}
               </div>
@@ -86,36 +86,36 @@ export default function ZoneCard({ zone, devices, schedule, setpoints }: ZoneCar
           
           {setpoints.night && (
             <div>
-              <div className="text-xs font-medium text-indigo-600 mb-2">NIGHT</div>
+              <div className="text-xs font-medium text-indigo-600 dark:text-indigo-400 mb-2">NIGHT</div>
               <div className="grid grid-cols-2 gap-3">
                 {setpoints.night.heating_setpoint !== null && setpoints.night.heating_setpoint !== undefined && (
                   <div>
-                    <div className="text-xs text-gray-600 mb-1">Heating Setpoint</div>
-                    <div className="text-lg font-bold text-gray-900">{formatTemperature(setpoints.night.heating_setpoint)}</div>
+                    <div className="text-xs text-gray-600 dark:text-gray-400 mb-1">Heating Setpoint</div>
+                    <div className="text-lg font-bold text-gray-900 dark:text-gray-100">{formatTemperature(setpoints.night.heating_setpoint)}</div>
                   </div>
                 )}
                 {setpoints.night.cooling_setpoint !== null && setpoints.night.cooling_setpoint !== undefined && (
                   <div>
-                    <div className="text-xs text-gray-600 mb-1">Cooling Setpoint</div>
-                    <div className="text-lg font-bold text-gray-900">{formatTemperature(setpoints.night.cooling_setpoint)}</div>
+                    <div className="text-xs text-gray-600 dark:text-gray-400 mb-1">Cooling Setpoint</div>
+                    <div className="text-lg font-bold text-gray-900 dark:text-gray-100">{formatTemperature(setpoints.night.cooling_setpoint)}</div>
                   </div>
                 )}
                 {setpoints.night.humidity !== null && setpoints.night.humidity !== undefined && (
                   <div>
-                    <div className="text-xs text-gray-600 mb-1">Humidity</div>
-                    <div className="text-lg font-bold text-gray-900">{formatHumidity(setpoints.night.humidity)}</div>
+                    <div className="text-xs text-gray-600 dark:text-gray-400 mb-1">Humidity</div>
+                    <div className="text-lg font-bold text-gray-900 dark:text-gray-100">{formatHumidity(setpoints.night.humidity)}</div>
                   </div>
                 )}
                 {setpoints.night.co2 !== null && setpoints.night.co2 !== undefined && (
                   <div>
-                    <div className="text-xs text-gray-600 mb-1">CO₂</div>
-                    <div className="text-lg font-bold text-gray-900">{formatCO2(setpoints.night.co2)}</div>
+                    <div className="text-xs text-gray-600 dark:text-gray-400 mb-1">CO₂</div>
+                    <div className="text-lg font-bold text-gray-900 dark:text-gray-100">{formatCO2(setpoints.night.co2)}</div>
                   </div>
                 )}
                 {setpoints.night.vpd !== null && setpoints.night.vpd !== undefined && (
                   <div>
-                    <div className="text-xs text-gray-600 mb-1">VPD</div>
-                    <div className="text-lg font-bold text-gray-900">{formatVPD(setpoints.night.vpd)}</div>
+                    <div className="text-xs text-gray-600 dark:text-gray-400 mb-1">VPD</div>
+                    <div className="text-lg font-bold text-gray-900 dark:text-gray-100">{formatVPD(setpoints.night.vpd)}</div>
                   </div>
                 )}
               </div>
@@ -125,13 +125,13 @@ export default function ZoneCard({ zone, devices, schedule, setpoints }: ZoneCar
       )}
 
       {lights.length > 0 && (
-        <div className="mt-4 pt-4 border-t border-gray-200">
-          <div className="text-sm font-medium text-gray-700 mb-2">Lights</div>
+        <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-800">
+          <div className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Lights</div>
           <div className="space-y-1">
             {lights.map(light => (
               <div key={light.device_name} className="flex justify-between items-center text-sm">
-                <span className="text-gray-600">{light.device_name}</span>
-                <span className={`font-semibold ${light.state === 1 ? 'text-green-600' : 'text-gray-400'}`}>
+                <span className="text-gray-600 dark:text-gray-400">{light.device_name}</span>
+                <span className={`font-semibold ${light.state === 1 ? 'text-green-600 dark:text-green-400' : 'text-gray-400 dark:text-gray-500'}`}>
                   {light.state === 1 ? 'ON' : 'OFF'}
                 </span>
               </div>
@@ -141,25 +141,25 @@ export default function ZoneCard({ zone, devices, schedule, setpoints }: ZoneCar
       )}
 
       {schedule && (
-        <div className="mt-4 pt-4 border-t border-gray-200">
-          <div className="text-sm font-medium text-gray-700 mb-2">Schedule</div>
+        <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-800">
+          <div className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Schedule</div>
           <div className="space-y-1 text-sm">
             <div className="flex justify-between">
-              <span className="text-gray-600">Day:</span>
-              <span className="font-semibold text-gray-900">
+              <span className="text-gray-600 dark:text-gray-400">Day:</span>
+              <span className="font-semibold text-gray-900 dark:text-gray-100">
                 {schedule.day_start_time} - {schedule.day_end_time}
               </span>
             </div>
             <div className="flex justify-between">
-              <span className="text-gray-600">Night:</span>
-              <span className="font-semibold text-gray-900">
+              <span className="text-gray-600 dark:text-gray-400">Night:</span>
+              <span className="font-semibold text-gray-900 dark:text-gray-100">
                 {schedule.night_start_time} - {schedule.night_end_time}
               </span>
             </div>
             {(schedule.ramp_up_duration || schedule.ramp_down_duration) && (
-              <div className="flex justify-between mt-2 pt-2 border-t border-gray-100">
-                <span className="text-gray-600">Ramp:</span>
-                <span className="text-gray-900">
+              <div className="flex justify-between mt-2 pt-2 border-t border-gray-100 dark:border-gray-800">
+                <span className="text-gray-600 dark:text-gray-400">Ramp:</span>
+                <span className="text-gray-900 dark:text-gray-100">
                   Up: {schedule.ramp_up_duration || 0}min, Down: {schedule.ramp_down_duration || 0}min
                 </span>
               </div>
@@ -168,9 +168,9 @@ export default function ZoneCard({ zone, devices, schedule, setpoints }: ZoneCar
         </div>
       )}
 
-      <div className="mt-4 pt-4 border-t border-gray-200">
-        <div className="text-sm font-medium text-gray-700">
-          Active Devices: <span className="font-bold text-gray-900">{activeDevices}</span> / <span className="text-gray-900">{devices.length}</span>
+      <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-800">
+        <div className="text-sm font-medium text-gray-700 dark:text-gray-300">
+          Active Devices: <span className="font-bold text-gray-900 dark:text-gray-100">{activeDevices}</span> / <span className="text-gray-900 dark:text-gray-100">{devices.length}</span>
         </div>
       </div>
     </div>

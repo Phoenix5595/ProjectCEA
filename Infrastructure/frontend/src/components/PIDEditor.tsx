@@ -68,37 +68,26 @@ export default function PIDEditor() {
   return (
     <div>
       <div className="mb-6">
-        <label className="block text-sm font-medium text-gray-700 mb-2">
+        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
           Device Type
         </label>
         <select
           value={selectedDeviceType}
           onChange={(e) => setSelectedDeviceType(e.target.value)}
-          className="border border-gray-300 rounded-md px-3 py-2"
+          className="border border-gray-300 dark:border-gray-600 rounded-md px-3 py-2 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
         >
           {DEVICE_TYPES.map(type => (
             <option key={type} value={type}>{type}</option>
           ))}
         </select>
-        <p className="text-sm text-gray-500 mt-1">
+        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
           Note: Fans can use PID control for temperature cooling. Dehumidifiers are ON/OFF only.
         </p>
       </div>
 
-      {currentParams && (
-        <div className="mb-6 p-4 bg-gray-50 rounded-md">
-          <h3 className="font-medium mb-2">Current Parameters</h3>
-          <div className="grid grid-cols-3 gap-4 text-sm">
-            <div>Kp: {currentParams.kp}</div>
-            <div>Ki: {currentParams.ki}</div>
-            <div>Kd: {currentParams.kd}</div>
-          </div>
-        </div>
-      )}
-
       <div className="space-y-4">
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
             Kp (Proportional Gain)
           </label>
           <input
@@ -106,15 +95,20 @@ export default function PIDEditor() {
             step="0.01"
             value={formData.kp ?? ''}
             onChange={(e) => handleChange('kp', parseFloat(e.target.value))}
-            className={`border rounded-md px-3 py-2 w-full ${errors.kp ? 'border-red-500' : 'border-gray-300'}`}
+            className={`border rounded-md px-3 py-2 w-full bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 ${errors.kp ? 'border-red-500 dark:border-red-400' : 'border-gray-300 dark:border-gray-600'}`}
           />
+          {currentParams?.kp !== undefined && (
+            <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              Current: {currentParams.kp}
+            </div>
+          )}
           {errors.kp && (
-            <p className="text-sm text-red-500 mt-1">{errors.kp}</p>
+            <p className="text-sm text-red-500 dark:text-red-400 mt-1">{errors.kp}</p>
           )}
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
             Ki (Integral Gain)
           </label>
           <input
@@ -122,15 +116,20 @@ export default function PIDEditor() {
             step="0.001"
             value={formData.ki ?? ''}
             onChange={(e) => handleChange('ki', parseFloat(e.target.value))}
-            className={`border rounded-md px-3 py-2 w-full ${errors.ki ? 'border-red-500' : 'border-gray-300'}`}
+            className={`border rounded-md px-3 py-2 w-full bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 ${errors.ki ? 'border-red-500 dark:border-red-400' : 'border-gray-300 dark:border-gray-600'}`}
           />
+          {currentParams?.ki !== undefined && (
+            <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              Current: {currentParams.ki}
+            </div>
+          )}
           {errors.ki && (
-            <p className="text-sm text-red-500 mt-1">{errors.ki}</p>
+            <p className="text-sm text-red-500 dark:text-red-400 mt-1">{errors.ki}</p>
           )}
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
             Kd (Derivative Gain)
           </label>
           <input
@@ -138,10 +137,15 @@ export default function PIDEditor() {
             step="0.01"
             value={formData.kd ?? ''}
             onChange={(e) => handleChange('kd', parseFloat(e.target.value))}
-            className={`border rounded-md px-3 py-2 w-full ${errors.kd ? 'border-red-500' : 'border-gray-300'}`}
+            className={`border rounded-md px-3 py-2 w-full bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 ${errors.kd ? 'border-red-500 dark:border-red-400' : 'border-gray-300 dark:border-gray-600'}`}
           />
+          {currentParams?.kd !== undefined && (
+            <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              Current: {currentParams.kd}
+            </div>
+          )}
           {errors.kd && (
-            <p className="text-sm text-red-500 mt-1">{errors.kd}</p>
+            <p className="text-sm text-red-500 dark:text-red-400 mt-1">{errors.kd}</p>
           )}
         </div>
       </div>
@@ -150,7 +154,7 @@ export default function PIDEditor() {
         <button
           onClick={handleSubmit}
           disabled={loading || Object.keys(errors).length > 0}
-          className="bg-blue-600 text-white px-6 py-2 rounded-md hover:bg-blue-700 disabled:opacity-50"
+          className="bg-blue-600 dark:bg-blue-500 text-white px-6 py-2 rounded-md hover:bg-blue-700 dark:hover:bg-blue-600 disabled:opacity-50"
         >
           {loading ? 'Saving...' : 'Save PID Parameters'}
         </button>

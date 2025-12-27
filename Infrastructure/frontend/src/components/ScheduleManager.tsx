@@ -160,7 +160,7 @@ export default function ScheduleManager({ location, cluster }: ScheduleManagerPr
   return (
     <div>
       <div className="flex justify-between items-center mb-4">
-        <h2 className="text-xl font-bold">Schedules</h2>
+        <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100">Schedules</h2>
         <button
           onClick={() => {
             setShowForm(!showForm)
@@ -175,22 +175,22 @@ export default function ScheduleManager({ location, cluster }: ScheduleManagerPr
               enabled: true,
             })
           }}
-          className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700"
+          className="bg-blue-600 dark:bg-blue-500 text-white px-4 py-2 rounded-md hover:bg-blue-700 dark:hover:bg-blue-600"
         >
           {showForm ? 'Cancel' : '+ New Schedule'}
         </button>
       </div>
 
       {showForm && (
-        <div className="mb-6 p-4 border rounded-md bg-gray-50">
-          <h3 className="font-bold mb-4">
+        <div className="mb-6 p-4 border border-gray-200 dark:border-gray-800 rounded-md bg-gray-50 dark:bg-gray-900">
+          <h3 className="font-bold mb-4 text-gray-900 dark:text-gray-100">
             {editingSchedule ? 'Edit Schedule' : 'Create Schedule'}
           </h3>
 
           {conflicts.length > 0 && (
-            <div className="mb-4 p-3 bg-yellow-100 border border-yellow-400 rounded-md">
-              <p className="font-medium text-yellow-800">Conflicts detected:</p>
-              <ul className="list-disc list-inside text-sm text-yellow-700">
+            <div className="mb-4 p-3 bg-yellow-100 dark:bg-yellow-900/20 border border-yellow-400 dark:border-yellow-800 rounded-md">
+              <p className="font-medium text-yellow-800 dark:text-yellow-300">Conflicts detected:</p>
+              <ul className="list-disc list-inside text-sm text-yellow-700 dark:text-yellow-400">
                 {conflicts.map((conflict, i) => (
                   <li key={i}>{conflict}</li>
                 ))}
@@ -200,25 +200,25 @@ export default function ScheduleManager({ location, cluster }: ScheduleManagerPr
 
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                 Name
               </label>
               <input
                 type="text"
                 value={formData.name}
                 onChange={(e) => handleFormChange('name', e.target.value)}
-                className="border border-gray-300 rounded-md px-3 py-2 w-full"
+                className="border border-gray-300 dark:border-gray-600 rounded-md px-3 py-2 w-full bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                 Device
               </label>
               <select
                 value={formData.device_name}
                 onChange={(e) => handleFormChange('device_name', e.target.value)}
-                className="border border-gray-300 rounded-md px-3 py-2 w-full bg-white text-gray-900"
+                className="border border-gray-300 dark:border-gray-600 rounded-md px-3 py-2 w-full bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
                 required
               >
                 <option value="">Select a device...</option>
@@ -233,37 +233,37 @@ export default function ScheduleManager({ location, cluster }: ScheduleManagerPr
 
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                   Start Time (HH:MM)
                 </label>
                 <input
                   type="time"
                   value={formData.start_time}
                   onChange={(e) => handleFormChange('start_time', e.target.value)}
-                  className="border border-gray-300 rounded-md px-3 py-2 w-full"
+                  className="border border-gray-300 dark:border-gray-600 rounded-md px-3 py-2 w-full bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                   End Time (HH:MM)
                 </label>
                 <input
                   type="time"
                   value={formData.end_time}
                   onChange={(e) => handleFormChange('end_time', e.target.value)}
-                  className="border border-gray-300 rounded-md px-3 py-2 w-full"
+                  className="border border-gray-300 dark:border-gray-600 rounded-md px-3 py-2 w-full bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
                 />
               </div>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                 Day of Week (optional, leave empty for daily)
               </label>
               <select
                 value={formData.day_of_week ?? ''}
                 onChange={(e) => handleFormChange('day_of_week', e.target.value ? parseInt(e.target.value) : null)}
-                className="border border-gray-300 rounded-md px-3 py-2 w-full"
+                className="border border-gray-300 dark:border-gray-600 rounded-md px-3 py-2 w-full bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
               >
                 <option value="">Daily</option>
                 <option value="0">Monday</option>
@@ -277,13 +277,13 @@ export default function ScheduleManager({ location, cluster }: ScheduleManagerPr
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                 Mode (optional)
               </label>
               <select
                 value={formData.mode ?? ''}
                 onChange={(e) => handleFormChange('mode', e.target.value || undefined)}
-                className="border border-gray-300 rounded-md px-3 py-2 w-full"
+                className="border border-gray-300 dark:border-gray-600 rounded-md px-3 py-2 w-full bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
               >
                 <option value="">None</option>
                 <option value="DAY">DAY</option>
@@ -292,15 +292,15 @@ export default function ScheduleManager({ location, cluster }: ScheduleManagerPr
               </select>
             </div>
 
-            <div className="border-t pt-4">
-              <h4 className="text-sm font-semibold text-gray-700 mb-2">Light Ramp Settings (optional)</h4>
-              <p className="text-xs text-gray-500 mb-3">
+            <div className="border-t border-gray-200 dark:border-gray-800 pt-4">
+              <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Light Ramp Settings (optional)</h4>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
                 For dimmable lights: set target intensity and ramp durations for gradual transitions
               </p>
               
               <div className="space-y-3">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     Target Intensity (0-100%)
                   </label>
                   <input
@@ -310,14 +310,14 @@ export default function ScheduleManager({ location, cluster }: ScheduleManagerPr
                     step="1"
                     value={formData.target_intensity ?? ''}
                     onChange={(e) => handleFormChange('target_intensity', e.target.value ? parseFloat(e.target.value) : null)}
-                    className="border border-gray-300 rounded-md px-3 py-2 w-full"
+                    className="border border-gray-300 dark:border-gray-600 rounded-md px-3 py-2 w-full bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
                     placeholder="Leave empty for ON/OFF only"
                   />
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                       Ramp Up (minutes)
                     </label>
                     <input
@@ -326,12 +326,12 @@ export default function ScheduleManager({ location, cluster }: ScheduleManagerPr
                       step="1"
                       value={formData.ramp_up_duration ?? ''}
                       onChange={(e) => handleFormChange('ramp_up_duration', e.target.value ? parseInt(e.target.value) : null)}
-                      className="border border-gray-300 rounded-md px-3 py-2 w-full"
+                      className="border border-gray-300 dark:border-gray-600 rounded-md px-3 py-2 w-full bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
                       placeholder="0 = instant"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                       Ramp Down (minutes)
                     </label>
                     <input
@@ -340,7 +340,7 @@ export default function ScheduleManager({ location, cluster }: ScheduleManagerPr
                       step="1"
                       value={formData.ramp_down_duration ?? ''}
                       onChange={(e) => handleFormChange('ramp_down_duration', e.target.value ? parseInt(e.target.value) : null)}
-                      className="border border-gray-300 rounded-md px-3 py-2 w-full"
+                      className="border border-gray-300 dark:border-gray-600 rounded-md px-3 py-2 w-full bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
                       placeholder="0 = instant"
                     />
                   </div>
@@ -356,14 +356,14 @@ export default function ScheduleManager({ location, cluster }: ScheduleManagerPr
                   onChange={(e) => handleFormChange('enabled', e.target.checked)}
                   className="mr-2"
                 />
-                <span className="text-sm text-gray-700">Enabled</span>
+                <span className="text-sm text-gray-700 dark:text-gray-300">Enabled</span>
               </label>
             </div>
 
             <button
               onClick={handleSubmit}
               disabled={loading || conflicts.length > 0}
-              className="bg-blue-600 text-white px-6 py-2 rounded-md hover:bg-blue-700 disabled:opacity-50"
+              className="bg-blue-600 dark:bg-blue-500 text-white px-6 py-2 rounded-md hover:bg-blue-700 dark:hover:bg-blue-600 disabled:opacity-50"
             >
               {loading ? 'Saving...' : editingSchedule ? 'Update' : 'Create'}
             </button>
@@ -373,16 +373,16 @@ export default function ScheduleManager({ location, cluster }: ScheduleManagerPr
 
       <div className="space-y-2">
         {schedules.length === 0 ? (
-          <p className="text-gray-500">No schedules configured</p>
+          <p className="text-gray-500 dark:text-gray-400">No schedules configured</p>
         ) : (
           schedules.map((schedule) => (
             <div
               key={schedule.id}
-              className="p-4 border rounded-md flex justify-between items-center"
+              className="p-4 border border-gray-200 dark:border-gray-800 rounded-md flex justify-between items-center bg-white dark:bg-gray-900"
             >
               <div>
-                <div className="font-medium">{schedule.name}</div>
-                <div className="text-sm text-gray-600">
+                <div className="font-medium text-gray-900 dark:text-gray-100">{schedule.name}</div>
+                <div className="text-sm text-gray-600 dark:text-gray-400">
                   {schedule.device_name} • {schedule.start_time} - {schedule.end_time}
                   {schedule.day_of_week !== null && ` • Day ${schedule.day_of_week}`}
                   {schedule.mode && ` • Mode: ${schedule.mode}`}
@@ -402,13 +402,13 @@ export default function ScheduleManager({ location, cluster }: ScheduleManagerPr
               <div className="flex gap-2">
                 <button
                   onClick={() => startEdit(schedule)}
-                  className="text-blue-600 hover:underline"
+                  className="text-blue-600 dark:text-blue-400 hover:underline"
                 >
                   Edit
                 </button>
                 <button
                   onClick={() => handleDelete(schedule.id)}
-                  className="text-red-600 hover:underline"
+                  className="text-red-600 dark:text-red-400 hover:underline"
                 >
                   Delete
                 </button>

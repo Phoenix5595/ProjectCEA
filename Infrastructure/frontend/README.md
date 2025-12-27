@@ -41,6 +41,12 @@ npm run build
 
 Build output will be in `dist/` directory. The backend serves these files automatically.
 
+After building, restart the automation service to serve the new assets:
+
+```bash
+sudo systemctl restart automation-service.service
+```
+
 ## Configuration
 
 ### Zones
@@ -109,6 +115,12 @@ src/
 - `DELETE /api/schedules/{id}` - Delete schedule
 - `GET /api/mode/{location}/{cluster}` - Get mode
 - `WebSocket /ws` - Real-time updates
+
+## Setpoint Timeline Behavior
+
+- Timeline runs fixed 00:00 → 24:00.
+- PRE_DAY and PRE_NIGHT setpoints/ramp-in take precedence during their periods; DAY lines do not render inside those periods.
+- Ramp-in is shown as a diagonal from the previous period value to the new period value over the configured minutes.
 
 ## Validation
 

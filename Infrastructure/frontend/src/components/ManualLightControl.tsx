@@ -308,23 +308,23 @@ export default function ManualLightControl({ location, cluster, compact = false 
   })
   
   return (
-    <div className={compact ? "" : "mt-4 pt-4 border-t border-gray-200"} style={{ minHeight: compact ? 'auto' : '100px', backgroundColor: '#f9fafb', padding: compact ? '8px' : '12px', borderRadius: '4px', width: compact ? 'fit-content' : '100%', display: 'inline-block' }}>
-      {!compact && <div className="text-sm font-medium text-gray-700 mb-2">Manual Control</div>}
-      {compact && <div className="text-xs font-medium text-gray-700 mb-1.5">Manual Control</div>}
+    <div className={`${compact ? "" : "mt-4 pt-4 border-t border-gray-200 dark:border-gray-800"} bg-gray-50 dark:bg-gray-950/80`} style={{ minHeight: compact ? 'auto' : '100px', padding: compact ? '8px' : '12px', borderRadius: '4px', width: compact ? 'fit-content' : '100%', display: 'inline-block' }}>
+      {!compact && <div className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Manual Control</div>}
+      {compact && <div className="text-xs font-medium text-gray-700 dark:text-gray-300 mb-1.5">Manual Control</div>}
       {loadingDetails && (
-        <div className="text-xs text-gray-500 mb-2">Loading lights...</div>
+        <div className="text-xs text-gray-500 dark:text-gray-400 mb-2">Loading lights...</div>
       )}
       {!loadingDetails && lightDetails.length === 0 && (
-        <div className="text-xs text-red-600 mb-2 font-semibold">⚠️ No lights found in this zone (location: {location}, cluster: {cluster})</div>
+        <div className="text-xs text-red-600 dark:text-red-400 mb-2 font-semibold">⚠️ No lights found in this zone (location: {location}, cluster: {cluster})</div>
       )}
       {!loadingDetails && lightDetails.length > 0 && (
-        <div className="text-xs text-green-600 mb-2 font-semibold">✓ Found {lightDetails.length} light(s): {lightDetails.map(l => l.device_name).join(', ')}</div>
+        <div className="text-xs text-green-600 dark:text-green-400 mb-2 font-semibold">✓ Found {lightDetails.length} light(s): {lightDetails.map(l => l.device_name).join(', ')}</div>
       )}
       {error && (
-        <div className="text-xs text-red-600 mb-2">{error}</div>
+        <div className="text-xs text-red-600 dark:text-red-400 mb-2">{error}</div>
       )}
       {activeTimer !== null && (
-        <div className="text-xs text-blue-600 mb-2">
+        <div className="text-xs text-blue-600 dark:text-blue-400 mb-2">
           Timer: {activeTimer} min remaining
         </div>
       )}
@@ -333,48 +333,48 @@ export default function ManualLightControl({ location, cluster, compact = false 
           <button
             onClick={() => restoreMode(lastDefaultMode || 'auto')}
             disabled={loading}
-            className="px-3 py-1.5 text-sm font-medium bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-3 py-1.5 text-sm font-medium bg-blue-600 dark:bg-blue-500 text-white rounded hover:bg-blue-700 dark:hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Auto
           </button>
           <button
             onClick={() => turnOffLights()}
             disabled={loading}
-            className="px-3 py-1.5 text-sm font-medium bg-gray-600 text-white rounded hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-3 py-1.5 text-sm font-medium bg-gray-600 dark:bg-gray-500 text-white rounded hover:bg-gray-700 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Off
           </button>
           <button
             onClick={() => turnOnLights(5)}
             disabled={loading}
-            className="px-3 py-1.5 text-sm font-medium bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-3 py-1.5 text-sm font-medium bg-green-600 dark:bg-green-500 text-white rounded hover:bg-green-700 dark:hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             5m
           </button>
           <button
             onClick={() => turnOnLights(30)}
             disabled={loading}
-            className="px-3 py-1.5 text-sm font-medium bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-3 py-1.5 text-sm font-medium bg-green-600 dark:bg-green-500 text-white rounded hover:bg-green-700 dark:hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             30m
           </button>
           <button
             onClick={() => turnOnLights(60)}
             disabled={loading}
-            className="px-3 py-1.5 text-sm font-medium bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-3 py-1.5 text-sm font-medium bg-green-600 dark:bg-green-500 text-white rounded hover:bg-green-700 dark:hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             1h
           </button>
           <button
             onClick={() => turnOnLights(480)}
             disabled={loading}
-            className="px-3 py-1.5 text-sm font-medium bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-3 py-1.5 text-sm font-medium bg-green-600 dark:bg-green-500 text-white rounded hover:bg-green-700 dark:hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             8h
           </button>
         </div>
       ) : !loadingDetails ? (
-        <div className="text-xs text-orange-600 mb-2 italic">Buttons will appear when lights are detected</div>
+        <div className="text-xs text-orange-600 dark:text-orange-400 mb-2 italic">Buttons will appear when lights are detected</div>
       ) : null}
     </div>
   )

@@ -496,31 +496,41 @@ class ControlEngine:
             
             # Initialize or update ramp state if mode changed
             if mode_changed:
-                # Mode changed: capture current effective setpoint as ramp start
-                current_effective = self._ramp_state.get(ramp_key, {}).get('current_effective_setpoint')
-                if current_effective is None:
-                    # No previous ramp state, use current sensor value as start
-                    if sensor_values:
-                        sensor_name = self._get_sensor_for_setpoint_type(location, cluster, setpoint_type)
-                        if sensor_name:
-                            current_effective = sensor_values.get(sensor_name)
-                if current_effective is None:
-                    current_effective = nominal_value  # Fallback to target
+                # Mode changed: check if we need to restart ramp
+                existing_ramp_state = self._ramp_state.get(ramp_key)
+                existing_target = existing_ramp_state.get('target_setpoint') if existing_ramp_state else None
                 
-                # Start new ramp
-                self._ramp_state[ramp_key] = {
-                    'current_effective_setpoint': current_effective,
-                    'ramp_start_timestamp': current_time,
-                    'ramp_duration': ramp_in_duration,
-                    'target_setpoint': nominal_value
-                }
+                # Only restart ramp if nominal value actually changed
+                if existing_target is not None and existing_target == nominal_value:
+                    # Nominal value unchanged: keep existing ramp state, just update ramp_duration if it changed
+                    if existing_ramp_state.get('ramp_duration') != ramp_in_duration:
+                        existing_ramp_state['ramp_duration'] = ramp_in_duration
+                    # Don't restart ramp - continue with existing effective setpoint
+                else:
+                    # Nominal value changed or no existing ramp: restart ramp
+                    current_effective = existing_ramp_state.get('current_effective_setpoint') if existing_ramp_state else None
+                    if current_effective is None:
+                        # No previous ramp state, use current sensor value as start
+                        if sensor_values:
+                            sensor_name = self._get_sensor_for_setpoint_type(location, cluster, setpoint_type)
+                            if sensor_name:
+                                current_effective = sensor_values.get(sensor_name)
+                    if current_effective is None:
+                        current_effective = nominal_value  # Fallback to target
+                    
+                    # Start new ramp
+                    self._ramp_state[ramp_key] = {
+                        'current_effective_setpoint': current_effective,
+                        'ramp_start_timestamp': current_time,
+                        'ramp_duration': ramp_in_duration,
+                        'target_setpoint': nominal_value
+                    }
             elif ramp_key not in self._ramp_state:
                 # First time: initialize ramp state
+                # If ramp_in_duration is 0, use nominal value directly (instant transition)
+                # If ramp_in_duration > 0, start from nominal value to avoid unnecessary ramps
+                # Only use sensor value if we're explicitly transitioning (which would be handled by mode change or target change)
                 start_value = nominal_value
-                if sensor_values:
-                    sensor_name = self._get_sensor_for_setpoint_type(location, cluster, setpoint_type)
-                    if sensor_name:
-                        start_value = sensor_values.get(sensor_name) or nominal_value
                 
                 self._ramp_state[ramp_key] = {
                     'current_effective_setpoint': start_value,
@@ -529,7 +539,7 @@ class ControlEngine:
                     'target_setpoint': nominal_value
                 }
             else:
-                # Update target if it changed (but don't restart ramp)
+                # Update target or ramp_duration if they changed (but don't restart ramp unnecessarily)
                 ramp_state = self._ramp_state[ramp_key]
                 if ramp_state['target_setpoint'] != nominal_value:
                     # Target changed: restart ramp from current effective
@@ -537,6 +547,9 @@ class ControlEngine:
                     ramp_state['ramp_start_timestamp'] = current_time
                     ramp_state['ramp_duration'] = ramp_in_duration
                     ramp_state['target_setpoint'] = nominal_value
+                elif ramp_state['ramp_duration'] != ramp_in_duration:
+                    # Only ramp_duration changed: update it but don't restart ramp
+                    ramp_state['ramp_duration'] = ramp_in_duration
             
             # Calculate effective setpoint (with ramp)
             ramp_state = self._ramp_state[ramp_key]

@@ -517,7 +517,7 @@ export default function CircularTimePicker({
   return (
     <div className="flex flex-col items-center">
       {label && (
-        <label className="block text-sm font-medium text-gray-700 mb-4">
+        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-4">
           {label}
         </label>
       )}
@@ -529,7 +529,7 @@ export default function CircularTimePicker({
                 onDayStartChange('17:00')
                 onDayEndChange('11:00')
               }}
-              className="px-4 py-2 bg-green-600 text-white font-semibold rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 shadow-md transition-colors"
+              className="px-4 py-2 bg-green-600 dark:bg-green-500 text-white font-semibold rounded-md hover:bg-green-700 dark:hover:bg-green-600 focus:outline-none focus:ring-2 focus:ring-green-500 shadow-md transition-colors"
               title="Set to Veg schedule: 17:00 - 11:00"
             >
               Veg
@@ -539,7 +539,7 @@ export default function CircularTimePicker({
                 onDayStartChange('17:00')
                 onDayEndChange('05:00')
               }}
-              className="px-4 py-2 bg-purple-600 text-white font-semibold rounded-md hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-purple-500 shadow-md transition-colors"
+              className="px-4 py-2 bg-purple-600 dark:bg-purple-500 text-white font-semibold rounded-md hover:bg-purple-700 dark:hover:bg-purple-600 focus:outline-none focus:ring-2 focus:ring-purple-500 shadow-md transition-colors"
               title="Set to Flower schedule: 17:00 - 05:00"
             >
               Flower
@@ -558,7 +558,7 @@ export default function CircularTimePicker({
         <div className="flex flex-col gap-4 pt-4">
           <div className="flex items-end gap-3">
             <div className="space-y-1 flex-1">
-              <label className="block text-sm font-medium text-gray-700">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                 Start Time
               </label>
               <input
@@ -570,20 +570,20 @@ export default function CircularTimePicker({
                   }
                 }}
                 disabled={lockedPhotoperiodHours !== null && lockedPhotoperiodHours !== undefined}
-                className={`border-2 border-gray-400 rounded-md px-3 py-2 bg-white text-gray-900 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 w-full ${
+                className={`border-2 border-gray-400 dark:border-gray-600 rounded-md px-3 py-2 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 w-full ${
                   lockedPhotoperiodHours !== null && lockedPhotoperiodHours !== undefined
-                    ? 'opacity-50 cursor-not-allowed bg-gray-100'
+                    ? 'opacity-50 cursor-not-allowed bg-gray-100 dark:bg-gray-900'
                     : ''
                 }`}
               />
-              <p className="text-xs text-gray-500">
-                <span className="text-red-600 font-medium">●</span> Red marker
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                <span className="text-red-600 dark:text-red-400 font-medium">●</span> Red marker
                 {lockedPhotoperiodHours !== null && lockedPhotoperiodHours !== undefined && ' (locked)'}
               </p>
             </div>
             {onRampUpChange && rampUpDuration !== undefined && (
               <div className="space-y-1 flex-1">
-                <label className="block text-sm font-medium text-gray-700">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                   Ramp Up (min)
                 </label>
                 <input
@@ -592,14 +592,14 @@ export default function CircularTimePicker({
                   step="1"
                   value={rampUpDuration !== null && rampUpDuration !== undefined ? rampUpDuration : ''}
                   onChange={(e) => onRampUpChange(e.target.value ? parseInt(e.target.value) : null)}
-                  className="border-2 border-gray-400 rounded-md px-3 py-2 bg-white text-gray-900 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 w-full"
+                  className="border-2 border-gray-400 dark:border-gray-600 rounded-md px-3 py-2 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 w-full"
                 />
               </div>
             )}
           </div>
           <div className="flex items-end gap-3">
             <div className="space-y-1 flex-1">
-              <label className="block text-sm font-medium text-gray-700">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                 End Time
               </label>
               <input
@@ -611,20 +611,20 @@ export default function CircularTimePicker({
                   }
                 }}
                 disabled={lockedPhotoperiodHours !== null && lockedPhotoperiodHours !== undefined}
-                className={`border-2 border-gray-400 rounded-md px-3 py-2 bg-white text-gray-900 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 w-full ${
+                className={`border-2 border-gray-400 dark:border-gray-600 rounded-md px-3 py-2 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 w-full ${
                   lockedPhotoperiodHours !== null && lockedPhotoperiodHours !== undefined
-                    ? 'opacity-50 cursor-not-allowed bg-gray-100'
+                    ? 'opacity-50 cursor-not-allowed bg-gray-100 dark:bg-gray-900'
                     : ''
                 }`}
               />
-              <p className="text-xs text-gray-500">
-                <span className="text-purple-800 font-medium">●</span> Purple marker
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                <span className="text-purple-800 dark:text-purple-400 font-medium">●</span> Purple marker
                 {lockedPhotoperiodHours !== null && lockedPhotoperiodHours !== undefined && ' (locked)'}
               </p>
             </div>
             {onRampDownChange && rampDownDuration !== undefined && (
               <div className="space-y-1 flex-1">
-                <label className="block text-sm font-medium text-gray-700">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                   Ramp Down (min)
                 </label>
                 <input
@@ -633,23 +633,23 @@ export default function CircularTimePicker({
                   step="1"
                   value={rampDownDuration !== null && rampDownDuration !== undefined ? rampDownDuration : ''}
                   onChange={(e) => onRampDownChange(e.target.value ? parseInt(e.target.value) : null)}
-                  className="border-2 border-gray-400 rounded-md px-3 py-2 bg-white text-gray-900 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 w-full"
+                  className="border-2 border-gray-400 dark:border-gray-600 rounded-md px-3 py-2 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 w-full"
                 />
               </div>
             )}
           </div>
-          <div className="pt-2 border-t border-gray-200">
-            <div className="text-sm font-medium text-gray-700 mb-1">
+          <div className="pt-2 border-t border-gray-200 dark:border-gray-800">
+            <div className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
               Photoperiod
             </div>
-            <div className="text-lg font-semibold text-gray-900">
+            <div className="text-lg font-semibold text-gray-900 dark:text-gray-100">
               {calculatePhotoperiod().toFixed(1)} hours
             </div>
           </div>
         </div>
       </div>
-      <p className="text-xs text-gray-500 mt-4 text-center max-w-2xl">
-        Click and drag the <span className="text-red-600 font-medium">red</span> marker for start time, <span className="text-purple-800 font-medium">purple</span> marker for end time, or drag the arc to move the entire period. You can also edit times directly using the input fields.
+      <p className="text-xs text-gray-500 dark:text-gray-400 mt-4 text-center max-w-2xl">
+        Click and drag the <span className="text-red-600 dark:text-red-400 font-medium">red</span> marker for start time, <span className="text-purple-800 dark:text-purple-400 font-medium">purple</span> marker for end time, or drag the arc to move the entire period. You can also edit times directly using the input fields.
       </p>
     </div>
   )

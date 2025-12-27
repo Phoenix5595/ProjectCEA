@@ -188,7 +188,7 @@ export default function SetpointEditor({ location, cluster, onUpdate, mode = nul
     <div>
       <div className="space-y-4">
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
             Heating Setpoint (°C)
           </label>
           <input
@@ -199,18 +199,18 @@ export default function SetpointEditor({ location, cluster, onUpdate, mode = nul
             value={inputValues.heating_setpoint ?? formData.heating_setpoint ?? ''}
             onChange={(e) => handleInputChange('heating_setpoint', e.target.value)}
             onBlur={() => handleBlur('heating_setpoint')}
-            className={`border-2 rounded-md px-3 py-2 w-full bg-white text-gray-900 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.heating_setpoint ? 'border-red-600' : 'border-gray-400'}`}
+            className={`border-2 rounded-md px-3 py-2 w-full bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.heating_setpoint ? 'border-red-600 dark:border-red-500' : 'border-gray-400 dark:border-gray-600'}`}
           />
-          <p className="text-xs text-gray-500 mt-1">
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
             Current: {formatValue(savedValues.heating_setpoint, '°C')}
           </p>
           {errors.heating_setpoint && (
-            <p className="text-sm font-medium text-red-700 mt-1">{errors.heating_setpoint}</p>
+            <p className="text-sm font-medium text-red-700 dark:text-red-400 mt-1">{errors.heating_setpoint}</p>
           )}
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
             Cooling Setpoint (°C)
           </label>
           <input
@@ -221,18 +221,18 @@ export default function SetpointEditor({ location, cluster, onUpdate, mode = nul
             value={inputValues.cooling_setpoint ?? formData.cooling_setpoint ?? ''}
             onChange={(e) => handleInputChange('cooling_setpoint', e.target.value)}
             onBlur={() => handleBlur('cooling_setpoint')}
-            className={`border-2 rounded-md px-3 py-2 w-full bg-white text-gray-900 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.cooling_setpoint ? 'border-red-600' : 'border-gray-400'}`}
+            className={`border-2 rounded-md px-3 py-2 w-full bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.cooling_setpoint ? 'border-red-600 dark:border-red-500' : 'border-gray-400 dark:border-gray-600'}`}
           />
-          <p className="text-xs text-gray-500 mt-1">
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
             Current: {formatValue(savedValues.cooling_setpoint, '°C')}
           </p>
           {errors.cooling_setpoint && (
-            <p className="text-sm font-medium text-red-700 mt-1">{errors.cooling_setpoint}</p>
+            <p className="text-sm font-medium text-red-700 dark:text-red-400 mt-1">{errors.cooling_setpoint}</p>
           )}
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
             CO₂ (ppm)
           </label>
           <input
@@ -243,18 +243,18 @@ export default function SetpointEditor({ location, cluster, onUpdate, mode = nul
             value={inputValues.co2 ?? formData.co2 ?? ''}
             onChange={(e) => handleInputChange('co2', e.target.value)}
             onBlur={() => handleBlur('co2')}
-            className={`border-2 rounded-md px-3 py-2 w-full bg-white text-gray-900 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.co2 ? 'border-red-600' : 'border-gray-400'}`}
+            className={`border-2 rounded-md px-3 py-2 w-full bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.co2 ? 'border-red-600 dark:border-red-500' : 'border-gray-400 dark:border-gray-600'}`}
           />
-          <p className="text-xs text-gray-500 mt-1">
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
             Current: {formatValue(savedValues.co2, 'ppm')}
           </p>
           {errors.co2 && (
-            <p className="text-sm font-medium text-red-700 mt-1">{errors.co2}</p>
+            <p className="text-sm font-medium text-red-700 dark:text-red-400 mt-1">{errors.co2}</p>
           )}
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
             VPD (kPa) - Controls dehumidifying devices
           </label>
           <input
@@ -265,15 +265,15 @@ export default function SetpointEditor({ location, cluster, onUpdate, mode = nul
             value={inputValues.vpd ?? formData.vpd ?? ''}
             onChange={(e) => handleInputChange('vpd', e.target.value)}
             onBlur={() => handleBlur('vpd')}
-            className={`border-2 rounded-md px-3 py-2 w-full bg-white text-gray-900 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.vpd ? 'border-red-600' : 'border-gray-400'}`}
+            className={`border-2 rounded-md px-3 py-2 w-full bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.vpd ? 'border-red-600 dark:border-red-500' : 'border-gray-400 dark:border-gray-600'}`}
           />
-          <p className="text-xs text-gray-500 mt-1">
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
             Current: {formatValue(savedValues.vpd, 'kPa')}
           </p>
           {errors.vpd && (
-            <p className="text-sm font-medium text-red-700 mt-1">{errors.vpd}</p>
+            <p className="text-sm font-medium text-red-700 dark:text-red-400 mt-1">{errors.vpd}</p>
           )}
-          <p className="text-sm text-gray-600 mt-1">
+          <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
             VPD setpoint controls fans and dehumidifiers. When VPD is below setpoint, devices turn ON.
           </p>
         </div>
@@ -287,12 +287,12 @@ export default function SetpointEditor({ location, cluster, onUpdate, mode = nul
             onChange={(e) => setDryRun(e.target.checked)}
             className="mr-2"
           />
-          <span className="text-sm font-medium text-gray-800">Dry run (validate only)</span>
+          <span className="text-sm font-medium text-gray-800 dark:text-gray-200">Dry run (validate only)</span>
         </label>
         <button
           onClick={handleSubmit}
           disabled={loading}
-          className="bg-blue-700 text-white font-semibold px-6 py-2 rounded-md hover:bg-blue-800 disabled:opacity-50 disabled:cursor-not-allowed shadow-md"
+          className="bg-blue-700 dark:bg-blue-600 text-white font-semibold px-6 py-2 rounded-md hover:bg-blue-800 dark:hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-md"
         >
           {loading ? 'Saving...' : 'Save Setpoints'}
         </button>

@@ -7,7 +7,7 @@
   line-height: 1.5;
   font-weight: 400;
 
-  color-scheme: light;
+  color-scheme: light dark;
   color: #1f2937; /* Dark gray for high contrast */
   background-color: #f3f4f6; /* Light gray background */
 
@@ -17,12 +17,23 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
+:root.dark {
+  color: #f9fafb; /* Light gray for high contrast */
+  background-color: #000000; /* True black background */
+}
+
 body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
   background-color: #f3f4f6;
   color: #1f2937;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+.dark body {
+  background-color: #000000;
+  color: #f9fafb;
 }
 
 #root {

@@ -24,6 +24,8 @@ export default function ClimateScheduleEditor({ location, cluster }: ClimateSche
   const [schedule, setSchedule] = useState<ClimateSchedule | null>(null)
   const [lightSchedule, setLightSchedule] = useState<any>(null)
   const [currentSetpoints, setCurrentSetpoints] = useState<Record<string, any>>({})
+  // Store current database values separately (for "Current:" labels)
+  const [currentSchedule, setCurrentSchedule] = useState<ClimateSchedule | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -55,7 +57,27 @@ export default function ClimateScheduleEditor({ location, cluster }: ClimateSche
         // Don't fail the whole load if setpoints can't be loaded
       }
       
+      // Store current database values (for "Current:" labels) - make a deep copy
+      // This ensures currentSchedule never changes when form fields are edited
+      // Use explicit values to ensure they're always set (even if 0)
+      const currentPreDay = climateData.pre_day_duration !== undefined && climateData.pre_day_duration !== null ? climateData.pre_day_duration : 0
+      const currentPreNight = climateData.pre_night_duration !== undefined && climateData.pre_night_duration !== null ? climateData.pre_night_duration : 0
+      
+      setCurrentSchedule({
+        day_start_time: climateData.day_start_time,
+        day_end_time: climateData.day_end_time,
+        pre_day_duration: currentPreDay,
+        pre_night_duration: currentPreNight,
+        setpoints: {
+          DAY: { ...(climateData.setpoints?.DAY || {}) },
+          NIGHT: { ...(climateData.setpoints?.NIGHT || {}) },
+          PRE_DAY: { ...(climateData.setpoints?.PRE_DAY || {}) },
+          PRE_NIGHT: { ...(climateData.setpoints?.PRE_NIGHT || {}) }
+        }
+      })
+      
       // Merge current setpoints with schedule setpoints (current setpoints as defaults)
+      // Form fields should be populated with database values on load
       const setpoints = {
         DAY: { ...setpointsMap.DAY, ...(climateData.setpoints?.DAY || {}) },
         NIGHT: { ...setpointsMap.NIGHT, ...(climateData.setpoints?.NIGHT || {}) },
@@ -119,33 +141,35 @@ export default function ClimateScheduleEditor({ location, cluster }: ClimateSche
   }
 
   if (loading) {
-    return <div className="text-gray-900">Loading climate schedule...</div>
+    return <div className="text-gray-900 dark:text-gray-100">Loading climate schedule...</div>
   }
 
   if (!schedule) {
-    return <div className="text-gray-900">Failed to load climate schedule</div>
+    return <div className="text-gray-900 dark:text-gray-100">Failed to load climate schedule</div>
   }
 
   return (
     <div className="space-y-8">
       {error && (
-        <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded">
+        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-800 dark:text-red-300 px-4 py-3 rounded">
           {error}
         </div>
       )}
       {success && (
-        <div className="bg-green-50 border border-green-200 text-green-800 px-4 py-3 rounded">
+        <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 text-green-800 dark:text-green-300 px-4 py-3 rounded">
           {success}
         </div>
       )}
 
       <section>
-        <h2 className="text-xl font-semibold mb-4 text-gray-900">Climate Schedule Timeline</h2>
+        <h2 className="text-xl font-semibold mb-4 text-gray-900 dark:text-gray-100">Climate Schedule Timeline</h2>
         <SetpointTimeline
           dayStartTime={schedule.day_start_time}
           dayEndTime={schedule.day_end_time}
           preDayDuration={schedule.pre_day_duration}
           preNightDuration={schedule.pre_night_duration}
+          currentPreDayDuration={currentSchedule?.pre_day_duration !== undefined ? currentSchedule.pre_day_duration : schedule.pre_day_duration}
+          currentPreNightDuration={currentSchedule?.pre_night_duration !== undefined ? currentSchedule.pre_night_duration : schedule.pre_night_duration}
           onDayStartChange={(time) => handleScheduleChange({ day_start_time: time })}
           onDayEndChange={(time) => handleScheduleChange({ day_end_time: time })}
           onPreDayDurationChange={(duration) => handleScheduleChange({ pre_day_duration: duration })}
@@ -160,43 +184,43 @@ export default function ClimateScheduleEditor({ location, cluster }: ClimateSche
         />
       </section>
 
-      <section className="border-t border-gray-200 pt-6">
-        <h2 className="text-xl font-semibold mb-4 text-gray-900">Setpoints</h2>
+      <section className="border-t border-gray-200 dark:border-gray-800 pt-6">
+        <h2 className="text-xl font-semibold mb-4 text-gray-900 dark:text-gray-100">Setpoints</h2>
         <div className="grid grid-cols-2 gap-6">
           <div>
-            <h3 className="text-lg font-semibold mb-3 text-gray-800">Day</h3>
+            <h3 className="text-lg font-semibold mb-3 text-gray-800 dark:text-gray-200">Day</h3>
             <SetpointModeEditor
               mode="DAY"
               setpoint={schedule.setpoints.DAY || {}}
-              currentSetpoint={currentSetpoints.DAY}
+              currentSetpoint={{ ...currentSetpoints.DAY, ...(currentSchedule?.setpoints?.DAY || {}) }}
               onChange={(data) => handleSetpointChange('DAY', data)}
             />
           </div>
           <div>
-            <h3 className="text-lg font-semibold mb-3 text-gray-800">Night</h3>
+            <h3 className="text-lg font-semibold mb-3 text-gray-800 dark:text-gray-200">Night</h3>
             <SetpointModeEditor
               mode="NIGHT"
               setpoint={schedule.setpoints.NIGHT || {}}
-              currentSetpoint={currentSetpoints.NIGHT}
+              currentSetpoint={{ ...currentSetpoints.NIGHT, ...(currentSchedule?.setpoints?.NIGHT || {}) }}
               onChange={(data) => handleSetpointChange('NIGHT', data)}
             />
           </div>
           <div>
-            <h3 className="text-lg font-semibold mb-3 text-gray-800">Pre-Day</h3>
+            <h3 className="text-lg font-semibold mb-3 text-gray-800 dark:text-gray-200">Pre-Day</h3>
             <SetpointModeEditor
               mode="PRE_DAY"
               setpoint={schedule.setpoints.PRE_DAY || {}}
-              currentSetpoint={currentSetpoints.PRE_DAY}
+              currentSetpoint={{ ...currentSetpoints.PRE_DAY, ...(currentSchedule?.setpoints?.PRE_DAY || {}) }}
               onChange={(data) => handleSetpointChange('PRE_DAY', data)}
               isAbsolute={true}
             />
           </div>
           <div>
-            <h3 className="text-lg font-semibold mb-3 text-gray-800">Pre-Night</h3>
+            <h3 className="text-lg font-semibold mb-3 text-gray-800 dark:text-gray-200">Pre-Night</h3>
             <SetpointModeEditor
               mode="PRE_NIGHT"
               setpoint={schedule.setpoints.PRE_NIGHT || {}}
-              currentSetpoint={currentSetpoints.PRE_NIGHT}
+              currentSetpoint={{ ...currentSetpoints.PRE_NIGHT, ...(currentSchedule?.setpoints?.PRE_NIGHT || {}) }}
               onChange={(data) => handleSetpointChange('PRE_NIGHT', data)}
               isAbsolute={true}
             />
@@ -208,7 +232,7 @@ export default function ClimateScheduleEditor({ location, cluster }: ClimateSche
         <button
           onClick={handleSave}
           disabled={saving}
-          className="px-6 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
+          className="px-6 py-2 bg-blue-600 dark:bg-blue-500 text-white rounded hover:bg-blue-700 dark:hover:bg-blue-600 disabled:bg-gray-400 dark:disabled:bg-gray-600 disabled:cursor-not-allowed"
         >
           {saving ? 'Saving...' : 'Save Climate Schedule'}
         </button>
@@ -233,12 +257,12 @@ function SetpointModeEditor({ mode: _mode, setpoint, currentSetpoint, onChange, 
   return (
     <div className="space-y-4">
       {isAbsolute && (
-        <div className="text-sm text-gray-600 mb-2">
+        <div className="text-sm text-gray-600 dark:text-gray-400 mb-2">
           Absolute setpoint (not relative to night/day)
         </div>
       )}
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">
+        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
           Heating Setpoint (°C)
         </label>
         <input
@@ -246,16 +270,16 @@ function SetpointModeEditor({ mode: _mode, setpoint, currentSetpoint, onChange, 
           step="0.1"
           value={setpoint.heating_setpoint ?? ''}
           onChange={(e) => handleChange('heating_setpoint', e.target.value ? parseFloat(e.target.value) : null)}
-          className="w-full px-3 py-2 border border-gray-300 rounded-md"
+          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
         />
         {currentSetpoint?.heating_setpoint !== undefined && (
-          <div className="mt-1 text-xs text-gray-500">
+          <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
             Current: {currentSetpoint.heating_setpoint}°C
           </div>
         )}
       </div>
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">
+        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
           Cooling Setpoint (°C)
         </label>
         <input
@@ -263,16 +287,16 @@ function SetpointModeEditor({ mode: _mode, setpoint, currentSetpoint, onChange, 
           step="0.1"
           value={setpoint.cooling_setpoint ?? ''}
           onChange={(e) => handleChange('cooling_setpoint', e.target.value ? parseFloat(e.target.value) : null)}
-          className="w-full px-3 py-2 border border-gray-300 rounded-md"
+          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
         />
         {currentSetpoint?.cooling_setpoint !== undefined && (
-          <div className="mt-1 text-xs text-gray-500">
+          <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
             Current: {currentSetpoint.cooling_setpoint}°C
           </div>
         )}
       </div>
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">
+        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
           VPD Setpoint (kPa)
         </label>
         <input
@@ -280,16 +304,16 @@ function SetpointModeEditor({ mode: _mode, setpoint, currentSetpoint, onChange, 
           step="0.01"
           value={setpoint.vpd ?? ''}
           onChange={(e) => handleChange('vpd', e.target.value ? parseFloat(e.target.value) : null)}
-          className="w-full px-3 py-2 border border-gray-300 rounded-md"
+          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
         />
         {currentSetpoint?.vpd !== undefined && (
-          <div className="mt-1 text-xs text-gray-500">
+          <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
             Current: {currentSetpoint.vpd} kPa
           </div>
         )}
       </div>
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">
+        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
           CO₂ Setpoint (ppm)
         </label>
         <input
@@ -297,16 +321,16 @@ function SetpointModeEditor({ mode: _mode, setpoint, currentSetpoint, onChange, 
           step="1"
           value={setpoint.co2 ?? ''}
           onChange={(e) => handleChange('co2', e.target.value ? parseFloat(e.target.value) : null)}
-          className="w-full px-3 py-2 border border-gray-300 rounded-md"
+          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
         />
         {currentSetpoint?.co2 !== undefined && (
-          <div className="mt-1 text-xs text-gray-500">
+          <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
             Current: {currentSetpoint.co2} ppm
           </div>
         )}
       </div>
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">
+        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
           Ramp In Duration (minutes)
         </label>
         <input
@@ -315,15 +339,15 @@ function SetpointModeEditor({ mode: _mode, setpoint, currentSetpoint, onChange, 
           max="240"
           value={setpoint.ramp_in_duration || 0}
           onChange={(e) => handleChange('ramp_in_duration', parseInt(e.target.value) || 0)}
-          className="w-full px-3 py-2 border border-gray-300 rounded-md"
+          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
         />
         {currentSetpoint?.ramp_in_duration !== undefined && (
-          <div className="mt-1 text-xs text-gray-500">
+          <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
             Current: {currentSetpoint.ramp_in_duration} minutes
           </div>
         )}
         {setpoint.vpd && setpoint.ramp_in_duration > 15 && (
-          <div className="mt-1 text-sm text-yellow-600">
+          <div className="mt-1 text-sm text-yellow-600 dark:text-yellow-400">
             Warning: VPD ramp duration &gt; 15 minutes may cause stomatal shock
           </div>
         )}

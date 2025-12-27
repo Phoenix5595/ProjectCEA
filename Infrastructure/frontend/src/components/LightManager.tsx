@@ -95,7 +95,7 @@ export default function LightManager({ location, cluster, lights }: LightManager
 
   if (dimmableLights.length === 0) {
     return (
-      <div className="text-gray-600">
+      <div className="text-gray-600 dark:text-gray-400">
         No dimmable lights configured for this zone.
       </div>
     )
@@ -103,22 +103,22 @@ export default function LightManager({ location, cluster, lights }: LightManager
 
   return (
     <div className="space-y-6">
-      <div className="border border-gray-200 rounded-lg overflow-hidden bg-white">
+      <div className="border border-gray-200 dark:border-gray-800 rounded-lg overflow-hidden bg-white dark:bg-gray-900">
         {/* Header Row */}
-        <div className="grid grid-cols-[2fr_1fr_1fr_3fr_1fr] border-b border-gray-200 bg-gray-50">
-          <div className="px-4 py-3 text-left text-sm font-semibold text-gray-900 border-r border-gray-200">
+        <div className="grid grid-cols-[2fr_1fr_1fr_3fr_1fr] border-b border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-800">
+          <div className="px-4 py-3 text-left text-sm font-semibold text-gray-900 dark:text-gray-100 border-r border-gray-200 dark:border-gray-800">
             Device
           </div>
-          <div className="px-4 py-3 text-center text-sm font-semibold text-gray-900 border-r border-gray-200">
+          <div className="px-4 py-3 text-center text-sm font-semibold text-gray-900 dark:text-gray-100 border-r border-gray-200 dark:border-gray-800">
             Intensity
           </div>
-          <div className="px-4 py-3 text-center text-sm font-semibold text-gray-900 border-r border-gray-200">
+          <div className="px-4 py-3 text-center text-sm font-semibold text-gray-900 dark:text-gray-100 border-r border-gray-200 dark:border-gray-800">
             Voltage
           </div>
-          <div className="px-4 py-3 text-center text-sm font-semibold text-gray-900 border-r border-gray-200">
+          <div className="px-4 py-3 text-center text-sm font-semibold text-gray-900 dark:text-gray-100 border-r border-gray-200 dark:border-gray-800">
             Slider
           </div>
-          <div className="px-4 py-3 text-center text-sm font-semibold text-gray-900">
+          <div className="px-4 py-3 text-center text-sm font-semibold text-gray-900 dark:text-gray-100">
             <div>Number</div>
             <div>field</div>
           </div>
@@ -135,36 +135,36 @@ export default function LightManager({ location, cluster, lights }: LightManager
             : `Device:Board ${light.dimming_board_id ?? '?'}, Channel ${light.dimming_channel ?? '?'}`
 
           return (
-            <div key={light.device_name} className="grid grid-cols-[2fr_1fr_1fr_3fr_1fr] border-b border-gray-200 hover:bg-gray-50">
-              <div className="px-4 py-3 text-sm text-gray-900 border-r border-gray-200">
+            <div key={light.device_name} className="grid grid-cols-[2fr_1fr_1fr_3fr_1fr] border-b border-gray-200 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800">
+              <div className="px-4 py-3 text-sm text-gray-900 dark:text-gray-100 border-r border-gray-200 dark:border-gray-800">
                 <div className="font-medium">{displayName}</div>
-                <div className="text-xs text-gray-600 mt-1">{deviceInfo}</div>
+                <div className="text-xs text-gray-600 dark:text-gray-400 mt-1">{deviceInfo}</div>
                 {error && (
-                  <div className="text-xs text-red-600 mt-1">{error}</div>
+                  <div className="text-xs text-red-600 dark:text-red-400 mt-1">{error}</div>
                 )}
                 {isLoading && (
-                  <div className="text-xs text-gray-500 mt-1">Updating...</div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">Updating...</div>
                 )}
               </div>
-              <div className="px-4 py-3 text-center border-r border-gray-200 flex items-center justify-center">
+              <div className="px-4 py-3 text-center border-r border-gray-200 dark:border-gray-800 flex items-center justify-center">
               {status ? (
-                <div className="text-sm font-semibold text-gray-900">
+                <div className="text-sm font-semibold text-gray-900 dark:text-gray-100">
                   {status.intensity.toFixed(1)}%
                 </div>
               ) : (
-                <div className="text-sm text-gray-400">-</div>
+                <div className="text-sm text-gray-400 dark:text-gray-500">-</div>
               )}
             </div>
-            <div className="px-4 py-3 text-center border-r border-gray-200 flex items-center justify-center">
+            <div className="px-4 py-3 text-center border-r border-gray-200 dark:border-gray-800 flex items-center justify-center">
               {status ? (
-                <div className="text-sm font-semibold text-gray-900">
+                <div className="text-sm font-semibold text-gray-900 dark:text-gray-100">
                   {status.voltage.toFixed(2)}V
                 </div>
               ) : (
-                <div className="text-sm text-gray-400">-</div>
+                <div className="text-sm text-gray-400 dark:text-gray-500">-</div>
               )}
             </div>
-            <div className="px-4 py-3 border-r border-gray-200 flex items-center">
+            <div className="px-4 py-3 border-r border-gray-200 dark:border-gray-800 flex items-center">
               {status ? (
                 <input
                   type="range"
@@ -186,10 +186,10 @@ export default function LightManager({ location, cluster, lights }: LightManager
                     }
                   }}
                   disabled={isLoading}
-                  className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
+                  className="w-full h-2 bg-gray-200 dark:bg-gray-900 rounded-lg appearance-none cursor-pointer accent-blue-600"
                 />
               ) : (
-                <div className="text-sm text-gray-400 w-full text-center">Loading...</div>
+                <div className="text-sm text-gray-400 dark:text-gray-500 w-full text-center">Loading...</div>
               )}
             </div>
             <div className="px-4 py-3 text-center flex items-center justify-center">
@@ -211,10 +211,10 @@ export default function LightManager({ location, cluster, lights }: LightManager
                     }
                   }}
                   disabled={isLoading}
-                  className="w-20 border-2 border-gray-400 rounded-md px-2 py-1 bg-white text-gray-900 font-medium text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-20 border-2 border-gray-400 dark:border-gray-600 rounded-md px-2 py-1 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 font-medium text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               ) : (
-                <div className="text-sm text-gray-400">-</div>
+                <div className="text-sm text-gray-400 dark:text-gray-500">-</div>
               )}
             </div>
             </div>

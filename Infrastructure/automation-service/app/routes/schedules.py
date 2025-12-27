@@ -12,6 +12,17 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
+SETPOINT_MODES = ("DAY", "NIGHT", "PRE_DAY", "PRE_NIGHT")
+
+
+def _parse_time_str(value: str) -> dt_time:
+    """Parse 'HH:MM' or 'HH:MM:SS' into a datetime.time."""
+    parts = value.split(":")
+    hour = int(parts[0])
+    minute = int(parts[1]) if len(parts) > 1 else 0
+    second = int(parts[2]) if len(parts) > 2 else 0
+    return dt_time(hour, minute, second)
+
 
 class ScheduleCreate(BaseModel):
     name: str
@@ -744,7 +755,7 @@ async def get_climate_schedule(
     
     # Get setpoints for all modes
     setpoints = {}
-    for mode in ['DAY', 'NIGHT', 'PRE_DAY', 'PRE_NIGHT']:
+    for mode in SETPOINT_MODES:
         setpoint_data = await database.get_setpoint(location, cluster, mode)
         if setpoint_data:
             setpoints[mode] = {
@@ -823,7 +834,7 @@ async def save_climate_schedule(
     
     # Validate setpoints and check for VPD ramp warnings
     for mode, setpoint_data in schedule.setpoints.items():
-        if mode not in ['DAY', 'NIGHT', 'PRE_DAY', 'PRE_NIGHT']:
+        if mode not in SETPOINT_MODES:
             raise HTTPException(
                 status_code=400,
                 detail=f"Invalid mode in setpoints: {mode}. Valid modes: DAY, NIGHT, PRE_DAY, PRE_NIGHT"
@@ -890,11 +901,8 @@ async def save_climate_schedule(
                     """, schedule.pre_day_duration, schedule.pre_night_duration, existing['id'])
                 else:
                     # Create new (use a dummy device_name for climate schedules)
-                    # Convert time strings to TIME objects (handle both "HH:MM" and "HH:MM:SS" formats)
-                    start_parts = schedule.day_start_time.split(':')
-                    end_parts = schedule.day_end_time.split(':')
-                    start_time_obj = dt_time(int(start_parts[0]), int(start_parts[1]), int(start_parts[2]) if len(start_parts) > 2 else 0)
-                    end_time_obj = dt_time(int(end_parts[0]), int(end_parts[1]), int(end_parts[2]) if len(end_parts) > 2 else 0)
+                    start_time_obj = _parse_time_str(schedule.day_start_time)
+                    end_time_obj = _parse_time_str(schedule.day_end_time)
                     
                     await conn.execute("""
                         INSERT INTO schedules (name, location, cluster, device_name, start_time, end_time, enabled, pre_day_duration, pre_night_duration)

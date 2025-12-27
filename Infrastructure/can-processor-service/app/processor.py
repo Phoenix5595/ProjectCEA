@@ -11,6 +11,101 @@ logger = logging.getLogger(__name__)
 # Key: (location, cluster), Value: latest pressure (hPa)
 _pressure_state: Dict[Tuple[str, str], float] = defaultdict(lambda: 1013.25)  # Default sea level pressure
 
+# State tracker for CO2 readings per sensor
+# Key: sensor_name, Value: list of (value, timestamp) tuples (max 3 entries)
+_co2_history: Dict[str, List[Tuple[float, datetime]]] = defaultdict(list)
+
+# CO2 filter configuration
+CO2_MIN_VALID = 300.0  # Minimum valid CO2 reading (ppm)
+CO2_MAX_DROP_RATE = 200.0  # Maximum drop rate to allow (ppm/sec)
+CO2_HISTORY_SIZE = 3  # Number of recent readings to track
+CO2_MAX_AGE_SECONDS = 30  # Maximum age of previous reading to consider (seconds)
+
+
+def validate_co2_reading(sensor_name: str, value: float, timestamp: datetime) -> bool:
+    """Validate a CO2 reading to detect false 0 ppm readings.
+    
+    This function checks if a 0 ppm reading is legitimate by:
+    1. Checking if previous reading was valid (> 300 ppm)
+    2. Calculating drop rate from previous reading
+    3. Allowing fast drops (> 200 ppm/sec) as legitimate
+    4. Rejecting slow drops to 0 as likely false readings
+    
+    Args:
+        sensor_name: Name of the CO2 sensor (e.g., 'co2_f', 'co2_b')
+        value: CO2 reading value (ppm)
+        timestamp: Timestamp of the reading
+    
+    Returns:
+        True if reading should be accepted, False if it should be filtered out
+    """
+    # If not a 0 reading, always accept (and update history)
+    if value > 0:
+        # Update history
+        history = _co2_history[sensor_name]
+        history.append((value, timestamp))
+        # Keep only last CO2_HISTORY_SIZE readings
+        if len(history) > CO2_HISTORY_SIZE:
+            history.pop(0)
+        return True
+    
+    # For 0 readings, check against previous readings
+    history = _co2_history[sensor_name]
+    
+    # If no history, allow (first reading or after restart)
+    if not history:
+        history.append((value, timestamp))
+        return True
+    
+    # Get most recent previous reading
+    prev_value, prev_timestamp = history[-1]
+    
+    # If previous was also 0, allow (consecutive 0s might be legitimate sensor issue)
+    if prev_value == 0:
+        history.append((value, timestamp))
+        if len(history) > CO2_HISTORY_SIZE:
+            history.pop(0)
+        return True
+    
+    # Check if previous reading is too old (> 30 seconds)
+    time_delta = (timestamp - prev_timestamp).total_seconds()
+    if time_delta > CO2_MAX_AGE_SECONDS:
+        # Previous reading too old, treat as no previous reading
+        history.append((value, timestamp))
+        if len(history) > CO2_HISTORY_SIZE:
+            history.pop(0)
+        return True
+    
+    # Previous reading was valid (> 300 ppm)
+    if prev_value >= CO2_MIN_VALID:
+        # Calculate drop rate
+        if time_delta > 0:
+            drop_rate = (prev_value - value) / time_delta
+        else:
+            drop_rate = float('inf')  # Same timestamp, very fast drop
+        
+        # If drop rate exceeds threshold, allow (legitimate fast drop)
+        if drop_rate > CO2_MAX_DROP_RATE:
+            logger.debug(f"CO2 {sensor_name}: Allowing 0 reading with fast drop rate "
+                        f"{drop_rate:.1f} ppm/sec (previous: {prev_value:.1f} ppm)")
+            history.append((value, timestamp))
+            if len(history) > CO2_HISTORY_SIZE:
+                history.pop(0)
+            return True
+        else:
+            # Slow drop to 0, likely false reading - reject
+            logger.warning(f"CO2 {sensor_name}: Filtering false 0 reading "
+                         f"(previous: {prev_value:.1f} ppm, drop rate: {drop_rate:.1f} ppm/sec)")
+            # Don't add to history - we're rejecting this reading
+            return False
+    
+    # Previous reading was between 0 and CO2_MIN_VALID
+    # Allow the 0 reading (can't determine if false)
+    history.append((value, timestamp))
+    if len(history) > CO2_HISTORY_SIZE:
+        history.pop(0)
+    return True
+
 
 def validate_decoded_data(decoded: Dict[str, Any]) -> bool:
     """Validate decoded CAN frame data.
@@ -108,7 +203,13 @@ def extract_sensor_values(decoded: Dict[str, Any], location: str, cluster: str) 
         # CO2
         if 'co2_ppm' in decoded and decoded['co2_ppm'] is not None:
             sensor_key = f"co2_{suffix}" if suffix else "co2"
-            sensors.append((sensor_key, float(decoded['co2_ppm']), "ppm"))
+            co2_value = float(decoded['co2_ppm'])
+            
+            # Validate CO2 reading (filters false 0 readings)
+            # Use current time for timestamp since we're processing in real-time
+            if validate_co2_reading(sensor_key, co2_value, datetime.now()):
+                sensors.append((sensor_key, co2_value, "ppm"))
+            # If validation fails, reading is filtered out (not added to sensors list)
         
         # Secondary temperature
         if 'temperature_c' in decoded and decoded['temperature_c'] is not None:

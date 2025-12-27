@@ -212,6 +212,10 @@ AND md.time > NOW() - INTERVAL '30 days'
 ORDER BY md.time DESC;
 ```
 
+## Schema Audit (current)
+
+- Reviewed automation-related tables (`schedules`, `setpoints`, `pid_parameters`, `config_versions`, `effective_setpoints`). No unused tables/columns identified for removal; keep `ramp_in_duration` aligned with UI expectations.
+
 ## Monitoring
 
 ### Monitoring Scripts

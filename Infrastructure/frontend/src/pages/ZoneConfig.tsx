@@ -58,29 +58,29 @@ export default function ZoneConfig() {
 
 
   if (!location || !cluster) {
-    return <div className="text-gray-900">Invalid zone</div>
+    return <div className="text-gray-900 dark:text-gray-100">Invalid zone</div>
   }
 
   return (
-    <div className="min-h-screen bg-gray-100 p-8">
+    <div className="min-h-screen bg-gray-100 dark:bg-gray-950 p-8">
       <div className="max-w-7xl mx-auto">
-        <Link to="/" className="text-blue-700 hover:text-blue-800 hover:underline mb-4 inline-block font-medium">
+        <Link to="/" className="text-blue-700 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 hover:underline mb-4 inline-block font-medium">
           ← Back to Dashboard
         </Link>
         
-        <h1 className="text-3xl font-bold mb-8 text-gray-900">
+        <h1 className="text-3xl font-bold mb-8 text-gray-900 dark:text-gray-100">
           Configuration: {cluster === 'main' ? getLocationDisplayName(location) : `${getLocationDisplayName(location)} - ${cluster}`}
         </h1>
 
-        <div className="bg-white rounded-lg shadow-md border border-gray-200">
-          <div className="border-b border-gray-200">
+        <div className="bg-white dark:bg-gray-900 rounded-lg shadow-md border border-gray-200 dark:border-gray-800">
+          <div className="border-b border-gray-200 dark:border-gray-800">
             <nav className="flex">
               <button
                 onClick={() => setActiveTab('climate')}
                 className={`px-6 py-3 font-semibold ${
                   activeTab === 'climate'
-                    ? 'border-b-2 border-blue-600 text-blue-700 bg-blue-50'
-                    : 'text-gray-700 hover:text-gray-900 hover:bg-gray-50'
+                    ? 'border-b-2 border-blue-600 dark:border-blue-500 text-blue-700 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20'
+                    : 'text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-800'
                 }`}
               >
                 Climate
@@ -89,8 +89,8 @@ export default function ZoneConfig() {
                 onClick={() => setActiveTab('lights')}
                 className={`px-6 py-3 font-semibold ${
                   activeTab === 'lights'
-                    ? 'border-b-2 border-blue-600 text-blue-700 bg-blue-50'
-                    : 'text-gray-700 hover:text-gray-900 hover:bg-gray-50'
+                    ? 'border-b-2 border-blue-600 dark:border-blue-500 text-blue-700 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20'
+                    : 'text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-800'
                 }`}
               >
                 Lights
@@ -99,8 +99,8 @@ export default function ZoneConfig() {
                 onClick={() => setActiveTab('pid')}
                 className={`px-6 py-3 font-semibold ${
                   activeTab === 'pid'
-                    ? 'border-b-2 border-blue-600 text-blue-700 bg-blue-50'
-                    : 'text-gray-700 hover:text-gray-900 hover:bg-gray-50'
+                    ? 'border-b-2 border-blue-600 dark:border-blue-500 text-blue-700 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20'
+                    : 'text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-800'
                 }`}
               >
                 PID Parameters
@@ -108,18 +108,18 @@ export default function ZoneConfig() {
             </nav>
           </div>
 
-          <div className="p-6">
+          <div className="p-6 dark:bg-black">
             {activeTab === 'climate' && location && (
               <ClimateScheduleEditor location={location} cluster={cluster!} />
             )}
             {activeTab === 'lights' && location && (
               <div className="space-y-8">
                 <section>
-                  <h2 className="text-xl font-semibold mb-4 text-gray-900">Light Schedule</h2>
+                  <h2 className="text-xl font-semibold mb-4 text-gray-900 dark:text-gray-100">Light Schedule</h2>
                   <RoomScheduleEditor location={location} cluster={cluster!} period="day" />
                 </section>
-                <section className="border-t border-gray-200 pt-6">
-                  <h2 className="text-xl font-semibold mb-4 text-gray-900">Light Management</h2>
+                <section className="border-t border-gray-200 dark:border-gray-800 pt-6">
+                  <h2 className="text-xl font-semibold mb-4 text-gray-900 dark:text-gray-100">Light Management</h2>
                   <LightManager location={location} cluster={cluster!} lights={lights} />
                 </section>
               </div>

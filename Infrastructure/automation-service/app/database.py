@@ -744,6 +744,15 @@ class DatabaseManager:
             except Exception:
                 pass  # Column might already exist
             
+            # Add ramp_in_duration column for setpoint ramping (for existing databases)
+            try:
+                await conn.execute("""
+                    ALTER TABLE setpoints ADD COLUMN IF NOT EXISTS ramp_in_duration INTEGER
+                    CHECK (ramp_in_duration IS NULL OR (ramp_in_duration >= 0 AND ramp_in_duration <= 240))
+                """)
+            except Exception:
+                pass  # Column might already exist
+            
             # Drop old unique constraint if it exists and create new one
             try:
                 await conn.execute("""
@@ -1926,7 +1935,7 @@ class DatabaseManager:
                     FROM schedules
                     WHERE location = $1 AND cluster = $2
                       AND (pre_day_duration IS NOT NULL OR pre_night_duration IS NOT NULL)
-                    ORDER BY updated_at DESC
+                    ORDER BY id DESC
                     LIMIT 1
                 """, location, cluster)
                 
