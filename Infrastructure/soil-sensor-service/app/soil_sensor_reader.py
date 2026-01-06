@@ -1,9 +1,9 @@
 """Soil sensor reader for DFRobot RS485 4-in-1 sensor."""
-import logging
+from shared.logging import get_logger
 from typing import Dict, Optional
 from .modbus_rtu import ModbusRTU
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class SoilSensorReader:
@@ -33,12 +33,12 @@ class SoilSensorReader:
         }
         
         # Scaling factors for converting register values to actual measurements
-        # These may need adjustment based on actual sensor documentation
+        # Based on DFRobot SEN0604 documentation: ph = (Data[9] * 256 + Data[10]) / 10.00
         self.SCALING = {
             'temperature': 0.1,   # Register value * 0.1 = temperature in °C
             'humidity': 0.1,      # Register value * 0.1 = humidity in %
             'ec': 1.0,            # Register value = EC in µS/cm (or may need scaling)
-            'ph': 0.01            # Register value * 0.01 = pH value
+            'ph': 0.1             # Register value * 0.1 = pH value (matches DFRobot documentation)
         }
         
     def connect(self):

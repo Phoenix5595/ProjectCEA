@@ -1,4 +1,5 @@
 """Shared dependencies for FastAPI routes."""
+from shared.logging import get_logger
 from app.database import DatabaseManager
 from app.config import ConfigLoader
 from typing import Optional

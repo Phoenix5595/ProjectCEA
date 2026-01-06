@@ -1,11 +1,62 @@
 """Helper functions to process Redis Stream entries into sensor data points."""
+from shared.logging import get_logger
 import math
+import sys
+import os
 from typing import Dict, Any, List, Tuple, Optional
 from datetime import datetime
 from collections import defaultdict
 from app.models import DataPoint
 
-# State tracker for pressure values per location/cluster
+# Import shared sensor processing functions
+try:
+    shared_path = os.path.join(os.path.dirname(__file__), '..', '..', '..')
+    sys.path.insert(0, shared_path)
+    from shared import (
+        get_sensor_suffix as shared_get_sensor_suffix,
+        calculate_rh as shared_calculate_rh,
+        calculate_vpd as shared_calculate_vpd,
+        update_pressure_state,
+        get_pressure_state
+    )
+except ImportError:
+    # Fallback implementations
+    def shared_get_sensor_suffix(location: str, cluster: str) -> str:
+        suffix_map = {
+            ('Veg Room', 'clusterA'): '_f',
+            ('Veg Room', 'clusterB'): '_b',
+            ('Flower Room', 'clusterA'): '_f',
+            ('Flower Room', 'clusterB'): '_b',
+            ('Mother Room', 'clusterA'): '_f',
+            ('Mother Room', 'clusterB'): '_b',
+        }
+        return suffix_map.get((location, cluster), '_f')
+
+    def shared_calculate_rh(temp_dry, temp_wet, pressure=1013.25):
+        if temp_dry <= temp_wet:
+            return 100.0
+        a, b = 17.27, 237.3
+        es_dry = 6.1078 * math.exp((a * temp_dry) / (b + temp_dry))
+        es_wet = 6.1078 * math.exp((a * temp_wet) / (b + temp_wet))
+        e = es_wet - ((pressure / 1000) * (temp_dry - temp_wet) * 0.00066 * (1 + 0.00115 * temp_wet))
+        return max(0.0, min(100.0, (e / es_dry) * 100.0))
+
+    def shared_calculate_vpd(temp_dry, temp_wet, pressure=1013.25):
+        if temp_dry <= temp_wet:
+            return 0.0
+        a, b = 17.27, 237.3
+        es_dry = 0.6108 * math.exp((a * temp_dry) / (b + temp_dry))
+        es_wet = 0.6108 * math.exp((a * temp_wet) / (b + temp_wet))
+        e = es_wet - ((pressure / 1000) * (temp_dry - temp_wet) * 0.00066 * (1 + 0.00115 * temp_wet))
+        return max(0.0, es_dry - e)
+
+    def update_pressure_state(location, cluster, pressure):
+        pass
+
+    def get_pressure_state(location, cluster):
+        return 1013.25
+
+# State tracker for pressure values per location/cluster (local to stream processor)
 _pressure_state: Dict[Tuple[str, str], float] = defaultdict(lambda: 1013.25)
 
 
@@ -22,31 +73,31 @@ def get_location_from_node(node_id: Optional[int]) -> Tuple[str, str]:
 
 
 def get_sensor_suffix(location: str, cluster: str) -> str:
-    """Get sensor name suffix based on location and cluster."""
-    if location == "Flower Room":
-        return "f" if cluster == "front" else "b"
-    elif location == "Veg Room":
-        return "v"
-    elif location == "Lab":
-        return ""
-    return ""
+    """Get the sensor suffix for a location/cluster combination.
+
+    Note: Stream processor uses different cluster naming than CAN processor.
+    This function adapts the shared suffix mapping to stream processor conventions.
+    """
+    # Adapt cluster names for stream processor
+    adapted_cluster = cluster
+    if cluster == "back":
+        adapted_cluster = "clusterB"
+    elif cluster == "front":
+        adapted_cluster = "clusterA"
+    elif cluster == "main":
+        adapted_cluster = "clusterA"  # Default to clusterA for main
+
+    return shared_get_sensor_suffix(location, adapted_cluster)
 
 
 def calculate_rh(temp_dry: float, temp_wet: float, pressure: float = 1013.25) -> float:
-    """Calculate relative humidity from dry and wet bulb temperatures."""
-    es_dry = 6.112 * math.exp((17.67 * temp_dry) / (temp_dry + 243.5))
-    es_wet = 6.112 * math.exp((17.67 * temp_wet) / (temp_wet + 243.5))
-    e = es_wet - 0.000662 * pressure * (temp_dry - temp_wet)
-    rh = (e / es_dry) * 100.0
-    return max(0.0, min(100.0, rh))
+    """Calculate relative humidity using shared library."""
+    return shared_calculate_rh(temp_dry, temp_wet, pressure)
 
 
 def calculate_vpd(temp_dry: float, temp_wet: float, pressure: float = 1013.25) -> float:
-    """Calculate VPD from dry and wet bulb temperatures."""
-    es = 6.112 * math.exp((17.67 * temp_dry) / (temp_dry + 243.5))
-    ea = 6.112 * math.exp((17.67 * temp_wet) / (temp_wet + 243.5)) - 0.000662 * pressure * (temp_dry - temp_wet)
-    vpd = (es - ea) / 10.0
-    return max(0.0, vpd)
+    """Calculate vapor pressure deficit using shared library."""
+    return shared_calculate_vpd(temp_dry, temp_wet, pressure)
 
 
 def extract_sensor_values_from_decoded(decoded: Dict[str, Any], location: str, cluster: str) -> List[Tuple[str, float, str]]:

@@ -1,11 +1,11 @@
 """Alarm manager for tracking alarms and enforcing failsafe."""
-import logging
+from shared.logging import get_logger
 from typing import Dict, Any, Optional, List
 from datetime import datetime
 from app.redis_client import AutomationRedisClient
 from app.database import DatabaseManager
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class AlarmManager:

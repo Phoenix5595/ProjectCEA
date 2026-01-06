@@ -1,4 +1,5 @@
 """FastAPI application entry point."""
+from shared.logging import get_logger
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
@@ -8,19 +9,19 @@ import uvicorn
 import asyncio
 import signal
 import sys
-import traceback
-import logging
 from contextlib import asynccontextmanager
-from app.routes import sensors, statistics, config, measurement, live
+from app.routes import sensors, config, live
 from app.websocket import websocket_manager
 from datetime import datetime
+from shared.logging import setup_structured_logging
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+# Configure structured logging
+logger = setup_structured_logging(
+    service_name="backend-service",
+    log_level="INFO",
+    console_output=True,
+    json_format=True
 )
-logger = logging.getLogger(__name__)
 
 # Global state for shutdown tracking
 shutdown_event = asyncio.Event()
@@ -190,9 +191,7 @@ app.add_middleware(
 
 # Include routers
 app.include_router(sensors.router)
-app.include_router(statistics.router)
 app.include_router(config.router)
-app.include_router(measurement.router)
 app.include_router(live.router)
 
 

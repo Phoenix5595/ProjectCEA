@@ -98,6 +98,7 @@ export default function RoomScheduleEditor({ location, cluster, period }: RoomSc
       }
 
       await apiClient.saveRoomSchedule(location, cluster, schedule)
+      
       // Reload the schedule to ensure we have the correct values from the database
       await loadRoomSchedule()
       alert('Room schedule saved successfully! All devices in this room will follow this schedule.')

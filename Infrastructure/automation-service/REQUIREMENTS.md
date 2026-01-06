@@ -5,4 +5,6 @@
 - Time parsing accepts `HH:MM` or `HH:MM:SS` strings.
 - Database tables in use: `schedules`, `setpoints`, `pid_parameters`, `config_versions`, `effective_setpoints`. No unused tables identified for removal during latest audit.
 - Keep UI/DB schema aligned for setpoints (modes + `ramp_in_duration`) and schedules (pre_day_duration, pre_night_duration).
+- Light schedules are always daily (lights require `day_of_week = NULL`; per-day light schedules are invalid).
+- Light ramp-up recalculates mid-ramp on target changes and completes within the original `ramp_up_duration` (increase slope if needed); ramp-down always continues to 0% even if the target changes mid-ramp.
 

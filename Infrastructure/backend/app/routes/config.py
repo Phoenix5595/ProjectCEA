@@ -1,4 +1,5 @@
 """Configuration API routes."""
+from shared.logging import get_logger
 from fastapi import APIRouter
 from typing import Dict, Any
 from app.config import ConfigLoader

@@ -15,6 +15,7 @@ export interface Schedule {
   ramp_up_duration?: number | null;  // Minutes to ramp up (0 = instant)
   ramp_down_duration?: number | null;  // Minutes to ramp down (0 = instant)
   created_at: string;
+  updated_at?: string;  // ISO format timestamp for version tracking
 }
 
 export interface ScheduleCreate {
@@ -42,5 +43,6 @@ export interface ScheduleUpdate {
   target_intensity?: number | null;  // 0-100% for light ramp schedules
   ramp_up_duration?: number | null;  // Minutes to ramp up (0 = instant)
   ramp_down_duration?: number | null;  // Minutes to ramp down (0 = instant)
+  expected_version?: string | null;  // ISO format timestamp for optimistic locking
 }
 

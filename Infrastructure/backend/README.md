@@ -34,7 +34,6 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000
 - `GET /health` - Health check
 - `GET /api/sensors/{location}/{cluster}` - Get sensor data
 - `GET /api/sensors/{location}/{cluster}/live` - Get live sensor data from Redis
-- `GET /api/statistics/{sensor_type}/{location}/{cluster}` - Get statistics
 - `GET /api/config` - Get configuration
 - `GET /api/config/locations` - Get available locations
 - `WS /ws/{location}` - WebSocket for real-time updates

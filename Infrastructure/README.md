@@ -393,11 +393,6 @@ curl http://localhost:8000/api/sensors/Flower%20Room/back/live
 curl "http://localhost:8000/api/sensors/Flower%20Room/back?time_range=1%20Hour"
 ```
 
-#### Statistics
-```bash
-curl "http://localhost:8000/api/statistics/dry_bulb_b/Flower%20Room/back?time_range=24%20Hours"
-```
-
 ### Monitoring Scripts
 
 #### CAN Processor Monitor

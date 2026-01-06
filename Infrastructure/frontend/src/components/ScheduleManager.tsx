@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
 import { apiClient } from '../services/api'
 import { findConflicts } from '../utils/conflictDetection'
+import { wsClient } from '../services/websocket'
+import { useToast } from '../contexts/ToastContext'
 import type { Schedule, ScheduleCreate, ScheduleUpdate } from '../types/schedule'
 
 interface ScheduleManagerProps {
@@ -24,11 +26,44 @@ export default function ScheduleManager({ location, cluster }: ScheduleManagerPr
     enabled: true,
   })
   const [conflicts, setConflicts] = useState<string[]>([])
+  const [versionConflict, setVersionConflict] = useState<string | null>(null)
+  const { showToast } = useToast()
 
   useEffect(() => {
     loadSchedules()
     loadDevices()
-  }, [location, cluster])
+    
+    // Listen for schedule updates from WebSocket
+    const unsubscribe = wsClient.on('schedule_update', (message: any) => {
+      if (message.schedule && message.schedule.location === location && message.schedule.cluster === cluster) {
+        // Update the schedule in our list
+        setSchedules(prev => {
+          const index = prev.findIndex(s => s.id === message.schedule_id)
+          if (index >= 0) {
+            const updated = [...prev]
+            updated[index] = { ...updated[index], ...message.schedule }
+            return updated
+          }
+          // If it's a new schedule or we don't have it, reload
+          loadSchedules()
+          return prev
+        })
+        
+        // Show toast notification
+        showToast(`Schedule "${message.schedule.name}" was updated by another user`, 'info')
+        
+        // If we're editing this schedule, refresh it
+        if (editingSchedule && editingSchedule.id === message.schedule_id) {
+          setEditingSchedule({ ...editingSchedule, ...message.schedule })
+          showToast('Schedule was updated. Please review changes before saving.', 'warning', 8000)
+        }
+      }
+    })
+    
+    return () => {
+      unsubscribe()
+    }
+  }, [location, cluster, editingSchedule, showToast])
 
   async function loadDevices() {
     try {
@@ -91,6 +126,7 @@ export default function ScheduleManager({ location, cluster }: ScheduleManagerPr
     }
 
     setLoading(true)
+    setVersionConflict(null)
     try {
       if (editingSchedule) {
         const update: ScheduleUpdate = {
@@ -103,10 +139,13 @@ export default function ScheduleManager({ location, cluster }: ScheduleManagerPr
           target_intensity: formData.target_intensity ?? null,
           ramp_up_duration: formData.ramp_up_duration ?? null,
           ramp_down_duration: formData.ramp_down_duration ?? null,
+          expected_version: editingSchedule.updated_at || null,
         }
         await apiClient.updateSchedule(editingSchedule.id, update)
+        showToast('Schedule updated successfully', 'success')
       } else {
         await apiClient.createSchedule(formData)
+        showToast('Schedule created successfully', 'success')
       }
       setShowForm(false)
       setEditingSchedule(null)
@@ -121,9 +160,48 @@ export default function ScheduleManager({ location, cluster }: ScheduleManagerPr
       })
       loadSchedules()
     } catch (error: any) {
-      alert(`Error saving schedule: ${error.response?.data?.detail || error.message}`)
+      // Handle version conflict (409)
+      if (error.response?.status === 409) {
+        const conflictDetail = error.response?.data?.detail
+        const message = typeof conflictDetail === 'string' 
+          ? conflictDetail 
+          : conflictDetail?.detail || 'This schedule was modified by another user. Please refresh and try again.'
+        setVersionConflict(message)
+        showToast(message, 'error', 10000)
+        // Reload schedules to get latest version
+        loadSchedules()
+      } else {
+        const errorMsg = error.response?.data?.detail || error.message || 'Error saving schedule'
+        showToast(errorMsg, 'error')
+        alert(errorMsg)
+      }
     } finally {
       setLoading(false)
+    }
+  }
+  
+  function handleRefresh() {
+    loadSchedules()
+    if (editingSchedule) {
+      const updated = schedules.find(s => s.id === editingSchedule.id)
+      if (updated) {
+        setEditingSchedule(updated)
+        setFormData({
+          name: updated.name,
+          location: updated.location,
+          cluster: updated.cluster,
+          device_name: updated.device_name,
+          start_time: updated.start_time,
+          end_time: updated.end_time,
+          day_of_week: updated.day_of_week,
+          enabled: updated.enabled,
+          mode: updated.mode,
+          target_intensity: updated.target_intensity ?? null,
+          ramp_up_duration: updated.ramp_up_duration ?? null,
+          ramp_down_duration: updated.ramp_down_duration ?? null,
+        })
+        setVersionConflict(null)
+      }
     }
   }
 
@@ -195,6 +273,18 @@ export default function ScheduleManager({ location, cluster }: ScheduleManagerPr
                   <li key={i}>{conflict}</li>
                 ))}
               </ul>
+            </div>
+          )}
+
+          {versionConflict && (
+            <div className="mb-4 p-3 bg-red-100 dark:bg-red-900/20 border border-red-400 dark:border-red-800 rounded-md">
+              <p className="font-medium text-red-800 dark:text-red-300 mb-2">{versionConflict}</p>
+              <button
+                onClick={handleRefresh}
+                className="text-sm bg-red-600 dark:bg-red-500 text-white px-3 py-1 rounded hover:bg-red-700 dark:hover:bg-red-600"
+              >
+                Refresh Data
+              </button>
             </div>
           )}
 

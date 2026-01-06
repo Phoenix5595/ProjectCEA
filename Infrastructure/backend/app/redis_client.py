@@ -1,10 +1,10 @@
 """Redis client utilities for reading live sensor state."""
+from shared.logging import get_logger
 import redis.asyncio as redis
-import logging
 from typing import Optional, Dict, Any, List
 import os
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # Redis connection pool (singleton)
 _redis_pool: Optional[redis.ConnectionPool] = None

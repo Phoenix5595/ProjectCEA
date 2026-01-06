@@ -1,4 +1,5 @@
 """Sensor data API routes."""
+from shared.logging import get_logger
 from datetime import datetime, timedelta
 from fastapi import APIRouter, Query, HTTPException, Request
 from typing import Optional, Dict, List
@@ -51,7 +52,7 @@ async def get_sensor_data(
         time_range: Time range string if start/end not provided (e.g., "1 Hour")
     """
     import logging
-    logger = logging.getLogger(__name__)
+    logger = get_logger(__name__)
     
     db = get_db_manager()
     
@@ -186,7 +187,7 @@ async def get_live_sensor_data(
         Dictionary of sensor_type -> SensorDataResponse with single latest data point
     """
     import logging
-    logger = logging.getLogger(__name__)
+    logger = get_logger(__name__)
     
     # Get sensor suffix based on location/cluster
     suffix = get_sensor_suffix(location, cluster)
@@ -247,7 +248,7 @@ async def get_all_live_sensor_data():
         List of sensor data with name, value, timestamp, and unit
     """
     import logging
-    logger = logging.getLogger(__name__)
+    logger = get_logger(__name__)
     
     # Get all sensor values from Redis
     sensor_values = await get_all_sensor_values()

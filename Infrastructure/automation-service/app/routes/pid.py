@@ -1,5 +1,5 @@
 """PID parameter management endpoints."""
-import logging
+from shared.logging import get_logger
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from typing import Optional, Dict, Any, List
@@ -9,7 +9,7 @@ from app.database import DatabaseManager
 from app.config import ConfigLoader
 from app.validation import validate_pid_parameters
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 router = APIRouter()
 

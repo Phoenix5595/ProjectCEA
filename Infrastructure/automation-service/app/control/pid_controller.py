@@ -1,9 +1,9 @@
 """PID controller for temperature and CO2 control."""
-import logging
+from shared.logging import get_logger
 from typing import Dict, Optional
 from datetime import datetime
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class PIDController:

@@ -1,12 +1,12 @@
 """Live snapshot API routes for Grafana."""
+from shared.logging import get_logger
 from datetime import datetime
 from fastapi import APIRouter, HTTPException
 from typing import Optional, Dict, Tuple
 from app.models import LiveSnapshotResponse, LiveSensorValue
 from app.redis_client import get_all_sensor_values, get_all_sensor_timestamps
-import logging
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 router = APIRouter(prefix="/api/live", tags=["live"])
 

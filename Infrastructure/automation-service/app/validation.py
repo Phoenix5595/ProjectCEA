@@ -1,8 +1,8 @@
 """Validation functions for automation service."""
-import logging
+from shared.logging import get_logger
 from typing import Dict, Any, Optional, Tuple
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def validate_pid_parameters(

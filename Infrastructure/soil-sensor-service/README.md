@@ -4,14 +4,16 @@ FastAPI microservice for monitoring DFRobot RS485 4-in-1 soil sensors (temperatu
 
 ## Overview
 
-This service reads data from RS485 soil sensors connected via a MAX13487 transceiver board to the Raspberry Pi GPIO UART. It stores measurements in TimescaleDB and publishes updates to Redis for other services to consume.
+This service reads data from RS485 soil sensors connected via a MAX13487-based RS485 to TTL converter board (e.g., DSD TECH SH-U12) to the Raspberry Pi GPIO UART. It stores measurements in TimescaleDB and publishes updates to Redis for other services to consume.
 
 ## Hardware Requirements
 
 - Raspberry Pi (with GPIO UART)
-- MAX13487 RS485 transceiver board
+- RS485 to TTL converter board (MAX13487 chip):
+  - MAX13487 RS485 transceiver board, OR
+  - DSD TECH SH-U12 RS485 to TTL converter (uses MAX13487 chip)
 - DFRobot RS485 4-in-1 Soil Sensor (SEN0604) - supports multiple sensors on same bus
-- RS485 cable connection between sensors and MAX13487 board
+- RS485 cable connection between sensors and converter board
 - Proper termination resistors (120Ω at each end of RS485 bus)
 
 ## Software Requirements
@@ -66,7 +68,22 @@ Edit `soil_sensor_config.yaml`:
 
 The service uses `soil_sensor_config.yaml` for configuration.
 
-### Sensor Configuration
+### Auto-Detection (Recommended)
+
+The service **automatically scans the RS485 bus** and detects sensors without manual configuration:
+
+- **Scans every 30 seconds** (configurable via `discovery_interval_seconds`)
+- **Auto-registers** newly found sensors
+- **Assigns default names**: `soil_sensor_{modbus_id}` (e.g., `soil_sensor_1`, `soil_sensor_2`)
+- **Alternates bed assignment**: First sensor → "Front Bed", second → "Back Bed", third → "Front Bed", etc.
+- **Keeps scanning** even if no sensors are found initially
+- **Works alongside** manually configured sensors (if any in config file)
+
+You can start the service with an empty `sensors:` list and it will automatically discover and register sensors as they're connected.
+
+### Manual Sensor Configuration (Optional)
+
+If you want to manually configure sensors with specific names and bed assignments, add them to the config:
 
 Each sensor requires:
 - `modbus_id`: Unique Modbus slave ID (1, 2, 3, etc.)
@@ -74,14 +91,10 @@ Each sensor requires:
 - `bed_name`: Bed name ("Front Bed" or "Back Bed")
 - `room_name`: Must be "Flower Room"
 
-### Initial Configuration
+### Polling Configuration
 
-For the first sensor:
-- Modbus ID: 1
-- Bed: "Front Bed"
-- Room: "Flower Room"
-- Serial port: `/dev/serial0` (GPIO UART)
-- Polling interval: 5 seconds
+- `interval_seconds`: How often to read sensor data (default: 5 seconds)
+- `discovery_interval_seconds`: How often to scan bus for new sensors (default: 30 seconds)
 
 ## Running the Service
 
@@ -117,8 +130,8 @@ sudo systemctl start soil-sensor-service
 ## Functional Requirements
 
 ### RS485 Communication
-- Establish serial communication with MAX13487 board via GPIO UART
-- Support configurable serial port (e.g., `/dev/serial0` for GPIO UART)
+- Establish serial communication with MAX13487-based RS485 to TTL converter board (e.g., DSD TECH SH-U12) via GPIO UART
+- Support configurable serial port (e.g., `/dev/serial0` for GPIO UART, `/dev/ttyUSB0` for USB adapters)
 - Support configurable baudrate (default: 9600)
 - Implement Modbus RTU protocol for communication
 - Handle CRC16 checksum calculation and verification
@@ -184,11 +197,11 @@ sudo systemctl start soil-sensor-service
   - EC: 0x0002
   - pH: 0x0003
 - Scaling factors must be verified from sensor documentation
-- Default scaling (may need adjustment):
+- Default scaling (verified from DFRobot documentation):
   - Temperature: 0.1
   - Humidity: 0.1
   - EC: 1.0
-  - pH: 0.01
+  - pH: 0.1 (matches DFRobot documentation: ph = (Data[9] * 256 + Data[10]) / 10.00)
 
 ### Database Schema
 - Follows existing CEA database schema

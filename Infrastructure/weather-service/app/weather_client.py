@@ -1,11 +1,11 @@
 """Weather API client for fetching METAR data."""
-import logging
+from shared.logging import get_logger
 import httpx
 from typing import Dict, Any, Optional
 from datetime import datetime
 import math
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class WeatherClient:

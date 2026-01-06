@@ -1,4 +1,5 @@
 """Pydantic models for API request/response validation."""
+from shared.logging import get_logger
 from datetime import datetime
 from typing import List, Optional, Dict
 from pydantic import BaseModel, Field
@@ -20,18 +21,6 @@ class SensorDataResponse(BaseModel):
     unit: str
 
 
-class StatisticsResponse(BaseModel):
-    """Statistics for a sensor over a time range."""
-    sensor_type: str
-    location: str
-    cluster: str
-    min: float
-    max: float
-    avg: float
-    std_dev: float
-    unit: str
-
-
 class LocationResponse(BaseModel):
     """Available location information."""
     name: str
@@ -41,7 +30,7 @@ class LocationResponse(BaseModel):
 
 class WebSocketMessage(BaseModel):
     """WebSocket message format."""
-    type: str  # "sensor_update", "statistics_update", etc.
+    type: str  # "sensor_update", etc.
     location: str
     cluster: str
     sensor_type: str

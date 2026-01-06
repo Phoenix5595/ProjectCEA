@@ -9,7 +9,8 @@ rs485:
 
 # Polling configuration
 polling:
-  interval_seconds: 5  # Polling interval in seconds
+  interval_seconds: 5  # Polling interval in seconds (how often to read sensors)
+  discovery_interval_seconds: 30  # Discovery interval in seconds (how often to scan bus for new sensors)
 
 # Sensor configurations
 # Each sensor must have a unique Modbus slave ID

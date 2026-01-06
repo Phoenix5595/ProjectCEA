@@ -1,14 +1,14 @@
 """Writer for Redis Stream, TimescaleDB and Redis state keys."""
+from shared.logging import get_logger
 import psycopg2
 import psycopg2.extras
 import redis
 import json
-import logging
 import os
 from datetime import datetime
 from typing import Dict, Any, List, Tuple, Optional
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class DataWriter:
@@ -45,6 +45,7 @@ class DataWriter:
         
         self.db_conn: Optional[psycopg2.extensions.connection] = None
         self.redis_client: Optional[redis.Redis] = None
+        self.redis_state_client: Optional[redis.Redis] = None  # Separate client for state writes (decode_responses=True)
         
         self.db_enabled = False
         self.redis_enabled = False
@@ -58,6 +59,11 @@ class DataWriter:
         try:
             # Add connection parameters for better performance
             db_config_optimized = self.db_config.copy()
+            # Add TCP keepalive to detect stale connections faster
+            db_config_optimized['keepalives'] = 1
+            db_config_optimized['keepalives_idle'] = 30
+            db_config_optimized['keepalives_interval'] = 10
+            db_config_optimized['keepalives_count'] = 3
             # Use autocommit for faster writes (each statement commits immediately)
             self.db_conn = psycopg2.connect(**db_config_optimized)
             self.db_conn.autocommit = True  # Auto-commit for faster writes
@@ -69,18 +75,65 @@ class DataWriter:
             self.db_enabled = False
             return False
     
-    def connect_redis(self) -> bool:
-        """Connect to Redis."""
+    def _check_db_connection(self) -> bool:
+        """Check if database connection is alive and reconnect if needed.
+        
+        Returns:
+            True if connection is healthy or reconnection succeeded, False otherwise
+        """
+        if not self.db_conn:
+            return self.connect_db()
+        
         try:
-            self.redis_client = redis.Redis.from_url(
+            # Use a lightweight query to check connection health
+            cursor = self.db_conn.cursor()
+            cursor.execute("SELECT 1")
+            cursor.fetchone()
+            cursor.close()
+            return True
+        except (psycopg2.OperationalError, psycopg2.InterfaceError) as e:
+            logger.warning(f"Database connection lost, attempting reconnect: {e}")
+            try:
+                self.db_conn.close()
+            except Exception:
+                pass
+            self.db_conn = None
+            self.db_enabled = False
+            return self.connect_db()
+        except Exception as e:
+            logger.error(f"Unexpected error checking DB connection: {e}")
+            return False
+    
+    def connect_redis(self) -> bool:
+        """Connect to Redis with connection pooling for better performance."""
+        try:
+            # Create connection pool for stream client (binary mode)
+            stream_pool = redis.ConnectionPool.from_url(
                 self.redis_url,
                 decode_responses=False,  # Keep binary for stream writes
+                max_connections=10,
                 socket_connect_timeout=5,
-                socket_timeout=5
+                socket_timeout=5,
+                retry_on_timeout=True
             )
+            self.redis_client = redis.Redis(connection_pool=stream_pool)
             self.redis_client.ping()
+            
+            # Create connection pool for state client (decode_responses=True)
+            # This is reused across all write_to_redis_state calls instead of creating new clients
+            state_pool = redis.ConnectionPool.from_url(
+                self.redis_url,
+                decode_responses=True,  # Decode for state key operations
+                max_connections=10,
+                socket_connect_timeout=5,
+                socket_timeout=5,
+                retry_on_timeout=True
+            )
+            self.redis_state_client = redis.Redis(connection_pool=state_pool)
+            self.redis_state_client.ping()
+            
             self.redis_enabled = True
-            logger.info(f"Connected to Redis at {self.redis_url}")
+            logger.info(f"Connected to Redis at {self.redis_url} (with connection pooling)")
             return True
         except Exception as e:
             logger.warning(f"Failed to connect to Redis: {e}. Continuing without Redis.")
@@ -151,6 +204,10 @@ class DataWriter:
         if not self.db_enabled:
             if not self.connect_db():
                 return False
+        
+        # Check connection health before write (handles reconnection)
+        if not self._check_db_connection():
+            return False
         
         if not sensors:
             return True
@@ -227,6 +284,9 @@ class DataWriter:
     def write_to_redis_state(self, sensors: List[Tuple[str, float, str]], timestamp_ms: int) -> bool:
         """Write sensor values to Redis state keys.
         
+        Uses the pre-created pooled Redis client for better performance.
+        This is a CRITICAL performance fix - previously created a new client on every call.
+        
         Args:
             sensors: List of (sensor_name, value, unit) tuples
             timestamp_ms: Timestamp in milliseconds
@@ -242,16 +302,14 @@ class DataWriter:
             return True
         
         try:
-            # Create a separate Redis client for state writes (decode_responses=True)
-            redis_state_client = redis.Redis.from_url(
-                self.redis_url,
-                decode_responses=True,
-                socket_connect_timeout=5,
-                socket_timeout=5
-            )
+            # Use the pre-created pooled state client (no longer creates new client per call)
+            if not self.redis_state_client:
+                logger.warning("Redis state client not initialized, attempting reconnection")
+                if not self.connect_redis():
+                    return False
             
             # Use pipeline for batch operations
-            pipe = redis_state_client.pipeline()
+            pipe = self.redis_state_client.pipeline()
             
             for sensor_name, value, unit in sensors:
                 # Set sensor value with TTL
@@ -264,11 +322,11 @@ class DataWriter:
             
             # Execute all commands
             pipe.execute()
-            redis_state_client.close()
             return True
         
         except redis.exceptions.ConnectionError as e:
             logger.warning(f"Redis connection error: {e}")
+            self.redis_enabled = False
             return False
         except Exception as e:
             logger.warning(f"Error writing to Redis state: {e}")
@@ -318,4 +376,11 @@ class DataWriter:
             except Exception:
                 pass
             self.redis_client = None
+        
+        if self.redis_state_client:
+            try:
+                self.redis_state_client.close()
+            except Exception:
+                pass
+            self.redis_state_client = None
 

@@ -5,7 +5,11 @@ export type WebSocketMessageType =
   | 'device_update'
   | 'mode_update'
   | 'initial_state'
-  | 'pong';
+  | 'pong'
+  | 'schedule_update'
+  | 'setpoint_update'
+  | 'room_schedule_update'
+  | 'climate_schedule_update';
 
 export interface WebSocketMessage {
   type: WebSocketMessageType;

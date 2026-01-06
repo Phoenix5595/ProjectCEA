@@ -1,5 +1,5 @@
 """Schedule management endpoints."""
-import logging
+from shared.logging import get_logger
 from datetime import time as dt_time
 from fastapi import APIRouter, HTTPException, Depends, Query
 from pydantic import BaseModel
@@ -8,7 +8,7 @@ from app.database import DatabaseManager
 from app.config import ConfigLoader
 from app.validation import validate_setpoint
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 router = APIRouter()
 
@@ -49,6 +49,7 @@ class ScheduleUpdate(BaseModel):
     target_intensity: Optional[float] = None  # 0-100% for light ramp schedules
     ramp_up_duration: Optional[int] = None  # Minutes to ramp up (0 = instant)
     ramp_down_duration: Optional[int] = None  # Minutes to ramp down (0 = instant)
+    expected_version: Optional[str] = None  # ISO format timestamp for optimistic locking
 
 
 # This will be overridden by main app
@@ -57,9 +58,32 @@ def get_database() -> DatabaseManager:
     raise RuntimeError("Dependency not injected")
 
 
+def get_scheduler():
+    """Dependency to get scheduler."""
+    raise RuntimeError("Dependency not injected")
+
+
 def get_config() -> ConfigLoader:
     """Dependency to get config loader."""
     raise RuntimeError("Dependency not injected")
+
+
+def _ensure_light_schedules_are_daily(
+    mode: Optional[str],
+    target_intensity: Optional[float],
+    day_of_week: Optional[int]
+) -> None:
+    """Enforce that light schedules remain daily (day_of_week must be NULL).
+    
+    A schedule is considered a light schedule when:
+    - mode is DAY (or evaluates to DAY), and
+    - target_intensity is provided (ramps only apply to lights)
+    """
+    if mode and mode.upper() == 'DAY' and target_intensity is not None and day_of_week is not None:
+        raise HTTPException(
+            status_code=400,
+            detail="Light schedules must be daily: set day_of_week to null for lights with target_intensity."
+        )
 
 
 @router.get("/api/schedules")
@@ -123,6 +147,13 @@ async def create_schedule(
             status_code=400,
             detail="ramp_down_duration must be >= 0"
         )
+
+    # Enforce daily schedules for lights (mode DAY + target_intensity means light dimming)
+    _ensure_light_schedules_are_daily(
+        schedule.mode,
+        schedule.target_intensity,
+        schedule.day_of_week
+    )
     
     schedule_id = await database.create_schedule(
         schedule.name,
@@ -156,7 +187,8 @@ async def create_schedule(
 async def update_schedule(
     schedule_id: int,
     schedule: ScheduleUpdate,
-    database: DatabaseManager = Depends(get_database)
+    database: DatabaseManager = Depends(get_database),
+    scheduler=Depends(get_scheduler)
 ) -> Dict[str, Any]:
     """Update a schedule.
     
@@ -197,14 +229,32 @@ async def update_schedule(
             detail="ramp_down_duration must be >= 0"
         )
     
-    # Get existing schedule to get location/cluster
+    # Get existing schedule to get location/cluster and current version
     all_schedules = await database.get_schedules()
     existing = next((s for s in all_schedules if s['id'] == schedule_id), None)
     
     if not existing:
         raise HTTPException(status_code=404, detail="Schedule not found")
     
-    success = await database.update_schedule(
+    # Parse expected_version if provided
+    expected_version_dt = None
+    if schedule.expected_version:
+        try:
+            from datetime import datetime
+            expected_version_dt = datetime.fromisoformat(schedule.expected_version.replace('Z', '+00:00'))
+        except (ValueError, AttributeError):
+            raise HTTPException(
+                status_code=400,
+                detail="expected_version must be in ISO format (e.g., '2024-01-15T10:30:00Z')"
+            )
+    
+    # Determine final values after update to validate light schedules remain daily
+    final_mode = schedule.mode or existing.get('mode')
+    final_target = schedule.target_intensity if schedule.target_intensity is not None else existing.get('target_intensity')
+    final_day_of_week = schedule.day_of_week if schedule.day_of_week is not None else existing.get('day_of_week')
+    _ensure_light_schedules_are_daily(final_mode, final_target, final_day_of_week)
+    
+    success, new_updated_at = await database.update_schedule(
         schedule_id,
         schedule.name,
         schedule.start_time,
@@ -214,10 +264,24 @@ async def update_schedule(
         schedule.mode,
         schedule.target_intensity,
         schedule.ramp_up_duration,
-        schedule.ramp_down_duration
+        schedule.ramp_down_duration,
+        expected_version_dt
     )
     
     if not success:
+        # Check if it's a version conflict
+        if expected_version_dt is not None and new_updated_at is not None:
+            current_version_str = new_updated_at.isoformat()
+            expected_version_str = expected_version_dt.isoformat()
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "detail": "Conflict: This record was modified by another user. Please refresh and try again.",
+                    "conflict_type": "version_mismatch",
+                    "current_version": current_version_str,
+                    "expected_version": expected_version_str
+                }
+            )
         raise HTTPException(status_code=500, detail="Failed to update schedule")
     
     # Get updated schedule
@@ -226,6 +290,19 @@ async def update_schedule(
     
     if not updated:
         raise HTTPException(status_code=500, detail="Schedule updated but not found")
+    
+    # Refresh scheduler immediately with updated schedules
+    if scheduler:
+        all_schedules = await database.get_schedules()
+        scheduler.update_schedules(all_schedules)
+        logger.debug(f"Scheduler refreshed after schedule {schedule_id} update")
+    
+    # Broadcast update to all WebSocket clients
+    try:
+        from app.routes.websocket import broadcast_schedule_update
+        await broadcast_schedule_update(schedule_id, updated)
+    except Exception as e:
+        logger.warning(f"Failed to broadcast schedule update: {e}")
     
     return updated
 
@@ -526,6 +603,23 @@ async def save_room_schedule(
                     """, location, cluster)
                     room_schedule_id_set = {r['id'] for r in room_schedule_ids}
                     filtered_ids = [sid for sid in schedule_ids_to_delete if sid not in room_schedule_id_set]
+                    
+                    # Preserve existing target_intensity values for lights BEFORE deletion
+                    preserved_intensities = {}
+                    if room_devices:
+                        for device_name, device_info in room_devices.items():
+                            if device_info.get('device_type') == 'light' and device_info.get('dimming_enabled'):
+                                existing_day = await conn.fetchrow("""
+                                    SELECT target_intensity
+                                    FROM schedules
+                                    WHERE location = $1 AND cluster = $2 AND device_name = $3
+                                      AND mode = 'DAY' AND enabled = TRUE
+                                    ORDER BY updated_at DESC
+                                    LIMIT 1
+                                """, location, cluster, device_name)
+                                if existing_day and existing_day['target_intensity'] is not None:
+                                    preserved_intensities[device_name] = existing_day['target_intensity']
+                    
                     if filtered_ids:
                         await database.delete_schedules_bulk(filtered_ids, conn)
                         logger.info(f"Deleted {len(filtered_ids)} existing schedules for {location}/{cluster}")
@@ -571,9 +665,8 @@ async def save_room_schedule(
                     
                     if device_type == 'light' and dimming_enabled:
                         # For lights: Create day schedule with target_intensity and ramp, night schedule with target_intensity=0
-                        # Get current intensity (default to 100% if not available)
-                        # Note: We'll use 100% as default target for day schedule
-                        target_intensity = 100  # Could be made configurable later
+                        # Preserve existing target_intensity if available, otherwise default to 100%
+                        target_intensity = preserved_intensities.get(device_name, 100)
                         
                         # Day schedule
                         # ramp_up happens at start of day, ramp_down happens at end of day (when transitioning to night)
@@ -688,6 +781,20 @@ async def save_room_schedule(
             'devices_configured': len(room_devices)
         }
     )
+    
+    # Broadcast update to all WebSocket clients
+    try:
+        from app.routes.websocket import broadcast_room_schedule_update
+        await broadcast_room_schedule_update(location, cluster, {
+            'day_start_time': schedule.day_start_time,
+            'day_end_time': schedule.day_end_time,
+            'night_start_time': schedule.night_start_time,
+            'night_end_time': schedule.night_end_time,
+            'ramp_up_duration': schedule.ramp_up_duration,
+            'ramp_down_duration': schedule.ramp_down_duration
+        })
+    except Exception as e:
+        logger.warning(f"Failed to broadcast room schedule update: {e}")
     
     return {
         "success": True,
@@ -962,6 +1069,19 @@ async def save_climate_schedule(
             status_code=500,
             detail=f"Failed to save climate schedule: {str(e)}"
         )
+    
+    # Broadcast update to all WebSocket clients
+    try:
+        from app.routes.websocket import broadcast_climate_schedule_update
+        await broadcast_climate_schedule_update(location, cluster, {
+            'day_start_time': schedule.day_start_time,
+            'day_end_time': schedule.day_end_time,
+            'pre_day_duration': schedule.pre_day_duration,
+            'pre_night_duration': schedule.pre_night_duration,
+            'setpoints': {mode: setpoint.model_dump() for mode, setpoint in schedule.setpoints.items()}
+        })
+    except Exception as e:
+        logger.warning(f"Failed to broadcast climate schedule update: {e}")
     
     return {
         "success": True,

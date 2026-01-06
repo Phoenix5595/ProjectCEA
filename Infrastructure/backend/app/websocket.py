@@ -1,4 +1,5 @@
 """WebSocket manager for real-time data broadcasting."""
+from shared.logging import get_logger
 from typing import Dict, Set
 from fastapi import WebSocket
 import json
@@ -56,34 +57,6 @@ class WebSocketManager:
         )
         
         message_json = message.model_dump_json()
-        disconnected = set()
-        
-        for connection in self.active_connections[location]:
-            try:
-                await connection.send_text(message_json)
-            except Exception:
-                disconnected.add(connection)
-        
-        # Remove disconnected connections
-        for conn in disconnected:
-            self.disconnect(conn, location)
-    
-    async def broadcast_statistics_update(
-        self,
-        location: str,
-        statistics: dict
-    ):
-        """Broadcast statistics update to all connected clients."""
-        if location not in self.active_connections:
-            return
-        
-        message = {
-            "type": "statistics_update",
-            "location": location,
-            "statistics": statistics
-        }
-        
-        message_json = json.dumps(message, default=str)
         disconnected = set()
         
         for connection in self.active_connections[location]:

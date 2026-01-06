@@ -1,13 +1,13 @@
 """Background tasks for polling weather API."""
+from shared.logging import get_logger
 import asyncio
-import logging
 from datetime import datetime
 from typing import Optional
 from .config import ConfigLoader
 from .database import DatabaseManager
 from .weather_client import WeatherClient
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class BackgroundTasks:

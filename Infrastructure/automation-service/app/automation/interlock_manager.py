@@ -1,8 +1,8 @@
 """Interlock manager for safety interlocks."""
-import logging
+from shared.logging import get_logger
 from typing import Dict, List, Optional, Set, Tuple, Callable
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class InterlockManager:

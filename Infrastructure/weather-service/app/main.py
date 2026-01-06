@@ -1,5 +1,5 @@
 """Main FastAPI application for weather service."""
-import logging
+from shared.logging import get_logger
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
@@ -10,13 +10,15 @@ from app.weather_client import WeatherClient
 from app.background_tasks import BackgroundTasks
 
 from app.routes import status, weather
+from shared.logging import setup_structured_logging
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+# Configure structured logging
+logger = setup_structured_logging(
+    service_name="weather-service",
+    log_level="INFO",
+    console_output=True,
+    json_format=True
 )
-logger = logging.getLogger(__name__)
 
 # Global instances (will be initialized in lifespan)
 config: ConfigLoader = None

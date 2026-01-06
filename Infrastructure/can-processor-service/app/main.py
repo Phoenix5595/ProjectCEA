@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from shared.logging import get_logger
 """CAN Processor - Unified service for reading CAN bus and processing messages.
 
 Reads CAN messages directly from CAN bus, decodes once, processes, and writes to:
@@ -8,7 +9,6 @@ Reads CAN messages directly from CAN bus, decodes once, processes, and writes to
 """
 import signal
 import sys
-import logging
 import os
 import argparse
 from datetime import datetime
@@ -18,13 +18,15 @@ from app.can_reader import CANReader
 from app.decoder import decode_message_data
 from app.processor import validate_decoded_data, extract_sensor_values, get_location_from_node
 from app.writer import DataWriter
+from shared.logging import setup_structured_logging
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+# Configure structured logging
+logger = setup_structured_logging(
+    service_name="can-processor-service",
+    log_level="INFO",
+    console_output=True,
+    json_format=True
 )
-logger = logging.getLogger(__name__)
 
 running = True
 can_reader: Optional[CANReader] = None

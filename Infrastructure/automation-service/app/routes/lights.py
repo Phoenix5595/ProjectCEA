@@ -1,4 +1,5 @@
 """Light dimming control endpoints for DFR0971 DAC modules."""
+from shared.logging import get_logger
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from typing import Dict, Any, Optional
@@ -41,6 +42,11 @@ def get_interlock_manager():
 
 def get_database():
     """Dependency to get database manager."""
+    raise RuntimeError("Dependency not injected")
+
+
+def get_scheduler():
+    """Dependency to get scheduler."""
     raise RuntimeError("Dependency not injected")
 
 
@@ -178,9 +184,10 @@ async def get_light_status(
     device_name: str,
     dfr0971_manager=Depends(get_dfr0971_manager),
     config=Depends(get_config),
-    database=Depends(get_database)
+    database=Depends(get_database),
+    scheduler=Depends(get_scheduler)
 ) -> Dict[str, Any]:
-    """Get current light status (intensity, voltage, board info)."""
+    """Get current light status (intensity, voltage, board info, target intensity)."""
     # Get device configuration
     devices = config.get_devices()
     device_info = devices.get(location, {}).get(cluster, {}).get(device_name)
@@ -234,6 +241,16 @@ async def get_light_status(
     boards = dfr0971_manager.list_boards()
     board_info = next((b for b in boards if b['board_id'] == board_id), None)
     
+    # Get target intensity from active schedule (if any)
+    target_intensity = None
+    if scheduler:
+        from datetime import datetime
+        intensity_details = scheduler.get_light_intensity_details(
+            location, cluster, device_name, datetime.now(), intensity
+        )
+        if intensity_details:
+            target_intensity = intensity_details.get('nominal_intensity')
+    
     return {
         "location": location,
         "cluster": cluster,
@@ -242,7 +259,8 @@ async def get_light_status(
         "voltage": voltage,
         "board_id": board_id,
         "channel": channel,
-        "board_info": board_info
+        "board_info": board_info,
+        "target_intensity": target_intensity  # Target intensity from schedule (max intensity for the day)
     }
 
 

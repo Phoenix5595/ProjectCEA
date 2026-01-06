@@ -1,4 +1,5 @@
 """Status and health check endpoints."""
+from shared.logging import get_logger
 from fastapi import APIRouter, Depends
 from datetime import datetime
 from typing import Dict, Any, Optional

@@ -1,10 +1,10 @@
 """Relay manager for device-to-channel mapping and state management."""
-import logging
+from shared.logging import get_logger
 from typing import Dict, Optional, Tuple, Set
 from app.hardware.mcp23017 import MCP23017Driver
 from app.automation.interlock_manager import InterlockManager
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class RelayManager:

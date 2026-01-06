@@ -52,6 +52,73 @@ The automation backend consists of three core components:
 - **State Store (Redis)**: Holds real-time values, decouples sensors from logic, provides fast access to current state
 - **Config Store (PostgreSQL)**: Holds operator-defined parameters, survives reboots, provides audit trail via versioning
 
+## Codebase Structure
+
+The automation service follows a modular architecture with clear separation of concerns:
+
+### Core Modules
+
+```
+app/
+├── main.py                 # Application entry point (39 lines)
+├── bootstrap.py            # Startup/shutdown lifecycle (25 lines)
+├── container.py            # Service dependency injection (424 lines)
+├── middleware.py           # CORS and static file serving (170 lines)
+├── routes/
+│   ├── __init__.py         # Route module exports
+│   ├── routes.py           # Route registration & DI overrides (75 lines)
+│   ├── status.py           # Health/status endpoints
+│   ├── devices.py          # Device control endpoints
+│   ├── setpoints.py        # Setpoint management
+│   ├── schedules.py        # Schedule CRUD
+│   ├── rules.py            # Automation rules
+│   ├── pid.py              # PID parameter management
+│   ├── lights.py           # Light dimming control
+│   ├── alarms.py           # Alarm management
+│   └── websocket.py        # Real-time updates
+├── config.py               # YAML configuration loader
+├── database.py             # PostgreSQL/TimescaleDB operations
+├── redis_client.py         # Redis client wrapper
+├── background_tasks.py     # Control loop orchestration
+├── alarm_manager.py        # Alert system
+├── validation.py           # Input validation utilities
+├── hardware/
+│   ├── mcp23017.py         # Relay board driver
+│   └── dfr0971.py          # Light dimming driver
+├── control/
+│   ├── control_engine.py   # Main control logic
+│   ├── relay_manager.py    # Device state management
+│   ├── scheduler.py        # Time-based scheduling
+│   ├── pid_controller.py   # PID control implementation
+│   └── __init__.py
+├── automation/
+│   ├── rules_engine.py     # If-then rule evaluation
+│   ├── interlock_manager.py # Safety interlocks
+│   └── __init__.py
+└── __init__.py
+```
+
+### Module Responsibilities
+
+- **`main.py`**: Clean entry point, imports setup functions, creates FastAPI app
+- **`bootstrap.py`**: Application lifecycle management (startup/shutdown)
+- **`container.py`**: Service dependency injection container, manages all service instances
+- **`middleware.py`**: HTTP middleware (CORS, static files, favicon serving)
+- **`routes/`**: REST API endpoints and WebSocket, dependency injection setup
+- **`control/`**: Core automation logic (PID, scheduling, device control)
+- **`automation/`**: Rule-based automation and safety systems
+- **`hardware/`**: Low-level device drivers (relays, dimming)
+- **`database.py`**: Data persistence layer (PostgreSQL/TimescaleDB)
+- **`background_tasks.py`**: Control loop orchestration and monitoring
+
+### Key Design Patterns
+
+- **Dependency Injection**: `ServiceContainer` manages service lifecycle and injection
+- **Separation of Concerns**: Each module has a single responsibility
+- **Clean Architecture**: Business logic isolated from HTTP/framework concerns
+- **Testability**: Modules designed for independent unit testing
+- **Maintainability**: Clear module boundaries, minimal coupling
+
 ## Data Flow
 
 ### Sensor → Control
@@ -302,6 +369,10 @@ Schedules work by changing system modes and setpoints, not by directly controlli
 - **DAY mode**: Lights turn ON (or to configured intensity)
 - **NIGHT mode**: Lights turn OFF
 - **TRANSITION mode**: Intermediate intensity (optional, e.g., 50%)
+- **Lighting constraints**:
+  - Light schedules are always daily (no per-day overrides); `day_of_week` must be `NULL` for lights.
+  - During ramp-up, if target intensity changes mid-ramp, the ramp recalculates from the current effective intensity to the new target **within the original ramp_up_duration** (speeds up if needed to finish on time).
+  - During ramp-down, lights continue to 0% even if a new target arrives mid-ramp.
 
 **Example Schedule:**
 - 06:00 → Change to DAY mode
@@ -849,6 +920,12 @@ The automation service integrates with:
 ## Summary
 
 The greenhouse automation backend is a deterministic control system with clear separation between live state (Redis), persistent configuration (PostgreSQL), and control logic (Control Core). It runs independently of any UI and uses scheduled mode transitions, PID-based controllers, and safety supervision to manage environmental conditions.
+
+**Architecture Highlights:**
+- **Modular Design**: Clean separation into bootstrap, container, middleware, and route modules
+- **Dependency Injection**: Service container manages all dependencies and lifecycles
+- **Testable Codebase**: Each module designed for independent unit testing
+- **Maintainable Structure**: main.py reduced from 721 to 39 lines through refactoring
 
 **Key Principles:**
 - Deterministic control with fixed tick rate

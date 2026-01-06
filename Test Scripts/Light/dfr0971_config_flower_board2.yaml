@@ -1,0 +1,14 @@
+hardware:
+  i2c_bus: 1
+  i2c_address: 0x5A  # Flower Room board 2 (Chilled Front/Back)
+  board_name: "Flower Board 2"
+  simulation: false
+
+test:
+  test_voltage: 5.0
+  test_intensity: 50.0
+  ramp:
+    step_size: 5.0
+    delay: 1
+    start_intensity: 0.0
+    end_intensity: 100.0

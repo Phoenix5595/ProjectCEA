@@ -1,15 +1,15 @@
 """Redis Stream reader utility for querying sensor data from Redis Stream.
+from shared.logging import get_logger
 
 Supports reading from unified sensor:raw stream with filtering by type (can/soil) and time range.
 """
 import redis
 import json
-import logging
 import os
 from datetime import datetime
 from typing import Dict, Any, List, Optional, Tuple
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class RedisStreamReader:

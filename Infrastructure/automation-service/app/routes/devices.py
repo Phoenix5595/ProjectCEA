@@ -1,15 +1,15 @@
 """Device control endpoints."""
+from shared.logging import get_logger
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
 import yaml
-import logging
 from app.control.relay_manager import RelayManager
 from app.database import DatabaseManager
 from app.config import ConfigLoader
 from app.validation import validate_device_mapping
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 router = APIRouter()
 

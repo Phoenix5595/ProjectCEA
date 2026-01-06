@@ -1,4 +1,5 @@
 """CAN frame decoder - decodes CAN messages from CAN bus."""
+from shared.logging import get_logger
 import struct
 from typing import Dict, Any, Optional
 

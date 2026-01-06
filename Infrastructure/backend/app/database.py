@@ -1,11 +1,12 @@
 """Database manager for TimescaleDB operations."""
+from shared.logging import get_logger
 import json
 import math
 import os
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple
 import asyncpg
-from app.models import DataPoint, StatisticsResponse
+from app.models import DataPoint
 
 
 class DatabaseManager:
@@ -217,62 +218,6 @@ class DatabaseManager:
                 )
         
         return sensor_data
-    
-    async def get_statistics(
-        self,
-        sensor_type: str,
-        location: str,
-        cluster: str,
-        start_time: datetime,
-        end_time: datetime
-    ) -> StatisticsResponse:
-        """Get statistics (min/max/avg/std_dev) for a sensor using SQL aggregation."""
-        pool = await self._get_pool()
-
-        # Use raw measurement with SQL aggregation to avoid pulling large datasets
-        query = """
-            SELECT
-                MIN(m.value) AS min_value,
-                MAX(m.value) AS max_value,
-                AVG(m.value) AS avg_value,
-                COALESCE(STDDEV_POP(m.value), 0) AS std_value,
-                s.unit AS sensor_unit
-            FROM measurement m
-            JOIN sensor s ON m.sensor_id = s.sensor_id
-            JOIN device d ON s.device_id = d.device_id
-            LEFT JOIN rack rk ON d.rack_id = rk.rack_id
-            JOIN room r ON rk.room_id = r.room_id
-            WHERE r.name = $1
-              AND s.name = $2
-              AND m.time >= $3
-              AND m.time <= $4
-        """
-
-        async with pool.acquire() as conn:
-            row = await conn.fetchrow(query, location, sensor_type, start_time, end_time)
-
-        if not row or row["min_value"] is None:
-            return StatisticsResponse(
-                sensor_type=sensor_type,
-                location=location,
-                cluster=cluster,
-                min=0.0,
-                max=0.0,
-                avg=0.0,
-                std_dev=0.0,
-                unit=""
-            )
-
-        return StatisticsResponse(
-            sensor_type=sensor_type,
-            location=location,
-            cluster=cluster,
-            min=float(row["min_value"]),
-            max=float(row["max_value"]),
-            avg=float(row["avg_value"]),
-            std_dev=float(row["std_value"]),
-            unit=row["sensor_unit"] or ""
-        )
     
     def _get_node_id(self, location: str, cluster: str) -> int:
         """Map location/cluster to CAN node ID.

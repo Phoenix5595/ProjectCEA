@@ -1,4 +1,5 @@
 """Failsafe management endpoints."""
+from shared.logging import get_logger
 from fastapi import APIRouter, HTTPException, Depends
 from typing import Dict, Any, Optional
 from app.database import DatabaseManager

@@ -1,12 +1,12 @@
 """Redis client for automation service - writes to stream and state keys."""
+from shared.logging import get_logger
 import os
 import json
-import logging
 from datetime import datetime
 from typing import Dict, Any, Optional, List, Tuple
 import redis
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class AutomationRedisClient:
@@ -15,6 +15,8 @@ class AutomationRedisClient:
     Writes automation state to:
     - Redis Stream (sensor:raw) - recent history buffer
     - Redis state keys (automation:*) - live values for frontend
+    
+    Uses connection pooling for better performance and resource efficiency.
     """
     
     def __init__(self, redis_url: Optional[str] = None, redis_ttl: int = 10):
@@ -28,35 +30,52 @@ class AutomationRedisClient:
         self.redis_ttl = redis_ttl
         self.redis_client: Optional[redis.Redis] = None
         self.stream_client: Optional[redis.Redis] = None  # Separate client for stream (binary mode)
+        self._state_pool: Optional[redis.ConnectionPool] = None  # Connection pool for state client
+        self._stream_pool: Optional[redis.ConnectionPool] = None  # Connection pool for stream client
         self.redis_enabled = False
     
     def connect(self) -> bool:
-        """Connect to Redis.
+        """Connect to Redis with connection pooling for better performance.
+        
+        Creates two connection pools:
+        - State pool (decode_responses=True) for state key operations
+        - Stream pool (decode_responses=False) for binary stream writes
+        
+        Connection pooling improves performance by reusing connections
+        instead of creating new ones for each operation.
         
         Returns:
             True if successful, False otherwise
         """
         try:
-            # Connect for state keys (decode_responses=True)
-            self.redis_client = redis.Redis.from_url(
+            # Create connection pool for state keys (decode_responses=True)
+            self._state_pool = redis.ConnectionPool.from_url(
                 self.redis_url,
                 decode_responses=True,
+                max_connections=20,
                 socket_connect_timeout=5,
-                socket_timeout=5
+                socket_timeout=5,
+                retry_on_timeout=True,
+                health_check_interval=30
             )
+            self.redis_client = redis.Redis(connection_pool=self._state_pool)
             self.redis_client.ping()
             
-            # Connect for stream writes (decode_responses=False for binary)
-            self.stream_client = redis.Redis.from_url(
+            # Create connection pool for stream writes (decode_responses=False for binary)
+            self._stream_pool = redis.ConnectionPool.from_url(
                 self.redis_url,
                 decode_responses=False,
+                max_connections=10,
                 socket_connect_timeout=5,
-                socket_timeout=5
+                socket_timeout=5,
+                retry_on_timeout=True,
+                health_check_interval=30
             )
+            self.stream_client = redis.Redis(connection_pool=self._stream_pool)
             self.stream_client.ping()
             
             self.redis_enabled = True
-            logger.info(f"Connected to Redis: {self.redis_url}")
+            logger.info(f"Connected to Redis: {self.redis_url} (with connection pooling: state=20, stream=10)")
             return True
         except Exception as e:
             logger.warning(f"Redis connection failed: {e}. Will continue without Redis.")
@@ -64,7 +83,7 @@ class AutomationRedisClient:
             return False
     
     def close(self) -> None:
-        """Close Redis connection."""
+        """Close Redis connections and disconnect connection pools."""
         if self.redis_client:
             try:
                 self.redis_client.close()
@@ -73,6 +92,16 @@ class AutomationRedisClient:
         if self.stream_client:
             try:
                 self.stream_client.close()
+            except Exception:
+                pass
+        if self._state_pool:
+            try:
+                self._state_pool.disconnect()
+            except Exception:
+                pass
+        if self._stream_pool:
+            try:
+                self._stream_pool.disconnect()
             except Exception:
                 pass
         self.redis_enabled = False
@@ -223,12 +252,10 @@ class AutomationRedisClient:
             co2_key = f"setpoint:{location}:{cluster}:co2"
             source_key = f"setpoint:{location}:{cluster}:source"
             
-            heat = self.redis_client.get(heat_key)
-            cool = self.redis_client.get(cool_key)
-            temp = self.redis_client.get(temp_key)  # Legacy support
-            hum = self.redis_client.get(hum_key)
-            co2 = self.redis_client.get(co2_key)
-            source_data = self.redis_client.get(source_key)
+            # Use MGET for single round-trip instead of 6 individual GETs
+            keys = [heat_key, cool_key, temp_key, hum_key, co2_key, source_key]
+            values = self.redis_client.mget(keys)
+            heat, cool, temp, hum, co2, source_data = values
             
             if heat is None and cool is None and temp is None and hum is None and co2 is None:
                 return None
@@ -322,26 +349,122 @@ class AutomationRedisClient:
         effective_cooling_setpoint: Optional[float] = None,
         effective_humidity_setpoint: Optional[float] = None,
         effective_co2_setpoint: Optional[float] = None,
-        effective_vpd_setpoint: Optional[float] = None
+        effective_vpd_setpoint: Optional[float] = None,
+        device_name: Optional[str] = None,
+        effective_light_intensity: Optional[float] = None,
+        nominal_light_intensity: Optional[float] = None,
+        ramp_progress_light: Optional[float] = None,
+        nominal_heating_setpoint: Optional[float] = None,
+        nominal_cooling_setpoint: Optional[float] = None,
+        nominal_humidity_setpoint: Optional[float] = None,
+        nominal_co2_setpoint: Optional[float] = None,
+        nominal_vpd_setpoint: Optional[float] = None,
+        ramp_progress_heating: Optional[float] = None,
+        ramp_progress_cooling: Optional[float] = None,
+        ramp_progress_humidity: Optional[float] = None,
+        ramp_progress_co2: Optional[float] = None,
+        ramp_progress_vpd: Optional[float] = None,
     ) -> bool:
         """Write effective setpoints to Redis.
-        
+
         Effective setpoints are the actual values being used by the control system,
         accounting for ramp transitions. These are updated every control step.
-        
+
+        Writes all 18 fields to Redis for real-time access:
+        - Effective setpoints (actual values)
+        - Nominal setpoints (target values)
+        - Ramp progress (0.0-1.0 for each setpoint)
+        - Device name for filtering in Grafana
+        - Light intensity (if available)
+
         Args:
             location: Location name
             cluster: Cluster name
+            device_name: Device name for per-device logging (e.g., 'Main')
             effective_heating_setpoint: Effective heating setpoint (actual value being used)
             effective_cooling_setpoint: Effective cooling setpoint (actual value being used)
             effective_humidity_setpoint: Effective humidity setpoint (actual value being used)
             effective_co2_setpoint: Effective CO2 setpoint (actual value being used)
             effective_vpd_setpoint: Effective VPD setpoint (actual value being used)
-        
+            nominal_heating_setpoint: Nominal heating setpoint from database (reference value)
+            nominal_cooling_setpoint: Nominal cooling setpoint from database (reference value)
+            nominal_humidity_setpoint: Nominal humidity setpoint from database (reference value)
+            nominal_co2_setpoint: Nominal CO2 setpoint from database (reference value)
+            nominal_vpd_setpoint: Nominal VPD setpoint from database (reference value)
+            ramp_progress_heating: Ramp progress for heating (0.0-1.0 or None if not ramping)
+            ramp_progress_cooling: Ramp progress for cooling (0.0-1.0 or None if not ramping)
+            ramp_progress_humidity: Ramp progress for humidity (0.0-1.0 or None if not ramping)
+            ramp_progress_co2: Ramp progress for CO2 (0.0-1.0 or None if not ramping)
+            ramp_progress_vpd: Ramp progress for VPD (0.0-1.0 or None if not ramping)
+            effective_light_intensity: Effective light intensity (0-100%) after ramp
+            nominal_light_intensity: Nominal/target light intensity from schedule
+            ramp_progress_light: Ramp progress for light (0.0-1.0 or None if not ramping)
+
         Returns:
             True if successful, False otherwise
         """
         if not self.redis_enabled or not self.redis_client:
+            return False
+
+        try:
+            timestamp_ms = int(datetime.now().timestamp() * 1000)
+            # Effective setpoints have longer TTL since they're updated every second
+            setpoint_ttl = 300  # 5 minutes TTL (covers control loop intervals)
+
+            pipe = self.redis_client.pipeline()
+
+            # Write effective setpoints (actual values)
+            if effective_heating_setpoint is not None:
+                pipe.setex(f"effective_setpoint:{location}:{cluster}:heating_setpoint", setpoint_ttl, str(effective_heating_setpoint))
+            if effective_cooling_setpoint is not None:
+                pipe.setex(f"effective_setpoint:{location}:{cluster}:cooling_setpoint", setpoint_ttl, str(effective_cooling_setpoint))
+            if effective_humidity_setpoint is not None:
+                pipe.setex(f"effective_setpoint:{location}:{cluster}:humidity", setpoint_ttl, str(effective_humidity_setpoint))
+            if effective_co2_setpoint is not None:
+                pipe.setex(f"effective_setpoint:{location}:{cluster}:co2", setpoint_ttl, str(effective_co2_setpoint))
+            if effective_vpd_setpoint is not None:
+                pipe.setex(f"effective_setpoint:{location}:{cluster}:vpd", setpoint_ttl, str(effective_vpd_setpoint))
+
+            # Write nominal setpoints (target values)
+            if nominal_heating_setpoint is not None:
+                pipe.setex(f"effective_setpoint:{location}:{cluster}:nominal_heating_setpoint", setpoint_ttl, str(nominal_heating_setpoint))
+            if nominal_cooling_setpoint is not None:
+                pipe.setex(f"effective_setpoint:{location}:{cluster}:nominal_cooling_setpoint", setpoint_ttl, str(nominal_cooling_setpoint))
+            if nominal_humidity_setpoint is not None:
+                pipe.setex(f"effective_setpoint:{location}:{cluster}:nominal_humidity_setpoint", setpoint_ttl, str(nominal_humidity_setpoint))
+            if nominal_co2_setpoint is not None:
+                pipe.setex(f"effective_setpoint:{location}:{cluster}:nominal_co2_setpoint", setpoint_ttl, str(nominal_co2_setpoint))
+            if nominal_vpd_setpoint is not None:
+                pipe.setex(f"effective_setpoint:{location}:{cluster}:nominal_vpd_setpoint", setpoint_ttl, str(nominal_vpd_setpoint))
+
+            # Write ramp progress values
+            if ramp_progress_heating is not None:
+                pipe.setex(f"effective_setpoint:{location}:{cluster}:ramp_progress_heating", setpoint_ttl, str(ramp_progress_heating))
+            if ramp_progress_cooling is not None:
+                pipe.setex(f"effective_setpoint:{location}:{cluster}:ramp_progress_cooling", setpoint_ttl, str(ramp_progress_cooling))
+            if ramp_progress_humidity is not None:
+                pipe.setex(f"effective_setpoint:{location}:{cluster}:ramp_progress_humidity", setpoint_ttl, str(ramp_progress_humidity))
+            if ramp_progress_co2 is not None:
+                pipe.setex(f"effective_setpoint:{location}:{cluster}:ramp_progress_co2", setpoint_ttl, str(ramp_progress_co2))
+            if ramp_progress_vpd is not None:
+                pipe.setex(f"effective_setpoint:{location}:{cluster}:ramp_progress_vpd", setpoint_ttl, str(ramp_progress_vpd))
+
+            # Write device name (for Grafana filtering)
+            if device_name is not None:
+                pipe.setex(f"effective_setpoint:{location}:{cluster}:device_name", setpoint_ttl, device_name)
+
+            # Write light intensity fields (if available)
+            if effective_light_intensity is not None:
+                pipe.setex(f"effective_setpoint:{location}:{cluster}:effective_light_intensity", setpoint_ttl, str(effective_light_intensity))
+            if nominal_light_intensity is not None:
+                pipe.setex(f"effective_setpoint:{location}:{cluster}:nominal_light_intensity", setpoint_ttl, str(nominal_light_intensity))
+            if ramp_progress_light is not None:
+                pipe.setex(f"effective_setpoint:{location}:{cluster}:ramp_progress_light", setpoint_ttl, str(ramp_progress_light))
+
+            pipe.execute()
+            return True
+        except Exception as e:
+            logger.warning(f"Error writing setpoint to Redis: {e}")
             return False
         
         try:
@@ -1043,4 +1166,70 @@ class AutomationRedisClient:
         except Exception as e:
             logger.debug(f"Error reading light intensity from Redis: {e}")
         return None
+
+    def write_ramp_state(
+        self,
+        location: str,
+        cluster: str,
+        setpoint_type: str,
+        current_effective_setpoint: float,
+        ramp_start_timestamp: datetime,
+        ramp_duration: int,
+        target_setpoint: float
+    ) -> bool:
+        if not self.redis_enabled or not self.redis_client:
+            return False
+        try:
+            ramp_key = f"ramp:{location}:{cluster}:{setpoint_type}"
+            ramp_ttl = 10
+            ramp_data = {
+                'current_effective_setpoint': current_effective_setpoint,
+                'ramp_start_timestamp': ramp_start_timestamp.isoformat(),
+                'ramp_duration': ramp_duration,
+                'target_setpoint': target_setpoint
+            }
+            self.redis_client.setex(ramp_key, ramp_ttl, json.dumps(ramp_data))
+            logger.debug(
+                f"Wrote ramp state for {setpoint_type} ({location}/{cluster}): "
+                f"current={current_effective_setpoint:.2f}, target={target_setpoint:.2f}, "
+                f"duration={ramp_duration}min"
+            )
+            return True
+        except Exception as e:
+            logger.warning(f"Error writing ramp state to Redis: {e}")
+            return False
+
+    def read_ramp_state(
+        self,
+        location: str,
+        cluster: str,
+        setpoint_type: str
+    ):
+        if not self.redis_enabled or not self.redis_client:
+            return None
+        try:
+            ramp_key = f"ramp:{location}:{cluster}:{setpoint_type}"
+            ramp_data = self.redis_client.get(ramp_key)
+            if ramp_data:
+                return json.loads(ramp_data)
+        except Exception as e:
+            logger.debug(f"Error reading ramp state from Redis: {e}")
+        return None
+
+    def clear_ramp_state(
+        self,
+        location: str,
+        cluster: str,
+        setpoint_type: str
+    ) -> bool:
+        if not self.redis_enabled or not self.redis_client:
+            return False
+        try:
+            ramp_key = f"ramp:{location}:{cluster}:{setpoint_type}"
+            self.redis_client.delete(ramp_key)
+            logger.debug(f"Cleared ramp state for {setpoint_type} ({location}/{cluster})")
+            return True
+        except Exception as e:
+            logger.warning(f"Error clearing ramp state from Redis: {e}")
+            return False
 

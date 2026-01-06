@@ -4,10 +4,11 @@ export interface LightStatus {
   location: string;
   cluster: string;
   device: string;
-  intensity: number;  // 0-100%
+  intensity: number;  // 0-100% (current intensity, changes during ramp)
   voltage: number;    // 0-10V
   board_id: number;
   channel: number;
+  target_intensity?: number | null;  // 0-100% (target intensity from schedule, max for the day)
   board_info?: {
     board_id: number;
     i2c_address: number;

@@ -1,4 +1,5 @@
 """Setpoint management endpoints."""
+from shared.logging import get_logger
 from fastapi import APIRouter, HTTPException, Depends, Query
 from pydantic import BaseModel
 from typing import Dict, Optional, Any, List
@@ -7,9 +8,8 @@ from app.config import ConfigLoader
 from app.validation import validate_setpoint
 from app.redis_client import AutomationRedisClient
 from asyncpg.exceptions import PostgresConnectionError, PostgresError
-import logging
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 router = APIRouter()
 
@@ -22,6 +22,7 @@ class SetpointUpdate(BaseModel):
     vpd: Optional[float] = None
     mode: Optional[str] = None
     ramp_in_duration: Optional[int] = None  # Minutes to ramp in when entering this mode (0 = instant)
+    expected_version: Optional[str] = None  # ISO format timestamp for optimistic locking
 
 
 # This will be overridden by main app
@@ -161,6 +162,18 @@ async def update_setpoints(
     # Get existing setpoints to merge (for the specified mode or default)
     existing = await database.get_setpoint(location, cluster, setpoints.mode)
     
+    # Parse expected_version if provided
+    expected_version_dt = None
+    if setpoints.expected_version:
+        try:
+            from datetime import datetime
+            expected_version_dt = datetime.fromisoformat(setpoints.expected_version.replace('Z', '+00:00'))
+        except (ValueError, AttributeError):
+            raise HTTPException(
+                status_code=400,
+                detail="expected_version must be in ISO format (e.g., '2024-01-15T10:30:00Z')"
+            )
+    
     # Merge with existing values
     final_heat = setpoints.heating_setpoint if setpoints.heating_setpoint is not None else (existing.get('heating_setpoint') if existing else None)
     final_cool = setpoints.cooling_setpoint if setpoints.cooling_setpoint is not None else (existing.get('cooling_setpoint') if existing else None)
@@ -183,7 +196,7 @@ async def update_setpoints(
     
     # Write to database and Redis with source='api'
     try:
-        success = await database.set_setpoint(
+        success, new_updated_at = await database.set_setpoint(
             location, cluster,
             final_heat,
             final_cool,
@@ -192,10 +205,24 @@ async def update_setpoints(
             final_vpd,
             setpoints.mode,
             final_ramp_in,
-            source='api'
+            source='api',
+            expected_version=expected_version_dt
         )
         
         if not success:
+            # Check if it's a version conflict
+            if expected_version_dt is not None and new_updated_at is not None:
+                current_version_str = new_updated_at.isoformat()
+                expected_version_str = expected_version_dt.isoformat()
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "detail": "Conflict: This record was modified by another user. Please refresh and try again.",
+                        "conflict_type": "version_mismatch",
+                        "current_version": current_version_str,
+                        "expected_version": expected_version_str
+                    }
+                )
             raise HTTPException(status_code=500, detail="Failed to update setpoints in database.")
     except ValueError as e:
         logger.error(f"Configuration error in update_setpoints: {e}", exc_info=True)
@@ -267,6 +294,17 @@ async def update_setpoints(
             changes=changes
         )
     
+    # Get updated setpoint to broadcast
+    updated_setpoint = await database.get_setpoint(location, cluster, setpoints.mode)
+    
+    # Broadcast update to all WebSocket clients
+    try:
+        from app.routes.websocket import broadcast_setpoint_update
+        if updated_setpoint:
+            await broadcast_setpoint_update(location, cluster, setpoints.mode, updated_setpoint)
+    except Exception as e:
+        logger.warning(f"Failed to broadcast setpoint update: {e}")
+    
     return {
         "location": location,
         "cluster": cluster,
@@ -280,6 +318,7 @@ async def update_setpoints(
             "ramp_in_duration": final_ramp_in
         },
         "warnings": warnings,
-        "success": True
+        "success": True,
+        "updated_at": updated_setpoint.get('updated_at').isoformat() if updated_setpoint and updated_setpoint.get('updated_at') else None
     }
 

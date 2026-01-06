@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from shared.logging import get_logger
 """
 DFR0971 2-Channel I2C 0-10V DAC Module Driver
 Controls DFR0971 modules for HLG320B light dimming
@@ -6,11 +7,10 @@ Supports multiple boards with different I2C addresses
 Supports simulation mode when hardware is not connected
 """
 
-import logging
 from typing import Optional, Dict
 from dataclasses import dataclass
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # GP8403 I2C Commands (DFR0971 uses GP8403 chip)
 # Based on official DFRobot_GP8403 library: https://github.com/DFRobot/DFRobot_GP8403
@@ -81,11 +81,36 @@ class DFR0971Driver:
             return
         
         try:
-            # Set output range to 10V (0-10V range)
-            self._set_output_range(DFR0971_RANGE_10V)
+            import time
+            # CRITICAL: Some boards (especially 0x59) may have issues with output range
+            # Force set the range multiple times to ensure it sticks
+            logger.debug(f"Initializing DFR0971 at 0x{self.i2c_address:02X} - setting output range to 10V")
+            
+            # Set output range to 10V (0-10V range) - try multiple times
+            for attempt in range(3):
+                try:
+                    self._set_output_range(DFR0971_RANGE_10V)
+                    time.sleep(0.05)  # Give it time to process
+                    # Verify by setting it again
+                    self._set_output_range(DFR0971_RANGE_10V)
+                    time.sleep(0.05)
+                    break
+                except Exception as e:
+                    if attempt == 2:
+                        raise
+                    logger.warning(f"Range setting attempt {attempt + 1} failed, retrying: {e}")
+                    time.sleep(0.1)
+            
+            # Store settings to EEPROM to persist the range
+            try:
+                self.store_settings()
+                time.sleep(0.1)  # EEPROM write takes time
+            except Exception as e:
+                logger.warning(f"Could not store range to EEPROM during init: {e}")
+            
             self._range_set = True
             self._voltage_range = 10000  # 10V range
-            logger.debug(f"DFR0971 output range set to 10V")
+            logger.debug(f"DFR0971 output range set to 10V and stored")
         except Exception as e:
             logger.error(f"Error initializing DFR0971 hardware: {e}")
             raise
@@ -99,20 +124,39 @@ class DFR0971Driver:
         if self.simulation:
             return
         
-        try:
-            # Use write_word_data as per official Python library
-            # Note: write_word_data writes a 16-bit word (little-endian)
-            # For a single byte value, it will be in the low byte
-            self.bus.write_word_data(self.i2c_address, DFR0971_CMD_SET_RANGE, range_value)
-            
-            # Add delay to ensure command is processed
-            import time
-            time.sleep(0.02)
-            
-            logger.debug(f"Output range set to {'10V' if range_value == DFR0971_RANGE_10V else '5V'} (value: 0x{range_value:02X})")
-        except Exception as e:
-            logger.error(f"Error setting output range: {e}")
-            raise
+        import time
+        max_retries = 3
+        retry_delay = 0.01
+        
+        for attempt in range(max_retries):
+            try:
+                # Use write_word_data as per official Python library
+                # Note: write_word_data writes a 16-bit word (little-endian)
+                # For a single byte value, it will be in the low byte
+                self.bus.write_word_data(self.i2c_address, DFR0971_CMD_SET_RANGE, range_value)
+                
+                # Add delay to ensure command is processed
+                time.sleep(0.02)
+                
+                logger.debug(f"Output range set to {'10V' if range_value == DFR0971_RANGE_10V else '5V'} (value: 0x{range_value:02X})")
+                return  # Success
+                
+            except OSError as e:
+                # Check if it's an I2C error (errno 121 = Remote I/O error)
+                if e.errno == 121 and attempt < max_retries - 1:
+                    wait_time = retry_delay * (2 ** attempt)
+                    logger.warning(
+                        f"I2C error setting output range on attempt {attempt + 1}/{max_retries} "
+                        f"for board 0x{self.i2c_address:02X}: {e}. Retrying in {wait_time:.3f}s..."
+                    )
+                    time.sleep(wait_time)
+                    continue
+                else:
+                    logger.error(f"Error setting output range after {max_retries} attempts: {e}")
+                    raise
+            except Exception as e:
+                logger.error(f"Error setting output range: {e}")
+                raise
     
     def set_voltage(self, voltage: float, channel: int = 0, store_to_eeprom: bool = False) -> bool:
         """
@@ -139,12 +183,20 @@ class DFR0971Driver:
                 logger.debug(f"Simulation: Channel {channel} set to {voltage:.2f}V")
                 return True
             
-            # Always ensure output range is set to 10V before setting voltage
-            # This is important because the range might not persist or might be reset
-            if not self._range_set:
-                self._set_output_range(DFR0971_RANGE_10V)
-                self._range_set = True
-                self._voltage_range = 10000
+            # CRITICAL: Always ensure output range is set to 10V before setting voltage
+            # Some boards (especially 0x59) may lose the range setting or have it corrupted
+            # Force set the range every time for problematic boards
+            if not self._range_set or self.i2c_address == 0x59:
+                # For board 0x59, always re-set the range to ensure it's correct
+                try:
+                    self._set_output_range(DFR0971_RANGE_10V)
+                    self._range_set = True
+                    self._voltage_range = 10000
+                    if self.i2c_address == 0x59:
+                        logger.debug(f"Force-set output range for board 0x59 before voltage write")
+                except Exception as e:
+                    logger.warning(f"Failed to set output range before voltage write: {e}")
+                    # Continue anyway - might still work
             
             # Based on official DFRobot library implementation:
             # setDACOutVoltage(uint16_t data, uint8_t channel)
@@ -183,18 +235,49 @@ class DFR0971Driver:
             logger.debug(f"Setting voltage: {voltage:.2f}V, channel={channel}, "
                         f"DAC_12bit={dac_12bit}, DAC_16bit={dac_value} (0x{dac_value:04X})")
             
-            # Use write_word_data as per official Python library
-            # write_word_data automatically handles little-endian byte order
-            # Format: write_word_data(addr, register, 16-bit_value)
-            self.bus.write_word_data(
-                self.i2c_address,
-                reg_addr,
-                dac_value
-            )
+            # Retry logic for I2C communication errors
+            # Some boards (especially 0x59) may have intermittent I2C issues
+            import time
+            max_retries = 3
+            retry_delay = 0.01  # Start with 10ms delay
+            last_error = None
+            
+            for attempt in range(max_retries):
+                try:
+                    # Use write_word_data as per official Python library
+                    # write_word_data automatically handles little-endian byte order
+                    # Format: write_word_data(addr, register, 16-bit_value)
+                    self.bus.write_word_data(
+                        self.i2c_address,
+                        reg_addr,
+                        dac_value
+                    )
+                    
+                    # Success - break out of retry loop
+                    break
+                    
+                except OSError as e:
+                    # Check if it's an I2C error (errno 121 = Remote I/O error)
+                    if e.errno == 121 and attempt < max_retries - 1:
+                        # I2C Remote I/O error - retry with exponential backoff
+                        wait_time = retry_delay * (2 ** attempt)
+                        logger.warning(
+                            f"I2C error on attempt {attempt + 1}/{max_retries} for board 0x{self.i2c_address:02X}, "
+                            f"channel {channel}: {e}. Retrying in {wait_time:.3f}s..."
+                        )
+                        time.sleep(wait_time)
+                        continue
+                    else:
+                        # Last attempt failed or non-retryable error
+                        last_error = e
+                        raise
+                except Exception as e:
+                    # Other errors - don't retry
+                    last_error = e
+                    raise
             
             # Delay after setting voltage to ensure command is processed
             # DFR0971 may need time to update the output
-            import time
             time.sleep(0.05)  # Increased delay to ensure voltage is set
             
             self._channel_states[channel] = voltage
@@ -211,7 +294,7 @@ class DFR0971Driver:
             return True
             
         except Exception as e:
-            logger.error(f"Error setting voltage on channel {channel}: {e}")
+            logger.error(f"Error setting voltage on channel {channel} (address 0x{self.i2c_address:02X}): {e}")
             return False
     
     def set_intensity(self, intensity: float, channel: int = 0, store_to_eeprom: bool = False) -> bool:
@@ -276,12 +359,75 @@ class DFR0971Driver:
             logger.debug("Simulation: Settings stored")
             return True
         
+        import time
+        max_retries = 3
+        retry_delay = 0.01
+        
+        for attempt in range(max_retries):
+            try:
+                # CRITICAL: For board 0x59, ensure range is set before storing
+                if self.i2c_address == 0x59 and not self._range_set:
+                    self._set_output_range(DFR0971_RANGE_10V)
+                    self._range_set = True
+                    self._voltage_range = 10000
+                    time.sleep(0.05)
+                
+                self.bus.write_byte(self.i2c_address, DFR0971_CMD_STORE)
+                # EEPROM writes can take up to 10ms, wait longer for reliability
+                time.sleep(0.02)
+                logger.debug("DFR0971 settings stored to EEPROM")
+                return True
+            except OSError as e:
+                # Check if it's an I2C error (errno 121 = Remote I/O error)
+                if e.errno == 121 and attempt < max_retries - 1:
+                    wait_time = retry_delay * (2 ** attempt)
+                    logger.warning(
+                        f"I2C error storing settings on attempt {attempt + 1}/{max_retries} "
+                        f"for board 0x{self.i2c_address:02X}: {e}. Retrying in {wait_time:.3f}s..."
+                    )
+                    time.sleep(wait_time)
+                    continue
+                else:
+                    logger.error(f"Error storing settings after {max_retries} attempts: {e}")
+                    return False
+            except Exception as e:
+                logger.error(f"Error storing settings: {e}")
+                return False
+        
+        return False
+    
+    def force_reinitialize(self) -> bool:
+        """
+        Force re-initialization of the board - useful for boards that lose their settings
+        
+        Returns:
+            True if successful, False otherwise
+        """
+        if self.simulation:
+            return True
+        
+        logger.info(f"Force re-initializing board 0x{self.i2c_address:02X}...")
         try:
-            self.bus.write_byte(self.i2c_address, DFR0971_CMD_STORE)
-            logger.debug("DFR0971 settings stored to EEPROM")
+            import time
+            # Reset the range flag to force re-setting
+            self._range_set = False
+            
+            # Re-initialize hardware
+            self._initialize_hardware()
+            
+            # Set both channels to 0V first
+            self.set_voltage(0.0, channel=0)
+            time.sleep(0.1)
+            self.set_voltage(0.0, channel=1)
+            time.sleep(0.1)
+            
+            # Store settings
+            self.store_settings()
+            
+            logger.info(f"Board 0x{self.i2c_address:02X} re-initialized successfully")
             return True
         except Exception as e:
-            logger.error(f"Error storing settings: {e}")
+            logger.error(f"Failed to re-initialize board 0x{self.i2c_address:02X}: {e}")
             return False
     
     def close(self):
@@ -349,9 +495,15 @@ class DFR0971Manager:
             # if values exist, otherwise they'll remain at whatever EEPROM has stored
             if not self.simulation:
                 try:
-                    # Just ensure output range is set to 10V and stored
-                    # The actual intensity values will be restored from Redis if available
-                    driver.store_settings()
+                    # CRITICAL: Board 0x59 (board_id 1) has known issues with output range
+                    # Force re-initialize it to ensure proper output
+                    if i2c_address == 0x59:
+                        logger.info(f"Board 0x59 detected - forcing re-initialization due to known output issues")
+                        driver.force_reinitialize()
+                    else:
+                        # Just ensure output range is set to 10V and stored
+                        # The actual intensity values will be restored from Redis if available
+                        driver.store_settings()
                     logger.info(f"DFR0971 board {board_id} initialized at address 0x{i2c_address:02X} (range set to 10V)")
                 except Exception as e:
                     logger.warning(f"Could not store settings for board {board_id}: {e}")
@@ -484,6 +636,23 @@ class DFR0971Manager:
                 'available': driver is not None
             })
         return boards
+    
+    def force_reinitialize_board(self, board_id: int) -> bool:
+        """
+        Force re-initialization of a specific board
+        
+        Args:
+            board_id: Board identifier
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        driver = self.get_board(board_id)
+        if driver is None:
+            logger.error(f"Board {board_id} not found")
+            return False
+        
+        return driver.force_reinitialize()
     
     def close_all(self):
         """Close all board connections"""

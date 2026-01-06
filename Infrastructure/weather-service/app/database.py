@@ -1,12 +1,12 @@
 """Database manager for TimescaleDB operations."""
+from shared.logging import get_logger
 import os
-import logging
 import asyncio
 from datetime import datetime
 from typing import Dict, List, Optional, Any, Tuple
 import asyncpg
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class DatabaseManager:

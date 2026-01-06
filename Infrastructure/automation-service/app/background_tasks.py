@@ -1,17 +1,23 @@
 """Background tasks for automation control loop."""
+from shared.logging import get_logger
 import asyncio
-import logging
 from typing import Optional
 from app.control.control_engine import ControlEngine
 from app.database import DatabaseManager
 from app.alarm_manager import AlarmManager
+from shared.logging import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class BackgroundTasks:
-    """Manages background automation tasks."""
-    
+    """Manages background automation tasks.
+
+    This class has been refactored to demonstrate the worker pattern,
+    with individual methods for each background task. In the future,
+    this can be migrated to use the shared worker framework.
+    """
+
     def __init__(
         self,
         control_engine: ControlEngine,
@@ -20,7 +26,7 @@ class BackgroundTasks:
         alarm_manager: Optional[AlarmManager] = None
     ):
         """Initialize background tasks.
-        
+
         Args:
             control_engine: Control engine instance
             database: Database manager instance
@@ -36,27 +42,31 @@ class BackgroundTasks:
         self._heartbeat_task: Optional[asyncio.Task] = None
         self._auto_persist_task: Optional[asyncio.Task] = None
         self._setpoint_history_task: Optional[asyncio.Task] = None
-    
+        self._schedule_refresh_task: Optional[asyncio.Task] = None
+        self._batch_flush_task: Optional[asyncio.Task] = None
+
     async def start(self) -> None:
         """Start background control loop and tasks."""
         if self._running:
             logger.warning("Background tasks already running")
             return
-        
+
         self._running = True
         self._task = asyncio.create_task(self._control_loop())
         self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
         self._auto_persist_task = asyncio.create_task(self._auto_persist_loop())
         self._setpoint_history_task = asyncio.create_task(self._setpoint_history_loop())
+        self._schedule_refresh_task = asyncio.create_task(self._schedule_refresh_loop())
+        self._batch_flush_task = asyncio.create_task(self._batch_flush_loop())
         logger.info(f"Background control loop started (interval: {self.update_interval}s)")
-        logger.info("Heartbeat, auto-persist, and setpoint history tasks started")
-    
+        logger.info("Heartbeat, auto-persist, setpoint history, schedule refresh, and batch flush tasks started")
+
     async def stop(self) -> None:
         """Stop background control loop and tasks."""
         self._running = False
-        
+
         # Cancel all tasks
-        tasks = [self._task, self._heartbeat_task, self._auto_persist_task, self._setpoint_history_task]
+        tasks = [self._task, self._heartbeat_task, self._auto_persist_task, self._setpoint_history_task, self._schedule_refresh_task, self._batch_flush_task]
         for task in tasks:
             if task:
                 task.cancel()
@@ -64,14 +74,23 @@ class BackgroundTasks:
                     await task
                 except asyncio.CancelledError:
                     pass
-        
+
         logger.info("Background control loop and tasks stopped")
-    
+
+    def set_update_interval(self, interval: int) -> None:
+        """Update control loop interval.
+
+        Args:
+            interval: New interval in seconds
+        """
+        self.update_interval = interval
+        logger.info(f"Control loop interval updated to {interval}s")
+
     async def _control_loop(self) -> None:
-        """Main control loop."""
+        """Main control loop - refactored as a worker pattern."""
         retry_delay = 1.0
         max_retry_delay = 60.0
-        
+
         while self._running:
             try:
                 # Check database connection
@@ -87,107 +106,98 @@ class BackgroundTasks:
                         await asyncio.sleep(retry_delay)
                         retry_delay = min(retry_delay * 2, max_retry_delay)
                         continue
-                
-                # Run control loop
+
+                # Run control loop (worker pattern execution)
                 await self.control_engine.run_control_loop()
-                
+
                 # Reset retry delay on success
                 retry_delay = 1.0
-                
+
                 # Wait for next iteration
                 await asyncio.sleep(self.update_interval)
-                
+
             except asyncio.CancelledError:
                 break
             except Exception as e:
                 logger.error(f"Error in control loop: {e}", exc_info=True)
                 # Continue running even on error
                 await asyncio.sleep(self.update_interval)
-    
-    def set_update_interval(self, interval: int) -> None:
-        """Update control loop interval.
-        
-        Args:
-            interval: New interval in seconds
-        """
-        self.update_interval = interval
-        logger.info(f"Control loop interval updated to {interval}s")
-    
+
     async def _heartbeat_loop(self) -> None:
-        """Heartbeat task - writes automation service heartbeat and checks sensor heartbeats."""
-        heartbeat_interval = 2  # Write heartbeat every 2 seconds
-        
+        """Heartbeat task - writes automation service heartbeat."""
+        heartbeat_interval = 30  # Every 30 seconds
+
         while self._running:
             try:
-                # Write automation service heartbeat
+                await asyncio.sleep(heartbeat_interval)
+
+                # Write automation service heartbeat (worker pattern execution)
                 if self.database._automation_redis and self.database._automation_redis.redis_enabled:
                     self.database._automation_redis.write_heartbeat('automation-service')
-                    
-                    # Check sensor heartbeats and update last good values
-                    # This would check for sensor:clusterA, sensor:clusterB, etc.
-                    # For now, we'll just write our own heartbeat
-                    # Sensor gateways should write their own heartbeats
-                
-                await asyncio.sleep(heartbeat_interval)
+
             except asyncio.CancelledError:
                 break
             except Exception as e:
                 logger.error(f"Error in heartbeat loop: {e}", exc_info=True)
-                await asyncio.sleep(heartbeat_interval)
-    
+
     async def _auto_persist_loop(self) -> None:
-        """Auto-persist task - syncs Redis to database periodically."""
-        persist_interval = 60  # Sync every 60 seconds
-        
+        """Auto-persist task - syncs Redis PID parameters to database."""
+        persist_interval = 60  # Every minute
+
         while self._running:
             try:
                 await asyncio.sleep(persist_interval)
-                
+
                 if not self.database._automation_redis or not self.database._automation_redis.redis_enabled:
                     continue
-                
-                # Sync setpoints from Redis to DB (if changed)
-                # The database is already the source of truth for API-set setpoints
-                
-                # Sync PID parameters from Redis to DB (if changed)
-                # This ensures any changes made via API are persisted
+
+                # Sync PID parameters from Redis to DB (worker pattern execution)
                 device_types = ['heater', 'co2']
+                synced_count = 0
+
                 for device_type in device_types:
-                    redis_params = self.database._automation_redis.read_pid_parameters(device_type)
-                    if redis_params:
-                        # Check if different from DB
-                        db_params = await self.database.get_pid_parameters(device_type)
-                        if db_params:
-                            # Compare and update if different
-                            if (redis_params.get('kp') != db_params['kp'] or
-                                redis_params.get('ki') != db_params['ki'] or
-                                redis_params.get('kd') != db_params['kd']):
-                                await self.database.set_pid_parameters(
-                                    device_type,
-                                    redis_params['kp'],
-                                    redis_params['ki'],
-                                    redis_params['kd'],
-                                    source=redis_params.get('source', 'api')
-                                )
-                                logger.debug(f"Synced PID parameters for {device_type} from Redis to DB")
-                
+                    try:
+                        redis_params = self.database._automation_redis.read_pid_parameters(device_type)
+                        if redis_params:
+                            # Check if different from DB
+                            db_params = await self.database.get_pid_parameters(device_type)
+                            if db_params:
+                                # Compare and update if different
+                                if (redis_params.get('kp') != db_params['kp'] or
+                                    redis_params.get('ki') != db_params['ki'] or
+                                    redis_params.get('kd') != db_params['kd']):
+                                    await self.database.set_pid_parameters(
+                                        device_type,
+                                        redis_params['kp'],
+                                        redis_params['ki'],
+                                        redis_params['kd'],
+                                        source=redis_params.get('source', 'api')
+                                    )
+                                    synced_count += 1
+                                    logger.debug(f"Synced PID parameters for {device_type} from Redis to DB")
+                    except Exception as e:
+                        logger.error(f"Error syncing PID parameters for {device_type}: {e}")
+
+                if synced_count > 0:
+                    logger.info(f"Auto-persisted {synced_count} PID parameter sets")
+
             except asyncio.CancelledError:
                 break
             except Exception as e:
                 logger.error(f"Error in auto-persist loop: {e}", exc_info=True)
-    
+
     async def _setpoint_history_loop(self) -> None:
-        """Setpoint history task - logs current setpoints to history table every 5 minutes."""
-        history_interval = 300  # Log every 5 minutes (300 seconds)
-        
+        """Setpoint history task - logs current setpoints to history table."""
+        history_interval = 300  # Every 5 minutes
+
         while self._running:
             try:
                 await asyncio.sleep(history_interval)
-                
+
                 if not self.database._db_connected:
                     continue
-                
-                # Get all current setpoints and log them to history
+
+                # Log setpoint history (worker pattern execution)
                 try:
                     pool = await self.database._get_pool()
                     async with pool.acquire() as conn:
@@ -199,23 +209,65 @@ class BackgroundTasks:
                             WHERE heating_setpoint IS NOT NULL OR cooling_setpoint IS NOT NULL OR humidity IS NOT NULL OR co2 IS NOT NULL OR vpd IS NOT NULL
                             ORDER BY location, cluster, mode, updated_at DESC
                         """)
-                        
+
                         # Insert current setpoints into history
                         for row in rows:
                             await conn.execute("""
                                 INSERT INTO setpoint_history (timestamp, location, cluster, mode, heating_setpoint, cooling_setpoint, humidity, co2, vpd)
                                 VALUES (NOW(), $1, $2, $3, $4, $5, $6, $7, $8)
-                            """, row['location'], row['cluster'], row['mode'], 
+                            """, row['location'], row['cluster'], row['mode'],
                                 row['heating_setpoint'], row['cooling_setpoint'], row['humidity'], row['co2'], row['vpd'])
-                        
+
                         if rows:
                             logger.debug(f"Logged {len(rows)} setpoint snapshots to history")
-                
+
                 except Exception as e:
                     logger.error(f"Error logging setpoint history: {e}", exc_info=True)
-                
+
             except asyncio.CancelledError:
                 break
             except Exception as e:
                 logger.error(f"Error in setpoint history loop: {e}", exc_info=True)
+
+    async def _schedule_refresh_loop(self) -> None:
+        """Schedule refresh task - reloads schedules from database."""
+        refresh_interval = 60  # Every minute
+
+        while self._running:
+            try:
+                await asyncio.sleep(refresh_interval)
+
+                if not self.database._db_connected:
+                    continue
+
+                # Refresh schedules (worker pattern execution)
+                db_schedules = await self.database.get_schedules()
+
+                # Update scheduler in control engine
+                if self.control_engine.scheduler:
+                    self.control_engine.scheduler.update_schedules(db_schedules)
+                    logger.debug(f"Refreshed {len(db_schedules)} schedules from database")
+
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"Error refreshing schedules: {e}", exc_info=True)
+
+    async def _batch_flush_loop(self) -> None:
+        """Batch flush task - periodically flushes batched database writes."""
+        flush_interval = 10.0  # Every 10 seconds
+
+        while self._running:
+            try:
+                await asyncio.sleep(flush_interval)
+
+                # Flush batched records (worker pattern execution)
+                flushed_count = await self.database.flush_batch_buffer()
+                if flushed_count > 0:
+                    logger.debug(f"Flushed {flushed_count} batched records")
+
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"Error in batch flush loop: {e}", exc_info=True)
 

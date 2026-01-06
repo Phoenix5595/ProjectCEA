@@ -1,10 +1,10 @@
 """Configuration loader for YAML config files."""
+from shared.logging import get_logger
 import yaml
-import logging
 from pathlib import Path
 from typing import Dict, Any, Optional
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class ConfigLoader:

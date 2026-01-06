@@ -1,13 +1,13 @@
 """WebSocket endpoints for real-time updates."""
+from shared.logging import get_logger
 import json
-import logging
 from typing import Dict, Any, Optional
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends
 from app.database import DatabaseManager
 from app.redis_client import AutomationRedisClient
 from app.control.relay_manager import RelayManager
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 router = APIRouter()
 
@@ -180,5 +180,75 @@ async def broadcast_mode_update(location: str, cluster: str, mode: str):
         "location": location,
         "cluster": cluster,
         "mode": mode
+    })
+
+
+# Function to broadcast schedule updates
+async def broadcast_schedule_update(schedule_id: int, schedule_data: Dict[str, Any]):
+    """Broadcast schedule update to all WebSocket clients.
+    
+    Args:
+        schedule_id: Schedule ID
+        schedule_data: Complete schedule data dictionary
+    """
+    await broadcast_message({
+        "type": "schedule_update",
+        "schedule_id": schedule_id,
+        "schedule": schedule_data,
+        "updated_at": schedule_data.get('updated_at').isoformat() if schedule_data.get('updated_at') else None
+    })
+
+
+# Function to broadcast setpoint updates
+async def broadcast_setpoint_update(location: str, cluster: str, mode: Optional[str], setpoint_data: Dict[str, Any]):
+    """Broadcast setpoint update to all WebSocket clients.
+    
+    Args:
+        location: Location name
+        cluster: Cluster name
+        mode: Mode (DAY/NIGHT/TRANSITION) or None for legacy
+        setpoint_data: Complete setpoint data dictionary
+    """
+    await broadcast_message({
+        "type": "setpoint_update",
+        "location": location,
+        "cluster": cluster,
+        "mode": mode,
+        "setpoint": setpoint_data,
+        "updated_at": setpoint_data.get('updated_at').isoformat() if setpoint_data.get('updated_at') else None
+    })
+
+
+# Function to broadcast room schedule updates
+async def broadcast_room_schedule_update(location: str, cluster: str, schedule_data: Dict[str, Any]):
+    """Broadcast room schedule update to all WebSocket clients.
+    
+    Args:
+        location: Location name
+        cluster: Cluster name
+        schedule_data: Room schedule data dictionary
+    """
+    await broadcast_message({
+        "type": "room_schedule_update",
+        "location": location,
+        "cluster": cluster,
+        "schedule": schedule_data
+    })
+
+
+# Function to broadcast climate schedule updates
+async def broadcast_climate_schedule_update(location: str, cluster: str, schedule_data: Dict[str, Any]):
+    """Broadcast climate schedule update to all WebSocket clients.
+    
+    Args:
+        location: Location name
+        cluster: Cluster name
+        schedule_data: Climate schedule data dictionary
+    """
+    await broadcast_message({
+        "type": "climate_schedule_update",
+        "location": location,
+        "cluster": cluster,
+        "schedule": schedule_data
     })
 

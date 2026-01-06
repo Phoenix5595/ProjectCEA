@@ -13,6 +13,8 @@ interface LightDeviceDetails {
   dimming_enabled: boolean
 }
 
+type ActiveMode = 'auto' | 'off' | '5m' | '30m' | '1h' | '8h' | null
+
 export default function ManualLightControl({ location, cluster, compact = false }: ManualLightControlProps) {
   const [lightDetails, setLightDetails] = useState<LightDeviceDetails[]>([])
   const [loadingDetails, setLoadingDetails] = useState(true)
@@ -20,12 +22,14 @@ export default function ManualLightControl({ location, cluster, compact = false 
   const [lastDefaultMode, setLastDefaultMode] = useState<'auto' | 'scheduled' | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [activeMode, setActiveMode] = useState<ActiveMode>(null)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const intervalRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const zoneKey = `${location}:${cluster}`
   const timerStorageKey = `light_timer_${zoneKey}`
   const modeStorageKey = `last_default_mode_${zoneKey}`
+  const activeModeStorageKey = `active_mode_${zoneKey}`
 
   // Load device details on mount
   useEffect(() => {
@@ -60,10 +64,11 @@ export default function ManualLightControl({ location, cluster, compact = false 
     loadDeviceDetails()
   }, [location, cluster])
 
-  // Load timer state from localStorage on mount
+  // Load timer state and active mode from localStorage on mount
   useEffect(() => {
     const savedTimerEnd = localStorage.getItem(timerStorageKey)
     const savedMode = localStorage.getItem(modeStorageKey) as 'auto' | 'scheduled' | null
+    const savedActiveMode = localStorage.getItem(activeModeStorageKey) as ActiveMode
 
     if (savedTimerEnd && savedMode) {
       const endTime = parseInt(savedTimerEnd, 10)
@@ -73,13 +78,18 @@ export default function ManualLightControl({ location, cluster, compact = false 
       if (remaining > 0) {
         setActiveTimer(remaining)
         setLastDefaultMode(savedMode)
+        setActiveMode(savedActiveMode)
         startTimerCountdown(remaining)
       } else {
-        // Timer expired, restore mode
+        // Timer expired, restore mode (restoreMode will set activeMode to 'auto')
         restoreMode(savedMode)
         localStorage.removeItem(timerStorageKey)
         localStorage.removeItem(modeStorageKey)
+        // Don't remove activeModeStorageKey here - let restoreMode handle it
       }
+    } else if (savedActiveMode) {
+      // Restore active mode even if timer expired
+      setActiveMode(savedActiveMode)
     }
   }, [])
 
@@ -105,49 +115,29 @@ export default function ManualLightControl({ location, cluster, compact = false 
     }, 60000) // Update every minute
   }
 
-  async function getScheduleIntensity(): Promise<number> {
+  async function getDayTargetIntensity(deviceName: string): Promise<number> {
     try {
       const schedules = await apiClient.getSchedules(location, cluster)
-      const now = new Date()
-      const currentTime = now.getHours() * 60 + now.getMinutes() // minutes since midnight
-      const currentWeekday = now.getDay() === 0 ? 6 : now.getDay() - 1 // Convert to 0-6 (Monday-Sunday)
-
-      // Find active schedule for any light device
-      for (const schedule of schedules) {
-        if (!schedule.enabled) continue
-        if (schedule.device_name && !schedule.device_name.startsWith('light_')) continue
-
-        const startMinutes = timeToMinutes(schedule.start_time)
-        const endMinutes = timeToMinutes(schedule.end_time)
-        const dayMatch = schedule.day_of_week === null || schedule.day_of_week === currentWeekday
-
-        if (!dayMatch) continue
-
-        let isActive = false
-        if (startMinutes <= endMinutes) {
-          // Same day schedule
-          isActive = currentTime >= startMinutes && currentTime < endMinutes
-        } else {
-          // Overnight schedule
-          isActive = currentTime >= startMinutes || currentTime < endMinutes
-        }
-
-        if (isActive && schedule.target_intensity !== null && schedule.target_intensity !== undefined) {
-          return schedule.target_intensity
-        }
+      
+      // Find the DAY schedule for this specific device
+      const daySchedule = schedules.find(
+        s => s.device_name === deviceName && 
+             s.mode === 'DAY' && 
+             s.enabled &&
+             s.target_intensity !== null && 
+             s.target_intensity !== undefined
+      )
+      
+      if (daySchedule && daySchedule.target_intensity !== null && daySchedule.target_intensity !== undefined) {
+        return daySchedule.target_intensity
       }
 
-      // No active schedule with intensity, default to 100%
+      // No day schedule found, default to 100%
       return 100
     } catch (err) {
-      console.error('Error getting schedule intensity:', err)
+      console.error(`Error getting day target intensity for ${deviceName}:`, err)
       return 100 // Default to 100% on error
     }
-  }
-
-  function timeToMinutes(timeStr: string): number {
-    const [hours, minutes] = timeStr.split(':').map(Number)
-    return hours * 60 + minutes
   }
 
   async function turnOnLights(durationMinutes?: number) {
@@ -155,9 +145,6 @@ export default function ManualLightControl({ location, cluster, compact = false 
     setError(null)
 
     try {
-      // Get schedule intensity
-      const intensity = await getScheduleIntensity()
-
       // Save current mode as last default if not already in manual mode
       if (!lastDefaultMode && lightDetails.length > 0) {
         try {
@@ -181,23 +168,36 @@ export default function ManualLightControl({ location, cluster, compact = false 
         }
       }
 
-      // Turn on all lights
+      // Turn on all lights with day target intensity
       for (const light of lightDetails) {
         try {
+          // Get day target intensity for this specific light
+          const dayTargetIntensity = await getDayTargetIntensity(light.device_name)
+          
           // Set intensity if dimming enabled
           if (light.dimming_enabled) {
-            await apiClient.setLightIntensity(location, cluster, light.device_name, intensity)
+            await apiClient.setLightIntensity(location, cluster, light.device_name, dayTargetIntensity)
           }
 
           // Turn relay ON
           await apiClient.controlDevice(location, cluster, light.device_name, 1, 'Manual override')
 
-          // Set to manual mode
+          // Set to manual mode to override everything
           await apiClient.setDeviceMode(location, cluster, light.device_name, 'manual')
         } catch (err: any) {
           console.error(`Error controlling light ${light.device_name}:`, err)
           setError(err.response?.data?.detail || `Failed to control ${light.device_name}`)
         }
+      }
+
+      // Set active mode based on duration
+      const modeKey: ActiveMode = durationMinutes === 5 ? '5m' : 
+                                   durationMinutes === 30 ? '30m' : 
+                                   durationMinutes === 60 ? '1h' : 
+                                   durationMinutes === 480 ? '8h' : null
+      setActiveMode(modeKey)
+      if (modeKey) {
+        localStorage.setItem(activeModeStorageKey, modeKey)
       }
 
       // Start timer if duration specified
@@ -240,13 +240,17 @@ export default function ManualLightControl({ location, cluster, compact = false 
       setActiveTimer(null)
       localStorage.removeItem(timerStorageKey)
 
+      // Set active mode to 'off'
+      setActiveMode('off')
+      localStorage.setItem(activeModeStorageKey, 'off')
+
       // Turn off all lights
       for (const light of lightDetails) {
         try {
           // Turn relay OFF
           await apiClient.controlDevice(location, cluster, light.device_name, 0, 'Manual override')
 
-          // Set to manual mode
+          // Set to manual mode to keep it off until changed
           await apiClient.setDeviceMode(location, cluster, light.device_name, 'manual')
         } catch (err: any) {
           console.error(`Error controlling light ${light.device_name}:`, err)
@@ -278,10 +282,27 @@ export default function ManualLightControl({ location, cluster, compact = false 
       setActiveTimer(null)
       localStorage.removeItem(timerStorageKey)
       localStorage.removeItem(modeStorageKey)
+      localStorage.removeItem(activeModeStorageKey)
 
-      // Set all lights to auto/scheduled mode
+      // Set active mode to 'auto' (schedule is now active)
+      setActiveMode('auto')
+      localStorage.setItem(activeModeStorageKey, 'auto')
+
+      // Restore all lights: turn ON relay, set to day target intensity, then set mode to auto/scheduled
       for (const light of lightDetails) {
         try {
+          // Get day target intensity for this specific light
+          const dayTargetIntensity = await getDayTargetIntensity(light.device_name)
+          
+          // Set intensity if dimming enabled (set to day target)
+          if (light.dimming_enabled) {
+            await apiClient.setLightIntensity(location, cluster, light.device_name, dayTargetIntensity)
+          }
+
+          // Turn relay ON (in case it was OFF)
+          await apiClient.controlDevice(location, cluster, light.device_name, 1, 'Restoring to schedule')
+
+          // Set to auto/scheduled mode (activates schedule)
           await apiClient.setDeviceMode(location, cluster, light.device_name, mode)
         } catch (err: any) {
           console.error(`Error restoring mode for ${light.device_name}:`, err)
@@ -333,42 +354,54 @@ export default function ManualLightControl({ location, cluster, compact = false 
           <button
             onClick={() => restoreMode(lastDefaultMode || 'auto')}
             disabled={loading}
-            className="px-3 py-1.5 text-sm font-medium bg-blue-600 dark:bg-blue-500 text-white rounded hover:bg-blue-700 dark:hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
+            className={`px-3 py-1.5 text-sm font-medium bg-blue-600 dark:bg-blue-500 text-white rounded hover:bg-blue-700 dark:hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed ${
+              activeMode === 'auto' ? 'ring-2 ring-blue-400 dark:ring-blue-300 ring-offset-2' : ''
+            }`}
           >
             Auto
           </button>
           <button
             onClick={() => turnOffLights()}
             disabled={loading}
-            className="px-3 py-1.5 text-sm font-medium bg-gray-600 dark:bg-gray-500 text-white rounded hover:bg-gray-700 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
+            className={`px-3 py-1.5 text-sm font-medium bg-gray-600 dark:bg-gray-500 text-white rounded hover:bg-gray-700 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed ${
+              activeMode === 'off' ? 'ring-2 ring-gray-400 dark:ring-gray-300 ring-offset-2' : ''
+            }`}
           >
             Off
           </button>
           <button
             onClick={() => turnOnLights(5)}
             disabled={loading}
-            className="px-3 py-1.5 text-sm font-medium bg-green-600 dark:bg-green-500 text-white rounded hover:bg-green-700 dark:hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed"
+            className={`px-3 py-1.5 text-sm font-medium bg-green-600 dark:bg-green-500 text-white rounded hover:bg-green-700 dark:hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed ${
+              activeMode === '5m' ? 'ring-2 ring-green-400 dark:ring-green-300 ring-offset-2' : ''
+            }`}
           >
             5m
           </button>
           <button
             onClick={() => turnOnLights(30)}
             disabled={loading}
-            className="px-3 py-1.5 text-sm font-medium bg-green-600 dark:bg-green-500 text-white rounded hover:bg-green-700 dark:hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed"
+            className={`px-3 py-1.5 text-sm font-medium bg-green-600 dark:bg-green-500 text-white rounded hover:bg-green-700 dark:hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed ${
+              activeMode === '30m' ? 'ring-2 ring-green-400 dark:ring-green-300 ring-offset-2' : ''
+            }`}
           >
             30m
           </button>
           <button
             onClick={() => turnOnLights(60)}
             disabled={loading}
-            className="px-3 py-1.5 text-sm font-medium bg-green-600 dark:bg-green-500 text-white rounded hover:bg-green-700 dark:hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed"
+            className={`px-3 py-1.5 text-sm font-medium bg-green-600 dark:bg-green-500 text-white rounded hover:bg-green-700 dark:hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed ${
+              activeMode === '1h' ? 'ring-2 ring-green-400 dark:ring-green-300 ring-offset-2' : ''
+            }`}
           >
             1h
           </button>
           <button
             onClick={() => turnOnLights(480)}
             disabled={loading}
-            className="px-3 py-1.5 text-sm font-medium bg-green-600 dark:bg-green-500 text-white rounded hover:bg-green-700 dark:hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed"
+            className={`px-3 py-1.5 text-sm font-medium bg-green-600 dark:bg-green-500 text-white rounded hover:bg-green-700 dark:hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed ${
+              activeMode === '8h' ? 'ring-2 ring-green-400 dark:ring-green-300 ring-offset-2' : ''
+            }`}
           >
             8h
           </button>

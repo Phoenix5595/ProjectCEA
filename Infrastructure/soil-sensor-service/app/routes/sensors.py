@@ -1,4 +1,5 @@
 """Sensor data routes."""
+from shared.logging import get_logger
 from fastapi import APIRouter, HTTPException, Depends, Query
 from typing import List, Optional, Dict, Any
 from datetime import datetime

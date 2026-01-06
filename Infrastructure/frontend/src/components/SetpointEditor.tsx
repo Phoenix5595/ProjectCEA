@@ -19,6 +19,7 @@ export default function SetpointEditor({ location, cluster, onUpdate, mode = nul
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(false)
   const [dryRun, setDryRun] = useState(false)
+  const [rampInDuration, setRampInDuration] = useState<number>(0)
 
   useEffect(() => {
     // Load setpoint for the specified mode
@@ -35,6 +36,7 @@ export default function SetpointEditor({ location, cluster, onUpdate, mode = nul
         cooling_setpoint: setpoint.cooling_setpoint ?? undefined,
         co2: setpoint.co2 ?? undefined,
         vpd: setpoint.vpd ?? undefined,
+        ramp_in_duration: setpoint.ramp_in_duration ?? 0,
         mode: mode as any,
       }
       setFormData(newFormData)
@@ -52,6 +54,7 @@ export default function SetpointEditor({ location, cluster, onUpdate, mode = nul
         co2: setpoint.co2 ?? null,
         vpd: setpoint.vpd ?? null,
       })
+      setRampInDuration(setpoint.ramp_in_duration ?? 0)
       setErrors({})
     } catch (error) {
       console.error('Error loading setpoint:', error)
@@ -136,6 +139,10 @@ export default function SetpointEditor({ location, cluster, onUpdate, mode = nul
       }
     }
 
+    if (rampInDuration < 0 || rampInDuration > 240) {
+      newErrors.ramp_in_duration = 'Ramp duration must be between 0 and 240 minutes'
+    }
+
     setErrors(newErrors)
     return Object.keys(newErrors).length === 0
   }
@@ -155,6 +162,7 @@ export default function SetpointEditor({ location, cluster, onUpdate, mode = nul
       // Ensure mode is included in the update
       const updateData = {
         ...formData,
+        ramp_in_duration: rampInDuration,
         mode: mode || undefined
       }
       console.log('Saving setpoints:', { location, cluster, mode, updateData })
@@ -276,6 +284,32 @@ export default function SetpointEditor({ location, cluster, onUpdate, mode = nul
           <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
             VPD setpoint controls fans and dehumidifiers. When VPD is below setpoint, devices turn ON.
           </p>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+            Ramp-In Duration (minutes)
+          </label>
+          <input
+            type="number"
+            step="1"
+            min="0"
+            max="240"
+            value={rampInDuration}
+            onChange={(e) => setRampInDuration(parseInt(e.target.value) || 0)}
+            className={`border-2 rounded-md px-3 py-2 w-full bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.ramp_in_duration ? 'border-red-600 dark:border-red-500' : 'border-gray-400 dark:border-gray-600'}`}
+          />
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+            Current: {savedValues.ramp_in_duration ?? 0} minutes
+          </p>
+          {errors.ramp_in_duration && (
+            <p className="text-sm font-medium text-red-700 dark:text-red-400 mt-1">{errors.ramp_in_duration}</p>
+          )}
+          {rampInDuration > 15 && formData.vpd !== undefined && (
+            <p className="text-sm font-medium text-yellow-700 dark:text-yellow-400 mt-1">
+              Warning: Long ramp durations (>15 min) may cause VPD fluctuations during transition
+            </p>
+          )}
         </div>
       </div>
 

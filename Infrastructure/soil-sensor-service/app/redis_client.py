@@ -1,16 +1,19 @@
 """Redis client for publishing sensor updates."""
+from shared.logging import get_logger
 import os
 import json
-import logging
 from datetime import datetime
 from typing import Dict, Any, Optional
 import redis.asyncio as redis
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class RedisClient:
-    """Redis client for publishing sensor data updates."""
+    """Redis client for publishing sensor data updates.
+    
+    Uses connection pooling for better performance and resource efficiency.
+    """
     
     def __init__(self, redis_url: Optional[str] = None):
         """Initialize Redis client.
@@ -21,32 +24,44 @@ class RedisClient:
         self.redis_url = redis_url or os.getenv("REDIS_URL", "redis://localhost:6379")
         self.redis_client: Optional[redis.Redis] = None
         self.stream_client: Optional[redis.Redis] = None  # Separate client for stream (binary mode)
+        self._state_pool: Optional[redis.ConnectionPool] = None  # Connection pool for state client
+        self._stream_pool: Optional[redis.ConnectionPool] = None  # Connection pool for stream client
         self.redis_enabled = False
         self.redis_ttl = 10  # 10 seconds TTL for state keys (consistent with CAN sensors)
     
     async def connect(self) -> bool:
-        """Connect to Redis.
+        """Connect to Redis with connection pooling for better performance.
+        
+        Creates two connection pools:
+        - State pool (decode_responses=True) for state key operations
+        - Stream pool (decode_responses=False) for binary stream writes
         
         Returns:
             True if successful, False otherwise
         """
         try:
-            # Connect for state keys (decode_responses=True)
-            self.redis_client = await redis.from_url(
+            # Create connection pool for state keys (decode_responses=True)
+            self._state_pool = redis.ConnectionPool.from_url(
                 self.redis_url,
-                decode_responses=True
+                decode_responses=True,
+                max_connections=10,
+                retry_on_timeout=True
             )
+            self.redis_client = redis.Redis(connection_pool=self._state_pool)
             await self.redis_client.ping()
             
-            # Connect for stream writes (decode_responses=False for binary)
-            self.stream_client = await redis.from_url(
+            # Create connection pool for stream writes (decode_responses=False for binary)
+            self._stream_pool = redis.ConnectionPool.from_url(
                 self.redis_url,
-                decode_responses=False
+                decode_responses=False,
+                max_connections=5,
+                retry_on_timeout=True
             )
+            self.stream_client = redis.Redis(connection_pool=self._stream_pool)
             await self.stream_client.ping()
             
             self.redis_enabled = True
-            logger.info(f"Connected to Redis: {self.redis_url}")
+            logger.info(f"Connected to Redis: {self.redis_url} (with connection pooling: state=10, stream=5)")
             return True
         except Exception as e:
             logger.warning(f"Redis connection failed: {e}. Will continue without Redis.")
@@ -54,11 +69,15 @@ class RedisClient:
             return False
     
     async def close(self) -> None:
-        """Close Redis connection."""
+        """Close Redis connections and disconnect connection pools."""
         if self.redis_client:
             await self.redis_client.close()
         if self.stream_client:
             await self.stream_client.close()
+        if self._state_pool:
+            await self._state_pool.disconnect()
+        if self._stream_pool:
+            await self._stream_pool.disconnect()
         self.redis_enabled = False
         logger.info("Redis connection closed")
     

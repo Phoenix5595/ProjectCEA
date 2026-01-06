@@ -1,10 +1,10 @@
 """CAN bus reader - reads messages from CAN interface."""
+from shared.logging import get_logger
 import can
 import subprocess
-import logging
 from typing import Optional, Tuple
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def check_can_interface(channel: str = 'can0') -> Tuple[bool, Optional[str]]:

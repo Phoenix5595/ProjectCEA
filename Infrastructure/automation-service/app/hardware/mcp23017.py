@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
+from shared.logging import get_logger
 """
 MCP23017 I2C Relay Driver
 Controls MCP23017 16-channel I/O expander for relay control
 Supports simulation mode when hardware is not connected
 """
 
-import logging
 from typing import Optional
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # MCP23017 Register Addresses
 MCP23017_IODIRA = 0x00  # I/O Direction Register A

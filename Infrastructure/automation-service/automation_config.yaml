@@ -87,7 +87,7 @@ devices:
         dimming_type: dfr0971
         dimming_board_id: 0
         dimming_channel: 1
-        safety_level: 20
+        safety_level: 40
       light_3:
         display_name: Ridgetop Bottom Left
         channel: 5
@@ -98,7 +98,7 @@ devices:
         dimming_type: dfr0971
         dimming_board_id: 1
         dimming_channel: 0
-        safety_level: 0
+        safety_level: 40
       Heater Veg:
         channel: 6
         device_type: heater

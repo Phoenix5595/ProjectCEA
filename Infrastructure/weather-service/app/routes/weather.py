@@ -1,4 +1,5 @@
 """Weather data routes."""
+from shared.logging import get_logger
 from fastapi import APIRouter, Depends
 from typing import Dict, Any, Optional
 from datetime import datetime

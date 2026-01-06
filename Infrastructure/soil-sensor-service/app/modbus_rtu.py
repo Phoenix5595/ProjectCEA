@@ -1,10 +1,10 @@
 """MODBUS-RTU protocol implementation for RS485 communication."""
+from shared.logging import get_logger
 import serial
 import struct
-import logging
 from typing import Optional
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class ModbusRTU:

@@ -1,4 +1,5 @@
 """Status and health check routes."""
+from shared.logging import get_logger
 from fastapi import APIRouter, Depends
 from typing import Dict, Any
 from app.database import DatabaseManager

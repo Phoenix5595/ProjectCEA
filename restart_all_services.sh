@@ -38,7 +38,29 @@ restart_service() {
 # Restart in dependency order (reverse of startup order)
 # Stop in reverse order, start in forward order
 
-echo "Step 1: Stopping services (reverse dependency order)..."
+echo "Step 1: Building frontend..."
+echo ""
+
+# Build frontend before restarting services
+FRONTEND_DIR="/home/antoine/Project CEA/Infrastructure/frontend"
+if [ -d "$FRONTEND_DIR" ]; then
+    echo -e "${YELLOW}Building frontend...${NC}"
+    cd "$FRONTEND_DIR"
+    if npm run build 2>&1; then
+        echo -e "  ${GREEN}✓ Frontend built successfully${NC}"
+    else
+        echo -e "  ${RED}✗ Frontend build failed${NC}"
+        echo "  Check the output above for errors"
+    fi
+    echo ""
+    # Return to original directory
+    cd - > /dev/null
+else
+    echo -e "${YELLOW}Frontend directory not found, skipping build${NC}"
+    echo ""
+fi
+
+echo "Step 2: Stopping services (reverse dependency order)..."
 echo ""
 
 # Stop services that depend on others first
@@ -60,7 +82,7 @@ sleep 1
 sudo systemctl stop grafana-server.service 2>/dev/null
 sleep 1
 
-echo "Step 2: Starting services (dependency order)..."
+echo "Step 3: Starting services (dependency order)..."
 echo ""
 
 # Start in correct dependency order
@@ -68,7 +90,7 @@ restart_service "can-setup.service" "CAN Setup"
 restart_service "can-processor.service" "CAN Processor"
 restart_service "soil-sensor-service.service" "Soil Sensor Service"
 restart_service "cea-backend.service" "CEA Backend"
-restart_service "automation-service.service" "Automation Service"
+restart_service "automation-service.service" "Automation Service (serves frontend)"
 restart_service "grafana-server.service" "Grafana Server"
 
 echo "=========================================="

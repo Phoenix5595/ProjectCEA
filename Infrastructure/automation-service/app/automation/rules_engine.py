@@ -1,9 +1,9 @@
 """Rules engine for if-then automation rules."""
-import logging
+from shared.logging import get_logger
 from typing import Dict, List, Optional, Tuple
 from datetime import datetime
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class RulesEngine:
