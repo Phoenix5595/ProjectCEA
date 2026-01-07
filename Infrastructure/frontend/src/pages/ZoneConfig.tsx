@@ -5,6 +5,7 @@ import RoomScheduleEditor from '../components/RoomScheduleEditor'
 import LightManager from '../components/LightManager'
 import ClimateScheduleEditor from '../components/ClimateScheduleEditor'
 import { apiClient } from '../services/api'
+import { logger } from '../utils/logger'
 import { getLocationDisplayName, getLocationBackendName } from '../config/zones'
 
 export default function ZoneConfig() {
@@ -23,23 +24,23 @@ export default function ZoneConfig() {
 
   async function loadLights() {
     if (!location || !cluster) {
-      console.log('loadLights: Missing location or cluster', { location, cluster })
+      logger.debug('loadLights: Missing location or cluster', { location, cluster })
       return
     }
     try {
       // Ensure we use backend location name (not display name)
       const backendLocation = getLocationBackendName(location)
-      console.log('loadLights: Using backend location', { location, backendLocation, cluster })
+      logger.debug('loadLights: Using backend location', { location, backendLocation, cluster })
       const devices = await apiClient.getDevicesForLocationClusterWithDetails(backendLocation, cluster)
-      console.log('loadLights: Devices received', { deviceCount: Object.keys(devices).length, devices })
+      logger.debug('loadLights: Devices received', { deviceCount: Object.keys(devices).length, devices })
       // Filter for lights with dimming enabled
       const allDevices = Object.entries(devices)
-      console.log('loadLights: All devices', allDevices.map(([name, dev]) => ({ name, type: dev.device_type, dimming: dev.dimming_enabled })))
+      logger.debug('loadLights: All devices', allDevices.map(([name, dev]) => ({ name, type: dev.device_type, dimming: dev.dimming_enabled })))
       const lightDevices = allDevices
         .filter(([_, device]: [string, any]) => {
           const isLight = device.device_type === 'light'
           const hasDimming = device.dimming_enabled === true
-          console.log('loadLights: Filtering device', { device_type: device.device_type, dimming_enabled: device.dimming_enabled, isLight, hasDimming })
+          logger.debug('loadLights: Filtering device', { device_type: device.device_type, dimming_enabled: device.dimming_enabled, isLight, hasDimming })
           return isLight && hasDimming
         })
         .map(([deviceName, device]: [string, any]) => ({
@@ -49,10 +50,10 @@ export default function ZoneConfig() {
           dimming_board_id: device.dimming_board_id,
           dimming_channel: device.dimming_channel
         }))
-      console.log('loadLights: Filtered lights', lightDevices)
+      logger.debug('loadLights: Filtered lights', lightDevices)
       setLights(lightDevices)
     } catch (error) {
-      console.error('Error loading lights:', error)
+      logger.error('Error loading lights:', error)
     }
   }
 

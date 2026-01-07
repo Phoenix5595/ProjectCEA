@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { apiClient } from '../services/api'
+import { logger } from '../utils/logger'
 import SetpointTimeline from './SetpointTimeline'
 
 interface ClimateScheduleEditorProps {
@@ -53,7 +54,7 @@ export default function ClimateScheduleEditor({ location, cluster }: ClimateSche
         })
         setCurrentSetpoints(setpointsMap)
       } catch (err: any) {
-        console.warn('Error loading current setpoints:', err)
+        logger.warn('Error loading current setpoints:', err)
         // Don't fail the whole load if setpoints can't be loaded
       }
       
@@ -94,7 +95,7 @@ export default function ClimateScheduleEditor({ location, cluster }: ClimateSche
       const lightData = await apiClient.getRoomSchedule(location, cluster)
       setLightSchedule(lightData)
     } catch (err: any) {
-      console.error('Error loading climate schedule:', err)
+      logger.error('Error loading climate schedule:', err)
       setError(err.response?.data?.detail || err.message || 'Failed to load climate schedule')
     } finally {
       setLoading(false)
@@ -117,7 +118,7 @@ export default function ClimateScheduleEditor({ location, cluster }: ClimateSche
       // Reload to get updated data
       await loadData()
     } catch (err: any) {
-      console.error('Error saving climate schedule:', err)
+      logger.error('Error saving climate schedule:', err)
       setError(err.response?.data?.detail || err.message || 'Failed to save climate schedule')
     } finally {
       setSaving(false)

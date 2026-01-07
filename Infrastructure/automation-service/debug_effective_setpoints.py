@@ -4,8 +4,13 @@ import asyncio
 import sys
 import os
 sys.path.append('.')
-os.environ['POSTGRES_PASSWORD'] = 'Lenin1917'
-os.environ['REDIS_URL'] = 'redis://localhost:6379'
+
+# Get password from environment variable (do not hardcode)
+if not os.getenv('POSTGRES_PASSWORD'):
+    raise ValueError("POSTGRES_PASSWORD environment variable is required")
+
+if not os.getenv('REDIS_URL'):
+    os.environ['REDIS_URL'] = 'redis://localhost:6379'
 
 from app.database import DatabaseManager
 from app.control.scheduler import Scheduler

@@ -224,8 +224,8 @@ class BackgroundTasks:
             logger.error(f"Failed to auto-register sensor Modbus ID {modbus_id}: {e}")
             try:
                 reader.disconnect()
-            except:
-                pass
+            except Exception as e:
+                logger.warning(f"Error disconnecting reader: {e}")
     
     async def _polling_loop(self) -> None:
         """Main polling loop."""

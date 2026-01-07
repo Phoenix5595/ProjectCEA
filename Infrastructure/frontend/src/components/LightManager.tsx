@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { apiClient } from '../services/api'
+import { logger } from '../utils/logger'
 import type { LightStatus } from '../types/light'
 
 interface LightDevice {
@@ -57,7 +58,7 @@ export default function LightManager({ location, cluster, lights }: LightManager
       
       setDeviceStates(states)
     } catch (error: any) {
-      console.error('Error loading device states:', error)
+      logger.error('Error loading device states:', error)
     }
   }
 
@@ -87,7 +88,7 @@ export default function LightManager({ location, cluster, lights }: LightManager
           }
         } else {
           // Log warning if no schedule found
-          console.warn(`No DAY schedule found for ${light.device_name} in ${location}/${cluster}. Available schedules:`, 
+          logger.warn(`No DAY schedule found for ${light.device_name} in ${location}/${cluster}. Available schedules:`, 
             allSchedules.filter(s => s.device_name === light.device_name))
         }
       }
@@ -105,7 +106,7 @@ export default function LightManager({ location, cluster, lights }: LightManager
         return { ...prev, ...newInputValues }
       })
     } catch (error: any) {
-      console.error('Error loading schedules:', error)
+      logger.error('Error loading schedules:', error)
     }
   }
 
@@ -170,7 +171,7 @@ export default function LightManager({ location, cluster, lights }: LightManager
           return newErrors
         })
       } catch (error: any) {
-        console.error(`Error loading light status for ${light.device_name}:`, error)
+        logger.error(`Error loading light status for ${light.device_name}:`, error)
         setErrors(prev => ({
           ...prev,
           [light.device_name]: error.response?.data?.detail || 'Failed to load status'
@@ -184,7 +185,7 @@ export default function LightManager({ location, cluster, lights }: LightManager
     
     // If schedule not found, try reloading schedules first (might be stale state)
     if (!schedule) {
-      console.warn(`Schedule not found for ${deviceName}, attempting to reload schedules...`)
+      logger.warn(`Schedule not found for ${deviceName}, attempting to reload schedules...`)
       await loadSchedules()
       schedule = schedules[deviceName]
     }
@@ -251,7 +252,7 @@ export default function LightManager({ location, cluster, lights }: LightManager
 
       // Reload schedules in background to sync with other potential changes (but don't wait for it)
       loadSchedules().catch(err => {
-        console.warn('Background schedule reload failed:', err)
+        logger.warn('Background schedule reload failed:', err)
       })
       
       // Refresh immediately, then again after control loop has time to apply
@@ -281,7 +282,7 @@ export default function LightManager({ location, cluster, lights }: LightManager
         return newErrors
       })
     } catch (error: any) {
-      console.error(`Error saving target intensity for ${deviceName}:`, error)
+      logger.error(`Error saving target intensity for ${deviceName}:`, error)
       setErrors(prev => ({
         ...prev,
         [deviceName]: error.response?.data?.detail || error.message || 'Failed to save target intensity'
@@ -323,7 +324,7 @@ export default function LightManager({ location, cluster, lights }: LightManager
       }, 1000)
       alert(`Successfully saved ${lightsToSave.length} light${lightsToSave.length > 1 ? 's' : ''}`)
     } catch (error) {
-      console.error('Error saving all lights:', error)
+      logger.error('Error saving all lights:', error)
       alert('Some lights failed to save. Please check individual errors.')
     } finally {
       setSavingAll(false)

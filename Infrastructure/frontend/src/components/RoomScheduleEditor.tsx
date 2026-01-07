@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { apiClient } from '../services/api'
+import { logger } from '../utils/logger'
 import CircularTimePicker from './CircularTimePicker'
 import ManualLightControl from './ManualLightControl'
 
@@ -37,7 +38,7 @@ export default function RoomScheduleEditor({ location, cluster, period }: RoomSc
     try {
       const schedule = await apiClient.getRoomSchedule(location, cluster)
       if (import.meta.env.DEV) {
-        console.log('Loaded schedule from API:', schedule)
+        logger.debug('Loaded schedule from API:', schedule)
       }
       if (schedule) {
         // Ensure times are in HH:MM format
@@ -61,7 +62,7 @@ export default function RoomScheduleEditor({ location, cluster, period }: RoomSc
         const rampDown = schedule.ramp_down_duration ?? 15
         
         if (import.meta.env.DEV) {
-          console.log('Setting state:', { dayStart, dayEnd, nightStart, nightEnd, rampUp, rampDown })
+          logger.debug('Setting state:', { dayStart, dayEnd, nightStart, nightEnd, rampUp, rampDown })
         }
         
         // Set all state values - ensure we're setting the exact values from the API
@@ -74,11 +75,11 @@ export default function RoomScheduleEditor({ location, cluster, period }: RoomSc
         setRampDownDuration(rampDown !== null && rampDown !== undefined ? rampDown : null)
       }
     } catch (error: any) {
-      console.error('Error loading room schedule:', error)
+      logger.error('Error loading room schedule:', error)
       // Keep default values on error
       // In production, could show a user-friendly error message here
       if (import.meta.env.DEV) {
-        console.error('Full error details:', error)
+        logger.error('Full error details:', error)
       }
     } finally {
       setLoading(false)
@@ -103,10 +104,10 @@ export default function RoomScheduleEditor({ location, cluster, period }: RoomSc
       await loadRoomSchedule()
       alert('Room schedule saved successfully! All devices in this room will follow this schedule.')
     } catch (error: any) {
-      console.error('Error saving room schedule:', error)
+      logger.error('Error saving room schedule:', error)
       // Extract detailed error message from API response
       const errorMessage = error.response?.data?.detail || error.message || 'Unknown error occurred'
-      console.error('Error details:', {
+      logger.error('Error details:', {
         status: error.response?.status,
         statusText: error.response?.statusText,
         data: error.response?.data,

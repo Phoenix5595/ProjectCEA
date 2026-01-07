@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { apiClient } from '../services/api'
+import { logger } from '../utils/logger'
 
 interface ManualLightControlProps {
   location: string
@@ -36,15 +37,15 @@ export default function ManualLightControl({ location, cluster, compact = false 
     async function loadDeviceDetails() {
       setLoadingDetails(true)
       try {
-        console.log('ManualLightControl: Fetching devices for', location, cluster)
+        logger.debug('ManualLightControl: Fetching devices for', location, cluster)
         const devices = await apiClient.getDevicesForLocationClusterWithDetails(location, cluster)
-        console.log('ManualLightControl: Raw devices received', devices)
+        logger.debug('ManualLightControl: Raw devices received', devices)
         const allDevices = Object.entries(devices)
-        console.log('ManualLightControl: All device entries', allDevices.map(([name, dev]) => ({ name, type: dev?.device_type })))
+        logger.debug('ManualLightControl: All device entries', allDevices.map(([name, dev]) => ({ name, type: dev?.device_type })))
         const lights = allDevices
           .filter(([_, device]: [string, any]) => {
             const isLight = device?.device_type === 'light'
-            console.log('ManualLightControl: Device', _, 'type:', device?.device_type, 'isLight:', isLight)
+            logger.debug('ManualLightControl: Device', _, 'type:', device?.device_type, 'isLight:', isLight)
             return isLight
           })
           .map(([deviceName, device]: [string, any]) => ({
@@ -52,10 +53,10 @@ export default function ManualLightControl({ location, cluster, compact = false 
             display_name: device.display_name,
             dimming_enabled: device.dimming_enabled || false
           }))
-        console.log('ManualLightControl: Filtered lights result', lights)
+        logger.debug('ManualLightControl: Filtered lights result', lights)
         setLightDetails(lights)
       } catch (err) {
-        console.error('ManualLightControl: Error loading device details:', err)
+        logger.error('ManualLightControl: Error loading device details:', err)
         setLightDetails([])
       } finally {
         setLoadingDetails(false)
@@ -135,7 +136,7 @@ export default function ManualLightControl({ location, cluster, compact = false 
       // No day schedule found, default to 100%
       return 100
     } catch (err) {
-      console.error(`Error getting day target intensity for ${deviceName}:`, err)
+      logger.error(`Error getting day target intensity for ${deviceName}:`, err)
       return 100 // Default to 100% on error
     }
   }
@@ -159,7 +160,7 @@ export default function ManualLightControl({ location, cluster, compact = false 
             }
           }
         } catch (err) {
-          console.error('Error checking current mode:', err)
+          logger.error('Error checking current mode:', err)
         }
         // Default to 'auto' if we can't determine
         if (!lastDefaultMode) {
@@ -185,7 +186,7 @@ export default function ManualLightControl({ location, cluster, compact = false 
           // Set to manual mode to override everything
           await apiClient.setDeviceMode(location, cluster, light.device_name, 'manual')
         } catch (err: any) {
-          console.error(`Error controlling light ${light.device_name}:`, err)
+          logger.error(`Error controlling light ${light.device_name}:`, err)
           setError(err.response?.data?.detail || `Failed to control ${light.device_name}`)
         }
       }
@@ -216,7 +217,7 @@ export default function ManualLightControl({ location, cluster, compact = false 
         }, durationMinutes * 60000)
       }
     } catch (err: any) {
-      console.error('Error turning on lights:', err)
+      logger.error('Error turning on lights:', err)
       setError(err.response?.data?.detail || 'Failed to turn on lights')
     } finally {
       setLoading(false)
@@ -253,12 +254,12 @@ export default function ManualLightControl({ location, cluster, compact = false 
           // Set to manual mode to keep it off until changed
           await apiClient.setDeviceMode(location, cluster, light.device_name, 'manual')
         } catch (err: any) {
-          console.error(`Error controlling light ${light.device_name}:`, err)
+          logger.error(`Error controlling light ${light.device_name}:`, err)
           setError(err.response?.data?.detail || `Failed to control ${light.device_name}`)
         }
       }
     } catch (err: any) {
-      console.error('Error turning off lights:', err)
+      logger.error('Error turning off lights:', err)
       setError(err.response?.data?.detail || 'Failed to turn off lights')
     } finally {
       setLoading(false)
@@ -305,14 +306,14 @@ export default function ManualLightControl({ location, cluster, compact = false 
           // Set to auto/scheduled mode (activates schedule)
           await apiClient.setDeviceMode(location, cluster, light.device_name, mode)
         } catch (err: any) {
-          console.error(`Error restoring mode for ${light.device_name}:`, err)
+          logger.error(`Error restoring mode for ${light.device_name}:`, err)
           setError(err.response?.data?.detail || `Failed to restore mode for ${light.device_name}`)
         }
       }
 
       setLastDefaultMode(null)
     } catch (err: any) {
-      console.error('Error restoring mode:', err)
+      logger.error('Error restoring mode:', err)
       setError(err.response?.data?.detail || 'Failed to restore mode')
     } finally {
       setLoading(false)
@@ -320,7 +321,7 @@ export default function ManualLightControl({ location, cluster, compact = false 
   }
 
   // Always render the component, even if no lights found
-  console.log('ManualLightControl RENDER:', { 
+  logger.debug('ManualLightControl RENDER:', { 
     location, 
     cluster, 
     lightDetailsCount: lightDetails.length, 

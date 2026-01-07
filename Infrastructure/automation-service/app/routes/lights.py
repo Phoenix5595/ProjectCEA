@@ -1,8 +1,18 @@
 """Light dimming control endpoints for DFR0971 DAC modules."""
-from shared.logging import get_logger
+from typing import Dict, Any, Optional, TYPE_CHECKING
+
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
-from typing import Dict, Any, Optional
+
+from shared.logging import get_logger
+
+if TYPE_CHECKING:
+    from app.hardware.dfr0971 import DFR0971Manager
+    from app.control.relay_manager import RelayManager
+    from app.automation.interlock_manager import InterlockManager
+    from app.database import DatabaseManager
+    from app.config import ConfigLoader
+    from app.control.scheduler import Scheduler
 
 router = APIRouter()
 
@@ -20,32 +30,32 @@ class VoltageControl(BaseModel):
 
 
 # These will be overridden by main app
-def get_dfr0971_manager():
+def get_dfr0971_manager() -> 'DFR0971Manager':
     """Dependency to get DFR0971 manager."""
     raise RuntimeError("Dependency not injected")
 
 
-def get_config():
+def get_config() -> ConfigLoader:
     """Dependency to get config loader."""
     raise RuntimeError("Dependency not injected")
 
 
-def get_relay_manager():
+def get_relay_manager() -> 'RelayManager':
     """Dependency to get relay manager."""
     raise RuntimeError("Dependency not injected")
 
 
-def get_interlock_manager():
+def get_interlock_manager() -> 'InterlockManager':
     """Dependency to get interlock manager."""
     raise RuntimeError("Dependency not injected")
 
 
-def get_database():
+def get_database() -> DatabaseManager:
     """Dependency to get database manager."""
     raise RuntimeError("Dependency not injected")
 
 
-def get_scheduler():
+def get_scheduler() -> 'Scheduler':
     """Dependency to get scheduler."""
     raise RuntimeError("Dependency not injected")
 

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { apiClient } from '../services/api'
+import { logger } from '../utils/logger'
 import { ZONES } from '../config/zones'
 
 interface ChannelInfo {
@@ -60,7 +61,7 @@ export default function DeviceManager() {
       setChannels(response.channels)
       setLightNames(response.light_names)
     } catch (error) {
-      console.error('Error loading channels:', error)
+      logger.error('Error loading channels:', error)
     } finally {
       setLoading(false)
     }
@@ -124,7 +125,7 @@ export default function DeviceManager() {
       await loadChannels()
       cancelEdit()
     } catch (error) {
-      console.error('Error updating channel device:', error)
+      logger.error('Error updating channel device:', error)
       alert('Failed to update device configuration')
     } finally {
       setSaving(false)

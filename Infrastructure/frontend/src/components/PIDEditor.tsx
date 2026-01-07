@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { apiClient } from '../services/api'
+import { logger } from '../utils/logger'
 import { validatePIDParameter } from '../utils/validation'
 import type { PIDParameters, PIDParameterUpdate } from '../types/pid'
 
@@ -27,7 +28,7 @@ export default function PIDEditor() {
       })
       setErrors({})
     } catch (error) {
-      console.error('Error loading PID parameters:', error)
+      logger.error('Error loading PID parameters:', error)
       setCurrentParams(null)
     }
   }

@@ -1,4 +1,5 @@
 /** WebSocket client for real-time updates. */
+import { logger } from '../utils/logger';
 
 export type WebSocketMessageType = 
   | 'sensor_update'
@@ -49,7 +50,7 @@ class WebSocketClient {
       this.ws = new WebSocket(this.url);
 
       this.ws.onopen = () => {
-        console.log('WebSocket connected');
+        logger.info('WebSocket connected');
         this.isConnecting = false;
         this.reconnectAttempts = 0;
         this.reconnectDelay = 1000;
@@ -60,22 +61,22 @@ class WebSocketClient {
           const message: WebSocketMessage = JSON.parse(event.data);
           this.handleMessage(message);
         } catch (e) {
-          console.error('Error parsing WebSocket message:', e);
+          logger.error('Error parsing WebSocket message:', e);
         }
       };
 
       this.ws.onerror = (error) => {
-        console.error('WebSocket error:', error);
+        logger.error('WebSocket error:', error);
         this.isConnecting = false;
       };
 
       this.ws.onclose = () => {
-        console.log('WebSocket disconnected');
+        logger.info('WebSocket disconnected');
         this.isConnecting = false;
         this.attemptReconnect();
       };
     } catch (error) {
-      console.error('Error creating WebSocket:', error);
+      logger.error('Error creating WebSocket:', error);
       this.isConnecting = false;
       this.attemptReconnect();
     }
@@ -83,13 +84,13 @@ class WebSocketClient {
 
   private attemptReconnect(): void {
     if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-      console.error('Max reconnection attempts reached');
+      logger.error('Max reconnection attempts reached');
       return;
     }
 
     this.reconnectAttempts++;
     const delay = Math.min(this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1), 30000);
-    console.log(`Attempting to reconnect in ${delay}ms (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
+    logger.debug(`Attempting to reconnect in ${delay}ms (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
 
     setTimeout(() => {
       this.connect();
@@ -102,7 +103,7 @@ class WebSocketClient {
       try {
         handler(message);
       } catch (error) {
-        console.error('Error in WebSocket message handler:', error);
+        logger.error('Error in WebSocket message handler:', error);
       }
     });
   }
@@ -129,7 +130,7 @@ class WebSocketClient {
     if (this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(message));
     } else {
-      console.warn('WebSocket is not open, cannot send message');
+      logger.warn('WebSocket is not open, cannot send message');
     }
   }
 

@@ -3,11 +3,16 @@ import asyncio
 import asyncpg
 
 async def check_database():
+    import os
+    password = os.getenv("POSTGRES_PASSWORD")
+    if not password:
+        raise ValueError("POSTGRES_PASSWORD environment variable is required")
+    
     conn = await asyncpg.connect(
         host='localhost',
         database='cea_sensors',
         user='cea_user',
-        password='Lenin1917'
+        password=password
     )
 
     print("="*70)

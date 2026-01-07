@@ -33,7 +33,7 @@ def get_automation_redis() -> Optional[AutomationRedisClient]:
     return database._automation_redis if database else None
 
 
-async def broadcast_message(message: Dict[str, Any]):
+async def broadcast_message(message: Dict[str, Any]) -> None:
     """Broadcast a message to all connected WebSocket clients.
     
     Args:
@@ -59,7 +59,7 @@ async def broadcast_message(message: Dict[str, Any]):
 
 
 @router.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket):
+async def websocket_endpoint(websocket: WebSocket) -> None:
     """WebSocket endpoint for real-time updates.
     
     Broadcasts:
@@ -125,7 +125,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
 
 # Function to broadcast sensor updates (called from background tasks)
-async def broadcast_sensor_update(location: str, cluster: str, sensor_name: str, value: float, timestamp: float):
+async def broadcast_sensor_update(location: str, cluster: str, sensor_name: str, value: float, timestamp: float) -> None:
     """Broadcast sensor update to all WebSocket clients.
     
     Args:
@@ -146,7 +146,7 @@ async def broadcast_sensor_update(location: str, cluster: str, sensor_name: str,
 
 
 # Function to broadcast device state changes (called from control engine)
-async def broadcast_device_update(location: str, cluster: str, device_name: str, state: int, mode: str):
+async def broadcast_device_update(location: str, cluster: str, device_name: str, state: int, mode: str) -> None:
     """Broadcast device state change to all WebSocket clients.
     
     Args:
@@ -167,7 +167,7 @@ async def broadcast_device_update(location: str, cluster: str, device_name: str,
 
 
 # Function to broadcast mode changes
-async def broadcast_mode_update(location: str, cluster: str, mode: str):
+async def broadcast_mode_update(location: str, cluster: str, mode: str) -> None:
     """Broadcast mode change to all WebSocket clients.
     
     Args:
@@ -184,7 +184,7 @@ async def broadcast_mode_update(location: str, cluster: str, mode: str):
 
 
 # Function to broadcast schedule updates
-async def broadcast_schedule_update(schedule_id: int, schedule_data: Dict[str, Any]):
+async def broadcast_schedule_update(schedule_id: int, schedule_data: Dict[str, Any]) -> None:
     """Broadcast schedule update to all WebSocket clients.
     
     Args:
@@ -200,7 +200,7 @@ async def broadcast_schedule_update(schedule_id: int, schedule_data: Dict[str, A
 
 
 # Function to broadcast setpoint updates
-async def broadcast_setpoint_update(location: str, cluster: str, mode: Optional[str], setpoint_data: Dict[str, Any]):
+async def broadcast_setpoint_update(location: str, cluster: str, mode: Optional[str], setpoint_data: Dict[str, Any]) -> None:
     """Broadcast setpoint update to all WebSocket clients.
     
     Args:
@@ -220,7 +220,7 @@ async def broadcast_setpoint_update(location: str, cluster: str, mode: Optional[
 
 
 # Function to broadcast room schedule updates
-async def broadcast_room_schedule_update(location: str, cluster: str, schedule_data: Dict[str, Any]):
+async def broadcast_room_schedule_update(location: str, cluster: str, schedule_data: Dict[str, Any]) -> None:
     """Broadcast room schedule update to all WebSocket clients.
     
     Args:
@@ -237,7 +237,7 @@ async def broadcast_room_schedule_update(location: str, cluster: str, schedule_d
 
 
 # Function to broadcast climate schedule updates
-async def broadcast_climate_schedule_update(location: str, cluster: str, schedule_data: Dict[str, Any]):
+async def broadcast_climate_schedule_update(location: str, cluster: str, schedule_data: Dict[str, Any]) -> None:
     """Broadcast climate schedule update to all WebSocket clients.
     
     Args:

@@ -1,12 +1,20 @@
 """Schedule management endpoints."""
-from shared.logging import get_logger
+# Standard library imports
 from datetime import time as dt_time
+from typing import List, Dict, Any, Optional, TYPE_CHECKING
+
+# Third-party imports
 from fastapi import APIRouter, HTTPException, Depends, Query
 from pydantic import BaseModel
-from typing import List, Dict, Any, Optional
+
+# Local imports
+from shared.logging import get_logger
 from app.database import DatabaseManager
 from app.config import ConfigLoader
 from app.validation import validate_setpoint
+
+if TYPE_CHECKING:
+    from app.control.scheduler import Scheduler
 
 logger = get_logger(__name__)
 
@@ -58,7 +66,7 @@ def get_database() -> DatabaseManager:
     raise RuntimeError("Dependency not injected")
 
 
-def get_scheduler():
+def get_scheduler() -> 'Scheduler':
     """Dependency to get scheduler."""
     raise RuntimeError("Dependency not injected")
 
@@ -449,7 +457,8 @@ async def get_room_schedule(
         try:
             parts = time_str.split(':')
             return int(parts[0]) * 60 + int(parts[1])
-        except:
+        except (ValueError, IndexError, AttributeError) as e:
+            logger.warning(f"Invalid time format '{time_str}': {e}, returning 0")
             return 0
     
     # Get day schedule times

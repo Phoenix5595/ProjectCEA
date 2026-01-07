@@ -1,8 +1,14 @@
 """Control engine that orchestrates rules, schedules, and PID control."""
-from shared.logging import get_logger
+# Standard library imports
 import asyncio
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple, Any
+
+# Third-party imports
+# (none in this file)
+
+# Local imports
+from shared.logging import get_logger
 from app.control.relay_manager import RelayManager
 from app.control.scheduler import Scheduler
 from app.automation.rules_engine import RulesEngine
@@ -14,6 +20,7 @@ from app.control.pid_controller_manager import PIDControllerManager
 from app.control.device_controller import DeviceController
 from app.control.device_processor import DeviceProcessor
 from app.control.setpoint_manager import SetpointManager, RampManager
+from app.control.performance_monitor import get_performance_monitor
 
 logger = get_logger(__name__)
 
@@ -349,10 +356,12 @@ class ControlEngine:
         if self._profiling_enabled and loop_start_time:
             total_time = (datetime.now() - loop_start_time).total_seconds() * 1000
             self._record_performance_stat('total_loop_time', total_time)
+            get_performance_monitor().record_operation('total_loop_time', total_time / 1000.0)
 
             if device_processing_start:
                 device_time = (datetime.now() - device_processing_start).total_seconds() * 1000
                 self._record_performance_stat('device_processing_time', device_time)
+                get_performance_monitor().record_operation('device_processing_time', device_time / 1000.0)
     
     async def _get_sensor_values(
         self,

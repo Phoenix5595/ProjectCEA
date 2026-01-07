@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { apiClient } from '../services/api'
 import { validateSetpoint } from '../utils/validation'
+import { logger } from '../utils/logger'
 import type { SetpointUpdate } from '../types/setpoint'
 
 interface SetpointEditorProps {
@@ -28,16 +29,16 @@ export default function SetpointEditor({ location, cluster, onUpdate, mode = nul
 
   async function loadSetpoint(mode: 'DAY' | 'NIGHT' | null) {
     try {
-      console.log('Loading setpoint:', { location, cluster, mode })
+      logger.debug('Loading setpoint:', { location, cluster, mode })
       const setpoint = await apiClient.getSetpoints(location, cluster, mode || undefined)
-      console.log('Loaded setpoint:', setpoint)
-      const newFormData = {
+      logger.debug('Loaded setpoint:', setpoint)
+      const newFormData: SetpointUpdate = {
         heating_setpoint: setpoint.heating_setpoint ?? undefined,
         cooling_setpoint: setpoint.cooling_setpoint ?? undefined,
         co2: setpoint.co2 ?? undefined,
         vpd: setpoint.vpd ?? undefined,
         ramp_in_duration: setpoint.ramp_in_duration ?? 0,
-        mode: mode as any,
+        mode: mode ?? undefined,
       }
       setFormData(newFormData)
       // Set input values as strings for display
@@ -57,7 +58,7 @@ export default function SetpointEditor({ location, cluster, onUpdate, mode = nul
       setRampInDuration(setpoint.ramp_in_duration ?? 0)
       setErrors({})
     } catch (error) {
-      console.error('Error loading setpoint:', error)
+      logger.error('Error loading setpoint:', error)
       // On error, clear the form to show empty state
       setFormData({})
       setInputValues({
@@ -165,7 +166,7 @@ export default function SetpointEditor({ location, cluster, onUpdate, mode = nul
         ramp_in_duration: rampInDuration,
         mode: mode || undefined
       }
-      console.log('Saving setpoints:', { location, cluster, mode, updateData })
+      logger.debug('Saving setpoints:', { location, cluster, mode, updateData })
       await apiClient.updateSetpoints(location, cluster, updateData)
       // Update saved values after successful save
       setSavedValues({
@@ -180,7 +181,7 @@ export default function SetpointEditor({ location, cluster, onUpdate, mode = nul
       onUpdate()
     } catch (error: any) {
       const errorMessage = error.response?.data?.detail || error.message || 'Unknown error';
-      console.error('Setpoint update error:', error);
+      logger.error('Setpoint update error:', error);
       alert(`Error updating setpoints: ${errorMessage}`)
     } finally {
       setLoading(false)

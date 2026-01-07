@@ -3,6 +3,7 @@ import { apiClient } from '../services/api'
 import { findConflicts } from '../utils/conflictDetection'
 import { wsClient } from '../services/websocket'
 import { useToast } from '../contexts/ToastContext'
+import { logger } from '../utils/logger'
 import type { Schedule, ScheduleCreate, ScheduleUpdate } from '../types/schedule'
 
 interface ScheduleManagerProps {
@@ -75,7 +76,7 @@ export default function ScheduleManager({ location, cluster }: ScheduleManagerPr
       }))
       setDevices(deviceList.sort((a, b) => a.name.localeCompare(b.name)))
     } catch (error) {
-      console.error('Error loading devices:', error)
+      logger.error('Error loading devices:', error)
     }
   }
 
@@ -84,7 +85,7 @@ export default function ScheduleManager({ location, cluster }: ScheduleManagerPr
       const data = await apiClient.getSchedules(location, cluster)
       setSchedules(data)
     } catch (error) {
-      console.error('Error loading schedules:', error)
+      logger.error('Error loading schedules:', error)
     }
   }
 

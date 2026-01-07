@@ -24,6 +24,12 @@ id_ed25519.pub
 *_rsa
 *_ed25519
 
+# Debug and test scripts (may contain hardcoded credentials)
+debug_*.py
+*_debug.py
+test_*.py
+*_test.py
+
 # Accidentally committed key files (legacy filenames in this repo)
 /ssh-keygen -t ed25519 -C "antoine.olivier.dion@gmail.com"
 /ssh-keygen -t ed25519 -C "antoine.olivier.dion@gmail.com".pub

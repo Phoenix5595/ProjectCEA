@@ -184,7 +184,7 @@ async def cmd_setpoint_get(db: DatabaseManager, location: str, cluster: str, mod
     if mode:
         # Get specific mode setpoint
         setpoint = await db.get_setpoint(location, cluster, mode)
-    if not setpoint:
+        if not setpoint:
             print(f"No setpoints found for {location}/{cluster} (mode: {mode})")
             return
         
@@ -192,7 +192,7 @@ async def cmd_setpoint_get(db: DatabaseManager, location: str, cluster: str, mod
     else:
         # Get default/legacy setpoint (mode=NULL)
         setpoint = await db.get_setpoint(location, cluster, None)
-    if not setpoint:
+        if not setpoint:
             # Try to get all modes
             all_setpoints = await db.get_all_setpoints_for_location_cluster(location, cluster)
             if all_setpoints:
@@ -210,8 +210,8 @@ async def cmd_setpoint_get(db: DatabaseManager, location: str, cluster: str, mod
                         print(f"    VPD: {sp['vpd']} kPa")
                 return
             else:
-        print(f"No setpoints found for {location}/{cluster}")
-        return
+                print(f"No setpoints found for {location}/{cluster}")
+                return
     
     print(f"Setpoints for {location}/{cluster}:")
     

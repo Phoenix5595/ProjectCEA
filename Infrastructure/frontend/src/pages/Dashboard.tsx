@@ -4,6 +4,7 @@ import { ZONES } from '../config/zones'
 import { apiClient } from '../services/api'
 import { wsClient } from '../services/websocket'
 import { useTheme } from '../contexts/ThemeContext'
+import { logger } from '../utils/logger'
 import type { Device } from '../types/device'
 import ZoneCard from '../components/ZoneCard'
 import DeviceManager from '../components/DeviceManager'
@@ -68,7 +69,7 @@ export default function Dashboard() {
           const schedule = await apiClient.getRoomSchedule(zone.location, zone.cluster)
           return { zone, schedule }
         } catch (error) {
-          console.error(`Error loading schedule for ${zone.location}/${zone.cluster}:`, error)
+          logger.error(`Error loading schedule for ${zone.location}/${zone.cluster}:`, error)
           return { zone, schedule: null }
         }
       })
@@ -93,7 +94,7 @@ export default function Dashboard() {
           const nightSetpoint = allSetpoints.find(sp => sp.mode === 'NIGHT')
           return { zone, daySetpoint, nightSetpoint }
         } catch (error) {
-          console.error(`Error loading setpoints for ${zone.location}/${zone.cluster}:`, error)
+          logger.error(`Error loading setpoints for ${zone.location}/${zone.cluster}:`, error)
           return { zone, daySetpoint: undefined, nightSetpoint: undefined }
         }
       })
@@ -109,7 +110,7 @@ export default function Dashboard() {
       })
       setSetpoints(setpointMap)
     } catch (error) {
-      console.error('Error loading initial data:', error)
+      logger.error('Error loading initial data:', error)
     } finally {
       setLoading(false)
     }

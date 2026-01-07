@@ -1,12 +1,17 @@
 """Database manager for TimescaleDB operations."""
-from shared.logging import get_logger
+# Standard library imports
 import os
 import asyncio
 import time
 from datetime import datetime
 from typing import Dict, List, Optional, Any, Tuple
+
+# Third-party imports
 import asyncpg
 import redis
+
+# Local imports
+from shared.logging import get_logger
 from app.redis_client import AutomationRedisClient
 
 logger = get_logger(__name__)

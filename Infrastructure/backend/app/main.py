@@ -1,19 +1,23 @@
 """FastAPI application entry point."""
-from shared.logging import get_logger
+# Standard library imports
+import os
+import sys
+import signal
+import asyncio
+from pathlib import Path
+from datetime import datetime
+from contextlib import asynccontextmanager
+
+# Third-party imports
+import uvicorn
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
-from pathlib import Path
-import os
-import uvicorn
-import asyncio
-import signal
-import sys
-from contextlib import asynccontextmanager
+
+# Local imports
+from shared.logging import get_logger, setup_structured_logging
 from app.routes import sensors, config, live
 from app.websocket import websocket_manager
-from datetime import datetime
-from shared.logging import setup_structured_logging
 
 # Configure structured logging
 logger = setup_structured_logging(
@@ -140,7 +144,33 @@ async def lifespan(app: FastAPI):
         logger.info(f"✅ Shutdown complete (final reason: {shutdown_reason})")
 
 
-app = FastAPI(title="CEA Dashboard v8 API", version="1.0.0", lifespan=lifespan)
+app = FastAPI(
+    title="CEA Dashboard v8 API",
+    description="Backend API service for CEA (Controlled Environment Agriculture) dashboard. Provides sensor data, device status, and real-time monitoring endpoints.",
+    version="1.0.0",
+    lifespan=lifespan,
+    docs_url="/docs",
+    redoc_url="/redoc",
+    openapi_url="/openapi.json",
+    contact={
+        "name": "CEA Dashboard",
+        "email": "support@cea.local"
+    },
+    tags_metadata=[
+        {
+            "name": "sensors",
+            "description": "Sensor data retrieval and management",
+        },
+        {
+            "name": "config",
+            "description": "System configuration endpoints",
+        },
+        {
+            "name": "live",
+            "description": "Live data and real-time monitoring",
+        },
+    ]
+)
 
 # Add exception handler for HTTP exceptions (but not all exceptions to avoid catching too much)
 from fastapi import Request

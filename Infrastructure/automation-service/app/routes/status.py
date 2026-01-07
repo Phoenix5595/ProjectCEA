@@ -6,6 +6,8 @@ from typing import Dict, Any, Optional
 from app.database import DatabaseManager
 from app.control.relay_manager import RelayManager
 from app.config import ConfigLoader
+from app.middleware.profiling import get_performance_metrics
+from app.control.performance_monitor import get_performance_monitor
 
 router = APIRouter()
 
@@ -27,7 +29,7 @@ def get_config() -> ConfigLoader:
 
 
 @router.get("/health")
-async def health_check():
+async def health_check() -> Dict[str, Any]:
     """Health check endpoint."""
     return {
         "status": "ok",
@@ -40,7 +42,7 @@ async def get_status(
     database: DatabaseManager = Depends(get_database),
     relay_manager: RelayManager = Depends(get_relay_manager),
     config: ConfigLoader = Depends(get_config)
-):
+) -> Dict[str, Any]:
     """Get full system status."""
     # Get all device states
     devices = {}
@@ -74,9 +76,17 @@ async def get_status(
                 value = await database.get_sensor_value(sensor_name)
                 sensors[location][cluster][sensor_type] = value
     
+    # Get performance metrics
+    request_metrics = get_performance_metrics()
+    control_metrics = get_performance_monitor().get_statistics()
+    
     return {
         "devices": devices,
         "sensors": sensors,
-        "timestamp": datetime.now().isoformat()
+        "timestamp": datetime.now().isoformat(),
+        "performance": {
+            "api": request_metrics,
+            "control_loop": control_metrics
+        }
     }
 
