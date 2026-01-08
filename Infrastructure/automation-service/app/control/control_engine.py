@@ -188,25 +188,98 @@ class ControlEngine:
         devices = self._get_device_hierarchy()
         sensor_mapping = self._get_sensor_mapping()
         
+        # #region agent log
+        import json
+        import time
+        location_cluster_count = sum(len(clusters) for clusters in devices.values())
+        try:
+            with open('/home/antoine/.cursor/debug.log', 'a') as f:
+                f.write(json.dumps({
+                    'sessionId': 'debug-session',
+                    'runId': 'run1',
+                    'hypothesisId': 'A',
+                    'location': 'control_engine.py:188',
+                    'message': 'control_loop_start',
+                    'data': {
+                        'location_cluster_count': location_cluster_count,
+                        'locations': list(devices.keys())
+                    },
+                    'timestamp': int(time.time() * 1000)
+                }) + '\n')
+        except: pass
+        # #endregion
+        
         # Process each location/cluster
         device_processing_start = datetime.now() if self._profiling_enabled else None
 
         for location, clusters in devices.items():
             for cluster, cluster_devices in clusters.items():
+                # #region agent log
+                import json
+                import time
+                lc_start = time.time()
+                # #endregion
                 # Log when processing Veg Room to verify control loop is running
                 if location == 'Veg Room':
                     logger.info(f"Control loop processing {location}/{cluster} with {len(cluster_devices)} devices")
 
                 # Get sensor values for this location/cluster (with timing)
                 sensor_start = datetime.now() if self._profiling_enabled else None
+                # #region agent log
+                import json
+                import time
+                sensor_query_start = time.time()
+                # #endregion
                 sensor_values = await self.sensor_data_manager.get_sensor_values(location, cluster, sensor_mapping)
+                # #region agent log
+                sensor_query_time = time.time() - sensor_query_start
+                try:
+                    with open('/home/antoine/.cursor/debug.log', 'a') as f:
+                        f.write(json.dumps({
+                            'sessionId': 'debug-session',
+                            'runId': 'run1',
+                            'hypothesisId': 'B',
+                            'location': 'control_engine.py:202',
+                            'message': 'sensor_values_fetched',
+                            'data': {
+                                'location': location,
+                                'cluster': cluster,
+                                'query_time_seconds': sensor_query_time,
+                                'sensor_count': len(sensor_values)
+                            },
+                            'timestamp': int(time.time() * 1000)
+                        }) + '\n')
+                except: pass
+                # #endregion
                 if self._profiling_enabled and sensor_start:
                     sensor_time = (datetime.now() - sensor_start).total_seconds() * 1000
                     self._record_performance_stat('sensor_reading_time', sensor_time)
                 
                 # Determine current mode and get setpoints
+                # #region agent log
+                schedule_query_start = time.time()
+                # #endregion
                 light_schedule = await self.database.get_light_schedule(location, cluster)
                 climate_schedule = await self.database.get_climate_schedule(location, cluster)
+                # #region agent log
+                schedule_query_time = time.time() - schedule_query_start
+                try:
+                    with open('/home/antoine/.cursor/debug.log', 'a') as f:
+                        f.write(json.dumps({
+                            'sessionId': 'debug-session',
+                            'runId': 'run1',
+                            'hypothesisId': 'B',
+                            'location': 'control_engine.py:208',
+                            'message': 'schedules_fetched',
+                            'data': {
+                                'location': location,
+                                'cluster': cluster,
+                                'query_time_seconds': schedule_query_time
+                            },
+                            'timestamp': int(time.time() * 1000)
+                        }) + '\n')
+                except: pass
+                # #endregion
 
                 current_mode = None
                 setpoint_data = None
@@ -227,14 +300,29 @@ class ControlEngine:
                         current_mode, _, _ = mode_result
 
                     # Get setpoint data BEFORE computing effective setpoints
+                    # #region agent log
+                    setpoint_query_start = time.time()
+                    setpoint_query_count = 0
+                    # #endregion
                     setpoint_data = await self.database.get_setpoint(location, cluster, current_mode)
+                    # #region agent log
+                    setpoint_query_count += 1
+                    setpoint_query_time = time.time() - setpoint_query_start
+                    # #endregion
                     if not setpoint_data and current_mode:
                         # Fallback to legacy mode=None if mode-based setpoint not found
                         logger.debug(
                             f"No setpoint found for {location}/{cluster} mode={current_mode}, "
                             f"falling back to legacy mode=None"
                         )
+                        # #region agent log
+                        setpoint_query_start2 = time.time()
+                        # #endregion
                         setpoint_data = await self.database.get_setpoint(location, cluster, None)
+                        # #region agent log
+                        setpoint_query_count += 1
+                        setpoint_query_time += time.time() - setpoint_query_start2
+                        # #endregion
                         if setpoint_data:
                             logger.debug(
                                 f"No setpoint found for {location}/{cluster} mode={current_mode}, "
@@ -249,7 +337,14 @@ class ControlEngine:
                         f"No setpoint found for {location}/{cluster} mode={current_mode}, "
                         f"falling back to legacy mode=None"
                     )
+                    # #region agent log
+                    setpoint_query_start3 = time.time()
+                    # #endregion
                     setpoint_data = await self.database.get_setpoint(location, cluster, None)
+                    # #region agent log
+                    setpoint_query_count += 1
+                    setpoint_query_time += time.time() - setpoint_query_start3
+                    # #endregion
                     if setpoint_data:
                         logger.debug(
                             f"No setpoint found for {location}/{cluster} mode={current_mode}, "
@@ -278,12 +373,43 @@ class ControlEngine:
                         )
                     
                     # Compute effective setpoints (pass previous_mode for change detection)
+                    # #region agent log
+                    setpoint_calc_start = time.time()
+                    # #endregion
                     effective_data = await self.setpoint_manager.compute_effective_setpoints(
                         location, cluster, current_time, current_mode, setpoint_data, sensor_values, previous_mode
                     )
+                    # #region agent log
+                    setpoint_calc_time = time.time() - setpoint_calc_start
+                    # #endregion
                     
                     # Store in context
                     self._effective_setpoints[(location, cluster)] = effective_data
+                    
+                    # #region agent log
+                    lc_duration = time.time() - lc_start
+                    try:
+                        with open('/home/antoine/.cursor/debug.log', 'a') as f:
+                            f.write(json.dumps({
+                                'sessionId': 'debug-session',
+                                'runId': 'run1',
+                                'hypothesisId': 'A,B,C',
+                                'location': 'control_engine.py:195',
+                                'message': 'location_cluster_processed',
+                                'data': {
+                                    'location': location,
+                                    'cluster': cluster,
+                                    'total_time_seconds': lc_duration,
+                                    'sensor_query_time': sensor_query_time,
+                                    'schedule_query_time': schedule_query_time,
+                                    'setpoint_query_time': setpoint_query_time,
+                                    'setpoint_query_count': setpoint_query_count,
+                                    'setpoint_calc_time': setpoint_calc_time
+                                },
+                                'timestamp': int(time.time() * 1000)
+                            }) + '\n')
+                    except: pass
+                    # #endregion
                     
                     # Log to database immediately (before device processing)
                     await self.database.log_effective_setpoints(

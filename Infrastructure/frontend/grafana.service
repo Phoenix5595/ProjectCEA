@@ -8,7 +8,7 @@ OnFailure=service-error-handler@%n.service
 Type=simple
 User=root
 Group=root
-WorkingDirectory=/home/antoine/Project CEA/Infrastructure/frontend
+WorkingDirectory=/home/antoine/ProjectCEA/Infrastructure/frontend
 ExecStart=/usr/sbin/grafana-server --config=/etc/grafana/grafana.ini --pidfile=/var/run/grafana-server.pid
 Restart=on-failure
 RestartSec=5

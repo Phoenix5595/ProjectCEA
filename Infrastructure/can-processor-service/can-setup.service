@@ -6,7 +6,7 @@ Before=network-online.target
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=/bin/bash "/home/antoine/Project CEA/Infrastructure/can-processor-service/setup_can.sh"
+ExecStart=/bin/bash "/home/antoine/ProjectCEA/Infrastructure/can-processor-service/setup_can.sh"
 StandardOutput=journal
 StandardError=journal
 

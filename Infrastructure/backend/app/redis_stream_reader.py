@@ -1,8 +1,8 @@
 """Redis Stream reader utility for querying sensor data from Redis Stream.
-from shared.logging import get_logger
 
 Supports reading from unified sensor:raw stream with filtering by type (can/soil) and time range.
 """
+from shared.logging import get_logger
 import redis
 import json
 import os

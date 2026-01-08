@@ -364,6 +364,7 @@ class AutomationRedisClient:
         ramp_progress_humidity: Optional[float] = None,
         ramp_progress_co2: Optional[float] = None,
         ramp_progress_vpd: Optional[float] = None,
+        mode: Optional[str] = None,
     ) -> bool:
         """Write effective setpoints to Redis.
 
@@ -462,36 +463,117 @@ class AutomationRedisClient:
                 pipe.setex(f"effective_setpoint:{location}:{cluster}:ramp_progress_light", setpoint_ttl, str(ramp_progress_light))
 
             pipe.execute()
+            
+            # Also write to stream:control for dashboard visualization and DB writes (history/auditing)
+            # State keys = fast truth for automation, Streams = history for dashboards/DB
+            if self.stream_client:
+                try:
+                    timestamp_ms = int(datetime.now().timestamp() * 1000)
+                    
+                    # Write separate stream entries for each variable (following canonical schema)
+                    # Each entry contains: room, variable, nominal, effective, ramp, mode
+                    
+                    if effective_heating_setpoint is not None:
+                        stream_data = {
+                            b'ts': str(timestamp_ms).encode(),
+                            b'type': b'control',
+                            b'room': location.encode(),
+                            b'cluster': cluster.encode(),
+                            b'variable': b'temp',
+                            b'nominal': str(nominal_heating_setpoint or effective_heating_setpoint).encode(),
+                            b'effective': str(effective_heating_setpoint).encode(),
+                        }
+                        if mode:
+                            stream_data[b'mode'] = mode.encode()
+                        if ramp_progress_heating is not None:
+                            stream_data[b'ramp'] = str(ramp_progress_heating).encode()
+                        self.stream_client.xadd('stream:control', stream_data, maxlen=100000, approximate=True)
+                    
+                    if effective_cooling_setpoint is not None:
+                        stream_data = {
+                            b'ts': str(timestamp_ms).encode(),
+                            b'type': b'control',
+                            b'room': location.encode(),
+                            b'cluster': cluster.encode(),
+                            b'variable': b'cooling',
+                            b'nominal': str(nominal_cooling_setpoint or effective_cooling_setpoint).encode(),
+                            b'effective': str(effective_cooling_setpoint).encode(),
+                        }
+                        if mode:
+                            stream_data[b'mode'] = mode.encode()
+                        if ramp_progress_cooling is not None:
+                            stream_data[b'ramp'] = str(ramp_progress_cooling).encode()
+                        self.stream_client.xadd('stream:control', stream_data, maxlen=100000, approximate=True)
+                    
+                    if effective_humidity_setpoint is not None:
+                        stream_data = {
+                            b'ts': str(timestamp_ms).encode(),
+                            b'type': b'control',
+                            b'room': location.encode(),
+                            b'cluster': cluster.encode(),
+                            b'variable': b'humidity',
+                            b'nominal': str(nominal_humidity_setpoint or effective_humidity_setpoint).encode(),
+                            b'effective': str(effective_humidity_setpoint).encode(),
+                        }
+                        if mode:
+                            stream_data[b'mode'] = mode.encode()
+                        if ramp_progress_humidity is not None:
+                            stream_data[b'ramp'] = str(ramp_progress_humidity).encode()
+                        self.stream_client.xadd('stream:control', stream_data, maxlen=100000, approximate=True)
+                    
+                    if effective_co2_setpoint is not None:
+                        stream_data = {
+                            b'ts': str(timestamp_ms).encode(),
+                            b'type': b'control',
+                            b'room': location.encode(),
+                            b'cluster': cluster.encode(),
+                            b'variable': b'co2',
+                            b'nominal': str(nominal_co2_setpoint or effective_co2_setpoint).encode(),
+                            b'effective': str(effective_co2_setpoint).encode(),
+                        }
+                        if mode:
+                            stream_data[b'mode'] = mode.encode()
+                        if ramp_progress_co2 is not None:
+                            stream_data[b'ramp'] = str(ramp_progress_co2).encode()
+                        self.stream_client.xadd('stream:control', stream_data, maxlen=100000, approximate=True)
+                    
+                    if effective_vpd_setpoint is not None:
+                        stream_data = {
+                            b'ts': str(timestamp_ms).encode(),
+                            b'type': b'control',
+                            b'room': location.encode(),
+                            b'cluster': cluster.encode(),
+                            b'variable': b'vpd',
+                            b'nominal': str(nominal_vpd_setpoint or effective_vpd_setpoint).encode(),
+                            b'effective': str(effective_vpd_setpoint).encode(),
+                        }
+                        if mode:
+                            stream_data[b'mode'] = mode.encode()
+                        if ramp_progress_vpd is not None:
+                            stream_data[b'ramp'] = str(ramp_progress_vpd).encode()
+                        self.stream_client.xadd('stream:control', stream_data, maxlen=100000, approximate=True)
+                    
+                    if effective_light_intensity is not None:
+                        stream_data = {
+                            b'ts': str(timestamp_ms).encode(),
+                            b'type': b'control',
+                            b'room': location.encode(),
+                            b'cluster': cluster.encode(),
+                            b'variable': b'light',
+                            b'nominal': str(nominal_light_intensity or effective_light_intensity).encode(),
+                            b'effective': str(effective_light_intensity).encode(),
+                        }
+                        if mode:
+                            stream_data[b'mode'] = mode.encode()
+                        if ramp_progress_light is not None:
+                            stream_data[b'ramp'] = str(ramp_progress_light).encode()
+                        self.stream_client.xadd('stream:control', stream_data, maxlen=100000, approximate=True)
+                except Exception as e:
+                    logger.debug(f"Error writing effective setpoints to stream: {e}")
+            
             return True
         except Exception as e:
             logger.warning(f"Error writing setpoint to Redis: {e}")
-            return False
-        
-        try:
-            timestamp_ms = int(datetime.now().timestamp() * 1000)
-            # Effective setpoints have longer TTL since they're updated every second
-            setpoint_ttl = 300  # 5 minutes TTL (covers control loop intervals)
-            
-            pipe = self.redis_client.pipeline()
-            
-            if effective_heating_setpoint is not None:
-                pipe.setex(f"effective_setpoint:{location}:{cluster}:heating_setpoint", setpoint_ttl, str(effective_heating_setpoint))
-            if effective_cooling_setpoint is not None:
-                pipe.setex(f"effective_setpoint:{location}:{cluster}:cooling_setpoint", setpoint_ttl, str(effective_cooling_setpoint))
-            if effective_humidity_setpoint is not None:
-                pipe.setex(f"effective_setpoint:{location}:{cluster}:humidity", setpoint_ttl, str(effective_humidity_setpoint))
-            if effective_co2_setpoint is not None:
-                pipe.setex(f"effective_setpoint:{location}:{cluster}:co2", setpoint_ttl, str(effective_co2_setpoint))
-            if effective_vpd_setpoint is not None:
-                pipe.setex(f"effective_setpoint:{location}:{cluster}:vpd", setpoint_ttl, str(effective_vpd_setpoint))
-            
-            # Write timestamp
-            pipe.setex(f"effective_setpoint:{location}:{cluster}:timestamp", setpoint_ttl, str(timestamp_ms))
-            
-            pipe.execute()
-            return True
-        except Exception as e:
-            logger.warning(f"Error writing effective setpoints to Redis: {e}")
             return False
     
     def read_setpoint_source(self, location: str, cluster: str) -> Optional[Dict[str, Any]]:
@@ -1232,4 +1314,98 @@ class AutomationRedisClient:
         except Exception as e:
             logger.warning(f"Error clearing ramp state from Redis: {e}")
             return False
+    
+    # ========== Schedule State Management ==========
+    
+    def write_schedule_state(
+        self,
+        location: str,
+        cluster: str,
+        schedule_data: Dict[str, Any]
+    ) -> bool:
+        """Write complete schedule state to Redis following canonical schema.
+        
+        Schedule state includes:
+        - Room schedule (day_start_time, day_end_time, ramp durations)
+        - Climate schedule (pre_day_duration, pre_night_duration)
+        - Setpoints for all modes (DAY, NIGHT, PRE_DAY, PRE_NIGHT)
+        - Light intensities (target_intensity per light)
+        
+        Args:
+            location: Location name (e.g., 'Veg Room', 'Flower Room')
+            cluster: Cluster name (e.g., 'main')
+            schedule_data: Complete schedule data matching canonical schema:
+                {
+                    "room": {
+                        "day_start_time": "06:00",
+                        "day_end_time": "20:00",
+                        "night_start_time": "20:00",
+                        "night_end_time": "06:00",
+                        "ramp_up_duration": 30,
+                        "ramp_down_duration": 15
+                    },
+                    "climate": {
+                        "pre_day_duration": 15,
+                        "pre_night_duration": 10
+                    },
+                    "setpoints": {
+                        "DAY": { "heating_setpoint": 22.0, ... },
+                        "NIGHT": { ... },
+                        "PRE_DAY": { ... },
+                        "PRE_NIGHT": { ... }
+                    },
+                    "lights": {
+                        "light_1": { "target_intensity": 70.0 },
+                        "light_2": { "target_intensity": 80.0 }
+                    }
+                }
+        
+        Returns:
+            True if successful, False otherwise
+        """
+        if not self.redis_enabled or not self.redis_client:
+            return False
+        
+        try:
+            # Follow canonical schema: schedule:state:<room>:<cluster>
+            state_key = f"schedule:state:{location}:{cluster}"
+            
+            # No TTL - schedule state persists until explicitly updated
+            # Schedule configuration changes infrequently, current mode changes daily
+            # but is stored separately in system:mode
+            self.redis_client.set(state_key, json.dumps(schedule_data))
+            
+            logger.debug(f"Wrote schedule state to Redis: {state_key}")
+            return True
+        except Exception as e:
+            logger.warning(f"Error writing schedule state to Redis: {e}")
+            return False
+    
+    def read_schedule_state(
+        self,
+        location: str,
+        cluster: str
+    ) -> Optional[Dict[str, Any]]:
+        """Read schedule state from Redis following canonical schema.
+        
+        Args:
+            location: Location name (e.g., 'Veg Room', 'Flower Room')
+            cluster: Cluster name (e.g., 'main')
+        
+        Returns:
+            Complete schedule data matching canonical schema, or None if not found
+        """
+        if not self.redis_enabled or not self.redis_client:
+            return None
+        
+        try:
+            # Follow canonical schema: schedule:state:<room>:<cluster>
+            state_key = f"schedule:state:{location}:{cluster}"
+            state_data = self.redis_client.get(state_key)
+            
+            if state_data:
+                return json.loads(state_data)
+        except Exception as e:
+            logger.debug(f"Error reading schedule state from Redis: {e}")
+        return None
 

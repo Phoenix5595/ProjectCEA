@@ -1264,7 +1264,31 @@ class DatabaseManager:
         # Try Redis first
         if self._redis_enabled and self._redis_client:
             try:
+                # #region agent log
+                import json
+                import time
+                redis_check_start = time.time()
+                # #endregion
                 value = self._redis_client.get(f"sensor:{sensor_name}")
+                # #region agent log
+                redis_check_time = time.time() - redis_check_start
+                try:
+                    with open('/home/antoine/.cursor/debug.log', 'a') as f:
+                        f.write(json.dumps({
+                            'sessionId': 'debug-session',
+                            'runId': 'run1',
+                            'hypothesisId': 'B',
+                            'location': 'database.py:1267',
+                            'message': 'redis_sensor_read',
+                            'data': {
+                                'sensor_name': sensor_name,
+                                'found': value is not None,
+                                'read_time_seconds': redis_check_time
+                            },
+                            'timestamp': int(time.time() * 1000)
+                        }) + '\n')
+                except: pass
+                # #endregion
                 if value is not None:
                     try:
                         return float(value)
@@ -1302,6 +1326,109 @@ class DatabaseManager:
         
         return None
     
+    async def get_sensor_values_batch(self, sensor_names: List[str]) -> Dict[str, Optional[float]]:
+        """Get latest sensor values for multiple sensors in a single batch query.
+        
+        Args:
+            sensor_names: List of sensor names to fetch
+        
+        Returns:
+            Dict mapping sensor names to values (None if not found)
+        """
+        result = {}
+        
+        # Try Redis first for all sensors
+        if self._redis_enabled and self._redis_client:
+            try:
+                # #region agent log
+                import json
+                import time
+                redis_batch_start = time.time()
+                # #endregion
+                # Batch get from Redis
+                keys = [f"sensor:{name}" for name in sensor_names]
+                values = self._redis_client.mget(keys)
+                # #region agent log
+                redis_batch_time = time.time() - redis_batch_start
+                found_count = sum(1 for v in values if v is not None)
+                try:
+                    with open('/home/antoine/.cursor/debug.log', 'a') as f:
+                        f.write(json.dumps({
+                            'sessionId': 'debug-session',
+                            'runId': 'run1',
+                            'hypothesisId': 'B',
+                            'location': 'database.py:1310',
+                            'message': 'redis_batch_read',
+                            'data': {
+                                'sensor_count': len(sensor_names),
+                                'found_count': found_count,
+                                'read_time_seconds': redis_batch_time,
+                                'all_found': found_count == len(sensor_names)
+                            },
+                            'timestamp': int(time.time() * 1000)
+                        }) + '\n')
+                except: pass
+                # #endregion
+                
+                for sensor_name, value in zip(sensor_names, values):
+                    if value is not None:
+                        try:
+                            result[sensor_name] = float(value)
+                        except (ValueError, TypeError):
+                            result[sensor_name] = None
+                    else:
+                        result[sensor_name] = None
+                
+                # If all values found in Redis, return early
+                if all(v is not None for v in result.values()):
+                    return result
+            except Exception as e:
+                logger.debug(f"Redis batch read failed: {e}")
+                # Try to reconnect
+                try:
+                    await self._connect_redis()
+                except Exception:
+                    pass
+        
+        # Fallback to TimescaleDB for missing values (batch query)
+        missing_sensors = [name for name in sensor_names if name not in result or result[name] is None]
+        if missing_sensors:
+            try:
+                pool = await self._get_pool()
+                async with pool.acquire() as conn:
+                    # Single batch query - get latest value for each sensor using LATERAL join
+                    rows = await conn.fetch("""
+                        SELECT s.name, latest.value
+                        FROM sensor s
+                        CROSS JOIN LATERAL (
+                            SELECT value
+                            FROM measurement
+                            WHERE sensor_id = s.sensor_id
+                            ORDER BY time DESC
+                            LIMIT 1
+                        ) latest
+                        WHERE s.name = ANY($1)
+                    """, missing_sensors)
+                    
+                    # Build result dict from query results
+                    db_results = {row['name']: row['value'] for row in rows}
+                    
+                    # Merge with Redis results
+                    for sensor_name in missing_sensors:
+                        if sensor_name in db_results:
+                            try:
+                                result[sensor_name] = float(db_results[sensor_name])
+                            except (ValueError, TypeError):
+                                result[sensor_name] = None
+                        else:
+                            result[sensor_name] = None
+            except Exception as e:
+                logger.error(f"Error batch reading sensors from TimescaleDB: {e}")
+                # Set missing sensors to None
+                for sensor_name in missing_sensors:
+                    result[sensor_name] = None
+        
+        return result
     
     async def get_device_state(self, location: str, cluster: str, device_name: str) -> Optional[Dict[str, Any]]:
         """Get device state from database."""
@@ -1834,6 +1961,7 @@ class DatabaseManager:
                 await self.flush_batch_buffer()
 
             # Write effective setpoints to Redis immediately for real-time access
+            # State keys = fast truth for automation, Streams = history for dashboards/DB
             if self._automation_redis and self._automation_redis.redis_enabled:
                 self._automation_redis.write_effective_setpoints(
                     location=location,
@@ -1854,7 +1982,8 @@ class DatabaseManager:
                     ramp_progress_cooling=ramp_progress_cooling,
                     ramp_progress_humidity=ramp_progress_humidity,
                     ramp_progress_co2=ramp_progress_co2,
-                    ramp_progress_vpd=ramp_progress_vpd
+                    ramp_progress_vpd=ramp_progress_vpd,
+                    mode=mode
                 )
 
             return True
@@ -2645,6 +2774,55 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Error deleting schedules in bulk: {e}")
             raise
+    
+    async def load_schedule_state_to_redis(self) -> None:
+        """Load all schedule state from database to Redis following canonical schema.
+        
+        Queries all room schedules, climate schedules, setpoints (including PRE_DAY and PRE_NIGHT),
+        and light schedules from DB, groups by location/cluster, and writes to Redis state.
+        Called on service startup to populate Redis with current schedule configuration.
+        """
+        if not self._automation_redis or not self._automation_redis.redis_enabled:
+            logger.warning("Redis not enabled, skipping schedule state load")
+            return
+        
+        try:
+            pool = await self._get_pool()
+            async with pool.acquire() as conn:
+                # Get all unique location/cluster pairs
+                rows = await conn.fetch("""
+                    SELECT DISTINCT location, cluster
+                    FROM schedules
+                    UNION
+                    SELECT DISTINCT location, cluster
+                    FROM setpoints
+                """)
+                
+                locations_loaded = []
+                
+                for row in rows:
+                    location = row['location']
+                    cluster = row['cluster']
+                    
+                    try:
+                        # Build schedule state using the helper function from schedules.py
+                        # Import here to avoid circular dependency
+                        from app.routes.schedules import _build_schedule_state
+                        schedule_state = await _build_schedule_state(self, location, cluster)
+                        
+                        # Write to Redis
+                        self._automation_redis.write_schedule_state(location, cluster, schedule_state)
+                        locations_loaded.append(f"{location}/{cluster}")
+                        logger.debug(f"Loaded schedule state to Redis for {location}/{cluster}")
+                    except Exception as e:
+                        logger.warning(f"Failed to load schedule state for {location}/{cluster}: {e}")
+                
+                if locations_loaded:
+                    logger.info(f"Loaded schedule state to Redis for {len(locations_loaded)} locations: {', '.join(locations_loaded)}")
+                else:
+                    logger.info("No schedule state to load (no locations found in database)")
+        except Exception as e:
+            logger.error(f"Error loading schedule state to Redis: {e}", exc_info=True)
     
     async def close(self):
         """Close database connections."""

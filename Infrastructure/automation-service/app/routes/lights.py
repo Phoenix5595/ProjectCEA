@@ -5,13 +5,13 @@ from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 
 from shared.logging import get_logger
+from app.config import ConfigLoader
+from app.database import DatabaseManager
 
 if TYPE_CHECKING:
     from app.hardware.dfr0971 import DFR0971Manager
     from app.control.relay_manager import RelayManager
     from app.automation.interlock_manager import InterlockManager
-    from app.database import DatabaseManager
-    from app.config import ConfigLoader
     from app.control.scheduler import Scheduler
 
 router = APIRouter()

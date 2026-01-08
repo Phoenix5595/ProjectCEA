@@ -9,8 +9,9 @@ OnFailure=service-error-handler@%n.service
 Type=simple
 User=antoine
 Group=antoine
-WorkingDirectory=/home/antoine/Project CEA/Infrastructure/backend
+WorkingDirectory=/home/antoine/ProjectCEA/Infrastructure/backend
 Environment="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/local/bin"
+Environment="PYTHONPATH=/home/antoine/ProjectCEA/Infrastructure/automation-service"
 Environment="REDIS_URL=redis://localhost:6379"
 Environment="POSTGRES_HOST=localhost"
 Environment="POSTGRES_DB=cea_sensors"

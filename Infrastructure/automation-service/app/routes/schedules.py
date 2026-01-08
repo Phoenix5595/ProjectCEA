@@ -12,6 +12,7 @@ from shared.logging import get_logger
 from app.database import DatabaseManager
 from app.config import ConfigLoader
 from app.validation import validate_setpoint
+from app.redis_client import AutomationRedisClient
 
 if TYPE_CHECKING:
     from app.control.scheduler import Scheduler
@@ -74,6 +75,81 @@ def get_scheduler() -> 'Scheduler':
 def get_config() -> ConfigLoader:
     """Dependency to get config loader."""
     raise RuntimeError("Dependency not injected")
+
+
+def get_automation_redis() -> Optional[AutomationRedisClient]:
+    """Get automation Redis client."""
+    from app.main import get_database as _get_database
+    database = _get_database()
+    return database._automation_redis if database else None
+
+
+async def _build_schedule_state(
+    database: DatabaseManager,
+    location: str,
+    cluster: str
+) -> Dict[str, Any]:
+    """Build complete schedule state from database following canonical schema.
+    
+    Args:
+        database: Database manager
+        location: Location name
+        cluster: Cluster name
+    
+    Returns:
+        Complete schedule state matching canonical schema
+    """
+    # Get room schedule
+    room_schedule = await database.get_room_schedule(location, cluster)
+    
+    # Get climate schedule
+    climate_schedule = await database.get_climate_schedule(location, cluster)
+    
+    # Get setpoints for all modes
+    setpoints = {}
+    for mode in SETPOINT_MODES:
+        setpoint_data = await database.get_setpoint(location, cluster, mode)
+        if setpoint_data:
+            setpoints[mode] = {
+                "heating_setpoint": setpoint_data.get('heating_setpoint'),
+                "cooling_setpoint": setpoint_data.get('cooling_setpoint'),
+                "humidity": setpoint_data.get('humidity'),
+                "co2": setpoint_data.get('co2'),
+                "vpd": setpoint_data.get('vpd'),
+                "ramp_in_duration": setpoint_data.get('ramp_in_duration', 0) or 0
+            }
+        else:
+            setpoints[mode] = {}
+    
+    # Get light schedules to extract target_intensity
+    all_schedules = await database.get_schedules(location, cluster)
+    lights = {}
+    for sched in all_schedules:
+        device_name = sched.get('device_name', '')
+        if device_name.startswith('light_') and sched.get('mode') == 'DAY' and sched.get('enabled'):
+            target_intensity = sched.get('target_intensity')
+            if target_intensity is not None:
+                lights[device_name] = {"target_intensity": float(target_intensity)}
+    
+    # Build schedule state structure
+    schedule_state = {
+        "room": {
+            "day_start_time": room_schedule.get('day_start_time', '06:00'),
+            "day_end_time": room_schedule.get('day_end_time', '20:00'),
+            "night_start_time": room_schedule.get('night_start_time', '20:00'),
+            "night_end_time": room_schedule.get('night_end_time', '06:00'),
+            "ramp_up_duration": room_schedule.get('ramp_up_duration', 30) or 30,
+            "ramp_down_duration": room_schedule.get('ramp_down_duration', 15) or 15
+        },
+        "climate": {
+            "pre_day_duration": climate_schedule.get('pre_day_duration', 0) if climate_schedule else 0,
+            "pre_night_duration": climate_schedule.get('pre_night_duration', 0) if climate_schedule else 0
+        },
+        "setpoints": setpoints,
+        "lights": lights
+    }
+    
+    return schedule_state
 
 
 def _ensure_light_schedules_are_daily(
@@ -187,6 +263,16 @@ async def create_schedule(
     
     if not created:
         raise HTTPException(status_code=500, detail="Schedule created but not found")
+    
+    # Write schedule state to Redis
+    try:
+        redis_client = get_automation_redis()
+        if redis_client:
+            schedule_state = await _build_schedule_state(database, schedule.location, schedule.cluster)
+            redis_client.write_schedule_state(schedule.location, schedule.cluster, schedule_state)
+            logger.debug(f"Wrote schedule state to Redis for {schedule.location}/{schedule.cluster}")
+    except Exception as e:
+        logger.warning(f"Failed to write schedule state to Redis: {e}")
     
     return created
 
@@ -311,6 +397,16 @@ async def update_schedule(
         await broadcast_schedule_update(schedule_id, updated)
     except Exception as e:
         logger.warning(f"Failed to broadcast schedule update: {e}")
+    
+    # Write schedule state to Redis
+    try:
+        redis_client = get_automation_redis()
+        if redis_client:
+            schedule_state = await _build_schedule_state(database, existing['location'], existing['cluster'])
+            redis_client.write_schedule_state(existing['location'], existing['cluster'], schedule_state)
+            logger.debug(f"Wrote schedule state to Redis for {existing['location']}/{existing['cluster']}")
+    except Exception as e:
+        logger.warning(f"Failed to write schedule state to Redis: {e}")
     
     return updated
 
@@ -805,6 +901,16 @@ async def save_room_schedule(
     except Exception as e:
         logger.warning(f"Failed to broadcast room schedule update: {e}")
     
+    # Write schedule state to Redis
+    try:
+        redis_client = get_automation_redis()
+        if redis_client:
+            schedule_state = await _build_schedule_state(database, location, cluster)
+            redis_client.write_schedule_state(location, cluster, schedule_state)
+            logger.debug(f"Wrote schedule state to Redis for {location}/{cluster}")
+    except Exception as e:
+        logger.warning(f"Failed to write schedule state to Redis: {e}")
+    
     return {
         "success": True,
         "location": location,
@@ -1091,6 +1197,16 @@ async def save_climate_schedule(
         })
     except Exception as e:
         logger.warning(f"Failed to broadcast climate schedule update: {e}")
+    
+    # Write schedule state to Redis
+    try:
+        redis_client = get_automation_redis()
+        if redis_client:
+            schedule_state = await _build_schedule_state(database, location, cluster)
+            redis_client.write_schedule_state(location, cluster, schedule_state)
+            logger.debug(f"Wrote schedule state to Redis for {location}/{cluster}")
+    except Exception as e:
+        logger.warning(f"Failed to write schedule state to Redis: {e}")
     
     return {
         "success": True,

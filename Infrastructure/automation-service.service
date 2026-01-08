@@ -9,7 +9,7 @@ OnFailure=service-error-handler@%n.service
 Type=simple
 User=antoine
 Group=antoine
-WorkingDirectory=/home/antoine/Project CEA/Infrastructure/automation-service
+WorkingDirectory=/home/antoine/ProjectCEA/Infrastructure/automation-service
 Environment="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/local/bin"
 Environment="REDIS_URL=redis://localhost:6379"
 Environment="POSTGRES_HOST=localhost"

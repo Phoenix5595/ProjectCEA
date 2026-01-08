@@ -633,37 +633,50 @@ class Scheduler:
         pre_night_dur = pre_night_duration or 0
         
         # Calculate pre-day period: starts at (day_start_time - pre_day_duration) % 1440, ends at day_start_time
+        # PRE_DAY occurs DURING the night light period (lights still OFF)
         pre_day_start_min = (day_start_min - pre_day_dur) % 1440
         pre_day_end_min = day_start_min
         
-        # Calculate pre-night period: starts at night_start_time, ends at (night_start_time + pre_night_duration) % 1440
-        night_start_min = day_end_min
-        pre_night_start_min = night_start_min
-        pre_night_end_min = (night_start_min + pre_night_dur) % 1440
+        # Calculate pre-night period: starts at (day_end_time - pre_night_duration) % 1440, ends at day_end_time
+        # PRE_NIGHT occurs DURING the day light period (lights still ON)
+        pre_night_start_min = (day_end_min - pre_night_dur) % 1440
+        pre_night_end_min = day_end_min
         
-        # Calculate night period: starts at pre_night_end, ends at pre_day_start
-        night_start_actual_min = pre_night_end_min
-        night_end_min = pre_day_start_min
+        # Calculate DAY period: starts at day_start_time, ends when PRE_NIGHT starts
+        # Pure DAY period (lights ON + climate DAY), PRE_NIGHT replaces the end
+        day_start_actual_min = day_start_min
+        day_end_actual_min = pre_night_start_min
+        
+        # Calculate NIGHT period: starts at day_end_time, ends when PRE_DAY starts
+        # Pure NIGHT period (lights OFF + climate NIGHT), PRE_DAY replaces the end
+        night_start_actual_min = day_end_min
+        night_end_actual_min = pre_day_start_min
         
         # Check which period we're in (priority: PRE_DAY > DAY > PRE_NIGHT > NIGHT)
         # PRE_DAY period
-        if is_time_in_range(current_min, pre_day_start_min, pre_day_end_min):
+        if pre_day_dur > 0 and is_time_in_range(current_min, pre_day_start_min, pre_day_end_min):
             return ('PRE_DAY', pre_day_start_min, pre_day_end_min)
         
-        # DAY period
-        if is_time_in_range(current_min, day_start_min, day_end_min):
-            return ('DAY', day_start_min, day_end_min)
+        # DAY period (only if not in PRE_NIGHT)
+        if pre_night_dur > 0:
+            # If PRE_NIGHT duration > 0, DAY period ends when PRE_NIGHT starts
+            if is_time_in_range(current_min, day_start_actual_min, day_end_actual_min):
+                return ('DAY', day_start_actual_min, day_end_actual_min)
+        else:
+            # If PRE_NIGHT duration = 0, DAY period runs full day
+            if is_time_in_range(current_min, day_start_min, day_end_min):
+                return ('DAY', day_start_min, day_end_min)
         
         # PRE_NIGHT period
-        if is_time_in_range(current_min, pre_night_start_min, pre_night_end_min):
+        if pre_night_dur > 0 and is_time_in_range(current_min, pre_night_start_min, pre_night_end_min):
             return ('PRE_NIGHT', pre_night_start_min, pre_night_end_min)
         
         # NIGHT period (everything else)
-        if is_time_in_range(current_min, night_start_actual_min, night_end_min):
-            return ('NIGHT', night_start_actual_min, night_end_min)
+        if is_time_in_range(current_min, night_start_actual_min, night_end_actual_min):
+            return ('NIGHT', night_start_actual_min, night_end_actual_min)
         
         # Fallback: if we somehow don't match any period, return NIGHT
-        return ('NIGHT', night_start_actual_min, night_end_min)
+        return ('NIGHT', night_start_actual_min, night_end_actual_min)
     
     def _time_to_minutes(self, time_str: Optional[str]) -> int:
         """Convert time string (HH:MM) to minutes since midnight.

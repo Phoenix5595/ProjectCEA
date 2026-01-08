@@ -8,6 +8,7 @@ from app.config import ConfigLoader
 from app.validation import validate_setpoint
 from app.redis_client import AutomationRedisClient
 from asyncpg.exceptions import PostgresConnectionError, PostgresError
+from app.routes.schedules import _build_schedule_state
 
 logger = get_logger(__name__)
 
@@ -304,6 +305,16 @@ async def update_setpoints(
             await broadcast_setpoint_update(location, cluster, setpoints.mode, updated_setpoint)
     except Exception as e:
         logger.warning(f"Failed to broadcast setpoint update: {e}")
+    
+    # Write schedule state to Redis
+    try:
+        redis_client = get_automation_redis()
+        if redis_client:
+            schedule_state = await _build_schedule_state(database, location, cluster)
+            redis_client.write_schedule_state(location, cluster, schedule_state)
+            logger.debug(f"Wrote schedule state to Redis for {location}/{cluster}")
+    except Exception as e:
+        logger.warning(f"Failed to write schedule state to Redis: {e}")
     
     return {
         "location": location,

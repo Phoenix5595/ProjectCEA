@@ -4,7 +4,7 @@ After=network-online.target
 
 [Service]
 Type=oneshot
-ExecStart=/home/antoine/Project CEA/service_error_handler.sh %i
+ExecStart=/home/antoine/ProjectCEA/service_error_handler.sh %i
 StandardOutput=journal
 StandardError=journal
 

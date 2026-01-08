@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useEffect, useState } from 'react'
 
 interface SetpointTimelineProps {
   dayStartTime: string
@@ -34,6 +34,18 @@ export default function SetpointTimeline({
   lightPhotoperiod,
   setpoints: _setpoints
 }: SetpointTimelineProps) {
+  // Track dark mode for hatch pattern styling
+  const [isDarkMode, setIsDarkMode] = useState(false)
+  
+  useEffect(() => {
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
+    setIsDarkMode(mediaQuery.matches)
+    
+    const handleChange = (e: MediaQueryListEvent) => setIsDarkMode(e.matches)
+    mediaQuery.addEventListener('change', handleChange)
+    return () => mediaQuery.removeEventListener('change', handleChange)
+  }, [])
+  
   // Convert time string (HH:MM) to minutes since midnight
   function timeToMinutes(time: string): number {
     const [hours, minutes] = time.split(':').map(Number)
@@ -156,20 +168,26 @@ export default function SetpointTimeline({
             const photoperiodStart = startMin
             const photoperiodEnd = endMin
             
-            // Render ramp up period (yellow) - at the beginning of photoperiod
+            // Render ramp up period with hatch pattern - at the beginning of photoperiod
             const renderRampUp = () => {
               if (rampUpDuration === 0) return null
+              
+              // Hatch pattern using repeating linear gradient
+              const hatchPattern = isDarkMode
+                ? 'repeating-linear-gradient(45deg, transparent, transparent 4px, rgba(154, 52, 18, 0.5) 4px, rgba(154, 52, 18, 0.5) 8px)'
+                : 'repeating-linear-gradient(45deg, transparent, transparent 4px, rgba(251, 146, 60, 0.4) 4px, rgba(251, 146, 60, 0.4) 8px)'
               
               if (rampUpEndMin >= rampUpStartMin) {
                 // Ramp up doesn't cross midnight
                 return (
                   <div
                     key="ramp-up"
-                    className="absolute top-0 bottom-0 bg-orange-200 dark:bg-orange-900/50 opacity-40 pointer-events-none"
+                    className="absolute top-0 bottom-0 pointer-events-none"
                     style={{
                       left: `${getPosition(rampUpStartMin)}%`,
                       width: `${getPosition(rampUpDuration)}%`,
-                      zIndex: 0
+                      zIndex: 0,
+                      backgroundImage: hatchPattern
                     }}
                   />
                 )
@@ -181,20 +199,22 @@ export default function SetpointTimeline({
                   <>
                     <div
                       key="ramp-up-1"
-                      className="absolute top-0 bottom-0 bg-orange-200 dark:bg-orange-900/50 opacity-40 pointer-events-none"
+                      className="absolute top-0 bottom-0 pointer-events-none"
                       style={{
                         left: `${getPosition(rampUpStartMin)}%`,
                         width: `${getPosition(firstPart)}%`,
-                        zIndex: 0
+                        zIndex: 0,
+                        backgroundImage: hatchPattern
                       }}
                     />
                     <div
                       key="ramp-up-2"
-                      className="absolute top-0 bottom-0 bg-orange-200 dark:bg-orange-900/50 opacity-40 pointer-events-none"
+                      className="absolute top-0 bottom-0 pointer-events-none"
                       style={{
                         left: `${getPosition(0)}%`,
                         width: `${getPosition(secondPart)}%`,
-                        zIndex: 0
+                        zIndex: 0,
+                        backgroundImage: hatchPattern
                       }}
                     />
                   </>
@@ -202,20 +222,26 @@ export default function SetpointTimeline({
               }
             }
             
-            // Render ramp down period (yellow) - at the end of photoperiod
+            // Render ramp down period with hatch pattern - at the end of photoperiod
             const renderRampDown = () => {
               if (rampDownDuration === 0) return null
+              
+              // Hatch pattern using repeating linear gradient
+              const hatchPattern = isDarkMode
+                ? 'repeating-linear-gradient(45deg, transparent, transparent 4px, rgba(154, 52, 18, 0.5) 4px, rgba(154, 52, 18, 0.5) 8px)'
+                : 'repeating-linear-gradient(45deg, transparent, transparent 4px, rgba(251, 146, 60, 0.4) 4px, rgba(251, 146, 60, 0.4) 8px)'
               
               if (rampDownEndMin >= rampDownStartMin) {
                 // Ramp down doesn't cross midnight
                 return (
                   <div
                     key="ramp-down"
-                    className="absolute top-0 bottom-0 bg-orange-200 dark:bg-orange-900/50 opacity-40 pointer-events-none"
+                    className="absolute top-0 bottom-0 pointer-events-none"
                     style={{
                       left: `${getPosition(rampDownStartMin)}%`,
                       width: `${getPosition(rampDownDuration)}%`,
-                      zIndex: 0
+                      zIndex: 0,
+                      backgroundImage: hatchPattern
                     }}
                   />
                 )
@@ -227,20 +253,22 @@ export default function SetpointTimeline({
                   <>
                     <div
                       key="ramp-down-1"
-                      className="absolute top-0 bottom-0 bg-orange-200 dark:bg-orange-900/50 opacity-40 pointer-events-none"
+                      className="absolute top-0 bottom-0 pointer-events-none"
                       style={{
                         left: `${getPosition(rampDownStartMin)}%`,
                         width: `${getPosition(firstPart)}%`,
-                        zIndex: 0
+                        zIndex: 0,
+                        backgroundImage: hatchPattern
                       }}
                     />
                     <div
                       key="ramp-down-2"
-                      className="absolute top-0 bottom-0 bg-orange-200 dark:bg-orange-900/50 opacity-40 pointer-events-none"
+                      className="absolute top-0 bottom-0 pointer-events-none"
                       style={{
                         left: `${getPosition(0)}%`,
                         width: `${getPosition(secondPart)}%`,
-                        zIndex: 0
+                        zIndex: 0,
+                        backgroundImage: hatchPattern
                       }}
                     />
                   </>

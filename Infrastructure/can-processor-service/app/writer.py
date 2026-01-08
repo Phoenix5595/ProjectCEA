@@ -312,13 +312,14 @@ class DataWriter:
             pipe = self.redis_state_client.pipeline()
             
             for sensor_name, value, unit in sensors:
-                # Set sensor value with TTL
+                # Set sensor value with NO TTL (persistent) - values should always be in Redis
+                # This prevents database fallback and reduces CPU usage
                 key = f"sensor:{sensor_name}"
-                pipe.setex(key, self.redis_ttl, str(value))
+                pipe.set(key, str(value))  # No TTL - persistent key
                 
-                # Set timestamp
+                # Set timestamp (also persistent)
                 ts_key = f"sensor:{sensor_name}:ts"
-                pipe.setex(ts_key, self.redis_ttl, str(timestamp_ms))
+                pipe.set(ts_key, str(timestamp_ms))  # No TTL - persistent key
             
             # Execute all commands
             pipe.execute()

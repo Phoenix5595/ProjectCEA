@@ -20,7 +20,7 @@ class ConfigLoader:
             # Try common locations
             possible_paths = [
                 Path(__file__).parent.parent / "weather_config.yaml",
-                Path("/home/antoine/Project CEA/Infrastructure/weather-service/weather_config.yaml"),
+                Path("/home/antoine/ProjectCEA/Infrastructure/weather-service/weather_config.yaml"),
             ]
             for path in possible_paths:
                 if path.exists():

@@ -13,7 +13,7 @@ else
     echo "  sudo systemctl start cea-backend"
     echo ""
     echo "Or manually:"
-    echo "  cd '/home/antoine/Project CEA/Infrastructure/backend'"
+    echo "  cd '/home/antoine/ProjectCEA/Infrastructure/backend'"
     echo "  python3 -m uvicorn app.main:app --host 0.0.0.0 --port 8000"
 fi
 

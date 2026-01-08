@@ -40,9 +40,33 @@ class SensorDataManager:
         current_time = asyncio.get_event_loop().time()
 
         # Check cache validity
-        if (self._cache_timestamp and
+        cache_hit = (self._cache_timestamp and
             current_time - self._cache_timestamp < self._cache_ttl_seconds and
-            cache_key in self._sensor_cache):
+            cache_key in self._sensor_cache)
+        
+        # #region agent log
+        import json
+        import time
+        try:
+            with open('/home/antoine/.cursor/debug.log', 'a') as f:
+                f.write(json.dumps({
+                    'sessionId': 'debug-session',
+                    'runId': 'run1',
+                    'hypothesisId': 'C',
+                    'location': 'sensor_data_manager.py:43',
+                    'message': 'sensor_cache_check',
+                    'data': {
+                        'location': location,
+                        'cluster': cluster,
+                        'cache_hit': cache_hit,
+                        'cache_age_seconds': current_time - self._cache_timestamp if self._cache_timestamp else None
+                    },
+                    'timestamp': int(time.time() * 1000)
+                }) + '\n')
+        except: pass
+        # #endregion
+        
+        if cache_hit:
             return self._sensor_cache[cache_key].copy()
 
         # Cache miss - fetch fresh data

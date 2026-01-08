@@ -87,6 +87,12 @@ class ServiceContainer:
             # Get automation redis from database
             self.automation_redis = self.database._automation_redis
             
+            # Load schedule state from DB to Redis (after Redis connection is established)
+            try:
+                await self.database.load_schedule_state_to_redis()
+            except Exception as e:
+                logger.warning(f"Failed to load schedule state to Redis: {e}")
+            
             # 3. Initialize hardware
             await self._init_hardware()
             

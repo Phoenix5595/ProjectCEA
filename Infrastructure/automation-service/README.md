@@ -548,7 +548,7 @@ Requires=postgresql.service
 [Service]
 Type=simple
 User=cea
-WorkingDirectory=/home/antoine/Project CEA/Infrastructure/automation-service
+WorkingDirectory=/home/antoine/ProjectCEA/Infrastructure/automation-service
 ExecStart=/usr/bin/python3 -m app.main
 Restart=always
 RestartSec=10
@@ -559,7 +559,7 @@ WantedBy=multi-user.target
 
 **Installation:**
 ```bash
-cd "/home/antoine/Project CEA/Infrastructure"
+cd "/home/antoine/ProjectCEA/Infrastructure"
 sudo cp automation-service.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable automation-service.service
@@ -788,7 +788,7 @@ cp automation_config.yaml.template automation_config.yaml
 
 4. **Install systemd service:**
 ```bash
-cd "/home/antoine/Project CEA/Infrastructure"
+cd "/home/antoine/ProjectCEA/Infrastructure"
 sudo cp automation-service.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable automation-service.service

@@ -242,6 +242,7 @@ class SetpointManager:
 
         # Start ramps for each setpoint type
         setpoint_types = ['heating', 'cooling', 'humidity', 'co2', 'vpd']
+        ramps_started = []
         for setpoint_type in setpoint_types:
             nominal_value = nominal_values[setpoint_type]
             start_value = ramp_starts.get(setpoint_type)
@@ -251,6 +252,7 @@ class SetpointManager:
                     setpoint_type, start_value, nominal_value,
                     ramp_in_duration, current_time
                 )
+                ramps_started.append(setpoint_type)
 
         # Apply current ramp values
         self._apply_ramp_values(result, nominal_values, current_time)
@@ -276,10 +278,29 @@ class SetpointManager:
             }
 
         elif current_mode == 'PRE_NIGHT':
-            # Ramp from DAY setpoints to NIGHT setpoints
-            logger.debug(f"RAMP DEBUG: Entering PRE_NIGHT mode, using DAY setpoints as start")
-            # Keep current nominal values as start (they're the DAY values)
-            ramp_starts = nominal_values.copy()
+            # Ramp from DAY setpoints to PRE_NIGHT setpoints
+            logger.debug(f"RAMP DEBUG: Entering PRE_NIGHT mode, fetching DAY setpoints as start")
+            # Fetch DAY setpoints from database to use as ramp start values
+            day_setpoint_data = await self.database.get_setpoint(location, cluster, 'DAY')
+            if day_setpoint_data:
+                ramp_starts = {
+                    'heating': day_setpoint_data.get('heating_setpoint'),
+                    'cooling': day_setpoint_data.get('cooling_setpoint'),
+                    'humidity': day_setpoint_data.get('humidity'),
+                    'co2': day_setpoint_data.get('co2'),
+                    'vpd': day_setpoint_data.get('vpd')
+                }
+                logger.debug(f"RAMP DEBUG: Using DAY setpoints as ramp start: {ramp_starts}")
+            else:
+                # Fallback to current sensor values or nominal values if DAY setpoints not found
+                logger.warning(f"RAMP DEBUG: DAY setpoints not found for {location}/{cluster}, using sensor/nominal values as fallback")
+                ramp_starts = {
+                    'heating': sensor_values.get('temperature') if sensor_values else nominal_values['heating'],
+                    'cooling': sensor_values.get('temperature') if sensor_values else nominal_values['cooling'],
+                    'humidity': sensor_values.get('humidity') if sensor_values else nominal_values['humidity'],
+                    'co2': sensor_values.get('co2') if sensor_values else nominal_values['co2'],
+                    'vpd': sensor_values.get('vpd') if sensor_values else nominal_values['vpd']
+                }
 
         return ramp_starts
 

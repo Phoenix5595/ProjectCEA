@@ -308,7 +308,7 @@ export default function SetpointEditor({ location, cluster, onUpdate, mode = nul
           )}
           {rampInDuration > 15 && formData.vpd !== undefined && (
             <p className="text-sm font-medium text-yellow-700 dark:text-yellow-400 mt-1">
-              Warning: Long ramp durations (>15 min) may cause VPD fluctuations during transition
+              Warning: Long ramp durations (&gt;15 min) may cause VPD fluctuations during transition
             </p>
           )}
         </div>

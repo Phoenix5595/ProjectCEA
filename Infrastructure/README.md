@@ -45,7 +45,7 @@ All service files are located in `Infrastructure/`:
 Service files should be copied to `/etc/systemd/system/`:
 
 ```bash
-cd "/home/antoine/Project CEA/Infrastructure"
+cd "/home/antoine/ProjectCEA/Infrastructure"
 sudo cp can-processor-service.service /etc/systemd/system/
 sudo cp soil-sensor-service.service /etc/systemd/system/
 sudo cp weather-service.service /etc/systemd/system/
@@ -88,7 +88,7 @@ Complete setup guide for Redis, TimescaleDB, CAN Processor, and Grafana integrat
 #### 1. Install Redis
 
 ```bash
-cd "/home/antoine/Project CEA/Infrastructure"
+cd "/home/antoine/ProjectCEA/Infrastructure"
 sudo ./setup_redis.sh
 ```
 
@@ -101,7 +101,7 @@ redis-cli ping
 #### 2. Install TimescaleDB
 
 ```bash
-cd "/home/antoine/Project CEA/Infrastructure"
+cd "/home/antoine/ProjectCEA/Infrastructure"
 sudo ./setup_timescaledb.sh
 ```
 
@@ -114,7 +114,7 @@ sudo -u postgres psql -c "ALTER USER cea_user WITH PASSWORD 'your_secure_passwor
 #### 3. Create TimescaleDB Schema
 
 ```bash
-psql -h localhost -U cea_user -d cea_sensors -f "/home/antoine/Project CEA/Database/timescaledb_setup.sql"
+psql -h localhost -U cea_user -d cea_sensors -f "/home/antoine/ProjectCEA/Database/timescaledb_setup.sql"
 ```
 
 #### 4. Migrate SQLite Data (if needed)
@@ -125,19 +125,19 @@ psql -h localhost -U cea_user -d cea_sensors -f "/home/antoine/Project CEA/Datab
 
 ```bash
 # Backend dependencies
-cd "/home/antoine/Project CEA/Infrastructure/backend"
+cd "/home/antoine/ProjectCEA/Infrastructure/backend"
 pip3 install -r requirements.txt
 
 # CAN processor dependencies
-cd "/home/antoine/Project CEA/Infrastructure/can-processor-service"
+cd "/home/antoine/ProjectCEA/Infrastructure/can-processor-service"
 pip3 install -r requirements.txt
 
 # Soil sensor service dependencies
-cd "/home/antoine/Project CEA/Infrastructure/soil-sensor-service"
+cd "/home/antoine/ProjectCEA/Infrastructure/soil-sensor-service"
 pip3 install -r requirements.txt
 
 # Automation service dependencies
-cd "/home/antoine/Project CEA/Infrastructure/automation-service"
+cd "/home/antoine/ProjectCEA/Infrastructure/automation-service"
 pip3 install -r requirements.txt
 ```
 
@@ -145,19 +145,19 @@ pip3 install -r requirements.txt
 
 ```bash
 # CAN Processor service
-sudo cp "/home/antoine/Project CEA/Infrastructure/can-processor-service.service" /etc/systemd/system/
+sudo cp "/home/antoine/ProjectCEA/Infrastructure/can-processor-service.service" /etc/systemd/system/
 
 # Soil sensor service
-sudo cp "/home/antoine/Project CEA/Infrastructure/soil-sensor-service.service" /etc/systemd/system/
+sudo cp "/home/antoine/ProjectCEA/Infrastructure/soil-sensor-service.service" /etc/systemd/system/
 
 # Automation service
-sudo cp "/home/antoine/Project CEA/Infrastructure/automation-service.service" /etc/systemd/system/
+sudo cp "/home/antoine/ProjectCEA/Infrastructure/automation-service.service" /etc/systemd/system/
 
 # Backend service
-sudo cp "/home/antoine/Project CEA/Infrastructure/cea-backend.service" /etc/systemd/system/
+sudo cp "/home/antoine/ProjectCEA/Infrastructure/cea-backend.service" /etc/systemd/system/
 
 # Error handler service
-sudo cp "/home/antoine/Project CEA/Infrastructure/service-error-handler@.service" /etc/systemd/system/
+sudo cp "/home/antoine/ProjectCEA/Infrastructure/service-error-handler@.service" /etc/systemd/system/
 sudo systemctl daemon-reload
 ```
 
@@ -397,13 +397,13 @@ curl "http://localhost:8000/api/sensors/Flower%20Room/back?time_range=1%20Hour"
 
 #### CAN Processor Monitor
 ```bash
-"/home/antoine/Project CEA/monitor_can_processor.sh"
+"/home/antoine/ProjectCEA/monitor_can_processor.sh"
 ```
 Monitors CAN processor service, CAN bus interface, Redis stream, database writes, and recent CAN messages.
 
 #### Redis Stream Monitor
 ```bash
-"/home/antoine/Project CEA/monitor_redis_stream.sh"
+"/home/antoine/ProjectCEA/monitor_redis_stream.sh"
 ```
 Monitors Redis stream (`sensor:raw`) and displays live sensor values.
 
@@ -432,9 +432,9 @@ Monitors Redis stream (`sensor:raw`) and displays live sensor values.
 
 ### File Locations
 
-- **CAN Processor**: `/home/antoine/Project CEA/Infrastructure/can-processor-service/`
-- **Backend**: `/home/antoine/Project CEA/Infrastructure/backend/` (port 8000)
-- **Automation Service**: `/home/antoine/Project CEA/Infrastructure/automation-service/` (port 8001)
+- **CAN Processor**: `/home/antoine/ProjectCEA/Infrastructure/can-processor-service/`
+- **Backend**: `/home/antoine/ProjectCEA/Infrastructure/backend/` (port 8000)
+- **Automation Service**: `/home/antoine/ProjectCEA/Infrastructure/automation-service/` (port 8001)
 - **Database**: TimescaleDB `cea_sensors` database
 - **Redis Config**: `/etc/redis/redis.conf`
 - **Service Files**: `/etc/systemd/system/`
@@ -1038,7 +1038,7 @@ This checklist guides you through deploying the complete Redis-based pipeline sy
 
 - [ ] Run installation script:
   ```bash
-  cd "/home/antoine/Project CEA/Infrastructure"
+  cd "/home/antoine/ProjectCEA/Infrastructure"
   sudo ./setup_redis.sh
   ```
 
@@ -1052,7 +1052,7 @@ This checklist guides you through deploying the complete Redis-based pipeline sy
 
 - [ ] Run installation script:
   ```bash
-  cd "/home/antoine/Project CEA/Infrastructure"
+  cd "/home/antoine/ProjectCEA/Infrastructure"
   sudo ./setup_timescaledb.sh
   ```
 
@@ -1066,7 +1066,7 @@ This checklist guides you through deploying the complete Redis-based pipeline sy
 
 - [ ] Run schema setup:
   ```bash
-  cd "/home/antoine/Project CEA/Infrastructure/database"
+  cd "/home/antoine/ProjectCEA/Infrastructure/database"
   psql -U cea_user -d cea_sensors -f cea_schema.sql
   ```
 
@@ -1123,13 +1123,13 @@ This checklist guides you through deploying the complete Redis-based pipeline sy
 
 #### CAN Processor Monitor
 ```bash
-"/home/antoine/Project CEA/monitor_can_processor.sh"
+"/home/antoine/ProjectCEA/monitor_can_processor.sh"
 ```
 Monitors CAN processor service, CAN bus interface, Redis stream, database writes, and recent CAN messages.
 
 #### Redis Stream Monitor
 ```bash
-"/home/antoine/Project CEA/monitor_redis_stream.sh"
+"/home/antoine/ProjectCEA/monitor_redis_stream.sh"
 ```
 Monitors Redis stream (`sensor:raw`) and displays live sensor values.
 

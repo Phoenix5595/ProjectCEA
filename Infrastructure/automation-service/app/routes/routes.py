@@ -2,7 +2,7 @@
 from shared.logging import get_logger
 from fastapi import FastAPI
 
-from app.routes import schedules, lights, setpoints, devices, status, alarms, pid, mode, rules, failsafe, websocket
+from app.routes import schedules, lights, setpoints, devices, status, alarms, pid, mode, rules, failsafe, websocket, redis_state
 
 logger = get_logger(__name__)
 
@@ -25,6 +25,7 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(rules.router, tags=["rules"])
     app.include_router(failsafe.router, tags=["failsafe"])
     app.include_router(websocket.router, tags=["websocket"])
+    app.include_router(redis_state.router, tags=["redis-state"])
     
     # Health check endpoint
     @app.get("/health")
@@ -81,5 +82,8 @@ def setup_dependency_overrides(app: FastAPI, container) -> None:
     
     # Override dependencies in failsafe module
     app.dependency_overrides[failsafe.get_database] = container.get_database
+    
+    # Override dependencies in redis_state module
+    app.dependency_overrides[redis_state.get_database] = container.get_database
     
     logger.info("Dependency overrides configured")

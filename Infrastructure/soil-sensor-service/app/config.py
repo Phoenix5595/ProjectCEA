@@ -20,7 +20,7 @@ class ConfigLoader:
             # Try common locations
             possible_paths = [
                 Path(__file__).parent.parent / "soil_sensor_config.yaml",
-                Path("/home/antoine/Project CEA/Infrastructure/soil-sensor-service/soil_sensor_config.yaml"),
+                Path("/home/antoine/ProjectCEA/Infrastructure/soil-sensor-service/soil_sensor_config.yaml"),
             ]
             for path in possible_paths:
                 if path.exists():

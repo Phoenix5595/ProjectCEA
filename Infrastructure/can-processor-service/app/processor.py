@@ -23,7 +23,12 @@ try:
     )
     logger.info("Successfully imported shared sensor processing library")
 except ImportError as e:
-    logger.error(f"Failed to import shared library: {e}")
+    # Use print since logger might not be available if shared import failed
+    print(f"Warning: Failed to import shared sensor processing library: {e}", file=sys.stderr)
+    try:
+        logger.warning(f"Failed to import shared sensor processing library: {e}")
+    except:
+        pass  # Logger not available
     # Define minimal fallback implementations
     def get_sensor_suffix(location: str, cluster: str) -> str:
         suffix_map = {
@@ -40,8 +45,8 @@ except ImportError as e:
         if node_id is None:
             return ('Unknown', 'Unknown')
         node_map = {
-            1: ('Veg Room', 'clusterA'),
-            2: ('Veg Room', 'clusterB'),
+            1: ('Veg Room', 'clusterB'),  # Node 1 has _b sensors in DB
+            2: ('Veg Room', 'clusterA'),  # Node 2 has _f sensors in DB
             3: ('Flower Room', 'clusterA'),
             4: ('Flower Room', 'clusterB'),
             5: ('Mother Room', 'clusterA'),
@@ -142,14 +147,14 @@ def extract_sensor_values(decoded: Dict[str, Any], location: str, cluster: str) 
             if location == "Lab":
                 sensor_key = "lab_temp"
             elif suffix:
-                sensor_key = f"dry_bulb_{suffix}"
+                sensor_key = f"dry_bulb{suffix}"
             else:
                 sensor_key = "dry_bulb"
             sensors.append((sensor_key, float(decoded['temp_dry_c']), "°C"))
         
         # Wet bulb temperature
         if 'temp_wet_c' in decoded and decoded['temp_wet_c'] is not None:
-            sensor_key = f"wet_bulb_{suffix}" if suffix else "wet_bulb"
+            sensor_key = f"wet_bulb{suffix}" if suffix else "wet_bulb"
             sensors.append((sensor_key, float(decoded['temp_wet_c']), "°C"))
         
         # Calculate RH and VPD if both temperatures are available
@@ -168,8 +173,8 @@ def extract_sensor_values(decoded: Dict[str, Any], location: str, cluster: str) 
             vpd = round(vpd, 3)
             
             # Add calculated values to sensors list
-            rh_key = f"rh_{suffix}" if suffix else "rh"
-            vpd_key = f"vpd_{suffix}" if suffix else "vpd"
+            rh_key = f"rh{suffix}" if suffix else "rh"
+            vpd_key = f"vpd{suffix}" if suffix else "vpd"
             sensors.append((rh_key, rh, "%"))
             sensors.append((vpd_key, vpd, "kPa"))
             
@@ -181,7 +186,7 @@ def extract_sensor_values(decoded: Dict[str, Any], location: str, cluster: str) 
     elif message_type == "SCD30":
         # CO2
         if 'co2_ppm' in decoded and decoded['co2_ppm'] is not None:
-            sensor_key = f"co2_{suffix}" if suffix else "co2"
+            sensor_key = f"co2{suffix}" if suffix else "co2"
             co2_value = float(decoded['co2_ppm'])
             
             # Validate CO2 reading (filters false 0 readings)
@@ -195,21 +200,21 @@ def extract_sensor_values(decoded: Dict[str, Any], location: str, cluster: str) 
             if location == "Lab":
                 sensor_key = "water_temp"
             elif suffix:
-                sensor_key = f"secondary_temp_{suffix}"
+                sensor_key = f"secondary_temp{suffix}"
             else:
                 sensor_key = "secondary_temp"
             sensors.append((sensor_key, float(decoded['temperature_c']), "°C"))
         
         # Secondary RH
         if 'humidity_percent' in decoded and decoded['humidity_percent'] is not None:
-            sensor_key = f"secondary_rh_{suffix}" if suffix else "secondary_rh"
+            sensor_key = f"secondary_rh{suffix}" if suffix else "secondary_rh"
             sensors.append((sensor_key, float(decoded['humidity_percent']), "%"))
     
     elif message_type == "BME280":
         # Pressure
         if 'pressure_hpa' in decoded and decoded['pressure_hpa'] is not None:
             pressure_value = float(decoded['pressure_hpa'])
-            sensor_key = f"pressure_{suffix}" if suffix else "pressure"
+            sensor_key = f"pressure{suffix}" if suffix else "pressure"
             sensors.append((sensor_key, pressure_value, "hPa"))
             
             # Update pressure state for this location/cluster
@@ -218,7 +223,7 @@ def extract_sensor_values(decoded: Dict[str, Any], location: str, cluster: str) 
     elif message_type == "VL53" or message_type == "VL53L0X":
         # Water level (distance)
         if 'distance_mm' in decoded and decoded['distance_mm'] is not None:
-            sensor_key = f"water_level_{suffix}" if suffix else "water_level"
+            sensor_key = f"water_level{suffix}" if suffix else "water_level"
             sensors.append((sensor_key, float(decoded['distance_mm']), "mm"))
     
     return sensors

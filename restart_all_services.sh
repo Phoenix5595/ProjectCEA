@@ -42,7 +42,7 @@ echo "Step 1: Building frontend..."
 echo ""
 
 # Build frontend before restarting services
-FRONTEND_DIR="/home/antoine/Project CEA/Infrastructure/frontend"
+FRONTEND_DIR="/home/antoine/ProjectCEA/Infrastructure/frontend"
 if [ -d "$FRONTEND_DIR" ]; then
     echo -e "${YELLOW}Building frontend...${NC}"
     cd "$FRONTEND_DIR"

@@ -84,7 +84,7 @@ curl http://localhost:8001/health
 
 ## ANTI-PATTERNS (THIS SERVICE)
 
-- **Never**: Write automation state without 10s TTL
+
 - **Never**: Skip TimescaleDB writes (setpoints must persist)
 - **Never**: Bypass validation (setpoint ranges are enforced)
 - **Never**: Modify zones config at runtime (requires restart)

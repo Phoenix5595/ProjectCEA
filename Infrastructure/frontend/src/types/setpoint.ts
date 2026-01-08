@@ -8,6 +8,7 @@ export interface Setpoint {
   humidity?: number;
   co2?: number;
   vpd?: number;
+  ramp_in_duration?: number;
   mode?: Mode;
   updated_at?: string;  // ISO format timestamp for version tracking
 }

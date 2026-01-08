@@ -505,7 +505,7 @@ Ensure PostgreSQL is configured for time-series workloads. See `Infrastructure/d
 Use the provided import script:
 
 ```bash
-cd "/home/antoine/Project CEA"
+cd "/home/antoine/ProjectCEA"
 ./Infrastructure/frontend/grafana/import_dashboard.sh
 ```
 
