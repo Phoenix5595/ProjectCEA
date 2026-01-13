@@ -18,8 +18,8 @@ ProjectCEA/
 │   ├── soil-sensor-service/  # RS485 Modbus sensors (port 8002)
 │   ├── weather-service/      # YUL Airport data (port 8003)
 │   └── database/             # TimescaleDB schema + docs
-├── Sensor Nodes/             # ESP32 Arduino firmware
-├── Boot Initialisation Services/  # CAN interface setup
+├── Sensor_Nodes/             # ESP32 Arduino firmware
+├── Boot_Initialisation_Services/  # CAN interface setup
 ├── .sisyphus/                # AI context files
 └── deploy.sh                 # Atomic deployment script
 ```
@@ -33,7 +33,7 @@ ProjectCEA/
 | Frontend components | `Infrastructure/frontend/src/components/` | React + TypeScript |
 | Database schema | `Infrastructure/database/*.sql` | TimescaleDB hypertables |
 | Hardware drivers | `Infrastructure/automation-service/app/hardware/` | I2C: DFR0971, MCP23017 |
-| Sensor firmware | `Sensor Nodes/ESP32/fullV6/` | Latest stable ESP32 code |
+| Sensor firmware | `Sensor_Nodes/ESP32/fullV6/` | Latest stable ESP32 code |
 | Service configs | `*.service` files in Infrastructure/ | systemd units |
 | Deploy/rollback | `deploy.sh`, `rollback.sh` | Atomic symlink switching |
 

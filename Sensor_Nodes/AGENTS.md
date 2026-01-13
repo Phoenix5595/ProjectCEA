@@ -7,7 +7,7 @@ ESP32-based CAN bus sensor nodes. Read environmental sensors, transmit via CAN t
 ## STRUCTURE
 
 ```
-Sensor Nodes/
+Sensor_Nodes/
 └── ESP32/
     ├── fullV6/              # LATEST STABLE - use this
     │   ├── fullV6.ino       # Main firmware
