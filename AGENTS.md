@@ -4,7 +4,7 @@
 
 ## OVERVIEW
 
-Controlled Environment Agriculture system: 5 Python microservices + React frontend on Raspberry Pi. CAN bus sensors (ESP32), TimescaleDB storage, Redis real-time state, I2C actuators.
+Controlled Environment Agriculture system: 5 Python microservices + React frontend on Raspberry Pi 5 (512g nvme ssd & 8g ram). CAN bus sensors (ESP32), TimescaleDB storage, Redis real-time state, I2C actuators.
 
 ## STRUCTURE
 
@@ -151,7 +151,7 @@ cd Infrastructure/frontend && npm run dev  # port 3001
 
 After completing ANY implementation work:
 
-- [ ] Update relevant `AGENTS.md` files with new patterns/functions
+- [ ] Update relevant `AGENTS.md` files with new patterns/functions in every folder and sub folders. They should be freshly kept up to date.
 - [ ] Add discovered anti-patterns to documentation
 - [ ] Document new database functions, tables, or views
 - [ ] Run `sync_dashboards.sh` if Grafana dashboards changed
