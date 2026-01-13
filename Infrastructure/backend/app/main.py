@@ -1,6 +1,7 @@
 """FastAPI application entry point."""
 # Standard library imports
 import os
+import logging
 import sys
 import signal
 import asyncio

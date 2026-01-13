@@ -1,121 +1,167 @@
-# PROJECT CEA - Greenhouse Automation System
+# PROJECT CEA - KNOWLEDGE BASE
 
-**Generated:** 2025-01-05
+**Generated:** 2026-01-11 | **Commit:** 89b66bd | **Branch:** dev
 
 ## OVERVIEW
-Controlled Environment Agriculture system for greenhouse automation with multi-service microservices architecture, ESP32 sensor nodes, and React frontend.
+
+Controlled Environment Agriculture system: 5 Python microservices + React frontend on Raspberry Pi. CAN bus sensors (ESP32), TimescaleDB storage, Redis real-time state, I2C actuators.
 
 ## STRUCTURE
 
 ```
 ProjectCEA/
-├── Infrastructure/          # 6 Python microservices + React frontend
-│   ├── backend/           # Sensor data API (port 8000)
-│   ├── automation-service/ # Control & configuration API (port 8001)
-│   ├── frontend/          # React dashboard
-│   ├── can-processor-service/     # CAN bus data processing
-│   ├── soil-sensor-service/      # RS485 soil sensors
-│   ├── weather-service/          # Weather API integration
-│   └── database/         # Schema & documentation
-├── Sensor Nodes/          # ESP32 Arduino firmware
-├── Boot Initialisation Services/  # System boot scripts
-└── Test Scripts/         # Testing & monitoring utilities
+├── Infrastructure/           # All services + frontend
+│   ├── automation-service/   # Control logic, PID, schedules (port 8001)
+│   ├── backend/              # Sensor data API (port 8000)
+│   ├── frontend/             # React dashboard (served by automation)
+│   ├── can-processor-service/# CAN bus → Redis/DB
+│   ├── soil-sensor-service/  # RS485 Modbus sensors (port 8002)
+│   ├── weather-service/      # YUL Airport data (port 8003)
+│   └── database/             # TimescaleDB schema + docs
+├── Sensor Nodes/             # ESP32 Arduino firmware
+├── Boot Initialisation Services/  # CAN interface setup
+├── .sisyphus/                # AI context files
+└── deploy.sh                 # Atomic deployment script
 ```
 
 ## WHERE TO LOOK
 
 | Task | Location | Notes |
 |------|----------|-------|
-| Service development | `Infrastructure/*/` | Each service in own dir |
-| Frontend UI | `Infrastructure/frontend/` | React + TypeScript |
-| Database schema | `Infrastructure/database/` | TimescaleDB setup |
-| Sensor firmware | `Sensor Nodes/ESP32/` | Arduino IDE projects |
-| Service logs | `journalctl -u <service>` | systemd journal |
-| Monitoring | Root scripts | `monitor_can_processor.py`, `monitor_redis_stream.py` |
+| Device control logic | `Infrastructure/automation-service/app/control/` | PID, scheduler, relay manager |
+| API endpoints | `Infrastructure/*/app/routes/` | FastAPI routers |
+| Frontend components | `Infrastructure/frontend/src/components/` | React + TypeScript |
+| Database schema | `Infrastructure/database/*.sql` | TimescaleDB hypertables |
+| Hardware drivers | `Infrastructure/automation-service/app/hardware/` | I2C: DFR0971, MCP23017 |
+| Sensor firmware | `Sensor Nodes/ESP32/fullV6/` | Latest stable ESP32 code |
+| Service configs | `*.service` files in Infrastructure/ | systemd units |
+| Deploy/rollback | `deploy.sh`, `rollback.sh` | Atomic symlink switching |
 
-## CONVENTIONS
+## DEEP DIVE DOCS
 
-### Python Services
-- **Framework**: FastAPI
-- **Structure**: `app/` directory with `main.py` entry point
-- **Dependencies**: `requirements.txt` per service
-- **Ports**: backend=8000, automation=8001
-- **State management**: Redis keys with 10-second TTL (`sensor:*`, `automation:*`)
+| Topic | Document | Summary |
+|-------|----------|---------|
+| Project context | `.sisyphus/PROJECT_CONTEXT.md` | Architecture diagram, env vars, known issues |
+| User preferences | `.sisyphus/USER_PREFERENCES.md` | Antoine's workflow, critical constraints |
+| Code review | `code_review_report.md` | 2026-01-06 audit: issues found/fixed |
+| Infrastructure setup | `Infrastructure/README.md` | Full setup guide, data storage pattern |
+| Automation architecture | `Infrastructure/automation-service/README.md` | PID, modes, schedules, hardware |
+| Database schema | `Infrastructure/database/REQUIREMENTS.md` | Tables, hypertables, aggregates |
+| Power tracking | `RASPBERRY_PI_POWER_TRACKING.md` | UPS and power monitoring |
 
-### Frontend
-- **Stack**: React 18 + TypeScript + Vite + Tailwind CSS
-- **Build**: `npm run build` → `dist/` served by automation-service
-- **APIs**: backend:8000 (sensors), automation:8001 (control)
+## SERVICE PORTS
 
-### Data Flow
-- **Services write to**: Redis Stream `sensor:raw` (MAXLEN 100K) + TimescaleDB
-- **Services read from**: Redis Stream (recent <6h) → TimescaleDB (older)
-- **Real-time**: Redis state keys for live display
+| Service | Port | Entry Point | Purpose |
+|---------|------|-------------|---------|
+| backend | 8000 | `backend/app/main.py` | Sensor data API, WebSocket |
+| automation-service | 8001 | `automation-service/app/main.py` | Control + serves frontend SPA |
+| soil-sensor-service | 8002 | `soil-sensor-service/app/main.py` | RS485 Modbus polling |
+| weather-service | 8003 | `weather-service/app/main.py` | External weather data |
+| can-processor | — | `can-processor-service/app/main.py` | CAN → Redis/TimescaleDB |
 
-### Redis State Management
-- **Schedule State**: Persistent keys `schedule:state:<room>:<cluster>` (no TTL) containing complete schedule configuration
-  - Includes: room schedule (day/night times, ramp durations), climate schedule (pre-day/pre-night durations), setpoints for all modes (DAY, NIGHT, PRE_DAY, PRE_NIGHT), and light target intensities
-  - Written by backend endpoints after DB writes (backend-only, frontend calls APIs)
-  - Loaded from DB to Redis on service restart via `load_schedule_state_to_redis()`
-  - Query endpoint: `GET /api/redis-state/schedule/{location}/{cluster}` (used by Grafana, falls back to DB if Redis unavailable)
-- **Grafana Overlays**: Day/night period overlays based on light schedule (room_schedule day_start_time to day_end_time), not climate mode
-  - DAY overlay = when lights are ON (between day_start_time and day_end_time)
-  - NIGHT overlay = when lights are OFF (time not between day_start_time and day_end_time)
-  - PRE_DAY and PRE_NIGHT are climate periods only (lights off during PRE_DAY, lights on during PRE_NIGHT)
-- **Climate Period Timing**: Two categories of schedules - Light Schedule (controls lights ON/OFF) and Climate Schedule (controls setpoints)
-  - **Light Schedule**: DAY = lights ON (day_start_time to day_end_time), NIGHT = lights OFF (rest of time)
-  - **Climate Schedule**: Follows light schedule timing but with transition periods
-    - **DAY**: Pure climate DAY period (day_start_time to day_end_time - pre_night_duration), lights ON + climate DAY
-    - **PRE_NIGHT**: Climate transition period (day_end_time - pre_night_duration to day_end_time), occurs DURING day light period (lights still ON)
-    - **NIGHT**: Pure climate NIGHT period (day_end_time to day_start_time - pre_day_duration), lights OFF + climate NIGHT
-    - **PRE_DAY**: Climate transition period (day_start_time - pre_day_duration to day_start_time), occurs DURING night light period (lights still OFF)
-  - **Period Priority**: PRE_DAY > DAY > PRE_NIGHT > NIGHT
-  - **Ramp Logic**: PRE_NIGHT ramps from DAY setpoints → PRE_NIGHT setpoints, PRE_DAY ramps from NIGHT setpoints → PRE_DAY setpoints
-- **State vs Stream**: State keys = fast truth for real-time queries, Streams = history for auditing/debugging
+## REDIS KEY PATTERNS
 
-### Systemd
-- Service files in `Infrastructure/*.service`
-- Copy to `/etc/systemd/system/` then `daemon-reload`
-- Startup order: postgresql → redis → can-setup → can-processor → soil-sensor → backend → automation
+| Pattern | TTL | Service | Purpose |
+|---------|-----|---------|---------|
+| `sensor:{name}` | 10s | can-processor, backend | Real-time sensor values |
+| `sensor:raw` (Stream) | MAXLEN 100K | can-processor | Raw data buffer |
+| `automation:{loc}:{cluster}:{device}` | — | automation | Device states |
+| `setpoint:{loc}:{cluster}:{type}` | — | automation | Target setpoints |
+| `effective_setpoint:{loc}:{cluster}:{type}` | — | automation | Calculated (after ramps) |
+| `mode:{loc}:{cluster}` | — | automation | DAY/NIGHT/PRE_DAY/PRE_NIGHT |
+| `schedule:state:{loc}:{cluster}` | — | automation | Persistent schedule state |
+| `alarm:{loc}:{cluster}:{name}` | — | automation | Active alarms |
+
+## HARDWARE INTERFACES
+
+| Type | Address | File | Purpose |
+|------|---------|------|---------|
+| I2C | 0x20 | `hardware/mcp23017.py` | 16-channel relay expander |
+| I2C | 0x58-0x5A | `hardware/dfr0971.py` | 0-10V DAC light dimming |
+| CAN | can0 @ 250kbps | `can-processor-service/` | Sensor node communication |
+| Modbus | /dev/serial0 | `soil-sensor-service/` | RS485 soil sensors |
+
+## STARTUP ORDER
+
+```
+postgresql → redis-server → can-setup → can-processor → soil-sensor → cea-backend → automation-service
+```
 
 ## COMMANDS
 
 ```bash
-# Start all services
-./restart_all_services.sh
+# Deploy (dev → production)
+ssh mothernode "cd /home/antoine/ProjectCEA && ./deploy.sh"
 
-# Enable autostart
-./enable_autostart.sh
+# Rollback (<30s)
+ssh mothernode "./rollback.sh"
 
 # Service management
-systemctl start can-processor
-systemctl start soil-sensor-service
-systemctl start cea-backend
-systemctl start automation-service
+ssh mothernode "systemctl status automation-service cea-backend"
+ssh mothernode "journalctl -u automation-service -f"
 
-# Development - backend
-cd Infrastructure/backend && uvicorn app.main:app --reload
+# Health checks
+ssh mothernode "curl -fsS http://127.0.0.1:8000/health && curl -fsS http://127.0.0.1:8001/health"
 
-# Development - frontend
-cd Infrastructure/frontend && npm run dev
-
-# Development - automation
-cd Infrastructure/automation-service && uvicorn app.main:app --reload
+# Development
+cd Infrastructure/backend && uvicorn app.main:app --reload --port 8000
+cd Infrastructure/frontend && npm run dev  # port 3001
 ```
 
 ## ANTI-PATTERNS (THIS PROJECT)
 
-- **Never**: Commit secrets to repo (`.env`, passwords, API tokens)
-- **Never**: Use long TTL for Redis state keys (must be 10s) - **Exception**: Schedule state keys have no TTL (persistent until updated)
-- **Never**: Skip TimescaleDB writes (all data must persist to DB)
-- **Never**: Direct DB access from frontend (always go through backend APIs)
-- **Never**: Modify service files without testing startup order
-- **Never**: Read Redis streams inside control loops (streams are for history, state keys are for control decisions)
+| Never | Reason |
+|-------|--------|
+| Commit secrets (`.env`, passwords) | Security - use EnvironmentFile |
+| Use TTL >10s for sensor state keys | Stale data in control loops |
+| Skip TimescaleDB writes | All data must persist |
+| Direct DB access from frontend | Always use backend APIs |
+| Read Redis Streams in control loops | Streams = history, state keys = control |
+| Start services out of order | Dependency failures |
+| Modify `.service` files without daemon-reload | Config won't apply |
+| Change CAN message format without updating parser | Protocol mismatch |
+
+## COMPLEXITY HOTSPOTS
+
+| File | Lines | Purpose |
+|------|-------|---------|
+| `automation-service/app/database.py` | 2,878 | Data access, migrations, batching |
+| `automation-service/app/redis_client.py` | 1,411 | Streams, state, effective setpoints |
+| `automation-service/app/routes/schedules.py` | 1,217 | Schedule CRUD, room schedules |
+| `frontend/src/components/SetpointTimeline.tsx` | 869 | 24h timeline visualization |
+
+## ZONES
+
+- **Flower Room**: front, back clusters
+- **Veg Room**: main cluster
+- **Lab**: main cluster
+- **Outside**: weather station
 
 ## NOTES
 
-- **Hardware**: CAN bus for sensors, RS485 for soil sensors
-- **Monitoring**: Grafana dashboard (optional) at port 3000
+- **Atomic deploys**: `/opt/projectcea/current` symlink, 10 releases kept
 - **Redis AOF corruption**: Auto-fix via `redis-aof-check.service`
-- **Boot dependencies**: Service startup order is critical
-- **Zones**: Flower Room (front/back), Veg Room (main), Lab (main)
+- **Frontend in production**: Built `dist/` served by automation-service
+- **Light schedules**: Always daily (no per-day overrides)
+- **Ramp logic**: PRE_NIGHT ramps from DAY→PRE_NIGHT, PRE_DAY from NIGHT→PRE_DAY
+
+---
+
+## POST-WORK CHECKLIST (MANDATORY)
+
+After completing ANY implementation work:
+
+- [ ] Update relevant `AGENTS.md` files with new patterns/functions
+- [ ] Add discovered anti-patterns to documentation
+- [ ] Document new database functions, tables, or views
+- [ ] Run `sync_dashboards.sh` if Grafana dashboards changed
+- [ ] Commit documentation WITH code changes (same commit)
+
+**Incomplete documentation = incomplete work.**
+
+### Additional ANTI-PATTERNS
+
+| Never | Reason | Use Instead |
+|-------|--------|-------------|
+| Query PostgreSQL for current sensor values in Grafana | Slow, unnecessary DB load | Redis `GET sensor:{name}` |
+| Skip documentation updates after implementation | Knowledge loss, repeated mistakes | Always update AGENTS.md files |

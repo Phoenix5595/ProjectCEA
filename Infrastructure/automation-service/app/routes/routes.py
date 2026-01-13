@@ -25,6 +25,7 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(rules.router, tags=["rules"])
     app.include_router(failsafe.router, tags=["failsafe"])
     app.include_router(websocket.router, tags=["websocket"])
+    app.include_router(room_modes.router, tags=["room-modes"])
     app.include_router(redis_state.router, tags=["redis-state"])
     
     # Health check endpoint

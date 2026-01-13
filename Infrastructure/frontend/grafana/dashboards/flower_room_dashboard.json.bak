@@ -399,7 +399,7 @@
               },
               {
                 "id": "custom.fillOpacity",
-                "value": 5
+                "value": 15
               },
               {
                 "id": "custom.gradientMode",
@@ -470,7 +470,7 @@
               },
               {
                 "id": "custom.fillOpacity",
-                "value": 5
+                "value": 10
               },
               {
                 "id": "custom.gradientMode",
@@ -547,11 +547,8 @@
                 "value": "stepBefore"
               },
               {
-                "id": "color",
-                "value": {
-                  "fixedColor": "dark-red",
-                  "mode": "fixed"
-                }
+                "id": "custom.fillOpacity",
+                "value": 10
               }
             ]
           },
@@ -564,7 +561,7 @@
               {
                 "id": "color",
                 "value": {
-                  "fixedColor": "dark-blue",
+                  "fixedColor": "red",
                   "mode": "fixed"
                 }
               },
@@ -585,6 +582,10 @@
               {
                 "id": "custom.lineInterpolation",
                 "value": "stepBefore"
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 10
               }
             ]
           }
@@ -1501,6 +1502,41 @@
           }
         },
         {
+          "editorMode": "code",
+          "format": "time_series",
+          "hide": false,
+          "rawQuery": true,
+          "rawSql": "SELECT timestamp AS \"time\", device_name || ' - Duty Cycle' AS metric, COALESCE(duty_cycle_percent, 0) AS value FROM automation_state WHERE location = 'Flower Room' AND cluster = 'main' AND device_name = 'light_1' AND timestamp >= $__timeFrom() AND timestamp <= $__timeTo() ORDER BY timestamp",
+          "refId": "H",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        },
+        {
+          "format": "time_series",
+          "rawSql": "SELECT timestamp AS \"time\", device_name || ' - Duty Cycle' AS metric, COALESCE(duty_cycle_percent, 0) AS value FROM automation_state WHERE location = 'Flower Room' AND cluster = 'main' AND device_name = 'light_2' AND timestamp >= $__timeFrom() AND timestamp <= $__timeTo() ORDER BY timestamp",
+          "refId": "I"
+        },
+        {
+          "format": "time_series",
+          "rawSql": "SELECT timestamp AS \"time\", device_name || ' - Duty Cycle' AS metric, COALESCE(duty_cycle_percent, 0) AS value FROM automation_state WHERE location = 'Flower Room' AND cluster = 'main' AND device_name = 'light_3' AND timestamp >= $__timeFrom() AND timestamp <= $__timeTo() ORDER BY timestamp",
+          "refId": "J"
+        },
+        {
           "format": "time_series",
           "rawSql": "SELECT timestamp AS \"time\", device_name || ' - PID Output' AS metric, COALESCE(pid_output, 0) AS value FROM automation_state WHERE location = 'Flower Room' AND cluster = 'main' AND device_name = 'Heater Flower' AND timestamp >= $__timeFrom() AND timestamp <= $__timeTo() ORDER BY timestamp",
           "refId": "K"
@@ -1684,5 +1720,5 @@
   "timezone": "browser",
   "title": "Siberian Jungle : Flower Sector",
   "uid": "7467103e-9964-4e06-9fc8-c43610129ba9",
-  "version": 71
+  "version": 36
 }

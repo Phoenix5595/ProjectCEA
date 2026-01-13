@@ -108,31 +108,9 @@ class BackgroundTasks:
                         continue
 
                 # Run control loop (worker pattern execution)
-                # #region agent log
-                import json
-                import time
-                loop_start = time.time()
-                # #endregion
+                # Debug logging removed
                 await self.control_engine.run_control_loop()
-                # #region agent log
-                loop_duration = time.time() - loop_start
-                try:
-                    with open('/home/antoine/.cursor/debug.log', 'a') as f:
-                        f.write(json.dumps({
-                            'sessionId': 'debug-session',
-                            'runId': 'run1',
-                            'hypothesisId': 'A',
-                            'location': 'background_tasks.py:111',
-                            'message': 'control_loop_iteration',
-                            'data': {
-                                'duration_seconds': loop_duration,
-                                'update_interval': self.update_interval,
-                                'sleep_time': self.update_interval
-                            },
-                            'timestamp': int(time.time() * 1000)
-                        }) + '\n')
-                except: pass
-                # #endregion
+                # Debug logging removed
 
                 # Reset retry delay on success
                 retry_delay = 1.0

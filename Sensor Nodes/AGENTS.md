@@ -1,91 +1,68 @@
 # SENSOR NODES
 
-**Generated:** 2025-01-05
-
 ## OVERVIEW
-ESP32 Arduino firmware for CAN bus sensor nodes. Multiple versions for different hardware configurations.
+
+ESP32-based CAN bus sensor nodes. Read environmental sensors, transmit via CAN to mothernode. Arduino/PlatformIO firmware.
 
 ## STRUCTURE
 
 ```
 Sensor Nodes/
 └── ESP32/
-    ├── fullV1/           # Version 1 complete firmware
-    ├── fullV2/           # Version 2 complete firmware
-    ├── fullV3/           # Version 3 complete firmware
-    ├── fullV4/           # Version 4 complete firmware
-    ├── fullV5/           # Version 5 complete firmware
-    ├── fullV6/           # Version 6 complete firmware
-    ├── can_twai_test/     # TWAI (CAN) test firmware
-    ├── can_spi_test_can_bus/  # SPI CAN test firmware
-    └── can_test_alternative/  # Alternative CAN test firmware
+    ├── fullV6/              # LATEST STABLE - use this
+    │   ├── fullV6.ino       # Main firmware
+    │   └── README.md
+    ├── fullV5/              # Previous version
+    ├── fullV4/              # Legacy
+    ├── fullV1-V3/           # Deprecated
+    └── can_*/               # CAN bus test sketches
 ```
 
-## WHERE TO LOOK
+## HARDWARE PER NODE
 
-| Task | Location | Notes |
-|------|----------|-------|
-| Production firmware | `fullV1/` - `fullV6/` | Use latest stable version |
-| CAN communication | All versions | CAN bus message handling |
-| Hardware tests | `can_*_test/` | TWAI, SPI, alternative implementations |
-| Sensor reading | All versions | Sensor data collection logic |
+| Sensor | Interface | Address | Measurements |
+|--------|-----------|---------|--------------|
+| BME280 | I2C | 0x76/0x77 | Temp, RH, Pressure |
+| SCD30 | I2C | 0x61 | CO2, Temp, RH |
+| MAX31865 | SPI | — | PT100 temperature |
 
-## CONVENTIONS
+## CAN BUS PROTOCOL
 
-### Arduino IDE
-- **Board**: ESP32 (various modules)
-- **Framework**: Arduino ESP32
-- **Upload**: USB/Serial interface
-- **Monitor**: Serial monitor for debugging
+- **Bitrate**: 250 kbps
+- **ID scheme**: `0x1XX` (Node 1), `0x2XX` (Node 2), etc.
+- **Message format**: Defined in `can-processor-service/app/decoder.py`
 
-### CAN Bus Protocol
-- **Interface**: TWAI (Two-Wire Automotive Interface)
-- **Message ID**: Standard CAN identifiers
-- **Data**: 8-byte payload per message
-- **Baud rate**: Configured in firmware
+## NODE ID MAPPING
 
-### Sensor Types
-- Temperature sensors
-- Humidity sensors
-- CO₂ sensors
-- VPD (calculated)
-- Light sensors
+| Node ID | Location | Cluster |
+|---------|----------|---------|
+| 1 | Flower Room | back |
+| 2 | Flower Room | front |
+| 3 | Veg Room | main |
+| 4 | Lab | main |
+| 5 | Outside | main |
 
-### Version Evolution
-- `fullV1-V6`: Incremental improvements and bug fixes
-- Test versions: Experimental features, hardware validation
+## ANTI-PATTERNS
 
-## COMMANDS
+| Never | Reason |
+|-------|--------|
+| Upload to wrong node | Nodes have unique IDs |
+| Change CAN format without updating parser | Protocol mismatch |
+| Skip sensor calibration | Accuracy |
+| Use test firmware in production | Use fullV* |
+| Change CAN baud rate alone | Must update all nodes + Pi |
+
+## DEVELOPMENT
 
 ```bash
-# Arduino IDE
-# 1. Open project folder (e.g., fullV6/)
-# 2. Select board: ESP32 Dev Module
-# 3. Select port: /dev/ttyUSB0
-# 4. Upload
-
-# PlatformIO (if configured)
-cd Sensor\ Nodes/ESP32/fullV6
-pio run --target upload
-pio device monitor
-
-# Serial monitor
-# Arduino IDE: Tools → Serial Monitor
-# baud rate: 115200 (typically)
+# Arduino IDE or PlatformIO
+# Select: ESP32 Dev Module
+# Upload to correct node (verify node_id in code)
 ```
 
-## ANTI-PATTERNS (THIS PROJECT)
+## DEEP DIVE DOCS
 
-- **Never**: Upload firmware to wrong node (nodes have unique IDs)
-- **Never**: Change CAN message format without updating backend parser
-- **Never**: Skip sensor calibration before deployment
-- **Never**: Use test firmware in production (use fullV*)
-- **Never**: Modify CAN baud rate without updating all nodes
-
-## NOTES
-
-- **Hardware**: ESP32 microcontrollers with CAN controllers
-- **Communication**: CAN bus to Raspberry Pi (via MCP2515 or built-in TWAI)
-- **Deployment**: Upload via Arduino IDE or PlatformIO
-- **Testing**: Test versions for validating hardware changes
-- **Backend integration**: CAN processor service parses node messages
+| Topic | Document |
+|-------|----------|
+| V6 firmware | `ESP32/fullV6/README.md` |
+| V5 firmware | `ESP32/fullV5/README.md` |

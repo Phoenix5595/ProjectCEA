@@ -1,94 +1,116 @@
 # CEA FRONTEND
 
-**Generated:** 2025-01-05
-
 ## OVERVIEW
-React + TypeScript dashboard for real-time monitoring and control of greenhouse system. WebSocket for live updates, Recharts for visualization.
+
+React 18 + TypeScript + Vite + Tailwind. WebSocket for real-time sensor data. Built `dist/` served by automation-service.
 
 ## STRUCTURE
 
 ```
 frontend/
 ├── src/
-│   ├── pages/          # Main page components (ZoneDashboards, Schedules)
-│   ├── components/     # Reusable UI components
-│   ├── services/       # API client, WebSocket client
-│   ├── config/         # Zone definitions
-│   ├── types/          # TypeScript interfaces
-│   ├── utils/          # Validation, formatting
-│   └── styles/        # CSS/Tailwind
-├── public/            # Static assets
-├── grafana/           # Grafana dashboards (optional)
-└── dist/              # Build output (served by automation-service)
+│   ├── components/          # 21 React components (main UI)
+│   │   ├── SetpointTimeline.tsx  # 869 lines - 24h visualization
+│   │   ├── CircularTimePicker.tsx # 657 lines - clock UI
+│   │   ├── LightManager.tsx      # Light cluster control
+│   │   └── ScheduleManager.tsx   # Schedule CRUD
+│   ├── pages/               # Route pages
+│   ├── services/            # API + WebSocket clients
+│   ├── types/               # TypeScript interfaces
+│   ├── utils/               # Sensor helpers
+│   └── contexts/            # React context providers
+├── public/
+├── dist/                    # Production build output
+├── vite.config.ts           # Dev proxy: /api → :8000, /ws → :8001
+└── package.json
 ```
 
-## WHERE TO LOOK
+## DEEP DIVE DOCS
 
-| Task | Location | Notes |
-|------|----------|-------|
-| Dashboard UI | `src/pages/` | Zone-specific dashboards |
-| Reusable components | `src/components/` | Common UI elements |
-| API calls | `src/services/api.ts` | Axios to backend/automation |
-| WebSocket | `src/services/websocket.ts` | Real-time updates |
-| Zone config | `src/config/zones.ts` | Hardcoded zone list |
-| Type definitions | `src/types/` | Interfaces for data structures |
-| Validation | `src/utils/validation.ts` | Input validation |
-| Styling | `src/styles/` | CSS, Tailwind config |
+| Topic | Document |
+|-------|----------|
+| Setup | `README.md` |
+| Requirements | `REQUIREMENTS.md` (timeline rendering) |
+| Grafana | `grafana/README.md` |
+| Alerting | `grafana/alerting/README.md` |
+| Setpoints in Grafana | `grafana/SETPOINTS_IN_GRAFANA.md` |
 
-## CONVENTIONS
+## KEY COMPONENTS
 
-### Architecture
-- **State**: React hooks (useState, useEffect)
-- **Data fetching**: Axios to backend:8000 (sensors) + automation:8001 (control)
-- **Real-time**: WebSocket to automation-service:8001/ws
-- **Routing**: React Router DOM for page navigation
-- **Charts**: Recharts for time-series visualization
+| Component | Purpose | Lines |
+|-----------|---------|-------|
+| `SetpointTimeline` | 24h timeline with modes/ramps | 869 |
+| `CircularTimePicker` | Radial time selection | 657 |
+| `LightManager` | Light intensity control | 565 |
+| `ScheduleManager` | Schedule list + CRUD | 514 |
+| `SetpointEditor` | Setpoint form | — |
 
-### Environment Variables (`.env`)
-- `VITE_BACKEND_API_URL` - Sensor data API (default: http://localhost:8000)
-- `VITE_AUTOMATION_API_URL` - Control API (default: http://localhost:8001)
-- `VITE_WEBSOCKET_URL` - WebSocket (default: ws://localhost:8001/ws)
-
-### Build & Serve
-- **Dev**: `npm run dev` → Vite dev server (port 3001)
-- **Build**: `npm run build` → `dist/` directory
-- **Production**: `dist/` served by automation-service at root path
-
-### Validation
-- Temperature: 10.0 - 35.0 °C
-- Humidity: 30.0 - 90.0 %
-- CO₂: 400.0 - 2000.0 ppm
-- VPD: 0.0 - 5.0 kPa
-
-## COMMANDS
+## DEVELOPMENT
 
 ```bash
-# Development
-npm run dev        # Port 3001
-
-# Build
-npm run build      # Creates dist/
-
-# Preview build
-npm run preview    # Preview dist/
-
 # Install dependencies
 npm install
+
+# Development (port 3001)
+npm run dev
+
+# Production build
+npm run build
+
+# After build, restart automation-service to serve new dist/
+sudo systemctl restart automation-service
 ```
 
-## ANTI-PATTERNS (THIS PROJECT)
+## ENVIRONMENT
 
-- **Never**: Direct database access (always use APIs)
-- **Never**: Hardcode URLs (use environment variables)
-- **Never**: Skip input validation (ranges enforced)
-- **Never**: Commit `.env` files (gitignored)
-- **Never**: Modify `src/config/zones.ts` at runtime (requires rebuild)
-- **Never**: Use different port than 3001 in dev (causes conflicts)
+```bash
+# .env (gitignored)
+VITE_BACKEND_API_URL=http://mothernode:8000
+VITE_AUTOMATION_API_URL=http://mothernode:8001
+VITE_WEBSOCKET_URL=ws://mothernode:8000/ws
+```
 
-## NOTES
+## ANTI-PATTERNS
 
-- **Tailscale access**: Set `VITE_*` vars to Tailscale IP for remote access
-- **Schedule conflicts**: Detected client-side before submission
-- **Setpoint timeline**: Fixed 00:00-24:00, PRE_DAY/PRE_NIGHT override DAY periods
-- **Mode-aware**: Setpoints change based on current mode (DAY/NIGHT/TRANSITION)
-- **Build output**: Served by automation-service, not Vite in production
+| Never | Reason |
+|-------|--------|
+| Direct database access | Always use APIs |
+| Hardcode URLs | Use environment variables |
+| Skip input validation | Ranges enforced server-side |
+| Commit `.env` files | Gitignored |
+| Use port other than 3001 in dev | Conflicts with services |
+| console.log in production | 61 instances found - use proper logging |
+
+---
+
+## GRAFANA DASHBOARDS
+
+### Locations
+- Provisioned from: `/var/lib/grafana/dashboards/`
+- Sync script: `Infrastructure/frontend/grafana/sync_dashboards.sh`
+- Auto-sync: Every 5 minutes via systemd timer
+
+### Data Sources
+
+| Source | Use For | Response Time |
+|--------|---------|---------------|
+| Redis | Current values, device states | <1ms |
+| PostgreSQL | Historical time-series | 50-100ms |
+
+### Query Patterns
+
+| Panel Type | Data Source | Query Pattern |
+|------------|-------------|---------------|
+| Stat (current temp) | Redis | `GET sensor:dry_bulb_f` |
+| Table (current values) | Redis | `MGET sensor:*` |
+| Time-series graph | PostgreSQL | `get_sensor_data_optimized()` |
+| Day/Night overlay | PostgreSQL | `get_light_periods()` |
+| Min/Max stats | PostgreSQL | `get_sensor_stats()` |
+
+### ANTI-PATTERNS
+
+| Never | Instead |
+|-------|---------|
+| Use PostgreSQL for current-value panels | Use Redis |
+| Query raw `measurement` table for >1h | Use aggregates |
+| Skip `maxDataPoints` setting | Set to 1500 |

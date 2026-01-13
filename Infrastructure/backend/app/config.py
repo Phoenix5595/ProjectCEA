@@ -19,7 +19,6 @@ class ConfigLoader:
             possible_paths = [
                 Path(__file__).parent.parent.parent.parent / "config.yaml",
                 Path(__file__).parent.parent.parent / "config.yaml",
-                Path("/home/antoine/ProjectCEA/Test Scripts/GUI/config.yaml"),
             ]
             for path in possible_paths:
                 if path.exists():

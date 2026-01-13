@@ -75,6 +75,7 @@ class DatabaseManager:
             await self._connect_db()
             await self._create_tables()
             await self._migrate_tables()
+            await self._create_room_modes_tables()
             await self._connect_redis()
             # Initialize automation Redis client for stream and state writes
             self._automation_redis = AutomationRedisClient(redis_url=self.redis_url, redis_ttl=10)
@@ -1264,31 +1265,9 @@ class DatabaseManager:
         # Try Redis first
         if self._redis_enabled and self._redis_client:
             try:
-                # #region agent log
-                import json
-                import time
-                redis_check_start = time.time()
-                # #endregion
+                # Debug logging removed
                 value = self._redis_client.get(f"sensor:{sensor_name}")
-                # #region agent log
-                redis_check_time = time.time() - redis_check_start
-                try:
-                    with open('/home/antoine/.cursor/debug.log', 'a') as f:
-                        f.write(json.dumps({
-                            'sessionId': 'debug-session',
-                            'runId': 'run1',
-                            'hypothesisId': 'B',
-                            'location': 'database.py:1267',
-                            'message': 'redis_sensor_read',
-                            'data': {
-                                'sensor_name': sensor_name,
-                                'found': value is not None,
-                                'read_time_seconds': redis_check_time
-                            },
-                            'timestamp': int(time.time() * 1000)
-                        }) + '\n')
-                except: pass
-                # #endregion
+                # Debug logging removed
                 if value is not None:
                     try:
                         return float(value)
@@ -1340,35 +1319,11 @@ class DatabaseManager:
         # Try Redis first for all sensors
         if self._redis_enabled and self._redis_client:
             try:
-                # #region agent log
-                import json
-                import time
-                redis_batch_start = time.time()
-                # #endregion
+                # Debug logging removed
                 # Batch get from Redis
                 keys = [f"sensor:{name}" for name in sensor_names]
                 values = self._redis_client.mget(keys)
-                # #region agent log
-                redis_batch_time = time.time() - redis_batch_start
-                found_count = sum(1 for v in values if v is not None)
-                try:
-                    with open('/home/antoine/.cursor/debug.log', 'a') as f:
-                        f.write(json.dumps({
-                            'sessionId': 'debug-session',
-                            'runId': 'run1',
-                            'hypothesisId': 'B',
-                            'location': 'database.py:1310',
-                            'message': 'redis_batch_read',
-                            'data': {
-                                'sensor_count': len(sensor_names),
-                                'found_count': found_count,
-                                'read_time_seconds': redis_batch_time,
-                                'all_found': found_count == len(sensor_names)
-                            },
-                            'timestamp': int(time.time() * 1000)
-                        }) + '\n')
-                except: pass
-                # #endregion
+                # Debug logging removed
                 
                 for sensor_name, value in zip(sensor_names, values):
                     if value is not None:
@@ -1783,10 +1738,18 @@ class DatabaseManager:
                     vpd_val = vpd if vpd is not None else (existing.get('vpd') if existing else None)
                     ramp_in = ramp_in_duration if ramp_in_duration is not None else (existing.get('ramp_in_duration') if existing else None)
                     
-                    # Insert a new row to preserve history (no overwrite)
+                    # UPSERT: Insert or update existing row (unique constraint on location, cluster, mode)
                     new_row = await conn.fetchrow("""
                         INSERT INTO setpoints (location, cluster, heating_setpoint, cooling_setpoint, humidity, co2, vpd, mode, ramp_in_duration, updated_at)
                         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
+                        ON CONFLICT (location, cluster, mode) DO UPDATE SET
+                            heating_setpoint = COALESCE(EXCLUDED.heating_setpoint, setpoints.heating_setpoint),
+                            cooling_setpoint = COALESCE(EXCLUDED.cooling_setpoint, setpoints.cooling_setpoint),
+                            humidity = COALESCE(EXCLUDED.humidity, setpoints.humidity),
+                            co2 = COALESCE(EXCLUDED.co2, setpoints.co2),
+                            vpd = COALESCE(EXCLUDED.vpd, setpoints.vpd),
+                            ramp_in_duration = COALESCE(EXCLUDED.ramp_in_duration, setpoints.ramp_in_duration),
+                            updated_at = NOW()
                         RETURNING updated_at
                     """, location, cluster, heat, cool, hum, co2_val, vpd_val, db_mode, ramp_in)
                     
@@ -2835,3 +2798,81 @@ class DatabaseManager:
             self._redis_client = None
             self._redis_enabled = False
 
+
+    async def _create_room_modes_tables(self) -> None:
+        """Create room modes tables for the new UI."""
+        pool = await self._get_pool()
+        async with pool.acquire() as conn:
+            # Room modes table (Veg, Flower, Drying, Sleep)
+            await conn.execute("""
+                CREATE TABLE IF NOT EXISTS room_modes (
+                    id SERIAL PRIMARY KEY,
+                    name TEXT NOT NULL UNIQUE,
+                    description TEXT,
+                    photoperiod_hours INTEGER CHECK (photoperiod_hours >= 0 AND photoperiod_hours <= 24),
+                    is_constant BOOLEAN DEFAULT FALSE,
+                    created_at TIMESTAMPTZ DEFAULT NOW()
+                )
+            """)
+            
+            # Insert default modes if not exist
+            await conn.execute("""
+                INSERT INTO room_modes (name, description, photoperiod_hours, is_constant)
+                VALUES 
+                    ('veg', 'Vegetative growth - 18/6 photoperiod', 18, FALSE),
+                    ('flower', 'Flowering - 12/12 photoperiod', 12, FALSE),
+                    ('drying', 'Drying - 24h constant conditions', 0, TRUE),
+                    ('sleep', 'Sleep mode - minimal energy', 0, TRUE)
+                ON CONFLICT (name) DO NOTHING
+            """)
+            
+            # Flower submodes table (Stretch, Bulk, Ripen)
+            await conn.execute("""
+                CREATE TABLE IF NOT EXISTS flower_submodes (
+                    id SERIAL PRIMARY KEY,
+                    name TEXT NOT NULL UNIQUE,
+                    description TEXT,
+                    week_start INTEGER CHECK (week_start >= 1),
+                    week_end INTEGER CHECK (week_end >= 1),
+                    created_at TIMESTAMPTZ DEFAULT NOW()
+                )
+            """)
+            
+            # Insert default flower submodes
+            await conn.execute("""
+                INSERT INTO flower_submodes (name, description, week_start, week_end)
+                VALUES 
+                    ('stretch', 'Stretch phase - weeks 1-3', 1, 3),
+                    ('bulk', 'Bulk phase - weeks 4-6', 4, 6),
+                    ('ripen', 'Ripen phase - weeks 7-9', 7, 9)
+                ON CONFLICT (name) DO NOTHING
+            """)
+            
+            # Room active mode table
+            await conn.execute("""
+                CREATE TABLE IF NOT EXISTS room_active_mode (
+                    id SERIAL PRIMARY KEY,
+                    location TEXT NOT NULL,
+                    cluster TEXT NOT NULL,
+                    mode_id INTEGER REFERENCES room_modes(id),
+                    submode_id INTEGER REFERENCES flower_submodes(id),
+                    activated_at TIMESTAMPTZ DEFAULT NOW(),
+                    UNIQUE(location, cluster)
+                )
+            """)
+            
+            # Light presets per mode
+            await conn.execute("""
+                CREATE TABLE IF NOT EXISTS light_presets (
+                    id SERIAL PRIMARY KEY,
+                    mode_id INTEGER REFERENCES room_modes(id),
+                    submode_id INTEGER REFERENCES flower_submodes(id),
+                    lights_on_hour INTEGER CHECK (lights_on_hour >= 0 AND lights_on_hour < 24),
+                    lights_off_hour INTEGER CHECK (lights_off_hour >= 0 AND lights_off_hour < 24),
+                    intensity_day INTEGER CHECK (intensity_day >= 0 AND intensity_day <= 100),
+                    intensity_night INTEGER CHECK (intensity_night >= 0 AND intensity_night <= 100),
+                    created_at TIMESTAMPTZ DEFAULT NOW()
+                )
+            """)
+            
+            logger.info("Room modes tables created/verified")

@@ -44,27 +44,7 @@ class SensorDataManager:
             current_time - self._cache_timestamp < self._cache_ttl_seconds and
             cache_key in self._sensor_cache)
         
-        # #region agent log
-        import json
-        import time
-        try:
-            with open('/home/antoine/.cursor/debug.log', 'a') as f:
-                f.write(json.dumps({
-                    'sessionId': 'debug-session',
-                    'runId': 'run1',
-                    'hypothesisId': 'C',
-                    'location': 'sensor_data_manager.py:43',
-                    'message': 'sensor_cache_check',
-                    'data': {
-                        'location': location,
-                        'cluster': cluster,
-                        'cache_hit': cache_hit,
-                        'cache_age_seconds': current_time - self._cache_timestamp if self._cache_timestamp else None
-                    },
-                    'timestamp': int(time.time() * 1000)
-                }) + '\n')
-        except: pass
-        # #endregion
+        # Debug logging removed
         
         if cache_hit:
             return self._sensor_cache[cache_key].copy()

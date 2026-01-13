@@ -173,7 +173,7 @@ class DataWriter:
                 stream_data[b'decoded'] = decoded_json.encode()
             
             # Write to Redis Stream with automatic trimming (keep last 100,000 messages)
-            self.redis_client.xadd(self.stream_name, stream_data, maxlen=100000, approximate=True)
+            self.redis_client.xadd(self.stream_name, stream_data, maxlen=1100000, approximate=True)
             return True
         except Exception as e:
             # Don't log error for every message, just occasionally

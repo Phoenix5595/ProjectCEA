@@ -66,6 +66,11 @@ class ControlEngine:
         self.device_processor = DeviceProcessor(self.device_controller, database, dfr0971_manager, scheduler)
         self.setpoint_manager = SetpointManager(database)
         
+        # Clear any stale ramp state on startup - per design, ramps are not restored
+        # If service restarts mid-ramp, we immediately apply final (target) setpoints
+        self.setpoint_manager.ramp_manager.clear_all_ramps()
+        logger.info("Control engine startup: cleared all ramps, applying current period setpoints immediately")
+        
         # Track automation context for logging
         self._automation_context: Dict[Tuple[str, str, str], Dict[str, Any]] = {}
 
@@ -188,98 +193,32 @@ class ControlEngine:
         devices = self._get_device_hierarchy()
         sensor_mapping = self._get_sensor_mapping()
         
-        # #region agent log
-        import json
-        import time
-        location_cluster_count = sum(len(clusters) for clusters in devices.values())
-        try:
-            with open('/home/antoine/.cursor/debug.log', 'a') as f:
-                f.write(json.dumps({
-                    'sessionId': 'debug-session',
-                    'runId': 'run1',
-                    'hypothesisId': 'A',
-                    'location': 'control_engine.py:188',
-                    'message': 'control_loop_start',
-                    'data': {
-                        'location_cluster_count': location_cluster_count,
-                        'locations': list(devices.keys())
-                    },
-                    'timestamp': int(time.time() * 1000)
-                }) + '\n')
-        except: pass
-        # #endregion
+        # Debug logging removed
         
         # Process each location/cluster
         device_processing_start = datetime.now() if self._profiling_enabled else None
 
         for location, clusters in devices.items():
             for cluster, cluster_devices in clusters.items():
-                # #region agent log
-                import json
-                import time
-                lc_start = time.time()
-                # #endregion
+                # Debug logging removed
                 # Log when processing Veg Room to verify control loop is running
                 if location == 'Veg Room':
                     logger.info(f"Control loop processing {location}/{cluster} with {len(cluster_devices)} devices")
 
                 # Get sensor values for this location/cluster (with timing)
                 sensor_start = datetime.now() if self._profiling_enabled else None
-                # #region agent log
-                import json
-                import time
-                sensor_query_start = time.time()
-                # #endregion
+                # Debug logging removed
                 sensor_values = await self.sensor_data_manager.get_sensor_values(location, cluster, sensor_mapping)
-                # #region agent log
-                sensor_query_time = time.time() - sensor_query_start
-                try:
-                    with open('/home/antoine/.cursor/debug.log', 'a') as f:
-                        f.write(json.dumps({
-                            'sessionId': 'debug-session',
-                            'runId': 'run1',
-                            'hypothesisId': 'B',
-                            'location': 'control_engine.py:202',
-                            'message': 'sensor_values_fetched',
-                            'data': {
-                                'location': location,
-                                'cluster': cluster,
-                                'query_time_seconds': sensor_query_time,
-                                'sensor_count': len(sensor_values)
-                            },
-                            'timestamp': int(time.time() * 1000)
-                        }) + '\n')
-                except: pass
-                # #endregion
+                # Debug logging removed
                 if self._profiling_enabled and sensor_start:
                     sensor_time = (datetime.now() - sensor_start).total_seconds() * 1000
                     self._record_performance_stat('sensor_reading_time', sensor_time)
                 
                 # Determine current mode and get setpoints
-                # #region agent log
-                schedule_query_start = time.time()
-                # #endregion
+                # Debug logging removed
                 light_schedule = await self.database.get_light_schedule(location, cluster)
                 climate_schedule = await self.database.get_climate_schedule(location, cluster)
-                # #region agent log
-                schedule_query_time = time.time() - schedule_query_start
-                try:
-                    with open('/home/antoine/.cursor/debug.log', 'a') as f:
-                        f.write(json.dumps({
-                            'sessionId': 'debug-session',
-                            'runId': 'run1',
-                            'hypothesisId': 'B',
-                            'location': 'control_engine.py:208',
-                            'message': 'schedules_fetched',
-                            'data': {
-                                'location': location,
-                                'cluster': cluster,
-                                'query_time_seconds': schedule_query_time
-                            },
-                            'timestamp': int(time.time() * 1000)
-                        }) + '\n')
-                except: pass
-                # #endregion
+                # Debug logging removed
 
                 current_mode = None
                 setpoint_data = None
@@ -300,29 +239,18 @@ class ControlEngine:
                         current_mode, _, _ = mode_result
 
                     # Get setpoint data BEFORE computing effective setpoints
-                    # #region agent log
-                    setpoint_query_start = time.time()
-                    setpoint_query_count = 0
-                    # #endregion
+                    # Debug logging removed
                     setpoint_data = await self.database.get_setpoint(location, cluster, current_mode)
-                    # #region agent log
-                    setpoint_query_count += 1
-                    setpoint_query_time = time.time() - setpoint_query_start
-                    # #endregion
+                    # Debug logging removed
                     if not setpoint_data and current_mode:
                         # Fallback to legacy mode=None if mode-based setpoint not found
                         logger.debug(
                             f"No setpoint found for {location}/{cluster} mode={current_mode}, "
                             f"falling back to legacy mode=None"
                         )
-                        # #region agent log
-                        setpoint_query_start2 = time.time()
-                        # #endregion
+                        # Debug logging removed
                         setpoint_data = await self.database.get_setpoint(location, cluster, None)
-                        # #region agent log
-                        setpoint_query_count += 1
-                        setpoint_query_time += time.time() - setpoint_query_start2
-                        # #endregion
+                        # Debug logging removed
                         if setpoint_data:
                             logger.debug(
                                 f"No setpoint found for {location}/{cluster} mode={current_mode}, "
@@ -337,14 +265,9 @@ class ControlEngine:
                         f"No setpoint found for {location}/{cluster} mode={current_mode}, "
                         f"falling back to legacy mode=None"
                     )
-                    # #region agent log
-                    setpoint_query_start3 = time.time()
-                    # #endregion
+                    # Debug logging removed
                     setpoint_data = await self.database.get_setpoint(location, cluster, None)
-                    # #region agent log
-                    setpoint_query_count += 1
-                    setpoint_query_time += time.time() - setpoint_query_start3
-                    # #endregion
+                    # Debug logging removed
                     if setpoint_data:
                         logger.debug(
                             f"No setpoint found for {location}/{cluster} mode={current_mode}, "
@@ -373,43 +296,16 @@ class ControlEngine:
                         )
                     
                     # Compute effective setpoints (pass previous_mode for change detection)
-                    # #region agent log
-                    setpoint_calc_start = time.time()
-                    # #endregion
+                    # Debug logging removed
                     effective_data = await self.setpoint_manager.compute_effective_setpoints(
                         location, cluster, current_time, current_mode, setpoint_data, sensor_values, previous_mode
                     )
-                    # #region agent log
-                    setpoint_calc_time = time.time() - setpoint_calc_start
-                    # #endregion
+                    # Debug logging removed
                     
                     # Store in context
                     self._effective_setpoints[(location, cluster)] = effective_data
                     
-                    # #region agent log
-                    lc_duration = time.time() - lc_start
-                    try:
-                        with open('/home/antoine/.cursor/debug.log', 'a') as f:
-                            f.write(json.dumps({
-                                'sessionId': 'debug-session',
-                                'runId': 'run1',
-                                'hypothesisId': 'A,B,C',
-                                'location': 'control_engine.py:195',
-                                'message': 'location_cluster_processed',
-                                'data': {
-                                    'location': location,
-                                    'cluster': cluster,
-                                    'total_time_seconds': lc_duration,
-                                    'sensor_query_time': sensor_query_time,
-                                    'schedule_query_time': schedule_query_time,
-                                    'setpoint_query_time': setpoint_query_time,
-                                    'setpoint_query_count': setpoint_query_count,
-                                    'setpoint_calc_time': setpoint_calc_time
-                                },
-                                'timestamp': int(time.time() * 1000)
-                            }) + '\n')
-                    except: pass
-                    # #endregion
+                    # Debug logging removed
                     
                     # Log to database immediately (before device processing)
                     await self.database.log_effective_setpoints(
@@ -754,60 +650,16 @@ class ControlEngine:
                     )
 
     async def restore_ramp_state_from_database(self) -> None:
-        """Restore ramp state on service startup."""
-        # Get devices and restore ramp state from effective_setpoints table
-        devices = self.config.get_devices()
-        current_time = datetime.now()
-
-        for location, clusters in devices.items():
-            for cluster in clusters.keys():
-                # Get latest effective setpoints and nominal setpoints
-                effective_setpoints = await self.database.get_latest_effective_setpoints(location, cluster)
-                if not effective_setpoints:
-                    continue
-
-                # Build ramp data from database
-                ramp_data = {}
-
-                # Check each setpoint type
-                for setpoint_type in ['heating', 'cooling', 'humidity', 'co2', 'vpd']:
-                    effective_key = f'effective_{setpoint_type}_setpoint'
-                    nominal_key = f'nominal_{setpoint_type}_setpoint'
-                    progress_key = f'ramp_progress_{setpoint_type}'
-
-                    effective_value = effective_setpoints.get(effective_key)
-                    nominal_value = effective_setpoints.get(nominal_key)
-                    ramp_progress = effective_setpoints.get(progress_key)
-
-                    # Only restore if there's an active ramp (ramp_progress is not None and < 1.0)
-                    if (effective_value is not None and
-                        nominal_value is not None and
-                        ramp_progress is not None and
-                        0.0 <= ramp_progress < 1.0):
-
-                        # Get setpoint configuration to determine ramp duration
-                        setpoint_config = await self.database.get_setpoint(location, cluster, effective_setpoints.get('mode'))
-                        if not setpoint_config:
-                            continue
-
-                        ramp_in_duration = setpoint_config.get('ramp_in_duration', 0) or 0
-                        if ramp_in_duration <= 0:
-                            continue
-
-                        # Calculate ramp start time based on progress
-                        elapsed_minutes = ramp_progress * ramp_in_duration
-                        start_time = current_time - timedelta(minutes=elapsed_minutes)
-
-                        ramp_data[setpoint_type] = {
-                            'setpoint_type': setpoint_type,
-                            'start_value': effective_value,
-                            'target_value': nominal_value,
-                            'duration_minutes': ramp_in_duration,
-                            'start_time': start_time.isoformat()
-                        }
-
-                # Restore ramp state if any active ramps found
-                if ramp_data:
-                    self.setpoint_manager.restore_ramp_state(ramp_data, current_time)
-                    logger.info(f"Restored {len(ramp_data)} active ramps for {location}/{cluster}")
+        """Handle ramp state on service startup.
+        
+        Per design requirements: On service restart, we do NOT restore ramps.
+        Instead, we cancel any active ramps and immediately apply final setpoints.
+        This ensures predictable behavior and avoids complex state restoration.
+        """
+        # Clear all ramps - per design, service restart = cancel ramps, apply final setpoints
+        self.setpoint_manager.ramp_manager.clear_all_ramps()
+        logger.info(
+            "Service startup: All ramps cancelled. "
+            "Current period setpoints will be applied immediately."
+        )
 
