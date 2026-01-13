@@ -27,7 +27,7 @@ except ImportError as e:
     print(f"Warning: Failed to import shared sensor processing library: {e}", file=sys.stderr)
     try:
         logger.warning(f"Failed to import shared sensor processing library: {e}")
-    except:
+    except Exception:
         pass  # Logger not available
     # Define minimal fallback implementations
     def get_sensor_suffix(location: str, cluster: str) -> str:

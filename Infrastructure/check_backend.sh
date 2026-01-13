@@ -1,4 +1,5 @@
 #!/bin/bash
+set -e
 # Quick script to check if backend is running
 
 echo "Checking if backend is running on port 8000..."

@@ -1,4 +1,5 @@
 #!/bin/bash
+set -e
 # Enable Autostart for All CEA Services
 # This script enables all services to start automatically on boot
 

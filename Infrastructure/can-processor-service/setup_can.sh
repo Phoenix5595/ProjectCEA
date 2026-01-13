@@ -1,4 +1,5 @@
 #!/bin/bash
+set -e
 #
 # CAN Interface Setup Script
 # Initializes can0 interface with proper bitrate

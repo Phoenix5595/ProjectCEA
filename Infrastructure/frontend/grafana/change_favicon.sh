@@ -1,4 +1,5 @@
 #!/bin/bash
+set -e
 # Change Grafana Favicon
 # This script helps you replace the default Grafana favicon with a custom one
 

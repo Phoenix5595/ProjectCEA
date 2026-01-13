@@ -1,4 +1,5 @@
 #!/bin/bash
+set -e
 # Redis Restart Script with AOF Fix
 # This script attempts to fix AOF corruption and restart Redis
 

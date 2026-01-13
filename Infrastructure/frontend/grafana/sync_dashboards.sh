@@ -1,4 +1,5 @@
 #!/bin/bash
+set -e
 # Sync Grafana dashboards back to JSON files
 # Usage: ./sync_dashboards.sh [password]
 

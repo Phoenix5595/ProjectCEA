@@ -1,4 +1,5 @@
 #!/bin/bash
+set -e
 # Restart All CEA Services in Correct Dependency Order
 # This ensures services restart properly without dependency issues
 

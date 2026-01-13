@@ -1,4 +1,5 @@
 #!/bin/bash
+set -e
 # Import CEA Sensors Dashboard to Grafana
 # Usage: ./import_dashboard.sh [grafana_url] [admin_password]
 

@@ -1,4 +1,5 @@
 #!/bin/bash
+set -e
 # Service Error Handler
 # Opens a terminal window with error information when a service fails
 

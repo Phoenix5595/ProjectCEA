@@ -1,4 +1,5 @@
 #!/bin/bash
+set -e
 # Redis AOF Corruption Fix Script
 # This script checks and fixes corrupted AOF files before Redis starts
 
