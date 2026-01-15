@@ -21,6 +21,7 @@ from app.control.device_controller import DeviceController
 from app.control.device_processor import DeviceProcessor
 from app.control.setpoint_manager import SetpointManager, RampManager
 from app.control.performance_monitor import get_performance_monitor
+from app.control.vpd_cascade_controller import VPDCascadeController, EnvironmentState, TempConstraints
 
 logger = get_logger(__name__)
 
@@ -65,6 +66,12 @@ class ControlEngine:
         # Initialize new extracted components
         self.device_processor = DeviceProcessor(self.device_controller, database, dfr0971_manager, scheduler)
         self.setpoint_manager = SetpointManager(database)
+        
+        # VPD Cascade Controller for intelligent actuator selection
+        self.vpd_cascade_controller = VPDCascadeController(
+            vpd_deadband=0.05,  # 0.05 kPa deadband
+            kp=20.0, ki=0.5, kd=2.0
+        )
         
         # Clear any stale ramp state on startup - per design, ramps are not restored
         # If service restarts mid-ramp, we immediately apply final (target) setpoints

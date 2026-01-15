@@ -19,6 +19,7 @@ Public API:
 from app.control.control_engine import ControlEngine
 from app.control.pid_controller_manager import PIDControllerManager
 from app.control.vpd_controller import VPDController
+from app.control.vpd_cascade_controller import VPDCascadeController
 from app.control.setpoint_manager import SetpointManager
 from app.control.device_controller import DeviceController
 
@@ -28,4 +29,5 @@ __all__ = [
     'VPDController', 
     'SetpointManager',
     'DeviceController',
+    'VPDCascadeController',
 ]
