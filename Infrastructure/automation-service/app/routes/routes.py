@@ -2,7 +2,7 @@
 from shared.logging import get_logger
 from fastapi import FastAPI
 
-from app.routes import schedules, lights, setpoints, devices, status, alarms, pid, mode, rules, failsafe, websocket, redis_state
+from app.routes import schedules, lights, setpoints, devices, status, alarms, pid, mode, rules, failsafe, websocket, redis_state, room_modes
 
 logger = get_logger(__name__)
 
