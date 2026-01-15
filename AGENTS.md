@@ -53,7 +53,7 @@ sudo /opt/projectcea/rollback.sh [release_name]
 6. Made assumptions instead of reading documentation first
 
 **Before ANY change:**
-1. READ .sisyphus/PROJECT_CONTEXT.md and requirements only
+1. READ .sisyphus/PROJECT_CONTEXT.md, USER_PREFERENCES.md, and requirements
 2. READ AGENTS.md
 3. Check git history to understand what exists
 4. Understand the deployment process (deploy.sh, rollback.sh)
