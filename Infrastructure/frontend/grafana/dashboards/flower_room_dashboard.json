@@ -347,8 +347,8 @@
               {
                 "id": "color",
                 "value": {
-                  "fixedColor": "blue",
-                  "mode": "fixed"
+                  "mode": "fixed",
+                  "fixedColor": "#FADE2A"
                 }
               },
               {
@@ -398,7 +398,7 @@
               },
               {
                 "id": "custom.fillOpacity",
-                "value": 15
+                "value": 5
               },
               {
                 "id": "custom.gradientMode",
@@ -414,15 +414,7 @@
               },
               {
                 "id": "custom.axisPlacement",
-                "value": "right"
-              },
-              {
-                "id": "custom.axisSoftMax",
-                "value": 100
-              },
-              {
-                "id": "custom.axisSoftMin",
-                "value": 0
+                "value": "hidden"
               },
               {
                 "id": "unit",
@@ -469,7 +461,7 @@
               },
               {
                 "id": "custom.fillOpacity",
-                "value": 10
+                "value": 5
               },
               {
                 "id": "custom.gradientMode",
@@ -485,15 +477,7 @@
               },
               {
                 "id": "custom.axisPlacement",
-                "value": "right"
-              },
-              {
-                "id": "custom.axisSoftMax",
-                "value": 100
-              },
-              {
-                "id": "custom.axisSoftMin",
-                "value": 0
+                "value": "hidden"
               },
               {
                 "id": "unit",
@@ -547,7 +531,14 @@
               },
               {
                 "id": "custom.fillOpacity",
-                "value": 10
+                "value": 0
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#b5121b"
+                }
               }
             ]
           },
@@ -560,8 +551,8 @@
               {
                 "id": "color",
                 "value": {
-                  "fixedColor": "red",
-                  "mode": "fixed"
+                  "mode": "fixed",
+                  "fixedColor": "#3274d9"
                 }
               },
               {
@@ -584,7 +575,7 @@
               },
               {
                 "id": "custom.fillOpacity",
-                "value": 10
+                "value": 0
               }
             ]
           }

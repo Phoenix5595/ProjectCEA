@@ -42,6 +42,15 @@ class RampState:
 class RampManager:
     """Manages ramp transitions for setpoint changes."""
 
+    # Setpoint-type aware skip thresholds - ramps are skipped if delta is below these
+    SKIP_THRESHOLDS: Dict[str, float] = {
+        'heating': 0.1,   # °C - temperature precision
+        'cooling': 0.1,   # °C - temperature precision
+        'vpd': 0.01,      # kPa - VPD precision (2 decimal places)
+        'co2': 10.0,      # ppm - CO2 precision
+        'humidity': 1.0,  # % - humidity precision
+    }
+
     def __init__(self):
         """Initialize ramp manager."""
         # Key: (location, cluster, setpoint_type) - ensures room isolation
@@ -62,11 +71,20 @@ class RampManager:
             duration_minutes: Duration of ramp in minutes
             current_time: Current timestamp
         """
-        if duration_minutes <= 0 or abs(target_value - start_value) < 0.1:
-            # No ramp needed for instant changes or very small changes
+        ramp_key = self._make_key(location, cluster, setpoint_type)
+        threshold = self.SKIP_THRESHOLDS.get(setpoint_type, 0.1)
+        delta = abs(target_value - start_value)
+
+        if duration_minutes <= 0 or delta < threshold:
+            # No ramp needed - but MUST cancel any existing ramp to prevent stale data
+            if ramp_key in self.active_ramps:
+                del self.active_ramps[ramp_key]
+                logger.debug(
+                    f"RAMP SKIPPED: {location}/{cluster} {setpoint_type} "
+                    f"delta={delta:.3f} < threshold={threshold}, cleared stale ramp"
+                )
             return
 
-        ramp_key = self._make_key(location, cluster, setpoint_type)
         self.active_ramps[ramp_key] = RampState(
             setpoint_type, start_value, target_value, duration_minutes, current_time
         )
@@ -182,6 +200,18 @@ class RampManager:
             self.active_ramps.clear()
             logger.info(f"RAMPS CLEARED: {ramp_types}")
 
+    def clear_ramps_for_room(self, location: str, cluster: str) -> None:
+        """Clear all active ramps for a specific room - used on mode change."""
+        setpoint_types = ['heating', 'cooling', 'humidity', 'co2', 'vpd']
+        cleared = []
+        for setpoint_type in setpoint_types:
+            ramp_key = self._make_key(location, cluster, setpoint_type)
+            if ramp_key in self.active_ramps:
+                del self.active_ramps[ramp_key]
+                cleared.append(setpoint_type)
+        if cleared:
+            logger.debug(f"RAMPS CLEARED for {location}/{cluster}: {cleared}")
+
 
 
 class SetpointManager:
@@ -233,11 +263,18 @@ class SetpointManager:
             # Check for mode transitions that require ramping
             mode_changed = self._detect_mode_change(current_mode, previous_mode)
 
-            if mode_changed and ramp_in_duration > 0:
-                await self._handle_mode_transition_ramp(
-                    location, cluster, current_mode, nominal_values,
-                    sensor_values, ramp_in_duration, current_time, result
-                )
+            if mode_changed:
+                # CRITICAL: Clear ALL stale ramps when mode changes to prevent sawtoothing
+                self.ramp_manager.clear_ramps_for_room(location, cluster)
+                
+                if ramp_in_duration > 0:
+                    await self._handle_mode_transition_ramp(
+                        location, cluster, current_mode, nominal_values,
+                        sensor_values, ramp_in_duration, current_time, result,
+                        previous_mode
+                    )
+                else:
+                    self._apply_nominal_values(result, nominal_values)
             elif self.ramp_manager.has_active_ramps(location, cluster):
                 # Continue applying active ramps (no mode change, but ramps still in progress)
                 self._apply_ramp_values(location, cluster, result, nominal_values, current_time)
@@ -286,13 +323,16 @@ class SetpointManager:
         result['nominal_vpd_setpoint'] = nominal_values['vpd']
 
     def _detect_mode_change(self, current_mode: Optional[str], previous_mode: Optional[str]) -> bool:
-        """Detect if a mode change occurred."""
+        """Detect if a mode change occurred. Returns False on startup."""
+        if previous_mode is None:
+            return False
         return current_mode != previous_mode
 
     async def _handle_mode_transition_ramp(
         self, location: str, cluster: str, current_mode: Optional[str],
         nominal_values: Dict[str, Optional[float]], sensor_values: Optional[Dict[str, Optional[float]]],
-        ramp_in_duration: float, current_time: datetime, result: Dict[str, Any]
+        ramp_in_duration: float, current_time: datetime, result: Dict[str, Any],
+        previous_mode: Optional[str] = None
     ) -> None:
         """Handle ramp transitions when mode changes."""
         if current_mode is None:
@@ -302,9 +342,10 @@ class SetpointManager:
             f"RAMP DEBUG: {location}/{cluster} - mode_changed=True, current_mode={current_mode}"
         )
 
-        # Determine ramp start values based on mode
+        # Determine ramp start values based on previous mode
         ramp_starts = await self._calculate_ramp_start_values(
-            location, cluster, current_mode, nominal_values, sensor_values
+            location, cluster, current_mode, nominal_values, sensor_values,
+            previous_mode
         )
 
         # Start ramps for each setpoint type
@@ -320,6 +361,15 @@ class SetpointManager:
                     ramp_in_duration, current_time
                 )
                 ramps_started.append(setpoint_type)
+            elif nominal_value is None:
+                logger.debug(f"RAMP SKIP: {location}/{cluster} {setpoint_type} - nominal_value is None")
+            elif start_value is None:
+                logger.debug(f"RAMP SKIP: {location}/{cluster} {setpoint_type} - start_value is None")
+
+        if ramps_started:
+            logger.info(f"RAMPS INITIATED: {location}/{cluster} {ramps_started} over {ramp_in_duration}min")
+        else:
+            logger.warning(f"NO RAMPS STARTED: {location}/{cluster} - check setpoint configuration")
 
         # Apply current ramp values
         self._apply_ramp_values(location, cluster, result, nominal_values, current_time)
@@ -327,61 +377,79 @@ class SetpointManager:
     async def _calculate_ramp_start_values(
         self, location: str, cluster: str, current_mode: str,
         nominal_values: Dict[str, Optional[float]],
-        sensor_values: Optional[Dict[str, Optional[float]]]
+        sensor_values: Optional[Dict[str, Optional[float]]],
+        previous_mode: Optional[str] = None
     ) -> Dict[str, Optional[float]]:
-        """Calculate starting values for ramps based on current mode."""
-        ramp_starts = {}
+        """Calculate starting values for ramps based on previous mode.
+        
+        Uses the previous mode's setpoints as the ramp starting point.
+        Falls back to inferred previous mode if previous_mode is None.
+        """
+        ramp_starts: Dict[str, Optional[float]] = {}
 
-        if current_mode == 'PRE_DAY':
-            # Ramp from NIGHT setpoints to PRE_DAY setpoints
-            logger.debug(f"RAMP DEBUG: Entering PRE_DAY mode, fetching NIGHT setpoints as start")
-            # Fetch NIGHT setpoints from database to use as ramp start values
-            night_setpoint_data = await self.database.get_setpoint(location, cluster, 'NIGHT')
-            if night_setpoint_data:
-                ramp_starts = {
-                    'heating': night_setpoint_data.get('heating_setpoint'),
-                    'cooling': night_setpoint_data.get('cooling_setpoint'),
-                    'humidity': night_setpoint_data.get('humidity'),
-                    'co2': night_setpoint_data.get('co2'),
-                    'vpd': night_setpoint_data.get('vpd')
-                }
-                logger.debug(f"RAMP DEBUG: Using NIGHT setpoints as ramp start: {ramp_starts}")
+        def _extract_setpoints(setpoint_data: Dict[str, Any]) -> Dict[str, Optional[float]]:
+            """Helper to extract setpoint values from database record."""
+            return {
+                'heating': setpoint_data.get('heating_setpoint'),
+                'cooling': setpoint_data.get('cooling_setpoint'),
+                'humidity': setpoint_data.get('humidity'),
+                'co2': setpoint_data.get('co2'),
+                'vpd': setpoint_data.get('vpd')
+            }
+
+        # If we know the previous mode, use its setpoints as ramp start
+        if previous_mode:
+            logger.debug(f"RAMP: {previous_mode} -> {current_mode}, fetching {previous_mode} setpoints as start")
+            prev_setpoint_data = await self.database.get_setpoint(location, cluster, previous_mode)
+            if prev_setpoint_data:
+                ramp_starts = _extract_setpoints(prev_setpoint_data)
+                logger.debug(f"RAMP: Using {previous_mode} setpoints as ramp start: {ramp_starts}")
+                return ramp_starts
             else:
-                # Fallback to nominal values if NIGHT setpoints not found
-                logger.warning(f"RAMP DEBUG: NIGHT setpoints not found for {location}/{cluster}, using nominal values as fallback")
-                ramp_starts = {
-                    'heating': nominal_values['heating'],
-                    'cooling': nominal_values['cooling'],
-                    'humidity': nominal_values['humidity'],
-                    'co2': nominal_values['co2'],
-                    'vpd': nominal_values['vpd']
-                }
+                logger.warning(f"RAMP: {previous_mode} setpoints not found for {location}/{cluster}")
 
-        elif current_mode == 'PRE_NIGHT':
-            # Ramp from DAY setpoints to PRE_NIGHT setpoints
-            logger.debug(f"RAMP DEBUG: Entering PRE_NIGHT mode, fetching DAY setpoints as start")
-            # Fetch DAY setpoints from database to use as ramp start values
-            day_setpoint_data = await self.database.get_setpoint(location, cluster, 'DAY')
-            if day_setpoint_data:
-                ramp_starts = {
-                    'heating': day_setpoint_data.get('heating_setpoint'),
-                    'cooling': day_setpoint_data.get('cooling_setpoint'),
-                    'humidity': day_setpoint_data.get('humidity'),
-                    'co2': day_setpoint_data.get('co2'),
-                    'vpd': day_setpoint_data.get('vpd')
-                }
-                logger.debug(f"RAMP DEBUG: Using DAY setpoints as ramp start: {ramp_starts}")
-            else:
-                # Fallback to current sensor values or nominal values if DAY setpoints not found
-                logger.warning(f"RAMP DEBUG: DAY setpoints not found for {location}/{cluster}, using sensor/nominal values as fallback")
-                ramp_starts = {
-                    'heating': sensor_values.get('temperature') if sensor_values else nominal_values['heating'],
-                    'cooling': sensor_values.get('temperature') if sensor_values else nominal_values['cooling'],
-                    'humidity': sensor_values.get('humidity') if sensor_values else nominal_values['humidity'],
-                    'co2': sensor_values.get('co2') if sensor_values else nominal_values['co2'],
-                    'vpd': sensor_values.get('vpd') if sensor_values else nominal_values['vpd']
-                }
+        # Fallback: Infer previous mode from current mode (backward compatibility / service startup)
+        # Maps current_mode -> (primary_previous, secondary_fallback)
+        mode_fallbacks: Dict[str, Tuple[str, Optional[str]]] = {
+            'PRE_DAY': ('NIGHT', None),
+            'DAY': ('PRE_DAY', 'NIGHT'),      # PRE_DAY if exists, else NIGHT
+            'PRE_NIGHT': ('DAY', None),
+            'NIGHT': ('PRE_NIGHT', 'DAY')     # PRE_NIGHT if exists, else DAY
+        }
 
+        fallbacks = mode_fallbacks.get(current_mode)
+        if not fallbacks:
+            logger.warning(f"RAMP: Unknown mode {current_mode}, cannot determine ramp start")
+            return ramp_starts
+
+        primary, secondary = fallbacks
+        logger.debug(f"RAMP: Inferring previous mode for {current_mode}, trying {primary}")
+        
+        # Try primary fallback
+        primary_data = await self.database.get_setpoint(location, cluster, primary)
+        if primary_data:
+            ramp_starts = _extract_setpoints(primary_data)
+            logger.debug(f"RAMP: Using {primary} setpoints as ramp start: {ramp_starts}")
+            return ramp_starts
+
+        # Try secondary fallback if primary not found
+        if secondary:
+            logger.debug(f"RAMP: {primary} not found, falling back to {secondary}")
+            secondary_data = await self.database.get_setpoint(location, cluster, secondary)
+            if secondary_data:
+                ramp_starts = _extract_setpoints(secondary_data)
+                logger.debug(f"RAMP: Using {secondary} setpoints as ramp start: {ramp_starts}")
+                return ramp_starts
+
+        # Ultimate fallback: use nominal values (target = start, so no actual ramp)
+        logger.warning(f"RAMP: No previous mode setpoints found for {location}/{cluster}, using nominal values")
+        ramp_starts = {
+            'heating': nominal_values['heating'],
+            'cooling': nominal_values['cooling'],
+            'humidity': nominal_values['humidity'],
+            'co2': nominal_values['co2'],
+            'vpd': nominal_values['vpd']
+        }
         return ramp_starts
 
     def _apply_ramp_values(self, location: str, cluster: str, result: Dict[str, Any],
