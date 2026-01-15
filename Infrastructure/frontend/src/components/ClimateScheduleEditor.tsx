@@ -353,6 +353,40 @@ function SetpointModeEditor({ mode: _mode, setpoint, currentSetpoint, onChange, 
           </div>
         )}
       </div>
+
+      {/* Leaf Temperature Delta */}
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+            Leaf Delta Day (°C)
+          </label>
+          <input
+            type="number"
+            step="0.1"
+            min="-5"
+            max="5"
+            value={setpoint.leaf_delta_day ?? 0}
+            onChange={(e) => handleChange('leaf_delta_day', parseFloat(e.target.value) || 0)}
+            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
+          />
+          <div className="mt-1 text-xs text-gray-500">Leaf temp offset from air (day)</div>
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+            Leaf Delta Night (°C)
+          </label>
+          <input
+            type="number"
+            step="0.1"
+            min="-5"
+            max="5"
+            value={setpoint.leaf_delta_night ?? 0}
+            onChange={(e) => handleChange('leaf_delta_night', parseFloat(e.target.value) || 0)}
+            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
+          />
+          <div className="mt-1 text-xs text-gray-500">Leaf temp offset from air (night)</div>
+        </div>
+      </div>
     </div>
   )
 }

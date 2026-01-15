@@ -301,7 +301,7 @@ class DeviceController:
 
         try:
             # Convert 0.0-1.0 to 0-100% intensity
-            intensity_percent = int(intensity * 100)
+            intensity_percent = round(intensity * 100)
             self.dfr0971_manager.set_intensity(board_id, channel, intensity_percent)
 
             logger.info(

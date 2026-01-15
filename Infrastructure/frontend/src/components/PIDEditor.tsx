@@ -159,6 +159,25 @@ export default function PIDEditor() {
         >
           {loading ? 'Saving...' : 'Save PID Parameters'}
         </button>
+        <button
+          onClick={async () => {
+            if (window.confirm('Reset PID parameters to config defaults?')) {
+              setLoading(true);
+              try {
+                const reset = await apiClient.resetPIDParameters(selectedDeviceType);
+                setFormData({ kp: reset.kp, ki: reset.ki, kd: reset.kd });
+                setCurrentParams(reset);
+              } catch (e) {
+                console.error('Reset failed:', e);
+              }
+              setLoading(false);
+            }
+          }}
+          disabled={loading}
+          className="ml-3 bg-gray-500 dark:bg-gray-600 text-white px-4 py-2 rounded-md hover:bg-gray-600 dark:hover:bg-gray-700 disabled:opacity-50"
+        >
+          Reset to Defaults
+        </button>
       </div>
     </div>
   )
