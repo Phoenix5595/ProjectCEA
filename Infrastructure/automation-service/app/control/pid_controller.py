@@ -32,6 +32,8 @@ class PIDController:
         self.ki = ki
         self.kd = kd
         self.pwm_period = pwm_period
+        self.deadband = 0.5  # Deadband for temperature (0.5C)
+        self.humidity_deadband = 2.0  # Deadband for humidity (2%)
         self.database = database
         self.device_type = device_type
         self._last_reload_time: Optional[datetime] = None
@@ -62,6 +64,10 @@ class PIDController:
             PID output (0-100%)
         """
         error = setpoint - current_value
+        
+        # Apply deadband - zero error if within deadband
+        if abs(error) < self.deadband:
+            error = 0.0
         
         # Proportional term
         p_term = self.kp * error

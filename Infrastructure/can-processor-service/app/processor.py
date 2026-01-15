@@ -24,7 +24,7 @@ try:
     logger.info("Successfully imported shared sensor processing library")
 except ImportError as e:
     # Use print since logger might not be available if shared import failed
-    print(f"Warning: Failed to import shared sensor processing library: {e}", file=sys.stderr)
+    logger.warning(f" Failed to import shared sensor processing library: {e}", file=sys.stderr)
     try:
         logger.warning(f"Failed to import shared sensor processing library: {e}")
     except Exception:

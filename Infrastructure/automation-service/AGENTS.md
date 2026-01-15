@@ -102,3 +102,243 @@ sudo systemctl restart automation-service
 - Redis GET: <1ms latency
 - PostgreSQL query: 10-100ms latency
 - Redis is the **source of truth** for current values
+
+---
+
+## FUTURE: MULTI-CLUSTER SUPPORT
+
+### Cluster Naming Convention
+
+
+
+### Sensor Key Naming
+
+
+
+### Control Isolation
+
+Each cluster should be independently controllable:
+- Separate PID instances per cluster
+- Separate setpoints per cluster (if needed)
+- Failover: If one cluster's sensors fail, use backup chain
+
+### Database Schema Considerations
+
+C:\Windows\System32\main.cpl
+
+---
+
+## LEAF TEMPERATURE INPUT METHODS
+
+### Current: Manual Delta Entry
+- User measures with handheld IR laser
+- Enters delta (typically -1°C to -3°C vs air temp)
+- Stored in database per room
+
+### Future: IR Camera Heatmap
+- Thermal camera captures leaf canopy
+- ML model extracts average leaf temperature
+- Real-time updates to VPD controller
+
+### Fallback Chain
+
+
+---
+
+*Last updated: 2026-01-13 - Multi-cluster and leaf temp documentation*
+
+
+---
+
+## FUTURE: MULTI-CLUSTER SUPPORT
+
+### Cluster Naming Convention
+
+Location examples: Flower Room, Veg Room, Lab, Water Management
+Cluster examples: main, secondary, backup
+
+Full examples:
+- Flower Room / main (current front sensors)
+- Flower Room / secondary (future back sensors)
+- Veg Room / main (only cluster needed)
+- Lab / main (TBD configuration)
+
+### Sensor Key Naming
+
+Format: {sensor_type}_{location_suffix}_{cluster_suffix}
+
+Examples:
+- dry_bulb_f_main: Flower Room, main cluster, dry bulb
+- dry_bulb_f_sec: Flower Room, secondary cluster
+- wet_bulb_v_main: Veg Room, main cluster, wet bulb
+- co2_f_main: Flower Room, main cluster, CO2
+- water_level_wm_main: Water Management, main cluster
+
+### Control Isolation
+
+Each cluster should be independently controllable:
+- Separate PID instances per cluster
+- Separate setpoints per cluster if needed
+- Failover: If one cluster sensors fail, use backup chain
+
+### Database Schema Considerations
+
+Current: location + cluster columns exist
+Future: Ensure all queries filter by BOTH location AND cluster
+Never assume one cluster per room
+
+Good query pattern:
+  SELECT * FROM measurement WHERE location = X AND cluster = Y
+
+Bad query pattern (will break with multi-cluster):
+  SELECT * FROM measurement WHERE location = X
+
+---
+
+## LEAF TEMPERATURE INPUT METHODS
+
+### Current: Manual Delta Entry
+- User measures with handheld IR laser
+- Enters delta (typically -1C to -3C vs air temp)
+- Stored in database per room
+
+### Future: IR Camera Heatmap
+- Thermal camera captures leaf canopy
+- ML model extracts average leaf temperature
+- Real-time updates to VPD controller
+
+### Fallback Chain
+1. IR Camera (best accuracy)
+2. Manual Delta (user-measured)
+3. Calculated Offset (-2C default)
+
+---
+
+## VPD CASCADE CONTROL
+
+VPD is the MASTER controller for humidity-related automation.
+RH is monitored as SAFETY backup for heating failure scenarios.
+
+### Why VPD as Master
+- Plants respond to VPD, not raw humidity
+- Automatically adapts to temperature changes
+- Reduces equipment cycling
+- Industry best practice for CEA
+
+### Safety Logic for Heating Failure
+Problem: If heater fails, temp drops, RH spikes, VPD drops
+Bad response: Exhaust fan tries to lower RH, makes temp drop worse
+
+Safety rule implemented:
+- If heating is active AND temp is below setpoint by 2C+
+- System enters safe mode
+- Exhaust is inhibited to prevent making heating failure worse
+
+---
+
+*Last updated: 2026-01-13 - Multi-cluster and VPD documentation*
+
+
+---
+
+## SELF-TUNING PID IMPLEMENTATION
+
+### Algorithm: Relay Feedback Auto-Tuning
+
+The system will use relay feedback method to identify optimal PID parameters:
+
+1. Apply relay (on-off) control around setpoint
+2. Measure resulting oscillation period (Tu) and amplitude (a)
+3. Calculate ultimate gain: Ku = 4d / (pi * a) where d = relay amplitude
+4. Apply Ziegler-Nichols or SIMC tuning rules
+5. Continuously refine based on observed performance
+
+### Data Logging for Neural-PID
+
+Every control action logs:
+- Timestamp
+- Setpoint
+- Process variable (sensor reading)
+- Error (setpoint - PV)
+- PID output (0-100%)
+- Actual device state
+- Current Kp, Ki, Kd values
+- Settling time, overshoot, steady-state error
+
+This data feeds future Neural-PID training.
+
+### Deadband and Anti-Windup
+
+- Deadband: 0.5C for temperature, 2% for humidity
+- Anti-windup: Clamp integral term when output saturated
+- Derivative filter: Low-pass to reduce noise sensitivity
+
+---
+
+## LEAF TEMPERATURE DELTA SYSTEM
+
+### Database Schema Addition
+
+
+
+### Calculation Logic
+
+
+
+### Frontend UI
+
+Add to room settings page:
+- "Leaf Temperature Offset (Day)" input with default -1.5C
+- "Leaf Temperature Offset (Night)" input with default -0.5C
+- "Last measured" timestamp display
+- Help text explaining measurement procedure
+
+---
+
+*Implementation details for self-tuning PID and leaf temperature*
+
+## OPTIMIZATION WORK COMPLETED (Jan 2026)
+
+### Phase 1: Critical Reliability
+- **Bug Fix**: Fixed  signature mismatch in device_controller.py
+  - Was passing 
+  - Now passes 
+- **CAN Processor**: Implemented async batching for DB writes
+  - 100ms max delay, 50 message threshold
+  - 10,000 message queue capacity
+  - Redis writes remain instant (non-negotiable for control loop)
+- **Service Hardening**:
+  - Created dedicated `cea` system user
+  - Added systemd watchdog (30s timeout)
+  - Memory limits: automation-service 256MB, can-processor 128MB
+  - Security: NoNewPrivileges, ProtectSystem=strict, PrivateTmp
+
+### Phase 2: Database Optimization
+- **Hypertables**: measurement, effective_setpoints, automation_state
+- **Compression**: Enabled on effective_setpoints (segmentby: location, cluster)
+- **Retention**: 2-year retention for AI training data
+
+### Phase 3: VPD Cascade Controller
+- New `vpd_controller.py` module created
+- Features:
+  - VPD calculation from air temp, humidity, leaf temp delta
+  - PID control for VPD targeting
+  - Growth stage presets (propagation, vegetative, flowering)
+  - Cascade control: VPD → humidity setpoint adjustment
+
+### Phase 4: Modular Architecture
+- Clean module interfaces in `app/control/__init__.py`
+- Public API exports: ControlEngine, PIDControllerManager, VPDController, SetpointManager, DeviceController
+
+## VPD CONTROLLER USAGE
+
+```python
+from app.control import VPDController
+
+vpd = VPDController(leaf_temp_delta=-2.0)
+state = vpd.calculate_vpd(air_temp_c=25.0, humidity_pct=60.0)
+print(f"VPD: {state.vpd_kpa:.2f} kPa")
+
+# Get target humidity for desired VPD
+target_rh = vpd.calculate_target_humidity(target_vpd=1.0, air_temp_c=25.0)
+```

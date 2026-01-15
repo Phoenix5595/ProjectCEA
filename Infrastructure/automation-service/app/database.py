@@ -132,7 +132,7 @@ class DatabaseManager:
                     insert_query = """
 
                             INSERT INTO effective_setpoints (
-                                timestamp, location, cluster, device_name,
+                                timestamp, location, cluster, device_name, mode,
                                 effective_heating_setpoint, effective_cooling_setpoint, effective_humidity_setpoint,
                                 effective_co2_setpoint, effective_vpd_setpoint,
                                 nominal_heating_setpoint, nominal_cooling_setpoint, nominal_humidity_setpoint,
@@ -140,11 +140,12 @@ class DatabaseManager:
                                 ramp_progress_heating, ramp_progress_cooling, ramp_progress_humidity,
                                 ramp_progress_co2, ramp_progress_vpd,
                                 effective_light_intensity, nominal_light_intensity, ramp_progress_light
-                            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
+                            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
                         """.strip()
                     await conn.executemany(insert_query, [
                         (
                             record['timestamp'], record['location'], record['cluster'], record['device_name'],
+                            record.get('mode'),
                             record['effective_heating_setpoint'], record['effective_cooling_setpoint'], record['effective_humidity_setpoint'],
                             record['effective_co2_setpoint'], record['effective_vpd_setpoint'],
                             record['nominal_heating_setpoint'], record['nominal_cooling_setpoint'], record['nominal_humidity_setpoint'],

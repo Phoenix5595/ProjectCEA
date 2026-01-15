@@ -1,19 +1,31 @@
-"""Control logic package."""
-from shared.logging import get_logger
+"""Control Module - Climate and Device Control.
 
-# Export the main control components
-from .control_engine import ControlEngine
-from .sensor_data_manager import SensorDataManager
-from .setpoint_manager import SetpointManager, RampManager
-from .pid_controller_manager import PIDControllerManager
-from .device_controller import DeviceController
+This module provides:
+- PID controllers for temperature, humidity, CO2
+- VPD cascade controller with leaf temperature input
+- Device control (heaters, humidifiers, fans, lights)
+- Setpoint management with ramping
+- Control engine orchestration
+
+Public API:
+    from app.control import (
+        ControlEngine,
+        PIDControllerManager, 
+        VPDController,
+        SetpointManager,
+        DeviceController,
+    )
+"""
+from app.control.control_engine import ControlEngine
+from app.control.pid_controller_manager import PIDControllerManager
+from app.control.vpd_controller import VPDController
+from app.control.setpoint_manager import SetpointManager
+from app.control.device_controller import DeviceController
 
 __all__ = [
     'ControlEngine',
-    'SensorDataManager',
-    'SetpointManager',
-    'RampManager',
     'PIDControllerManager',
-    'DeviceController'
+    'VPDController', 
+    'SetpointManager',
+    'DeviceController',
 ]
-

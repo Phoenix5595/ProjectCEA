@@ -44,9 +44,14 @@ class RampManager:
 
     def __init__(self):
         """Initialize ramp manager."""
-        self.active_ramps: Dict[str, RampState] = {}
+        # Key: (location, cluster, setpoint_type) - ensures room isolation
+        self.active_ramps: Dict[Tuple[str, str, str], RampState] = {}
 
-    def start_ramp(self, setpoint_type: str, start_value: float, target_value: float,
+    def _make_key(self, location: str, cluster: str, setpoint_type: str) -> Tuple[str, str, str]:
+        """Create composite key for room-isolated ramp storage."""
+        return (location, cluster, setpoint_type)
+
+    def start_ramp(self, location: str, cluster: str, setpoint_type: str, start_value: float, target_value: float,
                    duration_minutes: float, current_time: datetime) -> None:
         """Start a new ramp transition.
 
@@ -61,17 +66,17 @@ class RampManager:
             # No ramp needed for instant changes or very small changes
             return
 
-        ramp_key = setpoint_type
+        ramp_key = self._make_key(location, cluster, setpoint_type)
         self.active_ramps[ramp_key] = RampState(
             setpoint_type, start_value, target_value, duration_minutes, current_time
         )
 
         logger.info(
-            f"RAMP START: {setpoint_type} from {start_value} to {target_value} "
+            f"RAMP START: {location}/{cluster} {setpoint_type} from {start_value} to {target_value} "
             f"over {duration_minutes} minutes"
         )
 
-    def get_ramp_value(self, setpoint_type: str, nominal_value: float,
+    def get_ramp_value(self, location: str, cluster: str, setpoint_type: str, nominal_value: float,
                        current_time: datetime) -> Tuple[float, Optional[float]]:
         """Get the current ramp value and progress for a setpoint type.
 
@@ -83,7 +88,7 @@ class RampManager:
         Returns:
             Tuple of (effective_value, progress_ratio)
         """
-        ramp_key = setpoint_type
+        ramp_key = self._make_key(location, cluster, setpoint_type)
         ramp = self.active_ramps.get(ramp_key)
 
         if ramp and not ramp.is_complete(current_time):
@@ -94,16 +99,16 @@ class RampManager:
         elif ramp and ramp.is_complete(current_time):
             # Ramp completed, clean it up
             del self.active_ramps[ramp_key]
-            logger.debug(f"RAMP COMPLETE: {setpoint_type} reached {nominal_value}")
+            logger.debug(f"RAMP COMPLETE: {location}/{cluster} {setpoint_type} reached {nominal_value}")
 
         return nominal_value, None
 
-    def cancel_ramp(self, setpoint_type: str) -> None:
-        """Cancel an active ramp."""
-        ramp_key = setpoint_type
+    def cancel_ramp(self, location: str, cluster: str, setpoint_type: str) -> None:
+        """Cancel an active ramp for a specific room."""
+        ramp_key = self._make_key(location, cluster, setpoint_type)
         if ramp_key in self.active_ramps:
             del self.active_ramps[ramp_key]
-            logger.info(f"RAMP CANCELLED: {setpoint_type}")
+            logger.info(f"RAMP CANCELLED: {location}/{cluster} {setpoint_type}")
 
     def get_active_ramps(self) -> Dict[str, Dict[str, Any]]:
         """Get information about all active ramps."""
@@ -119,11 +124,28 @@ class RampManager:
             for ramp_key, ramp in self.active_ramps.items()
         }
 
-    def has_active_ramps(self) -> bool:
-        """Check if any ramps are currently active."""
-        return len(self.active_ramps) > 0
+    def has_active_ramps(self, location: Optional[str] = None, cluster: Optional[str] = None) -> bool:
+        """Check if any ramps are currently active, optionally filtered by room.
+        
+        Args:
+            location: Optional location filter
+            cluster: Optional cluster filter
+            
+        Returns:
+            True if active ramps exist (matching filter if provided)
+        """
+        if location is None and cluster is None:
+            return len(self.active_ramps) > 0
+        
+        for ramp_key in self.active_ramps:
+            if location is not None and ramp_key[0] != location:
+                continue
+            if cluster is not None and ramp_key[1] != cluster:
+                continue
+            return True
+        return False
 
-    def update_ramp_target(self, setpoint_type: str, new_target: float,
+    def update_ramp_target(self, location: str, cluster: str, setpoint_type: str, new_target: float,
                            current_time: datetime) -> None:
         """Update ramp target mid-ramp - adjusts rate to hit new target by original end time.
         
@@ -132,7 +154,8 @@ class RampManager:
             new_target: New target value
             current_time: Current timestamp
         """
-        ramp = self.active_ramps.get(setpoint_type)
+        ramp_key = self._make_key(location, cluster, setpoint_type)
+        ramp = self.active_ramps.get(ramp_key)
         if ramp and not ramp.is_complete(current_time):
             current_value = ramp.get_current_value(current_time)
             remaining_seconds = (ramp.end_time - current_time).total_seconds()
@@ -148,7 +171,7 @@ class RampManager:
             ramp.duration_minutes = remaining_minutes
             
             logger.info(
-                f"RAMP ADJUSTED: {setpoint_type} {current_value:.2f} -> {new_target:.2f} "
+                f"RAMP ADJUSTED: {location}/{cluster} {setpoint_type} {current_value:.2f} -> {new_target:.2f} "
                 f"in {remaining_minutes:.1f}min remaining"
             )
 
@@ -215,9 +238,9 @@ class SetpointManager:
                     location, cluster, current_mode, nominal_values,
                     sensor_values, ramp_in_duration, current_time, result
                 )
-            elif self.ramp_manager.has_active_ramps():
+            elif self.ramp_manager.has_active_ramps(location, cluster):
                 # Continue applying active ramps (no mode change, but ramps still in progress)
-                self._apply_ramp_values(result, nominal_values, current_time)
+                self._apply_ramp_values(location, cluster, result, nominal_values, current_time)
             else:
                 # No ramping needed, use nominal values directly
                 self._apply_nominal_values(result, nominal_values)
@@ -293,13 +316,13 @@ class SetpointManager:
 
             if nominal_value is not None and start_value is not None:
                 self.ramp_manager.start_ramp(
-                    setpoint_type, start_value, nominal_value,
+                    location, cluster, setpoint_type, start_value, nominal_value,
                     ramp_in_duration, current_time
                 )
                 ramps_started.append(setpoint_type)
 
         # Apply current ramp values
-        self._apply_ramp_values(result, nominal_values, current_time)
+        self._apply_ramp_values(location, cluster, result, nominal_values, current_time)
 
     async def _calculate_ramp_start_values(
         self, location: str, cluster: str, current_mode: str,
@@ -361,16 +384,16 @@ class SetpointManager:
 
         return ramp_starts
 
-    def _apply_ramp_values(self, result: Dict[str, Any], nominal_values: Dict[str, Optional[float]],
-                          current_time: datetime) -> None:
-        """Apply current ramp values to result dict."""
+    def _apply_ramp_values(self, location: str, cluster: str, result: Dict[str, Any],
+                          nominal_values: Dict[str, Optional[float]], current_time: datetime) -> None:
+        """Apply current ramp values to result dict for a specific room."""
         setpoint_types = ['heating', 'cooling', 'humidity', 'co2', 'vpd']
 
         for setpoint_type in setpoint_types:
             nominal_value = nominal_values[setpoint_type]
             if nominal_value is not None:
                 effective_value, progress = self.ramp_manager.get_ramp_value(
-                    setpoint_type, nominal_value, current_time
+                    location, cluster, setpoint_type, nominal_value, current_time
                 )
 
                 result[f'effective_{setpoint_type}_setpoint'] = effective_value

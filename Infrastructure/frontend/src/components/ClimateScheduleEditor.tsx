@@ -337,7 +337,7 @@ function SetpointModeEditor({ mode: _mode, setpoint, currentSetpoint, onChange, 
         <input
           type="number"
           min="0"
-          max="240"
+          max="180"
           value={setpoint.ramp_in_duration || 0}
           onChange={(e) => handleChange('ramp_in_duration', parseInt(e.target.value) || 0)}
           className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"

@@ -147,6 +147,7 @@ class ApiClient {
     const response = await this.automationClient.post(`/api/pid/parameters/${deviceType}`, params);
     return response.data;
   }
+async resetPIDParameters(deviceType: string): Promise<PIDParameters> {    const response = await this.automationClient.post(`/api/pid/parameters/${deviceType}/reset`);    return response.data;  }
 
   // Schedules (automation service)
   async getSchedules(location?: string, cluster?: string): Promise<Schedule[]> {

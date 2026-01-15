@@ -167,3 +167,95 @@ Automatically selects optimal aggregate based on time range.
 2. Update USER_PREFERENCES.md if it affects preferences
 3. Include specific values, thresholds, and rationale
 4. Mark as NON-NEGOTIABLE if critical
+
+---
+
+## DATA RETENTION POLICY (AI-OPTIMIZED)
+
+> Conservative retention for AI/ML training. 512GB SSD available.
+
+### Retention Rules
+
+| Table | Full Resolution | Downsampled | Notes |
+|-------|-----------------|-------------|-------|
+|  | 1 year | Indefinite (hourly) | Primary AI training data |
+|  | 1 year | Indefinite (hourly) | Control decisions |
+|  | 90 days | Indefinite (hourly) | Device behavior |
+|  | 30 days | None | Raw debug data |
+
+### AI Training Data Export
+
+Future capability: Export aligned datasets for ML training
+
+
+
+### Future: Database Migration
+
+When migrating off Pi to dedicated server:
+1. Export full dataset using 
+2. Consider column-store (TimescaleDB compression already helps)
+3. Add read replicas for AI workloads
+
+---
+
+*Last updated: 2026-01-13 - AI-optimized retention policy*
+
+
+---
+
+## DATA RETENTION POLICY (AI-OPTIMIZED)
+
+Conservative retention for AI/ML training. 512GB SSD available.
+
+### Retention Rules
+
+| Table | Full Resolution | Downsampled | Notes |
+|-------|-----------------|-------------|-------|
+| measurement | 1 year | Indefinite hourly | Primary AI training data |
+| effective_setpoints | 1 year | Indefinite hourly | Control decisions |
+| automation_state | 90 days | Indefinite hourly | Device behavior |
+| can_messages | 30 days | None | Raw debug data |
+
+### Why Conservative Retention
+
+- AI model training requires historical patterns
+- Seasonal variations need year+ of data
+- Machine efficiency degradation analysis
+- Spike prediction needs examples of past spikes
+- 512GB SSD can hold years of data with compression
+
+### Compression Strategy
+
+TimescaleDB compression enabled on all hypertables:
+- effective_setpoints: compress after 7 days
+- automation_state: compress after 7 days
+- measurement: compress after 30 days
+
+Expected compression ratio: 10-20x for time-series data
+
+### Future: Database Migration
+
+When migrating off Pi to dedicated server:
+1. Export full dataset using pg_dump
+2. Consider dedicated TimescaleDB cloud or self-hosted
+3. Add read replicas for AI training workloads
+4. Keep Pi as edge device, sync to central DB
+
+---
+
+## MULTI-CLUSTER SCHEMA NOTES
+
+### Current Schema Supports Multi-Cluster
+
+The measurement table already has location and cluster columns.
+All queries MUST filter by both for future compatibility.
+
+### Indexes for Multi-Cluster Queries
+
+Ensure composite indexes exist:
+- (location, cluster, time) for time-range queries
+- (location, cluster, sensor_type) for sensor lookups
+
+---
+
+*Last updated: 2026-01-13 - AI retention policy and multi-cluster notes*

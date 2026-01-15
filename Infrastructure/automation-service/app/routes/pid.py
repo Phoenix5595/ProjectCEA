@@ -187,3 +187,55 @@ async def get_pid_parameter_history(
     history = await database.get_pid_parameter_history(device_type, limit)
     return history
 
+
+
+@router.post("/api/pid/parameters/{device_type}/reset")
+async def reset_pid_parameters(
+    device_type: str,
+    database: DatabaseManager = Depends(get_database),
+    config: ConfigLoader = Depends(get_config)
+) -> Dict[str, Any]:
+    """Reset PID parameters to config defaults.
+    
+    Args:
+        device_type: Device type (e.g., 'heater', 'co2')
+    
+    Returns:
+        Reset PID parameters from config
+    """
+    # Get default parameters from config
+    device_config = config.get_device_config(device_type)
+    if not device_config or 'pid' not in device_config:
+        raise HTTPException(
+            status_code=404, 
+            detail=f"No default PID config found for device_type: {device_type}"
+        )
+    
+    pid_config = device_config['pid']
+    kp = pid_config.get('kp')
+    ki = pid_config.get('ki')
+    kd = pid_config.get('kd')
+    
+    if kp is None or ki is None or kd is None:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Incomplete PID config for device_type: {device_type}"
+        )
+    
+    # Update in database with config values
+    success = await database.set_pid_parameters(
+        device_type,
+        kp,
+        ki,
+        kd,
+        source="config_reset",
+        updated_by="system"
+    )
+    
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to reset PID parameters")
+    
+    logger.info(f"Reset PID parameters for {device_type} to config defaults: kp={kp}, ki={ki}, kd={kd}")
+    
+    # Return reset parameters
+    return await database.get_pid_parameters(device_type)

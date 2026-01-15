@@ -279,7 +279,7 @@ class DeviceController:
                 await self._control_binary_device(location, cluster, device_name, device_type, channel, control_output)
 
             # Log the control action
-            await self._log_control_action(location, cluster, device_name, device_type, channel, control_output, current_time)
+            await self._log_control_action(location, cluster, device_name, device_type, control_output, current_time)
 
         except Exception as e:
             logger.error(f"Failed to control {device_name} ({location}/{cluster}): {e}")
@@ -329,22 +329,17 @@ class DeviceController:
 
     async def _log_control_action(
         self, location: str, cluster: str, device_name: str, device_type: str,
-        channel: int, control_output: float, current_time: datetime
+        control_output: float, current_time: datetime
     ) -> None:
         """Log a control action to the database."""
         try:
-            # Calculate binary state from control output
-            new_state = 1 if control_output > 0.5 else 0
-            
             await self.database.log_control_action(
                 location=location,
                 cluster=cluster,
                 device_name=device_name,
-                channel=channel,
-                old_state=None,  # TODO: Track previous state if needed
-                new_state=new_state,
-                mode="auto",
-                reason=f"Automated control: {device_type}"
+                device_type=device_type,
+                action_value=control_output,
+                timestamp=current_time
             )
         except Exception as e:
             logger.warning(f"Failed to log control action for {device_name}: {e}")

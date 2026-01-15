@@ -89,11 +89,11 @@ class DatabaseManager:
         else:
             prefix = "🟢 API_CALL"
         
-        print(f"{prefix}: Querying {location}/{cluster} from {start_time} to {end_time} (duration: {duration_hours:.2f} hours)")
+        logger.debug(f"{prefix}: Querying {location}/{cluster} from {start_time} to {end_time} (duration: {duration_hours:.2f} hours)")
         
         pool = await self._get_pool()
         
-        print(f"DB: Query params: location={location}, cluster={cluster}, start_time={start_time}, end_time={end_time}")
+        logger.debug(f"DB: Query params: location={location}, cluster={cluster}, start_time={start_time}, end_time={end_time}")
         
         # For larger time ranges, use continuous aggregates for better performance
         use_hourly = duration_hours >= 12
@@ -101,7 +101,7 @@ class DatabaseManager:
         
         async with pool.acquire() as conn:
             if use_daily:  # multi-day ranges, use daily aggregates
-                print(f"DB: Using daily continuous aggregates for large time range")
+                logger.debug(f"DB: Using daily continuous aggregates for large time range")
                 rows = await conn.fetch("""
                     SELECT 
                         md.time,
@@ -119,7 +119,7 @@ class DatabaseManager:
                     ORDER BY md.time ASC, s.name ASC
                 """, location, start_time, end_time)
             elif use_hourly:  # >=12 hours, use hourly aggregates
-                print(f"DB: Using hourly continuous aggregates for medium time range")
+                logger.debug(f"DB: Using hourly continuous aggregates for medium time range")
                 rows = await conn.fetch("""
                     SELECT 
                         mh.time,
@@ -155,10 +155,10 @@ class DatabaseManager:
                     ORDER BY m.time ASC, s.name ASC
                 """, location, start_time, end_time)
         
-        print(f"DB: Found {len(rows)} rows in database")
+        logger.debug(f"DB: Found {len(rows)} rows in database")
         
         if not rows:
-            print(f"DB: No data found for {location}/{cluster}")
+            logger.debug(f"DB: No data found for {location}/{cluster}")
             return {}
         
         # Parse and organize data by sensor name
@@ -201,13 +201,13 @@ class DatabaseManager:
             except (KeyError, ValueError, TypeError) as e:
                 error_count += 1
                 if error_count <= 5:  # Only print first 5 errors to avoid spam
-                    print(f"DB: Error processing row: {e}")
+                    logger.debug(f"DB: Error processing row: {e}")
                 continue
         
-        print(f"DB: Processed {processed_count} rows, skipped {skipped_count} rows, errors {error_count} rows")
-        print(f"DB: Created {len(sensor_data)} sensor types with data")
+        logger.debug(f"DB: Processed {processed_count} rows, skipped {skipped_count} rows, errors {error_count} rows")
+        logger.debug(f"DB: Created {len(sensor_data)} sensor types with data")
         for sensor_type, data_points in sensor_data.items():
-            print(f"DB:   {sensor_type}: {len(data_points)} data points")
+            logger.debug(f"DB:   {sensor_type}: {len(data_points)} data points")
         
         # Downsample if too many points
         for sensor_type in sensor_data:
@@ -236,7 +236,7 @@ class DatabaseManager:
             ("Outside", "main"): 5,
         }
         node_id = mapping.get((location, cluster), 1)
-        print(f"DB: Mapped {location}/{cluster} -> node_id={node_id}")
+        logger.debug(f"DB: Mapped {location}/{cluster} -> node_id={node_id}")
         return node_id
     
     def _extract_sensors(

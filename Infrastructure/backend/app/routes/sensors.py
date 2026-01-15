@@ -59,18 +59,18 @@ async def get_sensor_data(
     # Debug: Log raw query parameters
     query_params = dict(request.query_params)
     print(f"\n{'='*80}")
-    print(f"API ENDPOINT CALLED: /api/sensors/{location}/{cluster}")
-    print(f"API: Raw query params: {query_params}")
-    print(f"API: Parsed parameters - start_time: {start_time} (type: {type(start_time)}), end_time: {end_time} (type: {type(end_time)}), time_range: {time_range}")
+    logger.debug(f"API ENDPOINT CALLED: /api/sensors/{location}/{cluster}")
+    logger.debug(f"API: Raw query params: {query_params}")
+    logger.debug(f"API: Parsed parameters - start_time: {start_time} (type: {type(start_time)}), end_time: {end_time} (type: {type(end_time)}), time_range: {time_range}")
     print(f"{'='*80}\n")
     
     # Try to parse datetime from query string if FastAPI didn't parse it
     if start_time is None and 'start_time' in query_params:
         start_time = parse_datetime_param(query_params['start_time'])
-        print(f"API: Manually parsed start_time: {start_time}")
+        logger.debug(f"API: Manually parsed start_time: {start_time}")
     if end_time is None and 'end_time' in query_params:
         end_time = parse_datetime_param(query_params['end_time'])
-        print(f"API: Manually parsed end_time: {end_time}")
+        logger.debug(f"API: Manually parsed end_time: {end_time}")
     
     # Calculate time range if not provided
     # If both start_time and end_time are provided, use them directly
@@ -89,12 +89,12 @@ async def get_sensor_data(
         }
         seconds = time_ranges.get(time_range, 3600)
         start_time = end_time - timedelta(seconds=seconds)
-        print(f"API: Using time_range '{time_range}' ({seconds} seconds) - calculated start_time: {start_time}, end_time: {end_time}")
+        logger.debug(f"API: Using time_range '{time_range}' ({seconds} seconds) - calculated start_time: {start_time}, end_time: {end_time}")
     else:
         duration = (end_time - start_time).total_seconds()
-        print(f"API: Using provided start_time: {start_time}, end_time: {end_time} (duration: {duration} seconds = {duration/3600:.2f} hours)")
+        logger.debug(f"API: Using provided start_time: {start_time}, end_time: {end_time} (duration: {duration} seconds = {duration/3600:.2f} hours)")
     
-    print(f"API: Fetching sensor data for {location}/{cluster} from {start_time} to {end_time}")
+    logger.debug(f"API: Fetching sensor data for {location}/{cluster} from {start_time} to {end_time}")
     
     # Calculate duration to determine if we should check stream first
     duration_seconds = (end_time - start_time).total_seconds()
@@ -109,7 +109,7 @@ async def get_sensor_data(
         try:
             stream_reader = RedisStreamReader(stream_name="sensor:raw")
             if stream_reader.connect():
-                print(f"API: Checking Redis Stream for recent data (time range: {duration_hours:.2f} hours)")
+                logger.debug(f"API: Checking Redis Stream for recent data (time range: {duration_hours:.2f} hours)")
                 stream_entries = stream_reader.read_by_time_range(
                     start_time=start_time,
                     end_time=end_time,
@@ -118,19 +118,19 @@ async def get_sensor_data(
                 )
                 
                 if stream_entries:
-                    print(f"API: Found {len(stream_entries)} entries in Redis Stream")
+                    logger.debug(f"API: Found {len(stream_entries)} entries in Redis Stream")
                     # Process stream entries to sensor data points
                     stream_sensor_data = process_stream_entries_to_sensor_data(
                         stream_entries, location, cluster
                     )
                     
                     if stream_sensor_data:
-                        print(f"API: Processed {len(stream_sensor_data)} sensor types from Stream")
+                        logger.debug(f"API: Processed {len(stream_sensor_data)} sensor types from Stream")
                         sensor_data = stream_sensor_data
                         # Check if we have sufficient data coverage
                         total_points = sum(len(points) for points in sensor_data.values())
                         if total_points > 0:
-                            print(f"API: Using data from Redis Stream ({total_points} total data points)")
+                            logger.debug(f"API: Using data from Redis Stream ({total_points} total data points)")
                             # Use stream data, but also check DB for any gaps if needed
                             # For now, use stream data if we have any
                             use_stream = True
@@ -142,14 +142,14 @@ async def get_sensor_data(
     
     # If stream didn't provide data or time range is too old, query database
     if not sensor_data or not use_stream:
-        print(f"API: Querying TimescaleDB for sensor data")
+        logger.debug(f"API: Querying TimescaleDB for sensor data")
         sensor_data = await db.get_all_sensors_for_location(
             location, cluster, start_time, end_time
         )
     
-    print(f"API: Retrieved {len(sensor_data)} sensor types: {list(sensor_data.keys())}")
+    logger.debug(f"API: Retrieved {len(sensor_data)} sensor types: {list(sensor_data.keys())}")
     for sensor_type, data_points in sensor_data.items():
-        print(f"API: {sensor_type}: {len(data_points)} data points")
+        logger.debug(f"API: {sensor_type}: {len(data_points)} data points")
     
     # Convert to response format
     response = {}
@@ -165,7 +165,7 @@ async def get_sensor_data(
             unit=data_points[0].unit if data_points else ""
         )
     
-    print(f"API: Returning {len(response)} sensors in response")
+    logger.debug(f"API: Returning {len(response)} sensors in response")
     return response
 
 

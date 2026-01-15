@@ -7,20 +7,8 @@ import json
 import os
 from datetime import datetime
 from typing import Dict, Any, List, Tuple, Optional
-import threading
-import queue
-import time
-from dataclasses import dataclass
 
 logger = get_logger(__name__)
-
-
-@dataclass
-class DBWriteItem:
-    decoded: Dict[str, Any]
-    raw_data: str
-    sensors: List[Tuple[str, float, str]]
-    timestamp: object  # datetime
 
 
 class DataWriter:
@@ -65,15 +53,6 @@ class DataWriter:
         # Cache for device and sensor lookups (avoid repeated queries)
         self.device_cache: Dict[str, int] = {}  # {device_name: device_id}
         self.sensor_cache: Dict[Tuple[int, str], int] = {}  # {(device_id, sensor_name): sensor_id}
-        
-        # Async batching for DB writes
-        self._db_queue = queue.Queue(maxsize=10000)
-        self._flush_thread = None
-        self._stop_flush = threading.Event()
-        self._db_write_lock = threading.Lock()
-        self._queued_count = 0
-        self._flushed_count = 0
-        self._dropped_count = 0
     
     def connect_db(self) -> bool:
         """Connect to TimescaleDB with optimizations for high throughput."""
@@ -89,85 +68,13 @@ class DataWriter:
             self.db_conn = psycopg2.connect(**db_config_optimized)
             self.db_conn.autocommit = True  # Auto-commit for faster writes
             self.db_enabled = True
-            logger.info("Connected to TimescaleDB (async batching enabled)")
-            self._start_flush_thread()
+            logger.info("Connected to TimescaleDB (autocommit enabled for high throughput)")
             return True
         except Exception as e:
             logger.error(f"Failed to connect to TimescaleDB: {e}")
             self.db_enabled = False
             return False
     
-
-    def _start_flush_thread(self):
-        if self._flush_thread and self._flush_thread.is_alive():
-            return
-        self._stop_flush.clear()
-        self._flush_thread = threading.Thread(target=self._flush_loop, name="db-batch-flush", daemon=True)
-        self._flush_thread.start()
-        logger.info("Started DB batch flush thread (100ms interval, 50 msg threshold)")
-    
-    def _flush_loop(self):
-        while not self._stop_flush.is_set():
-            try:
-                start_time = time.time()
-                items = []
-                while len(items) < 50:
-                    remaining = 0.1 - (time.time() - start_time)
-                    if remaining <= 0:
-                        break
-                    try:
-                        item = self._db_queue.get(timeout=remaining)
-                        items.append(item)
-                        self._db_queue.task_done()
-                    except queue.Empty:
-                        break
-                if items:
-                    self._flush_batch(items)
-            except Exception as e:
-                logger.error(f"Error in DB flush loop: {e}")
-                time.sleep(0.1)
-    
-    def _flush_batch(self, items):
-        if not items or not self.db_enabled:
-            return
-        with self._db_write_lock:
-            try:
-                if not self._check_db_connection():
-                    self._dropped_count += len(items)
-                    return
-                cursor = self.db_conn.cursor()
-                measurements = []
-                for item in items:
-                    node_id = item.decoded.get("node_id")
-                    if not node_id:
-                        continue
-                    device_name = f"Node {node_id}"
-                    if device_name not in self.device_cache:
-                        cursor.execute("SELECT device_id FROM device WHERE name = %s", (device_name,))
-                        row = cursor.fetchone()
-                        if not row:
-                            continue
-                        self.device_cache[device_name] = row[0]
-                    device_id = self.device_cache[device_name]
-                    for sensor_name, value, unit in item.sensors:
-                        cache_key = (device_id, sensor_name)
-                        if cache_key not in self.sensor_cache:
-                            cursor.execute("SELECT sensor_id FROM sensor WHERE device_id = %s AND name = %s", (device_id, sensor_name))
-                            row = cursor.fetchone()
-                            if not row:
-                                continue
-                            self.sensor_cache[cache_key] = row[0]
-                        measurements.append((item.timestamp, self.sensor_cache[cache_key], value, None))
-                if measurements:
-                    psycopg2.extras.execute_batch(cursor,
-                        "INSERT INTO measurement (time, sensor_id, value, status) VALUES (%s, %s, %s, %s) ON CONFLICT (time, sensor_id) DO UPDATE SET value = EXCLUDED.value",
-                        measurements, page_size=500)
-                    self._flushed_count += len(items)
-                cursor.close()
-            except Exception as e:
-                logger.error(f"Error flushing batch: {e}")
-                self._dropped_count += len(items)
-
     def _check_db_connection(self) -> bool:
         """Check if database connection is alive and reconnect if needed.
         
@@ -281,23 +188,6 @@ class DataWriter:
             
             return False
     
-
-    def queue_db_write(self, decoded, raw_data, sensors, timestamp):
-        if not self.db_enabled:
-            return False
-        item = DBWriteItem(decoded=decoded, raw_data=raw_data, sensors=sensors, timestamp=timestamp)
-        try:
-            self._db_queue.put_nowait(item)
-            self._queued_count += 1
-            return True
-        except queue.Full:
-            self._dropped_count += 1
-            return False
-    
-    def get_stats(self):
-        return {"queued": self._queued_count, "flushed": self._flushed_count, 
-                "dropped": self._dropped_count, "pending": self._db_queue.qsize()}
-
     def write_to_db(self, decoded: Dict[str, Any], raw_data: str, 
                     sensors: List[Tuple[str, float, str]], timestamp: datetime) -> bool:
         """Write decoded data to TimescaleDB measurement table.
@@ -473,21 +363,7 @@ class DataWriter:
         return result
     
     def close(self):
-        """Close all connections and stop flush thread."""
-        self._stop_flush.set()
-        if self._flush_thread and self._flush_thread.is_alive():
-            self._flush_thread.join(timeout=2.0)
-        # Flush remaining
-        remaining = []
-        while not self._db_queue.empty():
-            try:
-                remaining.append(self._db_queue.get_nowait())
-            except:
-                break
-        if remaining:
-            self._flush_batch(remaining)
-        stats = self.get_stats()
-        logger.info(f"DB batch stats: queued={stats['queued']}, flushed={stats['flushed']}, dropped={stats['dropped']}")
+        """Close all connections."""
         if self.db_conn:
             try:
                 self.db_conn.close()

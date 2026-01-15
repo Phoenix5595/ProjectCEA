@@ -1,6 +1,10 @@
 """Time-based scheduler for device control."""
 from shared.logging import get_logger
 from datetime import datetime, time, timedelta
+from zoneinfo import ZoneInfo
+
+# Timezone constant for consistent scheduling
+LOCAL_TZ = ZoneInfo("America/Toronto")
 from typing import Dict, List, Optional, Tuple, Any
 
 logger = get_logger(__name__)
@@ -61,7 +65,7 @@ class Scheduler:
             Tuple of (is_active, schedule_id)
         """
         if current_time is None:
-            current_time = datetime.now()
+            current_time = datetime.now(tz=LOCAL_TZ)
         
         current_time_obj = current_time.time()
         current_weekday = current_time.weekday()  # 0 = Monday, 6 = Sunday
@@ -150,7 +154,7 @@ class Scheduler:
             or None if no active schedule
         """
         if current_time is None:
-            current_time = datetime.now()
+            current_time = datetime.now(tz=LOCAL_TZ)
         
         current_time_obj = current_time.time()
         current_weekday = current_time.weekday()
@@ -220,7 +224,7 @@ class Scheduler:
             None if no active schedule or no target_intensity set
         """
         if current_time is None:
-            current_time = datetime.now()
+            current_time = datetime.now(tz=LOCAL_TZ)
         
         current_time_obj = current_time.time()
         current_weekday = current_time.weekday()  # 0 = Monday, 6 = Sunday
@@ -485,7 +489,7 @@ class Scheduler:
             or None if no active schedule
         """
         if current_time is None:
-            current_time = datetime.now()
+            current_time = datetime.now(tz=LOCAL_TZ)
         
         # Get effective intensity (with ramp)
         effective_intensity = self.get_schedule_intensity(
@@ -617,7 +621,7 @@ class Scheduler:
             mode_end_minutes: End time in minutes since midnight (0-1439)
         """
         if current_time is None:
-            current_time = datetime.now()
+            current_time = datetime.now(tz=LOCAL_TZ)
         
         # Need day/night times to calculate periods
         if not day_start_time or not day_end_time:
@@ -717,40 +721,58 @@ class Scheduler:
         Args:
             day_start_time: Day start time in HH:MM format
             day_end_time: Day end time in HH:MM format
-            pre_day_duration: Pre-day duration in minutes
-            pre_night_duration: Pre-night duration in minutes
+            pre_day_duration: Pre-day duration in minutes (0-180)
+            pre_night_duration: Pre-night duration in minutes (0-180)
         
         Returns:
             Tuple of (is_valid, error_message)
+            
+        Validation Rules:
+            - Both durations must be 0-180 minutes (practical real-world limit)
+            - pre_day_duration must be strictly shorter than night_length
+            - pre_night_duration must be strictly shorter than day_length
+            - Combined durations must be less than night_length (no overlap)
         """
         # Convert to minutes
         day_start_min = self._time_to_minutes(day_start_time)
         day_end_min = self._time_to_minutes(day_end_time)
         
-        # Calculate night length
+        # Calculate day and night lengths
         if day_end_min > day_start_min:
-            night_length = 1440 - (day_end_min - day_start_min)
+            day_length = day_end_min - day_start_min
+            night_length = 1440 - day_length
         else:
             night_length = day_start_min - day_end_min
+            day_length = 1440 - night_length
         
-        # Validate: pre_day_duration + pre_night_duration < night_length
-        if pre_day_duration + pre_night_duration >= night_length:
-            return (False, f"pre_day_duration ({pre_day_duration} min) + pre_night_duration ({pre_night_duration} min) must be less than night_length ({night_length} min)")
+        # Hard limits: 0-180 minutes (3 hours max - practical real-world limit)
+        MAX_RAMP_DURATION = 180
         
-        # Validate max durations
-        max_duration = 240
-        if pre_day_duration > max_duration:
-            return (False, f"pre_day_duration ({pre_day_duration} min) exceeds maximum ({max_duration} min)")
-        
-        if pre_night_duration > max_duration:
-            return (False, f"pre_night_duration ({pre_night_duration} min) exceeds maximum ({max_duration} min)")
-        
-        # Validate non-negative
+        # Validate non-negative first
         if pre_day_duration < 0:
             return (False, f"pre_day_duration must be >= 0")
         
         if pre_night_duration < 0:
             return (False, f"pre_night_duration must be >= 0")
+        
+        # Validate max durations (180 min practical limit)
+        if pre_day_duration > MAX_RAMP_DURATION:
+            return (False, f"pre_day_duration ({pre_day_duration} min) exceeds maximum ({MAX_RAMP_DURATION} min)")
+        
+        if pre_night_duration > MAX_RAMP_DURATION:
+            return (False, f"pre_night_duration ({pre_night_duration} min) exceeds maximum ({MAX_RAMP_DURATION} min)")
+        
+        # pre_day can NEVER be as long as night (must be strictly shorter)
+        if pre_day_duration >= night_length:
+            return (False, f"pre_day_duration ({pre_day_duration} min) must be shorter than night_length ({night_length} min)")
+        
+        # pre_night can NEVER be as long as day (must be strictly shorter)
+        if pre_night_duration >= day_length:
+            return (False, f"pre_night_duration ({pre_night_duration} min) must be shorter than day_length ({day_length} min)")
+        
+        # Combined constraint: no overlap during night period
+        if pre_day_duration + pre_night_duration >= night_length:
+            return (False, f"pre_day_duration ({pre_day_duration} min) + pre_night_duration ({pre_night_duration} min) must be less than night_length ({night_length} min)")
         
         return (True, None)
 
