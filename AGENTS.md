@@ -39,3 +39,31 @@ sudo /opt/projectcea/rollback.sh [release_name]
 - MQTT: When adding Lab/Water Management nodes
 - IR Camera: Replace manual leaf temp delta
 - CO2 FRC: If enrichment added, disable ASC
+
+## CRITICAL LESSON (2026-01-15)
+
+### NEVER MAKE CHANGES WITHOUT UNDERSTANDING THE WHOLE SYSTEM
+
+**What went wrong:**
+1. Made changes to device_controller.py (relay sync) without understanding how the system works
+2. Modified Grafana datasources without checking existing configuration
+3. Reset passwords that didn't need resetting
+4. Created duplicate datasources
+5. Did not use proper deployment process (deploy.sh/rollback.sh)
+6. Made assumptions instead of reading documentation first
+
+**Before ANY change:**
+1. READ .sisyphus/PROJECT_CONTEXT.md and requirements only
+2. READ AGENTS.md
+3. Check git history to understand what exists
+4. Understand the deployment process (deploy.sh, rollback.sh)
+5. ASK if unsure - do not assume
+6. Test in isolation before deploying
+
+**Deployment Process:**
+- Development: /home/antoine/ProjectCEA/
+- Production: /opt/projectcea/current/ (symlink)
+- Deploy: ./deploy.sh (NOT manual copying)
+- Rollback: ./rollback.sh (fast, use it if anything breaks)
+
+**If something is working, DO NOT TOUCH IT unless explicitly asked.**
