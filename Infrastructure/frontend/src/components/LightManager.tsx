@@ -37,7 +37,6 @@ export default function LightManager({ location, cluster, lights }: LightManager
     
     // Refresh every 1 second for faster updates
     const interval = setInterval(() => {
-      loadSchedules()
       loadLightStatuses()
       loadDeviceStates()
     }, 1000)
