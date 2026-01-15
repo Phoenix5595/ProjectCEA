@@ -287,46 +287,22 @@ class DeviceController:
     async def _control_dimmable_light(
         self, location: str, cluster: str, device_name: str, device_info: Dict[str, Any], intensity: float
     ) -> None:
-        """Control a dimmable light with relay synchronization.
-        
-        The relay provides POWER to the light, the dimmer provides 0-10V SIGNAL.
-        - If intensity > 0: Turn relay ON first, then set dimmer
-        - If intensity = 0: Set dimmer to 0, then turn relay OFF
-        """
+        """Control a dimmable light."""
         if not self.dfr0971_manager:
             logger.warning(f"No DFR0971 manager available for {device_name}")
             return
 
         board_id = device_info.get('dimming_board_id')
-        dimming_channel = device_info.get('dimming_channel')
-        relay_channel = device_info.get('channel')  # Relay channel for power control
+        channel = device_info.get('dimming_channel')
 
-        if board_id is None or dimming_channel is None:
-            logger.warning(f"Incomplete DFR0971 config for {device_name}: board_id={board_id}, channel={dimming_channel}")
+        if board_id is None or channel is None:
+            logger.warning(f"Incomplete DFR0971 config for {device_name}: board_id={board_id}, channel={channel}")
             return
 
         try:
             # Convert 0.0-1.0 to 0-100% intensity
             intensity_percent = round(intensity * 100)
-            
-            # CRITICAL: Sync relay state with dimmer
-            # Relay ON when intensity > 0, OFF when intensity = 0
-            if relay_channel is not None and self.relay_manager:
-                relay_state = 1 if intensity > 0 else 0
-                
-                if intensity > 0:
-                    # Turn relay ON first, then set dimmer (power before signal)
-                    self.relay_manager.set_device_state(location, cluster, device_name, 1)
-                    self.dfr0971_manager.set_intensity(board_id, dimming_channel, intensity_percent)
-                else:
-                    # Set dimmer to 0 first, then turn relay OFF (signal before power)
-                    self.dfr0971_manager.set_intensity(board_id, dimming_channel, 0)
-                    self.relay_manager.set_device_state(location, cluster, device_name, 0)
-                
-                logger.info(f"Relay channel {relay_channel} set to {'ON' if relay_state else 'OFF'} for {device_name}")
-            else:
-                # No relay configured, just set dimmer
-                self.dfr0971_manager.set_intensity(board_id, dimming_channel, intensity_percent)
+            self.dfr0971_manager.set_intensity(board_id, channel, intensity_percent)
             
             # Calculate voltage (0-10V range)
             voltage = intensity * 10.0
@@ -336,7 +312,7 @@ class DeviceController:
                 try:
                     self.database._automation_redis.write_light_intensity(
                         location, cluster, device_name,
-                        intensity_percent, voltage, board_id, dimming_channel
+                        intensity_percent, voltage, board_id, channel
                     )
                 except Exception as redis_err:
                     logger.warning(f"Failed to write light intensity to Redis: {redis_err}")
