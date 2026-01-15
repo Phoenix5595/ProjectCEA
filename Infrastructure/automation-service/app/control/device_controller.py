@@ -303,6 +303,19 @@ class DeviceController:
             # Convert 0.0-1.0 to 0-100% intensity
             intensity_percent = round(intensity * 100)
             self.dfr0971_manager.set_intensity(board_id, channel, intensity_percent)
+            
+            # Calculate voltage (0-10V range)
+            voltage = intensity * 10.0
+            
+            # Write to Redis so API returns current state
+            if self.database and hasattr(self.database, '_automation_redis') and self.database._automation_redis:
+                try:
+                    self.database._automation_redis.write_light_intensity(
+                        location, cluster, device_name,
+                        intensity_percent, voltage, board_id, channel
+                    )
+                except Exception as redis_err:
+                    logger.warning(f"Failed to write light intensity to Redis: {redis_err}")
 
             logger.info(
                 f"Set {device_name} ({location}/{cluster}) to {intensity_percent}% "
