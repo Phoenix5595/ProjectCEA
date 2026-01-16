@@ -3,7 +3,7 @@ import axios, { AxiosInstance } from 'axios';
 import type { Setpoint, SetpointUpdate } from '../types/setpoint';
 import type { SensorDataResponse } from '../types/sensor';
 import type { Device } from '../types/device';
-import type { PIDParameters, PIDParameterUpdate } from '../types/pid';
+import type { PIDParameters, PIDParameterUpdate, PIDModeInfo, PIDModeUpdate, AutotuneState } from '../types/pid';
 import type { Schedule, ScheduleCreate, ScheduleUpdate } from '../types/schedule';
 import type { LightStatus } from '../types/light';
 
@@ -147,7 +147,38 @@ class ApiClient {
     const response = await this.automationClient.post(`/api/pid/parameters/${deviceType}`, params);
     return response.data;
   }
-async resetPIDParameters(deviceType: string): Promise<PIDParameters> {    const response = await this.automationClient.post(`/api/pid/parameters/${deviceType}/reset`);    return response.data;  }
+  async resetPIDParameters(deviceType: string): Promise<PIDParameters> {
+    const response = await this.automationClient.post(`/api/pid/parameters/${deviceType}/reset`);
+    return response.data;
+  }
+
+  async getPIDParameterHistory(deviceType: string, limit: number = 50): Promise<import('../types/pid').PIDHistoryEntry[]> {
+    const response = await this.automationClient.get(`/api/pid/parameters/${deviceType}/history`, {
+      params: { limit }
+    });
+    return response.data;
+  }
+
+  // PID Control Modes (automation service)
+  async getPIDMode(deviceType: string): Promise<PIDModeInfo> {
+    const response = await this.automationClient.get(`/api/pid/mode/${deviceType}`);
+    return response.data;
+  }
+
+  async setPIDMode(deviceType: string, update: PIDModeUpdate): Promise<PIDModeInfo> {
+    const response = await this.automationClient.post(`/api/pid/mode/${deviceType}`, update);
+    return response.data;
+  }
+
+  async getAutotuneStatus(deviceType: string): Promise<AutotuneState> {
+    const response = await this.automationClient.get(`/api/pid/autotune/${deviceType}/status`);
+    return response.data;
+  }
+
+  async stopAutotune(deviceType: string): Promise<AutotuneState> {
+    const response = await this.automationClient.post(`/api/pid/autotune/${deviceType}/stop`);
+    return response.data;
+  }
 
   // Schedules (automation service)
   async getSchedules(location?: string, cluster?: string): Promise<Schedule[]> {

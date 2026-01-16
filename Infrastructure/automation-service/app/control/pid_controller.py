@@ -14,7 +14,7 @@ class PIDController:
         kp: float,
         ki: float,
         kd: float,
-        pwm_period: int = 100,
+        pwm_period: int = 60,
         database: Optional[object] = None,
         device_type: Optional[str] = None
     ):
@@ -24,7 +24,7 @@ class PIDController:
             kp: Proportional gain
             ki: Integral gain
             kd: Derivative gain
-            pwm_period: PWM control period in seconds (default: 100)
+            pwm_period: PWM control period in seconds (default: 60)
             database: Optional DatabaseManager for dynamic parameter reload
             device_type: Optional device type for parameter reload
         """

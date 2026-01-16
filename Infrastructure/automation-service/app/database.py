@@ -222,6 +222,42 @@ class DatabaseManager:
                 ADD COLUMN IF NOT EXISTS pid_kd REAL
             """)
 
+            # Add PID control mode columns to pid_parameters table
+            await conn.execute("""
+                ALTER TABLE pid_parameters
+                ADD COLUMN IF NOT EXISTS control_mode TEXT DEFAULT 'pid'
+                    CHECK (control_mode IN ('auto_pid', 'pid', 'on_off')),
+                ADD COLUMN IF NOT EXISTS hysteresis_high REAL DEFAULT 1.0,
+                ADD COLUMN IF NOT EXISTS hysteresis_low REAL DEFAULT 0.5
+            """)
+
+            # Add change_reason column to pid_parameter_history table
+            await conn.execute("""
+                ALTER TABLE pid_parameter_history
+                ADD COLUMN IF NOT EXISTS change_reason TEXT
+            """)
+
+            # Create pid_autotune_state table for tracking auto-tuning progress
+            await conn.execute("""
+                CREATE TABLE IF NOT EXISTS pid_autotune_state (
+                    device_type TEXT PRIMARY KEY,
+                    is_active BOOLEAN DEFAULT FALSE,
+                    started_at TIMESTAMPTZ,
+                    cycles_completed INTEGER DEFAULT 0,
+                    current_amplitude REAL,
+                    current_period REAL,
+                    current_ku REAL,
+                    current_tu REAL,
+                    suggested_kp REAL,
+                    suggested_ki REAL,
+                    suggested_kd REAL,
+                    last_change_reason TEXT,
+                    last_update TIMESTAMPTZ,
+                    status TEXT DEFAULT 'idle'
+                        CHECK (status IN ('idle', 'running', 'calculating', 'complete', 'error'))
+                )
+            """)
+
             logger.info("Database migration completed")
 
     async def _connect_redis(self) -> None:
@@ -2184,7 +2220,7 @@ class DatabaseManager:
             pool = await self._get_pool()
             async with pool.acquire() as conn:
                 row = await conn.fetchrow("""
-                    SELECT kp, ki, kd, updated_at, updated_by, source
+                    SELECT kp, ki, kd, updated_at, updated_by, source, control_mode, hysteresis_high, hysteresis_low
                     FROM pid_parameters
                     WHERE device_type = $1
                 """, device_type)
@@ -2196,7 +2232,10 @@ class DatabaseManager:
                         'kd': row['kd'],
                         'updated_at': row['updated_at'],
                         'updated_by': row['updated_by'],
-                        'source': row['source']
+                        'source': row['source'],
+                        'control_mode': row['control_mode'] or 'pid',
+                        'hysteresis_high': row['hysteresis_high'] or 1.0,
+                        'hysteresis_low': row['hysteresis_low'] or 0.5
                     }
         except Exception as e:
             logger.error(f"Error getting PID parameters: {e}")
@@ -2306,12 +2345,295 @@ class DatabaseManager:
                     'kd': row['kd'],
                     'updated_at': row['updated_at'],
                     'updated_by': row['updated_by'],
-                    'source': row['source']
+                    'source': row['source'],
+                        'control_mode': row['control_mode'] or 'pid',
+                        'hysteresis_high': row['hysteresis_high'] or 1.0,
+                        'hysteresis_low': row['hysteresis_low'] or 0.5
                 } for row in rows}
         except Exception as e:
             logger.error(f"Error getting all PID parameters: {e}")
             return {}
     
+
+    async def get_pid_control_mode(self, device_type: str) -> Optional[str]:
+        """Get PID control mode for a device type.
+        
+        Args:
+            device_type: Device type (e.g., 'heater', 'co2', 'fan')
+        
+        Returns:
+            Control mode ('auto_pid', 'pid', 'on_off') or None if not found
+        """
+        try:
+            pool = await self._get_pool()
+            async with pool.acquire() as conn:
+                row = await conn.fetchrow("""
+                    SELECT control_mode, hysteresis_high, hysteresis_low
+                    FROM pid_parameters
+                    WHERE device_type = $1
+                """, device_type)
+                
+                if row:
+                    return {
+                        'control_mode': row['control_mode'] or 'pid',
+                        'hysteresis_high': row['hysteresis_high'] or 1.0,
+                        'hysteresis_low': row['hysteresis_low'] or 0.5
+                    }
+        except Exception as e:
+            logger.error(f"Error getting PID control mode: {e}")
+        return None
+
+    async def set_pid_control_mode(
+        self,
+        device_type: str,
+        control_mode: str,
+        hysteresis_high: Optional[float] = None,
+        hysteresis_low: Optional[float] = None,
+        updated_by: Optional[str] = None
+    ) -> bool:
+        """Set PID control mode for a device type.
+        
+        Args:
+            device_type: Device type (e.g., 'heater', 'co2', 'fan')
+            control_mode: Control mode ('auto_pid', 'pid', 'on_off')
+            hysteresis_high: Upper hysteresis threshold for on_off mode
+            hysteresis_low: Lower hysteresis threshold for on_off mode
+            updated_by: Optional identifier of who made the update
+        
+        Returns:
+            True if successful, False otherwise
+        """
+        if control_mode not in ('auto_pid', 'pid', 'on_off'):
+            logger.error(f"Invalid control mode: {control_mode}")
+            return False
+            
+        try:
+            pool = await self._get_pool()
+            async with pool.acquire() as conn:
+                # Build update query based on provided parameters
+                if hysteresis_high is not None and hysteresis_low is not None:
+                    await conn.execute("""
+                        UPDATE pid_parameters
+                        SET control_mode = $2,
+                            hysteresis_high = $3,
+                            hysteresis_low = $4,
+                            updated_at = NOW(),
+                            updated_by = $5
+                        WHERE device_type = $1
+                    """, device_type, control_mode, hysteresis_high, hysteresis_low, updated_by)
+                else:
+                    await conn.execute("""
+                        UPDATE pid_parameters
+                        SET control_mode = $2,
+                            updated_at = NOW(),
+                            updated_by = $3
+                        WHERE device_type = $1
+                    """, device_type, control_mode, updated_by)
+                
+                logger.info(f"PID control mode set to {control_mode} for {device_type}")
+                return True
+        except Exception as e:
+            logger.error(f"Error setting PID control mode: {e}")
+            return False
+
+    async def get_autotune_state(self, device_type: str) -> Optional[Dict[str, Any]]:
+        """Get auto-tune state for a device type.
+        
+        Args:
+            device_type: Device type (e.g., 'heater', 'co2', 'fan')
+        
+        Returns:
+            Dict with autotune state or None if not found
+        """
+        try:
+            pool = await self._get_pool()
+            async with pool.acquire() as conn:
+                row = await conn.fetchrow("""
+                    SELECT device_type, is_active, started_at, cycles_completed,
+                           current_amplitude, current_period, current_ku, current_tu,
+                           suggested_kp, suggested_ki, suggested_kd,
+                           last_change_reason, last_update, status
+                    FROM pid_autotune_state
+                    WHERE device_type = $1
+                """, device_type)
+                
+                if row:
+                    return dict(row)
+        except Exception as e:
+            logger.error(f"Error getting autotune state: {e}")
+        return None
+
+    async def update_autotune_state(
+        self,
+        device_type: str,
+        is_active: Optional[bool] = None,
+        cycles_completed: Optional[int] = None,
+        current_amplitude: Optional[float] = None,
+        current_period: Optional[float] = None,
+        current_ku: Optional[float] = None,
+        current_tu: Optional[float] = None,
+        suggested_kp: Optional[float] = None,
+        suggested_ki: Optional[float] = None,
+        suggested_kd: Optional[float] = None,
+        last_change_reason: Optional[str] = None,
+        status: Optional[str] = None
+    ) -> bool:
+        """Update auto-tune state for a device type.
+        
+        Args:
+            device_type: Device type
+            is_active: Whether auto-tuning is active
+            cycles_completed: Number of relay cycles completed
+            current_amplitude: Current oscillation amplitude
+            current_period: Current oscillation period
+            current_ku: Calculated ultimate gain
+            current_tu: Calculated ultimate period
+            suggested_kp: Suggested Kp from tuning
+            suggested_ki: Suggested Ki from tuning
+            suggested_kd: Suggested Kd from tuning
+            last_change_reason: Reason for last K value change
+            status: Current status ('idle', 'running', 'calculating', 'complete', 'error')
+        
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            pool = await self._get_pool()
+            async with pool.acquire() as conn:
+                # Build dynamic update based on provided parameters
+                updates = []
+                params = [device_type]
+                param_idx = 2
+                
+                if is_active is not None:
+                    updates.append(f"is_active = ${param_idx}")
+                    params.append(is_active)
+                    param_idx += 1
+                    if is_active:
+                        updates.append("started_at = NOW()")
+                        
+                if cycles_completed is not None:
+                    updates.append(f"cycles_completed = ${param_idx}")
+                    params.append(cycles_completed)
+                    param_idx += 1
+                    
+                if current_amplitude is not None:
+                    updates.append(f"current_amplitude = ${param_idx}")
+                    params.append(current_amplitude)
+                    param_idx += 1
+                    
+                if current_period is not None:
+                    updates.append(f"current_period = ${param_idx}")
+                    params.append(current_period)
+                    param_idx += 1
+                    
+                if current_ku is not None:
+                    updates.append(f"current_ku = ${param_idx}")
+                    params.append(current_ku)
+                    param_idx += 1
+                    
+                if current_tu is not None:
+                    updates.append(f"current_tu = ${param_idx}")
+                    params.append(current_tu)
+                    param_idx += 1
+                    
+                if suggested_kp is not None:
+                    updates.append(f"suggested_kp = ${param_idx}")
+                    params.append(suggested_kp)
+                    param_idx += 1
+                    
+                if suggested_ki is not None:
+                    updates.append(f"suggested_ki = ${param_idx}")
+                    params.append(suggested_ki)
+                    param_idx += 1
+                    
+                if suggested_kd is not None:
+                    updates.append(f"suggested_kd = ${param_idx}")
+                    params.append(suggested_kd)
+                    param_idx += 1
+                    
+                if last_change_reason is not None:
+                    updates.append(f"last_change_reason = ${param_idx}")
+                    params.append(last_change_reason)
+                    param_idx += 1
+                    
+                if status is not None:
+                    updates.append(f"status = ${param_idx}")
+                    params.append(status)
+                    param_idx += 1
+                
+                updates.append("last_update = NOW()")
+                
+                if updates:
+                    update_clause = ", ".join(updates)
+                    await conn.execute(f"""
+                        INSERT INTO pid_autotune_state (device_type, last_update)
+                        VALUES ($1, NOW())
+                        ON CONFLICT (device_type)
+                        DO UPDATE SET {update_clause}
+                    """, *params)
+                    
+                return True
+        except Exception as e:
+            logger.error(f"Error updating autotune state: {e}")
+            return False
+
+    async def set_pid_parameters_with_reason(
+        self,
+        device_type: str,
+        kp: float,
+        ki: float,
+        kd: float,
+        change_reason: str,
+        source: str = 'auto_pid',
+        updated_by: Optional[str] = None
+    ) -> bool:
+        """Set PID parameters with a change reason (for auto-tuning).
+        
+        Args:
+            device_type: Device type (e.g., 'heater', 'co2')
+            kp: Proportional gain
+            ki: Integral gain
+            kd: Derivative gain
+            change_reason: Explanation for why values changed
+            source: Source of update ('auto_pid', 'api', 'config')
+            updated_by: Optional identifier of who made the update
+        
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            pool = await self._get_pool()
+            async with pool.acquire() as conn:
+                # Get existing parameters for history
+                existing = await self.get_pid_parameters(device_type)
+                
+                # Update or insert PID parameters
+                await conn.execute("""
+                    INSERT INTO pid_parameters (device_type, kp, ki, kd, updated_at, updated_by, source)
+                    VALUES ($1, $2, $3, $4, NOW(), $5, $6)
+                    ON CONFLICT (device_type)
+                    DO UPDATE SET 
+                        kp = EXCLUDED.kp,
+                        ki = EXCLUDED.ki,
+                        kd = EXCLUDED.kd,
+                        updated_at = NOW(),
+                        updated_by = EXCLUDED.updated_by,
+                        source = EXCLUDED.source
+                """, device_type, kp, ki, kd, updated_by, source)
+                
+                # Log to history with change reason
+                if existing is None or existing['kp'] != kp or existing['ki'] != ki or existing['kd'] != kd:
+                    await conn.execute("""
+                        INSERT INTO pid_parameter_history (timestamp, device_type, kp, ki, kd, updated_by, source, change_reason)
+                        VALUES (NOW(), $1, $2, $3, $4, $5, $6, $7)
+                    """, device_type, kp, ki, kd, updated_by, source, change_reason)
+                    logger.info(f"PID parameters updated for {device_type}: Kp={kp}, Ki={ki}, Kd={kd} (reason: {change_reason})")
+                
+                return True
+        except Exception as e:
+            logger.error(f"Error setting PID parameters with reason: {e}")
+            return False
     async def get_schedules(
         self,
         location: Optional[str] = None,

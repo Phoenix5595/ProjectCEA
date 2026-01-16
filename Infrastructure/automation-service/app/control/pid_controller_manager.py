@@ -19,7 +19,8 @@ class PIDControllerManager:
         self._pid_controllers: Dict[Tuple[str, str, str, str], Any] = {}
         self._pid_params_cache: Dict[str, Dict[str, float]] = {}
         self._cache_timestamp: Optional[float] = None
-        self._params_cache_ttl = 300.0  # Cache PID params for 5 minutes  # PIDController instances
+        self._params_cache_ttl = 300.0  # Cache PID params for 5 minutes
+        self._autotuners: Dict[str, Any] = {}  # Auto-tuner instances per device type
 
     async def get_pid_controller(self, location: str, cluster: str, device_name: str,
                                 device_type: str) -> Optional[Any]:
@@ -43,6 +44,143 @@ class PIDControllerManager:
                 self._pid_controllers[key] = controller
 
         return self._pid_controllers.get(key)
+
+    # Control mode integration
+    async def get_control_mode_info(self, device_type: str) -> Dict[str, Any]:
+        """Get control mode info for a device type with caching."""
+        try:
+            mode_info = await self.database.get_pid_control_mode(device_type)
+            if mode_info:
+                return mode_info
+        except Exception as e:
+            logger.warning(f"Failed to get control mode for {device_type}: {e}")
+        return {'control_mode': 'pid', 'hysteresis_high': 1.0, 'hysteresis_low': 0.5}
+
+    async def get_or_create_autotuner(self, device_type: str) -> Any:
+        """Get or create an auto-tuner instance for a device type."""
+        from app.control.pid_autotuner import RelayAutoTuner
+        
+        if device_type not in self._autotuners:
+            self._autotuners[device_type] = RelayAutoTuner(
+                relay_amplitude=50.0,
+                hysteresis=0.5,
+                min_cycles=3,
+                max_cycles=10
+            )
+        return self._autotuners[device_type]
+
+    def _on_off_control(
+        self, 
+        error: float, 
+        hysteresis_high: float, 
+        hysteresis_low: float,
+        device_type: str
+    ) -> float:
+        """Simple ON/OFF control with hysteresis.
+        
+        Args:
+            error: Control error (setpoint - sensor for heating-like, sensor - setpoint for cooling-like)
+            hysteresis_high: Upper threshold to turn ON
+            hysteresis_low: Lower threshold to turn OFF
+            device_type: Device type for determining direction
+            
+        Returns:
+            Control output (0.0 or 1.0)
+        """
+        state_key = f"on_off_state_{device_type}"
+        current_state = getattr(self, state_key, False)
+        
+        if error > hysteresis_high:
+            new_state = True
+        elif error < -hysteresis_low:
+            new_state = False
+        else:
+            new_state = current_state
+        
+        setattr(self, state_key, new_state)
+        return 1.0 if new_state else 0.0
+
+    async def _process_autotune_control(
+        self,
+        device_type: str,
+        setpoint: float,
+        sensor_value: float,
+        current_time: datetime
+    ) -> Optional[float]:
+        """Process auto-tuning control for a device.
+        
+        Returns:
+            Control output (0.0-1.0) or None if auto-tuning not applicable
+        """
+        from app.control.pid_autotuner import RelayAutoTuner
+        
+        autotuner = await self.get_or_create_autotuner(device_type)
+        
+        # Start autotuner if not active
+        if not autotuner.is_active:
+            autotuner.start(setpoint)
+            logger.info(f"Started auto-tuning for {device_type}")
+        
+        # Update autotuner and get output
+        output, tuning_result = autotuner.update(sensor_value, current_time)
+        
+        # Convert relay output (0-100) to normalized (0-1)
+        normalized_output = output / 100.0
+        
+        # Update autotune state in database
+        n_cycles = min(len(autotuner._peaks), len(autotuner._troughs))
+        await self.database.update_autotune_state(
+            device_type,
+            is_active=autotuner.is_active,
+            cycles_completed=n_cycles,
+            status='running' if autotuner.is_active else 'calculating'
+        )
+        
+        # If tuning completed, apply results
+        if tuning_result:
+            logger.info(
+                f"Auto-tuning complete for {device_type}: "
+                f"Kp={tuning_result.kp:.3f}, Ki={tuning_result.ki:.4f}, Kd={tuning_result.kd:.3f}"
+            )
+            
+            # Build change reason
+            reason = (
+                f"Auto-tune completed after {n_cycles} cycles. "
+                f"Ku={tuning_result.ultimate_gain:.2f}, Tu={tuning_result.ultimate_period:.1f}s. "
+                f"Method: {tuning_result.tuning_method}"
+            )
+            
+            # Save new PID parameters with reason
+            await self.database.set_pid_parameters_with_reason(
+                device_type,
+                tuning_result.kp,
+                tuning_result.ki,
+                tuning_result.kd,
+                change_reason=reason,
+                source='auto_pid'
+            )
+            
+            # Update autotune state with results
+            await self.database.update_autotune_state(
+                device_type,
+                is_active=False,
+                current_ku=tuning_result.ultimate_gain,
+                current_tu=tuning_result.ultimate_period,
+                suggested_kp=tuning_result.kp,
+                suggested_ki=tuning_result.ki,
+                suggested_kd=tuning_result.kd,
+                last_change_reason=reason,
+                status='complete'
+            )
+            
+            # Clear cached PID params to force reload
+            if device_type in self._pid_params_cache:
+                del self._pid_params_cache[device_type]
+            
+            # Restart autotuner for continuous tuning
+            autotuner.start(setpoint)
+        
+        return normalized_output
 
     async def _create_pid_controller(self, location: str, cluster: str, device_name: str,
                                    device_type: str) -> Optional[Any]:
@@ -138,7 +276,38 @@ class PIDControllerManager:
         with LoggingContext(operation="process_pid_control"):
             device_type = device_info.get('device_type', '')
 
-            # Get PID controller
+            # Get control mode for this device type
+            mode_info = await self.get_control_mode_info(device_type)
+            control_mode = mode_info.get('control_mode', 'pid')
+
+            # Route based on control mode
+            if control_mode == 'on_off':
+                # ON/OFF control with hysteresis
+                setpoint = self._get_setpoint_for_device(device_type, context)
+                sensor_value = self._get_sensor_value_for_device(device_type, sensor_values)
+                if setpoint is None or sensor_value is None:
+                    return None
+                error = self._calculate_error(device_type, setpoint, sensor_value)
+                output = self._on_off_control(
+                    error,
+                    mode_info.get('hysteresis_high', 1.0),
+                    mode_info.get('hysteresis_low', 0.5),
+                    device_type
+                )
+                logger.debug(f"ON/OFF {device_name}: error={error:.2f}, output={output}")
+                return output
+            
+            elif control_mode == 'auto_pid':
+                # Auto-tuning control
+                setpoint = self._get_setpoint_for_device(device_type, context)
+                sensor_value = self._get_sensor_value_for_device(device_type, sensor_values)
+                if setpoint is None or sensor_value is None:
+                    return None
+                return await self._process_autotune_control(
+                    device_type, setpoint, sensor_value, current_time
+                )
+            
+            # Standard PID control (control_mode == 'pid')
             controller = await self.get_pid_controller(location, cluster, device_name, device_type)
             if not controller:
                 return None

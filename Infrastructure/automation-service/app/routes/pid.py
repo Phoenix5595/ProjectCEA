@@ -239,3 +239,232 @@ async def reset_pid_parameters(
     
     # Return reset parameters
     return await database.get_pid_parameters(device_type)
+
+
+# ============================================================================
+# PID Control Mode Endpoints
+# ============================================================================
+
+class PIDModeUpdate(BaseModel):
+    """Request model for PID control mode update."""
+    mode: str  # 'auto_pid', 'pid', 'on_off'
+    hysteresis_high: Optional[float] = None
+    hysteresis_low: Optional[float] = None
+    updated_by: Optional[str] = None
+
+
+class PIDModeResponse(BaseModel):
+    """Response model for PID control mode."""
+    device_type: str
+    mode: str
+    hysteresis_high: float
+    hysteresis_low: float
+    autotune_active: bool
+    updated_at: Optional[str] = None
+
+
+class AutotuneStatusResponse(BaseModel):
+    """Response model for autotune status."""
+    device_type: str
+    is_active: bool
+    status: str  # 'idle', 'running', 'calculating', 'complete', 'error'
+    cycles_completed: int
+    estimated_remaining_cycles: int
+    current_ku: Optional[float] = None
+    current_tu: Optional[float] = None
+    suggested_kp: Optional[float] = None
+    suggested_ki: Optional[float] = None
+    suggested_kd: Optional[float] = None
+    last_change_reason: Optional[str] = None
+
+
+@router.get("/api/pid/mode/{device_type}")
+async def get_pid_mode(
+    device_type: str,
+    database: DatabaseManager = Depends(get_database)
+) -> Dict[str, Any]:
+    """Get PID control mode for a device type.
+    
+    Args:
+        device_type: Device type (e.g., 'heater', 'co2', 'fan')
+    
+    Returns:
+        Dict with mode, hysteresis settings, and autotune status
+    """
+    mode_info = await database.get_pid_control_mode(device_type)
+    if mode_info is None:
+        raise HTTPException(status_code=404, detail=f"PID mode not found for device_type: {device_type}")
+    
+    # Get autotune state to check if active
+    autotune_state = await database.get_autotune_state(device_type)
+    is_autotune_active = autotune_state.get('is_active', False) if autotune_state else False
+    
+    # Get updated_at from main PID parameters
+    params = await database.get_pid_parameters(device_type)
+    updated_at = params.get('updated_at') if params else None
+    
+    return {
+        'device_type': device_type,
+        'mode': mode_info['control_mode'],
+        'hysteresis_high': mode_info['hysteresis_high'],
+        'hysteresis_low': mode_info['hysteresis_low'],
+        'autotune_active': is_autotune_active,
+        'updated_at': str(updated_at) if updated_at else None
+    }
+
+
+@router.post("/api/pid/mode/{device_type}")
+async def set_pid_mode(
+    device_type: str,
+    update: PIDModeUpdate,
+    database: DatabaseManager = Depends(get_database)
+) -> Dict[str, Any]:
+    """Set PID control mode for a device type.
+    
+    When setting mode to 'auto_pid', auto-tuning will start.
+    When changing away from 'auto_pid', auto-tuning will stop.
+    
+    Args:
+        device_type: Device type (e.g., 'heater', 'co2', 'fan')
+        update: Mode update request
+    
+    Returns:
+        Updated mode info
+    """
+    # Validate mode
+    valid_modes = ('auto_pid', 'pid', 'on_off')
+    if update.mode not in valid_modes:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Invalid mode: {update.mode}. Must be one of: {valid_modes}"
+        )
+    
+    # Validate hysteresis if on_off mode
+    if update.mode == 'on_off':
+        if update.hysteresis_high is not None and update.hysteresis_high <= 0:
+            raise HTTPException(status_code=400, detail="hysteresis_high must be positive")
+        if update.hysteresis_low is not None and update.hysteresis_low <= 0:
+            raise HTTPException(status_code=400, detail="hysteresis_low must be positive")
+    
+    # Get current mode to detect changes
+    current_mode_info = await database.get_pid_control_mode(device_type)
+    current_mode = current_mode_info['control_mode'] if current_mode_info else 'pid'
+    
+    # Update mode in database
+    success = await database.set_pid_control_mode(
+        device_type,
+        update.mode,
+        hysteresis_high=update.hysteresis_high,
+        hysteresis_low=update.hysteresis_low,
+        updated_by=update.updated_by
+    )
+    
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to update PID mode")
+    
+    # Handle auto-tune state changes
+    if update.mode == 'auto_pid' and current_mode != 'auto_pid':
+        # Starting auto-tune
+        await database.update_autotune_state(
+            device_type,
+            is_active=True,
+            status='running',
+            cycles_completed=0
+        )
+        logger.info(f"Auto-tuning started for {device_type}")
+    elif update.mode != 'auto_pid' and current_mode == 'auto_pid':
+        # Stopping auto-tune
+        await database.update_autotune_state(
+            device_type,
+            is_active=False,
+            status='idle'
+        )
+        logger.info(f"Auto-tuning stopped for {device_type}")
+    
+    # Return updated mode
+    return await get_pid_mode(device_type, database)
+
+
+@router.get("/api/pid/autotune/{device_type}/status")
+async def get_autotune_status(
+    device_type: str,
+    database: DatabaseManager = Depends(get_database)
+) -> Dict[str, Any]:
+    """Get auto-tune status for a device type.
+    
+    Args:
+        device_type: Device type (e.g., 'heater', 'co2', 'fan')
+    
+    Returns:
+        Auto-tune status including progress, calculated values, and suggestions
+    """
+    state = await database.get_autotune_state(device_type)
+    
+    if state is None:
+        # Return default idle state
+        return {
+            'device_type': device_type,
+            'is_active': False,
+            'status': 'idle',
+            'cycles_completed': 0,
+            'estimated_remaining_cycles': 5,
+            'current_ku': None,
+            'current_tu': None,
+            'suggested_kp': None,
+            'suggested_ki': None,
+            'suggested_kd': None,
+            'last_change_reason': None
+        }
+    
+    # Estimate remaining cycles (typically need 5 total)
+    total_cycles_needed = 5
+    remaining = max(0, total_cycles_needed - (state.get('cycles_completed') or 0))
+    
+    return {
+        'device_type': device_type,
+        'is_active': state.get('is_active', False),
+        'status': state.get('status', 'idle'),
+        'cycles_completed': state.get('cycles_completed', 0),
+        'estimated_remaining_cycles': remaining,
+        'current_ku': state.get('current_ku'),
+        'current_tu': state.get('current_tu'),
+        'suggested_kp': state.get('suggested_kp'),
+        'suggested_ki': state.get('suggested_ki'),
+        'suggested_kd': state.get('suggested_kd'),
+        'last_change_reason': state.get('last_change_reason')
+    }
+
+
+@router.post("/api/pid/autotune/{device_type}/stop")
+async def stop_autotune(
+    device_type: str,
+    database: DatabaseManager = Depends(get_database)
+) -> Dict[str, Any]:
+    """Force stop auto-tuning for a device type.
+    
+    This will stop auto-tuning but keep the current K values.
+    The mode will be changed to 'pid' (manual).
+    
+    Args:
+        device_type: Device type (e.g., 'heater', 'co2', 'fan')
+    
+    Returns:
+        Updated autotune status
+    """
+    # Update autotune state
+    await database.update_autotune_state(
+        device_type,
+        is_active=False,
+        status='idle'
+    )
+    
+    # Change mode to 'pid' (manual)
+    await database.set_pid_control_mode(
+        device_type,
+        'pid',
+        updated_by='system'
+    )
+    
+    logger.info(f"Auto-tuning force stopped for {device_type}, mode set to 'pid'")
+    
+    return await get_autotune_status(device_type, database)

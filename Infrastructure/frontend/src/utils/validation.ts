@@ -25,6 +25,11 @@ const PID_RANGES: Record<string, { kp: { min: number; max: number }; ki: { min: 
     ki: { min: 0.0, max: 0.5 },
     kd: { min: 0.0, max: 5.0 },
   },
+  fan: {
+    kp: { min: 0.0, max: 100.0 },
+    ki: { min: 0.0, max: 1.0 },
+    kd: { min: 0.0, max: 10.0 },
+  },
 };
 
 const VALID_MODES = ['DAY', 'NIGHT', 'TRANSITION'];
