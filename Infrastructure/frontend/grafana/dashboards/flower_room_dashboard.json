@@ -417,6 +417,14 @@
                 "value": "hidden"
               },
               {
+                "id": "custom.axisSoftMin",
+                "value": 0
+              },
+              {
+                "id": "custom.axisSoftMax",
+                "value": 100
+              },
+              {
                 "id": "unit",
                 "value": "percent"
               },
@@ -478,6 +486,14 @@
               {
                 "id": "custom.axisPlacement",
                 "value": "hidden"
+              },
+              {
+                "id": "custom.axisSoftMin",
+                "value": 0
+              },
+              {
+                "id": "custom.axisSoftMax",
+                "value": 100
               },
               {
                 "id": "unit",
@@ -1490,41 +1506,6 @@
             ],
             "limit": 50
           }
-        },
-        {
-          "editorMode": "code",
-          "format": "time_series",
-          "hide": false,
-          "rawQuery": true,
-          "rawSql": "SELECT timestamp AS \"time\", device_name || ' - Duty Cycle' AS metric, COALESCE(duty_cycle_percent, 0) AS value FROM automation_state WHERE location = 'Flower Room' AND cluster = 'main' AND device_name = 'light_1' AND timestamp >= $__timeFrom() AND timestamp <= $__timeTo() ORDER BY timestamp",
-          "refId": "H",
-          "sql": {
-            "columns": [
-              {
-                "parameters": [],
-                "type": "function"
-              }
-            ],
-            "groupBy": [
-              {
-                "property": {
-                  "type": "string"
-                },
-                "type": "groupBy"
-              }
-            ],
-            "limit": 50
-          }
-        },
-        {
-          "format": "time_series",
-          "rawSql": "SELECT timestamp AS \"time\", device_name || ' - Duty Cycle' AS metric, COALESCE(duty_cycle_percent, 0) AS value FROM automation_state WHERE location = 'Flower Room' AND cluster = 'main' AND device_name = 'light_2' AND timestamp >= $__timeFrom() AND timestamp <= $__timeTo() ORDER BY timestamp",
-          "refId": "I"
-        },
-        {
-          "format": "time_series",
-          "rawSql": "SELECT timestamp AS \"time\", device_name || ' - Duty Cycle' AS metric, COALESCE(duty_cycle_percent, 0) AS value FROM automation_state WHERE location = 'Flower Room' AND cluster = 'main' AND device_name = 'light_3' AND timestamp >= $__timeFrom() AND timestamp <= $__timeTo() ORDER BY timestamp",
-          "refId": "J"
         },
         {
           "format": "time_series",
