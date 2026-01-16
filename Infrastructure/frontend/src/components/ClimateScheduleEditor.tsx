@@ -13,6 +13,8 @@ interface ClimateSchedule {
   day_end_time: string
   pre_day_duration: number
   pre_night_duration: number
+  leaf_delta_day: number
+  leaf_delta_night: number
   setpoints: {
     DAY?: any
     NIGHT?: any
@@ -69,6 +71,8 @@ export default function ClimateScheduleEditor({ location, cluster }: ClimateSche
         day_end_time: climateData.day_end_time,
         pre_day_duration: currentPreDay,
         pre_night_duration: currentPreNight,
+        leaf_delta_day: climateData.leaf_delta_day ?? -2.0,
+        leaf_delta_night: climateData.leaf_delta_night ?? -1.0,
         setpoints: {
           DAY: { ...(climateData.setpoints?.DAY || {}) },
           NIGHT: { ...(climateData.setpoints?.NIGHT || {}) },
@@ -88,6 +92,8 @@ export default function ClimateScheduleEditor({ location, cluster }: ClimateSche
       
       setSchedule({
         ...climateData,
+        leaf_delta_day: climateData.leaf_delta_day ?? -2.0,
+        leaf_delta_night: climateData.leaf_delta_night ?? -1.0,
         setpoints
       })
 
@@ -229,6 +235,60 @@ export default function ClimateScheduleEditor({ location, cluster }: ClimateSche
         </div>
       </section>
 
+      <section className="border-t border-gray-200 dark:border-gray-800 pt-6">
+        <h2 className="text-xl font-semibold mb-4 text-gray-900 dark:text-gray-100">Leaf Temperature Settings</h2>
+        <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+          Leaf temperature offset from air temperature. Used for accurate VPD calculation.
+          The system interpolates between day and night values during transitions.
+        </p>
+        <div className="grid grid-cols-2 gap-6 max-w-xl">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              Day Leaf Delta (°C)
+            </label>
+            <input
+              type="number"
+              step="0.1"
+              min="-5"
+              max="5"
+              value={schedule.leaf_delta_day ?? -2.0}
+              onChange={(e) => handleScheduleChange({ leaf_delta_day: parseFloat(e.target.value) || 0 })}
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
+            />
+            <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              Typical: -1.5 to -3.0°C (leaves cooler than air under lights)
+            </div>
+            {currentSchedule?.leaf_delta_day !== undefined && (
+              <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                Current: {currentSchedule.leaf_delta_day}°C
+              </div>
+            )}
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              Night Leaf Delta (°C)
+            </label>
+            <input
+              type="number"
+              step="0.1"
+              min="-5"
+              max="5"
+              value={schedule.leaf_delta_night ?? -1.0}
+              onChange={(e) => handleScheduleChange({ leaf_delta_night: parseFloat(e.target.value) || 0 })}
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
+            />
+            <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              Typical: -0.5 to -1.5°C (leaves closer to air temp at night)
+            </div>
+            {currentSchedule?.leaf_delta_night !== undefined && (
+              <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                Current: {currentSchedule.leaf_delta_night}°C
+              </div>
+            )}
+          </div>
+        </div>
+      </section>
+
       <div className="flex justify-end">
         <button
           onClick={handleSave}
@@ -354,39 +414,6 @@ function SetpointModeEditor({ mode: _mode, setpoint, currentSetpoint, onChange, 
         )}
       </div>
 
-      {/* Leaf Temperature Delta */}
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-            Leaf Delta Day (°C)
-          </label>
-          <input
-            type="number"
-            step="0.1"
-            min="-5"
-            max="5"
-            value={setpoint.leaf_delta_day ?? 0}
-            onChange={(e) => handleChange('leaf_delta_day', parseFloat(e.target.value) || 0)}
-            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
-          />
-          <div className="mt-1 text-xs text-gray-500">Leaf temp offset from air (day)</div>
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-            Leaf Delta Night (°C)
-          </label>
-          <input
-            type="number"
-            step="0.1"
-            min="-5"
-            max="5"
-            value={setpoint.leaf_delta_night ?? 0}
-            onChange={(e) => handleChange('leaf_delta_night', parseFloat(e.target.value) || 0)}
-            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
-          />
-          <div className="mt-1 text-xs text-gray-500">Leaf temp offset from air (night)</div>
-        </div>
-      </div>
     </div>
   )
 }
