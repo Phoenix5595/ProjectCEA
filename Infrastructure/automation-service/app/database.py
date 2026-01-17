@@ -122,6 +122,7 @@ class DatabaseManager:
             return 0
 
         flushed_count = 0
+        batch_data: list[tuple[Any, ...]] = []
         try:
             # Use a single batch insert for all buffered records
             batch_data = self._batch_buffer.copy()
@@ -129,7 +130,7 @@ class DatabaseManager:
 
             if batch_data:
                 # Insert all records in a single transaction
-                async with self._pool.acquire() as conn:
+                async with self._pool.acquire() as conn:  # pyright: ignore[reportOptionalMemberAccess]
                     # Prepare the insert statement
                     insert_query = """
 
@@ -1290,7 +1291,7 @@ class DatabaseManager:
         """Get or create connection pool with retry logic."""
         if self._pool is None or not self._db_connected:
             await self._connect_db()
-        return self._pool
+        return self._pool  # pyright: ignore[reportReturnType]
     
     async def get_sensor_value(self, sensor_name: str) -> Optional[float]:
         """Get latest sensor value from Redis or TimescaleDB fallback.
@@ -1365,7 +1366,7 @@ class DatabaseManager:
                 # Debug logging removed
                 
                 # Cast to list since mget returns list of values
-                values_list: list[Any] = list(raw_values) if raw_values is not None else []  # type: ignore[arg-type]
+                values_list: list[Any] = cast(list[Any], raw_values) if raw_values is not None else []
                 for sensor_name, value in zip(sensor_names, values_list):
                     if value is not None:
                         try:
@@ -3254,7 +3255,7 @@ class DatabaseManager:
             
             logger.info("Room modes tables created/verified")
     
-    async def get_room_modes(self) -> list[dict]:
+    async def get_room_modes(self) -> list[dict[str, Any]]:
         pool = await self._get_pool()
         async with pool.acquire() as conn:
             rows = await conn.fetch("""
@@ -3263,7 +3264,7 @@ class DatabaseManager:
             """)
             return [dict(row) for row in rows]
     
-    async def get_flower_submodes(self) -> list[dict]:
+    async def get_flower_submodes(self) -> list[dict[str, Any]]:
         pool = await self._get_pool()
         async with pool.acquire() as conn:
             rows = await conn.fetch("""
@@ -3308,7 +3309,7 @@ class DatabaseManager:
             """, location, cluster, mode_id, submode_id)
             return True
     
-    async def get_mode_parameters(self, location: str, cluster: str, mode_name: str, submode_name: str | None = None) -> dict | None:
+    async def get_mode_parameters(self, location: str, cluster: str, mode_name: str, submode_name: str | None = None) -> dict[str, Any] | None:
         pool = await self._get_pool()
         async with pool.acquire() as conn:
             mode_row = await conn.fetchrow("SELECT id FROM room_modes WHERE name = $1", mode_name)
@@ -3340,7 +3341,7 @@ class DatabaseManager:
                 return result
             return None
     
-    async def save_mode_parameters(self, location: str, cluster: str, mode_name: str, submode_name: str | None, params: dict) -> bool:
+    async def save_mode_parameters(self, location: str, cluster: str, mode_name: str, submode_name: str | None, params: dict[str, Any]) -> bool:
         pool = await self._get_pool()
         async with pool.acquire() as conn:
             mode_row = await conn.fetchrow("SELECT id FROM room_modes WHERE name = $1", mode_name)
