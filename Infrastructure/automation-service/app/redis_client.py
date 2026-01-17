@@ -5,7 +5,7 @@ from shared.logging import get_logger
 import os
 import json
 from datetime import datetime
-from typing import Dict, Any, Optional, List, Tuple
+from typing import Dict, Any, Optional, List, Tuple, cast
 import redis
 
 logger = get_logger(__name__)
@@ -170,7 +170,7 @@ class AutomationRedisClient:
                 stream_data[b'control_reason'] = control_reason.encode()
             
             # Write to Redis Stream with automatic trimming (keep last 100,000 messages)
-            self.stream_client.xadd('sensor:raw', stream_data, maxlen=100000, approximate=True)
+            self.stream_client.xadd('sensor:raw', stream_data, maxlen=100000, approximate=True)  # type: ignore
             return True
         except Exception as e:
             logger.warning(f"Error writing to Redis Stream: {e}")
@@ -257,7 +257,7 @@ class AutomationRedisClient:
             # Use MGET for single round-trip instead of 6 individual GETs
             keys = [heat_key, cool_key, temp_key, hum_key, co2_key, source_key]
             values = self.redis_client.mget(keys)
-            heat, cool, temp, hum, co2, source_data = values
+            heat, cool, temp, hum, co2, source_data = cast(List[Any], values)  # type: ignore
             
             if heat is None and cool is None and temp is None and hum is None and co2 is None:
                 return None
@@ -489,7 +489,7 @@ class AutomationRedisClient:
                             stream_data[b'mode'] = mode.encode()
                         if ramp_progress_heating is not None:
                             stream_data[b'ramp'] = str(ramp_progress_heating).encode()
-                        self.stream_client.xadd('stream:control', stream_data, maxlen=100000, approximate=True)
+                        self.stream_client.xadd('stream:control', stream_data, maxlen=100000, approximate=True)  # type: ignore
                     
                     if effective_cooling_setpoint is not None:
                         stream_data = {
@@ -505,7 +505,7 @@ class AutomationRedisClient:
                             stream_data[b'mode'] = mode.encode()
                         if ramp_progress_cooling is not None:
                             stream_data[b'ramp'] = str(ramp_progress_cooling).encode()
-                        self.stream_client.xadd('stream:control', stream_data, maxlen=100000, approximate=True)
+                        self.stream_client.xadd('stream:control', stream_data, maxlen=100000, approximate=True)  # type: ignore
                     
                     if effective_humidity_setpoint is not None:
                         stream_data = {
@@ -521,7 +521,7 @@ class AutomationRedisClient:
                             stream_data[b'mode'] = mode.encode()
                         if ramp_progress_humidity is not None:
                             stream_data[b'ramp'] = str(ramp_progress_humidity).encode()
-                        self.stream_client.xadd('stream:control', stream_data, maxlen=100000, approximate=True)
+                        self.stream_client.xadd('stream:control', stream_data, maxlen=100000, approximate=True)  # type: ignore
                     
                     if effective_co2_setpoint is not None:
                         stream_data = {
@@ -537,7 +537,7 @@ class AutomationRedisClient:
                             stream_data[b'mode'] = mode.encode()
                         if ramp_progress_co2 is not None:
                             stream_data[b'ramp'] = str(ramp_progress_co2).encode()
-                        self.stream_client.xadd('stream:control', stream_data, maxlen=100000, approximate=True)
+                        self.stream_client.xadd('stream:control', stream_data, maxlen=100000, approximate=True)  # type: ignore
                     
                     if effective_vpd_setpoint is not None:
                         stream_data = {
@@ -553,7 +553,7 @@ class AutomationRedisClient:
                             stream_data[b'mode'] = mode.encode()
                         if ramp_progress_vpd is not None:
                             stream_data[b'ramp'] = str(ramp_progress_vpd).encode()
-                        self.stream_client.xadd('stream:control', stream_data, maxlen=100000, approximate=True)
+                        self.stream_client.xadd('stream:control', stream_data, maxlen=100000, approximate=True)  # type: ignore
                     
                     if effective_light_intensity is not None:
                         stream_data = {
@@ -569,7 +569,7 @@ class AutomationRedisClient:
                             stream_data[b'mode'] = mode.encode()
                         if ramp_progress_light is not None:
                             stream_data[b'ramp'] = str(ramp_progress_light).encode()
-                        self.stream_client.xadd('stream:control', stream_data, maxlen=100000, approximate=True)
+                        self.stream_client.xadd('stream:control', stream_data, maxlen=100000, approximate=True)  # type: ignore
                 except Exception as e:
                     logger.debug(f"Error writing effective setpoints to stream: {e}")
             
@@ -595,7 +595,7 @@ class AutomationRedisClient:
             source_key = f"setpoint:{location}:{cluster}:source"
             source_data = self.redis_client.get(source_key)
             if source_data:
-                return json.loads(source_data)
+                return json.loads(str(source_data))
         except Exception as e:
             logger.debug(f"Error reading setpoint source: {e}")
         return None
@@ -630,7 +630,7 @@ class AutomationRedisClient:
                 self.redis_client.setex(rate_limit_key, 2, str(int(datetime.now().timestamp() * 1000)))
                 return True
             
-            last_write_ms = int(last_write_str)
+            last_write_ms = int(str(last_write_str))
             now_ms = int(datetime.now().timestamp() * 1000)
             time_since_last = (now_ms - last_write_ms) / 1000.0
             
@@ -663,7 +663,7 @@ class AutomationRedisClient:
         try:
             mode_key = f"mode:{location}:{cluster}"
             mode = self.redis_client.get(mode_key)
-            return mode if mode else None
+            return str(mode) if mode else None
         except Exception as e:
             logger.warning(f"Error reading mode from Redis: {e}")
             return None
@@ -719,7 +719,7 @@ class AutomationRedisClient:
             failsafe_key = f"failsafe:{location}:{cluster}"
             failsafe_data = self.redis_client.get(failsafe_key)
             if failsafe_data:
-                return json.loads(failsafe_data)
+                return json.loads(str(failsafe_data))
         except Exception as e:
             logger.debug(f"Error reading failsafe: {e}")
         return None
@@ -819,7 +819,7 @@ class AutomationRedisClient:
             # Check if alarm already exists
             existing_data = self.redis_client.get(alarm_key)
             if existing_data:
-                existing = json.loads(existing_data)
+                existing = json.loads(str(existing_data))
                 since = existing.get('since', timestamp_ms)
             else:
                 since = timestamp_ms
@@ -871,7 +871,7 @@ class AutomationRedisClient:
             alarm_data = self.redis_client.get(alarm_key)
             
             if alarm_data:
-                alarm = json.loads(alarm_data)
+                alarm = json.loads(str(alarm_data))
                 alarm['acknowledged'] = True
                 self.redis_client.set(alarm_key, json.dumps(alarm))
                 logger.info(f"Alarm acknowledged: {location}/{cluster}/{alarm_name}")
@@ -902,7 +902,7 @@ class AutomationRedisClient:
                 alarm_data = self.redis_client.get(key)
                 if alarm_data:
                     try:
-                        alarm = json.loads(alarm_data)
+                        alarm = json.loads(str(alarm_data))
                         if alarm.get('active', False):
                             alarm_name = key.split(':')[-1]
                             alarms[alarm_name] = alarm
@@ -938,7 +938,7 @@ class AutomationRedisClient:
             alarm_data = self.redis_client.get(alarm_key)
             
             if alarm_data:
-                alarm = json.loads(alarm_data)
+                alarm = json.loads(str(alarm_data))
                 alarm['active'] = False
                 self.redis_client.set(alarm_key, json.dumps(alarm))
                 logger.info(f"Alarm cleared: {location}/{cluster}/{alarm_name}")
@@ -980,7 +980,7 @@ class AutomationRedisClient:
             logger.debug(f"Error writing heartbeat: {e}")
             return False
     
-    def check_heartbeat(self, service_name: str, max_age_seconds: int = 5) -> Tuple[bool, Optional[int]]:
+    def check_heartbeat(self, service_name: str, max_age_seconds: int = 5) -> Tuple[bool, Optional[float]]:
         """Check if service heartbeat is fresh.
         
         Args:
@@ -1000,7 +1000,7 @@ class AutomationRedisClient:
             if heartbeat_str is None:
                 return False, None
             
-            heartbeat_ms = int(heartbeat_str)
+            heartbeat_ms = int(str(heartbeat_str))
             now_ms = int(datetime.now().timestamp() * 1000)
             age_seconds = (now_ms - heartbeat_ms) / 1000.0
             
@@ -1069,7 +1069,7 @@ class AutomationRedisClient:
             last_good_data = self.redis_client.get(last_good_key)
             
             if last_good_data:
-                return json.loads(last_good_data)
+                return json.loads(str(last_good_data))
         except Exception as e:
             logger.debug(f"Error reading last good value: {e}")
         return None
@@ -1126,7 +1126,7 @@ class AutomationRedisClient:
             pid_data = self.redis_client.get(pid_key)
             
             if pid_data:
-                return json.loads(pid_data)
+                return json.loads(str(pid_data))
         except Exception as e:
             logger.debug(f"Error reading PID parameters from Redis: {e}")
         return None
@@ -1246,7 +1246,7 @@ class AutomationRedisClient:
             light_key = f"light:{location}:{cluster}:{device_name}"
             light_data = self.redis_client.get(light_key)
             if light_data:
-                return json.loads(light_data)
+                return json.loads(str(light_data))
         except Exception as e:
             logger.debug(f"Error reading light intensity from Redis: {e}")
         return None
@@ -1295,7 +1295,7 @@ class AutomationRedisClient:
             ramp_key = f"ramp:{location}:{cluster}:{setpoint_type}"
             ramp_data = self.redis_client.get(ramp_key)
             if ramp_data:
-                return json.loads(ramp_data)
+                return json.loads(str(ramp_data))
         except Exception as e:
             logger.debug(f"Error reading ramp state from Redis: {e}")
         return None
@@ -1406,7 +1406,7 @@ class AutomationRedisClient:
             state_data = self.redis_client.get(state_key)
             
             if state_data:
-                return json.loads(state_data)
+                return json.loads(str(state_data))
         except Exception as e:
             logger.debug(f"Error reading schedule state from Redis: {e}")
         return None
