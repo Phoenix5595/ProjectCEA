@@ -41,17 +41,25 @@ class ActiveModeResponse(BaseModel):
 
 
 class ModeParameters(BaseModel):
-    day_start_time: str = "06:00"
-    night_start_time: str = "18:00"
+    day_start_time: str = "17:00"
+    night_start_time: str = "11:00"
     ramp_up_minutes: int = 30
     ramp_down_minutes: int = 30
     pre_day_minutes: int = 30
     pre_night_minutes: int = 30
+    pre_day_heat_temp: float = 22.0
+    pre_day_cool_temp: float = 26.0
+    pre_day_vpd: float = 0.9
+    pre_day_co2: int = 700
     day_heat_temp: float = 24.0
     day_cool_temp: float = 28.0
     day_vpd: float = 1.0
     day_co2: int = 800
     day_leaf_delta: float = -2.0
+    pre_night_heat_temp: float = 22.0
+    pre_night_cool_temp: float = 26.0
+    pre_night_vpd: float = 0.9
+    pre_night_co2: int = 700
     night_heat_temp: float = 20.0
     night_cool_temp: float = 24.0
     night_vpd: float = 0.8
@@ -82,11 +90,19 @@ class UpdateParametersRequest(BaseModel):
     ramp_down_minutes: Optional[int] = None
     pre_day_minutes: Optional[int] = None
     pre_night_minutes: Optional[int] = None
+    pre_day_heat_temp: Optional[float] = None
+    pre_day_cool_temp: Optional[float] = None
+    pre_day_vpd: Optional[float] = None
+    pre_day_co2: Optional[int] = None
     day_heat_temp: Optional[float] = None
     day_cool_temp: Optional[float] = None
     day_vpd: Optional[float] = None
     day_co2: Optional[int] = None
     day_leaf_delta: Optional[float] = None
+    pre_night_heat_temp: Optional[float] = None
+    pre_night_cool_temp: Optional[float] = None
+    pre_night_vpd: Optional[float] = None
+    pre_night_co2: Optional[int] = None
     night_heat_temp: Optional[float] = None
     night_cool_temp: Optional[float] = None
     night_vpd: Optional[float] = None

@@ -21,11 +21,19 @@ export interface ModeParameters {
   ramp_down_minutes: number
   pre_day_minutes: number
   pre_night_minutes: number
+  pre_day_heat_temp: number
+  pre_day_cool_temp: number
+  pre_day_vpd: number
+  pre_day_co2: number
   day_heat_temp: number
   day_cool_temp: number
   day_vpd: number
   day_co2: number
   day_leaf_delta: number
+  pre_night_heat_temp: number
+  pre_night_cool_temp: number
+  pre_night_vpd: number
+  pre_night_co2: number
   night_heat_temp: number
   night_cool_temp: number
   night_vpd: number
@@ -56,11 +64,19 @@ export interface UpdateParametersRequest {
   ramp_down_minutes?: number
   pre_day_minutes?: number
   pre_night_minutes?: number
+  pre_day_heat_temp?: number
+  pre_day_cool_temp?: number
+  pre_day_vpd?: number
+  pre_day_co2?: number
   day_heat_temp?: number
   day_cool_temp?: number
   day_vpd?: number
   day_co2?: number
   day_leaf_delta?: number
+  pre_night_heat_temp?: number
+  pre_night_cool_temp?: number
+  pre_night_vpd?: number
+  pre_night_co2?: number
   night_heat_temp?: number
   night_cool_temp?: number
   night_vpd?: number

@@ -6,9 +6,10 @@ import { getLocationDisplayName, getLocationBackendName } from '../config/zones'
 import type { RoomModeWithParams, ModeParameters } from '../types/modes'
 import RoomModeSelector from '../components/RoomModeSelector'
 import SetpointTimeline from '../components/SetpointTimeline'
-import ScheduleLightsPanel from '../components/ScheduleLightsPanel'
 import SetpointsTable from '../components/SetpointsTable'
-import PIDEditor from '../components/PIDEditor'
+import CircularTimePicker from '../components/CircularTimePicker'
+import LightSlidersPanel from '../components/LightSlidersPanel'
+import PIDCompactRow from '../components/PIDCompactRow'
 
 export default function ZoneConfig() {
   const { location: locationParam, cluster } = useParams<{ location: string; cluster: string }>()
@@ -94,13 +95,15 @@ export default function ZoneConfig() {
 
   const params = roomMode?.parameters
   const isConstant = roomMode?.is_constant || false
+  const currentModeName = roomMode?.mode_name || 'veg'
+  const lockedPhotoperiod = currentModeName === 'flower' ? 12 : currentModeName === 'veg' ? 18 : null
 
   return (
     <div className="min-h-screen bg-gray-950 p-2">
       <div className="max-w-[1920px] mx-auto h-[calc(100vh-1rem)] flex flex-col">
         <div className="flex items-center justify-between mb-2 px-1">
           <h1 className="text-lg font-bold text-gray-100 flex items-center gap-2">
-            <span>🌱</span> 
+            <span>🌻</span> 
             {cluster === 'main' ? getLocationDisplayName(location) : `${getLocationDisplayName(location)} - ${cluster}`}
           </h1>
           <div className="flex items-center gap-3">
@@ -128,55 +131,84 @@ export default function ZoneConfig() {
 
         {params && (
           <div className="flex-1 flex flex-col gap-2 min-h-0">
-            <div className="flex gap-2 h-[200px] flex-shrink-0">
-              <div className="flex-[2] bg-gray-900 rounded-lg border border-gray-800 overflow-hidden">
-                {!isConstant && (
-                  <SetpointTimeline
-                    dayStartTime={params.day_start_time}
-                    dayEndTime={params.night_start_time}
-                    preDayDuration={params.pre_day_minutes}
-                    preNightDuration={params.pre_night_minutes}
-                    onDayStartChange={(time) => handleParamChange({ day_start_time: time })}
-                    onDayEndChange={(time) => handleParamChange({ night_start_time: time })}
-                    onPreDayDurationChange={(d) => handleParamChange({ pre_day_minutes: d })}
-                    onPreNightDurationChange={(d) => handleParamChange({ pre_night_minutes: d })}
-                    setpoints={{
-                      DAY: { heating_setpoint: params.day_heat_temp, cooling_setpoint: params.day_cool_temp, vpd: params.day_vpd, co2: params.day_co2 },
-                      NIGHT: { heating_setpoint: params.night_heat_temp, cooling_setpoint: params.night_cool_temp, vpd: params.night_vpd, co2: params.night_co2 }
-                    }}
-                    className="h-full"
-                  />
-                )}
-                {isConstant && (
-                  <div className="h-full flex items-center justify-center text-gray-500 text-sm">
-                    Constant mode - no schedule
-                  </div>
-                )}
-              </div>
-              
-              <div className="flex-1">
-                <ScheduleLightsPanel
-                  params={params}
-                  currentParams={savedParams || undefined}
-                  isConstant={isConstant}
-                  onChange={handleParamChange}
+            <div className="h-[270px] flex-shrink-0 bg-gray-900 rounded-lg border border-gray-800 overflow-hidden p-3">
+              <div className="text-[14px] text-gray-400 uppercase font-bold tracking-wider mb-2">Climate Timeline</div>
+              {!isConstant && (
+                <SetpointTimeline
+                  dayStartTime={params.day_start_time}
+                  dayEndTime={params.night_start_time}
+                  preDayDuration={params.pre_day_minutes}
+                  preNightDuration={params.pre_night_minutes}
+                  onDayStartChange={(time) => handleParamChange({ day_start_time: time })}
+                  onDayEndChange={(time) => handleParamChange({ night_start_time: time })}
+                  onPreDayDurationChange={(d) => handleParamChange({ pre_day_minutes: d })}
+                  onPreNightDurationChange={(d) => handleParamChange({ pre_night_minutes: d })}
+                  lightPhotoperiod={{
+                    startTime: params.day_start_time,
+                    endTime: params.night_start_time,
+                    rampUpDuration: params.pre_day_minutes,
+                    rampDownDuration: params.pre_night_minutes
+                  }}
+                  setpoints={{
+                    DAY: { heating_setpoint: params.day_heat_temp, cooling_setpoint: params.day_cool_temp, vpd: params.day_vpd, co2: params.day_co2 },
+                    NIGHT: { heating_setpoint: params.night_heat_temp, cooling_setpoint: params.night_cool_temp, vpd: params.night_vpd, co2: params.night_co2 }
+                  }}
+                  className="h-[calc(100%-28px)]"
                 />
-              </div>
+              )}
+              {isConstant && (
+                <div className="h-full flex items-center justify-center text-gray-500 text-sm">
+                  Constant mode - no timeline
+                </div>
+              )}
             </div>
 
-            <div className="flex gap-2 flex-1 min-h-0">
-              <div className="flex-[2]">
-                <SetpointsTable
-                  params={params}
-                  currentParams={savedParams || undefined}
-                  isConstant={isConstant}
-                  onChange={handleParamChange}
-                />
+            <div className="flex gap-2">
+              <div className="w-[35%] flex flex-col gap-2">
+                {!isConstant && (
+                  <div className="bg-gray-900 rounded-lg border border-gray-800 p-[11px] flex-shrink-0">
+                    <div className="text-[14px] text-gray-400 uppercase font-bold tracking-wider mb-2">Light Schedule</div>
+                    <div className="flex justify-center">
+                      <CircularTimePicker
+                        dayStartTime={params.day_start_time}
+                        dayEndTime={params.night_start_time}
+                      onDayStartChange={(time) => handleParamChange({ day_start_time: time })}
+                      onDayEndChange={(time) => handleParamChange({ night_start_time: time })}
+                      showPresetButtons={false}
+                      lockedPhotoperiodHours={lockedPhotoperiod}
+                      rampUpDuration={params.pre_day_minutes}
+                      rampDownDuration={params.pre_night_minutes}
+                      onRampUpChange={(d) => handleParamChange({ pre_day_minutes: d ?? 0 })}
+                      onRampDownChange={(d) => handleParamChange({ pre_night_minutes: d ?? 0 })}
+                      size={420}
+                    />
+                  </div>
+                </div>
+                )}
               </div>
               
-              <div className="flex-1">
-                <PIDEditor />
+              <div className="w-[65%] flex flex-col gap-2">
+                <div className="bg-gray-900 rounded-lg border border-gray-800 p-3">
+                  <div className="text-[14px] text-gray-400 uppercase font-bold tracking-wider mb-2">Setpoints</div>
+                  <SetpointsTable
+                    params={params}
+                    currentParams={savedParams || undefined}
+                    isConstant={isConstant}
+                    onChange={handleParamChange}
+                  />
+                </div>
               </div>
+            </div>
+            
+            <div className="flex-shrink-0">
+              <LightSlidersPanel
+                location={location}
+                cluster={cluster}
+              />
+            </div>
+            
+            <div className="flex-shrink-0">
+              <PIDCompactRow />
             </div>
           </div>
         )}

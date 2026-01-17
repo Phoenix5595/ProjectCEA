@@ -1,8 +1,8 @@
-# Zone Configuration - Complete Redesign v3
+# Zone Configuration - Complete Redesign v4
 
 **Created**: 2026-01-16  
-**Updated**: 2026-01-17  
-**Status**: PLANNED  
+**Updated**: 2026-01-17 (Post-Exploration)  
+**Status**: READY FOR IMPLEMENTATION  
 **Priority**: HIGH  
 
 ---
@@ -11,7 +11,35 @@
 
 Complete redesign of the Zone Configuration page with:
 1. **Corrected UI Layout** - CircularTimePicker left, Timeline+Setpoints right
-2. **Room Modes System** - Veg, Flower (with submodes), Drying, Sleep
+2. **Room Modes System** - Already implemented in backend, frontend integration only
+
+---
+
+## Exploration Findings (2026-01-17)
+
+### What Already Exists ✅
+
+| Component/Feature | Status | Notes |
+|-------------------|--------|-------|
+| **Backend Mode Infrastructure** | ✅ Complete | `room_modes`, `flower_submodes`, `active_room_modes`, `mode_parameters` tables |
+| **Backend Mode Endpoints** | ✅ Complete | `/api/room-modes/`, `/api/lights/`, `/api/setpoints/` |
+| **API Client Methods** | ✅ Complete | `getLightsForZone()`, `getRoomModeWithParams()`, `setRoomMode()` |
+| **CircularTimePicker.tsx** | ✅ Exists | 676 lines, has `showPresetButtons` prop |
+| **SetpointTimeline.tsx** | ✅ Exists | 826 lines, fully functional |
+| **SetpointsTable.tsx** | ✅ Exists | 74 lines, compact table |
+| **LightSlider.tsx** | ✅ Exists | 88 lines, has current value marker |
+| **RoomModeSelector.tsx** | ✅ Exists | 114 lines, dropdown with submodes |
+| **PIDEditor.tsx** | ✅ Exists | 323 lines, multi-row (needs compact version) |
+| **Types** | ✅ Complete | `ModeParameters`, `RoomModeWithParams`, `LightDevice` |
+
+### What Needs Work ⚠️
+
+| Task | Action | Notes |
+|------|--------|-------|
+| **ZoneConfig.tsx** | MODIFY | Major layout restructure |
+| **LightSlidersPanel.tsx** | CREATE | Wrapper that fetches real device names |
+| **PIDCompactRow.tsx** | CREATE | Single-line compact PID |
+| **RoomModeSelector.tsx** | MODIFY | Add separate submode buttons |
 
 ---
 
@@ -57,466 +85,378 @@ Complete redesign of the Zone Configuration page with:
 
 ---
 
-## Component Structure
+## Current vs Target Layout
 
-### ZoneConfig.tsx - New Layout
+### Current ZoneConfig.tsx Layout
+```
+┌─────────────────────────────────────────────────────────────────┐
+│ Header: Title + Mode Selector + Save + Back                     │
+├───────────────────────────────────┬─────────────────────────────┤
+│ SetpointTimeline (flex-[2])       │ ScheduleLightsPanel (flex-1)│
+│ LEFT - 2/3 width                  │ RIGHT - 1/3 width           │
+├───────────────────────────────────┼─────────────────────────────┤
+│ SetpointsTable (flex-[2])         │ PIDEditor (flex-1)          │
+│ LEFT - 2/3 width                  │ RIGHT - 1/3 width           │
+└───────────────────────────────────┴─────────────────────────────┘
+```
 
-```tsx
-<div className="flex flex-col h-full gap-2 p-3 bg-gray-950 min-h-screen">
-  {/* Header - Mode selector + Save */}
-  <div className="flex items-center justify-between">
-    <div className="flex items-center gap-3">
-      <h1 className="text-xl font-bold">{roomName}</h1>
-      <RoomModeSelector location={location} cluster={cluster} />
-    </div>
-    <div className="flex items-center gap-2">
-      <button className="px-4 py-2 bg-cyan-600 rounded">SAVE</button>
-      <button onClick={() => navigate(-1)}>←</button>
-    </div>
-  </div>
-
-  {/* Main content: LEFT (1/3) + RIGHT (2/3) */}
-  <div className="flex gap-3 flex-1">
-    
-    {/* LEFT 1/3: Circular Photoperiod + Lights */}
-    <div className="w-1/3 flex flex-col gap-3">
-      <CircularTimePicker 
-        showPresetButtons={false}  /* Remove Veg/Flower buttons */
-        dayStartTime={dayStart}
-        dayEndTime={dayEnd}
-        rampUpDuration={rampUp}
-        rampDownDuration={rampDown}
-        lockedPhotoperiodHours={isFlowerMode ? 12 : isVegMode ? 18 : null}
-      />
-      <LightSlidersPanel location={location} cluster={cluster} />
-    </div>
-    
-    {/* RIGHT 2/3: Timeline (top) + Setpoints (bottom) */}
-    <div className="w-2/3 flex flex-col gap-3">
-      <SetpointTimeline 
-        className="h-[140px]" 
-        location={location} 
-        cluster={cluster} 
-      />
-      <SetpointsTable 
-        location={location} 
-        cluster={cluster}
-        className="flex-1"
-      />
-    </div>
-    
-  </div>
-
-  {/* Full width: PID compact row */}
-  <PIDCompactRow location={location} cluster={cluster} />
-</div>
+### Target ZoneConfig.tsx Layout
+```
+┌─────────────────────────────────────────────────────────────────┐
+│ Header: Title + [Mode ▼] [STR][BLK][RPN] + Save + Back          │
+├─────────────────────────┬───────────────────────────────────────┤
+│ CircularTimePicker      │ SetpointTimeline                      │
+│ (1/3)                   │ (2/3 - top)                           │
+│                         ├───────────────────────────────────────┤
+│ LightSlidersPanel       │ SetpointsTable                        │
+│ (1/3)                   │ (2/3 - bottom)                        │
+├─────────────────────────┴───────────────────────────────────────┤
+│ PIDCompactRow (full width)                                      │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## Component Details
+## Implementation Plan
 
-### 1. Header with RoomModeSelector
+### Phase 1: Create LightSlidersPanel.tsx (20 min)
 
-Mode dropdown + separate submode toggle buttons:
+New component that fetches real device names and uses existing LightSlider:
 
 ```tsx
-<div className="flex items-center gap-2">
-  {/* Mode Dropdown */}
-  <select className="bg-gray-800 px-3 py-1 rounded">
-    <option>Veg</option>
-    <option>Flower</option>
-    <option>Drying</option>
-    <option>Sleep</option>
-  </select>
-  
-  {/* Submode Buttons - only visible when Flower mode */}
-  {mode === 'FLOWER' && (
-    <div className="flex gap-1">
-      <button className={submode === 'STR' ? 'bg-amber-600' : 'bg-gray-700'}>STR</button>
-      <button className={submode === 'BLK' ? 'bg-amber-600' : 'bg-gray-700'}>BLK</button>
-      <button className={submode === 'RPN' ? 'bg-amber-600' : 'bg-gray-700'}>RPN</button>
+// components/LightSlidersPanel.tsx
+import { useState, useEffect } from 'react'
+import { apiClient } from '../services/api'
+import LightSlider from './LightSlider'
+
+interface LightSlidersPanelProps {
+  location: string
+  cluster: string
+  mainIntensity: number
+  supplementalIntensity: number
+  currentMainIntensity?: number
+  currentSupplementalIntensity?: number
+  onChange: (updates: { main_light_intensity?: number; supplemental_light_intensity?: number }) => void
+}
+
+export default function LightSlidersPanel({
+  location,
+  cluster,
+  mainIntensity,
+  supplementalIntensity,
+  currentMainIntensity,
+  currentSupplementalIntensity,
+  onChange
+}: LightSlidersPanelProps) {
+  const [lights, setLights] = useState<Array<{ device_name: string; display_name: string }>>([])
+
+  useEffect(() => {
+    apiClient.getLightsForZone(location, cluster).then(setLights).catch(console.error)
+  }, [location, cluster])
+
+  // Map device names to display names, fallback to generic labels
+  const mainLabel = lights.find(l => l.device_name.toLowerCase().includes('main'))?.display_name || 'Main'
+  const suppLabel = lights.find(l => l.device_name.toLowerCase().includes('supp'))?.display_name || 'Supplemental'
+
+  return (
+    <div className="bg-gray-900 rounded-lg border border-gray-800 p-2">
+      <div className="text-xs text-gray-400 uppercase font-bold tracking-wider mb-2">Lights</div>
+      <div className="space-y-2">
+        <LightSlider
+          label={mainLabel}
+          value={mainIntensity}
+          currentValue={currentMainIntensity}
+          onChange={(v) => onChange({ main_light_intensity: v })}
+        />
+        <LightSlider
+          label={suppLabel}
+          value={supplementalIntensity}
+          currentValue={currentSupplementalIntensity}
+          onChange={(v) => onChange({ supplemental_light_intensity: v })}
+        />
+      </div>
     </div>
-  )}
+  )
+}
+```
+
+### Phase 2: Create PIDCompactRow.tsx (25 min)
+
+Compact single-line PID controls, reusing logic from PIDEditor:
+
+```tsx
+// components/PIDCompactRow.tsx
+import { useState, useEffect } from 'react'
+import { apiClient } from '../services/api'
+import type { PIDControlMode } from '../types/pid'
+
+const DEVICE_TYPES = ['heater', 'fan', 'co2']
+
+export default function PIDCompactRow() {
+  const [device, setDevice] = useState('heater')
+  const [mode, setMode] = useState<PIDControlMode>('pid')
+  const [kp, setKp] = useState(0)
+  const [ki, setKi] = useState(0)
+  const [kd, setKd] = useState(0)
+  const [loading, setLoading] = useState(false)
+  const [historyOpen, setHistoryOpen] = useState(false)
+
+  useEffect(() => {
+    loadData()
+  }, [device])
+
+  async function loadData() {
+    try {
+      const [params, modeInfo] = await Promise.all([
+        apiClient.getPIDParameters(device),
+        apiClient.getPIDMode(device)
+      ])
+      setKp(params.kp)
+      setKi(params.ki)
+      setKd(params.kd)
+      setMode(modeInfo.mode)
+    } catch (err) {
+      console.error('Failed to load PID data:', err)
+    }
+  }
+
+  async function handleModeChange(newMode: PIDControlMode) {
+    try {
+      await apiClient.setPIDMode(device, { mode: newMode })
+      setMode(newMode)
+    } catch (err) {
+      console.error('Failed to change mode:', err)
+    }
+  }
+
+  async function handleSave() {
+    setLoading(true)
+    try {
+      await apiClient.updatePIDParameters(device, { kp, ki, kd })
+    } catch (err) {
+      console.error('Failed to save:', err)
+    }
+    setLoading(false)
+  }
+
+  return (
+    <div className="bg-gray-900 rounded-lg border border-gray-800 p-2">
+      <div className="flex items-center gap-3 text-xs">
+        {/* Device selector */}
+        <select
+          value={device}
+          onChange={(e) => setDevice(e.target.value)}
+          className="bg-gray-800 border border-gray-700 px-2 py-1 rounded text-gray-200"
+        >
+          {DEVICE_TYPES.map(t => (
+            <option key={t} value={t}>{t.toUpperCase()}</option>
+          ))}
+        </select>
+
+        {/* Mode buttons */}
+        <div className="flex gap-1">
+          {(['auto_pid', 'pid', 'on_off'] as PIDControlMode[]).map(m => (
+            <button
+              key={m}
+              onClick={() => handleModeChange(m)}
+              className={`px-2 py-1 rounded ${mode === m ? 'bg-cyan-700 text-white' : 'bg-gray-800 text-gray-400'}`}
+            >
+              {m === 'auto_pid' ? 'Auto' : m === 'pid' ? 'PID' : 'ON/OFF'}
+            </button>
+          ))}
+        </div>
+
+        {/* K-values (only show for PID modes) */}
+        {mode !== 'on_off' && (
+          <div className="flex gap-2">
+            <label className="flex items-center gap-1">
+              Kp:<input
+                type="number"
+                step="0.1"
+                value={kp}
+                onChange={(e) => setKp(parseFloat(e.target.value))}
+                disabled={mode === 'auto_pid'}
+                className="w-14 bg-gray-800 border border-gray-700 px-1 rounded text-center text-gray-200 disabled:opacity-50"
+              />
+            </label>
+            <label className="flex items-center gap-1">
+              Ki:<input
+                type="number"
+                step="0.001"
+                value={ki}
+                onChange={(e) => setKi(parseFloat(e.target.value))}
+                disabled={mode === 'auto_pid'}
+                className="w-14 bg-gray-800 border border-gray-700 px-1 rounded text-center text-gray-200 disabled:opacity-50"
+              />
+            </label>
+            <label className="flex items-center gap-1">
+              Kd:<input
+                type="number"
+                step="0.01"
+                value={kd}
+                onChange={(e) => setKd(parseFloat(e.target.value))}
+                disabled={mode === 'auto_pid'}
+                className="w-14 bg-gray-800 border border-gray-700 px-1 rounded text-center text-gray-200 disabled:opacity-50"
+              />
+            </label>
+          </div>
+        )}
+
+        {/* Actions */}
+        <div className="flex gap-2 ml-auto">
+          {mode === 'pid' && (
+            <button
+              onClick={handleSave}
+              disabled={loading}
+              className="px-2 py-1 bg-cyan-700 hover:bg-cyan-600 rounded text-white disabled:opacity-50"
+            >
+              {loading ? '...' : 'Save'}
+            </button>
+          )}
+          <button
+            onClick={() => setHistoryOpen(!historyOpen)}
+            className="px-2 py-1 bg-gray-800 hover:bg-gray-700 rounded text-gray-400"
+          >
+            History {historyOpen ? '▲' : '▼'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+```
+
+### Phase 3: Modify RoomModeSelector.tsx (15 min)
+
+Add separate submode buttons that appear when Flower mode is selected:
+
+**Changes needed:**
+- Extract submode selection from dropdown
+- Add toggle button group [STR][BLK][RPN] visible when mode === 'flower'
+- Keep existing mode dropdown functionality
+
+### Phase 4: Restructure ZoneConfig.tsx (40 min)
+
+Major layout changes:
+1. Import CircularTimePicker (currently not imported)
+2. Replace ScheduleLightsPanel position with CircularTimePicker
+3. Add LightSlidersPanel below CircularTimePicker
+4. Move SetpointsTable to right column below timeline
+5. Replace PIDEditor with PIDCompactRow (full width)
+
+**New structure:**
+```tsx
+<div className="min-h-screen bg-gray-950 p-2">
+  <div className="max-w-[1920px] mx-auto h-[calc(100vh-1rem)] flex flex-col">
+    
+    {/* Header */}
+    <div className="flex items-center justify-between mb-2 px-1">
+      <h1>...</h1>
+      <div className="flex items-center gap-3">
+        <RoomModeSelector ... />  {/* Now with submode buttons */}
+        <button>SAVE</button>
+        <Link>← Back</Link>
+      </div>
+    </div>
+
+    {/* Main content */}
+    <div className="flex-1 flex gap-2 min-h-0">
+      
+      {/* LEFT 1/3: CircularTimePicker + Lights */}
+      <div className="w-1/3 flex flex-col gap-2">
+        <CircularTimePicker
+          showPresetButtons={false}
+          dayStartTime={params.day_start_time}
+          dayEndTime={params.night_start_time}
+          onDayStartChange={(t) => handleParamChange({ day_start_time: t })}
+          onDayEndChange={(t) => handleParamChange({ night_start_time: t })}
+          rampUpDuration={params.ramp_up_minutes}
+          rampDownDuration={params.ramp_down_minutes}
+          onRampUpDurationChange={(d) => handleParamChange({ ramp_up_minutes: d })}
+          onRampDownDurationChange={(d) => handleParamChange({ ramp_down_minutes: d })}
+          lockedPhotoperiodHours={roomMode?.mode_name === 'flower' ? 12 : roomMode?.mode_name === 'veg' ? 18 : undefined}
+        />
+        <LightSlidersPanel
+          location={location}
+          cluster={cluster}
+          mainIntensity={params.main_light_intensity}
+          supplementalIntensity={params.supplemental_light_intensity}
+          currentMainIntensity={savedParams?.main_light_intensity}
+          currentSupplementalIntensity={savedParams?.supplemental_light_intensity}
+          onChange={handleParamChange}
+        />
+      </div>
+
+      {/* RIGHT 2/3: Timeline + Setpoints */}
+      <div className="w-2/3 flex flex-col gap-2">
+        <SetpointTimeline ... className="h-[200px]" />
+        <SetpointsTable ... className="flex-1" />
+      </div>
+
+    </div>
+
+    {/* PID Compact Row (full width) */}
+    <PIDCompactRow />
+
+  </div>
 </div>
 ```
 
-### 2. CircularTimePicker Modifications
+### Phase 5: Testing + Verification (20 min)
 
-- **Remove**: Veg/Flower preset buttons (`showPresetButtons={false}`)
-- **Keep**: Start/End time inputs, Ramp Up/Down inputs, Lock toggle
-- **Size**: Consider reducing from 300px to 250px for better fit in 1/3 width
-
-The existing `CircularTimePicker.tsx` already has a `showPresetButtons` prop - just pass `false`.
-
-### 3. LightSlidersPanel (NEW)
-
-Fetches actual light device names from API:
-
-```tsx
-interface Light {
-  device_id: string
-  device_name: string      // "HLG_600_Main"
-  display_name: string     // "HLG 600"
-  current_intensity: number
-  target_intensity: number
-}
-
-function LightSlidersPanel({ location, cluster }: Props) {
-  const [lights, setLights] = useState<Light[]>([])
-  
-  useEffect(() => {
-    // Fetch actual light devices for this zone
-    apiClient.getLightsForZone(location, cluster).then(setLights)
-  }, [location, cluster])
-  
-  return (
-    <div className="bg-gray-900 rounded p-2 space-y-2">
-      <h3 className="text-xs text-gray-400 uppercase">Lights</h3>
-      {lights.map(light => (
-        <LightSlider
-          key={light.device_id}
-          name={light.display_name}  /* "HLG 600", "Far Red", etc. */
-          currentValue={light.current_intensity}
-          targetValue={light.target_intensity}
-          onChange={(val) => updateLightIntensity(light.device_id, val)}
-        />
-      ))}
-    </div>
-  )
-}
-```
-
-### 4. LightSlider Component
-
-Shows device name, slider with current value marker, and editable target:
-
-```tsx
-interface LightSliderProps {
-  name: string           // Display name like "HLG 600"
-  currentValue: number   // Actual current intensity (0-100)
-  targetValue: number    // Target intensity (0-100)
-  onChange: (value: number) => void
-}
-
-function LightSlider({ name, currentValue, targetValue, onChange }: LightSliderProps) {
-  return (
-    <div className="space-y-1">
-      <div className="flex justify-between items-center">
-        <span className="text-sm text-gray-300">{name}</span>
-        <div className="flex items-center gap-1">
-          <input 
-            type="number" 
-            min={0}
-            max={100}
-            value={targetValue}
-            onChange={(e) => onChange(Number(e.target.value))}
-            className="w-12 bg-gray-800 text-right text-sm rounded px-1"
-          />
-          <span className="text-xs text-gray-500">%</span>
-        </div>
-      </div>
-      <div className="relative h-4 bg-gray-800 rounded overflow-hidden">
-        {/* Filled portion (target) */}
-        <div 
-          className="absolute left-0 top-0 h-full bg-amber-500/60"
-          style={{ width: `${targetValue}%` }}
-        />
-        {/* Current value marker (white line) */}
-        <div 
-          className="absolute top-0 h-full w-0.5 bg-white"
-          style={{ left: `${currentValue}%` }}
-        />
-      </div>
-    </div>
-  )
-}
-```
-
-### 5. SetpointsTable (Compact)
-
-Inline editable grid with Day/Night rows:
-
-```tsx
-interface SetpointsTableProps {
-  location: string
-  cluster: string
-  className?: string
-}
-
-function SetpointsTable({ location, cluster, className }: SetpointsTableProps) {
-  const [daySetpoints, setDaySetpoints] = useState({ heat: 24, cool: 28, vpd: 1.0, co2: 800, leaf: -2 })
-  const [nightSetpoints, setNightSetpoints] = useState({ heat: 20, cool: 24, vpd: 0.8, co2: 600, leaf: -1 })
-  
-  return (
-    <div className={`bg-gray-900 rounded p-2 ${className}`}>
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="text-xs text-gray-400">
-            <th className="w-20 text-left"></th>
-            <th className="text-center">🌡️ Heat</th>
-            <th className="text-center">❄️ Cool</th>
-            <th className="text-center">💧 VPD</th>
-            <th className="text-center">🌬️ CO2</th>
-            <th className="text-center">🍃 Leaf Δ</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td className="text-amber-400 font-medium">☀️ DAY</td>
-            <td className="text-center"><input value={daySetpoints.heat} className="w-12 bg-gray-800 text-center rounded" />°</td>
-            <td className="text-center"><input value={daySetpoints.cool} className="w-12 bg-gray-800 text-center rounded" />°</td>
-            <td className="text-center"><input value={daySetpoints.vpd} className="w-12 bg-gray-800 text-center rounded" /></td>
-            <td className="text-center"><input value={daySetpoints.co2} className="w-14 bg-gray-800 text-center rounded" /></td>
-            <td className="text-center"><input value={daySetpoints.leaf} className="w-12 bg-gray-800 text-center rounded" />°</td>
-          </tr>
-          <tr>
-            <td className="text-blue-400 font-medium">🌙 NIGHT</td>
-            <td className="text-center"><input value={nightSetpoints.heat} className="w-12 bg-gray-800 text-center rounded" />°</td>
-            <td className="text-center"><input value={nightSetpoints.cool} className="w-12 bg-gray-800 text-center rounded" />°</td>
-            <td className="text-center"><input value={nightSetpoints.vpd} className="w-12 bg-gray-800 text-center rounded" /></td>
-            <td className="text-center"><input value={nightSetpoints.co2} className="w-14 bg-gray-800 text-center rounded" /></td>
-            <td className="text-center"><input value={nightSetpoints.leaf} className="w-12 bg-gray-800 text-center rounded" />°</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-  )
-}
-```
-
-### 6. PIDCompactRow (NEW)
-
-Single-line compact PID controls:
-
-```tsx
-function PIDCompactRow({ location, cluster }: Props) {
-  const [device, setDevice] = useState('heater')
-  const [mode, setMode] = useState<'auto' | 'pid' | 'onoff'>('auto')
-  const [kp, setKp] = useState(22.3)
-  const [ki, setKi] = useState(0.02)
-  const [kd, setKd] = useState(0.5)
-  
-  return (
-    <div className="bg-gray-900 rounded p-2 flex items-center gap-4 text-sm">
-      {/* Device selector */}
-      <select 
-        value={device}
-        onChange={(e) => setDevice(e.target.value)}
-        className="bg-gray-800 px-2 py-1 rounded"
-      >
-        <option value="heater">Heater</option>
-        <option value="ac">AC</option>
-        <option value="dehumidifier">Dehumidifier</option>
-      </select>
-      
-      {/* Mode radio buttons */}
-      <div className="flex gap-3">
-        <label className="flex items-center gap-1 cursor-pointer">
-          <input 
-            type="radio" 
-            name="pidMode" 
-            checked={mode === 'auto'}
-            onChange={() => setMode('auto')}
-          /> Auto
-        </label>
-        <label className="flex items-center gap-1 cursor-pointer">
-          <input 
-            type="radio" 
-            name="pidMode"
-            checked={mode === 'pid'}
-            onChange={() => setMode('pid')}
-          /> PID
-        </label>
-        <label className="flex items-center gap-1 cursor-pointer">
-          <input 
-            type="radio" 
-            name="pidMode"
-            checked={mode === 'onoff'}
-            onChange={() => setMode('onoff')}
-          /> ON/OFF
-        </label>
-      </div>
-      
-      {/* K-values */}
-      <div className="flex gap-3">
-        <span className="flex items-center">
-          Kp:<input value={kp} onChange={(e) => setKp(Number(e.target.value))} className="w-14 bg-gray-800 ml-1 px-1 rounded text-center" />
-        </span>
-        <span className="flex items-center">
-          Ki:<input value={ki} onChange={(e) => setKi(Number(e.target.value))} className="w-14 bg-gray-800 ml-1 px-1 rounded text-center" />
-        </span>
-        <span className="flex items-center">
-          Kd:<input value={kd} onChange={(e) => setKd(Number(e.target.value))} className="w-14 bg-gray-800 ml-1 px-1 rounded text-center" />
-        </span>
-      </div>
-      
-      {/* Actions */}
-      <div className="flex gap-2 ml-auto">
-        <button className="px-2 py-1 bg-gray-700 rounded hover:bg-gray-600">Reset</button>
-        <button className="px-2 py-1 bg-gray-700 rounded hover:bg-gray-600">History ▼</button>
-      </div>
-    </div>
-  )
-}
-```
+- [ ] Run `npm run build` - no errors
+- [ ] Check layout on 1080p viewport - no scrolling
+- [ ] Verify CircularTimePicker shows on left
+- [ ] Verify Timeline shows on right top
+- [ ] Verify Setpoints table shows below timeline
+- [ ] Verify light sliders fetch real device names
+- [ ] Verify PID row is compact and full width
+- [ ] Verify mode switching works
+- [ ] Verify submode buttons appear for Flower mode
+- [ ] Run `lsp_diagnostics` on modified files
 
 ---
 
 ## Files to Modify/Create
 
-### Frontend
+### Frontend Only (No Backend Changes Needed!)
 
-| File | Action | Description |
-|------|--------|-------------|
-| `pages/ZoneConfig.tsx` | MODIFY | Major restructure - new layout |
-| `components/RoomModeSelector.tsx` | MODIFY | Add separate submode buttons |
-| `components/CircularTimePicker.tsx` | NONE | Already has `showPresetButtons` prop |
-| `components/LightSlidersPanel.tsx` | **CREATE** | Fetches real device names |
-| `components/LightSlider.tsx` | **CREATE** | Slider with current marker |
-| `components/SetpointsTable.tsx` | **CREATE** | Compact Day/Night table |
-| `components/SetpointTimeline.tsx` | MODIFY | Adjust height to ~140px |
-| `components/PIDCompactRow.tsx` | **CREATE** | Single-line PID |
-| `services/api.ts` | MODIFY | Add `getLightsForZone()` method |
+| File | Action | Lines | Description |
+|------|--------|-------|-------------|
+| `components/LightSlidersPanel.tsx` | **CREATE** | ~50 | Fetches device names, wraps LightSlider |
+| `components/PIDCompactRow.tsx` | **CREATE** | ~100 | Single-line compact PID |
+| `components/RoomModeSelector.tsx` | MODIFY | +30 | Add submode toggle buttons |
+| `pages/ZoneConfig.tsx` | MODIFY | ~50 | Restructure layout |
 
-### Backend
-
-| File | Action | Description |
-|------|--------|-------------|
-| `database.py` | MODIFY | Add mode tables + methods |
-| `routes/modes.py` | **CREATE** | Mode endpoints |
-| `routes/lights.py` | MODIFY | Add endpoint for lights by zone |
-| `main.py` | MODIFY | Register modes router |
+**Total new code: ~230 lines**
 
 ---
 
-## Room Modes System
+## Implementation Timeline
 
-### Mode Definitions
-
-| Mode | Submodes | Photoperiod | Description |
-|------|----------|-------------|-------------|
-| **Veg** | None | 18h on / 6h off | Vegetative growth (Veg Room only) |
-| **Flower** | STR, BLK, RPN | 12h on / 12h off | Flowering phase |
-| **Drying** | None | 0h on / 24h off | Post-harvest drying |
-| **Sleep** | None | 0h on / 24h off | Room inactive |
-
-### Flower Submodes
-
-| Submode | Name | Description |
-|---------|------|-------------|
-| **STR** | Stretch | First 2-3 weeks of flower, plants stretch |
-| **BLK** | Bulk | Main flowering, bud development |
-| **RPN** | Ripen | Final 1-2 weeks, finishing |
-
-### Mode Persistence
-
-Each mode/submode combination saves its own parameters:
-- Setpoints (Heat, Cool, VPD, CO2, Leaf Δ)
-- Light schedule (start, end, ramps)
-- Light intensities
-
-When switching modes:
-1. Auto-save current mode's parameters
-2. Load saved parameters for new mode
-3. If no saved params, use mode defaults
-
----
-
-## Database Schema
-
-```sql
--- Room modes table
-CREATE TABLE room_mode (
-    id SERIAL PRIMARY KEY,
-    location VARCHAR(50) NOT NULL,
-    cluster VARCHAR(50) NOT NULL,
-    mode VARCHAR(20) NOT NULL,  -- VEG, FLOWER, DRYING, SLEEP
-    submode VARCHAR(20),         -- STR, BLK, RPN (nullable)
-    created_at TIMESTAMP DEFAULT NOW(),
-    updated_at TIMESTAMP DEFAULT NOW(),
-    UNIQUE(location, cluster)
-);
-
--- Mode-specific setpoints
-CREATE TABLE mode_setpoints (
-    id SERIAL PRIMARY KEY,
-    location VARCHAR(50) NOT NULL,
-    cluster VARCHAR(50) NOT NULL,
-    mode VARCHAR(20) NOT NULL,
-    submode VARCHAR(20),
-    period VARCHAR(10) NOT NULL,  -- DAY, NIGHT
-    heat_setpoint FLOAT,
-    cool_setpoint FLOAT,
-    vpd_setpoint FLOAT,
-    co2_setpoint FLOAT,
-    leaf_delta FLOAT,
-    UNIQUE(location, cluster, mode, submode, period)
-);
-
--- Mode-specific light settings
-CREATE TABLE mode_lights (
-    id SERIAL PRIMARY KEY,
-    location VARCHAR(50) NOT NULL,
-    cluster VARCHAR(50) NOT NULL,
-    mode VARCHAR(20) NOT NULL,
-    submode VARCHAR(20),
-    day_start_time TIME,
-    day_end_time TIME,
-    ramp_up_duration INTEGER,
-    ramp_down_duration INTEGER,
-    UNIQUE(location, cluster, mode, submode)
-);
-```
-
----
-
-## API Endpoints
-
-### Mode Endpoints
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/modes/{location}/{cluster}` | Get current mode |
-| PUT | `/api/modes/{location}/{cluster}` | Set mode (auto-saves old, loads new) |
-| GET | `/api/modes/{location}/{cluster}/params` | Get mode-specific params |
-| PUT | `/api/modes/{location}/{cluster}/params` | Save mode-specific params |
-
-### Light Device Endpoints
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/lights/{location}/{cluster}` | Get lights for zone with real names |
-
----
-
-## Implementation Phases
-
-| Phase | Description | Time |
-|-------|-------------|------|
-| **1** | Backend: Mode tables + API | 1h 15m |
-| **2** | Frontend: ZoneConfig layout restructure | 45m |
-| **3** | Frontend: LightSlidersPanel with real device names | 30m |
-| **4** | Frontend: SetpointsTable compact | 25m |
-| **5** | Frontend: PIDCompactRow | 25m |
-| **6** | Frontend: RoomModeSelector with submode buttons | 20m |
-| **7** | Testing + Build verification | 30m |
-| **Total** | | ~4h 10m |
+| Phase | Task | Est. Time |
+|-------|------|-----------|
+| 1 | Create `LightSlidersPanel.tsx` | 20 min |
+| 2 | Create `PIDCompactRow.tsx` | 25 min |
+| 3 | Modify `RoomModeSelector.tsx` | 15 min |
+| 4 | Restructure `ZoneConfig.tsx` | 40 min |
+| 5 | Testing + Verification | 20 min |
+| **Total** | | **~2 hours** |
 
 ---
 
 ## Success Criteria
 
 - [ ] CircularTimePicker on LEFT (1/3), no preset buttons
-- [ ] Timeline on RIGHT TOP (2/3), ~140px height
+- [ ] Timeline on RIGHT TOP (2/3)
 - [ ] Setpoints table on RIGHT BOTTOM (below timeline)
 - [ ] Light sliders show real device names (e.g., "HLG 600")
 - [ ] Light sliders have white current value marker
 - [ ] Mode dropdown + separate submode buttons [STR][BLK][RPN]
 - [ ] PID in single compact row (full width)
 - [ ] No scrolling on 1080p viewport
-- [ ] Build passes with no errors
-- [ ] Mode switching saves/loads parameters correctly
+- [ ] Build passes with no errors (`npm run build`)
+- [ ] No TypeScript errors (`lsp_diagnostics`)
 
 ---
 
@@ -524,40 +464,69 @@ CREATE TABLE mode_lights (
 
 | Decision | Choice |
 |----------|--------|
-| Layout order | CircularTimePicker LEFT, Timeline RIGHT |
+| Layout order | CircularTimePicker LEFT (1/3), Timeline+Setpoints RIGHT (2/3) |
 | Setpoints position | Below timeline in right column |
 | Preset buttons | REMOVE from CircularTimePicker (modes handle this) |
 | Light labels | Use real device names from API |
 | Header banner | Keep mode selector + save + back |
 | Submode buttons | Visible only when Flower mode selected |
+| Backend work | NOT NEEDED - all infrastructure exists |
 
 ---
 
-## Design System
+## Existing Components Reference
 
-### Colors (Dark Mode)
+### CircularTimePicker.tsx (676 lines)
+- Location: `components/CircularTimePicker.tsx`
+- Key props: `showPresetButtons`, `dayStartTime`, `dayEndTime`, `rampUpDuration`, `rampDownDuration`, `lockedPhotoperiodHours`
+- Already supports hiding preset buttons
 
-| Element | Tailwind | Usage |
-|---------|----------|-------|
-| Background | `bg-gray-950` | Page |
-| Cards | `bg-gray-900` | Panels |
-| Borders | `border-gray-800` | Dividers |
-| Text | `text-gray-100` | Primary |
-| Muted | `text-gray-400` | Labels |
-| Active | `text-amber-400` | Live values |
-| Edit | `text-cyan-400` | Interactive |
-| Heat | `text-orange-400` | 🌡️ |
-| Cool | `text-blue-400` | ❄️ |
-| VPD | `text-emerald-400` | 💧 |
-| CO2 | `text-purple-400` | 🌬️ |
+### LightSlider.tsx (88 lines)
+- Location: `components/LightSlider.tsx`
+- Props: `label`, `value`, `currentValue`, `onChange`, `min`, `max`, `disabled`
+- Already has white current value marker
 
-### Spacing (Compact)
+### SetpointsTable.tsx (74 lines)
+- Location: `components/SetpointsTable.tsx`
+- Props: `params`, `currentParams`, `isConstant`, `onChange`
+- Compact Day/Night table already implemented
 
-| Element | Value |
-|---------|-------|
-| Page padding | `p-3` |
-| Card padding | `p-2` |
-| Gaps | `gap-2` to `gap-3` |
-| Input height | `h-7` |
-| Font body | `text-sm` |
-| Font labels | `text-xs` |
+### SetpointTimeline.tsx (826 lines)
+- Location: `components/SetpointTimeline.tsx`
+- Full 24-hour visualization with setpoint lines
+- Already fully functional
+
+### PIDEditor.tsx (323 lines)
+- Location: `components/PIDEditor.tsx`
+- Full multi-row PID editor
+- Will create compact version, not modify this
+
+### RoomModeSelector.tsx (114 lines)
+- Location: `components/RoomModeSelector.tsx`
+- Dropdown with submodes inside
+- Will add separate submode buttons
+
+---
+
+## API Methods Available (from api.ts)
+
+```typescript
+// Lights
+apiClient.getLightsForZone(location, cluster)  // Returns light devices with names
+apiClient.setLightIntensity(location, cluster, deviceName, intensity)
+
+// Room Modes
+apiClient.getRoomModes()                        // List all modes
+apiClient.getFlowerSubmodes()                   // List flower submodes
+apiClient.getRoomModeWithParams(location, cluster)  // Get current mode + params
+apiClient.setRoomMode(location, cluster, request)   // Change mode
+apiClient.updateRoomParameters(location, cluster, params)  // Save params
+
+// PID
+apiClient.getPIDParameters(deviceType)
+apiClient.getPIDMode(deviceType)
+apiClient.setPIDMode(deviceType, update)
+apiClient.updatePIDParameters(deviceType, params)
+```
+
+All methods already exist - no API changes needed!

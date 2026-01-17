@@ -13,6 +13,7 @@ interface CircularTimePickerProps {
   onRampDownChange?: (duration: number | null) => void
   showPresetButtons?: boolean
   lockedPhotoperiodHours?: number | null
+  size?: number
 }
 
 export default function CircularTimePicker({
@@ -26,8 +27,9 @@ export default function CircularTimePicker({
   rampDownDuration,
   onRampUpChange,
   onRampDownChange,
-  showPresetButtons = true,
-  lockedPhotoperiodHours = null
+  showPresetButtons: _showPresetButtons = true,
+  lockedPhotoperiodHours = null,
+  size = 300
 }: CircularTimePickerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [isDragging, setIsDragging] = useState<'start' | 'end' | 'period' | null>(null)
@@ -118,7 +120,6 @@ export default function CircularTimePicker({
     const ctx = canvas.getContext('2d')
     if (!ctx) return
 
-    const size = 300
     const centerX = size / 2
     const centerY = size / 2
     const radius = size / 2 - 40
@@ -521,154 +522,89 @@ export default function CircularTimePicker({
           {label}
         </label>
       )}
-      <div className="flex items-start gap-6">
-        {showPresetButtons && (
-          <div className="flex flex-col gap-2 pt-4">
-            <button
-              onClick={() => {
-                onDayStartChange('17:00')
-                onDayEndChange('11:00')
+      <div className="relative">
+        <canvas
+          ref={canvasRef}
+          width={size}
+          height={size}
+          onMouseDown={handleMouseDown}
+          className="cursor-pointer"
+        />
+      </div>
+      <div className="pt-1" style={{ width: size }}>
+        <div className="grid grid-cols-4 gap-1">
+          <div>
+            <label className="block text-[12px] text-gray-400 mb-0.5">Start</label>
+            <input
+              type="time"
+              value={dayStartTime}
+              onChange={(e) => {
+                if (lockedPhotoperiodHours === null || lockedPhotoperiodHours === undefined) {
+                  onDayStartChange(e.target.value)
+                }
               }}
-              className="px-4 py-2 bg-green-600 dark:bg-green-500 text-white font-semibold rounded-md hover:bg-green-700 dark:hover:bg-green-600 focus:outline-none focus:ring-2 focus:ring-green-500 shadow-md transition-colors"
-              title="Set to Veg schedule: 17:00 - 11:00"
-            >
-              Veg
-            </button>
-            <button
-              onClick={() => {
-                onDayStartChange('17:00')
-                onDayEndChange('05:00')
-              }}
-              className="px-4 py-2 bg-purple-600 dark:bg-purple-500 text-white font-semibold rounded-md hover:bg-purple-700 dark:hover:bg-purple-600 focus:outline-none focus:ring-2 focus:ring-purple-500 shadow-md transition-colors"
-              title="Set to Flower schedule: 17:00 - 05:00"
-            >
-              Flower
-            </button>
+              disabled={lockedPhotoperiodHours !== null && lockedPhotoperiodHours !== undefined}
+              className={`w-full h-6 text-[16px] text-center bg-gray-800 border border-gray-700 rounded text-gray-200 [&::-webkit-calendar-picker-indicator]:hidden ${
+                lockedPhotoperiodHours !== null && lockedPhotoperiodHours !== undefined ? 'opacity-50 cursor-not-allowed' : ''
+              }`}
+              style={{ padding: '0 2px' }}
+            />
           </div>
-        )}
-        <div className="relative">
-          <canvas
-            ref={canvasRef}
-            width={300}
-            height={300}
-            onMouseDown={handleMouseDown}
-            className="cursor-pointer"
-          />
+          {onRampUpChange && rampUpDuration !== undefined && (
+            <div>
+              <label className="block text-[12px] text-gray-400 mb-0.5">↑ min</label>
+              <input
+                type="number"
+                min="0"
+                max="180"
+                value={rampUpDuration ?? ''}
+                onChange={(e) => {
+                  const val = e.target.value ? parseInt(e.target.value) : null
+                  onRampUpChange(val !== null && val > 180 ? 180 : val)
+                }}
+                className="w-full h-6 text-[16px] text-center bg-gray-800 border border-gray-700 rounded text-gray-200 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+              />
+            </div>
+          )}
+          <div>
+            <label className="block text-[12px] text-gray-400 mb-0.5">End</label>
+            <input
+              type="time"
+              value={dayEndTime}
+              onChange={(e) => {
+                if (lockedPhotoperiodHours === null || lockedPhotoperiodHours === undefined) {
+                  onDayEndChange(e.target.value)
+                }
+              }}
+              disabled={lockedPhotoperiodHours !== null && lockedPhotoperiodHours !== undefined}
+              className={`w-full h-6 text-[16px] text-center bg-gray-800 border border-gray-700 rounded text-gray-200 [&::-webkit-calendar-picker-indicator]:hidden ${
+                lockedPhotoperiodHours !== null && lockedPhotoperiodHours !== undefined ? 'opacity-50 cursor-not-allowed' : ''
+              }`}
+              style={{ padding: '0 2px' }}
+            />
+          </div>
+          {onRampDownChange && rampDownDuration !== undefined && (
+            <div>
+              <label className="block text-[12px] text-gray-400 mb-0.5">↓ min</label>
+              <input
+                type="number"
+                min="0"
+                max="180"
+                value={rampDownDuration ?? ''}
+                onChange={(e) => {
+                  const val = e.target.value ? parseInt(e.target.value) : null
+                  onRampDownChange(val !== null && val > 180 ? 180 : val)
+                }}
+                className="w-full h-6 text-[16px] text-center bg-gray-800 border border-gray-700 rounded text-gray-200 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+              />
+            </div>
+          )}
         </div>
-        <div className="flex flex-col gap-4 pt-4">
-          <div className="flex items-end gap-3">
-            <div className="space-y-1 flex-1">
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                Start Time
-              </label>
-              <input
-                type="time"
-                value={dayStartTime}
-                onChange={(e) => {
-                  if (lockedPhotoperiodHours === null || lockedPhotoperiodHours === undefined) {
-                    onDayStartChange(e.target.value)
-                  }
-                }}
-                disabled={lockedPhotoperiodHours !== null && lockedPhotoperiodHours !== undefined}
-                className={`border-2 border-gray-400 dark:border-gray-600 rounded-md px-3 py-2 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 w-full ${
-                  lockedPhotoperiodHours !== null && lockedPhotoperiodHours !== undefined
-                    ? 'opacity-50 cursor-not-allowed bg-gray-100 dark:bg-gray-900'
-                    : ''
-                }`}
-              />
-              <p className="text-xs text-gray-500 dark:text-gray-400">
-                <span className="text-red-600 dark:text-red-400 font-medium">●</span> Red marker
-                {lockedPhotoperiodHours !== null && lockedPhotoperiodHours !== undefined && ' (locked)'}
-              </p>
-            </div>
-            {onRampUpChange && rampUpDuration !== undefined && (
-              <div className="space-y-1 flex-1">
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                  Ramp Up (min)
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  max="180"
-                  step="1"
-                  value={rampUpDuration !== null && rampUpDuration !== undefined ? rampUpDuration : ''}
-                  onChange={(e) => {
-                    const val = e.target.value ? parseInt(e.target.value) : null
-                    if (val !== null && val > 180) {
-                      alert('Maximum ramp duration is 180 minutes (3 hours)')
-                      onRampUpChange(180)
-                    } else {
-                      onRampUpChange(val)
-                    }
-                  }}
-                  className="border-2 border-gray-400 dark:border-gray-600 rounded-md px-3 py-2 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 w-full"
-                />
-              </div>
-            )}
-          </div>
-          <div className="flex items-end gap-3">
-            <div className="space-y-1 flex-1">
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                End Time
-              </label>
-              <input
-                type="time"
-                value={dayEndTime}
-                onChange={(e) => {
-                  if (lockedPhotoperiodHours === null || lockedPhotoperiodHours === undefined) {
-                    onDayEndChange(e.target.value)
-                  }
-                }}
-                disabled={lockedPhotoperiodHours !== null && lockedPhotoperiodHours !== undefined}
-                className={`border-2 border-gray-400 dark:border-gray-600 rounded-md px-3 py-2 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 w-full ${
-                  lockedPhotoperiodHours !== null && lockedPhotoperiodHours !== undefined
-                    ? 'opacity-50 cursor-not-allowed bg-gray-100 dark:bg-gray-900'
-                    : ''
-                }`}
-              />
-              <p className="text-xs text-gray-500 dark:text-gray-400">
-                <span className="text-purple-800 dark:text-purple-400 font-medium">●</span> Purple marker
-                {lockedPhotoperiodHours !== null && lockedPhotoperiodHours !== undefined && ' (locked)'}
-              </p>
-            </div>
-            {onRampDownChange && rampDownDuration !== undefined && (
-              <div className="space-y-1 flex-1">
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                  Ramp Down (min)
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  max="180"
-                  step="1"
-                  value={rampDownDuration !== null && rampDownDuration !== undefined ? rampDownDuration : ''}
-                  onChange={(e) => {
-                    const val = e.target.value ? parseInt(e.target.value) : null
-                    if (val !== null && val > 180) {
-                      alert('Maximum ramp duration is 180 minutes (3 hours)')
-                      onRampDownChange(180)
-                    } else {
-                      onRampDownChange(val)
-                    }
-                  }}
-                  className="border-2 border-gray-400 dark:border-gray-600 rounded-md px-3 py-2 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 w-full"
-                />
-              </div>
-            )}
-          </div>
-          <div className="pt-2 border-t border-gray-200 dark:border-gray-800">
-            <div className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Photoperiod
-            </div>
-            <div className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-              {calculatePhotoperiod().toFixed(1)} hours
-            </div>
-          </div>
+        <div className="flex items-center justify-center gap-2 mt-2 text-gray-400">
+          <span className="text-[10px]">Photoperiod:</span>
+          <span className="text-sm font-medium text-gray-200">{calculatePhotoperiod().toFixed(1)}h</span>
         </div>
       </div>
-      <p className="text-xs text-gray-500 dark:text-gray-400 mt-4 text-center max-w-2xl">
-        Click and drag the <span className="text-red-600 dark:text-red-400 font-medium">red</span> marker for start time, <span className="text-purple-800 dark:text-purple-400 font-medium">purple</span> marker for end time, or drag the arc to move the entire period. You can also edit times directly using the input fields.
-      </p>
     </div>
   )
 }

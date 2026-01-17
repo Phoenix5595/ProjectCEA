@@ -3214,12 +3214,18 @@ class DatabaseManager:
                     submode_id INTEGER REFERENCES flower_submodes(id),  -- NULL for non-Flower modes
                     
                     -- Schedule parameters
-                    day_start_time TIME NOT NULL DEFAULT '06:00',
-                    night_start_time TIME NOT NULL DEFAULT '18:00',
+                    day_start_time TIME NOT NULL DEFAULT '17:00',
+                    night_start_time TIME NOT NULL DEFAULT '11:00',
                     ramp_up_minutes INTEGER NOT NULL DEFAULT 30,
                     ramp_down_minutes INTEGER NOT NULL DEFAULT 30,
                     pre_day_minutes INTEGER NOT NULL DEFAULT 30,
                     pre_night_minutes INTEGER NOT NULL DEFAULT 30,
+                    
+                    -- Pre-Day setpoints
+                    pre_day_heat_temp REAL NOT NULL DEFAULT 22.0,
+                    pre_day_cool_temp REAL NOT NULL DEFAULT 26.0,
+                    pre_day_vpd REAL NOT NULL DEFAULT 0.9,
+                    pre_day_co2 INTEGER NOT NULL DEFAULT 700,
                     
                     -- Day setpoints
                     day_heat_temp REAL NOT NULL DEFAULT 24.0,
@@ -3227,6 +3233,12 @@ class DatabaseManager:
                     day_vpd REAL NOT NULL DEFAULT 1.0,
                     day_co2 INTEGER NOT NULL DEFAULT 800,
                     day_leaf_delta REAL NOT NULL DEFAULT -2.0,
+                    
+                    -- Pre-Night setpoints
+                    pre_night_heat_temp REAL NOT NULL DEFAULT 22.0,
+                    pre_night_cool_temp REAL NOT NULL DEFAULT 26.0,
+                    pre_night_vpd REAL NOT NULL DEFAULT 0.9,
+                    pre_night_co2 INTEGER NOT NULL DEFAULT 700,
                     
                     -- Night setpoints
                     night_heat_temp REAL NOT NULL DEFAULT 20.0,

@@ -91,7 +91,7 @@ export default function SetpointTimeline({
     <div className={`w-full ${className}`}>
       <div className="relative bg-gray-50 dark:bg-gray-950 border border-gray-800 rounded-lg overflow-hidden h-full">
         {/* Y-axis labels - Temperature (left) - OVERLAY */}
-        <div className="absolute left-0 top-0 bottom-4 w-6 z-20 pointer-events-none">
+        <div className="absolute left-0 top-2 bottom-4 w-6 z-20 pointer-events-none">
           {[35, 25, 15].map((value) => (
             <div
               key={value}
@@ -108,7 +108,7 @@ export default function SetpointTimeline({
         </div>
         
         {/* Timeline content area - FULL WIDTH */}
-        <div className="relative h-full">
+        <div className="relative h-full pt-2">
           <div className="relative h-full">
           {/* Mode period backgrounds - Climate periods (independent of light overlay) */}
           <div
@@ -186,7 +186,7 @@ export default function SetpointTimeline({
                     style={{
                       left: `${getPosition(rampUpStartMin)}%`,
                       width: `${getPosition(rampUpDuration)}%`,
-                      zIndex: 0,
+                      zIndex: 5,
                       backgroundImage: hatchPattern
                     }}
                   />
@@ -203,7 +203,7 @@ export default function SetpointTimeline({
                       style={{
                         left: `${getPosition(rampUpStartMin)}%`,
                         width: `${getPosition(firstPart)}%`,
-                        zIndex: 0,
+                        zIndex: 5,
                         backgroundImage: hatchPattern
                       }}
                     />
@@ -213,7 +213,7 @@ export default function SetpointTimeline({
                       style={{
                         left: `${getPosition(0)}%`,
                         width: `${getPosition(secondPart)}%`,
-                        zIndex: 0,
+                        zIndex: 5,
                         backgroundImage: hatchPattern
                       }}
                     />
@@ -240,7 +240,7 @@ export default function SetpointTimeline({
                     style={{
                       left: `${getPosition(rampDownStartMin)}%`,
                       width: `${getPosition(rampDownDuration)}%`,
-                      zIndex: 0,
+                      zIndex: 5,
                       backgroundImage: hatchPattern
                     }}
                   />
@@ -257,7 +257,7 @@ export default function SetpointTimeline({
                       style={{
                         left: `${getPosition(rampDownStartMin)}%`,
                         width: `${getPosition(firstPart)}%`,
-                        zIndex: 0,
+                        zIndex: 5,
                         backgroundImage: hatchPattern
                       }}
                     />
@@ -267,7 +267,7 @@ export default function SetpointTimeline({
                       style={{
                         left: `${getPosition(0)}%`,
                         width: `${getPosition(secondPart)}%`,
-                        zIndex: 0,
+                        zIndex: 5,
                         backgroundImage: hatchPattern
                       }}
                     />
@@ -803,7 +803,7 @@ export default function SetpointTimeline({
         </div>
         
         {/* Y-axis labels - VPD (right) - OVERLAY */}
-        <div className="absolute right-0 top-0 bottom-4 w-6 z-20 pointer-events-none">
+        <div className="absolute right-0 top-2 bottom-4 w-6 z-20 pointer-events-none">
           {[2, 1, 0.5].map((value) => (
             <div
               key={`vpd-${value}`}
