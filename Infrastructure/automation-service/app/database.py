@@ -14,7 +14,7 @@ import redis
 
 # Local imports
 from shared.logging import get_logger
-from app.redis_client import AutomationRedisClient
+from .redis_client import AutomationRedisClient
 
 logger = get_logger(__name__)
 
@@ -1309,7 +1309,7 @@ class DatabaseManager:
                 # Debug logging removed
                 if value is not None:
                     try:
-                        return float(value)
+                        return float(str(value))
                     except (ValueError, TypeError):
                         pass
             except Exception as e:
@@ -1361,10 +1361,12 @@ class DatabaseManager:
                 # Debug logging removed
                 # Batch get from Redis
                 keys = [f"sensor:{name}" for name in sensor_names]
-                values = self._redis_client.mget(keys)
+                raw_values = self._redis_client.mget(keys)
                 # Debug logging removed
                 
-                for sensor_name, value in zip(sensor_names, values):
+                # Cast to list since mget returns list of values
+                values_list: list[Any] = list(raw_values) if raw_values is not None else []  # type: ignore[arg-type]
+                for sensor_name, value in zip(sensor_names, values_list):
                     if value is not None:
                         try:
                             result[sensor_name] = float(value)
@@ -1723,8 +1725,8 @@ class DatabaseManager:
             If expected_version is provided and doesn't match, returns (False, current_updated_at)
         """
         # Import validation here to avoid circular imports
-        from app.validation import validate_setpoint
-        from app.config import ConfigLoader
+        from .validation import validate_setpoint
+        from .config import ConfigLoader
         
         # Validate setpoints if provided
         # Note: We need config for validation, but we'll do basic validation here
@@ -1806,13 +1808,13 @@ class DatabaseManager:
                 return (True, new_updated_at)
         except asyncpg.PostgresConnectionError as e:
             logger.error(f"Database connection error setting setpoint: {e}")
-            return False
+            return (False, None)
         except asyncpg.PostgresError as e:
             logger.error(f"Database error setting setpoint: {e}")
-            return False
+            return (False, None)
         except Exception as e:
             logger.error(f"Error setting setpoint: {e}", exc_info=True)
-            return False
+            return (False, None)
     
     async def log_effective_setpoint(
         self,
@@ -2357,14 +2359,14 @@ class DatabaseManager:
             return {}
     
 
-    async def get_pid_control_mode(self, device_type: str) -> Optional[str]:
+    async def get_pid_control_mode(self, device_type: str) -> dict[str, Any] | None:
         """Get PID control mode for a device type.
         
         Args:
             device_type: Device type (e.g., 'heater', 'co2', 'fan')
         
         Returns:
-            Control mode ('auto_pid', 'pid', 'on_off') or None if not found
+            Dict with control_mode and hysteresis values, or None if not found
         """
         try:
             pool = await self._get_pool()
@@ -2503,8 +2505,8 @@ class DatabaseManager:
             pool = await self._get_pool()
             async with pool.acquire() as conn:
                 # Build dynamic update based on provided parameters
-                updates = []
-                params = [device_type]
+                updates: list[str] = []
+                params: list[Any] = [device_type]
                 param_idx = 2
                 
                 if is_active is not None:
@@ -3095,7 +3097,7 @@ class DatabaseManager:
                     try:
                         # Build schedule state using the helper function from schedules.py
                         # Import here to avoid circular dependency
-                        from app.routes.schedules import _build_schedule_state
+                        from .routes.schedules import _build_schedule_state
                         schedule_state = await _build_schedule_state(self, location, cluster)
                         
                         # Write to Redis
