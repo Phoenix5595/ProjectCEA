@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from __future__ import annotations
+
 from shared.logging import get_logger
 """CAN Processor - Unified service for reading CAN bus and processing messages.
 
@@ -10,7 +12,9 @@ Reads CAN messages directly from CAN bus, decodes once, processes, and writes to
 import signal
 import sys
 import os
+import socket
 import argparse
+import time
 from datetime import datetime
 from typing import Optional
 
@@ -41,6 +45,38 @@ redis_write_count = 0
 
 # Display mode
 display_messages = False
+
+# Watchdog timing
+last_watchdog_ping = 0.0
+WATCHDOG_INTERVAL = 15  # seconds (WatchdogSec=30, ping at half interval)
+
+
+def sd_notify(state: str) -> bool:
+    """Send notification to systemd.
+    
+    Args:
+        state: Notification string (e.g., "READY=1", "WATCHDOG=1", "STOPPING=1")
+    
+    Returns:
+        True if notification sent successfully, False otherwise
+    """
+    notify_socket = os.environ.get('NOTIFY_SOCKET')
+    if not notify_socket:
+        return False
+    
+    try:
+        # Handle abstract socket (starts with @)
+        if notify_socket.startswith('@'):
+            notify_socket = '\0' + notify_socket[1:]
+        
+        sock = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+        sock.connect(notify_socket)
+        sock.sendall(state.encode())
+        sock.close()
+        return True
+    except Exception as e:
+        logger.warning(f"Failed to send sd_notify({state}): {e}")
+        return False
 
 
 def signal_handler(sig, frame):
@@ -245,12 +281,23 @@ def main():
     logger.info("Press Ctrl+C to stop")
     logger.info("-" * 60)
     
+    # Notify systemd we're ready
+    if sd_notify("READY=1"):
+        logger.info("Notified systemd: READY")
+    
     consecutive_errors = 0
     max_consecutive_errors = 5
     
     try:
         while running:
             try:
+                # Ping systemd watchdog periodically
+                global last_watchdog_ping
+                now = time.time()
+                if now - last_watchdog_ping >= WATCHDOG_INTERVAL:
+                    sd_notify("WATCHDOG=1")
+                    last_watchdog_ping = now
+                
                 # Read message from CAN bus
                 msg = can_reader.read_message(timeout=1.0)
                 consecutive_errors = 0  # Reset error counter on success
@@ -274,6 +321,9 @@ def main():
                 # Continue processing despite errors
     
     finally:
+        # Notify systemd we're stopping
+        sd_notify("STOPPING=1")
+        
         logger.info("-" * 60)
         logger.info("Shutting down...")
         logger.info(f"Statistics:")

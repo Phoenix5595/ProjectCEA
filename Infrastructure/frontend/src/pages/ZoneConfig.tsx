@@ -1,137 +1,186 @@
 import { useParams, Link } from 'react-router-dom'
 import { useState, useEffect } from 'react'
-import PIDEditor from '../components/PIDEditor'
-import RoomScheduleEditor from '../components/RoomScheduleEditor'
-import LightManager from '../components/LightManager'
-import ClimateScheduleEditor from '../components/ClimateScheduleEditor'
 import { apiClient } from '../services/api'
 import { logger } from '../utils/logger'
 import { getLocationDisplayName, getLocationBackendName } from '../config/zones'
+import type { RoomModeWithParams, ModeParameters } from '../types/modes'
+import RoomModeSelector from '../components/RoomModeSelector'
+import SetpointTimeline from '../components/SetpointTimeline'
+import ScheduleLightsPanel from '../components/ScheduleLightsPanel'
+import SetpointsTable from '../components/SetpointsTable'
+import PIDEditor from '../components/PIDEditor'
 
 export default function ZoneConfig() {
   const { location: locationParam, cluster } = useParams<{ location: string; cluster: string }>()
-  // URL should have backend location name (from zones config), but convert display name if needed
-  // React Router automatically decodes URL params, so we just need to map if it's a display name
   const location = locationParam ? getLocationBackendName(locationParam) : null
-  const [activeTab, setActiveTab] = useState<'climate' | 'lights' | 'pid'>('climate')
-  const [lights, setLights] = useState<any[]>([])
+  
+  const [roomMode, setRoomMode] = useState<RoomModeWithParams | null>(null)
+  const [savedParams, setSavedParams] = useState<ModeParameters | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [success, setSuccess] = useState<string | null>(null)
 
   useEffect(() => {
     if (location && cluster) {
-      loadLights()
+      loadRoomMode()
     }
   }, [location, cluster])
 
-  async function loadLights() {
-    if (!location || !cluster) {
-      logger.debug('loadLights: Missing location or cluster', { location, cluster })
-      return
-    }
+  async function loadRoomMode() {
+    setLoading(true)
+    setError(null)
     try {
-      // Ensure we use backend location name (not display name)
-      const backendLocation = getLocationBackendName(location)
-      logger.debug('loadLights: Using backend location', { location, backendLocation, cluster })
-      const devices = await apiClient.getDevicesForLocationClusterWithDetails(backendLocation, cluster)
-      logger.debug('loadLights: Devices received', { deviceCount: Object.keys(devices).length, devices })
-      // Filter for lights with dimming enabled
-      const allDevices = Object.entries(devices)
-      logger.debug('loadLights: All devices', allDevices.map(([name, dev]) => ({ name, type: dev.device_type, dimming: dev.dimming_enabled })))
-      const lightDevices = allDevices
-        .filter(([_, device]: [string, any]) => {
-          const isLight = device.device_type === 'light'
-          const hasDimming = device.dimming_enabled === true
-          logger.debug('loadLights: Filtering device', { device_type: device.device_type, dimming_enabled: device.dimming_enabled, isLight, hasDimming })
-          return isLight && hasDimming
-        })
-        .map(([deviceName, device]: [string, any]) => ({
-          device_name: deviceName,
-          display_name: device.display_name,
-          dimming_enabled: device.dimming_enabled,
-          dimming_board_id: device.dimming_board_id,
-          dimming_channel: device.dimming_channel
-        }))
-      logger.debug('loadLights: Filtered lights', lightDevices)
-      setLights(lightDevices)
-    } catch (error) {
-      logger.error('Error loading lights:', error)
+      const mode = await apiClient.getRoomModeWithParams(location!, cluster!)
+      setRoomMode(mode)
+      setSavedParams({ ...mode.parameters })
+    } catch (err: any) {
+      logger.error('Error loading room mode:', err)
+      setError(err.response?.data?.detail || err.message || 'Failed to load')
+    } finally {
+      setLoading(false)
     }
   }
 
+  async function handleModeChange(modeName: string, submodeName?: string) {
+    if (!location || !cluster) return
+    
+    try {
+      const newMode = await apiClient.setRoomMode(location, cluster, { mode_name: modeName, submode_name: submodeName })
+      setRoomMode(newMode)
+      setSavedParams({ ...newMode.parameters })
+      setSuccess('Mode changed')
+      setTimeout(() => setSuccess(null), 2000)
+    } catch (err: any) {
+      logger.error('Error changing mode:', err)
+      setError(err.response?.data?.detail || 'Failed to change mode')
+    }
+  }
+
+  function handleParamChange(updates: Partial<ModeParameters>) {
+    if (!roomMode) return
+    setRoomMode({
+      ...roomMode,
+      parameters: { ...roomMode.parameters, ...updates }
+    })
+  }
+
+  async function handleSave() {
+    if (!roomMode || !location || !cluster) return
+    
+    setSaving(true)
+    setError(null)
+    try {
+      const updated = await apiClient.updateRoomParameters(location, cluster, roomMode.parameters)
+      setRoomMode(updated)
+      setSavedParams({ ...updated.parameters })
+      setSuccess('Saved')
+      setTimeout(() => setSuccess(null), 2000)
+    } catch (err: any) {
+      logger.error('Error saving parameters:', err)
+      setError(err.response?.data?.detail || 'Failed to save')
+    } finally {
+      setSaving(false)
+    }
+  }
 
   if (!location || !cluster) {
-    return <div className="text-gray-900 dark:text-gray-100">Invalid zone</div>
+    return <div className="text-gray-100">Invalid zone</div>
   }
 
+  if (loading) {
+    return <div className="min-h-screen bg-gray-950 flex items-center justify-center text-gray-400">Loading...</div>
+  }
+
+  const params = roomMode?.parameters
+  const isConstant = roomMode?.is_constant || false
+
   return (
-    <div className="min-h-screen bg-gray-100 dark:bg-gray-950 p-8">
-      <div className="max-w-7xl mx-auto">
-        <Link to="/" className="text-blue-700 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 hover:underline mb-4 inline-block font-medium">
-          ← Back to Dashboard
-        </Link>
-        
-        <h1 className="text-3xl font-bold mb-8 text-gray-900 dark:text-gray-100">
-          Configuration: {cluster === 'main' ? getLocationDisplayName(location) : `${getLocationDisplayName(location)} - ${cluster}`}
-        </h1>
-
-        <div className="bg-white dark:bg-gray-900 rounded-lg shadow-md border border-gray-200 dark:border-gray-800">
-          <div className="border-b border-gray-200 dark:border-gray-800">
-            <nav className="flex">
-              <button
-                onClick={() => setActiveTab('climate')}
-                className={`px-6 py-3 font-semibold ${
-                  activeTab === 'climate'
-                    ? 'border-b-2 border-blue-600 dark:border-blue-500 text-blue-700 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20'
-                    : 'text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-800'
-                }`}
-              >
-                Climate
-              </button>
-              <button
-                onClick={() => setActiveTab('lights')}
-                className={`px-6 py-3 font-semibold ${
-                  activeTab === 'lights'
-                    ? 'border-b-2 border-blue-600 dark:border-blue-500 text-blue-700 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20'
-                    : 'text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-800'
-                }`}
-              >
-                Lights
-              </button>
-              <button
-                onClick={() => setActiveTab('pid')}
-                className={`px-6 py-3 font-semibold ${
-                  activeTab === 'pid'
-                    ? 'border-b-2 border-blue-600 dark:border-blue-500 text-blue-700 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20'
-                    : 'text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-800'
-                }`}
-              >
-                PID Parameters
-              </button>
-            </nav>
-          </div>
-
-          <div className="p-6 dark:bg-black">
-            {activeTab === 'climate' && location && (
-              <ClimateScheduleEditor location={location} cluster={cluster!} />
-            )}
-            {activeTab === 'lights' && location && (
-              <div className="space-y-8">
-                <section>
-                  <h2 className="text-xl font-semibold mb-4 text-gray-900 dark:text-gray-100">Light Schedule</h2>
-                  <RoomScheduleEditor location={location} cluster={cluster!} period="day" />
-                </section>
-                <section className="border-t border-gray-200 dark:border-gray-800 pt-6">
-                  <h2 className="text-xl font-semibold mb-4 text-gray-900 dark:text-gray-100">Light Management</h2>
-                  <LightManager location={location} cluster={cluster!} lights={lights} />
-                </section>
+    <div className="min-h-screen bg-gray-950 p-2">
+      <div className="max-w-[1920px] mx-auto h-[calc(100vh-1rem)] flex flex-col">
+        <div className="flex items-center justify-between mb-2 px-1">
+          <h1 className="text-lg font-bold text-gray-100 flex items-center gap-2">
+            <span>🌱</span> 
+            {cluster === 'main' ? getLocationDisplayName(location) : `${getLocationDisplayName(location)} - ${cluster}`}
+          </h1>
+          <div className="flex items-center gap-3">
+            {(error || success) && (
+              <div className={`text-xs px-2 py-0.5 rounded ${error ? 'bg-red-900 text-red-200' : 'bg-green-900 text-green-200'}`}>
+                {error || success}
               </div>
             )}
-            {activeTab === 'pid' && (
-              <PIDEditor />
-            )}
+            <button
+              onClick={handleSave}
+              disabled={saving}
+              className="px-3 py-1 bg-cyan-700 hover:bg-cyan-600 disabled:opacity-50 text-white text-xs font-bold rounded transition-colors"
+            >
+              {saving ? '...' : 'SAVE'}
+            </button>
+            <RoomModeSelector
+              currentMode={roomMode}
+              onModeChange={handleModeChange}
+            />
+            <Link to="/" className="text-xs text-gray-400 hover:text-white font-medium flex items-center gap-1 bg-gray-800 px-2 py-1 rounded border border-gray-700 hover:border-gray-500 transition-colors">
+              <span>←</span> Back
+            </Link>
           </div>
         </div>
+
+        {params && (
+          <div className="flex-1 flex flex-col gap-2 min-h-0">
+            <div className="flex gap-2 h-[200px] flex-shrink-0">
+              <div className="flex-[2] bg-gray-900 rounded-lg border border-gray-800 overflow-hidden">
+                {!isConstant && (
+                  <SetpointTimeline
+                    dayStartTime={params.day_start_time}
+                    dayEndTime={params.night_start_time}
+                    preDayDuration={params.pre_day_minutes}
+                    preNightDuration={params.pre_night_minutes}
+                    onDayStartChange={(time) => handleParamChange({ day_start_time: time })}
+                    onDayEndChange={(time) => handleParamChange({ night_start_time: time })}
+                    onPreDayDurationChange={(d) => handleParamChange({ pre_day_minutes: d })}
+                    onPreNightDurationChange={(d) => handleParamChange({ pre_night_minutes: d })}
+                    setpoints={{
+                      DAY: { heating_setpoint: params.day_heat_temp, cooling_setpoint: params.day_cool_temp, vpd: params.day_vpd, co2: params.day_co2 },
+                      NIGHT: { heating_setpoint: params.night_heat_temp, cooling_setpoint: params.night_cool_temp, vpd: params.night_vpd, co2: params.night_co2 }
+                    }}
+                    className="h-full"
+                  />
+                )}
+                {isConstant && (
+                  <div className="h-full flex items-center justify-center text-gray-500 text-sm">
+                    Constant mode - no schedule
+                  </div>
+                )}
+              </div>
+              
+              <div className="flex-1">
+                <ScheduleLightsPanel
+                  params={params}
+                  currentParams={savedParams || undefined}
+                  isConstant={isConstant}
+                  onChange={handleParamChange}
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-2 flex-1 min-h-0">
+              <div className="flex-[2]">
+                <SetpointsTable
+                  params={params}
+                  currentParams={savedParams || undefined}
+                  isConstant={isConstant}
+                  onChange={handleParamChange}
+                />
+              </div>
+              
+              <div className="flex-1">
+                <PIDEditor />
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )
 }
-

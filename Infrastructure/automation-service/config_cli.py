@@ -19,6 +19,8 @@ Usage:
     config-cli schedule delete <id> [--dry-run]
     config-cli config show <location> <cluster>
 """
+from __future__ import annotations
+
 import asyncio
 import argparse
 import sys

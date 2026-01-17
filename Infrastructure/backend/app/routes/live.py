@@ -1,4 +1,6 @@
 """Live snapshot API routes for Grafana."""
+from __future__ import annotations
+
 from shared.logging import get_logger
 from datetime import datetime
 from fastapi import APIRouter, HTTPException

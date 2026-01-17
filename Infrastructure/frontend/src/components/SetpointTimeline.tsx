@@ -18,6 +18,8 @@ interface SetpointTimelineProps {
     PRE_DAY?: any
     PRE_NIGHT?: any
   }
+  compact?: boolean
+  className?: string
 }
 
 export default function SetpointTimeline({
@@ -25,14 +27,16 @@ export default function SetpointTimeline({
   dayEndTime,
   preDayDuration,
   preNightDuration,
-  currentPreDayDuration,
-  currentPreNightDuration,
+  currentPreDayDuration: _currentPreDayDuration,
+  currentPreNightDuration: _currentPreNightDuration,
   onDayStartChange: _onDayStartChange,
   onDayEndChange: _onDayEndChange,
-  onPreDayDurationChange,
-  onPreNightDurationChange,
+  onPreDayDurationChange: _onPreDayDurationChange,
+  onPreNightDurationChange: _onPreNightDurationChange,
   lightPhotoperiod,
-  setpoints: _setpoints
+  setpoints: _setpoints,
+  compact: _compact = false,
+  className = ""
 }: SetpointTimelineProps) {
   // Track dark mode for hatch pattern styling
   const [isDarkMode, setIsDarkMode] = useState(false)
@@ -84,32 +88,28 @@ export default function SetpointTimeline({
   }
 
   return (
-    <div className="w-full">
-      <div className="relative bg-gray-50 dark:bg-gray-950 border border-gray-300 dark:border-gray-600 rounded-lg overflow-hidden flex">
-        {/* Y-axis labels - Temperature (left) */}
-        <div className="flex-shrink-0 w-12 border-r border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-950 relative">
-          <div className="relative h-64">
-            {[35, 30, 25, 20, 15].map((value) => (
-              <div
-                key={value}
-                className="absolute text-xs text-gray-700 dark:text-gray-300 font-medium text-right pr-2"
-                style={{ 
-                  top: `${((35 - value) / (35 - 15)) * 100}%`,
-                  transform: 'translateY(-50%)',
-                  width: '100%'
-                }}
-              >
-                {value}
-              </div>
-            ))}
-          </div>
-          {/* Spacer for hour labels */}
-          <div className="h-8"></div>
+    <div className={`w-full ${className}`}>
+      <div className="relative bg-gray-50 dark:bg-gray-950 border border-gray-800 rounded-lg overflow-hidden h-full">
+        {/* Y-axis labels - Temperature (left) - OVERLAY */}
+        <div className="absolute left-0 top-0 bottom-4 w-6 z-20 pointer-events-none">
+          {[35, 25, 15].map((value) => (
+            <div
+              key={value}
+              className="absolute text-[9px] text-gray-400 font-medium text-right pr-0.5 bg-gray-950/80 px-0.5 rounded-r"
+              style={{ 
+                top: `${((35 - value) / (35 - 15)) * 100}%`,
+                transform: 'translateY(-50%)',
+                left: 0
+              }}
+            >
+              {value}°
+            </div>
+          ))}
         </div>
         
-        {/* Timeline content area */}
-        <div className="flex-1 relative">
-          <div className="relative h-64">
+        {/* Timeline content area - FULL WIDTH */}
+        <div className="relative h-full">
+          <div className="relative h-full">
           {/* Mode period backgrounds - Climate periods (independent of light overlay) */}
           <div
             className="absolute top-0 bottom-0 bg-blue-100 dark:bg-blue-500/30 opacity-30 dark:opacity-100"
@@ -767,7 +767,7 @@ export default function SetpointTimeline({
           {Array.from({ length: 25 }).map((_, i) => (
             <div
               key={i}
-              className="absolute top-0 bottom-0 w-px bg-gray-300 dark:bg-gray-600"
+              className="absolute top-0 bottom-0 w-px bg-gray-800"
               style={{ left: `${(i / 24) * 100}%` }}
             />
           ))}
@@ -776,7 +776,7 @@ export default function SetpointTimeline({
           {[15, 20, 25, 30, 35].map((value) => (
             <div
               key={`grid-${value}`}
-              className="absolute left-0 right-0 h-px bg-gray-200 dark:bg-gray-900 opacity-50"
+              className="absolute left-0 right-0 h-px bg-gray-800 opacity-50"
               style={{
                 top: `${((35 - value) / (35 - 15)) * 100}%`
               }}
@@ -785,82 +785,38 @@ export default function SetpointTimeline({
           </div>
           
           {/* Hour labels - fixed from midnight (00:00) to midnight (24:00) */}
-          <div className="relative h-8 border-t border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-950">
-            {Array.from({ length: 25 }).map((_, i) => {
-              // Show 00:00 to 24:00 (fixed midnight to midnight)
-              const hour = i === 24 ? 24 : i
+          <div className="absolute bottom-0 left-0 right-0 h-4 pointer-events-none">
+            {Array.from({ length: 13 }).map((_, i) => {
+              // Show every 2 hours
+              const hour = i * 2
               return (
                 <div
                   key={i}
-                  className="absolute top-1 text-xs text-gray-700 dark:text-gray-300 font-medium"
-                  style={{ left: `${(i / 24) * 100}%`, transform: 'translateX(-50%)' }}
+                  className="absolute bottom-0 text-[10px] text-gray-500 font-medium"
+                  style={{ left: `${(hour / 24) * 100}%`, transform: 'translateX(-50%)' }}
                 >
-                  {String(hour).padStart(2, '0')}:00
+                  {String(hour).padStart(2, '0')}
                 </div>
               )
             })}
           </div>
         </div>
         
-        {/* Y-axis labels - VPD (right) */}
-        <div className="flex-shrink-0 w-12 border-l border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-950 relative">
-          <div className="relative h-64">
-            {[2, 1.5, 1, 0.5].map((value) => (
-              <div
-                key={`vpd-${value}`}
-                className="absolute text-xs text-gray-700 dark:text-gray-300 font-medium text-left pl-2"
-                style={{ 
-                  top: `${((2 - value) / (2 - 0.5)) * 100}%`,
-                  transform: 'translateY(-50%)',
-                  width: '100%'
-                }}
-              >
-                {value}
-              </div>
-            ))}
-          </div>
-          {/* Spacer for hour labels */}
-          <div className="h-8"></div>
-        </div>
-      </div>
-
-      {/* Duration controls */}
-      <div className="mt-4 grid grid-cols-2 gap-4">
-        <div>
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-            Pre-Day Duration (minutes)
-          </label>
-          <input
-            type="number"
-            min="0"
-            max="240"
-            value={preDayDuration}
-            onChange={(e) => onPreDayDurationChange(parseInt(e.target.value) || 0)}
-            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
-          />
-          {currentPreDayDuration !== undefined && currentPreDayDuration !== null && (
-            <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-              Current: {currentPreDayDuration} minutes
+        {/* Y-axis labels - VPD (right) - OVERLAY */}
+        <div className="absolute right-0 top-0 bottom-4 w-6 z-20 pointer-events-none">
+          {[2, 1, 0.5].map((value) => (
+            <div
+              key={`vpd-${value}`}
+              className="absolute text-[9px] text-cyan-400 font-medium text-left pl-0.5 bg-gray-950/80 px-0.5 rounded-l"
+              style={{ 
+                top: `${((2 - value) / (2 - 0.5)) * 100}%`,
+                transform: 'translateY(-50%)',
+                right: 0
+              }}
+            >
+              {value}
             </div>
-          )}
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-            Pre-Night Duration (minutes)
-          </label>
-          <input
-            type="number"
-            min="0"
-            max="240"
-            value={preNightDuration}
-            onChange={(e) => onPreNightDurationChange(parseInt(e.target.value) || 0)}
-            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
-          />
-          {currentPreNightDuration !== undefined && currentPreNightDuration !== null && (
-            <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-              Current: {currentPreNightDuration} minutes
-            </div>
-          )}
+          ))}
         </div>
       </div>
     </div>

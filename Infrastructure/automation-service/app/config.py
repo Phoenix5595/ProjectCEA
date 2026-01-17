@@ -1,4 +1,6 @@
 """Configuration loader for YAML config files."""
+from __future__ import annotations
+
 import yaml
 import logging
 from pathlib import Path

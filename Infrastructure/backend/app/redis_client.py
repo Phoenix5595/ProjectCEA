@@ -1,4 +1,6 @@
 """Redis client utilities for reading live sensor state."""
+from __future__ import annotations
+
 from shared.logging import get_logger
 import redis.asyncio as redis
 from typing import Optional, Dict, Any, List

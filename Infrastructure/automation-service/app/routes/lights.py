@@ -1,4 +1,6 @@
 """Light dimming control endpoints for DFR0971 DAC modules."""
+from __future__ import annotations
+
 from typing import Dict, Any, Optional, TYPE_CHECKING
 
 from fastapi import APIRouter, HTTPException, Depends

@@ -1,4 +1,6 @@
 """Sensor Data Manager - Handles sensor data retrieval and processing."""
+from __future__ import annotations
+
 import asyncio
 from typing import Dict, Optional, Any
 from shared.logging import get_logger

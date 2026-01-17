@@ -1,4 +1,6 @@
 """Control engine that orchestrates rules, schedules, and PID control."""
+from __future__ import annotations
+
 # Standard library imports
 import asyncio
 from datetime import datetime, timedelta

@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json.schemastore.org/pyrightconfig.json",
+  "pythonVersion": "3.11",
+  "pythonPlatform": "Linux",
+  "typeCheckingMode": "standard",
+  "include": ["app", "*.py"],
+  "exclude": ["**/__pycache__", "**/.*", "**/venv", "**/.venv"],
+  "extraPaths": [".", ".."],
+  "reportImportCycles": "warning",
+  "reportImplicitRelativeImport": "warning",
+  "reportMissingImports": "error",
+  "reportMissingTypeStubs": "none",
+  "reportUnusedImport": "none",
+  "strictListInference": true,
+  "strictDictionaryInference": true,
+  "strictSetInference": true
+}

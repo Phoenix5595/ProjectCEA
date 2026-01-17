@@ -14,6 +14,7 @@ import PIDHistoryTerminal from './PIDHistoryTerminal';
 
 const DEVICE_TYPES = ['heater', 'fan', 'co2'];
 
+
 export default function PIDEditor() {
   const [selectedDeviceType, setSelectedDeviceType] = useState<string>('heater');
   const [formData, setFormData] = useState<PIDParameterUpdate>({});
@@ -23,6 +24,9 @@ export default function PIDEditor() {
   const [currentMode, setCurrentMode] = useState<PIDControlMode>('pid');
   const [hysteresisData, setHysteresisData] = useState({ high: 0.5, low: 0.5 });
   const [autotuneState, setAutotuneState] = useState<AutotuneState | null>(null);
+
+  // Collapse history by default
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   useEffect(() => {
     loadAllData();
@@ -145,63 +149,60 @@ export default function PIDEditor() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="mb-6">
-        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-          Device Type
-        </label>
-        <select
-          value={selectedDeviceType}
-          onChange={(e) => setSelectedDeviceType(e.target.value)}
-          className="border border-gray-300 dark:border-gray-600 rounded-md px-3 py-2 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
-        >
-          {DEVICE_TYPES.map(type => (
-            <option key={type} value={type}>{type}</option>
-          ))}
-        </select>
-        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-          Note: Fans can use PID control for temperature cooling. Dehumidifiers are ON/OFF only.
-        </p>
+    <div className="bg-gray-900 rounded p-2 border border-gray-800 h-full flex flex-col">
+      <div className="flex justify-between items-center mb-2">
+        <div className="text-xs font-bold text-gray-400 uppercase tracking-wider">
+           PID CONTROL
+        </div>
+        <div className="flex gap-2">
+            <select
+               value={selectedDeviceType}
+               onChange={(e) => setSelectedDeviceType(e.target.value)}
+               className="h-6 px-1 py-0 bg-gray-800 border border-gray-700 text-gray-300 text-[10px] rounded focus:outline-none"
+            >
+               {DEVICE_TYPES.map(type => (
+                  <option key={type} value={type}>{type.toUpperCase()}</option>
+               ))}
+            </select>
+        </div>
       </div>
 
-      <PIDModeSelector 
-        mode={currentMode} 
-        onChange={handleModeChange}
-        disabled={loading}
-      />
+      <div className="mb-2">
+          <PIDModeSelector 
+            mode={currentMode} 
+            onChange={handleModeChange}
+            disabled={loading}
+          />
+      </div>
 
       {currentMode === 'auto_pid' && autotuneState && (
-        <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg border border-blue-200 dark:border-blue-800">
-          <div className="flex items-center justify-between mb-2">
-            <h4 className="font-semibold text-blue-900 dark:text-blue-100 flex items-center gap-2">
-              <span className="relative flex h-3 w-3">
+        <div className="bg-blue-900/20 p-2 rounded border border-blue-800 mb-2">
+          <div className="flex items-center justify-between mb-1">
+            <h4 className="font-semibold text-blue-100 flex items-center gap-2 text-[10px]">
+              <span className="relative flex h-1.5 w-1.5">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-3 w-3 bg-blue-500"></span>
+                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-blue-500"></span>
               </span>
-              Auto-tuning in Progress
+              Auto-tuning
             </h4>
-            <span className="text-sm font-medium px-2 py-1 bg-blue-100 dark:bg-blue-800 text-blue-800 dark:text-blue-100 rounded-full capitalize">
+            <span className="text-[10px] font-medium px-2 py-0 bg-blue-800 text-blue-100 rounded-full capitalize">
               {autotuneState.status}
             </span>
           </div>
-          <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2.5 mb-2">
+          <div className="w-full bg-gray-700 rounded-full h-1 mb-1">
             <div 
-              className="bg-blue-600 h-2.5 rounded-full transition-all duration-500" 
+              className="bg-blue-500 h-1 rounded-full transition-all duration-500" 
               style={{ width: `${(autotuneState.cycles_completed / 5) * 100}%` }}
             ></div>
-          </div>
-          <div className="flex justify-between text-sm text-gray-600 dark:text-gray-400">
-            <span>Cycle {autotuneState.cycles_completed} / 5</span>
-            <span>Est. Remaining: {autotuneState.estimated_remaining_cycles} cycles</span>
           </div>
         </div>
       )}
 
       {currentMode === 'on_off' ? (
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-2 gap-2 mb-2">
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Hysteresis High
+            <label className="block text-[10px] font-medium text-gray-400 mb-0.5">
+              Hyst High
             </label>
             <input
               type="number"
@@ -209,12 +210,12 @@ export default function PIDEditor() {
               value={hysteresisData.high}
               onChange={(e) => setHysteresisData(prev => ({ ...prev, high: parseFloat(e.target.value) }))}
               onBlur={() => handleModeChange('on_off')}
-              className="border border-gray-300 dark:border-gray-600 rounded-md px-3 py-2 w-full bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
+              className="border border-gray-700 rounded px-2 py-1 w-full bg-gray-800 text-gray-200 text-xs h-6"
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Hysteresis Low
+            <label className="block text-[10px] font-medium text-gray-400 mb-0.5">
+              Hyst Low
             </label>
             <input
               type="number"
@@ -222,126 +223,100 @@ export default function PIDEditor() {
               value={hysteresisData.low}
               onChange={(e) => setHysteresisData(prev => ({ ...prev, low: parseFloat(e.target.value) }))}
               onBlur={() => handleModeChange('on_off')}
-              className="border border-gray-300 dark:border-gray-600 rounded-md px-3 py-2 w-full bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
+              className="border border-gray-700 rounded px-2 py-1 w-full bg-gray-800 text-gray-200 text-xs h-6"
             />
           </div>
         </div>
       ) : (
-        <div className="space-y-4">
+        <div className="grid grid-cols-3 gap-2 mb-2">
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Kp (Proportional Gain)
-            </label>
+            <label className="block text-[10px] font-medium text-gray-400 mb-0.5">Kp</label>
             <input
               type="number"
               step="0.01"
               value={formData.kp ?? ''}
               onChange={(e) => handleChange('kp', parseFloat(e.target.value))}
               disabled={currentMode === 'auto_pid'}
-              className={`border rounded-md px-3 py-2 w-full bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 ${
-                errors.kp ? 'border-red-500 dark:border-red-400' : 'border-gray-300 dark:border-gray-600'
-              } ${currentMode === 'auto_pid' ? 'opacity-50 cursor-not-allowed' : ''}`}
+              className={`border rounded px-1 py-0.5 w-full bg-gray-800 text-gray-200 text-xs h-6 ${
+                errors.kp ? 'border-red-500' : 'border-gray-700'
+              } ${currentMode === 'auto_pid' ? 'opacity-50' : ''}`}
             />
-            {currentParams?.kp !== undefined && (
-              <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                Current: {currentParams.kp}
-              </div>
-            )}
-            {errors.kp && (
-              <p className="text-sm text-red-500 dark:text-red-400 mt-1">{errors.kp}</p>
-            )}
           </div>
-
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Ki (Integral Gain)
-            </label>
+            <label className="block text-[10px] font-medium text-gray-400 mb-0.5">Ki</label>
             <input
               type="number"
               step="0.001"
               value={formData.ki ?? ''}
               onChange={(e) => handleChange('ki', parseFloat(e.target.value))}
               disabled={currentMode === 'auto_pid'}
-              className={`border rounded-md px-3 py-2 w-full bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 ${
-                errors.ki ? 'border-red-500 dark:border-red-400' : 'border-gray-300 dark:border-gray-600'
-              } ${currentMode === 'auto_pid' ? 'opacity-50 cursor-not-allowed' : ''}`}
+              className={`border rounded px-1 py-0.5 w-full bg-gray-800 text-gray-200 text-xs h-6 ${
+                errors.ki ? 'border-red-500' : 'border-gray-700'
+              } ${currentMode === 'auto_pid' ? 'opacity-50' : ''}`}
             />
-            {currentParams?.ki !== undefined && (
-              <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                Current: {currentParams.ki}
-              </div>
-            )}
-            {errors.ki && (
-              <p className="text-sm text-red-500 dark:text-red-400 mt-1">{errors.ki}</p>
-            )}
           </div>
-
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Kd (Derivative Gain)
-            </label>
+            <label className="block text-[10px] font-medium text-gray-400 mb-0.5">Kd</label>
             <input
               type="number"
               step="0.01"
               value={formData.kd ?? ''}
               onChange={(e) => handleChange('kd', parseFloat(e.target.value))}
               disabled={currentMode === 'auto_pid'}
-              className={`border rounded-md px-3 py-2 w-full bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 ${
-                errors.kd ? 'border-red-500 dark:border-red-400' : 'border-gray-300 dark:border-gray-600'
-              } ${currentMode === 'auto_pid' ? 'opacity-50 cursor-not-allowed' : ''}`}
+              className={`border rounded px-1 py-0.5 w-full bg-gray-800 text-gray-200 text-xs h-6 ${
+                errors.kd ? 'border-red-500' : 'border-gray-700'
+              } ${currentMode === 'auto_pid' ? 'opacity-50' : ''}`}
             />
-            {currentParams?.kd !== undefined && (
-              <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                Current: {currentParams.kd}
-              </div>
-            )}
-            {errors.kd && (
-              <p className="text-sm text-red-500 dark:text-red-400 mt-1">{errors.kd}</p>
-            )}
           </div>
         </div>
       )}
 
       {currentMode !== 'auto_pid' && currentMode !== 'on_off' && (
-        <div className="flex gap-4 mt-6">
-          <button
-            onClick={handleSubmit}
-            disabled={loading || Object.keys(errors).length > 0}
-            className="bg-blue-600 dark:bg-blue-500 text-white px-6 py-2 rounded-md hover:bg-blue-700 dark:hover:bg-blue-600 disabled:opacity-50"
-          >
-            {loading ? 'Saving...' : 'Save PID Parameters'}
-          </button>
+        <div className="flex gap-2 mb-2 justify-end">
           <button
             onClick={async () => {
-              if (window.confirm('Reset PID parameters to config defaults?')) {
+              if (window.confirm('Reset?')) {
                 setLoading(true);
                 try {
                   const reset = await apiClient.resetPIDParameters(selectedDeviceType);
                   setFormData({ kp: reset.kp, ki: reset.ki, kd: reset.kd });
                   setCurrentParams(reset);
                 } catch (e) {
-                  console.error('Reset failed:', e);
+                  // ignore
                 }
                 setLoading(false);
               }
             }}
             disabled={loading}
-            className="bg-gray-500 dark:bg-gray-600 text-white px-4 py-2 rounded-md hover:bg-gray-600 dark:hover:bg-gray-700 disabled:opacity-50"
+            className="text-gray-400 hover:text-white text-[10px]"
           >
-            Reset to Defaults
+            Reset
+          </button>
+          <button
+            onClick={handleSubmit}
+            disabled={loading || Object.keys(errors).length > 0}
+            className="bg-cyan-700 hover:bg-cyan-600 text-white px-3 py-0.5 rounded text-[10px] font-bold"
+          >
+            {loading ? '...' : 'SAVE'}
           </button>
         </div>
       )}
-
-      {currentParams?.updated_at && (
-        <div className="text-xs text-gray-400 dark:text-gray-500 mt-8 pt-4 border-t border-gray-200 dark:border-gray-700">
-          Last updated: {new Date(currentParams.updated_at).toLocaleString()} 
-          {currentParams.updated_by && ` by ${currentParams.updated_by}`}
-          {currentParams.source && ` (${currentParams.source})`}
-        </div>
-      )}
-
-      <PIDHistoryTerminal deviceType={selectedDeviceType} />
+      
+      <div className="mt-auto border-t border-gray-800 pt-2">
+         <div 
+           className="flex justify-between items-center cursor-pointer"
+           onClick={() => setHistoryOpen(!historyOpen)}
+         >
+           <span className="text-[10px] text-gray-500 flex items-center gap-1">
+             <span>{historyOpen ? '▼' : '▶'}</span> History
+           </span>
+         </div>
+         {historyOpen && (
+           <div className="mt-2">
+              <PIDHistoryTerminal deviceType={selectedDeviceType} maxLines={10} />
+           </div>
+         )}
+      </div>
     </div>
   );
 }

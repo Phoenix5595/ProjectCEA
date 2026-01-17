@@ -1,4 +1,6 @@
 """Helper functions to process Redis Stream entries into sensor data points."""
+from __future__ import annotations
+
 from shared.logging import get_logger
 import math
 import sys

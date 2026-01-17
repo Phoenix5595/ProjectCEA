@@ -1,4 +1,6 @@
 """Background tasks for polling soil sensors."""
+from __future__ import annotations
+
 from shared.logging import get_logger
 import asyncio
 from datetime import datetime

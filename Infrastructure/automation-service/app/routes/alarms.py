@@ -1,4 +1,6 @@
 """Alarm management endpoints."""
+from __future__ import annotations
+
 from shared.logging import get_logger
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel

@@ -1,4 +1,6 @@
 """Application middleware and static file handling."""
+from __future__ import annotations
+
 from shared.logging import get_logger
 import os
 from fastapi import FastAPI

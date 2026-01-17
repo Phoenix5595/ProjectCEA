@@ -1,4 +1,6 @@
 """Relay manager for device-to-channel mapping and state management."""
+from __future__ import annotations
+
 from shared.logging import get_logger
 from typing import Dict, Optional, Tuple, Set
 from app.hardware.mcp23017 import MCP23017Driver

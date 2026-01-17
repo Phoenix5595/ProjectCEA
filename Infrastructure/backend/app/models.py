@@ -1,4 +1,6 @@
 """Pydantic models for API request/response validation."""
+from __future__ import annotations
+
 from shared.logging import get_logger
 from datetime import datetime
 from typing import List, Optional, Dict

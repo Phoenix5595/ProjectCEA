@@ -2,6 +2,8 @@
 
 Supports reading from unified sensor:raw stream with filtering by type (can/soil) and time range.
 """
+from __future__ import annotations
+
 from shared.logging import get_logger
 import redis
 import json

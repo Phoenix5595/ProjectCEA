@@ -1,4 +1,6 @@
 """Database manager for TimescaleDB operations."""
+from __future__ import annotations
+
 from shared.logging import get_logger
 import json
 import math

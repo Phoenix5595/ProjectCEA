@@ -1,4 +1,6 @@
 """Main FastAPI application for soil sensor service."""
+from __future__ import annotations
+
 from shared.logging import get_logger
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Depends

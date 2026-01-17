@@ -1,4 +1,6 @@
 """Route registration and dependency injection setup."""
+from __future__ import annotations
+
 from shared.logging import get_logger
 from fastapi import FastAPI
 

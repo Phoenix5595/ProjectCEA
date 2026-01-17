@@ -16,6 +16,8 @@ Public API:
         DeviceController,
     )
 """
+from __future__ import annotations
+
 from app.control.control_engine import ControlEngine
 from app.control.pid_controller_manager import PIDControllerManager
 from app.control.vpd_controller import VPDController

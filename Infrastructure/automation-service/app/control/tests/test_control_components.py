@@ -1,4 +1,6 @@
 """Unit tests for control engine components."""
+from __future__ import annotations
+
 import asyncio
 import pytest
 from datetime import datetime, timedelta

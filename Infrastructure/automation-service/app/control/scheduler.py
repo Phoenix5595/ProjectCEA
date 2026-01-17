@@ -1,4 +1,6 @@
 """Time-based scheduler for device control."""
+from __future__ import annotations
+
 from shared.logging import get_logger
 from datetime import datetime, time, timedelta
 from zoneinfo import ZoneInfo

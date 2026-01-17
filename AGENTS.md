@@ -191,3 +191,32 @@ systemctl status can-processor cea-backend automation-service
 | `Infrastructure/backend/AGENTS.md` | Sensor API |
 | `Infrastructure/can-processor-service/AGENTS.md` | CAN ingestion |
 | `Sensor_Nodes/AGENTS.md` | ESP32 firmware |
+
+## EXTERNAL RESOURCES
+
+> Librarian uses this for focused searches. No Context7 MCP configured.
+
+### Dependencies
+
+**Python:** fastapi, uvicorn, pydantic, redis, asyncpg, psycopg2-binary, python-can, sqlalchemy, websockets, pyyaml, smbus2
+**JavaScript:** react, react-dom, react-router-dom, @tanstack/react-query, axios, recharts, tailwindcss, vite, typescript
+
+### GitHub Repos
+- tiangolo/fastapi
+- redis/redis-py
+- MagicStack/asyncpg
+- pydantic/pydantic
+- facebook/react
+- TanStack/query
+- timescale/timescaledb
+
+### Documentation
+- https://fastapi.tiangolo.com
+- https://redis.io/docs
+- https://magicstack.github.io/asyncpg
+- https://docs.pydantic.dev
+- https://react.dev
+- https://tanstack.com/query/latest
+- https://docs.timescale.com
+- https://tailwindcss.com/docs
+- https://vitejs.dev/guide

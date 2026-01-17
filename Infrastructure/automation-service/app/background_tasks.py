@@ -1,4 +1,6 @@
 """Background tasks for automation control loop."""
+from __future__ import annotations
+
 from shared.logging import get_logger
 import asyncio
 from typing import Optional

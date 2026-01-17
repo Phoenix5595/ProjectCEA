@@ -9,6 +9,8 @@ Decision Hierarchy (energy priority):
 2. Active dehumidification
 3. Thermal manipulation (highest energy)
 """
+from __future__ import annotations
+
 from shared.logging import get_logger
 from dataclasses import dataclass
 from typing import Dict, Optional, List

@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from __future__ import annotations
+
 from shared.logging import get_logger
 """
 MCP23017 I2C Relay Driver

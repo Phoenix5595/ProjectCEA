@@ -10,6 +10,8 @@ VPD Formula:
   SVP_air = 0.6108 * exp((17.27 * T_air) / (T_air + 237.3))
   VPD = SVP_leaf - (SVP_air * RH / 100)
 """
+from __future__ import annotations
+
 import math
 from typing import Dict, Optional, Tuple
 from dataclasses import dataclass

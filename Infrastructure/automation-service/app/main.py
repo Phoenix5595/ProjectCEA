@@ -1,4 +1,6 @@
 """Main FastAPI application for automation service."""
+from __future__ import annotations
+
 from shared.logging import get_logger
 from fastapi import FastAPI
 

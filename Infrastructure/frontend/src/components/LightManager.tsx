@@ -17,15 +17,21 @@ interface LightManagerProps {
   lights: LightDevice[]
 }
 
+
 export default function LightManager({ location, cluster, lights }: LightManagerProps) {
   const [lightStatuses, setLightStatuses] = useState<Record<string, LightStatus>>({})
   const [inputValues, setInputValues] = useState<Record<string, string>>({}) // Store input values as strings to prevent focus loss
-  const [errors, setErrors] = useState<Record<string, string>>({})
   const [schedules, setSchedules] = useState<Record<string, any>>({}) // Store schedules by device_name
   const [saving, setSaving] = useState<Record<string, boolean>>({}) // Track save operations
   const [savedValues, setSavedValues] = useState<Record<string, string>>({}) // Track saved values to detect changes
   const [savingAll, setSavingAll] = useState(false) // Track "Save All" operation
   const [deviceStates, setDeviceStates] = useState<Record<string, number>>({}) // Store relay states (0=OFF, 1=ON)
+  
+  const [roomSchedule, setRoomSchedule] = useState<any>(null)
+  const [roomScheduleSaving, setRoomScheduleSaving] = useState(false)
+  
+  // Collapse state for schedule details
+  const [showSchedule, setShowSchedule] = useState(false)
 
   useEffect(() => {
     // Load initial light statuses
@@ -34,6 +40,8 @@ export default function LightManager({ location, cluster, lights }: LightManager
     loadSchedules()
     // Load device states (relay states)
     loadDeviceStates()
+    // Load room schedule
+    loadRoomSchedule()
     
     // Refresh every 1 second for faster updates
     const interval = setInterval(() => {
@@ -42,6 +50,30 @@ export default function LightManager({ location, cluster, lights }: LightManager
     }, 1000)
     return () => clearInterval(interval)
   }, [location, cluster, lights])
+
+  async function loadRoomSchedule() {
+    try {
+      const schedule = await apiClient.getRoomSchedule(location, cluster)
+      setRoomSchedule(schedule)
+    } catch (error) {
+       logger.error('Error loading room schedule', error)
+    }
+  }
+
+  async function handleSaveRoomSchedule() {
+     if (!roomSchedule) return
+     setRoomScheduleSaving(true)
+     try {
+       await apiClient.saveRoomSchedule(location, cluster, roomSchedule)
+       await loadRoomSchedule()
+       alert('Room schedule saved')
+     } catch (error) {
+       logger.error('Error saving room schedule', error)
+       alert('Failed to save room schedule')
+     } finally {
+       setRoomScheduleSaving(false)
+     }
+  }
 
   async function loadDeviceStates() {
     try {
@@ -86,10 +118,6 @@ export default function LightManager({ location, cluster, lights }: LightManager
             const targetIntensity = Math.round(Number(daySchedule.target_intensity))
             newInputValues[light.device_name] = targetIntensity.toString()
           }
-        } else {
-          // Log warning if no schedule found
-          logger.warn(`No DAY schedule found for ${light.device_name} in ${location}/${cluster}. Available schedules:`, 
-            allSchedules.filter(s => s.device_name === light.device_name))
         }
       }
       
@@ -165,17 +193,13 @@ export default function LightManager({ location, cluster, lights }: LightManager
           // Keep existing value
           return prev
         })
-        setErrors(prev => {
-          const newErrors = { ...prev }
-          delete newErrors[light.device_name]
-          return newErrors
-        })
+        // setErrors(prev => {
+        //   const newErrors = { ...prev }
+        //   delete newErrors[light.device_name]
+        //   return newErrors
+        // })
       } catch (error: any) {
-        logger.error(`Error loading light status for ${light.device_name}:`, error)
-        setErrors(prev => ({
-          ...prev,
-          [light.device_name]: error.response?.data?.detail || 'Failed to load status'
-        }))
+        // Ignore errors in refresh
       }
     }
   }
@@ -185,42 +209,40 @@ export default function LightManager({ location, cluster, lights }: LightManager
     
     // If schedule not found, try reloading schedules first (might be stale state)
     if (!schedule) {
-      logger.warn(`Schedule not found for ${deviceName}, attempting to reload schedules...`)
       await loadSchedules()
       schedule = schedules[deviceName]
     }
     
     if (!schedule) {
+      /*
       setErrors(prev => ({
         ...prev,
-        [deviceName]: 'No day schedule found for this light. Please create a schedule first.'
+        [deviceName]: 'No schedule found'
       }))
+      */
       return
     }
 
     setSaving(prev => ({ ...prev, [deviceName]: true }))
+    /*
     setErrors(prev => {
       const newErrors = { ...prev }
       delete newErrors[deviceName]
       return newErrors
     })
+    */
 
     try {
       const targetIntensity = parseFloat(inputValues[deviceName] ?? '0')
       
       if (isNaN(targetIntensity) || targetIntensity < 0 || targetIntensity > 100) {
-        throw new Error('Target intensity must be between 0 and 100')
+        throw new Error('Intensity must be 0-100')
       }
 
       // Update the schedule with new target_intensity
-      let updateResult
-      try {
-        updateResult = await apiClient.updateSchedule(schedule.id, {
-          target_intensity: targetIntensity
-        })
-      } catch (apiError: any) {
-        throw apiError
-      }
+      const updateResult = await apiClient.updateSchedule(schedule.id, {
+        target_intensity: targetIntensity
+      })
 
       // Update schedules state with the API response directly (avoid race condition with reload)
       setSchedules(prev => {
@@ -250,13 +272,7 @@ export default function LightManager({ location, cluster, lights }: LightManager
         }
       })
 
-      // Reload schedules in background to sync with other potential changes (but don't wait for it)
-      loadSchedules().catch(err => {
-        logger.warn('Background schedule reload failed:', err)
-      })
-      
-      // Refresh immediately, then again after control loop has time to apply
-      // Control loop runs every 1s, so we check at 0.5s and 1.5s to catch it quickly
+      // Refresh immediately
       const refreshStatus = async () => {
         try {
           const status = await apiClient.getLightStatus(location, cluster, deviceName)
@@ -265,28 +281,27 @@ export default function LightManager({ location, cluster, lights }: LightManager
             [deviceName]: status
           }))
         } catch (error) {
-          // Ignore errors in refresh
+          // Ignore
         }
       }
       
-      // First refresh after 500ms (catches if control loop runs soon)
-      await new Promise(resolve => setTimeout(resolve, 500))
-      await refreshStatus()
+      setTimeout(refreshStatus, 500)
       
-      // Second refresh after another 1s (catches next control loop iteration)
-      setTimeout(refreshStatus, 1000)
-
+      /*
       setErrors(prev => {
         const newErrors = { ...prev }
         delete newErrors[deviceName]
         return newErrors
       })
+      */
     } catch (error: any) {
-      logger.error(`Error saving target intensity for ${deviceName}:`, error)
+      logger.error(`Error saving intensity for ${deviceName}:`, error)
+      /*
       setErrors(prev => ({
         ...prev,
-        [deviceName]: error.response?.data?.detail || error.message || 'Failed to save target intensity'
+        [deviceName]: 'Save failed'
       }))
+      */
     } finally {
       setSaving(prev => ({ ...prev, [deviceName]: false }))
     }
@@ -306,7 +321,6 @@ export default function LightManager({ location, cluster, lights }: LightManager
     })
 
     if (lightsToSave.length === 0) {
-      alert('No changes to save')
       return
     }
 
@@ -315,17 +329,8 @@ export default function LightManager({ location, cluster, lights }: LightManager
     
     try {
       await Promise.all(savePromises)
-      // Wait a moment for control loop to apply changes, then refresh immediately
-      await new Promise(resolve => setTimeout(resolve, 500))
-      await loadLightStatuses()
-      // Refresh again after another moment to catch any delayed updates
-      setTimeout(() => {
-        loadLightStatuses()
-      }, 1000)
-      alert(`Successfully saved ${lightsToSave.length} light${lightsToSave.length > 1 ? 's' : ''}`)
     } catch (error) {
       logger.error('Error saving all lights:', error)
-      alert('Some lights failed to save. Please check individual errors.')
     } finally {
       setSavingAll(false)
     }
@@ -336,25 +341,20 @@ export default function LightManager({ location, cluster, lights }: LightManager
     const savedValue = savedValues[deviceName]
     const schedule = schedules[deviceName]
     
-    // If currentValue is undefined, no unsaved changes (nothing entered)
     if (currentValue === undefined || currentValue === '') {
       return false
     }
     
-    // Normalize to integers for comparison (intensities are always whole numbers)
     const currentInt = parseInt(currentValue, 10)
     if (isNaN(currentInt)) {
       return false
     }
     
-    // Always use schedule as source of truth if available (handles state timing issues)
-    // This prevents false positives when savedValues hasn't updated yet
     if (schedule && schedule.target_intensity !== null && schedule.target_intensity !== undefined) {
       const scheduleInt = Math.round(Number(schedule.target_intensity))
       return currentInt !== scheduleInt
     }
     
-    // Fallback to savedValue comparison if no schedule
     if (savedValue === undefined) {
       return false
     }
@@ -377,189 +377,153 @@ export default function LightManager({ location, cluster, lights }: LightManager
   if (dimmableLights.length === 0) {
     return (
       <div className="text-gray-600 dark:text-gray-400">
-        No dimmable lights configured for this zone.
+        No dimmable lights.
       </div>
     )
   }
 
   return (
-    <div className="space-y-6">
-      {/* Save All Button */}
-      <div className="flex justify-end">
+    <div className="bg-gray-900 rounded p-2 border border-gray-800 h-full">
+      <div className="flex justify-between items-center mb-2">
+        <div className="text-xs font-bold text-gray-400 uppercase tracking-wider">
+           LIGHTS
+        </div>
         <button
           onClick={handleSaveAll}
           disabled={savingAll || getUnsavedCount() === 0}
-          className="px-6 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white text-sm font-medium rounded-md transition-colors"
+          className="px-2 py-0.5 bg-cyan-700 hover:bg-cyan-600 disabled:bg-gray-700 disabled:text-gray-500 disabled:cursor-not-allowed text-white text-[10px] font-bold rounded transition-colors"
         >
-          {savingAll ? 'Saving All...' : `Save All${getUnsavedCount() > 0 ? ` (${getUnsavedCount()})` : ''}`}
+          {savingAll ? '...' : `SAVE (${getUnsavedCount()})`}
         </button>
       </div>
 
-      <div className="border border-gray-200 dark:border-gray-800 rounded-lg overflow-hidden bg-white dark:bg-gray-900">
-        {/* Header Row */}
-        <div className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr_3fr_1fr_1fr] border-b border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-800">
-          <div className="px-2 py-2 text-left text-sm font-semibold text-gray-900 dark:text-gray-100 border-r border-gray-200 dark:border-gray-800">
-            Device
-          </div>
-          <div className="px-2 py-2 text-center text-sm font-semibold text-gray-900 dark:text-gray-100 border-r border-gray-200 dark:border-gray-800">
-            Current Intensity
-          </div>
-          <div className="px-2 py-2 text-center text-sm font-semibold text-gray-900 dark:text-gray-100 border-r border-gray-200 dark:border-gray-800">
-            Day Target
-          </div>
-          <div className="px-2 py-2 text-center text-sm font-semibold text-gray-900 dark:text-gray-100 border-r border-gray-200 dark:border-gray-800">
-            Voltage
-          </div>
-          <div className="px-2 py-2 text-center text-sm font-semibold text-gray-900 dark:text-gray-100 border-r border-gray-200 dark:border-gray-800">
-            Relay State
-          </div>
-          <div className="px-2 py-2 text-center text-sm font-semibold text-gray-900 dark:text-gray-100 border-r border-gray-200 dark:border-gray-800">
-            Target Slider
-          </div>
-          <div className="px-2 py-2 text-center text-sm font-semibold text-gray-900 dark:text-gray-100 border-r border-gray-200 dark:border-gray-800">
-            <div>Number</div>
-            <div>field</div>
-          </div>
-          <div className="px-2 py-2 text-center text-sm font-semibold text-gray-900 dark:text-gray-100">
-            Status
-          </div>
-        </div>
-
-        {/* Data Rows */}
+      <div className="space-y-2">
         {dimmableLights.map((light) => {
           const status = lightStatuses[light.device_name]
-          const error = errors[light.device_name]
-          const displayName = light.display_name || light.device_name
-          const deviceInfo = status 
-            ? `Device:Board ${light.dimming_board_id ?? '?'}, Channel ${light.dimming_channel ?? '?'} ${status.intensity.toFixed(1)}%`
-            : `Device:Board ${light.dimming_board_id ?? '?'}, Channel ${light.dimming_channel ?? '?'}`
-
-          // Get schedule for this specific light
+          const displayName = light.display_name || light.device_name.replace('grow_light_', 'Light ')
+          
           const schedule = schedules[light.device_name]
-          // Get target intensity for this light (from schedule or status)
           const targetIntensity = schedule?.target_intensity ?? status?.target_intensity ?? 0
           const sliderValue = inputValues[light.device_name] ?? targetIntensity.toString()
 
           const relayState = deviceStates[light.device_name]
+          const isRelayOn = relayState === 1
           
           return (
-            <div key={light.device_name} className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr_3fr_1fr_1fr] border-b border-gray-200 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800">
-              <div className="px-2 py-2 text-sm text-gray-900 dark:text-gray-100 border-r border-gray-200 dark:border-gray-800">
-                <div className="font-medium">{displayName}</div>
-                <div className="text-xs text-gray-600 dark:text-gray-400 mt-1">{deviceInfo}</div>
-                {error && (
-                  <div className="text-xs text-red-600 dark:text-red-400 mt-1">{error}</div>
-                )}
-                {saving[light.device_name] && (
-                  <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">Saving...</div>
-                )}
-              </div>
-              <div className="px-2 py-2 text-center border-r border-gray-200 dark:border-gray-800 flex items-center justify-center">
-                {status ? (
-                  <div className={`text-sm font-semibold ${
-                    // Highlight if current intensity exceeds day target
-                    (schedule?.target_intensity !== null && schedule?.target_intensity !== undefined && status.intensity > schedule.target_intensity) ||
-                    (status.target_intensity !== null && status.target_intensity !== undefined && status.intensity > status.target_intensity)
-                      ? 'text-red-600 dark:text-red-400'
-                      : 'text-gray-900 dark:text-gray-100'
-                  }`}>
-                    {status.intensity.toFixed(1)}%
-                    {/* Show warning if above target */}
-                    {((schedule?.target_intensity !== null && schedule?.target_intensity !== undefined && status.intensity > schedule.target_intensity) ||
-                      (status.target_intensity !== null && status.target_intensity !== undefined && status.intensity > status.target_intensity)) && (
-                      <span className="ml-1 text-xs" title="Current intensity exceeds day target">⚠</span>
-                    )}
+            <div key={light.device_name} className="flex items-center gap-2">
+               {/* Name & Status */}
+               <div className="w-16 flex-shrink-0">
+                  <div className="text-xs text-gray-300 truncate font-medium">{displayName}</div>
+                  <div className="flex items-center gap-1">
+                     <div className={`w-1.5 h-1.5 rounded-full ${isRelayOn ? 'bg-green-500' : 'bg-gray-600'}`}></div>
+                     <span className="text-[10px] text-gray-500">{status ? `${status.intensity.toFixed(0)}%` : '-'}</span>
                   </div>
-                ) : (
-                  <div className="text-sm text-gray-400 dark:text-gray-500">-</div>
-                )}
-              </div>
-              <div className="px-2 py-2 text-center border-r border-gray-200 dark:border-gray-800 flex items-center justify-center">
-                {schedule && schedule.target_intensity !== null && schedule.target_intensity !== undefined ? (
-                  <div className="text-sm font-semibold text-blue-600 dark:text-blue-400">
-                    {Math.round(schedule.target_intensity)}%
+               </div>
+
+               {/* Slider Progress Bar Style */}
+               <div className="flex-1 relative h-4 bg-gray-800 rounded overflow-hidden">
+                  <div 
+                    className="absolute top-0 left-0 bottom-0 bg-cyan-900"
+                    style={{ width: `${sliderValue}%` }}
+                  ></div>
+                  {/* Hatch pattern for intensity */}
+                  <div 
+                    className="absolute top-0 left-0 bottom-0 opacity-30"
+                    style={{ 
+                       width: `${sliderValue}%`,
+                       backgroundImage: 'linear-gradient(45deg,rgba(255,255,255,.15) 25%,transparent 25%,transparent 50%,rgba(255,255,255,.15) 50%,rgba(255,255,255,.15) 75%,transparent 75%,transparent)',
+                       backgroundSize: '1rem 1rem'
+                    }}
+                  ></div>
+                  
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    step="1"
+                    value={sliderValue}
+                    onChange={(e) => setInputValues(prev => ({ ...prev, [light.device_name]: e.target.value }))}
+                    disabled={!schedule || saving[light.device_name]}
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                  />
+                  
+                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                     <span className="text-[10px] font-bold text-gray-300 shadow-black drop-shadow-md">{sliderValue}%</span>
                   </div>
-                ) : status && status.target_intensity !== null && status.target_intensity !== undefined ? (
-                  <div className="text-sm font-semibold text-blue-600 dark:text-blue-400">
-                    {Math.round(status.target_intensity)}%
-                  </div>
-                ) : (
-                  <div className="text-sm text-gray-400 dark:text-gray-500">-</div>
-                )}
-              </div>
-              <div className="px-2 py-2 text-center border-r border-gray-200 dark:border-gray-800 flex items-center justify-center">
-                {status ? (
-                  <div className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-                    {status.voltage.toFixed(2)}V
-                  </div>
-                ) : (
-                  <div className="text-sm text-gray-400 dark:text-gray-500">-</div>
-                )}
-              </div>
-              <div className="px-2 py-2 text-center border-r border-gray-200 dark:border-gray-800 flex items-center justify-center">
-                {relayState !== undefined ? (
-                  <div className={`text-sm font-semibold ${
-                    relayState === 1 
-                      ? 'text-green-600 dark:text-green-400' 
-                      : 'text-gray-500 dark:text-gray-400'
-                  }`}>
-                    {relayState === 1 ? 'ON' : 'OFF'}
-                  </div>
-                ) : (
-                  <div className="text-sm text-gray-400 dark:text-gray-500">-</div>
-                )}
-              </div>
-            <div className="px-2 py-2 border-r border-gray-200 dark:border-gray-800 flex items-center">
-              {status ? (
-                <input
-                  type="range"
-                  min="0"
-                  max="100"
-                  step="1"
-                  value={sliderValue}
-                  onChange={(e) => setInputValues(prev => ({ ...prev, [light.device_name]: e.target.value }))}
-                  disabled={!schedule || saving[light.device_name]}
-                  className="w-full h-2 bg-gray-200 dark:bg-gray-900 rounded-lg appearance-none cursor-pointer accent-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
-                />
-              ) : (
-                <div className="text-sm text-gray-400 dark:text-gray-500 w-full text-center">Loading...</div>
-              )}
-            </div>
-            <div className="px-2 py-2 text-center border-r border-gray-200 dark:border-gray-800 flex items-center justify-center">
-              {status ? (
-                <input
-                  type="number"
-                  min="0"
-                  max="100"
-                  step="1"
-                  value={sliderValue}
-                  onChange={(e) => setInputValues(prev => ({ ...prev, [light.device_name]: e.target.value }))}
-                  disabled={!schedule || saving[light.device_name]}
-                  className="w-20 border-2 border-gray-400 dark:border-gray-600 rounded-md px-2 py-1 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 font-medium text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
-                />
-              ) : (
-                <div className="text-sm text-gray-400 dark:text-gray-500">-</div>
-              )}
-            </div>
-            <div className="px-2 py-2 text-center flex items-center justify-center">
-              {schedule ? (
-                hasUnsavedChanges(light.device_name) ? (
-                  <span className="text-xs text-orange-600 dark:text-orange-400 font-medium" title="Unsaved changes">
-                    ● Modified
-                  </span>
-                ) : saving[light.device_name] ? (
-                  <span className="text-xs text-blue-600 dark:text-blue-400">Saving...</span>
-                ) : (
-                  <span className="text-xs text-gray-400 dark:text-gray-500">Saved</span>
-                )
-              ) : (
-                <div className="text-xs text-gray-400 dark:text-gray-500">No schedule</div>
-              )}
-            </div>
+               </div>
+               
+               {/* State Indicator */}
+               <div className="w-4 flex-shrink-0 text-right">
+                  {hasUnsavedChanges(light.device_name) && (
+                     <span className="text-orange-400 text-[10px]">●</span>
+                  )}
+               </div>
             </div>
           )
         })}
       </div>
+      
+      <div className="mt-2 pt-2 border-t border-gray-800">
+         <button 
+           onClick={() => setShowSchedule(!showSchedule)}
+           className="text-[10px] text-gray-500 hover:text-gray-300 flex items-center gap-1 w-full"
+         >
+           <span>{showSchedule ? '▼' : '▶'}</span> Schedule
+         </button>
+         
+         {showSchedule && roomSchedule && (
+           <div className="mt-2 p-2 bg-gray-800 rounded space-y-2">
+             <div className="grid grid-cols-2 gap-2">
+               <div>
+                  <label className="text-[10px] text-gray-500 block">Day Start</label>
+                  <input 
+                    type="time" 
+                    value={roomSchedule.day_start_time || ''} 
+                    onChange={e => setRoomSchedule({...roomSchedule, day_start_time: e.target.value})}
+                    className="w-full bg-gray-900 border border-gray-700 rounded text-gray-200 text-xs px-1"
+                  />
+               </div>
+               <div>
+                  <label className="text-[10px] text-gray-500 block">Day End</label>
+                  <input 
+                    type="time" 
+                    value={roomSchedule.day_end_time || ''} 
+                    onChange={e => setRoomSchedule({...roomSchedule, day_end_time: e.target.value})}
+                    className="w-full bg-gray-900 border border-gray-700 rounded text-gray-200 text-xs px-1"
+                  />
+               </div>
+             </div>
+             <div className="grid grid-cols-2 gap-2">
+               <div>
+                  <label className="text-[10px] text-gray-500 block">Ramp Up (m)</label>
+                  <input 
+                    type="number" 
+                    value={roomSchedule.ramp_up_duration || 0} 
+                    onChange={e => setRoomSchedule({...roomSchedule, ramp_up_duration: parseInt(e.target.value) || 0})}
+                    className="w-full bg-gray-900 border border-gray-700 rounded text-gray-200 text-xs px-1"
+                  />
+               </div>
+               <div>
+                  <label className="text-[10px] text-gray-500 block">Ramp Down (m)</label>
+                  <input 
+                    type="number" 
+                    value={roomSchedule.ramp_down_duration || 0} 
+                    onChange={e => setRoomSchedule({...roomSchedule, ramp_down_duration: parseInt(e.target.value) || 0})}
+                    className="w-full bg-gray-900 border border-gray-700 rounded text-gray-200 text-xs px-1"
+                  />
+               </div>
+             </div>
+             <button 
+               onClick={handleSaveRoomSchedule}
+               disabled={roomScheduleSaving}
+               className="w-full bg-blue-700 hover:bg-blue-600 text-white text-xs font-bold py-1 rounded disabled:opacity-50"
+             >
+               {roomScheduleSaving ? '...' : 'Update Schedule'}
+             </button>
+           </div>
+         )}
+      </div>
     </div>
   )
 }
+

@@ -1,4 +1,6 @@
 """PID controller for temperature and CO2 control."""
+from __future__ import annotations
+
 from shared.logging import get_logger
 from typing import Dict, Optional
 from datetime import datetime

@@ -1,4 +1,6 @@
 """Request profiling middleware for FastAPI."""
+from __future__ import annotations
+
 import time
 from typing import Callable
 from fastapi import Request, Response

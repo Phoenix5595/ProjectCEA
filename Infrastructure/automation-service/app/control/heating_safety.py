@@ -5,6 +5,8 @@ Implements safety logic for heating system failures:
 2. Triggers emergency responses (alerts, backup systems)
 3. Prevents crop damage from freezing
 """
+from __future__ import annotations
+
 from shared.logging import get_logger
 from dataclasses import dataclass
 from typing import Optional, List, Callable

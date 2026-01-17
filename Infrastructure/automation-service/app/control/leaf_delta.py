@@ -3,6 +3,8 @@
 Smoothly transitions between day and night leaf delta values based on
 current mode and transition progress.
 """
+from __future__ import annotations
+
 from datetime import datetime, time
 from typing import Optional, Tuple
 from enum import Enum

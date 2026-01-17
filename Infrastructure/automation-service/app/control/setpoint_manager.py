@@ -1,4 +1,6 @@
 """Setpoint Manager - Handles setpoint calculations and ramp transitions."""
+from __future__ import annotations
+
 from shared.logging import get_logger, LoggingContext
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple, Any

@@ -1,4 +1,6 @@
 """Device Controller - Handles device state control and validation."""
+from __future__ import annotations
+
 from typing import Dict, Optional, Any
 from datetime import datetime
 from shared.logging import get_logger, LoggingContext

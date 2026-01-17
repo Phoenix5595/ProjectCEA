@@ -1,4 +1,6 @@
 """Redis client for automation service - writes to stream and state keys."""
+from __future__ import annotations
+
 from shared.logging import get_logger
 import os
 import json

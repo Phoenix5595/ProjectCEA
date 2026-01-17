@@ -1,4 +1,6 @@
 """Redis state query endpoints for Grafana and other consumers."""
+from __future__ import annotations
+
 from shared.logging import get_logger
 from fastapi import APIRouter, HTTPException, Depends
 from typing import Dict, Any, Optional

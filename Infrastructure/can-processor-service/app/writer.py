@@ -1,4 +1,6 @@
 """Writer for Redis Stream, TimescaleDB and Redis state keys."""
+from __future__ import annotations
+
 from shared.logging import get_logger
 import psycopg2
 import psycopg2.extras

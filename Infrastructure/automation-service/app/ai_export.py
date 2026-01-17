@@ -5,6 +5,8 @@ Exports time-series data in formats suitable for ML training:
 - Control actions and setpoints
 - Environmental conditions
 """
+from __future__ import annotations
+
 from shared.logging import get_logger
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict

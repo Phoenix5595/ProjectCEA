@@ -1,4 +1,6 @@
 """Rules engine for if-then automation rules."""
+from __future__ import annotations
+
 from shared.logging import get_logger
 from typing import Dict, List, Optional, Tuple
 from datetime import datetime

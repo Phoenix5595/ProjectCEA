@@ -1,4 +1,6 @@
 """Soil sensor reader for DFRobot RS485 4-in-1 sensor."""
+from __future__ import annotations
+
 from shared.logging import get_logger
 from typing import Dict, Optional
 from .modbus_rtu import ModbusRTU

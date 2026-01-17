@@ -1,4 +1,6 @@
 """PID Controller Manager - Handles PID control logic for devices."""
+from __future__ import annotations
+
 from typing import Dict, Optional, Any, Tuple
 from datetime import datetime
 from shared.logging import get_logger, LoggingContext

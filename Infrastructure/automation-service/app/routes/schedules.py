@@ -1,4 +1,6 @@
 """Schedule management endpoints."""
+from __future__ import annotations
+
 # Standard library imports
 from datetime import time as dt_time
 from typing import List, Dict, Any, Optional, TYPE_CHECKING

@@ -1,4 +1,6 @@
 """Interlock manager for safety interlocks."""
+from __future__ import annotations
+
 from shared.logging import get_logger
 from typing import Dict, List, Optional, Set, Tuple, Callable
 

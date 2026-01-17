@@ -1,4 +1,6 @@
 """CAN bus reader - reads messages from CAN interface."""
+from __future__ import annotations
+
 from shared.logging import get_logger
 import can
 import subprocess

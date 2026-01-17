@@ -1,4 +1,6 @@
 """Validation functions for automation service."""
+from __future__ import annotations
+
 from shared.logging import get_logger
 from typing import Dict, Any, Optional, Tuple
 

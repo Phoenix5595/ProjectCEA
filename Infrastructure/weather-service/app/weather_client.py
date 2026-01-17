@@ -1,4 +1,6 @@
 """Weather API client for fetching METAR data."""
+from __future__ import annotations
+
 from shared.logging import get_logger
 import httpx
 from typing import Dict, Any, Optional

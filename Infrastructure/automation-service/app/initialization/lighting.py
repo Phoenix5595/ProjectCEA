@@ -3,6 +3,7 @@
 This module provides functions for initializing lighting hardware,
 setting safety levels, and restoring light intensities on startup.
 """
+from __future__ import annotations
 
 import logging
 from typing import Dict, Any, Optional

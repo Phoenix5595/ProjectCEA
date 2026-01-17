@@ -1,4 +1,6 @@
 """MODBUS-RTU protocol implementation for RS485 communication."""
+from __future__ import annotations
+
 from shared.logging import get_logger
 import serial
 import struct

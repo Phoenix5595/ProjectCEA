@@ -1,4 +1,6 @@
 """Database manager for TimescaleDB operations."""
+from __future__ import annotations
+
 # Standard library imports
 import os
 import asyncio
@@ -3198,4 +3200,192 @@ class DatabaseManager:
                 )
             """)
             
+            # Mode parameters table - stores ALL parameters per room/mode/submode combination
+            # Each mode/submode has its own saved parameters that persist through mode switches
+            await conn.execute("""
+                CREATE TABLE IF NOT EXISTS mode_parameters (
+                    id SERIAL PRIMARY KEY,
+                    location TEXT NOT NULL,
+                    cluster TEXT NOT NULL,
+                    mode_id INTEGER REFERENCES room_modes(id) NOT NULL,
+                    submode_id INTEGER REFERENCES flower_submodes(id),  -- NULL for non-Flower modes
+                    
+                    -- Schedule parameters
+                    day_start_time TIME NOT NULL DEFAULT '06:00',
+                    night_start_time TIME NOT NULL DEFAULT '18:00',
+                    ramp_up_minutes INTEGER NOT NULL DEFAULT 30,
+                    ramp_down_minutes INTEGER NOT NULL DEFAULT 30,
+                    pre_day_minutes INTEGER NOT NULL DEFAULT 30,
+                    pre_night_minutes INTEGER NOT NULL DEFAULT 30,
+                    
+                    -- Day setpoints
+                    day_heat_temp REAL NOT NULL DEFAULT 24.0,
+                    day_cool_temp REAL NOT NULL DEFAULT 28.0,
+                    day_vpd REAL NOT NULL DEFAULT 1.0,
+                    day_co2 INTEGER NOT NULL DEFAULT 800,
+                    day_leaf_delta REAL NOT NULL DEFAULT -2.0,
+                    
+                    -- Night setpoints
+                    night_heat_temp REAL NOT NULL DEFAULT 20.0,
+                    night_cool_temp REAL NOT NULL DEFAULT 24.0,
+                    night_vpd REAL NOT NULL DEFAULT 0.8,
+                    night_co2 INTEGER NOT NULL DEFAULT 600,
+                    night_leaf_delta REAL NOT NULL DEFAULT -1.0,
+                    
+                    -- Light intensity (percentage)
+                    main_light_intensity INTEGER NOT NULL DEFAULT 100,
+                    supplemental_light_intensity INTEGER NOT NULL DEFAULT 0,
+                    
+                    -- Timestamps
+                    created_at TIMESTAMPTZ DEFAULT NOW(),
+                    updated_at TIMESTAMPTZ DEFAULT NOW(),
+                    
+                    -- Unique constraint: one parameter set per room/mode/submode
+                    UNIQUE(location, cluster, mode_id, submode_id)
+                )
+            """)
+            
+            await conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_mode_parameters_lookup
+                ON mode_parameters(location, cluster, mode_id, submode_id)
+            """)
+            
             logger.info("Room modes tables created/verified")
+    
+    async def get_room_modes(self) -> list[dict]:
+        pool = await self._get_pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch("""
+                SELECT id, name, description, photoperiod_hours, is_constant
+                FROM room_modes ORDER BY id
+            """)
+            return [dict(row) for row in rows]
+    
+    async def get_flower_submodes(self) -> list[dict]:
+        pool = await self._get_pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch("""
+                SELECT id, name, description, week_start, week_end
+                FROM flower_submodes ORDER BY week_start
+            """)
+            return [dict(row) for row in rows]
+    
+    async def get_active_mode(self, location: str, cluster: str) -> dict | None:
+        pool = await self._get_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow("""
+                SELECT ram.location, ram.cluster, rm.name as mode_name, fs.name as submode_name,
+                       ram.mode_id, ram.submode_id, ram.activated_at
+                FROM room_active_mode ram
+                JOIN room_modes rm ON ram.mode_id = rm.id
+                LEFT JOIN flower_submodes fs ON ram.submode_id = fs.id
+                WHERE ram.location = $1 AND ram.cluster = $2
+            """, location, cluster)
+            return dict(row) if row else None
+    
+    async def set_active_mode(self, location: str, cluster: str, mode_name: str, submode_name: str | None = None) -> bool:
+        pool = await self._get_pool()
+        async with pool.acquire() as conn:
+            mode_row = await conn.fetchrow("SELECT id FROM room_modes WHERE name = $1", mode_name)
+            if not mode_row:
+                logger.error(f"Mode '{mode_name}' not found")
+                return False
+            mode_id = mode_row['id']
+            
+            submode_id = None
+            if submode_name:
+                submode_row = await conn.fetchrow("SELECT id FROM flower_submodes WHERE name = $1", submode_name)
+                if submode_row:
+                    submode_id = submode_row['id']
+            
+            await conn.execute("""
+                INSERT INTO room_active_mode (location, cluster, mode_id, submode_id, activated_at)
+                VALUES ($1, $2, $3, $4, NOW())
+                ON CONFLICT (location, cluster) DO UPDATE SET
+                    mode_id = $3, submode_id = $4, activated_at = NOW()
+            """, location, cluster, mode_id, submode_id)
+            return True
+    
+    async def get_mode_parameters(self, location: str, cluster: str, mode_name: str, submode_name: str | None = None) -> dict | None:
+        pool = await self._get_pool()
+        async with pool.acquire() as conn:
+            mode_row = await conn.fetchrow("SELECT id FROM room_modes WHERE name = $1", mode_name)
+            if not mode_row:
+                return None
+            mode_id = mode_row['id']
+            
+            submode_id = None
+            if submode_name:
+                submode_row = await conn.fetchrow("SELECT id FROM flower_submodes WHERE name = $1", submode_name)
+                if submode_row:
+                    submode_id = submode_row['id']
+            
+            if submode_id:
+                row = await conn.fetchrow("""
+                    SELECT * FROM mode_parameters
+                    WHERE location = $1 AND cluster = $2 AND mode_id = $3 AND submode_id = $4
+                """, location, cluster, mode_id, submode_id)
+            else:
+                row = await conn.fetchrow("""
+                    SELECT * FROM mode_parameters
+                    WHERE location = $1 AND cluster = $2 AND mode_id = $3 AND submode_id IS NULL
+                """, location, cluster, mode_id)
+            
+            if row:
+                result = dict(row)
+                result['day_start_time'] = str(result['day_start_time'])[:5] if result['day_start_time'] else '06:00'
+                result['night_start_time'] = str(result['night_start_time'])[:5] if result['night_start_time'] else '18:00'
+                return result
+            return None
+    
+    async def save_mode_parameters(self, location: str, cluster: str, mode_name: str, submode_name: str | None, params: dict) -> bool:
+        pool = await self._get_pool()
+        async with pool.acquire() as conn:
+            mode_row = await conn.fetchrow("SELECT id FROM room_modes WHERE name = $1", mode_name)
+            if not mode_row:
+                logger.error(f"Mode '{mode_name}' not found")
+                return False
+            mode_id = mode_row['id']
+            
+            submode_id = None
+            if submode_name:
+                submode_row = await conn.fetchrow("SELECT id FROM flower_submodes WHERE name = $1", submode_name)
+                if submode_row:
+                    submode_id = submode_row['id']
+            
+            from datetime import time as dt_time
+            day_start = params.get('day_start_time', '06:00')
+            night_start = params.get('night_start_time', '18:00')
+            if isinstance(day_start, str):
+                parts = day_start.split(':')
+                day_start = dt_time(int(parts[0]), int(parts[1]))
+            if isinstance(night_start, str):
+                parts = night_start.split(':')
+                night_start = dt_time(int(parts[0]), int(parts[1]))
+            
+            await conn.execute("""
+                INSERT INTO mode_parameters (
+                    location, cluster, mode_id, submode_id,
+                    day_start_time, night_start_time, ramp_up_minutes, ramp_down_minutes,
+                    pre_day_minutes, pre_night_minutes,
+                    day_heat_temp, day_cool_temp, day_vpd, day_co2, day_leaf_delta,
+                    night_heat_temp, night_cool_temp, night_vpd, night_co2, night_leaf_delta,
+                    main_light_intensity, supplemental_light_intensity, updated_at
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, NOW())
+                ON CONFLICT (location, cluster, mode_id, submode_id) DO UPDATE SET
+                    day_start_time = $5, night_start_time = $6, ramp_up_minutes = $7, ramp_down_minutes = $8,
+                    pre_day_minutes = $9, pre_night_minutes = $10,
+                    day_heat_temp = $11, day_cool_temp = $12, day_vpd = $13, day_co2 = $14, day_leaf_delta = $15,
+                    night_heat_temp = $16, night_cool_temp = $17, night_vpd = $18, night_co2 = $19, night_leaf_delta = $20,
+                    main_light_intensity = $21, supplemental_light_intensity = $22, updated_at = NOW()
+            """, location, cluster, mode_id, submode_id,
+                day_start, night_start,
+                params.get('ramp_up_minutes', 30), params.get('ramp_down_minutes', 30),
+                params.get('pre_day_minutes', 30), params.get('pre_night_minutes', 30),
+                params.get('day_heat_temp', 24.0), params.get('day_cool_temp', 28.0),
+                params.get('day_vpd', 1.0), params.get('day_co2', 800), params.get('day_leaf_delta', -2.0),
+                params.get('night_heat_temp', 20.0), params.get('night_cool_temp', 24.0),
+                params.get('night_vpd', 0.8), params.get('night_co2', 600), params.get('night_leaf_delta', -1.0),
+                params.get('main_light_intensity', 100), params.get('supplemental_light_intensity', 0)
+            )
+            return True

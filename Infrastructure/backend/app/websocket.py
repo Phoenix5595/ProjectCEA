@@ -1,4 +1,6 @@
 """WebSocket manager for real-time data broadcasting."""
+from __future__ import annotations
+
 from shared.logging import get_logger
 from typing import Dict, Set
 from fastapi import WebSocket

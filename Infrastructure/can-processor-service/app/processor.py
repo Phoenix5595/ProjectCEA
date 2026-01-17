@@ -1,4 +1,6 @@
 """Process and validate decoded CAN frame data."""
+from __future__ import annotations
+
 from shared.logging import get_logger
 import sys
 import os

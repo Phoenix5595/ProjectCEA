@@ -6,6 +6,7 @@ import type { Device } from '../types/device';
 import type { PIDParameters, PIDParameterUpdate, PIDModeInfo, PIDModeUpdate, AutotuneState } from '../types/pid';
 import type { Schedule, ScheduleCreate, ScheduleUpdate } from '../types/schedule';
 import type { LightStatus } from '../types/light';
+import type { RoomMode, FlowerSubmode, RoomModeWithParams, SetModeRequest, UpdateParametersRequest } from '../types/modes';
 
 function defaultApiUrl(port: number): string {
   // When accessed from another device, "localhost" points to the user's device,
@@ -293,6 +294,32 @@ class ApiClient {
         display_name: device.display_name,
         dimming_enabled: device.dimming_enabled
       }));
+  }
+
+  // Room Modes (automation service)
+  async getRoomModes(): Promise<RoomMode[]> {
+    const response = await this.automationClient.get('/api/room-modes/modes');
+    return response.data;
+  }
+
+  async getFlowerSubmodes(): Promise<FlowerSubmode[]> {
+    const response = await this.automationClient.get('/api/room-modes/submodes');
+    return response.data;
+  }
+
+  async getRoomModeWithParams(location: string, cluster: string): Promise<RoomModeWithParams> {
+    const response = await this.automationClient.get(`/api/room-modes/room/${location}/${cluster}`);
+    return response.data;
+  }
+
+  async setRoomMode(location: string, cluster: string, request: SetModeRequest): Promise<RoomModeWithParams> {
+    const response = await this.automationClient.post(`/api/room-modes/room/${location}/${cluster}/mode`, request);
+    return response.data;
+  }
+
+  async updateRoomParameters(location: string, cluster: string, params: UpdateParametersRequest): Promise<RoomModeWithParams> {
+    const response = await this.automationClient.put(`/api/room-modes/room/${location}/${cluster}/parameters`, params);
+    return response.data;
   }
 }
 

@@ -3,6 +3,8 @@
 Implements automatic PID tuning by inducing controlled oscillations
 and calculating optimal Kp, Ki, Kd from the resulting waveform.
 """
+from __future__ import annotations
+
 from shared.logging import get_logger
 from dataclasses import dataclass
 from typing import Optional, Tuple, List

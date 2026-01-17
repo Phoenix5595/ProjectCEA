@@ -1,4 +1,6 @@
 """Alarm manager for tracking alarms and enforcing failsafe."""
+from __future__ import annotations
+
 from shared.logging import get_logger
 from typing import Dict, Any, Optional, List
 from datetime import datetime

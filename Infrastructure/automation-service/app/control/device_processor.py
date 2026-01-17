@@ -1,4 +1,6 @@
 """Device processor component for automation control."""
+from __future__ import annotations
+
 from shared.logging import get_logger
 from datetime import datetime
 from typing import Dict, Optional, Any

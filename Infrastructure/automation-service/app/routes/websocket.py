@@ -1,4 +1,6 @@
 """WebSocket endpoints for real-time updates."""
+from __future__ import annotations
+
 from shared.logging import get_logger
 import json
 from typing import Dict, Any, Optional

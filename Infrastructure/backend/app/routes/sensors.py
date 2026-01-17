@@ -1,4 +1,6 @@
 """Sensor data API routes."""
+from __future__ import annotations
+
 from shared.logging import get_logger
 from datetime import datetime, timedelta
 from fastapi import APIRouter, Query, HTTPException, Request

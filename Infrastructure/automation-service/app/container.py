@@ -1,4 +1,6 @@
 """Service container for dependency injection and initialization."""
+from __future__ import annotations
+
 from shared.logging import get_logger
 from typing import Optional, Any
 import asyncio

@@ -1,4 +1,6 @@
 """Background tasks for polling weather API."""
+from __future__ import annotations
+
 from shared.logging import get_logger
 import asyncio
 from datetime import datetime

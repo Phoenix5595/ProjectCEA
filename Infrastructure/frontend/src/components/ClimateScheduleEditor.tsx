@@ -23,11 +23,180 @@ interface ClimateSchedule {
   }
 }
 
+
+export function ScheduleCard({ 
+  schedule, 
+  onUpdate 
+}: { 
+  schedule: any; 
+  onUpdate: (updates: any) => void 
+}) {
+  return (
+    <div className="bg-gray-900 rounded p-2 h-full border border-gray-800">
+      <div className="text-xs text-gray-400 uppercase mb-2 font-bold tracking-wider">Schedule</div>
+      <div className="space-y-2">
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <label className="text-[10px] text-gray-500 uppercase block mb-0.5">☀️ Day Start</label>
+            <input 
+              type="time" 
+              value={schedule.day_start_time}
+              onChange={(e) => onUpdate({ day_start_time: e.target.value })}
+              className="w-full h-7 px-2 text-sm bg-gray-800 border border-gray-700 rounded text-gray-200 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500"
+            />
+          </div>
+          <div>
+            <label className="text-[10px] text-gray-500 uppercase block mb-0.5">🌙 Night Start</label>
+            <input 
+              type="time" 
+              value={schedule.day_end_time}
+              onChange={(e) => onUpdate({ day_end_time: e.target.value })}
+              className="w-full h-7 px-2 text-sm bg-gray-800 border border-gray-700 rounded text-gray-200 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500"
+            />
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <label className="text-[10px] text-gray-500 uppercase block mb-0.5">⏱️ Pre (min)</label>
+            <div className="flex gap-1">
+               <input
+                type="number"
+                min="0"
+                max="120"
+                value={schedule.pre_day_duration}
+                onChange={(e) => onUpdate({ pre_day_duration: parseInt(e.target.value) || 0 })}
+                className="w-full h-7 px-1 text-sm bg-gray-800 border border-gray-700 rounded text-gray-200 text-center"
+                title="Pre-Day"
+              />
+               <input
+                type="number"
+                min="0"
+                max="120"
+                value={schedule.pre_night_duration}
+                onChange={(e) => onUpdate({ pre_night_duration: parseInt(e.target.value) || 0 })}
+                className="w-full h-7 px-1 text-sm bg-gray-800 border border-gray-700 rounded text-gray-200 text-center"
+                title="Pre-Night"
+              />
+            </div>
+          </div>
+          <div>
+             <label className="text-[10px] text-gray-500 uppercase block mb-0.5">🍃 Δ (°C)</label>
+             <div className="flex gap-1">
+               <input
+                  type="number"
+                  step="0.1"
+                  value={schedule.leaf_delta_day ?? -2.0}
+                  onChange={(e) => onUpdate({ leaf_delta_day: parseFloat(e.target.value) || 0 })}
+                  className="w-full h-7 px-1 text-sm bg-gray-800 border border-gray-700 rounded text-gray-200 text-center"
+                  title="Day Delta"
+                />
+               <input
+                  type="number"
+                  step="0.1"
+                  value={schedule.leaf_delta_night ?? -1.0}
+                  onChange={(e) => onUpdate({ leaf_delta_night: parseFloat(e.target.value) || 0 })}
+                  className="w-full h-7 px-1 text-sm bg-gray-800 border border-gray-700 rounded text-gray-200 text-center"
+                  title="Night Delta"
+                />
+             </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export function SetpointCard({ 
+  mode, 
+  setpoint, 
+  currentSetpoint, 
+  onChange, 
+  title 
+}: { 
+  mode: string; 
+  setpoint: any; 
+  currentSetpoint?: any; 
+  onChange: (data: any) => void;
+  title?: string;
+}) {
+  function handleChange(field: string, value: any) {
+    onChange({ ...setpoint, [field]: value })
+  }
+
+  const inputClass = "w-full h-7 px-2 text-sm bg-gray-800 border border-gray-700 rounded text-gray-200 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500"
+  const labelClass = "text-[10px] text-gray-500 uppercase flex items-center gap-1"
+
+  return (
+    <div className="bg-gray-900 rounded p-2 h-full border border-gray-800">
+      <div className="text-xs text-gray-400 uppercase mb-2 font-bold tracking-wider flex justify-between items-center">
+        <span>{title || mode}</span>
+        {setpoint.ramp_in_duration > 0 && (
+           <span className="text-[10px] bg-gray-800 px-1 rounded text-cyan-400">Ramp: {setpoint.ramp_in_duration}m</span>
+        )}
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <div className="space-y-1">
+           <div className="flex justify-between items-center">
+             <label className={labelClass}>🌡️ Heat</label>
+             {currentSetpoint?.heating_setpoint !== undefined && <span className="text-[10px] text-gray-600">{currentSetpoint.heating_setpoint}</span>}
+           </div>
+           <input
+             type="number"
+             step="0.1"
+             value={setpoint.heating_setpoint ?? ''}
+             onChange={(e) => handleChange('heating_setpoint', e.target.value ? parseFloat(e.target.value) : null)}
+             className={`${inputClass} text-orange-200`}
+           />
+        </div>
+        <div className="space-y-1">
+           <div className="flex justify-between items-center">
+             <label className={labelClass}>❄️ Cool</label>
+             {currentSetpoint?.cooling_setpoint !== undefined && <span className="text-[10px] text-gray-600">{currentSetpoint.cooling_setpoint}</span>}
+           </div>
+           <input
+             type="number"
+             step="0.1"
+             value={setpoint.cooling_setpoint ?? ''}
+             onChange={(e) => handleChange('cooling_setpoint', e.target.value ? parseFloat(e.target.value) : null)}
+             className={`${inputClass} text-blue-200`}
+           />
+        </div>
+        <div className="space-y-1">
+           <div className="flex justify-between items-center">
+             <label className={labelClass}>💧 VPD</label>
+             {currentSetpoint?.vpd !== undefined && <span className="text-[10px] text-gray-600">{currentSetpoint.vpd}</span>}
+           </div>
+           <input
+             type="number"
+             step="0.01"
+             value={setpoint.vpd ?? ''}
+             onChange={(e) => handleChange('vpd', e.target.value ? parseFloat(e.target.value) : null)}
+             className={`${inputClass} text-emerald-200`}
+           />
+        </div>
+        <div className="space-y-1">
+           <div className="flex justify-between items-center">
+             <label className={labelClass}>🌬️ CO2</label>
+             {currentSetpoint?.co2 !== undefined && <span className="text-[10px] text-gray-600">{currentSetpoint.co2}</span>}
+           </div>
+           <input
+             type="number"
+             step="1"
+             value={setpoint.co2 ?? ''}
+             onChange={(e) => handleChange('co2', e.target.value ? parseFloat(e.target.value) : null)}
+             className={`${inputClass} text-purple-200`}
+           />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+
 export default function ClimateScheduleEditor({ location, cluster }: ClimateScheduleEditorProps) {
   const [schedule, setSchedule] = useState<ClimateSchedule | null>(null)
   const [lightSchedule, setLightSchedule] = useState<any>(null)
   const [currentSetpoints, setCurrentSetpoints] = useState<Record<string, any>>({})
-  // Store current database values separately (for "Current:" labels)
   const [currentSchedule, setCurrentSchedule] = useState<ClimateSchedule | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -42,10 +211,8 @@ export default function ClimateScheduleEditor({ location, cluster }: ClimateSche
     setLoading(true)
     setError(null)
     try {
-      // Load climate schedule
       const climateData = await apiClient.getClimateSchedule(location, cluster)
       
-      // Load current setpoints for all modes
       let setpointsMap: Record<string, any> = {}
       try {
         const allSetpoints = await apiClient.getAllSetpointsForLocationCluster(location, cluster)
@@ -57,12 +224,8 @@ export default function ClimateScheduleEditor({ location, cluster }: ClimateSche
         setCurrentSetpoints(setpointsMap)
       } catch (err: any) {
         logger.warn('Error loading current setpoints:', err)
-        // Don't fail the whole load if setpoints can't be loaded
       }
       
-      // Store current database values (for "Current:" labels) - make a deep copy
-      // This ensures currentSchedule never changes when form fields are edited
-      // Use explicit values to ensure they're always set (even if 0)
       const currentPreDay = climateData.pre_day_duration !== undefined && climateData.pre_day_duration !== null ? climateData.pre_day_duration : 0
       const currentPreNight = climateData.pre_night_duration !== undefined && climateData.pre_night_duration !== null ? climateData.pre_night_duration : 0
       
@@ -81,8 +244,6 @@ export default function ClimateScheduleEditor({ location, cluster }: ClimateSche
         }
       })
       
-      // Merge current setpoints with schedule setpoints (current setpoints as defaults)
-      // Form fields should be populated with database values on load
       const setpoints = {
         DAY: { ...setpointsMap.DAY, ...(climateData.setpoints?.DAY || {}) },
         NIGHT: { ...setpointsMap.NIGHT, ...(climateData.setpoints?.NIGHT || {}) },
@@ -97,7 +258,6 @@ export default function ClimateScheduleEditor({ location, cluster }: ClimateSche
         setpoints
       })
 
-      // Load light schedule for overlay
       const lightData = await apiClient.getRoomSchedule(location, cluster)
       setLightSchedule(lightData)
     } catch (err: any) {
@@ -117,15 +277,15 @@ export default function ClimateScheduleEditor({ location, cluster }: ClimateSche
 
     try {
       const result = await apiClient.saveClimateSchedule(location, cluster, schedule)
-      setSuccess('Climate schedule saved successfully')
+      setSuccess('Saved')
       if (result.warnings && result.warnings.length > 0) {
         setError(result.warnings.join('; '))
       }
-      // Reload to get updated data
+      setTimeout(() => setSuccess(null), 2000)
       await loadData()
     } catch (err: any) {
       logger.error('Error saving climate schedule:', err)
-      setError(err.response?.data?.detail || err.message || 'Failed to save climate schedule')
+      setError(err.response?.data?.detail || err.message || 'Failed to save')
     } finally {
       setSaving(false)
     }
@@ -148,273 +308,82 @@ export default function ClimateScheduleEditor({ location, cluster }: ClimateSche
   }
 
   if (loading) {
-    return <div className="text-gray-900 dark:text-gray-100">Loading climate schedule...</div>
+    return <div className="text-gray-100 p-4">Loading climate schedule...</div>
   }
 
   if (!schedule) {
-    return <div className="text-gray-900 dark:text-gray-100">Failed to load climate schedule</div>
+    return <div className="text-gray-100 p-4">Failed to load climate schedule</div>
   }
 
   return (
-    <div className="space-y-8">
-      {error && (
-        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-800 dark:text-red-300 px-4 py-3 rounded">
-          {error}
-        </div>
-      )}
-      {success && (
-        <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 text-green-800 dark:text-green-300 px-4 py-3 rounded">
-          {success}
-        </div>
-      )}
+    <div className="flex flex-col h-full p-2 gap-2">
+      {/* Timeline Section */}
+      <div className="relative h-20 w-full bg-gray-900 border border-gray-800 rounded-lg overflow-hidden flex-shrink-0">
+          <SetpointTimeline
+            dayStartTime={schedule.day_start_time}
+            dayEndTime={schedule.day_end_time}
+            preDayDuration={schedule.pre_day_duration}
+            preNightDuration={schedule.pre_night_duration}
+            currentPreDayDuration={currentSchedule?.pre_day_duration !== undefined ? currentSchedule.pre_day_duration : schedule.pre_day_duration}
+            currentPreNightDuration={currentSchedule?.pre_night_duration !== undefined ? currentSchedule.pre_night_duration : schedule.pre_night_duration}
+            onDayStartChange={(time) => handleScheduleChange({ day_start_time: time })}
+            onDayEndChange={(time) => handleScheduleChange({ day_end_time: time })}
+            onPreDayDurationChange={(duration) => handleScheduleChange({ pre_day_duration: duration })}
+            onPreNightDurationChange={(duration) => handleScheduleChange({ pre_night_duration: duration })}
+            lightPhotoperiod={lightSchedule ? {
+              startTime: lightSchedule.day_start_time,
+              endTime: lightSchedule.day_end_time,
+              rampUpDuration: lightSchedule.ramp_up_duration || 0,
+              rampDownDuration: lightSchedule.ramp_down_duration || 0
+            } : undefined}
+            setpoints={schedule.setpoints}
+            compact={true}
+            className="h-full"
+          />
+      </div>
 
-      <section>
-        <h2 className="text-xl font-semibold mb-4 text-gray-900 dark:text-gray-100">Climate Schedule Timeline</h2>
-        <SetpointTimeline
-          dayStartTime={schedule.day_start_time}
-          dayEndTime={schedule.day_end_time}
-          preDayDuration={schedule.pre_day_duration}
-          preNightDuration={schedule.pre_night_duration}
-          currentPreDayDuration={currentSchedule?.pre_day_duration !== undefined ? currentSchedule.pre_day_duration : schedule.pre_day_duration}
-          currentPreNightDuration={currentSchedule?.pre_night_duration !== undefined ? currentSchedule.pre_night_duration : schedule.pre_night_duration}
-          onDayStartChange={(time) => handleScheduleChange({ day_start_time: time })}
-          onDayEndChange={(time) => handleScheduleChange({ day_end_time: time })}
-          onPreDayDurationChange={(duration) => handleScheduleChange({ pre_day_duration: duration })}
-          onPreNightDurationChange={(duration) => handleScheduleChange({ pre_night_duration: duration })}
-          lightPhotoperiod={lightSchedule ? {
-            startTime: lightSchedule.day_start_time,
-            endTime: lightSchedule.day_end_time,
-            rampUpDuration: lightSchedule.ramp_up_duration || 0,
-            rampDownDuration: lightSchedule.ramp_down_duration || 0
-          } : undefined}
-          setpoints={schedule.setpoints}
-        />
-      </section>
+      {/* Editor Grid */}
+      <div className="flex-1 min-h-0 flex flex-col gap-2">
+          <div className="flex justify-between items-center px-1">
+             <div className="flex-1"></div>
+             {(error || success) && (
+                <div className={`text-xs px-2 py-0.5 rounded mr-2 ${error ? 'bg-red-900 text-red-200' : 'bg-green-900 text-green-200'}`}>
+                  {error || success}
+                </div>
+             )}
+             <button
+                onClick={handleSave}
+                disabled={saving}
+                className="px-3 py-1 bg-cyan-700 hover:bg-cyan-600 disabled:opacity-50 text-white text-xs font-bold rounded shadow-sm transition-colors"
+              >
+                {saving ? '...' : 'SAVE'}
+             </button>
+          </div>
 
-      <section className="border-t border-gray-200 dark:border-gray-800 pt-6">
-        <h2 className="text-xl font-semibold mb-4 text-gray-900 dark:text-gray-100">Setpoints</h2>
-        <div className="grid grid-cols-2 gap-6">
-          <div>
-            <h3 className="text-lg font-semibold mb-3 text-gray-800 dark:text-gray-200">Day</h3>
-            <SetpointModeEditor
-              mode="DAY"
-              setpoint={schedule.setpoints.DAY || {}}
+          <div className="grid grid-cols-3 gap-2 flex-1 min-h-0">
+            <ScheduleCard schedule={schedule} onUpdate={handleScheduleChange} />
+            
+            <SetpointCard 
+              mode="DAY" 
+              title="☀️ DAY SETPOINTS"
+              setpoint={schedule.setpoints.DAY || {}} 
               currentSetpoint={{ ...currentSetpoints.DAY, ...(currentSchedule?.setpoints?.DAY || {}) }}
               onChange={(data) => handleSetpointChange('DAY', data)}
             />
-          </div>
-          <div>
-            <h3 className="text-lg font-semibold mb-3 text-gray-800 dark:text-gray-200">Night</h3>
-            <SetpointModeEditor
-              mode="NIGHT"
-              setpoint={schedule.setpoints.NIGHT || {}}
+            
+            <SetpointCard 
+              mode="NIGHT" 
+              title="🌙 NIGHT SETPOINTS"
+              setpoint={schedule.setpoints.NIGHT || {}} 
               currentSetpoint={{ ...currentSetpoints.NIGHT, ...(currentSchedule?.setpoints?.NIGHT || {}) }}
               onChange={(data) => handleSetpointChange('NIGHT', data)}
             />
           </div>
-          <div>
-            <h3 className="text-lg font-semibold mb-3 text-gray-800 dark:text-gray-200">Pre-Day</h3>
-            <SetpointModeEditor
-              mode="PRE_DAY"
-              setpoint={schedule.setpoints.PRE_DAY || {}}
-              currentSetpoint={{ ...currentSetpoints.PRE_DAY, ...(currentSchedule?.setpoints?.PRE_DAY || {}) }}
-              onChange={(data) => handleSetpointChange('PRE_DAY', data)}
-              isAbsolute={true}
-            />
-          </div>
-          <div>
-            <h3 className="text-lg font-semibold mb-3 text-gray-800 dark:text-gray-200">Pre-Night</h3>
-            <SetpointModeEditor
-              mode="PRE_NIGHT"
-              setpoint={schedule.setpoints.PRE_NIGHT || {}}
-              currentSetpoint={{ ...currentSetpoints.PRE_NIGHT, ...(currentSchedule?.setpoints?.PRE_NIGHT || {}) }}
-              onChange={(data) => handleSetpointChange('PRE_NIGHT', data)}
-              isAbsolute={true}
-            />
-          </div>
-        </div>
-      </section>
-
-      <section className="border-t border-gray-200 dark:border-gray-800 pt-6">
-        <h2 className="text-xl font-semibold mb-4 text-gray-900 dark:text-gray-100">Leaf Temperature Settings</h2>
-        <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-          Leaf temperature offset from air temperature. Used for accurate VPD calculation.
-          The system interpolates between day and night values during transitions.
-        </p>
-        <div className="grid grid-cols-2 gap-6 max-w-xl">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Day Leaf Delta (°C)
-            </label>
-            <input
-              type="number"
-              step="0.1"
-              min="-5"
-              max="5"
-              value={schedule.leaf_delta_day ?? -2.0}
-              onChange={(e) => handleScheduleChange({ leaf_delta_day: parseFloat(e.target.value) || 0 })}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
-            />
-            <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-              Typical: -1.5 to -3.0°C (leaves cooler than air under lights)
-            </div>
-            {currentSchedule?.leaf_delta_day !== undefined && (
-              <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                Current: {currentSchedule.leaf_delta_day}°C
-              </div>
-            )}
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Night Leaf Delta (°C)
-            </label>
-            <input
-              type="number"
-              step="0.1"
-              min="-5"
-              max="5"
-              value={schedule.leaf_delta_night ?? -1.0}
-              onChange={(e) => handleScheduleChange({ leaf_delta_night: parseFloat(e.target.value) || 0 })}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
-            />
-            <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-              Typical: -0.5 to -1.5°C (leaves closer to air temp at night)
-            </div>
-            {currentSchedule?.leaf_delta_night !== undefined && (
-              <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                Current: {currentSchedule.leaf_delta_night}°C
-              </div>
-            )}
-          </div>
-        </div>
-      </section>
-
-      <div className="flex justify-end">
-        <button
-          onClick={handleSave}
-          disabled={saving}
-          className="px-6 py-2 bg-blue-600 dark:bg-blue-500 text-white rounded hover:bg-blue-700 dark:hover:bg-blue-600 disabled:bg-gray-400 dark:disabled:bg-gray-600 disabled:cursor-not-allowed"
-        >
-          {saving ? 'Saving...' : 'Save Climate Schedule'}
-        </button>
       </div>
     </div>
   )
 }
+// Remove old components no longer used in this file
+// SetpointModeEditor is replaced by SetpointCard
 
-interface SetpointModeEditorProps {
-  mode: string
-  setpoint: any
-  currentSetpoint?: any
-  onChange: (data: any) => void
-  isAbsolute?: boolean
-}
-
-function SetpointModeEditor({ mode: _mode, setpoint, currentSetpoint, onChange, isAbsolute = false }: SetpointModeEditorProps) {
-  function handleChange(field: string, value: any) {
-    onChange({ ...setpoint, [field]: value })
-  }
-
-  return (
-    <div className="space-y-4">
-      {isAbsolute && (
-        <div className="text-sm text-gray-600 dark:text-gray-400 mb-2">
-          Absolute setpoint (not relative to night/day)
-        </div>
-      )}
-      <div>
-        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-          Heating Setpoint (°C)
-        </label>
-        <input
-          type="number"
-          step="0.1"
-          value={setpoint.heating_setpoint ?? ''}
-          onChange={(e) => handleChange('heating_setpoint', e.target.value ? parseFloat(e.target.value) : null)}
-          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
-        />
-        {currentSetpoint?.heating_setpoint !== undefined && (
-          <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-            Current: {currentSetpoint.heating_setpoint}°C
-          </div>
-        )}
-      </div>
-      <div>
-        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-          Cooling Setpoint (°C)
-        </label>
-        <input
-          type="number"
-          step="0.1"
-          value={setpoint.cooling_setpoint ?? ''}
-          onChange={(e) => handleChange('cooling_setpoint', e.target.value ? parseFloat(e.target.value) : null)}
-          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
-        />
-        {currentSetpoint?.cooling_setpoint !== undefined && (
-          <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-            Current: {currentSetpoint.cooling_setpoint}°C
-          </div>
-        )}
-      </div>
-      <div>
-        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-          VPD Setpoint (kPa)
-        </label>
-        <input
-          type="number"
-          step="0.01"
-          value={setpoint.vpd ?? ''}
-          onChange={(e) => handleChange('vpd', e.target.value ? parseFloat(e.target.value) : null)}
-          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
-        />
-        {currentSetpoint?.vpd !== undefined && (
-          <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-            Current: {currentSetpoint.vpd} kPa
-          </div>
-        )}
-      </div>
-      <div>
-        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-          CO₂ Setpoint (ppm)
-        </label>
-        <input
-          type="number"
-          step="1"
-          value={setpoint.co2 ?? ''}
-          onChange={(e) => handleChange('co2', e.target.value ? parseFloat(e.target.value) : null)}
-          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
-        />
-        {currentSetpoint?.co2 !== undefined && (
-          <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-            Current: {currentSetpoint.co2} ppm
-          </div>
-        )}
-      </div>
-      <div>
-        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-          Ramp In Duration (minutes)
-        </label>
-        <input
-          type="number"
-          min="0"
-          max="180"
-          value={setpoint.ramp_in_duration || 0}
-          onChange={(e) => handleChange('ramp_in_duration', parseInt(e.target.value) || 0)}
-          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
-        />
-        {currentSetpoint?.ramp_in_duration !== undefined && (
-          <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-            Current: {currentSetpoint.ramp_in_duration} minutes
-          </div>
-        )}
-        {setpoint.vpd && setpoint.ramp_in_duration > 15 && (
-          <div className="mt-1 text-sm text-yellow-600 dark:text-yellow-400">
-            Warning: VPD ramp duration &gt; 15 minutes may cause stomatal shock
-          </div>
-        )}
-      </div>
-
-    </div>
-  )
-}
 
