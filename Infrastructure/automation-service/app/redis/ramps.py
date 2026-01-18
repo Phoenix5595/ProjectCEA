@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Dict, Optional, TYPE_CHECKING
 
 from shared.logging import get_logger
@@ -118,3 +118,83 @@ class RampsMixin:
         except Exception as e:
             logger.warning(f"Error clearing ramp state from Redis: {e}")
             return False
+    def persist_ramp(
+        self,
+        location: str,
+        cluster: str,
+        setpoint_type: str,
+        start_value: float,
+        target_value: float,
+        duration_minutes: int,
+        start_time: datetime
+    ) -> bool:
+        """Persist ramp state for recovery after restart (2 hour TTL)."""
+        if not self.redis_enabled or not self.redis_client:
+            return False
+        try:
+            key = f"ramp_persist:{location}:{cluster}:{setpoint_type}"
+            data = {
+                'start_value': start_value,
+                'target_value': target_value,
+                'duration_minutes': duration_minutes,
+                'start_time': start_time.isoformat()
+            }
+            self.redis_client.setex(key, 7200, json.dumps(data))
+            logger.debug(f"Persisted ramp {location}/{cluster}/{setpoint_type}")
+            return True
+        except Exception as e:
+            logger.warning(f"Failed to persist ramp: {e}")
+            return False
+
+    def get_persisted_ramps(self) -> list:
+        """Get all persisted ramps for restoration."""
+        if not self.redis_enabled or not self.redis_client:
+            return []
+        try:
+            keys = self.redis_client.keys("ramp_persist:*")
+            ramps = []
+            now = datetime.now()
+            for key in keys:
+                try:
+                    data = self.redis_client.get(key)
+                    if not data:
+                        continue
+                    ramp = json.loads(data)
+                    start_time = datetime.fromisoformat(ramp['start_time'])
+                    end_time = start_time + timedelta(minutes=ramp['duration_minutes'])
+                    
+                    if now >= end_time:
+                        self.redis_client.delete(key)
+                        continue
+                    
+                    parts = key.decode() if isinstance(key, bytes) else key
+                    parts = parts.split(":")
+                    if len(parts) >= 4:
+                        ramps.append({
+                            'location': parts[1],
+                            'cluster': parts[2],
+                            'setpoint_type': parts[3],
+                            'start_value': ramp['start_value'],
+                            'target_value': ramp['target_value'],
+                            'duration_minutes': ramp['duration_minutes'],
+                            'start_time': start_time
+                        })
+                except Exception as e:
+                    logger.warning(f"Error reading persisted ramp {key}: {e}")
+            return ramps
+        except Exception as e:
+            logger.error(f"Failed to get persisted ramps: {e}")
+            return []
+
+    def clear_persisted_ramp(self, location: str, cluster: str, setpoint_type: str) -> bool:
+        """Clear a persisted ramp after completion."""
+        if not self.redis_enabled or not self.redis_client:
+            return False
+        try:
+            key = f"ramp_persist:{location}:{cluster}:{setpoint_type}"
+            self.redis_client.delete(key)
+            return True
+        except Exception as e:
+            logger.warning(f"Failed to clear persisted ramp: {e}")
+            return False
+

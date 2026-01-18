@@ -75,10 +75,9 @@ class ControlEngine:
             kp=20.0, ki=0.5, kd=2.0
         )
         
-        # Clear any stale ramp state on startup - per design, ramps are not restored
-        # If service restarts mid-ramp, we immediately apply final (target) setpoints
-        self.setpoint_manager.ramp_manager.clear_all_ramps()
-        logger.info("Control engine startup: cleared all ramps, applying current period setpoints immediately")
+        # Ramp restoration will be done asynchronously after Redis is available
+        # See _restore_ramps_on_startup() called from run()
+        self._ramps_restored = False
         
         # Track automation context for logging
         self._automation_context: Dict[Tuple[str, str, str], Dict[str, Any]] = {}
@@ -192,8 +191,30 @@ class ControlEngine:
                 stats[key] = {'avg': 0.0, 'min': 0.0, 'max': 0.0, 'count': 0}
         return stats
 
+
+    async def _restore_ramps_on_startup(self) -> None:
+        """Restore active ramps from Redis on startup."""
+        try:
+            redis_client = self.database._automation_redis
+            if redis_client:
+                self.setpoint_manager.ramp_manager.set_redis(redis_client)
+                restored = self.setpoint_manager.ramp_manager.restore_ramps_from_redis()
+                if restored > 0:
+                    logger.info(f"Control engine startup: restored {restored} active ramp(s) from Redis")
+                else:
+                    logger.info("Control engine startup: no active ramps to restore")
+            else:
+                logger.warning("Control engine startup: Redis not available, cannot restore ramps")
+        except Exception as e:
+            logger.error(f"Failed to restore ramps on startup: {e}")
+            self.setpoint_manager.ramp_manager.clear_all_ramps()
+
     async def run_control_loop(self) -> None:
         """Run one iteration of the control loop with performance profiling."""
+        if not self._ramps_restored:
+            await self._restore_ramps_on_startup()
+            self._ramps_restored = True
+        
         loop_start_time = datetime.now() if self._profiling_enabled else None
 
         current_time = datetime.now()
@@ -666,9 +687,5 @@ class ControlEngine:
         This ensures predictable behavior and avoids complex state restoration.
         """
         # Clear all ramps - per design, service restart = cancel ramps, apply final setpoints
-        self.setpoint_manager.ramp_manager.clear_all_ramps()
-        logger.info(
-            "Service startup: All ramps cancelled. "
-            "Current period setpoints will be applied immediately."
-        )
+        pass
 

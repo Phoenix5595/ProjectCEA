@@ -53,14 +53,84 @@ class RampManager:
         'humidity': 1.0,  # % - humidity precision
     }
 
-    def __init__(self):
+    def __init__(self, redis_client=None):
         """Initialize ramp manager."""
         # Key: (location, cluster, setpoint_type) - ensures room isolation
         self.active_ramps: Dict[Tuple[str, str, str], RampState] = {}
+        self._redis = redis_client
+
+    def set_redis(self, redis_client) -> None:
+        """Set Redis client for ramp persistence."""
+        self._redis = redis_client
 
     def _make_key(self, location: str, cluster: str, setpoint_type: str) -> Tuple[str, str, str]:
         """Create composite key for room-isolated ramp storage."""
         return (location, cluster, setpoint_type)
+
+    def _persist_ramp(self, location: str, cluster: str, ramp: RampState) -> None:
+        """Persist ramp state to Redis using sync method."""
+        if not self._redis:
+            return
+        try:
+            self._redis.persist_ramp(
+                location, cluster, ramp.setpoint_type,
+                ramp.start_value, ramp.target_value,
+                ramp.duration_minutes, ramp.start_time
+            )
+        except Exception as e:
+            logger.warning(f"Failed to persist ramp: {e}")
+
+    def _clear_persisted_ramp(self, location: str, cluster: str, setpoint_type: str) -> None:
+        """Clear persisted ramp from Redis."""
+        if not self._redis:
+            return
+        try:
+            self._redis.clear_persisted_ramp(location, cluster, setpoint_type)
+        except Exception as e:
+            logger.warning(f"Failed to clear persisted ramp: {e}")
+
+    def restore_ramps_from_redis(self) -> int:
+        """Restore active ramps from Redis on startup. Returns count of restored ramps."""
+        if not self._redis:
+            logger.warning("No Redis client - cannot restore ramps")
+            return 0
+        
+        try:
+            ramps = self._redis.get_persisted_ramps()
+            restored = 0
+            now = datetime.now()
+            
+            for ramp_data in ramps:
+                try:
+                    location = ramp_data['location']
+                    cluster = ramp_data['cluster']
+                    setpoint_type = ramp_data['setpoint_type']
+                    start_time = ramp_data['start_time']
+                    duration = ramp_data['duration_minutes']
+                    
+                    ramp_key = self._make_key(location, cluster, setpoint_type)
+                    self.active_ramps[ramp_key] = RampState(
+                        setpoint_type,
+                        ramp_data['start_value'],
+                        ramp_data['target_value'],
+                        duration,
+                        start_time
+                    )
+                    
+                    elapsed = (now - start_time).total_seconds() / 60.0
+                    progress = min(elapsed / duration * 100, 100)
+                    logger.info(
+                        f"RAMP RESTORED: {location}/{cluster} {setpoint_type} "
+                        f"at {progress:.1f}% ({elapsed:.1f}/{duration:.0f} min)"
+                    )
+                    restored += 1
+                except Exception as e:
+                    logger.warning(f"Failed to restore ramp: {e}")
+            
+            return restored
+        except Exception as e:
+            logger.error(f"Failed to restore ramps from Redis: {e}")
+            return 0
 
     def start_ramp(self, location: str, cluster: str, setpoint_type: str, start_value: float, target_value: float,
                    duration_minutes: float, current_time: datetime) -> None:
@@ -87,14 +157,18 @@ class RampManager:
                 )
             return
 
-        self.active_ramps[ramp_key] = RampState(
+        ramp = RampState(
             setpoint_type, start_value, target_value, duration_minutes, current_time
         )
+        self.active_ramps[ramp_key] = ramp
 
         logger.info(
             f"RAMP START: {location}/{cluster} {setpoint_type} from {start_value} to {target_value} "
             f"over {duration_minutes} minutes"
         )
+        
+        if self._redis:
+            self._persist_ramp(location, cluster, ramp)
 
     def get_ramp_value(self, location: str, cluster: str, setpoint_type: str, nominal_value: float,
                        current_time: datetime) -> Tuple[float, Optional[float]]:
@@ -117,9 +191,10 @@ class RampManager:
             progress = min(elapsed / ramp.duration_minutes, 1.0)
             return current_value, progress
         elif ramp and ramp.is_complete(current_time):
-            # Ramp completed, clean it up
             del self.active_ramps[ramp_key]
-            logger.debug(f"RAMP COMPLETE: {location}/{cluster} {setpoint_type} reached {nominal_value}")
+            logger.info(f"RAMP COMPLETE: {location}/{cluster} {setpoint_type} reached {nominal_value}")
+            if self._redis:
+                self._clear_persisted_ramp(location, cluster, setpoint_type)
 
         return nominal_value, None
 
@@ -129,6 +204,8 @@ class RampManager:
         if ramp_key in self.active_ramps:
             del self.active_ramps[ramp_key]
             logger.info(f"RAMP CANCELLED: {location}/{cluster} {setpoint_type}")
+            if self._redis:
+                self._clear_persisted_ramp(location, cluster, setpoint_type)
 
     def get_active_ramps(self) -> Dict[str, Dict[str, Any]]:
         """Get information about all active ramps."""
