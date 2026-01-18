@@ -1608,21 +1608,15 @@ class DatabaseManager:
         cluster: str,
         device_name: str,
         channel: int,
-        device_type: str,
-        board_id: Optional[int] = None,
-        display_name: Optional[str] = None,
-        output_type: Optional[str] = None,
-        min_value: Optional[int] = None,
-        max_value: Optional[int] = None,
-        dimming_enabled: Optional[bool] = None,
-        inverted: Optional[bool] = None
+        active_high: bool = True,
+        safe_state: bool = False,
+        mcp_board_id: int = 0
     ) -> bool:
-        """Set device mapping in database."""
+        """Set device hardware mapping."""
         if self._device_repo:
             return await self._device_repo.set_device_mapping(
-                location, cluster, device_name, channel, device_type,
-                board_id, display_name, output_type, min_value, max_value,
-                dimming_enabled, inverted
+                location, cluster, device_name, channel,
+                active_high, safe_state, mcp_board_id
             )
         raise RuntimeError("DeviceRepository not initialized - call initialize() first")
     
