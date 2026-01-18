@@ -1656,13 +1656,13 @@ class DatabaseManager:
             return await self._pid_repo.get_pid_parameter_history(device_type, limit)
         raise RuntimeError("PIDRepository not initialized - call initialize() first")
     
-    async def get_all_pid_parameters(self) -> Dict[str, Dict[str, Any]]:
+    async def get_all_pid_parameters(self) -> list[dict[str, Any]]:
         """Get all PID parameters."""
         if self._pid_repo:
             return await self._pid_repo.get_all_pid_parameters()
         raise RuntimeError("PIDRepository not initialized - call initialize() first")
     
-    async def get_pid_control_mode(self, device_type: str) -> dict[str, Any] | None:
+    async def get_pid_control_mode(self, device_type: str) -> str | None:
         """Get PID control mode for a device type."""
         if self._pid_repo:
             return await self._pid_repo.get_pid_control_mode(device_type)
@@ -1778,8 +1778,11 @@ class DatabaseManager:
     ) -> int:
         """Create a new schedule."""
         if self._schedule_repo:
+            # Convert time objects to strings for repository
+            start_str = start_time.strftime("%H:%M") if hasattr(start_time, 'strftime') else str(start_time)
+            end_str = end_time.strftime("%H:%M") if hasattr(end_time, 'strftime') else str(end_time)
             return await self._schedule_repo.create_schedule(
-                name, location, cluster, device_name, start_time, end_time,
+                name, location, cluster, device_name, start_str, end_str,
                 day_of_week, enabled, mode, target_intensity,
                 ramp_up_duration, ramp_down_duration, conn
             )
