@@ -121,6 +121,7 @@ automation-service.service (8001)
 | Data | 1yr full resolution, indefinite aggregates |
 | Safety | Software-only for now |
 | CO2 | ASC on, design for FRC when enrichment added |
+| Light Schedule | CircularTimePicker manages start/end times; photoperiod locked per mode (veg/flower) |
 
 ## FUTURE REMINDERS
 

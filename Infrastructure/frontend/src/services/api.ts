@@ -222,8 +222,21 @@ class ApiClient {
   }
 
   async setLightIntensity(location: string, cluster: string, deviceName: string, intensity: number): Promise<LightStatus> {
-    const response = await this.automationClient.post(`/api/lights/${location}/${cluster}/${deviceName}/intensity`, {
-      intensity
+    const response = await this.automationClient.post(`/api/lights/${location}/${cluster}/${deviceName}/target`, {
+      target_intensity: intensity
+    });
+    return response.data;
+  }
+
+  async getLightSchedule(location: string, cluster: string, deviceName: string): Promise<{ start_time: string; end_time: string; target_intensity: number }> {
+    const response = await this.automationClient.get(`/api/lights/${location}/${cluster}/${deviceName}/schedule`);
+    return response.data;
+  }
+
+  async updateLightSchedule(location: string, cluster: string, deviceName: string, startTime: string, endTime: string): Promise<any> {
+    const response = await this.automationClient.put(`/api/lights/${location}/${cluster}/${deviceName}/schedule`, {
+      start_time: startTime,
+      end_time: endTime
     });
     return response.data;
   }
@@ -231,6 +244,17 @@ class ApiClient {
   async getDevicesForLocationClusterWithDetails(location: string, cluster: string): Promise<Record<string, any>> {
     const response = await this.automationClient.get(`/api/devices/${location}/${cluster}`);
     return response.data.devices || {};
+  }
+
+  async getLightsForZone(location: string, cluster: string): Promise<Array<{ device_name: string; display_name?: string; dimming_enabled?: boolean }>> {
+    const devices = await this.getDevicesForLocationClusterWithDetails(location, cluster);
+    return Object.entries(devices)
+      .filter(([_, device]: [string, any]) => device.device_type === 'light')
+      .map(([deviceName, device]: [string, any]) => ({
+        device_name: deviceName,
+        display_name: device.display_name,
+        dimming_enabled: device.dimming_enabled
+      }));
   }
 
   // Room Schedule (automation service)
@@ -282,18 +306,6 @@ class ApiClient {
       { mode }
     );
     return response.data;
-  }
-
-  // Helper to get all lights for a zone
-  async getLightsForZone(location: string, cluster: string): Promise<Array<{ device_name: string; display_name?: string; dimming_enabled?: boolean }>> {
-    const devices = await this.getDevicesForLocationClusterWithDetails(location, cluster);
-    return Object.entries(devices)
-      .filter(([_, device]: [string, any]) => device.device_type === 'light')
-      .map(([deviceName, device]: [string, any]) => ({
-        device_name: deviceName,
-        display_name: device.display_name,
-        dimming_enabled: device.dimming_enabled
-      }));
   }
 
   // Room Modes (automation service)

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, forwardRef, useImperativeHandle } from 'react'
 import { apiClient } from '../services/api'
 import { logger } from '../utils/logger'
 
@@ -10,23 +10,23 @@ interface LightDevice {
 
 interface LightStatus {
   intensity: number
-  target_intensity: number | null
+  target_intensity?: number | null
 }
 
 interface LightSlidersPanelProps {
   location: string
   cluster: string
-  onIntensityChange?: (deviceName: string, intensity: number) => void
 }
 
-export default function LightSlidersPanel({
-  location,
-  cluster,
-  onIntensityChange
-}: LightSlidersPanelProps) {
+export interface LightSlidersPanelRef {
+  savePendingChanges: () => Promise<void>
+  hasPendingChanges: () => boolean
+}
+
+const LightSlidersPanel = forwardRef<LightSlidersPanelRef, LightSlidersPanelProps>(({ location, cluster }, ref) => {
   const [lights, setLights] = useState<LightDevice[]>([])
   const [statuses, setStatuses] = useState<Record<string, LightStatus>>({})
-  const [pendingValues, setPendingValues] = useState<Record<string, number>>({})
+  const [pendingTargets, setPendingTargets] = useState<Record<string, number>>({})
   const [loading, setLoading] = useState(true)
 
   const fetchLightsAndStatus = useCallback(async () => {
@@ -34,7 +34,7 @@ export default function LightSlidersPanel({
       const lightDevices = await apiClient.getLightsForZone(location, cluster)
       setLights(lightDevices)
       
-      const statusPromises = lightDevices.map(async (light) => {
+      const statusPromises = lightDevices.map(async (light: LightDevice) => {
         try {
           const status = await apiClient.getLightStatus(location, cluster, light.device_name)
           return { deviceName: light.device_name, status }
@@ -45,7 +45,7 @@ export default function LightSlidersPanel({
       
       const results = await Promise.all(statusPromises)
       const statusMap: Record<string, LightStatus> = {}
-      results.forEach(({ deviceName, status }) => {
+      results.forEach(({ deviceName, status }: { deviceName: string; status: LightStatus | null }) => {
         if (status) {
           statusMap[deviceName] = {
             intensity: status.intensity,
@@ -67,25 +67,27 @@ export default function LightSlidersPanel({
     return () => clearInterval(interval)
   }, [fetchLightsAndStatus])
 
-  async function handleIntensityChange(deviceName: string, intensity: number) {
-    setPendingValues(prev => ({ ...prev, [deviceName]: intensity }))
-    try {
-      await apiClient.setLightIntensity(location, cluster, deviceName, intensity)
-      onIntensityChange?.(deviceName, intensity)
-      setStatuses(prev => ({
-        ...prev,
-        [deviceName]: { ...prev[deviceName], intensity }
-      }))
-    } catch (err) {
-      logger.error('Failed to set light intensity:', err)
-    } finally {
-      setPendingValues(prev => {
-        const next = { ...prev }
-        delete next[deviceName]
-        return next
-      })
-    }
+  function handleTargetChange(deviceName: string, value: number) {
+    setPendingTargets(prev => ({ ...prev, [deviceName]: value }))
   }
+
+  async function savePendingChanges() {
+    const entries = Object.entries(pendingTargets)
+    for (const [deviceName, target] of entries) {
+      try {
+        await apiClient.setLightIntensity(location, cluster, deviceName, target)
+      } catch (err) {
+        logger.error(`Failed to set light intensity for ${deviceName}:`, err)
+      }
+    }
+    setPendingTargets({})
+    await fetchLightsAndStatus()
+  }
+
+  useImperativeHandle(ref, () => ({
+    savePendingChanges,
+    hasPendingChanges: () => Object.keys(pendingTargets).length > 0
+  }))
 
   if (loading) {
     return (
@@ -114,18 +116,19 @@ export default function LightSlidersPanel({
         {lights.map((light) => {
           const status = statuses[light.device_name]
           const currentIntensity = status?.intensity ?? 0
-          const targetIntensity = status?.target_intensity
-          const pendingValue = pendingValues[light.device_name]
-          const displayValue = pendingValue ?? currentIntensity
+          const savedTarget = status?.target_intensity ?? currentIntensity
+          const pendingTarget = pendingTargets[light.device_name]
+          const hasPending = pendingTarget !== undefined && pendingTarget !== savedTarget
 
           return (
             <LightRow
               key={light.device_name}
               label={light.display_name || light.device_name}
               currentIntensity={currentIntensity}
-              targetIntensity={targetIntensity}
-              value={displayValue}
-              onChange={(v) => handleIntensityChange(light.device_name, v)}
+              savedTarget={savedTarget}
+              pendingTarget={pendingTarget}
+              hasPending={hasPending}
+              onTargetChange={(v) => handleTargetChange(light.device_name, v)}
               disabled={!light.dimming_enabled}
             />
           )
@@ -133,42 +136,31 @@ export default function LightSlidersPanel({
       </div>
     </div>
   )
-}
+})
+
+export default LightSlidersPanel
 
 interface LightRowProps {
   label: string
   currentIntensity: number
-  targetIntensity: number | null
-  value: number
-  onChange: (value: number) => void
+  savedTarget: number
+  pendingTarget: number | undefined
+  hasPending: boolean
+  onTargetChange: (value: number) => void
   disabled?: boolean
 }
 
-function LightRow({ label, currentIntensity, targetIntensity, value, onChange, disabled }: LightRowProps) {
-  const [localValue, setLocalValue] = useState(value)
-
-  useEffect(() => {
-    setLocalValue(value)
-  }, [value])
-
-  function handleSliderChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const v = parseInt(e.target.value)
-    setLocalValue(v)
-  }
-
-  function handleSliderCommit() {
-    if (localValue !== value) {
-      onChange(localValue)
-    }
-  }
-
-  function handleInputChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const v = Math.max(0, Math.min(100, parseInt(e.target.value) || 0))
-    setLocalValue(v)
-    onChange(v)
-  }
-
-  const percentage = (localValue / 100) * 100
+function LightRow({ 
+  label, 
+  currentIntensity, 
+  savedTarget, 
+  pendingTarget, 
+  hasPending, 
+  onTargetChange, 
+  disabled 
+}: LightRowProps) {
+  const displayTarget = pendingTarget ?? savedTarget
+  const sliderPosition = currentIntensity
 
   return (
     <div className={`${disabled ? 'opacity-50' : ''}`}>
@@ -186,7 +178,7 @@ function LightRow({ label, currentIntensity, targetIntensity, value, onChange, d
           <div className="flex items-center gap-1">
             <span className="text-gray-500">TGT</span>
             <span className="bg-gray-800 px-1.5 py-0.5 rounded text-amber-400 font-mono min-w-[32px] text-center">
-              {targetIntensity !== null ? `${targetIntensity}%` : '—'}
+              {savedTarget}%
             </span>
           </div>
         </div>
@@ -195,26 +187,31 @@ function LightRow({ label, currentIntensity, targetIntensity, value, onChange, d
         <div className="relative flex-1 h-5">
           <div className="absolute inset-0 bg-gray-800 rounded overflow-hidden">
             <div 
-              className="h-full bg-gradient-to-r from-amber-600 to-amber-400 transition-all"
-              style={{ width: `${percentage}%` }}
+              className="absolute h-full bg-gradient-to-r from-blue-600 to-blue-400 transition-all"
+              style={{ width: `${sliderPosition}%` }}
             />
           </div>
           <input
             type="range"
             min={0}
             max={100}
-            value={localValue}
-            onChange={handleSliderChange}
-            onMouseUp={handleSliderCommit}
-            onTouchEnd={handleSliderCommit}
+            value={displayTarget}
+            onChange={(e) => onTargetChange(parseInt(e.target.value))}
             disabled={disabled}
             className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed"
           />
-          {targetIntensity !== null && targetIntensity !== currentIntensity && (
+          {savedTarget !== currentIntensity && (
             <div 
-              className="absolute top-0 w-0.5 h-full bg-amber-400/60"
-              style={{ left: `${targetIntensity}%` }}
-              title={`Target: ${targetIntensity}%`}
+              className="absolute top-0 w-1 h-full bg-amber-400 rounded"
+              style={{ left: `calc(${savedTarget}% - 2px)` }}
+              title={`Saved Target: ${savedTarget}%`}
+            />
+          )}
+          {hasPending && (
+            <div 
+              className="absolute top-0 w-1 h-full bg-yellow-400 rounded"
+              style={{ left: `calc(${displayTarget}% - 2px)` }}
+              title={`Pending: ${displayTarget}%`}
             />
           )}
         </div>
@@ -222,10 +219,10 @@ function LightRow({ label, currentIntensity, targetIntensity, value, onChange, d
           type="number"
           min={0}
           max={100}
-          value={localValue}
-          onChange={handleInputChange}
+          value={displayTarget}
+          onChange={(e) => onTargetChange(Math.max(0, Math.min(100, parseInt(e.target.value) || 0)))}
           disabled={disabled}
-          className="w-14 h-6 px-1 text-[16px] text-center bg-gray-800 border border-gray-700 rounded text-gray-200 disabled:opacity-50"
+          className="w-12 h-6 px-1 text-[14px] text-center bg-gray-800 border border-gray-700 rounded text-gray-200 disabled:opacity-50"
         />
         <span className="text-[12px] text-gray-500">%</span>
       </div>

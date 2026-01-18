@@ -18,6 +18,8 @@ if TYPE_CHECKING:
 
 router = APIRouter()
 
+logger = get_logger(__name__)
+
 
 class IntensityControl(BaseModel):
     """Intensity control request."""
@@ -346,3 +348,111 @@ async def set_voltage(
         "channel": channel
     }
 
+
+
+class TargetIntensityControl(BaseModel):
+    target_intensity: float
+
+
+class ScheduleTimeControl(BaseModel):
+    start_time: str
+    end_time: str
+
+
+@router.post("/api/lights/{location}/{cluster}/{device_name}/target")
+async def set_target_intensity(
+    location: str,
+    cluster: str,
+    device_name: str,
+    control: TargetIntensityControl,
+    config=Depends(get_config),
+    database=Depends(get_database),
+    scheduler=Depends(get_scheduler)
+) -> Dict[str, Any]:
+    if control.target_intensity < 0 or control.target_intensity > 100:
+        raise HTTPException(
+            status_code=400,
+            detail="Target intensity must be between 0 and 100"
+        )
+    
+    devices = config.get_devices()
+    device_info = devices.get(location, {}).get(cluster, {}).get(device_name)
+    
+    if not device_info:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Device not found: {location}/{cluster}/{device_name}"
+        )
+    
+    if device_info.get('device_type') != 'light':
+        raise HTTPException(
+            status_code=400,
+            detail=f"Device {device_name} is not a light"
+        )
+    
+    updated = await database.update_light_schedule_target(
+        location, cluster, device_name, control.target_intensity
+    )
+    
+    if not updated:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No active schedule found for {device_name}"
+        )
+    
+    # Refresh scheduler with updated schedules
+    if scheduler:
+        all_schedules = await database.get_schedules()
+        scheduler.update_schedules(all_schedules)
+        logger.debug(f"Scheduler refreshed after {device_name} target intensity update")
+    
+    return {
+        "success": True,
+        "location": location,
+        "cluster": cluster,
+        "device": device_name,
+        "target_intensity": control.target_intensity
+    }
+
+
+@router.get("/api/lights/{location}/{cluster}/{device_name}/schedule")
+async def get_light_schedule(
+    location: str,
+    cluster: str,
+    device_name: str,
+    database=Depends(get_database)
+) -> Dict[str, Any]:
+    schedule = await database.get_light_schedule(location, cluster, device_name)
+    if not schedule:
+        raise HTTPException(status_code=404, detail=f"No schedule found for {device_name}")
+    return schedule
+
+
+@router.put("/api/lights/{location}/{cluster}/{device_name}/schedule")
+async def update_light_schedule(
+    location: str,
+    cluster: str,
+    device_name: str,
+    control: ScheduleTimeControl,
+    database=Depends(get_database),
+    scheduler=Depends(get_scheduler)
+) -> Dict[str, Any]:
+    updated = await database.update_light_schedule_times(
+        location, cluster, device_name, control.start_time, control.end_time
+    )
+    if not updated:
+        raise HTTPException(status_code=404, detail=f"No schedule found for {device_name}")
+    
+    if scheduler:
+        all_schedules = await database.get_schedules()
+        scheduler.update_schedules(all_schedules)
+        logger.debug(f"Scheduler refreshed after {device_name} schedule time update")
+    
+    return {
+        "success": True,
+        "location": location,
+        "cluster": cluster,
+        "device": device_name,
+        "start_time": control.start_time,
+        "end_time": control.end_time
+    }

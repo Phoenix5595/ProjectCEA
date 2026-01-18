@@ -1,5 +1,5 @@
 import { useParams, Link } from 'react-router-dom'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { apiClient } from '../services/api'
 import { logger } from '../utils/logger'
 import { getLocationDisplayName, getLocationBackendName } from '../config/zones'
@@ -8,7 +8,7 @@ import RoomModeSelector from '../components/RoomModeSelector'
 import SetpointTimeline from '../components/SetpointTimeline'
 import SetpointsTable from '../components/SetpointsTable'
 import CircularTimePicker from '../components/CircularTimePicker'
-import LightSlidersPanel from '../components/LightSlidersPanel'
+import LightSlidersPanel, { LightSlidersPanelRef } from '../components/LightSlidersPanel'
 import PIDCompactRow from '../components/PIDCompactRow'
 
 export default function ZoneConfig() {
@@ -21,6 +21,7 @@ export default function ZoneConfig() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
+  const lightsPanelRef = useRef<LightSlidersPanelRef>(null)
 
   useEffect(() => {
     if (location && cluster) {
@@ -75,6 +76,11 @@ export default function ZoneConfig() {
       const updated = await apiClient.updateRoomParameters(location, cluster, roomMode.parameters)
       setRoomMode(updated)
       setSavedParams({ ...updated.parameters })
+      
+      if (lightsPanelRef.current?.hasPendingChanges()) {
+        await lightsPanelRef.current.savePendingChanges()
+      }
+      
       setSuccess('Saved')
       setTimeout(() => setSuccess(null), 2000)
     } catch (err: any) {
@@ -204,6 +210,7 @@ export default function ZoneConfig() {
             
             <div className="flex-shrink-0">
               <LightSlidersPanel
+                ref={lightsPanelRef}
                 location={location}
                 cluster={cluster}
               />

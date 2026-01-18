@@ -62,21 +62,14 @@ export default function CircularTimePicker({
   // Convert angle (radians) to minutes (12:00 noon = top, 00:00 midnight = bottom)
   // Input angle is from getAngleFromMouse: -π/2 at top (noon), π/2 at bottom (midnight)
   function angleToMinutes(angle: number): number {
-    // Normalize angle to 0-2π range
     let normalizedAngle = angle % (2 * Math.PI)
     if (normalizedAngle < 0) normalizedAngle += 2 * Math.PI
     
-    // Convert angle to hours (0-23.99)
-    // -π/2 (top/noon) should map to hour 12
-    // π/2 (bottom/midnight) should map to hour 0
-    // We need to rotate: add π/2 to shift -π/2 to 0, then add 12 hours
     const rotatedAngle = (normalizedAngle + Math.PI / 2) % (2 * Math.PI)
     const hours = (rotatedAngle / (2 * Math.PI)) * 24
-    // Shift by 12 hours: hour 0 in rotated = hour 12 (noon)
     const actualHours = (hours + 12) % 24
-    // Convert to minutes
-    const minutes = actualHours * 60
-    return Math.round(minutes)
+    const roundedHours = Math.round(actualHours) % 24
+    return roundedHours * 60
   }
 
   // Convert minutes to angle (12:00 noon = top of circle, 00:00 midnight = bottom)
@@ -357,10 +350,13 @@ export default function CircularTimePicker({
     const endY = centerY + Math.sin(endAngle) * radius
 
     // Calculate middle slider position (same calculation as drawing)
-    let midAngle = (startAngle + endAngle) / 2
-    if (endMinutes < startMinutes) {
-      // For overnight, endAngle was adjusted by +2π for drawing
-      midAngle = (startAngle + (endAngle + 2 * Math.PI)) / 2
+    const isOvernight = endMinutes < startMinutes
+    let midAngle: number
+    if (isOvernight) {
+      const midMinutes = (startMinutes + endMinutes + 1440) / 2 % 1440
+      midAngle = minutesToAngle(midMinutes)
+    } else {
+      midAngle = (startAngle + endAngle) / 2
     }
     // Normalize to 0-2π range
     if (midAngle < 0) midAngle += 2 * Math.PI
@@ -481,24 +477,21 @@ export default function CircularTimePicker({
         let normalizedStart = newStartMinutes % 1440
         if (normalizedStart < 0) normalizedStart += 1440
         
-        // Calculate end time
-        let normalizedEnd: number
+        // When photoperiod is locked, only update start time
+        // The useEffect will automatically calculate the correct end time
         if (lockedPhotoperiodHours !== null && lockedPhotoperiodHours !== undefined) {
-          // Use locked duration
-          const lockedDurationMinutes = lockedPhotoperiodHours * 60
-          normalizedEnd = (normalizedStart + lockedDurationMinutes) % 1440
-          if (normalizedEnd < 0) normalizedEnd += 1440
+          onDayStartChange(minutesToTime(normalizedStart))
         } else {
-          // Use current duration
+          // Use current duration for unlocked photoperiod
           const startMinutes = timeToMinutes(dayStartTime)
           const endMinutes = timeToMinutes(dayEndTime)
           const periodDuration = endMinutes - startMinutes < 0 ? endMinutes - startMinutes + 1440 : endMinutes - startMinutes
-          normalizedEnd = (normalizedStart + periodDuration) % 1440
+          let normalizedEnd = (normalizedStart + periodDuration) % 1440
           if (normalizedEnd < 0) normalizedEnd += 1440
+          
+          onDayStartChange(minutesToTime(normalizedStart))
+          onDayEndChange(minutesToTime(normalizedEnd))
         }
-        
-        onDayStartChange(minutesToTime(normalizedStart))
-        onDayEndChange(minutesToTime(normalizedEnd))
       }
     }
 

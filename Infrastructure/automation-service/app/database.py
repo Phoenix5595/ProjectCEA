@@ -3440,3 +3440,56 @@ class DatabaseManager:
                     params.get('main_light_intensity', 100), params.get('supplemental_light_intensity', 0)
                 )
             return True
+
+    async def update_light_schedule_target(
+        self, location: str, cluster: str, device_name: str, target_intensity: float
+    ) -> bool:
+        """Update target_intensity for a light device's active schedule."""
+        pool = await self._get_pool()
+        async with pool.acquire() as conn:
+            result = await conn.execute("""
+                UPDATE schedules 
+                SET target_intensity = $4, updated_at = NOW()
+                WHERE location = $1 AND cluster = $2 AND device_name = $3
+                AND enabled = true AND target_intensity IS NOT NULL
+            """, location, cluster, device_name, target_intensity)
+            return result != "UPDATE 0"
+
+    async def get_light_schedule(
+        self, location: str, cluster: str, device_name: str
+    ) -> dict | None:
+        """Get the active day schedule for a light device."""
+        pool = await self._get_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow("""
+                SELECT start_time, end_time, target_intensity
+                FROM schedules
+                WHERE location = $1 AND cluster = $2 AND device_name = $3
+                AND enabled = true AND target_intensity IS NOT NULL
+                AND target_intensity > 0
+                ORDER BY target_intensity DESC
+                LIMIT 1
+            """, location, cluster, device_name)
+            if row:
+                return {
+                    "start_time": str(row["start_time"])[:5],
+                    "end_time": str(row["end_time"])[:5],
+                    "target_intensity": row["target_intensity"]
+                }
+            return None
+
+    async def update_light_schedule_times(
+        self, location: str, cluster: str, device_name: str,
+        start_time: str, end_time: str
+    ) -> bool:
+        """Update start/end times for a light device's day schedule."""
+        pool = await self._get_pool()
+        async with pool.acquire() as conn:
+            result = await conn.execute("""
+                UPDATE schedules 
+                SET start_time = $4::time, end_time = $5::time, updated_at = NOW()
+                WHERE location = $1 AND cluster = $2 AND device_name = $3
+                AND enabled = true AND target_intensity IS NOT NULL
+                AND target_intensity > 0
+            """, location, cluster, device_name, start_time, end_time)
+            return result != "UPDATE 0"
