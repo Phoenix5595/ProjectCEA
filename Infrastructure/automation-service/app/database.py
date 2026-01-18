@@ -1656,7 +1656,7 @@ class DatabaseManager:
             return await self._pid_repo.get_all_pid_parameters()
         raise RuntimeError("PIDRepository not initialized - call initialize() first")
     
-    async def get_pid_control_mode(self, device_type: str) -> str | None:
+    async def get_pid_control_mode(self, device_type: str) -> dict | None:
         """Get PID control mode for a device type."""
         if self._pid_repo:
             return await self._pid_repo.get_pid_control_mode(device_type)

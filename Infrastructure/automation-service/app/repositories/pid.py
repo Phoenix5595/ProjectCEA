@@ -95,16 +95,20 @@ class PIDRepository(BaseRepository):
             logger.error(f"Failed to get all PID parameters: {e}")
             return []
 
-    async def get_pid_control_mode(self, device_type: str) -> str | None:
-        """Get PID control mode for device type."""
+    async def get_pid_control_mode(self, device_type: str) -> dict[str, Any] | None:
+        """Get PID control mode and hysteresis for device type."""
         try:
             async with self.pool.acquire() as conn:
                 row = await conn.fetchrow(
-                    "SELECT control_mode FROM pid_parameters WHERE device_type = $1",
+                    "SELECT control_mode, hysteresis_high, hysteresis_low FROM pid_parameters WHERE device_type = $1",
                     device_type
                 )
                 if row:
-                    return row["control_mode"]
+                    return {
+                        "control_mode": row["control_mode"],
+                        "hysteresis_high": row["hysteresis_high"],
+                        "hysteresis_low": row["hysteresis_low"]
+                    }
         except Exception as e:
             logger.error(f"Failed to get control mode: {e}")
         return None

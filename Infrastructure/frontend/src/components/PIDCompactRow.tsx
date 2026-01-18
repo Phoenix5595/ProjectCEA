@@ -72,110 +72,138 @@ export default function PIDCompactRow() {
     }
   }
 
+  const isAuto = mode === 'auto_pid'
+  const isOff = mode === 'on_off'
+
   return (
-    <div className="bg-gray-900 rounded-lg border border-gray-800 p-3">
-      <div className="flex items-center gap-3 text-[12px] flex-wrap">
-          <span className="text-gray-400 uppercase font-bold tracking-wider text-[14px]">PID</span>
+    <div className="bg-gray-900 rounded-xl border border-gray-800 shadow-xl overflow-hidden">
+      <div className="flex border-b border-gray-800">
+        {DEVICE_TYPES.map(t => (
+          <button
+            key={t}
+            onClick={() => setDevice(t)}
+            disabled={loading}
+            className={`flex-1 py-3 text-xs font-bold tracking-widest transition-colors uppercase ${
+              device === t 
+                ? 'bg-gray-800 text-cyan-400 border-b-2 border-cyan-500' 
+                : 'text-gray-500 hover:text-gray-300 hover:bg-gray-800/50'
+            }`}
+          >
+            {t}
+          </button>
+        ))}
+      </div>
 
-        <select
-          value={device}
-          onChange={(e) => setDevice(e.target.value)}
-          disabled={loading}
-          className="bg-gray-800 border border-gray-700 px-2 py-1 rounded text-gray-200 text-[12px]"
-        >
-          {DEVICE_TYPES.map(t => (
-            <option key={t} value={t}>{t.toUpperCase()}</option>
-          ))}
-        </select>
-
-        <div className="flex gap-1">
-          {(['auto_pid', 'pid', 'on_off'] as PIDControlMode[]).map(m => (
-            <button
-              key={m}
-              onClick={() => handleModeChange(m)}
-              disabled={loading}
-              className={`px-2 py-1 rounded text-[12px] font-medium transition-colors ${
-                mode === m 
-                  ? 'bg-cyan-700 text-white' 
-                  : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
-              }`}
-            >
-              {m === 'auto_pid' ? 'Auto' : m === 'pid' ? 'PID' : 'ON/OFF'}
-            </button>
-          ))}
+      <div className="p-5 space-y-6">
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Control Mode</label>
+            <div className={`h-2 w-2 rounded-full ${
+              isAuto ? 'bg-purple-500 shadow-[0_0_8px_rgba(168,85,247,0.5)]' :
+              isOff ? 'bg-red-500' : 'bg-cyan-500 shadow-[0_0_8px_rgba(6,182,212,0.5)]'
+            }`} />
+          </div>
+          
+          <div className="grid grid-cols-3 gap-1 bg-gray-950 p-1 rounded-lg border border-gray-800">
+            {(['auto_pid', 'pid', 'on_off'] as PIDControlMode[]).map(m => (
+              <button
+                key={m}
+                onClick={() => handleModeChange(m)}
+                disabled={loading}
+                className={`py-2 px-2 rounded-md text-[11px] font-bold transition-all uppercase ${
+                  mode === m 
+                    ? m === 'auto_pid' ? 'bg-purple-900/50 text-purple-300 border border-purple-700/50' :
+                      m === 'on_off' ? 'bg-red-900/30 text-red-400 border border-red-800/50' :
+                      'bg-cyan-900/30 text-cyan-300 border border-cyan-800/50'
+                    : 'text-gray-500 hover:text-gray-300 hover:bg-gray-800'
+                }`}
+              >
+                {m === 'auto_pid' ? 'Auto-Tune' : m === 'pid' ? 'Manual PID' : 'ON/OFF'}
+              </button>
+            ))}
+          </div>
         </div>
 
-        {mode !== 'on_off' && (
-          <div className="flex gap-2 items-center">
-            <label className="flex items-center gap-1 text-gray-400">
-              Kp:
+        <div className={`transition-opacity duration-300 ${isOff ? 'opacity-30 pointer-events-none grayscale' : 'opacity-100'}`}>
+          <div className="grid grid-cols-3 gap-4">
+            <div className="space-y-1">
+              <label className="text-[10px] font-medium text-gray-500 block text-center uppercase">Kp (Prop)</label>
               <input
                 type="number"
                 step="0.1"
                 value={kp}
                 onChange={(e) => setKp(parseFloat(e.target.value) || 0)}
-                disabled={mode === 'auto_pid' || loading}
-                className="w-16 bg-gray-800 border border-gray-700 px-1 py-0.5 rounded text-center text-[16px] text-gray-200 disabled:opacity-50"
+                disabled={isAuto || isOff || loading}
+                className="w-full bg-gray-950 border border-gray-700 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 rounded px-2 py-2 text-center text-sm font-mono text-gray-200 disabled:opacity-50 transition-colors"
               />
-            </label>
-            <label className="flex items-center gap-1 text-gray-400">
-              Ki:
+            </div>
+            <div className="space-y-1">
+              <label className="text-[10px] font-medium text-gray-500 block text-center uppercase">Ki (Int)</label>
               <input
                 type="number"
                 step="0.001"
                 value={ki}
                 onChange={(e) => setKi(parseFloat(e.target.value) || 0)}
-                disabled={mode === 'auto_pid' || loading}
-                className="w-16 bg-gray-800 border border-gray-700 px-1 py-0.5 rounded text-center text-[16px] text-gray-200 disabled:opacity-50"
+                disabled={isAuto || isOff || loading}
+                className="w-full bg-gray-950 border border-gray-700 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 rounded px-2 py-2 text-center text-sm font-mono text-gray-200 disabled:opacity-50 transition-colors"
               />
-            </label>
-            <label className="flex items-center gap-1 text-gray-400">
-              Kd:
+            </div>
+            <div className="space-y-1">
+              <label className="text-[10px] font-medium text-gray-500 block text-center uppercase">Kd (Deriv)</label>
               <input
                 type="number"
                 step="0.01"
                 value={kd}
                 onChange={(e) => setKd(parseFloat(e.target.value) || 0)}
-                disabled={mode === 'auto_pid' || loading}
-                className="w-16 bg-gray-800 border border-gray-700 px-1 py-0.5 rounded text-center text-[16px] text-gray-200 disabled:opacity-50"
+                disabled={isAuto || isOff || loading}
+                className="w-full bg-gray-950 border border-gray-700 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 rounded px-2 py-2 text-center text-sm font-mono text-gray-200 disabled:opacity-50 transition-colors"
               />
-            </label>
+            </div>
           </div>
-        )}
+        </div>
 
-        <div className="flex gap-2 ml-auto">
-          {mode === 'pid' && (
-            <>
-              <button
-                onClick={handleReset}
-                disabled={loading || saving}
-                className="text-gray-400 hover:text-white text-[12px] px-2 py-1"
-              >
-                Reset
-              </button>
-              <button
-                onClick={handleSave}
-                disabled={loading || saving}
-                className="px-3 py-1 bg-cyan-700 hover:bg-cyan-600 rounded text-white text-[12px] font-bold disabled:opacity-50"
-              >
-                {saving ? '...' : 'Save'}
-              </button>
-            </>
-          )}
+        <div className="flex items-center justify-between pt-2 border-t border-gray-800/50">
           <button
             onClick={() => setHistoryOpen(!historyOpen)}
-            className="px-2 py-1 bg-gray-800 hover:bg-gray-700 rounded text-gray-400 text-[12px]"
+            className="flex items-center gap-2 text-[11px] font-medium text-gray-500 hover:text-cyan-400 transition-colors"
           >
-            Hist {historyOpen ? '▲' : '▼'}
+            <span>HISTORY</span>
+            <span className="text-[9px]">{historyOpen ? '▲' : '▼'}</span>
           </button>
+
+          <div className="flex gap-3">
+             {!isOff && !isAuto && (
+               <button
+                 onClick={handleReset}
+                 disabled={loading || saving}
+                 className="text-[11px] font-medium text-gray-500 hover:text-red-400 transition-colors px-2"
+               >
+                 RESET
+               </button>
+             )}
+             
+             {!isOff && (
+               <button
+                 onClick={handleSave}
+                 disabled={loading || saving || isAuto}
+                 className="px-4 py-1.5 bg-cyan-700 hover:bg-cyan-600 disabled:bg-gray-800 disabled:text-gray-600 rounded text-white text-[11px] font-bold tracking-wide transition-colors shadow-lg shadow-cyan-900/20"
+               >
+                 {saving ? 'SAVING...' : 'SAVE CONFIG'}
+               </button>
+             )}
+          </div>
         </div>
       </div>
 
       {historyOpen && (
-        <div className="mt-2 pt-2 border-t border-gray-800">
-          <div className="text-[12px] text-gray-500">
-            PID history for {device.toUpperCase()} - Use full PID Editor for detailed history view
-          </div>
+        <div className="bg-gray-950/50 border-t border-gray-800 p-4 animate-in slide-in-from-top-2 duration-200">
+           <div className="flex items-start gap-3 p-3 rounded bg-gray-900/50 border border-gray-800/50">
+             <div className="text-cyan-500 mt-0.5">ℹ️</div>
+             <div className="text-xs text-gray-400 leading-relaxed">
+               <span className="block font-medium text-gray-300 mb-1">Detailed History</span>
+               Full parameter history and tuning logs for <span className="text-cyan-400 font-mono">{device.toUpperCase()}</span> are available in the dedicated PID Editor view.
+             </div>
+           </div>
         </div>
       )}
     </div>
