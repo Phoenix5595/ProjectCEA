@@ -150,8 +150,10 @@ export default function ZoneConfig() {
                     rampDownDuration: params.pre_night_minutes
                   }}
                   setpoints={{
-                    DAY: { heating_setpoint: params.day_heat_temp, cooling_setpoint: params.day_cool_temp, vpd: params.day_vpd, co2: params.day_co2 },
-                    NIGHT: { heating_setpoint: params.night_heat_temp, cooling_setpoint: params.night_cool_temp, vpd: params.night_vpd, co2: params.night_co2 }
+                    DAY: { heating_setpoint: params.day_heat_temp, cooling_setpoint: params.day_cool_temp, vpd: params.day_vpd, co2: params.day_co2, ramp_in_duration: params.ramp_up_minutes },
+                    NIGHT: { heating_setpoint: params.night_heat_temp, cooling_setpoint: params.night_cool_temp, vpd: params.night_vpd, co2: params.night_co2, ramp_in_duration: params.ramp_down_minutes },
+                    PRE_DAY: { heating_setpoint: params.pre_day_heat_temp, cooling_setpoint: params.pre_day_cool_temp, vpd: params.pre_day_vpd, co2: params.pre_day_co2, ramp_in_duration: params.pre_day_ramp_minutes },
+                    PRE_NIGHT: { heating_setpoint: params.pre_night_heat_temp, cooling_setpoint: params.pre_night_cool_temp, vpd: params.pre_night_vpd, co2: params.pre_night_co2, ramp_in_duration: params.pre_night_ramp_minutes }
                   }}
                   className="h-[calc(100%-28px)]"
                 />

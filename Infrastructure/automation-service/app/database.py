@@ -3388,18 +3388,26 @@ class DatabaseManager:
                 await conn.execute("""
                     UPDATE mode_parameters SET
                         day_start_time = $1, night_start_time = $2, ramp_up_minutes = $3, ramp_down_minutes = $4,
-                        pre_day_minutes = $5, pre_night_minutes = $6,
-                        day_heat_temp = $7, day_cool_temp = $8, day_vpd = $9, day_co2 = $10, day_leaf_delta = $11,
-                        night_heat_temp = $12, night_cool_temp = $13, night_vpd = $14, night_co2 = $15, night_leaf_delta = $16,
-                        main_light_intensity = $17, supplemental_light_intensity = $18, updated_at = NOW()
-                    WHERE id = $19
+                        pre_day_ramp_minutes = $5, pre_night_ramp_minutes = $6,
+                        pre_day_minutes = $7, pre_night_minutes = $8,
+                        day_heat_temp = $9, day_cool_temp = $10, day_vpd = $11, day_co2 = $12, day_leaf_delta = $13,
+                        night_heat_temp = $14, night_cool_temp = $15, night_vpd = $16, night_co2 = $17, night_leaf_delta = $18,
+                        pre_day_heat_temp = $19, pre_day_cool_temp = $20, pre_day_vpd = $21, pre_day_co2 = $22,
+                        pre_night_heat_temp = $23, pre_night_cool_temp = $24, pre_night_vpd = $25, pre_night_co2 = $26,
+                        main_light_intensity = $27, supplemental_light_intensity = $28, updated_at = NOW()
+                    WHERE id = $29
                 """, day_start, night_start,
                     params.get('ramp_up_minutes', 30), params.get('ramp_down_minutes', 30),
+                    params.get('pre_day_ramp_minutes', 30), params.get('pre_night_ramp_minutes', 30),
                     params.get('pre_day_minutes', 30), params.get('pre_night_minutes', 30),
                     params.get('day_heat_temp', 24.0), params.get('day_cool_temp', 28.0),
-                    params.get('day_vpd', 1.0), params.get('day_co2', 800), params.get('day_leaf_delta', -2.0),
+                    params.get('day_vpd', 1.2), params.get('day_co2', 800), params.get('day_leaf_delta', -2.0),
                     params.get('night_heat_temp', 20.0), params.get('night_cool_temp', 24.0),
-                    params.get('night_vpd', 0.8), params.get('night_co2', 600), params.get('night_leaf_delta', -1.0),
+                    params.get('night_vpd', 1.2), params.get('night_co2', 600), params.get('night_leaf_delta', -1.0),
+                    params.get('pre_day_heat_temp', 22.0), params.get('pre_day_cool_temp', 26.0),
+                    params.get('pre_day_vpd', 1.2), params.get('pre_day_co2', 700),
+                    params.get('pre_night_heat_temp', 22.0), params.get('pre_night_cool_temp', 26.0),
+                    params.get('pre_night_vpd', 1.2), params.get('pre_night_co2', 700),
                     params.get('main_light_intensity', 100), params.get('supplemental_light_intensity', 0),
                     existing
                 )
@@ -3408,19 +3416,27 @@ class DatabaseManager:
                     INSERT INTO mode_parameters (
                         location, cluster, mode_id, submode_id,
                         day_start_time, night_start_time, ramp_up_minutes, ramp_down_minutes,
+                        pre_day_ramp_minutes, pre_night_ramp_minutes,
                         pre_day_minutes, pre_night_minutes,
                         day_heat_temp, day_cool_temp, day_vpd, day_co2, day_leaf_delta,
                         night_heat_temp, night_cool_temp, night_vpd, night_co2, night_leaf_delta,
+                        pre_day_heat_temp, pre_day_cool_temp, pre_day_vpd, pre_day_co2,
+                        pre_night_heat_temp, pre_night_cool_temp, pre_night_vpd, pre_night_co2,
                         main_light_intensity, supplemental_light_intensity, updated_at
-                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, NOW())
+                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, NOW())
                 """, location, cluster, mode_id, submode_id,
                     day_start, night_start,
                     params.get('ramp_up_minutes', 30), params.get('ramp_down_minutes', 30),
+                    params.get('pre_day_ramp_minutes', 30), params.get('pre_night_ramp_minutes', 30),
                     params.get('pre_day_minutes', 30), params.get('pre_night_minutes', 30),
                     params.get('day_heat_temp', 24.0), params.get('day_cool_temp', 28.0),
-                    params.get('day_vpd', 1.0), params.get('day_co2', 800), params.get('day_leaf_delta', -2.0),
+                    params.get('day_vpd', 1.2), params.get('day_co2', 800), params.get('day_leaf_delta', -2.0),
                     params.get('night_heat_temp', 20.0), params.get('night_cool_temp', 24.0),
-                    params.get('night_vpd', 0.8), params.get('night_co2', 600), params.get('night_leaf_delta', -1.0),
+                    params.get('night_vpd', 1.2), params.get('night_co2', 600), params.get('night_leaf_delta', -1.0),
+                    params.get('pre_day_heat_temp', 22.0), params.get('pre_day_cool_temp', 26.0),
+                    params.get('pre_day_vpd', 1.2), params.get('pre_day_co2', 700),
+                    params.get('pre_night_heat_temp', 22.0), params.get('pre_night_cool_temp', 26.0),
+                    params.get('pre_night_vpd', 1.2), params.get('pre_night_co2', 700),
                     params.get('main_light_intensity', 100), params.get('supplemental_light_intensity', 0)
                 )
             return True

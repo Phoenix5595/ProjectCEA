@@ -45,6 +45,8 @@ class ModeParameters(BaseModel):
     night_start_time: str = "11:00"
     ramp_up_minutes: int = 30
     ramp_down_minutes: int = 30
+    pre_day_ramp_minutes: int = 30
+    pre_night_ramp_minutes: int = 30
     pre_day_minutes: int = 30
     pre_night_minutes: int = 30
     pre_day_heat_temp: float = 22.0
@@ -88,6 +90,8 @@ class UpdateParametersRequest(BaseModel):
     night_start_time: Optional[str] = None
     ramp_up_minutes: Optional[int] = None
     ramp_down_minutes: Optional[int] = None
+    pre_day_ramp_minutes: Optional[int] = None
+    pre_night_ramp_minutes: Optional[int] = None
     pre_day_minutes: Optional[int] = None
     pre_night_minutes: Optional[int] = None
     pre_day_heat_temp: Optional[float] = None

@@ -44,7 +44,7 @@ export default function SetpointsTable({
         <PeriodCard title="Pre-Day" colorClass="border-amber-900/50 bg-amber-950/20" titleColor="text-amber-500">
           <TimingRow>
             <TimingInput label="Duration" value={params.pre_day_minutes} field="pre_day_minutes" onChange={onChange} tooltip="Pre-day period duration" />
-            <TimingInput label="Ramp" value={params.ramp_up_minutes} field="ramp_up_minutes" onChange={onChange} tooltip="Ramp up transition time" />
+            <TimingInput label="Ramp" value={params.pre_day_ramp_minutes} field="pre_day_ramp_minutes" onChange={onChange} tooltip="Pre-day ramp transition time" />
           </TimingRow>
           <Setpoints2x2 params={params} currentParams={currentParams} onChange={onChange} prefix="pre_day" />
         </PeriodCard>
@@ -52,7 +52,7 @@ export default function SetpointsTable({
         <PeriodCard title="Pre-Night" colorClass="border-indigo-900/50 bg-indigo-950/20" titleColor="text-indigo-400">
           <TimingRow>
             <TimingInput label="Duration" value={params.pre_night_minutes} field="pre_night_minutes" onChange={onChange} tooltip="Pre-night period duration" />
-            <TimingInput label="Ramp" value={params.ramp_down_minutes} field="ramp_down_minutes" onChange={onChange} tooltip="Ramp down transition time" />
+            <TimingInput label="Ramp" value={params.pre_night_ramp_minutes} field="pre_night_ramp_minutes" onChange={onChange} tooltip="Pre-night ramp transition time" />
           </TimingRow>
           <Setpoints2x2 params={params} currentParams={currentParams} onChange={onChange} prefix="pre_night" />
         </PeriodCard>
@@ -122,9 +122,9 @@ function Setpoints2x2({ params, currentParams, onChange, prefix }: { params: Mod
     <div>
       <div className="text-[12px] text-gray-500 mb-1">Setpoints</div>
       <div className="grid grid-cols-2 gap-2">
-        <SetpointInput label="Heating" value={params[h] as number} current={currentParams?.[h] as number} onChange={(val) => onChange({ [h]: val })} step={0.5} color="text-orange-300" unit="°C" tip="Heater activates below this" />
-        <SetpointInput label="Cooling" value={params[c] as number} current={currentParams?.[c] as number} onChange={(val) => onChange({ [c]: val })} step={0.5} color="text-blue-300" unit="°C" tip="Cooling activates above this" />
-        <SetpointInput label="VPD" value={params[v] as number} current={currentParams?.[v] as number} onChange={(val) => onChange({ [v]: val })} step={0.05} color="text-emerald-300" unit="kPa" tip="Vapor Pressure Deficit target" />
+        <SetpointInput label="Heating" value={Math.round(params[h] as number * 100) / 100} current={currentParams?.[h] as number} onChange={(val) => onChange({ [h]: Math.round(val * 100) / 100 })} step={0.01} color="text-orange-300" unit="°C" tip="Heater activates below this" />
+        <SetpointInput label="Cooling" value={Math.round(params[c] as number * 100) / 100} current={currentParams?.[c] as number} onChange={(val) => onChange({ [c]: Math.round(val * 100) / 100 })} step={0.01} color="text-blue-300" unit="°C" tip="Cooling activates above this" />
+        <SetpointInput label="VPD" value={Math.round(params[v] as number * 100) / 100} current={currentParams?.[v] as number} onChange={(val) => onChange({ [v]: Math.round(val * 100) / 100 })} step={0.01} color="text-emerald-300" unit="kPa" tip="Vapor Pressure Deficit target" />
         <SetpointInput label="CO2" value={params[co2] as number} current={currentParams?.[co2] as number} onChange={(val) => onChange({ [co2]: val })} step={50} color="text-purple-300" unit="ppm" tip="CO2 concentration target" />
       </div>
     </div>

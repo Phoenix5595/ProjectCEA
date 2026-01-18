@@ -19,6 +19,8 @@ export interface ModeParameters {
   night_start_time: string
   ramp_up_minutes: number
   ramp_down_minutes: number
+  pre_day_ramp_minutes: number
+  pre_night_ramp_minutes: number
   pre_day_minutes: number
   pre_night_minutes: number
   pre_day_heat_temp: number
@@ -62,6 +64,8 @@ export interface UpdateParametersRequest {
   night_start_time?: string
   ramp_up_minutes?: number
   ramp_down_minutes?: number
+  pre_day_ramp_minutes?: number
+  pre_night_ramp_minutes?: number
   pre_day_minutes?: number
   pre_night_minutes?: number
   pre_day_heat_temp?: number
