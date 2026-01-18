@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import asyncio
 import time
-from datetime import datetime
+from datetime import datetime, time as dt_time
 from typing import Dict, List, Optional, Any, Tuple
 
 # Third-party imports
@@ -1627,40 +1627,10 @@ class DatabaseManager:
         raise RuntimeError("DeviceRepository not initialized - call initialize() first")
     
     async def get_pid_parameters(self, device_type: str) -> Optional[Dict[str, Any]]:
-        """Get PID parameters from database.
-        
-        Args:
-            device_type: Device type (e.g., 'heater', 'co2')
-        
-        Returns:
-            Dict with 'kp', 'ki', 'kd', 'updated_at', 'updated_by', 'source', or None if not found
-        """
+        """Get PID parameters from database."""
         if self._pid_repo:
             return await self._pid_repo.get_pid_parameters(device_type)
-        try:
-            pool = await self._get_pool()
-            async with pool.acquire() as conn:
-                row = await conn.fetchrow("""
-                    SELECT kp, ki, kd, updated_at, updated_by, source, control_mode, hysteresis_high, hysteresis_low
-                    FROM pid_parameters
-                    WHERE device_type = $1
-                """, device_type)
-                
-                if row:
-                    return {
-                        'kp': row['kp'],
-                        'ki': row['ki'],
-                        'kd': row['kd'],
-                        'updated_at': row['updated_at'],
-                        'updated_by': row['updated_by'],
-                        'source': row['source'],
-                        'control_mode': row['control_mode'] or 'pid',
-                        'hysteresis_high': row['hysteresis_high'] or 1.0,
-                        'hysteresis_low': row['hysteresis_low'] or 0.5
-                    }
-        except Exception as e:
-            logger.error(f"Error getting PID parameters: {e}")
-        return None
+        raise RuntimeError("PIDRepository not initialized - call initialize() first")
     
     async def set_pid_parameters(
         self,
@@ -1804,8 +1774,8 @@ class DatabaseManager:
         location: str,
         cluster: str,
         device_name: str,
-        start_time: time,
-        end_time: time,
+        start_time: dt_time,
+        end_time: dt_time,
         day_of_week: Optional[int] = None,
         enabled: bool = True,
         mode: Optional[str] = None,
@@ -1827,8 +1797,8 @@ class DatabaseManager:
         self,
         schedule_id: int,
         name: Optional[str] = None,
-        start_time: Optional[time] = None,
-        end_time: Optional[time] = None,
+        start_time: Optional[dt_time] = None,
+        end_time: Optional[dt_time] = None,
         day_of_week: Optional[int] = None,
         enabled: Optional[bool] = None,
         mode: Optional[str] = None,
