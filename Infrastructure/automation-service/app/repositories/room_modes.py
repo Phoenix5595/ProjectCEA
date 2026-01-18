@@ -47,8 +47,8 @@ class RoomModeRepository(BaseRepository):
         try:
             async with self.pool.acquire() as conn:
                 row = await conn.fetchrow(
-                    """SELECT rm.name as mode_name, fs.name as submode_name, arm.mode_id, arm.submode_id
-                       FROM active_room_modes arm
+                    """SELECT arm.location, arm.cluster, rm.name as mode_name, fs.name as submode_name, arm.mode_id, arm.submode_id
+                       FROM room_active_mode arm
                        JOIN room_modes rm ON rm.id = arm.mode_id
                        LEFT JOIN flower_submodes fs ON fs.id = arm.submode_id
                        WHERE arm.location = $1 AND arm.cluster = $2""",
@@ -83,7 +83,7 @@ class RoomModeRepository(BaseRepository):
                         submode_id = submode_row["id"]
 
                 await conn.execute(
-                    """INSERT INTO active_room_modes (location, cluster, mode_id, submode_id, activated_at)
+                    """INSERT INTO room_active_mode (location, cluster, mode_id, submode_id, activated_at)
                        VALUES ($1, $2, $3, $4, NOW())
                        ON CONFLICT (location, cluster)
                        DO UPDATE SET mode_id = $3, submode_id = $4, activated_at = NOW()""",
