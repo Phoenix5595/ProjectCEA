@@ -17,6 +17,7 @@ export default function PIDCompactRow() {
   const [history, setHistory] = useState<PIDHistoryEntry[]>([])
 
   useEffect(() => {
+    setLoading(true)
     loadData()
   }, [device])
 
@@ -37,7 +38,6 @@ export default function PIDCompactRow() {
   }
 
   async function loadData() {
-    setLoading(true)
     try {
       const [params, modeInfo] = await Promise.all([
         apiClient.getPIDParameters(device),

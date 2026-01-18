@@ -335,3 +335,37 @@ async def update_setpoints(
         "updated_at": updated_setpoint.get('updated_at').isoformat() if updated_setpoint and updated_setpoint.get('updated_at') else None
     }
 
+
+
+@router.get("/api/setpoints/{location}/{cluster}/effective")
+async def get_effective_setpoints(
+    location: str,
+    cluster: str,
+    database: DatabaseManager = Depends(get_database)
+) -> Dict[str, Any]:
+    """Get currently effective setpoints from database (real-time values used by control loop)."""
+    try:
+        async with database._pool.acquire() as conn:
+            row = await conn.fetchrow("""
+                SELECT 
+                    effective_heating_setpoint, effective_cooling_setpoint, 
+                    effective_vpd_setpoint, nominal_heating_setpoint, 
+                    nominal_cooling_setpoint, nominal_vpd_setpoint, mode
+                FROM effective_setpoints 
+                WHERE location = $1 AND cluster = $2 AND device_name = 'Main'
+                ORDER BY timestamp DESC LIMIT 1
+            """, location, cluster)
+            
+            if row:
+                return {
+                    "heating_setpoint": row["effective_heating_setpoint"],
+                    "cooling_setpoint": row["effective_cooling_setpoint"],
+                    "vpd": row["effective_vpd_setpoint"],
+                    "nominal_heating_setpoint": row["nominal_heating_setpoint"],
+                    "nominal_cooling_setpoint": row["nominal_cooling_setpoint"],
+                    "nominal_vpd_setpoint": row["nominal_vpd_setpoint"],
+                    "mode": row["mode"]
+                }
+            return {}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
