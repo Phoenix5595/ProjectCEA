@@ -1666,11 +1666,15 @@ class DatabaseManager:
         self,
         device_type: str,
         mode: str,
-        reason: Optional[str] = None
+        hysteresis_high: float | None = None,
+        hysteresis_low: float | None = None,
+        updated_by: str = "system"
     ) -> bool:
         """Set PID control mode for a device type."""
         if self._pid_repo:
-            return await self._pid_repo.set_pid_control_mode(device_type, mode, reason)
+            return await self._pid_repo.set_pid_control_mode(
+                device_type, mode, hysteresis_high, hysteresis_low, updated_by
+            )
         raise RuntimeError("PIDRepository not initialized - call initialize() first")
     
     async def get_autotune_state(self, device_type: str) -> Optional[Dict[str, Any]]:

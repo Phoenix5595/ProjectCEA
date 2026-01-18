@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { apiClient } from '../services/api'
 import { logger } from '../utils/logger'
-import type { PIDControlMode } from '../types/pid'
+import type { PIDControlMode, PIDHistoryEntry } from '../types/pid'
 
 const DEVICE_TYPES = ['heater', 'fan', 'co2']
 
@@ -14,10 +14,27 @@ export default function PIDCompactRow() {
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
+  const [history, setHistory] = useState<PIDHistoryEntry[]>([])
 
   useEffect(() => {
     loadData()
   }, [device])
+
+  useEffect(() => {
+    if (historyOpen) {
+      loadHistory()
+    }
+  }, [historyOpen, device])
+
+  async function loadHistory() {
+    try {
+      const data = await apiClient.getPIDParameterHistory(device, 20)
+      setHistory(data)
+    } catch (err) {
+      logger.error('Failed to load PID history:', err)
+      setHistory([])
+    }
+  }
 
   async function loadData() {
     setLoading(true)
@@ -197,13 +214,25 @@ export default function PIDCompactRow() {
 
       {historyOpen && (
         <div className="bg-gray-950/50 border-t border-gray-800 p-4 animate-in slide-in-from-top-2 duration-200">
-           <div className="flex items-start gap-3 p-3 rounded bg-gray-900/50 border border-gray-800/50">
-             <div className="text-cyan-500 mt-0.5">ℹ️</div>
-             <div className="text-xs text-gray-400 leading-relaxed">
-               <span className="block font-medium text-gray-300 mb-1">Detailed History</span>
-               Full parameter history and tuning logs for <span className="text-cyan-400 font-mono">{device.toUpperCase()}</span> are available in the dedicated PID Editor view.
-             </div>
-           </div>
+          {history.length === 0 ? (
+            <div className="text-xs text-gray-500 text-center py-2">No history available</div>
+          ) : (
+            <div className="space-y-2 max-h-48 overflow-y-auto">
+              {history.map((entry, i) => (
+                <div key={i} className="text-xs bg-gray-900/50 rounded px-3 py-2 border border-gray-800/50">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-gray-500">{new Date(entry.timestamp).toLocaleString()}</span>
+                    <span className="text-gray-600">{entry.reason}</span>
+                  </div>
+                  <div className="flex gap-4">
+                    <span className="text-gray-400">Kp: <span className="text-red-400/70 font-mono line-through">{entry.old_values.kp}</span> → <span className="text-cyan-400 font-mono">{entry.new_values.kp}</span></span>
+                    <span className="text-gray-400">Ki: <span className="text-red-400/70 font-mono line-through">{entry.old_values.ki}</span> → <span className="text-cyan-400 font-mono">{entry.new_values.ki}</span></span>
+                    <span className="text-gray-400">Kd: <span className="text-red-400/70 font-mono line-through">{entry.old_values.kd}</span> → <span className="text-cyan-400 font-mono">{entry.new_values.kd}</span></span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>
