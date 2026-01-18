@@ -15,6 +15,15 @@ import redis
 # Local imports
 from shared.logging import get_logger
 from .redis_client import AutomationRedisClient
+from .repositories import (
+    SensorRepository,
+    DeviceRepository,
+    SetpointRepository,
+    ScheduleRepository,
+    PIDRepository,
+    RoomModeRepository,
+    ControlActionRepository,
+)
 
 logger = get_logger(__name__)
 
@@ -66,6 +75,15 @@ class DatabaseManager:
         self._batch_buffer: List[Dict[str, Any]] = []  # Buffer for batched effective setpoint logging
         self._batch_interval = 10.0  # Flush batch every 10 seconds
         self._last_batch_flush = time.time()
+
+        # Repository instances (initialized in initialize())
+        self._sensor_repo: Optional[SensorRepository] = None
+        self._device_repo: Optional[DeviceRepository] = None
+        self._setpoint_repo: Optional[SetpointRepository] = None
+        self._schedule_repo: Optional[ScheduleRepository] = None
+        self._pid_repo: Optional[PIDRepository] = None
+        self._room_mode_repo: Optional[RoomModeRepository] = None
+        self._control_action_repo: Optional[ControlActionRepository] = None
     
     async def initialize(self) -> bool:
         """Initialize database connection and create tables.
@@ -82,6 +100,16 @@ class DatabaseManager:
             # Initialize automation Redis client for stream and state writes
             self._automation_redis = AutomationRedisClient(redis_url=self.redis_url, redis_ttl=10)
             self._automation_redis.connect()
+            
+            # Initialize repository instances with the connection pool
+            self._sensor_repo = SensorRepository(self._pool)
+            self._device_repo = DeviceRepository(self._pool)
+            self._setpoint_repo = SetpointRepository(self._pool, self._automation_redis)
+            self._schedule_repo = ScheduleRepository(self._pool)
+            self._pid_repo = PIDRepository(self._pool)
+            self._room_mode_repo = RoomModeRepository(self._pool)
+            self._control_action_repo = ControlActionRepository(self._pool)
+            
             return True
         except Exception as e:
             logger.error(f"Failed to initialize database: {e}")
@@ -1429,25 +1457,9 @@ class DatabaseManager:
     
     async def get_device_state(self, location: str, cluster: str, device_name: str) -> Optional[Dict[str, Any]]:
         """Get device state from database."""
-        try:
-            pool = await self._get_pool()
-            async with pool.acquire() as conn:
-                row = await conn.fetchrow("""
-                    SELECT state, mode, channel, updated_at
-                    FROM device_states
-                    WHERE location = $1 AND cluster = $2 AND device_name = $3
-                """, location, cluster, device_name)
-                
-                if row:
-                    return {
-                        'state': row['state'],
-                        'mode': row['mode'],
-                        'channel': row['channel'],
-                        'updated_at': row['updated_at']
-                    }
-        except Exception as e:
-            logger.error(f"Error getting device state: {e}")
-        return None
+        if self._device_repo:
+            return await self._device_repo.get_device_state(location, cluster, device_name)
+        raise RuntimeError("DeviceRepository not initialized - call initialize() first")
     
     async def get_latest_light_intensity(
         self, location: str, cluster: str, device_name: str
@@ -1526,6 +1538,11 @@ class DatabaseManager:
         setpoint: Optional[float] = None
     ) -> bool:
         """Log control action to control_history."""
+        if self._control_action_repo:
+            return await self._control_action_repo.log_control_action(
+                location, cluster, device_name, channel, old_state, new_state,
+                mode, reason, sensor_value, setpoint
+            )
         try:
             pool = await self._get_pool()
             async with pool.acquire() as conn:
@@ -2038,15 +2055,10 @@ class DatabaseManager:
         This retrieves the most recent effective setpoint values that were logged
         to the effective_setpoints table. Used to restore setpoints on service restart.
         Also includes ramp_progress and nominal values to determine if restart happened
-        during an active ramp.
-        
-        Args:
-            location: Location name
-            cluster: Cluster name
-        
-        Returns:
-            Dict with effective setpoint values, ramp_progress, and nominal values, or None if not found
+        during a ramp (for ramp restoration).
         """
+        if self._setpoint_repo:
+            return await self._setpoint_repo.get_latest_effective_setpoints(location, cluster)
         try:
             pool = await self._get_pool()
             async with pool.acquire() as conn:
@@ -2099,18 +2111,9 @@ class DatabaseManager:
     
     async def get_all_device_states(self) -> List[Dict[str, Any]]:
         """Get all device states."""
-        try:
-            pool = await self._get_pool()
-            async with pool.acquire() as conn:
-                rows = await conn.fetch("""
-                    SELECT location, cluster, device_name, channel, state, mode, updated_at
-                    FROM device_states
-                    ORDER BY location, cluster, device_name
-                """)
-                return [dict(row) for row in rows]
-        except Exception as e:
-            logger.error(f"Error getting all device states: {e}")
-            return []
+        if self._device_repo:
+            return await self._device_repo.get_all_device_states()
+        raise RuntimeError("DeviceRepository not initialized")
     
     async def get_device_mapping(
         self,
@@ -2118,36 +2121,10 @@ class DatabaseManager:
         cluster: str,
         device_name: str
     ) -> Optional[Dict[str, Any]]:
-        """Get device mapping from database.
-        
-        Args:
-            location: Location name
-            cluster: Cluster name
-            device_name: Device name
-        
-        Returns:
-            Dict with channel, active_high, safe_state, mcp_board_id, updated_at, or None if not found
-        """
-        try:
-            pool = await self._get_pool()
-            async with pool.acquire() as conn:
-                row = await conn.fetchrow("""
-                    SELECT channel, active_high, safe_state, mcp_board_id, updated_at
-                    FROM device_mappings
-                    WHERE location = $1 AND cluster = $2 AND device_name = $3
-                """, location, cluster, device_name)
-                
-                if row:
-                    return {
-                        'channel': row['channel'],
-                        'active_high': row['active_high'],
-                        'safe_state': row['safe_state'],
-                        'mcp_board_id': row['mcp_board_id'],
-                        'updated_at': row['updated_at']
-                    }
-        except Exception as e:
-            logger.error(f"Error getting device mapping: {e}")
-        return None
+        """Get device mapping from database."""
+        if self._device_repo:
+            return await self._device_repo.get_device_mapping(location, cluster, device_name)
+        raise RuntimeError("DeviceRepository not initialized")
     
     async def set_device_mapping(
         self,
@@ -2194,23 +2171,10 @@ class DatabaseManager:
             return False
     
     async def get_all_device_mappings(self) -> List[Dict[str, Any]]:
-        """Get all device mappings.
-        
-        Returns:
-            List of device mapping dicts
-        """
-        try:
-            pool = await self._get_pool()
-            async with pool.acquire() as conn:
-                rows = await conn.fetch("""
-                    SELECT location, cluster, device_name, channel, active_high, safe_state, mcp_board_id, updated_at
-                    FROM device_mappings
-                    ORDER BY location, cluster, device_name
-                """)
-                return [dict(row) for row in rows]
-        except Exception as e:
-            logger.error(f"Error getting all device mappings: {e}")
-            return []
+        """Get all device mappings."""
+        if self._device_repo:
+            return await self._device_repo.get_all_device_mappings()
+        raise RuntimeError("DeviceRepository not initialized")
     
     async def get_pid_parameters(self, device_type: str) -> Optional[Dict[str, Any]]:
         """Get PID parameters from database.
@@ -2221,6 +2185,8 @@ class DatabaseManager:
         Returns:
             Dict with 'kp', 'ki', 'kd', 'updated_at', 'updated_by', 'source', or None if not found
         """
+        if self._pid_repo:
+            return await self._pid_repo.get_pid_parameters(device_type)
         try:
             pool = await self._get_pool()
             async with pool.acquire() as conn:
@@ -2644,15 +2610,17 @@ class DatabaseManager:
         location: Optional[str] = None,
         cluster: Optional[str] = None
     ) -> List[Dict[str, Any]]:
-        """Get schedules from database.
+        """Get schedules, optionally filtered by location/cluster.
         
         Args:
-            location: Filter by location (optional)
-            cluster: Filter by cluster (optional)
+            location: Location to filter by (optional)
+            cluster: Cluster to filter by (optional)
         
         Returns:
-            List of schedule dictionaries
+            List of schedule dicts
         """
+        if self._schedule_repo:
+            return await self._schedule_repo.get_schedules(location, cluster)
         try:
             pool = await self._get_pool()
             async with pool.acquire() as conn:
@@ -3324,6 +3292,8 @@ class DatabaseManager:
             return True
     
     async def get_mode_parameters(self, location: str, cluster: str, mode_name: str, submode_name: str | None = None) -> dict[str, Any] | None:
+        if self._room_mode_repo:
+            return await self._room_mode_repo.get_mode_parameters(location, cluster, mode_name, submode_name)
         pool = await self._get_pool()
         async with pool.acquire() as conn:
             mode_row = await conn.fetchrow("SELECT id FROM room_modes WHERE name = $1", mode_name)
@@ -3356,6 +3326,8 @@ class DatabaseManager:
             return None
     
     async def save_mode_parameters(self, location: str, cluster: str, mode_name: str, submode_name: str | None, params: dict[str, Any]) -> bool:
+        if self._room_mode_repo:
+            return await self._room_mode_repo.save_mode_parameters(location, cluster, mode_name, submode_name, params)
         pool = await self._get_pool()
         async with pool.acquire() as conn:
             mode_row = await conn.fetchrow("SELECT id FROM room_modes WHERE name = $1", mode_name)
@@ -3461,28 +3433,6 @@ class DatabaseManager:
             """, location, cluster, device_name, target_intensity)
             return result != "UPDATE 0"
 
-    async def get_light_schedule(
-        self, location: str, cluster: str, device_name: str
-    ) -> dict | None:
-        """Get the active day schedule for a light device."""
-        pool = await self._get_pool()
-        async with pool.acquire() as conn:
-            row = await conn.fetchrow("""
-                SELECT start_time, end_time, target_intensity
-                FROM schedules
-                WHERE location = $1 AND cluster = $2 AND device_name = $3
-                AND enabled = true AND target_intensity IS NOT NULL
-                AND target_intensity > 0
-                ORDER BY target_intensity DESC
-                LIMIT 1
-            """, location, cluster, device_name)
-            if row:
-                return {
-                    "start_time": str(row["start_time"])[:5],
-                    "end_time": str(row["end_time"])[:5],
-                    "target_intensity": row["target_intensity"]
-                }
-            return None
 
     async def update_light_schedule_times(
         self, location: str, cluster: str, device_name: str,

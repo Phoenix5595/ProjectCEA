@@ -764,6 +764,20 @@ async def save_room_schedule(
                         day_start_time_obj, day_end_time_obj, True,
                         schedule.ramp_up_duration, schedule.ramp_down_duration)
                 
+                # Fetch light-specific ramp durations from mode_parameters
+                # These are separate from climate ramp durations
+                light_ramp_up = 15  # default
+                light_ramp_down = 15  # default
+                mode_params_row = await conn.fetchrow("""
+                    SELECT light_ramp_up_minutes, light_ramp_down_minutes
+                    FROM mode_parameters
+                    WHERE location = $1 AND cluster = $2
+                    LIMIT 1
+                """, location, cluster)
+                if mode_params_row:
+                    light_ramp_up = mode_params_row['light_ramp_up_minutes'] or 15
+                    light_ramp_down = mode_params_row['light_ramp_down_minutes'] or 15
+                
                 # Create schedules for all devices within transaction
                 for device_name, device_info in room_devices.items():
                     device_type = device_info.get('device_type', '')
@@ -776,6 +790,7 @@ async def save_room_schedule(
                         target_intensity = preserved_intensities.get(device_name, 100)
                         
                         # Day schedule
+                        # Use light-specific ramp durations from mode_parameters (NOT generic climate ramps)
                         # ramp_up happens at start of day, ramp_down happens at end of day (when transitioning to night)
                         day_schedule_id = await database.create_schedule(
                             name=f"{display_name} - Day",
@@ -788,8 +803,8 @@ async def save_room_schedule(
                             enabled=True,
                             mode='DAY',
                             target_intensity=target_intensity,
-                            ramp_up_duration=schedule.ramp_up_duration or 0,
-                            ramp_down_duration=schedule.ramp_down_duration or 0,
+                            ramp_up_duration=light_ramp_up,
+                            ramp_down_duration=light_ramp_down,
                             conn=conn
                         )
                         if day_schedule_id:

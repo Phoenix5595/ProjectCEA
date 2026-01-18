@@ -173,3 +173,62 @@ class PIDRepository(BaseRepository):
         except Exception as e:
             logger.error(f"Failed to update autotune state: {e}")
             return False
+
+    async def set_pid_parameters_with_reason(
+        self,
+        device_type: str,
+        kp: float,
+        ki: float,
+        kd: float,
+        change_reason: str,
+        source: str = "auto_pid",
+        updated_by: str | None = None
+    ) -> bool:
+        """Set PID parameters with a change reason (for auto-tuning).
+        
+        Args:
+            device_type: Device type (e.g., 'heater', 'co2')
+            kp: Proportional gain
+            ki: Integral gain
+            kd: Derivative gain
+            change_reason: Explanation for why values changed
+            source: Source of update ('auto_pid', 'api', 'config')
+            updated_by: Optional identifier of who made the update
+        
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                # Get existing parameters for history
+                existing = await conn.fetchrow(
+                    "SELECT kp, ki, kd FROM pid_parameters WHERE device_type = $1",
+                    device_type
+                )
+                
+                # Update or insert PID parameters
+                await conn.execute("""
+                    INSERT INTO pid_parameters (device_type, kp, ki, kd, updated_at, updated_by, source)
+                    VALUES ($1, $2, $3, $4, NOW(), $5, $6)
+                    ON CONFLICT (device_type)
+                    DO UPDATE SET 
+                        kp = EXCLUDED.kp,
+                        ki = EXCLUDED.ki,
+                        kd = EXCLUDED.kd,
+                        updated_at = NOW(),
+                        updated_by = EXCLUDED.updated_by,
+                        source = EXCLUDED.source
+                """, device_type, kp, ki, kd, updated_by, source)
+                
+                # Log to history with change reason if values changed
+                if existing is None or existing['kp'] != kp or existing['ki'] != ki or existing['kd'] != kd:
+                    await conn.execute("""
+                        INSERT INTO pid_parameter_history (timestamp, device_type, kp, ki, kd, updated_by, source, change_reason)
+                        VALUES (NOW(), $1, $2, $3, $4, $5, $6, $7)
+                    """, device_type, kp, ki, kd, updated_by, source, change_reason)
+                    logger.info(f"PID parameters updated for {device_type}: Kp={kp}, Ki={ki}, Kd={kd} (reason: {change_reason})")
+                
+                return True
+        except Exception as e:
+            logger.error(f"Failed to set PID parameters with reason: {e}")
+            return False

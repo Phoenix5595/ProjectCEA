@@ -1130,3 +1130,600 @@ journalctl -u automation-service -f
 **Last Updated:** 2026-01-18
 **Author:** AI Assistant
 **Reviewed By:** (pending)
+
+---
+
+# ADDENDUM: 2026 Standards & Modernization
+
+**Added:** 2026-01-18 (Research Phase)
+**Research Duration:** 30 minutes, 7 parallel agents
+
+---
+
+## MCP Status Investigation
+
+| MCP | Status | Issue |
+|-----|--------|-------|
+| **playwright** | ✅ Running | Process found: `mcp-server-playwright` |
+| **tavily** | ✅ Available | Remote MCP (no local process needed) |
+| **context7** | ❌ Not Running | Process not found - npx may have failed to start |
+
+**To fix context7:**
+```bash
+# Test manually
+npx -y @upstash/context7-mcp@latest --api-key ctx7sk-cb2a9890-4c50-46f1-99ca-81409a15be45
+
+# Check for errors in startup
+# May need to run: npm install -g @upstash/context7-mcp
+```
+
+---
+
+## Recent Codebase Changes (Since Plan Creation)
+
+| Commit | Date | Change |
+|--------|------|--------|
+| `1005906` | 2026-01-18 | **feat: add independent light ramp up/down durations** |
+| `6a9a6a5` | 2026-01-18 | fix: light intensity save and CircularTimePicker drag |
+
+**New columns added to `mode_parameters`:**
+- `light_ramp_up_minutes`
+- `light_ramp_down_minutes`
+
+**Impact on plan:** These new columns must also be added to `RoomModeRepository` (now 34 columns instead of 32).
+
+---
+
+## 2026 Python Async Patterns
+
+### Connection Management
+
+**Current:** Manual pool management in `database.py`
+**2026 Standard:** Singleton `ConnectionManager` with structured lifecycle
+
+```python
+# connection_manager.py - 2026 pattern
+from contextlib import asynccontextmanager
+import asyncpg
+
+class ConnectionManager:
+    _pool: asyncpg.Pool | None = None
+    
+    @classmethod
+    async def initialize(cls, dsn: str) -> None:
+        cls._pool = await asyncpg.create_pool(
+            dsn,
+            min_size=4,           # Little's Law: λ × W × 2
+            max_size=25,          # Burst capacity
+            max_queries=50000,
+            max_inactive_connection_lifetime=300.0,
+            command_timeout=60.0,
+        )
+    
+    @classmethod
+    @asynccontextmanager
+    async def acquire(cls):
+        async with cls._pool.acquire() as conn:
+            yield conn
+```
+
+### Structured Concurrency (Python 3.12+)
+
+**Current:** Scattered `asyncio.create_task()`
+**2026 Standard:** `TaskGroup` for automatic cleanup
+
+```python
+# 2026 pattern - structured concurrency
+from asyncio import TaskGroup
+
+async def fetch_sensors_concurrent(pool, sensor_ids):
+    results = {}
+    async with TaskGroup() as tg:
+        for sensor_id in sensor_ids:
+            tg.create_task(fetch_sensor(pool, sensor_id, results))
+    return results  # All tasks complete or all cancelled on error
+```
+
+### 100ms Batch Writer
+
+```python
+# batch_writer.py - meets 100ms requirement
+class AsyncBatchWriter:
+    def __init__(self, pool, max_size=50, max_interval=0.1):
+        self.pool = pool
+        self.max_size = max_size
+        self.max_interval = max_interval  # 100ms
+        self._buffer = []
+        self._flush_lock = asyncio.Lock()
+    
+    async def add(self, item: dict) -> None:
+        self._buffer.append(item)
+        if len(self._buffer) >= self.max_size:
+            await self.flush()
+    
+    async def flush(self) -> None:
+        async with self._flush_lock:
+            if not self._buffer:
+                return
+            to_write, self._buffer = self._buffer, []
+            async with self.pool.acquire() as conn:
+                await conn.executemany(INSERT_SQL, to_write)
+```
+
+---
+
+## 2026 FastAPI Architecture
+
+### Keep: Current Patterns (Already Good)
+
+| Pattern | Status | Why |
+|---------|--------|-----|
+| FastAPI `Depends()` | ✅ Keep | Native DI, production-proven |
+| `app/container.py` | ✅ Keep | Good service lifecycle |
+| Service layer | ✅ Keep | Matches IoT needs |
+| pydantic-settings v2 | ✅ Keep | Already correct |
+
+### Add: Annotated Dependencies (2026 Standard)
+
+```python
+# Current (good):
+def get_database() -> Database:
+    return container.database
+
+@router.get("/sensors")
+async def get_sensors(db: Database = Depends(get_database)):
+    ...
+
+# 2026 pattern (better):
+from typing import Annotated
+
+DatabaseDep = Annotated[Database, Depends(get_database)]
+RedisDep = Annotated[RedisClient, Depends(get_redis)]
+
+@router.get("/sensors")
+async def get_sensors(db: DatabaseDep, redis: RedisDep):
+    ...
+```
+
+### Add: Structured Logging with OpenTelemetry
+
+```python
+# requirements.txt additions
+structlog>=24.1.0
+opentelemetry-api>=1.27.0
+opentelemetry-sdk>=1.27.0
+opentelemetry-instrumentation-fastapi>=0.48b0
+opentelemetry-instrumentation-redis>=0.48b0
+opentelemetry-instrumentation-asyncpg>=0.48b0
+```
+
+```python
+# app/telemetry.py
+from opentelemetry import trace
+from opentelemetry.sdk.trace.sampling import TraceIdRatioBased
+
+# 10% sampling for Pi 5 resource constraints
+sampler = TraceIdRatioBased(0.1)
+provider = TracerProvider(sampler=sampler)
+```
+
+### Add: Custom Exception Hierarchy
+
+```python
+# app/exceptions.py
+class SensorTimeoutError(Exception):
+    """Raised when sensor data is stale"""
+    pass
+
+class SetpointValidationError(Exception):
+    """Raised when setpoint out of range"""
+    pass
+
+class DeviceControlError(Exception):
+    """Raised when hardware control fails"""
+    pass
+
+# Global handlers
+@app.exception_handler(SensorTimeoutError)
+async def sensor_timeout_handler(request, exc):
+    return JSONResponse(status_code=503, content={"detail": str(exc)})
+```
+
+---
+
+## 2026 Python Typing Standards
+
+### TypeIs over TypeGuard (PEP 742)
+
+```python
+from typing import TypeIs
+
+# TypeIs narrows both branches
+def is_valid_sensor_reading(value: object) -> TypeIs[int]:
+    return isinstance(value, int) and 0 <= value <= 100
+
+def process(reading: int | str) -> float:
+    if is_valid_sensor_reading(reading):
+        # reading is int here
+        return reading * 1.5
+    else:
+        # reading is str here
+        return float(len(reading))
+```
+
+### Protocol Classes for IoT Devices
+
+```python
+from typing import Protocol, runtime_checkable
+
+@runtime_checkable
+class Sensor(Protocol):
+    def read(self) -> dict: ...
+    def get_id(self) -> str: ...
+
+# Any class with matching methods works - no inheritance needed
+class TemperatureSensor:
+    def read(self) -> dict:
+        return {"type": "temp", "value": 22.5}
+    def get_id(self) -> str:
+        return "temp_001"
+```
+
+### basedpyright Configuration
+
+```toml
+# pyproject.toml
+[tool.basedpyright]
+typeCheckingMode = "strict"
+pythonPlatform = "Linux"
+pythonVersion = "3.12"
+
+strictListInference = true
+strictDictionaryInference = true
+reportUnreachableCode = "error"
+
+# Gradual migration
+reportMissingTypeStubs = "warning"
+reportUnknownVariableType = "warning"
+reportUnknownArgumentType = "warning"
+```
+
+---
+
+## 2026 React/TypeScript Patterns
+
+### Keep: Current Stack (Already Good)
+
+| Tool | Status | Why |
+|------|--------|-----|
+| TanStack Query v5 | ✅ Keep | Gold standard for server state |
+| Vite | ✅ Keep | Best for SPAs |
+| Recharts | ✅ Keep | Good for dashboards |
+| WebSocket | ✅ Keep | Bidirectional needed |
+
+### Add: Zustand for UI State
+
+```typescript
+// src/store/uiStore.ts
+import { create } from 'zustand'
+
+interface UIState {
+  selectedZone: string | null
+  isEditing: boolean
+  setSelectedZone: (zone: string | null) => void
+}
+
+export const useUIStore = create<UIState>((set) => ({
+  selectedZone: null,
+  isEditing: false,
+  setSelectedZone: (zone) => set({ selectedZone: zone }),
+}))
+```
+
+### Add: OpenAPI Code Generation (orval)
+
+```bash
+# Install
+npm install -D orval
+
+# Generate types from FastAPI
+npx orval http://localhost:8001/openapi.json -o src/api/generated.ts
+```
+
+```typescript
+// Auto-generated, type-safe API calls
+import { apiClient } from '@/api/generated'
+
+const setpoint = await apiClient.setpoints.updateSetpoints({
+  path: { location: 'Flower Room', cluster: 'back' },
+  body: { temperature: 22.5, humidity: 60 }
+})
+```
+
+### Optimize: Recharts for 1Hz Updates
+
+```typescript
+// Disable animations for real-time data
+<Line dataKey="temperature" isAnimationActive={false} />
+
+// Limit data points
+const [chartData, setChartData] = useState<SensorData[]>([])
+useEffect(() => {
+  setChartData(prev => [...prev, newPoint].slice(-100)) // Last 100 points
+}, [newPoint])
+```
+
+---
+
+## 2026 IoT/CEA Architecture
+
+### Your Current Architecture is CORRECT
+
+```
+ESP32 (CAN @250kbps)
+    ↓
+can-processor-service
+    ├→ Redis State (instant, <1ms)
+    ├→ Redis Stream (recent history)
+    └→ TimescaleDB (persistent)
+         ↓
+automation-service (2s control loop)
+    ↓
+React + Grafana dashboards
+```
+
+**This is already event-driven and matches 2026 industrial IoT patterns.**
+
+### Add: TimescaleDB Continuous Aggregates
+
+```sql
+-- Hourly rollups for 365 days
+CREATE MATERIALIZED VIEW hourly_avg
+WITH (timescaledb.continuous) AS
+SELECT time_bucket('1 hour', time), device_id, sensor_type,
+       AVG(value), MIN(value), MAX(value)
+FROM measurement
+GROUP BY 1, 2, 3;
+
+SELECT add_continuous_aggregate_policy('hourly_avg',
+  start_offset => INTERVAL '30 days',
+  end_offset => INTERVAL '1 hour',
+  schedule_interval => INTERVAL '1 hour');
+
+-- Enable columnstore compression (2025 feature)
+ALTER MATERIALIZED VIEW hourly_avg 
+SET (timescaledb.enable_columnstore=true);
+
+-- Data retention
+SELECT add_retention_policy('measurement', INTERVAL '30 days');
+SELECT add_retention_policy('hourly_avg', INTERVAL '730 days');
+```
+
+### Add: Offline Resilience Pattern
+
+```
+Connection State    Behavior
+─────────────────────────────────────────
+Online             Normal operation
+Degraded          Buffer in Redis stream
+Offline             Full local operation
+Reconnecting         Replay stream (FIFO)
+```
+
+---
+
+## 2026 Testing Patterns
+
+### Testcontainers for Integration Tests
+
+```python
+# conftest.py
+from testcontainers.postgres import PostgresContainer
+
+@pytest.fixture(scope="session")
+def postgres_container():
+    with PostgresContainer(
+        "timescale/timescaledb:2.15.2-pg16"
+    ) as container:
+        yield container.get_connection_url()
+```
+
+### Property-Based Testing with Hypothesis
+
+```python
+from hypothesis import given, strategies as st
+
+@given(
+    temp=st.floats(min_value=10.0, max_value=35.0),
+    humidity=st.floats(min_value=30.0, max_value=90.0)
+)
+async def test_vpd_calculation_properties(temp, humidity):
+    vpd = calculate_vpd(temp, humidity)
+    assert 0.1 <= vpd <= 5.0  # Valid range
+```
+
+### Snapshot Testing with syrupy
+
+```python
+async def test_sensor_api_response(async_client, snapshot):
+    response = await async_client.get("/api/sensors/Flower%20Room/live")
+    assert response.json() == snapshot
+```
+
+---
+
+## Updated Phase Plan
+
+### Phase 0: Fix Critical Drift (MUST DO FIRST)
+*Estimated: 6-8 hours*
+
+**Updated for new columns:**
+
+1. **RoomModeRepository** - Now needs **34 columns** (not 32):
+   - Add `light_ramp_up_minutes` (from commit `1005906`)
+   - Add `light_ramp_down_minutes` (from commit `1005906`)
+
+2. **Add missing methods** (unchanged from original plan)
+
+### Phase 1: Wire DatabaseManager (unchanged)
+
+### Phase 2: Testing (unchanged)
+
+### Phase 3: Remove Duplicates & Fix LSP (unchanged)
+
+### NEW Phase 4: 2026 Modernization
+*Estimated: 1-2 weeks, can run parallel to Phase 1-3*
+
+| Task | Priority | Effort | Impact |
+|------|----------|--------|--------|
+| Add `Annotated` dependencies | Medium | Low | Better DX |
+| Add structlog | High | Low | Better debugging |
+| Add OpenTelemetry (10% sampling) | Medium | Medium | Observability |
+| Configure basedpyright strict | High | Low | Type safety |
+| Add Zustand to frontend | Medium | Low | Cleaner state |
+| Add orval OpenAPI codegen | Medium | Medium | E2E types |
+| Add TimescaleDB continuous aggregates | High | Medium | Query perf |
+| Add testcontainers | Medium | Medium | Real DB tests |
+
+### NEW Phase 5: Performance & Resilience
+*Estimated: 1 week*
+
+| Task | Priority | Effort | Impact |
+|------|----------|--------|--------|
+| Enable uvloop | Medium | Low | +20% throughput |
+| Add NVMe for TimescaleDB WAL | High | Medium | Crash recovery |
+| Implement offline buffer | Medium | Medium | Resilience |
+| Add 100ms batch writer | High | Medium | Meets requirement |
+| Configure data retention policies | High | Low | Storage mgmt |
+
+---
+
+## Dependencies to Add
+
+### Python (requirements.txt)
+
+```txt
+# 2026 additions
+structlog>=24.1.0
+opentelemetry-api>=1.27.0
+opentelemetry-sdk>=1.27.0
+opentelemetry-instrumentation-fastapi>=0.48b0
+opentelemetry-instrumentation-redis>=0.48b0
+opentelemetry-instrumentation-asyncpg>=0.48b0
+uvloop>=0.19.0
+
+# Testing
+testcontainers[postgres]>=4.0.0
+hypothesis>=6.150.0
+syrupy>=4.0.0
+httpx>=0.25.0
+```
+
+### Frontend (package.json)
+
+```json
+{
+  "dependencies": {
+    "zustand": "^4.5.0"
+  },
+  "devDependencies": {
+    "orval": "^6.25.0"
+  }
+}
+```
+
+### pyproject.toml
+
+```toml
+[tool.basedpyright]
+typeCheckingMode = "strict"
+pythonPlatform = "Linux"
+pythonVersion = "3.12"
+strictListInference = true
+strictDictionaryInference = true
+reportUnreachableCode = "error"
+reportMissingTypeStubs = "warning"
+stubPath = "stubs"
+```
+
+---
+
+## What NOT to Change (Confirmed by Research)
+
+| Component | Keep | Research Confirms |
+|-----------|------|-------------------|
+| Redis Streams for sensors | ✅ | Optimal for IoT scale |
+| TimescaleDB for history | ✅ | Best for time-series |
+| FastAPI + Depends() | ✅ | Native DI preferred |
+| 2s deterministic control loop | ✅ | Correct async pattern |
+| WebSocket for real-time | ✅ | Bidirectional needed |
+| Vite for frontend | ✅ | Best for SPAs |
+| TanStack Query | ✅ | Gold standard |
+
+---
+
+**Plan Version:** 2.0 (with 2026 standards addendum)
+**Last Updated:** 2026-01-18
+
+---
+
+## MCP Autostart Issue - Root Cause & Fix
+
+**Issue:** Context7 MCP doesn't always autostart with opencode
+
+**Root Cause:** `npx -y @upstash/context7-mcp@latest` takes **~3.4 seconds** to start, even when cached. This is on the edge of opencode's MCP startup timeout (typically 3-5 seconds), causing intermittent failures.
+
+**Evidence:**
+```
+$ time npx -y @upstash/context7-mcp@latest --version
+real    0m3.417s
+user    0m3.273s
+sys     0m0.222s
+```
+
+### Recommended Fix: Install Globally
+
+```bash
+# Install globally - starts instantly
+npm install -g @upstash/context7-mcp
+```
+
+**Update `~/.config/opencode/opencode.json`:**
+
+```json
+// Before (slow - npx overhead)
+"context7": {
+  "type": "local",
+  "command": ["npx", "-y", "@upstash/context7-mcp@latest", "--api-key", "ctx7sk-..."]
+}
+
+// After (fast - direct execution)
+"context7": {
+  "type": "local", 
+  "command": ["context7-mcp", "--api-key", "ctx7sk-cb2a9890-4c50-46f1-99ca-81409a15be45"]
+}
+```
+
+### Alternative: Pre-warm Script
+
+If you prefer to keep using npx (for auto-updates):
+
+```bash
+# ~/.local/bin/start-opencode.sh
+#!/bin/bash
+# Pre-warm MCP cache before starting opencode
+npx -y @upstash/context7-mcp@latest --help >/dev/null 2>&1 &
+sleep 1
+exec opencode "$@"
+```
+
+### Why This Affects Only context7
+
+| MCP | Startup Time | Status |
+|-----|--------------|--------|
+| playwright | ~2.1s | Usually works |
+| context7 | ~3.4s | Intermittent failures |
+| tavily | N/A (remote) | Always works |
+
+The playwright MCP is faster because `@playwright/mcp` has fewer dependencies to resolve.
+
