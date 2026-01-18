@@ -184,10 +184,10 @@ export default function ZoneConfig() {
                       onDayEndChange={(time) => handleParamChange({ night_start_time: time })}
                       showPresetButtons={false}
                       lockedPhotoperiodHours={lockedPhotoperiod}
-                      rampUpDuration={params.pre_day_minutes}
-                      rampDownDuration={params.pre_night_minutes}
-                      onRampUpChange={(d) => handleParamChange({ pre_day_minutes: d ?? 0 })}
-                      onRampDownChange={(d) => handleParamChange({ pre_night_minutes: d ?? 0 })}
+                      rampUpDuration={params.light_ramp_up_minutes}
+                      rampDownDuration={params.light_ramp_down_minutes}
+                      onRampUpChange={(d) => handleParamChange({ light_ramp_up_minutes: d ?? 0 })}
+                      onRampDownChange={(d) => handleParamChange({ light_ramp_down_minutes: d ?? 0 })}
                       size={420}
                     />
                   </div>

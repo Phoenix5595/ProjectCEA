@@ -49,6 +49,8 @@ class ModeParameters(BaseModel):
     pre_night_ramp_minutes: int = 30
     pre_day_minutes: int = 30
     pre_night_minutes: int = 30
+    light_ramp_up_minutes: int = 15
+    light_ramp_down_minutes: int = 15
     pre_day_heat_temp: float = 22.0
     pre_day_cool_temp: float = 26.0
     pre_day_vpd: float = 0.9
@@ -94,6 +96,8 @@ class UpdateParametersRequest(BaseModel):
     pre_night_ramp_minutes: Optional[int] = None
     pre_day_minutes: Optional[int] = None
     pre_night_minutes: Optional[int] = None
+    light_ramp_up_minutes: Optional[int] = None
+    light_ramp_down_minutes: Optional[int] = None
     pre_day_heat_temp: Optional[float] = None
     pre_day_cool_temp: Optional[float] = None
     pre_day_vpd: Optional[float] = None

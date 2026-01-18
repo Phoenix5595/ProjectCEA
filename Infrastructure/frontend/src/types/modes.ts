@@ -23,6 +23,8 @@ export interface ModeParameters {
   pre_night_ramp_minutes: number
   pre_day_minutes: number
   pre_night_minutes: number
+  light_ramp_up_minutes: number
+  light_ramp_down_minutes: number
   pre_day_heat_temp: number
   pre_day_cool_temp: number
   pre_day_vpd: number
@@ -68,6 +70,8 @@ export interface UpdateParametersRequest {
   pre_night_ramp_minutes?: number
   pre_day_minutes?: number
   pre_night_minutes?: number
+  light_ramp_up_minutes?: number
+  light_ramp_down_minutes?: number
   pre_day_heat_temp?: number
   pre_day_cool_temp?: number
   pre_day_vpd?: number
