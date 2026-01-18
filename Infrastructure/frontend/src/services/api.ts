@@ -190,6 +190,12 @@ class ApiClient {
     return response.data;
   }
 
+  async getSchedulesForDevice(location: string, cluster: string, deviceName: string): Promise<Schedule[]> {
+    const params: Record<string, string> = { location, cluster, device_name: deviceName };
+    const response = await this.automationClient.get('/api/schedules', { params });
+    return response.data;
+  }
+
   async createSchedule(schedule: ScheduleCreate): Promise<Schedule> {
     const response = await this.automationClient.post('/api/schedules', schedule);
     return response.data;

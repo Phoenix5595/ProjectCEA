@@ -11,6 +11,7 @@ interface LightDevice {
 interface LightStatus {
   intensity: number
   target_intensity?: number | null
+  day_target_intensity?: number | null
 }
 
 interface LightSlidersPanelProps {
@@ -34,22 +35,35 @@ const LightSlidersPanel = forwardRef<LightSlidersPanelRef, LightSlidersPanelProp
       const lightDevices = await apiClient.getLightsForZone(location, cluster)
       setLights(lightDevices)
       
+      const schedules = await apiClient.getSchedules(location, cluster)
+      
       const statusPromises = lightDevices.map(async (light: LightDevice) => {
         try {
           const status = await apiClient.getLightStatus(location, cluster, light.device_name)
-          return { deviceName: light.device_name, status }
+          
+          const daySchedule = schedules.find((s: any) => 
+            s.device_name === light.device_name &&
+            s.mode === 'DAY' && 
+            s.enabled && 
+            s.target_intensity !== null && 
+            s.target_intensity !== undefined
+          )
+          const dayTargetIntensity = daySchedule?.target_intensity ?? null
+          
+          return { deviceName: light.device_name, status, dayTargetIntensity }
         } catch {
-          return { deviceName: light.device_name, status: null }
+          return { deviceName: light.device_name, status: null, dayTargetIntensity: null }
         }
       })
       
       const results = await Promise.all(statusPromises)
       const statusMap: Record<string, LightStatus> = {}
-      results.forEach(({ deviceName, status }: { deviceName: string; status: LightStatus | null }) => {
+      results.forEach(({ deviceName, status, dayTargetIntensity }: { deviceName: string; status: LightStatus | null; dayTargetIntensity: number | null }) => {
         if (status) {
           statusMap[deviceName] = {
             intensity: status.intensity,
-            target_intensity: status.target_intensity ?? null
+            target_intensity: status.target_intensity ?? null,
+            day_target_intensity: dayTargetIntensity ?? status.target_intensity ?? null
           }
         }
       })
@@ -117,6 +131,7 @@ const LightSlidersPanel = forwardRef<LightSlidersPanelRef, LightSlidersPanelProp
           const status = statuses[light.device_name]
           const currentIntensity = status?.intensity ?? 0
           const savedTarget = status?.target_intensity ?? currentIntensity
+          const dayTarget = status?.day_target_intensity ?? savedTarget
           const pendingTarget = pendingTargets[light.device_name]
           const hasPending = pendingTarget !== undefined && pendingTarget !== savedTarget
 
@@ -126,6 +141,7 @@ const LightSlidersPanel = forwardRef<LightSlidersPanelRef, LightSlidersPanelProp
               label={light.display_name || light.device_name}
               currentIntensity={currentIntensity}
               savedTarget={savedTarget}
+              dayTarget={dayTarget}
               pendingTarget={pendingTarget}
               hasPending={hasPending}
               onTargetChange={(v) => handleTargetChange(light.device_name, v)}
@@ -144,6 +160,7 @@ interface LightRowProps {
   label: string
   currentIntensity: number
   savedTarget: number
+  dayTarget: number
   pendingTarget: number | undefined
   hasPending: boolean
   onTargetChange: (value: number) => void
@@ -153,7 +170,8 @@ interface LightRowProps {
 function LightRow({ 
   label, 
   currentIntensity, 
-  savedTarget, 
+  savedTarget,
+  dayTarget,
   pendingTarget, 
   hasPending, 
   onTargetChange, 
@@ -178,7 +196,7 @@ function LightRow({
           <div className="flex items-center gap-1">
             <span className="text-gray-500">TGT</span>
             <span className="bg-gray-800 px-1.5 py-0.5 rounded text-amber-400 font-mono min-w-[32px] text-center">
-              {savedTarget}%
+              {dayTarget}%
             </span>
           </div>
         </div>
@@ -200,11 +218,11 @@ function LightRow({
             disabled={disabled}
             className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed"
           />
-          {savedTarget !== currentIntensity && (
+          {dayTarget > 0 && (
             <div 
               className="absolute top-0 w-1 h-full bg-amber-400 rounded"
-              style={{ left: `calc(${savedTarget}% - 2px)` }}
-              title={`Saved Target: ${savedTarget}%`}
+              style={{ left: `calc(${dayTarget}% - 2px)` }}
+              title={`Day Target: ${dayTarget}%`}
             />
           )}
           {hasPending && (
