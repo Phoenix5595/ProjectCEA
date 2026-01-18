@@ -106,6 +106,33 @@ class ScheduleRepository(BaseRepository):
             logger.error(f"Failed to get light schedule: {e}")
         return None
 
+    async def get_room_light_schedule(
+        self, location: str, cluster: str
+    ) -> dict[str, Any] | None:
+        """Get room-level light schedule (day start/end times) for control loop."""
+        try:
+            async with self.pool.acquire() as conn:
+                # Get any enabled light schedule to determine day/night times
+                row = await conn.fetchrow("""
+                    SELECT start_time, end_time
+                    FROM schedules
+                    WHERE location = $1 AND cluster = $2
+                      AND device_name LIKE 'light%'
+                      AND mode = 'DAY'
+                      AND enabled = true
+                    ORDER BY id DESC
+                    LIMIT 1
+                """, location, cluster)
+                
+                if row:
+                    return {
+                        'day_start_time': str(row['start_time'])[:5],
+                        'day_end_time': str(row['end_time'])[:5]
+                    }
+        except Exception as e:
+            logger.error(f"Failed to get room light schedule: {e}")
+        return None
+
     async def create_schedule(
         self,
         name: str,

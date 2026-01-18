@@ -45,16 +45,46 @@ class ControlActionRepository(BaseRepository):
         self,
         location: str,
         cluster: str,
-        state: str,
-        reason: str | None = None
+        device_name: str,
+        device_state: int,
+        device_mode: str,
+        pid_output: float | None,
+        duty_cycle_percent: float | None,
+        active_rule_ids: list[int],
+        active_schedule_ids: list[int],
+        control_reason: str,
+        schedule_ramp_up_duration: int | None = None,
+        schedule_ramp_down_duration: int | None = None,
+        schedule_photoperiod_hours: float | None = None,
+        pid_kp: float | None = None,
+        pid_ki: float | None = None,
+        pid_kd: float | None = None
     ) -> bool:
-        """Log automation state change."""
+        """Log automation state to automation_state table."""
         try:
             async with self.pool.acquire() as conn:
-                await conn.execute("""
-                    INSERT INTO automation_state_history (timestamp, location, cluster, state, reason)
-                    VALUES (NOW(), $1, $2, $3, $4)
-                """, location, cluster, state, reason)
+                try:
+                    await conn.execute("""
+                        INSERT INTO automation_state 
+                        (timestamp, location, cluster, device_name, device_state, device_mode,
+                         pid_output, duty_cycle_percent, active_rule_ids, active_schedule_ids, 
+                         control_reason, schedule_ramp_up_duration, schedule_ramp_down_duration,
+                         schedule_photoperiod_hours, pid_kp, pid_ki, pid_kd, updated_at)
+                        VALUES (NOW(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, NOW())
+                    """, location, cluster, device_name, device_state, device_mode,
+                        pid_output, duty_cycle_percent, active_rule_ids, active_schedule_ids, control_reason,
+                        schedule_ramp_up_duration, schedule_ramp_down_duration, schedule_photoperiod_hours,
+                        pid_kp, pid_ki, pid_kd)
+                except Exception:
+                    # Fallback for older schemas
+                    await conn.execute("""
+                        INSERT INTO automation_state 
+                        (timestamp, location, cluster, device_name, device_state, device_mode,
+                         pid_output, duty_cycle_percent, active_rule_ids, active_schedule_ids, 
+                         control_reason, updated_at)
+                        VALUES (NOW(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
+                    """, location, cluster, device_name, device_state, device_mode,
+                        pid_output, duty_cycle_percent, active_rule_ids, active_schedule_ids, control_reason)
                 return True
         except Exception as e:
             logger.error(f"Failed to log automation state: {e}")

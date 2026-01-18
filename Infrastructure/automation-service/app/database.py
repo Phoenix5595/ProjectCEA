@@ -1322,138 +1322,16 @@ class DatabaseManager:
         return self._pool  # pyright: ignore[reportReturnType]
     
     async def get_sensor_value(self, sensor_name: str) -> Optional[float]:
-        """Get latest sensor value from Redis or TimescaleDB fallback.
-        
-        Args:
-            sensor_name: Sensor name (e.g., 'dry_bulb_f', 'rh_b', 'co2_f')
-        
-        Returns:
-            Sensor value as float, or None if not found
-        """
-        # Try Redis first
-        if self._redis_enabled and self._redis_client:
-            try:
-                # Debug logging removed
-                value = self._redis_client.get(f"sensor:{sensor_name}")
-                # Debug logging removed
-                if value is not None:
-                    try:
-                        return float(str(value))
-                    except (ValueError, TypeError):
-                        pass
-            except Exception as e:
-                logger.debug(f"Redis read failed for {sensor_name}: {e}")
-                # Try to reconnect
-                try:
-                    await self._connect_redis()
-                except Exception:
-                    pass
-        
-        # Fallback to TimescaleDB (using measurement table)
-        try:
-            pool = await self._get_pool()
-            async with pool.acquire() as conn:
-                # Query measurement table directly using sensor name
-                row = await conn.fetchrow("""
-                    SELECT m.value
-                    FROM measurement m
-                    JOIN sensor s ON m.sensor_id = s.sensor_id
-                    WHERE s.name = $1
-                    ORDER BY m.time DESC
-                    LIMIT 1
-                """, sensor_name)
-                
-                if row and row['value'] is not None:
-                    try:
-                        return float(row['value'])
-                    except (ValueError, TypeError):
-                        pass
-        except Exception as e:
-            logger.error(f"Error reading sensor {sensor_name} from TimescaleDB: {e}")
-        
-        return None
+        """Get latest sensor value from Redis or TimescaleDB fallback."""
+        if self._sensor_repo:
+            return await self._sensor_repo.get_sensor_value(sensor_name)
+        raise RuntimeError("SensorRepository not initialized - call initialize() first")
     
     async def get_sensor_values_batch(self, sensor_names: List[str]) -> Dict[str, Optional[float]]:
-        """Get latest sensor values for multiple sensors in a single batch query.
-        
-        Args:
-            sensor_names: List of sensor names to fetch
-        
-        Returns:
-            Dict mapping sensor names to values (None if not found)
-        """
-        result = {}
-        
-        # Try Redis first for all sensors
-        if self._redis_enabled and self._redis_client:
-            try:
-                # Debug logging removed
-                # Batch get from Redis
-                keys = [f"sensor:{name}" for name in sensor_names]
-                raw_values = self._redis_client.mget(keys)
-                # Debug logging removed
-                
-                # Cast to list since mget returns list of values
-                values_list: list[Any] = cast(list[Any], raw_values) if raw_values is not None else []
-                for sensor_name, value in zip(sensor_names, values_list):
-                    if value is not None:
-                        try:
-                            result[sensor_name] = float(value)
-                        except (ValueError, TypeError):
-                            result[sensor_name] = None
-                    else:
-                        result[sensor_name] = None
-                
-                # If all values found in Redis, return early
-                if all(v is not None for v in result.values()):
-                    return result
-            except Exception as e:
-                logger.debug(f"Redis batch read failed: {e}")
-                # Try to reconnect
-                try:
-                    await self._connect_redis()
-                except Exception:
-                    pass
-        
-        # Fallback to TimescaleDB for missing values (batch query)
-        missing_sensors = [name for name in sensor_names if name not in result or result[name] is None]
-        if missing_sensors:
-            try:
-                pool = await self._get_pool()
-                async with pool.acquire() as conn:
-                    # Single batch query - get latest value for each sensor using LATERAL join
-                    rows = await conn.fetch("""
-                        SELECT s.name, latest.value
-                        FROM sensor s
-                        CROSS JOIN LATERAL (
-                            SELECT value
-                            FROM measurement
-                            WHERE sensor_id = s.sensor_id
-                            ORDER BY time DESC
-                            LIMIT 1
-                        ) latest
-                        WHERE s.name = ANY($1)
-                    """, missing_sensors)
-                    
-                    # Build result dict from query results
-                    db_results = {row['name']: row['value'] for row in rows}
-                    
-                    # Merge with Redis results
-                    for sensor_name in missing_sensors:
-                        if sensor_name in db_results:
-                            try:
-                                result[sensor_name] = float(db_results[sensor_name])
-                            except (ValueError, TypeError):
-                                result[sensor_name] = None
-                        else:
-                            result[sensor_name] = None
-            except Exception as e:
-                logger.error(f"Error batch reading sensors from TimescaleDB: {e}")
-                # Set missing sensors to None
-                for sensor_name in missing_sensors:
-                    result[sensor_name] = None
-        
-        return result
+        """Get latest sensor values for multiple sensors in a single batch query."""
+        if self._sensor_repo:
+            return await self._sensor_repo.get_sensor_values_batch(sensor_names)
+        raise RuntimeError("SensorRepository not initialized - call initialize() first")
     
     async def get_device_state(self, location: str, cluster: str, device_name: str) -> Optional[Dict[str, Any]]:
         """Get device state from database."""
@@ -1464,31 +1342,10 @@ class DatabaseManager:
     async def get_latest_light_intensity(
         self, location: str, cluster: str, device_name: str
     ) -> Optional[float]:
-        """Get the most recent light intensity from automation_state table.
-        
-        For lights, the intensity is stored in duty_cycle_percent field.
-        This is more reliable than Redis since it persists across restarts.
-        
-        Returns:
-            Light intensity (0-100%) or None if not found
-        """
-        try:
-            pool = await self._get_pool()
-            async with pool.acquire() as conn:
-                row = await conn.fetchrow("""
-                    SELECT duty_cycle_percent, timestamp
-                    FROM automation_state
-                    WHERE location = $1 AND cluster = $2 AND device_name = $3
-                      AND duty_cycle_percent IS NOT NULL
-                    ORDER BY timestamp DESC
-                    LIMIT 1
-                """, location, cluster, device_name)
-                
-                if row and row['duty_cycle_percent'] is not None:
-                    return float(row['duty_cycle_percent'])
-        except Exception as e:
-            logger.debug(f"Error getting latest light intensity from database: {e}")
-        return None
+        """Get the most recent light intensity from automation_state table."""
+        if self._device_repo:
+            return await self._device_repo.get_latest_light_intensity(location, cluster, device_name)
+        raise RuntimeError("DeviceRepository not initialized - call initialize() first")
     
     async def set_device_state(
         self, 
@@ -1500,29 +1357,11 @@ class DatabaseManager:
         mode: str
     ) -> bool:
         """Set device state in database and Redis state keys."""
-        # Write to TimescaleDB
-        db_success = False
-        try:
-            pool = await self._get_pool()
-            async with pool.acquire() as conn:
-                await conn.execute("""
-                    INSERT INTO device_states (location, cluster, device_name, channel, state, mode, updated_at)
-                    VALUES ($1, $2, $3, $4, $5, $6, NOW())
-                    ON CONFLICT (location, cluster, device_name)
-                    DO UPDATE SET state = EXCLUDED.state, mode = EXCLUDED.mode, 
-                                  channel = EXCLUDED.channel, updated_at = NOW()
-                """, location, cluster, device_name, channel, state, mode)
-                db_success = True
-        except Exception as e:
-            logger.error(f"Error setting device state: {e}")
-        
-        # Write to Redis state keys (for live device state)
-        if self._automation_redis and self._automation_redis.redis_enabled:
-            self._automation_redis.write_to_state(
-                location, cluster, device_name, state, mode
+        if self._device_repo:
+            return await self._device_repo.set_device_state(
+                location, cluster, device_name, channel, state, mode
             )
-        
-        return db_success
+        raise RuntimeError("DeviceRepository not initialized - call initialize() first")
     
     async def log_control_action(
         self,
@@ -1543,20 +1382,7 @@ class DatabaseManager:
                 location, cluster, device_name, channel, old_state, new_state,
                 mode, reason, sensor_value, setpoint
             )
-        try:
-            pool = await self._get_pool()
-            async with pool.acquire() as conn:
-                await conn.execute("""
-                    INSERT INTO control_history 
-                    (timestamp, location, cluster, device_name, channel, old_state, new_state, 
-                     mode, reason, sensor_value, setpoint)
-                    VALUES (NOW(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-                """, location, cluster, device_name, channel, old_state, new_state, 
-                    mode, reason, sensor_value, setpoint)
-                return True
-        except Exception as e:
-            logger.error(f"Error logging control action: {e}")
-            return False
+        raise RuntimeError("ControlActionRepository not initialized - call initialize() first")
     
     async def log_automation_state(
         self,
@@ -1578,133 +1404,20 @@ class DatabaseManager:
         pid_kd: Optional[float] = None
     ) -> bool:
         """Log automation state to automation_state table, Redis Stream, and Redis state keys."""
-        # Write to TimescaleDB
-        db_success = False
-        try:
-            pool = await self._get_pool()
-            async with pool.acquire() as conn:
-                try:
-                    # Preferred insert with extended fields (for newer schemas)
-                    await conn.execute("""
-                        INSERT INTO automation_state 
-                        (timestamp, location, cluster, device_name, device_state, device_mode,
-                         pid_output, duty_cycle_percent, active_rule_ids, active_schedule_ids, 
-                         control_reason, schedule_ramp_up_duration, schedule_ramp_down_duration,
-                         schedule_photoperiod_hours, pid_kp, pid_ki, pid_kd, updated_at)
-                        VALUES (NOW(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, NOW())
-                    """, location, cluster, device_name, device_state, device_mode,
-                        pid_output, duty_cycle_percent, active_rule_ids, active_schedule_ids, control_reason,
-                        schedule_ramp_up_duration, schedule_ramp_down_duration, schedule_photoperiod_hours,
-                        pid_kp, pid_ki, pid_kd)
-                    db_success = True
-                except Exception as e:
-                    # Fallback for older schemas missing extended columns
-                    logger.warning(f"Falling back to legacy automation_state insert (missing columns?): {e}")
-                    await conn.execute("""
-                        INSERT INTO automation_state 
-                        (timestamp, location, cluster, device_name, device_state, device_mode,
-                         pid_output, duty_cycle_percent, active_rule_ids, active_schedule_ids, 
-                         control_reason, updated_at)
-                        VALUES (NOW(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
-                    """, location, cluster, device_name, device_state, device_mode,
-                        pid_output, duty_cycle_percent, active_rule_ids, active_schedule_ids, control_reason)
-                    db_success = True
-        except Exception as e:
-            logger.error(f"Error logging automation state to database: {e}")
-        
-        # Write to Redis Stream and state keys
-        if self._automation_redis and self._automation_redis.redis_enabled:
-            # Write to stream
-            self._automation_redis.write_to_stream(
+        if self._control_action_repo:
+            return await self._control_action_repo.log_automation_state(
                 location, cluster, device_name, device_state, device_mode,
-                pid_output, duty_cycle_percent, active_rule_ids, active_schedule_ids, control_reason
+                pid_output, duty_cycle_percent, active_rule_ids, active_schedule_ids,
+                control_reason, schedule_ramp_up_duration, schedule_ramp_down_duration,
+                schedule_photoperiod_hours, pid_kp, pid_ki, pid_kd
             )
-            # Write to state keys
-            self._automation_redis.write_to_state(
-                location, cluster, device_name, device_state, device_mode,
-                pid_output, duty_cycle_percent
-            )
-        
-        return db_success
+        raise RuntimeError("ControlActionRepository not initialized - call initialize() first")
     
     async def get_setpoint(self, location: str, cluster: str, mode: Optional[str] = None) -> Optional[Dict[str, Any]]:
-        """Get setpoints for location/cluster.
-
-        Uses memory caching for 30s to reduce database load in control loop.
-        Reads from Redis first (fast), falls back to database if Redis unavailable or TTL expired.
-        If found in database, caches in Redis.
-
-        Args:
-            location: Location name
-            cluster: Cluster name
-            mode: Mode (DAY/NIGHT/TRANSITION) or None for legacy/default setpoint
-
-        Returns:
-            Dict with setpoint values including mode and vpd, or None if not found
-        """
-        # Normalize mode: None becomes NULL in database (legacy behavior)
-        db_mode = mode if mode else None
-
-        # Check memory cache first (performance optimization for control loop)
-        cache_key = self._get_cache_key("setpoint", location, cluster, db_mode or "NULL")
-        cached_result = self._get_cached_result(cache_key)
-        if cached_result is not None:
-            logger.debug(f"Setpoint cache hit for {location}/{cluster}/{db_mode}")
-            return cached_result
-
-        # Try Redis first (Redis doesn't support mode yet, so only for legacy mode=NULL)
-        if db_mode is None and self._automation_redis and self._automation_redis.redis_enabled:
-            redis_setpoint = self._automation_redis.read_setpoint(location, cluster)
-            if redis_setpoint:
-                # Check if we have all required values
-                if 'heating_setpoint' in redis_setpoint or 'cooling_setpoint' in redis_setpoint or 'humidity' in redis_setpoint or 'co2' in redis_setpoint:
-                    # Return what we have from Redis (may be partial if TTL expired on some keys)
-                    setpoint_data = {
-                        'heating_setpoint': redis_setpoint.get('heating_setpoint'),
-                        'cooling_setpoint': redis_setpoint.get('cooling_setpoint'),
-                        'humidity': redis_setpoint.get('humidity'),
-                        'co2': redis_setpoint.get('co2'),
-                        'vpd': redis_setpoint.get('vpd'),
-                        'mode': None
-                    }
-                    # Cache in memory for control loop performance
-                    self._set_cached_result(cache_key, setpoint_data)
-                    return setpoint_data
-
-        # Fallback to database (Redis unavailable, TTL expired, or mode-based setpoint)
-        try:
-            pool = await self._get_pool()
-            async with pool.acquire() as conn:
-                row = await conn.fetchrow("""
-                    SELECT heating_setpoint, cooling_setpoint, humidity, co2, vpd, mode, ramp_in_duration, updated_at
-                    FROM setpoints
-                    WHERE location = $1 AND cluster = $2 AND (mode = $3 OR (mode IS NULL AND $3 IS NULL))
-                    ORDER BY updated_at DESC
-                    LIMIT 1
-                """, location, cluster, db_mode)
-
-                if row:
-                    setpoint_data = {
-                        'heating_setpoint': row['heating_setpoint'],
-                        'cooling_setpoint': row['cooling_setpoint'],
-                        'humidity': row['humidity'],
-                        'co2': row['co2'],
-                        'vpd': row['vpd'],
-                        'mode': row['mode'],
-                        'ramp_in_duration': row['ramp_in_duration'],
-                        'updated_at': row['updated_at']
-                    }
-
-                    # Cache result in memory for subsequent control loop calls
-                    self._set_cached_result(cache_key, setpoint_data)
-
-                    # Note: User-set (nominal) setpoints are NOT cached in Redis
-                    # Only effective setpoints are written to Redis (updated every control step)
-
-                    return setpoint_data
-        except Exception as e:
-            logger.error(f"Error getting setpoint: {e}")
-        return None
+        """Get setpoints for location/cluster."""
+        if self._setpoint_repo:
+            return await self._setpoint_repo.get_setpoint(location, cluster, mode)
+        raise RuntimeError("SetpointRepository not initialized - call initialize() first")
     
     async def set_setpoint(
         self, 
@@ -1720,169 +1433,32 @@ class DatabaseManager:
         source: str = 'api',
         expected_version: Optional[datetime] = None
     ) -> tuple[bool, Optional[datetime]]:
-        """Set setpoints for location/cluster.
-        
-        Validates setpoints, then writes to database only.
-        Note: User-set (nominal) setpoints are NOT written to Redis.
-        Only effective setpoints (computed at runtime) are written to Redis.
-        
-        Args:
-            location: Location name
-            cluster: Cluster name
-            heating_setpoint: Heating setpoint (optional)
-            cooling_setpoint: Cooling setpoint (optional)
-            humidity: Humidity setpoint (optional)
-            co2: CO2 setpoint (optional)
-            vpd: VPD setpoint (optional)
-            mode: Mode (DAY/NIGHT/TRANSITION) or None for legacy/default setpoint
-            source: Source of setpoint ('api', 'schedule', 'failsafe', 'cli')
-            expected_version: Expected updated_at timestamp for optimistic locking (optional)
-        
-        Returns:
-            Tuple of (success: bool, new_updated_at: Optional[datetime])
-            If expected_version is provided and doesn't match, returns (False, current_updated_at)
-        """
-        # Import validation here to avoid circular imports
-        from .validation import validate_setpoint
-        from .config import ConfigLoader
-        
-        # Validate setpoints if provided
-        # Note: We need config for validation, but we'll do basic validation here
-        # Full validation should be done in the API endpoint before calling this
-        
-        # Normalize mode: None becomes NULL in database (legacy behavior)
-        db_mode = mode if mode else None
-        
-        existing = None
-        try:
-            pool = await self._get_pool()
-            async with pool.acquire() as conn:
-                async with conn.transaction():
-                    # Get latest existing setpoints for this mode (or mode=NULL for legacy) within transaction
-                    row = await conn.fetchrow("""
-                        SELECT heating_setpoint, cooling_setpoint, humidity, co2, vpd, mode, ramp_in_duration, updated_at
-                        FROM setpoints
-                        WHERE location = $1 AND cluster = $2 AND (mode = $3 OR (mode IS NULL AND $3 IS NULL))
-                        ORDER BY updated_at DESC
-                        LIMIT 1
-                    """, location, cluster, db_mode)
-                    
-                    # Check version if expected_version is provided
-                    if expected_version is not None:
-                        if row and row['updated_at']:
-                            current_updated_at = row['updated_at']
-                            # Compare timestamps (accounting for timezone)
-                            if current_updated_at != expected_version:
-                                return (False, current_updated_at)  # Version mismatch
-                        elif expected_version is not None:
-                            # Expected version provided but no existing row - this is a conflict
-                            return (False, None)
-                    
-                    if row:
-                        existing = {
-                            'heating_setpoint': row['heating_setpoint'],
-                            'cooling_setpoint': row['cooling_setpoint'],
-                            'humidity': row['humidity'],
-                            'co2': row['co2'],
-                            'vpd': row['vpd'],
-                            'mode': row['mode'],
-                            'ramp_in_duration': row['ramp_in_duration']
-                        }
-                    
-                    # Merge incoming values with latest existing so we always insert a complete row
-                    heat = heating_setpoint if heating_setpoint is not None else (existing.get('heating_setpoint') if existing else None)
-                    cool = cooling_setpoint if cooling_setpoint is not None else (existing.get('cooling_setpoint') if existing else None)
-                    hum = humidity if humidity is not None else (existing.get('humidity') if existing else None)
-                    co2_val = co2 if co2 is not None else (existing.get('co2') if existing else None)
-                    vpd_val = vpd if vpd is not None else (existing.get('vpd') if existing else None)
-                    ramp_in = ramp_in_duration if ramp_in_duration is not None else (existing.get('ramp_in_duration') if existing else None)
-                    
-                    # UPSERT: Insert or update existing row (unique constraint on location, cluster, mode)
-                    new_row = await conn.fetchrow("""
-                        INSERT INTO setpoints (location, cluster, heating_setpoint, cooling_setpoint, humidity, co2, vpd, mode, ramp_in_duration, updated_at)
-                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
-                        ON CONFLICT (location, cluster, mode) DO UPDATE SET
-                            heating_setpoint = COALESCE(EXCLUDED.heating_setpoint, setpoints.heating_setpoint),
-                            cooling_setpoint = COALESCE(EXCLUDED.cooling_setpoint, setpoints.cooling_setpoint),
-                            humidity = COALESCE(EXCLUDED.humidity, setpoints.humidity),
-                            co2 = COALESCE(EXCLUDED.co2, setpoints.co2),
-                            vpd = COALESCE(EXCLUDED.vpd, setpoints.vpd),
-                            ramp_in_duration = COALESCE(EXCLUDED.ramp_in_duration, setpoints.ramp_in_duration),
-                            updated_at = NOW()
-                        RETURNING updated_at
-                    """, location, cluster, heat, cool, hum, co2_val, vpd_val, db_mode, ramp_in)
-                    
-                    # Log to setpoint_history for time-series queries (Grafana)
-                    await conn.execute("""
-                        INSERT INTO setpoint_history (timestamp, location, cluster, mode, heating_setpoint, cooling_setpoint, humidity, co2, vpd)
-                        VALUES (NOW(), $1, $2, $3, $4, $5, $6, $7, $8)
-                    """, location, cluster, db_mode, heat, cool, hum, co2_val, vpd_val)
-                    
-                    new_updated_at = new_row['updated_at'] if new_row else None
-                
-                # Note: User-set (nominal) setpoints are NOT written to Redis
-                # Only effective setpoints (computed at runtime) are written to Redis
-                
-                return (True, new_updated_at)
-        except asyncpg.PostgresConnectionError as e:
-            logger.error(f"Database connection error setting setpoint: {e}")
-            return (False, None)
-        except asyncpg.PostgresError as e:
-            logger.error(f"Database error setting setpoint: {e}")
-            return (False, None)
-        except Exception as e:
-            logger.error(f"Error setting setpoint: {e}", exc_info=True)
-            return (False, None)
+        """Set setpoints for location/cluster."""
+        if self._setpoint_repo:
+            return await self._setpoint_repo.set_setpoint(
+                location, cluster, heating_setpoint, cooling_setpoint,
+                humidity, co2, vpd, mode, ramp_in_duration, source, expected_version
+            )
+        raise RuntimeError("SetpointRepository not initialized - call initialize() first")
     
     async def log_effective_setpoint(
         self,
         location: str,
         cluster: str,
-        mode: Optional[str],
-        heating_setpoint: Optional[float] = None,
-        cooling_setpoint: Optional[float] = None,
-        humidity: Optional[float] = None,
-        co2: Optional[float] = None,
-        vpd: Optional[float] = None,
-        timestamp: Optional[datetime] = None
+        mode: str,
+        setpoint_type: str,
+        raw_value: float,
+        ramped_value: float,
+        ramp_progress: float,
+        source: str = 'system'
     ) -> bool:
-        """Log effective setpoint to setpoint_history (for ramp tracking).
-        
-        .. deprecated:: Use log_effective_setpoints (plural) instead.
-        
-        This is called during ramps to log the effective setpoint at each change.
-        This method is deprecated in favor of log_effective_setpoints which logs
-        both heating and cooling setpoints together at the location/cluster level.
-        
-        Args:
-            location: Location name
-            cluster: Cluster name
-            mode: Mode (DAY/NIGHT/PRE_DAY/PRE_NIGHT/TRANSITION) or None
-            heating_setpoint: Effective heating setpoint
-            cooling_setpoint: Effective cooling setpoint
-            humidity: Effective humidity setpoint
-            co2: Effective CO2 setpoint
-            vpd: Effective VPD setpoint
-            timestamp: Timestamp (default: NOW())
-        
-        Returns:
-            True if successful, False otherwise
-        """
-        try:
-            pool = await self._get_pool()
-            async with pool.acquire() as conn:
-                db_mode = mode if mode else None
-                ts = timestamp or datetime.now()
-                
-                await conn.execute("""
-                    INSERT INTO setpoint_history (timestamp, location, cluster, mode, heating_setpoint, cooling_setpoint, humidity, co2, vpd)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-                """, ts, location, cluster, db_mode, heating_setpoint, cooling_setpoint, humidity, co2, vpd)
-                
-                return True
-        except Exception as e:
-            logger.error(f"Error logging effective setpoint: {e}")
-            return False
+        """Log effective setpoint to effective_setpoints table."""
+        if self._setpoint_repo:
+            return await self._setpoint_repo.log_effective_setpoint(
+                location, cluster, mode, setpoint_type, raw_value,
+                ramped_value, ramp_progress, source
+            )
+        raise RuntimeError("SetpointRepository not initialized - call initialize() first")
     
     async def log_effective_setpoints(
         self,
@@ -2013,118 +1589,18 @@ class DatabaseManager:
             logger.error(f"Error buffering effective setpoints: {e}")
             return False
     
+
     async def get_all_setpoints_for_location_cluster(self, location: str, cluster: str) -> List[Dict[str, Any]]:
-        """Get all setpoints for a location/cluster (all modes).
-        
-        Args:
-            location: Location name
-            cluster: Cluster name
-        
-        Returns:
-            List of setpoint dicts, each with mode information
-        """
-        try:
-            pool = await self._get_pool()
-            async with pool.acquire() as conn:
-                rows = await conn.fetch("""
-                    SELECT DISTINCT ON (mode) heating_setpoint, cooling_setpoint, humidity, co2, vpd, mode, updated_at
-                    FROM setpoints
-                    WHERE location = $1 AND cluster = $2
-                    ORDER BY mode NULLS FIRST, updated_at DESC
-                """, location, cluster)
-                
-                return [
-                    {
-                        'heating_setpoint': row['heating_setpoint'],
-                        'cooling_setpoint': row['cooling_setpoint'],
-                        'humidity': row['humidity'],
-                        'co2': row['co2'],
-                        'vpd': row['vpd'],
-                        'mode': row['mode'],
-                        'updated_at': row['updated_at']
-                    }
-                    for row in rows
-                ]
-        except Exception as e:
-            logger.error(f"Error getting all setpoints: {e}")
-            return []
+        """Get all setpoints for a location/cluster."""
+        if self._setpoint_repo:
+            return await self._setpoint_repo.get_all_setpoints_for_location_cluster(location, cluster)
+        raise RuntimeError("SetpointRepository not initialized - call initialize() first")
     
     async def get_latest_effective_setpoints(self, location: str, cluster: str) -> Optional[Dict[str, Any]]:
-        """Get the latest effective setpoints for a location/cluster from the database.
-        
-        This retrieves the most recent effective setpoint values that were logged
-        to the effective_setpoints table. Used to restore setpoints on service restart.
-        Also includes ramp_progress and nominal values to determine if restart happened
-        during a ramp (for ramp restoration).
-        """
+        """Get latest effective setpoints for location/cluster."""
         if self._setpoint_repo:
             return await self._setpoint_repo.get_latest_effective_setpoints(location, cluster)
-        try:
-            pool = await self._get_pool()
-            async with pool.acquire() as conn:
-                row = await conn.fetchrow("""
-                    SELECT 
-                        effective_heating_setpoint,
-                        effective_cooling_setpoint,
-                        effective_humidity_setpoint,
-                        effective_co2_setpoint,
-                        effective_vpd_setpoint,
-                        nominal_heating_setpoint,
-                        nominal_cooling_setpoint,
-                        nominal_humidity_setpoint,
-                        nominal_co2_setpoint,
-                        nominal_vpd_setpoint,
-                        ramp_progress_heating,
-                        ramp_progress_cooling,
-                        ramp_progress_humidity,
-                        ramp_progress_co2,
-                        ramp_progress_vpd,
-                        timestamp
-                    FROM effective_setpoints
-                    WHERE location = $1 AND cluster = $2 AND device_name IS NULL
-                    ORDER BY timestamp DESC
-                    LIMIT 1
-                """, location, cluster)
-                
-                if row:
-                    return {
-                        'effective_heating_setpoint': row['effective_heating_setpoint'],
-                        'effective_cooling_setpoint': row['effective_cooling_setpoint'],
-                        'effective_humidity_setpoint': row['effective_humidity_setpoint'],
-                        'effective_co2_setpoint': row['effective_co2_setpoint'],
-                        'effective_vpd_setpoint': row['effective_vpd_setpoint'],
-                        'nominal_heating_setpoint': row['nominal_heating_setpoint'],
-                        'nominal_cooling_setpoint': row['nominal_cooling_setpoint'],
-                        'nominal_humidity_setpoint': row['nominal_humidity_setpoint'],
-                        'nominal_co2_setpoint': row['nominal_co2_setpoint'],
-                        'nominal_vpd_setpoint': row['nominal_vpd_setpoint'],
-                        'ramp_progress_heating': row['ramp_progress_heating'],
-                        'ramp_progress_cooling': row['ramp_progress_cooling'],
-                        'ramp_progress_humidity': row['ramp_progress_humidity'],
-                        'ramp_progress_co2': row['ramp_progress_co2'],
-                        'ramp_progress_vpd': row['ramp_progress_vpd'],
-                        'timestamp': row['timestamp']
-                    }
-        except Exception as e:
-            logger.error(f"Error getting latest effective setpoints: {e}")
-        return None
-    
-    async def get_all_device_states(self) -> List[Dict[str, Any]]:
-        """Get all device states."""
-        if self._device_repo:
-            return await self._device_repo.get_all_device_states()
-        raise RuntimeError("DeviceRepository not initialized")
-    
-    async def get_device_mapping(
-        self,
-        location: str,
-        cluster: str,
-        device_name: str
-    ) -> Optional[Dict[str, Any]]:
-        """Get device mapping from database."""
-        if self._device_repo:
-            return await self._device_repo.get_device_mapping(location, cluster, device_name)
-        raise RuntimeError("DeviceRepository not initialized")
+        raise RuntimeError("SetpointRepository not initialized - call initialize() first")
     
     async def set_device_mapping(
         self,
@@ -2132,49 +1608,23 @@ class DatabaseManager:
         cluster: str,
         device_name: str,
         channel: int,
-        active_high: bool = True,
-        safe_state: int = 0,
-        mcp_board_id: Optional[int] = None
+        device_type: str,
+        board_id: Optional[int] = None,
+        display_name: Optional[str] = None,
+        output_type: Optional[str] = None,
+        min_value: Optional[int] = None,
+        max_value: Optional[int] = None,
+        dimming_enabled: Optional[bool] = None,
+        inverted: Optional[bool] = None
     ) -> bool:
-        """Set device mapping in database.
-        
-        Args:
-            location: Location name
-            cluster: Cluster name
-            device_name: Device name
-            channel: MCP23017 channel number (0-15)
-            active_high: True if active high logic, False if active low
-            safe_state: Safe state (0 or 1)
-            mcp_board_id: MCP23017 board ID (optional)
-        
-        Returns:
-            True if successful, False otherwise
-        """
-        try:
-            pool = await self._get_pool()
-            async with pool.acquire() as conn:
-                await conn.execute("""
-                    INSERT INTO device_mappings (location, cluster, device_name, channel, active_high, safe_state, mcp_board_id, updated_at)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
-                    ON CONFLICT (location, cluster, device_name)
-                    DO UPDATE SET 
-                        channel = EXCLUDED.channel,
-                        active_high = EXCLUDED.active_high,
-                        safe_state = EXCLUDED.safe_state,
-                        mcp_board_id = EXCLUDED.mcp_board_id,
-                        updated_at = NOW()
-                """, location, cluster, device_name, channel, active_high, safe_state, mcp_board_id)
-                logger.info(f"Device mapping updated: {location}/{cluster}/{device_name} -> channel {channel}")
-                return True
-        except Exception as e:
-            logger.error(f"Error setting device mapping: {e}")
-            return False
-    
-    async def get_all_device_mappings(self) -> List[Dict[str, Any]]:
-        """Get all device mappings."""
+        """Set device mapping in database."""
         if self._device_repo:
-            return await self._device_repo.get_all_device_mappings()
-        raise RuntimeError("DeviceRepository not initialized")
+            return await self._device_repo.set_device_mapping(
+                location, cluster, device_name, channel, device_type,
+                board_id, display_name, output_type, min_value, max_value,
+                dimming_enabled, inverted
+            )
+        raise RuntimeError("DeviceRepository not initialized - call initialize() first")
     
     async def get_pid_parameters(self, device_type: str) -> Optional[Dict[str, Any]]:
         """Get PID parameters from database.
@@ -2215,566 +1665,138 @@ class DatabaseManager:
     async def set_pid_parameters(
         self,
         device_type: str,
+        location: str,
+        cluster: str,
         kp: float,
         ki: float,
         kd: float,
-        source: str = 'api',
-        updated_by: Optional[str] = None
+        output_min: float = 0.0,
+        output_max: float = 100.0,
+        deadband: float = 0.5
     ) -> bool:
-        """Set PID parameters in database with logging.
-        
-        Args:
-            device_type: Device type (e.g., 'heater', 'co2')
-            kp: Proportional gain
-            ki: Integral gain
-            kd: Derivative gain
-            source: Source of update ('api', 'config')
-            updated_by: Optional identifier of who made the update
-        
-        Returns:
-            True if successful, False otherwise
-        """
-        try:
-            pool = await self._get_pool()
-            async with pool.acquire() as conn:
-                # Get existing parameters for history
-                existing = await self.get_pid_parameters(device_type)
-                
-                # Update or insert PID parameters
-                await conn.execute("""
-                    INSERT INTO pid_parameters (device_type, kp, ki, kd, updated_at, updated_by, source)
-                    VALUES ($1, $2, $3, $4, NOW(), $5, $6)
-                    ON CONFLICT (device_type)
-                    DO UPDATE SET 
-                        kp = EXCLUDED.kp,
-                        ki = EXCLUDED.ki,
-                        kd = EXCLUDED.kd,
-                        updated_at = NOW(),
-                        updated_by = EXCLUDED.updated_by,
-                        source = EXCLUDED.source
-                """, device_type, kp, ki, kd, updated_by, source)
-                
-                # Log to history if parameters changed
-                if existing is None or existing['kp'] != kp or existing['ki'] != ki or existing['kd'] != kd:
-                    await conn.execute("""
-                        INSERT INTO pid_parameter_history (timestamp, device_type, kp, ki, kd, updated_by, source)
-                        VALUES (NOW(), $1, $2, $3, $4, $5, $6)
-                    """, device_type, kp, ki, kd, updated_by, source)
-                    logger.info(f"PID parameters updated for {device_type}: Kp={kp}, Ki={ki}, Kd={kd} (source: {source})")
-                
-                return True
-        except Exception as e:
-            logger.error(f"Error setting PID parameters: {e}")
-            return False
+        """Set PID parameters for a device type."""
+        if self._pid_repo:
+            return await self._pid_repo.set_pid_parameters(
+                device_type, location, cluster, kp, ki, kd,
+                output_min, output_max, deadband
+            )
+        raise RuntimeError("PIDRepository not initialized - call initialize() first")
     
     async def get_pid_parameter_history(
-        self,
-        device_type: str,
-        limit: int = 100
+        self, device_type: str, location: str, cluster: str, limit: int = 100
     ) -> List[Dict[str, Any]]:
-        """Get PID parameter change history.
-        
-        Args:
-            device_type: Device type
-            limit: Maximum number of history entries to return
-        
-        Returns:
-            List of history entries with timestamp, kp, ki, kd, updated_by, source
-        """
-        try:
-            pool = await self._get_pool()
-            async with pool.acquire() as conn:
-                rows = await conn.fetch("""
-                    SELECT timestamp, kp, ki, kd, updated_by, source
-                    FROM pid_parameter_history
-                    WHERE device_type = $1
-                    ORDER BY timestamp DESC
-                    LIMIT $2
-                """, device_type, limit)
-                return [dict(row) for row in rows]
-        except Exception as e:
-            logger.error(f"Error getting PID parameter history: {e}")
-            return []
+        """Get PID parameter history."""
+        if self._pid_repo:
+            return await self._pid_repo.get_pid_parameter_history(device_type, location, cluster, limit)
+        raise RuntimeError("PIDRepository not initialized - call initialize() first")
     
     async def get_all_pid_parameters(self) -> Dict[str, Dict[str, Any]]:
-        """Get all PID parameters for all device types.
-        
-        Returns:
-            Dict mapping device_type to parameter dict
-        """
-        try:
-            pool = await self._get_pool()
-            async with pool.acquire() as conn:
-                rows = await conn.fetch("""
-                    SELECT device_type, kp, ki, kd, updated_at, updated_by, source
-                    FROM pid_parameters
-                    ORDER BY device_type
-                """)
-                return {row['device_type']: {
-                    'kp': row['kp'],
-                    'ki': row['ki'],
-                    'kd': row['kd'],
-                    'updated_at': row['updated_at'],
-                    'updated_by': row['updated_by'],
-                    'source': row['source'],
-                        'control_mode': row['control_mode'] or 'pid',
-                        'hysteresis_high': row['hysteresis_high'] or 1.0,
-                        'hysteresis_low': row['hysteresis_low'] or 0.5
-                } for row in rows}
-        except Exception as e:
-            logger.error(f"Error getting all PID parameters: {e}")
-            return {}
+        """Get all PID parameters."""
+        if self._pid_repo:
+            return await self._pid_repo.get_all_pid_parameters()
+        raise RuntimeError("PIDRepository not initialized - call initialize() first")
     
-
     async def get_pid_control_mode(self, device_type: str) -> dict[str, Any] | None:
-        """Get PID control mode for a device type.
-        
-        Args:
-            device_type: Device type (e.g., 'heater', 'co2', 'fan')
-        
-        Returns:
-            Dict with control_mode and hysteresis values, or None if not found
-        """
-        try:
-            pool = await self._get_pool()
-            async with pool.acquire() as conn:
-                row = await conn.fetchrow("""
-                    SELECT control_mode, hysteresis_high, hysteresis_low
-                    FROM pid_parameters
-                    WHERE device_type = $1
-                """, device_type)
-                
-                if row:
-                    return {
-                        'control_mode': row['control_mode'] or 'pid',
-                        'hysteresis_high': row['hysteresis_high'] or 1.0,
-                        'hysteresis_low': row['hysteresis_low'] or 0.5
-                    }
-        except Exception as e:
-            logger.error(f"Error getting PID control mode: {e}")
-        return None
-
+        """Get PID control mode for a device type."""
+        if self._pid_repo:
+            return await self._pid_repo.get_pid_control_mode(device_type)
+        raise RuntimeError("PIDRepository not initialized - call initialize() first")
+    
     async def set_pid_control_mode(
         self,
         device_type: str,
-        control_mode: str,
-        hysteresis_high: Optional[float] = None,
-        hysteresis_low: Optional[float] = None,
-        updated_by: Optional[str] = None
+        mode: str,
+        reason: Optional[str] = None
     ) -> bool:
-        """Set PID control mode for a device type.
-        
-        Args:
-            device_type: Device type (e.g., 'heater', 'co2', 'fan')
-            control_mode: Control mode ('auto_pid', 'pid', 'on_off')
-            hysteresis_high: Upper hysteresis threshold for on_off mode
-            hysteresis_low: Lower hysteresis threshold for on_off mode
-            updated_by: Optional identifier of who made the update
-        
-        Returns:
-            True if successful, False otherwise
-        """
-        if control_mode not in ('auto_pid', 'pid', 'on_off'):
-            logger.error(f"Invalid control mode: {control_mode}")
-            return False
-            
-        try:
-            pool = await self._get_pool()
-            async with pool.acquire() as conn:
-                # Build update query based on provided parameters
-                if hysteresis_high is not None and hysteresis_low is not None:
-                    await conn.execute("""
-                        UPDATE pid_parameters
-                        SET control_mode = $2,
-                            hysteresis_high = $3,
-                            hysteresis_low = $4,
-                            updated_at = NOW(),
-                            updated_by = $5
-                        WHERE device_type = $1
-                    """, device_type, control_mode, hysteresis_high, hysteresis_low, updated_by)
-                else:
-                    await conn.execute("""
-                        UPDATE pid_parameters
-                        SET control_mode = $2,
-                            updated_at = NOW(),
-                            updated_by = $3
-                        WHERE device_type = $1
-                    """, device_type, control_mode, updated_by)
-                
-                logger.info(f"PID control mode set to {control_mode} for {device_type}")
-                return True
-        except Exception as e:
-            logger.error(f"Error setting PID control mode: {e}")
-            return False
-
+        """Set PID control mode for a device type."""
+        if self._pid_repo:
+            return await self._pid_repo.set_pid_control_mode(device_type, mode, reason)
+        raise RuntimeError("PIDRepository not initialized - call initialize() first")
+    
     async def get_autotune_state(self, device_type: str) -> Optional[Dict[str, Any]]:
-        """Get auto-tune state for a device type.
-        
-        Args:
-            device_type: Device type (e.g., 'heater', 'co2', 'fan')
-        
-        Returns:
-            Dict with autotune state or None if not found
-        """
-        try:
-            pool = await self._get_pool()
-            async with pool.acquire() as conn:
-                row = await conn.fetchrow("""
-                    SELECT device_type, is_active, started_at, cycles_completed,
-                           current_amplitude, current_period, current_ku, current_tu,
-                           suggested_kp, suggested_ki, suggested_kd,
-                           last_change_reason, last_update, status
-                    FROM pid_autotune_state
-                    WHERE device_type = $1
-                """, device_type)
-                
-                if row:
-                    return dict(row)
-        except Exception as e:
-            logger.error(f"Error getting autotune state: {e}")
-        return None
-
+        """Get autotune state for a device type."""
+        if self._pid_repo:
+            return await self._pid_repo.get_autotune_state(device_type)
+        raise RuntimeError("PIDRepository not initialized - call initialize() first")
+    
     async def update_autotune_state(
         self,
         device_type: str,
-        is_active: Optional[bool] = None,
-        cycles_completed: Optional[int] = None,
-        current_amplitude: Optional[float] = None,
-        current_period: Optional[float] = None,
-        current_ku: Optional[float] = None,
-        current_tu: Optional[float] = None,
-        suggested_kp: Optional[float] = None,
-        suggested_ki: Optional[float] = None,
-        suggested_kd: Optional[float] = None,
-        last_change_reason: Optional[str] = None,
-        status: Optional[str] = None
+        state: str,
+        progress: Optional[float] = None,
+        current_step: Optional[str] = None,
+        error_message: Optional[str] = None,
+        result_kp: Optional[float] = None,
+        result_ki: Optional[float] = None,
+        result_kd: Optional[float] = None
     ) -> bool:
-        """Update auto-tune state for a device type.
-        
-        Args:
-            device_type: Device type
-            is_active: Whether auto-tuning is active
-            cycles_completed: Number of relay cycles completed
-            current_amplitude: Current oscillation amplitude
-            current_period: Current oscillation period
-            current_ku: Calculated ultimate gain
-            current_tu: Calculated ultimate period
-            suggested_kp: Suggested Kp from tuning
-            suggested_ki: Suggested Ki from tuning
-            suggested_kd: Suggested Kd from tuning
-            last_change_reason: Reason for last K value change
-            status: Current status ('idle', 'running', 'calculating', 'complete', 'error')
-        
-        Returns:
-            True if successful, False otherwise
-        """
-        try:
-            pool = await self._get_pool()
-            async with pool.acquire() as conn:
-                # Build dynamic update based on provided parameters
-                updates: list[str] = []
-                params: list[Any] = [device_type]
-                param_idx = 2
-                
-                if is_active is not None:
-                    updates.append(f"is_active = ${param_idx}")
-                    params.append(is_active)
-                    param_idx += 1
-                    if is_active:
-                        updates.append("started_at = NOW()")
-                        
-                if cycles_completed is not None:
-                    updates.append(f"cycles_completed = ${param_idx}")
-                    params.append(cycles_completed)
-                    param_idx += 1
-                    
-                if current_amplitude is not None:
-                    updates.append(f"current_amplitude = ${param_idx}")
-                    params.append(current_amplitude)
-                    param_idx += 1
-                    
-                if current_period is not None:
-                    updates.append(f"current_period = ${param_idx}")
-                    params.append(current_period)
-                    param_idx += 1
-                    
-                if current_ku is not None:
-                    updates.append(f"current_ku = ${param_idx}")
-                    params.append(current_ku)
-                    param_idx += 1
-                    
-                if current_tu is not None:
-                    updates.append(f"current_tu = ${param_idx}")
-                    params.append(current_tu)
-                    param_idx += 1
-                    
-                if suggested_kp is not None:
-                    updates.append(f"suggested_kp = ${param_idx}")
-                    params.append(suggested_kp)
-                    param_idx += 1
-                    
-                if suggested_ki is not None:
-                    updates.append(f"suggested_ki = ${param_idx}")
-                    params.append(suggested_ki)
-                    param_idx += 1
-                    
-                if suggested_kd is not None:
-                    updates.append(f"suggested_kd = ${param_idx}")
-                    params.append(suggested_kd)
-                    param_idx += 1
-                    
-                if last_change_reason is not None:
-                    updates.append(f"last_change_reason = ${param_idx}")
-                    params.append(last_change_reason)
-                    param_idx += 1
-                    
-                if status is not None:
-                    updates.append(f"status = ${param_idx}")
-                    params.append(status)
-                    param_idx += 1
-                
-                updates.append("last_update = NOW()")
-                
-                if updates:
-                    update_clause = ", ".join(updates)
-                    await conn.execute(f"""
-                        INSERT INTO pid_autotune_state (device_type, last_update)
-                        VALUES ($1, NOW())
-                        ON CONFLICT (device_type)
-                        DO UPDATE SET {update_clause}
-                    """, *params)
-                    
-                return True
-        except Exception as e:
-            logger.error(f"Error updating autotune state: {e}")
-            return False
-
+        """Update autotune state for a device type."""
+        if self._pid_repo:
+            return await self._pid_repo.update_autotune_state(
+                device_type, state, progress, current_step,
+                error_message, result_kp, result_ki, result_kd
+            )
+        raise RuntimeError("PIDRepository not initialized - call initialize() first")
+    
     async def set_pid_parameters_with_reason(
         self,
         device_type: str,
+        location: str,
+        cluster: str,
         kp: float,
         ki: float,
         kd: float,
-        change_reason: str,
-        source: str = 'auto_pid',
-        updated_by: Optional[str] = None
+        reason: str,
+        output_min: float = 0.0,
+        output_max: float = 100.0,
+        deadband: float = 0.5
     ) -> bool:
-        """Set PID parameters with a change reason (for auto-tuning).
-        
-        Args:
-            device_type: Device type (e.g., 'heater', 'co2')
-            kp: Proportional gain
-            ki: Integral gain
-            kd: Derivative gain
-            change_reason: Explanation for why values changed
-            source: Source of update ('auto_pid', 'api', 'config')
-            updated_by: Optional identifier of who made the update
-        
-        Returns:
-            True if successful, False otherwise
-        """
-        try:
-            pool = await self._get_pool()
-            async with pool.acquire() as conn:
-                # Get existing parameters for history
-                existing = await self.get_pid_parameters(device_type)
-                
-                # Update or insert PID parameters
-                await conn.execute("""
-                    INSERT INTO pid_parameters (device_type, kp, ki, kd, updated_at, updated_by, source)
-                    VALUES ($1, $2, $3, $4, NOW(), $5, $6)
-                    ON CONFLICT (device_type)
-                    DO UPDATE SET 
-                        kp = EXCLUDED.kp,
-                        ki = EXCLUDED.ki,
-                        kd = EXCLUDED.kd,
-                        updated_at = NOW(),
-                        updated_by = EXCLUDED.updated_by,
-                        source = EXCLUDED.source
-                """, device_type, kp, ki, kd, updated_by, source)
-                
-                # Log to history with change reason
-                if existing is None or existing['kp'] != kp or existing['ki'] != ki or existing['kd'] != kd:
-                    await conn.execute("""
-                        INSERT INTO pid_parameter_history (timestamp, device_type, kp, ki, kd, updated_by, source, change_reason)
-                        VALUES (NOW(), $1, $2, $3, $4, $5, $6, $7)
-                    """, device_type, kp, ki, kd, updated_by, source, change_reason)
-                    logger.info(f"PID parameters updated for {device_type}: Kp={kp}, Ki={ki}, Kd={kd} (reason: {change_reason})")
-                
-                return True
-        except Exception as e:
-            logger.error(f"Error setting PID parameters with reason: {e}")
-            return False
+        """Set PID parameters with a reason for the change."""
+        if self._pid_repo:
+            return await self._pid_repo.set_pid_parameters_with_reason(
+                device_type, location, cluster, kp, ki, kd,
+                reason, output_min, output_max, deadband
+            )
+        raise RuntimeError("PIDRepository not initialized - call initialize() first")
+    
     async def get_schedules(
         self,
         location: Optional[str] = None,
-        cluster: Optional[str] = None
+        cluster: Optional[str] = None,
+        device_name: Optional[str] = None,
+        enabled_only: bool = False
     ) -> List[Dict[str, Any]]:
-        """Get schedules, optionally filtered by location/cluster.
-        
-        Args:
-            location: Location to filter by (optional)
-            cluster: Cluster to filter by (optional)
-        
-        Returns:
-            List of schedule dicts
-        """
+        """Get schedules with optional filters."""
         if self._schedule_repo:
-            return await self._schedule_repo.get_schedules(location, cluster)
-        try:
-            pool = await self._get_pool()
-            async with pool.acquire() as conn:
-                if location and cluster:
-                    rows = await conn.fetch("""
-                        SELECT id, name, location, cluster, device_name, day_of_week,
-                               start_time, end_time, enabled, mode, target_intensity,
-                               ramp_up_duration, ramp_down_duration, pre_day_duration,
-                               pre_night_duration, created_at, updated_at
-                        FROM schedules
-                        WHERE location = $1 AND cluster = $2
-                        ORDER BY start_time
-                    """, location, cluster)
-                elif location:
-                    rows = await conn.fetch("""
-                        SELECT id, name, location, cluster, device_name, day_of_week,
-                               start_time, end_time, enabled, mode, target_intensity,
-                               ramp_up_duration, ramp_down_duration, pre_day_duration,
-                               pre_night_duration, created_at, updated_at
-                        FROM schedules
-                        WHERE location = $1
-                        ORDER BY start_time
-                    """, location)
-                else:
-                    rows = await conn.fetch("""
-                        SELECT id, name, location, cluster, device_name, day_of_week,
-                               start_time, end_time, enabled, mode, target_intensity,
-                               ramp_up_duration, ramp_down_duration, pre_day_duration,
-                               pre_night_duration, created_at, updated_at
-                        FROM schedules
-                        ORDER BY location, cluster, start_time
-                    """)
-                return [dict(row) for row in rows]
-        except Exception as e:
-            logger.error(f"Error getting schedules: {e}")
-            return []
-    
-    async def fix_light_schedules_day_of_week(self) -> int:
-        """Force light schedules to be daily (day_of_week = NULL).
-        
-        Targets schedules where:
-        - mode = 'DAY'
-        - target_intensity IS NOT NULL (light dimming schedule)
-        - day_of_week IS NOT NULL (invalid for lights)
-        
-        Returns:
-            Number of schedules updated.
-        """
-        try:
-            pool = await self._get_pool()
-            async with pool.acquire() as conn:
-                rows = await conn.fetch("""
-                    UPDATE schedules
-                    SET day_of_week = NULL
-                    WHERE mode = 'DAY'
-                      AND target_intensity IS NOT NULL
-                      AND day_of_week IS NOT NULL
-                    RETURNING id
-                """)
-                fixed = len(rows)
-                if fixed:
-                    logger.info(f"Updated {fixed} light schedules to daily (day_of_week=NULL)")
-                return fixed
-        except Exception as e:
-            logger.error(f"Error fixing light schedules day_of_week: {e}")
-            return 0
+            # Repository only supports location/cluster filtering
+            # device_name and enabled_only filtering done in-memory if needed
+            schedules = await self._schedule_repo.get_schedules(location, cluster)
+            if device_name:
+                schedules = [s for s in schedules if s.get('device_name') == device_name]
+            if enabled_only:
+                schedules = [s for s in schedules if s.get('enabled')]
+            return schedules
+        raise RuntimeError("ScheduleRepository not initialized - call initialize() first")
     
     async def get_climate_schedule(
         self,
         location: str,
         cluster: str
     ) -> Optional[Dict[str, Any]]:
-        """Get climate schedule data (pre-day/pre-night durations) for a location/cluster.
-        
-        Climate schedules are stored in schedules table with pre_day_duration/pre_night_duration.
-        This method finds the first schedule with these fields set (or returns defaults).
-        
-        Args:
-            location: Location name
-            cluster: Cluster name
-        
-        Returns:
-            Dict with pre_day_duration, pre_night_duration, day_start_time, day_end_time
-            or None if not found
-        """
-        try:
-            pool = await self._get_pool()
-            async with pool.acquire() as conn:
-                # Get climate schedule (any schedule with pre_day_duration or pre_night_duration set)
-                row = await conn.fetchrow("""
-                    SELECT pre_day_duration, pre_night_duration
-                    FROM schedules
-                    WHERE location = $1 AND cluster = $2
-                      AND (pre_day_duration IS NOT NULL OR pre_night_duration IS NOT NULL)
-                    ORDER BY id DESC
-                    LIMIT 1
-                """, location, cluster)
-                
-                if row:
-                    return {
-                        'pre_day_duration': row['pre_day_duration'] or 0,
-                        'pre_night_duration': row['pre_night_duration'] or 0
-                    }
-                
-                # If no climate schedule found, return defaults
-                return {
-                    'pre_day_duration': 0,
-                    'pre_night_duration': 0
-                }
-        except Exception as e:
-            logger.error(f"Error getting climate schedule: {e}")
-            return {
-                'pre_day_duration': 0,
-                'pre_night_duration': 0
-            }
+        """Get climate schedule data (pre-day/pre-night durations) for a location/cluster."""
+        if self._schedule_repo:
+            return await self._schedule_repo.get_climate_schedule(location, cluster)
+        raise RuntimeError("ScheduleRepository not initialized - call initialize() first")
     
     async def get_light_schedule(
         self,
         location: str,
         cluster: str
     ) -> Optional[Dict[str, Any]]:
-        """Get light schedule (day start/end times) for a location/cluster.
-        
-        Finds the first enabled DAY mode schedule for any light device.
-        
-        Args:
-            location: Location name
-            cluster: Cluster name
-        
-        Returns:
-            Dict with day_start_time, day_end_time or None if not found
-        """
-        try:
-            pool = await self._get_pool()
-            async with pool.acquire() as conn:
-                # Get room schedule entry
-                row = await conn.fetchrow("""
-                    SELECT start_time, end_time
-                    FROM schedules
-                    WHERE location = $1 AND cluster = $2
-                      AND device_name = 'room_schedule'
-                      AND enabled = TRUE
-                    ORDER BY created_at DESC
-                    LIMIT 1
-                """, location, cluster)
-                
-                if row:
-                    return {
-                        'day_start_time': str(row['start_time']),
-                        'day_end_time': str(row['end_time'])
-                    }
-        except Exception as e:
-            logger.error(f"Error getting light schedule: {e}")
-        return None
+        """Get light schedule (day start/end times) for a location/cluster."""
+        if self._schedule_repo:
+            return await self._schedule_repo.get_room_light_schedule(location, cluster)
+        raise RuntimeError("ScheduleRepository not initialized - call initialize() first")
     
     async def create_schedule(
         self,
@@ -2782,257 +1804,57 @@ class DatabaseManager:
         location: str,
         cluster: str,
         device_name: str,
-        start_time: str,
-        end_time: str,
+        start_time: time,
+        end_time: time,
         day_of_week: Optional[int] = None,
         enabled: bool = True,
         mode: Optional[str] = None,
         target_intensity: Optional[float] = None,
-        ramp_up_duration: Optional[int] = None,
-        ramp_down_duration: Optional[int] = None,
+        ramp_up_duration: int = 0,
+        ramp_down_duration: int = 0,
         conn: Optional[asyncpg.Connection] = None
-    ) -> Optional[int]:
-        """Create a new schedule.
-        
-        Args:
-            name: Schedule name
-            location: Location name
-            cluster: Cluster name
-            device_name: Device name
-            start_time: Start time (HH:MM format)
-            end_time: End time (HH:MM format)
-            day_of_week: Day of week (0-6, None for daily)
-            enabled: Whether schedule is enabled
-            mode: Mode (DAY, NIGHT, TRANSITION) for mode-based scheduling
-            target_intensity: Target light intensity (0-100%) for ramp schedules
-            ramp_up_duration: Ramp up duration in minutes (0 = instant)
-            ramp_down_duration: Ramp down duration in minutes (0 = instant)
-            conn: Optional database connection (for use within transactions)
-        
-        Returns:
-            Schedule ID if successful, None otherwise
-        """
-        try:
-            # Convert time strings to TIME objects
-            from datetime import time as dt_time
-            start_parts = start_time.split(':')
-            end_parts = end_time.split(':')
-            start_time_obj = dt_time(int(start_parts[0]), int(start_parts[1]))
-            end_time_obj = dt_time(int(end_parts[0]), int(end_parts[1]))
-            
-            if conn is not None:
-                # Use provided connection (within transaction)
-                row = await conn.fetchrow("""
-                    INSERT INTO schedules 
-                    (name, location, cluster, device_name, day_of_week, start_time, end_time, enabled, mode,
-                     target_intensity, ramp_up_duration, ramp_down_duration)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-                    RETURNING id
-                """, name, location, cluster, device_name, day_of_week, start_time_obj, end_time_obj, enabled, mode,
-                    target_intensity, ramp_up_duration, ramp_down_duration)
-                return row['id'] if row else None
-            else:
-                # Create new connection
-                pool = await self._get_pool()
-                async with pool.acquire() as new_conn:
-                    row = await new_conn.fetchrow("""
-                        INSERT INTO schedules 
-                        (name, location, cluster, device_name, day_of_week, start_time, end_time, enabled, mode,
-                         target_intensity, ramp_up_duration, ramp_down_duration)
-                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-                        RETURNING id
-                    """, name, location, cluster, device_name, day_of_week, start_time_obj, end_time_obj, enabled, mode,
-                        target_intensity, ramp_up_duration, ramp_down_duration)
-                    return row['id'] if row else None
-        except Exception as e:
-            logger.error(f"Error creating schedule: {e}")
-            raise  # Re-raise to allow transaction rollback
+    ) -> int:
+        """Create a new schedule."""
+        if self._schedule_repo:
+            return await self._schedule_repo.create_schedule(
+                name, location, cluster, device_name, start_time, end_time,
+                day_of_week, enabled, mode, target_intensity,
+                ramp_up_duration, ramp_down_duration, conn
+            )
+        raise RuntimeError("ScheduleRepository not initialized - call initialize() first")
     
     async def update_schedule(
         self,
         schedule_id: int,
         name: Optional[str] = None,
-        start_time: Optional[str] = None,
-        end_time: Optional[str] = None,
+        start_time: Optional[time] = None,
+        end_time: Optional[time] = None,
         day_of_week: Optional[int] = None,
         enabled: Optional[bool] = None,
         mode: Optional[str] = None,
         target_intensity: Optional[float] = None,
         ramp_up_duration: Optional[int] = None,
-        ramp_down_duration: Optional[int] = None,
-        expected_version: Optional[datetime] = None
-    ) -> tuple[bool, Optional[datetime]]:
-        """Update a schedule.
-        
-        Args:
-            schedule_id: Schedule ID
-            name: New name (optional)
-            start_time: New start time (optional)
-            end_time: New end time (optional)
-            day_of_week: New day of week (optional)
-            enabled: New enabled state (optional)
-            mode: New mode (optional)
-            target_intensity: New target intensity (optional)
-            ramp_up_duration: New ramp up duration in minutes (optional)
-            ramp_down_duration: New ramp down duration in minutes (optional)
-            expected_version: Expected updated_at timestamp for optimistic locking (optional)
-        
-        Returns:
-            Tuple of (success: bool, new_updated_at: Optional[datetime])
-            If expected_version is provided and doesn't match, returns (False, current_updated_at)
-        """
-        # Whitelist of allowed column names for security
-        ALLOWED_COLUMNS = {
-            'name', 'start_time', 'end_time', 'day_of_week', 'enabled',
-            'mode', 'target_intensity', 'ramp_up_duration', 'ramp_down_duration'
-        }
-        
-        try:
-            pool = await self._get_pool()
-            async with pool.acquire() as conn:
-                # Check version if expected_version is provided
-                if expected_version is not None:
-                    current_row = await conn.fetchrow("""
-                        SELECT updated_at FROM schedules WHERE id = $1
-                    """, schedule_id)
-                    if not current_row:
-                        return (False, None)  # Schedule not found
-                    current_updated_at = current_row['updated_at']
-                    # Compare timestamps (accounting for timezone)
-                    if current_updated_at != expected_version:
-                        return (False, current_updated_at)  # Version mismatch
-                
-                updates = []
-                params = []
-                param_idx = 1
-                
-                if name is not None:
-                    if 'name' not in ALLOWED_COLUMNS:
-                        raise ValueError("Column 'name' is not allowed")
-                    updates.append(f"name = ${param_idx}")
-                    params.append(name)
-                    param_idx += 1
-                if start_time is not None:
-                    if 'start_time' not in ALLOWED_COLUMNS:
-                        raise ValueError("Column 'start_time' is not allowed")
-                    # Convert time string to TIME object
-                    from datetime import time as dt_time
-                    start_parts = start_time.split(':')
-                    start_time_obj = dt_time(int(start_parts[0]), int(start_parts[1]))
-                    updates.append(f"start_time = ${param_idx}")
-                    params.append(start_time_obj)
-                    param_idx += 1
-                if end_time is not None:
-                    if 'end_time' not in ALLOWED_COLUMNS:
-                        raise ValueError("Column 'end_time' is not allowed")
-                    # Convert time string to TIME object
-                    from datetime import time as dt_time
-                    end_parts = end_time.split(':')
-                    end_time_obj = dt_time(int(end_parts[0]), int(end_parts[1]))
-                    updates.append(f"end_time = ${param_idx}")
-                    params.append(end_time_obj)
-                    param_idx += 1
-                if day_of_week is not None:
-                    if 'day_of_week' not in ALLOWED_COLUMNS:
-                        raise ValueError("Column 'day_of_week' is not allowed")
-                    updates.append(f"day_of_week = ${param_idx}")
-                    params.append(day_of_week)
-                    param_idx += 1
-                if enabled is not None:
-                    if 'enabled' not in ALLOWED_COLUMNS:
-                        raise ValueError("Column 'enabled' is not allowed")
-                    updates.append(f"enabled = ${param_idx}")
-                    params.append(enabled)
-                    param_idx += 1
-                if mode is not None:
-                    if 'mode' not in ALLOWED_COLUMNS:
-                        raise ValueError("Column 'mode' is not allowed")
-                    updates.append(f"mode = ${param_idx}")
-                    params.append(mode)
-                    param_idx += 1
-                if target_intensity is not None:
-                    if 'target_intensity' not in ALLOWED_COLUMNS:
-                        raise ValueError("Column 'target_intensity' is not allowed")
-                    updates.append(f"target_intensity = ${param_idx}")
-                    params.append(target_intensity)
-                    param_idx += 1
-                if ramp_up_duration is not None:
-                    if 'ramp_up_duration' not in ALLOWED_COLUMNS:
-                        raise ValueError("Column 'ramp_up_duration' is not allowed")
-                    updates.append(f"ramp_up_duration = ${param_idx}")
-                    params.append(ramp_up_duration)
-                    param_idx += 1
-                if ramp_down_duration is not None:
-                    if 'ramp_down_duration' not in ALLOWED_COLUMNS:
-                        raise ValueError("Column 'ramp_down_duration' is not allowed")
-                    updates.append(f"ramp_down_duration = ${param_idx}")
-                    params.append(ramp_down_duration)
-                    param_idx += 1
-                
-                if not updates:
-                    return (False, None)
-                
-                # Always update updated_at on successful update
-                updates.append(f"updated_at = NOW()")
-                
-                params.append(schedule_id)
-                # Use parameterized query with whitelisted column names
-                query = f"""
-                    UPDATE schedules
-                    SET {', '.join(updates)}
-                    WHERE id = ${param_idx}
-                    RETURNING updated_at
-                """
-                row = await conn.fetchrow(query, *params)
-                if row:
-                    return (True, row['updated_at'])
-                return (False, None)
-        except Exception as e:
-            logger.error(f"Error updating schedule: {e}")
-            return (False, None)
+        ramp_down_duration: Optional[int] = None
+    ) -> bool:
+        """Update an existing schedule."""
+        if self._schedule_repo:
+            return await self._schedule_repo.update_schedule(
+                schedule_id, name, start_time, end_time, day_of_week,
+                enabled, mode, target_intensity, ramp_up_duration, ramp_down_duration
+            )
+        raise RuntimeError("ScheduleRepository not initialized - call initialize() first")
     
     async def delete_schedule(self, schedule_id: int) -> bool:
-        """Delete a schedule.
-        
-        Args:
-            schedule_id: Schedule ID
-        
-        Returns:
-            True if successful, False otherwise
-        """
-        try:
-            pool = await self._get_pool()
-            async with pool.acquire() as conn:
-                await conn.execute("DELETE FROM schedules WHERE id = $1", schedule_id)
-                return True
-        except Exception as e:
-            logger.error(f"Error deleting schedule: {e}")
-            return False
+        """Delete a schedule by ID."""
+        if self._schedule_repo:
+            return await self._schedule_repo.delete_schedule(schedule_id)
+        raise RuntimeError("ScheduleRepository not initialized - call initialize() first")
     
-    async def delete_schedules_bulk(self, schedule_ids: List[int], conn: asyncpg.Connection) -> int:
-        """Delete multiple schedules within a transaction.
-        
-        Args:
-            schedule_ids: List of schedule IDs to delete
-            conn: Database connection (must be within a transaction)
-        
-        Returns:
-            Number of schedules deleted
-        """
-        if not schedule_ids:
-            return 0
-        try:
-            result = await conn.execute(
-                "DELETE FROM schedules WHERE id = ANY($1::bigint[])",
-                schedule_ids
-            )
-            # Extract number of rows deleted from result string
-            deleted_count = int(result.split()[-1]) if result else 0
-            logger.info(f"Deleted {deleted_count} schedules in bulk")
-            return deleted_count
-        except Exception as e:
-            logger.error(f"Error deleting schedules in bulk: {e}")
-            raise
+    async def delete_schedules_bulk(self, schedule_ids: List[int]) -> int:
+        """Delete multiple schedules by IDs."""
+        if self._schedule_repo:
+            return await self._schedule_repo.delete_schedules_bulk(schedule_ids)
+        raise RuntimeError("ScheduleRepository not initialized - call initialize() first")
     
     async def load_schedule_state_to_redis(self) -> None:
         """Load all schedule state from database to Redis following canonical schema.
@@ -3238,187 +2060,41 @@ class DatabaseManager:
             logger.info("Room modes tables created/verified")
     
     async def get_room_modes(self) -> list[dict[str, Any]]:
-        pool = await self._get_pool()
-        async with pool.acquire() as conn:
-            rows = await conn.fetch("""
-                SELECT id, name, description, photoperiod_hours, is_constant
-                FROM room_modes ORDER BY id
-            """)
-            return [dict(row) for row in rows]
+        """Get all room modes."""
+        if self._room_mode_repo:
+            return await self._room_mode_repo.get_room_modes()
+        raise RuntimeError("RoomModeRepository not initialized - call initialize() first")
     
     async def get_flower_submodes(self) -> list[dict[str, Any]]:
-        pool = await self._get_pool()
-        async with pool.acquire() as conn:
-            rows = await conn.fetch("""
-                SELECT id, name, description, week_start, week_end
-                FROM flower_submodes ORDER BY week_start
-            """)
-            return [dict(row) for row in rows]
+        """Get all flower submodes."""
+        if self._room_mode_repo:
+            return await self._room_mode_repo.get_flower_submodes()
+        raise RuntimeError("RoomModeRepository not initialized - call initialize() first")
     
     async def get_active_mode(self, location: str, cluster: str) -> dict | None:
-        pool = await self._get_pool()
-        async with pool.acquire() as conn:
-            row = await conn.fetchrow("""
-                SELECT ram.location, ram.cluster, rm.name as mode_name, fs.name as submode_name,
-                       ram.mode_id, ram.submode_id, ram.activated_at
-                FROM room_active_mode ram
-                JOIN room_modes rm ON ram.mode_id = rm.id
-                LEFT JOIN flower_submodes fs ON ram.submode_id = fs.id
-                WHERE ram.location = $1 AND ram.cluster = $2
-            """, location, cluster)
-            return dict(row) if row else None
+        """Get active mode for a location/cluster."""
+        if self._room_mode_repo:
+            return await self._room_mode_repo.get_active_mode(location, cluster)
+        raise RuntimeError("RoomModeRepository not initialized - call initialize() first")
     
     async def set_active_mode(self, location: str, cluster: str, mode_name: str, submode_name: str | None = None) -> bool:
-        pool = await self._get_pool()
-        async with pool.acquire() as conn:
-            mode_row = await conn.fetchrow("SELECT id FROM room_modes WHERE name = $1", mode_name)
-            if not mode_row:
-                logger.error(f"Mode '{mode_name}' not found")
-                return False
-            mode_id = mode_row['id']
-            
-            submode_id = None
-            if submode_name:
-                submode_row = await conn.fetchrow("SELECT id FROM flower_submodes WHERE name = $1", submode_name)
-                if submode_row:
-                    submode_id = submode_row['id']
-            
-            await conn.execute("""
-                INSERT INTO room_active_mode (location, cluster, mode_id, submode_id, activated_at)
-                VALUES ($1, $2, $3, $4, NOW())
-                ON CONFLICT (location, cluster) DO UPDATE SET
-                    mode_id = $3, submode_id = $4, activated_at = NOW()
-            """, location, cluster, mode_id, submode_id)
-            return True
+        """Set active mode for a location/cluster."""
+        if self._room_mode_repo:
+            return await self._room_mode_repo.set_active_mode(location, cluster, mode_name, submode_name)
+        raise RuntimeError("RoomModeRepository not initialized - call initialize() first")
     
     async def get_mode_parameters(self, location: str, cluster: str, mode_name: str, submode_name: str | None = None) -> dict[str, Any] | None:
+        """Get mode parameters for a location/cluster/mode."""
         if self._room_mode_repo:
             return await self._room_mode_repo.get_mode_parameters(location, cluster, mode_name, submode_name)
-        pool = await self._get_pool()
-        async with pool.acquire() as conn:
-            mode_row = await conn.fetchrow("SELECT id FROM room_modes WHERE name = $1", mode_name)
-            if not mode_row:
-                return None
-            mode_id = mode_row['id']
-            
-            submode_id = None
-            if submode_name:
-                submode_row = await conn.fetchrow("SELECT id FROM flower_submodes WHERE name = $1", submode_name)
-                if submode_row:
-                    submode_id = submode_row['id']
-            
-            if submode_id:
-                row = await conn.fetchrow("""
-                    SELECT * FROM mode_parameters
-                    WHERE location = $1 AND cluster = $2 AND mode_id = $3 AND submode_id = $4
-                """, location, cluster, mode_id, submode_id)
-            else:
-                row = await conn.fetchrow("""
-                    SELECT * FROM mode_parameters
-                    WHERE location = $1 AND cluster = $2 AND mode_id = $3 AND submode_id IS NULL
-                """, location, cluster, mode_id)
-            
-            if row:
-                result = dict(row)
-                result['day_start_time'] = str(result['day_start_time'])[:5] if result['day_start_time'] else '06:00'
-                result['night_start_time'] = str(result['night_start_time'])[:5] if result['night_start_time'] else '18:00'
-                return result
-            return None
+        raise RuntimeError("RoomModeRepository not initialized - call initialize() first")
     
     async def save_mode_parameters(self, location: str, cluster: str, mode_name: str, submode_name: str | None, params: dict[str, Any]) -> bool:
+        """Save mode parameters."""
         if self._room_mode_repo:
             return await self._room_mode_repo.save_mode_parameters(location, cluster, mode_name, submode_name, params)
-        pool = await self._get_pool()
-        async with pool.acquire() as conn:
-            mode_row = await conn.fetchrow("SELECT id FROM room_modes WHERE name = $1", mode_name)
-            if not mode_row:
-                logger.error(f"Mode '{mode_name}' not found")
-                return False
-            mode_id = mode_row['id']
-            
-            submode_id = None
-            if submode_name:
-                submode_row = await conn.fetchrow("SELECT id FROM flower_submodes WHERE name = $1", submode_name)
-                if submode_row:
-                    submode_id = submode_row['id']
-            
-            from datetime import time as dt_time
-            day_start = params.get('day_start_time', '06:00')
-            night_start = params.get('night_start_time', '18:00')
-            if isinstance(day_start, str):
-                parts = day_start.split(':')
-                day_start = dt_time(int(parts[0]), int(parts[1]))
-            if isinstance(night_start, str):
-                parts = night_start.split(':')
-                night_start = dt_time(int(parts[0]), int(parts[1]))
-            
-            existing = await conn.fetchval("""
-                SELECT id FROM mode_parameters 
-                WHERE location = $1 AND cluster = $2 AND mode_id = $3 
-                AND COALESCE(submode_id, -1) = COALESCE($4, -1)
-            """, location, cluster, mode_id, submode_id)
-            
-            if existing:
-                await conn.execute("""
-                    UPDATE mode_parameters SET
-                        day_start_time = $1, night_start_time = $2, ramp_up_minutes = $3, ramp_down_minutes = $4,
-                        pre_day_ramp_minutes = $5, pre_night_ramp_minutes = $6,
-                        pre_day_minutes = $7, pre_night_minutes = $8,
-                        light_ramp_up_minutes = $9, light_ramp_down_minutes = $10,
-                        day_heat_temp = $11, day_cool_temp = $12, day_vpd = $13, day_co2 = $14, day_leaf_delta = $15,
-                        night_heat_temp = $16, night_cool_temp = $17, night_vpd = $18, night_co2 = $19, night_leaf_delta = $20,
-                        pre_day_heat_temp = $21, pre_day_cool_temp = $22, pre_day_vpd = $23, pre_day_co2 = $24,
-                        pre_night_heat_temp = $25, pre_night_cool_temp = $26, pre_night_vpd = $27, pre_night_co2 = $28,
-                        main_light_intensity = $29, supplemental_light_intensity = $30, updated_at = NOW()
-                    WHERE id = $31
-                """, day_start, night_start,
-                    params.get('ramp_up_minutes', 30), params.get('ramp_down_minutes', 30),
-                    params.get('pre_day_ramp_minutes', 30), params.get('pre_night_ramp_minutes', 30),
-                    params.get('pre_day_minutes', 30), params.get('pre_night_minutes', 30),
-                    params.get('light_ramp_up_minutes', 15), params.get('light_ramp_down_minutes', 15),
-                    params.get('day_heat_temp', 24.0), params.get('day_cool_temp', 28.0),
-                    params.get('day_vpd', 1.2), params.get('day_co2', 800), params.get('day_leaf_delta', -2.0),
-                    params.get('night_heat_temp', 20.0), params.get('night_cool_temp', 24.0),
-                    params.get('night_vpd', 1.2), params.get('night_co2', 600), params.get('night_leaf_delta', -1.0),
-                    params.get('pre_day_heat_temp', 22.0), params.get('pre_day_cool_temp', 26.0),
-                    params.get('pre_day_vpd', 1.2), params.get('pre_day_co2', 700),
-                    params.get('pre_night_heat_temp', 22.0), params.get('pre_night_cool_temp', 26.0),
-                    params.get('pre_night_vpd', 1.2), params.get('pre_night_co2', 700),
-                    params.get('main_light_intensity', 100), params.get('supplemental_light_intensity', 0),
-                    existing
-                )
-            else:
-                await conn.execute("""
-                    INSERT INTO mode_parameters (
-                        location, cluster, mode_id, submode_id,
-                        day_start_time, night_start_time, ramp_up_minutes, ramp_down_minutes,
-                        pre_day_ramp_minutes, pre_night_ramp_minutes,
-                        pre_day_minutes, pre_night_minutes,
-                        light_ramp_up_minutes, light_ramp_down_minutes,
-                        day_heat_temp, day_cool_temp, day_vpd, day_co2, day_leaf_delta,
-                        night_heat_temp, night_cool_temp, night_vpd, night_co2, night_leaf_delta,
-                        pre_day_heat_temp, pre_day_cool_temp, pre_day_vpd, pre_day_co2,
-                        pre_night_heat_temp, pre_night_cool_temp, pre_night_vpd, pre_night_co2,
-                        main_light_intensity, supplemental_light_intensity, updated_at
-                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, NOW())
-                """, location, cluster, mode_id, submode_id,
-                    day_start, night_start,
-                    params.get('ramp_up_minutes', 30), params.get('ramp_down_minutes', 30),
-                    params.get('pre_day_ramp_minutes', 30), params.get('pre_night_ramp_minutes', 30),
-                    params.get('pre_day_minutes', 30), params.get('pre_night_minutes', 30),
-                    params.get('light_ramp_up_minutes', 15), params.get('light_ramp_down_minutes', 15),
-                    params.get('day_heat_temp', 24.0), params.get('day_cool_temp', 28.0),
-                    params.get('day_vpd', 1.2), params.get('day_co2', 800), params.get('day_leaf_delta', -2.0),
-                    params.get('night_heat_temp', 20.0), params.get('night_cool_temp', 24.0),
-                    params.get('night_vpd', 1.2), params.get('night_co2', 600), params.get('night_leaf_delta', -1.0),
-                    params.get('pre_day_heat_temp', 22.0), params.get('pre_day_cool_temp', 26.0),
-                    params.get('pre_day_vpd', 1.2), params.get('pre_day_co2', 700),
-                    params.get('pre_night_heat_temp', 22.0), params.get('pre_night_cool_temp', 26.0),
-                    params.get('pre_night_vpd', 1.2), params.get('pre_night_co2', 700),
-                    params.get('main_light_intensity', 100), params.get('supplemental_light_intensity', 0)
-                )
-            return True
-
+        raise RuntimeError("RoomModeRepository not initialized - call initialize() first")
+    
     async def update_light_schedule_target(
         self, location: str, cluster: str, device_name: str, target_intensity: float
     ) -> bool:
