@@ -150,7 +150,7 @@ class DatabaseManager:
             return 0
 
         flushed_count = 0
-        batch_data: list[tuple[Any, ...]] = []
+        batch_data: list[Dict[str, Any]] = []
         try:
             # Use a single batch insert for all buffered records
             batch_data = self._batch_buffer.copy()
@@ -1635,29 +1635,25 @@ class DatabaseManager:
     async def set_pid_parameters(
         self,
         device_type: str,
-        location: str,
-        cluster: str,
         kp: float,
         ki: float,
         kd: float,
-        output_min: float = 0.0,
-        output_max: float = 100.0,
-        deadband: float = 0.5
+        source: str = "manual",
+        updated_by: str = "system"
     ) -> bool:
         """Set PID parameters for a device type."""
         if self._pid_repo:
             return await self._pid_repo.set_pid_parameters(
-                device_type, location, cluster, kp, ki, kd,
-                output_min, output_max, deadband
+                device_type, kp, ki, kd, source, updated_by
             )
         raise RuntimeError("PIDRepository not initialized - call initialize() first")
     
     async def get_pid_parameter_history(
-        self, device_type: str, location: str, cluster: str, limit: int = 100
+        self, device_type: str, limit: int = 100
     ) -> List[Dict[str, Any]]:
         """Get PID parameter history."""
         if self._pid_repo:
-            return await self._pid_repo.get_pid_parameter_history(device_type, location, cluster, limit)
+            return await self._pid_repo.get_pid_parameter_history(device_type, limit)
         raise RuntimeError("PIDRepository not initialized - call initialize() first")
     
     async def get_all_pid_parameters(self) -> Dict[str, Dict[str, Any]]:
@@ -1711,21 +1707,17 @@ class DatabaseManager:
     async def set_pid_parameters_with_reason(
         self,
         device_type: str,
-        location: str,
-        cluster: str,
         kp: float,
         ki: float,
         kd: float,
-        reason: str,
-        output_min: float = 0.0,
-        output_max: float = 100.0,
-        deadband: float = 0.5
+        change_reason: str,
+        source: str = "auto_pid",
+        updated_by: Optional[str] = None
     ) -> bool:
         """Set PID parameters with a reason for the change."""
         if self._pid_repo:
             return await self._pid_repo.set_pid_parameters_with_reason(
-                device_type, location, cluster, kp, ki, kd,
-                reason, output_min, output_max, deadband
+                device_type, kp, ki, kd, change_reason, source, updated_by
             )
         raise RuntimeError("PIDRepository not initialized - call initialize() first")
     
