@@ -152,8 +152,8 @@ export default function ZoneConfig() {
                   lightPhotoperiod={{
                     startTime: params.day_start_time,
                     endTime: params.night_start_time,
-                    rampUpDuration: params.pre_day_minutes,
-                    rampDownDuration: params.pre_night_minutes
+                    rampUpDuration: params.light_ramp_up_minutes,
+                    rampDownDuration: params.light_ramp_down_minutes
                   }}
                   setpoints={{
                     DAY: { heating_setpoint: params.day_heat_temp, cooling_setpoint: params.day_cool_temp, vpd: params.day_vpd, co2: params.day_co2, ramp_in_duration: params.ramp_up_minutes },
