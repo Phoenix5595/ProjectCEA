@@ -33,8 +33,8 @@ done
 echo "[3/6] Building frontend..."
 cd "$TARGET/Infrastructure/frontend"
 sudo rm -rf dist/
-sudo npm ci --silent
-sudo npm run build
+sudo env CI=true npm ci --silent --no-audit --no-fund
+sudo env CI=true npm run build
 
 # 4. Atomic symlink switch
 echo "[4/6] Switching symlink..."
