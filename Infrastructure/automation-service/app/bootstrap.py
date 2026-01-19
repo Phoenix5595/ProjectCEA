@@ -1,11 +1,13 @@
 """Bootstrap utilities for application startup and shutdown."""
+
 from __future__ import annotations
 
-from shared.logging import get_logger
 from contextlib import asynccontextmanager
-from typing import Optional
+
 from fastapi import FastAPI
+
 from app.container import ServiceContainer
+from shared.logging import get_logger
 
 logger = get_logger(__name__)
 

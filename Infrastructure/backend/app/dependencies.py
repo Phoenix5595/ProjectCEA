@@ -1,14 +1,14 @@
 """Shared dependencies for FastAPI routes."""
+
 from __future__ import annotations
 
-from shared.logging import get_logger
-from app.database import DatabaseManager
 from app.config import ConfigLoader
-from typing import Optional
+from app.database import DatabaseManager
 
 # Global instances (lazy initialization)
-_db_manager: Optional[DatabaseManager] = None
-_config_loader: Optional[ConfigLoader] = None
+_db_manager: DatabaseManager | None = None
+_config_loader: ConfigLoader | None = None
+
 
 def get_db_manager() -> DatabaseManager:
     """Get or create database manager instance."""
@@ -17,10 +17,10 @@ def get_db_manager() -> DatabaseManager:
         _db_manager = DatabaseManager()
     return _db_manager
 
+
 def get_config_loader() -> ConfigLoader:
     """Get or create config loader instance."""
     global _config_loader
     if _config_loader is None:
         _config_loader = ConfigLoader()
     return _config_loader
-

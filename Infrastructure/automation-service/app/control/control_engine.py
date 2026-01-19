@@ -1,36 +1,38 @@
 """Control engine that orchestrates rules, schedules, and PID control."""
+
 from __future__ import annotations
 
 # Standard library imports
-import asyncio
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Tuple, Any
+from typing import Any
+
+from app.alarm_manager import AlarmManager
+from app.automation.rules_engine import RulesEngine
+from app.config import ConfigLoader
+from app.control.device_controller import DeviceController
+from app.control.device_processor import DeviceProcessor
+from app.control.performance_monitor import get_performance_monitor
+from app.control.pid_controller_manager import PIDControllerManager
+from app.control.relay_manager import RelayManager
+from app.control.scheduler import Scheduler
+from app.control.sensor_data_manager import SensorDataManager
+from app.control.setpoint_manager import SetpointManager
+from app.control.vpd_cascade_controller import (
+    VPDCascadeController,
+)
+from app.database import DatabaseManager
 
 # Third-party imports
 # (none in this file)
-
 # Local imports
 from shared.logging import get_logger
-from app.control.relay_manager import RelayManager
-from app.control.scheduler import Scheduler
-from app.automation.rules_engine import RulesEngine
-from app.database import DatabaseManager
-from app.config import ConfigLoader
-from app.alarm_manager import AlarmManager
-from app.control.sensor_data_manager import SensorDataManager
-from app.control.pid_controller_manager import PIDControllerManager
-from app.control.device_controller import DeviceController
-from app.control.device_processor import DeviceProcessor
-from app.control.setpoint_manager import SetpointManager, RampManager
-from app.control.performance_monitor import get_performance_monitor
-from app.control.vpd_cascade_controller import VPDCascadeController, EnvironmentState, TempConstraints
 
 logger = get_logger(__name__)
 
 
 class ControlEngine:
     """Main control engine that executes automation logic."""
-    
+
     def __init__(
         self,
         relay_manager: RelayManager,
@@ -39,7 +41,7 @@ class ControlEngine:
         scheduler: Scheduler,
         rules_engine: RulesEngine,
         alarm_manager: AlarmManager | None = None,
-        dfr0971_manager: Any | None = None  # DFR0971Manager (avoid circular import)
+        dfr0971_manager: Any | None = None,  # DFR0971Manager (avoid circular import)
     ):
         """Initialize control engine.
 
@@ -66,24 +68,28 @@ class ControlEngine:
         self.device_controller = DeviceController(relay_manager, database, dfr0971_manager)
 
         # Initialize new extracted components
-        self.device_processor = DeviceProcessor(self.device_controller, database, dfr0971_manager, scheduler)
+        self.device_processor = DeviceProcessor(
+            self.device_controller, database, dfr0971_manager, scheduler
+        )
         self.setpoint_manager = SetpointManager(database)
-        
+
         # VPD Cascade Controller for intelligent actuator selection
         self.vpd_cascade_controller = VPDCascadeController(
             vpd_deadband=0.05,  # 0.05 kPa deadband
-            kp=20.0, ki=0.5, kd=2.0
+            kp=20.0,
+            ki=0.5,
+            kd=2.0,
         )
-        
+
         # Ramp restoration will be done asynchronously after Redis is available
         # See _restore_ramps_on_startup() called from run()
         self._ramps_restored = False
-        
+
         # Track automation context for logging
-        self._automation_context: Dict[Tuple[str, str, str], Dict[str, Any]] = {}
+        self._automation_context: dict[tuple[str, str, str], dict[str, Any]] = {}
 
         # Track current climate mode per location/cluster
-        self._current_climate_mode: Dict[Tuple[str, str], str] = {}
+        self._current_climate_mode: dict[tuple[str, str], str] = {}
 
         # Track effective setpoints per location/cluster
         # Format: (location, cluster) -> {
@@ -94,73 +100,79 @@ class ControlEngine:
         #   'ramp_progress_heating': float or None,
         #   'ramp_progress_cooling': float or None
         # }
-        self._effective_setpoints: Dict[Tuple[str, str], Dict[str, Any]] = {}
+        self._effective_setpoints: dict[tuple[str, str], dict[str, Any]] = {}
 
         # Performance optimizations
-        self._device_hierarchy_cache: Optional[Dict[str, Dict[str, Dict[str, Dict[str, Any]]]]] = None
-        self._sensor_mapping_cache: Optional[Dict[str, str]] = None
-        self._cache_timestamp: Optional[datetime] = None
+        self._device_hierarchy_cache: dict[str, dict[str, dict[str, dict[str, Any]]]] | None = (
+            None
+        )
+        self._sensor_mapping_cache: dict[str, str] | None = None
+        self._cache_timestamp: datetime | None = None
         self._cache_ttl = timedelta(seconds=30)  # Cache for 30 seconds
 
         # Object pooling for memory optimization
-        self._setpoint_data_pool: List[Dict[str, Any]] = []
-        self._sensor_values_pool: List[Dict[str, Optional[float]]] = []
+        self._setpoint_data_pool: list[dict[str, Any]] = []
+        self._sensor_values_pool: list[dict[str, float | None]] = []
         self._pool_size = 10  # Keep up to 10 objects in each pool
 
         # Performance profiling
         self._profiling_enabled = True
-        self._performance_stats: Dict[str, List[float]] = {
-            'total_loop_time': [],
-            'sensor_reading_time': [],
-            'setpoint_calculation_time': [],
-            'device_processing_time': []
+        self._performance_stats: dict[str, list[float]] = {
+            "total_loop_time": [],
+            "sensor_reading_time": [],
+            "setpoint_calculation_time": [],
+            "device_processing_time": [],
         }
         self._max_stats_history = 100  # Keep last 100 measurements
 
         logger.info("Control engine initialized")
 
-    def _get_device_hierarchy(self) -> Dict[str, Dict[str, Dict[str, Dict[str, Any]]]]:
+    def _get_device_hierarchy(self) -> dict[str, dict[str, dict[str, dict[str, Any]]]]:
         """Get cached device hierarchy or refresh if expired."""
         now = datetime.now()
-        if (self._device_hierarchy_cache is None or
-            self._cache_timestamp is None or
-            now - self._cache_timestamp > self._cache_ttl):
+        if (
+            self._device_hierarchy_cache is None
+            or self._cache_timestamp is None
+            or now - self._cache_timestamp > self._cache_ttl
+        ):
             self._device_hierarchy_cache = self.config.get_devices()
             self._cache_timestamp = now
             logger.debug("Refreshed device hierarchy cache")
         return self._device_hierarchy_cache
 
-    def _get_sensor_mapping(self) -> Dict[str, str]:
+    def _get_sensor_mapping(self) -> dict[str, str]:
         """Get cached sensor mapping or refresh if expired."""
         now = datetime.now()
-        if (self._sensor_mapping_cache is None or
-            self._cache_timestamp is None or
-            now - self._cache_timestamp > self._cache_ttl):
+        if (
+            self._sensor_mapping_cache is None
+            or self._cache_timestamp is None
+            or now - self._cache_timestamp > self._cache_ttl
+        ):
             self._sensor_mapping_cache = self.config.get_sensor_mapping()
             if self._cache_timestamp is None:  # Only update if not already set
                 self._cache_timestamp = now
             logger.debug("Refreshed sensor mapping cache")
         return self._sensor_mapping_cache
 
-    def _get_setpoint_data_from_pool(self) -> Dict[str, Any]:
+    def _get_setpoint_data_from_pool(self) -> dict[str, Any]:
         """Get a setpoint data dict from the object pool or create new one."""
         if self._setpoint_data_pool:
             return self._setpoint_data_pool.pop()
         return {}
 
-    def _return_setpoint_data_to_pool(self, obj: Dict[str, Any]) -> None:
+    def _return_setpoint_data_to_pool(self, obj: dict[str, Any]) -> None:
         """Return a setpoint data dict to the object pool."""
         if len(self._setpoint_data_pool) < self._pool_size:
             obj.clear()  # Clear before reusing
             self._setpoint_data_pool.append(obj)
 
-    def _get_sensor_values_from_pool(self) -> Dict[str, Optional[float]]:
+    def _get_sensor_values_from_pool(self) -> dict[str, float | None]:
         """Get a sensor values dict from the object pool or create new one."""
         if self._sensor_values_pool:
             return self._sensor_values_pool.pop()
         return {}
 
-    def _return_sensor_values_to_pool(self, obj: Dict[str, Optional[float]]) -> None:
+    def _return_sensor_values_to_pool(self, obj: dict[str, float | None]) -> None:
         """Return a sensor values dict to the object pool."""
         if len(self._sensor_values_pool) < self._pool_size:
             obj.clear()  # Clear before reusing
@@ -176,21 +188,20 @@ class ControlEngine:
         if len(stats_list) > self._max_stats_history:
             stats_list.pop(0)
 
-    def get_performance_stats(self) -> Dict[str, Dict[str, float]]:
+    def get_performance_stats(self) -> dict[str, dict[str, float]]:
         """Get performance statistics summary."""
         stats = {}
         for key, values in self._performance_stats.items():
             if values:
                 stats[key] = {
-                    'avg': sum(values) / len(values),
-                    'min': min(values),
-                    'max': max(values),
-                    'count': len(values)
+                    "avg": sum(values) / len(values),
+                    "min": min(values),
+                    "max": max(values),
+                    "count": len(values),
                 }
             else:
-                stats[key] = {'avg': 0.0, 'min': 0.0, 'max': 0.0, 'count': 0}
+                stats[key] = {"avg": 0.0, "min": 0.0, "max": 0.0, "count": 0}
         return stats
-
 
     async def _restore_ramps_on_startup(self) -> None:
         """Restore active ramps from Redis on startup."""
@@ -200,7 +211,9 @@ class ControlEngine:
                 self.setpoint_manager.ramp_manager.set_redis(redis_client)
                 restored = self.setpoint_manager.ramp_manager.restore_ramps_from_redis()
                 if restored > 0:
-                    logger.info(f"Control engine startup: restored {restored} active ramp(s) from Redis")
+                    logger.info(
+                        f"Control engine startup: restored {restored} active ramp(s) from Redis"
+                    )
                 else:
                     logger.info("Control engine startup: no active ramps to restore")
             else:
@@ -214,7 +227,7 @@ class ControlEngine:
         if not self._ramps_restored:
             await self._restore_ramps_on_startup()
             self._ramps_restored = True
-        
+
         loop_start_time = datetime.now() if self._profiling_enabled else None
 
         current_time = datetime.now()
@@ -222,9 +235,9 @@ class ControlEngine:
         # Get cached device hierarchy and sensor mapping (performance optimization)
         devices = self._get_device_hierarchy()
         sensor_mapping = self._get_sensor_mapping()
-        
+
         # Debug logging removed
-        
+
         # Process each location/cluster
         device_processing_start = datetime.now() if self._profiling_enabled else None
 
@@ -232,18 +245,22 @@ class ControlEngine:
             for cluster, cluster_devices in clusters.items():
                 # Debug logging removed
                 # Log when processing Veg Room to verify control loop is running
-                if location == 'Veg Room':
-                    logger.info(f"Control loop processing {location}/{cluster} with {len(cluster_devices)} devices")
+                if location == "Veg Room":
+                    logger.info(
+                        f"Control loop processing {location}/{cluster} with {len(cluster_devices)} devices"
+                    )
 
                 # Get sensor values for this location/cluster (with timing)
                 sensor_start = datetime.now() if self._profiling_enabled else None
                 # Debug logging removed
-                sensor_values = await self.sensor_data_manager.get_sensor_values(location, cluster, sensor_mapping)
+                sensor_values = await self.sensor_data_manager.get_sensor_values(
+                    location, cluster, sensor_mapping
+                )
                 # Debug logging removed
                 if self._profiling_enabled and sensor_start:
                     sensor_time = (datetime.now() - sensor_start).total_seconds() * 1000
-                    self._record_performance_stat('sensor_reading_time', sensor_time)
-                
+                    self._record_performance_stat("sensor_reading_time", sensor_time)
+
                 # Determine current mode and get setpoints
                 # Debug logging removed
                 light_schedule = await self.database.get_light_schedule(location, cluster)
@@ -256,21 +273,25 @@ class ControlEngine:
                 climate_mode_key = (location, cluster)
                 # Get previous mode BEFORE determining new mode (for change detection)
                 previous_mode = self._current_climate_mode.get(climate_mode_key)
-                
+
                 if light_schedule and climate_schedule:
                     mode_result = self.scheduler.get_climate_mode(
-                        location, cluster, current_time,
-                        light_schedule.get('day_start_time'),
-                        light_schedule.get('day_end_time'),
-                        climate_schedule.get('pre_day_duration'),
-                        climate_schedule.get('pre_night_duration')
+                        location,
+                        cluster,
+                        current_time,
+                        light_schedule.get("day_start_time"),
+                        light_schedule.get("day_end_time"),
+                        climate_schedule.get("pre_day_duration"),
+                        climate_schedule.get("pre_night_duration"),
                     )
                     if mode_result:
                         current_mode, _, _ = mode_result
 
                     # Get setpoint data BEFORE computing effective setpoints
                     # Debug logging removed
-                    setpoint_data = await self.database.get_setpoint(location, cluster, current_mode)
+                    setpoint_data = await self.database.get_setpoint(
+                        location, cluster, current_mode
+                    )
                     # Debug logging removed
                     if not setpoint_data and current_mode:
                         # Fallback to legacy mode=None if mode-based setpoint not found
@@ -303,7 +324,7 @@ class ControlEngine:
                             f"No setpoint found for {location}/{cluster} mode={current_mode}, "
                             f"using legacy mode=None setpoint"
                         )
-                
+
                 # Log setpoint retrieval for verification
                 if setpoint_data:
                     mode_str = current_mode or "None (legacy)"
@@ -313,75 +334,92 @@ class ControlEngine:
                         f"cooling={setpoint_data.get('cooling_setpoint')}, "
                         f"ramp_in_duration={setpoint_data.get('ramp_in_duration', 0)}"
                     )
-                
+
                 if setpoint_data:
                     # Log setpoint retrieval for debugging
-                    if current_mode in ['PRE_DAY', 'PRE_NIGHT']:
-                        ramp_in = setpoint_data.get('ramp_in_duration', 0) or 0
+                    if current_mode in ["PRE_DAY", "PRE_NIGHT"]:
+                        ramp_in = setpoint_data.get("ramp_in_duration", 0) or 0
                         logger.debug(
                             f"Retrieved {current_mode} setpoint for {location}/{cluster}: "
                             f"heating={setpoint_data.get('heating_setpoint')}, "
                             f"cooling={setpoint_data.get('cooling_setpoint')}, "
                             f"ramp_in_duration={ramp_in}min"
                         )
-                    
+
                     # Compute effective setpoints (pass previous_mode for change detection)
                     # Debug logging removed
                     effective_data = await self.setpoint_manager.compute_effective_setpoints(
-                        location, cluster, current_time, current_mode, setpoint_data, sensor_values, previous_mode
+                        location,
+                        cluster,
+                        current_time,
+                        current_mode,
+                        setpoint_data,
+                        sensor_values,
+                        previous_mode,
                     )
                     # Debug logging removed
-                    
+
                     # Store in context
                     self._effective_setpoints[(location, cluster)] = effective_data
-                    
+
                     # Debug logging removed
-                    
+
                     # Log to database immediately (before device processing)
                     await self.database.log_effective_setpoints(
                         location=location,
                         cluster=cluster,
-                        device_name='Main',
+                        device_name="Main",
                         mode=current_mode,
-                        effective_heating_setpoint=effective_data['effective_heating_setpoint'],
-                        effective_cooling_setpoint=effective_data['effective_cooling_setpoint'],
-                        effective_humidity_setpoint=effective_data['effective_humidity_setpoint'],
-                        effective_co2_setpoint=effective_data['effective_co2_setpoint'],
-                        effective_vpd_setpoint=effective_data['effective_vpd_setpoint'],
-                        nominal_heating_setpoint=effective_data['nominal_heating_setpoint'],
-                        nominal_cooling_setpoint=effective_data['nominal_cooling_setpoint'],
-                        nominal_humidity_setpoint=effective_data['nominal_humidity_setpoint'],
-                        nominal_co2_setpoint=effective_data['nominal_co2_setpoint'],
-                        nominal_vpd_setpoint=effective_data['nominal_vpd_setpoint'],
-                        ramp_progress_heating=effective_data['ramp_progress_heating'],
-                        ramp_progress_cooling=effective_data['ramp_progress_cooling'],
-                        ramp_progress_humidity=effective_data['ramp_progress_humidity'],
-                        ramp_progress_co2=effective_data['ramp_progress_co2'],
-                        ramp_progress_vpd=effective_data['ramp_progress_vpd'],
-                        timestamp=current_time
+                        effective_heating_setpoint=effective_data["effective_heating_setpoint"],
+                        effective_cooling_setpoint=effective_data["effective_cooling_setpoint"],
+                        effective_humidity_setpoint=effective_data["effective_humidity_setpoint"],
+                        effective_co2_setpoint=effective_data["effective_co2_setpoint"],
+                        effective_vpd_setpoint=effective_data["effective_vpd_setpoint"],
+                        nominal_heating_setpoint=effective_data["nominal_heating_setpoint"],
+                        nominal_cooling_setpoint=effective_data["nominal_cooling_setpoint"],
+                        nominal_humidity_setpoint=effective_data["nominal_humidity_setpoint"],
+                        nominal_co2_setpoint=effective_data["nominal_co2_setpoint"],
+                        nominal_vpd_setpoint=effective_data["nominal_vpd_setpoint"],
+                        ramp_progress_heating=effective_data["ramp_progress_heating"],
+                        ramp_progress_cooling=effective_data["ramp_progress_cooling"],
+                        ramp_progress_humidity=effective_data["ramp_progress_humidity"],
+                        ramp_progress_co2=effective_data["ramp_progress_co2"],
+                        ramp_progress_vpd=effective_data["ramp_progress_vpd"],
+                        timestamp=current_time,
                     )
-                
+
                 # Process devices using extracted component
                 await self.device_processor.process_devices(
-                    location, cluster, cluster_devices, sensor_values, current_time, effective_data, current_mode
+                    location,
+                    cluster,
+                    cluster_devices,
+                    sensor_values,
+                    current_time,
+                    effective_data,
+                    current_mode,
                 )
-                
+
                 # Log effective light intensities for all dimmable lights
                 if self.dfr0971_manager:
                     light_intensities_dict = {}  # For Redis batch write
                     for device_name, device_info in cluster_devices.items():
-                        if device_info.get('dimming_enabled') and device_info.get('dimming_type') == 'dfr0971':
-                            board_id = device_info.get('dimming_board_id')
-                            channel = device_info.get('dimming_channel')
+                        if (
+                            device_info.get("dimming_enabled")
+                            and device_info.get("dimming_type") == "dfr0971"
+                        ):
+                            board_id = device_info.get("dimming_board_id")
+                            channel = device_info.get("dimming_channel")
                             if board_id is not None and channel is not None:
                                 # Get current intensity from hardware
-                                current_intensity = self.dfr0971_manager.get_intensity(board_id, channel) or 0.0
-                                
+                                current_intensity = (
+                                    self.dfr0971_manager.get_intensity(board_id, channel) or 0.0
+                                )
+
                                 # Get effective intensity details from scheduler
                                 intensity_details = self.scheduler.get_light_intensity_details(
                                     location, cluster, device_name, current_time, current_intensity
                                 )
-                                
+
                                 if intensity_details:
                                     # Log to effective_setpoints table
                                     await self.database.log_effective_setpoints(
@@ -389,93 +427,95 @@ class ControlEngine:
                                         cluster=cluster,
                                         mode=current_mode,
                                         device_name=device_name,
-                                        effective_light_intensity=intensity_details['effective_intensity'],
-                                        nominal_light_intensity=intensity_details['nominal_intensity'],
-                                        ramp_progress_light=intensity_details['ramp_progress'],
-                                        timestamp=current_time
+                                        effective_light_intensity=intensity_details[
+                                            "effective_intensity"
+                                        ],
+                                        nominal_light_intensity=intensity_details[
+                                            "nominal_intensity"
+                                        ],
+                                        ramp_progress_light=intensity_details["ramp_progress"],
+                                        timestamp=current_time,
                                     )
-                                    
+
                                     # Collect for Redis batch write
-                                    light_intensities_dict[device_name] = intensity_details['effective_intensity']
-                    
+                                    light_intensities_dict[device_name] = intensity_details[
+                                        "effective_intensity"
+                                    ]
+
                     # Light intensities are logged to database but not stored in Redis state
                     # (they're persisted separately for hardware restoration)
-        
+
         # Log automation state for all devices
         await self._log_automation_state()
 
         # Record performance statistics
         if self._profiling_enabled and loop_start_time:
             total_time = (datetime.now() - loop_start_time).total_seconds() * 1000
-            self._record_performance_stat('total_loop_time', total_time)
-            get_performance_monitor().record_operation('total_loop_time', total_time / 1000.0)
+            self._record_performance_stat("total_loop_time", total_time)
+            get_performance_monitor().record_operation("total_loop_time", total_time / 1000.0)
 
             if device_processing_start:
                 device_time = (datetime.now() - device_processing_start).total_seconds() * 1000
-                self._record_performance_stat('device_processing_time', device_time)
-                get_performance_monitor().record_operation('device_processing_time', device_time / 1000.0)
-    
+                self._record_performance_stat("device_processing_time", device_time)
+                get_performance_monitor().record_operation(
+                    "device_processing_time", device_time / 1000.0
+                )
+
     async def _get_sensor_values(
-        self,
-        location: str,
-        cluster: str,
-        sensor_mapping: Dict[str, Any]
-    ) -> Dict[str, Optional[float]]:
+        self, location: str, cluster: str, sensor_mapping: dict[str, Any]
+    ) -> dict[str, float | None]:
         """Get sensor values for a location/cluster.
-        
+
         Args:
             location: Location name
             cluster: Cluster name
             sensor_mapping: Sensor mapping from config
-        
+
         Returns:
             Dict mapping sensor names to values
         """
         sensor_values = {}
-        
+
         location_sensors = sensor_mapping.get(location, {})
         cluster_sensors = location_sensors.get(cluster, {})
-        
+
         for sensor_type, sensor_name in cluster_sensors.items():
             if sensor_name:
                 value = await self.database.get_sensor_value(sensor_name)
                 sensor_values[sensor_name] = value
-        
+
         return sensor_values
-    
+
     def _get_sensor_for_setpoint_type(
-        self,
-        location: str,
-        cluster: str,
-        setpoint_type: str
-    ) -> Optional[str]:
+        self, location: str, cluster: str, setpoint_type: str
+    ) -> str | None:
         """Get sensor name for a setpoint type.
-        
+
         Args:
             location: Location name
             cluster: Cluster name
             setpoint_type: Setpoint type (e.g., 'heating_setpoint', 'cooling_setpoint', 'vpd_setpoint', 'co2')
-        
+
         Returns:
             Sensor name or None if not found
         """
         sensor_mapping = self.config.get_sensor_mapping()
         location_sensors = sensor_mapping.get(location, {})
         cluster_sensors = location_sensors.get(cluster, {})
-        
+
         # Map setpoint types to sensor names
-        if setpoint_type in ['heating_setpoint', 'cooling_setpoint']:
-            return cluster_sensors.get('temperature_sensor')
-        elif setpoint_type == 'vpd' or setpoint_type == 'vpd_setpoint':
-            return cluster_sensors.get('vpd_sensor')
-        elif setpoint_type == 'co2':
-            return cluster_sensors.get('co2_sensor')
-        elif setpoint_type == 'humidity' or setpoint_type == 'humidity_setpoint':
-            return cluster_sensors.get('humidity_sensor')
+        if setpoint_type in ["heating_setpoint", "cooling_setpoint"]:
+            return cluster_sensors.get("temperature_sensor")
+        elif setpoint_type == "vpd" or setpoint_type == "vpd_setpoint":
+            return cluster_sensors.get("vpd_sensor")
+        elif setpoint_type == "co2":
+            return cluster_sensors.get("co2_sensor")
+        elif setpoint_type == "humidity" or setpoint_type == "humidity_setpoint":
+            return cluster_sensors.get("humidity_sensor")
         else:
             logger.warning(f"Unknown setpoint_type: {setpoint_type}")
             return None
-    
+
     # _compute_effective_setpoints method moved to SetpointManager
 
     async def _process_vpd_control(
@@ -483,16 +523,16 @@ class ControlEngine:
         location: str,
         cluster: str,
         device_name: str,
-        device_info: Dict[str, Any],
-        sensor_values: Dict[str, Optional[float]],
+        device_info: dict[str, Any],
+        sensor_values: dict[str, float | None],
         current_time: datetime,
-        context: Dict[str, Any]
+        context: dict[str, Any],
     ) -> None:
         """Process VPD-based control for dehumidifying devices (fans, dehumidifiers).
-        
+
         When VPD is below setpoint, turn ON dehumidifying devices to increase VPD.
         When VPD is at or above setpoint, turn OFF dehumidifying devices.
-        
+
         Args:
             location: Location name
             cluster: Cluster name
@@ -510,82 +550,98 @@ class ControlEngine:
                 # For now, use default setpoint (mode=NULL)
                 # TODO: Integrate with scheduler to get current DAY/NIGHT/TRANSITION mode
                 pass
-            
+
             # Get setpoint (use default/legacy for now, can be enhanced to use mode-based)
             setpoint_data = await self.database.get_setpoint(location, cluster, current_mode_str)
             if not setpoint_data:
                 return  # No setpoint configured
-            
-            vpd_setpoint = setpoint_data.get('vpd')
+
+            vpd_setpoint = setpoint_data.get("vpd")
             if vpd_setpoint is None:
                 return  # No VPD setpoint configured
-            
+
             # Get VPD sensor name from mapping
             sensor_mapping = self.config.get_sensor_mapping()
             location_sensors = sensor_mapping.get(location, {})
             cluster_sensors = location_sensors.get(cluster, {})
-            vpd_sensor_name = cluster_sensors.get('vpd_sensor')
-            
+            vpd_sensor_name = cluster_sensors.get("vpd_sensor")
+
             if not vpd_sensor_name:
                 logger.debug(f"No VPD sensor mapping for {location}/{cluster}")
                 return
-            
+
             # Get current VPD value
             current_vpd = sensor_values.get(vpd_sensor_name)
-            
+
             if current_vpd is None:
                 # Try to get from Redis last good value
-                if self.database._automation_redis and self.database._automation_redis.redis_enabled:
-                    last_good = self.database._automation_redis.read_last_good_value(cluster, vpd_sensor_name)
+                if (
+                    self.database._automation_redis
+                    and self.database._automation_redis.redis_enabled
+                ):
+                    last_good = self.database._automation_redis.read_last_good_value(
+                        cluster, vpd_sensor_name
+                    )
                     if last_good:
-                        hold_period = self.config.get('control.last_good_hold_period', 30)
-                        is_valid, age = self.database._automation_redis.check_last_good_age(cluster, vpd_sensor_name, hold_period)
+                        hold_period = self.config.get("control.last_good_hold_period", 30)
+                        is_valid, age = self.database._automation_redis.check_last_good_age(
+                            cluster, vpd_sensor_name, hold_period
+                        )
                         if is_valid:
-                            current_vpd = last_good['value']
+                            current_vpd = last_good["value"]
                         else:
                             # Last good value expired
                             if self.alarm_manager:
                                 self.alarm_manager.raise_alarm(
-                                    location, cluster, f"{vpd_sensor_name}_offline",
-                                    'critical', f"VPD sensor {vpd_sensor_name} offline for {age:.1f}s"
+                                    location,
+                                    cluster,
+                                    f"{vpd_sensor_name}_offline",
+                                    "critical",
+                                    f"VPD sensor {vpd_sensor_name} offline for {age:.1f}s",
                                 )
                             return
                     else:
                         return  # No VPD sensor value available
                 else:
                     return  # No VPD sensor value and no Redis
-            
+
             # Update last good value if sensor is valid
             if self.database._automation_redis and self.database._automation_redis.redis_enabled:
-                self.database._automation_redis.write_last_good_value(cluster, vpd_sensor_name, current_vpd)
-            
+                self.database._automation_redis.write_last_good_value(
+                    cluster, vpd_sensor_name, current_vpd
+                )
+
             # Control logic: If VPD < setpoint, turn ON dehumidifying device
             # If VPD >= setpoint, turn OFF dehumidifying device
             # Add small hysteresis to prevent rapid cycling (0.1 kPa)
             hysteresis = 0.1  # kPa
-            
+
             current_state = self.relay_manager.get_device_state(location, cluster, device_name) or 0
             target_state = 0
-            
+
             if current_vpd < (vpd_setpoint - hysteresis):
                 # VPD is below setpoint, need to increase VPD → turn ON dehumidifying device
                 target_state = 1
-                context['control_reason'] = 'vpd_control'
+                context["control_reason"] = "vpd_control"
             elif current_vpd >= (vpd_setpoint + hysteresis):
                 # VPD is at or above setpoint → turn OFF dehumidifying device
                 target_state = 0
-                context['control_reason'] = 'vpd_control'
+                context["control_reason"] = "vpd_control"
             else:
                 # VPD is within hysteresis band, maintain current state
                 target_state = current_state
-                context['control_reason'] = 'vpd_control_hysteresis'
-            
+                context["control_reason"] = "vpd_control_hysteresis"
+
             # Set device state if changed
             if target_state != current_state:
                 await self._set_device_state(
-                    location, cluster, device_name, target_state,
-                    'auto', f'vpd_control (VPD: {current_vpd:.2f}kPa, setpoint: {vpd_setpoint:.2f}kPa)',
-                    sensor_values
+                    location,
+                    cluster,
+                    device_name,
+                    target_state,
+                    "auto",
+                    f"vpd_control (VPD: {current_vpd:.2f}kPa, setpoint: {vpd_setpoint:.2f}kPa)",
+                    sensor_values,
                 )
                 logger.info(
                     f"VPD control: {location}/{cluster}/{device_name} "
@@ -595,8 +651,9 @@ class ControlEngine:
         except Exception as e:
             logger.error(f"Error in VPD control for {location}/{cluster}/{device_name}: {e}")
             import traceback
+
             traceback.print_exc()
-    
+
     async def _set_device_state(
         self,
         location: str,
@@ -605,11 +662,11 @@ class ControlEngine:
         state: int,
         mode: str,
         reason: str,
-        sensor_values: Dict[str, Optional[float]],
-        setpoint: Optional[float] = None
+        sensor_values: dict[str, float | None],
+        setpoint: float | None = None,
     ) -> None:
         """Set device state and log action.
-        
+
         Args:
             location: Location name
             cluster: Cluster name
@@ -621,71 +678,84 @@ class ControlEngine:
             setpoint: Setpoint value for logging
         """
         current_state = self.relay_manager.get_device_state(location, cluster, device_name) or 0
-        
+
         # Set device state
         success, error_reason = self.relay_manager.set_device_state(
             location, cluster, device_name, state, mode
         )
-        
+
         if not success:
             logger.warning(f"Failed to set device state: {error_reason}")
-            if error_reason and 'interlock' in error_reason.lower():
-                reason = 'interlock'
-        
+            if error_reason and "interlock" in error_reason.lower():
+                reason = "interlock"
+
         # Get channel for logging
         channel = self.relay_manager.get_channel(location, cluster, device_name) or 0
-        
+
         # Get sensor value for logging (use first available)
         sensor_value = None
         for value in sensor_values.values():
             if value is not None:
                 sensor_value = value
                 break
-        
+
         # Log to database
         await self.database.set_device_state(location, cluster, device_name, channel, state, mode)
         await self.database.log_control_action(
-            location, cluster, device_name, channel,
-            current_state, state, mode, reason,
-            sensor_value, setpoint
+            location,
+            cluster,
+            device_name,
+            channel,
+            current_state,
+            state,
+            mode,
+            reason,
+            sensor_value,
+            setpoint,
         )
-    
+
     async def _log_automation_state(self) -> None:
         """Log automation state for all devices."""
         devices = self.config.get_devices()
-        
+
         for location, clusters in devices.items():
             for cluster, cluster_devices in clusters.items():
                 for device_name in cluster_devices.keys():
                     key = (location, cluster, device_name)
                     context = self._automation_context.get(key, {})
-                    
-                    current_state = self.relay_manager.get_device_state(location, cluster, device_name) or 0
-                    current_mode = self.relay_manager.get_device_mode(location, cluster, device_name) or 'auto'
-                    
+
+                    current_state = (
+                        self.relay_manager.get_device_state(location, cluster, device_name) or 0
+                    )
+                    current_mode = (
+                        self.relay_manager.get_device_mode(location, cluster, device_name) or "auto"
+                    )
+
                     await self.database.log_automation_state(
-                        location, cluster, device_name,
-                        current_state, current_mode,
-                        context.get('pid_output'),
-                        context.get('duty_cycle_percent'),
-                        context.get('active_rule_ids', []),
-                        context.get('active_schedule_ids', []),
-                        context.get('control_reason', 'unknown'),
-                        context.get('schedule_ramp_up_duration'),
-                        context.get('schedule_ramp_down_duration'),
-                        context.get('schedule_photoperiod_hours'),
-                        context.get('pid_kp'),
-                        context.get('pid_ki'),
-                        context.get('pid_kd')
+                        location,
+                        cluster,
+                        device_name,
+                        current_state,
+                        current_mode,
+                        context.get("pid_output"),
+                        context.get("duty_cycle_percent"),
+                        context.get("active_rule_ids", []),
+                        context.get("active_schedule_ids", []),
+                        context.get("control_reason", "unknown"),
+                        context.get("schedule_ramp_up_duration"),
+                        context.get("schedule_ramp_down_duration"),
+                        context.get("schedule_photoperiod_hours"),
+                        context.get("pid_kp"),
+                        context.get("pid_ki"),
+                        context.get("pid_kd"),
                     )
 
     async def restore_ramp_state_from_database(self) -> None:
         """Handle ramp state on service startup.
-        
+
         Per design requirements: On service restart, we do NOT restore ramps.
         Instead, we cancel any active ramps and immediately apply final setpoints.
         This ensures predictable behavior and avoids complex state restoration.
         """
         # Clear all ramps - per design, service restart = cancel ramps, apply final setpoints
         pass
-

@@ -10,26 +10,27 @@ This module provides:
 Public API:
     from app.control import (
         ControlEngine,
-        PIDControllerManager, 
+        PIDControllerManager,
         VPDController,
         SetpointManager,
         DeviceController,
     )
 """
+
 from __future__ import annotations
 
 from app.control.control_engine import ControlEngine
-from app.control.pid_controller_manager import PIDControllerManager
-from app.control.vpd_controller import VPDController
-from app.control.vpd_cascade_controller import VPDCascadeController
-from app.control.setpoint_manager import SetpointManager
 from app.control.device_controller import DeviceController
+from app.control.pid_controller_manager import PIDControllerManager
+from app.control.setpoint_manager import SetpointManager
+from app.control.vpd_cascade_controller import VPDCascadeController
+from app.control.vpd_controller import VPDController
 
 __all__ = [
-    'ControlEngine',
-    'PIDControllerManager',
-    'VPDController', 
-    'SetpointManager',
-    'DeviceController',
-    'VPDCascadeController',
+    "ControlEngine",
+    "PIDControllerManager",
+    "VPDController",
+    "SetpointManager",
+    "DeviceController",
+    "VPDCascadeController",
 ]

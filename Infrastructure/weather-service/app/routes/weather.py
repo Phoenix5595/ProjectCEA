@@ -1,14 +1,16 @@
 """Weather data routes."""
+
 from __future__ import annotations
 
-from shared.logging import get_logger
+from typing import Any
+
 from fastapi import APIRouter, Depends
-from typing import Dict, Any, Optional
-from datetime import datetime
+
 from app.database import DatabaseManager
 from app.weather_client import WeatherClient
 
 router = APIRouter()
+
 
 # Dependency injection (will be overridden in main.py)
 def get_database() -> DatabaseManager:
@@ -22,9 +24,7 @@ def get_weather_client() -> WeatherClient:
 
 
 @router.get("/latest")
-async def get_latest_weather(
-    db: DatabaseManager = Depends(get_database)
-) -> Dict[str, Any]:
+async def get_latest_weather(db: DatabaseManager = Depends(get_database)) -> dict[str, Any]:
     """Get latest weather measurements."""
     try:
         pool = await db._get_pool()
@@ -46,24 +46,18 @@ async def get_latest_weather(
                 )
                 ORDER BY s.name
             """)
-            
+
             weather_data = {}
             timestamp = None
             for row in rows:
-                sensor_name = row['sensor_name']
+                sensor_name = row["sensor_name"]
                 # Remove 'outside_' prefix for response
-                key = sensor_name.replace('outside_', '')
-                weather_data[key] = {
-                    'value': row['value'],
-                    'unit': row['unit']
-                }
+                key = sensor_name.replace("outside_", "")
+                weather_data[key] = {"value": row["value"], "unit": row["unit"]}
                 if timestamp is None:
-                    timestamp = row['time']
-            
-            return {
-                'timestamp': timestamp.isoformat() if timestamp else None,
-                'data': weather_data
-            }
+                    timestamp = row["time"]
+
+            return {"timestamp": timestamp.isoformat() if timestamp else None, "data": weather_data}
     except Exception as e:
         return {"error": str(e)}
 
@@ -71,35 +65,14 @@ async def get_latest_weather(
 @router.post("/fetch")
 async def fetch_weather_now(
     db: DatabaseManager = Depends(get_database),
-    weather_client: WeatherClient = Depends(get_weather_client)
-) -> Dict[str, Any]:
+    weather_client: WeatherClient = Depends(get_weather_client),
+) -> dict[str, Any]:
     """Manually trigger a weather data fetch."""
     try:
         weather_data = await weather_client.fetch_metar()
         if weather_data:
-            return {
-                "status": "success",
-                "data": weather_data
-            }
+            return {"status": "success", "data": weather_data}
         else:
-            return {
-                "status": "error",
-                "message": "Failed to fetch weather data"
-            }
+            return {"status": "error", "message": "Failed to fetch weather data"}
     except Exception as e:
-        return {
-            "status": "error",
-            "message": str(e)
-        }
-
-
-
-
-
-
-
-
-
-
-
-
+        return {"status": "error", "message": str(e)}

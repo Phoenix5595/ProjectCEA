@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any
 from .base import BaseRepository, logger
 
 if TYPE_CHECKING:
-    from asyncpg import Pool, Connection
+    from asyncpg import Connection, Pool
 
 
 class ScheduleRepository(BaseRepository):
@@ -16,9 +16,7 @@ class ScheduleRepository(BaseRepository):
         super().__init__(pool)
 
     async def get_schedules(
-        self,
-        location: str | None = None,
-        cluster: str | None = None
+        self, location: str | None = None, cluster: str | None = None
     ) -> list[dict[str, Any]]:
         """Get schedules, optionally filtered by location/cluster."""
         try:
@@ -31,7 +29,8 @@ class ScheduleRepository(BaseRepository):
                            FROM schedules 
                            WHERE location = $1 AND cluster = $2
                            ORDER BY start_time""",
-                        location, cluster
+                        location,
+                        cluster,
                     )
                 elif location:
                     rows = await conn.fetch(
@@ -39,7 +38,7 @@ class ScheduleRepository(BaseRepository):
                                   day_of_week, enabled, mode, target_intensity, ramp_up_duration,
                                   ramp_down_duration, updated_at
                            FROM schedules WHERE location = $1 ORDER BY start_time""",
-                        location
+                        location,
                     )
                 else:
                     rows = await conn.fetch(
@@ -57,29 +56,30 @@ class ScheduleRepository(BaseRepository):
         """Get climate schedule data (pre-day/pre-night durations) for a location/cluster."""
         try:
             async with self.pool.acquire() as conn:
-                row = await conn.fetchrow("""
+                row = await conn.fetchrow(
+                    """
                     SELECT pre_day_duration, pre_night_duration
                     FROM schedules
                     WHERE location = $1 AND cluster = $2
                       AND (pre_day_duration IS NOT NULL OR pre_night_duration IS NOT NULL)
                     ORDER BY id DESC
                     LIMIT 1
-                """, location, cluster)
-                
+                """,
+                    location,
+                    cluster,
+                )
+
                 if row:
                     return {
-                        'pre_day_duration': row['pre_day_duration'] or 0,
-                        'pre_night_duration': row['pre_night_duration'] or 0
+                        "pre_day_duration": row["pre_day_duration"] or 0,
+                        "pre_night_duration": row["pre_night_duration"] or 0,
                     }
-                
+
                 # If no climate schedule found, return defaults
-                return {
-                    'pre_day_duration': 0,
-                    'pre_night_duration': 0
-                }
+                return {"pre_day_duration": 0, "pre_night_duration": 0}
         except Exception as e:
             logger.error(f"Failed to get climate schedule: {e}")
-            return {'pre_day_duration': 0, 'pre_night_duration': 0}
+            return {"pre_day_duration": 0, "pre_night_duration": 0}
 
     async def get_light_schedule(
         self, location: str, cluster: str, device_name: str
@@ -87,7 +87,8 @@ class ScheduleRepository(BaseRepository):
         """Get the active day schedule for a light device."""
         try:
             async with self.pool.acquire() as conn:
-                row = await conn.fetchrow("""
+                row = await conn.fetchrow(
+                    """
                     SELECT start_time, end_time, target_intensity
                     FROM schedules
                     WHERE location = $1 AND cluster = $2 AND device_name = $3
@@ -95,25 +96,28 @@ class ScheduleRepository(BaseRepository):
                     AND target_intensity > 0
                     ORDER BY target_intensity DESC
                     LIMIT 1
-                """, location, cluster, device_name)
+                """,
+                    location,
+                    cluster,
+                    device_name,
+                )
                 if row:
                     return {
                         "start_time": str(row["start_time"])[:5],
                         "end_time": str(row["end_time"])[:5],
-                        "target_intensity": row["target_intensity"]
+                        "target_intensity": row["target_intensity"],
                     }
         except Exception as e:
             logger.error(f"Failed to get light schedule: {e}")
         return None
 
-    async def get_room_light_schedule(
-        self, location: str, cluster: str
-    ) -> dict[str, Any] | None:
+    async def get_room_light_schedule(self, location: str, cluster: str) -> dict[str, Any] | None:
         """Get room-level light schedule (day start/end times) for control loop."""
         try:
             async with self.pool.acquire() as conn:
                 # Get any enabled light schedule to determine day/night times
-                row = await conn.fetchrow("""
+                row = await conn.fetchrow(
+                    """
                     SELECT start_time, end_time
                     FROM schedules
                     WHERE location = $1 AND cluster = $2
@@ -122,12 +126,15 @@ class ScheduleRepository(BaseRepository):
                       AND enabled = true
                     ORDER BY id DESC
                     LIMIT 1
-                """, location, cluster)
-                
+                """,
+                    location,
+                    cluster,
+                )
+
                 if row:
                     return {
-                        'day_start_time': str(row['start_time'])[:5],
-                        'day_end_time': str(row['end_time'])[:5]
+                        "day_start_time": str(row["start_time"])[:5],
+                        "day_end_time": str(row["end_time"])[:5],
                     }
         except Exception as e:
             logger.error(f"Failed to get room light schedule: {e}")
@@ -147,7 +154,7 @@ class ScheduleRepository(BaseRepository):
         target_intensity: float | None = None,
         ramp_up_duration: int = 30,
         ramp_down_duration: int = 30,
-        conn: Connection | None = None
+        conn: Connection | None = None,
     ) -> int | None:
         """Create a new schedule."""
         try:
@@ -163,8 +170,18 @@ class ScheduleRepository(BaseRepository):
                                              ramp_down_duration, updated_at)
                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW())
                        RETURNING id""",
-                    name, location, cluster, device_name, start_time_obj, end_time_obj,
-                    day_of_week, enabled, mode, target_intensity, ramp_up_duration, ramp_down_duration
+                    name,
+                    location,
+                    cluster,
+                    device_name,
+                    start_time_obj,
+                    end_time_obj,
+                    day_of_week,
+                    enabled,
+                    mode,
+                    target_intensity,
+                    ramp_up_duration,
+                    ramp_down_duration,
                 )
                 return row["id"] if row else None
 
@@ -219,9 +236,12 @@ class ScheduleRepository(BaseRepository):
             logger.error(f"Failed to delete schedule: {e}")
             return False
 
-    async def delete_schedules_bulk(self, schedule_ids: list[int], conn: Connection | None = None) -> int:
+    async def delete_schedules_bulk(
+        self, schedule_ids: list[int], conn: Connection | None = None
+    ) -> int:
         """Delete multiple schedules."""
         try:
+
             async def do_delete(c: Connection) -> int:
                 result = await c.execute("DELETE FROM schedules WHERE id = ANY($1)", schedule_ids)
                 return int(result.split()[-1]) if result else 0
@@ -236,12 +256,12 @@ class ScheduleRepository(BaseRepository):
 
     async def fix_light_schedules_day_of_week(self) -> int:
         """Force light schedules to be daily (day_of_week = NULL).
-        
+
         Targets schedules where:
         - mode = 'DAY'
         - target_intensity IS NOT NULL (light dimming schedule)
         - day_of_week IS NOT NULL (invalid for lights)
-        
+
         Returns:
             Number of schedules updated.
         """
@@ -269,31 +289,43 @@ class ScheduleRepository(BaseRepository):
         """Update target_intensity for a light device's active schedule."""
         try:
             async with self.pool.acquire() as conn:
-                result = await conn.execute("""
+                result = await conn.execute(
+                    """
                     UPDATE schedules 
                     SET target_intensity = $4, updated_at = NOW()
                     WHERE location = $1 AND cluster = $2 AND device_name = $3
                     AND enabled = true AND target_intensity IS NOT NULL
-                """, location, cluster, device_name, target_intensity)
+                """,
+                    location,
+                    cluster,
+                    device_name,
+                    target_intensity,
+                )
                 return result != "UPDATE 0"
         except Exception as e:
             logger.error(f"Failed to update light schedule target: {e}")
             return False
 
     async def update_light_schedule_times(
-        self, location: str, cluster: str, device_name: str,
-        start_time: str, end_time: str
+        self, location: str, cluster: str, device_name: str, start_time: str, end_time: str
     ) -> bool:
         """Update start/end times for a light device's day schedule."""
         try:
             async with self.pool.acquire() as conn:
-                result = await conn.execute("""
+                result = await conn.execute(
+                    """
                     UPDATE schedules 
                     SET start_time = $4::time, end_time = $5::time, updated_at = NOW()
                     WHERE location = $1 AND cluster = $2 AND device_name = $3
                     AND enabled = true AND target_intensity IS NOT NULL
                     AND target_intensity > 0
-                """, location, cluster, device_name, start_time, end_time)
+                """,
+                    location,
+                    cluster,
+                    device_name,
+                    start_time,
+                    end_time,
+                )
                 return result != "UPDATE 0"
         except Exception as e:
             logger.error(f"Failed to update light schedule times: {e}")

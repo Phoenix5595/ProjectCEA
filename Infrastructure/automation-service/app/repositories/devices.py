@@ -14,7 +14,9 @@ class DeviceRepository(BaseRepository):
     def __init__(self, pool: Pool | None = None) -> None:
         super().__init__(pool)
 
-    async def get_device_state(self, location: str, cluster: str, device_name: str) -> dict[str, Any] | None:
+    async def get_device_state(
+        self, location: str, cluster: str, device_name: str
+    ) -> dict[str, Any] | None:
         """Get current device state."""
         try:
             async with self.pool.acquire() as conn:
@@ -22,7 +24,9 @@ class DeviceRepository(BaseRepository):
                     """SELECT location, cluster, device_name, channel, state, mode, updated_at
                        FROM device_states 
                        WHERE location = $1 AND cluster = $2 AND device_name = $3""",
-                    location, cluster, device_name
+                    location,
+                    cluster,
+                    device_name,
                 )
                 if row:
                     return dict(row)
@@ -37,7 +41,7 @@ class DeviceRepository(BaseRepository):
         device_name: str,
         channel: int,
         state: bool,
-        mode: str = "auto"
+        mode: str = "auto",
     ) -> bool:
         """Set device state in database."""
         try:
@@ -47,7 +51,12 @@ class DeviceRepository(BaseRepository):
                        VALUES ($1, $2, $3, $4, $5, $6, NOW())
                        ON CONFLICT (location, cluster, device_name) 
                        DO UPDATE SET channel = $4, state = $5, mode = $6, updated_at = NOW()""",
-                    location, cluster, device_name, channel, state, mode
+                    location,
+                    cluster,
+                    device_name,
+                    channel,
+                    state,
+                    mode,
                 )
                 return True
         except Exception as e:
@@ -58,13 +67,17 @@ class DeviceRepository(BaseRepository):
         """Get all device states."""
         try:
             async with self.pool.acquire() as conn:
-                rows = await conn.fetch("SELECT * FROM device_states ORDER BY location, cluster, device_name")
+                rows = await conn.fetch(
+                    "SELECT * FROM device_states ORDER BY location, cluster, device_name"
+                )
                 return [dict(row) for row in rows]
         except Exception as e:
             logger.error(f"Failed to get all device states: {e}")
             return []
 
-    async def get_device_mapping(self, location: str, cluster: str, device_name: str) -> dict[str, Any] | None:
+    async def get_device_mapping(
+        self, location: str, cluster: str, device_name: str
+    ) -> dict[str, Any] | None:
         """Get device hardware mapping."""
         try:
             async with self.pool.acquire() as conn:
@@ -72,7 +85,9 @@ class DeviceRepository(BaseRepository):
                     """SELECT location, cluster, device_name, channel, active_high, safe_state, mcp_board_id
                        FROM device_mappings 
                        WHERE location = $1 AND cluster = $2 AND device_name = $3""",
-                    location, cluster, device_name
+                    location,
+                    cluster,
+                    device_name,
                 )
                 if row:
                     return dict(row)
@@ -88,7 +103,7 @@ class DeviceRepository(BaseRepository):
         channel: int,
         active_high: bool = True,
         safe_state: bool = False,
-        mcp_board_id: int = 0
+        mcp_board_id: int = 0,
     ) -> bool:
         """Set device hardware mapping."""
         try:
@@ -98,7 +113,13 @@ class DeviceRepository(BaseRepository):
                        VALUES ($1, $2, $3, $4, $5, $6, $7)
                        ON CONFLICT (location, cluster, device_name) 
                        DO UPDATE SET channel = $4, active_high = $5, safe_state = $6, mcp_board_id = $7""",
-                    location, cluster, device_name, channel, active_high, safe_state, mcp_board_id
+                    location,
+                    cluster,
+                    device_name,
+                    channel,
+                    active_high,
+                    safe_state,
+                    mcp_board_id,
                 )
                 return True
         except Exception as e:
@@ -109,13 +130,17 @@ class DeviceRepository(BaseRepository):
         """Get all device mappings."""
         try:
             async with self.pool.acquire() as conn:
-                rows = await conn.fetch("SELECT * FROM device_mappings ORDER BY location, cluster, device_name")
+                rows = await conn.fetch(
+                    "SELECT * FROM device_mappings ORDER BY location, cluster, device_name"
+                )
                 return [dict(row) for row in rows]
         except Exception as e:
             logger.error(f"Failed to get all device mappings: {e}")
             return []
 
-    async def get_latest_light_intensity(self, location: str, cluster: str, device_name: str) -> float | None:
+    async def get_latest_light_intensity(
+        self, location: str, cluster: str, device_name: str
+    ) -> float | None:
         """Get latest light intensity for a device."""
         try:
             async with self.pool.acquire() as conn:
@@ -123,7 +148,9 @@ class DeviceRepository(BaseRepository):
                     """SELECT effective_light_intensity FROM effective_setpoints
                        WHERE location = $1 AND cluster = $2 AND device_name = $3
                        ORDER BY timestamp DESC LIMIT 1""",
-                    location, cluster, device_name
+                    location,
+                    cluster,
+                    device_name,
                 )
                 if row and row["effective_light_intensity"] is not None:
                     return float(row["effective_light_intensity"])

@@ -1,12 +1,15 @@
 """Application middleware and static file handling."""
+
 from __future__ import annotations
 
-from shared.logging import get_logger
 import os
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, Response
+
+from shared.logging import get_logger
 
 logger = get_logger(__name__)
 
@@ -29,19 +32,28 @@ def setup_static_files(app: FastAPI) -> None:
     _base_path = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
     frontend_dist_path = os.path.abspath(os.path.join(_base_path, "frontend", "dist"))
 
-    logger.info(f"Frontend dist path: {frontend_dist_path}, exists: {os.path.exists(frontend_dist_path)}")
+    logger.info(
+        f"Frontend dist path: {frontend_dist_path}, exists: {os.path.exists(frontend_dist_path)}"
+    )
 
     if os.path.exists(frontend_dist_path):
         # Mount static assets (JS, CSS, images) - these are in the assets subdirectory
-        app.mount("/assets", StaticFiles(directory=os.path.join(frontend_dist_path, "assets")), name="static-assets")
+        app.mount(
+            "/assets",
+            StaticFiles(directory=os.path.join(frontend_dist_path, "assets")),
+            name="static-assets",
+        )
 
         # Serve logo.png and favicon routes - must be registered before catch-all route
         logo_path = os.path.join(frontend_dist_path, "logo.png")
         # Use absolute path to ensure it works
         logo_path = os.path.abspath(logo_path)
-        logger.info(f"Registering favicon routes, path: {logo_path}, exists: {os.path.exists(logo_path)}")
+        logger.info(
+            f"Registering favicon routes, path: {logo_path}, exists: {os.path.exists(logo_path)}"
+        )
 
         if os.path.exists(logo_path):
+
             @app.api_route("/logo.png", methods=["GET", "HEAD"], name="logo")
             async def serve_logo():
                 """Serve logo.png favicon."""
@@ -84,7 +96,7 @@ def setup_static_files(app: FastAPI) -> None:
                 "service": "Automation Service",
                 "version": "1.0.0",
                 "status": "running",
-                "note": "Frontend not built. Run 'npm run build' in Infrastructure/frontend"
+                "note": "Frontend not built. Run 'npm run build' in Infrastructure/frontend",
             }
 
         # SPA fallback: serve index.html for all routes that don't match API routes
@@ -101,22 +113,27 @@ def setup_static_files(app: FastAPI) -> None:
 
             # Don't serve frontend for API routes, WebSocket, or FastAPI docs
             # FastAPI should match API routes first, but this is a safety check
-            if path.startswith("api/") or path.startswith("ws") or path in ["docs", "openapi.json", "redoc"]:
+            if (
+                path.startswith("api/")
+                or path.startswith("ws")
+                or path in ["docs", "openapi.json", "redoc"]
+            ):
                 from fastapi.responses import JSONResponse
+
                 return JSONResponse({"error": "Not found"}, status_code=404)
 
             # Serve other static files from dist root (favicon, etc.)
-            if path and '.' in path and not path.startswith('api/') and not path.startswith('ws'):
+            if path and "." in path and not path.startswith("api/") and not path.startswith("ws"):
                 static_file_path = os.path.abspath(os.path.join(frontend_dist_path, path))
                 if os.path.exists(static_file_path) and os.path.isfile(static_file_path):
                     # Determine media type based on extension
-                    if path.endswith('.png'):
+                    if path.endswith(".png"):
                         return FileResponse(static_file_path, media_type="image/png")
-                    elif path.endswith('.ico'):
+                    elif path.endswith(".ico"):
                         return FileResponse(static_file_path, media_type="image/x-icon")
-                    elif path.endswith('.svg'):
+                    elif path.endswith(".svg"):
                         return FileResponse(static_file_path, media_type="image/svg+xml")
-                    elif path.endswith('.jpg') or path.endswith('.jpeg'):
+                    elif path.endswith(".jpg") or path.endswith(".jpeg"):
                         return FileResponse(static_file_path, media_type="image/jpeg")
                     else:
                         return FileResponse(static_file_path)
@@ -128,6 +145,7 @@ def setup_static_files(app: FastAPI) -> None:
             return {"error": "Frontend not found"}
 
     else:
+
         @app.get("/")
         async def root():
             """Root endpoint."""
@@ -135,5 +153,5 @@ def setup_static_files(app: FastAPI) -> None:
                 "service": "Automation Service",
                 "version": "1.0.0",
                 "status": "running",
-                "note": "Frontend not built. Run 'npm run build' in Infrastructure/frontend"
+                "note": "Frontend not built. Run 'npm run build' in Infrastructure/frontend",
             }

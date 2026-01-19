@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 from .base import BaseRepository
-from .sensors import SensorRepository
+from .control_actions import ControlActionRepository
 from .devices import DeviceRepository
-from .setpoints import SetpointRepository
-from .schedules import ScheduleRepository
 from .pid import PIDRepository
 from .room_modes import RoomModeRepository
-from .control_actions import ControlActionRepository
+from .schedules import ScheduleRepository
+from .sensors import SensorRepository
+from .setpoints import SetpointRepository
 
 __all__ = [
     "BaseRepository",

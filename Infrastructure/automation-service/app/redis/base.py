@@ -1,11 +1,13 @@
 """Base Redis connection mixin for automation service."""
+
 from __future__ import annotations
 
-from typing import Optional, TYPE_CHECKING
 import os
+from typing import TYPE_CHECKING
+
+import redis
 
 from shared.logging import get_logger
-import redis
 
 if TYPE_CHECKING:
     pass
@@ -15,21 +17,21 @@ logger = get_logger(__name__)
 
 class RedisConnectionMixin:
     """Mixin providing Redis connection management.
-    
+
     Provides connection pooling for both state keys and stream writes.
     """
-    
+
     redis_url: str
     redis_ttl: int
-    redis_client: Optional[redis.Redis]
-    stream_client: Optional[redis.Redis]
-    _state_pool: Optional[redis.ConnectionPool]
-    _stream_pool: Optional[redis.ConnectionPool]
+    redis_client: redis.Redis | None
+    stream_client: redis.Redis | None
+    _state_pool: redis.ConnectionPool | None
+    _stream_pool: redis.ConnectionPool | None
     redis_enabled: bool
-    
-    def _init_connection(self, redis_url: Optional[str] = None, redis_ttl: int = 10) -> None:
+
+    def _init_connection(self, redis_url: str | None = None, redis_ttl: int = 10) -> None:
         """Initialize connection attributes.
-        
+
         Args:
             redis_url: Redis connection URL. If None, uses environment variable or default.
             redis_ttl: TTL for Redis state keys in seconds (default: 10)
@@ -41,17 +43,17 @@ class RedisConnectionMixin:
         self._state_pool = None
         self._stream_pool = None
         self.redis_enabled = False
-    
+
     def connect(self) -> bool:
         """Connect to Redis with connection pooling for better performance.
-        
+
         Creates two connection pools:
         - State pool (decode_responses=True) for state key operations
         - Stream pool (decode_responses=False) for binary stream writes
-        
+
         Connection pooling improves performance by reusing connections
         instead of creating new ones for each operation.
-        
+
         Returns:
             True if successful, False otherwise
         """
@@ -64,11 +66,11 @@ class RedisConnectionMixin:
                 socket_connect_timeout=5,
                 socket_timeout=5,
                 retry_on_timeout=True,
-                health_check_interval=30
+                health_check_interval=30,
             )
             self.redis_client = redis.Redis(connection_pool=self._state_pool)
             self.redis_client.ping()
-            
+
             # Create connection pool for stream writes (decode_responses=False for binary)
             self._stream_pool = redis.ConnectionPool.from_url(
                 self.redis_url,
@@ -77,19 +79,21 @@ class RedisConnectionMixin:
                 socket_connect_timeout=5,
                 socket_timeout=5,
                 retry_on_timeout=True,
-                health_check_interval=30
+                health_check_interval=30,
             )
             self.stream_client = redis.Redis(connection_pool=self._stream_pool)
             self.stream_client.ping()
-            
+
             self.redis_enabled = True
-            logger.info(f"Connected to Redis: {self.redis_url} (with connection pooling: state=20, stream=10)")
+            logger.info(
+                f"Connected to Redis: {self.redis_url} (with connection pooling: state=20, stream=10)"
+            )
             return True
         except Exception as e:
             logger.warning(f"Redis connection failed: {e}. Will continue without Redis.")
             self.redis_enabled = False
             return False
-    
+
     def close(self) -> None:
         """Close Redis connections and disconnect connection pools."""
         if self.redis_client:

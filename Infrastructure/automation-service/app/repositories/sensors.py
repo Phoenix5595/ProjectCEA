@@ -34,7 +34,7 @@ class SensorRepository(BaseRepository):
                     """SELECT value FROM measurement 
                        WHERE sensor_name = $1 
                        ORDER BY time DESC LIMIT 1""",
-                    sensor_name
+                    sensor_name,
                 )
                 if row:
                     return float(row["value"])
@@ -44,7 +44,7 @@ class SensorRepository(BaseRepository):
 
     async def get_sensor_values_batch(self, sensor_names: list[str]) -> dict[str, float | None]:
         """Get multiple sensor values in batch."""
-        result: dict[str, float | None] = {name: None for name in sensor_names}
+        result: dict[str, float | None] = dict.fromkeys(sensor_names)
 
         if self._redis_client and self._redis_client._connected:
             try:
@@ -65,7 +65,7 @@ class SensorRepository(BaseRepository):
                            FROM measurement 
                            WHERE sensor_name = ANY($1)
                            ORDER BY sensor_name, time DESC""",
-                        missing_sensors
+                        missing_sensors,
                     )
                     for row in rows:
                         result[row["sensor_name"]] = float(row["value"])

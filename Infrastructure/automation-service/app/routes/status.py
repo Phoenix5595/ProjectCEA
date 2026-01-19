@@ -1,15 +1,17 @@
 """Status and health check endpoints."""
+
 from __future__ import annotations
 
-from shared.logging import get_logger
-from fastapi import APIRouter, Depends
 from datetime import datetime
-from typing import Dict, Any, Optional
-from app.database import DatabaseManager
-from app.control.relay_manager import RelayManager
+from typing import Any
+
+from fastapi import APIRouter, Depends
+
 from app.config import ConfigLoader
-from app.middleware.profiling import get_performance_metrics
 from app.control.performance_monitor import get_performance_monitor
+from app.control.relay_manager import RelayManager
+from app.database import DatabaseManager
+from app.middleware.profiling import get_performance_metrics
 
 router = APIRouter()
 
@@ -31,25 +33,22 @@ def get_config() -> ConfigLoader:
 
 
 @router.get("/health")
-async def health_check() -> Dict[str, Any]:
+async def health_check() -> dict[str, Any]:
     """Health check endpoint."""
-    return {
-        "status": "ok",
-        "timestamp": datetime.now().isoformat()
-    }
+    return {"status": "ok", "timestamp": datetime.now().isoformat()}
 
 
 @router.get("/api/status")
 async def get_status(
     database: DatabaseManager = Depends(get_database),
     relay_manager: RelayManager = Depends(get_relay_manager),
-    config: ConfigLoader = Depends(get_config)
-) -> Dict[str, Any]:
+    config: ConfigLoader = Depends(get_config),
+) -> dict[str, Any]:
     """Get full system status."""
     # Get all device states
     devices = {}
     device_states = relay_manager.get_all_states()
-    
+
     device_config = config.get_devices()
     for location, clusters in device_config.items():
         devices[location] = {}
@@ -58,15 +57,15 @@ async def get_status(
             for device_name in cluster_devices.keys():
                 key = (location, cluster, device_name)
                 state = device_states.get(key, 0)
-                mode = relay_manager.get_device_mode(location, cluster, device_name) or 'auto'
+                mode = relay_manager.get_device_mode(location, cluster, device_name) or "auto"
                 channel = relay_manager.get_channel(location, cluster, device_name)
-                
+
                 devices[location][cluster][device_name] = {
                     "state": state,
                     "mode": mode,
-                    "channel": channel
+                    "channel": channel,
                 }
-    
+
     # Get sensor values
     sensors = {}
     sensor_mapping = config.get_sensor_mapping()
@@ -77,18 +76,14 @@ async def get_status(
             for sensor_type, sensor_name in cluster_sensors.items():
                 value = await database.get_sensor_value(sensor_name)
                 sensors[location][cluster][sensor_type] = value
-    
+
     # Get performance metrics
     request_metrics = get_performance_metrics()
     control_metrics = get_performance_monitor().get_statistics()
-    
+
     return {
         "devices": devices,
         "sensors": sensors,
         "timestamp": datetime.now().isoformat(),
-        "performance": {
-            "api": request_metrics,
-            "control_loop": control_metrics
-        }
+        "performance": {"api": request_metrics, "control_loop": control_metrics},
     }
-

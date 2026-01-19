@@ -1,22 +1,19 @@
 """Main FastAPI application for automation service."""
+
 from __future__ import annotations
 
-from shared.logging import get_logger
 from fastapi import FastAPI
 
 from app.bootstrap import lifespan_manager
 from app.container import ServiceContainer
-from app.middleware_utils import setup_cors, setup_static_files
 from app.middleware.profiling import profiling_middleware
+from app.middleware_utils import setup_cors, setup_static_files
 from app.routes import register_routes, setup_dependency_overrides
 from shared.logging import setup_structured_logging
 
 # Configure structured logging
 logger = setup_structured_logging(
-    service_name="automation-service",
-    log_level="INFO",
-    console_output=True,
-    json_format=True
+    service_name="automation-service", log_level="INFO", console_output=True, json_format=True
 )
 
 # Global service container
@@ -31,10 +28,7 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc",
     openapi_url="/openapi.json",
-    contact={
-        "name": "CEA Automation System",
-        "email": "support@cea.local"
-    },
+    contact={"name": "CEA Automation System", "email": "support@cea.local"},
     license_info={
         "name": "Proprietary",
     },
@@ -75,7 +69,7 @@ app = FastAPI(
             "name": "websocket",
             "description": "WebSocket endpoints for real-time updates",
         },
-    ]
+    ],
 )
 
 # Setup middleware
@@ -93,5 +87,5 @@ setup_static_files(app)
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8001)
 
+    uvicorn.run(app, host="0.0.0.0", port=8001)

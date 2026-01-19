@@ -1,18 +1,19 @@
 """Configuration loader for YAML config file."""
+
 from __future__ import annotations
 
-from shared.logging import get_logger
-import yaml
 from pathlib import Path
-from typing import Dict, Any, List, Optional
+from typing import Any
+
+import yaml
 
 
 class ConfigLoader:
     """Loads and parses YAML configuration file."""
-    
-    def __init__(self, config_path: Optional[str] = None):
+
+    def __init__(self, config_path: str | None = None):
         """Initialize config loader.
-        
+
         Args:
             config_path: Path to config.yaml. If None, searches in common locations.
         """
@@ -26,22 +27,22 @@ class ConfigLoader:
                 if path.exists():
                     config_path = str(path)
                     break
-        
+
         if config_path is None or not Path(config_path).exists():
             raise FileNotFoundError(f"Config file not found: {config_path}")
-        
+
         self.config_path = config_path
-        self._config: Dict[str, Any] = {}
+        self._config: dict[str, Any] = {}
         self.load()
-    
+
     def load(self) -> None:
         """Load configuration from YAML file."""
-        with open(self.config_path, 'r') as f:
+        with open(self.config_path) as f:
             self._config = yaml.safe_load(f) or {}
-    
+
     def get(self, key: str, default: Any = None) -> Any:
         """Get configuration value using dot notation (e.g., 'dashboard.refresh_interval')."""
-        keys = key.split('.')
+        keys = key.split(".")
         value = self._config
         for k in keys:
             if isinstance(value, dict):
@@ -51,26 +52,25 @@ class ConfigLoader:
             else:
                 return default
         return value
-    
-    def get_locations(self) -> List[str]:
+
+    def get_locations(self) -> list[str]:
         """Get list of available locations."""
-        sensors = self._config.get('sensors', {})
-        return sensors.get('locations', [])
-    
-    def get_sensors_for_location(self, location: str) -> Dict[str, Any]:
+        sensors = self._config.get("sensors", {})
+        return sensors.get("locations", [])
+
+    def get_sensors_for_location(self, location: str) -> dict[str, Any]:
         """Get sensor configuration for a specific location."""
-        sensors = self._config.get('sensors', {})
-        
+        sensors = self._config.get("sensors", {})
+
         # Map location name to config key
         location_map = {
             "Flower Room": "flower_room",
             "Veg Room": "veg_room",
             "Lab": "lab",
-            "Outside": "outside"
+            "Outside": "outside",
         }
-        
+
         config_key = location_map.get(location, location.lower().replace(" ", "_"))
         location_config = sensors.get(config_key, {})
-        
-        return location_config.get('clusters', {})
 
+        return location_config.get("clusters", {})

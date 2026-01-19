@@ -15,7 +15,7 @@
       }
     ]
   },
-  "description": "Vegetation room",
+  "description": "Veg Sector monitoring dashboard",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
@@ -1288,6 +1288,6 @@
     ]
   },
   "timezone": "browser",
-  "title": "Siberian Jungle : Vegetation Sector",
+  "title": "Veg Sector",
   "uid": "80bcfd37-f781-48da-aba9-48d3b06a6347"
 }

@@ -8,20 +8,21 @@ Usage:
     # or for backward compatibility:
     from app.redis_client import AutomationRedisClient
 """
+
 from __future__ import annotations
 
-from .base import RedisConnectionMixin
-from .streams import StreamsMixin
-from .setpoints import SetpointsMixin
-from .modes import ModesMixin
-from .failsafe import FailsafeMixin
 from .alarms import AlarmsMixin
+from .base import RedisConnectionMixin
+from .failsafe import FailsafeMixin
 from .heartbeat import HeartbeatMixin
-from .sensors import SensorsMixin
-from .pid import PIDMixin
 from .lighting import LightingMixin
+from .modes import ModesMixin
+from .pid import PIDMixin
 from .ramps import RampsMixin
 from .schedules import SchedulesMixin
+from .sensors import SensorsMixin
+from .setpoints import SetpointsMixin
+from .streams import StreamsMixin
 
 
 class AutomationRedisClient(
@@ -39,7 +40,7 @@ class AutomationRedisClient(
     SchedulesMixin,
 ):
     """Combined Redis client for automation service.
-    
+
     Provides all Redis functionality for the automation control loop:
     - Connection management (connect, close)
     - Stream writes (sensor data, control data)
@@ -54,9 +55,9 @@ class AutomationRedisClient(
     - Ramp state
     - Schedule state
     """
-    
+
     def __init__(self, redis_url: str | None = None, redis_ttl: int = 10) -> None:
         self._init_connection(redis_url, redis_ttl)
 
 
-__all__ = ['AutomationRedisClient']
+__all__ = ["AutomationRedisClient"]

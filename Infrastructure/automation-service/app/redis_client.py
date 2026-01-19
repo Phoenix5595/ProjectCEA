@@ -6,8 +6,9 @@ at app/redis/ for backward compatibility with existing imports.
 New code should import directly:
     from app.redis import AutomationRedisClient
 """
+
 from __future__ import annotations
 
 from .redis import AutomationRedisClient
 
-__all__ = ['AutomationRedisClient']
+__all__ = ["AutomationRedisClient"]

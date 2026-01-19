@@ -1,4 +1,5 @@
 """Shared utilities for all CEA Infrastructure services."""
+
 from __future__ import annotations
 
 from shared.logging import (
@@ -12,7 +13,7 @@ from shared.logging import (
 
 __all__ = [
     "JsonFormatter",
-    "ConsoleFormatter", 
+    "ConsoleFormatter",
     "LoggingContext",
     "StructuredLogger",
     "get_logger",

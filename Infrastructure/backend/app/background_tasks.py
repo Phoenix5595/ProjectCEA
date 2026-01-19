@@ -1,13 +1,13 @@
 """Background tasks for periodic data updates."""
+
 from __future__ import annotations
 
-from shared.logging import get_logger
 import asyncio
-from datetime import datetime, timedelta
-from app.database import DatabaseManager
-from app.websocket import websocket_manager
-from app.dependencies import get_db_manager
+from datetime import datetime
+
 from app.redis_client import get_all_sensor_values, get_sensor_timestamp
+from app.websocket import websocket_manager
+from shared.logging import get_logger
 
 logger = get_logger(__name__)
 
@@ -19,13 +19,13 @@ ERROR_DELAY = 5.0  # seconds after error
 
 async def broadcast_latest_sensor_data():
     """Periodically fetch latest sensor data from Redis and broadcast via WebSocket.
-    
+
     This task reads live sensor values from Redis state keys and broadcasts them
     via WebSocket for real-time updates.
     """
     consecutive_errors = 0
     max_consecutive_errors = 10
-    
+
     # Map sensor names to location/cluster
     # This maps sensor suffixes to location/cluster
     sensor_location_map = {
@@ -60,24 +60,29 @@ async def broadcast_latest_sensor_data():
         "lab_temp": ("Lab", "main"),
         "water_temp": ("Lab", "main"),
     }
-    
+
     # Unit mapping
     unit_map = {
-        "dry_bulb": "°C", "wet_bulb": "°C", "secondary_temp": "°C", "lab_temp": "°C", "water_temp": "°C",
+        "dry_bulb": "°C",
+        "wet_bulb": "°C",
+        "secondary_temp": "°C",
+        "lab_temp": "°C",
+        "water_temp": "°C",
         "co2": "ppm",
-        "rh": "%", "secondary_rh": "%",
+        "rh": "%",
+        "secondary_rh": "%",
         "vpd": "kPa",
         "pressure": "hPa",
-        "water_level": "mm"
+        "water_level": "mm",
     }
-    
+
     logger.info("🔄 Background broadcast task starting (reading from Redis)...")
-    
+
     while True:
         try:
             # Get all sensor values from Redis
             sensor_values = await get_all_sensor_values()
-            
+
             if not sensor_values:
                 # No data in Redis, might be starting up
                 consecutive_errors += 1
@@ -85,9 +90,9 @@ async def broadcast_latest_sensor_data():
                     logger.debug("No sensor data in Redis yet")
                 await asyncio.sleep(1.0)
                 continue
-            
+
             consecutive_errors = 0  # Reset on success
-            
+
             # Broadcast each sensor value
             for sensor_name, value in sensor_values.items():
                 try:
@@ -95,21 +100,21 @@ async def broadcast_latest_sensor_data():
                     location, cluster = sensor_location_map.get(sensor_name, (None, None))
                     if not location or not cluster:
                         continue  # Skip unknown sensors
-                    
+
                     # Get timestamp
                     ts_ms = await get_sensor_timestamp(sensor_name)
                     if ts_ms:
                         timestamp = datetime.fromtimestamp(ts_ms / 1000.0)
                     else:
                         timestamp = datetime.now()
-                    
+
                     # Determine unit
                     unit = ""
                     for key, u in unit_map.items():
                         if key in sensor_name:
                             unit = u
                             break
-                    
+
                     # Broadcast via WebSocket
                     await websocket_manager.broadcast_sensor_update(
                         location=location,
@@ -117,16 +122,16 @@ async def broadcast_latest_sensor_data():
                         sensor_type=sensor_name,
                         timestamp=timestamp,
                         value=value,
-                        unit=unit
+                        unit=unit,
                     )
-                
+
                 except Exception as e:
                     logger.warning(f"⚠️  Error broadcasting {sensor_name}: {e}")
                     # Continue with other sensors even if one fails
-            
+
             # Wait 0.5 seconds before next broadcast for faster updates
             await asyncio.sleep(0.5)
-            
+
         except asyncio.CancelledError:
             logger.info("🛑 Background broadcast task cancelled")
             raise
@@ -134,13 +139,13 @@ async def broadcast_latest_sensor_data():
             consecutive_errors += 1
             logger.error(
                 f"❌ Unexpected error in background broadcast task (error #{consecutive_errors}): {e}",
-                exc_info=True
+                exc_info=True,
             )
-            
+
             # If we've had too many errors, wait longer before retrying
             wait_time = ERROR_DELAY * min(consecutive_errors, 5)  # Cap at 5x delay
             await asyncio.sleep(wait_time)
-            
+
             if consecutive_errors >= max_consecutive_errors:
                 logger.warning("⚠️  Too many consecutive errors, waiting longer before retry")
                 consecutive_errors = 0
@@ -227,7 +232,9 @@ class BackgroundTasks:
                     consecutive_errors += 1
 
                 if consecutive_errors >= max_consecutive_errors:
-                    logger.warning("⚠️  Too many consecutive broadcast errors, waiting longer before retry")
+                    logger.warning(
+                        "⚠️  Too many consecutive broadcast errors, waiting longer before retry"
+                    )
                     await asyncio.sleep(ERROR_DELAY)
                     consecutive_errors = 0
 
@@ -246,13 +253,7 @@ class BackgroundTasks:
                 return True  # Not an error, just no data yet
 
             # Unit mapping for sensor values
-            unit_map = {
-                "temp": "°C",
-                "rh": "%",
-                "co2": "ppm",
-                "pressure": "hPa",
-                "vpd": "kPa"
-            }
+            unit_map = {"temp": "°C", "rh": "%", "co2": "ppm", "pressure": "hPa", "vpd": "kPa"}
 
             # Broadcast each sensor individually
             for sensor_name, value in sensor_values.items():
@@ -279,7 +280,7 @@ class BackgroundTasks:
                             sensor_type=sensor_name,
                             timestamp=timestamp,
                             value=value,
-                            unit=unit
+                            unit=unit,
                         )
 
                 except Exception as e:
@@ -297,7 +298,7 @@ class BackgroundTasks:
 # Global instance for backward compatibility
 _background_tasks = BackgroundTasks()
 
+
 def start_background_tasks():
     """Start background tasks in the event loop (backward compatibility)."""
     asyncio.create_task(_background_tasks.start())
-

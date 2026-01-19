@@ -1,12 +1,15 @@
 """Database manager for TimescaleDB operations."""
+
 from __future__ import annotations
+
+import asyncio
+from datetime import datetime
+from datetime import time as dt_time
 
 # Standard library imports
 import os
-import asyncio
 import time
-from datetime import datetime, time as dt_time
-from typing import Dict, List, Optional, Any, Tuple
+from typing import Any
 
 # Third-party imports
 import asyncpg
@@ -14,15 +17,16 @@ import redis
 
 # Local imports
 from shared.logging import get_logger
+
 from .redis_client import AutomationRedisClient
 from .repositories import (
-    SensorRepository,
+    ControlActionRepository,
     DeviceRepository,
-    SetpointRepository,
-    ScheduleRepository,
     PIDRepository,
     RoomModeRepository,
-    ControlActionRepository,
+    ScheduleRepository,
+    SensorRepository,
+    SetpointRepository,
 )
 
 logger = get_logger(__name__)
@@ -30,10 +34,10 @@ logger = get_logger(__name__)
 
 class DatabaseManager:
     """Manages TimescaleDB database connections and operations for automation service."""
-    
-    def __init__(self, db_config: Optional[Dict[str, Any]] = None, redis_url: Optional[str] = None):
+
+    def __init__(self, db_config: dict[str, Any] | None = None, redis_url: str | None = None):
         """Initialize database manager.
-        
+
         Args:
             db_config: Database connection config dict with host, database, user, password, port.
                       If None, uses environment variables or defaults.
@@ -48,46 +52,50 @@ class DatabaseManager:
                 "database": os.getenv("POSTGRES_DB", "cea_sensors"),
                 "user": os.getenv("POSTGRES_USER", "cea_user"),
                 "password": password,
-                "port": int(os.getenv("POSTGRES_PORT", "5432"))
+                "port": int(os.getenv("POSTGRES_PORT", "5432")),
             }
         else:
             self.db_config = db_config
         self.redis_url = redis_url or os.getenv("REDIS_URL", "redis://localhost:6379")
-        self._pool: Optional[asyncpg.Pool] = None
-        self._redis_client: Optional[redis.Redis] = None
+        self._pool: asyncpg.Pool | None = None
+        self._redis_client: redis.Redis | None = None
         self._redis_enabled = False
-        self._automation_redis: Optional[AutomationRedisClient] = None
+        self._automation_redis: AutomationRedisClient | None = None
         self._db_connected = False
         self._retry_delay = 1.0  # Initial retry delay in seconds
         self._max_retry_delay = 60.0  # Maximum retry delay
 
         # Performance optimization: Query result caching and batching
-        self._query_cache: Dict[str, Tuple[Any, float]] = {}  # cache_key -> (result, expiry_time)
+        self._query_cache: dict[str, tuple[Any, float]] = {}  # cache_key -> (result, expiry_time)
         self._cache_ttl = 30.0  # 30 seconds cache TTL for control loop queries
-        self._batch_buffer: List[Dict[str, Any]] = []  # Buffer for batched effective setpoint logging
+        self._batch_buffer: list[
+            dict[str, Any]
+        ] = []  # Buffer for batched effective setpoint logging
         self._batch_interval = 10.0  # Flush batch every 10 seconds
         self._last_batch_flush = time.time()
-        self._control_loop_cache: Dict[str, Any] = {}  # Cache for current control loop iteration
+        self._control_loop_cache: dict[str, Any] = {}  # Cache for current control loop iteration
 
         # Performance optimization: Query result caching
-        self._query_cache: Dict[str, Tuple[Any, float]] = {}  # cache_key -> (result, expiry_time)
+        self._query_cache: dict[str, tuple[Any, float]] = {}  # cache_key -> (result, expiry_time)
         self._cache_ttl = 30.0  # 30 seconds cache TTL for control loop queries
-        self._batch_buffer: List[Dict[str, Any]] = []  # Buffer for batched effective setpoint logging
+        self._batch_buffer: list[
+            dict[str, Any]
+        ] = []  # Buffer for batched effective setpoint logging
         self._batch_interval = 10.0  # Flush batch every 10 seconds
         self._last_batch_flush = time.time()
 
         # Repository instances (initialized in initialize())
-        self._sensor_repo: Optional[SensorRepository] = None
-        self._device_repo: Optional[DeviceRepository] = None
-        self._setpoint_repo: Optional[SetpointRepository] = None
-        self._schedule_repo: Optional[ScheduleRepository] = None
-        self._pid_repo: Optional[PIDRepository] = None
-        self._room_mode_repo: Optional[RoomModeRepository] = None
-        self._control_action_repo: Optional[ControlActionRepository] = None
-    
+        self._sensor_repo: SensorRepository | None = None
+        self._device_repo: DeviceRepository | None = None
+        self._setpoint_repo: SetpointRepository | None = None
+        self._schedule_repo: ScheduleRepository | None = None
+        self._pid_repo: PIDRepository | None = None
+        self._room_mode_repo: RoomModeRepository | None = None
+        self._control_action_repo: ControlActionRepository | None = None
+
     async def initialize(self) -> bool:
         """Initialize database connection and create tables.
-        
+
         Returns:
             True if successful, False otherwise
         """
@@ -100,7 +108,7 @@ class DatabaseManager:
             # Initialize automation Redis client for stream and state writes
             self._automation_redis = AutomationRedisClient(redis_url=self.redis_url, redis_ttl=10)
             self._automation_redis.connect()
-            
+
             # Initialize repository instances with the connection pool
             self._sensor_repo = SensorRepository(self._pool)
             self._device_repo = DeviceRepository(self._pool)
@@ -109,7 +117,7 @@ class DatabaseManager:
             self._pid_repo = PIDRepository(self._pool)
             self._room_mode_repo = RoomModeRepository(self._pool)
             self._control_action_repo = ControlActionRepository(self._pool)
-            
+
             return True
         except Exception as e:
             logger.error(f"Failed to initialize database: {e}")
@@ -119,7 +127,7 @@ class DatabaseManager:
         """Generate a cache key for query results."""
         return f"{operation}:{':'.join(str(arg) for arg in args)}"
 
-    def _get_cached_result(self, cache_key: str) -> Optional[Any]:
+    def _get_cached_result(self, cache_key: str) -> Any | None:
         """Get result from cache if valid, None otherwise."""
         if cache_key in self._query_cache:
             result, expiry_time = self._query_cache[cache_key]
@@ -150,7 +158,7 @@ class DatabaseManager:
             return 0
 
         flushed_count = 0
-        batch_data: list[Dict[str, Any]] = []
+        batch_data: list[dict[str, Any]] = []
         try:
             # Use a single batch insert for all buffered records
             batch_data = self._batch_buffer.copy()
@@ -173,21 +181,37 @@ class DatabaseManager:
                                 effective_light_intensity, nominal_light_intensity, ramp_progress_light
                             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
                         """.strip()
-                    await conn.executemany(insert_query, [
-                        (
-                            record['timestamp'], record['location'], record['cluster'], record['device_name'],
-                            record.get('mode'),
-                            record['effective_heating_setpoint'], record['effective_cooling_setpoint'], record['effective_humidity_setpoint'],
-                            record['effective_co2_setpoint'], record['effective_vpd_setpoint'],
-                            record['nominal_heating_setpoint'], record['nominal_cooling_setpoint'], record['nominal_humidity_setpoint'],
-                            record['nominal_co2_setpoint'], record['nominal_vpd_setpoint'],
-                            record['ramp_progress_heating'], record['ramp_progress_cooling'],
-                            record['ramp_progress_humidity'], record['ramp_progress_co2'],
-                            record['ramp_progress_vpd'],
-                            record['effective_light_intensity'], record['nominal_light_intensity'],
-                            record['ramp_progress_light']
-                        ) for record in batch_data
-                    ])
+                    await conn.executemany(
+                        insert_query,
+                        [
+                            (
+                                record["timestamp"],
+                                record["location"],
+                                record["cluster"],
+                                record["device_name"],
+                                record.get("mode"),
+                                record["effective_heating_setpoint"],
+                                record["effective_cooling_setpoint"],
+                                record["effective_humidity_setpoint"],
+                                record["effective_co2_setpoint"],
+                                record["effective_vpd_setpoint"],
+                                record["nominal_heating_setpoint"],
+                                record["nominal_cooling_setpoint"],
+                                record["nominal_humidity_setpoint"],
+                                record["nominal_co2_setpoint"],
+                                record["nominal_vpd_setpoint"],
+                                record["ramp_progress_heating"],
+                                record["ramp_progress_cooling"],
+                                record["ramp_progress_humidity"],
+                                record["ramp_progress_co2"],
+                                record["ramp_progress_vpd"],
+                                record["effective_light_intensity"],
+                                record["nominal_light_intensity"],
+                                record["ramp_progress_light"],
+                            )
+                            for record in batch_data
+                        ],
+                    )
 
                     flushed_count = len(batch_data)
                 logger.debug(f"Flushed {flushed_count} batched effective setpoint records")
@@ -199,7 +223,7 @@ class DatabaseManager:
 
         self._last_batch_flush = time.time()
         return flushed_count
-    
+
     async def _connect_db(self) -> None:
         """Connect to TimescaleDB with retry logic."""
         max_retries = 5
@@ -214,9 +238,7 @@ class DatabaseManager:
                     min_size=2,
                     max_size=10,
                     command_timeout=30,  # Query timeout in seconds
-                    server_settings={
-                        'application_name': 'automation_service'
-                    }
+                    server_settings={"application_name": "automation_service"},
                 )
                 self._db_connected = True
                 self._retry_delay = 1.0  # Reset retry delay on success
@@ -224,11 +246,15 @@ class DatabaseManager:
                 return
             except Exception as e:
                 if attempt < max_retries - 1:
-                    wait_time = min(self._retry_delay * (2 ** attempt), self._max_retry_delay)
-                    logger.warning(f"Database connection attempt {attempt + 1} failed: {e}. Retrying in {wait_time}s...")
+                    wait_time = min(self._retry_delay * (2**attempt), self._max_retry_delay)
+                    logger.warning(
+                        f"Database connection attempt {attempt + 1} failed: {e}. Retrying in {wait_time}s..."
+                    )
                     await asyncio.sleep(wait_time)
                 else:
-                    raise ConnectionError(f"Failed to connect to TimescaleDB after {max_retries} attempts: {e}")
+                    raise ConnectionError(
+                        f"Failed to connect to TimescaleDB after {max_retries} attempts: {e}"
+                    )
 
     async def _migrate_tables(self) -> None:
         """Migrate tables to add missing columns."""
@@ -301,7 +327,7 @@ class DatabaseManager:
         except Exception as e:
             logger.warning(f"Redis connection failed: {e}. Will use TimescaleDB fallback.")
             self._redis_enabled = False
-    
+
     async def _create_tables(self) -> None:
         """Create all required tables if they don't exist."""
         pool = await self._get_pool()
@@ -324,7 +350,7 @@ class DatabaseManager:
                 CREATE INDEX IF NOT EXISTS idx_device_states_location_cluster 
                 ON device_states(location, cluster)
             """)
-            
+
             # Control history table
             await conn.execute("""
                 CREATE TABLE IF NOT EXISTS control_history (
@@ -349,7 +375,7 @@ class DatabaseManager:
                 """)
             except Exception:
                 logger.warning("TimescaleDB extension not available, using regular table")
-            
+
             await conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_control_history_location 
                 ON control_history(location, cluster)
@@ -358,7 +384,7 @@ class DatabaseManager:
                 CREATE INDEX IF NOT EXISTS idx_control_history_timestamp 
                 ON control_history(timestamp DESC)
             """)
-            
+
             # Setpoints table
             await conn.execute("""
                 CREATE TABLE IF NOT EXISTS setpoints (
@@ -374,7 +400,7 @@ class DatabaseManager:
                     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
                 )
             """)
-            
+
             # Migration: Rename temperature to heating_setpoint if temperature column exists
             try:
                 # Check if temperature column exists
@@ -391,7 +417,7 @@ class DatabaseManager:
                     logger.info("Migrated temperature column to heating_setpoint")
             except Exception as e:
                 logger.warning(f"Migration check for temperature column failed: {e}")
-            
+
             # Add cooling_setpoint column if it doesn't exist
             try:
                 await conn.execute("""
@@ -400,7 +426,7 @@ class DatabaseManager:
                 """)
             except Exception:
                 pass  # Column might already exist
-            
+
             # Add mode and vpd columns if they don't exist (for existing databases)
             try:
                 await conn.execute("""
@@ -408,14 +434,14 @@ class DatabaseManager:
                 """)
             except Exception:
                 pass  # Column might already exist
-            
+
             try:
                 await conn.execute("""
                     ALTER TABLE setpoints ADD COLUMN IF NOT EXISTS vpd REAL
                 """)
             except Exception:
                 pass  # Column might already exist
-            
+
             # Add ramp_in_duration column for setpoint ramping (for existing databases)
             try:
                 await conn.execute("""
@@ -424,7 +450,7 @@ class DatabaseManager:
                 """)
             except Exception:
                 pass  # Column might already exist
-            
+
             # Update mode constraint to include PRE_DAY and PRE_NIGHT
             # Note: We can't directly modify CHECK constraints, so we add a new constraint
             # PostgreSQL will enforce both, but the new one is more permissive
@@ -445,7 +471,7 @@ class DatabaseManager:
             except Exception:
                 # If constraint already exists with new values, that's fine
                 pass
-            
+
             # Drop unique constraint/index to allow history inserts, then add a non-unique index
             try:
                 await conn.execute("""
@@ -472,7 +498,7 @@ class DatabaseManager:
                 """)
             except Exception:
                 pass  # Index might already exist
-            
+
             # Schedules table
             await conn.execute("""
                 CREATE TABLE IF NOT EXISTS schedules (
@@ -497,7 +523,7 @@ class DatabaseManager:
                 """)
             except Exception:
                 pass  # Column might already exist
-            
+
             # Add ramp columns for light intensity ramping (for existing databases)
             try:
                 await conn.execute("""
@@ -511,7 +537,7 @@ class DatabaseManager:
                 """)
             except Exception:
                 pass  # Columns might already exist
-            
+
             # Add pre-day and pre-night duration columns for climate schedules (for existing databases)
             try:
                 await conn.execute("""
@@ -524,7 +550,7 @@ class DatabaseManager:
                 """)
             except Exception:
                 pass  # Columns might already exist
-            
+
             # Add updated_at column for optimistic locking (for existing databases)
             try:
                 await conn.execute("""
@@ -536,7 +562,7 @@ class DatabaseManager:
                 """)
             except Exception:
                 pass  # Column might already exist
-            
+
             # Rules table
             await conn.execute("""
                 CREATE TABLE IF NOT EXISTS rules (
@@ -556,7 +582,7 @@ class DatabaseManager:
                     FOREIGN KEY (schedule_id) REFERENCES schedules(id) ON DELETE SET NULL
                 )
             """)
-            
+
             # Automation state table
             await conn.execute("""
                 CREATE TABLE IF NOT EXISTS automation_state (
@@ -587,8 +613,10 @@ class DatabaseManager:
                     SELECT create_hypertable('automation_state', 'timestamp', if_not_exists => TRUE)
                 """)
             except Exception:
-                logger.warning("TimescaleDB extension not available for automation_state, using regular table")
-            
+                logger.warning(
+                    "TimescaleDB extension not available for automation_state, using regular table"
+                )
+
             await conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_automation_state_location 
                 ON automation_state(location, cluster)
@@ -601,7 +629,7 @@ class DatabaseManager:
                 CREATE INDEX IF NOT EXISTS idx_automation_state_device 
                 ON automation_state(location, cluster, device_name)
             """)
-            
+
             # Effective setpoints table (TimescaleDB hypertable)
             await conn.execute("""
                 CREATE TABLE IF NOT EXISTS effective_setpoints (
@@ -636,8 +664,10 @@ class DatabaseManager:
                     SELECT create_hypertable('effective_setpoints', 'timestamp', if_not_exists => TRUE)
                 """)
             except Exception:
-                logger.warning("TimescaleDB extension not available for effective_setpoints, using regular table")
-            
+                logger.warning(
+                    "TimescaleDB extension not available for effective_setpoints, using regular table"
+                )
+
             # Migration: Add columns for humidity, co2, and vpd if they don't exist
             try:
                 # Check if effective_humidity_setpoint column exists
@@ -647,7 +677,7 @@ class DatabaseManager:
                     WHERE table_name = 'effective_setpoints' 
                     AND column_name = 'effective_humidity_setpoint'
                 """)
-                
+
                 if column_check is None:
                     # Add new columns for humidity, co2, and vpd
                     await conn.execute("""
@@ -665,7 +695,7 @@ class DatabaseManager:
                     logger.info("Added humidity, co2, and vpd columns to effective_setpoints table")
             except Exception as e:
                 logger.warning(f"Error adding columns to effective_setpoints: {e}")
-            
+
             # Migration: Add columns for light intensity if they don't exist
             try:
                 light_column_check = await conn.fetchval("""
@@ -674,7 +704,7 @@ class DatabaseManager:
                     WHERE table_name = 'effective_setpoints' 
                     AND column_name = 'effective_light_intensity'
                 """)
-                
+
                 if light_column_check is None:
                     # Add new columns for light intensity
                     await conn.execute("""
@@ -684,10 +714,12 @@ class DatabaseManager:
                         ADD COLUMN IF NOT EXISTS nominal_light_intensity REAL,
                         ADD COLUMN IF NOT EXISTS ramp_progress_light REAL
                     """)
-                    logger.info("Added device_name and light intensity columns to effective_setpoints table")
+                    logger.info(
+                        "Added device_name and light intensity columns to effective_setpoints table"
+                    )
             except Exception as e:
                 logger.warning(f"Error adding light intensity columns to effective_setpoints: {e}")
-            
+
             await conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_effective_setpoints_location 
                 ON effective_setpoints(location, cluster)
@@ -700,7 +732,7 @@ class DatabaseManager:
                 CREATE INDEX IF NOT EXISTS idx_effective_setpoints_device 
                 ON effective_setpoints(location, cluster, device_name, timestamp DESC)
             """)
-            
+
             # PID parameters table
             await conn.execute("""
                 CREATE TABLE IF NOT EXISTS pid_parameters (
@@ -713,7 +745,7 @@ class DatabaseManager:
                     source TEXT
                 )
             """)
-            
+
             # PID parameter history table (for audit trail)
             await conn.execute("""
                 CREATE TABLE IF NOT EXISTS pid_parameter_history (
@@ -727,7 +759,7 @@ class DatabaseManager:
                     source TEXT
                 )
             """)
-            
+
             # Config versions table (for audit trail of all config changes)
             await conn.execute("""
                 CREATE TABLE IF NOT EXISTS config_versions (
@@ -749,13 +781,13 @@ class DatabaseManager:
                 CREATE INDEX IF NOT EXISTS idx_config_versions_type 
                 ON config_versions(config_type)
             """)
-            
+
             # PID parameter history index
             await conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_pid_parameter_history_device_type 
                 ON pid_parameter_history(device_type, timestamp DESC)
             """)
-            
+
             # Device mappings table
             await conn.execute("""
                 CREATE TABLE IF NOT EXISTS device_mappings (
@@ -775,20 +807,20 @@ class DatabaseManager:
                 CREATE INDEX IF NOT EXISTS idx_device_mappings_location_cluster 
                 ON device_mappings(location, cluster)
             """)
-            
+
             logger.info("Database tables created/verified")
-    
+
     async def log_config_version(
         self,
         config_type: str,
-        author: Optional[str] = None,
-        comment: Optional[str] = None,
-        location: Optional[str] = None,
-        cluster: Optional[str] = None,
-        changes: Optional[Dict[str, Any]] = None
-    ) -> Optional[int]:
+        author: str | None = None,
+        comment: str | None = None,
+        location: str | None = None,
+        cluster: str | None = None,
+        changes: dict[str, Any] | None = None,
+    ) -> int | None:
         """Log a configuration change to config_versions table.
-        
+
         Args:
             config_type: Type of config change ('setpoint', 'schedule', 'pid', 'safety')
             author: Author of the change (optional)
@@ -796,26 +828,34 @@ class DatabaseManager:
             location: Location name if applicable (optional)
             cluster: Cluster name if applicable (optional)
             changes: Dictionary of changes made (optional)
-        
+
         Returns:
             version_id if successful, None otherwise
         """
         try:
             import json
+
             pool = await self._get_pool()
             async with pool.acquire() as conn:
-                row = await conn.fetchrow("""
+                row = await conn.fetchrow(
+                    """
                     INSERT INTO config_versions 
                     (timestamp, author, comment, config_type, location, cluster, changes)
                     VALUES (NOW(), $1, $2, $3, $4, $5, $6)
                     RETURNING version_id
-                """, author, comment, config_type, location, cluster, 
-                    json.dumps(changes) if changes else None)
-                return row['version_id'] if row else None
+                """,
+                    author,
+                    comment,
+                    config_type,
+                    location,
+                    cluster,
+                    json.dumps(changes) if changes else None,
+                )
+                return row["version_id"] if row else None
         except Exception as e:
             logger.error(f"Error logging config version: {e}")
             return None
-    
+
     async def _create_tables(self) -> None:
         """Create all required tables if they don't exist."""
         pool = await self._get_pool()
@@ -838,7 +878,7 @@ class DatabaseManager:
                 CREATE INDEX IF NOT EXISTS idx_device_states_location_cluster 
                 ON device_states(location, cluster)
             """)
-            
+
             # Control history table
             await conn.execute("""
                 CREATE TABLE IF NOT EXISTS control_history (
@@ -863,7 +903,7 @@ class DatabaseManager:
                 """)
             except Exception:
                 logger.warning("TimescaleDB extension not available, using regular table")
-            
+
             await conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_control_history_location 
                 ON control_history(location, cluster)
@@ -872,7 +912,7 @@ class DatabaseManager:
                 CREATE INDEX IF NOT EXISTS idx_control_history_timestamp 
                 ON control_history(timestamp DESC)
             """)
-            
+
             # Setpoints table
             await conn.execute("""
                 CREATE TABLE IF NOT EXISTS setpoints (
@@ -888,7 +928,7 @@ class DatabaseManager:
                     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
                 )
             """)
-            
+
             # Setpoint history table (time-series for Grafana)
             await conn.execute("""
                 CREATE TABLE IF NOT EXISTS setpoint_history (
@@ -910,8 +950,10 @@ class DatabaseManager:
                     SELECT create_hypertable('setpoint_history', 'timestamp', if_not_exists => TRUE)
                 """)
             except Exception:
-                logger.warning("TimescaleDB extension not available for setpoint_history, using regular table")
-            
+                logger.warning(
+                    "TimescaleDB extension not available for setpoint_history, using regular table"
+                )
+
             await conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_setpoint_history_location 
                 ON setpoint_history(location, cluster, mode)
@@ -920,7 +962,7 @@ class DatabaseManager:
                 CREATE INDEX IF NOT EXISTS idx_setpoint_history_timestamp 
                 ON setpoint_history(timestamp DESC)
             """)
-            
+
             # Migration: Rename temperature to heating_setpoint if temperature column exists (second location)
             try:
                 # Check if temperature column exists in setpoints
@@ -936,8 +978,10 @@ class DatabaseManager:
                     """)
                     logger.info("Migrated temperature column to heating_setpoint (second location)")
             except Exception as e:
-                logger.warning(f"Migration check for temperature column failed (second location): {e}")
-            
+                logger.warning(
+                    f"Migration check for temperature column failed (second location): {e}"
+                )
+
             # Migration: Rename temperature to heating_setpoint in setpoint_history if it exists
             try:
                 result = await conn.fetchval("""
@@ -949,10 +993,14 @@ class DatabaseManager:
                     await conn.execute("""
                         ALTER TABLE setpoint_history RENAME COLUMN temperature TO heating_setpoint
                     """)
-                    logger.info("Migrated temperature column to heating_setpoint in setpoint_history")
+                    logger.info(
+                        "Migrated temperature column to heating_setpoint in setpoint_history"
+                    )
             except Exception as e:
-                logger.warning(f"Migration check for temperature column in setpoint_history failed: {e}")
-            
+                logger.warning(
+                    f"Migration check for temperature column in setpoint_history failed: {e}"
+                )
+
             # Add cooling_setpoint column to setpoints if it doesn't exist
             try:
                 await conn.execute("""
@@ -961,7 +1009,7 @@ class DatabaseManager:
                 """)
             except Exception:
                 pass  # Column might already exist
-            
+
             # Add cooling_setpoint column to setpoint_history if it doesn't exist
             try:
                 await conn.execute("""
@@ -970,7 +1018,7 @@ class DatabaseManager:
                 """)
             except Exception:
                 pass  # Column might already exist
-            
+
             # Add mode and vpd columns if they don't exist (for existing databases)
             try:
                 await conn.execute("""
@@ -978,14 +1026,14 @@ class DatabaseManager:
                 """)
             except Exception:
                 pass  # Column might already exist
-            
+
             try:
                 await conn.execute("""
                     ALTER TABLE setpoints ADD COLUMN IF NOT EXISTS vpd REAL
                 """)
             except Exception:
                 pass  # Column might already exist
-            
+
             # Add ramp_in_duration column for setpoint ramping (for existing databases)
             try:
                 await conn.execute("""
@@ -994,7 +1042,7 @@ class DatabaseManager:
                 """)
             except Exception:
                 pass  # Column might already exist
-            
+
             # Drop old unique constraint if it exists and create new one
             try:
                 await conn.execute("""
@@ -1002,7 +1050,7 @@ class DatabaseManager:
                 """)
             except Exception:
                 pass  # Constraint might not exist
-            
+
             # Create new unique constraint with mode
             try:
                 await conn.execute("""
@@ -1011,7 +1059,7 @@ class DatabaseManager:
                 """)
             except Exception:
                 pass  # Index might already exist
-            
+
             # Schedules table
             await conn.execute("""
                 CREATE TABLE IF NOT EXISTS schedules (
@@ -1036,7 +1084,7 @@ class DatabaseManager:
                 """)
             except Exception:
                 pass  # Column might already exist
-            
+
             # Add ramp columns for light intensity ramping (for existing databases)
             try:
                 await conn.execute("""
@@ -1050,7 +1098,7 @@ class DatabaseManager:
                 """)
             except Exception:
                 pass  # Columns might already exist
-            
+
             # Add pre-day and pre-night duration columns for climate schedules (for existing databases)
             try:
                 await conn.execute("""
@@ -1063,7 +1111,7 @@ class DatabaseManager:
                 """)
             except Exception:
                 pass  # Columns might already exist
-            
+
             # Add updated_at column for optimistic locking (for existing databases)
             try:
                 await conn.execute("""
@@ -1075,7 +1123,7 @@ class DatabaseManager:
                 """)
             except Exception:
                 pass  # Column might already exist
-            
+
             # Rules table
             await conn.execute("""
                 CREATE TABLE IF NOT EXISTS rules (
@@ -1095,7 +1143,7 @@ class DatabaseManager:
                     FOREIGN KEY (schedule_id) REFERENCES schedules(id) ON DELETE SET NULL
                 )
             """)
-            
+
             # Automation state table
             await conn.execute("""
                 CREATE TABLE IF NOT EXISTS automation_state (
@@ -1126,8 +1174,10 @@ class DatabaseManager:
                     SELECT create_hypertable('automation_state', 'timestamp', if_not_exists => TRUE)
                 """)
             except Exception:
-                logger.warning("TimescaleDB extension not available for automation_state, using regular table")
-            
+                logger.warning(
+                    "TimescaleDB extension not available for automation_state, using regular table"
+                )
+
             await conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_automation_state_location 
                 ON automation_state(location, cluster)
@@ -1140,7 +1190,7 @@ class DatabaseManager:
                 CREATE INDEX IF NOT EXISTS idx_automation_state_device 
                 ON automation_state(location, cluster, device_name)
             """)
-            
+
             # Effective setpoints table (TimescaleDB hypertable)
             await conn.execute("""
                 CREATE TABLE IF NOT EXISTS effective_setpoints (
@@ -1175,8 +1225,10 @@ class DatabaseManager:
                     SELECT create_hypertable('effective_setpoints', 'timestamp', if_not_exists => TRUE)
                 """)
             except Exception:
-                logger.warning("TimescaleDB extension not available for effective_setpoints, using regular table")
-            
+                logger.warning(
+                    "TimescaleDB extension not available for effective_setpoints, using regular table"
+                )
+
             # Migration: Add columns for humidity, co2, and vpd if they don't exist
             try:
                 # Check if effective_humidity_setpoint column exists
@@ -1186,7 +1238,7 @@ class DatabaseManager:
                     WHERE table_name = 'effective_setpoints' 
                     AND column_name = 'effective_humidity_setpoint'
                 """)
-                
+
                 if column_check is None:
                     # Add new columns for humidity, co2, and vpd
                     await conn.execute("""
@@ -1204,7 +1256,7 @@ class DatabaseManager:
                     logger.info("Added humidity, co2, and vpd columns to effective_setpoints table")
             except Exception as e:
                 logger.warning(f"Error adding columns to effective_setpoints: {e}")
-            
+
             # Migration: Add columns for light intensity if they don't exist
             try:
                 light_column_check = await conn.fetchval("""
@@ -1213,7 +1265,7 @@ class DatabaseManager:
                     WHERE table_name = 'effective_setpoints' 
                     AND column_name = 'effective_light_intensity'
                 """)
-                
+
                 if light_column_check is None:
                     # Add new columns for light intensity
                     await conn.execute("""
@@ -1223,10 +1275,12 @@ class DatabaseManager:
                         ADD COLUMN IF NOT EXISTS nominal_light_intensity REAL,
                         ADD COLUMN IF NOT EXISTS ramp_progress_light REAL
                     """)
-                    logger.info("Added device_name and light intensity columns to effective_setpoints table")
+                    logger.info(
+                        "Added device_name and light intensity columns to effective_setpoints table"
+                    )
             except Exception as e:
                 logger.warning(f"Error adding light intensity columns to effective_setpoints: {e}")
-            
+
             await conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_effective_setpoints_location 
                 ON effective_setpoints(location, cluster)
@@ -1239,7 +1293,7 @@ class DatabaseManager:
                 CREATE INDEX IF NOT EXISTS idx_effective_setpoints_device 
                 ON effective_setpoints(location, cluster, device_name, timestamp DESC)
             """)
-            
+
             # PID parameters table
             await conn.execute("""
                 CREATE TABLE IF NOT EXISTS pid_parameters (
@@ -1252,7 +1306,7 @@ class DatabaseManager:
                     source TEXT
                 )
             """)
-            
+
             # PID parameter history table (for audit trail)
             await conn.execute("""
                 CREATE TABLE IF NOT EXISTS pid_parameter_history (
@@ -1270,7 +1324,7 @@ class DatabaseManager:
                 CREATE INDEX IF NOT EXISTS idx_pid_parameter_history_device_type 
                 ON pid_parameter_history(device_type, timestamp DESC)
             """)
-            
+
             # Config versions table (for audit trail of all config changes)
             await conn.execute("""
                 CREATE TABLE IF NOT EXISTS config_versions (
@@ -1292,7 +1346,7 @@ class DatabaseManager:
                 CREATE INDEX IF NOT EXISTS idx_config_versions_type 
                 ON config_versions(config_type)
             """)
-            
+
             # Device mappings table
             await conn.execute("""
                 CREATE TABLE IF NOT EXISTS device_mappings (
@@ -1312,49 +1366,47 @@ class DatabaseManager:
                 CREATE INDEX IF NOT EXISTS idx_device_mappings_location_cluster 
                 ON device_mappings(location, cluster)
             """)
-            
+
             logger.info("Database tables created/verified")
-    
+
     async def _get_pool(self) -> asyncpg.Pool:
         """Get or create connection pool with retry logic."""
         if self._pool is None or not self._db_connected:
             await self._connect_db()
         return self._pool  # pyright: ignore[reportReturnType]
-    
-    async def get_sensor_value(self, sensor_name: str) -> Optional[float]:
+
+    async def get_sensor_value(self, sensor_name: str) -> float | None:
         """Get latest sensor value from Redis or TimescaleDB fallback."""
         if self._sensor_repo:
             return await self._sensor_repo.get_sensor_value(sensor_name)
         raise RuntimeError("SensorRepository not initialized - call initialize() first")
-    
-    async def get_sensor_values_batch(self, sensor_names: List[str]) -> Dict[str, Optional[float]]:
+
+    async def get_sensor_values_batch(self, sensor_names: list[str]) -> dict[str, float | None]:
         """Get latest sensor values for multiple sensors in a single batch query."""
         if self._sensor_repo:
             return await self._sensor_repo.get_sensor_values_batch(sensor_names)
         raise RuntimeError("SensorRepository not initialized - call initialize() first")
-    
-    async def get_device_state(self, location: str, cluster: str, device_name: str) -> Optional[Dict[str, Any]]:
+
+    async def get_device_state(
+        self, location: str, cluster: str, device_name: str
+    ) -> dict[str, Any] | None:
         """Get device state from database."""
         if self._device_repo:
             return await self._device_repo.get_device_state(location, cluster, device_name)
         raise RuntimeError("DeviceRepository not initialized - call initialize() first")
-    
+
     async def get_latest_light_intensity(
         self, location: str, cluster: str, device_name: str
-    ) -> Optional[float]:
+    ) -> float | None:
         """Get the most recent light intensity from automation_state table."""
         if self._device_repo:
-            return await self._device_repo.get_latest_light_intensity(location, cluster, device_name)
+            return await self._device_repo.get_latest_light_intensity(
+                location, cluster, device_name
+            )
         raise RuntimeError("DeviceRepository not initialized - call initialize() first")
-    
+
     async def set_device_state(
-        self, 
-        location: str, 
-        cluster: str, 
-        device_name: str, 
-        channel: int,
-        state: int, 
-        mode: str
+        self, location: str, cluster: str, device_name: str, channel: int, state: int, mode: str
     ) -> bool:
         """Set device state in database and Redis state keys."""
         if self._device_repo:
@@ -1362,28 +1414,36 @@ class DatabaseManager:
                 location, cluster, device_name, channel, state, mode
             )
         raise RuntimeError("DeviceRepository not initialized - call initialize() first")
-    
+
     async def log_control_action(
         self,
         location: str,
         cluster: str,
         device_name: str,
         channel: int,
-        old_state: Optional[int],
-        new_state: Optional[int],
+        old_state: int | None,
+        new_state: int | None,
         mode: str,
         reason: str,
-        sensor_value: Optional[float] = None,
-        setpoint: Optional[float] = None
+        sensor_value: float | None = None,
+        setpoint: float | None = None,
     ) -> bool:
         """Log control action to control_history."""
         if self._control_action_repo:
             return await self._control_action_repo.log_control_action(
-                location, cluster, device_name, channel, old_state, new_state,
-                mode, reason, sensor_value, setpoint
+                location,
+                cluster,
+                device_name,
+                channel,
+                old_state,
+                new_state,
+                mode,
+                reason,
+                sensor_value,
+                setpoint,
             )
         raise RuntimeError("ControlActionRepository not initialized - call initialize() first")
-    
+
     async def log_automation_state(
         self,
         location: str,
@@ -1391,56 +1451,79 @@ class DatabaseManager:
         device_name: str,
         device_state: int,
         device_mode: str,
-        pid_output: Optional[float],
-        duty_cycle_percent: Optional[float],
-        active_rule_ids: List[int],
-        active_schedule_ids: List[int],
+        pid_output: float | None,
+        duty_cycle_percent: float | None,
+        active_rule_ids: list[int],
+        active_schedule_ids: list[int],
         control_reason: str,
-        schedule_ramp_up_duration: Optional[int] = None,
-        schedule_ramp_down_duration: Optional[int] = None,
-        schedule_photoperiod_hours: Optional[float] = None,
-        pid_kp: Optional[float] = None,
-        pid_ki: Optional[float] = None,
-        pid_kd: Optional[float] = None
+        schedule_ramp_up_duration: int | None = None,
+        schedule_ramp_down_duration: int | None = None,
+        schedule_photoperiod_hours: float | None = None,
+        pid_kp: float | None = None,
+        pid_ki: float | None = None,
+        pid_kd: float | None = None,
     ) -> bool:
         """Log automation state to automation_state table, Redis Stream, and Redis state keys."""
         if self._control_action_repo:
             return await self._control_action_repo.log_automation_state(
-                location, cluster, device_name, device_state, device_mode,
-                pid_output, duty_cycle_percent, active_rule_ids, active_schedule_ids,
-                control_reason, schedule_ramp_up_duration, schedule_ramp_down_duration,
-                schedule_photoperiod_hours, pid_kp, pid_ki, pid_kd
+                location,
+                cluster,
+                device_name,
+                device_state,
+                device_mode,
+                pid_output,
+                duty_cycle_percent,
+                active_rule_ids,
+                active_schedule_ids,
+                control_reason,
+                schedule_ramp_up_duration,
+                schedule_ramp_down_duration,
+                schedule_photoperiod_hours,
+                pid_kp,
+                pid_ki,
+                pid_kd,
             )
         raise RuntimeError("ControlActionRepository not initialized - call initialize() first")
-    
-    async def get_setpoint(self, location: str, cluster: str, mode: Optional[str] = None) -> Optional[Dict[str, Any]]:
+
+    async def get_setpoint(
+        self, location: str, cluster: str, mode: str | None = None
+    ) -> dict[str, Any] | None:
         """Get setpoints for location/cluster."""
         if self._setpoint_repo:
             return await self._setpoint_repo.get_setpoint(location, cluster, mode)
         raise RuntimeError("SetpointRepository not initialized - call initialize() first")
-    
+
     async def set_setpoint(
-        self, 
-        location: str, 
-        cluster: str, 
-        heating_setpoint: Optional[float] = None,
-        cooling_setpoint: Optional[float] = None,
-        humidity: Optional[float] = None,
-        co2: Optional[float] = None,
-        vpd: Optional[float] = None,
-        mode: Optional[str] = None,
-        ramp_in_duration: Optional[int] = None,
-        source: str = 'api',
-        expected_version: Optional[datetime] = None
-    ) -> tuple[bool, Optional[datetime]]:
+        self,
+        location: str,
+        cluster: str,
+        heating_setpoint: float | None = None,
+        cooling_setpoint: float | None = None,
+        humidity: float | None = None,
+        co2: float | None = None,
+        vpd: float | None = None,
+        mode: str | None = None,
+        ramp_in_duration: int | None = None,
+        source: str = "api",
+        expected_version: datetime | None = None,
+    ) -> tuple[bool, datetime | None]:
         """Set setpoints for location/cluster."""
         if self._setpoint_repo:
             return await self._setpoint_repo.set_setpoint(
-                location, cluster, heating_setpoint, cooling_setpoint,
-                humidity, co2, vpd, mode, ramp_in_duration, source, expected_version
+                location,
+                cluster,
+                heating_setpoint,
+                cooling_setpoint,
+                humidity,
+                co2,
+                vpd,
+                mode,
+                ramp_in_duration,
+                source,
+                expected_version,
             )
         raise RuntimeError("SetpointRepository not initialized - call initialize() first")
-    
+
     async def log_effective_setpoint(
         self,
         location: str,
@@ -1450,41 +1533,47 @@ class DatabaseManager:
         raw_value: float,
         ramped_value: float,
         ramp_progress: float,
-        source: str = 'system'
+        source: str = "system",
     ) -> bool:
         """Log effective setpoint to effective_setpoints table."""
         if self._setpoint_repo:
             return await self._setpoint_repo.log_effective_setpoint(
-                location, cluster, mode, setpoint_type, raw_value,
-                ramped_value, ramp_progress, source
+                location,
+                cluster,
+                mode,
+                setpoint_type,
+                raw_value,
+                ramped_value,
+                ramp_progress,
+                source,
             )
         raise RuntimeError("SetpointRepository not initialized - call initialize() first")
-    
+
     async def log_effective_setpoints(
         self,
         location: str,
         cluster: str,
-        mode: Optional[str],
-        effective_heating_setpoint: Optional[float] = None,
-        effective_cooling_setpoint: Optional[float] = None,
-        effective_humidity_setpoint: Optional[float] = None,
-        effective_co2_setpoint: Optional[float] = None,
-        effective_vpd_setpoint: Optional[float] = None,
-        nominal_heating_setpoint: Optional[float] = None,
-        nominal_cooling_setpoint: Optional[float] = None,
-        nominal_humidity_setpoint: Optional[float] = None,
-        nominal_co2_setpoint: Optional[float] = None,
-        nominal_vpd_setpoint: Optional[float] = None,
-        ramp_progress_heating: Optional[float] = None,
-        ramp_progress_cooling: Optional[float] = None,
-        ramp_progress_humidity: Optional[float] = None,
-        ramp_progress_co2: Optional[float] = None,
-        ramp_progress_vpd: Optional[float] = None,
-        device_name: Optional[str] = None,
-        effective_light_intensity: Optional[float] = None,
-        nominal_light_intensity: Optional[float] = None,
-        ramp_progress_light: Optional[float] = None,
-        timestamp: Optional[datetime] = None
+        mode: str | None,
+        effective_heating_setpoint: float | None = None,
+        effective_cooling_setpoint: float | None = None,
+        effective_humidity_setpoint: float | None = None,
+        effective_co2_setpoint: float | None = None,
+        effective_vpd_setpoint: float | None = None,
+        nominal_heating_setpoint: float | None = None,
+        nominal_cooling_setpoint: float | None = None,
+        nominal_humidity_setpoint: float | None = None,
+        nominal_co2_setpoint: float | None = None,
+        nominal_vpd_setpoint: float | None = None,
+        ramp_progress_heating: float | None = None,
+        ramp_progress_cooling: float | None = None,
+        ramp_progress_humidity: float | None = None,
+        ramp_progress_co2: float | None = None,
+        ramp_progress_vpd: float | None = None,
+        device_name: str | None = None,
+        effective_light_intensity: float | None = None,
+        nominal_light_intensity: float | None = None,
+        ramp_progress_light: float | None = None,
+        timestamp: datetime | None = None,
     ) -> bool:
         """Log effective setpoints to effective_setpoints table using batching.
 
@@ -1526,29 +1615,29 @@ class DatabaseManager:
 
             # Buffer the record for batch writing (performance optimization)
             record = {
-                'timestamp': ts,
-                'location': location,
-                'cluster': cluster,
-                'mode': db_mode,
-                'device_name': device_name,
-                'effective_heating_setpoint': effective_heating_setpoint,
-                'effective_cooling_setpoint': effective_cooling_setpoint,
-                'effective_humidity_setpoint': effective_humidity_setpoint,
-                'effective_co2_setpoint': effective_co2_setpoint,
-                'effective_vpd_setpoint': effective_vpd_setpoint,
-                'effective_light_intensity': effective_light_intensity,
-                'nominal_heating_setpoint': nominal_heating_setpoint,
-                'nominal_cooling_setpoint': nominal_cooling_setpoint,
-                'nominal_humidity_setpoint': nominal_humidity_setpoint,
-                'nominal_co2_setpoint': nominal_co2_setpoint,
-                'nominal_vpd_setpoint': nominal_vpd_setpoint,
-                'nominal_light_intensity': nominal_light_intensity,
-                'ramp_progress_heating': ramp_progress_heating,
-                'ramp_progress_cooling': ramp_progress_cooling,
-                'ramp_progress_humidity': ramp_progress_humidity,
-                'ramp_progress_co2': ramp_progress_co2,
-                'ramp_progress_vpd': ramp_progress_vpd,
-                'ramp_progress_light': ramp_progress_light,
+                "timestamp": ts,
+                "location": location,
+                "cluster": cluster,
+                "mode": db_mode,
+                "device_name": device_name,
+                "effective_heating_setpoint": effective_heating_setpoint,
+                "effective_cooling_setpoint": effective_cooling_setpoint,
+                "effective_humidity_setpoint": effective_humidity_setpoint,
+                "effective_co2_setpoint": effective_co2_setpoint,
+                "effective_vpd_setpoint": effective_vpd_setpoint,
+                "effective_light_intensity": effective_light_intensity,
+                "nominal_heating_setpoint": nominal_heating_setpoint,
+                "nominal_cooling_setpoint": nominal_cooling_setpoint,
+                "nominal_humidity_setpoint": nominal_humidity_setpoint,
+                "nominal_co2_setpoint": nominal_co2_setpoint,
+                "nominal_vpd_setpoint": nominal_vpd_setpoint,
+                "nominal_light_intensity": nominal_light_intensity,
+                "ramp_progress_heating": ramp_progress_heating,
+                "ramp_progress_cooling": ramp_progress_cooling,
+                "ramp_progress_humidity": ramp_progress_humidity,
+                "ramp_progress_co2": ramp_progress_co2,
+                "ramp_progress_vpd": ramp_progress_vpd,
+                "ramp_progress_light": ramp_progress_light,
             }
 
             self._batch_buffer.append(record)
@@ -1581,27 +1670,32 @@ class DatabaseManager:
                     ramp_progress_humidity=ramp_progress_humidity,
                     ramp_progress_co2=ramp_progress_co2,
                     ramp_progress_vpd=ramp_progress_vpd,
-                    mode=mode
+                    mode=mode,
                 )
 
             return True
         except Exception as e:
             logger.error(f"Error buffering effective setpoints: {e}")
             return False
-    
 
-    async def get_all_setpoints_for_location_cluster(self, location: str, cluster: str) -> List[Dict[str, Any]]:
+    async def get_all_setpoints_for_location_cluster(
+        self, location: str, cluster: str
+    ) -> list[dict[str, Any]]:
         """Get all setpoints for a location/cluster."""
         if self._setpoint_repo:
-            return await self._setpoint_repo.get_all_setpoints_for_location_cluster(location, cluster)
+            return await self._setpoint_repo.get_all_setpoints_for_location_cluster(
+                location, cluster
+            )
         raise RuntimeError("SetpointRepository not initialized - call initialize() first")
-    
-    async def get_latest_effective_setpoints(self, location: str, cluster: str) -> Optional[Dict[str, Any]]:
+
+    async def get_latest_effective_setpoints(
+        self, location: str, cluster: str
+    ) -> dict[str, Any] | None:
         """Get latest effective setpoints for location/cluster."""
         if self._setpoint_repo:
             return await self._setpoint_repo.get_latest_effective_setpoints(location, cluster)
         raise RuntimeError("SetpointRepository not initialized - call initialize() first")
-    
+
     async def set_device_mapping(
         self,
         location: str,
@@ -1610,22 +1704,21 @@ class DatabaseManager:
         channel: int,
         active_high: bool = True,
         safe_state: bool = False,
-        mcp_board_id: int = 0
+        mcp_board_id: int = 0,
     ) -> bool:
         """Set device hardware mapping."""
         if self._device_repo:
             return await self._device_repo.set_device_mapping(
-                location, cluster, device_name, channel,
-                active_high, safe_state, mcp_board_id
+                location, cluster, device_name, channel, active_high, safe_state, mcp_board_id
             )
         raise RuntimeError("DeviceRepository not initialized - call initialize() first")
-    
-    async def get_pid_parameters(self, device_type: str) -> Optional[Dict[str, Any]]:
+
+    async def get_pid_parameters(self, device_type: str) -> dict[str, Any] | None:
         """Get PID parameters from database."""
         if self._pid_repo:
             return await self._pid_repo.get_pid_parameters(device_type)
         raise RuntimeError("PIDRepository not initialized - call initialize() first")
-    
+
     async def set_pid_parameters(
         self,
         device_type: str,
@@ -1633,7 +1726,7 @@ class DatabaseManager:
         ki: float,
         kd: float,
         source: str = "manual",
-        updated_by: str = "system"
+        updated_by: str = "system",
     ) -> bool:
         """Set PID parameters for a device type."""
         if self._pid_repo:
@@ -1641,34 +1734,34 @@ class DatabaseManager:
                 device_type, kp, ki, kd, source, updated_by
             )
         raise RuntimeError("PIDRepository not initialized - call initialize() first")
-    
+
     async def get_pid_parameter_history(
         self, device_type: str, limit: int = 100
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Get PID parameter history."""
         if self._pid_repo:
             return await self._pid_repo.get_pid_parameter_history(device_type, limit)
         raise RuntimeError("PIDRepository not initialized - call initialize() first")
-    
+
     async def get_all_pid_parameters(self) -> list[dict[str, Any]]:
         """Get all PID parameters."""
         if self._pid_repo:
             return await self._pid_repo.get_all_pid_parameters()
         raise RuntimeError("PIDRepository not initialized - call initialize() first")
-    
+
     async def get_pid_control_mode(self, device_type: str) -> dict | None:
         """Get PID control mode for a device type."""
         if self._pid_repo:
             return await self._pid_repo.get_pid_control_mode(device_type)
         raise RuntimeError("PIDRepository not initialized - call initialize() first")
-    
+
     async def set_pid_control_mode(
         self,
         device_type: str,
         mode: str,
         hysteresis_high: float | None = None,
         hysteresis_low: float | None = None,
-        updated_by: str = "system"
+        updated_by: str = "system",
     ) -> bool:
         """Set PID control mode for a device type."""
         if self._pid_repo:
@@ -1676,32 +1769,38 @@ class DatabaseManager:
                 device_type, mode, hysteresis_high, hysteresis_low, updated_by
             )
         raise RuntimeError("PIDRepository not initialized - call initialize() first")
-    
-    async def get_autotune_state(self, device_type: str) -> Optional[Dict[str, Any]]:
+
+    async def get_autotune_state(self, device_type: str) -> dict[str, Any] | None:
         """Get autotune state for a device type."""
         if self._pid_repo:
             return await self._pid_repo.get_autotune_state(device_type)
         raise RuntimeError("PIDRepository not initialized - call initialize() first")
-    
+
     async def update_autotune_state(
         self,
         device_type: str,
         state: str,
-        progress: Optional[float] = None,
-        current_step: Optional[str] = None,
-        error_message: Optional[str] = None,
-        result_kp: Optional[float] = None,
-        result_ki: Optional[float] = None,
-        result_kd: Optional[float] = None
+        progress: float | None = None,
+        current_step: str | None = None,
+        error_message: str | None = None,
+        result_kp: float | None = None,
+        result_ki: float | None = None,
+        result_kd: float | None = None,
     ) -> bool:
         """Update autotune state for a device type."""
         if self._pid_repo:
             return await self._pid_repo.update_autotune_state(
-                device_type, state, progress, current_step,
-                error_message, result_kp, result_ki, result_kd
+                device_type,
+                state,
+                progress,
+                current_step,
+                error_message,
+                result_kp,
+                result_ki,
+                result_kd,
             )
         raise RuntimeError("PIDRepository not initialized - call initialize() first")
-    
+
     async def set_pid_parameters_with_reason(
         self,
         device_type: str,
@@ -1710,7 +1809,7 @@ class DatabaseManager:
         kd: float,
         change_reason: str,
         source: str = "auto_pid",
-        updated_by: Optional[str] = None
+        updated_by: str | None = None,
     ) -> bool:
         """Set PID parameters with a reason for the change."""
         if self._pid_repo:
@@ -1718,46 +1817,38 @@ class DatabaseManager:
                 device_type, kp, ki, kd, change_reason, source, updated_by
             )
         raise RuntimeError("PIDRepository not initialized - call initialize() first")
-    
+
     async def get_schedules(
         self,
-        location: Optional[str] = None,
-        cluster: Optional[str] = None,
-        device_name: Optional[str] = None,
-        enabled_only: bool = False
-    ) -> List[Dict[str, Any]]:
+        location: str | None = None,
+        cluster: str | None = None,
+        device_name: str | None = None,
+        enabled_only: bool = False,
+    ) -> list[dict[str, Any]]:
         """Get schedules with optional filters."""
         if self._schedule_repo:
             # Repository only supports location/cluster filtering
             # device_name and enabled_only filtering done in-memory if needed
             schedules = await self._schedule_repo.get_schedules(location, cluster)
             if device_name:
-                schedules = [s for s in schedules if s.get('device_name') == device_name]
+                schedules = [s for s in schedules if s.get("device_name") == device_name]
             if enabled_only:
-                schedules = [s for s in schedules if s.get('enabled')]
+                schedules = [s for s in schedules if s.get("enabled")]
             return schedules
         raise RuntimeError("ScheduleRepository not initialized - call initialize() first")
-    
-    async def get_climate_schedule(
-        self,
-        location: str,
-        cluster: str
-    ) -> Optional[Dict[str, Any]]:
+
+    async def get_climate_schedule(self, location: str, cluster: str) -> dict[str, Any] | None:
         """Get climate schedule data (pre-day/pre-night durations) for a location/cluster."""
         if self._schedule_repo:
             return await self._schedule_repo.get_climate_schedule(location, cluster)
         raise RuntimeError("ScheduleRepository not initialized - call initialize() first")
-    
-    async def get_light_schedule(
-        self,
-        location: str,
-        cluster: str
-    ) -> Optional[Dict[str, Any]]:
+
+    async def get_light_schedule(self, location: str, cluster: str) -> dict[str, Any] | None:
         """Get light schedule (day start/end times) for a location/cluster."""
         if self._schedule_repo:
             return await self._schedule_repo.get_room_light_schedule(location, cluster)
         raise RuntimeError("ScheduleRepository not initialized - call initialize() first")
-    
+
     async def create_schedule(
         self,
         name: str,
@@ -1766,62 +1857,82 @@ class DatabaseManager:
         device_name: str,
         start_time: dt_time,
         end_time: dt_time,
-        day_of_week: Optional[int] = None,
+        day_of_week: int | None = None,
         enabled: bool = True,
-        mode: Optional[str] = None,
-        target_intensity: Optional[float] = None,
+        mode: str | None = None,
+        target_intensity: float | None = None,
         ramp_up_duration: int = 0,
         ramp_down_duration: int = 0,
-        conn: Optional[asyncpg.Connection] = None
+        conn: asyncpg.Connection | None = None,
     ) -> int:
         """Create a new schedule."""
         if self._schedule_repo:
             # Convert time objects to strings for repository
-            start_str = start_time.strftime("%H:%M") if hasattr(start_time, 'strftime') else str(start_time)
-            end_str = end_time.strftime("%H:%M") if hasattr(end_time, 'strftime') else str(end_time)
+            start_str = (
+                start_time.strftime("%H:%M") if hasattr(start_time, "strftime") else str(start_time)
+            )
+            end_str = end_time.strftime("%H:%M") if hasattr(end_time, "strftime") else str(end_time)
             return await self._schedule_repo.create_schedule(
-                name, location, cluster, device_name, start_str, end_str,
-                day_of_week, enabled, mode, target_intensity,
-                ramp_up_duration, ramp_down_duration, conn
+                name,
+                location,
+                cluster,
+                device_name,
+                start_str,
+                end_str,
+                day_of_week,
+                enabled,
+                mode,
+                target_intensity,
+                ramp_up_duration,
+                ramp_down_duration,
+                conn,
             )
         raise RuntimeError("ScheduleRepository not initialized - call initialize() first")
-    
+
     async def update_schedule(
         self,
         schedule_id: int,
-        name: Optional[str] = None,
-        start_time: Optional[dt_time] = None,
-        end_time: Optional[dt_time] = None,
-        day_of_week: Optional[int] = None,
-        enabled: Optional[bool] = None,
-        mode: Optional[str] = None,
-        target_intensity: Optional[float] = None,
-        ramp_up_duration: Optional[int] = None,
-        ramp_down_duration: Optional[int] = None
+        name: str | None = None,
+        start_time: dt_time | None = None,
+        end_time: dt_time | None = None,
+        day_of_week: int | None = None,
+        enabled: bool | None = None,
+        mode: str | None = None,
+        target_intensity: float | None = None,
+        ramp_up_duration: int | None = None,
+        ramp_down_duration: int | None = None,
     ) -> bool:
         """Update an existing schedule."""
         if self._schedule_repo:
             return await self._schedule_repo.update_schedule(
-                schedule_id, name, start_time, end_time, day_of_week,
-                enabled, mode, target_intensity, ramp_up_duration, ramp_down_duration
+                schedule_id,
+                name,
+                start_time,
+                end_time,
+                day_of_week,
+                enabled,
+                mode,
+                target_intensity,
+                ramp_up_duration,
+                ramp_down_duration,
             )
         raise RuntimeError("ScheduleRepository not initialized - call initialize() first")
-    
+
     async def delete_schedule(self, schedule_id: int) -> bool:
         """Delete a schedule by ID."""
         if self._schedule_repo:
             return await self._schedule_repo.delete_schedule(schedule_id)
         raise RuntimeError("ScheduleRepository not initialized - call initialize() first")
-    
-    async def delete_schedules_bulk(self, schedule_ids: List[int]) -> int:
+
+    async def delete_schedules_bulk(self, schedule_ids: list[int]) -> int:
         """Delete multiple schedules by IDs."""
         if self._schedule_repo:
             return await self._schedule_repo.delete_schedules_bulk(schedule_ids)
         raise RuntimeError("ScheduleRepository not initialized - call initialize() first")
-    
+
     async def load_schedule_state_to_redis(self) -> None:
         """Load all schedule state from database to Redis following canonical schema.
-        
+
         Queries all room schedules, climate schedules, setpoints (including PRE_DAY and PRE_NIGHT),
         and light schedules from DB, groups by location/cluster, and writes to Redis state.
         Called on service startup to populate Redis with current schedule configuration.
@@ -1829,7 +1940,7 @@ class DatabaseManager:
         if not self._automation_redis or not self._automation_redis.redis_enabled:
             logger.warning("Redis not enabled, skipping schedule state load")
             return
-        
+
         try:
             pool = await self._get_pool()
             async with pool.acquire() as conn:
@@ -1841,33 +1952,40 @@ class DatabaseManager:
                     SELECT DISTINCT location, cluster
                     FROM setpoints
                 """)
-                
+
                 locations_loaded = []
-                
+
                 for row in rows:
-                    location = row['location']
-                    cluster = row['cluster']
-                    
+                    location = row["location"]
+                    cluster = row["cluster"]
+
                     try:
                         # Build schedule state using the helper function from schedules.py
                         # Import here to avoid circular dependency
                         from .routes.schedules import _build_schedule_state
+
                         schedule_state = await _build_schedule_state(self, location, cluster)
-                        
+
                         # Write to Redis
-                        self._automation_redis.write_schedule_state(location, cluster, schedule_state)
+                        self._automation_redis.write_schedule_state(
+                            location, cluster, schedule_state
+                        )
                         locations_loaded.append(f"{location}/{cluster}")
                         logger.debug(f"Loaded schedule state to Redis for {location}/{cluster}")
                     except Exception as e:
-                        logger.warning(f"Failed to load schedule state for {location}/{cluster}: {e}")
-                
+                        logger.warning(
+                            f"Failed to load schedule state for {location}/{cluster}: {e}"
+                        )
+
                 if locations_loaded:
-                    logger.info(f"Loaded schedule state to Redis for {len(locations_loaded)} locations: {', '.join(locations_loaded)}")
+                    logger.info(
+                        f"Loaded schedule state to Redis for {len(locations_loaded)} locations: {', '.join(locations_loaded)}"
+                    )
                 else:
                     logger.info("No schedule state to load (no locations found in database)")
         except Exception as e:
             logger.error(f"Error loading schedule state to Redis: {e}", exc_info=True)
-    
+
     async def close(self):
         """Close database connections."""
         if self._pool:
@@ -1878,7 +1996,6 @@ class DatabaseManager:
             self._redis_client.close()
             self._redis_client = None
             self._redis_enabled = False
-
 
     async def _create_room_modes_tables(self) -> None:
         """Create room modes tables for the new UI."""
@@ -1895,7 +2012,7 @@ class DatabaseManager:
                     created_at TIMESTAMPTZ DEFAULT NOW()
                 )
             """)
-            
+
             # Insert default modes if not exist
             await conn.execute("""
                 INSERT INTO room_modes (name, description, photoperiod_hours, is_constant)
@@ -1906,7 +2023,7 @@ class DatabaseManager:
                     ('sleep', 'Sleep mode - minimal energy', 0, TRUE)
                 ON CONFLICT (name) DO NOTHING
             """)
-            
+
             # Flower submodes table (Stretch, Bulk, Ripen)
             await conn.execute("""
                 CREATE TABLE IF NOT EXISTS flower_submodes (
@@ -1918,7 +2035,7 @@ class DatabaseManager:
                     created_at TIMESTAMPTZ DEFAULT NOW()
                 )
             """)
-            
+
             # Insert default flower submodes
             await conn.execute("""
                 INSERT INTO flower_submodes (name, description, week_start, week_end)
@@ -1928,7 +2045,7 @@ class DatabaseManager:
                     ('ripen', 'Ripen phase - weeks 7-9', 7, 9)
                 ON CONFLICT (name) DO NOTHING
             """)
-            
+
             # Room active mode table
             await conn.execute("""
                 CREATE TABLE IF NOT EXISTS room_active_mode (
@@ -1941,7 +2058,7 @@ class DatabaseManager:
                     UNIQUE(location, cluster)
                 )
             """)
-            
+
             # Light presets per mode
             await conn.execute("""
                 CREATE TABLE IF NOT EXISTS light_presets (
@@ -1955,7 +2072,7 @@ class DatabaseManager:
                     created_at TIMESTAMPTZ DEFAULT NOW()
                 )
             """)
-            
+
             # Mode parameters table - stores ALL parameters per room/mode/submode combination
             # Each mode/submode has its own saved parameters that persist through mode switches
             await conn.execute("""
@@ -2014,77 +2131,105 @@ class DatabaseManager:
                     UNIQUE(location, cluster, mode_id, submode_id)
                 )
             """)
-            
+
             await conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_mode_parameters_lookup
                 ON mode_parameters(location, cluster, mode_id, submode_id)
             """)
-            
+
             logger.info("Room modes tables created/verified")
-    
+
     async def get_room_modes(self) -> list[dict[str, Any]]:
         """Get all room modes."""
         if self._room_mode_repo:
             return await self._room_mode_repo.get_room_modes()
         raise RuntimeError("RoomModeRepository not initialized - call initialize() first")
-    
+
     async def get_flower_submodes(self) -> list[dict[str, Any]]:
         """Get all flower submodes."""
         if self._room_mode_repo:
             return await self._room_mode_repo.get_flower_submodes()
         raise RuntimeError("RoomModeRepository not initialized - call initialize() first")
-    
+
     async def get_active_mode(self, location: str, cluster: str) -> dict | None:
         """Get active mode for a location/cluster."""
         if self._room_mode_repo:
             return await self._room_mode_repo.get_active_mode(location, cluster)
         raise RuntimeError("RoomModeRepository not initialized - call initialize() first")
-    
-    async def set_active_mode(self, location: str, cluster: str, mode_name: str, submode_name: str | None = None) -> bool:
+
+    async def set_active_mode(
+        self, location: str, cluster: str, mode_name: str, submode_name: str | None = None
+    ) -> bool:
         """Set active mode for a location/cluster."""
         if self._room_mode_repo:
-            return await self._room_mode_repo.set_active_mode(location, cluster, mode_name, submode_name)
+            return await self._room_mode_repo.set_active_mode(
+                location, cluster, mode_name, submode_name
+            )
         raise RuntimeError("RoomModeRepository not initialized - call initialize() first")
-    
-    async def get_mode_parameters(self, location: str, cluster: str, mode_name: str, submode_name: str | None = None) -> dict[str, Any] | None:
+
+    async def get_mode_parameters(
+        self, location: str, cluster: str, mode_name: str, submode_name: str | None = None
+    ) -> dict[str, Any] | None:
         """Get mode parameters for a location/cluster/mode."""
         if self._room_mode_repo:
-            return await self._room_mode_repo.get_mode_parameters(location, cluster, mode_name, submode_name)
+            return await self._room_mode_repo.get_mode_parameters(
+                location, cluster, mode_name, submode_name
+            )
         raise RuntimeError("RoomModeRepository not initialized - call initialize() first")
-    
-    async def save_mode_parameters(self, location: str, cluster: str, mode_name: str, submode_name: str | None, params: dict[str, Any]) -> bool:
+
+    async def save_mode_parameters(
+        self,
+        location: str,
+        cluster: str,
+        mode_name: str,
+        submode_name: str | None,
+        params: dict[str, Any],
+    ) -> bool:
         """Save mode parameters."""
         if self._room_mode_repo:
-            return await self._room_mode_repo.save_mode_parameters(location, cluster, mode_name, submode_name, params)
+            return await self._room_mode_repo.save_mode_parameters(
+                location, cluster, mode_name, submode_name, params
+            )
         raise RuntimeError("RoomModeRepository not initialized - call initialize() first")
-    
+
     async def update_light_schedule_target(
         self, location: str, cluster: str, device_name: str, target_intensity: float
     ) -> bool:
         """Update target_intensity for a light device's active schedule."""
         pool = await self._get_pool()
         async with pool.acquire() as conn:
-            result = await conn.execute("""
+            result = await conn.execute(
+                """
                 UPDATE schedules 
                 SET target_intensity = $4, updated_at = NOW()
                 WHERE location = $1 AND cluster = $2 AND device_name = $3
                 AND enabled = true AND target_intensity IS NOT NULL
-            """, location, cluster, device_name, target_intensity)
+            """,
+                location,
+                cluster,
+                device_name,
+                target_intensity,
+            )
             return result != "UPDATE 0"
 
-
     async def update_light_schedule_times(
-        self, location: str, cluster: str, device_name: str,
-        start_time: str, end_time: str
+        self, location: str, cluster: str, device_name: str, start_time: str, end_time: str
     ) -> bool:
         """Update start/end times for a light device's day schedule."""
         pool = await self._get_pool()
         async with pool.acquire() as conn:
-            result = await conn.execute("""
+            result = await conn.execute(
+                """
                 UPDATE schedules 
                 SET start_time = $4::time, end_time = $5::time, updated_at = NOW()
                 WHERE location = $1 AND cluster = $2 AND device_name = $3
                 AND enabled = true AND target_intensity IS NOT NULL
                 AND target_intensity > 0
-            """, location, cluster, device_name, start_time, end_time)
+            """,
+                location,
+                cluster,
+                device_name,
+                start_time,
+                end_time,
+            )
             return result != "UPDATE 0"

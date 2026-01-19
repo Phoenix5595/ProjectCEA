@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from typing import Optional
-from shared.logging import get_logger
+
 from app.database import DatabaseManager
+from shared.logging import get_logger
 
 logger = get_logger(__name__)
 router = APIRouter(prefix="/api/room-modes", tags=["room-modes"])
@@ -12,32 +12,33 @@ router = APIRouter(prefix="/api/room-modes", tags=["room-modes"])
 
 def get_database() -> DatabaseManager:
     from app.main import container
+
     return container.get_database()
 
 
 class RoomMode(BaseModel):
     id: int
     name: str
-    description: Optional[str] = None
-    photoperiod_hours: Optional[int] = None
+    description: str | None = None
+    photoperiod_hours: int | None = None
     is_constant: bool = False
 
 
 class FlowerSubmode(BaseModel):
     id: int
     name: str
-    description: Optional[str] = None
-    week_start: Optional[int] = None
-    week_end: Optional[int] = None
+    description: str | None = None
+    week_start: int | None = None
+    week_end: int | None = None
 
 
 class ActiveModeResponse(BaseModel):
     location: str
     cluster: str
     mode_name: str
-    submode_name: Optional[str] = None
-    mode_id: Optional[int] = None
-    submode_id: Optional[int] = None
+    submode_name: str | None = None
+    mode_id: int | None = None
+    submode_id: int | None = None
 
 
 class ModeParameters(BaseModel):
@@ -77,47 +78,47 @@ class RoomModeWithParams(BaseModel):
     location: str
     cluster: str
     mode_name: str
-    submode_name: Optional[str] = None
+    submode_name: str | None = None
     is_constant: bool = False
     parameters: ModeParameters
 
 
 class SetModeRequest(BaseModel):
     mode_name: str
-    submode_name: Optional[str] = None
+    submode_name: str | None = None
 
 
 class UpdateParametersRequest(BaseModel):
-    day_start_time: Optional[str] = None
-    night_start_time: Optional[str] = None
-    ramp_up_minutes: Optional[int] = None
-    ramp_down_minutes: Optional[int] = None
-    pre_day_ramp_minutes: Optional[int] = None
-    pre_night_ramp_minutes: Optional[int] = None
-    pre_day_minutes: Optional[int] = None
-    pre_night_minutes: Optional[int] = None
-    light_ramp_up_minutes: Optional[int] = None
-    light_ramp_down_minutes: Optional[int] = None
-    pre_day_heat_temp: Optional[float] = None
-    pre_day_cool_temp: Optional[float] = None
-    pre_day_vpd: Optional[float] = None
-    pre_day_co2: Optional[int] = None
-    day_heat_temp: Optional[float] = None
-    day_cool_temp: Optional[float] = None
-    day_vpd: Optional[float] = None
-    day_co2: Optional[int] = None
-    day_leaf_delta: Optional[float] = None
-    pre_night_heat_temp: Optional[float] = None
-    pre_night_cool_temp: Optional[float] = None
-    pre_night_vpd: Optional[float] = None
-    pre_night_co2: Optional[int] = None
-    night_heat_temp: Optional[float] = None
-    night_cool_temp: Optional[float] = None
-    night_vpd: Optional[float] = None
-    night_co2: Optional[int] = None
-    night_leaf_delta: Optional[float] = None
-    main_light_intensity: Optional[int] = None
-    supplemental_light_intensity: Optional[int] = None
+    day_start_time: str | None = None
+    night_start_time: str | None = None
+    ramp_up_minutes: int | None = None
+    ramp_down_minutes: int | None = None
+    pre_day_ramp_minutes: int | None = None
+    pre_night_ramp_minutes: int | None = None
+    pre_day_minutes: int | None = None
+    pre_night_minutes: int | None = None
+    light_ramp_up_minutes: int | None = None
+    light_ramp_down_minutes: int | None = None
+    pre_day_heat_temp: float | None = None
+    pre_day_cool_temp: float | None = None
+    pre_day_vpd: float | None = None
+    pre_day_co2: int | None = None
+    day_heat_temp: float | None = None
+    day_cool_temp: float | None = None
+    day_vpd: float | None = None
+    day_co2: int | None = None
+    day_leaf_delta: float | None = None
+    pre_night_heat_temp: float | None = None
+    pre_night_cool_temp: float | None = None
+    pre_night_vpd: float | None = None
+    pre_night_co2: int | None = None
+    night_heat_temp: float | None = None
+    night_cool_temp: float | None = None
+    night_vpd: float | None = None
+    night_co2: int | None = None
+    night_leaf_delta: float | None = None
+    main_light_intensity: int | None = None
+    supplemental_light_intensity: int | None = None
 
 
 @router.get("/modes", response_model=list[RoomMode])
@@ -137,83 +138,103 @@ async def get_active_mode(location: str, cluster: str, db: DatabaseManager = Dep
     active = await db.get_active_mode(location, cluster)
     if not active:
         if "flower" in location.lower():
-            return ActiveModeResponse(location=location, cluster=cluster, mode_name="flower", submode_name="bulk")
-        return ActiveModeResponse(location=location, cluster=cluster, mode_name="veg", submode_name=None)
+            return ActiveModeResponse(
+                location=location, cluster=cluster, mode_name="flower", submode_name="bulk"
+            )
+        return ActiveModeResponse(
+            location=location, cluster=cluster, mode_name="veg", submode_name=None
+        )
     return ActiveModeResponse(**active)
 
 
 @router.get("/room/{location}/{cluster}", response_model=RoomModeWithParams)
-async def get_room_mode_with_params(location: str, cluster: str, db: DatabaseManager = Depends(get_database)):
+async def get_room_mode_with_params(
+    location: str, cluster: str, db: DatabaseManager = Depends(get_database)
+):
     active = await db.get_active_mode(location, cluster)
-    
+
     if not active:
         mode_name = "flower" if "flower" in location.lower() else "veg"
         submode_name = "bulk" if mode_name == "flower" else None
     else:
-        mode_name = active['mode_name']
-        submode_name = active.get('submode_name')
-    
+        mode_name = active["mode_name"]
+        submode_name = active.get("submode_name")
+
     modes = await db.get_room_modes()
-    mode_info = next((m for m in modes if m['name'] == mode_name), None)
-    is_constant = mode_info['is_constant'] if mode_info else False
-    
+    mode_info = next((m for m in modes if m["name"] == mode_name), None)
+    is_constant = mode_info["is_constant"] if mode_info else False
+
     params = await db.get_mode_parameters(location, cluster, mode_name, submode_name)
     if not params:
         params = ModeParameters().model_dump()
     else:
-        params.pop('id', None)
-        params.pop('location', None)
-        params.pop('cluster', None)
-        params.pop('mode_id', None)
-        params.pop('submode_id', None)
-        params.pop('created_at', None)
-        params.pop('updated_at', None)
-    
+        params.pop("id", None)
+        params.pop("location", None)
+        params.pop("cluster", None)
+        params.pop("mode_id", None)
+        params.pop("submode_id", None)
+        params.pop("created_at", None)
+        params.pop("updated_at", None)
+
     return RoomModeWithParams(
         location=location,
         cluster=cluster,
         mode_name=mode_name,
         submode_name=submode_name,
         is_constant=is_constant,
-        parameters=ModeParameters(**params)
+        parameters=ModeParameters(**params),
     )
 
 
 @router.post("/room/{location}/{cluster}/mode", response_model=RoomModeWithParams)
-async def set_room_mode(location: str, cluster: str, request: SetModeRequest, db: DatabaseManager = Depends(get_database)):
+async def set_room_mode(
+    location: str,
+    cluster: str,
+    request: SetModeRequest,
+    db: DatabaseManager = Depends(get_database),
+):
     current = await db.get_active_mode(location, cluster)
     if current:
-        current_params = await db.get_mode_parameters(location, cluster, current['mode_name'], current.get('submode_name'))
+        current_params = await db.get_mode_parameters(
+            location, cluster, current["mode_name"], current.get("submode_name")
+        )
         if current_params:
-            await db.save_mode_parameters(location, cluster, current['mode_name'], current.get('submode_name'), current_params)
-    
+            await db.save_mode_parameters(
+                location, cluster, current["mode_name"], current.get("submode_name"), current_params
+            )
+
     success = await db.set_active_mode(location, cluster, request.mode_name, request.submode_name)
     if not success:
         raise HTTPException(status_code=400, detail=f"Failed to set mode '{request.mode_name}'")
-    
+
     logger.info(f"Mode switch: {location}/{cluster} -> {request.mode_name}/{request.submode_name}")
     return await get_room_mode_with_params(location, cluster, db)
 
 
 @router.put("/room/{location}/{cluster}/parameters", response_model=RoomModeWithParams)
-async def update_room_parameters(location: str, cluster: str, request: UpdateParametersRequest, db: DatabaseManager = Depends(get_database)):
+async def update_room_parameters(
+    location: str,
+    cluster: str,
+    request: UpdateParametersRequest,
+    db: DatabaseManager = Depends(get_database),
+):
     active = await db.get_active_mode(location, cluster)
     if not active:
         mode_name = "flower" if "flower" in location.lower() else "veg"
         submode_name = "bulk" if mode_name == "flower" else None
         await db.set_active_mode(location, cluster, mode_name, submode_name)
     else:
-        mode_name = active['mode_name']
-        submode_name = active.get('submode_name')
-    
+        mode_name = active["mode_name"]
+        submode_name = active.get("submode_name")
+
     current_params = await db.get_mode_parameters(location, cluster, mode_name, submode_name)
     if not current_params:
         current_params = ModeParameters().model_dump()
-    
+
     updates = request.model_dump(exclude_none=True)
     merged_params = {**current_params, **updates}
-    
+
     await db.save_mode_parameters(location, cluster, mode_name, submode_name, merged_params)
-    
+
     logger.info(f"Parameters updated: {location}/{cluster} mode={mode_name}")
     return await get_room_mode_with_params(location, cluster, db)

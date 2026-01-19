@@ -1,12 +1,12 @@
 """Background tasks for automation control loop."""
+
 from __future__ import annotations
 
-from shared.logging import get_logger
 import asyncio
-from typing import Optional
+
+from app.alarm_manager import AlarmManager
 from app.control.control_engine import ControlEngine
 from app.database import DatabaseManager
-from app.alarm_manager import AlarmManager
 from shared.logging import get_logger
 
 logger = get_logger(__name__)
@@ -25,7 +25,7 @@ class BackgroundTasks:
         control_engine: ControlEngine,
         database: DatabaseManager,
         update_interval: int = 1,
-        alarm_manager: Optional[AlarmManager] = None
+        alarm_manager: AlarmManager | None = None,
     ):
         """Initialize background tasks.
 
@@ -40,12 +40,12 @@ class BackgroundTasks:
         self.alarm_manager = alarm_manager
         self.update_interval = update_interval
         self._running = False
-        self._task: Optional[asyncio.Task] = None
-        self._heartbeat_task: Optional[asyncio.Task] = None
-        self._auto_persist_task: Optional[asyncio.Task] = None
-        self._setpoint_history_task: Optional[asyncio.Task] = None
-        self._schedule_refresh_task: Optional[asyncio.Task] = None
-        self._batch_flush_task: Optional[asyncio.Task] = None
+        self._task: asyncio.Task | None = None
+        self._heartbeat_task: asyncio.Task | None = None
+        self._auto_persist_task: asyncio.Task | None = None
+        self._setpoint_history_task: asyncio.Task | None = None
+        self._schedule_refresh_task: asyncio.Task | None = None
+        self._batch_flush_task: asyncio.Task | None = None
 
     async def start(self) -> None:
         """Start background control loop and tasks."""
@@ -61,14 +61,23 @@ class BackgroundTasks:
         self._schedule_refresh_task = asyncio.create_task(self._schedule_refresh_loop())
         self._batch_flush_task = asyncio.create_task(self._batch_flush_loop())
         logger.info(f"Background control loop started (interval: {self.update_interval}s)")
-        logger.info("Heartbeat, auto-persist, setpoint history, schedule refresh, and batch flush tasks started")
+        logger.info(
+            "Heartbeat, auto-persist, setpoint history, schedule refresh, and batch flush tasks started"
+        )
 
     async def stop(self) -> None:
         """Stop background control loop and tasks."""
         self._running = False
 
         # Cancel all tasks
-        tasks = [self._task, self._heartbeat_task, self._auto_persist_task, self._setpoint_history_task, self._schedule_refresh_task, self._batch_flush_task]
+        tasks = [
+            self._task,
+            self._heartbeat_task,
+            self._auto_persist_task,
+            self._setpoint_history_task,
+            self._schedule_refresh_task,
+            self._batch_flush_task,
+        ]
         for task in tasks:
             if task:
                 task.cancel()
@@ -104,7 +113,9 @@ class BackgroundTasks:
                         retry_delay = 1.0
                         logger.info("Database connection restored")
                     except Exception as e:
-                        logger.warning(f"Database connection failed: {e}. Retrying in {retry_delay}s...")
+                        logger.warning(
+                            f"Database connection failed: {e}. Retrying in {retry_delay}s..."
+                        )
                         await asyncio.sleep(retry_delay)
                         retry_delay = min(retry_delay * 2, max_retry_delay)
                         continue
@@ -136,8 +147,11 @@ class BackgroundTasks:
                 await asyncio.sleep(heartbeat_interval)
 
                 # Write automation service heartbeat (worker pattern execution)
-                if self.database._automation_redis and self.database._automation_redis.redis_enabled:
-                    self.database._automation_redis.write_heartbeat('automation-service')
+                if (
+                    self.database._automation_redis
+                    and self.database._automation_redis.redis_enabled
+                ):
+                    self.database._automation_redis.write_heartbeat("automation-service")
 
             except asyncio.CancelledError:
                 break
@@ -152,33 +166,42 @@ class BackgroundTasks:
             try:
                 await asyncio.sleep(persist_interval)
 
-                if not self.database._automation_redis or not self.database._automation_redis.redis_enabled:
+                if (
+                    not self.database._automation_redis
+                    or not self.database._automation_redis.redis_enabled
+                ):
                     continue
 
                 # Sync PID parameters from Redis to DB (worker pattern execution)
-                device_types = ['heater', 'co2']
+                device_types = ["heater", "co2"]
                 synced_count = 0
 
                 for device_type in device_types:
                     try:
-                        redis_params = self.database._automation_redis.read_pid_parameters(device_type)
+                        redis_params = self.database._automation_redis.read_pid_parameters(
+                            device_type
+                        )
                         if redis_params:
                             # Check if different from DB
                             db_params = await self.database.get_pid_parameters(device_type)
                             if db_params:
                                 # Compare and update if different
-                                if (redis_params.get('kp') != db_params['kp'] or
-                                    redis_params.get('ki') != db_params['ki'] or
-                                    redis_params.get('kd') != db_params['kd']):
+                                if (
+                                    redis_params.get("kp") != db_params["kp"]
+                                    or redis_params.get("ki") != db_params["ki"]
+                                    or redis_params.get("kd") != db_params["kd"]
+                                ):
                                     await self.database.set_pid_parameters(
                                         device_type,
-                                        redis_params['kp'],
-                                        redis_params['ki'],
-                                        redis_params['kd'],
-                                        source=redis_params.get('source', 'api')
+                                        redis_params["kp"],
+                                        redis_params["ki"],
+                                        redis_params["kd"],
+                                        source=redis_params.get("source", "api"),
                                     )
                                     synced_count += 1
-                                    logger.debug(f"Synced PID parameters for {device_type} from Redis to DB")
+                                    logger.debug(
+                                        f"Synced PID parameters for {device_type} from Redis to DB"
+                                    )
                     except Exception as e:
                         logger.error(f"Error syncing PID parameters for {device_type}: {e}")
 
@@ -216,11 +239,20 @@ class BackgroundTasks:
 
                         # Insert current setpoints into history
                         for row in rows:
-                            await conn.execute("""
+                            await conn.execute(
+                                """
                                 INSERT INTO setpoint_history (timestamp, location, cluster, mode, heating_setpoint, cooling_setpoint, humidity, co2, vpd)
                                 VALUES (NOW(), $1, $2, $3, $4, $5, $6, $7, $8)
-                            """, row['location'], row['cluster'], row['mode'],
-                                row['heating_setpoint'], row['cooling_setpoint'], row['humidity'], row['co2'], row['vpd'])
+                            """,
+                                row["location"],
+                                row["cluster"],
+                                row["mode"],
+                                row["heating_setpoint"],
+                                row["cooling_setpoint"],
+                                row["humidity"],
+                                row["co2"],
+                                row["vpd"],
+                            )
 
                         if rows:
                             logger.debug(f"Logged {len(rows)} setpoint snapshots to history")
@@ -274,4 +306,3 @@ class BackgroundTasks:
                 break
             except Exception as e:
                 logger.error(f"Error in batch flush loop: {e}", exc_info=True)
-

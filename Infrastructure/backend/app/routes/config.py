@@ -1,10 +1,10 @@
 """Configuration API routes."""
+
 from __future__ import annotations
 
-from shared.logging import get_logger
+from typing import Any
+
 from fastapi import APIRouter
-from typing import Dict, Any
-from app.config import ConfigLoader
 
 router = APIRouter(prefix="/api/config", tags=["config"])
 
@@ -12,13 +12,14 @@ router = APIRouter(prefix="/api/config", tags=["config"])
 from app.dependencies import get_config_loader
 
 
-@router.get("", response_model=Dict[str, Any])
+@router.get("", response_model=dict[str, Any])
 async def get_config():
     """Get full dashboard configuration."""
     config_loader = get_config_loader()
     # Return the full config dict
     import yaml
-    with open(config_loader.config_path, 'r') as f:
+
+    with open(config_loader.config_path) as f:
         return yaml.safe_load(f)
 
 
@@ -28,4 +29,3 @@ async def get_locations():
     config_loader = get_config_loader()
     locations = config_loader.get_locations()
     return {"locations": locations}
-

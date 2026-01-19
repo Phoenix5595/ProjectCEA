@@ -23,7 +23,7 @@ class SetpointRepository(BaseRepository):
         self, location: str, cluster: str, mode: str | None = None
     ) -> dict[str, Any] | None:
         """Get setpoint for location/cluster/mode.
-        
+
         Args:
             location: Location name
             cluster: Cluster name
@@ -42,7 +42,9 @@ class SetpointRepository(BaseRepository):
                               humidity, co2, vpd, ramp_in_duration, updated_at
                        FROM setpoints 
                        WHERE location = $1 AND cluster = $2 AND mode = $3""",
-                    location, cluster, db_mode
+                    location,
+                    cluster,
+                    db_mode,
                 )
                 if row:
                     result = dict(row)
@@ -64,10 +66,10 @@ class SetpointRepository(BaseRepository):
         mode: str | None = None,
         ramp_in_duration: int | None = None,
         source: str = "api",
-        expected_version: datetime | None = None
+        expected_version: datetime | None = None,
     ) -> tuple[bool, datetime | None]:
         """Set setpoint with optimistic locking.
-        
+
         Args:
             location: Location name
             cluster: Cluster name
@@ -80,7 +82,7 @@ class SetpointRepository(BaseRepository):
             ramp_in_duration: Ramp duration in minutes
             source: Source of update
             expected_version: For optimistic locking
-        
+
         Returns:
             Tuple of (success, new_updated_at)
         """
@@ -91,7 +93,9 @@ class SetpointRepository(BaseRepository):
                 if expected_version:
                     row = await conn.fetchrow(
                         "SELECT updated_at FROM setpoints WHERE location = $1 AND cluster = $2 AND mode = $3",
-                        location, cluster, db_mode
+                        location,
+                        cluster,
+                        db_mode,
                     )
                     if row:
                         current = row["updated_at"]
@@ -113,7 +117,15 @@ class SetpointRepository(BaseRepository):
                        DO UPDATE SET heating_setpoint = $4, cooling_setpoint = $5, humidity = $6,
                                     co2 = $7, vpd = $8, ramp_in_duration = $9, updated_at = NOW()
                        RETURNING updated_at""",
-                    location, cluster, db_mode, heat, cool, hum, co2_val, vpd_val, ramp_in
+                    location,
+                    cluster,
+                    db_mode,
+                    heat,
+                    cool,
+                    hum,
+                    co2_val,
+                    vpd_val,
+                    ramp_in,
                 )
                 self.clear_cache()
                 return (True, new_row["updated_at"] if new_row else None)
@@ -121,7 +133,9 @@ class SetpointRepository(BaseRepository):
             logger.error(f"Failed to set setpoint: {e}")
             return (False, None)
 
-    async def get_all_setpoints_for_location_cluster(self, location: str, cluster: str) -> list[dict[str, Any]]:
+    async def get_all_setpoints_for_location_cluster(
+        self, location: str, cluster: str
+    ) -> list[dict[str, Any]]:
         """Get all setpoints for a location/cluster."""
         try:
             async with self.pool.acquire() as conn:
@@ -129,14 +143,17 @@ class SetpointRepository(BaseRepository):
                     """SELECT location, cluster, mode, heating_setpoint, cooling_setpoint,
                               humidity, co2, vpd, ramp_in_duration, updated_at
                        FROM setpoints WHERE location = $1 AND cluster = $2""",
-                    location, cluster
+                    location,
+                    cluster,
                 )
                 return [dict(row) for row in rows]
         except Exception as e:
             logger.error(f"Failed to get setpoints: {e}")
             return []
 
-    async def get_latest_effective_setpoints(self, location: str, cluster: str) -> dict[str, Any] | None:
+    async def get_latest_effective_setpoints(
+        self, location: str, cluster: str
+    ) -> dict[str, Any] | None:
         """Get the latest effective setpoints."""
         try:
             async with self.pool.acquire() as conn:
@@ -144,7 +161,8 @@ class SetpointRepository(BaseRepository):
                     """SELECT * FROM effective_setpoints
                        WHERE location = $1 AND cluster = $2
                        ORDER BY timestamp DESC LIMIT 1""",
-                    location, cluster
+                    location,
+                    cluster,
                 )
                 if row:
                     return dict(row)
@@ -162,14 +180,14 @@ class SetpointRepository(BaseRepository):
         humidity: float | None = None,
         co2: float | None = None,
         vpd: float | None = None,
-        timestamp: datetime | None = None
+        timestamp: datetime | None = None,
     ) -> bool:
         """Log effective setpoint to setpoint_history (for ramp tracking).
-        
+
         .. deprecated:: Use log_effective_setpoints (plural) instead.
-        
+
         This is called during ramps to log the effective setpoint at each change.
-        
+
         Args:
             location: Location name
             cluster: Cluster name
@@ -180,7 +198,7 @@ class SetpointRepository(BaseRepository):
             co2: Effective CO2 setpoint
             vpd: Effective VPD setpoint
             timestamp: Timestamp (default: NOW())
-        
+
         Returns:
             True if successful, False otherwise
         """
@@ -188,12 +206,23 @@ class SetpointRepository(BaseRepository):
             async with self.pool.acquire() as conn:
                 db_mode = mode if mode else None
                 ts = timestamp or datetime.now()
-                
-                await conn.execute("""
+
+                await conn.execute(
+                    """
                     INSERT INTO setpoint_history (timestamp, location, cluster, mode, heating_setpoint, cooling_setpoint, humidity, co2, vpd)
                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-                """, ts, location, cluster, db_mode, heating_setpoint, cooling_setpoint, humidity, co2, vpd)
-                
+                """,
+                    ts,
+                    location,
+                    cluster,
+                    db_mode,
+                    heating_setpoint,
+                    cooling_setpoint,
+                    humidity,
+                    co2,
+                    vpd,
+                )
+
                 return True
         except Exception as e:
             logger.error(f"Failed to log effective setpoint: {e}")
@@ -223,16 +252,16 @@ class SetpointRepository(BaseRepository):
         effective_light_intensity: float | None = None,
         nominal_light_intensity: float | None = None,
         ramp_progress_light: float | None = None,
-        timestamp: datetime | None = None
+        timestamp: datetime | None = None,
     ) -> bool:
         """Log effective setpoints to effective_setpoints table.
-        
+
         This is the newer version that logs both effective and nominal values
         along with ramp progress for all setpoint types.
-        
+
         Note: The batching and Redis write behavior from DatabaseManager
         will be handled at the facade level during wiring.
-        
+
         Args:
             location: Location name
             cluster: Cluster name
@@ -242,7 +271,7 @@ class SetpointRepository(BaseRepository):
             ramp_progress_*: Progress values (0.0-1.0) or None if not ramping
             device_name: Device name for per-device logging
             timestamp: Optional timestamp (defaults to NOW())
-        
+
         Returns:
             True if successful, False otherwise
         """
@@ -250,8 +279,9 @@ class SetpointRepository(BaseRepository):
             async with self.pool.acquire() as conn:
                 ts = timestamp or datetime.now()
                 db_mode = mode if mode else None
-                
-                await conn.execute("""
+
+                await conn.execute(
+                    """
                     INSERT INTO effective_setpoints (
                         timestamp, location, cluster, mode, device_name,
                         effective_heating_setpoint, effective_cooling_setpoint,
@@ -264,18 +294,32 @@ class SetpointRepository(BaseRepository):
                         ramp_progress_humidity, ramp_progress_co2, ramp_progress_vpd,
                         ramp_progress_light
                     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
-                """, ts, location, cluster, db_mode, device_name,
-                    effective_heating_setpoint, effective_cooling_setpoint,
-                    effective_humidity_setpoint, effective_co2_setpoint, effective_vpd_setpoint,
+                """,
+                    ts,
+                    location,
+                    cluster,
+                    db_mode,
+                    device_name,
+                    effective_heating_setpoint,
+                    effective_cooling_setpoint,
+                    effective_humidity_setpoint,
+                    effective_co2_setpoint,
+                    effective_vpd_setpoint,
                     effective_light_intensity,
-                    nominal_heating_setpoint, nominal_cooling_setpoint,
-                    nominal_humidity_setpoint, nominal_co2_setpoint, nominal_vpd_setpoint,
+                    nominal_heating_setpoint,
+                    nominal_cooling_setpoint,
+                    nominal_humidity_setpoint,
+                    nominal_co2_setpoint,
+                    nominal_vpd_setpoint,
                     nominal_light_intensity,
-                    ramp_progress_heating, ramp_progress_cooling,
-                    ramp_progress_humidity, ramp_progress_co2, ramp_progress_vpd,
-                    ramp_progress_light
+                    ramp_progress_heating,
+                    ramp_progress_cooling,
+                    ramp_progress_humidity,
+                    ramp_progress_co2,
+                    ramp_progress_vpd,
+                    ramp_progress_light,
                 )
-                
+
                 return True
         except Exception as e:
             logger.error(f"Failed to log effective setpoints: {e}")

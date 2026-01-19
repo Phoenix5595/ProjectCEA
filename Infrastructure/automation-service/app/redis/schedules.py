@@ -1,8 +1,9 @@
 """Schedule state management mixin for Redis client."""
+
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from shared.logging import get_logger
 
@@ -14,19 +15,16 @@ logger = get_logger(__name__)
 
 class SchedulesMixin:
     """Mixin providing schedule state management."""
-    
+
     redis_enabled: bool
-    redis_client: Optional["redis.Redis"]
-    
+    redis_client: redis.Redis | None
+
     def write_schedule_state(
-        self,
-        location: str,
-        cluster: str,
-        schedule_data: Dict[str, Any]
+        self, location: str, cluster: str, schedule_data: dict[str, Any]
     ) -> bool:
         if not self.redis_enabled or not self.redis_client:
             return False
-        
+
         try:
             state_key = f"schedule:state:{location}:{cluster}"
             self.redis_client.set(state_key, json.dumps(schedule_data))
@@ -35,19 +33,15 @@ class SchedulesMixin:
         except Exception as e:
             logger.warning(f"Error writing schedule state to Redis: {e}")
             return False
-    
-    def read_schedule_state(
-        self,
-        location: str,
-        cluster: str
-    ) -> Optional[Dict[str, Any]]:
+
+    def read_schedule_state(self, location: str, cluster: str) -> dict[str, Any] | None:
         if not self.redis_enabled or not self.redis_client:
             return None
-        
+
         try:
             state_key = f"schedule:state:{location}:{cluster}"
             state_data = self.redis_client.get(state_key)
-            
+
             if state_data:
                 return json.loads(str(state_data))
         except Exception as e:

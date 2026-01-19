@@ -5,32 +5,35 @@ Exports time-series data in formats suitable for ML training:
 - Control actions and setpoints
 - Environmental conditions
 """
+
 from __future__ import annotations
 
-from shared.logging import get_logger
-from datetime import datetime, timedelta
-from typing import Optional, List, Dict
 import csv
+from datetime import datetime
 import json
+
+from shared.logging import get_logger
 
 logger = get_logger(__name__)
 
 
 class AIDataExporter:
     """Exports training data for AI/ML models."""
-    
+
     def __init__(self, db_connection):
         self.db = db_connection
-    
-    async def export_training_data(self,
-                                   start_time: datetime,
-                                   end_time: datetime,
-                                   location: str,
-                                   cluster: str,
-                                   interval_minutes: int = 5,
-                                   output_format: str = "csv") -> str:
+
+    async def export_training_data(
+        self,
+        start_time: datetime,
+        end_time: datetime,
+        location: str,
+        cluster: str,
+        interval_minutes: int = 5,
+        output_format: str = "csv",
+    ) -> str:
         """Export synchronized training data.
-        
+
         Args:
             start_time: Start of export range
             end_time: End of export range
@@ -38,7 +41,7 @@ class AIDataExporter:
             cluster: Cluster filter
             interval_minutes: Resampling interval
             output_format: "csv" or "json"
-            
+
         Returns:
             Path to exported file
         """
@@ -90,46 +93,70 @@ class AIDataExporter:
         GROUP BY tb.bucket, sp.temp_setpoint, sp.humidity_setpoint, sp.co2_setpoint
         ORDER BY tb.bucket
         """
-        
+
         interval_str = str(interval_minutes)
         params = (
-            start_time, end_time, interval_str,
-            interval_str, start_time, end_time, location, cluster,
-            interval_str, start_time, end_time, location, cluster
+            start_time,
+            end_time,
+            interval_str,
+            interval_str,
+            start_time,
+            end_time,
+            location,
+            cluster,
+            interval_str,
+            start_time,
+            end_time,
+            location,
+            cluster,
         )
-        
+
         cursor = await self.db.execute(query, params)
         rows = await cursor.fetchall()
-        
-        filename = f"/tmp/ai_training_{location}_{cluster}_{start_time.strftime('%Y%m%d')}.{output_format}"
-        
+
+        filename = (
+            f"/tmp/ai_training_{location}_{cluster}_{start_time.strftime('%Y%m%d')}.{output_format}"
+        )
+
         if output_format == "csv":
-            with open(filename, 'w', newline='') as f:
+            with open(filename, "w", newline="") as f:
                 writer = csv.writer(f)
-                writer.writerow(['timestamp', 'temperature', 'humidity', 'co2', 'light',
-                               'temp_setpoint', 'humidity_setpoint', 'co2_setpoint'])
+                writer.writerow(
+                    [
+                        "timestamp",
+                        "temperature",
+                        "humidity",
+                        "co2",
+                        "light",
+                        "temp_setpoint",
+                        "humidity_setpoint",
+                        "co2_setpoint",
+                    ]
+                )
                 for row in rows:
                     writer.writerow(row)
         else:
             data = []
             for row in rows:
-                data.append({
-                    'timestamp': row[0].isoformat() if row[0] else None,
-                    'temperature': row[1],
-                    'humidity': row[2],
-                    'co2': row[3],
-                    'light': row[4],
-                    'temp_setpoint': row[5],
-                    'humidity_setpoint': row[6],
-                    'co2_setpoint': row[7]
-                })
-            with open(filename, 'w') as f:
+                data.append(
+                    {
+                        "timestamp": row[0].isoformat() if row[0] else None,
+                        "temperature": row[1],
+                        "humidity": row[2],
+                        "co2": row[3],
+                        "light": row[4],
+                        "temp_setpoint": row[5],
+                        "humidity_setpoint": row[6],
+                        "co2_setpoint": row[7],
+                    }
+                )
+            with open(filename, "w") as f:
                 json.dump(data, f, indent=2)
-        
+
         logger.info(f"Exported {len(rows)} rows to {filename}")
         return filename
-    
-    async def get_available_ranges(self, location: str, cluster: str) -> Dict:
+
+    async def get_available_ranges(self, location: str, cluster: str) -> dict:
         """Get available data ranges for a location/cluster."""
         query = """
         SELECT 
@@ -143,8 +170,4 @@ class AIDataExporter:
         """
         cursor = await self.db.execute(query, (location, cluster))
         row = await cursor.fetchone()
-        return {
-            'earliest': row[0],
-            'latest': row[1],
-            'total_rows': row[2]
-        }
+        return {"earliest": row[0], "latest": row[1], "total_rows": row[2]}

@@ -1,22 +1,24 @@
 """Redis client utilities for reading live sensor state."""
+
 from __future__ import annotations
 
-from shared.logging import get_logger
-import redis.asyncio as redis
-from typing import Optional, Dict, Any, List
 import os
+
+import redis.asyncio as redis
+
+from shared.logging import get_logger
 
 logger = get_logger(__name__)
 
 # Redis connection pool (singleton)
-_redis_pool: Optional[redis.ConnectionPool] = None
-_redis_client: Optional[redis.Redis] = None
+_redis_pool: redis.ConnectionPool | None = None
+_redis_client: redis.Redis | None = None
 
 
-async def get_redis_client() -> Optional[redis.Redis]:
+async def get_redis_client() -> redis.Redis | None:
     """Get or create Redis client connection."""
     global _redis_client, _redis_pool
-    
+
     if _redis_client is not None:
         try:
             # Test connection
@@ -26,18 +28,16 @@ async def get_redis_client() -> Optional[redis.Redis]:
             # Connection lost, reset
             _redis_client = None
             _redis_pool = None
-    
+
     # Create new connection
     redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
-    
+
     try:
         _redis_pool = redis.ConnectionPool.from_url(
-            redis_url,
-            decode_responses=True,
-            max_connections=10
+            redis_url, decode_responses=True, max_connections=10
         )
         _redis_client = redis.Redis(connection_pool=_redis_pool)
-        
+
         # Test connection
         await _redis_client.ping()
         logger.info(f"Connected to Redis at {redis_url}")
@@ -47,19 +47,19 @@ async def get_redis_client() -> Optional[redis.Redis]:
         return None
 
 
-async def get_sensor_value(sensor_name: str) -> Optional[float]:
+async def get_sensor_value(sensor_name: str) -> float | None:
     """Get current sensor value from Redis.
-    
+
     Args:
         sensor_name: Sensor name (e.g., 'dry_bulb_b', 'co2_f')
-    
+
     Returns:
         Sensor value as float, or None if not found or Redis unavailable
     """
     client = await get_redis_client()
     if not client:
         return None
-    
+
     try:
         key = f"sensor:{sensor_name}"
         value = await client.get(key)
@@ -74,19 +74,19 @@ async def get_sensor_value(sensor_name: str) -> Optional[float]:
         return None
 
 
-async def get_sensor_timestamp(sensor_name: str) -> Optional[int]:
+async def get_sensor_timestamp(sensor_name: str) -> int | None:
     """Get sensor timestamp from Redis.
-    
+
     Args:
         sensor_name: Sensor name (e.g., 'dry_bulb_b', 'co2_f')
-    
+
     Returns:
         Timestamp in milliseconds, or None if not found
     """
     client = await get_redis_client()
     if not client:
         return None
-    
+
     try:
         key = f"sensor:{sensor_name}:ts"
         value = await client.get(key)
@@ -101,72 +101,72 @@ async def get_sensor_timestamp(sensor_name: str) -> Optional[int]:
         return None
 
 
-async def get_all_sensor_values() -> Dict[str, float]:
+async def get_all_sensor_values() -> dict[str, float]:
     """Get all current sensor values from Redis.
-    
+
     Returns:
         Dictionary mapping sensor_name -> value
     """
     client = await get_redis_client()
     if not client:
         return {}
-    
+
     try:
         # Scan sensor keys without blocking Redis (avoid KEYS)
-        value_keys: List[str] = []
+        value_keys: list[str] = []
         async for key in client.scan_iter(match="sensor:*", count=500):
-            if key.endswith(':ts'):
+            if key.endswith(":ts"):
                 continue
             value_keys.append(key)
             # Safety cap to avoid huge batches
             if len(value_keys) >= 5000:
                 break
-        
+
         if not value_keys:
             return {}
-        
+
         # Get all values in one call
         values = await client.mget(value_keys)
-        
+
         result = {}
         for key, value in zip(value_keys, values):
             if value is not None:
                 try:
                     # Remove 'sensor:' prefix
-                    sensor_name = key.replace('sensor:', '')
+                    sensor_name = key.replace("sensor:", "")
                     result[sensor_name] = float(value)
                 except (ValueError, TypeError):
                     continue
-        
+
         return result
     except Exception as e:
         logger.warning(f"Error reading all sensor values from Redis: {e}")
         return {}
 
 
-async def get_all_sensor_timestamps(sensor_names: List[str]) -> Dict[str, int]:
+async def get_all_sensor_timestamps(sensor_names: list[str]) -> dict[str, int]:
     """Get timestamps for multiple sensors in batch.
-    
+
     Args:
         sensor_names: List of sensor names
-    
+
     Returns:
         Dictionary mapping sensor_name -> timestamp_ms
     """
     client = await get_redis_client()
     if not client:
         return {}
-    
+
     if not sensor_names:
         return {}
-    
+
     try:
         # Build keys for all sensors
         ts_keys = [f"sensor:{name}:ts" for name in sensor_names]
-        
+
         # Get all timestamps in one call
         values = await client.mget(ts_keys)
-        
+
         result = {}
         for sensor_name, value in zip(sensor_names, values):
             if value is not None:
@@ -174,7 +174,7 @@ async def get_all_sensor_timestamps(sensor_names: List[str]) -> Dict[str, int]:
                     result[sensor_name] = int(value)
                 except (ValueError, TypeError):
                     continue
-        
+
         return result
     except Exception as e:
         logger.warning(f"Error reading sensor timestamps in batch: {e}")
@@ -184,18 +184,17 @@ async def get_all_sensor_timestamps(sensor_names: List[str]) -> Dict[str, int]:
 async def close_redis_client():
     """Close Redis client connection."""
     global _redis_client, _redis_pool
-    
+
     if _redis_client:
         try:
             await _redis_client.close()
         except Exception:
             pass
         _redis_client = None
-    
+
     if _redis_pool:
         try:
             await _redis_pool.disconnect()
         except Exception:
             pass
         _redis_pool = None
-

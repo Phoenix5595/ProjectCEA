@@ -1,8 +1,10 @@
 """Sensor Data Manager - Handles sensor data retrieval and processing."""
+
 from __future__ import annotations
 
 import asyncio
-from typing import Dict, Optional, Any
+from typing import Any
+
 from shared.logging import get_logger
 
 logger = get_logger(__name__)
@@ -18,16 +20,13 @@ class SensorDataManager:
             database_manager: Database manager instance for sensor queries
         """
         self.database = database_manager
-        self._sensor_cache: Dict[str, Dict[str, Optional[float]]] = {}
-        self._cache_timestamp: Optional[float] = None
+        self._sensor_cache: dict[str, dict[str, float | None]] = {}
+        self._cache_timestamp: float | None = None
         self._cache_ttl_seconds = 30.0  # Cache sensor values for 30 seconds
 
     async def get_sensor_values(
-        self,
-        location: str,
-        cluster: str,
-        sensor_mapping: Dict[str, Any]
-    ) -> Dict[str, Optional[float]]:
+        self, location: str, cluster: str, sensor_mapping: dict[str, Any]
+    ) -> dict[str, float | None]:
         """Get sensor values for a location/cluster with caching optimization.
 
         Args:
@@ -42,12 +41,14 @@ class SensorDataManager:
         current_time = asyncio.get_event_loop().time()
 
         # Check cache validity
-        cache_hit = (self._cache_timestamp and
-            current_time - self._cache_timestamp < self._cache_ttl_seconds and
-            cache_key in self._sensor_cache)
-        
+        cache_hit = (
+            self._cache_timestamp
+            and current_time - self._cache_timestamp < self._cache_ttl_seconds
+            and cache_key in self._sensor_cache
+        )
+
         # Debug logging removed
-        
+
         if cache_hit:
             return self._sensor_cache[cache_key].copy()
 
@@ -62,20 +63,21 @@ class SensorDataManager:
         if sensor_names:
             try:
                 # Use batch retrieval if available, otherwise fetch individually
-                if hasattr(self.database, 'get_sensor_values_batch'):
+                if hasattr(self.database, "get_sensor_values_batch"):
                     batch_values = await self.database.get_sensor_values_batch(sensor_names)
                     sensor_values.update(batch_values)
                 else:
                     # Fallback to individual fetches with concurrency
                     tasks = [
-                        self.database.get_sensor_value(sensor_name)
-                        for sensor_name in sensor_names
+                        self.database.get_sensor_value(sensor_name) for sensor_name in sensor_names
                     ]
                     results = await asyncio.gather(*tasks, return_exceptions=True)
 
                     for sensor_name, result in zip(sensor_names, results):
                         if isinstance(result, Exception):
-                            logger.warning(f"Failed to get sensor value for {sensor_name}: {result}")
+                            logger.warning(
+                                f"Failed to get sensor value for {sensor_name}: {result}"
+                            )
                             sensor_values[sensor_name] = None
                         else:
                             sensor_values[sensor_name] = result
@@ -90,12 +92,8 @@ class SensorDataManager:
         return sensor_values
 
     def get_sensor_for_setpoint_type(
-        self,
-        sensor_mapping: Dict[str, Any],
-        location: str,
-        cluster: str,
-        setpoint_type: str
-    ) -> Optional[str]:
+        self, sensor_mapping: dict[str, Any], location: str, cluster: str, setpoint_type: str
+    ) -> str | None:
         """Get the appropriate sensor name for a setpoint type.
 
         Args:
@@ -112,11 +110,11 @@ class SensorDataManager:
 
         # Map setpoint types to sensor types
         sensor_type_mapping = {
-            'heating': 'temperature',
-            'cooling': 'temperature',
-            'humidity': 'humidity',
-            'co2': 'co2',
-            'vpd': 'vpd'  # VPD is calculated from temp/humidity
+            "heating": "temperature",
+            "cooling": "temperature",
+            "humidity": "humidity",
+            "co2": "co2",
+            "vpd": "vpd",  # VPD is calculated from temp/humidity
         }
 
         sensor_type = sensor_type_mapping.get(setpoint_type)
@@ -129,9 +127,9 @@ class SensorDataManager:
         self,
         location: str,
         cluster: str,
-        sensor_mapping: Dict[str, Any],
-        max_age_seconds: int = 300
-    ) -> Dict[str, Optional[float]]:
+        sensor_mapping: dict[str, Any],
+        max_age_seconds: int = 300,
+    ) -> dict[str, float | None]:
         """Get last good sensor values with age validation.
 
         Args:
@@ -153,7 +151,9 @@ class SensorDataManager:
                 if age_result and age_result[0]:  # is_valid
                     result[sensor_name] = value
                     age_seconds = age_result[1].total_seconds() if age_result[1] else 0
-                    logger.debug(f"Using last good value for {sensor_name}: {value} (age: {age_seconds:.1f}s)")
+                    logger.debug(
+                        f"Using last good value for {sensor_name}: {value} (age: {age_seconds:.1f}s)"
+                    )
                 else:
                     logger.warning(f"Sensor value for {sensor_name} is too old or invalid")
                     result[sensor_name] = None
@@ -168,13 +168,14 @@ class SensorDataManager:
         self._cache_timestamp = None
         logger.debug("Sensor data cache cleared")
 
-    def get_cache_stats(self) -> Dict[str, Any]:
+    def get_cache_stats(self) -> dict[str, Any]:
         """Get cache statistics for monitoring."""
         return {
-            'cache_size': len(self._sensor_cache),
-            'cache_age_seconds': (
+            "cache_size": len(self._sensor_cache),
+            "cache_age_seconds": (
                 asyncio.get_event_loop().time() - self._cache_timestamp
-                if self._cache_timestamp else None
+                if self._cache_timestamp
+                else None
             ),
-            'cache_ttl_seconds': self._cache_ttl_seconds
+            "cache_ttl_seconds": self._cache_ttl_seconds,
         }

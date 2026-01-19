@@ -1,22 +1,25 @@
 """Database manager for TimescaleDB operations."""
+
 from __future__ import annotations
 
-from shared.logging import get_logger
-import os
 import asyncio
 from datetime import datetime
-from typing import Dict, List, Optional, Any, Tuple
+import os
+from typing import Any
+
 import asyncpg
+
+from shared.logging import get_logger
 
 logger = get_logger(__name__)
 
 
 class DatabaseManager:
     """Manages TimescaleDB database connections and operations for soil sensor service."""
-    
-    def __init__(self, db_config: Optional[Dict[str, Any]] = None):
+
+    def __init__(self, db_config: dict[str, Any] | None = None):
         """Initialize database manager.
-        
+
         Args:
             db_config: Database connection config dict with host, database, user, password, port.
                       If None, uses environment variables or defaults.
@@ -30,18 +33,18 @@ class DatabaseManager:
                 "database": os.getenv("POSTGRES_DB", "cea_sensors"),
                 "user": os.getenv("POSTGRES_USER", "cea_user"),
                 "password": password,
-                "port": int(os.getenv("POSTGRES_PORT", "5432"))
+                "port": int(os.getenv("POSTGRES_PORT", "5432")),
             }
         else:
             self.db_config = db_config
-        self._pool: Optional[asyncpg.Pool] = None
+        self._pool: asyncpg.Pool | None = None
         self._db_connected = False
         self._retry_delay = 1.0
         self._max_retry_delay = 60.0
-    
+
     async def initialize(self) -> bool:
         """Initialize database connection.
-        
+
         Returns:
             True if successful, False otherwise
         """
@@ -51,7 +54,7 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Failed to initialize database: {e}")
             return False
-    
+
     async def _connect_db(self) -> None:
         """Connect to TimescaleDB with retry logic."""
         max_retries = 5
@@ -66,9 +69,7 @@ class DatabaseManager:
                     min_size=2,
                     max_size=10,
                     command_timeout=30,  # Query timeout in seconds
-                    server_settings={
-                        'application_name': 'soil_sensor_service'
-                    }
+                    server_settings={"application_name": "soil_sensor_service"},
                 )
                 self._db_connected = True
                 self._retry_delay = 1.0
@@ -76,33 +77,33 @@ class DatabaseManager:
                 return
             except Exception as e:
                 if attempt < max_retries - 1:
-                    wait_time = min(self._retry_delay * (2 ** attempt), self._max_retry_delay)
-                    logger.warning(f"Database connection attempt {attempt + 1} failed: {e}. Retrying in {wait_time}s...")
+                    wait_time = min(self._retry_delay * (2**attempt), self._max_retry_delay)
+                    logger.warning(
+                        f"Database connection attempt {attempt + 1} failed: {e}. Retrying in {wait_time}s..."
+                    )
                     await asyncio.sleep(wait_time)
                 else:
-                    raise ConnectionError(f"Failed to connect to TimescaleDB after {max_retries} attempts: {e}")
-    
+                    raise ConnectionError(
+                        f"Failed to connect to TimescaleDB after {max_retries} attempts: {e}"
+                    )
+
     async def _get_pool(self) -> asyncpg.Pool:
         """Get database connection pool."""
         if not self._pool:
             await self._connect_db()
         return self._pool
-    
+
     async def close(self) -> None:
         """Close database connection pool."""
         if self._pool:
             await self._pool.close()
             self._db_connected = False
             logger.info("Database connection closed")
-    
-    async def ensure_hierarchy(
-        self, 
-        room_name: str,
-        bed_name: str
-    ) -> Tuple[int, int]:
+
+    async def ensure_hierarchy(self, room_name: str, bed_name: str) -> tuple[int, int]:
         """
         Ensure room/bed exist in database, create if needed.
-        
+
         Returns:
             Tuple of (room_id, rack_id)
         """
@@ -111,50 +112,44 @@ class DatabaseManager:
             async with conn.transaction():
                 # Get or create room
                 room_row = await conn.fetchrow(
-                    "SELECT room_id FROM room WHERE name = $1",
-                    room_name
+                    "SELECT room_id FROM room WHERE name = $1", room_name
                 )
                 if room_row:
-                    room_id = room_row['room_id']
+                    room_id = room_row["room_id"]
                 else:
                     room_id = await conn.fetchval(
-                        "INSERT INTO room (name) VALUES ($1) RETURNING room_id",
-                        room_name
+                        "INSERT INTO room (name) VALUES ($1) RETURNING room_id", room_name
                     )
                     logger.info(f"Created room: {room_name}")
-                
+
                 # Get or create rack (bed)
                 rack_row = await conn.fetchrow(
-                    "SELECT rack_id FROM rack WHERE room_id = $1 AND name = $2",
-                    room_id, bed_name
+                    "SELECT rack_id FROM rack WHERE room_id = $1 AND name = $2", room_id, bed_name
                 )
                 if rack_row:
-                    rack_id = rack_row['rack_id']
+                    rack_id = rack_row["rack_id"]
                 else:
                     rack_id = await conn.fetchval(
                         "INSERT INTO rack (room_id, name) VALUES ($1, $2) RETURNING rack_id",
-                        room_id, bed_name
+                        room_id,
+                        bed_name,
                     )
                     logger.info(f"Created bed (rack): {bed_name}")
-                
+
                 return room_id, rack_id
-    
+
     async def register_sensor_device(
-        self,
-        rack_id: int,
-        sensor_name: str,
-        modbus_id: int,
-        bed_name: str
-    ) -> Tuple[int, Dict[str, int]]:
+        self, rack_id: int, sensor_name: str, modbus_id: int, bed_name: str
+    ) -> tuple[int, dict[str, int]]:
         """
         Register a soil sensor device and its 4 sensors in the database.
-        
+
         Args:
             rack_id: Rack (bed) ID
             sensor_name: Base name for the sensor (e.g., "soil_sensor_front_bed")
             modbus_id: Modbus slave ID
             bed_name: Bed name for device description
-            
+
         Returns:
             Tuple of (device_id, dict mapping sensor_type to sensor_id)
         """
@@ -164,12 +159,15 @@ class DatabaseManager:
                 # Check if device already exists
                 device_row = await conn.fetchrow(
                     "SELECT device_id FROM device WHERE rack_id = $1 AND name = $2",
-                    rack_id, f"Soil Sensor - {bed_name}"
+                    rack_id,
+                    f"Soil Sensor - {bed_name}",
                 )
-                
+
                 if device_row:
-                    device_id = device_row['device_id']
-                    logger.info(f"Device already exists: Soil Sensor - {bed_name} (ID: {device_id})")
+                    device_id = device_row["device_id"]
+                    logger.info(
+                        f"Device already exists: Soil Sensor - {bed_name} (ID: {device_id})"
+                    )
                 else:
                     # Create device
                     device_id = await conn.fetchval(
@@ -178,61 +176,65 @@ class DatabaseManager:
                         rack_id,
                         f"Soil Sensor - {bed_name}",
                         "RS485 Soil Sensor",
-                        f"MODBUS-{modbus_id}"
+                        f"MODBUS-{modbus_id}",
                     )
                     logger.info(f"Created device: Soil Sensor - {bed_name} (ID: {device_id})")
-                
+
                 # Register 4 sensors
                 sensor_types = [
-                    ('temperature', '°C', 'temperature'),
-                    ('humidity', '%', 'humidity'),
-                    ('ec', 'µS/cm', 'electrical_conductivity'),
-                    ('ph', 'pH', 'ph')
+                    ("temperature", "°C", "temperature"),
+                    ("humidity", "%", "humidity"),
+                    ("ec", "µS/cm", "electrical_conductivity"),
+                    ("ph", "pH", "ph"),
                 ]
-                
+
                 sensor_ids = {}
                 for sensor_type, unit, data_type in sensor_types:
                     sensor_full_name = f"{sensor_name}_{sensor_type}"
-                    
+
                     # Check if sensor already exists
                     sensor_row = await conn.fetchrow(
                         "SELECT sensor_id FROM sensor WHERE device_id = $1 AND name = $2",
-                        device_id, sensor_full_name
+                        device_id,
+                        sensor_full_name,
                     )
-                    
+
                     if sensor_row:
-                        sensor_ids[sensor_type] = sensor_row['sensor_id']
+                        sensor_ids[sensor_type] = sensor_row["sensor_id"]
                     else:
                         sensor_id = await conn.fetchval(
                             """INSERT INTO sensor (device_id, name, unit, data_type)
                                VALUES ($1, $2, $3, $4) RETURNING sensor_id""",
-                            device_id, sensor_full_name, unit, data_type
+                            device_id,
+                            sensor_full_name,
+                            unit,
+                            data_type,
                         )
                         sensor_ids[sensor_type] = sensor_id
                         logger.info(f"Registered sensor: {sensor_full_name} (ID: {sensor_id})")
-                
+
                 return device_id, sensor_ids
-    
+
     async def store_measurements(
         self,
-        sensor_ids: Dict[str, int],
-        readings: Dict[str, float],
-        timestamp: Optional[datetime] = None
+        sensor_ids: dict[str, int],
+        readings: dict[str, float],
+        timestamp: datetime | None = None,
     ) -> bool:
         """
         Store sensor measurements in the database.
-        
+
         Args:
             sensor_ids: Dict mapping sensor_type to sensor_id
             readings: Dict with temperature, humidity, ec, ph values
             timestamp: Timestamp for measurements (defaults to now)
-        
+
         Returns:
             True if successful, False otherwise
         """
         if timestamp is None:
             timestamp = datetime.now()
-        
+
         pool = await self._get_pool()
         try:
             async with pool.acquire() as conn:
@@ -245,25 +247,26 @@ class DatabaseManager:
                                    VALUES ($1, $2, $3, $4)
                                    ON CONFLICT (time, sensor_id) DO UPDATE
                                    SET value = EXCLUDED.value, status = EXCLUDED.status""",
-                                timestamp, sensor_id, readings[sensor_type], 'ok'
+                                timestamp,
+                                sensor_id,
+                                readings[sensor_type],
+                                "ok",
                             )
-            
+
             return True
         except Exception as e:
             logger.error(f"Error storing measurements: {e}")
             return False
-    
-    async def get_sensor_id(self, sensor_name: str) -> Optional[int]:
+
+    async def get_sensor_id(self, sensor_name: str) -> int | None:
         """Get sensor_id by sensor name."""
         pool = await self._get_pool()
         try:
             async with pool.acquire() as conn:
                 row = await conn.fetchrow(
-                    "SELECT sensor_id FROM sensor WHERE name = $1",
-                    sensor_name
+                    "SELECT sensor_id FROM sensor WHERE name = $1", sensor_name
                 )
-                return row['sensor_id'] if row else None
+                return row["sensor_id"] if row else None
         except Exception as e:
             logger.error(f"Error getting sensor_id: {e}")
             return None
-

@@ -1,19 +1,23 @@
 """Sensor data routes."""
+
 from __future__ import annotations
 
-from shared.logging import get_logger
-from fastapi import APIRouter, HTTPException, Depends, Query
-from typing import List, Optional, Dict, Any
 from datetime import datetime
+from typing import Any
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+
 from app.database import DatabaseManager
 from app.redis_client import RedisClient
 
 router = APIRouter()
 
+
 # Dependency injection (will be overridden in main.py)
 def get_database() -> DatabaseManager:
     """Get database manager."""
     raise NotImplementedError("Dependency not injected")
+
 
 def get_redis_client() -> RedisClient:
     """Get Redis client."""
@@ -21,7 +25,7 @@ def get_redis_client() -> RedisClient:
 
 
 @router.get("/api/sensors")
-async def list_sensors(db: DatabaseManager = Depends(get_database)) -> List[Dict[str, Any]]:
+async def list_sensors(db: DatabaseManager = Depends(get_database)) -> list[dict[str, Any]]:
     """List all configured soil sensors."""
     try:
         pool = await db._get_pool()
@@ -42,19 +46,21 @@ async def list_sensors(db: DatabaseManager = Depends(get_database)) -> List[Dict
                 WHERE d.type = 'RS485 Soil Sensor'
                 ORDER BY s.sensor_id
             """)
-            
+
             sensors = []
             for row in rows:
-                sensors.append({
-                    "sensor_id": row['sensor_id'],
-                    "name": row['name'],
-                    "unit": row['unit'],
-                    "data_type": row['data_type'],
-                    "device_name": row['device_name'],
-                    "bed_name": row['bed_name'],
-                    "room_name": row['room_name']
-                })
-            
+                sensors.append(
+                    {
+                        "sensor_id": row["sensor_id"],
+                        "name": row["name"],
+                        "unit": row["unit"],
+                        "data_type": row["data_type"],
+                        "device_name": row["device_name"],
+                        "bed_name": row["bed_name"],
+                        "room_name": row["room_name"],
+                    }
+                )
+
             return sensors
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error listing sensors: {str(e)}")
@@ -62,14 +68,14 @@ async def list_sensors(db: DatabaseManager = Depends(get_database)) -> List[Dict
 
 @router.get("/api/sensors/{sensor_id}/latest")
 async def get_latest_reading(
-    sensor_id: int,
-    db: DatabaseManager = Depends(get_database)
-) -> Dict[str, Any]:
+    sensor_id: int, db: DatabaseManager = Depends(get_database)
+) -> dict[str, Any]:
     """Get latest reading for a sensor."""
     try:
         pool = await db._get_pool()
         async with pool.acquire() as conn:
-            row = await conn.fetchrow("""
+            row = await conn.fetchrow(
+                """
                 SELECT 
                     m.time,
                     m.value,
@@ -82,19 +88,21 @@ async def get_latest_reading(
                 WHERE s.sensor_id = $1
                 ORDER BY m.time DESC
                 LIMIT 1
-            """, sensor_id)
-            
+            """,
+                sensor_id,
+            )
+
             if not row:
                 raise HTTPException(status_code=404, detail="Sensor not found or no readings")
-            
+
             return {
                 "sensor_id": sensor_id,
-                "sensor_name": row['name'],
-                "unit": row['unit'],
-                "data_type": row['data_type'],
-                "value": float(row['value']),
-                "time": row['time'].isoformat(),
-                "status": row['status']
+                "sensor_name": row["name"],
+                "unit": row["unit"],
+                "data_type": row["data_type"],
+                "value": float(row["value"]),
+                "time": row["time"].isoformat(),
+                "status": row["status"],
             }
     except HTTPException:
         raise
@@ -105,11 +113,11 @@ async def get_latest_reading(
 @router.get("/api/sensors/{sensor_id}/readings")
 async def get_readings(
     sensor_id: int,
-    start_time: Optional[datetime] = Query(None),
-    end_time: Optional[datetime] = Query(None),
+    start_time: datetime | None = Query(None),
+    end_time: datetime | None = Query(None),
     limit: int = Query(100, ge=1, le=1000),
-    db: DatabaseManager = Depends(get_database)
-) -> Dict[str, Any]:
+    db: DatabaseManager = Depends(get_database),
+) -> dict[str, Any]:
     """Get historical readings for a sensor."""
     try:
         pool = await db._get_pool()
@@ -125,45 +133,43 @@ async def get_readings(
             """
             params = [sensor_id]
             param_idx = 2
-            
+
             if start_time:
                 query += f" AND m.time >= ${param_idx}"
                 params.append(start_time)
                 param_idx += 1
-            
+
             if end_time:
                 query += f" AND m.time <= ${param_idx}"
                 params.append(end_time)
                 param_idx += 1
-            
+
             query += " ORDER BY m.time DESC LIMIT $" + str(param_idx)
             params.append(limit)
-            
+
             rows = await conn.fetch(query, *params)
-            
+
             readings = []
             for row in rows:
-                readings.append({
-                    "time": row['time'].isoformat(),
-                    "value": float(row['value']),
-                    "status": row['status']
-                })
-            
-            return {
-                "sensor_id": sensor_id,
-                "count": len(readings),
-                "readings": readings
-            }
+                readings.append(
+                    {
+                        "time": row["time"].isoformat(),
+                        "value": float(row["value"]),
+                        "status": row["status"],
+                    }
+                )
+
+            return {"sensor_id": sensor_id, "count": len(readings), "readings": readings}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error getting readings: {str(e)}")
 
 
 @router.get("/api/sensors/live")
 async def get_live_readings(
-    redis_client: RedisClient = Depends(get_redis_client)
-) -> Dict[str, Any]:
+    redis_client: RedisClient = Depends(get_redis_client),
+) -> dict[str, Any]:
     """Get current live sensor values from Redis state keys.
-    
+
     Returns all soil sensor values currently in Redis.
     """
     try:
@@ -171,11 +177,10 @@ async def get_live_readings(
         # Note: This requires access to Redis state keys
         # For now, return a message indicating this endpoint needs Redis client access
         # The actual implementation would read from sensor:* keys
-        
+
         return {
             "message": "Live readings endpoint - requires Redis state key access",
-            "note": "This endpoint should read from sensor:* Redis keys"
+            "note": "This endpoint should read from sensor:* Redis keys",
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error getting live readings: {str(e)}")
-
