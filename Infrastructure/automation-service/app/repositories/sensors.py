@@ -31,9 +31,10 @@ class SensorRepository(BaseRepository):
         try:
             async with self.pool.acquire() as conn:
                 row = await conn.fetchrow(
-                    """SELECT value FROM measurement 
-                       WHERE sensor_name = $1 
-                       ORDER BY time DESC LIMIT 1""",
+                    """SELECT m.value FROM measurement m
+                       JOIN sensor s ON m.sensor_id = s.sensor_id
+                       WHERE s.name = $1 
+                       ORDER BY m.time DESC LIMIT 1""",
                     sensor_name,
                 )
                 if row:
@@ -61,14 +62,15 @@ class SensorRepository(BaseRepository):
             try:
                 async with self.pool.acquire() as conn:
                     rows = await conn.fetch(
-                        """SELECT DISTINCT ON (sensor_name) sensor_name, value 
-                           FROM measurement 
-                           WHERE sensor_name = ANY($1)
-                           ORDER BY sensor_name, time DESC""",
+                        """SELECT DISTINCT ON (s.name) s.name, m.value 
+                           FROM measurement m
+                           JOIN sensor s ON m.sensor_id = s.sensor_id
+                           WHERE s.name = ANY($1)
+                           ORDER BY s.name, m.time DESC""",
                         missing_sensors,
                     )
                     for row in rows:
-                        result[row["sensor_name"]] = float(row["value"])
+                        result[row["name"]] = float(row["value"])
             except Exception as e:
                 logger.error(f"Database batch read failed: {e}")
 
