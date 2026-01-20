@@ -106,6 +106,6 @@ class CANReader:
         if self.bus:
             try:
                 self.bus.shutdown()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"Error shutting down CAN bus: {e}")
             self.bus = None

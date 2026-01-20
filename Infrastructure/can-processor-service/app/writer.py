@@ -94,9 +94,12 @@ class DataWriter:
             db_config_optimized["keepalives_idle"] = 30
             db_config_optimized["keepalives_interval"] = 10
             db_config_optimized["keepalives_count"] = 3
-            # Use autocommit for faster writes (each statement commits immediately)
+            db_config_optimized["connect_timeout"] = 5
             self.db_conn = psycopg2.connect(**db_config_optimized)
-            self.db_conn.autocommit = True  # Auto-commit for faster writes
+            self.db_conn.autocommit = True
+            cursor = self.db_conn.cursor()
+            cursor.execute("SET statement_timeout = '5000'")
+            cursor.close()
             self.db_enabled = True
             logger.info("Connected to TimescaleDB (async batching enabled)")
             self._start_flush_thread()
@@ -208,8 +211,8 @@ class DataWriter:
             logger.warning(f"Database connection lost, attempting reconnect: {e}")
             try:
                 self.db_conn.close()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"Error closing stale connection: {e}")
             self.db_conn = None
             self.db_enabled = False
             return self.connect_db()
@@ -308,9 +311,13 @@ class DataWriter:
         try:
             self._db_queue.put_nowait(item)
             self._queued_count += 1
+            queue_size = self._db_queue.qsize()
+            if queue_size > 8000 and queue_size % 1000 == 0:
+                logger.warning(f"DB write queue depth high: {queue_size}/10000")
             return True
         except queue.Full:
             self._dropped_count += 1
+            logger.error("DB write queue full, dropping measurement")
             return False
 
     def get_stats(self):
@@ -508,8 +515,7 @@ class DataWriter:
         # Write to Redis Stream first
         result["stream"] = self.write_to_stream(msg, decoded)
 
-        # Write to database immediately (live processing)
-        result["db"] = self.write_to_db(decoded, raw_data, sensors, timestamp)
+        result["db"] = self.queue_db_write(decoded, raw_data, sensors, timestamp)
 
         # Write to Redis state immediately
         result["redis"] = self.write_to_redis_state(sensors, timestamp_ms)
@@ -526,7 +532,7 @@ class DataWriter:
         while not self._db_queue.empty():
             try:
                 remaining.append(self._db_queue.get_nowait())
-            except:
+            except Exception:
                 break
         if remaining:
             self._flush_batch(remaining)
@@ -537,20 +543,20 @@ class DataWriter:
         if self.db_conn:
             try:
                 self.db_conn.close()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"Error closing DB connection: {e}")
             self.db_conn = None
 
         if self.redis_client:
             try:
                 self.redis_client.close()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"Error closing Redis client: {e}")
             self.redis_client = None
 
         if self.redis_state_client:
             try:
                 self.redis_state_client.close()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"Error closing Redis state client: {e}")
             self.redis_state_client = None

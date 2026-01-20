@@ -45,6 +45,10 @@ display_messages = False
 last_watchdog_ping = 0.0
 WATCHDOG_INTERVAL = 15  # seconds (WatchdogSec=30, ping at half interval)
 
+# Stats logging
+last_stats_log = 0.0
+STATS_LOG_INTERVAL = 60
+
 
 def sd_notify(state: str) -> bool:
     """Send notification to systemd.
@@ -305,10 +309,19 @@ def main():
             try:
                 # Ping systemd watchdog periodically
                 global last_watchdog_ping
+                global last_stats_log
                 now = time.time()
                 if now - last_watchdog_ping >= WATCHDOG_INTERVAL:
                     sd_notify("WATCHDOG=1")
                     last_watchdog_ping = now
+
+                if now - last_stats_log >= STATS_LOG_INTERVAL:
+                    stats = data_writer.get_stats()
+                    logger.info(
+                        f"DB batch stats: queued={stats['queued']}, flushed={stats['flushed']}, "
+                        f"dropped={stats['dropped']}, pending={stats['pending']}"
+                    )
+                    last_stats_log = now
 
                 # Read message from CAN bus
                 msg = can_reader.read_message(timeout=1.0)
