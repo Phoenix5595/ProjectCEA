@@ -103,9 +103,7 @@ class ControlEngine:
         self._effective_setpoints: dict[tuple[str, str], dict[str, Any]] = {}
 
         # Performance optimizations
-        self._device_hierarchy_cache: dict[str, dict[str, dict[str, dict[str, Any]]]] | None = (
-            None
-        )
+        self._device_hierarchy_cache: dict[str, dict[str, dict[str, dict[str, Any]]]] | None = None
         self._sensor_mapping_cache: dict[str, str] | None = None
         self._cache_timestamp: datetime | None = None
         self._cache_ttl = timedelta(seconds=30)  # Cache for 30 seconds
@@ -263,11 +261,32 @@ class ControlEngine:
 
                 # Determine current mode and get setpoints
                 # Debug logging removed
-                light_schedule = await self.database.get_light_schedule(location, cluster)
-                climate_schedule = await self.database.get_climate_schedule(location, cluster)
-                # Debug logging removed
-
                 current_mode = None
+                try:
+                    light_schedule = await self.database.get_light_schedule(location, cluster)
+                    climate_schedule = await self.database.get_climate_schedule(location, cluster)
+                except Exception as e:
+                    logger.info(
+                        f"Database error fetching schedules for {location}/{cluster}: {e}. "
+                        "Falling back to Redis."
+                    )
+                    cached_schedule = None
+                    automation_redis = self.database._automation_redis
+                    if automation_redis:
+                        cached_schedule = automation_redis.read_schedule_state(location, cluster)
+
+                    if cached_schedule:
+                        light_schedule = cached_schedule.get("room", cached_schedule)
+                        climate_schedule = cached_schedule.get("climate", cached_schedule)
+                    else:
+                        logger.warning(
+                            f"No cached schedule found for {location}/{cluster}. "
+                            "Forcing NIGHT mode for safety."
+                        )
+                        light_schedule = None
+                        climate_schedule = None
+                        current_mode = "NIGHT"
+                # Debug logging removed
                 setpoint_data = None
                 effective_data = None  # Initialize to avoid unbound variable
                 climate_mode_key = (location, cluster)
