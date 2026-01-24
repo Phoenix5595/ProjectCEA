@@ -112,6 +112,9 @@ async def test_redis_fallback_when_db_fails(mock_dependencies):
         # call_args index 6 is current_mode
         assert call_args[6] == "DAY"
 
+        # Verify setpoint logging occurred
+        database.log_effective_setpoints.assert_called()
+
 
 @pytest.mark.asyncio
 async def test_safety_night_when_all_fails(mock_dependencies):
@@ -162,3 +165,8 @@ async def test_safety_night_when_all_fails(mock_dependencies):
         mock_processor_instance.process_devices.assert_called()
         call_args = mock_processor_instance.process_devices.call_args[0]
         assert call_args[6] == "NIGHT"
+
+        # Verify setpoint logging occurred with NIGHT mode
+        database.log_effective_setpoints.assert_called()
+        log_args = database.log_effective_setpoints.call_args.kwargs
+        assert log_args["mode"] == "NIGHT"
