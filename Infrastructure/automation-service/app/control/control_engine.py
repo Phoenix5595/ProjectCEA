@@ -259,16 +259,18 @@ class ControlEngine:
                     sensor_time = (datetime.now() - sensor_start).total_seconds() * 1000
                     self._record_performance_stat("sensor_reading_time", sensor_time)
 
-                # Determine current mode and get setpoints
-                # Debug logging removed
-                current_mode = None
+                # 1. Schedule resolution (DB -> Redis -> NIGHT fallback)
+                light_schedule = None
+                climate_schedule = None
+                current_mode = "NIGHT"  # Default fallback mode
+
                 try:
                     light_schedule = await self.database.get_light_schedule(location, cluster)
                     climate_schedule = await self.database.get_climate_schedule(location, cluster)
                 except Exception as e:
                     logger.info(
                         f"Database error fetching schedules for {location}/{cluster}: {e}. "
-                        "Falling back to Redis."
+                        + "Falling back to Redis."
                     )
                     cached_schedule = None
                     automation_redis = self.database._automation_redis
@@ -281,18 +283,10 @@ class ControlEngine:
                     else:
                         logger.warning(
                             f"No cached schedule found for {location}/{cluster}. "
-                            "Forcing NIGHT mode for safety."
+                            + "Forcing NIGHT mode for safety."
                         )
-                        light_schedule = None
-                        climate_schedule = None
-                        current_mode = "NIGHT"
-                # Debug logging removed
-                setpoint_data = None
-                effective_data = None  # Initialize to avoid unbound variable
-                climate_mode_key = (location, cluster)
-                # Get previous mode BEFORE determining new mode (for change detection)
-                previous_mode = self._current_climate_mode.get(climate_mode_key)
 
+                # 2. Mode resolution (happens early)
                 if light_schedule and climate_schedule:
                     mode_result = self.scheduler.get_climate_mode(
                         location,
@@ -306,67 +300,44 @@ class ControlEngine:
                     if mode_result:
                         current_mode, _, _ = mode_result
 
-                    # Get setpoint data BEFORE computing effective setpoints
-                    # Debug logging removed
-                    setpoint_data = await self.database.get_setpoint(
-                        location, cluster, current_mode
-                    )
-                    # Debug logging removed
-                    if not setpoint_data and current_mode:
-                        # Fallback to legacy mode=None if mode-based setpoint not found
-                        logger.debug(
-                            f"No setpoint found for {location}/{cluster} mode={current_mode}, "
-                            f"falling back to legacy mode=None"
-                        )
-                        # Debug logging removed
-                        setpoint_data = await self.database.get_setpoint(location, cluster, None)
-                        # Debug logging removed
-                        if setpoint_data:
-                            logger.debug(
-                                f"No setpoint found for {location}/{cluster} mode={current_mode}, "
-                                f"using legacy mode=None setpoint"
-                            )
-                    # Store new mode BEFORE computing effective setpoints (for proper transition detection)
-                    if current_mode is not None:
-                        self._current_climate_mode[climate_mode_key] = current_mode
-                if not setpoint_data and current_mode:
-                    # Fallback to legacy mode=None if mode-based setpoint not found
+                # Store new mode for transition detection
+                climate_mode_key = (location, cluster)
+                previous_mode = self._current_climate_mode.get(climate_mode_key)
+                self._current_climate_mode[climate_mode_key] = current_mode
+
+                # 3. Setpoint retrieval (always execute for the resolved mode)
+                setpoint_data = await self.database.get_setpoint(location, cluster, current_mode)
+
+                if not setpoint_data:
+                    # Fallback to legacy mode=None
                     logger.debug(
                         f"No setpoint found for {location}/{cluster} mode={current_mode}, "
-                        f"falling back to legacy mode=None"
+                        + f"falling back to legacy mode=None"
                     )
-                    # Debug logging removed
                     setpoint_data = await self.database.get_setpoint(location, cluster, None)
-                    # Debug logging removed
-                    if setpoint_data:
-                        logger.debug(
-                            f"No setpoint found for {location}/{cluster} mode={current_mode}, "
-                            f"using legacy mode=None setpoint"
-                        )
 
                 # Log setpoint retrieval for verification
                 if setpoint_data:
                     mode_str = current_mode or "None (legacy)"
                     logger.debug(
                         f"Retrieved setpoints for {location}/{cluster} mode={mode_str}: "
-                        f"heating={setpoint_data.get('heating_setpoint')}, "
-                        f"cooling={setpoint_data.get('cooling_setpoint')}, "
-                        f"ramp_in_duration={setpoint_data.get('ramp_in_duration', 0)}"
+                        + f"heating={setpoint_data.get('heating_setpoint')}, "
+                        + f"cooling={setpoint_data.get('cooling_setpoint')}, "
+                        + f"ramp_in_duration={setpoint_data.get('ramp_in_duration', 0)}"
                     )
-
-                if setpoint_data:
-                    # Log setpoint retrieval for debugging
                     if current_mode in ["PRE_DAY", "PRE_NIGHT"]:
                         ramp_in = setpoint_data.get("ramp_in_duration", 0) or 0
                         logger.debug(
                             f"Retrieved {current_mode} setpoint for {location}/{cluster}: "
-                            f"heating={setpoint_data.get('heating_setpoint')}, "
-                            f"cooling={setpoint_data.get('cooling_setpoint')}, "
-                            f"ramp_in_duration={ramp_in}min"
+                            + f"heating={setpoint_data.get('heating_setpoint')}, "
+                            + f"cooling={setpoint_data.get('cooling_setpoint')}, "
+                            + f"ramp_in_duration={ramp_in}min"
                         )
 
-                    # Compute effective setpoints (pass previous_mode for change detection)
-                    # Debug logging removed
+                # 4. Effective setpoint calculation and logging (moved outside conditional)
+                effective_data = None
+                if setpoint_data:
+                    # Compute effective setpoints
                     effective_data = await self.setpoint_manager.compute_effective_setpoints(
                         location,
                         cluster,
@@ -376,12 +347,9 @@ class ControlEngine:
                         sensor_values,
                         previous_mode,
                     )
-                    # Debug logging removed
 
                     # Store in context
                     self._effective_setpoints[(location, cluster)] = effective_data
-
-                    # Debug logging removed
 
                     # Log to database immediately (before device processing)
                     await self.database.log_effective_setpoints(
@@ -407,7 +375,7 @@ class ControlEngine:
                         timestamp=current_time,
                     )
 
-                # Process devices using extracted component
+                # 5. Process devices (using extracted component)
                 await self.device_processor.process_devices(
                     location,
                     cluster,
