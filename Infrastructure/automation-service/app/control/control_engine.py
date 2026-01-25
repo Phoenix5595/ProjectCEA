@@ -241,9 +241,8 @@ class ControlEngine:
 
         for location, clusters in devices.items():
             for cluster, cluster_devices in clusters.items():
-                # Debug logging removed
-                # Log when processing Veg Room to verify control loop is running
-                if location == "Veg Room":
+                # Log when processing Veg Room or Flower Room to verify control loop is running
+                if location in ["Veg Room", "Flower Room"]:
                     logger.info(
                         f"Control loop processing {location}/{cluster} with {len(cluster_devices)} devices"
                     )
