@@ -19,7 +19,7 @@ interface ZoneSetpoints {
 
 interface ZoneCardProps {
   zone: Zone
-  sensorData?: Record<string, never>
+  sensorData?: Record<string, number>
   devices: Device[]
   schedule?: RoomSchedule
   setpoints?: ZoneSetpoints

@@ -20,10 +20,13 @@ function defaultApiUrl(port: number): string {
 const BACKEND_API_URL = import.meta.env.VITE_BACKEND_API_URL || defaultApiUrl(8000);
 // Automation service (configuration) - port 8001
 const AUTOMATION_API_URL = import.meta.env.VITE_AUTOMATION_API_URL || defaultApiUrl(8001);
+// Weather service - port 8003
+const WEATHER_API_URL = import.meta.env.VITE_WEATHER_API_URL || defaultApiUrl(8003);
 
 class ApiClient {
   private backendClient: AxiosInstance;
   private automationClient: AxiosInstance;
+  private weatherClient: AxiosInstance;
 
   constructor() {
     this.backendClient = axios.create({
@@ -39,6 +42,14 @@ class ApiClient {
         'Content-Type': 'application/json',
       },
       timeout: 30000, // 30 second timeout
+    });
+
+    this.weatherClient = axios.create({
+      baseURL: WEATHER_API_URL,
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      timeout: 10000, // 10 second timeout for weather data
     });
     
     // Add response interceptor for better error handling
@@ -281,6 +292,18 @@ class ApiClient {
 
   async saveRoomSchedule(location: string, cluster: string, schedule: any): Promise<void> {
     await this.automationClient.post(`/api/room-schedule/${location}/${cluster}`, schedule);
+  }
+
+  // Weather Service
+  async getLatestWeather(): Promise<any> {
+    const response = await this.weatherClient.get('/weather/latest');
+    return response.data;
+  }
+
+  // System Status (automation service)
+  async getSystemStatus(): Promise<any> {
+    const response = await this.automationClient.get('/api/status');
+    return response.data;
   }
 
   // Device Control (automation service)

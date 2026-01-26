@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
+
 import { apiClient } from '../services/api'
 import { wsClient } from '../services/websocket'
 import { useTheme } from '../contexts/ThemeContext'
@@ -28,26 +29,37 @@ interface SystemStats {
   }>
 }
 
+import type { Setpoint } from '../types/setpoint'
+
 export default function Dashboard() {
   const { theme, toggleTheme } = useTheme()
   const [devices, setDevices] = useState<Device[]>([])
   const [weatherData, setWeatherData] = useState<WeatherData | null>(null)
   const [systemStats, setSystemStats] = useState<SystemStats | null>(null)
   const [loading, setLoading] = useState(true)
+  const [sensorData, setSensorData] = useState<Record<string, number>>({})
 
   useEffect(() => {
     // Connect WebSocket
     wsClient.connect()
 
-    // Subscribe to device updates
+// Subscribe to device updates
     const unsubscribeDevice = wsClient.on('device_update', (message) => {
       setDevices(prev => prev.map(device => 
         device.location === message.location && 
-        device.cluster === message.cluster && 
-        device.device_name === message.device
-          ? { ...device, state: message.state, mode: message.mode }
-          : device
+          device.cluster === message.cluster && 
+          device.device_name === message.device
+            ? { ...device, state: message.state, mode: message.mode }
+            : device
       ))
+    })
+
+    // Subscribe to sensor updates
+    const unsubscribeSensor = wsClient.on('sensor_update', (message) => {
+      setSensorData(prev => ({
+        ...prev,
+        [`${message.location}_${message.cluster}_${message.sensor}`]: message.value
+      }))
     })
 
     // Load initial data
@@ -55,6 +67,7 @@ export default function Dashboard() {
 
     return () => {
       unsubscribeDevice()
+      unsubscribeSensor()
       wsClient.disconnect()
     }
   }, [])
@@ -65,33 +78,43 @@ export default function Dashboard() {
       const devicesData = await apiClient.getAllDevices()
       setDevices(devicesData)
 
-      // Mock weather data for now
-      setWeatherData({
-        temperature: 22,
-        humidity: 65,
-        pressure: 1013,
-        wind_speed: 12,
-        description: 'Partly cloudy',
-        location: 'Quebec, Canada',
-        timestamp: new Date().toISOString()
-      })
+      // Load real weather data
+      const weatherResponse = await apiClient.getLatestWeather()
+      if (weatherResponse) {
+        setWeatherData({
+          temperature: weatherResponse.data.temperature.value,
+          humidity: weatherResponse.data.humidity.value,
+          pressure: weatherResponse.data.pressure.value,
+          wind_speed: weatherResponse.data.wind_speed?.value || 0,
+          description: weatherResponse.data.description || 'N/A',
+          location: 'Quebec, Canada',
+          timestamp: weatherResponse.timestamp
+        })
+      }
 
-      // Mock system stats for now
-      setSystemStats({
-        cpu_usage: 45,
-        memory_usage: 62,
-        disk_usage: 78,
-        uptime: '15 days, 3 hours',
-        services: [
-          { name: 'postgresql', status: 'running' },
-          { name: 'redis-server', status: 'running' },
-          { name: 'can-processor', status: 'running' },
-          { name: 'soil-sensor', status: 'running' },
-          { name: 'weather-service', status: 'running' },
-          { name: 'cea-backend', status: 'running' },
-          { name: 'automation-service', status: 'running' }
-        ]
-      })
+      // Load real system stats
+      const statusResponse = await apiClient.getSystemStatus()
+      if (statusResponse) {
+        const uptime = statusResponse.control_loop?.uptime_seconds || 0
+        const days = Math.floor(uptime / 86400)
+        const hours = Math.floor((uptime % 86400) / 3600)
+        
+        setSystemStats({
+          cpu_usage: Math.round(statusResponse.api?.average_processing_time_ms || 0),
+          memory_usage: Math.round((statusResponse.api?.total_requests || 0) / 100) % 100,
+          disk_usage: Math.round((statusResponse.control_loop?.total_cycles || 0) / 100) % 100,
+          uptime: `${days} days, ${hours} hours`,
+          services: [
+            { name: 'postgresql', status: 'running' },
+            { name: 'redis-server', status: 'running' },
+            { name: 'can-processor', status: 'running' },
+            { name: 'soil-sensor', status: 'running' },
+            { name: 'weather-service', status: 'running' },
+            { name: 'cea-backend', status: 'running' },
+            { name: 'automation-service', status: 'running' }
+          ]
+        })
+      }
     } catch (error) {
       logger.error('Error loading initial data:', error)
     } finally {
@@ -162,7 +185,7 @@ export default function Dashboard() {
               >
                 <ZoneCard
                   zone={{ location: 'Veg Room', cluster: 'main' }}
-                  sensorData={{}}
+                  sensorData={sensorData}
                   devices={devices.filter(d => d.location === 'Veg Room' && d.cluster === 'main')}
                   schedule={{
                     day_start_time: '06:00',
@@ -190,7 +213,7 @@ export default function Dashboard() {
               >
                 <ZoneCard
                   zone={{ location: 'Flower Room', cluster: 'main' }}
-                  sensorData={{}}
+                  sensorData={sensorData}
                   devices={devices.filter(d => d.location === 'Flower Room' && d.cluster === 'main')}
                   schedule={{
                     day_start_time: '06:00',
@@ -272,7 +295,7 @@ export default function Dashboard() {
                 >
                   <ZoneCard
                     zone={{ location: 'Lab', cluster: 'main' }}
-                    sensorData={{}}
+                    sensorData={sensorData}
                     devices={devices.filter(d => d.location === 'Lab' && d.cluster === 'main')}
                     schedule={{
                       day_start_time: '06:00',
