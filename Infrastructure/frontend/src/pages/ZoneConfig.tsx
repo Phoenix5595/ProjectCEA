@@ -1,5 +1,5 @@
 import { useParams, Link } from 'react-router-dom'
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { apiClient } from '../services/api'
 import { logger } from '../utils/logger'
 import { getLocationDisplayName, getLocationBackendName } from '../config/zones'
@@ -8,8 +8,9 @@ import RoomModeSelector from '../components/RoomModeSelector'
 import SetpointTimeline from '../components/SetpointTimeline'
 import SetpointsTable from '../components/SetpointsTable'
 import CircularTimePicker from '../components/CircularTimePicker'
-import LightSlidersPanel, { LightSlidersPanelRef } from '../components/LightSlidersPanel'
-import PIDCompactRow from '../components/PIDCompactRow'
+import VerticalLightsBlock from '../components/VerticalLightsBlock'
+import VerticalPIDBlock from '../components/VerticalPIDBlock'
+import VerticalNotesBlock from '../components/VerticalNotesBlock'
 
 export default function ZoneConfig() {
   const { location: locationParam, cluster } = useParams<{ location: string; cluster: string }>()
@@ -21,7 +22,6 @@ export default function ZoneConfig() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
-  const lightsPanelRef = useRef<LightSlidersPanelRef>(null)
 
   useEffect(() => {
     if (location && cluster) {
@@ -76,10 +76,6 @@ export default function ZoneConfig() {
       const updated = await apiClient.updateRoomParameters(location, cluster, roomMode.parameters)
       setRoomMode(updated)
       setSavedParams({ ...updated.parameters })
-      
-      if (lightsPanelRef.current?.hasPendingChanges()) {
-        await lightsPanelRef.current.savePendingChanges()
-      }
       
       setSuccess('Saved')
       setTimeout(() => setSuccess(null), 2000)
@@ -208,16 +204,10 @@ export default function ZoneConfig() {
               </div>
             </div>
             
-            <div className="flex-shrink-0">
-              <LightSlidersPanel
-                ref={lightsPanelRef}
-                location={location}
-                cluster={cluster}
-              />
-            </div>
-            
-            <div className="flex-shrink-0">
-              <PIDCompactRow />
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+              <VerticalLightsBlock location={location} cluster={cluster} />
+              <VerticalPIDBlock />
+              <VerticalNotesBlock />
             </div>
           </div>
         )}
