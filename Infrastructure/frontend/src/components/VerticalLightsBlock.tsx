@@ -49,7 +49,8 @@ export default function VerticalLightsBlock({ location, cluster }: VerticalLight
           const dayTargetIntensity = daySchedule?.target_intensity ?? null
           
           return { deviceName: light.device_name, status, dayTargetIntensity }
-        } catch {
+        } catch (err) {
+          logger.error(`Error getting light status for ${light.device_name}:`, err)
           return { deviceName: light.device_name, status: null, dayTargetIntensity: null }
         }
       })
@@ -84,7 +85,13 @@ export default function VerticalLightsBlock({ location, cluster }: VerticalLight
   }, [pendingTargets])
 
   function handleTargetChange(deviceName: string, value: number) {
-    setPendingTargets(prev => ({ ...prev, [deviceName]: value }))
+    // Validate and clamp the value
+    const clampedValue = Math.max(0, Math.min(100, value))
+    setPendingTargets(prev => ({
+      ...prev,
+      [deviceName]: clampedValue
+    }))
+    setHasPendingChanges(true)
   }
 
   async function savePendingChanges() {
@@ -173,7 +180,12 @@ export default function VerticalLightsBlock({ location, cluster }: VerticalLight
                       min={0}
                       max={100}
                       value={displayTarget}
-                      onChange={(e) => handleTargetChange(light.device_name!, parseInt(e.target.value))}
+                      onChange={(e) => {
+                        const value = parseInt(e.target.value)
+                        if (!isNaN(value)) {
+                          handleTargetChange(light.device_name!, value)
+                        }
+                      }}
                       disabled={!isOn}
                       className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed"
                     />
@@ -197,7 +209,12 @@ export default function VerticalLightsBlock({ location, cluster }: VerticalLight
                     min={0}
                     max={100}
                     value={displayTarget}
-                    onChange={(e) => handleTargetChange(light.device_name!, Math.max(0, Math.min(100, parseInt(e.target.value) || 0)))}
+                    onChange={(e) => {
+                        const value = parseInt(e.target.value)
+                        if (!isNaN(value)) {
+                          handleTargetChange(light.device_name!, value)
+                        }
+                      }}
                     disabled={!isOn}
                     className="w-12 h-6 px-1 text-xs text-center bg-gray-800 border border-gray-700 rounded text-gray-200 disabled:opacity-50 focus:outline-none focus:border-cyan-500 transition-colors"
                   />
