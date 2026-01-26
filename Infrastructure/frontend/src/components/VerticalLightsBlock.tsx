@@ -102,21 +102,21 @@ export default function VerticalLightsBlock({ location, cluster }: VerticalLight
 
   if (loading) {
     return (
-      <div className="bg-gray-900 rounded-lg border border-gray-800 p-4">
+      <div className="bg-gray-900 rounded-lg border border-gray-800 p-2 h-full flex flex-col">
         <div className="text-gray-400 uppercase font-bold tracking-wider text-[14px] mb-4">Lights</div>
-        <div className="text-gray-500 text-sm">Loading...</div>
+        <div className="text-gray-500 text-sm flex-1 flex items-center justify-center">Loading...</div>
       </div>
     )
   }
 
   return (
-    <div className="bg-gray-900 rounded-lg border border-gray-800 p-4">
+    <div className="bg-gray-900 rounded-lg border border-gray-800 p-2 h-full flex flex-col">
       <div className="text-gray-400 uppercase font-bold tracking-wider text-[14px] mb-4">Lights</div>
       
       {lights.length === 0 ? (
-        <div className="text-gray-500 text-sm">No lights found</div>
+        <div className="text-gray-500 text-sm flex-1 flex items-center justify-center">No lights found</div>
       ) : (
-        <div className="space-y-4">
+        <div className="flex-1 overflow-y-auto">
           {lights.map(light => {
             const status = statuses[light.device_name!]
             if (!status) return null
@@ -130,27 +130,27 @@ export default function VerticalLightsBlock({ location, cluster }: VerticalLight
             const isOn = status && status.intensity > 0
             
             return (
-              <div key={light.device_name} className={`${!isOn ? 'opacity-50' : ''}`}>
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-[12px] text-gray-300 font-medium truncate max-w-[120px]" title={light.display_name || light.device_name}>
+              <div key={light.device_name} className={`${!isOn ? 'opacity-50' : ''} mb-4`}>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs text-gray-300 font-medium truncate max-w-[120px]" title={light.display_name || light.device_name}>
                     {light.display_name || light.device_name}
                   </span>
-                  <div className="flex items-center gap-2 text-[12px]">
+                  <div className="flex items-center gap-2 text-xs">
                     <div className="flex items-center gap-1">
                       <span className="text-gray-500">CUR</span>
-                      <span className="bg-gray-800 px-1.5 py-0.5 rounded text-cyan-400 font-mono min-w-[32px] text-center">
+                      <span className="bg-gray-800 px-1 py-0.5 rounded text-cyan-400 font-mono min-w-[30px] text-center">
                         {currentIntensity}%
                       </span>
                     </div>
                     {dayTarget > 0 && (
                       <div className="flex items-center gap-1">
                         <span className="text-gray-500">TGT</span>
-                        <span className="bg-gray-800 px-1.5 py-0.5 rounded text-amber-400 font-mono min-w-[32px] text-center">
+                        <span className="bg-gray-800 px-1 py-0.5 rounded text-amber-400 font-mono min-w-[30px] text-center">
                           {dayTarget}%
                         </span>
                       </div>
                     )}
-                    <span className={`text-xs px-2 py-1 rounded ${
+                    <span className={`text-xs px-2 py-0.5 rounded ${
                       isOn 
                         ? 'bg-green-900/50 text-green-400 border border-green-800/50' 
                         : 'bg-gray-800 text-gray-500 border border-gray-700'
@@ -161,7 +161,7 @@ export default function VerticalLightsBlock({ location, cluster }: VerticalLight
                 </div>
                 
                 <div className="flex items-center gap-2">
-                  <div className="relative flex-1 h-5">
+                  <div className="relative flex-1 h-6">
                     <div className="absolute inset-0 bg-gray-800 rounded overflow-hidden">
                       <div 
                         className="absolute h-full bg-gradient-to-r from-blue-600 to-blue-400 transition-all"
@@ -179,15 +179,15 @@ export default function VerticalLightsBlock({ location, cluster }: VerticalLight
                     />
                     {dayTarget > 0 && (
                       <div 
-                        className="absolute top-0 w-1 h-full bg-amber-400 rounded"
-                        style={{ left: `calc(${dayTarget}% - 2px)` }}
+                        className="absolute top-0 w-0.5 h-full bg-amber-400 rounded"
+                        style={{ left: `calc(${dayTarget}% - 1px)` }}
                         title={`Day Target: ${dayTarget}%`}
                       />
                     )}
                     {pendingTargets[light.device_name!] !== undefined && (
                       <div 
-                        className="absolute top-0 w-1 h-full bg-yellow-400 rounded"
-                        style={{ left: `calc(${displayTarget}% - 2px)` }}
+                        className="absolute top-0 w-0.5 h-full bg-yellow-400 rounded"
+                        style={{ left: `calc(${displayTarget}% - 1px)` }}
                         title={`Pending: ${displayTarget}%`}
                       />
                     )}
@@ -199,19 +199,19 @@ export default function VerticalLightsBlock({ location, cluster }: VerticalLight
                     value={displayTarget}
                     onChange={(e) => handleTargetChange(light.device_name!, Math.max(0, Math.min(100, parseInt(e.target.value) || 0)))}
                     disabled={!isOn}
-                    className="w-12 h-6 px-1 text-[14px] text-center bg-gray-800 border border-gray-700 rounded text-gray-200 disabled:opacity-50"
+                    className="w-12 h-6 px-1 text-xs text-center bg-gray-800 border border-gray-700 rounded text-gray-200 disabled:opacity-50 focus:outline-none focus:border-cyan-500 transition-colors"
                   />
-                  <span className="text-[12px] text-gray-500">%</span>
+                  <span className="text-xs text-gray-500">%</span>
                 </div>
               </div>
             )
           })}
           
           {hasPendingChanges && (
-            <div className="pt-2 border-t border-gray-800">
+            <div className="pt-4 border-t border-gray-800 mt-auto">
               <button
                 onClick={savePendingChanges}
-                className="w-full px-4 py-2 bg-cyan-700 hover:bg-cyan-600 rounded text-white text-xs font-bold tracking-wide transition-colors"
+                className="w-full px-3 py-2 bg-cyan-700 hover:bg-cyan-600 rounded text-white text-xs font-bold tracking-wide transition-colors focus:outline-none focus:ring-2 focus:ring-cyan-500/50"
               >
                 Save Pending Changes
               </button>

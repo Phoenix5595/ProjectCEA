@@ -376,7 +376,7 @@ async def set_pid_mode(
         logger.info(f"Auto-tuning started for {device_type}")
     elif update.mode != "auto_pid" and current_mode == "auto_pid":
         # Stopping auto-tune
-        await database.update_autotune_state(device_type, is_active=False, status="idle")
+        await database.update_autotune_state(device_type, state="idle")
         logger.info(f"Auto-tuning stopped for {device_type}")
 
     # Return updated mode
@@ -448,11 +448,10 @@ async def stop_autotune(
         Updated autotune status
     """
     # Update autotune state
-    await database.update_autotune_state(device_type, is_active=False, status="idle")
+    await database.update_autotune_state(device_type, state="idle")
 
     # Change mode to 'pid' (manual)
     await database.set_pid_control_mode(device_type, "pid", updated_by="system")
 
     logger.info(f"Auto-tuning force stopped for {device_type}, mode set to 'pid'")
-
     return await get_autotune_status(device_type, database)
