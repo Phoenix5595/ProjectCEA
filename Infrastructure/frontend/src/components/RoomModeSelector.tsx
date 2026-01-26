@@ -6,6 +6,7 @@ import { MODE_DISPLAY_NAMES, SUBMODE_DISPLAY_NAMES, MODE_COLORS, SUBMODE_COLORS 
 interface RoomModeSelectorProps {
   currentMode: RoomModeWithParams | null
   onModeChange: (mode: string, submode?: string) => void
+  location?: string // Add location prop to disable mode changes for Veg
 }
 
 const SUBMODE_ABBREV: Record<string, string> = {
@@ -16,8 +17,10 @@ const SUBMODE_ABBREV: Record<string, string> = {
 
 export default function RoomModeSelector({
   currentMode,
-  onModeChange
+  onModeChange,
+  location
 }: RoomModeSelectorProps) {
+  const isVegRoom = location === 'Veg Room'
   const [modes, setModes] = useState<RoomMode[]>([])
   const [submodes, setSubmodes] = useState<FlowerSubmode[]>([])
   const [isOpen, setIsOpen] = useState(false)
@@ -70,9 +73,10 @@ export default function RoomModeSelector({
     <div className="flex items-center gap-1">
       <div className="relative">
         <button
-          onClick={() => setIsOpen(!isOpen)}
-          disabled={loading}
-          className={`${bgColor} px-3 py-1 rounded text-white text-xs font-bold uppercase tracking-wider flex items-center gap-2 hover:opacity-90 transition-opacity disabled:opacity-50`}
+          onClick={() => !isVegRoom && setIsOpen(!isOpen)}
+          disabled={loading || isVegRoom}
+          className={`${bgColor} px-3 py-1 rounded text-white text-xs font-bold uppercase tracking-wider flex items-center gap-2 hover:opacity-90 transition-opacity disabled:opacity-50 ${isVegRoom ? 'cursor-not-allowed' : ''}`}
+          title={isVegRoom ? 'Veg room is locked to veg mode' : 'Change mode'}
         >
           {loading ? '...' : displayName}
           <svg className={`w-3 h-3 transition-transform ${isOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">

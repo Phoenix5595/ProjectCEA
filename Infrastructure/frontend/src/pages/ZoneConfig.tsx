@@ -105,7 +105,7 @@ export default function ZoneConfig() {
       <div className="max-w-[1920px] mx-auto h-[calc(100vh-1rem)] flex flex-col">
         <div className="flex items-center justify-between mb-2 px-1">
           <h1 className="text-lg font-bold text-gray-100 flex items-center gap-2">
-            <span>�</span> 
+            <span>{location === 'Veg Room' ? '🌱' : location === 'Flower Room' ? '🌻' : '🌿'}</span> 
             {cluster === 'main' ? getLocationDisplayName(location) : `${getLocationDisplayName(location)} - ${cluster}`}
           </h1>
           <div className="flex items-center gap-3">
@@ -124,6 +124,7 @@ export default function ZoneConfig() {
             <RoomModeSelector
               currentMode={roomMode}
               onModeChange={handleModeChange}
+              location={location}
             />
             <Link to="/" className="text-xs text-gray-400 hover:text-white font-medium flex items-center gap-1 bg-gray-800 px-2 py-1 rounded border border-gray-700 hover:border-gray-500 transition-colors">
               <span>←</span> Back
