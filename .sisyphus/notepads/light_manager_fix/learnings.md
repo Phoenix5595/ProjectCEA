@@ -1,0 +1,3 @@
+- Implemented Redis-first mode resolution in ControlEngine to improve resilience against Database downtime.
+- Reused existing read_schedule_state from Redis client mixins.
+- Handled both nested ('room', 'climate') and flat structures for Redis schedule state to maintain compatibility with tests.
