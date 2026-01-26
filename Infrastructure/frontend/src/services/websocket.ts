@@ -62,6 +62,9 @@ class WebSocketClient {
           this.handleMessage(message);
         } catch (e) {
           logger.error('Error parsing WebSocket message:', e);
+          logger.error('Raw message data:', event.data);
+          // Attempt to recover by continuing with next message
+          // Don't break the connection for malformed messages
         }
       };
 

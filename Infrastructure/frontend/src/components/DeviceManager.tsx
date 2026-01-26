@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { apiClient } from '../services/api'
 import { logger } from '../utils/logger'
+import { useToast } from '../contexts/ToastContext'
 import { ZONES } from '../config/zones'
 
 interface ChannelInfo {
@@ -31,7 +32,8 @@ const DEVICE_TYPES = [
 ]
 
 export default function DeviceManager() {
-  const [channels, setChannels] = useState<Record<string, ChannelInfo>>({})
+  const { showToast } = useToast();
+  const [channels, setChannels] = useState<ChannelInfo[]>([])
   const [lightNames, setLightNames] = useState<LightName[]>([])
   const [loading, setLoading] = useState(true)
   const [editing, setEditing] = useState<number | null>(null)
@@ -58,7 +60,7 @@ export default function DeviceManager() {
     setLoading(true)
     try {
       const response = await apiClient.getChannels()
-      setChannels(response.channels)
+      setChannels(Object.values(response.channels) as ChannelInfo[])
       setLightNames(response.light_names)
     } catch (error) {
       logger.error('Error loading channels:', error)
@@ -68,7 +70,8 @@ export default function DeviceManager() {
   }
 
   function startEdit(channel: number) {
-    const channelInfo = channels[channel.toString()]
+    const channelInfo = channels.find(ch => ch.channel === channel)
+    if (!channelInfo) return
     const defaultLocation = channelInfo?.location || ZONES[0].location
     const defaultCluster = channelInfo?.cluster || ZONES.find(z => z.location === defaultLocation)?.cluster || ZONES[0].cluster
     
@@ -97,17 +100,17 @@ export default function DeviceManager() {
     if (editing === null) return
     
     if (!editForm.device_name.trim()) {
-      alert('Device name is required')
+      showToast('Device name is required', 'error')
       return
     }
     
     if (!editForm.device_type) {
-      alert('Device type is required')
+      showToast('Device type is required', 'error')
       return
     }
     
     if (editForm.device_type === 'light' && !editForm.light_name) {
-      alert('Light name is required for lights')
+      showToast('Light name is required for lights', 'error')
       return
     }
     
@@ -126,7 +129,7 @@ export default function DeviceManager() {
       cancelEdit()
     } catch (error) {
       logger.error('Error updating channel device:', error)
-      alert('Failed to update device configuration')
+      showToast('Failed to update device configuration', 'error')
     } finally {
       setSaving(false)
     }
@@ -174,7 +177,7 @@ export default function DeviceManager() {
             </thead>
             <tbody className="bg-white dark:bg-gray-900 divide-y divide-gray-200 dark:divide-gray-800">
               {Array.from({ length: 16 }, (_, i) => i).map((channel) => {
-                const channelInfo = channels[channel.toString()]
+                const channelInfo = channels.find(ch => ch.channel === channel)
                 const isEditing = editing === channel
                 const isEmpty = !channelInfo?.device_name
                 

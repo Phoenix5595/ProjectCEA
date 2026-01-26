@@ -51,7 +51,8 @@ const LightSlidersPanel = forwardRef<LightSlidersPanelRef, LightSlidersPanelProp
           const dayTargetIntensity = daySchedule?.target_intensity ?? null
           
           return { deviceName: light.device_name, status, dayTargetIntensity }
-        } catch {
+        } catch (err) {
+          logger.error(`Error getting light status for ${light.device_name}:`, err)
           return { deviceName: light.device_name, status: null, dayTargetIntensity: null }
         }
       })
@@ -214,7 +215,12 @@ function LightRow({
             min={0}
             max={100}
             value={displayTarget}
-            onChange={(e) => onTargetChange(parseInt(e.target.value))}
+            onChange={(e) => {
+              const value = parseInt(e.target.value)
+              if (!isNaN(value)) {
+                onTargetChange(value)
+              }
+            }}
             disabled={disabled}
             className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed"
           />
@@ -238,7 +244,12 @@ function LightRow({
           min={0}
           max={100}
           value={displayTarget}
-          onChange={(e) => onTargetChange(Math.max(0, Math.min(100, parseInt(e.target.value) || 0)))}
+          onChange={(e) => {
+            const value = parseInt(e.target.value)
+            if (!isNaN(value)) {
+              onTargetChange(value)
+            }
+          }}
           disabled={disabled}
           className="w-12 h-6 px-1 text-[14px] text-center bg-gray-800 border border-gray-700 rounded text-gray-200 disabled:opacity-50"
         />

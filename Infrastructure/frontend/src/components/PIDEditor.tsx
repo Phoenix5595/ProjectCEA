@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { apiClient } from '../services/api';
-import { logger } from '../utils/logger';
+import { logger } from '../utils/logger'
+import { useToast } from '../contexts/ToastContext';
 import { validatePIDParameter } from '../utils/validation';
 import type { 
   PIDParameters, 
@@ -16,6 +17,7 @@ const DEVICE_TYPES = ['heater', 'fan', 'co2'];
 
 
 export default function PIDEditor() {
+  const { showToast } = useToast();
   const [selectedDeviceType, setSelectedDeviceType] = useState<string>('heater');
   const [formData, setFormData] = useState<PIDParameterUpdate>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -102,7 +104,7 @@ export default function PIDEditor() {
       }
     } catch (error) {
       logger.error('Error changing mode:', error);
-      alert('Failed to change mode');
+      showToast('Failed to change mode', 'error');
     }
   }
 
@@ -122,7 +124,7 @@ export default function PIDEditor() {
 
   async function handleSubmit() {
     if (Object.keys(errors).length > 0) {
-      alert('Please fix validation errors before submitting');
+      showToast('Please fix validation errors before submitting', 'error');
       return;
     }
 
@@ -142,7 +144,7 @@ export default function PIDEditor() {
       setCurrentParams(newParams);
       loadPIDParameters();
     } catch (error: any) {
-      alert(`Error updating PID parameters: ${error.response?.data?.detail || error.message}`);
+      showToast(`Error updating PID parameters: ${error.response?.data?.detail || error.message}`, 'error');
     } finally {
       setLoading(false);
     }
