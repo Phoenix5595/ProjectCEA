@@ -55,7 +55,7 @@ export default function VerticalNotesBlock({ location, cluster, currentMode }: V
 
   if (loading) {
     return (
-      <div className="bg-gray-900 rounded-lg border border-gray-800 p-4">
+      <div className="bg-gray-900 rounded-lg border border-gray-800 p-2">
         <div className="text-gray-400 uppercase font-bold tracking-wider text-[14px] mb-4">Notes</div>
         <div className="text-gray-500 text-sm">Loading...</div>
       </div>
@@ -63,7 +63,7 @@ export default function VerticalNotesBlock({ location, cluster, currentMode }: V
   }
 
   return (
-    <div className="bg-gray-900 rounded-lg border border-gray-800 p-4">
+    <div className="bg-gray-900 rounded-lg border border-gray-800 p-2">
       <div className="text-gray-400 uppercase font-bold tracking-wider text-[14px] mb-4">
         Notes {currentMode && <span className="text-cyan-400">({currentMode})</span>}
       </div>

@@ -204,7 +204,7 @@ export default function ZoneConfig() {
               </div>
             </div>
             
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-2">
               <VerticalLightsBlock location={location} cluster={cluster} />
               <VerticalPIDBlock />
               <VerticalNotesBlock location={location} cluster={cluster} currentMode={roomMode?.mode_name} />
