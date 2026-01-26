@@ -80,7 +80,7 @@ export function ScheduleCard({
             </div>
           </div>
           <div>
-             <label className="text-[10px] text-gray-500 uppercase block mb-0.5">🍃 Δ (°C)</label>
+             <label className="text-[10px] text-gray-500 uppercase block mb-0.5">� Δ (°C)</label>
              <div className="flex gap-1">
                <input
                   type="number"
