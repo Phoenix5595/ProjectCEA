@@ -32,8 +32,7 @@ class SensorRepository(BaseRepository):
             async with self.pool.acquire() as conn:
                 row = await conn.fetchrow(
                     """SELECT m.value FROM measurement m
-                       JOIN sensor s ON m.sensor_id = s.sensor_id
-                       WHERE s.name = $1 
+                       WHERE m.sensor_id = (SELECT sensor_id FROM sensor WHERE name = $1)
                        ORDER BY m.time DESC LIMIT 1""",
                     sensor_name,
                 )
@@ -62,15 +61,21 @@ class SensorRepository(BaseRepository):
             try:
                 async with self.pool.acquire() as conn:
                     rows = await conn.fetch(
-                        """SELECT DISTINCT ON (s.name) s.name, m.value 
+                        """SELECT DISTINCT ON (m.sensor_id) m.sensor_id, m.value 
                            FROM measurement m
-                           JOIN sensor s ON m.sensor_id = s.sensor_id
-                           WHERE s.name = ANY($1)
-                           ORDER BY s.name, m.time DESC""",
+                           WHERE m.sensor_id IN (SELECT sensor_id FROM sensor WHERE name = ANY($1))
+                           ORDER BY m.sensor_id, m.time DESC""",
                         missing_sensors,
                     )
+                    # Map back to sensor names
+                    sensor_names_query = await conn.fetch(
+                        "SELECT sensor_id, name FROM sensor WHERE name = ANY($1)",
+                        missing_sensors,
+                    )
+                    name_by_id = {row["sensor_id"]: row["name"] for row in sensor_names_query}
                     for row in rows:
-                        result[row["name"]] = float(row["value"])
+                        if row["sensor_id"] in name_by_id:
+                            result[name_by_id[row["sensor_id"]]] = float(row["value"])
             except Exception as e:
                 logger.error(f"Database batch read failed: {e}")
 
