@@ -362,7 +362,7 @@ class DatabaseManager:
         """Set device state in database and Redis state keys."""
         if self._device_repo:
             return await self._device_repo.set_device_state(
-                location, cluster, device_name, channel, state, mode
+                location, cluster, device_name, channel, bool(state), mode
             )
         raise RuntimeError("DeviceRepository not initialized - call initialize() first")
 
@@ -479,24 +479,26 @@ class DatabaseManager:
         self,
         location: str,
         cluster: str,
-        mode: str,
-        setpoint_type: str,
-        raw_value: float,
-        ramped_value: float,
-        ramp_progress: float,
-        source: str = "system",
+        mode: str | None,
+        heating_setpoint: float | None = None,
+        cooling_setpoint: float | None = None,
+        humidity: float | None = None,
+        co2: float | None = None,
+        vpd: float | None = None,
+        timestamp: datetime | None = None,
     ) -> bool:
-        """Log effective setpoint to effective_setpoints table."""
+        """Log effective setpoint to effective_setpoints table (deprecated - use log_effective_setpoints)."""
         if self._setpoint_repo:
             return await self._setpoint_repo.log_effective_setpoint(
                 location,
                 cluster,
                 mode,
-                setpoint_type,
-                raw_value,
-                ramped_value,
-                ramp_progress,
-                source,
+                heating_setpoint,
+                cooling_setpoint,
+                humidity,
+                co2,
+                vpd,
+                timestamp,
             )
         raise RuntimeError("SetpointRepository not initialized - call initialize() first")
 
@@ -700,7 +702,7 @@ class DatabaseManager:
             return await self._pid_repo.get_all_pid_parameters()
         raise RuntimeError("PIDRepository not initialized - call initialize() first")
 
-    async def get_pid_control_mode(self, device_type: str) -> dict | None:
+    async def get_pid_control_mode(self, device_type: str) -> dict[str, Any] | None:
         """Get PID control mode for a device type."""
         if self._pid_repo:
             return await self._pid_repo.get_pid_control_mode(device_type)
@@ -742,13 +744,13 @@ class DatabaseManager:
         if self._pid_repo:
             return await self._pid_repo.update_autotune_state(
                 device_type,
-                state,
-                progress,
-                current_step,
-                error_message,
-                result_kp,
-                result_ki,
-                result_kd,
+                state=state,
+                progress=progress,
+                current_step=current_step,
+                error_message=error_message,
+                result_kp=result_kp,
+                result_ki=result_ki,
+                result_kd=result_kd,
             )
         raise RuntimeError("PIDRepository not initialized - call initialize() first")
 
@@ -808,14 +810,14 @@ class DatabaseManager:
         device_name: str,
         start_time: dt_time,
         end_time: dt_time,
-        day_of_week: int | None = None,
+        day_of_week: list[int] | None = None,
         enabled: bool = True,
-        mode: str | None = None,
+        mode: str = "light",
         target_intensity: float | None = None,
         ramp_up_duration: int = 0,
         ramp_down_duration: int = 0,
         conn: asyncpg.Connection | None = None,
-    ) -> int:
+    ) -> int | None:
         """Create a new schedule."""
         if self._schedule_repo:
             # Convert time objects to strings for repository
@@ -846,26 +848,26 @@ class DatabaseManager:
         name: str | None = None,
         start_time: dt_time | None = None,
         end_time: dt_time | None = None,
-        day_of_week: int | None = None,
+        day_of_week: list[int] | None = None,
         enabled: bool | None = None,
         mode: str | None = None,
         target_intensity: float | None = None,
         ramp_up_duration: int | None = None,
         ramp_down_duration: int | None = None,
-    ) -> bool:
+    ) -> dict[str, Any] | None:
         """Update an existing schedule."""
         if self._schedule_repo:
             return await self._schedule_repo.update_schedule(
                 schedule_id,
-                name,
-                start_time,
-                end_time,
-                day_of_week,
-                enabled,
-                mode,
-                target_intensity,
-                ramp_up_duration,
-                ramp_down_duration,
+                name=name,
+                start_time=start_time,
+                end_time=end_time,
+                day_of_week=day_of_week,
+                enabled=enabled,
+                mode=mode,
+                target_intensity=target_intensity,
+                ramp_up_duration=ramp_up_duration,
+                ramp_down_duration=ramp_down_duration,
             )
         raise RuntimeError("ScheduleRepository not initialized - call initialize() first")
 
@@ -1128,7 +1130,7 @@ class DatabaseManager:
             return await self._room_mode_repo.get_flower_submodes()
         raise RuntimeError("RoomModeRepository not initialized - call initialize() first")
 
-    async def get_active_mode(self, location: str, cluster: str) -> dict | None:
+    async def get_active_mode(self, location: str, cluster: str) -> dict[str, Any] | None:
         """Get active mode for a location/cluster."""
         if self._room_mode_repo:
             return await self._room_mode_repo.get_active_mode(location, cluster)

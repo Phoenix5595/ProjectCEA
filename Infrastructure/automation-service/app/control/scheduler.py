@@ -38,7 +38,7 @@ class Scheduler:
     # Minimum light intensity (10%) - lowest setting at which lights emit light
     MINIMUM_LIGHT_INTENSITY = 10.0
 
-    def __init__(self, schedules: list[dict[str, any]]):
+    def __init__(self, schedules: list[dict[str, Any]]):
         """Initialize scheduler.
 
         Args:
@@ -628,7 +628,7 @@ class Scheduler:
 
         return None
 
-    def update_schedules(self, schedules: list[dict[str, any]]):
+    def update_schedules(self, schedules: list[dict[str, Any]]):
         """Update schedules list."""
         self.schedules = schedules
         logger.info(f"Updated schedules: {len(schedules)} schedules")
