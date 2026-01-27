@@ -78,21 +78,20 @@ Each aggregate stores **avg + min + max** to preserve swing visibility:
 
 ### MANDATORY Aggregation Thresholds
 
-| Duration | Source | Points (8 sensors) | Rationale |
-|----------|--------|-------------------|-----------|
-| **< 1 hour** | Raw measurement table | ~28,800 | Live tracking, every reading |
-| **1h - 24h** | measurement_1min | ~11,520 | 1-min buckets capture 40% swings |
-| **1d - 7d** | measurement_5min | ~16,128 | Still shows significant events |
-| **> 7 days** | measurement_hourly | ~1,344 | Long-term trends |
+| Duration | Source | Rationale |
+|----------|--------|-----------|
+| **< 1 hour** | Raw measurement table | Live tracking, every 1s reading |
+| **1h - 3h** | measurement_1min | 1-min buckets capture swings |
+| **3h - 24h** | measurement_5min | Balance detail vs performance |
+| **> 24h** | measurement_hourly | Long-term trends |
 
 ### FORBIDDEN
 
 | Action | Why |
 |--------|-----|
-| Using hourly aggregate for <7d | **HIDES CRITICAL SWINGS** |
-| Using 5-minute aggregate for <24h | **LOSES PRECISION** |
+| Using hourly aggregate for <24h | **HIDES CRITICAL SWINGS** |
+| Using 5-minute aggregate for <3h | **LOSES PRECISION** |
 | Any aggregation for <1h | **MUST BE RAW DATA** |
-| Optimizing for "fewer points" over precision | **THIS IS LIVE MONITORING** |
 | Removing min/max from aggregates | **SWINGS BECOME INVISIBLE** |
 
 ### Environmental Reality
