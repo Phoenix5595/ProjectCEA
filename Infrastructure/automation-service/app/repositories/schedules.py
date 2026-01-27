@@ -118,7 +118,7 @@ class ScheduleRepository(BaseRepository):
                 # Get any enabled light schedule to determine day/night times
                 row = await conn.fetchrow(
                     """
-                    SELECT start_time, end_time
+                    SELECT start_time, end_time, ramp_up_duration, ramp_down_duration
                     FROM schedules
                     WHERE location = $1 AND cluster = $2
                       AND device_name LIKE 'light%'
@@ -135,6 +135,8 @@ class ScheduleRepository(BaseRepository):
                     return {
                         "day_start_time": str(row["start_time"])[:5],
                         "day_end_time": str(row["end_time"])[:5],
+                        "ramp_up_duration": row.get("ramp_up_duration"),
+                        "ramp_down_duration": row.get("ramp_down_duration"),
                     }
         except Exception as e:
             logger.error(f"Failed to get room light schedule: {e}")

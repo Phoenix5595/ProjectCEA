@@ -881,6 +881,32 @@ class DatabaseManager:
             return await self._schedule_repo.delete_schedules_bulk(schedule_ids)
         raise RuntimeError("ScheduleRepository not initialized - call initialize() first")
 
+    async def update_light_schedule_ramp_times(
+        self,
+        location: str,
+        cluster: str,
+        ramp_up_minutes: int,
+        ramp_down_minutes: int,
+    ) -> int:
+        """Update ramp times for all DAY light schedules in a location/cluster."""
+        pool = await self._get_pool()
+        async with pool.acquire() as conn:
+            result = await conn.execute(
+                """
+                UPDATE schedules
+                SET ramp_up_duration = $3, ramp_down_duration = $4
+                WHERE location = $1 AND cluster = $2
+                AND device_name LIKE 'light%' AND mode = 'DAY'
+                """,
+                location,
+                cluster,
+                ramp_up_minutes,
+                ramp_down_minutes,
+            )
+            count = int(result.split()[-1])
+            logger.info(f"Updated {count} light schedules ramp times for {location}/{cluster}")
+            return count
+
     async def load_schedule_state_to_redis(self) -> None:
         """Load all schedule state from database to Redis following canonical schema.
 

@@ -236,5 +236,16 @@ async def update_room_parameters(
 
     await db.save_mode_parameters(location, cluster, mode_name, submode_name, merged_params)
 
+    # Sync light ramp times to existing light schedules if they were updated
+    if "light_ramp_up_minutes" in updates or "light_ramp_down_minutes" in updates:
+        light_ramp_up = merged_params.get("light_ramp_up_minutes", 15)
+        light_ramp_down = merged_params.get("light_ramp_down_minutes", 15)
+
+        await db.update_light_schedule_ramp_times(location, cluster, light_ramp_up, light_ramp_down)
+        logger.info(
+            f"Synced light ramp times to schedules: {location}/{cluster} "
+            f"ramp_up={light_ramp_up}min, ramp_down={light_ramp_down}min"
+        )
+
     logger.info(f"Parameters updated: {location}/{cluster} mode={mode_name}")
     return await get_room_mode_with_params(location, cluster, db)
