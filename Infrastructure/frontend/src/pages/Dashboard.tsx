@@ -29,7 +29,7 @@ interface SystemStats {
   }>
 }
 
-import type { Setpoint } from '../types/setpoint'
+
 
 export default function Dashboard() {
   const { theme, toggleTheme } = useTheme()

@@ -3,26 +3,33 @@
 
 # RS485 serial port configuration
 rs485:
-  port: /dev/serial0  # GPIO UART (or /dev/ttyUSB0 for USB adapter)
+  port: /dev/ttyUSB0  # USB adapter port (corrected from serial0)
   baudrate: 9600      # Modbus RTU baudrate
   timeout: 1.0        # Serial read timeout in seconds
 
+# Sensor configurations
+# Use discovered sensor IDs (likely 1, 2, 3) instead of high-range IDs
+sensors:
+  - modbus_id: 226
+    name: "soil_sensor_front_bed"
+    bed_name: "Front Bed"
+    room_name: "Flower Room"
+  
+  - modbus_id: 227
+    name: "soil_sensor_back_bed"
+    bed_name: "Back Bed"
+    room_name: "Flower Room"
+  
+  - modbus_id: 228
+    name: "soil_sensor_1"
+    bed_name: "Front Bed"
+    room_name: "Flower Room"
+
 # Polling configuration
 polling:
-  interval_seconds: 5  # Polling interval in seconds (how often to read sensors)
-  discovery_interval_seconds: 30  # Discovery interval in seconds (how often to scan bus for new sensors)
+  interval_seconds: 5  # Poll sensors every 5 seconds
+  discovery_interval_seconds: 30  # Scan for new sensors every 30 seconds
 
-# Sensor configurations
-# Each sensor must have a unique Modbus slave ID
-sensors:
-  - modbus_id: 1                    # Modbus slave ID (must be unique per sensor)
-    name: "soil_sensor_front_bed"    # Base name for sensor (snake_case)
-    bed_name: "Front Bed"           # Bed name (maps to rack.name in database)
-    room_name: "Flower Room"        # Room name
-
-# To add more sensors, add additional entries to the sensors list:
-#  - modbus_id: 2
-#    name: "soil_sensor_back_bed"
-#    bed_name: "Back Bed"
-#    room_name: "Flower Room"
-
+# Automatic sensor discovery
+# The service will automatically scan RS485 bus and configure proper sensor IDs
+# based on discovered hardware
