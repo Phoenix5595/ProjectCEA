@@ -104,14 +104,6 @@ automation-service.service (8001)
 | Block the control loop | 2s tick is deterministic |
 | Hardcode setpoints | Use database |
 
-## CURRENT PHASE: 1 (Reliability)
-
-1. ~~Fix device_type bug~~ ✓
-2. Fix bare excepts (14 remaining)
-3. Document and verify rollback
-4. Add watchdog
-5. Implement 100ms DB batching
-
 ## LOCKED DECISIONS
 
 | Topic | Decision |
