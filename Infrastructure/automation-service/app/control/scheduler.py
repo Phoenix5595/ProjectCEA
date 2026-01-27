@@ -311,19 +311,25 @@ class Scheduler:
                 # RAMP UP: Calculate intensity ramping from 10% (minimum) to day target
                 if ramp_up_duration > 0 and time_since_start < ramp_up_duration:
                     # Ramp up period: Always ramp from 10% (minimum) to day target (target_intensity)
-                    # Initialize ramp state if missing
+                    # Initialize ramp state if missing - calculate expected intensity from time
                     if ramp_key not in self._light_ramp_state:
+                        # Calculate where we SHOULD be based on elapsed time (handles service restarts)
+                        progress_from_time = min(max(time_since_start / ramp_up_duration, 0.0), 1.0)
+                        expected_intensity = (
+                            self.MINIMUM_LIGHT_INTENSITY
+                            + (target_intensity - self.MINIMUM_LIGHT_INTENSITY) * progress_from_time
+                        )
                         self._light_ramp_state[ramp_key] = {
-                            "start_intensity": self.MINIMUM_LIGHT_INTENSITY,
-                            "target_intensity": target_intensity,  # Day target is the maximum
-                            "ramp_start_timestamp": start_datetime,
-                            "ramp_duration": ramp_up_duration,
+                            "start_intensity": expected_intensity,
+                            "target_intensity": target_intensity,
+                            "ramp_start_timestamp": current_time,
+                            "ramp_duration": ramp_up_duration - time_since_start,
                             "ramp_type": "up",
                         }
                         logger.debug(
-                            f"Starting light ramp up for {device_name} ({location}/{cluster}): "
-                            f"{self.MINIMUM_LIGHT_INTENSITY:.1f}% -> {target_intensity:.1f}% (day target) "
-                            f"(duration: {ramp_up_duration}min)"
+                            f"Resuming light ramp up for {device_name} ({location}/{cluster}): "
+                            f"{expected_intensity:.1f}% -> {target_intensity:.1f}% (day target) "
+                            f"(remaining: {ramp_up_duration - time_since_start:.1f}min)"
                         )
 
                     ramp_state = self._light_ramp_state[ramp_key]
@@ -392,19 +398,27 @@ class Scheduler:
                     ramp_down_start = end_datetime - timedelta(minutes=ramp_down_duration)
 
                     if ramp_key not in self._light_ramp_state:
-                        # Starting new ramp down - always start from day target
-                        start_intensity = target_intensity  # Day target is the starting point
+                        # Calculate where we SHOULD be based on elapsed time (handles service restarts)
+                        time_into_ramp_down = ramp_down_duration - time_until_end
+                        progress_from_time = min(
+                            max(time_into_ramp_down / ramp_down_duration, 0.0), 1.0
+                        )
+                        expected_intensity = (
+                            target_intensity
+                            + (self.MINIMUM_LIGHT_INTENSITY - target_intensity) * progress_from_time
+                        )
                         self._light_ramp_state[ramp_key] = {
-                            "start_intensity": start_intensity,
-                            "target_intensity": self.MINIMUM_LIGHT_INTENSITY,  # Ramp down to 10% (minimum)
-                            "ramp_start_timestamp": ramp_down_start,
-                            "ramp_duration": ramp_down_duration,
+                            "start_intensity": expected_intensity,
+                            "target_intensity": self.MINIMUM_LIGHT_INTENSITY,
+                            "ramp_start_timestamp": current_time,
+                            "ramp_duration": time_until_end,
                             "ramp_type": "down",
                             "schedule_target_intensity": target_intensity,
                         }
                         logger.debug(
-                            f"Starting light ramp down for {device_name} ({location}/{cluster}): "
-                            f"{start_intensity:.1f}% (day target) -> {self.MINIMUM_LIGHT_INTENSITY:.1f}% (duration: {ramp_down_duration}min)"
+                            f"Resuming light ramp down for {device_name} ({location}/{cluster}): "
+                            f"{expected_intensity:.1f}% -> {self.MINIMUM_LIGHT_INTENSITY:.1f}% "
+                            f"(remaining: {time_until_end:.1f}min)"
                         )
 
                     ramp_state = self._light_ramp_state[ramp_key]
