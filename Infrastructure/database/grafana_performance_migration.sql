@@ -179,7 +179,7 @@ BEGIN
     IF v_duration > INTERVAL '24 hours' THEN
         -- Use hourly aggregate for >24h
         RETURN QUERY
-        SELECT m.time, m.sensor_name, m.avg_value, m.min_value, m.max_value
+        SELECT m.time, m.sensor_name, m.avg_value::REAL, m.min_value::REAL, m.max_value::REAL
         FROM measurement_hourly_grafana m
         WHERE m.sensor_name = ANY(p_sensor_names)
           AND m.time >= p_from AND m.time <= p_to
@@ -188,7 +188,7 @@ BEGIN
     ELSIF v_duration > INTERVAL '3 hours' THEN
         -- Use 5-minute aggregate for 3h-24h
         RETURN QUERY
-        SELECT m.time, m.sensor_name, m.avg_value, m.min_value, m.max_value
+        SELECT m.time, m.sensor_name, m.avg_value::REAL, m.min_value::REAL, m.max_value::REAL
         FROM measurement_5min_grafana m
         WHERE m.sensor_name = ANY(p_sensor_names)
           AND m.time >= p_from AND m.time <= p_to
@@ -197,7 +197,7 @@ BEGIN
     ELSIF v_duration > INTERVAL '1 hour' THEN
         -- Use 1-minute aggregate for 1h-3h
         RETURN QUERY
-        SELECT m.time, m.sensor_name, m.avg_value, m.min_value, m.max_value
+        SELECT m.time, m.sensor_name, m.avg_value::REAL, m.min_value::REAL, m.max_value::REAL
         FROM measurement_1min_grafana m
         WHERE m.sensor_name = ANY(p_sensor_names)
           AND m.time >= p_from AND m.time <= p_to
@@ -241,21 +241,21 @@ BEGIN
     
     IF v_duration > INTERVAL '24 hours' THEN
         RETURN QUERY
-        SELECT m.sensor_name, MIN(m.min_value), MAX(m.max_value), AVG(m.avg_value)::REAL
+        SELECT m.sensor_name, MIN(m.min_value)::REAL, MAX(m.max_value)::REAL, AVG(m.avg_value)::REAL
         FROM measurement_hourly_grafana m
         WHERE m.sensor_name = ANY(p_sensor_names)
           AND m.time >= p_from AND m.time <= p_to
         GROUP BY m.sensor_name;
     ELSIF v_duration > INTERVAL '3 hours' THEN
         RETURN QUERY
-        SELECT m.sensor_name, MIN(m.min_value), MAX(m.max_value), AVG(m.avg_value)::REAL
+        SELECT m.sensor_name, MIN(m.min_value)::REAL, MAX(m.max_value)::REAL, AVG(m.avg_value)::REAL
         FROM measurement_5min_grafana m
         WHERE m.sensor_name = ANY(p_sensor_names)
           AND m.time >= p_from AND m.time <= p_to
         GROUP BY m.sensor_name;
     ELSIF v_duration > INTERVAL '1 hour' THEN
         RETURN QUERY
-        SELECT m.sensor_name, MIN(m.min_value), MAX(m.max_value), AVG(m.avg_value)::REAL
+        SELECT m.sensor_name, MIN(m.min_value)::REAL, MAX(m.max_value)::REAL, AVG(m.avg_value)::REAL
         FROM measurement_1min_grafana m
         WHERE m.sensor_name = ANY(p_sensor_names)
           AND m.time >= p_from AND m.time <= p_to
