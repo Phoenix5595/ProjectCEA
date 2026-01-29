@@ -8,4 +8,5 @@
   - Ramp-in is shown as a diagonal from the previous period value to the new value across the configured minutes.
 - Environment variables (`.env`): `VITE_BACKEND_API_URL`, `VITE_AUTOMATION_API_URL`, `VITE_WEBSOCKET_URL`.
 - Keep `setpoints` and schedules in sync with backend schema (modes: DAY, NIGHT, PRE_DAY, PRE_NIGHT; includes `ramp_in_duration`).
+- ZoneConfig SAVE must update both mode_parameters and room schedule (POST room-schedule) so the control loop has correct per-device light schedules for the photoperiod.
 

@@ -49,9 +49,8 @@ class DeviceController:
         with LoggingContext(operation="process_device"):
             device_type = device_info.get("device_type", "")
 
-            # Log when processing dimmable lights
             if device_info.get("dimming_enabled") and device_info.get("dimming_type") == "dfr0971":
-                logger.info(f"Processing device {device_name} ({location}/{cluster})")
+                logger.debug(f"Processing device {device_name} ({location}/{cluster})")
 
             # Determine control mode and setpoint
             control_mode, setpoint = self._determine_control_mode(device_name, device_info, context)
@@ -354,32 +353,64 @@ class DeviceController:
         try:
             # Convert 0.0-1.0 to 0-100% intensity
             intensity_percent = round(intensity * 100)
+            relay_ok = True
+            dimmer_ok = False
 
             # CRITICAL: Sync relay state with dimmer
             # Relay ON when intensity > 0, OFF when intensity = 0
             if relay_channel is not None and self.relay_manager:
-                relay_state = 1 if intensity > 0 else 0
-
                 if intensity > 0:
                     # Turn relay ON first, then set dimmer (power before signal)
-                    self.relay_manager.set_device_state(location, cluster, device_name, 1)
-                    self.dfr0971_manager.set_intensity(board_id, dimming_channel, intensity_percent)
+                    relay_ok, relay_reason = self.relay_manager.set_device_state(
+                        location, cluster, device_name, 1
+                    )
+                    if not relay_ok:
+                        logger.warning(
+                            f"Relay ON failed for {device_name} ({location}/{cluster}): {relay_reason}"
+                        )
+                    dimmer_ok = self.dfr0971_manager.set_intensity(
+                        board_id, dimming_channel, intensity_percent
+                    )
+                    if not dimmer_ok:
+                        logger.warning(
+                            f"Dimmer set failed for {device_name} ({location}/{cluster}) "
+                            f"board={board_id} ch={dimming_channel}"
+                        )
                 else:
                     # Set dimmer to 0 first, then turn relay OFF (signal before power)
-                    self.dfr0971_manager.set_intensity(board_id, dimming_channel, 0)
-                    self.relay_manager.set_device_state(location, cluster, device_name, 0)
-
-                logger.info(
-                    f"Relay channel {relay_channel} set to {'ON' if relay_state else 'OFF'} for {device_name}"
+                    dimmer_ok = self.dfr0971_manager.set_intensity(
+                        board_id, dimming_channel, 0
+                    )
+                    if not dimmer_ok:
+                        logger.warning(
+                            f"Dimmer set to 0 failed for {device_name} ({location}/{cluster})"
+                        )
+                    relay_ok, relay_reason = self.relay_manager.set_device_state(
+                        location, cluster, device_name, 0
+                    )
+                    if not relay_ok:
+                        logger.warning(
+                            f"Relay OFF failed for {device_name} ({location}/{cluster}): {relay_reason}"
+                        )
+                logger.debug(
+                    f"Relay channel {relay_channel} set to {'ON' if intensity > 0 else 'OFF'} for {device_name}"
                 )
             else:
                 # No relay configured, just set dimmer
-                self.dfr0971_manager.set_intensity(board_id, dimming_channel, intensity_percent)
+                dimmer_ok = self.dfr0971_manager.set_intensity(
+                    board_id, dimming_channel, intensity_percent
+                )
+                if not dimmer_ok:
+                    logger.warning(
+                        f"Dimmer set failed for {device_name} ({location}/{cluster}) "
+                        f"board={board_id} ch={dimming_channel}"
+                    )
 
-            # Calculate voltage (0-10V range)
-            voltage = intensity * 10.0
+            # Write to Redis only what hardware actually reflects so Grafana matches reality
+            hw_ok = relay_ok and dimmer_ok
+            redis_percent = intensity_percent if hw_ok else 0
+            redis_voltage = (redis_percent / 100.0) * 10.0
 
-            # Write to Redis so API returns current state
             if (
                 self.database
                 and hasattr(self.database, "_automation_redis")
@@ -390,21 +421,39 @@ class DeviceController:
                         location,
                         cluster,
                         device_name,
-                        intensity_percent,
-                        voltage,
+                        redis_percent,
+                        redis_voltage,
                         board_id,
                         dimming_channel,
                     )
                 except Exception as redis_err:
                     logger.warning(f"Failed to write light intensity to Redis: {redis_err}")
 
-            logger.info(
-                f"Set {device_name} ({location}/{cluster}) to {intensity_percent}% "
-                f"(intensity: {intensity})"
-            )
+            if hw_ok:
+                logger.debug(
+                    f"Set {device_name} ({location}/{cluster}) to {intensity_percent}% "
+                    f"(intensity: {intensity})"
+                )
+            else:
+                logger.warning(
+                    f"Hardware control failed for {device_name} ({location}/{cluster}); "
+                    f"Redis written as 0% so Grafana shows actual state"
+                )
 
         except Exception as e:
             logger.error(f"Failed to set dimmable light {device_name}: {e}")
+            # On exception, write 0 to Redis so UI reflects unknown/off state
+            if (
+                self.database
+                and hasattr(self.database, "_automation_redis")
+                and self.database._automation_redis
+            ):
+                try:
+                    self.database._automation_redis.write_light_intensity(
+                        location, cluster, device_name, 0, 0.0, board_id, dimming_channel
+                    )
+                except Exception as redis_err:
+                    logger.warning(f"Failed to write 0 to Redis after error: {redis_err}")
 
     async def _control_binary_device(
         self,
@@ -423,7 +472,7 @@ class DeviceController:
         success = await self.relay_manager.set_channel_state(channel, state)
 
         if success:
-            logger.info(f"{device_name} ({location}/{cluster}) set to {'ON' if state else 'OFF'}")
+            logger.debug(f"{device_name} ({location}/{cluster}) set to {'ON' if state else 'OFF'}")
         else:
             logger.warning(f"Failed to set {device_name} ({location}/{cluster}) state")
 

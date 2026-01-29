@@ -2,13 +2,17 @@
 # Copy this file to automation_config.yaml and fill in your device mappings
 
 # Hardware Configuration
+# MCP23017 = relays only (on/off). DFR0971 = dimming only (0-10V). Use separate buses when possible.
 hardware:
-  i2c_bus: 1              # Raspberry Pi I2C bus (usually 1)
-  i2c_address: 0x20       # MCP23017 I2C address (0x20-0x27, check with: i2cdetect -y 1)
-  simulation: false        # Set to true for testing without hardware
+  i2c_bus: 1              # Legacy fallback for both (if mcp_i2c_bus/dfr0971_i2c_bus omitted)
+  mcp_i2c_bus: 0          # Relays only (MCP23017), typically bus 0
+  dfr0971_i2c_bus: 1      # Dimming only (DF Robot DAC), typically bus 1
+  i2c_address: 0x20        # MCP23017 I2C address (0x20-0x27, check with: i2cdetect -y 1)
+  simulation: false       # Set to true for testing without hardware
 
 # Device Configuration
-# Map each device to its MCP23017 channel (0-15)
+# MCP: 16 relay channels (0-15). DFR0971: 6 dimming channels (3 boards × 2 channels each).
+# Map each device to its MCP23017 channel (0-15); lights also need dimming_board_id + dimming_channel (0 or 1).
 # Each location can have multiple clusters (e.g., "Flower Room" has "front" and "back")
 devices:
   "Flower Room":
@@ -162,7 +166,7 @@ control:
         co2: 1000.0
   
   # Control Loop Settings
-  update_interval: 5        # seconds - How often automatic control runs (5-10 seconds recommended)
+  update_interval: 2       # seconds - How often control runs (1-5 max, non-negotiable)
 
 # Interlock Rules (Safety)
 # These are global rules that prevent conflicting device states

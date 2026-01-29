@@ -144,7 +144,9 @@ async def restore_light_intensities(database, config, dfr0971_manager) -> None:
                                 channel,
                             )
 
-                if intensity is not None:
+                # Skip restoring 0 to hardware: treat 0 as "no value" so a bad 0 in DB/Redis
+                # does not force lights off; the control loop will set intensity from the schedule.
+                if intensity is not None and intensity > 0:
                     # Restore intensity to hardware (but don't save to EEPROM - safety levels stay in EEPROM)
                     success = dfr0971_manager.set_intensity(
                         board_id, channel, intensity, store_to_eeprom=False
@@ -159,6 +161,11 @@ async def restore_light_intensities(database, config, dfr0971_manager) -> None:
                         logger.warning(
                             f"Failed to restore intensity for {location}/{cluster}/{device_name}"
                         )
+                elif intensity is not None and intensity == 0:
+                    logger.debug(
+                        f"Skipping restore of 0% for {location}/{cluster}/{device_name} "
+                        "(treat 0 as no value; control loop will set from schedule)"
+                    )
 
     if restored_count > 0:
         logger.info(f"Restored {restored_count} light intensity values from database/Redis")

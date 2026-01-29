@@ -102,6 +102,10 @@ class ControlEngine:
         # }
         self._effective_setpoints: dict[tuple[str, str], dict[str, Any]] = {}
 
+        # Throttle light effective_setpoints DB logging to reduce CPU/IO (log at most every 60s per device)
+        self._last_light_effective_log: dict[tuple[str, str, str], datetime] = {}
+        self._light_effective_log_interval_sec = 60
+
         # Performance optimizations
         self._device_hierarchy_cache: dict[str, dict[str, dict[str, dict[str, Any]]]] | None = None
         self._sensor_mapping_cache: dict[str, str] | None = None
@@ -241,9 +245,8 @@ class ControlEngine:
 
         for location, clusters in devices.items():
             for cluster, cluster_devices in clusters.items():
-                # Log when processing Veg Room or Flower Room to verify control loop is running
                 if location in ["Veg Room", "Flower Room"]:
-                    logger.info(
+                    logger.debug(
                         f"Control loop processing {location}/{cluster} with {len(cluster_devices)} devices"
                     )
 
@@ -385,9 +388,8 @@ class ControlEngine:
                     current_mode,
                 )
 
-                # Log effective light intensities for all dimmable lights
+                # Log effective light intensities for all dimmable lights (throttled: I2C + scheduler + DB at most every 60s per device to reduce CPU)
                 if self.dfr0971_manager:
-                    light_intensities_dict = {}  # For Redis batch write
                     for device_name, device_info in cluster_devices.items():
                         if (
                             device_info.get("dimming_enabled")
@@ -395,41 +397,40 @@ class ControlEngine:
                         ):
                             board_id = device_info.get("dimming_board_id")
                             channel = device_info.get("dimming_channel")
-                            if board_id is not None and channel is not None:
-                                # Get current intensity from hardware
-                                current_intensity = (
-                                    self.dfr0971_manager.get_intensity(board_id, channel) or 0.0
-                                )
-
-                                # Get effective intensity details from scheduler
-                                intensity_details = self.scheduler.get_light_intensity_details(
-                                    location, cluster, device_name, current_time, current_intensity
-                                )
-
-                                if intensity_details:
-                                    # Log to effective_setpoints table
-                                    await self.database.log_effective_setpoints(
-                                        location=location,
-                                        cluster=cluster,
-                                        mode=current_mode,
-                                        device_name=device_name,
-                                        effective_light_intensity=intensity_details[
-                                            "effective_intensity"
-                                        ],
-                                        nominal_light_intensity=intensity_details[
-                                            "nominal_intensity"
-                                        ],
-                                        ramp_progress_light=intensity_details["ramp_progress"],
-                                        timestamp=current_time,
-                                    )
-
-                                    # Collect for Redis batch write
-                                    light_intensities_dict[device_name] = intensity_details[
+                            if board_id is None or channel is None:
+                                continue
+                            log_key = (location, cluster, device_name)
+                            last_log = self._last_light_effective_log.get(log_key)
+                            should_log = (
+                                last_log is None
+                                or (current_time - last_log).total_seconds()
+                                >= self._light_effective_log_interval_sec
+                            )
+                            if not should_log:
+                                continue
+                            # Only do I2C + scheduler + DB when throttle allows
+                            current_intensity = (
+                                self.dfr0971_manager.get_intensity(board_id, channel) or 0.0
+                            )
+                            intensity_details = self.scheduler.get_light_intensity_details(
+                                location, cluster, device_name, current_time, current_intensity
+                            )
+                            if intensity_details:
+                                await self.database.log_effective_setpoints(
+                                    location=location,
+                                    cluster=cluster,
+                                    mode=current_mode,
+                                    device_name=device_name,
+                                    effective_light_intensity=intensity_details[
                                         "effective_intensity"
-                                    ]
-
-                    # Light intensities are logged to database but not stored in Redis state
-                    # (they're persisted separately for hardware restoration)
+                                    ],
+                                    nominal_light_intensity=intensity_details[
+                                        "nominal_intensity"
+                                    ],
+                                    ramp_progress_light=intensity_details["ramp_progress"],
+                                    timestamp=current_time,
+                                )
+                                self._last_light_effective_log[log_key] = current_time
 
         # Log automation state for all devices
         await self._log_automation_state()
@@ -629,7 +630,7 @@ class ControlEngine:
                     f"vpd_control (VPD: {current_vpd:.2f}kPa, setpoint: {vpd_setpoint:.2f}kPa)",
                     sensor_values,
                 )
-                logger.info(
+                logger.debug(
                     f"VPD control: {location}/{cluster}/{device_name} "
                     f"{'ON' if target_state == 1 else 'OFF'} "
                     f"(VPD: {current_vpd:.2f}kPa, setpoint: {vpd_setpoint:.2f}kPa)"

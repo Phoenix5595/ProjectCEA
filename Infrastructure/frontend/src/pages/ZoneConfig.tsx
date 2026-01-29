@@ -67,16 +67,37 @@ export default function ZoneConfig() {
     })
   }
 
+  /** Format time to HH:MM (mode_parameters may return HH:MM:SS from DB). */
+  function toHHMM(t: string | undefined): string {
+    if (!t) return '06:00'
+    const parts = t.trim().split(/[:\s]/)
+    const h = parts[0]?.padStart(2, '0') ?? '06'
+    const m = parts[1]?.padStart(2, '0') ?? '00'
+    return `${h}:${m}`
+  }
+
   async function handleSave() {
     if (!roomMode || !location || !cluster) return
-    
+
     setSaving(true)
     setError(null)
     try {
       const updated = await apiClient.updateRoomParameters(location, cluster, roomMode.parameters)
       setRoomMode(updated)
       setSavedParams({ ...updated.parameters })
-      
+
+      const p = updated.parameters
+      const dayStart = toHHMM(p.day_start_time)
+      const nightStart = toHHMM(p.night_start_time)
+      await apiClient.saveRoomSchedule(location, cluster, {
+        day_start_time: dayStart,
+        day_end_time: nightStart,
+        night_start_time: nightStart,
+        night_end_time: dayStart,
+        ramp_up_duration: p.ramp_up_minutes ?? null,
+        ramp_down_duration: p.ramp_down_minutes ?? null,
+      })
+
       setSuccess('Saved')
       setTimeout(() => setSuccess(null), 2000)
     } catch (err: any) {

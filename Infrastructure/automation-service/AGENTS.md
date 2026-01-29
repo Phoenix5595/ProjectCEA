@@ -44,9 +44,22 @@ automation-service/
 - PRE_NIGHT: Fetches DAY setpoints, ramps to PRE_NIGHT
 - PRE_DAY: Fetches NIGHT setpoints, ramps to PRE_DAY
 
-### Hardware
-- **MCP23017** (0x20): 16-channel relay expander
-- **DFR0971** (0x58-0x5A): 0-10V DAC for light dimming
+### Light ramp (time-based, per-device)
+- Light ramp state is keyed by `(location, cluster, device_name)`. Each device has its own ramp.
+- **Reset/resume is time-based**: intensity is computed from time since schedule start (`time_since_start / ramp_up_duration`). On service restart, the ramp resumes by recalculating where the light should be from elapsed time (no stored intensity).
+- The system is designed so every dimmable light **always has an active schedule**; a device never has no active light schedule. If the scheduler returns None, the control loop does not update that device (no relay/dimmer change).
+
+- **MCP23017** (relays) → I2C bus 0, address 0x27. 16 ON/OFF channels (0–15).
+- **DFR0971** (dimming) → I2C bus 1, addresses 0x88 / 0x89 / 0x90. 6 dimming channels total (3 boards × 2 channels).
+- Each DFR0971 board has 2 channels (0-1).
+- Channel conflicts are prevented by startup validation using Pydantic models; ensure no duplicate channel assignments.
+- Do not use the same I2C bus for both unless intentionally single-bus; never swap roles (MCP for dimming, DFR for relays). Config: `automation_config.yaml` `hardware.mcp_i2c_bus` and `hardware.dfr0971_i2c_bus`.
+
+- Troubleshooting steps:
+  1) Check I2C bus with `i2cdetect -y <bus>`
+  2) Check board availability using API endpoints
+  3) Always check DFR0971 status first via `/api/hardware/dfr0971/status`
+  4) Check relay status with `journalctl` logs
 
 ## API GROUPS
 

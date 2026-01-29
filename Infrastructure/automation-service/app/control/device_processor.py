@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, time
+from zoneinfo import ZoneInfo
 from typing import Any
 
 from app.control.device_controller import DeviceController
@@ -12,6 +13,11 @@ from app.hardware.dfr0971 import DFR0971Manager
 from shared.logging import get_logger
 
 logger = get_logger(__name__)
+
+# Fallback day window when room has no schedule (mode stays NIGHT): 06:00–22:00 local
+_FALLBACK_DAY_START = time(6, 0)
+_FALLBACK_DAY_END = time(22, 0)
+_LOCAL_TZ = ZoneInfo("America/Toronto")
 
 
 class DeviceProcessor:
@@ -36,6 +42,9 @@ class DeviceProcessor:
         self.database = database
         self.dfr0971_manager = dfr0971_manager
         self.scheduler = scheduler
+        # Throttle "no schedule" warning to once per 5 min per device (avoid log spam / CPU)
+        self._last_no_schedule_log: dict[tuple[str, str, str], float] = {}
+        self._no_schedule_log_interval_sec = 300.0
 
     async def process_devices(
         self,
@@ -98,6 +107,18 @@ class DeviceProcessor:
                         logger.debug(
                             f"Light {device_name} scheduled intensity: {intensity_details['effective_intensity']}%"
                         )
+                    else:
+                        key = (location, cluster, device_name)
+                        now_ts = current_time.timestamp()
+                        last = self._last_no_schedule_log.get(key, 0.0)
+                        if now_ts - last >= self._no_schedule_log_interval_sec:
+                            self._last_no_schedule_log[key] = now_ts
+                            logger.warning(
+                                f"No active light schedule for {location}/{cluster}/{device_name}; "
+                                f"light will not be updated. Re-save room schedule in ZoneConfig or call "
+                                f"POST /api/room-schedule/{location}/{cluster}/sync-from-mode-parameters"
+                            )
+                    # System design: every dimmable light has an active schedule; no fallback.
 
             await self.device_controller.process_device(
                 location, cluster, device_name, device_info, sensor_values, current_time, context

@@ -149,7 +149,12 @@ async def set_intensity(
                 or "Interlock blocked: Cannot set intensity due to interlock constraint",
             )
 
-    # Set intensity
+    # Sync relay state with dimmer (same order as device_controller._control_dimmable_light)
+    if relay_manager:
+        if control.intensity > 0:
+            relay_manager.set_device_state(location, cluster, device_name, 1)
+
+    # Set intensity (dimmer)
     success = dfr0971_manager.set_intensity(board_id, channel, control.intensity)
 
     if not success:
@@ -157,6 +162,9 @@ async def set_intensity(
             status_code=500,
             detail=f"Failed to set intensity for board {board_id}, channel {channel}",
         )
+
+    if relay_manager and control.intensity == 0:
+        relay_manager.set_device_state(location, cluster, device_name, 0)
 
     # Get current voltage
     voltage = dfr0971_manager.get_voltage(board_id, channel)

@@ -150,8 +150,8 @@ class ServiceContainer:
             await set_safety_levels(self.config, self.dfr0971_manager)
             await restore_light_intensities(self.database, self.config, self.dfr0971_manager)
 
-            # 10. Initialize background tasks
-            update_interval = self.config.get("control.update_interval", 1)
+            # 10. Initialize background tasks (control loop max 5s, non-negotiable)
+            update_interval = self.config.get_update_interval()
             self.background_tasks = BackgroundTasks(
                 control_engine=self.control_engine,
                 database=self.database,
@@ -173,38 +173,57 @@ class ServiceContainer:
             raise
 
     async def _init_hardware(self) -> None:
-        """Initialize hardware components."""
+        """Initialize hardware components.
+
+        MCP23017 = relays only (on/off), typically bus 0.
+        DFR0971 = dimming only (0-10V), typically bus 1.
+        """
         hardware_config = self.config.get("hardware", {})
         simulation = hardware_config.get("simulation", False)
+        i2c_bus_legacy = hardware_config.get("i2c_bus", 1)
 
-        # Initialize MCP23017 relay driver
-        i2c_bus = hardware_config.get("i2c_bus", 1)
+        # Separate buses: MCP for relays, DFR0971 for dimming (fallback to legacy i2c_bus)
+        mcp_i2c_bus = hardware_config.get("mcp_i2c_bus", i2c_bus_legacy)
+        dfr0971_i2c_bus = hardware_config.get("dfr0971_i2c_bus", i2c_bus_legacy)
         i2c_address = hardware_config.get("i2c_address", 32)
+        dfr0971_boards = hardware_config.get("dfr0971_boards", [])
 
+        if dfr0971_boards and mcp_i2c_bus == dfr0971_i2c_bus:
+            logger.warning(
+                "MCP and DFR0971 share the same I2C bus (%s); expected: MCP on bus 0 (relays), "
+                "DFR0971 on bus 1 (dimming)",
+                mcp_i2c_bus,
+            )
+
+        # Initialize MCP23017 relay driver (relays only)
         try:
             self.mcp23017 = MCP23017Driver(
-                i2c_bus=i2c_bus, i2c_address=i2c_address, simulation=simulation
+                i2c_bus=mcp_i2c_bus, i2c_address=i2c_address, simulation=simulation
             )
             logger.info(
-                f"MCP23017 initialized (bus={i2c_bus}, addr=0x{i2c_address:02x}, simulation={simulation})"
+                f"MCP23017 initialized on bus {mcp_i2c_bus} (relays only, addr=0x{i2c_address:02x}, simulation={simulation})"
             )
         except Exception as e:
             logger.error(f"Failed to initialize MCP23017: {e}")
             self.mcp23017 = MCP23017Driver(simulation=True)
             logger.warning("Using MCP23017 in simulation mode")
 
-        # Initialize DFR0971 light dimming manager
-        dfr0971_boards = hardware_config.get("dfr0971_boards", [])
+        # Initialize DFR0971 light dimming manager (dimming only)
         if dfr0971_boards:
             try:
-                self.dfr0971_manager = DFR0971Manager(i2c_bus=i2c_bus, simulation=simulation)
+                self.dfr0971_manager = DFR0971Manager(
+                    i2c_bus=dfr0971_i2c_bus, simulation=simulation
+                )
                 # Add each board to the manager
                 for board in dfr0971_boards:
                     board_id = board.get("board_id", 0)
                     i2c_addr = board.get("i2c_address", 0x58)
                     board_name = board.get("name", f"Board {board_id}")
                     self.dfr0971_manager.add_board(board_id, i2c_addr, board_name)
-                logger.info(f"DFR0971 manager initialized with {len(dfr0971_boards)} boards")
+                logger.info(
+                    f"DFR0971 manager initialized on bus {dfr0971_i2c_bus} (dimming only) "
+                    f"with {len(dfr0971_boards)} boards"
+                )
             except Exception as e:
                 logger.error(f"Failed to initialize DFR0971 manager: {e}")
                 self.dfr0971_manager = None

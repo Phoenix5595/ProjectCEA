@@ -12,6 +12,9 @@ from shared.logging import get_logger
 logger = get_logger(__name__)
 
 
+CONTROL_LOOP_INTERVAL_MAX = 5  # seconds, non-negotiable
+
+
 class BackgroundTasks:
     """Manages background automation tasks.
 
@@ -32,13 +35,13 @@ class BackgroundTasks:
         Args:
             control_engine: Control engine instance
             database: Database manager instance
-            update_interval: Control loop interval in seconds (default: 1)
+            update_interval: Control loop interval in seconds (1–5, clamped)
             alarm_manager: Optional alarm manager instance
         """
         self.control_engine = control_engine
         self.database = database
         self.alarm_manager = alarm_manager
-        self.update_interval = update_interval
+        self.update_interval = max(1, min(CONTROL_LOOP_INTERVAL_MAX, int(update_interval)))
         self._running = False
         self._task: asyncio.Task | None = None
         self._heartbeat_task: asyncio.Task | None = None
@@ -89,13 +92,13 @@ class BackgroundTasks:
         logger.info("Background control loop and tasks stopped")
 
     def set_update_interval(self, interval: int) -> None:
-        """Update control loop interval.
+        """Update control loop interval (1–5s, clamped).
 
         Args:
             interval: New interval in seconds
         """
-        self.update_interval = interval
-        logger.info(f"Control loop interval updated to {interval}s")
+        self.update_interval = max(1, min(CONTROL_LOOP_INTERVAL_MAX, int(interval)))
+        logger.info(f"Control loop interval updated to {self.update_interval}s")
 
     async def _control_loop(self) -> None:
         """Main control loop - refactored as a worker pattern."""
