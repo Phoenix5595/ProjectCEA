@@ -263,6 +263,16 @@ class Scheduler:
 
                 # Check if schedule has target_intensity (ramp schedule)
                 target_intensity = schedule.get("target_intensity")
+                if target_intensity is None:
+                    effective_minimum = float(self.MINIMUM_LIGHT_INTENSITY)
+                else:
+                    try:
+                        t = float(target_intensity)
+                        effective_minimum = (
+                            t if t < self.MINIMUM_LIGHT_INTENSITY else self.MINIMUM_LIGHT_INTENSITY
+                        )
+                    except Exception:
+                        effective_minimum = float(self.MINIMUM_LIGHT_INTENSITY)
 
                 if target_intensity is None:
                     # No intensity specified, return None (use default ON/OFF behavior)
@@ -392,10 +402,16 @@ class Scheduler:
 
                     return max(0.0, min(target_intensity, intensity))
 
-                # RAMP DOWN: Calculate intensity ramping from day target to 10% (minimum)
+                # RAMP DOWN: Calculate intensity ramping from day target to effective minimum (0% at NIGHT, 10% otherwise)
                 elif ramp_down_duration > 0 and time_until_end < ramp_down_duration:
-                    # Ramp down period: Always ramp from day target (target_intensity) to 10% (minimum)
                     ramp_down_start = end_datetime - timedelta(minutes=ramp_down_duration)
+                    # Allow 0% at NIGHT; 10% minimum for DAY
+                    effective_minimum = min(
+                        self.MINIMUM_LIGHT_INTENSITY,
+                        target_intensity
+                        if target_intensity is not None
+                        else self.MINIMUM_LIGHT_INTENSITY,
+                    )
 
                     if ramp_key not in self._light_ramp_state:
                         # Calculate where we SHOULD be based on elapsed time (handles service restarts)
@@ -405,11 +421,11 @@ class Scheduler:
                         )
                         expected_intensity = (
                             target_intensity
-                            + (self.MINIMUM_LIGHT_INTENSITY - target_intensity) * progress_from_time
+                            + (effective_minimum - target_intensity) * progress_from_time
                         )
                         self._light_ramp_state[ramp_key] = {
                             "start_intensity": expected_intensity,
-                            "target_intensity": self.MINIMUM_LIGHT_INTENSITY,
+                            "target_intensity": effective_minimum,
                             "ramp_start_timestamp": current_time,
                             "ramp_duration": time_until_end,
                             "ramp_type": "down",
@@ -417,7 +433,7 @@ class Scheduler:
                         }
                         logger.debug(
                             f"Resuming light ramp down for {device_name} ({location}/{cluster}): "
-                            f"{expected_intensity:.1f}% -> {self.MINIMUM_LIGHT_INTENSITY:.1f}% "
+                            f"{expected_intensity:.1f}% -> {effective_minimum:.1f}% "
                             f"(remaining: {time_until_end:.1f}min)"
                         )
 
@@ -438,31 +454,31 @@ class Scheduler:
                     # Remaining time until end of schedule (finish ramp within window)
                     remaining_time = max(time_until_end, 0.0)
 
-                    # Recalculate ramp down to continue smoothly to 10% (minimum) in remaining time
+                    # Recalculate ramp down to continue smoothly to effective minimum in remaining time
                     if (ramp_state.get("schedule_target_intensity") != target_intensity) or (
                         ramp_state.get("ramp_duration") != remaining_time
                     ):
                         ramp_state["start_intensity"] = current_effective
-                        ramp_state["target_intensity"] = self.MINIMUM_LIGHT_INTENSITY
+                        ramp_state["target_intensity"] = effective_minimum
                         ramp_state["ramp_start_timestamp"] = current_time
                         ramp_state["ramp_duration"] = remaining_time
                         ramp_state["schedule_target_intensity"] = target_intensity
                         logger.debug(
                             f"Recalculating ramp down for {device_name} ({location}/{cluster}): "
-                            f"{current_effective:.1f}% -> {self.MINIMUM_LIGHT_INTENSITY:.1f}% over {remaining_time:.1f}min"
+                            f"{current_effective:.1f}% -> {ramp_state['target_intensity']:.1f}% over {remaining_time:.1f}min"
                         )
 
                     ramp_state = self._light_ramp_state[ramp_key]
                     ramp_duration = ramp_state.get("ramp_duration") or 0.0
 
                     if ramp_duration <= 0:
-                        intensity = self.MINIMUM_LIGHT_INTENSITY
+                        intensity = ramp_state["target_intensity"]
                         del self._light_ramp_state[ramp_key]
                         logger.debug(
                             f"Light ramp down complete for {device_name} ({location}/{cluster}): "
                             f"intensity={intensity:.1f}% (minimum)"
                         )
-                        return self.MINIMUM_LIGHT_INTENSITY
+                        return ramp_state["target_intensity"]
 
                     elapsed = (
                         current_time - ramp_state["ramp_start_timestamp"]
@@ -470,21 +486,22 @@ class Scheduler:
                     progress = min(max(elapsed / ramp_duration, 0.0), 1.0)
 
                     if progress >= 1.0:
-                        intensity = self.MINIMUM_LIGHT_INTENSITY
+                        intensity = ramp_state["target_intensity"]
                         del self._light_ramp_state[ramp_key]
                         logger.debug(
                             f"Light ramp down complete for {device_name} ({location}/{cluster}): "
                             f"intensity={intensity:.1f}% (minimum)"
                         )
                     else:
-                        # Linear interpolation from start_intensity to target_intensity (10% minimum)
+                        # Linear interpolation from start_intensity to target (effective minimum)
                         intensity = (
                             ramp_state["start_intensity"]
                             + (ramp_state["target_intensity"] - ramp_state["start_intensity"])
                             * progress
                         )
 
-                    return max(self.MINIMUM_LIGHT_INTENSITY, min(intensity, target_intensity))
+                    effective_minimum_val = min(self.MINIMUM_LIGHT_INTENSITY, target_intensity)
+                    return max(effective_minimum_val, min(intensity, target_intensity))
 
                 # STEADY STATE: Return day target directly (not in ramp up or ramp down)
                 else:

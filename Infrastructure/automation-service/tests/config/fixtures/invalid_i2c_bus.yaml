@@ -1,0 +1,17 @@
+# mcp_i2c_bus out of range (0-7)
+hardware:
+  i2c_bus: 1
+  mcp_i2c_bus: 10
+  i2c_address: 32
+  simulation: true
+devices:
+  Test Room:
+    main:
+      light_1:
+        channel: 0
+        device_type: light
+      fan_1:
+        channel: 1
+        device_type: fan
+control:
+  update_interval: 2

@@ -448,6 +448,66 @@ class RoomScheduleCreate(BaseModel):
     ramp_down_duration: int | None = None
 
 
+def _to_hhmm(value: Any) -> str:
+    """Convert mode_parameters time (time object or 'HH:MM'/'HH:MM:SS' string) to 'HH:MM'."""
+    if value is None:
+        return "06:00"
+    if hasattr(value, "hour"):  # datetime.time
+        return f"{value.hour:02d}:{value.minute:02d}"
+    s = str(value).strip()
+    return s[:5] if len(s) >= 5 else "06:00"
+
+
+@router.post("/api/room-schedule/sync-all-from-mode-parameters")
+async def sync_all_room_schedules_from_mode_parameters(
+    database: DatabaseManager = Depends(get_database),
+    config: ConfigLoader = Depends(get_config),
+) -> dict[str, Any]:
+    """Repopulate room and per-device light schedules for all rooms from mode_parameters.
+
+    Use when lights in multiple rooms are off or not ramping (Veg ridgetop, Flower ramp-up).
+    Syncs every (location, cluster) from config so the control loop has correct schedules.
+    """
+    devices = config.get_devices()
+    results: list[dict[str, Any]] = []
+    for location, clusters in (devices or {}).items():
+        if not isinstance(clusters, dict):
+            continue
+        for cluster in clusters:
+            try:
+                out = await sync_room_schedule_from_mode_parameters(
+                    location, cluster, database, config
+                )
+                results.append(
+                    {
+                        "location": location,
+                        "cluster": cluster,
+                        "success": True,
+                        "schedules_created": out.get("schedules_created", 0),
+                        "devices_configured": out.get("devices_configured", 0),
+                    }
+                )
+            except HTTPException as e:
+                results.append(
+                    {
+                        "location": location,
+                        "cluster": cluster,
+                        "success": False,
+                        "error": e.detail,
+                    }
+                )
+            except Exception as e:
+                results.append(
+                    {
+                        "location": location,
+                        "cluster": cluster,
+                        "success": False,
+                        "error": str(e),
+                    }
+                )
+    return {"synced": results}
+
+
 @router.get("/api/room-schedule/{location}/{cluster}")
 async def get_room_schedule(
     location: str, cluster: str, database: DatabaseManager = Depends(get_database)
@@ -986,6 +1046,48 @@ async def save_room_schedule(
         "schedules_created": schedules_created,
         "devices_configured": len(room_devices),
     }
+
+
+@router.post("/api/room-schedule/{location}/{cluster}/sync-from-mode-parameters")
+async def sync_room_schedule_from_mode_parameters(
+    location: str,
+    cluster: str,
+    database: DatabaseManager = Depends(get_database),
+    config: ConfigLoader = Depends(get_config),
+) -> dict[str, Any]:
+    """Repopulate room and per-device light schedules from current mode_parameters.
+
+    Use when lights have no active schedule (e.g. ridgetop off) and ZoneConfig SAVE
+    was not run after a fix. Reads day_start_time, night_start_time, ramp minutes
+    from the active mode's parameters and writes them to the schedules table.
+    """
+    active = await database.get_active_mode(location, cluster)
+    if not active:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No active mode for {location}/{cluster}. Set mode first.",
+        )
+    mode_name = active.get("mode_name", "veg")
+    submode_name = active.get("submode_name")
+    params = await database.get_mode_parameters(
+        location, cluster, mode_name, submode_name
+    )
+    if not params:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No mode parameters for {location}/{cluster} mode={mode_name}",
+        )
+    day_start = _to_hhmm(params.get("day_start_time"))
+    night_start = _to_hhmm(params.get("night_start_time"))
+    schedule = RoomScheduleCreate(
+        day_start_time=day_start,
+        day_end_time=night_start,
+        night_start_time=night_start,
+        night_end_time=day_start,
+        ramp_up_duration=params.get("ramp_up_minutes"),
+        ramp_down_duration=params.get("ramp_down_minutes"),
+    )
+    return await save_room_schedule(location, cluster, schedule, database, config)
 
 
 class ClimateScheduleSetpoint(BaseModel):

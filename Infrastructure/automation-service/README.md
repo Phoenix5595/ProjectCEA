@@ -575,14 +575,20 @@ sudo systemctl restart automation-service.service
 
 After rebuilding the frontend (served from `dist/`), restart this service so the new assets are served.
 
+**Fix all (lights off / not ramping / high CPU):** After deploying from project root (`./deploy.sh`), repopulate room light schedules and apply CPU/logging fixes by running:
+```bash
+curl -X POST "http://localhost:8001/api/room-schedule/sync-all-from-mode-parameters"
+```
+This syncs Veg Room, Flower Room (and Lab) schedules from current mode_parameters so the control loop has correct DAY/NIGHT entries. The deploy applies `update_interval: 2`, reduced hot-path logging, and throttled "no schedule" warnings.
+
 ### Fixed Tick Rate
 
-The control loop runs at a fixed interval (configurable: 1-5 seconds, default: 2 seconds).
+The control loop runs at a fixed interval (1–5 seconds; **max 5 seconds is non-negotiable**). Default: 2 seconds.
 
 **Configuration**: Set in `automation_config.yaml`:
 ```yaml
 control:
-  update_interval: 2  # seconds
+  update_interval: 2  # seconds (1–5 max, enforced)
 ```
 
 **Why fixed tick rate?**

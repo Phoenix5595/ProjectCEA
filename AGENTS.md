@@ -29,7 +29,7 @@ ProjectCEA/
 
 | Task | Location | Notes |
 |------|----------|-------|
-| Control logic | `Infrastructure/automation-service/app/control/` | 2s deterministic loop |
+| Control logic | `Infrastructure/automation-service/app/control/` | 1–5s loop (max 5s non-negotiable) |
 | Sensor data API | `Infrastructure/backend/app/routes/` | Redis + TimescaleDB |
 | CAN processing | `Infrastructure/can-processor-service/app/` | Async DB batching |
 | Frontend UI | `Infrastructure/frontend/src/` | React + TypeScript |
@@ -101,7 +101,7 @@ automation-service.service (8001)
 | Use `as any`, `@ts-ignore` | Type safety required |
 | Query DB without time filter | Scans all chunks |
 | Use hourly aggregates for <7d | Hides critical swings |
-| Block the control loop | 2s tick is deterministic |
+| Block the control loop | Tick is deterministic (1–5s max) |
 | Hardcode setpoints | Use database |
 
 ## LOCKED DECISIONS
@@ -114,6 +114,19 @@ automation-service.service (8001)
 | Safety | Software-only for now |
 | CO2 | ASC on, design for FRC when enrichment added |
 | Light Schedule | CircularTimePicker manages start/end times; photoperiod locked per mode (veg/flower) |
+| **MCP vs DFR0971** | **MCP23017 = relays only (on/off), 16 channels (0–15), use `mcp_i2c_bus` (typically 0). DFR0971 = dimming only (0–10V), 6 channels (3 boards × 2), use `dfr0971_i2c_bus` (typically 1). Do not use the same bus for both unless single-bus; never swap roles.** |
+
+## Hardware Mapping (critical update)
+- MCP23017 (relays) → I2C bus 0, address 0x27
+- DFR0971 (dimming) → I2C bus 1, addresses 0x88 / 0x89 / 0x90
+- Each DFR0971 board has 2 channels (0-1), total across boards limited to 6 dimming channels
+- Channel conflicts are caught at service startup via Pydantic validation
+- Remember: Always check DFR0971 dimming first when lights aren’t working
+- Troubleshooting steps:
+  1) Check I2C bus with `i2cdetect -y <bus>`
+  2) Check board availability using API endpoints
+  3) Always check DFR0971 status first via `/api/hardware/dfr0971/status`
+  4) Check relay status with `journalctl` logs
 
 ## FUTURE REMINDERS
 

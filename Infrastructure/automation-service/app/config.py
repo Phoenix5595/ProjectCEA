@@ -46,6 +46,7 @@ class ConfigLoader:
         # Load main config
         with open(self.config_path) as f:
             self._config = yaml.safe_load(f) or {}
+        self._validate_config()
 
         # Load schedules if exists
         if self.schedules_path.exists():
@@ -114,9 +115,16 @@ class ConfigLoader:
         """Get sensor mapping."""
         return self._config.get("sensors", {})
 
+    CONTROL_LOOP_INTERVAL_MAX = 5  # seconds, non-negotiable
+
     def get_update_interval(self) -> int:
-        """Get control loop update interval in seconds."""
-        return self._config.get("control", {}).get("update_interval", 1)
+        """Get control loop update interval in seconds (1–5, enforced)."""
+        raw = self._config.get("control", {}).get("update_interval", 1)
+        try:
+            val = int(raw) if raw is not None else 1
+        except (TypeError, ValueError):
+            val = 1
+        return max(1, min(self.CONTROL_LOOP_INTERVAL_MAX, val))
 
     def get_schedules(self) -> list[dict[str, Any]]:
         """Get schedules."""
@@ -215,6 +223,27 @@ class ConfigLoader:
         self.load()
         logger.info("Configuration reloaded")
         # Note: Incremental reload - changes applied as loaded, not atomic
+
+    def _validate_config(self) -> None:
+        """Validate loaded config against Pydantic schema.
+
+        Raises:
+            ValueError: If config validation fails.
+        """
+        from app.models.config_schema import AppConfig
+        from pydantic import ValidationError
+
+        try:
+            AppConfig.model_validate(self._config)
+            logger.info("Config validation passed")
+        except ValidationError as e:
+            errors = []
+            for error in e.errors():
+                field_path = " -> ".join(str(loc) for loc in error["loc"])
+                errors.append(f"  {field_path}: {error['msg']}")
+            error_msg = f"Config validation failed:\n" + "\n".join(errors)
+            logger.error(error_msg)
+            raise ValueError(error_msg) from e
 
     def update_device_config(
         self,

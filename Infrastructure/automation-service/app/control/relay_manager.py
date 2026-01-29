@@ -133,7 +133,7 @@ class RelayManager:
             old_state = self._current_states.get(key, 0)
             self._current_states[key] = state
             self._current_modes[key] = mode
-            logger.info(
+            logger.debug(
                 f"Device {location}/{cluster}/{device_name} (channel {channel}) set to {'ON' if state == 1 else 'OFF'}"
             )
             return (True, None)

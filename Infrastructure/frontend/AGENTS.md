@@ -35,13 +35,22 @@ frontend/
 | Alerting | `grafana/alerting/README.md` |
 | Setpoints in Grafana | `grafana/SETPOINTS_IN_GRAFANA.md` |
 
+## ZONECONFIG SAVE (LIGHT PHOTOPERIOD)
+
+ZoneConfig is the main place users set day/night times (CircularTimePicker) and climate parameters. **SAVE** does two things:
+
+1. **Mode parameters** — `PUT /api/room-modes/room/{location}/{cluster}/parameters` (climate setpoints, day/night times, ramp minutes).
+2. **Room schedule (lights)** — `POST /api/room-schedule/{location}/{cluster}` with the same day/night times. This updates the `schedules` table and creates/updates per-device DAY/NIGHT schedules so the control loop (`get_light_intensity_details`) actually turns lights on/off.
+
+Without (2), changing photoperiod in ZoneConfig would only update mode_parameters; lights would still follow old or missing entries in `schedules`.
+
 ## KEY COMPONENTS
 
 | Component | Purpose | Lines |
 |-----------|---------|-------|
 | `SetpointTimeline` | 24h timeline with modes/ramps | 869 |
 | `CircularTimePicker` | Radial time selection | 657 |
-| `LightManager` | Light intensity control | 565 |
+| `LightManager` | Light intensity control (not used in ZoneConfig) | 565 |
 | `ScheduleManager` | Schedule list + CRUD | 514 |
 | `SetpointEditor` | Setpoint form | — |
 

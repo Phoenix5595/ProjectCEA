@@ -1,6 +1,8 @@
 hardware:
-  i2c_bus: 1
-  i2c_address: 32
+  i2c_bus: 0
+  mcp_i2c_bus: 0       # Relays only (MCP23017)
+  dfr0971_i2c_bus: 1   # Dimming only (DF Robot DAC)
+  i2c_address: 39
   simulation: false
   dfr0971_boards:
   - board_id: 0
@@ -142,7 +144,7 @@ control:
         cooling_setpoint: null
         humidity: 68.0
         co2: 1000.0
-  update_interval: 1
+  update_interval: 3   # 1-5s max (non-negotiable), 3s reduces Pi CPU load
   last_good_hold_period: 30
   pid_limits:
     heater:
