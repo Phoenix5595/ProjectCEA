@@ -1,6 +1,6 @@
 hardware:
-  i2c_bus: 0
-  i2c_address: 39
+  i2c_bus: 1
+  i2c_address: 32
   simulation: false
   dfr0971_boards:
   - board_id: 0
