@@ -41,6 +41,7 @@ class MCP23017Driver:
         self.simulation = simulation
         self.bus = None
         self._channel_states = [False] * 16  # Track state of all 16 channels
+        self._probe_ok: bool | None = None  # Cache probe result when not simulation
 
         if not simulation:
             try:
@@ -79,6 +80,37 @@ class MCP23017Driver:
         except Exception as e:
             logger.error(f"Error initializing MCP23017 hardware: {e}")
             raise
+
+    def probe(self) -> bool:
+        """Probe I2C connectivity to the MCP23017 without changing output state.
+
+        Reads a safe register (IODIRA). Use at startup or for health checks.
+
+        Returns:
+            True if simulation or I2C read succeeded, False on I2C error.
+        """
+        if self.simulation:
+            return True
+        try:
+            self.bus.read_byte_data(self.i2c_address, MCP23017_IODIRA)
+            self._probe_ok = True
+            return True
+        except Exception as e:
+            logger.debug(f"MCP23017 probe failed: {e}")
+            self._probe_ok = False
+            return False
+
+    def is_connected(self) -> bool:
+        """Return whether real hardware is connected and last probe succeeded.
+
+        Returns:
+            False if simulation; otherwise cached probe result or run probe() once.
+        """
+        if self.simulation:
+            return False
+        if self._probe_ok is None:
+            self.probe()
+        return self._probe_ok is True
 
     def set_channel(self, channel: int, state: bool) -> bool:
         """
