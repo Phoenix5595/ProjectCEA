@@ -14,7 +14,7 @@ from app.control.device_processor import DeviceProcessor
 from app.control.performance_monitor import get_performance_monitor
 from app.control.pid_controller_manager import PIDControllerManager
 from app.control.relay_manager import RelayManager
-from app.control.scheduler import Scheduler
+from app.control.scheduler import Scheduler, is_time_in_range
 from app.control.sensor_data_manager import SensorDataManager
 from app.control.setpoint_manager import SetpointManager
 from app.control.vpd_cascade_controller import (
@@ -262,6 +262,9 @@ class ControlEngine:
                     self._record_performance_stat("sensor_reading_time", sensor_time)
 
                 # 1. Schedule resolution (DB -> Redis -> NIGHT fallback)
+                # light_schedule = sun/moon bounds (light = master); climate_schedule = pre_day/pre_night.
+                # Together they feed get_climate_mode for climate mode (setpoints only).
+                # Light intensity is determined separately by scheduler from light (sun/moon) schedules.
                 light_schedule = None
                 climate_schedule = None
                 current_mode = "NIGHT"  # Default fallback mode
@@ -377,7 +380,23 @@ class ControlEngine:
                         timestamp=current_time,
                     )
 
-                # 5. Process devices (using extracted component)
+                # 5. Moon = 0%: use room sun bounds as single source of truth for lights (all relevant rooms have a schedule)
+                is_sun = False
+                if light_schedule:
+                    sun_start = light_schedule.get("day_start_time")  # sun window start (HH:MM)
+                    sun_end = light_schedule.get("day_end_time")  # sun window end (HH:MM)
+                    if sun_start and sun_end:
+                        try:
+                            parts_s = sun_start.split(":")
+                            parts_e = sun_end.split(":")
+                            sun_start_min = int(parts_s[0]) * 60 + int(parts_s[1])
+                            sun_end_min = int(parts_e[0]) * 60 + int(parts_e[1])
+                            current_min = current_time.hour * 60 + current_time.minute
+                            is_sun = is_time_in_range(current_min, sun_start_min, sun_end_min)
+                        except (ValueError, IndexError):
+                            pass
+
+                # 6. Process devices (using extracted component)
                 await self.device_processor.process_devices(
                     location,
                     cluster,
@@ -386,6 +405,7 @@ class ControlEngine:
                     current_time,
                     effective_data,
                     current_mode,
+                    is_sun=is_sun,
                 )
 
                 # Log effective light intensities for all dimmable lights (throttled: I2C + scheduler + DB at most every 60s per device to reduce CPU)

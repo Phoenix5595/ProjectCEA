@@ -129,7 +129,7 @@ async def _build_schedule_state(
     lights = {}
     for sched in all_schedules:
         device_name = sched.get("device_name", "")
-        if device_name.startswith("light_") and sched.get("mode") == "DAY" and sched.get("enabled"):
+        if device_name.startswith("light_") and sched.get("mode") in ("SUN", "DAY") and sched.get("enabled"):
             target_intensity = sched.get("target_intensity")
             if target_intensity is not None:
                 lights[device_name] = {"target_intensity": float(target_intensity)}
@@ -165,10 +165,10 @@ def _ensure_light_schedules_are_daily(
     """Enforce that light schedules remain daily (day_of_week must be NULL).
 
     A schedule is considered a light schedule when:
-    - mode is DAY (or evaluates to DAY), and
+    - mode is SUN or DAY (light sun schedule), and
     - target_intensity is provided (ramps only apply to lights)
     """
-    if mode and mode.upper() == "DAY" and target_intensity is not None and day_of_week is not None:
+    if mode and mode.upper() in ("SUN", "DAY") and target_intensity is not None and day_of_week is not None:
         raise HTTPException(
             status_code=400,
             detail="Light schedules must be daily: set day_of_week to null for lights with target_intensity.",
@@ -208,7 +208,7 @@ async def create_schedule(
     """
     # Validate mode if provided
     if schedule.mode:
-        valid_modes = ["DAY", "NIGHT", "TRANSITION"]
+        valid_modes = ["DAY", "NIGHT", "TRANSITION", "SUN", "MOON"]
         if schedule.mode.upper() not in valid_modes:
             raise HTTPException(
                 status_code=400,
@@ -294,7 +294,7 @@ async def update_schedule(
     """
     # Validate mode if provided
     if schedule.mode:
-        valid_modes = ["DAY", "NIGHT", "TRANSITION"]
+        valid_modes = ["DAY", "NIGHT", "TRANSITION", "SUN", "MOON"]
         if schedule.mode.upper() not in valid_modes:
             raise HTTPException(
                 status_code=400,
@@ -599,14 +599,12 @@ async def get_room_schedule(
         target_intensity = schedule.get("target_intensity")
         mode = (schedule.get("mode") or "").upper()
 
-        # Prefer schedules with mode='DAY' or 'NIGHT' for clarity
-        if mode == "DAY" or (target_intensity is not None and target_intensity > 0):
-            # This is a day schedule
-            if day_schedule is None or mode == "DAY":
+        # Light schedules: SUN/DAY = lights on, MOON/NIGHT = lights off
+        if mode in ("SUN", "DAY") or (target_intensity is not None and target_intensity > 0):
+            if day_schedule is None or mode in ("SUN", "DAY"):
                 day_schedule = schedule
-        elif mode == "NIGHT" or (target_intensity is not None and target_intensity == 0):
-            # This is a night schedule
-            if night_schedule is None or mode == "NIGHT":
+        elif mode in ("MOON", "NIGHT") or (target_intensity is not None and target_intensity == 0):
+            if night_schedule is None or mode in ("MOON", "NIGHT"):
                 night_schedule = schedule
 
     # Extract times from schedules
@@ -796,7 +794,7 @@ async def save_room_schedule(
                                     SELECT target_intensity
                                     FROM schedules
                                     WHERE location = $1 AND cluster = $2 AND device_name = $3
-                                      AND mode = 'DAY' AND enabled = TRUE
+                                      AND mode IN ('SUN', 'DAY') AND enabled = TRUE
                                     ORDER BY updated_at DESC
                                     LIMIT 1
                                 """,
@@ -896,11 +894,11 @@ async def save_room_schedule(
                         # Preserve existing target_intensity if available, otherwise default to 100%
                         target_intensity = preserved_intensities.get(device_name, 100)
 
-                        # Day schedule
+                        # Sun schedule (lights on)
                         # Use light-specific ramp durations from mode_parameters (NOT generic climate ramps)
-                        # ramp_up happens at start of day, ramp_down happens at end of day (when transitioning to night)
+                        # ramp_up happens at start of sun, ramp_down happens at end of sun (when transitioning to moon)
                         day_schedule_id = await database.create_schedule(
-                            name=f"{display_name} - Day",
+                            name=f"{display_name} - Sun",
                             location=location,
                             cluster=cluster,
                             device_name=device_name,
@@ -908,7 +906,7 @@ async def save_room_schedule(
                             end_time=schedule.day_end_time,
                             day_of_week=None,
                             enabled=True,
-                            mode="DAY",
+                            mode="SUN",
                             target_intensity=target_intensity,
                             ramp_up_duration=light_ramp_up,
                             ramp_down_duration=light_ramp_down,
@@ -917,12 +915,12 @@ async def save_room_schedule(
                         if day_schedule_id:
                             schedules_created += 1
                         else:
-                            raise RuntimeError(f"Failed to create day schedule for {device_name}")
+                            raise RuntimeError(f"Failed to create sun schedule for {device_name}")
 
-                        # Night schedule
-                        # Note: ramp_down_duration should NOT be on night schedule (only on day schedule)
+                        # Moon schedule (lights off)
+                        # Note: ramp_down_duration should NOT be on moon schedule (only on sun schedule)
                         night_schedule_id = await database.create_schedule(
-                            name=f"{display_name} - Night",
+                            name=f"{display_name} - Moon",
                             location=location,
                             cluster=cluster,
                             device_name=device_name,
@@ -930,7 +928,7 @@ async def save_room_schedule(
                             end_time=schedule.night_end_time,
                             day_of_week=None,
                             enabled=True,
-                            mode="NIGHT",
+                            mode="MOON",
                             target_intensity=0,
                             ramp_up_duration=None,
                             ramp_down_duration=None,  # Fixed: removed ramp_down_duration from night schedule
@@ -939,7 +937,7 @@ async def save_room_schedule(
                         if night_schedule_id:
                             schedules_created += 1
                         else:
-                            raise RuntimeError(f"Failed to create night schedule for {device_name}")
+                            raise RuntimeError(f"Failed to create moon schedule for {device_name}")
                     else:
                         # For other devices: Create ON schedule for day, OFF schedule for night
                         # Day schedule (ON)

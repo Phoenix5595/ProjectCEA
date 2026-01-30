@@ -132,7 +132,7 @@ export default function ZoneCard({ zone, devices, schedule, setpoints }: ZoneCar
               <div key={light.device_name} className="flex justify-between items-center text-sm">
                 <span className="text-gray-600 dark:text-gray-400">{light.device_name}</span>
                 <span className={`font-semibold ${light.state === 1 ? 'text-green-600 dark:text-green-400' : 'text-gray-400 dark:text-gray-500'}`}>
-                  {light.state === 1 ? 'ON' : 'OFF'}
+                  {light.state === 1 ? 'Sun' : 'Moon'}
                 </span>
               </div>
             ))}

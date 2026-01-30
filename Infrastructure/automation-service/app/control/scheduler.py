@@ -1,4 +1,11 @@
-"""Time-based scheduler for device control."""
+"""Time-based scheduler for device control.
+
+Light (master): two periods only — sun (lights on) and moon (lights off). Intensity is
+binary: in sun window → schedule target + ramps; outside → moon = 0%. Climate (slave):
+PRE_DAY, DAY, PRE_NIGHT, NIGHT are derived from light bounds and used for setpoints only.
+DAY has the same length as sun; NIGHT has the same duration as moon. PRE_DAY/PRE_NIGHT
+exist only if their duration is above 0.
+"""
 
 from __future__ import annotations
 
@@ -121,13 +128,12 @@ class Scheduler:
             location, cluster, device_name, current_time
         )
         if is_active:
-            # Check if this is a NIGHT mode schedule - those should turn devices OFF
+            # Moon (or legacy NIGHT) = OFF; sun (or legacy DAY) = ON
             for schedule in self.schedules:
                 if schedule.get("id") == schedule_id:
                     mode = schedule.get("mode", "").upper()
-                    if mode == "NIGHT":
-                        return 0  # NIGHT mode schedules turn devices OFF
-                    # For DAY mode or no mode, return ON
+                    if mode in ("MOON", "NIGHT"):
+                        return 0
                     return 1
             # If schedule not found by ID, default to ON (backward compatibility)
             return 1
@@ -208,6 +214,10 @@ class Scheduler:
     ) -> float | None:
         """Get target intensity for a device from active schedule, with ramp calculation.
 
+        Light period only: sun (lights on) or moon (0%). Returns 0.0 when no schedule
+        matches (moon by definition) or when the matched schedule has mode MOON or NIGHT.
+        Otherwise returns intensity from sun schedule (with ramps).
+
         Args:
             location: Location name
             cluster: Cluster name
@@ -216,8 +226,8 @@ class Scheduler:
             current_intensity: Current light intensity (0-100%), used as ramp start point
 
         Returns:
-            Target intensity (0-100%) if schedule is active and has target_intensity,
-            None if no active schedule or no target_intensity set
+            Target intensity (0-100%). 0.0 when in moon (no match or moon/NIGHT schedule).
+            Non-None when a sun schedule matches (with target_intensity and optional ramps).
         """
         if current_time is None:
             current_time = datetime.now(tz=LOCAL_TZ)
@@ -234,93 +244,73 @@ class Scheduler:
                 and schedule.get("cluster") == cluster
                 and schedule.get("device_name") == device_name
             ):
-                # Check day of week
                 day_of_week = schedule.get("day_of_week")
                 if day_of_week is not None and day_of_week != current_weekday:
                     continue
 
-                # Check time range
                 start_time = self._parse_time(schedule.get("start_time"))
                 end_time = self._parse_time(schedule.get("end_time"))
-
                 if not start_time or not end_time:
                     continue
 
                 is_in_range = False
                 if start_time > end_time:
-                    # Overnight schedule
                     is_in_range = current_time_obj >= start_time or current_time_obj < end_time
                 else:
-                    # Normal schedule
                     is_in_range = start_time <= current_time_obj < end_time
 
                 if not is_in_range:
-                    # Schedule not active - clear any stale ramp state for this device
                     ramp_key = (location, cluster, device_name)
                     if ramp_key in self._light_ramp_state:
                         del self._light_ramp_state[ramp_key]
                     continue
 
-                # Check if schedule has target_intensity (ramp schedule)
+                # Moon schedule (or legacy NIGHT): lights off. Clear ramp and return 0%.
+                # Sun schedule (or legacy DAY): lights on, use target_intensity below.
+                if schedule.get("mode", "").upper() in ("MOON", "NIGHT"):
+                    ramp_key = (location, cluster, device_name)
+                    if ramp_key in self._light_ramp_state:
+                        del self._light_ramp_state[ramp_key]
+                    return 0.0
+
                 target_intensity = schedule.get("target_intensity")
                 if target_intensity is None:
-                    effective_minimum = float(self.MINIMUM_LIGHT_INTENSITY)
-                else:
-                    try:
-                        t = float(target_intensity)
-                        effective_minimum = (
-                            t if t < self.MINIMUM_LIGHT_INTENSITY else self.MINIMUM_LIGHT_INTENSITY
-                        )
-                    except Exception:
-                        effective_minimum = float(self.MINIMUM_LIGHT_INTENSITY)
-
-                if target_intensity is None:
-                    # No intensity specified, return None (use default ON/OFF behavior)
-                    # Clear any ramp state since we're not using intensity control
                     ramp_key = (location, cluster, device_name)
                     if ramp_key in self._light_ramp_state:
                         del self._light_ramp_state[ramp_key]
                     return None
 
-                # Calculate ramp intensity
+                try:
+                    t = float(target_intensity)
+                    effective_minimum = (
+                        t if t < self.MINIMUM_LIGHT_INTENSITY else self.MINIMUM_LIGHT_INTENSITY
+                    )
+                except Exception:
+                    effective_minimum = float(self.MINIMUM_LIGHT_INTENSITY)
+
                 ramp_up_duration = schedule.get("ramp_up_duration", 0) or 0
                 ramp_down_duration = schedule.get("ramp_down_duration", 0) or 0
 
-                # Calculate time since schedule start/end
                 start_datetime = datetime.combine(current_time.date(), start_time)
                 end_datetime = datetime.combine(current_time.date(), end_time)
-
-                # Handle overnight schedules
                 if start_time > end_time:
                     if current_time_obj >= start_time:
-                        # Before midnight
                         start_datetime = datetime.combine(current_time.date(), start_time)
                         end_datetime = datetime.combine(
                             current_time.date() + timedelta(days=1), end_time
                         )
                     else:
-                        # After midnight
                         start_datetime = datetime.combine(
                             current_time.date() - timedelta(days=1), start_time
                         )
                         end_datetime = datetime.combine(current_time.date(), end_time)
 
-                time_since_start = (current_time - start_datetime).total_seconds() / 60.0  # minutes
-                time_until_end = (end_datetime - current_time).total_seconds() / 60.0  # minutes
-
+                time_since_start = (current_time - start_datetime).total_seconds() / 60.0
+                time_until_end = (end_datetime - current_time).total_seconds() / 60.0
                 ramp_key = (location, cluster, device_name)
 
-                # Intensity calculation logic:
-                # 1. Check if in ramp up period → calculate ramp from 10% (minimum) to day target (target_intensity)
-                # 2. Check if in ramp down period → calculate ramp from day target to 10% (minimum)
-                # 3. Otherwise (steady state) → return day target directly
-                # Note: The day target (target_intensity) is the maximum value, NOT 100%
-                # If day target is 50%, ramps go from 10% to 50%, not 10% to 100%
-                # Minimum intensity is 10% - the lowest setting at which lights emit light
-
-                # RAMP UP: Calculate intensity ramping from 10% (minimum) to day target
                 if ramp_up_duration > 0 and time_since_start < ramp_up_duration:
-                    # Ramp up period: Always ramp from 10% (minimum) to day target (target_intensity)
+                    # Ramp up period: Always ramp from 10% (minimum) to sun target (target_intensity)
                     # Initialize ramp state if missing - calculate expected intensity from time
                     if ramp_key not in self._light_ramp_state:
                         # Calculate where we SHOULD be based on elapsed time (handles service restarts)
@@ -338,7 +328,7 @@ class Scheduler:
                         }
                         logger.debug(
                             f"Resuming light ramp up for {device_name} ({location}/{cluster}): "
-                            f"{expected_intensity:.1f}% -> {target_intensity:.1f}% (day target) "
+                            f"{expected_intensity:.1f}% -> {target_intensity:.1f}% (sun target) "
                             f"(remaining: {ramp_up_duration - time_since_start:.1f}min)"
                         )
 
@@ -391,7 +381,7 @@ class Scheduler:
                         del self._light_ramp_state[ramp_key]
                         logger.debug(
                             f"Light ramp up complete for {device_name} ({location}/{cluster}): "
-                            f"intensity={intensity:.1f}% (day target reached)"
+                            f"intensity={intensity:.1f}% (sun target reached)"
                         )
                     else:
                         intensity = (
@@ -402,10 +392,10 @@ class Scheduler:
 
                     return max(0.0, min(target_intensity, intensity))
 
-                # RAMP DOWN: Calculate intensity ramping from day target to effective minimum (0% at NIGHT, 10% otherwise)
+                # RAMP DOWN: Ramp from sun target to effective minimum (0% at moon, 10% otherwise)
                 elif ramp_down_duration > 0 and time_until_end < ramp_down_duration:
                     ramp_down_start = end_datetime - timedelta(minutes=ramp_down_duration)
-                    # Allow 0% at NIGHT; 10% minimum for DAY
+                    # Allow 0% at moon; 10% minimum during sun
                     effective_minimum = min(
                         self.MINIMUM_LIGHT_INTENSITY,
                         target_intensity
@@ -503,28 +493,24 @@ class Scheduler:
                     effective_minimum_val = min(self.MINIMUM_LIGHT_INTENSITY, target_intensity)
                     return max(effective_minimum_val, min(intensity, target_intensity))
 
-                # STEADY STATE: Return day target directly (not in ramp up or ramp down)
+                # STEADY STATE: Return sun target directly (not in ramp up or ramp down)
                 else:
-                    # Steady state - return day target (target_intensity) directly
-                    # Clear any existing ramp state if we're in steady state
+                    # Steady state - return sun target (target_intensity) directly
                     if ramp_key in self._light_ramp_state:
                         del self._light_ramp_state[ramp_key]
-                    # Return day target with safety clamp to 0-100% (100% is hardware max, not the actual limit)
-                    # The actual limit is target_intensity (day target), which may be less than 100%
                     clamped_intensity = max(0.0, min(100.0, target_intensity))
-
                     logger.debug(
                         f"Steady state intensity for {device_name} ({location}/{cluster}): "
-                        f"{clamped_intensity:.1f}% (day target from schedule: {target_intensity:.1f}%)"
+                        f"{clamped_intensity:.1f}% (sun target from schedule: {target_intensity:.1f}%)"
                     )
                     return clamped_intensity
 
-        # No active schedule found - clear any stale ramp state
+        # No active schedule found = moon by definition. Clear ramp and return 0%.
         ramp_key = (location, cluster, device_name)
         if ramp_key in self._light_ramp_state:
             del self._light_ramp_state[ramp_key]
 
-        return None
+        return 0.0
 
     def get_light_intensity_details(
         self,
@@ -661,6 +647,11 @@ class Scheduler:
         pre_night_duration: int | None = None,
     ) -> tuple[str, int, int] | None:
         """Get current climate mode (PRE_DAY, DAY, PRE_NIGHT, NIGHT) for a location/cluster.
+
+        Climate periods are slave to light: computed from light sun/moon bounds
+        (day_start_time, day_end_time) plus climate pre_day_duration, pre_night_duration.
+        Used for setpoints only; does not drive light intensity. DAY is slave to sun,
+        NIGHT is slave to moon.
 
         CRITICAL: Returns DISCRETE mode only (mode, mode_start_time, mode_end_time).
         Does NOT calculate ramp progress - that belongs in control engine.

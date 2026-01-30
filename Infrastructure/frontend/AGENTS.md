@@ -35,6 +35,11 @@ frontend/
 | Alerting | `grafana/alerting/README.md` |
 | Setpoints in Grafana | `grafana/SETPOINTS_IN_GRAFANA.md` |
 
+## LIGHT VS CLIMATE AND ROOM MODES
+
+- **Light (sun/moon)** drives intensity; **climate (PRE_DAY, DAY, PRE_NIGHT, NIGHT)** drives setpoints and is slave to light (DAY = sun length, NIGHT = moon duration).
+- **Room modes**: **Veg** (18h photoperiod, start/end movable), **Flower** (12h photoperiod + submodes Stretch/Bulk/Ripen with different setpoints), **Drying** (24h moon, manual mode active), **Sleep** (24h moon, different setpoints, manual mode active). Manual light control is **shown only in Drying and Sleep**; it is hidden in Veg and Flower.
+
 ## ZONECONFIG SAVE (LIGHT PHOTOPERIOD)
 
 ZoneConfig is the main place users set day/night times (CircularTimePicker) and climate parameters. **SAVE** does two things:

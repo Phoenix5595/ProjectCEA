@@ -11,6 +11,7 @@ import CircularTimePicker from '../components/CircularTimePicker'
 import VerticalLightsBlock from '../components/VerticalLightsBlock'
 import VerticalPIDBlock from '../components/VerticalPIDBlock'
 import VerticalNotesBlock from '../components/VerticalNotesBlock'
+import ManualLightControl from '../components/ManualLightControl'
 
 export default function ZoneConfig() {
   const { location: locationParam, cluster } = useParams<{ location: string; cluster: string }>()
@@ -228,6 +229,12 @@ export default function ZoneConfig() {
             
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-2">
               <VerticalLightsBlock location={location} cluster={cluster} />
+              {(currentModeName === 'drying' || currentModeName === 'sleep') && (
+                <div className="bg-gray-900 rounded-lg border border-gray-800 p-2">
+                  <div className="text-[14px] text-gray-400 uppercase font-bold tracking-wider mb-2">Manual Light Control</div>
+                  <ManualLightControl location={location} cluster={cluster} compact={true} />
+                </div>
+              )}
               <VerticalPIDBlock />
               <VerticalNotesBlock location={location} cluster={cluster} currentMode={roomMode?.mode_name} />
             </div>

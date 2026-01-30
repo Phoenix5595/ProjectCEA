@@ -43,6 +43,8 @@ control/
 | `PIDController` | `pid_controller.py` | Standard PID with anti-windup |
 | `RelayManager` | `relay_manager.py` | Hardware abstraction |
 
+Light intensity comes from light (sun/moon) via scheduler; setpoints come from climate (get_climate_mode), which is slave to light — DAY = sun length, NIGHT = moon duration.
+
 ## SAFETY LAYERS
 
 1. **Safety Supervisor**: Hard limits, sensor failure detection

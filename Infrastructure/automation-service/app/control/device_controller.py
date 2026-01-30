@@ -148,12 +148,11 @@ class DeviceController:
         if control_mode == "failsafe":
             return await self._calculate_failsafe_output(device_type)
         elif control_mode == "auto":
-            # For dimmable lights, use the scheduled light intensity directly
+            # Dimmable lights: use sun/moon intensity from context (0 = moon off, >0 = sun)
             if device_info.get("dimming_enabled") and device_info.get("dimming_type") == "dfr0971":
                 light_intensity = context.get("light_intensity")
                 if light_intensity is not None:
                     return light_intensity
-                # If no intensity in context, return None (don't change current state)
                 return None
 
             # Use PID control or rule-based control for other devices

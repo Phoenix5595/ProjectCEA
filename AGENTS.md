@@ -29,6 +29,8 @@ ProjectCEA/
 
 | Task | Location | Notes |
 |------|----------|-------|
+| **System architecture** | **`ARCHITECTURE.md`** (project root) | **Canonical narrative + ASCII schematic; read first** |
+| **Plan-style schematic** | **`ARCHITECTURE_SCHEMATIC.md`** (project root) | **Mermaid diagrams + tables; same content, diagram-first** |
 | Control logic | `Infrastructure/automation-service/app/control/` | 1–5s loop (max 5s non-negotiable) |
 | Sensor data API | `Infrastructure/backend/app/routes/` | Redis + TimescaleDB |
 | CAN processing | `Infrastructure/can-processor-service/app/` | Async DB batching |
@@ -48,6 +50,22 @@ ProjectCEA/
 | **Full TDD** | All new code needs tests |
 | **No bare excepts** | 14 violations remain - fix them |
 | **Rollback <30s** | Use `./rollback.sh` immediately if broken |
+| **Config validation** | automation-service fails startup on invalid `automation_config.yaml` (see Config validation below) |
+
+## Config validation (automation-service)
+
+Startup loads `automation_config.yaml` and validates it with Pydantic ([`app/models/config_schema.py`](Infrastructure/automation-service/app/models/config_schema.py)). Invalid config prevents the service from starting.
+
+**What is validated:**
+- **I2C buses**: `hardware.i2c_bus`, `mcp_i2c_bus`, `dfr0971_i2c_bus` must be 0–7
+- **Control loop**: `control.update_interval` must be 1–5 seconds
+- **Relay channels**: each device `channel` must be 0–15; no duplicate channels per room
+- **Device type**: must be one of fan, heater, light, dehumidifier, humidifier, co2, vent, relay, sensor, output, input
+- **Dimming**: if a device has `dimming_board_id`, it must exist in `hardware.dfr0971_boards`
+
+**Reading errors:** Startup logs show the field path and message (e.g. `hardware.mcp_i2c_bus must be between 0 and 7`). Fix the YAML and restart.
+
+**Common fixes:** Duplicate channel → give each device a unique `channel` in 0–15. Invalid dimming board → set `dimming_board_id` to a `board_id` listed under `hardware.dfr0971_boards`. Wrong bus → set `mcp_i2c_bus` and `dfr0971_i2c_bus` to 0 and 1 respectively for separate relay/dimming buses.
 
 ## DATA FLOW
 
@@ -149,12 +167,13 @@ automation-service.service (8001)
 6. Made assumptions instead of reading documentation first
 
 **Before ANY change:**
-1. READ `.sisyphus/PROJECT_CONTEXT.md` and `USER_PREFERENCES.md`
-2. READ this `AGENTS.md` file
-3. Check git history to understand what exists
+1. READ **`ARCHITECTURE.md`** (project root) for the current system schematic
+2. READ `.sisyphus/PROJECT_CONTEXT.md` and `USER_PREFERENCES.md`
+3. READ this `AGENTS.md` file
+4. Check git history to understand what exists
 4. Understand deployment: `deploy.sh` / `rollback.sh`
-5. ASK if unsure - do not assume
-6. Test in isolation before deploying
+6. ASK if unsure - do not assume
+7. Test in isolation before deploying
 
 **If something is working, DO NOT TOUCH IT unless explicitly asked.**
 
@@ -189,6 +208,8 @@ systemctl status can-processor cea-backend automation-service
 
 | Path | Purpose |
 |------|---------|
+| **`ARCHITECTURE.md`** | **Canonical system schematic (project root); agent reference** |
+| **`ARCHITECTURE_SCHEMATIC.md`** | **Plan-style schematic (Mermaid + tables); update with ARCHITECTURE.md** |
 | `Infrastructure/AGENTS.md` | Service architecture |
 | `Infrastructure/automation-service/AGENTS.md` | Control + API details |
 | `Infrastructure/automation-service/app/control/AGENTS.md` | Control loop internals |
