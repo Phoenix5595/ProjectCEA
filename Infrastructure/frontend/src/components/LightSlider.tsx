@@ -34,8 +34,8 @@ export default function LightSlider({
   function handleSliderClick(e: React.MouseEvent<HTMLDivElement>) {
     if (disabled || !sliderRef.current) return
     const rect = sliderRef.current.getBoundingClientRect()
-    const x = e.clientX - rect.left
-    const newPercentage = Math.max(0, Math.min(100, (x / rect.width) * 100))
+    const y = rect.bottom - e.clientY // Invert for vertical (top = 100%, bottom = 0%)
+    const newPercentage = Math.max(0, Math.min(100, (y / rect.height) * 100))
     const newValue = Math.round(min + (newPercentage / 100) * (max - min))
     setLocalValue(newValue)
     onChange(newValue)
@@ -51,37 +51,41 @@ export default function LightSlider({
   return (
     <div className="flex items-center gap-2">
       <span className="text-xs text-gray-400 w-16 truncate">{label}</span>
-      <div 
-        ref={sliderRef}
-        onClick={handleSliderClick}
-        className={`relative flex-1 h-6 bg-gray-800 rounded cursor-pointer ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
-      >
+      <div className="flex items-center gap-2 flex-1">
         <div 
-          className="absolute top-0 left-0 h-full bg-gradient-to-r from-amber-600 to-amber-400 rounded transition-all"
-          style={{ width: `${percentage}%` }}
-        />
-        {currentPercentage !== null && (
+          ref={sliderRef}
+          onClick={handleSliderClick}
+          className={`relative w-6 h-24 bg-gray-800 rounded cursor-pointer ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+        >
           <div 
-            className="absolute top-0 w-0.5 h-full bg-white/60"
-            style={{ left: `${currentPercentage}%` }}
-            title={`Current: ${currentValue}%`}
+            className="absolute bottom-0 left-0 w-full bg-gradient-to-t from-amber-600 to-amber-400 rounded transition-all"
+            style={{ height: `${percentage}%` }}
           />
-        )}
-        <div 
-          className="absolute top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full shadow-md border border-gray-400"
-          style={{ left: `calc(${percentage}% - 6px)` }}
-        />
+          {currentPercentage !== null && (
+            <div 
+              className="absolute left-0 w-full h-0.5 bg-white/60"
+              style={{ bottom: `${currentPercentage}%` }}
+              title={`Current: ${currentValue}%`}
+            />
+          )}
+          <div 
+            className="absolute left-1/2 -translate-x-1/2 w-3 h-3 bg-white rounded-full shadow-md border border-gray-400"
+            style={{ bottom: `calc(${percentage}% - 6px)` }}
+          />
+        </div>
+        <div className="flex flex-col items-center gap-1">
+          <input
+            type="number"
+            min={min}
+            max={max}
+            value={localValue}
+            onChange={handleInputChange}
+            disabled={disabled}
+            className="w-12 h-6 px-1 text-xs text-center bg-gray-800 border border-gray-700 rounded text-gray-200 disabled:opacity-50"
+          />
+          <span className="text-xs text-gray-500">%</span>
+        </div>
       </div>
-      <input
-        type="number"
-        min={min}
-        max={max}
-        value={localValue}
-        onChange={handleInputChange}
-        disabled={disabled}
-        className="w-12 h-6 px-1 text-xs text-center bg-gray-800 border border-gray-700 rounded text-gray-200 disabled:opacity-50"
-      />
-      <span className="text-xs text-gray-500">%</span>
     </div>
   )
 }
