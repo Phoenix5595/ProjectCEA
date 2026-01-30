@@ -8,6 +8,8 @@ interface RoomScheduleEditorProps {
   location: string
   cluster: string
   period: 'day' | 'night'
+  /** Current room mode. Manual light control is shown only when mode is 'drying' or 'sleep'. */
+  modeName?: string
 }
 
 interface RoomSchedule {
@@ -19,7 +21,8 @@ interface RoomSchedule {
   ramp_down_duration: number | null
 }
 
-export default function RoomScheduleEditor({ location, cluster, period }: RoomScheduleEditorProps) {
+export default function RoomScheduleEditor({ location, cluster, period, modeName }: RoomScheduleEditorProps) {
+  const showManualLightControl = modeName === 'drying' || modeName === 'sleep'
   const [dayStartTime, setDayStartTime] = useState('06:00')
   const [dayEndTime, setDayEndTime] = useState('20:00')
   const [nightStartTime, setNightStartTime] = useState('20:00')
@@ -163,9 +166,11 @@ export default function RoomScheduleEditor({ location, cluster, period }: RoomSc
                 This will create schedules for all devices in this room. Existing schedules will be replaced.
               </p>
             </div>
-            <div className="flex-shrink-0">
-              <ManualLightControl location={location} cluster={cluster} compact={true} />
-            </div>
+            {showManualLightControl && (
+              <div className="flex-shrink-0">
+                <ManualLightControl location={location} cluster={cluster} compact={true} />
+              </div>
+            )}
           </div>
         </div>
       ) : (
@@ -200,9 +205,11 @@ export default function RoomScheduleEditor({ location, cluster, period }: RoomSc
                 This will create schedules for all devices in this room. Existing schedules will be replaced.
               </p>
             </div>
-            <div className="flex-shrink-0">
-              <ManualLightControl location={location} cluster={cluster} compact={true} />
-            </div>
+            {showManualLightControl && (
+              <div className="flex-shrink-0">
+                <ManualLightControl location={location} cluster={cluster} compact={true} />
+              </div>
+            )}
           </div>
         </div>
       )}

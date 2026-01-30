@@ -33,6 +33,11 @@ automation-service/
 
 ## KEY CONCEPTS
 
+### Light (sun/moon) vs climate (slave to light)
+- **Light (master)**: Two periods only — **sun** (lights on) and **moon** (lights off). Sun schedule defines photoperiod; outside that window = moon = 0%. Drying/sleep room modes = 24h moon. Drives intensity and relay only.
+- **Climate (slave)**: PRE_DAY (if duration > 0), DAY (same length as sun, slave to sun), PRE_NIGHT (if duration > 0), NIGHT (same duration as moon, slave to moon). Drives setpoints only; PRE_DAY/PRE_NIGHT do not change lights.
+- Light intensity is never undefined: either from sun schedule (with ramps) or 0% (moon).
+
 ### Climate Modes
 - **DAY**: Lights ON, day setpoints
 - **NIGHT**: Lights OFF, night setpoints
@@ -47,7 +52,7 @@ automation-service/
 ### Light ramp (time-based, per-device)
 - Light ramp state is keyed by `(location, cluster, device_name)`. Each device has its own ramp.
 - **Reset/resume is time-based**: intensity is computed from time since schedule start (`time_since_start / ramp_up_duration`). On service restart, the ramp resumes by recalculating where the light should be from elapsed time (no stored intensity).
-- The system is designed so every dimmable light **always has an active schedule**; a device never has no active light schedule. If the scheduler returns None, the control loop does not update that device (no relay/dimmer change).
+- Intensity is never undefined: either from sun schedule (with ramps) or 0% (moon). No schedule match or moon/NIGHT schedule → scheduler returns 0.0.
 
 - **MCP23017** (relays) → I2C bus 0, address 0x27. 16 ON/OFF channels (0–15).
 - **DFR0971** (dimming) → I2C bus 1, addresses 0x88 / 0x89 / 0x90. 6 dimming channels total (3 boards × 2 channels).
@@ -60,6 +65,14 @@ automation-service/
   2) Check board availability using API endpoints
   3) Always check DFR0971 status first via `/api/hardware/dfr0971/status`
   4) Check relay status with `journalctl` logs
+
+### Config validation (startup)
+
+[`app/models/config_schema.py`](app/models/config_schema.py) validates `automation_config.yaml` at load. Invalid config causes startup failure with a clear error.
+
+**Rules:** I2C bus numbers 0–7; `control.update_interval` 1–5s; relay `channel` 0–15 and unique per room; `device_type` from allowed set; `dimming_board_id` must reference `hardware.dfr0971_boards`.
+
+**How to fix errors:** Read the log message (e.g. `duplicate relay channels` or `hardware.mcp_i2c_bus must be between 0 and 7`). Edit `automation_config.yaml`: resolve duplicates by changing one device’s `channel`; fix bus/interval values; ensure dimming devices reference an existing `board_id` in `dfr0971_boards`. Restart: `sudo systemctl restart automation-service`.
 
 ## API GROUPS
 

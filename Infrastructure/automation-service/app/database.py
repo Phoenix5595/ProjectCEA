@@ -877,10 +877,12 @@ class DatabaseManager:
             return await self._schedule_repo.delete_schedule(schedule_id)
         raise RuntimeError("ScheduleRepository not initialized - call initialize() first")
 
-    async def delete_schedules_bulk(self, schedule_ids: list[int]) -> int:
-        """Delete multiple schedules by IDs."""
+    async def delete_schedules_bulk(
+        self, schedule_ids: list[int], conn: asyncpg.Connection | None = None
+    ) -> int:
+        """Delete multiple schedules by IDs. If conn is provided, use it (for transactional use)."""
         if self._schedule_repo:
-            return await self._schedule_repo.delete_schedules_bulk(schedule_ids)
+            return await self._schedule_repo.delete_schedules_bulk(schedule_ids, conn)
         raise RuntimeError("ScheduleRepository not initialized - call initialize() first")
 
     async def update_light_schedule_ramp_times(
@@ -898,7 +900,7 @@ class DatabaseManager:
                 UPDATE schedules
                 SET ramp_up_duration = $3, ramp_down_duration = $4
                 WHERE location = $1 AND cluster = $2
-                AND device_name LIKE 'light%' AND mode = 'DAY'
+                AND device_name LIKE 'light%' AND mode IN ('SUN', 'DAY')
                 """,
                 location,
                 cluster,

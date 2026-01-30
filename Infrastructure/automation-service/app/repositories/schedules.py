@@ -53,7 +53,12 @@ class ScheduleRepository(BaseRepository):
             return []
 
     async def get_climate_schedule(self, location: str, cluster: str) -> dict[str, Any] | None:
-        """Get climate schedule data (pre-day/pre-night durations) for a location/cluster."""
+        """Get climate schedule data (pre_day_duration, pre_night_duration) for a location/cluster.
+
+        Returns climate parameters only; sun/moon (light period) boundaries come from
+        the light schedule (get_room_light_schedule). Used with light bounds to compute
+        climate mode (PRE_DAY, DAY, PRE_NIGHT, NIGHT) for setpoints.
+        """
         try:
             async with self.pool.acquire() as conn:
                 row = await conn.fetchrow(
@@ -112,7 +117,12 @@ class ScheduleRepository(BaseRepository):
         return None
 
     async def get_room_light_schedule(self, location: str, cluster: str) -> dict[str, Any] | None:
-        """Get room-level light schedule (day start/end times) for control loop."""
+        """Get room-level light period bounds (sun/moon) from light schedules.
+
+        Returns day_start_time, day_end_time (and ramp durations) from light schedules.
+        Used for control loop and for anchoring climate mode (DAY slave to sun,
+        NIGHT slave to moon). Climate parameters come from get_climate_schedule.
+        """
         try:
             async with self.pool.acquire() as conn:
                 # Get any enabled light schedule to determine day/night times
@@ -122,7 +132,7 @@ class ScheduleRepository(BaseRepository):
                     FROM schedules
                     WHERE location = $1 AND cluster = $2
                       AND device_name LIKE 'light%'
-                      AND mode = 'DAY'
+                      AND mode IN ('SUN', 'DAY')
                       AND enabled = true
                     ORDER BY id DESC
                     LIMIT 1
@@ -260,7 +270,7 @@ class ScheduleRepository(BaseRepository):
         """Force light schedules to be daily (day_of_week = NULL).
 
         Targets schedules where:
-        - mode = 'DAY'
+        - mode is SUN or DAY (light sun schedule)
         - target_intensity IS NOT NULL (light dimming schedule)
         - day_of_week IS NOT NULL (invalid for lights)
 
@@ -272,7 +282,7 @@ class ScheduleRepository(BaseRepository):
                 rows = await conn.fetch("""
                     UPDATE schedules
                     SET day_of_week = NULL
-                    WHERE mode = 'DAY'
+                    WHERE mode IN ('SUN', 'DAY')
                       AND target_intensity IS NOT NULL
                       AND day_of_week IS NOT NULL
                     RETURNING id
@@ -288,7 +298,7 @@ class ScheduleRepository(BaseRepository):
     async def update_light_schedule_target(
         self, location: str, cluster: str, device_name: str, target_intensity: float
     ) -> bool:
-        """Update target_intensity for a light device's active schedule."""
+        """Update target_intensity for a light device's sun schedule (not moon)."""
         try:
             async with self.pool.acquire() as conn:
                 result = await conn.execute(
@@ -296,7 +306,7 @@ class ScheduleRepository(BaseRepository):
                     UPDATE schedules 
                     SET target_intensity = $4, updated_at = NOW()
                     WHERE location = $1 AND cluster = $2 AND device_name = $3
-                    AND enabled = true AND target_intensity IS NOT NULL
+                    AND enabled = true AND mode IN ('SUN', 'DAY')
                 """,
                     location,
                     cluster,

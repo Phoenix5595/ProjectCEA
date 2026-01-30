@@ -39,14 +39,14 @@ export default function VerticalLightsBlock({ location, cluster }: VerticalLight
         try {
           const status = await apiClient.getLightStatus(location!, cluster!, light.device_name)
           
-          const daySchedule = schedules.find((s: any) => 
+          const sunSchedule = schedules.find((s: any) => 
             s.device_name === light.device_name &&
-            s.mode === 'DAY' && 
+            (s.mode === 'SUN' || s.mode === 'DAY') &&
             s.enabled && 
             s.target_intensity !== null && 
             s.target_intensity !== undefined
           )
-          const dayTargetIntensity = daySchedule?.target_intensity ?? null
+          const dayTargetIntensity = sunSchedule?.target_intensity ?? null
           
           return { deviceName: light.device_name, status, dayTargetIntensity }
         } catch (err) {
@@ -162,7 +162,7 @@ export default function VerticalLightsBlock({ location, cluster }: VerticalLight
                         ? 'bg-green-900/50 text-green-400 border border-green-800/50' 
                         : 'bg-gray-800 text-gray-500 border border-gray-700'
                     }`}>
-                      {isOn ? 'ON' : 'OFF'}
+                      {isOn ? 'Sun' : 'Moon'}
                     </span>
                   </div>
                 </div>
@@ -186,14 +186,14 @@ export default function VerticalLightsBlock({ location, cluster }: VerticalLight
                           handleTargetChange(light.device_name!, value)
                         }
                       }}
-                      disabled={!isOn}
-                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed"
+                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                      title="Sun target: editable even when lights are off"
                     />
                     {dayTarget > 0 && (
                       <div 
                         className="absolute top-0 w-0.5 h-full bg-amber-400 rounded"
                         style={{ left: `calc(${dayTarget}% - 1px)` }}
-                        title={`Day Target: ${dayTarget}%`}
+                        title={`Sun target: ${dayTarget}%`}
                       />
                     )}
                     {pendingTargets[light.device_name!] !== undefined && (
@@ -215,8 +215,8 @@ export default function VerticalLightsBlock({ location, cluster }: VerticalLight
                           handleTargetChange(light.device_name!, value)
                         }
                       }}
-                    disabled={!isOn}
-                    className="w-12 h-6 px-1 text-xs text-center bg-gray-800 border border-gray-700 rounded text-gray-200 disabled:opacity-50 focus:outline-none focus:border-cyan-500 transition-colors"
+                    className="w-12 h-6 px-1 text-xs text-center bg-gray-800 border border-gray-700 rounded text-gray-200 focus:outline-none focus:border-cyan-500 transition-colors"
+                    title="Sun target %"
                   />
                   <span className="text-xs text-gray-500">%</span>
                 </div>

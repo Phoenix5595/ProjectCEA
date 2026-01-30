@@ -14,7 +14,7 @@ from shared.logging import get_logger
 
 logger = get_logger(__name__)
 
-# Fallback day window when room has no schedule (mode stays NIGHT): 06:00–22:00 local
+# Fallback sun window when room has no schedule (climate stays NIGHT): 06:00–22:00 local
 _FALLBACK_DAY_START = time(6, 0)
 _FALLBACK_DAY_END = time(22, 0)
 _LOCAL_TZ = ZoneInfo("America/Toronto")
@@ -55,6 +55,7 @@ class DeviceProcessor:
         current_time: datetime,
         effective_data: dict[str, Any] | None,
         current_mode: str | None,
+        is_sun: bool = False,
     ) -> None:
         """Process all devices for a location/cluster.
 
@@ -66,6 +67,7 @@ class DeviceProcessor:
             current_time: Current timestamp
             effective_data: Effective setpoint data
             current_mode: Current climate mode
+            is_sun: True if current time is inside room sun window (lights on); False = moon (lights off).
         """
         # Process each device
         for device_name, device_info in cluster_devices.items():
@@ -93,32 +95,35 @@ class DeviceProcessor:
                     "current_mode": current_mode,
                 }
 
-            # Add light intensity for dimmable lights
+            # Light intensity: moon = 0% from room sun bounds; sun = scheduler (ramps, target). All relevant rooms have a schedule.
             if device_info.get("dimming_enabled") and device_info.get("dimming_type") == "dfr0971":
-                if self.scheduler:
+                if not is_sun:
+                    # Moon: lights off.
+                    context["light_intensity"] = 0.0
+                elif self.scheduler:
                     intensity_details = self.scheduler.get_light_intensity_details(
                         location, cluster, device_name, current_time
                     )
                     if intensity_details:
-                        # Convert percentage (0-100) to ratio (0.0-1.0) for control output
+                        # Sun: use schedule (ramps, target). Convert 0-100% to 0.0-1.0
                         context["light_intensity"] = (
                             intensity_details["effective_intensity"] / 100.0
                         )
                         logger.debug(
-                            f"Light {device_name} scheduled intensity: {intensity_details['effective_intensity']}%"
+                            f"Light {device_name} sun intensity: {intensity_details['effective_intensity']}%"
                         )
                     else:
+                        # Sun window but no schedule details: command 0% (safe fallback)
+                        context["light_intensity"] = 0.0
                         key = (location, cluster, device_name)
                         now_ts = current_time.timestamp()
                         last = self._last_no_schedule_log.get(key, 0.0)
                         if now_ts - last >= self._no_schedule_log_interval_sec:
                             self._last_no_schedule_log[key] = now_ts
                             logger.warning(
-                                f"No active light schedule for {location}/{cluster}/{device_name}; "
-                                f"light will not be updated. Re-save room schedule in ZoneConfig or call "
-                                f"POST /api/room-schedule/{location}/{cluster}/sync-from-mode-parameters"
+                                f"No sun schedule for {location}/{cluster}/{device_name}; "
+                                f"commanding 0%. Re-save room schedule in ZoneConfig."
                             )
-                    # System design: every dimmable light has an active schedule; no fallback.
 
             await self.device_controller.process_device(
                 location, cluster, device_name, device_info, sensor_values, current_time, context
