@@ -125,32 +125,34 @@ export default function ZoneConfig() {
   return (
     <div className="min-h-screen bg-gray-950 p-2">
       <div className="max-w-[1920px] mx-auto h-[calc(100vh-1rem)] flex flex-col">
-        <div className="flex items-center justify-between mb-2 px-1">
-          <h1 className="text-lg font-bold text-gray-100 flex items-center gap-2">
-            <span>{location === 'Veg Room' ? '🌱' : location === 'Flower Room' ? '🌻' : '🌿'}</span> 
-            {cluster === 'main' ? getLocationDisplayName(location) : `${getLocationDisplayName(location)} - ${cluster}`}
-          </h1>
-          <div className="flex items-center gap-3">
-            {(error || success) && (
-              <div className={`text-xs px-2 py-0.5 rounded ${error ? 'bg-red-900 text-red-200' : 'bg-green-900 text-green-200'}`}>
-                {error || success}
-              </div>
-            )}
-            <button
-              onClick={handleSave}
-              disabled={saving}
-              className="px-3 py-1 bg-cyan-700 hover:bg-cyan-600 disabled:opacity-50 text-white text-xs font-bold rounded transition-colors"
-            >
-              {saving ? '...' : 'SAVE'}
-            </button>
-            <RoomModeSelector
-              currentMode={roomMode}
-              onModeChange={handleModeChange}
-              location={location}
-            />
-            <Link to="/" className="text-xs text-gray-400 hover:text-white font-medium flex items-center gap-1 bg-gray-800 px-2 py-1 rounded border border-gray-700 hover:border-gray-500 transition-colors">
-              <span>←</span> Back
-            </Link>
+        <div className="sticky top-0 z-10 bg-gray-950 p-1 mb-2">
+          <div className="flex items-center justify-between px-1">
+            <h1 className="text-lg font-bold text-gray-100 flex items-center gap-2">
+              <span>{location === 'Veg Room' ? '🌱' : location === 'Flower Room' ? '🌻' : '🌿'}</span> 
+              {cluster === 'main' ? getLocationDisplayName(location) : `${getLocationDisplayName(location)} - ${cluster}`}
+            </h1>
+            <div className="flex items-center gap-3">
+              {(error || success) && (
+                <div className={`text-xs px-2 py-0.5 rounded ${error ? 'bg-red-900 text-red-200' : 'bg-green-900 text-green-200'}`}>
+                  {error || success}
+                </div>
+              )}
+              <button
+                onClick={handleSave}
+                disabled={saving}
+                className="px-3 py-1 bg-cyan-700 hover:bg-cyan-600 disabled:opacity-50 text-white text-xs font-bold rounded transition-colors"
+              >
+                {saving ? '...' : 'SAVE'}
+              </button>
+              <RoomModeSelector
+                currentMode={roomMode}
+                onModeChange={handleModeChange}
+                location={location}
+              />
+              <Link to="/" className="text-xs text-gray-400 hover:text-white font-medium flex items-center gap-1 bg-gray-800 px-2 py-1 rounded border border-gray-700 hover:border-gray-500 transition-colors">
+                <span>←</span> Back
+              </Link>
+            </div>
           </div>
         </div>
 
