@@ -2,6 +2,8 @@
 
 > Essential technical info for AI assistants. Updated: 2026-01-13
 
+**Canonical architecture:** For the full system schematic (data flow, services, Redis, DB, hardware, deployment), read **`ARCHITECTURE.md`** at project root. It is the single reference for current architecture and is updated when relevant changes are deployed.
+
 ## System Overview
 
 Raspberry Pi 5 + 512GB NVMe running CEA automation for 2 grow rooms.
