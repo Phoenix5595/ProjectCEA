@@ -118,13 +118,35 @@ export default function VerticalLightsBlock({ location, cluster }: VerticalLight
 
   return (
     <div className="bg-gray-900 rounded-lg border border-gray-800 p-2 h-full flex flex-col">
-      <div className="text-gray-400 uppercase font-bold tracking-wider text-[14px] mb-4">Lights</div>
+      <div className="flex items-center justify-between mb-2">
+        <div className="text-[14px] text-gray-400 uppercase font-bold tracking-wider">Lights</div>
+        <div className="flex items-center gap-2">
+          {lights.map((light) => {
+            const status = statuses[light.device_name!]
+            const isOn = status && status.intensity > 0
+            return (
+              <div 
+                key={light.device_name}
+                className={`text-[14px] px-1.5 py-0.5 rounded cursor-help transition-colors ${
+                  isOn 
+                    ? 'bg-green-900/50 text-green-400 border border-green-800/50' 
+                    : 'bg-gray-800 text-gray-500 border border-gray-700'
+                }`}
+                title={`${light.display_name || light.device_name}: ${isOn ? 'Sun' : 'Moon'}`}
+              >
+                {isOn ? '☀️' : '🌙'}
+              </div>
+            )
+          })}
+        </div>
+      </div>
       
       {lights.length === 0 ? (
         <div className="text-gray-500 text-sm flex-1 flex items-center justify-center">No lights found</div>
       ) : (
         <div className="flex-1 overflow-y-auto">
-          {lights.map(light => {
+          <div className="flex gap-0 h-full">
+            {lights.map(light => {
             const status = statuses[light.device_name!]
             if (!status) return null
             
@@ -137,42 +159,33 @@ export default function VerticalLightsBlock({ location, cluster }: VerticalLight
             const isOn = status && status.intensity > 0
             
             return (
-              <div key={light.device_name} className={`${!isOn ? 'opacity-50' : ''} mb-4`}>
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs text-gray-300 font-medium truncate max-w-[120px]" title={light.display_name || light.device_name}>
-                    {light.display_name || light.device_name}
-                  </span>
-                  <div className="flex items-center gap-2 text-xs">
-                    <div className="flex items-center gap-1">
-                      <span className="text-gray-500">CUR</span>
-                      <span className="bg-gray-800 px-1 py-0.5 rounded text-cyan-400 font-mono min-w-[30px] text-center">
-                        {currentIntensity}%
-                      </span>
-                    </div>
-                    {dayTarget > 0 && (
-                      <div className="flex items-center gap-1">
-                        <span className="text-gray-500">TGT</span>
-                        <span className="bg-gray-800 px-1 py-0.5 rounded text-amber-400 font-mono min-w-[30px] text-center">
-                          {dayTarget}%
-                        </span>
-                      </div>
-                    )}
-                    <span className={`text-xs px-2 py-0.5 rounded ${
-                      isOn 
-                        ? 'bg-green-900/50 text-green-400 border border-green-800/50' 
-                        : 'bg-gray-800 text-gray-500 border border-gray-700'
-                    }`}>
-                      {isOn ? 'Sun' : 'Moon'}
+              <div key={light.device_name} className={`${!isOn ? 'opacity-50' : ''} flex flex-col items-center min-w-[100px] flex-1`}>
+                <div className="text-[14px] text-gray-300 font-medium truncate text-center mb-1" title={light.display_name || light.device_name}>
+                  {light.display_name || light.device_name}
+                </div>
+                <div className="flex items-center gap-1 mb-2 text-xs">
+                  <div className="flex items-center gap-1">
+                    <span className="text-gray-500 text-[12px]">CUR</span>
+                    <span className="bg-gray-800 px-1 py-0.5 rounded text-cyan-400 font-mono text-[12px] min-w-[25px] text-center">
+                      {currentIntensity}%
                     </span>
                   </div>
+                  {dayTarget > 0 && (
+                    <div className="flex items-center gap-1">
+                      <span className="text-gray-500 text-[12px]">TGT</span>
+                      <span className="bg-gray-800 px-1 py-0.5 rounded text-amber-400 font-mono text-[12px] min-w-[25px] text-center">
+                        {dayTarget}%
+                      </span>
+                    </div>
+                  )}
                 </div>
                 
-                <div className="flex items-center gap-2">
-                  <div className="relative flex-1 h-6">
+                <div className="flex flex-col items-center flex-1">
+                  <div className="relative w-16 h-full min-h-[120px]">
                     <div className="absolute inset-0 bg-gray-800 rounded overflow-hidden">
                       <div 
-                        className="absolute h-full bg-gradient-to-r from-blue-600 to-blue-400 transition-all"
-                        style={{ width: `${sliderPosition}%` }}
+                        className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-blue-600 to-blue-400 transition-all"
+                        style={{ height: `${sliderPosition}%` }}
                       />
                     </div>
                     <input
@@ -191,38 +204,41 @@ export default function VerticalLightsBlock({ location, cluster }: VerticalLight
                     />
                     {dayTarget > 0 && (
                       <div 
-                        className="absolute top-0 w-0.5 h-full bg-amber-400 rounded"
-                        style={{ left: `calc(${dayTarget}% - 1px)` }}
+                        className="absolute left-0 right-0 h-1 bg-amber-400 rounded"
+                        style={{ bottom: `calc(${dayTarget}% - 2px)` }}
                         title={`Sun target: ${dayTarget}%`}
                       />
                     )}
                     {pendingTargets[light.device_name!] !== undefined && (
                       <div 
-                        className="absolute top-0 w-0.5 h-full bg-yellow-400 rounded"
-                        style={{ left: `calc(${displayTarget}% - 1px)` }}
+                        className="absolute left-0 right-0 h-1 bg-yellow-400 rounded"
+                        style={{ bottom: `calc(${displayTarget}% - 2px)` }}
                         title={`Pending: ${displayTarget}%`}
                       />
                     )}
                   </div>
-                  <input
-                    type="number"
-                    min={0}
-                    max={100}
-                    value={displayTarget}
-                    onChange={(e) => {
-                        const value = parseInt(e.target.value)
-                        if (!isNaN(value)) {
-                          handleTargetChange(light.device_name!, value)
-                        }
-                      }}
-                    className="w-12 h-6 px-1 text-xs text-center bg-gray-800 border border-gray-700 rounded text-gray-200 focus:outline-none focus:border-cyan-500 transition-colors"
-                    title="Sun target %"
-                  />
-                  <span className="text-xs text-gray-500">%</span>
+                  <div className="flex items-center gap-1">
+                    <input
+                      type="number"
+                      min={0}
+                      max={100}
+                      value={displayTarget}
+                      onChange={(e) => {
+                          const value = parseInt(e.target.value)
+                          if (!isNaN(value)) {
+                            handleTargetChange(light.device_name!, value)
+                          }
+                        }}
+                      className="w-12 h-5 px-1 text-[12px] text-center bg-gray-800 border border-gray-700 rounded text-gray-200 focus:outline-none focus:border-cyan-500 transition-colors"
+                      title="Sun target %"
+                    />
+                    <span className="text-[12px] text-gray-500">%</span>
+                  </div>
                 </div>
               </div>
             )
           })}
+          </div>
           
           {hasPendingChanges && (
             <div className="pt-4 border-t border-gray-800 mt-auto">
