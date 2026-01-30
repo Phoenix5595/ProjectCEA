@@ -1,6 +1,6 @@
 hardware:
   i2c_bus: 0
-  mcp_i2c_bus: 0       # Relays only (MCP23017)
+  mcp_i2c_bus: 0       # Relays only (MCP23017); MCP is connected on bus 0
   dfr0971_i2c_bus: 1   # Dimming only (DF Robot DAC)
   i2c_address: 39
   simulation: false

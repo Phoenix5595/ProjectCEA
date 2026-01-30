@@ -33,9 +33,22 @@ def get_config() -> ConfigLoader:
 
 
 @router.get("/health")
-async def health_check() -> dict[str, Any]:
-    """Health check endpoint."""
-    return {"status": "ok", "timestamp": datetime.now().isoformat()}
+async def health_check(
+    relay_manager: RelayManager = Depends(get_relay_manager),
+) -> dict[str, Any]:
+    """Health check endpoint. Includes hardware.mcp (connected, simulation)."""
+    mcp = relay_manager.mcp23017
+    return {
+        "status": "ok",
+        "timestamp": datetime.now().isoformat(),
+        "service": "automation-service",
+        "hardware": {
+            "mcp": {
+                "connected": mcp.is_connected(),
+                "simulation": mcp.simulation,
+            },
+        },
+    }
 
 
 @router.get("/api/status")

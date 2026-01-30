@@ -5,10 +5,11 @@
 # MCP23017 = relays only (on/off). DFR0971 = dimming only (0-10V). Use separate buses when possible.
 hardware:
   i2c_bus: 1              # Legacy fallback for both (if mcp_i2c_bus/dfr0971_i2c_bus omitted)
-  mcp_i2c_bus: 0          # Relays only (MCP23017), typically bus 0
+  mcp_i2c_bus: 0          # Relays only (MCP23017); MCP is connected on bus 0
   dfr0971_i2c_bus: 1      # Dimming only (DF Robot DAC), typically bus 1
   i2c_address: 0x20        # MCP23017 I2C address (0x20-0x27, check with: i2cdetect -y 1)
   simulation: false       # Set to true for testing without hardware
+  require_mcp: false      # If true, startup fails when MCP23017 probe fails; else fallback to simulation
 
 # Device Configuration
 # MCP: 16 relay channels (0-15). DFR0971: 6 dimming channels (3 boards × 2 channels each).

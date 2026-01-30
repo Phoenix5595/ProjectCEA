@@ -8,6 +8,7 @@ from app.routes import (
     alarms,
     devices,
     failsafe,
+    hardware,
     lights,
     mode,
     pid,
@@ -35,6 +36,7 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(lights.router, tags=["lights"])
     app.include_router(setpoints.router, tags=["setpoints"])
     app.include_router(devices.router, tags=["devices"])
+    app.include_router(hardware.router, tags=["hardware"])
     app.include_router(status.router, tags=["status"])
     app.include_router(alarms.router, tags=["alarms"])
     app.include_router(pid.router, tags=["pid"])
@@ -44,12 +46,7 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(websocket.router, tags=["websocket"])
     app.include_router(room_modes.router, tags=["room-modes"])
     app.include_router(redis_state.router, tags=["redis-state"])
-
-    # Health check endpoint
-    @app.get("/health")
-    async def health_check():
-        """Health check endpoint."""
-        return {"status": "healthy", "service": "automation-service"}
+    # Health (with hardware.mcp) is served by status.router GET /health
 
     logger.info("All routes registered")
 
@@ -82,6 +79,9 @@ def setup_dependency_overrides(app: FastAPI, container) -> None:
     app.dependency_overrides[devices.get_database] = container.get_database
     app.dependency_overrides[devices.get_config] = container.get_config
     app.dependency_overrides[devices.get_relay_manager] = container.get_relay_manager
+
+    # Override dependencies in hardware module
+    app.dependency_overrides[hardware.get_relay_manager] = container.get_relay_manager
 
     # Override dependencies in status module
     app.dependency_overrides[status.get_database] = container.get_database

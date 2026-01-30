@@ -196,6 +196,7 @@ class ServiceContainer:
             )
 
         # Initialize MCP23017 relay driver (relays only)
+        require_mcp = hardware_config.get("require_mcp", False)
         try:
             self.mcp23017 = MCP23017Driver(
                 i2c_bus=mcp_i2c_bus, i2c_address=i2c_address, simulation=simulation
@@ -203,7 +204,16 @@ class ServiceContainer:
             logger.info(
                 f"MCP23017 initialized on bus {mcp_i2c_bus} (relays only, addr=0x{i2c_address:02x}, simulation={simulation})"
             )
+            if not simulation and not self.mcp23017.probe():
+                if require_mcp:
+                    raise RuntimeError(
+                        "MCP23017 probe failed (I2C not responding); require_mcp is true"
+                    )
+                logger.warning("MCP23017 probe failed, falling back to simulation mode")
+                self.mcp23017 = MCP23017Driver(simulation=True)
         except Exception as e:
+            if require_mcp and "probe failed" in str(e):
+                raise
             logger.error(f"Failed to initialize MCP23017: {e}")
             self.mcp23017 = MCP23017Driver(simulation=True)
             logger.warning("Using MCP23017 in simulation mode")

@@ -33,6 +33,7 @@ Deployment & Operational Model
 - Production path is read-only from development environments; changes go through CI and deployment tooling.
 - Phases: Phase 1 focuses on Reliability (robustness, testing, observability) before feature expansion.
 - Observability: structured logging, health endpoints, basic metrics; Grafana dashboards for runtime insights.
+- **Hardware verification (automation-service)**: MCP23017 relay board is probed at startup (I2C read); `require_mcp` in config controls fail vs simulation fallback. GET /health includes `hardware.mcp` (connected, simulation). POST /api/hardware/relays/test runs per-channel toggle and read-back for commissioning; GET /api/hardware/relays/state returns current relay channel states.
 
 Constraints & Non-Negotiables
 - 1 request per second (sampling) constraint for control loop stability.
