@@ -9,6 +9,9 @@ import os
 import asyncpg
 
 from app.models import DataPoint
+from shared.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class DatabaseManager:
@@ -58,7 +61,7 @@ class DatabaseManager:
                     server_settings={"application_name": "cea_backend"},
                 )
             except Exception as e:
-                raise ConnectionError(f"Failed to connect to TimescaleDB: {e}")
+                raise ConnectionError(f"Failed to connect to TimescaleDB: {e}") from e
         return self._pool
 
     async def close(self):
@@ -104,7 +107,7 @@ class DatabaseManager:
                 logger.debug("DB: Using daily continuous aggregates for large time range")
                 rows = await conn.fetch(
                     """
-                    SELECT 
+                    SELECT
                         md.time,
                         s.name as sensor_name,
                         s.unit as sensor_unit,
@@ -127,7 +130,7 @@ class DatabaseManager:
                 logger.debug("DB: Using hourly continuous aggregates for medium time range")
                 rows = await conn.fetch(
                     """
-                    SELECT 
+                    SELECT
                         mh.time,
                         s.name as sensor_name,
                         s.unit as sensor_unit,
@@ -150,7 +153,7 @@ class DatabaseManager:
                 # For smaller ranges, get all data points from measurement table
                 rows = await conn.fetch(
                     """
-                    SELECT 
+                    SELECT
                         m.time,
                         s.name as sensor_name,
                         s.unit as sensor_unit,

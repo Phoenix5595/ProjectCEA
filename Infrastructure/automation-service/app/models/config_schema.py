@@ -94,7 +94,6 @@ class AppConfig(BaseModel):
                             board_ids.add(b.get("board_id"))
                             board_ids.add(b.get("id"))
 
-        channels_seen = set()
         duplicates = False
 
         def iter_device_props(devices_dict):

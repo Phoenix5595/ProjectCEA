@@ -22,7 +22,7 @@ class DeviceRepository(BaseRepository):
             async with self.pool.acquire() as conn:
                 row = await conn.fetchrow(
                     """SELECT location, cluster, device_name, channel, state, mode, updated_at
-                       FROM device_states 
+                       FROM device_states
                        WHERE location = $1 AND cluster = $2 AND device_name = $3""",
                     location,
                     cluster,
@@ -49,7 +49,7 @@ class DeviceRepository(BaseRepository):
                 await conn.execute(
                     """INSERT INTO device_states (location, cluster, device_name, channel, state, mode, updated_at)
                        VALUES ($1, $2, $3, $4, $5, $6, NOW())
-                       ON CONFLICT (location, cluster, device_name) 
+                       ON CONFLICT (location, cluster, device_name)
                        DO UPDATE SET channel = $4, state = $5, mode = $6, updated_at = NOW()""",
                     location,
                     cluster,
@@ -83,7 +83,7 @@ class DeviceRepository(BaseRepository):
             async with self.pool.acquire() as conn:
                 row = await conn.fetchrow(
                     """SELECT location, cluster, device_name, channel, active_high, safe_state, mcp_board_id
-                       FROM device_mappings 
+                       FROM device_mappings
                        WHERE location = $1 AND cluster = $2 AND device_name = $3""",
                     location,
                     cluster,
@@ -111,7 +111,7 @@ class DeviceRepository(BaseRepository):
                 await conn.execute(
                     """INSERT INTO device_mappings (location, cluster, device_name, channel, active_high, safe_state, mcp_board_id)
                        VALUES ($1, $2, $3, $4, $5, $6, $7)
-                       ON CONFLICT (location, cluster, device_name) 
+                       ON CONFLICT (location, cluster, device_name)
                        DO UPDATE SET channel = $4, active_high = $5, safe_state = $6, mcp_board_id = $7""",
                     location,
                     cluster,

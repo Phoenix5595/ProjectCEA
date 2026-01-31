@@ -182,7 +182,7 @@ async def update_setpoints(
             raise HTTPException(
                 status_code=400,
                 detail="expected_version must be in ISO format (e.g., '2024-01-15T10:30:00Z')",
-            )
+            ) from None
 
     # Merge with existing values
     final_heat = (
@@ -258,13 +258,13 @@ async def update_setpoints(
             raise HTTPException(status_code=500, detail="Failed to update setpoints in database.")
     except ValueError as e:
         logger.error(f"Configuration error in update_setpoints: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Configuration error: {e}")
+        raise HTTPException(status_code=500, detail=f"Configuration error: {e}") from e
     except (PostgresConnectionError, PostgresError) as e:
         logger.error(f"Database connection or query error in update_setpoints: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {e}") from e
     except Exception as e:
         logger.error(f"Unhandled error updating setpoints: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {e}")
+        raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {e}") from e
 
     # Set mode to 'auto' if not in failsafe (only for legacy mode=NULL setpoints)
     if setpoints.mode is None:
@@ -377,11 +377,11 @@ async def get_effective_setpoints(
         async with database._pool.acquire() as conn:
             row = await conn.fetchrow(
                 """
-                SELECT 
-                    effective_heating_setpoint, effective_cooling_setpoint, 
-                    effective_vpd_setpoint, nominal_heating_setpoint, 
+                SELECT
+                    effective_heating_setpoint, effective_cooling_setpoint,
+                    effective_vpd_setpoint, nominal_heating_setpoint,
                     nominal_cooling_setpoint, nominal_vpd_setpoint, mode
-                FROM effective_setpoints 
+                FROM effective_setpoints
                 WHERE location = $1 AND cluster = $2 AND device_name = 'Main'
                 ORDER BY timestamp DESC LIMIT 1
             """,
@@ -401,4 +401,4 @@ async def get_effective_setpoints(
                 }
             return {}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e

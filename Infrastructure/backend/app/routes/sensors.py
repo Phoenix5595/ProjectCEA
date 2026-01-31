@@ -15,7 +15,7 @@ from shared.logging import get_logger
 router = APIRouter(prefix="/api/sensors", tags=["sensors"])
 
 # Import from dependencies to avoid circular imports
-from app.dependencies import get_db_manager
+from app.dependencies import get_db_manager  # noqa: E402
 
 
 def parse_datetime_param(param: str | None) -> datetime | None:
@@ -199,7 +199,7 @@ async def get_live_sensor_data(
     Returns:
         Dictionary of sensor_type -> SensorDataResponse with single latest data point
     """
-    logger = get_logger(__name__)
+    get_logger(__name__)
 
     # Get sensor suffix based on location/cluster
     suffix = get_sensor_suffix(location, cluster)
@@ -277,7 +277,7 @@ async def get_all_live_sensor_data():
     Returns:
         List of sensor data with name, value, timestamp, and unit
     """
-    logger = get_logger(__name__)
+    get_logger(__name__)
 
     # Get all sensor values from Redis
     sensor_values = await get_all_sensor_values()

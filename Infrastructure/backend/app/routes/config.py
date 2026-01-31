@@ -9,7 +9,7 @@ from fastapi import APIRouter
 router = APIRouter(prefix="/api/config", tags=["config"])
 
 # Import from dependencies to avoid circular imports
-from app.dependencies import get_config_loader
+from app.dependencies import get_config_loader  # noqa: E402
 
 
 @router.get("", response_model=dict[str, Any])

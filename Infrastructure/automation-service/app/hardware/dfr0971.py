@@ -9,8 +9,7 @@ Controls DFR0971 modules for HLG320B light dimming
 Supports multiple boards with different I2C addresses
 Supports simulation mode when hardware is not connected
 """
-
-from dataclasses import dataclass
+from dataclasses import dataclass  # noqa: E402
 
 logger = get_logger(__name__)
 
@@ -257,7 +256,6 @@ class DFR0971Driver:
 
             max_retries = 3
             retry_delay = 0.01  # Start with 10ms delay
-            last_error = None
 
             for attempt in range(max_retries):
                 try:
@@ -282,11 +280,9 @@ class DFR0971Driver:
                         continue
                     else:
                         # Last attempt failed or non-retryable error
-                        last_error = e
                         raise
-                except Exception as e:
+                except Exception:
                     # Other errors - don't retry
-                    last_error = e
                     raise
 
             # Delay after setting voltage to ensure command is processed

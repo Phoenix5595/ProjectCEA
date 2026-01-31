@@ -129,7 +129,7 @@ async def get_all_sensor_values() -> dict[str, float]:
         values = await client.mget(value_keys)
 
         result = {}
-        for key, value in zip(value_keys, values):
+        for key, value in zip(value_keys, values, strict=False):
             if value is not None:
                 try:
                     # Remove 'sensor:' prefix
@@ -168,7 +168,7 @@ async def get_all_sensor_timestamps(sensor_names: list[str]) -> dict[str, int]:
         values = await client.mget(ts_keys)
 
         result = {}
-        for sensor_name, value in zip(sensor_names, values):
+        for sensor_name, value in zip(sensor_names, values, strict=False):
             if value is not None:
                 try:
                     result[sensor_name] = int(value)

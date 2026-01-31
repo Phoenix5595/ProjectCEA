@@ -70,4 +70,6 @@ async def get_schedule_state(
         return schedule_state
     except Exception as e:
         logger.error(f"Error getting schedule state for {location}/{cluster}: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to retrieve schedule state: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to retrieve schedule state: {str(e)}"
+        ) from e

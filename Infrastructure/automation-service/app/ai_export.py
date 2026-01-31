@@ -54,7 +54,7 @@ class AIDataExporter:
             ) AS bucket
         ),
         sensor_data AS (
-            SELECT 
+            SELECT
                 time_bucket('%s minutes', m.time) AS bucket,
                 s.name AS sensor_name,
                 AVG(m.value) AS value
@@ -67,7 +67,7 @@ class AIDataExporter:
             GROUP BY bucket, s.name
         ),
         setpoint_data AS (
-            SELECT 
+            SELECT
                 time_bucket('%s minutes', time) AS bucket,
                 AVG(day_temp) AS temp_setpoint,
                 AVG(day_humidity) AS humidity_setpoint,
@@ -78,7 +78,7 @@ class AIDataExporter:
               AND cluster = %s
             GROUP BY bucket
         )
-        SELECT 
+        SELECT
             tb.bucket AS timestamp,
             MAX(CASE WHEN sd.sensor_name = 'temperature' THEN sd.value END) AS temperature,
             MAX(CASE WHEN sd.sensor_name = 'humidity' THEN sd.value END) AS humidity,
@@ -159,7 +159,7 @@ class AIDataExporter:
     async def get_available_ranges(self, location: str, cluster: str) -> dict:
         """Get available data ranges for a location/cluster."""
         query = """
-        SELECT 
+        SELECT
             MIN(time) as earliest,
             MAX(time) as latest,
             COUNT(*) as total_rows

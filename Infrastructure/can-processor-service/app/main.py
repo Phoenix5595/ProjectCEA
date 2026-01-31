@@ -8,19 +8,23 @@ Reads CAN messages directly from CAN bus, decodes once, processes, and writes to
 - TimescaleDB (measurement table) - full history
 - Redis state keys (sensor:*) - live values for frontend
 """
-import argparse
-from datetime import datetime
-import os
-import signal
-import socket
-import sys
-import time
+import argparse  # noqa: E402
+from datetime import datetime  # noqa: E402
+import os  # noqa: E402
+import signal  # noqa: E402
+import socket  # noqa: E402
+import sys  # noqa: E402
+import time  # noqa: E402
 
-from app.can_reader import CANReader
-from app.decoder import decode_message_data
-from app.processor import extract_sensor_values, get_location_from_node, validate_decoded_data
-from app.writer import DataWriter
-from shared.logging import setup_structured_logging
+from app.can_reader import CANReader  # noqa: E402
+from app.decoder import decode_message_data  # noqa: E402
+from app.processor import (  # noqa: E402
+    extract_sensor_values,
+    get_location_from_node,
+    validate_decoded_data,
+)
+from app.writer import DataWriter  # noqa: E402
+from shared.logging import setup_structured_logging  # noqa: E402
 
 # Configure structured logging
 logger = setup_structured_logging(
@@ -184,7 +188,7 @@ def process_can_message(msg):
 
         # Add calculated RH/VPD to decoded data for database storage
         # NOTE: Only add calculated RH/VPD from PT100, NOT secondary_rh from SCD30
-        for sensor_name, value, unit in sensors:
+        for sensor_name, value, _unit in sensors:
             # Match calculated RH (rh_b, rh_f, rh_v) but NOT secondary_rh
             if (
                 sensor_name.startswith("rh_") or sensor_name == "rh"

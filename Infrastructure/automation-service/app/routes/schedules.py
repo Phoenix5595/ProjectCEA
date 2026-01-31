@@ -344,7 +344,7 @@ async def update_schedule(
             raise HTTPException(
                 status_code=400,
                 detail="expected_version must be in ISO format (e.g., '2024-01-15T10:30:00Z')",
-            )
+            ) from None
 
     # Determine final values after update to validate light schedules remain daily
     final_mode = schedule.mode or existing.get("mode")
@@ -644,8 +644,8 @@ async def get_room_schedule(
         day_end_raw = format_time_value(day_schedule.get("end_time"), "20:00")
 
         # Check if it's an overnight schedule (end < start in minutes)
-        day_start_min = parse_time_to_minutes(day_start_raw)
-        day_end_min = parse_time_to_minutes(day_end_raw)
+        parse_time_to_minutes(day_start_raw)
+        parse_time_to_minutes(day_end_raw)
 
         # For day schedule, if it's overnight (e.g., 17:00-11:00), that's actually 18 hours
         # But we want to return the actual start and end times as stored
@@ -734,7 +734,7 @@ async def save_room_schedule(
     except (ValueError, IndexError) as e:
         raise HTTPException(
             status_code=400, detail=f"Invalid time format. Use HH:MM format. Error: {e}"
-        )
+        ) from e
 
     # Validate ramp durations
     if schedule.ramp_up_duration is not None and schedule.ramp_up_duration < 0:
@@ -996,7 +996,7 @@ async def save_room_schedule(
                 )
     except Exception as e:
         logger.error(f"Error saving room schedule for {location}/{cluster}: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Database transaction failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Database transaction failed: {str(e)}") from e
 
     # Log room schedule configuration to database (not Redis)
     await database.log_config_version(
@@ -1382,7 +1382,9 @@ async def save_climate_schedule(
 
     except Exception as e:
         logger.error(f"Error saving climate schedule: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to save climate schedule: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to save climate schedule: {str(e)}"
+        ) from e
 
     # Broadcast update to all WebSocket clients
     try:

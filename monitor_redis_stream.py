@@ -28,7 +28,7 @@ class IncrementalRedisMonitor(BaseMonitor):
             type_counts = defaultdict(int)
             type_timestamps = defaultdict(list)
 
-            for entry_id, fields in entries:
+            for _entry_id, fields in entries:
                 entry_type = fields.get("type", "unknown")
                 type_counts[entry_type] += 1
 
@@ -37,7 +37,7 @@ class IncrementalRedisMonitor(BaseMonitor):
                     try:
                         timestamp = int(ts) / 1000
                         type_timestamps[entry_type].append(timestamp)
-                    except:
+                    except Exception:
                         pass
 
             # Calculate rates (entries per minute)
@@ -104,7 +104,7 @@ class IncrementalRedisMonitor(BaseMonitor):
         print(f"{GREEN}Latest Entries (last 10){NC}")
         print("----------------------------------------")
         # Reserve lines for entries (will be calculated after we know line positions)
-        for i in range(10):  # Reserve max, will be adjusted
+        for _i in range(10):  # Reserve max, will be adjusted
             print()
         print()
 

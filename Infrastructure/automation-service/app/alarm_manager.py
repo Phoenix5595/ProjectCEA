@@ -131,7 +131,7 @@ class AlarmManager:
             True if critical alarms exist, False otherwise
         """
         alarms = self.redis_client.read_alarms(location, cluster)
-        for alarm_name, alarm_data in alarms.items():
+        for _alarm_name, alarm_data in alarms.items():
             if alarm_data.get("severity") == "critical" and alarm_data.get("active", False):
                 return True
         return False

@@ -64,7 +64,7 @@ class IncrementalMonitor(BaseMonitor):
             last_minute = result.stdout.strip() if result.returncode == 0 else "0"
 
             return recent_count, last_minute
-        except:
+        except Exception:
             return "0", "0"
 
     def draw_initial_screen(self):
@@ -113,7 +113,7 @@ class IncrementalMonitor(BaseMonitor):
         used_lines = 33  # Approximate lines used so far
         available_lines = self.max_lines - used_lines - 3  # -3 for footer
         max_message_lines = max(4, min(10, available_lines))  # At least 4, max 10
-        for i in range(max_message_lines):
+        for _i in range(max_message_lines):
             print()
         print()
         print("==========================================")

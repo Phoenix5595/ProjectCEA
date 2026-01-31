@@ -31,7 +31,7 @@ async def get_latest_weather(db: DatabaseManager = Depends(get_database)) -> dic
         async with pool.acquire() as conn:
             # Get latest measurements for all weather sensors
             rows = await conn.fetch("""
-                SELECT 
+                SELECT
                     s.name as sensor_name,
                     m.value,
                     m.time,
@@ -40,8 +40,8 @@ async def get_latest_weather(db: DatabaseManager = Depends(get_database)) -> dic
                 JOIN sensor s ON m.sensor_id = s.sensor_id
                 WHERE s.name LIKE 'outside_%'
                 AND m.time = (
-                    SELECT MAX(time) 
-                    FROM measurement 
+                    SELECT MAX(time)
+                    FROM measurement
                     WHERE sensor_id = m.sensor_id
                 )
                 ORDER BY s.name

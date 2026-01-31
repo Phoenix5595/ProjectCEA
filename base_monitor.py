@@ -35,7 +35,7 @@ class BaseMonitor:
             cols, lines = shutil.get_terminal_size()
             max_lines = lines - 25  # 50px / 2px per line = 25 lines
             return max(max_lines, 20)  # Minimum 20 lines
-        except:
+        except Exception:
             return 40  # Default fallback
 
     def check_terminal_resize(self):
@@ -53,7 +53,7 @@ class BaseMonitor:
         try:
             width, height = shutil.get_terminal_size()
             return width, height
-        except:
+        except Exception:
             return 120, 40  # Default fallback
 
     def move_to_line(self, line):
@@ -84,7 +84,7 @@ class BaseMonitor:
             try:
                 self.redis_client = redis.Redis(host="localhost", port=6379, decode_responses=True)
                 self.redis_client.ping()
-            except:
+            except Exception:
                 return None
         return self.redis_client
 
@@ -94,7 +94,7 @@ class BaseMonitor:
         if r:
             try:
                 return r.get(key)
-            except:
+            except Exception:
                 return None
         return None
 
@@ -104,7 +104,7 @@ class BaseMonitor:
         if r:
             try:
                 return r.xlen("sensor:raw")
-            except:
+            except Exception:
                 return 0
         return 0
 
@@ -124,7 +124,7 @@ class BaseMonitor:
                             break
                 return list(reversed(filtered))
             return list(reversed(entries))
-        except:
+        except Exception:
             return []
 
     def format_timestamp(self, ts):
@@ -133,7 +133,7 @@ class BaseMonitor:
             try:
                 dt = datetime.fromtimestamp(int(ts) / 1000)
                 return f"\033[0;90m{dt.strftime('%H:%M:%S')}\033[0m"
-            except:
+            except Exception:
                 pass
         return ""
 
@@ -213,7 +213,7 @@ class BaseMonitor:
                     lines.append(" ".join(sensor_lines[:3]))
                     if len(sensor_lines) > 3:
                         lines.append(" ".join(sensor_lines[3:]))
-            except:
+            except Exception:
                 can_id = fields.get("id", "N/A")
                 lines.append(f"CAN: {can_id}")
         elif entry_type == "soil":
@@ -244,7 +244,7 @@ class BaseMonitor:
                 ["systemctl", "is-active", service_name], capture_output=True, text=True, timeout=1
             )
             return result.stdout.strip() if result.returncode == 0 else "inactive"
-        except:
+        except Exception:
             return "inactive"
 
     def get_can_state(self):
@@ -261,7 +261,7 @@ class BaseMonitor:
                         state = line.split("state")[1].split()[0]
                         return state
             return "NOT FOUND"
-        except:
+        except Exception:
             return "UNKNOWN"
 
     def draw_initial_screen(self):

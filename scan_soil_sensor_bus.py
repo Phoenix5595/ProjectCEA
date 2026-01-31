@@ -382,19 +382,19 @@ def main():
 Examples:
   # Run diagnostic tests (check hardware/connection)
   %(prog)s --test
-  
+
   # Continuous monitoring (default - just run the script)
   %(prog)s
-  
+
   # Single scan to find all sensors and exit
   %(prog)s --single
-  
+
   # Scan specific Modbus ID range with verbose output
   %(prog)s --scan-range 1-4 --verbose
-  
+
   # Use different serial port
   %(prog)s --port /dev/ttyUSB0
-  
+
   # Custom update interval (default is 5 seconds)
   %(prog)s --interval 10
         """,

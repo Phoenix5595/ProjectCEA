@@ -61,7 +61,7 @@ class SensorRepository(BaseRepository):
             try:
                 async with self.pool.acquire() as conn:
                     rows = await conn.fetch(
-                        """SELECT DISTINCT ON (m.sensor_id) m.sensor_id, m.value 
+                        """SELECT DISTINCT ON (m.sensor_id) m.sensor_id, m.value
                            FROM measurement m
                            WHERE m.sensor_id IN (SELECT sensor_id FROM sensor WHERE name = ANY($1))
                            ORDER BY m.sensor_id, m.time DESC""",

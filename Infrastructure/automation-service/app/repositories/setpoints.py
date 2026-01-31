@@ -40,7 +40,7 @@ class SetpointRepository(BaseRepository):
                 row = await conn.fetchrow(
                     """SELECT location, cluster, mode, heating_setpoint, cooling_setpoint,
                               humidity, co2, vpd, ramp_in_duration, updated_at
-                       FROM setpoints 
+                       FROM setpoints
                        WHERE location = $1 AND cluster = $2 AND mode = $3""",
                     location,
                     cluster,

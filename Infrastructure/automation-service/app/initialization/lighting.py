@@ -28,8 +28,8 @@ async def set_safety_levels(config, dfr0971_manager) -> None:
     devices = config.get_devices()
     safety_levels = {}
 
-    for location, clusters in devices.items():
-        for cluster, cluster_devices in clusters.items():
+    for _location, clusters in devices.items():
+        for _cluster, cluster_devices in clusters.items():
             for device_name, device_info in cluster_devices.items():
                 # Only set safety for dimmable DFR0971 lights
                 if not device_info.get("dimming_enabled", False):

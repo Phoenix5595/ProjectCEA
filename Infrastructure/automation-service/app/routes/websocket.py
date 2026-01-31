@@ -83,7 +83,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         # Send initial state
         database = get_database()
         relay_manager = get_relay_manager()
-        automation_redis = get_automation_redis()
+        get_automation_redis()
 
         if database and relay_manager:
             # Get all devices
