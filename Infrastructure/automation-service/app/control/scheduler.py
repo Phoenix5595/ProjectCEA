@@ -10,13 +10,13 @@ exist only if their duration is above 0.
 from __future__ import annotations
 
 from datetime import datetime, time, timedelta
+from typing import Any
 from zoneinfo import ZoneInfo
 
 from shared.logging import get_logger
 
 # Timezone constant for consistent scheduling
 LOCAL_TZ = ZoneInfo("America/Toronto")
-from typing import Any
 
 logger = get_logger(__name__)
 
@@ -394,7 +394,7 @@ class Scheduler:
 
                 # RAMP DOWN: Ramp from sun target to effective minimum (0% at moon, 10% otherwise)
                 elif ramp_down_duration > 0 and time_until_end < ramp_down_duration:
-                    ramp_down_start = end_datetime - timedelta(minutes=ramp_down_duration)
+                    _ramp_down_start = end_datetime - timedelta(minutes=ramp_down_duration)
                     # Allow 0% at moon; 10% minimum during sun
                     effective_minimum = min(
                         self.MINIMUM_LIGHT_INTENSITY,

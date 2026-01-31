@@ -29,7 +29,7 @@ control/
 2. Load config snapshot from PostgreSQL
 3. Determine current mode (DAY/NIGHT/PRE_*/via scheduler)
 4. Calculate effective setpoints (with ramp interpolation)
-5. Run PID controllers
+5. Run PID controllers (heating, cooling, CO2 only); VPD-only for humidifier/dehumidifier
 6. Apply safety constraints (failsafe supervisor)
 7. Write actuator commands
 ```
@@ -41,6 +41,11 @@ control/
 | `ControlEngine` | `control_engine.py` | Main loop coordinator |
 | `Scheduler` | `scheduler.py` | Mode + setpoint calculation |
 | `PIDController` | `pid_controller.py` | Standard PID with anti-windup |
+| `PIDControllerManager` | `pid_controller_manager.py` | PID lifecycle, control-mode routing (heating, cooling, CO2) |
+| `VPDController` | `vpd_controller.py` | VPD calculation, target humidity from VPD |
+| `VPDCascadeController` | `vpd_cascade_controller.py` | VPD-driven actuator selection (vent/dehum/humidifier) |
+| `DeviceProcessor` | `device_processor.py` | Device loop, PID + VPD context |
+| `DeviceController` | `device_controller.py` | Device output (PID, VPD-only, rule-based) |
 | `RelayManager` | `relay_manager.py` | Hardware abstraction |
 
 Light intensity comes from light (sun/moon) via scheduler; setpoints come from climate (get_climate_mode), which is slave to light — DAY = sun length, NIGHT = moon duration.

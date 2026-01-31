@@ -47,8 +47,6 @@ class DeviceController:
             context: Automation context dict
         """
         with LoggingContext(operation="process_device"):
-            device_type = device_info.get("device_type", "")
-
             if device_info.get("dimming_enabled") and device_info.get("dimming_type") == "dfr0971":
                 logger.debug(f"Processing device {device_name} ({location}/{cluster})")
 
@@ -75,7 +73,13 @@ class DeviceController:
             if control_output is not None:
                 # Apply the control output
                 await self._apply_control_output(
-                    location, cluster, device_name, device_info, control_output, current_time
+                    location,
+                    cluster,
+                    device_name,
+                    device_info,
+                    control_output,
+                    current_time,
+                    context,
                 )
 
     def _determine_control_mode(
@@ -106,12 +110,15 @@ class DeviceController:
     def _get_setpoint_for_device_type(
         self, device_type: str, context: dict[str, Any]
     ) -> float | None:
-        """Get the appropriate setpoint for a device type."""
+        """Get the appropriate setpoint for a device type.
+
+        VPD is king: humidifier and dehumidifier use effective_vpd_setpoint only.
+        """
         setpoint_mapping = {
             "heating": context.get("effective_heating_setpoint"),
             "cooling": context.get("effective_cooling_setpoint"),
-            "humidifier": context.get("effective_humidity_setpoint"),
-            "dehumidifier": context.get("effective_humidity_setpoint"),
+            "humidifier": context.get("effective_vpd_setpoint"),
+            "dehumidifier": context.get("effective_vpd_setpoint"),
             "co2": context.get("effective_co2_setpoint"),
             "light": context.get("light_intensity"),  # For dimmable lights
         }
@@ -160,10 +167,48 @@ class DeviceController:
             if pid_output is not None:
                 return pid_output
 
-            # Rule-based control for non-PID devices
+            # VPD-only control for humidifier and dehumidifier (no humidity setpoint/sensor)
+            if device_type in ["humidifier", "dehumidifier"]:
+                return self._calculate_vpd_based_output(device_type, context)
+
+            # Rule-based control for non-PID devices (heating, cooling, co2)
             return await self._calculate_rule_based_output(
                 location, cluster, device_name, device_info, sensor_values, setpoint
             )
+
+        return None
+
+    def _calculate_vpd_based_output(
+        self, device_type: str, context: dict[str, Any]
+    ) -> float | None:
+        """Calculate control output for humidifier/dehumidifier from VPD only.
+
+        VPD is king: uses effective_vpd_setpoint and current_vpd only.
+        No humidity (RH) setpoint or sensor in the decision.
+        """
+        vpd_setpoint = context.get("effective_vpd_setpoint")
+        current_vpd = context.get("current_vpd")
+        if vpd_setpoint is None or current_vpd is None:
+            return None
+
+        # Deadband (kPa) to prevent chatter; same order as control_engine _process_vpd_control
+        vpd_deadband = 0.1
+
+        if device_type == "humidifier":
+            # VPD too high (dry) -> need moisture -> on
+            if current_vpd > vpd_setpoint + vpd_deadband:
+                return 1.0
+            if current_vpd < vpd_setpoint - vpd_deadband:
+                return 0.0
+            return None  # In band: maintain current state
+
+        if device_type == "dehumidifier":
+            # VPD too low (humid) -> need drying -> on
+            if current_vpd < vpd_setpoint - vpd_deadband:
+                return 1.0
+            if current_vpd > vpd_setpoint + vpd_deadband:
+                return 0.0
+            return None  # In band: maintain current state
 
         return None
 
@@ -284,6 +329,7 @@ class DeviceController:
         device_info: dict[str, Any],
         control_output: float,
         current_time: datetime,
+        context: dict[str, Any] | None = None,
     ) -> None:
         """Apply the calculated control output to the device.
 
@@ -292,6 +338,7 @@ class DeviceController:
             device_info: Device configuration
             control_output: Control output value (0.0-1.0)
             current_time: Current timestamp
+            context: Automation context (for log reason and load_percent)
         """
         device_type = device_info.get("device_type", "")
         channel = device_info.get("channel")
@@ -299,6 +346,13 @@ class DeviceController:
         if channel is None:
             logger.warning(f"No channel configured for {device_name}")
             return
+
+        # Capture old state before applying (for control history log)
+        old_state: int | None = None
+        if self.relay_manager:
+            old_state = self.relay_manager.get_device_state(location, cluster, device_name)
+            if old_state is None:
+                old_state = 0
 
         try:
             # Handle different device types
@@ -315,7 +369,15 @@ class DeviceController:
 
             # Log the control action
             await self._log_control_action(
-                location, cluster, device_name, device_type, channel, control_output, current_time
+                location,
+                cluster,
+                device_name,
+                device_type,
+                channel,
+                control_output,
+                current_time,
+                old_state=old_state,
+                context=context or {},
             )
 
         except Exception as e:
@@ -377,9 +439,7 @@ class DeviceController:
                         )
                 else:
                     # Set dimmer to 0 first, then turn relay OFF (signal before power)
-                    dimmer_ok = self.dfr0971_manager.set_intensity(
-                        board_id, dimming_channel, 0
-                    )
+                    dimmer_ok = self.dfr0971_manager.set_intensity(board_id, dimming_channel, 0)
                     if not dimmer_ok:
                         logger.warning(
                             f"Dimmer set to 0 failed for {device_name} ({location}/{cluster})"
@@ -475,6 +535,26 @@ class DeviceController:
         else:
             logger.warning(f"Failed to set {device_name} ({location}/{cluster}) state")
 
+    def _reason_for_device_type(self, device_type: str, new_state: int) -> str:
+        """Human-readable reason for dashboard log."""
+        if new_state == 1:
+            reasons = {
+                "heating": "Heating threshold hit",
+                "cooling": "Cooling threshold hit",
+                "co2": "CO2 threshold hit",
+                "humidifier": "Humidifying",
+                "dehumidifier": "Dehumidifying",
+            }
+            return reasons.get(device_type, f"Automated control: {device_type}")
+        reasons_off = {
+            "heating": "Heating threshold hit",
+            "cooling": "Cooling threshold hit",
+            "co2": "CO2 threshold hit",
+            "humidifier": "Humidifying",
+            "dehumidifier": "Dehumidifying",
+        }
+        return reasons_off.get(device_type, f"Automated control: {device_type}")
+
     async def _log_control_action(
         self,
         location: str,
@@ -484,21 +564,30 @@ class DeviceController:
         channel: int,
         control_output: float,
         current_time: datetime,
+        old_state: int | None = None,
+        context: dict[str, Any] | None = None,
     ) -> None:
         """Log a control action to the database."""
         try:
-            # Calculate binary state from control output
             new_state = 1 if control_output > 0.5 else 0
+            reason = self._reason_for_device_type(device_type, new_state)
+            load_percent = None
+            if context:
+                pid_out = context.get("pid_output")
+                if pid_out is not None:
+                    load_percent = float(pid_out) * 100.0 if 0 <= pid_out <= 1 else float(pid_out)
+                    load_percent = max(0.0, min(100.0, load_percent))
 
             await self.database.log_control_action(
                 location=location,
                 cluster=cluster,
                 device_name=device_name,
                 channel=channel,
-                old_state=None,  # TODO: Track previous state if needed
+                old_state=old_state,
                 new_state=new_state,
                 mode="auto",
-                reason=f"Automated control: {device_type}",
+                reason=reason,
+                load_percent=load_percent,
             )
         except Exception as e:
             logger.warning(f"Failed to log control action for {device_name}: {e}")

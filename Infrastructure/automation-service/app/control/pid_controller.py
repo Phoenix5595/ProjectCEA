@@ -55,6 +55,64 @@ class PIDController:
         self._integral_max = 100.0
         self._integral_min = -100.0
 
+    @property
+    def integral(self) -> float:
+        """Expose integral term for status."""
+        return self._integral
+
+    @property
+    def previous_error(self) -> float:
+        """Expose last error for status."""
+        return self._last_error
+
+    def calculate(self, error: float, current_time: datetime) -> float:
+        """Compute PID output from pre-computed error (manager calls this).
+
+        Args:
+            error: Control error (setpoint - PV or PV - setpoint depending on device)
+            current_time: Current timestamp for dt calculation
+
+        Returns:
+            PID output in [0, 1] (manager expects 0-1)
+        """
+        dt = 1.0
+        if self._last_time is not None:
+            dt = (current_time - self._last_time).total_seconds()
+            dt = max(0.001, min(dt, 60.0))  # Clamp to avoid huge or zero dt
+
+        # Apply deadband - zero error if within deadband
+        if abs(error) < self.deadband:
+            error = 0.0
+
+        # Proportional term
+        p_term = self.kp * error
+
+        # Integral term (with anti-windup)
+        self._integral += error * dt
+        self._integral = max(self._integral_min, min(self._integral_max, self._integral))
+        i_term = self.ki * self._integral
+
+        # Derivative term
+        d_term = 0.0
+        if self._last_time is not None and dt > 0:
+            d_error = (error - self._last_error) / dt
+            d_term = self.kd * d_error
+
+        # PID output (0-100%), then normalize to [0, 1]
+        output = p_term + i_term + d_term
+        output = max(0.0, min(100.0, output))
+
+        self._last_error = error
+        self._last_time = current_time
+
+        return output / 100.0
+
+    def update_parameters(self, kp: float, ki: float, kd: float) -> None:
+        """Update PID gains (e.g. after reload or auto-tune). Does not reset state."""
+        self.kp = kp
+        self.ki = ki
+        self.kd = kd
+
     def compute(self, setpoint: float, current_value: float, dt: float = 1.0) -> float:
         """Compute PID output.
 
@@ -124,7 +182,7 @@ class PIDController:
 
         # Calculate ON and OFF durations
         on_duration = (self._pwm_duty_cycle / 100.0) * self.pwm_period
-        off_duration = self.pwm_period - on_duration
+        _off_duration = self.pwm_period - on_duration
 
         # Determine current state
         if elapsed < on_duration:

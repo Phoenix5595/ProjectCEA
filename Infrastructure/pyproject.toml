@@ -5,6 +5,19 @@ line-length = 100
 # Target Python version
 target-version = "py311"
 
+# Exclude patterns
+exclude = [
+    ".git",
+    "__pycache__",
+    ".venv",
+    "venv",
+    "node_modules",
+    "dist",
+    "build",
+    "*.egg-info",
+]
+
+[tool.ruff.lint]
 # Enable specific rule sets
 select = [
     "E",   # pycodestyle errors
@@ -22,17 +35,11 @@ ignore = [
     "C901",  # Too complex
 ]
 
-# Exclude patterns
-exclude = [
-    ".git",
-    "__pycache__",
-    ".venv",
-    "venv",
-    "node_modules",
-    "dist",
-    "build",
-    "*.egg-info",
-]
+[tool.ruff.lint.isort]
+# Force imports to be sorted by module, independent of import type
+force-sort-within-sections = true
+# Known first party modules
+known-first-party = ["app", "shared"]
 
 [tool.ruff.format]
 # Use double quotes for strings
@@ -43,12 +50,6 @@ indent-style = "space"
 skip-magic-trailing-comma = false
 # Automatically detect the appropriate line ending
 line-ending = "auto"
-
-[tool.ruff.isort]
-# Force imports to be sorted by module, independent of import type
-force-sort-within-sections = true
-# Known first party modules
-known-first-party = ["app", "shared"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime
 from typing import Any
 
@@ -195,7 +196,7 @@ class PIDControllerManager:
         from app.control.pid_controller import PIDController
 
         # Check if device type supports PID control
-        pid_capable_types = ["heating", "cooling", "humidifier", "dehumidifier", "co2"]
+        pid_capable_types = ["heating", "cooling", "co2"]
 
         if device_type not in pid_capable_types:
             return None
@@ -354,9 +355,7 @@ class PIDControllerManager:
                 logger.error(f"PID calculation failed for {device_name} ({device_type}): {e}")
                 return None
 
-    def _get_setpoint_for_device(
-        self, device_type: str, context: dict[str, Any]
-    ) -> float | None:
+    def _get_setpoint_for_device(self, device_type: str, context: dict[str, Any]) -> float | None:
         """Get the appropriate setpoint for a device type."""
         setpoint_mapping = {
             "heating": "effective_heating_setpoint",
@@ -390,9 +389,7 @@ class PIDControllerManager:
 
         return None
 
-    def _find_temperature_sensor(
-        self, sensor_values: dict[str, float | None]
-    ) -> float | None:
+    def _find_temperature_sensor(self, sensor_values: dict[str, float | None]) -> float | None:
         """Find temperature sensor value."""
         # Look for sensors with 'temperature' in name or 'temp' in name
         for sensor_name, value in sensor_values.items():
@@ -482,6 +479,7 @@ class PIDControllerManager:
         status = {}
         for key, controller in self._pid_controllers.items():
             location, cluster, device_name, device_type = key
+            duty = controller.get_duty_cycle() if hasattr(controller, "get_duty_cycle") else 0.0
             status[f"{location}/{cluster}/{device_name}"] = {
                 "device_type": device_type,
                 "kp": controller.kp,
@@ -489,6 +487,7 @@ class PIDControllerManager:
                 "kd": controller.kd,
                 "integral": getattr(controller, "integral", 0),
                 "previous_error": getattr(controller, "previous_error", 0),
+                "load_percent": round(float(duty), 1),
             }
         return status
 

@@ -69,7 +69,11 @@ class ControlEngine:
 
         # Initialize new extracted components
         self.device_processor = DeviceProcessor(
-            self.device_controller, database, dfr0971_manager, scheduler
+            self.device_controller,
+            database,
+            dfr0971_manager,
+            scheduler,
+            pid_controller_manager=self.pid_controller_manager,
         )
         self.setpoint_manager = SetpointManager(database)
 
@@ -317,7 +321,7 @@ class ControlEngine:
                     # Fallback to legacy mode=None
                     logger.debug(
                         f"No setpoint found for {location}/{cluster} mode={current_mode}, "
-                        + f"falling back to legacy mode=None"
+                        + "falling back to legacy mode=None"
                     )
                     setpoint_data = await self.database.get_setpoint(location, cluster, None)
 
@@ -352,6 +356,16 @@ class ControlEngine:
                         sensor_values,
                         previous_mode,
                     )
+
+                    # Add current VPD for humidifier/dehumidifier (VPD-only control)
+                    sensor_mapping = self._get_sensor_mapping()
+                    location_sensors = sensor_mapping.get(location, {}) if sensor_mapping else {}
+                    cluster_sensors = location_sensors.get(cluster, {})
+                    vpd_sensor_name = cluster_sensors.get("vpd_sensor")
+                    if vpd_sensor_name:
+                        effective_data["current_vpd"] = sensor_values.get(vpd_sensor_name)
+                    else:
+                        effective_data["current_vpd"] = None
 
                     # Store in context
                     self._effective_setpoints[(location, cluster)] = effective_data
@@ -406,6 +420,7 @@ class ControlEngine:
                     effective_data,
                     current_mode,
                     is_sun=is_sun,
+                    previous_climate_mode=previous_mode,
                 )
 
                 # Log effective light intensities for all dimmable lights (throttled: I2C + scheduler + DB at most every 60s per device to reduce CPU)
@@ -444,9 +459,7 @@ class ControlEngine:
                                     effective_light_intensity=intensity_details[
                                         "effective_intensity"
                                     ],
-                                    nominal_light_intensity=intensity_details[
-                                        "nominal_intensity"
-                                    ],
+                                    nominal_light_intensity=intensity_details["nominal_intensity"],
                                     ramp_progress_light=intensity_details["ramp_progress"],
                                     timestamp=current_time,
                                 )
@@ -486,7 +499,7 @@ class ControlEngine:
         location_sensors = sensor_mapping.get(location, {})
         cluster_sensors = location_sensors.get(cluster, {})
 
-        for sensor_type, sensor_name in cluster_sensors.items():
+        for _sensor_type, sensor_name in cluster_sensors.items():
             if sensor_name:
                 value = await self.database.get_sensor_value(sensor_name)
                 sensor_values[sensor_name] = value
@@ -671,6 +684,7 @@ class ControlEngine:
         reason: str,
         sensor_values: dict[str, float | None],
         setpoint: float | None = None,
+        load_percent: float | None = None,
     ) -> None:
         """Set device state and log action.
 
@@ -683,6 +697,7 @@ class ControlEngine:
             reason: Control reason
             sensor_values: Sensor values for logging
             setpoint: Setpoint value for logging
+            load_percent: Optional PID load (0-100) for log display
         """
         current_state = self.relay_manager.get_device_state(location, cluster, device_name) or 0
 
@@ -719,6 +734,7 @@ class ControlEngine:
             reason,
             sensor_value,
             setpoint,
+            load_percent=load_percent,
         )
 
     async def _log_automation_state(self) -> None:

@@ -242,6 +242,8 @@ Bad query pattern (will break with multi-cluster):
 
 ## VPD CASCADE CONTROL
 
+**VPD is king; PID never uses humidity.** Humidifier and dehumidifier are controlled only from VPD setpoint and current VPD (no humidity setpoint or RH sensor in the control decision). PID is used only for heating, cooling, and CO2. Cascade is documented in ARCHITECTURE.md (VPD Cascade Control), ARCHITECTURE_SCHEMATIC.md (Control Loop), and this file.
+
 VPD is the MASTER controller for humidity-related automation.
 RH is monitored as SAFETY backup for heating failure scenarios.
 

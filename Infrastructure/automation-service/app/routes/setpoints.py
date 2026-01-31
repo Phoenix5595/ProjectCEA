@@ -27,9 +27,7 @@ class SetpointUpdate(BaseModel):
     co2: float | None = None
     vpd: float | None = None
     mode: str | None = None
-    ramp_in_duration: int | None = (
-        None  # Minutes to ramp in when entering this mode (0 = instant)
-    )
+    ramp_in_duration: int | None = None  # Minutes to ramp in when entering this mode (0 = instant)
     expected_version: str | None = None  # ISO format timestamp for optimistic locking
 
 

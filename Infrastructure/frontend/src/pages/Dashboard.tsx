@@ -5,7 +5,7 @@ import { apiClient } from '../services/api'
 import { wsClient } from '../services/websocket'
 import { useTheme } from '../contexts/ThemeContext'
 import { logger } from '../utils/logger'
-import type { Device } from '../types/device'
+import type { Device, ControlHistoryEntry } from '../types/device'
 
 interface WeatherData {
   temperature: number
@@ -34,14 +34,52 @@ interface SystemStats {
   }>
 }
 
+/** Parse Lab live API response into flat keys Lab_main_${sensorType} -> number. */
+function parseLabLiveResponse(
+  labLive: Record<string, { data?: Array<{ value?: number }> }>
+): Record<string, number> {
+  const labFlat: Record<string, number> = {}
+  if (!labLive || typeof labLive !== 'object') return labFlat
+  for (const [sensorType, resp] of Object.entries(labLive)) {
+    const dp = Array.isArray(resp?.data) && resp.data.length > 0 ? resp.data[0] : null
+    if (dp?.value != null) labFlat[`Lab_main_${sensorType}`] = Number(dp.value)
+  }
+  return labFlat
+}
 
+const MAX_REASON_LENGTH = 40
+
+/** Format a single control history line for the dashboard log. */
+function formatControlHistoryLine(entry: ControlHistoryEntry): string {
+  const timeStr = (() => {
+    try {
+      const d = new Date(entry.timestamp)
+      return d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+    } catch {
+      return '--:--'
+    }
+  })()
+  const onOff = entry.new_state === 1 ? 'ON' : 'OFF'
+  const reason = entry.reason?.trim() || ''
+  const load = entry.load_percent != null ? Number(entry.load_percent) : null
+  let suffix = ''
+  if (entry.new_state === 1) {
+    if (load != null && reason) suffix = ` (Load ${Math.round(load)}%, ${reason.length > MAX_REASON_LENGTH ? reason.slice(0, MAX_REASON_LENGTH) + '…' : reason})`
+    else if (load != null) suffix = ` (Load ${Math.round(load)}%)`
+    else if (reason) suffix = ` (${reason.length > MAX_REASON_LENGTH ? reason.slice(0, MAX_REASON_LENGTH) + '…' : reason})`
+  } else {
+    if (reason) suffix = ` (${reason.length > MAX_REASON_LENGTH ? reason.slice(0, MAX_REASON_LENGTH) + '…' : reason})`
+  }
+  return `${timeStr} ${entry.device_name} ${onOff}${suffix}`
+}
 
 export default function Dashboard() {
   const { theme, toggleTheme } = useTheme()
   const [devices, setDevices] = useState<Device[]>([])
   const [weatherData, setWeatherData] = useState<WeatherData | null>(null)
   const [systemStats, setSystemStats] = useState<SystemStats | null>(null)
-  const [statusDevices, setStatusDevices] = useState<Record<string, Record<string, Record<string, { intensity?: number }>>> | null>(null)
+  const [statusDevices, setStatusDevices] = useState<Record<string, Record<string, Record<string, { intensity?: number; load_percent?: number }>>> | null>(null)
+  const [controlHistoryByRoom, setControlHistoryByRoom] = useState<Record<string, ControlHistoryEntry[]>>({})
   const [loading, setLoading] = useState(true)
   const [sensorData, setSensorData] = useState<Record<string, number>>({})
 
@@ -126,14 +164,8 @@ export default function Dashboard() {
       // Always fetch Lab live sensors (lab temp, water temp) so they show even if bulk failed (e.g. CORS)
       try {
         const labLive = await apiClient.getLiveSensorData('Lab', 'main') as Record<string, { data?: Array<{ value?: number }> }>
-        if (labLive && typeof labLive === 'object') {
-          const labFlat: Record<string, number> = {}
-          for (const [sensorType, resp] of Object.entries(labLive)) {
-            const dp = Array.isArray(resp?.data) && resp.data.length > 0 ? resp.data[0] : null
-            if (dp?.value != null) labFlat[`Lab_main_${sensorType}`] = Number(dp.value)
-          }
-          if (Object.keys(labFlat).length > 0) setSensorData(prev => ({ ...prev, ...labFlat }))
-        }
+        const labFlat = parseLabLiveResponse(labLive)
+        if (Object.keys(labFlat).length > 0) setSensorData(prev => ({ ...prev, ...labFlat }))
       } catch (_) {
         // Lab live optional
       }
@@ -157,6 +189,20 @@ export default function Dashboard() {
           })
         }
       }
+
+      // Load control history for dashboard log (Veg, Flower, Lab)
+      const rooms: [string, string][] = [['Veg Room', 'main'], ['Flower Room', 'main'], ['Lab', 'main']]
+      const historyByRoom: Record<string, ControlHistoryEntry[]> = {}
+      await Promise.all(rooms.map(async ([loc, cluster]) => {
+        try {
+          const list = await apiClient.getControlHistory(loc, cluster, 10)
+          historyByRoom[`${loc}_${cluster}`] = list ?? []
+        } catch (err) {
+          logger.warn('Control history fetch failed', { location: loc, cluster }, err)
+          historyByRoom[`${loc}_${cluster}`] = []
+        }
+      }))
+      setControlHistoryByRoom(historyByRoom)
 
       // Load real system stats from /api/status (system + service_health + devices + effective setpoints)
       const statusResponse = await apiClient.getSystemStatus()
@@ -306,6 +352,42 @@ export default function Dashboard() {
       }
     }, 5000)
 
+    return () => clearInterval(interval)
+  }, [])
+
+  // Refresh Lab live sensors (lab temp, water temp) every 5 seconds
+  useEffect(() => {
+    const refreshLabSensors = async () => {
+      try {
+        const labLive = await apiClient.getLiveSensorData('Lab', 'main') as Record<string, { data?: Array<{ value?: number }> }>
+        const labFlat = parseLabLiveResponse(labLive)
+        if (Object.keys(labFlat).length > 0) setSensorData(prev => ({ ...prev, ...labFlat }))
+      } catch (err) {
+        // Lab live optional; keep previous values on error (warn so live server issues show in console)
+        logger.warn('Lab sensor refresh failed', err)
+      }
+    }
+    refreshLabSensors() // run once immediately, then every 5s
+    const interval = setInterval(refreshLabSensors, 5000)
+    return () => clearInterval(interval)
+  }, [])
+
+  // Refresh control history (recent on/off log) every 30s
+  useEffect(() => {
+    const rooms: [string, string][] = [['Veg Room', 'main'], ['Flower Room', 'main'], ['Lab', 'main']]
+    const refresh = async () => {
+      const historyByRoom: Record<string, ControlHistoryEntry[]> = {}
+      await Promise.all(rooms.map(async ([loc, cluster]) => {
+        try {
+          const list = await apiClient.getControlHistory(loc, cluster, 10)
+          historyByRoom[`${loc}_${cluster}`] = list ?? []
+        } catch {
+          historyByRoom[`${loc}_${cluster}`] = []
+        }
+      }))
+      setControlHistoryByRoom(prev => ({ ...prev, ...historyByRoom }))
+    }
+    const interval = setInterval(refresh, 30000)
     return () => clearInterval(interval)
   }, [])
 
@@ -564,21 +646,40 @@ export default function Dashboard() {
                   <div className="bg-gray-800 rounded p-2">
                     <div className="text-xs text-gray-400 mb-2">Device Status</div>
                     <div className="space-y-1">
-                      {devices.filter(d => d.location === 'Veg Room' && d.cluster === 'main' && !d.device_name?.startsWith('light_')).map((device, index) => (
-                        <div key={index} className="flex items-center justify-between text-xs">
-                          <span className="text-gray-300 truncate flex-1">
-                            {device.device_name}
-                          </span>
-                          <span className={`px-1.5 py-0.5 rounded text-[8px] font-medium ${
-                            device.state === 1 
-                              ? 'bg-green-900 text-green-200' 
-                              : 'bg-gray-700 text-gray-400'
-                          }`}>
-                            {device.state === 1 ? 'ON' : 'OFF'}
-                          </span>
-                        </div>
-                      ))}
+                      {devices.filter(d => d.location === 'Veg Room' && d.cluster === 'main' && !d.device_name?.startsWith('light_')).map((device, index) => {
+                        const loadPct = statusDevices?.['Veg Room']?.['main']?.[device.device_name]?.load_percent
+                        return (
+                          <div key={index} className="flex items-center justify-between text-xs">
+                            <span className="text-gray-300 truncate flex-1">
+                              {device.device_name}
+                            </span>
+                            <span className={`px-1.5 py-0.5 rounded text-[8px] font-medium ${
+                              device.state === 1
+                                ? 'bg-green-900 text-green-200'
+                                : 'bg-gray-700 text-gray-400'
+                            }`}>
+                              {device.state === 1 ? 'ON' : 'OFF'}
+                              {loadPct != null ? ` ${Number(loadPct).toFixed(0)}%` : ''}
+                            </span>
+                          </div>
+                        )
+                      })}
                     </div>
+                  </div>
+                  {/* Recent on/off */}
+                  <div className="bg-gray-800 rounded p-2">
+                    <div className="text-xs text-gray-400 mb-1">Recent on/off</div>
+                    {controlHistoryByRoom['Veg Room_main']?.length ? (
+                      <div className="space-y-0.5 text-[10px] text-gray-300 font-mono">
+                        {controlHistoryByRoom['Veg Room_main'].slice(0, 10).map((entry, i) => (
+                          <div key={i} title={entry.reason ?? undefined}>
+                            {formatControlHistoryLine(entry)}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-[10px] text-gray-500">No recent changes</div>
+                    )}
                   </div>
                 </div>
               </Link>
@@ -728,21 +829,40 @@ export default function Dashboard() {
                   <div className="bg-gray-800 rounded p-2">
                     <div className="text-xs text-gray-400 mb-2">Device Status</div>
                     <div className="space-y-1">
-                      {devices.filter(d => d.location === 'Flower Room' && d.cluster === 'main' && !d.device_name?.startsWith('light_')).map((device, index) => (
-                        <div key={index} className="flex items-center justify-between text-xs">
-                          <span className="text-gray-300 truncate flex-1">
-                            {device.device_name}
-                          </span>
-                          <span className={`px-1.5 py-0.5 rounded text-[8px] font-medium ${
-                            device.state === 1 
-                              ? 'bg-green-900 text-green-200' 
-                              : 'bg-gray-700 text-gray-400'
-                          }`}>
-                            {device.state === 1 ? 'ON' : 'OFF'}
-                          </span>
-                        </div>
-                      ))}
+                      {devices.filter(d => d.location === 'Flower Room' && d.cluster === 'main' && !d.device_name?.startsWith('light_')).map((device, index) => {
+                        const loadPct = statusDevices?.['Flower Room']?.['main']?.[device.device_name]?.load_percent
+                        return (
+                          <div key={index} className="flex items-center justify-between text-xs">
+                            <span className="text-gray-300 truncate flex-1">
+                              {device.device_name}
+                            </span>
+                            <span className={`px-1.5 py-0.5 rounded text-[8px] font-medium ${
+                              device.state === 1
+                                ? 'bg-green-900 text-green-200'
+                                : 'bg-gray-700 text-gray-400'
+                            }`}>
+                              {device.state === 1 ? 'ON' : 'OFF'}
+                              {loadPct != null ? ` ${Number(loadPct).toFixed(0)}%` : ''}
+                            </span>
+                          </div>
+                        )
+                      })}
                     </div>
+                  </div>
+                  {/* Recent on/off */}
+                  <div className="bg-gray-800 rounded p-2">
+                    <div className="text-xs text-gray-400 mb-1">Recent on/off</div>
+                    {controlHistoryByRoom['Flower Room_main']?.length ? (
+                      <div className="space-y-0.5 text-[10px] text-gray-300 font-mono">
+                        {controlHistoryByRoom['Flower Room_main'].slice(0, 10).map((entry, i) => (
+                          <div key={i} title={entry.reason ?? undefined}>
+                            {formatControlHistoryLine(entry)}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-[10px] text-gray-500">No recent changes</div>
+                    )}
                   </div>
                 </div>
               </Link>
@@ -1041,21 +1161,40 @@ export default function Dashboard() {
                     <div className="bg-gray-800 rounded p-2">
                       <div className="text-xs text-gray-400 mb-2">Device Status</div>
                       <div className="space-y-1">
-                        {devices.filter(d => d.location === 'Lab' && d.cluster === 'main' && !d.device_name?.startsWith('light_')).map((device, index) => (
-                          <div key={index} className="flex items-center justify-between text-xs">
-                            <span className="text-gray-300 truncate flex-1">
-                              {device.device_name}
-                            </span>
-                            <span className={`px-1.5 py-0.5 rounded text-[8px] font-medium ${
-                              device.state === 1 
-                                ? 'bg-green-900 text-green-200' 
-                                : 'bg-gray-700 text-gray-400'
-                            }`}>
-                              {device.state === 1 ? 'ON' : 'OFF'}
-                            </span>
-                          </div>
-                        ))}
+                        {devices.filter(d => d.location === 'Lab' && d.cluster === 'main' && !d.device_name?.startsWith('light_')).map((device, index) => {
+                          const loadPct = statusDevices?.['Lab']?.['main']?.[device.device_name]?.load_percent
+                          return (
+                            <div key={index} className="flex items-center justify-between text-xs">
+                              <span className="text-gray-300 truncate flex-1">
+                                {device.device_name}
+                              </span>
+                              <span className={`px-1.5 py-0.5 rounded text-[8px] font-medium ${
+                                device.state === 1
+                                  ? 'bg-green-900 text-green-200'
+                                  : 'bg-gray-700 text-gray-400'
+                              }`}>
+                                {device.state === 1 ? 'ON' : 'OFF'}
+                                {loadPct != null ? ` ${Number(loadPct).toFixed(0)}%` : ''}
+                              </span>
+                            </div>
+                          )
+                        })}
                       </div>
+                    </div>
+                    {/* Recent on/off */}
+                    <div className="bg-gray-800 rounded p-2">
+                      <div className="text-xs text-gray-400 mb-1">Recent on/off</div>
+                      {controlHistoryByRoom['Lab_main']?.length ? (
+                        <div className="space-y-0.5 text-[10px] text-gray-300 font-mono">
+                          {controlHistoryByRoom['Lab_main'].slice(0, 10).map((entry, i) => (
+                            <div key={i} title={entry.reason ?? undefined}>
+                              {formatControlHistoryLine(entry)}
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="text-[10px] text-gray-500">No recent changes</div>
+                      )}
                     </div>
                   </div>
                 </Link>

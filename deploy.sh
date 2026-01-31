@@ -11,14 +11,20 @@ TARGET="$RELEASES/$RELEASE_ID"
 
 echo "=== Deploying release: $RELEASE_ID ==="
 
+# 0. Lint and format (Ruff) on Infrastructure — fail deploy if checks fail
+echo "[0/7] Running Ruff (lint + format) on Infrastructure..."
+cd "$SOURCE"
+ruff check --fix Infrastructure/ && ruff format Infrastructure/
+cd - >/dev/null
+
 # 1. Copy code to new release
-echo "[1/6] Copying code..."
+echo "[1/7] Copying code..."
 sudo mkdir -p "$TARGET"
 sudo rsync -a --delete "$SOURCE/Infrastructure/" "$TARGET/Infrastructure/"
 sudo chown -R root:root "$TARGET"
 
 # 2. Build Python venvs
-echo "[2/6] Building Python venvs..."
+echo "[2/7] Building Python venvs..."
 for svc in backend automation-service can-processor-service soil-sensor-service onewire-worker-service weather-service; do
   if [ -f "$TARGET/Infrastructure/$svc/requirements.txt" ]; then
     echo "  - $svc"
@@ -30,7 +36,7 @@ for svc in backend automation-service can-processor-service soil-sensor-service 
 done
 
 # 3. Build frontend
-echo "[3/6] Building frontend..."
+echo "[3/7] Building frontend..."
 cd "$TARGET/Infrastructure/frontend"
 sudo rm -rf dist/
 sudo env CI=true npm ci --silent --no-audit --no-fund

@@ -116,9 +116,10 @@ class DatabaseManager:
     def _run_migrations(self) -> None:
         """Run database migrations using Alembic if available."""
         try:
-            from alembic.config import Config
-            from alembic import command
             import os
+
+            from alembic import command
+            from alembic.config import Config
 
             alembic_ini = os.path.join(os.path.dirname(os.path.dirname(__file__)), "alembic.ini")
             if os.path.exists(alembic_ini):
@@ -378,6 +379,7 @@ class DatabaseManager:
         reason: str,
         sensor_value: float | None = None,
         setpoint: float | None = None,
+        load_percent: float | None = None,
     ) -> bool:
         """Log control action to control_history."""
         if self._control_action_repo:
@@ -392,8 +394,19 @@ class DatabaseManager:
                 reason,
                 sensor_value,
                 setpoint,
+                load_percent=load_percent,
             )
         raise RuntimeError("ControlActionRepository not initialized - call initialize() first")
+
+    async def get_control_history(
+        self, location: str, cluster: str, limit: int = 10
+    ) -> list[dict[str, Any]]:
+        """Return recent control_history rows for a location/cluster."""
+        if self._control_action_repo:
+            return await self._control_action_repo.get_recent_control_history(
+                location, cluster, limit
+            )
+        return []
 
     async def log_automation_state(
         self,

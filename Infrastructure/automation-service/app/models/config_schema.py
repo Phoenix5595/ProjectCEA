@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import List, Optional, Any
+from typing import Any
 
-from pydantic import BaseModel, Field, ConfigDict
-from pydantic import field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class DeviceType(str, Enum):
@@ -27,13 +26,13 @@ class DFR0971Board(BaseModel):
 
 
 class HardwareConfig(BaseModel):
-    boards: List[DFR0971Board] = Field(default_factory=list)
+    boards: list[DFR0971Board] = Field(default_factory=list)
 
 
 class DeviceConfig(BaseModel):
     device_type: DeviceType
     channel: int
-    dimming_board: Optional[str] = None
+    dimming_board: str | None = None
 
     @field_validator("channel")
     @classmethod
@@ -44,7 +43,7 @@ class DeviceConfig(BaseModel):
 
 
 class AutomationConfig(BaseModel):
-    relay_channels: List[int] = Field(default_factory=list)
+    relay_channels: list[int] = Field(default_factory=list)
 
     @model_validator(mode="after")
     @classmethod
@@ -57,10 +56,10 @@ class AutomationConfig(BaseModel):
 
 class AppConfig(BaseModel):
     # permissive top-level keys to accommodate varied YAML shapes in fixtures
-    devices: Optional[Any] = None
-    hardware: Optional[dict] = None
-    automation: Optional[dict] = None
-    control: Optional[dict] = None
+    devices: Any | None = None
+    hardware: dict | None = None
+    automation: dict | None = None
+    control: dict | None = None
     model_config = ConfigDict(extra="allow")
 
     @model_validator(mode="before")
@@ -81,7 +80,7 @@ class AppConfig(BaseModel):
         if ui is not None and isinstance(ui, (int, float)):
             if ui < 1 or ui > 5:
                 raise ValueError(
-                    "control.update_interval must be between 1 and 5 seconds (got {})".format(ui)
+                    f"control.update_interval must be between 1 and 5 seconds (got {ui})"
                 )
 
         # Determine known board ids from hardware list variants

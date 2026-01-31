@@ -230,8 +230,9 @@ class ConfigLoader:
         Raises:
             ValueError: If config validation fails.
         """
-        from app.models.config_schema import AppConfig
         from pydantic import ValidationError
+
+        from app.models.config_schema import AppConfig
 
         try:
             AppConfig.model_validate(self._config)
@@ -241,7 +242,7 @@ class ConfigLoader:
             for error in e.errors():
                 field_path = " -> ".join(str(loc) for loc in error["loc"])
                 errors.append(f"  {field_path}: {error['msg']}")
-            error_msg = f"Config validation failed:\n" + "\n".join(errors)
+            error_msg = "Config validation failed:\n" + "\n".join(errors)
             logger.error(error_msg)
             raise ValueError(error_msg) from e
 
