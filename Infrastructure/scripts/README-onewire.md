@@ -45,11 +45,32 @@ If you see two `28-*` directories and can read their `temperature` file, the Pi 
 
 ## Integration with CEA services
 
-**onewire-reader-service** (Infrastructure/onewire-reader-service/) runs as a systemd service and:
+**onewire-worker** (Infrastructure/onewire-worker-service/) runs as a systemd service and:
 
 - Reads `/sys/bus/w1/devices/28-*/temperature` at ~1 Hz
 - Maps device ids to logical names via `onewire_config.yaml` (e.g. `28-1be2d445e7ac` → `lab_temp`, `28-7227d445d907` → `water_temperature`)
 - Writes Redis keys `sensor:lab_temp`, `sensor:water_temperature` (and `:ts`) with 10s TTL
 - Dashboard Lab section shows "Lab temp" and "Water Temp" from these keys
 
-Install and start: see Infrastructure README; service file `onewire-reader.service`. After Redis, start `onewire-reader.service`.
+Install and start: see Infrastructure README; service file `onewire-worker.service`. After Redis, start `onewire-worker.service`.
+
+## Verification (Lab temp / Water temp not showing)
+
+If the dashboard Lab section shows no values for Lab temp or Water temp, run these on the Pi:
+
+**Service and Redis**
+
+- `systemctl status onewire-worker` — confirm active and no restart loop.
+- `redis-cli MGET sensor:lab_temp sensor:water_temperature` — expect two numeric strings when onewire-worker is running.
+
+**Backend APIs**
+
+- `curl -s http://localhost:8000/api/sensors/Lab/main/live` — should include `lab_temp` and `water_temperature` with `data[].value`.
+- `curl -s -X POST http://localhost:8000/api/sensor-data -H "Content-Type: application/json" -d '{"keys":["Lab_main_lab_temp","Lab_main_water_temperature"]}'` — should return those keys with numbers.
+
+**1-Wire**
+
+- `ls /sys/bus/w1/devices/` — confirm `28-*` devices match `onewire_config.yaml`.
+- `curl -s http://localhost:8004/readings` — should return `lab_temp` and `water_temperature` if the service and devices are OK.
+
+If Redis keys are missing: ensure onewire-worker is enabled and started; check `journalctl -u onewire-worker -n 50` for read/Redis errors. If device IDs or paths are wrong, update `Infrastructure/onewire-worker-service/onewire_config.yaml` to match the output of `ls /sys/bus/w1/devices/`.

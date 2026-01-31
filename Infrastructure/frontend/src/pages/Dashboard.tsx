@@ -119,22 +119,23 @@ export default function Dashboard() {
         if (Object.keys(setpointData).length > 0) {
           setSensorData(prev => ({ ...prev, ...setpointData }))
         }
-        // Explicitly fetch Lab live sensors (lab_temp, water_temperature) so they always show
-        try {
-          const labLive = await apiClient.getLiveSensorData('Lab', 'main') as Record<string, { data?: Array<{ value?: number }> }>
-          if (labLive && typeof labLive === 'object') {
-            const labFlat: Record<string, number> = {}
-            for (const [sensorType, resp] of Object.entries(labLive)) {
-              const dp = Array.isArray(resp?.data) && resp.data.length > 0 ? resp.data[0] : null
-              if (dp?.value != null) labFlat[`Lab_main_${sensorType}`] = Number(dp.value)
-            }
-            if (Object.keys(labFlat).length > 0) setSensorData(prev => ({ ...prev, ...labFlat }))
-          }
-        } catch (_) {
-          // Lab live optional; bulk may have already provided values
-        }
       } catch (error) {
         console.log('Setpoints and light intensities not available from API, using fallback')
+      }
+
+      // Always fetch Lab live sensors (lab temp, water temp) so they show even if bulk failed (e.g. CORS)
+      try {
+        const labLive = await apiClient.getLiveSensorData('Lab', 'main') as Record<string, { data?: Array<{ value?: number }> }>
+        if (labLive && typeof labLive === 'object') {
+          const labFlat: Record<string, number> = {}
+          for (const [sensorType, resp] of Object.entries(labLive)) {
+            const dp = Array.isArray(resp?.data) && resp.data.length > 0 ? resp.data[0] : null
+            if (dp?.value != null) labFlat[`Lab_main_${sensorType}`] = Number(dp.value)
+          }
+          if (Object.keys(labFlat).length > 0) setSensorData(prev => ({ ...prev, ...labFlat }))
+        }
+      } catch (_) {
+        // Lab live optional
       }
 
       // Load real weather data (API returns temp, rh; support legacy temperature/humidity)
@@ -205,6 +206,7 @@ export default function Dashboard() {
                 { name: 'can-processor', status: 'running' as const },
                 { name: 'soil-sensor-service', status: 'running' as const },
                 { name: 'weather-service', status: 'running' as const },
+                { name: 'onewire-worker', status: 'running' as const },
                 { name: 'cea-backend', status: 'running' as const },
                 { name: 'automation-service', status: 'running' as const }
               ]
@@ -293,6 +295,7 @@ export default function Dashboard() {
                   { name: 'can-processor', status: 'running' as const },
                   { name: 'soil-sensor-service', status: 'running' as const },
                   { name: 'weather-service', status: 'running' as const },
+                  { name: 'onewire-worker', status: 'running' as const },
                   { name: 'cea-backend', status: 'running' as const },
                   { name: 'automation-service', status: 'running' as const }
                 ]

@@ -1,5 +1,5 @@
 [Unit]
-Description=CEA 1-Wire Reader Service (DS18B20 lab/water temp)
+Description=CEA 1-Wire Worker (DS18B20 lab/water temp)
 After=redis-server.service network-online.target
 Requires=redis-server.service
 OnFailure=service-error-handler@%n.service
@@ -8,7 +8,7 @@ OnFailure=service-error-handler@%n.service
 Type=simple
 User=antoine
 Group=antoine
-WorkingDirectory=/home/antoine/ProjectCEA/Infrastructure/onewire-reader-service
+WorkingDirectory=/home/antoine/ProjectCEA/Infrastructure/onewire-worker-service
 Environment="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/local/bin"
 Environment="PYTHONPATH=/home/antoine/ProjectCEA/Infrastructure"
 Environment="REDIS_URL=redis://localhost:6379"

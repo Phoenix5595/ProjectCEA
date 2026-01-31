@@ -204,27 +204,18 @@ async def global_exception_handler(request: Request, exc: Exception):
     )
 
 
-# Add CORS middleware (API-only; restrict to frontend origins)
-default_frontend_origins = [
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-    "http://localhost:3001",  # Vite dev server
-    "http://127.0.0.1:3001",
-    "http://localhost:4173",
-    "http://127.0.0.1:4173",
-    "http://localhost:8000",  # allow same-origin when frontend is served by backend (optional)
-    "http://127.0.0.1:8000",
-]
+# Add CORS middleware (API-only). Allow any origin so dashboard works when opened by hostname or LAN IP (e.g. http://mothernode:8001).
 env_origins = os.environ.get("FRONTEND_ORIGINS")
-allow_origins = (
-    [o.strip() for o in env_origins.split(",") if o.strip()]
-    if env_origins
-    else default_frontend_origins
-)
+if env_origins:
+    allow_origins = [o.strip() for o in env_origins.split(",") if o.strip()]
+    allow_credentials = True
+else:
+    allow_origins = ["*"]
+    allow_credentials = False  # required when using allow_origins=["*"]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allow_origins,
-    allow_credentials=True,
+    allow_credentials=allow_credentials,
     allow_methods=["*"],
     allow_headers=["*"],
 )

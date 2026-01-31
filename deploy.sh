@@ -19,7 +19,7 @@ sudo chown -R root:root "$TARGET"
 
 # 2. Build Python venvs
 echo "[2/6] Building Python venvs..."
-for svc in backend automation-service can-processor-service soil-sensor-service onewire-reader-service weather-service; do
+for svc in backend automation-service can-processor-service soil-sensor-service onewire-worker-service weather-service; do
   if [ -f "$TARGET/Infrastructure/$svc/requirements.txt" ]; then
     echo "  - $svc"
     cd "$TARGET/Infrastructure/$svc"
@@ -52,7 +52,7 @@ echo "[6/7] Restarting services..."
 sudo systemctl daemon-reload
 sudo systemctl restart can-setup
 sleep 1
-sudo systemctl restart can-processor cea-backend onewire-reader
+sudo systemctl restart can-processor cea-backend onewire-worker
 sleep 2
 sudo systemctl restart automation-service soil-sensor-service weather-service
 
@@ -61,6 +61,7 @@ echo "[7/7] Health checks..."
 sleep 3
 curl -fsS http://127.0.0.1:8000/health && echo " ✓ backend (8000)"
 curl -fsS http://127.0.0.1:8001/health && echo " ✓ automation (8001)"
+curl -fsS http://127.0.0.1:8004/health && echo " ✓ onewire-worker (8004)"
 
 # Cleanup old releases (keep MAX_RELEASES)
 echo "Cleaning old releases..."

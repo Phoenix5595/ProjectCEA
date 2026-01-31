@@ -29,6 +29,7 @@ SERVICE_HEALTH_URLS = [
     ("automation-service", "127.0.0.1", 8001, "/health"),
     ("soil-sensor-service", "127.0.0.1", 8002, "/health"),
     ("weather-service", "127.0.0.1", 8003, "/health"),
+    ("onewire-worker", "127.0.0.1", 8004, "/health"),
 ]
 
 
