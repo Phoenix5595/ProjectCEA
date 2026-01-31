@@ -119,6 +119,20 @@ export default function Dashboard() {
         if (Object.keys(setpointData).length > 0) {
           setSensorData(prev => ({ ...prev, ...setpointData }))
         }
+        // Explicitly fetch Lab live sensors (lab_temp, water_temperature) so they always show
+        try {
+          const labLive = await apiClient.getLiveSensorData('Lab', 'main') as Record<string, { data?: Array<{ value?: number }> }>
+          if (labLive && typeof labLive === 'object') {
+            const labFlat: Record<string, number> = {}
+            for (const [sensorType, resp] of Object.entries(labLive)) {
+              const dp = Array.isArray(resp?.data) && resp.data.length > 0 ? resp.data[0] : null
+              if (dp?.value != null) labFlat[`Lab_main_${sensorType}`] = Number(dp.value)
+            }
+            if (Object.keys(labFlat).length > 0) setSensorData(prev => ({ ...prev, ...labFlat }))
+          }
+        } catch (_) {
+          // Lab live optional; bulk may have already provided values
+        }
       } catch (error) {
         console.log('Setpoints and light intensities not available from API, using fallback')
       }
@@ -344,7 +358,7 @@ export default function Dashboard() {
     return (
       <div className="main-dashboard min-h-screen bg-gray-950 p-4">
         <div className="max-w-full mx-auto">
-          <h1 className="text-3xl font-bold mb-8 text-gray-100">CEA Automation Dashboard</h1>
+          <h1 className="text-3xl font-bold mb-8 text-gray-100">Siberian Jungle</h1>
           <p className="text-gray-300">Loading...</p>
         </div>
       </div>
@@ -360,7 +374,8 @@ export default function Dashboard() {
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-xl font-bold text-gray-100 flex items-center gap-2">
-                <span>🌱</span> CEA Automation Dashboard
+                <img src="/favicon.ico" alt="" className="w-6 h-6 rounded" aria-hidden />
+                Siberian Jungle
               </h1>
             </div>
             <div className="flex items-center gap-4">
