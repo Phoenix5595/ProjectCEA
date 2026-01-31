@@ -200,6 +200,27 @@ async def get_status(
     # Optional: service health (backend, weather, etc.)
     service_health = await _check_service_health()
 
+    # Effective setpoints from Redis (same source as control loop; dashboard uses these when backend Redis differs)
+    effective_setpoints: dict[str, dict[str, dict[str, float]]] = {}
+    if redis_client and redis_client.redis_enabled:
+        for location, clusters in device_config.items():
+            effective_setpoints[location] = {}
+            for cluster in clusters:
+                raw = await asyncio.to_thread(
+                    redis_client.read_effective_setpoints, location, cluster
+                )
+                if raw:
+                    effective_setpoints[location][cluster] = {
+                        "heating_setpoint": raw.get("heating_setpoint"),
+                        "cooling_setpoint": raw.get("cooling_setpoint"),
+                        "co2_setpoint": raw.get("co2"),
+                        "vpd_setpoint": raw.get("vpd"),
+                    }
+                    # Drop None values so frontend gets only present keys
+                    effective_setpoints[location][cluster] = {
+                        k: v for k, v in effective_setpoints[location][cluster].items() if v is not None
+                    }
+
     result: dict[str, Any] = {
         "devices": devices,
         "sensors": sensors,
@@ -209,4 +230,6 @@ async def get_status(
     }
     if system is not None:
         result["system"] = system
+    if effective_setpoints:
+        result["effective_setpoints"] = effective_setpoints
     return result

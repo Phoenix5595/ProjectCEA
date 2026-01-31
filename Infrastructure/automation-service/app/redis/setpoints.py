@@ -65,6 +65,41 @@ class SetpointsMixin:
             logger.warning(f"Error reading setpoint from Redis: {e}")
             return None
 
+    def read_effective_setpoints(self, location: str, cluster: str) -> dict[str, float] | None:
+        """Read effective setpoints from Redis (heating_setpoint, cooling_setpoint in °C; co2, vpd)."""
+        if not self.redis_enabled or not self.redis_client:
+            return None
+        try:
+            prefix = f"effective_setpoint:{location}:{cluster}"
+            keys = [f"{prefix}:heating_setpoint", f"{prefix}:cooling_setpoint", f"{prefix}:co2", f"{prefix}:vpd"]
+            values = self.redis_client.mget(keys)
+            heat, cool, co2_val, vpd_val = values[0], values[1], values[2], values[3]
+            result: dict[str, float] = {}
+            if heat is not None:
+                try:
+                    result["heating_setpoint"] = float(heat)
+                except (ValueError, TypeError):
+                    pass
+            if cool is not None:
+                try:
+                    result["cooling_setpoint"] = float(cool)
+                except (ValueError, TypeError):
+                    pass
+            if co2_val is not None:
+                try:
+                    result["co2"] = float(co2_val)
+                except (ValueError, TypeError):
+                    pass
+            if vpd_val is not None:
+                try:
+                    result["vpd"] = float(vpd_val)
+                except (ValueError, TypeError):
+                    pass
+            return result if result else None
+        except Exception as e:
+            logger.debug(f"Error reading effective setpoints from Redis: {e}")
+            return None
+
     def write_setpoint(
         self,
         location: str,

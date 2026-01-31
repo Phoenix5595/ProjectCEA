@@ -28,8 +28,8 @@ def _parse_location_cluster(key: str) -> tuple[str | None, str | None, str | Non
 async def post_sensor_data(body: dict[str, Any]) -> dict[str, float]:
     """Return current values for requested keys from Redis (sensor:*, effective_setpoint:*, light:*).
 
-    Request body: { "keys": ["Veg Room_main_dry_bulb_setpoint_f", "Veg Room_main_light_1_intensity", ...] }
-    Returns: { "Veg Room_main_dry_bulb_setpoint_f": 72.5, ... } (only keys that were found).
+    Request body: { "keys": ["Veg Room_main_heating_setpoint", "Veg Room_main_light_1_intensity", ...] }
+    Returns: { "Veg Room_main_heating_setpoint": 22.5, ... } (only keys that were found). Temperatures in Celsius.
     """
     keys: list[str] = body.get("keys") or []
     if not keys:
@@ -62,20 +62,18 @@ async def post_sensor_data(body: dict[str, Any]) -> dict[str, float]:
             if not location or not cluster:
                 continue
             prefix = f"effective_setpoint:{location}:{cluster}"
-            if "dry_bulb_setpoint_f" in key or "dry_bulb_setpoint" in key:
+            if "heating_setpoint" in key or "dry_bulb_setpoint" in key:
                 raw = await client.get(f"{prefix}:heating_setpoint")
                 if raw is not None:
                     try:
-                        c = float(raw)
-                        result[key] = round(c * 9 / 5 + 32, 2)
+                        result[key] = float(raw)
                     except (ValueError, TypeError):
                         pass
-            elif "cooling_setpoint_f" in key or "cooling_setpoint" in key:
+            elif "cooling_setpoint" in key:
                 raw = await client.get(f"{prefix}:cooling_setpoint")
                 if raw is not None:
                     try:
-                        c = float(raw)
-                        result[key] = round(c * 9 / 5 + 32, 2)
+                        result[key] = float(raw)
                     except (ValueError, TypeError):
                         pass
             elif "relative_humidity_setpoint" in key:
