@@ -25,7 +25,7 @@ All services are organized in the `Infrastructure/` directory, each in its own s
 Infrastructure/
 ├── can-processor-service/       # CAN Bus processing service
 ├── soil-sensor-service/         # RS485 soil sensor service
-├── onewire-reader-service/      # 1-Wire DS18B20 (lab/water temp) on GPIO 24
+├── onewire-worker-service/      # 1-Wire DS18B20 (lab/water temp) on GPIO 24
 ├── weather-service/             # Weather API service (YUL Airport)
 ├── automation-service/          # Device control and automation service
 └── backend/                     # Backend API service (CEA Dashboard)
@@ -37,7 +37,7 @@ All service files are located in `Infrastructure/`:
 
 - `can-processor-service.service` - CAN processor systemd service
 - `soil-sensor-service.service` - Soil sensor systemd service
-- `onewire-reader.service` - 1-Wire reader (lab/water temp)
+- `onewire-worker.service` - 1-Wire worker (lab/water temp)
 - `weather-service.service` - Weather API service
 - `automation-service.service` - Automation service systemd service
 - `cea-backend.service` - Backend API service
@@ -50,7 +50,7 @@ Service files should be copied to `/etc/systemd/system/`:
 cd "/home/antoine/ProjectCEA/Infrastructure"
 sudo cp can-processor-service.service /etc/systemd/system/
 sudo cp soil-sensor-service.service /etc/systemd/system/
-sudo cp onewire-reader.service /etc/systemd/system/
+sudo cp onewire-worker.service /etc/systemd/system/
 sudo cp weather-service.service /etc/systemd/system/
 sudo cp automation-service.service /etc/systemd/system/
 sudo cp cea-backend.service /etc/systemd/system/
@@ -67,7 +67,7 @@ postgresql.service
     ↓
 can-processor.service
 soil-sensor-service.service
-onewire-reader.service
+onewire-worker.service
 weather-service.service
     ↓
 cea-backend.service

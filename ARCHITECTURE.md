@@ -67,7 +67,7 @@ ProjectCEA is a sophisticated Controlled Environment Agriculture (CEA) automatio
 - **Topology**: Multi-drop configuration supporting up to 32 devices
 
 **1-Wire DS18B20 (Lab / Water)**
-- **onewire-reader-service**: Reads DS18B20 probes on GPIO 24 (1-Wire)
+- **onewire-worker**: Reads DS18B20 probes on GPIO 24 (1-Wire)
 - **Probes**: Lab ambient temperature (`lab_temp`), water temperature (`water_temperature`)
 - **Config**: `onewire_config.yaml` maps device id (e.g. `28-1be2d445e7ac`) to logical name
 - **Data**: Published to Redis `sensor:lab_temp`, `sensor:water_temperature` (10s TTL); displayed in Dashboard Lab section
@@ -117,7 +117,7 @@ ProjectCEA is a sophisticated Controlled Environment Agriculture (CEA) automatio
 - **Data Processing**: Raw Modbus registers → engineering units
 - **Error Handling**: Device timeout detection, automatic retry with exponential backoff
 
-**onewire-reader-service**
+**onewire-worker**
 - **Purpose**: 1-Wire DS18B20 temperature probes (lab ambient, water temp) on GPIO 24
 - **Polling Strategy**: ~1 s interval; reads `/sys/bus/w1/devices/28-*/temperature`
 - **Config**: `onewire_config.yaml` maps device id → logical name (`lab_temp`, `water_temperature`)
@@ -316,7 +316,7 @@ WS   /ws/{location}                             # WebSocket live updates
 |---------|------|----------|-------------|--------------|
 | can-processor | — | CAN/Redis | Redis, TimescaleDB | CAN hardware |
 | soil-sensor-service | 8002 | Modbus/Redis | Redis, TimescaleDB | RS485 hardware |
-| onewire-reader-service | 8004 | 1-Wire/Redis | Redis (state only) | GPIO 24, 1-Wire probes |
+| onewire-worker | 8004 | 1-Wire/Redis | Redis (state only) | GPIO 24, 1-Wire probes |
 | weather-service | 8003 | HTTP/Redis | Redis, TimescaleDB | External APIs |
 | cea-backend | 8000 | HTTP/WebSocket | Redis, TimescaleDB | Redis, TimescaleDB |
 | automation-service | 8001 | HTTP | Redis, TimescaleDB | Redis, TimescaleDB, I2C hardware |
@@ -539,7 +539,7 @@ can-setup.service (oneshot)
     ↓
 can-processor.service
 soil-sensor-service.service
-onewire-reader.service
+onewire-worker.service
 weather-service.service
     ↓
 cea-backend.service (8000)
