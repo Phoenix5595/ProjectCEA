@@ -1,0 +1,22 @@
+[Unit]
+Description=CEA 1-Wire Reader Service (DS18B20 lab/water temp)
+After=redis-server.service network-online.target
+Requires=redis-server.service
+OnFailure=service-error-handler@%n.service
+
+[Service]
+Type=simple
+User=antoine
+Group=antoine
+WorkingDirectory=/home/antoine/ProjectCEA/Infrastructure/onewire-reader-service
+Environment="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/local/bin"
+Environment="PYTHONPATH=/home/antoine/ProjectCEA/Infrastructure"
+Environment="REDIS_URL=redis://localhost:6379"
+ExecStart=/usr/bin/python3 -m uvicorn app.main:app --host 0.0.0.0 --port 8004
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

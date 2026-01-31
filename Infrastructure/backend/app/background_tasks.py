@@ -56,9 +56,10 @@ async def broadcast_latest_sensor_data():
         "pressure_v": ("Veg Room", "main"),
         "secondary_temp_v": ("Veg Room", "main"),
         "secondary_rh_v": ("Veg Room", "main"),
-        # Lab
+        # Lab (1-Wire: lab_temp, water_temperature)
         "lab_temp": ("Lab", "main"),
         "water_temp": ("Lab", "main"),
+        "water_temperature": ("Lab", "main"),
     }
 
     # Unit mapping
@@ -68,6 +69,7 @@ async def broadcast_latest_sensor_data():
         "secondary_temp": "°C",
         "lab_temp": "°C",
         "water_temp": "°C",
+        "water_temperature": "°C",
         "co2": "ppm",
         "rh": "%",
         "secondary_rh": "%",
@@ -187,6 +189,10 @@ class BackgroundTasks:
             "dry_bulb_v": ("Veg Room", "main"),
             "wet_bulb_v": ("Veg Room", "main"),
             "co2_v": ("Veg Room", "main"),
+            # Lab (1-Wire)
+            "lab_temp": ("Lab", "main"),
+            "water_temp": ("Lab", "main"),
+            "water_temperature": ("Lab", "main"),
         }
 
     async def start(self) -> None:

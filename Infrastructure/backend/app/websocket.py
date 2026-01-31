@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime
 
 from fastapi import WebSocket
@@ -57,8 +58,10 @@ class WebSocketManager:
             value=value,
             unit=unit,
         )
-
-        message_json = message.model_dump_json()
+        # Include "sensor" for frontend (Dashboard uses message.sensor for key)
+        payload = message.model_dump(mode="json")
+        payload["sensor"] = sensor_type
+        message_json = json.dumps(payload)
         disconnected = set()
 
         for connection in self.active_connections[location]:

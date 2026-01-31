@@ -55,8 +55,10 @@ def get_location_cluster_from_sensor(sensor_name: str) -> tuple[str | None, str 
     elif sensor_name.endswith("_v"):
         return "Veg Room", "main"
 
-    # Check for lab sensors (no location suffix, contains "lab")
+    # Check for lab sensors (lab_temp, water_temperature, etc.)
     if "lab" in sensor_name.lower():
+        return "Lab", "main"
+    if "water" in sensor_name.lower():
         return "Lab", "main"
 
     # Unknown sensor - return None

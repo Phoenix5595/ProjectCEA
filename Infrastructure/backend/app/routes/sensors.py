@@ -207,7 +207,7 @@ async def get_live_sensor_data(
     # Map of sensor types to check
     sensor_types = []
     if location == "Lab":
-        sensor_types = ["lab_temp", "water_temp"]
+        sensor_types = ["lab_temp", "water_temperature"]
     else:
         base_types = [
             "dry_bulb",

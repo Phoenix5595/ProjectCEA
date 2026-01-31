@@ -1,6 +1,6 @@
 # ProjectCEA – Architecture Schematic (Plan-Agent Style)
 
-**Last updated (deployed):** 2026-01-30 — 1-Wire reader (lab/water temp) integrated; Dashboard Lab shows lab_temp and water_temperature.
+**Last updated (deployed):** 2026-01-30 — Dashboard: Quebec City weather (CYQB) top-right; real system stats from /api/status.
 
 > This file is the plan-style schematic: diagram-first, structured sections. Keep in sync with `ARCHITECTURE.md`. When deploying relevant changes, update both and copy previous versions to **`archive/`** (project root) with dated filenames.
 
@@ -22,14 +22,12 @@ flowchart TB
   subgraph HARDWARE["Hardware"]
     ESP32["ESP32 nodes (CAN)\nFlower _b/_f, Veg _v"]
     SOIL["Soil sensors\nRS485 Modbus"]
-    W1["1-Wire DS18B20\nGPIO 24 (lab/water)"]
     EXT["External\n(weather HTTP)"]
   end
 
   subgraph INGEST["Ingestion Services"]
     CAN["can-processor\n(no port)"]
     SOIL_SVC["soil-sensor\n:8002"]
-    OW["onewire-reader\n:8004"]
     WX["weather\n:8003"]
   end
 
@@ -50,14 +48,12 @@ flowchart TB
 
   ESP32 -->|CAN| CAN
   SOIL -->|Modbus| SOIL_SVC
-  W1 -->|sysfs| OW
   EXT -->|HTTP| WX
 
   CAN --> REDIS
   CAN --> TSDB
   SOIL_SVC --> REDIS
   SOIL_SVC --> TSDB
-  OW --> REDIS
   WX --> REDIS
   WX --> TSDB
 
@@ -102,12 +98,10 @@ sequenceDiagram
 |-------|-----------|------|
 | Hardware | ESP32 (CAN) | Flower Back/Front, Veg Main; 1 Hz sensors |
 | Hardware | Soil (RS485) | soil-sensor-service reads Modbus |
-| Hardware | 1-Wire DS18B20 | onewire-reader-service on GPIO 24 (lab temp, water temp) |
 | Hardware | MCP23017 | Relays only, I2C bus 0, 16 channels |
 | Hardware | DFR0971 | Dimming only, I2C bus 1, 6 channels |
 | Ingest | can-processor | CAN → Redis state + stream + TimescaleDB |
 | Ingest | soil-sensor-service | Modbus → Redis + TimescaleDB |
-| Ingest | onewire-reader-service | 1-Wire sysfs → Redis (lab_temp, water_temperature) |
 | Ingest | weather-service | External API → DB / Redis |
 | Store | Redis | sensor:*, sensor:raw, automation:*, effective_setpoint:* |
 | Store | TimescaleDB | measurement, aggregates, effective_setpoints, automation_state |

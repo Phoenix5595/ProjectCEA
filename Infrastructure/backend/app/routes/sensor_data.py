@@ -41,9 +41,20 @@ async def post_sensor_data(body: dict[str, Any]) -> dict[str, float]:
 
     result: dict[str, float] = {}
 
+    # Map dashboard keys to Redis sensor names (1-Wire: Lab_main_* -> lab_temp, water_temperature)
+    LAB_SENSOR_ALIASES: dict[str, str] = {
+        "Lab_main_lab_temp": "lab_temp",
+        "Lab_main_water_temperature": "water_temperature",
+    }
+
     try:
-        # 1) Try sensor:* for each key
-        sensor_keys = [f"sensor:{k}" for k in keys]
+        # 1) Try sensor:* for each key (and Lab aliases)
+        sensor_keys = []
+        for k in keys:
+            if k in LAB_SENSOR_ALIASES:
+                sensor_keys.append(f"sensor:{LAB_SENSOR_ALIASES[k]}")
+            else:
+                sensor_keys.append(f"sensor:{k}")
         values = await client.mget(sensor_keys)
         for key, val in zip(keys, values, strict=False):
             if val is not None:

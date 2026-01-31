@@ -35,7 +35,7 @@ ProjectCEA is a sophisticated Controlled Environment Agriculture (CEA) automatio
 
 - **Control Frequency**: 1-5 second control loop (configurable, max 5s non-negotiable)
 - **Data Resolution**: 1Hz sampling rate maintained for 1 year, then compressed
-- **Sensor Network**: 3 ESP32 CAN nodes + RS485 soil sensor network + 2× 1-Wire DS18B20 (lab temp, water temp)
+- **Sensor Network**: 3 ESP32 CAN nodes + RS485 soil sensor network
 - **Actuator Control**: 16-channel relay system + 6-channel PWM dimming
 - **Data Storage**: Redis (real-time) + TimescaleDB (historical)
 - **User Interface**: React SPA with real-time WebSocket updates
@@ -65,12 +65,6 @@ ProjectCEA is a sophisticated Controlled Environment Agriculture (CEA) automatio
 - **Sensor Types**: Soil temperature, moisture, EC, pH
 - **Communication**: Modbus RTU over RS485 for noise immunity
 - **Topology**: Multi-drop configuration supporting up to 32 devices
-
-**1-Wire DS18B20 (Lab / Water)**
-- **onewire-reader-service**: Reads DS18B20 probes on GPIO 24 (1-Wire)
-- **Probes**: Lab ambient temperature (`lab_temp`), water temperature (`water_temperature`)
-- **Config**: `onewire_config.yaml` maps device id (e.g. `28-1be2d445e7ac`) to logical name
-- **Data**: Published to Redis `sensor:lab_temp`, `sensor:water_temperature` (10s TTL); displayed in Dashboard Lab section
 
 **External Data Sources**
 - **weather-service**: HTTP-based integration with external weather APIs (METAR)
@@ -116,12 +110,6 @@ ProjectCEA is a sophisticated Controlled Environment Agriculture (CEA) automatio
 - **Polling Strategy**: Configurable intervals (typically 30-60 seconds)
 - **Data Processing**: Raw Modbus registers → engineering units
 - **Error Handling**: Device timeout detection, automatic retry with exponential backoff
-
-**onewire-reader-service**
-- **Purpose**: 1-Wire DS18B20 temperature probes (lab ambient, water temp) on GPIO 24
-- **Polling Strategy**: ~1 s interval; reads `/sys/bus/w1/devices/28-*/temperature`
-- **Config**: `onewire_config.yaml` maps device id → logical name (`lab_temp`, `water_temperature`)
-- **Data**: Redis state keys only (sensor:lab_temp, sensor:water_temperature, 10s TTL); optional stream/DB in future
 
 **weather-service**
 - **Purpose**: External weather data acquisition and caching
@@ -316,7 +304,6 @@ WS   /ws/{location}                             # WebSocket live updates
 |---------|------|----------|-------------|--------------|
 | can-processor | — | CAN/Redis | Redis, TimescaleDB | CAN hardware |
 | soil-sensor-service | 8002 | Modbus/Redis | Redis, TimescaleDB | RS485 hardware |
-| onewire-reader-service | 8004 | 1-Wire/Redis | Redis (state only) | GPIO 24, 1-Wire probes |
 | weather-service | 8003 | HTTP/Redis | Redis, TimescaleDB | External APIs |
 | cea-backend | 8000 | HTTP/WebSocket | Redis, TimescaleDB | Redis, TimescaleDB |
 | automation-service | 8001 | HTTP | Redis, TimescaleDB | Redis, TimescaleDB, I2C hardware |
@@ -539,7 +526,6 @@ can-setup.service (oneshot)
     ↓
 can-processor.service
 soil-sensor-service.service
-onewire-reader.service
 weather-service.service
     ↓
 cea-backend.service (8000)
