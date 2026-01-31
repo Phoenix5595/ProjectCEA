@@ -1284,7 +1284,9 @@ async def save_climate_schedule(
                     """
                     SELECT id FROM schedules
                     WHERE location = $1 AND cluster = $2
+                      AND device_name = 'climate'
                       AND (pre_day_duration IS NOT NULL OR pre_night_duration IS NOT NULL)
+                    ORDER BY id DESC
                     LIMIT 1
                 """,
                     location,
