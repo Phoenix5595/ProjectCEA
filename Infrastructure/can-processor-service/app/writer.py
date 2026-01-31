@@ -164,7 +164,7 @@ class DataWriter:
                             continue
                         self.device_cache[device_name] = row[0]
                     device_id = self.device_cache[device_name]
-                    for sensor_name, value, unit in item.sensors:
+                    for sensor_name, value, _unit in item.sensors:
                         cache_key = (device_id, sensor_name)
                         if cache_key not in self.sensor_cache:
                             cursor.execute(
@@ -383,12 +383,12 @@ class DataWriter:
 
             # Insert measurements for each sensor (use cache to avoid repeated queries)
             measurements = []
-            for sensor_name, value, unit in sensors:
+            for sensor_name, value, _unit in sensors:
                 cache_key = (device_id, sensor_name)
                 if cache_key not in self.sensor_cache:
                     cursor.execute(
                         """
-                        SELECT sensor_id FROM sensor 
+                        SELECT sensor_id FROM sensor
                         WHERE device_id = %s AND name = %s
                     """,
                         (device_id, sensor_name),
@@ -466,7 +466,7 @@ class DataWriter:
             # Use pipeline for batch operations
             pipe = self.redis_state_client.pipeline()
 
-            for sensor_name, value, unit in sensors:
+            for sensor_name, value, _unit in sensors:
                 # Set sensor value with NO TTL (persistent) - values should always be in Redis
                 # This prevents database fallback and reduces CPU usage
                 key = f"sensor:{sensor_name}"

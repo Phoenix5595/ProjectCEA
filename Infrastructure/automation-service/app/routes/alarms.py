@@ -68,7 +68,7 @@ async def get_all_alarms(
 
     # Group by location:cluster
     grouped = {}
-    for key, alarm_data in all_alarms.items():
+    for _key, alarm_data in all_alarms.items():
         loc = alarm_data.get("location", "")
         clust = alarm_data.get("cluster", "")
         alarm_name = alarm_data.get("alarm_name", "")

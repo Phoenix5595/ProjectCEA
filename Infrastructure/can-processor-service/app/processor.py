@@ -9,6 +9,8 @@ from typing import Any
 
 from shared.logging import get_logger
 
+logger = get_logger(__name__)
+
 # Add the shared library to the path
 current_dir = os.path.dirname(os.path.abspath(__file__))
 shared_path = os.path.join(current_dir, "..", "..", "..")

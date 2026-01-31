@@ -212,8 +212,8 @@ class RoomModeRepository(BaseRepository):
                 # Check if record exists
                 existing = await conn.fetchval(
                     """
-                    SELECT id FROM mode_parameters 
-                    WHERE location = $1 AND cluster = $2 AND mode_id = $3 
+                    SELECT id FROM mode_parameters
+                    WHERE location = $1 AND cluster = $2 AND mode_id = $3
                     AND COALESCE(submode_id, -1) = COALESCE($4, -1)
                 """,
                     location,

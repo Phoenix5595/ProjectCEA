@@ -180,8 +180,8 @@ app = FastAPI(
 )
 
 # Add exception handler for HTTP exceptions (but not all exceptions to avoid catching too much)
-from fastapi import Request
-from fastapi.responses import JSONResponse
+from fastapi import Request  # noqa: E402
+from fastapi.responses import JSONResponse  # noqa: E402
 
 
 @app.exception_handler(Exception)
@@ -258,7 +258,7 @@ async def websocket_endpoint(websocket: WebSocket, location: str):
     try:
         while True:
             # Keep connection alive and handle incoming messages
-            data = await websocket.receive_text()
+            await websocket.receive_text()
             # Could handle client messages here if needed
     except WebSocketDisconnect:
         websocket_manager.disconnect(websocket, location)

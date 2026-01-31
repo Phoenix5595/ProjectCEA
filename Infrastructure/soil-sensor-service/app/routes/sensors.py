@@ -31,7 +31,7 @@ async def list_sensors(db: DatabaseManager = Depends(get_database)) -> list[dict
         pool = await db._get_pool()
         async with pool.acquire() as conn:
             rows = await conn.fetch("""
-                SELECT 
+                SELECT
                     s.sensor_id,
                     s.name,
                     s.unit,
@@ -63,7 +63,7 @@ async def list_sensors(db: DatabaseManager = Depends(get_database)) -> list[dict
 
             return sensors
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error listing sensors: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error listing sensors: {str(e)}") from e
 
 
 @router.get("/api/sensors/{sensor_id}/latest")
@@ -76,7 +76,7 @@ async def get_latest_reading(
         async with pool.acquire() as conn:
             row = await conn.fetchrow(
                 """
-                SELECT 
+                SELECT
                     m.time,
                     m.value,
                     m.status,
@@ -107,7 +107,9 @@ async def get_latest_reading(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error getting latest reading: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Error getting latest reading: {str(e)}"
+        ) from e
 
 
 @router.get("/api/sensors/{sensor_id}/readings")
@@ -124,7 +126,7 @@ async def get_readings(
         async with pool.acquire() as conn:
             # Build query
             query = """
-                SELECT 
+                SELECT
                     m.time,
                     m.value,
                     m.status
@@ -161,7 +163,7 @@ async def get_readings(
 
             return {"sensor_id": sensor_id, "count": len(readings), "readings": readings}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error getting readings: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error getting readings: {str(e)}") from e
 
 
 @router.get("/api/sensors/live")
@@ -183,4 +185,4 @@ async def get_live_readings(
             "note": "This endpoint should read from sensor:* Redis keys",
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error getting live readings: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error getting live readings: {str(e)}") from e

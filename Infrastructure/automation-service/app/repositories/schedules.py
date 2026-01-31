@@ -26,7 +26,7 @@ class ScheduleRepository(BaseRepository):
                         """SELECT id, name, location, cluster, device_name, start_time, end_time,
                                   day_of_week, enabled, mode, target_intensity, ramp_up_duration,
                                   ramp_down_duration, updated_at
-                           FROM schedules 
+                           FROM schedules
                            WHERE location = $1 AND cluster = $2
                            ORDER BY start_time""",
                         location,
@@ -303,7 +303,7 @@ class ScheduleRepository(BaseRepository):
             async with self.pool.acquire() as conn:
                 result = await conn.execute(
                     """
-                    UPDATE schedules 
+                    UPDATE schedules
                     SET target_intensity = $4, updated_at = NOW()
                     WHERE location = $1 AND cluster = $2 AND device_name = $3
                     AND enabled = true AND mode IN ('SUN', 'DAY')
@@ -326,7 +326,7 @@ class ScheduleRepository(BaseRepository):
             async with self.pool.acquire() as conn:
                 result = await conn.execute(
                     """
-                    UPDATE schedules 
+                    UPDATE schedules
                     SET start_time = $4::time, end_time = $5::time, updated_at = NOW()
                     WHERE location = $1 AND cluster = $2 AND device_name = $3
                     AND enabled = true AND target_intensity IS NOT NULL

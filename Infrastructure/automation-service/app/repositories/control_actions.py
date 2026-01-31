@@ -38,7 +38,7 @@ class ControlActionRepository(BaseRepository):
             async with self.pool.acquire() as conn:
                 await conn.execute(
                     """
-                    INSERT INTO control_history 
+                    INSERT INTO control_history
                     (timestamp, location, cluster, device_name, channel, old_state, new_state, mode, reason, sensor_value, setpoint, load_percent)
                     VALUES (NOW(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
                 """,
@@ -123,9 +123,9 @@ class ControlActionRepository(BaseRepository):
                 try:
                     await conn.execute(
                         """
-                        INSERT INTO automation_state 
+                        INSERT INTO automation_state
                         (timestamp, location, cluster, device_name, device_state, device_mode,
-                         pid_output, duty_cycle_percent, active_rule_ids, active_schedule_ids, 
+                         pid_output, duty_cycle_percent, active_rule_ids, active_schedule_ids,
                          control_reason, schedule_ramp_up_duration, schedule_ramp_down_duration,
                          schedule_photoperiod_hours, pid_kp, pid_ki, pid_kd, updated_at)
                         VALUES (NOW(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, NOW())
@@ -151,9 +151,9 @@ class ControlActionRepository(BaseRepository):
                     # Fallback for older schemas
                     await conn.execute(
                         """
-                        INSERT INTO automation_state 
+                        INSERT INTO automation_state
                         (timestamp, location, cluster, device_name, device_state, device_mode,
-                         pid_output, duty_cycle_percent, active_rule_ids, active_schedule_ids, 
+                         pid_output, duty_cycle_percent, active_rule_ids, active_schedule_ids,
                          control_reason, updated_at)
                         VALUES (NOW(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
                     """,

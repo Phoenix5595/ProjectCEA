@@ -588,7 +588,7 @@ async def update_channel_device(
         config.reload()
     except Exception as e:
         logger.error(f"Error writing config: {e}")
-        raise HTTPException(status_code=500, detail="Failed to update configuration file")
+        raise HTTPException(status_code=500, detail="Failed to update configuration file") from e
 
     return {
         "channel": channel,

@@ -85,7 +85,7 @@ class DatabaseManager:
                 else:
                     raise ConnectionError(
                         f"Failed to connect to TimescaleDB after {max_retries} attempts: {e}"
-                    )
+                    ) from e
 
     async def _get_pool(self) -> asyncpg.Pool:
         """Get database connection pool."""
@@ -128,7 +128,7 @@ class DatabaseManager:
 
                 # Get or create device (no rack needed for weather station)
                 device_row = await conn.fetchrow(
-                    """SELECT device_id FROM device 
+                    """SELECT device_id FROM device
                        WHERE rack_id IS NULL AND name = $1""",
                     device_name,
                 )

@@ -59,7 +59,7 @@ class PIDRepository(BaseRepository):
                 )
                 if existing:
                     await conn.execute(
-                        """INSERT INTO pid_parameter_history 
+                        """INSERT INTO pid_parameter_history
                            (device_type, kp, ki, kd, source, updated_by, changed_at)
                            VALUES ($1, $2, $3, $4, $5, $6, NOW())""",
                         device_type,
@@ -137,7 +137,7 @@ class PIDRepository(BaseRepository):
         try:
             async with self.pool.acquire() as conn:
                 await conn.execute(
-                    """UPDATE pid_parameters 
+                    """UPDATE pid_parameters
                        SET control_mode = $2, hysteresis_high = COALESCE($3, hysteresis_high),
                            hysteresis_low = COALESCE($4, hysteresis_low), updated_by = $5, updated_at = NOW()
                        WHERE device_type = $1""",
@@ -230,7 +230,7 @@ class PIDRepository(BaseRepository):
                     INSERT INTO pid_parameters (device_type, kp, ki, kd, updated_at, updated_by, source)
                     VALUES ($1, $2, $3, $4, NOW(), $5, $6)
                     ON CONFLICT (device_type)
-                    DO UPDATE SET 
+                    DO UPDATE SET
                         kp = EXCLUDED.kp,
                         ki = EXCLUDED.ki,
                         kd = EXCLUDED.kd,

@@ -262,7 +262,7 @@ class DatabaseManager:
                 else:
                     raise ConnectionError(
                         f"Failed to connect to TimescaleDB after {max_retries} attempts: {e}"
-                    )
+                    ) from e
 
     async def _connect_redis(self) -> None:
         """Connect to Redis."""
@@ -304,7 +304,7 @@ class DatabaseManager:
             async with pool.acquire() as conn:
                 row = await conn.fetchrow(
                     """
-                    INSERT INTO config_versions 
+                    INSERT INTO config_versions
                     (timestamp, author, comment, config_type, location, cluster, changes)
                     VALUES (NOW(), $1, $2, $3, $4, $5, $6)
                     RETURNING version_id
@@ -1010,7 +1010,7 @@ class DatabaseManager:
             # Insert default modes if not exist
             await conn.execute("""
                 INSERT INTO room_modes (name, description, photoperiod_hours, is_constant)
-                VALUES 
+                VALUES
                     ('veg', 'Vegetative growth - 18/6 photoperiod', 18, FALSE),
                     ('flower', 'Flowering - 12/12 photoperiod', 12, FALSE),
                     ('drying', 'Drying - 24h constant conditions', 0, TRUE),
@@ -1033,7 +1033,7 @@ class DatabaseManager:
             # Insert default flower submodes
             await conn.execute("""
                 INSERT INTO flower_submodes (name, description, week_start, week_end)
-                VALUES 
+                VALUES
                     ('stretch', 'Stretch phase - weeks 1-3', 1, 3),
                     ('bulk', 'Bulk phase - weeks 4-6', 4, 6),
                     ('ripen', 'Ripen phase - weeks 7-9', 7, 9)
@@ -1076,7 +1076,7 @@ class DatabaseManager:
                     cluster TEXT NOT NULL,
                     mode_id INTEGER REFERENCES room_modes(id) NOT NULL,
                     submode_id INTEGER REFERENCES flower_submodes(id),  -- NULL for non-Flower modes
-                    
+
                     -- Schedule parameters
                     day_start_time TIME NOT NULL DEFAULT '17:00',
                     night_start_time TIME NOT NULL DEFAULT '11:00',
@@ -1086,41 +1086,41 @@ class DatabaseManager:
                     pre_night_minutes INTEGER NOT NULL DEFAULT 30,
                     light_ramp_up_minutes INTEGER NOT NULL DEFAULT 15,
                     light_ramp_down_minutes INTEGER NOT NULL DEFAULT 15,
-                    
+
                     -- Pre-Day setpoints
                     pre_day_heat_temp REAL NOT NULL DEFAULT 22.0,
                     pre_day_cool_temp REAL NOT NULL DEFAULT 26.0,
                     pre_day_vpd REAL NOT NULL DEFAULT 0.9,
                     pre_day_co2 INTEGER NOT NULL DEFAULT 700,
-                    
+
                     -- Day setpoints
                     day_heat_temp REAL NOT NULL DEFAULT 24.0,
                     day_cool_temp REAL NOT NULL DEFAULT 28.0,
                     day_vpd REAL NOT NULL DEFAULT 1.0,
                     day_co2 INTEGER NOT NULL DEFAULT 800,
                     day_leaf_delta REAL NOT NULL DEFAULT -2.0,
-                    
+
                     -- Pre-Night setpoints
                     pre_night_heat_temp REAL NOT NULL DEFAULT 22.0,
                     pre_night_cool_temp REAL NOT NULL DEFAULT 26.0,
                     pre_night_vpd REAL NOT NULL DEFAULT 0.9,
                     pre_night_co2 INTEGER NOT NULL DEFAULT 700,
-                    
+
                     -- Night setpoints
                     night_heat_temp REAL NOT NULL DEFAULT 20.0,
                     night_cool_temp REAL NOT NULL DEFAULT 24.0,
                     night_vpd REAL NOT NULL DEFAULT 0.8,
                     night_co2 INTEGER NOT NULL DEFAULT 600,
                     night_leaf_delta REAL NOT NULL DEFAULT -1.0,
-                    
+
                     -- Light intensity (percentage)
                     main_light_intensity INTEGER NOT NULL DEFAULT 100,
                     supplemental_light_intensity INTEGER NOT NULL DEFAULT 0,
-                    
+
                     -- Timestamps
                     created_at TIMESTAMPTZ DEFAULT NOW(),
                     updated_at TIMESTAMPTZ DEFAULT NOW(),
-                    
+
                     -- Unique constraint: one parameter set per room/mode/submode
                     UNIQUE(location, cluster, mode_id, submode_id)
                 )

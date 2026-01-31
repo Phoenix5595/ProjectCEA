@@ -219,7 +219,7 @@ class ConfigLoader:
 
     def reload(self) -> None:
         """Reload configuration from files (incremental reload)."""
-        old_config = self._config.copy()
+        self._config.copy()
         self.load()
         logger.info("Configuration reloaded")
         # Note: Incremental reload - changes applied as loaded, not atomic

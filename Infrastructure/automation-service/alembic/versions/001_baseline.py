@@ -32,7 +32,7 @@ def upgrade() -> None:
         )
     """)
     op.execute("""
-        CREATE INDEX IF NOT EXISTS idx_device_states_location_cluster 
+        CREATE INDEX IF NOT EXISTS idx_device_states_location_cluster
         ON device_states(location, cluster)
     """)
 

@@ -85,7 +85,7 @@ class DatabaseManager:
                 else:
                     raise ConnectionError(
                         f"Failed to connect to TimescaleDB after {max_retries} attempts: {e}"
-                    )
+                    ) from e
 
     async def _get_pool(self) -> asyncpg.Pool:
         """Get database connection pool."""
