@@ -149,6 +149,20 @@ class ApiClient {
     return response.data;
   }
 
+  // Notes (automation service, persisted outside deploy)
+  async getNotes(location: string, cluster: string, mode: string): Promise<{ content: string }> {
+    const response = await this.automationClient.get(`/api/notes/${encodeURIComponent(location)}/${encodeURIComponent(cluster)}/${encodeURIComponent(mode)}`);
+    return response.data;
+  }
+
+  async saveNotes(location: string, cluster: string, mode: string, content: string): Promise<{ content: string }> {
+    const response = await this.automationClient.put(
+      `/api/notes/${encodeURIComponent(location)}/${encodeURIComponent(cluster)}/${encodeURIComponent(mode)}`,
+      { content }
+    );
+    return response.data;
+  }
+
   // PID Parameters (automation service)
   async getAllPIDParameters(): Promise<Record<string, PIDParameters>> {
     const response = await this.automationClient.get('/api/pid/parameters');

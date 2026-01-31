@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
+import { apiClient } from '../services/api'
 import { logger } from '../utils/logger'
 
 interface VerticalNotesBlockProps {
@@ -7,25 +8,36 @@ interface VerticalNotesBlockProps {
   currentMode?: string
 }
 
+const SAVE_DEBOUNCE_MS = 600
+
 export default function VerticalNotesBlock({ location, cluster, currentMode }: VerticalNotesBlockProps) {
   const [content, setContent] = useState('')
   const [loading, setLoading] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // Get storage key based on location, cluster, and mode
-  const getStorageKey = () => {
+  const getStorageKey = useCallback(() => {
     const loc = location || 'unknown'
     const clust = cluster || 'unknown'
     const mode = currentMode || 'default'
     return `cea-notes-${loc}-${clust}-${mode}`
-  }
+  }, [location, cluster, currentMode])
 
   useEffect(() => {
     loadContent()
   }, [location, cluster, currentMode])
 
   async function loadContent() {
+    const loc = location || 'unknown'
+    const clust = cluster || 'unknown'
+    const mode = currentMode || 'default'
     setLoading(true)
     try {
+      const { content: apiContent } = await apiClient.getNotes(loc, clust, mode)
+      if (apiContent != null && apiContent !== '') {
+        setContent(apiContent)
+        return
+      }
       const storageKey = getStorageKey()
       const storedContent = localStorage.getItem(storageKey)
       if (storedContent) {
@@ -34,24 +46,54 @@ export default function VerticalNotesBlock({ location, cluster, currentMode }: V
         setContent('')
       }
     } catch (err) {
-      logger.error('Failed to load notes:', err)
+      logger.error('Failed to load notes from API, using localStorage:', err)
+      const storageKey = getStorageKey()
+      const storedContent = localStorage.getItem(storageKey)
+      setContent(storedContent ?? '')
     } finally {
       setLoading(false)
+    }
+  }
+
+  async function persistContent(newContent: string) {
+    const loc = location || 'unknown'
+    const clust = cluster || 'unknown'
+    const mode = currentMode || 'default'
+    setSaving(true)
+    try {
+      await apiClient.saveNotes(loc, clust, mode, newContent)
+      try {
+        localStorage.setItem(getStorageKey(), newContent)
+      } catch {
+        // ignore localStorage errors
+      }
+    } catch (err) {
+      logger.error('Failed to save notes to API:', err)
+      try {
+        localStorage.setItem(getStorageKey(), newContent)
+      } catch (e) {
+        logger.error('Failed to save notes to localStorage:', e)
+      }
+    } finally {
+      setSaving(false)
     }
   }
 
   function handleContentChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
     const newContent = e.target.value
     setContent(newContent)
-    
-    // Auto-save to localStorage
-    try {
-      const storageKey = getStorageKey()
-      localStorage.setItem(storageKey, newContent)
-    } catch (err) {
-      logger.error('Failed to save notes:', err)
-    }
+    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current)
+    saveTimeoutRef.current = setTimeout(() => {
+      saveTimeoutRef.current = null
+      persistContent(newContent)
+    }, SAVE_DEBOUNCE_MS)
   }
+
+  useEffect(() => {
+    return () => {
+      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current)
+    }
+  }, [])
 
   if (loading) {
     return (
@@ -77,7 +119,7 @@ export default function VerticalNotesBlock({ location, cluster, currentMode }: V
           style={{ fontFamily: 'monospace' }}
         />
         <div className="text-gray-500 text-xs text-center">
-          Auto-saved for {currentMode || 'this mode'}
+          {saving ? 'Saving...' : `Auto-saved for ${currentMode || 'this mode'}`}
         </div>
       </div>
     </div>

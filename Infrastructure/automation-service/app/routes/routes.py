@@ -11,6 +11,7 @@ from app.routes import (
     hardware,
     lights,
     mode,
+    notes,
     pid,
     redis_state,
     room_modes,
@@ -38,6 +39,7 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(devices.router, tags=["devices"])
     app.include_router(hardware.router, tags=["hardware"])
     app.include_router(status.router, tags=["status"])
+    app.include_router(notes.router, tags=["notes"])
     app.include_router(alarms.router, tags=["alarms"])
     app.include_router(pid.router, tags=["pid"])
     app.include_router(mode.router, tags=["mode"])
