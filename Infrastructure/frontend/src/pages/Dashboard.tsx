@@ -60,11 +60,13 @@ export default function Dashboard() {
       ))
     })
 
-    // Subscribe to sensor updates
+    // Subscribe to sensor updates (backend sends sensor_type; may also send sensor alias)
     const unsubscribeSensor = wsClient.on('sensor_update', (message) => {
+      const sensorKey = (message as { sensor?: string; sensor_type?: string }).sensor ?? (message as { sensor_type?: string }).sensor_type
+      if (!sensorKey) return
       setSensorData(prev => ({
         ...prev,
-        [`${message.location}_${message.cluster}_${message.sensor}`]: message.value
+        [`${message.location}_${message.cluster}_${sensorKey}`]: message.value
       }))
     })
 
@@ -106,9 +108,11 @@ export default function Dashboard() {
           'Flower Room_main_light_2_intensity',
           'Flower Room_main_light_3_intensity'
         ]
+        // Lab 1-Wire sensors (lab temp, water temp)
+        const labSensorKeys = ['Lab_main_lab_temp', 'Lab_main_water_temperature']
         
         // Combine all keys for single API call
-        const allKeys = [...setpointKeys, ...lightIntensityKeys]
+        const allKeys = [...setpointKeys, ...lightIntensityKeys, ...labSensorKeys]
         
         // Get setpoints and light intensities from backend API (reads from Redis; uses same base URL as apiClient)
         const setpointData = await apiClient.getSensorDataBulk(allKeys)
@@ -338,7 +342,7 @@ export default function Dashboard() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-950 p-4">
+      <div className="main-dashboard min-h-screen bg-gray-950 p-4">
         <div className="max-w-full mx-auto">
           <h1 className="text-3xl font-bold mb-8 text-gray-100">CEA Automation Dashboard</h1>
           <p className="text-gray-300">Loading...</p>
@@ -348,7 +352,7 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-950 p-2">
+    <div className="main-dashboard min-h-screen bg-gray-950 p-2">
       <div className="max-w-full mx-auto h-[calc(100vh-1rem)] flex flex-col">
         
         {/* Sticky Header: title left; weather (Quebec City) + theme right */}
@@ -934,11 +938,11 @@ export default function Dashboard() {
                       <div className="text-xs text-gray-400 mb-1">Current Conditions</div>
                       <div className="grid grid-cols-2 gap-2 text-xs">
                         <div>
-                          <div className="text-gray-500">Temperature</div>
+                          <div className="text-gray-500">Lab temp</div>
                           <div className="text-white font-mono">
-                            {sensorData['Lab_main_dry_bulb_f'] ? 
-                              `${((sensorData['Lab_main_dry_bulb_f'] - 32) * 5/9).toFixed(2)}°C` : 
-                              '--°C'
+                            {sensorData['Lab_main_lab_temp'] != null
+                              ? `${Number(sensorData['Lab_main_lab_temp']).toFixed(2)}°C`
+                              : '--°C'
                             }
                           </div>
                         </div>

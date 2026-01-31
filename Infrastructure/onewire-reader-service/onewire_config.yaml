@@ -1,0 +1,9 @@
+# 1-Wire DS18B20 probe mapping (device id -> logical sensor name)
+# Device ids from /sys/bus/w1/devices/28-*
+# Logical names must match backend/frontend: lab_temp, water_temperature
+devices:
+  28-1be2d445e7ac: lab_temp          # Lab ambient temperature
+  28-7227d445d907: water_temperature # Water temperature
+
+polling:
+  interval_seconds: 1
