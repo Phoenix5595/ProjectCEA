@@ -20,7 +20,7 @@ from fastapi.responses import FileResponse
 # Third-party imports
 import uvicorn
 
-from app.routes import config, live, sensors
+from app.routes import config, live, sensor_data, sensors
 from app.websocket import websocket_manager
 
 # Local imports
@@ -208,6 +208,8 @@ async def global_exception_handler(request: Request, exc: Exception):
 default_frontend_origins = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
+    "http://localhost:3001",  # Vite dev server
+    "http://127.0.0.1:3001",
     "http://localhost:4173",
     "http://127.0.0.1:4173",
     "http://localhost:8000",  # allow same-origin when frontend is served by backend (optional)
@@ -231,6 +233,7 @@ app.add_middleware(
 app.include_router(sensors.router)
 app.include_router(config.router)
 app.include_router(live.router)
+app.include_router(sensor_data.router)
 
 
 @app.get("/")

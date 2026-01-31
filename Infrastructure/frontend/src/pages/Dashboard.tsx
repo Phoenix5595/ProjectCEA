@@ -12,19 +12,25 @@ interface WeatherData {
   humidity: number
   pressure: number
   wind_speed: number
+  wind_direction: number | null
   description: string
   location: string
   timestamp: string
 }
 
 interface SystemStats {
-  cpu_usage: number
-  memory_usage: number
-  disk_usage: number
-  uptime: string
+  cpu_usage: number | null
+  memory_usage: number | null
+  disk_usage: number | null
+  uptime: string | null
+  load_avg?: string | null
+  process_count?: number | null
+  cpu_temp_c?: number | null
+  throttle_status?: string | null
   services: Array<{
     name: string
-    status: 'running' | 'stopped' | 'error'
+    status: 'running' | 'stopped' | 'error' | 'unreachable'
+    latency_ms?: number
   }>
 }
 
@@ -35,6 +41,7 @@ export default function Dashboard() {
   const [devices, setDevices] = useState<Device[]>([])
   const [weatherData, setWeatherData] = useState<WeatherData | null>(null)
   const [systemStats, setSystemStats] = useState<SystemStats | null>(null)
+  const [statusDevices, setStatusDevices] = useState<Record<string, Record<string, Record<string, { intensity?: number }>>> | null>(null)
   const [loading, setLoading] = useState(true)
   const [sensorData, setSensorData] = useState<Record<string, number>>({})
 
@@ -81,12 +88,12 @@ export default function Dashboard() {
       try {
         const setpointKeys = [
           'Flower Room_main_dry_bulb_setpoint_f',
-          'Flower Room_main_relative_humidity_setpoint', 
+          'Flower Room_main_cooling_setpoint_f',
           'Flower Room_main_co2_setpoint',
           'Flower Room_main_vpd_setpoint',
           'Veg Room_main_dry_bulb_setpoint_f',
-          'Veg Room_main_relative_humidity_setpoint',
-          'Veg Room_main_co2_setpoint', 
+          'Veg Room_main_cooling_setpoint_f',
+          'Veg Room_main_co2_setpoint',
           'Veg Room_main_vpd_setpoint'
         ]
         
@@ -103,97 +110,120 @@ export default function Dashboard() {
         // Combine all keys for single API call
         const allKeys = [...setpointKeys, ...lightIntensityKeys]
         
-        // Try to get setpoints and light intensities from backend API (which reads from Redis)
-        const setpointResponse = await fetch(`${import.meta.env.VITE_BACKEND_API_URL}/api/sensor-data`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ keys: allKeys })
-        })
-        
-        if (setpointResponse.ok) {
-          const setpointData = await setpointResponse.json()
-          // Merge setpoint and intensity data into sensorData
+        // Get setpoints and light intensities from backend API (reads from Redis; uses same base URL as apiClient)
+        const setpointData = await apiClient.getSensorDataBulk(allKeys)
+        if (Object.keys(setpointData).length > 0) {
           setSensorData(prev => ({ ...prev, ...setpointData }))
         }
       } catch (error) {
         console.log('Setpoints and light intensities not available from API, using fallback')
       }
 
-      // Load real weather data
+      // Load real weather data (API returns temp, rh; support legacy temperature/humidity)
       const weatherResponse = await apiClient.getLatestWeather()
-      if (weatherResponse) {
-        setWeatherData({
-          temperature: weatherResponse.data.temperature.value,
-          humidity: weatherResponse.data.humidity.value,
-          pressure: weatherResponse.data.pressure.value,
-          wind_speed: weatherResponse.data.wind_speed?.value || 0,
-          description: weatherResponse.data.description || 'N/A',
-          location: 'Quebec, Canada',
-          timestamp: weatherResponse.timestamp
-        })
+      if (weatherResponse?.data) {
+        const d = weatherResponse.data
+        const temp = d.temp?.value ?? d.temperature?.value
+        const rh = d.rh?.value ?? d.humidity?.value
+        if (temp != null && rh != null) {
+          setWeatherData({
+            temperature: Number(temp),
+            humidity: Number(rh),
+            pressure: Number(d.pressure?.value ?? 0),
+            wind_speed: Number(d.wind_speed?.value ?? 0),
+            wind_direction: d.wind_direction?.value != null ? Number(d.wind_direction.value) : null,
+            description: d.description?.value ?? 'N/A',
+            location: 'Quebec City',
+            timestamp: weatherResponse.timestamp ?? ''
+          })
+        }
       }
 
-      // Load real system stats
+      // Load real system stats from /api/status (system + service_health + devices with intensity)
       const statusResponse = await apiClient.getSystemStatus()
       if (statusResponse) {
-        // Calculate uptime from timestamp (using current date as reference)
-        const currentTime = new Date()
-        const startTime = new Date('2026-01-30T00:00:00') // Approximate start time
-        const uptimeSeconds = Math.floor((currentTime.getTime() - startTime.getTime()) / 1000)
-        const days = Math.floor(uptimeSeconds / 86400)
-        const hours = Math.floor((uptimeSeconds % 86400) / 3600)
-        
-        // Calculate realistic system metrics from performance data
-        const cpuUsage = Math.min(95, Math.round(statusResponse.performance.control_loop.total_loop_time.average * 20)) // Scale loop time to CPU %
-        const memoryUsage = Math.min(85, Math.round((statusResponse.performance.api.total_requests / 5000) * 30)) // Scale requests to memory %
-        const diskUsage = 42 // Static for now
-        
+        if (statusResponse.devices) setStatusDevices(statusResponse.devices)
+        const sys = statusResponse.system
+        const formatUptime = (sec: number) => {
+          const d = Math.floor(sec / 86400)
+          const h = Math.floor((sec % 86400) / 3600)
+          return `${d}d ${h}h`
+        }
         setSystemStats({
-          cpu_usage: cpuUsage,
-          memory_usage: memoryUsage,
-          disk_usage: diskUsage,
-          uptime: `${days}d ${hours}h`,
-          services: [
-            { name: 'postgresql', status: 'running' },
-            { name: 'redis-server', status: 'running' },
-            { name: 'can-processor', status: 'running' },
-            { name: 'soil-sensor-service', status: 'running' },
-            { name: 'weather-service', status: 'running' },
-            { name: 'cea-backend', status: 'running' },
-            { name: 'automation-service', status: 'running' }
-          ]
-        })
-        console.log('System stats set:', {
-          cpu_usage: cpuUsage,
-          memory_usage: memoryUsage,
-          disk_usage: diskUsage,
-          uptime: `${days}d ${hours}h`
+          cpu_usage: sys?.cpu_percent ?? null,
+          memory_usage: sys?.memory_percent ?? null,
+          disk_usage: sys?.disk_percent ?? null,
+          uptime: sys?.uptime_seconds != null ? formatUptime(sys.uptime_seconds) : null,
+          load_avg: sys?.load_avg ?? null,
+          process_count: sys?.process_count ?? null,
+          cpu_temp_c: sys?.cpu_temp_c ?? null,
+          throttle_status: sys?.throttle_status ?? null,
+          services: Array.isArray(statusResponse.service_health)
+            ? statusResponse.service_health.map((s: { name: string; status: string; latency_ms?: number }) => ({
+                name: s.name,
+                status: s.status as 'running' | 'stopped' | 'error' | 'unreachable',
+                latency_ms: s.latency_ms
+              }))
+            : [
+                { name: 'postgresql', status: 'running' as const },
+                { name: 'redis-server', status: 'running' as const },
+                { name: 'can-processor', status: 'running' as const },
+                { name: 'soil-sensor-service', status: 'running' as const },
+                { name: 'weather-service', status: 'running' as const },
+                { name: 'cea-backend', status: 'running' as const },
+                { name: 'automation-service', status: 'running' as const }
+              ]
         })
       }
     } catch (error) {
       console.error('Error loading initial data:', error)
       logger.error('Error loading initial data:', error)
-      
-      // Set fallback system stats if API fails
+      // Do not set fake numbers; show "Unavailable" for system stats
       setSystemStats({
-        cpu_usage: 25,
-        memory_usage: 45,
-        disk_usage: 42,
-        uptime: '0d 19h',
-        services: [
-          { name: 'postgresql', status: 'running' },
-          { name: 'redis-server', status: 'running' },
-          { name: 'can-processor', status: 'running' },
-          { name: 'soil-sensor-service', status: 'running' },
-          { name: 'weather-service', status: 'running' },
-          { name: 'cea-backend', status: 'running' },
-          { name: 'automation-service', status: 'running' }
-        ]
+        cpu_usage: null,
+        memory_usage: null,
+        disk_usage: null,
+        uptime: null,
+        load_avg: null,
+        process_count: null,
+        cpu_temp_c: null,
+        throttle_status: null,
+        services: []
       })
     } finally {
       setLoading(false)
     }
   }
+
+  // Refresh weather every 15 minutes
+  useEffect(() => {
+    const refreshWeather = async () => {
+      try {
+        const weatherResponse = await apiClient.getLatestWeather()
+        if (weatherResponse?.data) {
+          const d = weatherResponse.data
+          const temp = d.temp?.value ?? d.temperature?.value
+          const rh = d.rh?.value ?? d.humidity?.value
+          if (temp != null && rh != null) {
+            setWeatherData({
+              temperature: Number(temp),
+              humidity: Number(rh),
+              pressure: Number(d.pressure?.value ?? 0),
+              wind_speed: Number(d.wind_speed?.value ?? 0),
+              wind_direction: d.wind_direction?.value != null ? Number(d.wind_direction.value) : null,
+              description: d.description?.value ?? 'N/A',
+              location: 'Quebec City',
+              timestamp: weatherResponse.timestamp ?? ''
+            })
+          }
+        }
+      } catch {
+        // Keep previous weather data on error
+      }
+    }
+    const interval = setInterval(refreshWeather, 15 * 60 * 1000)
+    return () => clearInterval(interval)
+  }, [])
 
   // Refresh system stats every 5 seconds
   useEffect(() => {
@@ -201,38 +231,42 @@ export default function Dashboard() {
       try {
         const statusResponse = await apiClient.getSystemStatus()
         if (statusResponse) {
-          // Calculate uptime from timestamp (using current date as reference)
-          const currentTime = new Date()
-          const startTime = new Date('2026-01-30T00:00:00') // Approximate start time
-          const uptimeSeconds = Math.floor((currentTime.getTime() - startTime.getTime()) / 1000)
-          const days = Math.floor(uptimeSeconds / 86400)
-          const hours = Math.floor((uptimeSeconds % 86400) / 3600)
-          
-          // Calculate realistic system metrics from performance data
-          const cpuUsage = Math.min(95, Math.round(statusResponse.performance.control_loop.total_loop_time.average * 20)) // Scale loop time to CPU %
-          const memoryUsage = Math.min(85, Math.round((statusResponse.performance.api.total_requests / 5000) * 30)) // Scale requests to memory %
-          const diskUsage = 42 // Static for now
-          
+          const sys = statusResponse.system
+          const formatUptime = (sec: number) => {
+            const d = Math.floor(sec / 86400)
+            const h = Math.floor((sec % 86400) / 3600)
+            return `${d}d ${h}h`
+          }
           setSystemStats({
-            cpu_usage: cpuUsage,
-            memory_usage: memoryUsage,
-            disk_usage: diskUsage,
-            uptime: `${days}d ${hours}h`,
-            services: [
-              { name: 'postgresql', status: 'running' },
-              { name: 'redis-server', status: 'running' },
-              { name: 'can-processor', status: 'running' },
-              { name: 'soil-sensor-service', status: 'running' },
-              { name: 'weather-service', status: 'running' },
-              { name: 'cea-backend', status: 'running' },
-              { name: 'automation-service', status: 'running' }
-            ]
+            cpu_usage: sys?.cpu_percent ?? null,
+            memory_usage: sys?.memory_percent ?? null,
+            disk_usage: sys?.disk_percent ?? null,
+            uptime: sys?.uptime_seconds != null ? formatUptime(sys.uptime_seconds) : null,
+            load_avg: sys?.load_avg ?? null,
+            process_count: sys?.process_count ?? null,
+            cpu_temp_c: sys?.cpu_temp_c ?? null,
+            throttle_status: sys?.throttle_status ?? null,
+            services: Array.isArray(statusResponse.service_health)
+              ? statusResponse.service_health.map((s: { name: string; status: string; latency_ms?: number }) => ({
+                  name: s.name,
+                  status: s.status as 'running' | 'stopped' | 'error' | 'unreachable',
+                  latency_ms: s.latency_ms
+                }))
+              : [
+                  { name: 'postgresql', status: 'running' as const },
+                  { name: 'redis-server', status: 'running' as const },
+                  { name: 'can-processor', status: 'running' as const },
+                  { name: 'soil-sensor-service', status: 'running' as const },
+                  { name: 'weather-service', status: 'running' as const },
+                  { name: 'cea-backend', status: 'running' as const },
+                  { name: 'automation-service', status: 'running' as const }
+                ]
           })
         }
       } catch (error) {
         console.error('Error refreshing system stats:', error)
       }
-    }, 5000) // 5 seconds
+    }, 5000)
 
     return () => clearInterval(interval)
   }, [])
@@ -300,26 +334,33 @@ export default function Dashboard() {
     <div className="min-h-screen bg-gray-950 p-2">
       <div className="max-w-full mx-auto h-[calc(100vh-1rem)] flex flex-col">
         
-        {/* Sticky Header with Weather and Theme */}
+        {/* Sticky Header: title left; weather (Quebec City) + theme right */}
         <div className="sticky top-0 z-10 bg-gray-950 p-1 mb-2">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-6">
+            <div>
               <h1 className="text-xl font-bold text-gray-100 flex items-center gap-2">
-                <span>�</span> CEA Automation Dashboard
+                <span>🌱</span> CEA Automation Dashboard
               </h1>
+            </div>
+            <div className="flex items-center gap-4">
               {weatherData && (
-                <div className="flex items-center gap-4 text-sm text-gray-300">
+                <div className="flex items-center gap-3 text-sm text-gray-300" title={weatherData.timestamp ? `Quebec City weather · ${new Date(weatherData.timestamp).toLocaleString()}` : 'Quebec City weather'}>
+                  <span className="text-gray-400 font-medium">Quebec City</span>
                   <span className="flex items-center gap-1">
-                    <span>🌤</span> {weatherData.temperature}°C
+                    <span>🌤</span> {Number(weatherData.temperature).toFixed(2)}°C
                   </span>
-                  <span>{weatherData.humidity}%</span>
-                  <span>{weatherData.pressure} hPa</span>
-                  <span>{weatherData.wind_speed} km/h</span>
-                  <span className="text-gray-400">{weatherData.description}</span>
+                  <span>{Number(weatherData.humidity).toFixed(2)}%</span>
+                  <span>{Number(weatherData.pressure).toFixed(2)} hPa</span>
+                  <span>{Number(weatherData.wind_speed).toFixed(2)} km/h</span>
+                  {weatherData.wind_direction != null && (
+                    <span title="Wind direction (degrees)">{Number(weatherData.wind_direction).toFixed(2)}°</span>
+                  )}
+                  {weatherData.description && weatherData.description !== 'N/A' && (
+                    <span className="text-gray-400">{weatherData.description}</span>
+                  )}
                 </div>
               )}
-            </div>
-            <button
+              <button
               onClick={toggleTheme}
               className="p-2 rounded-lg bg-gray-800 text-gray-300 hover:bg-gray-700 transition-colors"
               aria-label="Toggle theme"
@@ -334,6 +375,7 @@ export default function Dashboard() {
                 </svg>
               )}
             </button>
+            </div>
           </div>
         </div>
 
@@ -366,7 +408,7 @@ export default function Dashboard() {
                         <div className="text-gray-500">Temperature</div>
                         <div className="text-white font-mono">
                           {sensorData['Veg Room_main_dry_bulb_f'] ? 
-                            `${Math.round((sensorData['Veg Room_main_dry_bulb_f'] - 32) * 5/9)}°C` : 
+                            `${((sensorData['Veg Room_main_dry_bulb_f'] - 32) * 5/9).toFixed(2)}°C` : 
                             '--°C'
                           }
                         </div>
@@ -375,7 +417,7 @@ export default function Dashboard() {
                         <div className="text-gray-500">Humidity</div>
                         <div className="text-white font-mono">
                           {sensorData['Veg Room_main_relative_humidity'] ? 
-                            `${Math.round(sensorData['Veg Room_main_relative_humidity'])}%` : 
+                            `${Number(sensorData['Veg Room_main_relative_humidity']).toFixed(2)}%` : 
                             '--%'
                           }
                         </div>
@@ -384,7 +426,7 @@ export default function Dashboard() {
                         <div className="text-gray-500">CO2</div>
                         <div className="text-white font-mono">
                           {sensorData['Veg Room_main_co2'] ? 
-                            `${Math.round(sensorData['Veg Room_main_co2'])} ppm` : 
+                            `${Number(sensorData['Veg Room_main_co2']).toFixed(2)} ppm` : 
                             '-- ppm'
                           }
                         </div>
@@ -393,7 +435,7 @@ export default function Dashboard() {
                         <div className="text-gray-500">VPD</div>
                         <div className="text-white font-mono">
                           {sensorData['Veg Room_main_vpd'] ? 
-                            `${sensorData['Veg Room_main_vpd'].toFixed(1)} kPa` : 
+                            `${Number(sensorData['Veg Room_main_vpd']).toFixed(2)} kPa` : 
                             '-- kPa'
                           }
                         </div>
@@ -401,44 +443,40 @@ export default function Dashboard() {
                     </div>
                   </div>
 
-                  {/* Current Setpoints */}
+                  {/* Effective Setpoints (heating, cooling, RH, CO2, VPD) */}
                   <div className="bg-gray-800 rounded p-2">
-                    <div className="text-xs text-gray-400 mb-1">Current Setpoints</div>
+                    <div className="text-xs text-gray-400 mb-1" title="From Redis (effective_setpoint:*): heating, cooling, CO2, VPD">Effective Setpoints</div>
                     <div className="grid grid-cols-2 gap-2 text-xs">
                       <div>
-                        <div className="text-gray-500">Temp Target</div>
-                        <div className={`font-mono ${getSetpointColor()}`} title="Temperature setpoint for Veg Room">
-                          {sensorData['Veg Room_main_dry_bulb_setpoint_f'] ? 
-                            `${Math.round((sensorData['Veg Room_main_dry_bulb_setpoint_f'] - 32) * 5/9)}°C` : 
-                            '--°C'
-                          }
+                        <div className="text-gray-500">Heating</div>
+                        <div className={`font-mono ${getSetpointColor()}`} title="Effective heating setpoint (Veg Room, from Redis)">
+                          {sensorData['Veg Room_main_dry_bulb_setpoint_f'] != null
+                            ? `${((sensorData['Veg Room_main_dry_bulb_setpoint_f'] - 32) * 5/9).toFixed(2)}°C`
+                            : '--°C'}
                         </div>
                       </div>
                       <div>
-                        <div className="text-gray-500">RH Target</div>
-                        <div className={`font-mono ${getSetpointColor()}`} title="Relative humidity setpoint for Veg Room">
-                          {sensorData['Veg Room_main_relative_humidity_setpoint'] ? 
-                            `${Math.round(sensorData['Veg Room_main_relative_humidity_setpoint'])}%` : 
-                            '--%'
-                          }
+                        <div className="text-gray-500">Cooling</div>
+                        <div className={`font-mono ${getSetpointColor()}`} title="Effective cooling setpoint (Veg Room)">
+                          {sensorData['Veg Room_main_cooling_setpoint_f'] != null
+                            ? `${((sensorData['Veg Room_main_cooling_setpoint_f'] - 32) * 5/9).toFixed(2)}°C`
+                            : '--°C'}
                         </div>
                       </div>
                       <div>
-                        <div className="text-gray-500">CO2 Target</div>
-                        <div className={`font-mono ${getSetpointColor()}`} title="CO2 concentration setpoint for Veg Room">
-                          {sensorData['Veg Room_main_co2_setpoint'] ? 
-                            `${Math.round(sensorData['Veg Room_main_co2_setpoint'])} ppm` : 
-                            '-- ppm'
-                          }
+                        <div className="text-gray-500">CO2</div>
+                        <div className={`font-mono ${getSetpointColor()}`} title="Effective CO2 setpoint (Veg Room)">
+                          {sensorData['Veg Room_main_co2_setpoint'] != null
+                            ? `${Number(sensorData['Veg Room_main_co2_setpoint']).toFixed(2)} ppm`
+                            : '-- ppm'}
                         </div>
                       </div>
                       <div>
-                        <div className="text-gray-500">VPD Target</div>
-                        <div className={`font-mono ${getSetpointColor()}`} title="Vapor Pressure Deficit setpoint for Veg Room">
-                          {sensorData['Veg Room_main_vpd_setpoint'] ? 
-                            `${sensorData['Veg Room_main_vpd_setpoint'].toFixed(1)} kPa` : 
-                            '-- kPa'
-                          }
+                        <div className="text-gray-500">VPD</div>
+                        <div className={`font-mono ${getSetpointColor()}`} title="Effective VPD setpoint (Veg Room)">
+                          {sensorData['Veg Room_main_vpd_setpoint'] != null
+                            ? `${Number(sensorData['Veg Room_main_vpd_setpoint']).toFixed(2)} kPa`
+                            : '-- kPa'}
                         </div>
                       </div>
                     </div>
@@ -464,9 +502,9 @@ export default function Dashboard() {
                             </span>
                             <div className="flex items-center gap-1">
                               <span className="text-cyan-400 font-mono">
-                                {sensorData[`Veg Room_main_${device.device_name}_intensity`] ? 
-                                  `${Math.round(sensorData[`Veg Room_main_${device.device_name}_intensity`])}%` : 
-                                  '--%'
+                                {(sensorData[`Veg Room_main_${device.device_name}_intensity`] ?? statusDevices?.['Veg Room']?.['main']?.[device.device_name]?.intensity) != null
+                                  ? `${Number(sensorData[`Veg Room_main_${device.device_name}_intensity`] ?? statusDevices?.['Veg Room']?.['main']?.[device.device_name]?.intensity).toFixed(2)}%`
+                                  : '--%'
                                 }
                               </span>
                               <span className={`text-[14px] px-1.5 py-0.5 rounded cursor-help ${
@@ -534,7 +572,7 @@ export default function Dashboard() {
                         <div className="text-gray-500">Temperature</div>
                         <div className="text-white font-mono">
                           {sensorData['Flower Room_main_temperature_sensor'] ? 
-                            `${sensorData['Flower Room_main_temperature_sensor'].toFixed(1)}°C` : 
+                            `${Number(sensorData['Flower Room_main_temperature_sensor']).toFixed(2)}°C` : 
                             '--°C'
                           }
                         </div>
@@ -543,7 +581,7 @@ export default function Dashboard() {
                         <div className="text-gray-500">Humidity</div>
                         <div className="text-white font-mono">
                           {sensorData['Flower Room_main_humidity_sensor'] ? 
-                            `${Math.round(sensorData['Flower Room_main_humidity_sensor'])}%` : 
+                            `${Number(sensorData['Flower Room_main_humidity_sensor']).toFixed(2)}%` : 
                             '--%'
                           }
                         </div>
@@ -552,7 +590,7 @@ export default function Dashboard() {
                         <div className="text-gray-500">CO2</div>
                         <div className="text-white font-mono">
                           {sensorData['Flower Room_main_co2_sensor'] ? 
-                            `${Math.round(sensorData['Flower Room_main_co2_sensor'])} ppm` : 
+                            `${Number(sensorData['Flower Room_main_co2_sensor']).toFixed(2)} ppm` : 
                             '-- ppm'
                           }
                         </div>
@@ -561,7 +599,7 @@ export default function Dashboard() {
                         <div className="text-gray-500">VPD</div>
                         <div className="text-white font-mono">
                           {sensorData['Flower Room_main_vpd_sensor'] ? 
-                            `${sensorData['Flower Room_main_vpd_sensor'].toFixed(2)} kPa` : 
+                            `${Number(sensorData['Flower Room_main_vpd_sensor']).toFixed(2)} kPa` : 
                             '-- kPa'
                           }
                         </div>
@@ -569,44 +607,40 @@ export default function Dashboard() {
                     </div>
                   </div>
 
-                  {/* Current Setpoints */}
+                  {/* Effective Setpoints (heating, cooling, RH, CO2, VPD) */}
                   <div className="bg-gray-800 rounded p-2">
-                    <div className="text-xs text-gray-400 mb-1">Current Setpoints</div>
+                    <div className="text-xs text-gray-400 mb-1" title="From Redis (effective_setpoint:*): heating, cooling, CO2, VPD">Effective Setpoints</div>
                     <div className="grid grid-cols-2 gap-2 text-xs">
                       <div>
-                        <div className="text-gray-500">Temp Target</div>
-                        <div className={`font-mono ${getSetpointColor()}`} title="Temperature setpoint for Flower Room">
-                          {sensorData['Flower Room_main_dry_bulb_setpoint_f'] ? 
-                            `${Math.round((sensorData['Flower Room_main_dry_bulb_setpoint_f'] - 32) * 5/9)}°C` : 
-                            '--°C'
-                          }
+                        <div className="text-gray-500">Heating</div>
+                        <div className={`font-mono ${getSetpointColor()}`} title="Effective heating setpoint (Flower Room, from Redis)">
+                          {sensorData['Flower Room_main_dry_bulb_setpoint_f'] != null
+                            ? `${((sensorData['Flower Room_main_dry_bulb_setpoint_f'] - 32) * 5/9).toFixed(2)}°C`
+                            : '--°C'}
                         </div>
                       </div>
                       <div>
-                        <div className="text-gray-500">RH Target</div>
-                        <div className={`font-mono ${getSetpointColor()}`} title="Relative humidity setpoint for Flower Room">
-                          {sensorData['Flower Room_main_relative_humidity_setpoint'] ? 
-                            `${Math.round(sensorData['Flower Room_main_relative_humidity_setpoint'])}%` : 
-                            '--%'
-                          }
+                        <div className="text-gray-500">Cooling</div>
+                        <div className={`font-mono ${getSetpointColor()}`} title="Effective cooling setpoint (Flower Room)">
+                          {sensorData['Flower Room_main_cooling_setpoint_f'] != null
+                            ? `${((sensorData['Flower Room_main_cooling_setpoint_f'] - 32) * 5/9).toFixed(2)}°C`
+                            : '--°C'}
                         </div>
                       </div>
                       <div>
-                        <div className="text-gray-500">CO2 Target</div>
-                        <div className={`font-mono ${getSetpointColor()}`} title="CO2 concentration setpoint for Flower Room">
-                          {sensorData['Flower Room_main_co2_setpoint'] ? 
-                            `${Math.round(sensorData['Flower Room_main_co2_setpoint'])} ppm` : 
-                            '-- ppm'
-                          }
+                        <div className="text-gray-500">CO2</div>
+                        <div className={`font-mono ${getSetpointColor()}`} title="Effective CO2 setpoint (Flower Room)">
+                          {sensorData['Flower Room_main_co2_setpoint'] != null
+                            ? `${Number(sensorData['Flower Room_main_co2_setpoint']).toFixed(2)} ppm`
+                            : '-- ppm'}
                         </div>
                       </div>
                       <div>
-                        <div className="text-gray-500">VPD Target</div>
-                        <div className={`font-mono ${getSetpointColor()}`} title="Vapor Pressure Deficit setpoint for Flower Room">
-                          {sensorData['Flower Room_main_vpd_setpoint'] ? 
-                            `${sensorData['Flower Room_main_vpd_setpoint'].toFixed(1)} kPa` : 
-                            '-- kPa'
-                          }
+                        <div className="text-gray-500">VPD</div>
+                        <div className={`font-mono ${getSetpointColor()}`} title="Effective VPD setpoint (Flower Room)">
+                          {sensorData['Flower Room_main_vpd_setpoint'] != null
+                            ? `${Number(sensorData['Flower Room_main_vpd_setpoint']).toFixed(2)} kPa`
+                            : '-- kPa'}
                         </div>
                       </div>
                     </div>
@@ -632,9 +666,9 @@ export default function Dashboard() {
                             </span>
                             <div className="flex items-center gap-1">
                               <span className="text-cyan-400 font-mono">
-                                {sensorData[`Flower Room_main_${device.device_name}_intensity`] ? 
-                                  `${Math.round(sensorData[`Flower Room_main_${device.device_name}_intensity`])}%` : 
-                                  '--%'
+                                {(sensorData[`Flower Room_main_${device.device_name}_intensity`] ?? statusDevices?.['Flower Room']?.['main']?.[device.device_name]?.intensity) != null
+                                  ? `${Number(sensorData[`Flower Room_main_${device.device_name}_intensity`] ?? statusDevices?.['Flower Room']?.['main']?.[device.device_name]?.intensity).toFixed(2)}%`
+                                  : '--%'
                                 }
                               </span>
                               <span className={`text-[14px] px-1.5 py-0.5 rounded cursor-help ${
@@ -701,50 +735,56 @@ export default function Dashboard() {
                         <div>
                           <div className="text-gray-500">CPU</div>
                           <div className="text-white font-mono flex items-center gap-1">
-                            <span>{systemStats.cpu_usage}%</span>
-                            <div className="w-8 h-1 bg-gray-700 rounded overflow-hidden">
-                              <div 
-                                className="h-full bg-green-400 transition-all" 
-                                style={{ width: `${Math.min(systemStats.cpu_usage, 100)}%` }}
-                              />
-                            </div>
+                            <span>{systemStats.cpu_usage != null ? `${Number(systemStats.cpu_usage).toFixed(2)}%` : '—'}</span>
+                            {systemStats.cpu_usage != null && (
+                              <div className="w-8 h-1 bg-gray-700 rounded overflow-hidden">
+                                <div
+                                  className="h-full bg-green-400 transition-all"
+                                  style={{ width: `${Math.min(systemStats.cpu_usage, 100)}%` }}
+                                />
+                              </div>
+                            )}
                           </div>
                         </div>
                         <div>
                           <div className="text-gray-500">Memory</div>
                           <div className="text-white font-mono flex items-center gap-1">
-                            <span>{systemStats.memory_usage}%</span>
-                            <div className="w-8 h-1 bg-gray-700 rounded overflow-hidden">
-                              <div 
-                                className="h-full bg-blue-400 transition-all" 
-                                style={{ width: `${Math.min(systemStats.memory_usage, 100)}%` }}
-                              />
-                            </div>
+                            <span>{systemStats.memory_usage != null ? `${Number(systemStats.memory_usage).toFixed(2)}%` : '—'}</span>
+                            {systemStats.memory_usage != null && (
+                              <div className="w-8 h-1 bg-gray-700 rounded overflow-hidden">
+                                <div
+                                  className="h-full bg-blue-400 transition-all"
+                                  style={{ width: `${Math.min(systemStats.memory_usage, 100)}%` }}
+                                />
+                              </div>
+                            )}
                           </div>
                         </div>
                         <div>
                           <div className="text-gray-500">Disk</div>
                           <div className="text-white font-mono flex items-center gap-1">
-                            <span>{systemStats.disk_usage}%</span>
-                            <div className="w-8 h-1 bg-gray-700 rounded overflow-hidden">
-                              <div 
-                                className="h-full bg-amber-400 transition-all" 
-                                style={{ width: `${Math.min(systemStats.disk_usage, 100)}%` }}
-                              />
-                            </div>
+                            <span>{systemStats.disk_usage != null ? `${Number(systemStats.disk_usage).toFixed(2)}%` : '—'}</span>
+                            {systemStats.disk_usage != null && (
+                              <div className="w-8 h-1 bg-gray-700 rounded overflow-hidden">
+                                <div
+                                  className="h-full bg-amber-400 transition-all"
+                                  style={{ width: `${Math.min(systemStats.disk_usage, 100)}%` }}
+                                />
+                              </div>
+                            )}
                           </div>
                         </div>
                         <div>
                           <div className="text-gray-500">Load Avg</div>
-                          <div className="text-white font-mono text-[10px]">1.2, 1.1, 0.9</div>
+                          <div className="text-white font-mono text-[10px]">{systemStats.load_avg ?? '—'}</div>
                         </div>
                         <div>
                           <div className="text-gray-500">Processes</div>
-                          <div className="text-white font-mono text-[10px]">142</div>
+                          <div className="text-white font-mono text-[10px]">{systemStats.process_count ?? '—'}</div>
                         </div>
                         <div>
                           <div className="text-gray-500">Uptime</div>
-                          <div className="text-white font-mono text-[10px]">{systemStats.uptime}</div>
+                          <div className="text-white font-mono text-[10px]">{systemStats.uptime ?? '—'}</div>
                         </div>
                       </div>
                     </div>
@@ -753,31 +793,34 @@ export default function Dashboard() {
                     <div className="bg-gray-800 rounded p-2">
                       <div className="text-xs text-gray-400 mb-1">Service Health</div>
                       <div className="grid grid-cols-1 gap-1">
-                        {systemStats.services.map((service, index) => (
-                          <div key={index} className="flex items-center justify-between text-xs">
-                            <div className="flex items-center gap-2 flex-1">
-                              <div className={`w-1.5 h-1.5 rounded-full ${
-                                service.status === 'running' ? 'bg-green-400' : 'bg-red-400'
-                              }`} />
-                              <span className="text-gray-300">{service.name}</span>
-                              <span className="text-gray-300 text-[10px] truncate">{service.name}</span>
+                        {systemStats.services.length === 0 ? (
+                          <div className="text-xs text-gray-500">Status unknown</div>
+                        ) : (
+                          systemStats.services.map((service, index) => (
+                            <div key={index} className="flex items-center justify-between text-xs">
+                              <div className="flex items-center gap-2 flex-1">
+                                <div className={`w-1.5 h-1.5 rounded-full ${
+                                  service.status === 'running' ? 'bg-green-400' : service.status === 'unreachable' ? 'bg-red-400' : 'bg-yellow-400'
+                                }`} />
+                                <span className="text-gray-300">{service.name}</span>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                {service.latency_ms != null && (
+                                  <span className="text-gray-500 text-[8px]">{service.latency_ms}ms</span>
+                                )}
+                                <span className={`px-1 py-0.5 rounded text-[8px] font-medium ${
+                                  service.status === 'running'
+                                    ? 'bg-green-900 text-green-200'
+                                    : service.status === 'unreachable' || service.status === 'stopped'
+                                    ? 'bg-red-900 text-red-200'
+                                    : 'bg-yellow-900 text-yellow-200'
+                                }`}>
+                                  {service.status === 'running' ? '✓' : '✗'}
+                                </span>
+                              </div>
                             </div>
-                            <div className="flex items-center gap-1">
-                              <span className="text-gray-500 text-[8px]">
-                                {service.status === 'running' ? '0.1s' : '--'}
-                              </span>
-                              <span className={`px-1 py-0.5 rounded text-[8px] font-medium ${
-                                service.status === 'running' 
-                                  ? 'bg-green-900 text-green-200' 
-                                  : service.status === 'stopped' 
-                                  ? 'bg-red-900 text-red-200' 
-                                  : 'bg-yellow-900 text-yellow-200'
-                              }`}>
-                                {service.status === 'running' ? '✓' : '✗'}
-                              </span>
-                            </div>
-                          </div>
-                        ))}
+                          ))
+                        )}
                       </div>
                     </div>
 
@@ -803,11 +846,11 @@ export default function Dashboard() {
                         </div>
                         <div>
                           <div className="text-gray-500">Temp</div>
-                          <div className="text-white font-mono text-[10px]">45.2°C</div>
+                          <div className="text-white font-mono text-[10px]">{systemStats.cpu_temp_c != null ? `${Number(systemStats.cpu_temp_c).toFixed(2)}°C` : '—'}</div>
                         </div>
                         <div>
                           <div className="text-gray-500">Throttle</div>
-                          <div className="text-green-400 font-mono text-[10px]">Normal</div>
+                          <div className="text-white font-mono text-[10px]">{systemStats.throttle_status ?? '—'}</div>
                         </div>
                       </div>
                     </div>
@@ -877,7 +920,7 @@ export default function Dashboard() {
                           <div className="text-gray-500">Temperature</div>
                           <div className="text-white font-mono">
                             {sensorData['Lab_main_dry_bulb_f'] ? 
-                              `${Math.round((sensorData['Lab_main_dry_bulb_f'] - 32) * 5/9)}°C` : 
+                              `${((sensorData['Lab_main_dry_bulb_f'] - 32) * 5/9).toFixed(2)}°C` : 
                               '--°C'
                             }
                           </div>
@@ -886,7 +929,7 @@ export default function Dashboard() {
                           <div className="text-gray-500">Humidity</div>
                           <div className="text-white font-mono">
                             {sensorData['Lab_main_relative_humidity'] ? 
-                              `${Math.round(sensorData['Lab_main_relative_humidity'])}%` : 
+                              `${Number(sensorData['Lab_main_relative_humidity']).toFixed(2)}%` : 
                               '--%'
                             }
                           </div>
@@ -895,7 +938,7 @@ export default function Dashboard() {
                           <div className="text-gray-500">CO2</div>
                           <div className="text-white font-mono">
                             {sensorData['Lab_main_co2'] ? 
-                              `${Math.round(sensorData['Lab_main_co2'])} ppm` : 
+                              `${Number(sensorData['Lab_main_co2']).toFixed(2)} ppm` : 
                               '-- ppm'
                             }
                           </div>
@@ -904,7 +947,7 @@ export default function Dashboard() {
                           <div className="text-gray-500">VPD</div>
                           <div className="text-white font-mono">
                             {sensorData['Lab_main_vpd'] ? 
-                              `${sensorData['Lab_main_vpd'].toFixed(1)} kPa` : 
+                              `${Number(sensorData['Lab_main_vpd']).toFixed(2)} kPa` : 
                               '-- kPa'
                             }
                           </div>
@@ -920,7 +963,7 @@ export default function Dashboard() {
                           <div className="text-gray-500">Water Level</div>
                           <div className="text-cyan-400 font-mono">
                             {sensorData['Lab_main_water_level'] ? 
-                              `${sensorData['Lab_main_water_level'].toFixed(1)} cm` : 
+                              `${Number(sensorData['Lab_main_water_level']).toFixed(2)} cm` : 
                               '-- cm'
                             }
                           </div>
@@ -929,7 +972,7 @@ export default function Dashboard() {
                           <div className="text-gray-500">Water Temp</div>
                           <div className="text-cyan-400 font-mono">
                             {sensorData['Lab_main_water_temperature'] ? 
-                              `${sensorData['Lab_main_water_temperature'].toFixed(1)}°C` : 
+                              `${Number(sensorData['Lab_main_water_temperature']).toFixed(2)}°C` : 
                               '--°C'
                             }
                           </div>
@@ -938,7 +981,7 @@ export default function Dashboard() {
                           <div className="text-gray-500">Water Pressure</div>
                           <div className="text-cyan-400 font-mono">
                             {sensorData['Lab_main_water_pressure'] ? 
-                              `${sensorData['Lab_main_water_pressure'].toFixed(1)} kPa` : 
+                              `${Number(sensorData['Lab_main_water_pressure']).toFixed(2)} kPa` : 
                               '-- kPa'
                             }
                           </div>
@@ -947,7 +990,7 @@ export default function Dashboard() {
                           <div className="text-gray-500">pH Level</div>
                           <div className="text-cyan-400 font-mono">
                             {sensorData['Lab_main_ph_level'] ? 
-                              `${sensorData['Lab_main_ph_level'].toFixed(2)}` : 
+                              `${Number(sensorData['Lab_main_ph_level']).toFixed(2)}` : 
                               '--'
                             }
                           </div>
