@@ -2,9 +2,8 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Base font 2pt (~2.67px) larger so all rem-based text scales up */
 html {
-  font-size: 18px;
+  font-size: 16px;
 }
 
 :root {
@@ -273,4 +272,9 @@ body {
   .room-grid {
     grid-template-columns: 1fr;
   }
+}
+
+/* Main dashboard only: slightly larger font (room/zone dashboard unchanged) */
+.main-dashboard {
+  font-size: 18px;
 }
