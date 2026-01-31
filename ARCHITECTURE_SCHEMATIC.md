@@ -1,6 +1,6 @@
 # ProjectCEA – Architecture Schematic (Plan-Agent Style)
 
-**Last updated (deployed):** 2026-01-30 — First schematic; no deploy yet.
+**Last updated (deployed):** 2026-01-30 — Dashboard: Quebec City weather (CYQB) top-right; real system stats from /api/status.
 
 > This file is the plan-style schematic: diagram-first, structured sections. Keep in sync with `ARCHITECTURE.md`. When deploying relevant changes, update both and copy previous versions to **`archive/`** (project root) with dated filenames.
 
@@ -42,7 +42,7 @@ flowchart TB
   end
 
   subgraph UI["User-Facing"]
-    FE["Frontend (React)\nDashboard, ZoneConfig"]
+    FE["Frontend (React)\nDashboard (weather Quebec City top-right)\nZoneConfig"]
     GRAF["Grafana\nPostgreSQL only"]
   end
 

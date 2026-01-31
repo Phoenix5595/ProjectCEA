@@ -90,6 +90,11 @@ class ApiClient {
     return response.data;
   }
 
+  async getSensorDataBulk(keys: string[]): Promise<Record<string, number>> {
+    const response = await this.backendClient.post('/api/sensor-data', { keys });
+    return response.data ?? {};
+  }
+
   // Devices (automation service)
   async getAllDevices(): Promise<Device[]> {
     const response = await this.automationClient.get('/api/devices');

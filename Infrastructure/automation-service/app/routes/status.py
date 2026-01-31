@@ -2,10 +2,17 @@
 
 from __future__ import annotations
 
+import asyncio
+import subprocess
+import time
 from datetime import datetime
 from typing import Any
+from urllib.request import Request, urlopen
+from urllib.error import URLError
 
 from fastapi import APIRouter, Depends
+
+import psutil
 
 from app.config import ConfigLoader
 from app.control.performance_monitor import get_performance_monitor
@@ -14,6 +21,15 @@ from app.database import DatabaseManager
 from app.middleware.profiling import get_performance_metrics
 
 router = APIRouter()
+
+# Service health check URLs (optional): (name, host, port, path)
+# All HTTP services that expose /health (can-processor has no HTTP server)
+SERVICE_HEALTH_URLS = [
+    ("cea-backend", "127.0.0.1", 8000, "/health"),
+    ("automation-service", "127.0.0.1", 8001, "/health"),
+    ("soil-sensor-service", "127.0.0.1", 8002, "/health"),
+    ("weather-service", "127.0.0.1", 8003, "/health"),
+]
 
 
 # These will be overridden by main app
@@ -30,6 +46,83 @@ def get_relay_manager() -> RelayManager:
 def get_config() -> ConfigLoader:
     """Dependency to get config loader."""
     raise RuntimeError("Dependency not injected")
+
+
+def _get_system_stats() -> dict[str, Any] | None:
+    """Collect host system stats (CPU, memory, disk, uptime, load, process count, Pi temp/throttle)."""
+    out: dict[str, Any] = {}
+    try:
+        out["cpu_percent"] = round(psutil.cpu_percent(interval=0.1), 1)
+    except Exception:
+        pass
+    try:
+        vm = psutil.virtual_memory()
+        out["memory_percent"] = round(vm.percent, 1)
+        out["memory_used_mb"] = round(vm.used / (1024 * 1024), 0)
+        out["memory_total_mb"] = round(vm.total / (1024 * 1024), 0)
+    except Exception:
+        pass
+    try:
+        du = psutil.disk_usage("/")
+        out["disk_percent"] = round(du.percent, 1)
+    except Exception:
+        pass
+    try:
+        out["uptime_seconds"] = int(time.time() - psutil.boot_time())
+    except Exception:
+        pass
+    try:
+        load = psutil.getloadavg()
+        out["load_avg"] = ", ".join(f"{x:.1f}" for x in load)
+    except Exception:
+        pass
+    try:
+        out["process_count"] = len(psutil.pids())
+    except Exception:
+        pass
+    # Raspberry Pi CPU temp (millidegrees -> °C)
+    try:
+        with open("/sys/class/thermal/thermal_zone0/temp", encoding="utf-8") as f:
+            out["cpu_temp_c"] = round(int(f.read().strip()) / 1000.0, 1)
+    except (FileNotFoundError, OSError, ValueError):
+        pass
+    # Raspberry Pi throttle (vcgencmd get_throttled)
+    try:
+        result = subprocess.run(
+            ["vcgencmd", "get_throttled"],
+            capture_output=True,
+            text=True,
+            timeout=2,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            raw = result.stdout.strip().split("=")[-1]
+            out["throttle_status"] = raw if raw != "0x0" else "Normal"
+        else:
+            out["throttle_status"] = "Normal"
+    except (FileNotFoundError, subprocess.TimeoutExpired, ValueError):
+        pass
+    return out if out else None
+
+
+async def _check_service_health() -> list[dict[str, Any]]:
+    """Check health of known services; returns list of {name, status, latency_ms}."""
+
+    async def _fetch(name: str, host: str, port: int, path: str) -> dict[str, Any]:
+        url = f"http://{host}:{port}{path}"
+        start = time.perf_counter()
+        try:
+            req = Request(url, method="GET")
+            async with asyncio.timeout(2.0):
+                response = await asyncio.to_thread(urlopen, req, timeout=2)
+            latency_ms = round((time.perf_counter() - start) * 1000)
+            status = "running" if response.getcode() == 200 else "error"
+            return {"name": name, "status": status, "latency_ms": latency_ms}
+        except (URLError, OSError, asyncio.TimeoutError, ValueError) as e:
+            latency_ms = round((time.perf_counter() - start) * 1000)
+            return {"name": name, "status": "unreachable", "latency_ms": latency_ms}
+
+    tasks = [_fetch(name, host, port, path) for name, host, port, path in SERVICE_HEALTH_URLS]
+    return await asyncio.gather(*tasks)
 
 
 @router.get("/health")
@@ -62,6 +155,7 @@ async def get_status(
     devices = {}
     device_states = relay_manager.get_all_states()
 
+    redis_client = getattr(database, "_automation_redis", None)
     device_config = config.get_devices()
     for location, clusters in device_config.items():
         devices[location] = {}
@@ -73,11 +167,17 @@ async def get_status(
                 mode = relay_manager.get_device_mode(location, cluster, device_name) or "auto"
                 channel = relay_manager.get_channel(location, cluster, device_name)
 
-                devices[location][cluster][device_name] = {
+                device_entry: dict[str, Any] = {
                     "state": state,
                     "mode": mode,
                     "channel": channel,
                 }
+                # Include light intensity from Redis (same source as device state)
+                if device_name.startswith("light_") and redis_client:
+                    light_data = redis_client.read_light_intensity(location, cluster, device_name)
+                    if light_data and isinstance(light_data.get("intensity"), (int, float)):
+                        device_entry["intensity"] = float(light_data["intensity"])
+                devices[location][cluster][device_name] = device_entry
 
     # Get sensor values
     sensors = {}
@@ -94,9 +194,19 @@ async def get_status(
     request_metrics = get_performance_metrics()
     control_metrics = get_performance_monitor().get_statistics()
 
-    return {
+    # Optional: host system stats (CPU, memory, disk, uptime, load, process count, Pi temp/throttle)
+    system = _get_system_stats()
+
+    # Optional: service health (backend, weather, etc.)
+    service_health = await _check_service_health()
+
+    result: dict[str, Any] = {
         "devices": devices,
         "sensors": sensors,
         "timestamp": datetime.now().isoformat(),
         "performance": {"api": request_metrics, "control_loop": control_metrics},
+        "service_health": service_health,
     }
+    if system is not None:
+        result["system"] = system
+    return result

@@ -1,9 +1,9 @@
 # Weather Service Configuration
-# Configuration for YUL Airport Weather Station
+# Configuration for Quebec City (Jean Lesage) Weather Station
 
 # Weather API configuration
 weather:
-  station_icao: "CYUL"  # YUL airport ICAO code
+  station_icao: "CYQB"  # Quebec City Jean Lesage International Airport
   poll_interval: 900  # 15 minutes in seconds
   api_url: "https://aviationweather.gov/api/data/metar"
 
@@ -20,7 +20,7 @@ database:
 # Room and device configuration
 room:
   name: "Outside"
-  device_name: "Weather Station YUL"
+  device_name: "Weather Station Quebec City"
 
 
 

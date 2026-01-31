@@ -9,4 +9,5 @@
 - Environment variables (`.env`): `VITE_BACKEND_API_URL`, `VITE_AUTOMATION_API_URL`, `VITE_WEBSOCKET_URL`.
 - Keep `setpoints` and schedules in sync with backend schema (modes: DAY, NIGHT, PRE_DAY, PRE_NIGHT; includes `ramp_in_duration`).
 - ZoneConfig SAVE must update both mode_parameters and room schedule (POST room-schedule) so the control loop has correct per-device light schedules for the photoperiod.
+- **Automation dashboard**: Shows weather data from the weather service (Quebec City, CYQB) in the **top-right** of the sticky header; label "Quebec City". System stats (CPU, memory, disk, uptime, load avg, process count, service health, Pi temp/throttle) use real data from automation-service `/api/status` when available; show "—" or "Unavailable" when data is missing or API fails (no mock/placeholder numbers).
 
