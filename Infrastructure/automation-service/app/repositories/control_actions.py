@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from .base import BaseRepository, logger
 
@@ -27,15 +27,20 @@ class ControlActionRepository(BaseRepository):
         reason: str | None = None,
         sensor_value: float | None = None,
         setpoint: float | None = None,
+        load_percent: float | None = None,
     ) -> bool:
         """Log a control action to control_history table."""
+        if reason is not None and len(reason) > 256:
+            reason = reason[:256]
+        if load_percent is not None:
+            load_percent = max(0.0, min(100.0, float(load_percent)))
         try:
             async with self.pool.acquire() as conn:
                 await conn.execute(
                     """
                     INSERT INTO control_history 
-                    (timestamp, location, cluster, device_name, channel, old_state, new_state, mode, reason, sensor_value, setpoint)
-                    VALUES (NOW(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                    (timestamp, location, cluster, device_name, channel, old_state, new_state, mode, reason, sensor_value, setpoint, load_percent)
+                    VALUES (NOW(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
                 """,
                     location,
                     cluster,
@@ -47,11 +52,51 @@ class ControlActionRepository(BaseRepository):
                     reason,
                     sensor_value,
                     setpoint,
+                    load_percent,
                 )
                 return True
         except Exception as e:
             logger.error(f"Failed to log control action: {e}")
             return False
+
+    async def get_recent_control_history(
+        self, location: str, cluster: str, limit: int = 10
+    ) -> list[dict[str, Any]]:
+        """Return recent control_history rows for a location/cluster."""
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(
+                    """
+                    SELECT timestamp, location, cluster, device_name, old_state, new_state, mode, reason, load_percent
+                    FROM control_history
+                    WHERE location = $1 AND cluster = $2
+                    ORDER BY timestamp DESC
+                    LIMIT $3
+                    """,
+                    location,
+                    cluster,
+                    limit,
+                )
+                out: list[dict[str, Any]] = []
+                for row in rows:
+                    ts = row["timestamp"]
+                    out.append(
+                        {
+                            "timestamp": ts.isoformat() if hasattr(ts, "isoformat") else str(ts),
+                            "location": row["location"],
+                            "cluster": row["cluster"],
+                            "device_name": row["device_name"],
+                            "old_state": row["old_state"],
+                            "new_state": row["new_state"],
+                            "mode": row["mode"],
+                            "reason": row["reason"],
+                            "load_percent": row["load_percent"],
+                        }
+                    )
+                return out
+        except Exception as e:
+            logger.error(f"Failed to get control history: {e}")
+            return []
 
     async def log_automation_state(
         self,

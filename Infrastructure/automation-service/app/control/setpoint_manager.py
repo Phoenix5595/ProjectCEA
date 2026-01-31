@@ -291,7 +291,7 @@ class RampManager:
             remaining_minutes = max(remaining_seconds / 60.0, 0.1)  # Minimum 6 seconds
 
             # Preserve original end time
-            original_end_time = ramp.end_time
+            _original_end_time = ramp.end_time
 
             # Update: new start = current value, new target, same end time
             ramp.start_value = current_value

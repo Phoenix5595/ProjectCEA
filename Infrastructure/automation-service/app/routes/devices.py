@@ -193,6 +193,7 @@ async def control_device(
         request.state,
         "manual",
         request.reason or "Manual override",
+        load_percent=None,
     )
 
     return {
@@ -241,14 +242,32 @@ async def set_device_mode(
 async def get_control_history(
     location: str | None = None,
     cluster: str | None = None,
-    device: str | None = None,
-    limit: int = 100,
+    limit: int = 10,
     database: DatabaseManager = Depends(get_database),
+    config: ConfigLoader = Depends(get_config),
 ) -> list[dict[str, Any]]:
-    """Get control history with optional filters."""
-    # This would query control_history table
-    # For now, return empty list (full implementation would query database)
-    return []
+    """Get recent control history for a location/cluster (for dashboard log)."""
+    if not location or not cluster:
+        raise HTTPException(
+            status_code=400,
+            detail="Query parameters 'location' and 'cluster' are required",
+        )
+    if not isinstance(limit, int) or limit < 1 or limit > 100:
+        raise HTTPException(
+            status_code=400,
+            detail="Parameter 'limit' must be an integer between 1 and 100",
+        )
+    devices_config = config.get_devices()
+    if location not in devices_config or cluster not in devices_config.get(location, {}):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid location or cluster",
+        )
+    try:
+        return await database.get_control_history(location, cluster, limit)
+    except Exception as e:
+        logger.warning(f"get_control_history failed: {e}")
+        return []
 
 
 @router.get("/api/devices/mappings")

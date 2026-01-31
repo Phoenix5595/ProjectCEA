@@ -73,7 +73,7 @@ class SensorDataManager:
                     ]
                     results = await asyncio.gather(*tasks, return_exceptions=True)
 
-                    for sensor_name, result in zip(sensor_names, results):
+                    for sensor_name, result in zip(sensor_names, results, strict=True):
                         if isinstance(result, Exception):
                             logger.warning(
                                 f"Failed to get sensor value for {sensor_name}: {result}"

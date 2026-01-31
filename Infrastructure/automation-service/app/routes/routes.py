@@ -89,6 +89,9 @@ def setup_dependency_overrides(app: FastAPI, container) -> None:
     app.dependency_overrides[status.get_database] = container.get_database
     app.dependency_overrides[status.get_config] = container.get_config
     app.dependency_overrides[status.get_relay_manager] = container.get_relay_manager
+    app.dependency_overrides[status.get_pid_controller_manager] = (
+        container.get_pid_controller_manager
+    )
 
     # Override dependencies in rules module
     app.dependency_overrides[rules.get_database] = container.get_database

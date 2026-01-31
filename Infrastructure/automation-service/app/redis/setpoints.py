@@ -71,7 +71,12 @@ class SetpointsMixin:
             return None
         try:
             prefix = f"effective_setpoint:{location}:{cluster}"
-            keys = [f"{prefix}:heating_setpoint", f"{prefix}:cooling_setpoint", f"{prefix}:co2", f"{prefix}:vpd"]
+            keys = [
+                f"{prefix}:heating_setpoint",
+                f"{prefix}:cooling_setpoint",
+                f"{prefix}:co2",
+                f"{prefix}:vpd",
+            ]
             values = self.redis_client.mget(keys)
             heat, cool, co2_val, vpd_val = values[0], values[1], values[2], values[3]
             result: dict[str, float] = {}

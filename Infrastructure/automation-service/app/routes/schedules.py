@@ -129,7 +129,11 @@ async def _build_schedule_state(
     lights = {}
     for sched in all_schedules:
         device_name = sched.get("device_name", "")
-        if device_name.startswith("light_") and sched.get("mode") in ("SUN", "DAY") and sched.get("enabled"):
+        if (
+            device_name.startswith("light_")
+            and sched.get("mode") in ("SUN", "DAY")
+            and sched.get("enabled")
+        ):
             target_intensity = sched.get("target_intensity")
             if target_intensity is not None:
                 lights[device_name] = {"target_intensity": float(target_intensity)}
@@ -168,7 +172,12 @@ def _ensure_light_schedules_are_daily(
     - mode is SUN or DAY (light sun schedule), and
     - target_intensity is provided (ramps only apply to lights)
     """
-    if mode and mode.upper() in ("SUN", "DAY") and target_intensity is not None and day_of_week is not None:
+    if (
+        mode
+        and mode.upper() in ("SUN", "DAY")
+        and target_intensity is not None
+        and day_of_week is not None
+    ):
         raise HTTPException(
             status_code=400,
             detail="Light schedules must be daily: set day_of_week to null for lights with target_intensity.",
@@ -1067,9 +1076,7 @@ async def sync_room_schedule_from_mode_parameters(
         )
     mode_name = active.get("mode_name", "veg")
     submode_name = active.get("submode_name")
-    params = await database.get_mode_parameters(
-        location, cluster, mode_name, submode_name
-    )
+    params = await database.get_mode_parameters(location, cluster, mode_name, submode_name)
     if not params:
         raise HTTPException(
             status_code=404,
@@ -1096,9 +1103,7 @@ class ClimateScheduleSetpoint(BaseModel):
     humidity: float | None = None
     co2: float | None = None
     vpd: float | None = None
-    ramp_in_duration: int | None = (
-        None  # Minutes to ramp in when entering this mode (0 = instant)
-    )
+    ramp_in_duration: int | None = None  # Minutes to ramp in when entering this mode (0 = instant)
 
 
 class ClimateScheduleCreate(BaseModel):

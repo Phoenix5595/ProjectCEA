@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 from datetime import datetime, time
-from zoneinfo import ZoneInfo
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from app.control.device_controller import DeviceController
+from app.control.pid_controller_manager import PIDControllerManager
 from app.control.scheduler import Scheduler
 from app.database import DatabaseManager
 from app.hardware.dfr0971 import DFR0971Manager
@@ -29,6 +30,7 @@ class DeviceProcessor:
         database: DatabaseManager,
         dfr0971_manager: DFR0971Manager | None = None,
         scheduler: Scheduler | None = None,
+        pid_controller_manager: PIDControllerManager | None = None,
     ):
         """Initialize device processor.
 
@@ -37,11 +39,13 @@ class DeviceProcessor:
             database: Database manager instance
             dfr0971_manager: Optional DFR0971 manager for light intensity
             scheduler: Optional scheduler for light intensity calculations
+            pid_controller_manager: Optional PID controller manager for heating/cooling/CO2
         """
         self.device_controller = device_controller
         self.database = database
         self.dfr0971_manager = dfr0971_manager
         self.scheduler = scheduler
+        self.pid_controller_manager = pid_controller_manager
         # Throttle "no schedule" warning to once per 5 min per device (avoid log spam / CPU)
         self._last_no_schedule_log: dict[tuple[str, str, str], float] = {}
         self._no_schedule_log_interval_sec = 300.0
@@ -56,6 +60,7 @@ class DeviceProcessor:
         effective_data: dict[str, Any] | None,
         current_mode: str | None,
         is_sun: bool = False,
+        previous_climate_mode: str | None = None,
     ) -> None:
         """Process all devices for a location/cluster.
 
@@ -68,6 +73,7 @@ class DeviceProcessor:
             effective_data: Effective setpoint data
             current_mode: Current climate mode
             is_sun: True if current time is inside room sun window (lights on); False = moon (lights off).
+            previous_climate_mode: Previous climate mode for this location/cluster (for PID integrator reset).
         """
         # Process each device
         for device_name, device_info in cluster_devices.items():
@@ -81,8 +87,12 @@ class DeviceProcessor:
                     ),
                     "effective_co2_setpoint": effective_data.get("effective_co2_setpoint"),
                     "effective_vpd_setpoint": effective_data.get("effective_vpd_setpoint"),
+                    "current_vpd": effective_data.get("current_vpd"),
                     "failsafe_active": False,  # TODO: implement failsafe logic
                     "current_mode": current_mode,
+                    "previous_climate_mode": {(location, cluster): previous_climate_mode}
+                    if previous_climate_mode is not None
+                    else {},
                 }
             else:
                 context = {
@@ -91,9 +101,29 @@ class DeviceProcessor:
                     "effective_humidity_setpoint": None,
                     "effective_co2_setpoint": None,
                     "effective_vpd_setpoint": None,
+                    "current_vpd": None,
                     "failsafe_active": False,
                     "current_mode": current_mode,
+                    "previous_climate_mode": {},
                 }
+
+            # PID path: only for heating, cooling, co2 (VPD is king: humidifier/dehumidifier use VPD only)
+            if self.pid_controller_manager and not context.get("failsafe_active", False):
+                device_type = device_info.get("device_type", "")
+                device_mode = device_info.get("control_mode", "auto")
+                if device_type in ["heating", "cooling", "co2"] and device_mode != "manual":
+                    pid_output = await self.pid_controller_manager.process_pid_control(
+                        location,
+                        cluster,
+                        device_name,
+                        device_info,
+                        sensor_values,
+                        current_time,
+                        context,
+                        current_mode,
+                    )
+                    if pid_output is not None:
+                        context["pid_output"] = pid_output
 
             # Light intensity: moon = 0% from room sun bounds; sun = scheduler (ramps, target). All relevant rooms have a schedule.
             if device_info.get("dimming_enabled") and device_info.get("dimming_type") == "dfr0971":

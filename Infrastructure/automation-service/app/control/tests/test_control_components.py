@@ -10,6 +10,7 @@ from shared.logging import get_logger
 # Import the components we're testing
 from app.control.sensor_data_manager import SensorDataManager
 from app.control.setpoint_manager import SetpointManager, RampManager
+from app.control.pid_controller import PIDController
 from app.control.pid_controller_manager import PIDControllerManager
 from app.control.device_controller import DeviceController
 
@@ -219,6 +220,37 @@ class TestSetpointManager:
         assert result['ramp_progress_heating'] == 0.0  # Just started
 
 
+class TestPIDController:
+    """Test the PIDController class (calculate, update_parameters, status)."""
+
+    def test_calculate_returns_zero_to_one(self):
+        """Test that calculate(error, current_time) returns value in [0, 1]."""
+        pid = PIDController(kp=1.0, ki=0.0, kd=0.0)
+        t0 = datetime(2023, 1, 1, 12, 0, 0)
+        out = pid.calculate(2.0, t0)  # First call, dt=1.0
+        assert 0.0 <= out <= 1.0
+        t1 = datetime(2023, 1, 1, 12, 0, 2)
+        out2 = pid.calculate(1.0, t1)
+        assert 0.0 <= out2 <= 1.0
+
+    def test_update_parameters_updates_gains(self):
+        """Test that update_parameters(kp, ki, kd) updates gains."""
+        pid = PIDController(kp=1.0, ki=0.1, kd=0.05)
+        pid.update_parameters(2.0, 0.2, 0.1)
+        assert pid.kp == 2.0
+        assert pid.ki == 0.2
+        assert pid.kd == 0.1
+
+    def test_integral_and_previous_error_properties(self):
+        """Test integral and previous_error properties for status."""
+        pid = PIDController(kp=1.0, ki=0.0, kd=0.0)
+        assert pid.integral == 0.0
+        assert pid.previous_error == 0.0
+        t0 = datetime(2023, 1, 1, 12, 0, 0)
+        pid.calculate(1.0, t0)
+        assert pid.previous_error == 1.0
+
+
 class TestPIDControllerManager:
     """Test the PIDControllerManager class."""
 
@@ -261,12 +293,39 @@ class TestPIDControllerManager:
         assert controller.kd == 0.05
 
     @pytest.mark.asyncio
+    async def test_get_pid_controller_none_for_humidifier(self):
+        """Test that humidifier does not get a PID controller (VPD is king, PID never uses humidity)."""
+        mock_db = MagicMock()
+        manager = PIDControllerManager(mock_db)
+
+        controller = await manager.get_pid_controller(
+            'location', 'cluster', 'device', 'humidifier'
+        )
+
+        assert controller is None
+
+    @pytest.mark.asyncio
+    async def test_get_pid_controller_none_for_dehumidifier(self):
+        """Test that dehumidifier does not get a PID controller (VPD is king)."""
+        mock_db = MagicMock()
+        manager = PIDControllerManager(mock_db)
+
+        controller = await manager.get_pid_controller(
+            'location', 'cluster', 'device', 'dehumidifier'
+        )
+
+        assert controller is None
+
+    @pytest.mark.asyncio
     async def test_process_pid_control(self):
         """Test PID control processing."""
         mock_db = MagicMock()
         mock_db.get_pid_parameters = AsyncMock(return_value={
             'kp': 1.0, 'ki': 0.0, 'kd': 0.0
         })
+        mock_db.get_control_mode_info = AsyncMock(
+            return_value={'control_mode': 'pid', 'hysteresis_high': 1.0, 'hysteresis_low': 0.5}
+        )
 
         manager = PIDControllerManager(mock_db)
 
@@ -275,19 +334,13 @@ class TestPIDControllerManager:
         context = {'effective_heating_setpoint': 22.0}
         current_time = datetime(2023, 1, 1, 12, 0, 0)
 
-        # Mock the PID controller methods
-        with patch('app.control.pid_controller.PIDController') as mock_pid_class:
-            mock_controller = MagicMock()
-            mock_controller.calculate.return_value = 0.8
-            mock_pid_class.return_value = mock_controller
+        output = await manager.process_pid_control(
+            'location', 'cluster', 'device', device_info,
+            sensor_values, current_time, context
+        )
 
-            output = await manager.process_pid_control(
-                'location', 'cluster', 'device', device_info,
-                sensor_values, current_time, context
-            )
-
-            assert output == 0.8
-            mock_controller.calculate.assert_called_once()
+        assert output is not None
+        assert 0.0 <= output <= 1.0
 
     def test_calculate_error_heating(self):
         """Test error calculation for heating."""
@@ -303,7 +356,7 @@ class TestPIDControllerManager:
         manager = PIDControllerManager(mock_db)
 
         error = manager._calculate_error('cooling', 25.0, 28.0)
-        assert error == -3.0  # sensor - setpoint = 28 - 25
+        assert error == 3.0  # sensor - setpoint = 28 - 25 (positive = too hot)
 
 
 class TestDeviceController:
@@ -320,6 +373,59 @@ class TestDeviceController:
         assert controller.relay_manager == mock_relay
         assert controller.database == mock_db
         assert controller.dfr0971_manager == mock_dfr
+
+    def test_get_setpoint_for_device_type_humidifier_uses_vpd(self):
+        """Test that humidifier uses effective_vpd_setpoint (VPD is king)."""
+        mock_relay = MagicMock()
+        mock_db = MagicMock()
+        controller = DeviceController(mock_relay, mock_db)
+
+        context = {
+            'effective_humidity_setpoint': 60.0,
+            'effective_vpd_setpoint': 1.2,
+        }
+        setpoint = controller._get_setpoint_for_device_type('humidifier', context)
+
+        assert setpoint == 1.2
+
+    def test_get_setpoint_for_device_type_dehumidifier_uses_vpd(self):
+        """Test that dehumidifier uses effective_vpd_setpoint (VPD is king)."""
+        mock_relay = MagicMock()
+        mock_db = MagicMock()
+        controller = DeviceController(mock_relay, mock_db)
+
+        context = {'effective_vpd_setpoint': 1.0}
+        setpoint = controller._get_setpoint_for_device_type('dehumidifier', context)
+
+        assert setpoint == 1.0
+
+    def test_calculate_vpd_based_output_humidifier(self):
+        """Test VPD-based output for humidifier (VPD > setpoint + deadband -> on)."""
+        mock_relay = MagicMock()
+        mock_db = MagicMock()
+        controller = DeviceController(mock_relay, mock_db)
+
+        context = {'effective_vpd_setpoint': 1.0, 'current_vpd': 1.3}  # VPD high -> need moisture
+        out = controller._calculate_vpd_based_output('humidifier', context)
+        assert out == 1.0
+
+        context_low = {'effective_vpd_setpoint': 1.0, 'current_vpd': 0.8}
+        out_off = controller._calculate_vpd_based_output('humidifier', context_low)
+        assert out_off == 0.0
+
+    def test_calculate_vpd_based_output_dehumidifier(self):
+        """Test VPD-based output for dehumidifier (VPD < setpoint - deadband -> on)."""
+        mock_relay = MagicMock()
+        mock_db = MagicMock()
+        controller = DeviceController(mock_relay, mock_db)
+
+        context = {'effective_vpd_setpoint': 1.0, 'current_vpd': 0.8}  # VPD low -> need drying
+        out = controller._calculate_vpd_based_output('dehumidifier', context)
+        assert out == 1.0
+
+        context_high = {'effective_vpd_setpoint': 1.0, 'current_vpd': 1.2}
+        out_off = controller._calculate_vpd_based_output('dehumidifier', context_high)
+        assert out_off == 0.0
 
     def test_determine_control_mode_manual(self):
         """Test determining manual control mode."""

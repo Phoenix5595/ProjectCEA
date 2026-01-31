@@ -3,15 +3,14 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime
 import subprocess
 import time
-from datetime import datetime
 from typing import Any
-from urllib.request import Request, urlopen
 from urllib.error import URLError
+from urllib.request import Request, urlopen
 
 from fastapi import APIRouter, Depends
-
 import psutil
 
 from app.config import ConfigLoader
@@ -46,6 +45,11 @@ def get_relay_manager() -> RelayManager:
 
 def get_config() -> ConfigLoader:
     """Dependency to get config loader."""
+    raise RuntimeError("Dependency not injected")
+
+
+def get_pid_controller_manager():
+    """Dependency to get PID controller manager (for load_percent in status)."""
     raise RuntimeError("Dependency not injected")
 
 
@@ -118,7 +122,7 @@ async def _check_service_health() -> list[dict[str, Any]]:
             latency_ms = round((time.perf_counter() - start) * 1000)
             status = "running" if response.getcode() == 200 else "error"
             return {"name": name, "status": status, "latency_ms": latency_ms}
-        except (URLError, OSError, asyncio.TimeoutError, ValueError) as e:
+        except (TimeoutError, URLError, OSError, ValueError):
             latency_ms = round((time.perf_counter() - start) * 1000)
             return {"name": name, "status": "unreachable", "latency_ms": latency_ms}
 
@@ -150,11 +154,15 @@ async def get_status(
     database: DatabaseManager = Depends(get_database),
     relay_manager: RelayManager = Depends(get_relay_manager),
     config: ConfigLoader = Depends(get_config),
+    pid_controller_manager=Depends(get_pid_controller_manager),
 ) -> dict[str, Any]:
     """Get full system status."""
     # Get all device states
     devices = {}
     device_states = relay_manager.get_all_states()
+    pid_status: dict[str, Any] = {}
+    if pid_controller_manager and hasattr(pid_controller_manager, "get_pid_status"):
+        pid_status = pid_controller_manager.get_pid_status()
 
     redis_client = getattr(database, "_automation_redis", None)
     device_config = config.get_devices()
@@ -178,6 +186,10 @@ async def get_status(
                     light_data = redis_client.read_light_intensity(location, cluster, device_name)
                     if light_data and isinstance(light_data.get("intensity"), (int, float)):
                         device_entry["intensity"] = float(light_data["intensity"])
+                # Include PID load% for heating/cooling/CO2 devices
+                pid_key = f"{location}/{cluster}/{device_name}"
+                if pid_key in pid_status and "load_percent" in pid_status[pid_key]:
+                    device_entry["load_percent"] = pid_status[pid_key]["load_percent"]
                 devices[location][cluster][device_name] = device_entry
 
     # Get sensor values
@@ -219,7 +231,9 @@ async def get_status(
                     }
                     # Drop None values so frontend gets only present keys
                     effective_setpoints[location][cluster] = {
-                        k: v for k, v in effective_setpoints[location][cluster].items() if v is not None
+                        k: v
+                        for k, v in effective_setpoints[location][cluster].items()
+                        if v is not None
                     }
 
     result: dict[str, Any] = {

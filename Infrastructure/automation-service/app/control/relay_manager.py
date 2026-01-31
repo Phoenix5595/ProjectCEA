@@ -130,7 +130,7 @@ class RelayManager:
         success = self.mcp23017.set_channel(channel, state == 1)
 
         if success:
-            old_state = self._current_states.get(key, 0)
+            _old_state = self._current_states.get(key, 0)
             self._current_states[key] = state
             self._current_modes[key] = mode
             logger.debug(

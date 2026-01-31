@@ -308,6 +308,11 @@ class ServiceContainer:
             raise RuntimeError("Control engine not initialized")
         return self.control_engine
 
+    def get_pid_controller_manager(self):
+        """Get PID controller manager from control engine (for status API load_percent)."""
+        engine = self.get_control_engine()
+        return getattr(engine, "pid_controller_manager", None)
+
     def get_automation_redis(self) -> AutomationRedisClient | None:
         """Get automation Redis client."""
         return self.automation_redis

@@ -2,7 +2,7 @@
 import axios, { AxiosInstance } from 'axios';
 import type { Setpoint, SetpointUpdate } from '../types/setpoint';
 import type { SensorDataResponse } from '../types/sensor';
-import type { Device } from '../types/device';
+import type { Device, ControlHistoryEntry } from '../types/device';
 import type { PIDParameters, PIDParameterUpdate, PIDModeInfo, PIDModeUpdate, AutotuneState } from '../types/pid';
 import type { Schedule, ScheduleCreate, ScheduleUpdate } from '../types/schedule';
 import type { LightStatus } from '../types/light';
@@ -323,6 +323,18 @@ class ApiClient {
   async getSystemStatus(): Promise<any> {
     const response = await this.automationClient.get('/api/status');
     return response.data;
+  }
+
+  // Control history (recent on/off log per room)
+  async getControlHistory(
+    location: string,
+    cluster: string,
+    limit?: number
+  ): Promise<ControlHistoryEntry[]> {
+    const response = await this.automationClient.get('/api/control/history', {
+      params: { location, cluster, limit: limit ?? 10 },
+    });
+    return response.data ?? [];
   }
 
   // Device Control (automation service)
