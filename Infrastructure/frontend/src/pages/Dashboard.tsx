@@ -87,12 +87,12 @@ export default function Dashboard() {
       // Load setpoints from Redis via backend API
       try {
         const setpointKeys = [
-          'Flower Room_main_dry_bulb_setpoint_f',
-          'Flower Room_main_cooling_setpoint_f',
+          'Flower Room_main_heating_setpoint',
+          'Flower Room_main_cooling_setpoint',
           'Flower Room_main_co2_setpoint',
           'Flower Room_main_vpd_setpoint',
-          'Veg Room_main_dry_bulb_setpoint_f',
-          'Veg Room_main_cooling_setpoint_f',
+          'Veg Room_main_heating_setpoint',
+          'Veg Room_main_cooling_setpoint',
           'Veg Room_main_co2_setpoint',
           'Veg Room_main_vpd_setpoint'
         ]
@@ -139,10 +139,27 @@ export default function Dashboard() {
         }
       }
 
-      // Load real system stats from /api/status (system + service_health + devices with intensity)
+      // Load real system stats from /api/status (system + service_health + devices + effective setpoints)
       const statusResponse = await apiClient.getSystemStatus()
       if (statusResponse) {
         if (statusResponse.devices) setStatusDevices(statusResponse.devices)
+        // Effective setpoints from automation Redis (Celsius; same source as control loop)
+        const ep = statusResponse.effective_setpoints
+        if (ep && typeof ep === 'object') {
+          const effectiveFlat: Record<string, number> = {}
+          for (const [location, clusters] of Object.entries(ep)) {
+            if (!clusters || typeof clusters !== 'object') continue
+            for (const [cluster, values] of Object.entries(clusters)) {
+              if (!values || typeof values !== 'object') continue
+              const prefix = `${location}_${cluster}_`
+              if (values.heating_setpoint != null) effectiveFlat[`${prefix}heating_setpoint`] = Number(values.heating_setpoint)
+              if (values.cooling_setpoint != null) effectiveFlat[`${prefix}cooling_setpoint`] = Number(values.cooling_setpoint)
+              if (values.co2_setpoint != null) effectiveFlat[`${prefix}co2_setpoint`] = Number(values.co2_setpoint)
+              if (values.vpd_setpoint != null) effectiveFlat[`${prefix}vpd_setpoint`] = Number(values.vpd_setpoint)
+            }
+          }
+          if (Object.keys(effectiveFlat).length > 0) setSensorData(prev => ({ ...prev, ...effectiveFlat }))
+        }
         const sys = statusResponse.system
         const formatUptime = (sec: number) => {
           const d = Math.floor(sec / 86400)
@@ -450,16 +467,16 @@ export default function Dashboard() {
                       <div>
                         <div className="text-gray-500">Heating</div>
                         <div className={`font-mono ${getSetpointColor()}`} title="Effective heating setpoint (Veg Room, from Redis)">
-                          {sensorData['Veg Room_main_dry_bulb_setpoint_f'] != null
-                            ? `${((sensorData['Veg Room_main_dry_bulb_setpoint_f'] - 32) * 5/9).toFixed(2)}°C`
+                          {sensorData['Veg Room_main_heating_setpoint'] != null
+                            ? `${Number(sensorData['Veg Room_main_heating_setpoint']).toFixed(2)}°C`
                             : '--°C'}
                         </div>
                       </div>
                       <div>
                         <div className="text-gray-500">Cooling</div>
                         <div className={`font-mono ${getSetpointColor()}`} title="Effective cooling setpoint (Veg Room)">
-                          {sensorData['Veg Room_main_cooling_setpoint_f'] != null
-                            ? `${((sensorData['Veg Room_main_cooling_setpoint_f'] - 32) * 5/9).toFixed(2)}°C`
+                          {sensorData['Veg Room_main_cooling_setpoint'] != null
+                            ? `${Number(sensorData['Veg Room_main_cooling_setpoint']).toFixed(2)}°C`
                             : '--°C'}
                         </div>
                       </div>
@@ -614,16 +631,16 @@ export default function Dashboard() {
                       <div>
                         <div className="text-gray-500">Heating</div>
                         <div className={`font-mono ${getSetpointColor()}`} title="Effective heating setpoint (Flower Room, from Redis)">
-                          {sensorData['Flower Room_main_dry_bulb_setpoint_f'] != null
-                            ? `${((sensorData['Flower Room_main_dry_bulb_setpoint_f'] - 32) * 5/9).toFixed(2)}°C`
+                          {sensorData['Flower Room_main_heating_setpoint'] != null
+                            ? `${Number(sensorData['Flower Room_main_heating_setpoint']).toFixed(2)}°C`
                             : '--°C'}
                         </div>
                       </div>
                       <div>
                         <div className="text-gray-500">Cooling</div>
                         <div className={`font-mono ${getSetpointColor()}`} title="Effective cooling setpoint (Flower Room)">
-                          {sensorData['Flower Room_main_cooling_setpoint_f'] != null
-                            ? `${((sensorData['Flower Room_main_cooling_setpoint_f'] - 32) * 5/9).toFixed(2)}°C`
+                          {sensorData['Flower Room_main_cooling_setpoint'] != null
+                            ? `${Number(sensorData['Flower Room_main_cooling_setpoint']).toFixed(2)}°C`
                             : '--°C'}
                         </div>
                       </div>
