@@ -2,6 +2,11 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Base font 2pt (~2.67px) larger so all rem-based text scales up */
+html {
+  font-size: 18px;
+}
+
 :root {
   font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
   line-height: 1.5;
