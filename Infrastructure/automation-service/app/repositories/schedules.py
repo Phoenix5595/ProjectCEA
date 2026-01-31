@@ -66,6 +66,7 @@ class ScheduleRepository(BaseRepository):
                     SELECT pre_day_duration, pre_night_duration
                     FROM schedules
                     WHERE location = $1 AND cluster = $2
+                      AND device_name = 'climate'
                       AND (pre_day_duration IS NOT NULL OR pre_night_duration IS NOT NULL)
                     ORDER BY id DESC
                     LIMIT 1
