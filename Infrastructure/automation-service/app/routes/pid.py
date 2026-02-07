@@ -371,7 +371,7 @@ async def set_pid_mode(
     if update.mode == "auto_pid" and current_mode != "auto_pid":
         # Starting auto-tune
         await database.update_autotune_state(
-            device_type, is_active=True, status="running", cycles_completed=0
+            device_type, state="running", progress=0.0, current_step="initializing"
         )
         logger.info(f"Auto-tuning started for {device_type}")
     elif update.mode != "auto_pid" and current_mode == "auto_pid":
