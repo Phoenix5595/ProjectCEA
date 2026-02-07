@@ -170,6 +170,28 @@ class PIDRepository(BaseRepository):
         if not kwargs:
             return True
 
+        # Map API parameter names to actual database column names
+        column_mapping = {
+            "state": "status",  # API uses 'state', DB has 'status'
+        }
+
+        # Known columns in pid_autotune_state table
+        valid_columns = {
+            "is_active",
+            "status",
+            "cycles_completed",
+            "started_at",
+            "current_amplitude",
+            "current_period",
+            "current_ku",
+            "current_tu",
+            "suggested_kp",
+            "suggested_ki",
+            "suggested_kd",
+            "last_change_reason",
+            "last_update",
+        }
+
         try:
             async with self.pool.acquire() as conn:
                 updates = []
@@ -178,14 +200,19 @@ class PIDRepository(BaseRepository):
 
                 for key, value in kwargs.items():
                     if value is not None:
-                        updates.append(f"{key} = ${param_idx}")
+                        # Map parameter name to column name
+                        column_name = column_mapping.get(key, key)
+                        # Skip unknown columns
+                        if column_name not in valid_columns:
+                            continue
+                        updates.append(f"{column_name} = ${param_idx}")
                         params.append(value)
                         param_idx += 1
 
                 if updates:
                     update_clause = ", ".join(updates)
                     await conn.execute(
-                        f"UPDATE pid_autotune_state SET {update_clause}, updated_at = NOW() WHERE device_type = $1",
+                        f"UPDATE pid_autotune_state SET {update_clause}, last_update = NOW() WHERE device_type = $1",
                         *params,
                     )
                 return True
