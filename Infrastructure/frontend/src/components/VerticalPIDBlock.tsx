@@ -1,9 +1,11 @@
 import { useState, useEffect, useCallback } from 'react'
+import { useToast } from '../contexts/ToastContext'
 import { apiClient } from '../services/api'
-import { logger } from '../utils/logger'
 import type { PIDControlMode, PIDParameters } from '../types/pid'
+import { logger } from '../utils/logger'
 
 export default function VerticalPIDBlock() {
+  const { showToast } = useToast()
   const [device, setDevice] = useState('heater')
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -98,8 +100,9 @@ export default function VerticalPIDBlock() {
       }
     } catch (err) {
       logger.error('Failed to update PID mode:', err)
+      showToast('Failed to update PID mode', 'error')
     }
-  }, [device, mode, parameters])
+  }, [device, mode, parameters, showToast])
 
   if (loading) {
     return (
