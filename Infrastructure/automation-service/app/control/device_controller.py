@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from shared.logging import LoggingContext, get_logger
+
+if TYPE_CHECKING:
+    from app.control.hardware_batch import HardwareBatchExecutor
 
 logger = get_logger(__name__)
 
@@ -34,6 +37,7 @@ class DeviceController:
         sensor_values: dict[str, float | None],
         current_time: datetime,
         context: dict[str, Any],
+        batch_executor: HardwareBatchExecutor | None = None,
     ) -> None:
         """Process control for a single device.
 
@@ -45,6 +49,7 @@ class DeviceController:
             sensor_values: Available sensor values
             current_time: Current time
             context: Automation context dict
+            batch_executor: Optional batch executor for parallel I2C operations
         """
         with LoggingContext(operation="process_device"):
             if device_info.get("dimming_enabled") and device_info.get("dimming_type") == "dfr0971":
@@ -80,6 +85,7 @@ class DeviceController:
                     control_output,
                     current_time,
                     context,
+                    batch_executor,
                 )
 
     def _determine_control_mode(
@@ -330,6 +336,7 @@ class DeviceController:
         control_output: float,
         current_time: datetime,
         context: dict[str, Any] | None = None,
+        batch_executor: HardwareBatchExecutor | None = None,
     ) -> None:
         """Apply the calculated control output to the device.
 
@@ -359,12 +366,18 @@ class DeviceController:
             if device_info.get("dimming_enabled") and device_info.get("dimming_type") == "dfr0971":
                 # Dimmable light control
                 await self._control_dimmable_light(
-                    location, cluster, device_name, device_info, control_output
+                    location, cluster, device_name, device_info, control_output, batch_executor
                 )
             else:
                 # Binary relay control
                 await self._control_binary_device(
-                    location, cluster, device_name, device_type, channel, control_output
+                    location,
+                    cluster,
+                    device_name,
+                    device_type,
+                    channel,
+                    control_output,
+                    batch_executor,
                 )
 
             # Log the control action
@@ -390,6 +403,7 @@ class DeviceController:
         device_name: str,
         device_info: dict[str, Any],
         intensity: float,
+        batch_executor: HardwareBatchExecutor | None = None,
     ) -> None:
         """Control a dimmable light with relay synchronization.
 
@@ -409,6 +423,34 @@ class DeviceController:
             logger.warning(
                 f"Incomplete DFR0971 config for {device_name}: board_id={board_id}, channel={dimming_channel}"
             )
+            return
+
+        # If batch_executor provided, queue operations for parallel execution
+        if batch_executor is not None:
+            intensity_percent = round(intensity * 100)
+            if intensity > 0:
+                batch_executor.queue_light_on(
+                    location=location,
+                    cluster=cluster,
+                    device_name=device_name,
+                    intensity=intensity_percent,
+                    relay_manager=self.relay_manager,
+                    dfr0971_manager=self.dfr0971_manager,
+                    board_id=board_id,
+                    dimming_channel=dimming_channel,
+                    relay_channel=relay_channel,
+                )
+            else:
+                batch_executor.queue_light_off(
+                    location=location,
+                    cluster=cluster,
+                    device_name=device_name,
+                    relay_manager=self.relay_manager,
+                    dfr0971_manager=self.dfr0971_manager,
+                    board_id=board_id,
+                    dimming_channel=dimming_channel,
+                    relay_channel=relay_channel,
+                )
             return
 
         try:
@@ -522,12 +564,24 @@ class DeviceController:
         device_type: str,
         channel: int,
         output: float,
+        batch_executor: HardwareBatchExecutor | None = None,
     ) -> None:
         """Control a binary (on/off) device."""
         # Convert output to binary state
         state = 1 if output > 0.5 else 0
 
-        # Apply the state
+        # If batch_executor provided, queue operation for parallel execution
+        if batch_executor is not None and self.relay_manager is not None:
+            batch_executor.queue_binary_device(
+                location=location,
+                cluster=cluster,
+                device_name=device_name,
+                state=state,
+                relay_manager=self.relay_manager,
+            )
+            return
+
+        # Apply the state directly
         success = await self.relay_manager.set_channel_state(channel, state)
 
         if success:

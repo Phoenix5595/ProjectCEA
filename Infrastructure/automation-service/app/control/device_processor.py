@@ -7,9 +7,11 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from app.control.device_controller import DeviceController
+from app.control.hardware_batch import HardwareBatchExecutor
 from app.control.pid_controller_manager import PIDControllerManager
 from app.control.scheduler import Scheduler
 from app.database import DatabaseManager
+from app.feature_flags import get_flag
 from app.hardware.dfr0971 import DFR0971Manager
 from shared.logging import get_logger
 
@@ -75,7 +77,11 @@ class DeviceProcessor:
             is_sun: True if current time is inside room sun window (lights on); False = moon (lights off).
             previous_climate_mode: Previous climate mode for this location/cluster (for PID integrator reset).
         """
-        # Process each device
+        batch_executor = None
+        if get_flag("PARALLEL_I2C", default=False):
+            batch_executor = HardwareBatchExecutor()
+            logger.debug(f"Parallel I2C enabled for {location}/{cluster}")
+
         for device_name, device_info in cluster_devices.items():
             # Build context for device processing
             if effective_data:
@@ -156,8 +162,28 @@ class DeviceProcessor:
                             )
 
             await self.device_controller.process_device(
-                location, cluster, device_name, device_info, sensor_values, current_time, context
+                location,
+                cluster,
+                device_name,
+                device_info,
+                sensor_values,
+                current_time,
+                context,
+                batch_executor=batch_executor,
             )
+
+        if batch_executor and batch_executor.pending_count > 0:
+            result = await batch_executor.execute()
+            if result.failure_count > 0:
+                logger.warning(
+                    f"Batch execution for {location}/{cluster}: "
+                    f"{result.success_count} succeeded, {result.failure_count} failed"
+                )
+            else:
+                logger.debug(
+                    f"Batch execution for {location}/{cluster}: "
+                    f"{result.success_count} devices in {result.timing_ms:.1f}ms"
+                )
 
         # Note: Light intensity logging is handled by ControlEngine.run_control_loop()
         # to ensure scheduler access for proper ramp calculations
