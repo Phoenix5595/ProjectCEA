@@ -43,6 +43,5 @@ repos:
     rev: v1.1.348
     hooks:
       - id: pyright
-        entry: bash -c 'pyright "$@" || true' --
         args: [--warnings]
         verbose: true
