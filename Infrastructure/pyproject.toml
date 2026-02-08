@@ -75,3 +75,9 @@ exclude_lines = [
     "if TYPE_CHECKING:",
     "@abstractmethod",
 ]
+
+[tool.pyright]
+include = ["automation-service/app", "backend/app", "shared"]
+strict = ["automation-service/app/control", "automation-service/app/repositories"]
+reportMissingTypeStubs = false
+pythonVersion = "3.11"
