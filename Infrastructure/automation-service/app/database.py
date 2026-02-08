@@ -1186,6 +1186,20 @@ class DatabaseManager:
             )
         raise RuntimeError("RoomModeRepository not initialized - call initialize() first")
 
+    async def set_mode_with_transaction(
+        self,
+        location: str,
+        cluster: str,
+        new_mode: str,
+        new_submode: str | None = None,
+        save_current_params: bool = True,
+    ) -> dict[str, Any] | None:
+        if self._room_mode_repo:
+            return await self._room_mode_repo.set_mode_with_transaction(
+                location, cluster, new_mode, new_submode, save_current_params
+            )
+        raise RuntimeError("RoomModeRepository not initialized - call initialize() first")
+
     async def update_light_schedule_target(
         self, location: str, cluster: str, device_name: str, target_intensity: float
     ) -> bool:
