@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import time
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from app.database import DatabaseManager
+from app.routes.websocket import broadcast_mode_update
 from shared.logging import get_logger
 
 logger = get_logger(__name__)
@@ -193,22 +196,36 @@ async def set_room_mode(
     request: SetModeRequest,
     db: DatabaseManager = Depends(get_database),
 ):
-    current = await db.get_active_mode(location, cluster)
-    if current:
-        current_params = await db.get_mode_parameters(
-            location, cluster, current["mode_name"], current.get("submode_name")
-        )
-        if current_params:
-            await db.save_mode_parameters(
-                location, cluster, current["mode_name"], current.get("submode_name"), current_params
-            )
+    total_start = time.perf_counter()
 
-    success = await db.set_active_mode(location, cluster, request.mode_name, request.submode_name)
-    if not success:
+    start = time.perf_counter()
+    new_mode_data = await db.set_mode_with_transaction(
+        location, cluster, request.mode_name, request.submode_name, save_current_params=True
+    )
+    transaction_time = (time.perf_counter() - start) * 1000
+    logger.info(f"MODE_SWITCH_TIMING: batched transaction took {transaction_time:.2f}ms")
+
+    if not new_mode_data:
         raise HTTPException(status_code=400, detail=f"Failed to set mode '{request.mode_name}'")
 
     logger.info(f"Mode switch: {location}/{cluster} -> {request.mode_name}/{request.submode_name}")
-    return await get_room_mode_with_params(location, cluster, db)
+
+    start = time.perf_counter()
+    result = await get_room_mode_with_params(location, cluster, db)
+    logger.info(
+        f"MODE_SWITCH_TIMING: get_room_mode_with_params took {(time.perf_counter() - start) * 1000:.2f}ms"
+    )
+
+    total_time = (time.perf_counter() - total_start) * 1000
+    logger.info(f"MODE_SWITCH_TIMING: total endpoint time {total_time:.2f}ms")
+
+    # Broadcast mode update to frontend
+    try:
+        await broadcast_mode_update(location, cluster, request.mode_name)
+    except Exception as e:
+        logger.error(f"Failed to broadcast mode update: {e}")
+
+    return result
 
 
 @router.put("/room/{location}/{cluster}/parameters", response_model=RoomModeWithParams)
