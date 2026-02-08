@@ -1,6 +1,6 @@
 # ProjectCEA - Technical Context
 
-> Essential technical info for AI assistants. Updated: 2026-01-13
+> Essential technical info for AI assistants. Updated: 2026-02-08 (Archived 19 completed plans)
 
 **Canonical architecture:** For the full system schematic (data flow, services, Redis, DB, hardware, deployment), read **`ARCHITECTURE.md`** at project root. It is the single reference for current architecture and is updated when relevant changes are deployed.
 
