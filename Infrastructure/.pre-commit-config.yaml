@@ -38,3 +38,11 @@ repos:
     hooks:
       - id: prettier
         files: \.(ts|tsx|json|css)$
+
+  - repo: https://github.com/RobertCraigie/pyright-python
+    rev: v1.1.348
+    hooks:
+      - id: pyright
+        entry: bash -c 'pyright "$@" || true' --
+        args: [--warnings]
+        verbose: true
