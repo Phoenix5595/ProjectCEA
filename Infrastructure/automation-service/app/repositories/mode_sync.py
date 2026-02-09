@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from .base import BaseRepository, logger
+from .base import logger
 
 if TYPE_CHECKING:
     from asyncpg import Connection
@@ -38,7 +38,7 @@ async def sync_climate_setpoints_from_mode_parameters(
         if submode_id:
             mode_params_row = await conn.fetchrow(
                 """
-                SELECT 
+                SELECT
                     heating_setpoint_day, cooling_setpoint_day, humidity_day,
                     heating_setpoint_night, cooling_setpoint_night, humidity_night
                 FROM mode_parameters
@@ -52,7 +52,7 @@ async def sync_climate_setpoints_from_mode_parameters(
         else:
             mode_params_row = await conn.fetchrow(
                 """
-                SELECT 
+                SELECT
                     heating_setpoint_day, cooling_setpoint_day, humidity_day,
                     heating_setpoint_night, cooling_setpoint_night, humidity_night
                 FROM mode_parameters
@@ -84,10 +84,10 @@ async def sync_climate_setpoints_from_mode_parameters(
             INSERT INTO setpoints (location, cluster, mode, heating_setpoint, cooling_setpoint, humidity, updated_at)
             VALUES ($1, $2, 'day', $3, $4, $5, NOW())
             ON CONFLICT (location, cluster, mode)
-            DO UPDATE SET 
-                heating_setpoint = $3, 
-                cooling_setpoint = $4, 
-                humidity = $5, 
+            DO UPDATE SET
+                heating_setpoint = $3,
+                cooling_setpoint = $4,
+                humidity = $5,
                 updated_at = NOW()
             """,
             location,
@@ -103,10 +103,10 @@ async def sync_climate_setpoints_from_mode_parameters(
             INSERT INTO setpoints (location, cluster, mode, heating_setpoint, cooling_setpoint, humidity, updated_at)
             VALUES ($1, $2, 'night', $3, $4, $5, NOW())
             ON CONFLICT (location, cluster, mode)
-            DO UPDATE SET 
-                heating_setpoint = $3, 
-                cooling_setpoint = $4, 
-                humidity = $5, 
+            DO UPDATE SET
+                heating_setpoint = $3,
+                cooling_setpoint = $4,
+                humidity = $5,
                 updated_at = NOW()
             """,
             location,

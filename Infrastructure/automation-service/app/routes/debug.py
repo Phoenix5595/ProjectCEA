@@ -5,10 +5,11 @@ from typing import Any, cast
 
 from fastapi import APIRouter, Depends, HTTPException
 
+from shared.logging import get_logger
+
 from ..control.control_engine import ControlEngine
 from ..control.scheduler import Scheduler
 from ..database import DatabaseManager
-from shared.logging import get_logger
 
 logger = get_logger(__name__)
 router = APIRouter(prefix="/api/debug", tags=["debug"])
@@ -107,7 +108,7 @@ async def get_mode_state(
         }
     except Exception as e:
         logger.error(f"Error in get_mode_state: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.get("/ramps/{location}/{cluster}")
@@ -167,7 +168,7 @@ async def get_ramp_states(
         }
     except Exception as e:
         logger.error(f"Error in get_ramp_states: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.get("/mode-history/{location}/{cluster}")
@@ -201,4 +202,4 @@ async def get_mode_history(
         return [dict(row) for row in rows]
     except Exception as e:
         logger.error(f"Error in get_mode_history: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
