@@ -68,7 +68,7 @@ class ScheduleRepository(BaseRepository):
                     WHERE location = $1 AND cluster = $2
                       AND device_name = 'climate'
                       AND (pre_day_duration IS NOT NULL OR pre_night_duration IS NOT NULL)
-                    ORDER BY id DESC
+                    ORDER BY updated_at DESC, id ASC
                     LIMIT 1
                 """,
                     location,
@@ -100,7 +100,7 @@ class ScheduleRepository(BaseRepository):
                     WHERE location = $1 AND cluster = $2 AND device_name = $3
                     AND enabled = true AND target_intensity IS NOT NULL
                     AND target_intensity > 0
-                    ORDER BY target_intensity DESC
+                    ORDER BY target_intensity DESC, id ASC
                     LIMIT 1
                 """,
                     location,
@@ -135,7 +135,7 @@ class ScheduleRepository(BaseRepository):
                       AND device_name LIKE 'light%'
                       AND mode IN ('SUN', 'DAY')
                       AND enabled = true
-                    ORDER BY id DESC
+                    ORDER BY updated_at DESC, id ASC
                     LIMIT 1
                 """,
                     location,
@@ -196,6 +196,11 @@ class ScheduleRepository(BaseRepository):
                     ramp_up_duration,
                     ramp_down_duration,
                 )
+                if row:
+                    logger.info(
+                        f"Created schedule {row['id']}: {name} ({location}/{cluster}) "
+                        f"device={device_name} mode={mode} start={start_time} end={end_time}"
+                    )
                 return row["id"] if row else None
 
             if conn:
@@ -233,6 +238,11 @@ class ScheduleRepository(BaseRepository):
                 if updates:
                     query = f"UPDATE schedules SET {', '.join(updates)}, updated_at = NOW() WHERE id = $1 RETURNING *"
                     row = await conn.fetchrow(query, *params)
+                    if row:
+                        logger.info(
+                            f"Updated schedule {schedule_id} ({row['location']}/{row['cluster']}): "
+                            f"device={row['device_name']} updates={list(kwargs.keys())}"
+                        )
                     return dict(row) if row else None
                 return dict(current)
         except Exception as e:
@@ -244,6 +254,7 @@ class ScheduleRepository(BaseRepository):
         try:
             async with self.pool.acquire() as conn:
                 await conn.execute("DELETE FROM schedules WHERE id = $1", schedule_id)
+                logger.info(f"Deleted schedule {schedule_id}")
                 return True
         except Exception as e:
             logger.error(f"Failed to delete schedule: {e}")

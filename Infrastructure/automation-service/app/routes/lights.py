@@ -375,7 +375,7 @@ async def set_target_intensity(
     if scheduler:
         all_schedules = await database.schedule_repo.get_schedules()
         scheduler.update_schedules(all_schedules)
-        logger.debug(f"Scheduler refreshed after {device_name} target intensity update")
+        logger.info(f"Scheduler refreshed after {device_name} target intensity update")
 
     return {
         "success": True,
@@ -414,7 +414,7 @@ async def update_light_schedule(
     if scheduler:
         all_schedules = await database.schedule_repo.get_schedules()
         scheduler.update_schedules(all_schedules)
-        logger.debug(f"Scheduler refreshed after {device_name} schedule time update")
+        logger.info(f"Scheduler refreshed after {device_name} schedule time update")
 
     return {
         "success": True,

@@ -326,7 +326,7 @@ class Scheduler:
                             "ramp_duration": ramp_up_duration - time_since_start,
                             "ramp_type": "up",
                         }
-                        logger.debug(
+                        logger.info(
                             f"Resuming light ramp up for {device_name} ({location}/{cluster}): "
                             f"{expected_intensity:.1f}% -> {target_intensity:.1f}% (sun target) "
                             f"(remaining: {ramp_up_duration - time_since_start:.1f}min)"
@@ -357,7 +357,7 @@ class Scheduler:
                         ramp_state["target_intensity"] = target_intensity
                         ramp_state["ramp_start_timestamp"] = current_time
                         ramp_state["ramp_duration"] = remaining_time
-                        logger.debug(
+                        logger.info(
                             f"Recalculating ramp up for {device_name} ({location}/{cluster}): "
                             f"{current_effective:.1f}% -> {target_intensity:.1f}% over {remaining_time:.1f}min "
                             f"(speeds up if needed)"
@@ -379,7 +379,7 @@ class Scheduler:
                     if progress >= 1.0:
                         intensity = target_intensity
                         del self._light_ramp_state[ramp_key]
-                        logger.debug(
+                        logger.info(
                             f"Light ramp up complete for {device_name} ({location}/{cluster}): "
                             f"intensity={intensity:.1f}% (sun target reached)"
                         )
@@ -421,7 +421,7 @@ class Scheduler:
                             "ramp_type": "down",
                             "schedule_target_intensity": target_intensity,
                         }
-                        logger.debug(
+                        logger.info(
                             f"Resuming light ramp down for {device_name} ({location}/{cluster}): "
                             f"{expected_intensity:.1f}% -> {effective_minimum:.1f}% "
                             f"(remaining: {time_until_end:.1f}min)"
@@ -453,7 +453,7 @@ class Scheduler:
                         ramp_state["ramp_start_timestamp"] = current_time
                         ramp_state["ramp_duration"] = remaining_time
                         ramp_state["schedule_target_intensity"] = target_intensity
-                        logger.debug(
+                        logger.info(
                             f"Recalculating ramp down for {device_name} ({location}/{cluster}): "
                             f"{current_effective:.1f}% -> {ramp_state['target_intensity']:.1f}% over {remaining_time:.1f}min"
                         )
@@ -464,7 +464,7 @@ class Scheduler:
                     if ramp_duration <= 0:
                         intensity = ramp_state["target_intensity"]
                         del self._light_ramp_state[ramp_key]
-                        logger.debug(
+                        logger.info(
                             f"Light ramp down complete for {device_name} ({location}/{cluster}): "
                             f"intensity={intensity:.1f}% (minimum)"
                         )
@@ -478,7 +478,7 @@ class Scheduler:
                     if progress >= 1.0:
                         intensity = ramp_state["target_intensity"]
                         del self._light_ramp_state[ramp_key]
-                        logger.debug(
+                        logger.info(
                             f"Light ramp down complete for {device_name} ({location}/{cluster}): "
                             f"intensity={intensity:.1f}% (minimum)"
                         )

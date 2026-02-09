@@ -147,9 +147,7 @@ async def create_schedule(
                 database, schedule.location, schedule.cluster
             )
             redis_client.write_schedule_state(schedule.location, schedule.cluster, schedule_state)
-            logger.debug(
-                f"Wrote schedule state to Redis for {schedule.location}/{schedule.cluster}"
-            )
+            logger.info(f"Wrote schedule state to Redis for {schedule.location}/{schedule.cluster}")
     except Exception as e:
         logger.warning(f"Failed to write schedule state to Redis: {e}")
 
@@ -246,7 +244,7 @@ async def update_schedule(
     if scheduler:
         all_schedules = await database.schedule_repo.get_schedules()
         scheduler.update_schedules(all_schedules)
-        logger.debug(f"Scheduler refreshed after schedule {schedule_id} update")
+        logger.info(f"Scheduler refreshed after schedule {schedule_id} update")
 
     try:
         from app.routes.websocket import broadcast_schedule_update
@@ -264,7 +262,7 @@ async def update_schedule(
             redis_client.write_schedule_state(
                 existing["location"], existing["cluster"], schedule_state
             )
-            logger.debug(
+            logger.info(
                 f"Wrote schedule state to Redis for {existing['location']}/{existing['cluster']}"
             )
     except Exception as e:

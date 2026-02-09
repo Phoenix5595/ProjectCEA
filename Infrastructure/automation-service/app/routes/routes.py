@@ -20,6 +20,7 @@ from app.routes import (
     setpoints,
     status,
     websocket,
+    debug,
 )
 from shared.logging import get_logger
 
@@ -48,6 +49,7 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(websocket.router, tags=["websocket"])
     app.include_router(room_modes.router, tags=["room-modes"])
     app.include_router(redis_state.router, tags=["redis-state"])
+    app.include_router(debug.router, tags=["debug"])
     # Health (with hardware.mcp) is served by status.router GET /health
 
     logger.info("All routes registered")
@@ -108,5 +110,10 @@ def setup_dependency_overrides(app: FastAPI, container) -> None:
 
     # Override dependencies in redis_state module
     app.dependency_overrides[redis_state.get_database] = container.get_database
+
+    # Override dependencies in debug module
+    app.dependency_overrides[debug.get_database] = container.get_database
+    app.dependency_overrides[debug.get_scheduler] = container.get_scheduler
+    app.dependency_overrides[debug.get_control_engine] = container.get_control_engine
 
     logger.info("Dependency overrides configured")

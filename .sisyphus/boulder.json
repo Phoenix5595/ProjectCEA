@@ -1,9 +1,8 @@
 {
-  "active_plan": "/home/antoine/ProjectCEA/.sisyphus/plans/MASTER-CONSOLIDATION-PLAN.md",
-  "started_at": "2026-02-08T18:51:51.184Z",
+  "active_plan": "/home/antoine/ProjectCEA/.sisyphus/plans/mode-switch-architecture-fix.md",
+  "started_at": "2026-02-09T11:35:25.342Z",
   "session_ids": [
-    "ses_3c200b4eeffeXvIpoHmlhfJ4Qa",
-    "ses_3c0ffbfd5ffeligy0GjhRYoMVR"
+    "ses_3bf732ae6ffeQaqp0iBzP1XDac"
   ],
-  "plan_name": "MASTER-CONSOLIDATION-PLAN"
+  "plan_name": "mode-switch-architecture-fix"
 }

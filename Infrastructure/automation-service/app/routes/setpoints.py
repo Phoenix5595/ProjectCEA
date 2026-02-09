@@ -351,7 +351,7 @@ async def update_setpoints(
         if redis_client:
             schedule_state = await _build_schedule_state(database, location, cluster)
             redis_client.write_schedule_state(location, cluster, schedule_state)
-            logger.debug(f"Wrote schedule state to Redis for {location}/{cluster}")
+            logger.info(f"Wrote schedule state to Redis for {location}/{cluster}")
     except Exception as e:
         logger.warning(f"Failed to write schedule state to Redis: {e}")
 

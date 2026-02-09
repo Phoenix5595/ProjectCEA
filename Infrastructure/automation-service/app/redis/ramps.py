@@ -56,7 +56,7 @@ class RampsMixin:
                 "target_setpoint": target_setpoint,
             }
             self.redis_client.setex(ramp_key, ramp_ttl, json.dumps(ramp_data))
-            logger.debug(
+            logger.info(
                 f"Wrote ramp state for {setpoint_type} ({location}/{cluster}): "
                 f"current={current_effective_setpoint:.2f}, target={target_setpoint:.2f}, "
                 f"duration={ramp_duration}min"
@@ -106,7 +106,7 @@ class RampsMixin:
         try:
             ramp_key = f"ramp:{location}:{cluster}:{setpoint_type}"
             self.redis_client.delete(ramp_key)
-            logger.debug(f"Cleared ramp state for {setpoint_type} ({location}/{cluster})")
+            logger.info(f"Cleared ramp state for {setpoint_type} ({location}/{cluster})")
             return True
         except Exception as e:
             logger.warning(f"Error clearing ramp state from Redis: {e}")
@@ -134,7 +134,7 @@ class RampsMixin:
                 "start_time": start_time.isoformat(),
             }
             self.redis_client.setex(key, 7200, json.dumps(data))
-            logger.debug(f"Persisted ramp {location}/{cluster}/{setpoint_type}")
+            logger.info(f"Persisted ramp {location}/{cluster}/{setpoint_type}")
             return True
         except Exception as e:
             logger.warning(f"Failed to persist ramp: {e}")

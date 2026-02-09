@@ -673,7 +673,7 @@ class ControlEngine:
                     f"vpd_control (VPD: {current_vpd:.2f}kPa, setpoint: {vpd_setpoint:.2f}kPa)",
                     sensor_values,
                 )
-                logger.debug(
+                logger.info(
                     f"VPD control: {location}/{cluster}/{device_name} "
                     f"{'ON' if target_state == 1 else 'OFF'} "
                     f"(VPD: {current_vpd:.2f}kPa, setpoint: {vpd_setpoint:.2f}kPa)"
@@ -788,9 +788,9 @@ class ControlEngine:
     async def restore_ramp_state_from_database(self) -> None:
         """Handle ramp state on service startup.
 
-        Per design requirements: On service restart, we do NOT restore ramps.
-        Instead, we cancel any active ramps and immediately apply final setpoints.
-        This ensures predictable behavior and avoids complex state restoration.
+        Light ramp state is time-based and resumes automatically by recalculating
+        intensity from elapsed time since schedule start. Climate ramps (setpoints)
+        are restored from Redis if available to ensure continuity of environmental
+        transitions.
         """
-        # Clear all ramps - per design, service restart = cancel ramps, apply final setpoints
-        pass
+        await self._restore_ramps_on_startup()
