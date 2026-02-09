@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from datetime import datetime, timedelta
-from typing import Any, TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from app.database import DatabaseManager
 from shared.logging import LoggingContext, get_logger
@@ -336,7 +336,7 @@ class RampManager:
                 del self.active_ramps[ramp_key]
                 cleared.append(setpoint_type)
         if cleared:
-            logger.debug(f"RAMPS CLEARED for {location}/{cluster}: {cleared}")
+            logger.info(f"RAMPS CLEARED for {location}/{cluster}: {cleared}")
 
 
 class SetpointManager:
@@ -559,7 +559,7 @@ class SetpointManager:
             )
             if prev_setpoint_data:
                 ramp_starts = _extract_setpoints(prev_setpoint_data)
-                logger.debug(f"RAMP: Using {previous_mode} setpoints as ramp start: {ramp_starts}")
+                logger.info(f"RAMP: Using {previous_mode} setpoints as ramp start: {ramp_starts}")
                 return ramp_starts
             else:
                 logger.warning(
@@ -581,24 +581,24 @@ class SetpointManager:
             return ramp_starts
 
         primary, secondary = fallbacks
-        logger.debug(f"RAMP: Inferring previous mode for {current_mode}, trying {primary}")
+        logger.info(f"RAMP: Inferring previous mode for {current_mode}, trying {primary}")
 
         # Try primary fallback
         primary_data = await self.database.setpoint_repo.get_setpoint(location, cluster, primary)
         if primary_data:
             ramp_starts = _extract_setpoints(primary_data)
-            logger.debug(f"RAMP: Using {primary} setpoints as ramp start: {ramp_starts}")
+            logger.info(f"RAMP: Using {primary} setpoints as ramp start: {ramp_starts}")
             return ramp_starts
 
         # Try secondary fallback if primary not found
         if secondary:
-            logger.debug(f"RAMP: {primary} not found, falling back to {secondary}")
+            logger.info(f"RAMP: {primary} not found, falling back to {secondary}")
             secondary_data = await self.database.setpoint_repo.get_setpoint(
                 location, cluster, secondary
             )
             if secondary_data:
                 ramp_starts = _extract_setpoints(secondary_data)
-                logger.debug(f"RAMP: Using {secondary} setpoints as ramp start: {ramp_starts}")
+                logger.info(f"RAMP: Using {secondary} setpoints as ramp start: {ramp_starts}")
                 return ramp_starts
 
         # Ultimate fallback: use nominal values (target = start, so no actual ramp)

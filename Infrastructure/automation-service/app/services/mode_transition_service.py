@@ -194,7 +194,9 @@ class ModeTransitionService:
             final_mode = await self.room_mode_repo.get_active_mode(location, cluster)
 
             logger.info(
-                f"Successfully transitioned {location}/{cluster} to {new_mode_name}/{new_submode_name or 'None'}"
+                f"Successfully transitioned {location}/{cluster} from "
+                f"{current_mode['mode_name'] if current_mode else 'None'}/{current_mode.get('submode_name') if current_mode else 'None'} "
+                f"to {new_mode_name}/{new_submode_name or 'None'}"
             )
 
             return ModeTransitionResult(

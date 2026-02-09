@@ -331,10 +331,14 @@ class PIDControllerManager:
             climate_mode_key = (location, cluster)
             previous_mode = context.get("previous_climate_mode", {}).get(climate_mode_key)
 
-            if current_mode != previous_mode and previous_mode is not None:
+            # Reset on mode change OR on first tick after restart if mode is known
+            # (previous_mode is None implies first tick after service startup)
+            should_reset = (current_mode != previous_mode) if previous_mode is not None else True
+
+            if should_reset:
                 controller.reset()
-                logger.debug(
-                    f"PID integrator reset for {device_name} due to mode change: {previous_mode} -> {current_mode}"
+                logger.info(
+                    f"PID integrator reset for {device_name} (mode: {previous_mode} -> {current_mode})"
                 )
 
             # Calculate PID output

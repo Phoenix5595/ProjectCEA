@@ -422,3 +422,33 @@ class SetpointRepository(BaseRepository):
         except Exception as e:
             logger.error(f"Error buffering effective setpoints: {e}")
             return False
+
+    def invalidate_cache_for_location_cluster(self, location: str, cluster: str) -> None:
+        """Clear all cached entries matching location/cluster pattern.
+
+        Args:
+            location: Location name
+            cluster: Cluster name
+        """
+        # Patterns to look for in cache keys
+        # Format for get_setpoint cache key: get_setpoint:location:cluster:mode
+        # Format from BaseRepository._get_cache_key: operation:arg1:arg2:...
+        target_pattern = f":{location}:{cluster}:"
+
+        to_delete = [
+            key
+            for key in self._query_cache
+            if key.startswith("get_setpoint:") and target_pattern in key
+        ]
+
+        for key in to_delete:
+            del self._query_cache[key]
+
+        if to_delete:
+            logger.debug(
+                f"Invalidated {len(to_delete)} setpoint cache entries for {location}/{cluster}"
+            )
+
+    def invalidate_all_cache(self) -> None:
+        """Full cache clear for this repository."""
+        self.clear_cache()

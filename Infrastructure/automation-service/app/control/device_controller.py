@@ -9,10 +9,10 @@ from typing import TYPE_CHECKING, Any
 from shared.logging import LoggingContext, get_logger
 
 if TYPE_CHECKING:
+    from ..database import DatabaseManager
+    from ..hardware.dfr0971 import DFR0971Manager
     from .hardware_batch import HardwareBatchExecutor
     from .relay_manager import RelayManager
-    from ..hardware.dfr0971 import DFR0971Manager
-    from ..database import DatabaseManager
 
 logger = get_logger(__name__)
 
@@ -69,7 +69,7 @@ class DeviceController:
 
             if control_mode == "manual":
                 # Skip automated control for manual devices
-                logger.debug(f"Skipping {device_name} ({location}/{cluster}) - manual mode")
+                logger.info(f"Skipping {device_name} ({location}/{cluster}) - manual mode")
                 return
 
             # Calculate control output
@@ -594,7 +594,7 @@ class DeviceController:
         success = await self.relay_manager.set_channel_state(channel, state)
 
         if success:
-            logger.debug(f"{device_name} ({location}/{cluster}) set to {'ON' if state else 'OFF'}")
+            logger.info(f"{device_name} ({location}/{cluster}) set to {'ON' if state else 'OFF'}")
         else:
             logger.warning(f"Failed to set {device_name} ({location}/{cluster}) state")
 

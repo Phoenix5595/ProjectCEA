@@ -28,7 +28,7 @@ class SchedulesMixin:
         try:
             state_key = f"schedule:state:{location}:{cluster}"
             self.redis_client.set(state_key, json.dumps(schedule_data))
-            logger.debug(f"Wrote schedule state to Redis: {state_key}")
+            logger.info(f"Wrote schedule state to Redis: {state_key}")
             return True
         except Exception as e:
             logger.warning(f"Error writing schedule state to Redis: {e}")

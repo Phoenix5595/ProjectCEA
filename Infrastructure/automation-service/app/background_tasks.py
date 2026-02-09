@@ -285,7 +285,7 @@ class BackgroundTasks:
                 # Update scheduler in control engine
                 if self.control_engine.scheduler:
                     self.control_engine.scheduler.update_schedules(db_schedules)
-                    logger.debug(f"Refreshed {len(db_schedules)} schedules from database")
+                    logger.info(f"Refreshed {len(db_schedules)} schedules from database")
 
             except asyncio.CancelledError:
                 break

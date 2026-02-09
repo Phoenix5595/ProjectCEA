@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import time
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from app.database import DatabaseManager
-from app.routes.websocket import broadcast_mode_update
+from ..database import DatabaseManager
+from .websocket import broadcast_mode_update
+from ..services.mode_transition_service import ModeTransitionService
 from shared.logging import get_logger
 
 logger = get_logger(__name__)
@@ -14,7 +16,7 @@ router = APIRouter(prefix="/api/room-modes", tags=["room-modes"])
 
 
 def get_database() -> DatabaseManager:
-    from app.main import container
+    from ..main import container
 
     return container.get_database()
 
@@ -89,6 +91,7 @@ class RoomModeWithParams(BaseModel):
 class SetModeRequest(BaseModel):
     mode_name: str
     submode_name: str | None = None
+    coordinate_clusters: bool = True  # When True, switch all clusters in location together
 
 
 class UpdateParametersRequest(BaseModel):
@@ -198,15 +201,41 @@ async def set_room_mode(
 ):
     total_start = time.perf_counter()
 
+    # Resolve IDs for the new transition service
+    modes = await db.room_mode_repo.get_room_modes()
+    mode_info = next((m for m in modes if m["name"] == request.mode_name), None)
+    if not mode_info:
+        raise HTTPException(status_code=400, detail=f"Mode '{request.mode_name}' not found")
+    mode_id = mode_info["id"]
+
+    submode_id = None
+    if request.submode_name:
+        submodes = await db.room_mode_repo.get_flower_submodes()
+        submode_info = next((s for s in submodes if s["name"] == request.submode_name), None)
+        if not submode_info:
+            raise HTTPException(
+                status_code=400, detail=f"Submode '{request.submode_name}' not found"
+            )
+        submode_id = submode_info["id"]
+
+    transition_service = ModeTransitionService(db)
+
     start = time.perf_counter()
-    new_mode_data = await db.room_mode_repo.set_mode_with_transaction(
-        location, cluster, request.mode_name, request.submode_name, save_current_params=True
+    result_data = await transition_service.execute_mode_transition(
+        location=location,
+        cluster=cluster,
+        new_mode_id=str(mode_id),
+        new_submode_id=str(submode_id) if submode_id else None,
+        triggered_by="api",
     )
     transaction_time = (time.perf_counter() - start) * 1000
-    logger.info(f"MODE_SWITCH_TIMING: batched transaction took {transaction_time:.2f}ms")
+    logger.info(f"MODE_SWITCH_TIMING: transition service took {transaction_time:.2f}ms")
 
-    if not new_mode_data:
-        raise HTTPException(status_code=400, detail=f"Failed to set mode '{request.mode_name}'")
+    if not result_data.get("success"):
+        raise HTTPException(
+            status_code=400,
+            detail=result_data.get("message") or f"Failed to set mode '{request.mode_name}'",
+        )
 
     logger.info(f"Mode switch: {location}/{cluster} -> {request.mode_name}/{request.submode_name}")
 
