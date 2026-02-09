@@ -137,7 +137,7 @@ async def load_schedule_state_to_redis(
                     # Write to Redis
                     redis_client.write_schedule_state(location, cluster, schedule_state)
                     locations_loaded.append(f"{location}/{cluster}")
-                    logger.debug(f"Loaded schedule state to Redis for {location}/{cluster}")
+                    logger.info(f"Loaded schedule state to Redis for {location}/{cluster}")
                 except Exception as e:
                     logger.warning(f"Failed to load schedule state for {location}/{cluster}: {e}")
 
