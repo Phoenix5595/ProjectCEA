@@ -1,6 +1,6 @@
 """Relay manager for device-to-channel mapping and state management."""
 
-from __future__ import annotations
+from typing import Any
 
 from app.automation.interlock_manager import InterlockManager
 from app.hardware.mcp23017 import MCP23017Driver
@@ -15,7 +15,7 @@ class RelayManager:
     def __init__(
         self,
         mcp23017: MCP23017Driver,
-        device_config: dict[str, any],
+        device_config: dict[str, Any],
         interlock_manager: InterlockManager,
     ):
         """Initialize relay manager.
@@ -176,7 +176,26 @@ class RelayManager:
         """
         return self._current_states.copy()
 
-    def restore_states(self, states: dict[tuple[str, str, str], dict[str, any]]):
+    async def set_channel_state(self, channel: int, state: int) -> bool:
+        """Set channel state directly by channel number.
+
+        Args:
+            channel: Channel number
+            state: 0 = OFF, 1 = ON
+
+        Returns:
+            True if successful, False otherwise
+        """
+        success = self.mcp23017.set_channel(channel, state == 1)
+        if success:
+            # Update internal state if we know the device
+            device_key = self._channel_map.get(channel)
+            if device_key:
+                self._current_states[device_key] = state
+            logger.debug(f"Channel {channel} set to {'ON' if state == 1 else 'OFF'}")
+        return success
+
+    def restore_states(self, states: dict[tuple[str, str, str], dict[str, Any]]):
         """Restore device states from database.
 
         Args:

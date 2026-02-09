@@ -90,7 +90,7 @@ async def get_sensor_data(
             "24 Hours": 86400,
             "7 Days": 604800,
         }
-        seconds = time_ranges.get(time_range, 3600)
+        seconds = time_ranges.get(str(time_range), 3600)
         start_time = end_time - timedelta(seconds=seconds)
         logger.debug(
             f"API: Using time_range '{time_range}' ({seconds} seconds) - calculated start_time: {start_time}, end_time: {end_time}"

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 import json
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from shared.logging import get_logger
 
@@ -145,15 +145,21 @@ class RampsMixin:
         if not self.redis_enabled or not self.redis_client:
             return []
         try:
-            keys = self.redis_client.keys("ramp_persist:*")
+            # Cast keys to list to satisfy type checker as redis-py stubs can be ambiguous
+            keys = cast(list, self.redis_client.keys("ramp_persist:*") or [])
             ramps = []
             now = datetime.now()
             for key in keys:
                 try:
-                    data = self.redis_client.get(key)
+                    data = self.redis_client.get(key)  # type: ignore
                     if not data:
                         continue
-                    ramp = json.loads(data)
+                    # Redis returns bytes, decode to string for json.loads
+                    if isinstance(data, bytes):
+                        data_str = data.decode("utf-8")
+                    else:
+                        data_str = str(data)
+                    ramp = json.loads(data_str)
                     start_time = datetime.fromisoformat(ramp["start_time"])
                     end_time = start_time + timedelta(minutes=ramp["duration_minutes"])
 

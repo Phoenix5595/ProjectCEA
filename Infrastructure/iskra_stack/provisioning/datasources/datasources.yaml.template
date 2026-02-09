@@ -1,0 +1,39 @@
+# Generated at container start from this template via envsubst (password from env).
+# Do not commit datasources.yaml; only this template is in repo.
+apiVersion: 1
+
+datasources:
+  - name: CEA Sensors
+    type: postgres
+    uid: bf6vebq5ipybke
+    url: projectcea_database:5432
+    database: cea_sensors
+    user: cea_user
+    secureJsonData:
+      password: ${POSTGRES_CEA_USER_PASSWORD}
+    jsonData:
+      sslmode: disable
+      postgresVersion: 1500
+      timescaledb: true
+    isDefault: true
+    editable: false
+
+  - name: CEA PostgreSQL
+    type: postgres
+    uid: cea_postgres
+    url: projectcea_database:5432
+    database: cea_sensors
+    user: cea_user
+    secureJsonData:
+      password: ${POSTGRES_CEA_USER_PASSWORD}
+    jsonData:
+      sslmode: disable
+      postgresVersion: 1500
+      timescaledb: true
+    editable: false
+
+  - name: Redis
+    type: redis-datasource
+    uid: bf9yw6nuqt81sa
+    url: projectcea_redis:6379
+    editable: false

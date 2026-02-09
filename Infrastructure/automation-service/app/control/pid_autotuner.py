@@ -121,7 +121,10 @@ class RelayAutoTuner:
             return 0.0, None
 
         # Check timeout
-        if (current_time - self._start_time).total_seconds() > self.timeout:
+        if (
+            self._start_time is not None
+            and (current_time - self._start_time).total_seconds() > self.timeout
+        ):
             logger.warning("Auto-tuning timeout")
             self.stop()
             return 0.0, None

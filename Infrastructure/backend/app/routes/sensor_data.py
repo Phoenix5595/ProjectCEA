@@ -116,7 +116,7 @@ async def post_sensor_data(body: dict[str, Any]) -> dict[str, float]:
             if not key.endswith("_intensity"):
                 continue
             location, cluster, rest = _parse_location_cluster(key)
-            if not location or not cluster or not rest.startswith("light_"):
+            if not location or not cluster or rest is None or not rest.startswith("light_"):
                 continue
             device = rest.replace("_intensity", "")
             redis_key = f"light:{location}:{cluster}:{device}"

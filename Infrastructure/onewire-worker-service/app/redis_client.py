@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Awaitable
 from datetime import datetime
 import os
+from typing import Any, cast
 
 import redis.asyncio as redis
 
@@ -28,7 +30,7 @@ class RedisClient:
                 self.redis_url, decode_responses=True, max_connections=5
             )
             self.client = redis.Redis(connection_pool=self._pool)
-            await self.client.ping()
+            await cast(Awaitable[Any], self.client.ping())
             self.redis_enabled = True
             logger.info(f"Connected to Redis: {self.redis_url}")
             return True

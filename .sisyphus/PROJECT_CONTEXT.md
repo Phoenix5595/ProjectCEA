@@ -25,6 +25,15 @@ Ultimate goal: Max data for AI training (spike prediction, auto-tuning).
 
 ## Data Flow
 
+Sensors (CAN/Modbus/HTTP) → Ingestion Services → Redis (live) + TimescaleDB (historical) → Control Loop (automation-service) → Actuators (I2C) → State persistence → Frontend/Grafana
+
+## Architecture Notes
+
+- **Repository Pattern**: Database access through specialized repositories (ControlAction, Device, PID, RoomMode, Schedule, Sensor, Setpoint, Config)
+- **DatabaseManager**: Now pure facade for connection management only
+- **Type Safety**: pyright strict mode enforced (0 LSP errors achieved)
+- **Schedules**: New directory structure at `automation-service/app/repositories/schedule/`
+
 
 
 ## Rooms
@@ -52,3 +61,4 @@ Ultimate goal: Max data for AI training (spike prediction, auto-tuning).
 - Dev: /home/antoine/ProjectCEA/
 - Prod: /opt/projectcea/
 - Git: https://github.com/Phoenix5595/ProjectCEA.git
+- Repository Pattern: `Infrastructure/automation-service/app/repositories/`

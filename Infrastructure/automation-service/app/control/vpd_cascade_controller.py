@@ -151,7 +151,15 @@ class VPDCascadeController:
                 env, temp_constraints, pid_output, current_vpd, target_vpd, vpd_error
             )
 
-    def _handle_vpd_too_low(self, env, constraints, output, current_vpd, target_vpd, vpd_error):
+    def _handle_vpd_too_low(
+        self,
+        env: EnvironmentState,
+        constraints: TempConstraints,
+        output: float,
+        current_vpd: float,
+        target_vpd: float,
+        vpd_error: float,
+    ) -> VPDCascadeOutput:
         """VPD too low (humid) -> dry the air. Priority: vent > dehum > heat"""
         outside_drier = False
         if env.outside_abs_humidity is not None:
@@ -180,10 +188,18 @@ class VPDCascadeController:
 
         return VPDCascadeOutput(current_vpd, target_vpd, vpd_error, cmd, [], reason)
 
-    def _handle_vpd_too_high(self, env, constraints, output, current_vpd, target_vpd, vpd_error):
+    def _handle_vpd_too_high(
+        self,
+        env: EnvironmentState,
+        constraints: TempConstraints,
+        output: float,
+        current_vpd: float,
+        target_vpd: float,
+        vpd_error: float,
+    ) -> VPDCascadeOutput:
         """VPD too high (dry) -> humidify"""
         cmd = ActuatorCommand(ActuatorType.HUMIDIFIER, output, "VPD high", 10)
-        secondary = []
+        secondary: list[ActuatorCommand] = []
         reason = "Humidifier: VPD too high"
 
         if constraints.near_cooling_limit(env.air_temp_c):

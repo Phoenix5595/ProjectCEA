@@ -15,22 +15,23 @@ router = APIRouter()
 
 def get_database() -> DatabaseManager:
     """Dependency to get database manager."""
-    from app.main import get_database as _get_database
+    from app.main import container
 
-    return _get_database()
+    return container.get_database()
 
 
 def get_automation_redis() -> AutomationRedisClient | None:
     """Get automation Redis client."""
-    database = get_database()
-    return database._automation_redis if database else None
+    from app.main import container
+
+    return container.get_automation_redis()
 
 
 def get_alarm_manager() -> AlarmManager | None:
     """Get alarm manager."""
-    from app.main import alarm_manager
+    from app.main import container
 
-    return alarm_manager
+    return container.get_alarm_manager()
 
 
 @router.get("/api/failsafe/{location}/{cluster}")
@@ -69,6 +70,7 @@ async def get_all_failsafes(
 
     failsafes = {}
     try:
+        assert automation_redis.redis_client is not None, "Redis client must be connected"
         for key in automation_redis.redis_client.scan_iter(match="failsafe:*"):
             # Parse key: failsafe:location:cluster
             parts = key.split(":")

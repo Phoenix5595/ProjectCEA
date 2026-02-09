@@ -63,6 +63,22 @@ class DeviceRepository(BaseRepository):
             logger.error(f"Failed to set device state: {e}")
             return False
 
+    async def get_device_states(self, location: str, cluster: str) -> dict[str, dict[str, Any]]:
+        """Get device states for a location and cluster."""
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(
+                    """SELECT device_name, channel, state, mode, updated_at
+                       FROM device_states
+                       WHERE location = $1 AND cluster = $2""",
+                    location,
+                    cluster,
+                )
+                return {row["device_name"]: dict(row) for row in rows}
+        except Exception as e:
+            logger.error(f"Failed to get device states: {e}")
+            return {}
+
     async def get_all_device_states(self) -> list[dict[str, Any]]:
         """Get all device states."""
         try:

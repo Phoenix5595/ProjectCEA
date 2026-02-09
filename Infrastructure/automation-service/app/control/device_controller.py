@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 from shared.logging import LoggingContext, get_logger
 
 if TYPE_CHECKING:
-    from app.control.hardware_batch import HardwareBatchExecutor
+    from .hardware_batch import HardwareBatchExecutor
+    from .relay_manager import RelayManager
+    from ..hardware.dfr0971 import DFR0971Manager
+    from ..database import DatabaseManager
 
 logger = get_logger(__name__)
 
@@ -16,7 +20,12 @@ logger = get_logger(__name__)
 class DeviceController:
     """Handles device control operations and state management."""
 
-    def __init__(self, relay_manager, database_manager, dfr0971_manager=None):
+    def __init__(
+        self,
+        relay_manager: RelayManager,
+        database_manager: DatabaseManager,
+        dfr0971_manager: DFR0971Manager | None = None,
+    ) -> None:
         """Initialize device controller.
 
         Args:
@@ -24,9 +33,9 @@ class DeviceController:
             database_manager: Database manager for state persistence
             dfr0971_manager: Optional DFR0971 manager for dimmable lights
         """
-        self.relay_manager = relay_manager
-        self.database = database_manager
-        self.dfr0971_manager = dfr0971_manager
+        self.relay_manager: RelayManager = relay_manager
+        self.database: DatabaseManager = database_manager
+        self.dfr0971_manager: DFR0971Manager | None = dfr0971_manager
 
     async def process_device(
         self,
@@ -34,7 +43,7 @@ class DeviceController:
         cluster: str,
         device_name: str,
         device_info: dict[str, Any],
-        sensor_values: dict[str, float | None],
+        sensor_values: Mapping[str, float | None],
         current_time: datetime,
         context: dict[str, Any],
         batch_executor: HardwareBatchExecutor | None = None,
@@ -137,7 +146,7 @@ class DeviceController:
         cluster: str,
         device_name: str,
         device_info: dict[str, Any],
-        sensor_values: dict[str, float | None],
+        sensor_values: Mapping[str, float | None],
         control_mode: str,
         setpoint: float | None,
         context: dict[str, Any],
@@ -238,7 +247,7 @@ class DeviceController:
         cluster: str,
         device_name: str,
         device_info: dict[str, Any],
-        sensor_values: dict[str, float | None],
+        sensor_values: Mapping[str, float | None],
         setpoint: float | None,
     ) -> float | None:
         """Calculate rule-based control output for non-PID devices."""
@@ -299,7 +308,7 @@ class DeviceController:
         return None
 
     def _get_sensor_value_for_device(
-        self, device_type: str, sensor_values: dict[str, float | None]
+        self, device_type: str, sensor_values: Mapping[str, float | None]
     ) -> float | None:
         """Get the appropriate sensor value for a device type."""
         sensor_mapping = {
@@ -317,7 +326,7 @@ class DeviceController:
         return None
 
     def _find_sensor_by_type(
-        self, sensor_values: dict[str, float | None], type_keywords: list
+        self, sensor_values: Mapping[str, float | None], type_keywords: list[str]
     ) -> float | None:
         """Find a sensor value by type keywords."""
         for sensor_name, value in sensor_values.items():
@@ -632,7 +641,7 @@ class DeviceController:
                     load_percent = float(pid_out) * 100.0 if 0 <= pid_out <= 1 else float(pid_out)
                     load_percent = max(0.0, min(100.0, load_percent))
 
-            await self.database.log_control_action(
+            await self.database.control_action_repo.log_control_action(
                 location=location,
                 cluster=cluster,
                 device_name=device_name,
@@ -649,7 +658,7 @@ class DeviceController:
     async def restore_device_states(self, location: str, cluster: str) -> None:
         """Restore device states from database after restart."""
         try:
-            device_states = await self.database.get_device_states(location, cluster)
+            device_states = await self.database.device_repo.get_device_states(location, cluster)
 
             restored_count = 0
             for device_name, state_info in device_states.items():

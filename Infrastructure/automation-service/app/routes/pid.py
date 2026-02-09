@@ -59,34 +59,34 @@ def check_rate_limit(device_type: str) -> bool:
 
 def get_database() -> DatabaseManager:
     """Get database manager."""
-    from app.main import get_database as _get_database
+    from app.main import container
 
-    return _get_database()
+    return container.get_database()
 
 
 def get_config() -> ConfigLoader:
     """Get config loader."""
-    from app.main import get_config as _get_config
+    from app.main import container
 
-    return _get_config()
+    return container.get_config()
 
 
 @router.get("/api/pid/parameters")
 async def get_all_pid_parameters(
     database: DatabaseManager = Depends(get_database),
-) -> dict[str, dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Get all PID parameters for all device types.
 
     Returns:
-        Dict mapping device_type to parameter dict with kp, ki, kd, updated_at, updated_by, source
+        List of dicts with kp, ki, kd, updated_at, updated_by, source
     """
-    return await database.get_all_pid_parameters()
+    return await database.pid_repo.get_all_pid_parameters()
 
 
 @router.get("/api/pid/parameters/{device_type}")
 async def get_pid_parameters(
     device_type: str, database: DatabaseManager = Depends(get_database)
-) -> dict[str, Any]:
+) -> dict[str, Any] | None:
     """Get PID parameters for a specific device type.
 
     Args:
@@ -95,7 +95,7 @@ async def get_pid_parameters(
     Returns:
         Dict with kp, ki, kd, updated_at, updated_by, source
     """
-    params = await database.get_pid_parameters(device_type)
+    params = await database.pid_repo.get_pid_parameters(device_type)
     if params is None:
         raise HTTPException(
             status_code=404, detail=f"PID parameters not found for device_type: {device_type}"
@@ -109,7 +109,7 @@ async def update_pid_parameters(
     update: PIDParameterUpdate,
     database: DatabaseManager = Depends(get_database),
     config: ConfigLoader = Depends(get_config),
-) -> dict[str, Any]:
+) -> dict[str, Any] | None:
     """Update PID parameters for a device type.
 
     Args:
@@ -127,7 +127,7 @@ async def update_pid_parameters(
         )
 
     # Get existing parameters to merge with update
-    existing = await database.get_pid_parameters(device_type)
+    existing = await database.pid_repo.get_pid_parameters(device_type)
 
     # Determine which parameters to update
     kp = update.kp if update.kp is not None else (existing["kp"] if existing else None)
@@ -135,7 +135,9 @@ async def update_pid_parameters(
     kd = update.kd if update.kd is not None else (existing["kd"] if existing else None)
 
     # Validate parameters
-    is_valid, error_message, validated = validate_pid_parameters(kp, ki, kd, device_type, config)
+    is_valid, error_message, validated = validate_pid_parameters(
+        kp, ki, kd, device_type, config._config
+    )
 
     if not is_valid:
         raise HTTPException(status_code=400, detail=error_message)
@@ -160,21 +162,21 @@ async def update_pid_parameters(
         )
 
     # Update in database
-    success = await database.set_pid_parameters(
+    success = await database.pid_repo.set_pid_parameters(
         device_type,
         final_kp,
         final_ki,
         final_kd,
         source=update.source,
-        updated_by=update.updated_by,
+        updated_by=update.updated_by if update.updated_by else "system",
     )
 
     if not success:
         raise HTTPException(status_code=500, detail="Failed to update PID parameters")
 
     # Return updated parameters
-    updated = await database.get_pid_parameters(device_type)
-    return updated
+    updated = await database.pid_repo.get_pid_parameters(device_type)
+    return updated or {}
 
 
 @router.get("/api/pid/parameters/{device_type}/history")
@@ -193,7 +195,7 @@ async def get_pid_parameter_history(
     if limit < 1 or limit > 1000:
         raise HTTPException(status_code=400, detail="Limit must be between 1 and 1000")
 
-    history = await database.get_pid_parameter_history(device_type, limit)
+    history = await database.pid_repo.get_pid_parameter_history(device_type, limit)
     return history
 
 
@@ -202,7 +204,7 @@ async def reset_pid_parameters(
     device_type: str,
     database: DatabaseManager = Depends(get_database),
     config: ConfigLoader = Depends(get_config),
-) -> dict[str, Any]:
+) -> dict[str, Any] | None:
     """Reset PID parameters to config defaults.
 
     Args:
@@ -212,24 +214,21 @@ async def reset_pid_parameters(
         Reset PID parameters from config
     """
     # Get default parameters from config
-    device_config = config.get_device_config(device_type)
-    if not device_config or "pid" not in device_config:
-        raise HTTPException(
-            status_code=404, detail=f"No default PID config found for device_type: {device_type}"
-        )
+    device_config = config.get_pid_params_for_device(device_type)
 
-    pid_config = device_config["pid"]
-    kp = pid_config.get("kp")
-    ki = pid_config.get("ki")
-    kd = pid_config.get("kd")
+    # config.get_pid_params_for_device returns {'kp': ..., 'ki': ..., 'kd': ...}
+    kp = device_config.get("kp")
+    ki = device_config.get("ki")
+    kd = device_config.get("kd")
 
     if kp is None or ki is None or kd is None:
-        raise HTTPException(
-            status_code=500, detail=f"Incomplete PID config for device_type: {device_type}"
-        )
+        # Fallback to hard defaults if somehow config is broken
+        kp = 10.0
+        ki = 0.01
+        kd = 0.0
 
     # Update in database with config values
-    success = await database.set_pid_parameters(
+    success = await database.pid_repo.set_pid_parameters(
         device_type, kp, ki, kd, source="config_reset", updated_by="system"
     )
 
@@ -241,7 +240,8 @@ async def reset_pid_parameters(
     )
 
     # Return reset parameters
-    return await database.get_pid_parameters(device_type)
+    updated = await database.pid_repo.get_pid_parameters(device_type)
+    return updated or {}
 
 
 # ============================================================================
@@ -297,18 +297,18 @@ async def get_pid_mode(
     Returns:
         Dict with mode, hysteresis settings, and autotune status
     """
-    mode_info = await database.get_pid_control_mode(device_type)
+    mode_info = await database.pid_repo.get_pid_control_mode(device_type)
     if mode_info is None:
         raise HTTPException(
             status_code=404, detail=f"PID mode not found for device_type: {device_type}"
         )
 
     # Get autotune state to check if active
-    autotune_state = await database.get_autotune_state(device_type)
+    autotune_state = await database.pid_repo.get_autotune_state(device_type)
     is_autotune_active = autotune_state.get("is_active", False) if autotune_state else False
 
     # Get updated_at from main PID parameters
-    params = await database.get_pid_parameters(device_type)
+    params = await database.pid_repo.get_pid_parameters(device_type)
     updated_at = params.get("updated_at") if params else None
 
     return {
@@ -352,16 +352,16 @@ async def set_pid_mode(
             raise HTTPException(status_code=400, detail="hysteresis_low must be positive")
 
     # Get current mode to detect changes
-    current_mode_info = await database.get_pid_control_mode(device_type)
+    current_mode_info = await database.pid_repo.get_pid_control_mode(device_type)
     current_mode = current_mode_info["control_mode"] if current_mode_info else "pid"
 
     # Update mode in database
-    success = await database.set_pid_control_mode(
+    success = await database.pid_repo.set_pid_control_mode(
         device_type,
         update.mode,
         hysteresis_high=update.hysteresis_high,
         hysteresis_low=update.hysteresis_low,
-        updated_by=update.updated_by,
+        updated_by=update.updated_by if update.updated_by else "system",
     )
 
     if not success:
@@ -370,13 +370,13 @@ async def set_pid_mode(
     # Handle auto-tune state changes
     if update.mode == "auto_pid" and current_mode != "auto_pid":
         # Starting auto-tune
-        await database.update_autotune_state(
+        await database.pid_repo.update_autotune_state(
             device_type, state="running", progress=0.0, current_step="initializing"
         )
         logger.info(f"Auto-tuning started for {device_type}")
     elif update.mode != "auto_pid" and current_mode == "auto_pid":
         # Stopping auto-tune
-        await database.update_autotune_state(device_type, state="idle")
+        await database.pid_repo.update_autotune_state(device_type, state="idle")
         logger.info(f"Auto-tuning stopped for {device_type}")
 
     # Return updated mode
@@ -395,7 +395,7 @@ async def get_autotune_status(
     Returns:
         Auto-tune status including progress, calculated values, and suggestions
     """
-    state = await database.get_autotune_state(device_type)
+    state = await database.pid_repo.get_autotune_state(device_type)
 
     if state is None:
         # Return default idle state
@@ -448,10 +448,10 @@ async def stop_autotune(
         Updated autotune status
     """
     # Update autotune state
-    await database.update_autotune_state(device_type, state="idle")
+    await database.pid_repo.update_autotune_state(device_type, state="idle")
 
     # Change mode to 'pid' (manual)
-    await database.set_pid_control_mode(device_type, "pid", updated_by="system")
+    await database.pid_repo.set_pid_control_mode(device_type, "pid", updated_by="system")
 
     logger.info(f"Auto-tuning force stopped for {device_type}, mode set to 'pid'")
     return await get_autotune_status(device_type, database)

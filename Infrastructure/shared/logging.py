@@ -30,11 +30,12 @@ class JsonFormatter(logging.Formatter):
         # Add context from LoggingContext if available
         context = LoggingContext.get_context()
         if context:
-            log_data["context"] = context
+            log_data["context"] = str(context)
 
         # Add extra fields if any
-        if hasattr(record, "extra") and record.extra:
-            log_data["extra"] = record.extra
+        extra = getattr(record, "extra", None)
+        if extra:
+            log_data["extra"] = str(extra)
 
         # Add exception info if present
         if record.exc_info:

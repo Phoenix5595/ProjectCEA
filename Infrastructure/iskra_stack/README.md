@@ -1,0 +1,151 @@
+# ProjectCEA stack on iskra
+
+Single Docker Compose stack on **iskra** that groups: **projectcea_database** (TimescaleDB replica), **Redis**, **Grafana**, and **projectcea_redis_sync** (syncs latest sensor values from replica DB to Redis). Grafana reads **current values from Redis** and **time-series from PostgreSQL** so the DB is not hammered for live panels.
+
+**Docker only on iskra.** Mothernode runs PostgreSQL, Grafana, and Redis natively (systemd).
+
+## Before implementing
+
+- [ ] **Storage 1 path**: Set `PGDATA_HOST_PATH` in `.env` (e.g. `/srv/storage1/projectcea_database/data`). PGDATA must exist and be owned by `999:999`.
+- [ ] **Mothernode replication**: Replication user and `postgresql.conf` / `pg_hba.conf` on mothernode must allow replication from iskra (Tailscale IP 100.72.106.76 for `cea_repl`). See `Infrastructure/database-replica/README.md`. After changing `pg_hba.conf` on mothernode, **reload PostgreSQL** then **on iskra** run: `sg docker -c "docker compose restart projectcea_database"` (or `./scripts/restart-replica-after-pghba.sh`).
+- [ ] **Passwords**: Copy `.env.example` to `.env` and set `REPLICATION_PASSWORD`, `GF_SECURITY_ADMIN_PASSWORD`, `POSTGRES_CEA_USER_PASSWORD` (same as `cea_user` on mothernode).
+
+## On iskra (step-by-step)
+
+Do these steps **on iskra** (e.g. via SSH).
+
+1. **Get the stack**  
+   Sync from mothernode (or clone the repo) so `ProjectCEA/Infrastructure/iskra_stack/` exists, e.g.:
+   ```bash
+   # From mothernode: rsync -avz --exclude=.env Infrastructure/iskra_stack/ iskra:ProjectCEA/Infrastructure/iskra_stack/
+   # On iskra: ensure the directory exists first: mkdir -p ProjectCEA/Infrastructure/iskra_stack
+   ```
+
+2. **Environment**  
+   In `ProjectCEA/Infrastructure/iskra_stack/`:
+   ```bash
+   cp .env.example .env
+   ```
+   Edit `.env` and set:
+   - `PRIMARY_HOST` – mothernode hostname (e.g. `mothernode.tail7a351e.ts.net`)
+   - `REPLICATION_PASSWORD` – same as on mothernode for `cea_repl`
+   - `POSTGRES_CEA_USER_PASSWORD` – same as `cea_user` password on mothernode (for Grafana + redis_sync)
+   - `GF_SECURITY_ADMIN_PASSWORD` – Grafana admin password
+   - `PGDATA_HOST_PATH` – path on iskra for DB data (e.g. `/srv/storage1/projectcea_database/data`)
+   - `GRAFANA_PORT=3001` if port 3000 is already in use on iskra (e.g. another Grafana).
+
+3. **PGDATA ownership**  
+   The Postgres process in the container runs as UID 999. The data directory on the host must be owned by `999:999`:
+   ```bash
+   sudo chown -R 999:999 /srv/storage1/projectcea_database/data
+   ```
+   (Use your actual `PGDATA_HOST_PATH` if different.)
+
+4. **Optional: replace standalone database**  
+   If you previously ran only the database container from `projectcea_database/`:
+   ```bash
+   cd ~/projectcea_database && docker compose down
+   ```
+   Then use the **same** `PGDATA_HOST_PATH` in the new stack so the replica data is reused.
+
+5. **Start the stack**  
+   ```bash
+   cd ~/ProjectCEA/Infrastructure/iskra_stack
+   chmod +x docker-entrypoint-replica.sh scripts/grafana-entrypoint.sh
+   docker compose up -d --build
+   ```
+
+6. **Check**  
+   ```bash
+   docker compose ps
+   ```
+   All four services should be Up (projectcea_database may take up to ~60 s to become healthy).  
+   **Grafana**: `http://<iskra>:3000` (or `:3001` if you set `GRAFANA_PORT=3001`). Login: admin / `GF_SECURITY_ADMIN_PASSWORD`.
+
+## After mothernode pg_hba.conf change
+
+When mothernode adds or changes replication entries (e.g. for iskra Tailscale IP 100.72.106.76), **on iskra** restart the replica so it retries `pg_basebackup` and streaming replication:
+
+```bash
+cd ~/ProjectCEA/Infrastructure/iskra_stack
+sg docker -c "docker compose restart projectcea_database"
+# Or: ./scripts/restart-replica-after-pghba.sh
+```
+
+Or restart the whole stack: `sg docker -c "docker compose up -d"`. Within ~1–2 minutes `projectcea_database` should become healthy.
+
+## Quick start (if already set up)
+
+1. **Replace standalone database** (if you previously ran only `projectcea_database`): stop that compose, then start this stack using the **same** `PGDATA_HOST_PATH` so the replica data is reused.
+2. From this directory:
+   ```bash
+   cp .env.example .env
+   # Edit .env: PRIMARY_HOST, REPLICATION_PASSWORD, POSTGRES_CEA_USER_PASSWORD, GF_SECURITY_ADMIN_PASSWORD, PGDATA_HOST_PATH
+   docker compose up -d
+   ```
+3. **Grafana**: `http://<iskra>:3000` (or `GF_SERVER_ROOT_URL`). Admin password from `GF_SECURITY_ADMIN_PASSWORD`.
+4. **Datasources**: Provisioned automatically. PostgreSQL → `projectcea_database` (CEA Sensors, uid `bf6vebq5ipybke`; CEA PostgreSQL, uid `cea_postgres`). Redis → `projectcea_redis` (uid `bf9yw6nuqt81sa`). The `cea_user` password is injected at container start from `POSTGRES_CEA_USER_PASSWORD` (generated `datasources.yaml` is not committed).
+
+## Redis population
+
+Redis is filled by **projectcea_redis_sync** (sync-from-DB):
+
+- Every `SYNC_INTERVAL_SEC` (default 10 s), the sync service queries the replica DB view `latest_sensor_values` and writes `sensor:<name>` and `sensor:<name>:ts` keys to Redis (TTL 30 s).
+- Grafana can use Redis for current-value panels (stat, table) so the DB is not queried every second for “latest”.
+
+**Alternative (optional):** If mothernode Redis is reachable from iskra (e.g. Tailscale), you can configure iskra Redis as a **replica of mothernode Redis** so `sensor:*` keys are replicated. Then you can stop or disable `projectcea_redis_sync`. Document this in your runbook; this stack implements sync-from-DB by default.
+
+## Services
+
+| Service                | Role                                                                 |
+|------------------------|----------------------------------------------------------------------|
+| projectcea_database    | TimescaleDB streaming standby; Grafana time-series and aggregates.  |
+| projectcea_redis       | Current/live values for Grafana; populated by redis_sync (or replication). |
+| projectcea_grafana     | Same dashboards/provisioning as mothernode; PostgreSQL + Redis datasources. |
+| projectcea_redis_sync  | Periodic read of `latest_sensor_values` from replica DB → Redis.     |
+
+## Files
+
+- `docker-compose.yml`: All four services; shared network.
+- `.env.example` / `.env`: DB replica, Grafana, Redis sync config.
+- `docker-entrypoint-replica.sh`: Replica entrypoint; creates minimal `postgresql.conf` in PGDATA when missing (e.g. if primary uses `/etc/postgresql`).
+- `provisioning/datasources/datasources.yaml.template`: Template for Grafana datasources; `datasources.yaml` is generated at container start via `envsubst` (password from env).
+- `provisioning/dashboards/dashboards.yaml`: Dashboard providers (veg_sector, flower_sector, flower_sector_soil, laboratory).
+- `dashboards/`: Dashboard JSONs (veg_sector, flower_sector, flower_sector_soil; laboratory is a placeholder folder).
+- `scripts/grafana-entrypoint.sh`: Runs `envsubst` then Grafana.
+- `scripts/redis_sync.py`: Sync script (used by built image).
+- `Dockerfile.redis_sync`: Builds image for projectcea_redis_sync.
+
+## Architecture docs
+
+See project root **ARCHITECTURE.md** and **ARCHITECTURE_SCHEMATIC.md**: subsection “ProjectCEA stack (iskra)” (database replica + Grafana + Redis; Grafana reads Redis for current values and PostgreSQL for time-series).
+
+---
+
+## Copy-paste checklist (on iskra)
+
+After the stack is synced to iskra (e.g. `ProjectCEA/Infrastructure/iskra_stack/`):
+
+```bash
+cd ~/ProjectCEA/Infrastructure/iskra_stack
+
+# 1. .env (create from example, then edit with your values)
+cp .env.example .env
+# Set: PRIMARY_HOST, REPLICATION_PASSWORD, POSTGRES_CEA_USER_PASSWORD, GF_SECURITY_ADMIN_PASSWORD, PGDATA_HOST_PATH
+# Set GRAFANA_PORT=3001 if port 3000 is already in use
+
+# 2. PGDATA ownership (postgres in container = UID 999)
+sudo chown -R 999:999 /srv/storage1/projectcea_database/data
+
+# 3. Optional: stop old standalone database if you had one
+# (cd ~/projectcea_database && docker compose down)
+
+# 4. Start stack
+chmod +x docker-entrypoint-replica.sh scripts/grafana-entrypoint.sh
+docker compose up -d --build
+
+# 5. Check (database may take ~60s to become healthy)
+docker compose ps
+```
+
+Grafana: **http://&lt;iskra&gt;:3000** (or **:3001** if `GRAFANA_PORT=3001`). Login: **admin** / value of `GF_SECURITY_ADMIN_PASSWORD`.

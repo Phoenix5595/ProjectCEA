@@ -64,12 +64,15 @@ class SensorDataManager:
             try:
                 # Use batch retrieval if available, otherwise fetch individually
                 if hasattr(self.database, "get_sensor_values_batch"):
-                    batch_values = await self.database.get_sensor_values_batch(sensor_names)
+                    batch_values = await self.database.sensor_repo.get_sensor_values_batch(
+                        sensor_names
+                    )
                     sensor_values.update(batch_values)
                 else:
                     # Fallback to individual fetches with concurrency
                     tasks = [
-                        self.database.get_sensor_value(sensor_name) for sensor_name in sensor_names
+                        self.database.sensor_repo.get_sensor_value(sensor_name)
+                        for sensor_name in sensor_names
                     ]
                     results = await asyncio.gather(*tasks, return_exceptions=True)
 

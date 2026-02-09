@@ -21,16 +21,16 @@ class AlarmAcknowledgeRequest(BaseModel):
 
 def get_database() -> DatabaseManager:
     """Dependency to get database manager."""
-    from app.main import get_database as _get_database
+    from app.main import container
 
-    return _get_database()
+    return container.get_database()
 
 
 def get_alarm_manager() -> AlarmManager | None:
     """Get alarm manager."""
-    from app.main import alarm_manager
+    from app.main import container
 
-    return alarm_manager
+    return container.get_alarm_manager()
 
 
 @router.get("/api/alarms/{location}/{cluster}")

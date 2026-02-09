@@ -1,0 +1,6 @@
+# Redis sync: reads latest_sensor_values from replica DB, writes to Redis.
+FROM python:3.12-alpine
+RUN pip install --no-cache-dir psycopg2-binary redis
+COPY scripts/redis_sync.py /app/redis_sync.py
+WORKDIR /app
+ENTRYPOINT ["python", "redis_sync.py"]

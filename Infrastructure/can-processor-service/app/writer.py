@@ -9,11 +9,13 @@ import os
 import queue
 import threading
 import time
-from typing import Any
+from typing import Any, cast
 
 import psycopg2
+import psycopg2.extensions
 import psycopg2.extras
 import redis
+import redis.exceptions
 
 from shared.logging import get_logger
 
@@ -33,8 +35,8 @@ class DataWriter:
 
     def __init__(
         self,
-        db_config: dict[str, str] = None,
-        redis_url: str = None,
+        db_config: dict[str, Any] | None = None,
+        redis_url: str | None = None,
         redis_ttl: int = 10,
         stream_name: str = "sensor:raw",
     ):
@@ -50,7 +52,7 @@ class DataWriter:
             password = os.getenv("POSTGRES_PASSWORD")
             if not password:
                 raise ValueError("POSTGRES_PASSWORD environment variable is required")
-            self.db_config = {
+            self.db_config: dict[str, Any] = {
                 "host": os.getenv("POSTGRES_HOST", "localhost"),
                 "database": os.getenv("POSTGRES_DB", "cea_sensors"),
                 "user": os.getenv("POSTGRES_USER", "cea_user"),
@@ -96,6 +98,8 @@ class DataWriter:
             db_config_optimized["keepalives_count"] = 3
             db_config_optimized["connect_timeout"] = 5
             self.db_conn = psycopg2.connect(**db_config_optimized)
+            if self.db_conn is None:
+                raise Exception("Failed to create database connection")
             self.db_conn.autocommit = True
             cursor = self.db_conn.cursor()
             cursor.execute("SET statement_timeout = '5000'")
@@ -148,6 +152,9 @@ class DataWriter:
                 if not self._check_db_connection():
                     self._dropped_count += len(items)
                     return
+                if self.db_conn is None:
+                    self._dropped_count += len(items)
+                    return
                 cursor = self.db_conn.cursor()
                 measurements = []
                 for item in items:
@@ -198,10 +205,14 @@ class DataWriter:
             True if connection is healthy or reconnection succeeded, False otherwise
         """
         if not self.db_conn:
-            return self.connect_db()
+            if not self.connect_db():
+                return False
 
+        # Check connection health before write (handles reconnection)
         try:
             # Use a lightweight query to check connection health
+            if self.db_conn is None:
+                return False
             cursor = self.db_conn.cursor()
             cursor.execute("SELECT 1")
             cursor.fetchone()
@@ -209,10 +220,11 @@ class DataWriter:
             return True
         except (psycopg2.OperationalError, psycopg2.InterfaceError) as e:
             logger.warning(f"Database connection lost, attempting reconnect: {e}")
-            try:
-                self.db_conn.close()
-            except Exception as e:
-                logger.debug(f"Error closing stale connection: {e}")
+            if self.db_conn:
+                try:
+                    self.db_conn.close()
+                except Exception as e:
+                    logger.debug(f"Error closing stale connection: {e}")
             self.db_conn = None
             self.db_enabled = False
             return self.connect_db()
@@ -289,7 +301,10 @@ class DataWriter:
                 stream_data[b"decoded"] = decoded_json.encode()
 
             # Write to Redis Stream with automatic trimming (keep last 100,000 messages)
-            self.redis_client.xadd(self.stream_name, stream_data, maxlen=1100000, approximate=True)
+            if self.redis_client:
+                self.redis_client.xadd(
+                    self.stream_name, cast(Any, stream_data), maxlen=1100000, approximate=True
+                )
             return True
         except Exception as e:
             # Don't log error for every message, just occasionally
@@ -357,8 +372,12 @@ class DataWriter:
         if not sensors:
             return True
 
+        conn = self.db_conn
+        if conn is None:
+            return False
+
         try:
-            cursor = self.db_conn.cursor()
+            cursor = conn.cursor()
             node_id = decoded.get("node_id")
 
             if not node_id:
@@ -462,6 +481,9 @@ class DataWriter:
                 logger.warning("Redis state client not initialized, attempting reconnection")
                 if not self.connect_redis():
                     return False
+
+            if not self.redis_state_client:
+                return False
 
             # Use pipeline for batch operations
             pipe = self.redis_state_client.pipeline()

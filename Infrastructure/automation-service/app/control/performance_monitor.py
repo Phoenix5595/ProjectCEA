@@ -1,9 +1,8 @@
 """Performance monitoring for control loop."""
 
-from __future__ import annotations
-
 from collections import deque
 from datetime import datetime
+from typing import Any
 
 from shared.logging import get_logger
 
@@ -26,7 +25,7 @@ class PerformanceMonitor:
             "setpoint_calculation_time": deque(maxlen=max_history),
             "device_processing_time": deque(maxlen=max_history),
         }
-        self.slow_operations: list[dict[str, any]] = []
+        self.slow_operations: list[dict[str, Any]] = []
         self.max_slow_operations = 50
 
     def record_operation(self, operation_name: str, duration: float) -> None:
@@ -55,7 +54,7 @@ class PerformanceMonitor:
 
             logger.warning(f"Slow operation detected: {operation_name} took {duration:.3f}s")
 
-    def get_statistics(self) -> dict[str, any]:
+    def get_statistics(self) -> dict[str, Any]:
         """Get performance statistics.
 
         Returns:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Mapping
 from datetime import datetime
 from typing import Any
 
@@ -57,7 +58,7 @@ class PIDControllerManager:
     async def get_control_mode_info(self, device_type: str) -> dict[str, Any]:
         """Get control mode info for a device type with caching."""
         try:
-            mode_info = await self.database.get_pid_control_mode(device_type)
+            mode_info = await self.database.pid_repo.get_pid_control_mode(device_type)
             if mode_info:
                 return mode_info
         except Exception as e:
@@ -125,7 +126,7 @@ class PIDControllerManager:
 
         # Update autotune state in database
         n_cycles = min(len(autotuner._peaks), len(autotuner._troughs))
-        await self.database.update_autotune_state(
+        await self.database.pid_repo.update_autotune_state(
             device_type,
             is_active=autotuner.is_active,
             cycles_completed=n_cycles,
@@ -147,7 +148,7 @@ class PIDControllerManager:
             )
 
             # Save new PID parameters with reason
-            await self.database.set_pid_parameters_with_reason(
+            await self.database.pid_repo.set_pid_parameters_with_reason(
                 device_type,
                 tuning_result.kp,
                 tuning_result.ki,
@@ -157,7 +158,7 @@ class PIDControllerManager:
             )
 
             # Update autotune state with results
-            await self.database.update_autotune_state(
+            await self.database.pid_repo.update_autotune_state(
                 device_type,
                 is_active=False,
                 current_ku=tuning_result.ultimate_gain,
@@ -240,7 +241,7 @@ class PIDControllerManager:
 
         # Cache miss - fetch from database
         try:
-            pid_params = await self.database.get_pid_parameters(device_type)
+            pid_params = await self.database.pid_repo.get_pid_parameters(device_type)
             if pid_params:
                 self._pid_params_cache[device_type] = pid_params
                 self._cache_timestamp = current_time
@@ -255,7 +256,7 @@ class PIDControllerManager:
         cluster: str,
         device_name: str,
         device_info: dict[str, Any],
-        sensor_values: dict[str, float | None],
+        sensor_values: Mapping[str, float | None],
         current_time: datetime,
         context: dict[str, Any],
         current_mode: str | None = None,
@@ -372,7 +373,7 @@ class PIDControllerManager:
         return None
 
     def _get_sensor_value_for_device(
-        self, device_type: str, sensor_values: dict[str, float | None]
+        self, device_type: str, sensor_values: Mapping[str, float | None]
     ) -> float | None:
         """Get the appropriate sensor value for a device type."""
         sensor_mapping = {
@@ -389,7 +390,7 @@ class PIDControllerManager:
 
         return None
 
-    def _find_temperature_sensor(self, sensor_values: dict[str, float | None]) -> float | None:
+    def _find_temperature_sensor(self, sensor_values: Mapping[str, float | None]) -> float | None:
         """Find temperature sensor value."""
         # Look for sensors with 'temperature' in name or 'temp' in name
         for sensor_name, value in sensor_values.items():
@@ -399,14 +400,14 @@ class PIDControllerManager:
                 return value
         return None
 
-    def _find_humidity_sensor(self, sensor_values: dict[str, float | None]) -> float | None:
+    def _find_humidity_sensor(self, sensor_values: Mapping[str, float | None]) -> float | None:
         """Find humidity sensor value."""
         for sensor_name, value in sensor_values.items():
             if value is not None and "humidity" in sensor_name.lower():
                 return value
         return None
 
-    def _find_co2_sensor(self, sensor_values: dict[str, float | None]) -> float | None:
+    def _find_co2_sensor(self, sensor_values: Mapping[str, float | None]) -> float | None:
         """Find CO2 sensor value."""
         for sensor_name, value in sensor_values.items():
             if value is not None and "co2" in sensor_name.lower():
@@ -444,7 +445,7 @@ class PIDControllerManager:
         """
         try:
             # Get updated PID parameters
-            pid_params = await self.database.get_pid_parameters(device_type)
+            pid_params = await self.database.pid_repo.get_pid_parameters(device_type)
             if not pid_params:
                 logger.warning(f"No PID parameters found for device_type {device_type}")
                 return False

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from app.alarm_manager import AlarmManager
 from app.automation.interlock_manager import InterlockManager
 from app.automation.rules_engine import RulesEngine
@@ -105,6 +107,7 @@ class ServiceContainer:
             logger.info("Interlock manager initialized")
 
             # 5. Initialize relay manager
+            assert self.mcp23017 is not None, "MCP23017 driver must be initialized"
             self.relay_manager = RelayManager(
                 mcp23017=self.mcp23017,
                 device_config=devices,
@@ -113,17 +116,19 @@ class ServiceContainer:
             logger.info("Relay manager initialized")
 
             # 6. Initialize scheduler with schedules from database
-            db_schedules = await self.database.get_schedules()
+            db_schedules = await self.database.schedule_repo.get_schedules()
             self.scheduler = Scheduler(db_schedules)
             logger.info(f"Scheduler initialized with {len(db_schedules)} schedules")
 
             # 7. Initialize rules engine
-            rules = await self.database.get_rules() if hasattr(self.database, "get_rules") else []
+            # get_rules is not yet implemented in DatabaseManager
+            rules: list[dict[str, Any]] = []
             self.rules_engine = RulesEngine(rules, self.scheduler)
             logger.info("Rules engine initialized")
 
             # 8. Initialize alarm manager
-            self.alarm_manager = AlarmManager(self.config, self.database)
+            assert self.automation_redis is not None, "AutomationRedisClient must be initialized"
+            self.alarm_manager = AlarmManager(self.automation_redis, self.database)
             logger.info("Alarm manager initialized")
 
             # 9. Initialize control engine
@@ -178,6 +183,7 @@ class ServiceContainer:
         MCP23017 = relays only (on/off), typically bus 0.
         DFR0971 = dimming only (0-10V), typically bus 1.
         """
+        assert self.config is not None, "Config must be loaded before hardware initialization"
         hardware_config = self.config.get("hardware", {})
         simulation = hardware_config.get("simulation", False)
         i2c_bus_legacy = hardware_config.get("i2c_bus", 1)

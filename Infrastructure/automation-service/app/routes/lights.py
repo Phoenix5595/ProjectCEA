@@ -373,7 +373,7 @@ async def set_target_intensity(
 
     # Refresh scheduler with updated schedules
     if scheduler:
-        all_schedules = await database.get_schedules()
+        all_schedules = await database.schedule_repo.get_schedules()
         scheduler.update_schedules(all_schedules)
         logger.debug(f"Scheduler refreshed after {device_name} target intensity update")
 
@@ -390,7 +390,7 @@ async def set_target_intensity(
 async def get_light_schedule(
     location: str, cluster: str, device_name: str, database=Depends(get_database)
 ) -> dict[str, Any]:
-    schedule = await database.get_light_schedule(location, cluster, device_name)
+    schedule = await database.schedule_repo.get_room_light_schedule(location, cluster, device_name)
     if not schedule:
         raise HTTPException(status_code=404, detail=f"No schedule found for {device_name}")
     return schedule
@@ -412,7 +412,7 @@ async def update_light_schedule(
         raise HTTPException(status_code=404, detail=f"No schedule found for {device_name}")
 
     if scheduler:
-        all_schedules = await database.get_schedules()
+        all_schedules = await database.schedule_repo.get_schedules()
         scheduler.update_schedules(all_schedules)
         logger.debug(f"Scheduler refreshed after {device_name} schedule time update")
 

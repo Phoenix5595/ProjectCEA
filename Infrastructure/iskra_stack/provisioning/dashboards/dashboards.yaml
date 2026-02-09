@@ -1,0 +1,44 @@
+# ProjectCEA stack: same structure as frontend/grafana/provisioning/dashboards/cea.yaml.
+# Paths point to mounted dirs inside the container. Laboratory folder is optional (placeholder).
+apiVersion: 1
+
+providers:
+  - name: Veg Sector
+    orgId: 1
+    folder: Siberian Jungle/Veg Sector
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards/veg_sector
+
+  - name: Flower Sector
+    orgId: 1
+    folder: Siberian Jungle/Flower Sector
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards/flower_sector
+
+  - name: Flower Sector Soil
+    orgId: 1
+    folder: Siberian Jungle/Flower Sector Soil
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards/flower_sector_soil
+
+  - name: Laboratory
+    orgId: 1
+    folder: Siberian Jungle/Laboratory
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards/laboratory

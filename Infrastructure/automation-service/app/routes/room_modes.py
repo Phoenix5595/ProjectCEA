@@ -126,19 +126,19 @@ class UpdateParametersRequest(BaseModel):
 
 @router.get("/modes", response_model=list[RoomMode])
 async def get_room_modes(db: DatabaseManager = Depends(get_database)):
-    modes = await db.get_room_modes()
+    modes = await db.room_mode_repo.get_room_modes()
     return modes
 
 
 @router.get("/submodes", response_model=list[FlowerSubmode])
 async def get_flower_submodes(db: DatabaseManager = Depends(get_database)):
-    submodes = await db.get_flower_submodes()
+    submodes = await db.room_mode_repo.get_flower_submodes()
     return submodes
 
 
 @router.get("/active/{location}/{cluster}", response_model=ActiveModeResponse)
 async def get_active_mode(location: str, cluster: str, db: DatabaseManager = Depends(get_database)):
-    active = await db.get_active_mode(location, cluster)
+    active = await db.room_mode_repo.get_active_mode(location, cluster)
     if not active:
         if "flower" in location.lower():
             return ActiveModeResponse(
@@ -154,7 +154,7 @@ async def get_active_mode(location: str, cluster: str, db: DatabaseManager = Dep
 async def get_room_mode_with_params(
     location: str, cluster: str, db: DatabaseManager = Depends(get_database)
 ):
-    active = await db.get_active_mode(location, cluster)
+    active = await db.room_mode_repo.get_active_mode(location, cluster)
 
     if not active:
         mode_name = "flower" if "flower" in location.lower() else "veg"
@@ -163,11 +163,11 @@ async def get_room_mode_with_params(
         mode_name = active["mode_name"]
         submode_name = active.get("submode_name")
 
-    modes = await db.get_room_modes()
+    modes = await db.room_mode_repo.get_room_modes()
     mode_info = next((m for m in modes if m["name"] == mode_name), None)
     is_constant = mode_info["is_constant"] if mode_info else False
 
-    params = await db.get_mode_parameters(location, cluster, mode_name, submode_name)
+    params = await db.room_mode_repo.get_mode_parameters(location, cluster, mode_name, submode_name)
     if not params:
         params = ModeParameters().model_dump()
     else:
@@ -199,7 +199,7 @@ async def set_room_mode(
     total_start = time.perf_counter()
 
     start = time.perf_counter()
-    new_mode_data = await db.set_mode_with_transaction(
+    new_mode_data = await db.room_mode_repo.set_mode_with_transaction(
         location, cluster, request.mode_name, request.submode_name, save_current_params=True
     )
     transaction_time = (time.perf_counter() - start) * 1000
@@ -235,30 +235,36 @@ async def update_room_parameters(
     request: UpdateParametersRequest,
     db: DatabaseManager = Depends(get_database),
 ):
-    active = await db.get_active_mode(location, cluster)
+    active = await db.room_mode_repo.get_active_mode(location, cluster)
     if not active:
         mode_name = "flower" if "flower" in location.lower() else "veg"
         submode_name = "bulk" if mode_name == "flower" else None
-        await db.set_active_mode(location, cluster, mode_name, submode_name)
+        await db.room_mode_repo.set_active_mode(location, cluster, mode_name, submode_name)
     else:
         mode_name = active["mode_name"]
         submode_name = active.get("submode_name")
 
-    current_params = await db.get_mode_parameters(location, cluster, mode_name, submode_name)
+    current_params = await db.room_mode_repo.get_mode_parameters(
+        location, cluster, mode_name, submode_name
+    )
     if not current_params:
         current_params = ModeParameters().model_dump()
 
     updates = request.model_dump(exclude_none=True)
     merged_params = {**current_params, **updates}
 
-    await db.save_mode_parameters(location, cluster, mode_name, submode_name, merged_params)
+    await db.room_mode_repo.save_mode_parameters(
+        location, cluster, mode_name, submode_name, merged_params
+    )
 
     # Sync light ramp times to existing light schedules if they were updated
     if "light_ramp_up_minutes" in updates or "light_ramp_down_minutes" in updates:
         light_ramp_up = merged_params.get("light_ramp_up_minutes", 15)
         light_ramp_down = merged_params.get("light_ramp_down_minutes", 15)
 
-        await db.update_light_schedule_ramp_times(location, cluster, light_ramp_up, light_ramp_down)
+        await db.schedule_repo.update_light_schedule_ramp_times(
+            location, cluster, light_ramp_up, light_ramp_down
+        )
         logger.info(
             f"Synced light ramp times to schedules: {location}/{cluster} "
             f"ramp_up={light_ramp_up}min, ramp_down={light_ramp_down}min"

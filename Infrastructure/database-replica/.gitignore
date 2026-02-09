@@ -1,0 +1,4 @@
+# Do not commit .env (replication password, PRIMARY_HOST, etc.)
+.env
+# Keep .env.example committed
+!.env.example

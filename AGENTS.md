@@ -158,6 +158,48 @@ ProjectCEA/
 | **Never hourly aggregates for <7d** | Hides critical dynamics | Analysis accuracy |
 | **Full TDD required** | All new code needs tests | System reliability |
 
+### Repository Pattern Architecture (Critical)
+
+**Database Access Layer**:
+- **Repository Pattern**: All data operations go through specialized repository classes
+- **ControlAction Repository**: Handles control action logging and retrieval
+- **Device Repository**: Manages device states and hardware configurations
+- **PID Repository**: Stores and retrieves PID controller parameters and tuning data
+- **RoomMode Repository**: Controls room operational modes and transitions
+- **Schedule Repository**: Manages light schedules and photoperiod controls
+- **Sensor Repository**: Handles sensor data validation and storage
+- **Setpoint Repository**: Manages environmental setpoints and targets
+- **Config Repository**: System configuration and parameter storage
+
+**DatabaseManager Facade**:
+- **Pure Facade Pattern**: DatabaseManager now only provides connection management
+- **No Direct Data Operations**: All queries handled by dedicated repositories
+- **Connection Pool Management**: Centralized database connection handling
+- **Transaction Coordination**: Manages cross-repository transactions when needed
+
+**Type Checking Requirements**:
+- **pyright Strict Mode**: All services must pass strict type checking (0 errors)
+- **Type Coverage**: 100% type annotation coverage required for new code
+- **Interface Compliance**: Repository interfaces must be fully typed
+- **Runtime Type Safety**: Pydantic models for all data structures
+
+**File Organization**:
+```
+Infrastructure/automation-service/app/repositories/
+├── control_action.py      # ControlAction repository
+├── device.py             # Device repository  
+├── pid.py                # PID repository
+├── room_mode.py          # RoomMode repository
+├── schedule/             # Schedule repository (new directory)
+│   ├── __init__.py
+│   ├── models.py         # Schedule data models
+│   ├── repository.py     # Schedule repository implementation
+│   └── routes.py         # Schedule API routes
+├── sensor.py             # Sensor repository
+├── setpoint.py           # Setpoint repository
+└── config.py             # Config repository
+```
+
 ### Hardware Rules (Critical)
 
 | Rule | Hardware Mapping | Reason |
@@ -259,6 +301,9 @@ IF heating_active AND temperature < (setpoint - 2°C):
 
 **Python Services**:
 - **Type Hints**: Full type annotation using Python 3.9+ syntax
+- **Type Checking**: pyright strict mode enforced for all services (achieved 0 LSP errors)
+- **Repository Pattern**: All data access uses dedicated repository classes (ControlAction, Device, PID, RoomMode, Schedule, Sensor, Setpoint, Config)
+- **Database Architecture**: DatabaseManager is now a pure facade, repositories handle data operations
 - **Async/Await**: All I/O operations must be asynchronous
 - **Error Handling**: Structured exception handling with specific error types
 - **Logging**: Structured JSON logging with correlation IDs
@@ -592,4 +637,4 @@ For specific implementation details, refer to the individual service documentati
 
 ---
 
-*Last updated: 2026-01-30 - Enhanced comprehensive documentation with complete system overview, advanced topics, and operational procedures.*
+*Last updated: 2026-02-08 - Updated documentation to reflect repository pattern refactoring, pyright type checking enforcement, and archived completed plans.*

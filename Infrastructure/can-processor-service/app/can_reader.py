@@ -69,7 +69,7 @@ class CANReader:
             return False
 
         try:
-            self.bus = can.interface.Bus(channel=self.channel, bustype=self.bustype)
+            self.bus = can.interface.Bus(channel=self.channel, bustype=self.bustype)  # type: ignore
             logger.info(f"Connected to CAN bus: {self.channel}")
             return True
         except Exception as e:
@@ -90,15 +90,15 @@ class CANReader:
 
         try:
             return self.bus.recv(timeout=timeout)
-        except can.CanOperationError as e:
+        except Exception as e:
             error_msg = str(e)
             if "Network is down" in error_msg or "100" in error_msg:
                 logger.error(f"CAN interface '{self.channel}' went down: {error_msg}")
             else:
                 logger.warning(f"CAN bus error: {error_msg}")
             return None
-        except Exception as e:
-            logger.error(f"Unexpected error reading CAN bus: {e}")
+        except:
+            logger.error("Unexpected error reading CAN bus")
             return None
 
     def close(self):

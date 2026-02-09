@@ -14,7 +14,7 @@ def validate_pid_parameters(
     ki: float | None,
     kd: float | None,
     device_type: str,
-    config: dict[str, Any],
+    config: Any,
 ) -> tuple[bool, str | None, dict[str, float]]:
     """Validate PID parameters against configurable limits.
 
@@ -88,9 +88,7 @@ def validate_pid_parameters(
     return True, None, validated
 
 
-def validate_setpoint(
-    setpoint_type: str, value: float, config: dict[str, Any]
-) -> tuple[bool, str | None]:
+def validate_setpoint(setpoint_type: str, value: float, config: Any) -> tuple[bool, str | None]:
     """Validate setpoint value against safety limits.
 
     Args:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+import time
 from typing import TYPE_CHECKING, Any
 
 from .base import BaseRepository, logger
@@ -15,9 +16,87 @@ class SetpointRepository(BaseRepository):
     def __init__(self, pool: Pool | None = None, redis_client: Any = None) -> None:
         super().__init__(pool)
         self._redis_client = redis_client
+        self._batch_buffer: list[dict[str, Any]] = []
+        self._batch_interval = 10.0
+        self._last_batch_flush = time.time()
 
     def set_redis_client(self, redis_client: Any) -> None:
         self._redis_client = redis_client
+
+    async def flush_batch_buffer(self) -> int:
+        """Flush batched effective setpoint logs to database.
+
+        Returns:
+            Number of records flushed (0 if no records to flush)
+        """
+        if not self._batch_buffer:
+            return 0
+
+        flushed_count = 0
+        batch_data: list[dict[str, Any]] = []
+        try:
+            # Use a single batch insert for all buffered records
+            batch_data = self._batch_buffer.copy()
+            self._batch_buffer.clear()
+
+            if batch_data:
+                # Insert all records in a single transaction
+                async with self.pool.acquire() as conn:
+                    # Prepare the insert statement
+                    insert_query = """
+                            INSERT INTO effective_setpoints (
+                                timestamp, location, cluster, device_name, mode,
+                                effective_heating_setpoint, effective_cooling_setpoint, effective_humidity_setpoint,
+                                effective_co2_setpoint, effective_vpd_setpoint,
+                                nominal_heating_setpoint, nominal_cooling_setpoint, nominal_humidity_setpoint,
+                                nominal_co2_setpoint, nominal_vpd_setpoint,
+                                ramp_progress_heating, ramp_progress_cooling, ramp_progress_humidity,
+                                ramp_progress_co2, ramp_progress_vpd,
+                                effective_light_intensity, nominal_light_intensity, ramp_progress_light
+                            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
+                        """
+                    await conn.executemany(
+                        insert_query,
+                        [
+                            (
+                                record["timestamp"],
+                                record["location"],
+                                record["cluster"],
+                                record["device_name"],
+                                record.get("mode"),
+                                record["effective_heating_setpoint"],
+                                record["effective_cooling_setpoint"],
+                                record["effective_humidity_setpoint"],
+                                record["effective_co2_setpoint"],
+                                record["effective_vpd_setpoint"],
+                                record["nominal_heating_setpoint"],
+                                record["nominal_cooling_setpoint"],
+                                record["nominal_humidity_setpoint"],
+                                record["nominal_co2_setpoint"],
+                                record["nominal_vpd_setpoint"],
+                                record["ramp_progress_heating"],
+                                record["ramp_progress_cooling"],
+                                record["ramp_progress_humidity"],
+                                record["ramp_progress_co2"],
+                                record["ramp_progress_vpd"],
+                                record["effective_light_intensity"],
+                                record["nominal_light_intensity"],
+                                record["ramp_progress_light"],
+                            )
+                            for record in batch_data
+                        ],
+                    )
+
+                    flushed_count = len(batch_data)
+                logger.debug(f"Flushed {flushed_count} batched effective setpoint records")
+
+        except Exception as e:
+            logger.error(f"Failed to flush batch buffer: {e}", exc_info=True)
+            # Re-add failed records to buffer for retry
+            self._batch_buffer.extend(batch_data)
+
+        self._last_batch_flush = time.time()
+        return flushed_count
 
     async def get_setpoint(
         self, location: str, cluster: str, mode: str | None = None
@@ -273,54 +352,73 @@ class SetpointRepository(BaseRepository):
             timestamp: Optional timestamp (defaults to NOW())
 
         Returns:
-            True if successful, False otherwise
+            True if buffered successfully, False otherwise
         """
         try:
-            async with self.pool.acquire() as conn:
-                ts = timestamp or datetime.now()
-                db_mode = mode if mode else None
+            ts = timestamp or datetime.now()
+            db_mode = mode if mode else None
 
-                await conn.execute(
-                    """
-                    INSERT INTO effective_setpoints (
-                        timestamp, location, cluster, mode, device_name,
-                        effective_heating_setpoint, effective_cooling_setpoint,
-                        effective_humidity_setpoint, effective_co2_setpoint, effective_vpd_setpoint,
-                        effective_light_intensity,
-                        nominal_heating_setpoint, nominal_cooling_setpoint,
-                        nominal_humidity_setpoint, nominal_co2_setpoint, nominal_vpd_setpoint,
-                        nominal_light_intensity,
-                        ramp_progress_heating, ramp_progress_cooling,
-                        ramp_progress_humidity, ramp_progress_co2, ramp_progress_vpd,
-                        ramp_progress_light
-                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
-                """,
-                    ts,
-                    location,
-                    cluster,
-                    db_mode,
-                    device_name,
-                    effective_heating_setpoint,
-                    effective_cooling_setpoint,
-                    effective_humidity_setpoint,
-                    effective_co2_setpoint,
-                    effective_vpd_setpoint,
-                    effective_light_intensity,
-                    nominal_heating_setpoint,
-                    nominal_cooling_setpoint,
-                    nominal_humidity_setpoint,
-                    nominal_co2_setpoint,
-                    nominal_vpd_setpoint,
-                    nominal_light_intensity,
-                    ramp_progress_heating,
-                    ramp_progress_cooling,
-                    ramp_progress_humidity,
-                    ramp_progress_co2,
-                    ramp_progress_vpd,
-                    ramp_progress_light,
+            # Buffer the record for batch writing (performance optimization)
+            record = {
+                "timestamp": ts,
+                "location": location,
+                "cluster": cluster,
+                "mode": db_mode,
+                "device_name": device_name,
+                "effective_heating_setpoint": effective_heating_setpoint,
+                "effective_cooling_setpoint": effective_cooling_setpoint,
+                "effective_humidity_setpoint": effective_humidity_setpoint,
+                "effective_co2_setpoint": effective_co2_setpoint,
+                "effective_vpd_setpoint": effective_vpd_setpoint,
+                "effective_light_intensity": effective_light_intensity,
+                "nominal_heating_setpoint": nominal_heating_setpoint,
+                "nominal_cooling_setpoint": nominal_cooling_setpoint,
+                "nominal_humidity_setpoint": nominal_humidity_setpoint,
+                "nominal_co2_setpoint": nominal_co2_setpoint,
+                "nominal_vpd_setpoint": nominal_vpd_setpoint,
+                "nominal_light_intensity": nominal_light_intensity,
+                "ramp_progress_heating": ramp_progress_heating,
+                "ramp_progress_cooling": ramp_progress_cooling,
+                "ramp_progress_humidity": ramp_progress_humidity,
+                "ramp_progress_co2": ramp_progress_co2,
+                "ramp_progress_vpd": ramp_progress_vpd,
+                "ramp_progress_light": ramp_progress_light,
+            }
+
+            self._batch_buffer.append(record)
+
+            # Check if it's time to flush the batch
+            current_time = time.time()
+            if current_time - self._last_batch_flush >= self._batch_interval:
+                await self.flush_batch_buffer()
+
+            # Write effective setpoints to Redis immediately for real-time access
+            # State keys = fast truth for automation, Streams = history for dashboards/DB
+            if self._redis_client and getattr(self._redis_client, "redis_enabled", False):
+                self._redis_client.write_effective_setpoints(
+                    location=location,
+                    cluster=cluster,
+                    effective_heating_setpoint=effective_heating_setpoint,
+                    effective_cooling_setpoint=effective_cooling_setpoint,
+                    effective_humidity_setpoint=effective_humidity_setpoint,
+                    effective_co2_setpoint=effective_co2_setpoint,
+                    effective_vpd_setpoint=effective_vpd_setpoint,
+                    device_name=device_name,
+                    effective_light_intensity=effective_light_intensity,
+                    nominal_heating_setpoint=nominal_heating_setpoint,
+                    nominal_cooling_setpoint=nominal_cooling_setpoint,
+                    nominal_humidity_setpoint=nominal_humidity_setpoint,
+                    nominal_co2_setpoint=nominal_co2_setpoint,
+                    nominal_vpd_setpoint=nominal_vpd_setpoint,
+                    ramp_progress_heating=ramp_progress_heating,
+                    ramp_progress_cooling=ramp_progress_cooling,
+                    ramp_progress_humidity=ramp_progress_humidity,
+                    ramp_progress_co2=ramp_progress_co2,
+                    ramp_progress_vpd=ramp_progress_vpd,
+                    mode=mode,
                 )
 
-                return True
+            return True
         except Exception as e:
-            logger.error(f"Failed to log effective setpoints: {e}")
+            logger.error(f"Error buffering effective setpoints: {e}")
             return False

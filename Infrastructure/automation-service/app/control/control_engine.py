@@ -112,7 +112,7 @@ class ControlEngine:
 
         # Performance optimizations
         self._device_hierarchy_cache: dict[str, dict[str, dict[str, dict[str, Any]]]] | None = None
-        self._sensor_mapping_cache: dict[str, str] | None = None
+        self._sensor_mapping_cache: dict[str, Any] | None = None
         self._cache_timestamp: datetime | None = None
         self._cache_ttl = timedelta(seconds=30)  # Cache for 30 seconds
 
@@ -146,7 +146,7 @@ class ControlEngine:
             logger.debug("Refreshed device hierarchy cache")
         return self._device_hierarchy_cache
 
-    def _get_sensor_mapping(self) -> dict[str, str]:
+    def _get_sensor_mapping(self) -> dict[str, Any]:
         """Get cached sensor mapping or refresh if expired."""
         now = datetime.now()
         if (
@@ -274,8 +274,12 @@ class ControlEngine:
                 current_mode = "NIGHT"  # Default fallback mode
 
                 try:
-                    light_schedule = await self.database.get_light_schedule(location, cluster)
-                    climate_schedule = await self.database.get_climate_schedule(location, cluster)
+                    light_schedule = await self.database.schedule_repo.get_room_light_schedule(
+                        location, cluster
+                    )
+                    climate_schedule = await self.database.schedule_repo.get_climate_schedule(
+                        location, cluster
+                    )
                 except Exception as e:
                     logger.info(
                         f"Database error fetching schedules for {location}/{cluster}: {e}. "
@@ -315,7 +319,9 @@ class ControlEngine:
                 self._current_climate_mode[climate_mode_key] = current_mode
 
                 # 3. Setpoint retrieval (always execute for the resolved mode)
-                setpoint_data = await self.database.get_setpoint(location, cluster, current_mode)
+                setpoint_data = await self.database.setpoint_repo.get_setpoint(
+                    location, cluster, current_mode
+                )
 
                 if not setpoint_data:
                     # Fallback to legacy mode=None
@@ -323,7 +329,9 @@ class ControlEngine:
                         f"No setpoint found for {location}/{cluster} mode={current_mode}, "
                         + "falling back to legacy mode=None"
                     )
-                    setpoint_data = await self.database.get_setpoint(location, cluster, None)
+                    setpoint_data = await self.database.setpoint_repo.get_setpoint(
+                        location, cluster, None
+                    )
 
                 # Log setpoint retrieval for verification
                 if setpoint_data:
@@ -371,7 +379,7 @@ class ControlEngine:
                     self._effective_setpoints[(location, cluster)] = effective_data
 
                     # Log to database immediately (before device processing)
-                    await self.database.log_effective_setpoints(
+                    await self.database.setpoint_repo.log_effective_setpoints(
                         location=location,
                         cluster=cluster,
                         device_name="Main",
@@ -451,7 +459,7 @@ class ControlEngine:
                                 location, cluster, device_name, current_time, current_intensity
                             )
                             if intensity_details:
-                                await self.database.log_effective_setpoints(
+                                await self.database.setpoint_repo.log_effective_setpoints(
                                     location=location,
                                     cluster=cluster,
                                     mode=current_mode,
@@ -501,7 +509,7 @@ class ControlEngine:
 
         for _sensor_type, sensor_name in cluster_sensors.items():
             if sensor_name:
-                value = await self.database.get_sensor_value(sensor_name)
+                value = await self.database.sensor_repo.get_sensor_value(sensor_name)
                 sensor_values[sensor_name] = value
 
         return sensor_values
@@ -572,7 +580,9 @@ class ControlEngine:
                 pass
 
             # Get setpoint (use default/legacy for now, can be enhanced to use mode-based)
-            setpoint_data = await self.database.get_setpoint(location, cluster, current_mode_str)
+            setpoint_data = await self.database.setpoint_repo.get_setpoint(
+                location, cluster, current_mode_str
+            )
             if not setpoint_data:
                 return  # No setpoint configured
 
@@ -722,8 +732,10 @@ class ControlEngine:
                 break
 
         # Log to database
-        await self.database.set_device_state(location, cluster, device_name, channel, state, mode)
-        await self.database.log_control_action(
+        await self.database.device_repo.set_device_state(
+            location, cluster, device_name, channel, bool(state), mode
+        )
+        await self.database.control_action_repo.log_control_action(
             location,
             cluster,
             device_name,
@@ -754,7 +766,7 @@ class ControlEngine:
                         self.relay_manager.get_device_mode(location, cluster, device_name) or "auto"
                     )
 
-                    await self.database.log_automation_state(
+                    await self.database.control_action_repo.log_automation_state(
                         location,
                         cluster,
                         device_name,

@@ -20,7 +20,7 @@ from app.can_reader import CANReader  # noqa: E402
 from app.decoder import decode_message_data  # noqa: E402
 from app.processor import (  # noqa: E402
     extract_sensor_values,
-    get_location_from_node,
+    get_location_from_node,  # type: ignore
     validate_decoded_data,
 )
 from app.writer import DataWriter  # noqa: E402
@@ -202,6 +202,7 @@ def process_can_message(msg):
                 decoded["pressure_hpa"] = value
 
         # Write to all three destinations: Stream, DB, and Redis state
+        assert data_writer is not None, "data_writer must be initialized before processing messages"
         result = data_writer.write(
             msg=msg,
             decoded=decoded,

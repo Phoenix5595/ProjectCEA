@@ -200,7 +200,7 @@ async def get_status(
         for cluster, cluster_sensors in clusters.items():
             sensors[location][cluster] = {}
             for sensor_type, sensor_name in cluster_sensors.items():
-                value = await database.get_sensor_value(sensor_name)
+                value = await database.sensor_repo.get_sensor_value(sensor_name)
                 sensors[location][cluster][sensor_type] = value
 
     # Get performance metrics
