@@ -2,10 +2,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, cast
 
+from shared.logging import get_logger
+
 from ..database import DatabaseManager
 from ..repositories.mode_sync import sync_climate_setpoints_from_mode_parameters
 from ..repositories.room_modes import RoomModeRepository
-from shared.logging import get_logger
 
 if TYPE_CHECKING:
     from asyncpg import Connection
@@ -140,7 +141,7 @@ class ModeTransitionService:
                     await conn.execute(
                         """
                         INSERT INTO mode_transition_history (
-                            location, cluster, 
+                            location, cluster,
                             old_mode_id, old_submode_id,
                             new_mode_id, new_submode_id,
                             old_mode_name, old_submode_name,
