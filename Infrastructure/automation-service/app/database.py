@@ -25,7 +25,6 @@ from .repositories.room_modes import RoomModeRepository
 from .repositories.schedules import ScheduleRepository
 from .repositories.sensors import SensorRepository
 from .repositories.setpoints import SetpointRepository
-from .services.schedule_state import load_schedule_state_to_redis
 
 logger = get_logger(__name__)
 
@@ -170,6 +169,11 @@ class DatabaseManager:
 
     async def load_schedule_state_to_redis(self) -> None:
         """Load all schedule state from database to Redis following canonical schema."""
+        # Lazy import to avoid circular dependency (services/__init__.py -> mode_transition_service -> database)
+        from .services.schedule_state import (
+            load_schedule_state_to_redis as _load_schedule_state,
+        )
+
         if (
             not self._automation_redis
             or not self._pool
@@ -179,7 +183,7 @@ class DatabaseManager:
             logger.warning("Components not initialized, skipping schedule state load")
             return
 
-        await load_schedule_state_to_redis(
+        await _load_schedule_state(
             self._pool, self._automation_redis, self._schedule_repo, self._setpoint_repo
         )
 
