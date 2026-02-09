@@ -133,7 +133,8 @@ async def get_readings(
                 FROM measurement m
                 WHERE m.sensor_id = $1
             """
-            params = [sensor_id]
+            params: list[Any] = []
+            params.append(sensor_id)
             param_idx = 2
 
             if start_time:

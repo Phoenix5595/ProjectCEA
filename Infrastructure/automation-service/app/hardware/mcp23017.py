@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+from typing import Any
+
 from shared.logging import get_logger
 
 """
@@ -39,7 +41,7 @@ class MCP23017Driver:
         self.i2c_bus = i2c_bus
         self.i2c_address = i2c_address
         self.simulation = simulation
-        self.bus = None
+        self.bus: Any = None
         self._channel_states = [False] * 16  # Track state of all 16 channels
         self._probe_ok: bool | None = None  # Cache probe result when not simulation
 
@@ -68,6 +70,10 @@ class MCP23017Driver:
         if self.simulation:
             return
 
+        if self.bus is None:
+            logger.warning("MCP23017 hardware initialization skipped: bus is None")
+            return
+
         try:
             # Set all pins as outputs (0 = output, 1 = input)
             # Port A (channels 0-7)
@@ -91,6 +97,8 @@ class MCP23017Driver:
         """
         if self.simulation:
             return True
+        if self.bus is None:
+            return False
         try:
             self.bus.read_byte_data(self.i2c_address, MCP23017_IODIRA)
             self._probe_ok = True
@@ -132,6 +140,10 @@ class MCP23017Driver:
                 self._channel_states[channel] = state
                 logger.debug(f"Simulation: Channel {channel} set to {'ON' if state else 'OFF'}")
                 return True
+
+            if self.bus is None:
+                logger.error("I2C bus not initialized")
+                return False
 
             # Determine which port (A or B) and bit position
             if channel < 8:
@@ -180,6 +192,10 @@ class MCP23017Driver:
         try:
             if self.simulation:
                 return self._channel_states[channel]
+
+            if self.bus is None:
+                logger.error("I2C bus not initialized")
+                return None
 
             # Determine which port (A or B) and bit position
             if channel < 8:

@@ -3,6 +3,12 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 import pathlib
 import sys
+from unittest.mock import MagicMock
+
+# Mock shared module before any app imports
+sys.modules["shared"] = MagicMock()
+sys.modules["shared.logging"] = MagicMock()
+sys.modules["shared.logging"].get_logger = MagicMock(return_value=MagicMock())
 
 import pytest
 
@@ -12,7 +18,8 @@ if str(ROOT) not in sys.path:
     sys.path.append(str(ROOT))
 
 from app.control.scheduler import Scheduler
-from app.routes.schedules import _ensure_light_schedules_are_daily, HTTPException
+from app.routes.schedules.utils import _ensure_light_schedules_are_daily
+from fastapi import HTTPException
 
 
 def _build_schedule(
@@ -60,6 +67,7 @@ def test_ramp_up_recalculates_within_remaining_time():
     # 3 minutes into a 5-minute ramp from 10% to 50%: expect ~34% (10 + (50-10) * 3/5)
     t1 = start_time + timedelta(minutes=3)
     intensity_t1 = scheduler.get_schedule_intensity("Room", "main", "light_1", current_time=t1)
+    assert intensity_t1 is not None
     assert 33.5 <= intensity_t1 <= 34.5
 
     # Change target to 70% mid-ramp and continue within remaining 2 minutes
@@ -69,11 +77,13 @@ def test_ramp_up_recalculates_within_remaining_time():
     # Immediately after target change (4 minutes into ramp from 10% to 50%): should be ~42% (10 + (50-10) * 4/5)
     t2 = start_time + timedelta(minutes=4)
     intensity_t2 = scheduler.get_schedule_intensity("Room", "main", "light_1", current_time=t2)
+    assert intensity_t2 is not None
     assert 41.5 <= intensity_t2 <= 42.5
 
     # By end of original ramp window (5 minutes), should reach new target 70%
     t3 = start_time + timedelta(minutes=5)
     intensity_t3 = scheduler.get_schedule_intensity("Room", "main", "light_1", current_time=t3)
+    assert intensity_t3 is not None
     assert 69.5 <= intensity_t3 <= 70.5
 
 
@@ -87,6 +97,7 @@ def test_ramp_down_continues_to_minimum_even_if_target_increases():
     # Two minutes before end (ramp-down running for 3 minutes of 5): 80 + (10-80) * 3/5 = 80 - 42 = 38%
     t1 = start_time + timedelta(minutes=8)
     intensity_t1 = scheduler.get_schedule_intensity("Room", "main", "light_1", current_time=t1)
+    assert intensity_t1 is not None
     assert 37 <= intensity_t1 <= 39  # ~38%
 
     # Raise target mid-ramp; ramp should still head toward 10% (minimum)
@@ -96,9 +107,11 @@ def test_ramp_down_continues_to_minimum_even_if_target_increases():
     # One minute before end (ramp-down running for 4 minutes of 5): 80 + (10-80) * 4/5 = 80 - 56 = 24%
     t2 = start_time + timedelta(minutes=9)
     intensity_t2 = scheduler.get_schedule_intensity("Room", "main", "light_1", current_time=t2)
+    assert intensity_t2 is not None
     assert 23 <= intensity_t2 <= 25  # continue downward trend toward 10%
 
     # Just before schedule end (ramp down complete): should be at 10% (minimum)
     t3 = start_time + timedelta(minutes=9, seconds=59)  # just before schedule end
     intensity_t3 = scheduler.get_schedule_intensity("Room", "main", "light_1", current_time=t3)
+    assert intensity_t3 is not None
     assert 9.5 <= intensity_t3 <= 10.5  # At or very close to 10% minimum

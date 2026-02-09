@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime
-from typing import Any
+from typing import Any, cast
 
 from shared.logging import get_logger
 
@@ -38,7 +38,7 @@ class BackgroundTasks:
         self.sensor_configs: list[dict[str, Any]] = []
         self.sensor_ids: dict[str, dict[str, int]] = {}  # sensor_name -> {type: sensor_id}
         self.discovered_modbus_ids: set = set()  # Track discovered Modbus IDs
-        self.rs485_port: str = None
+        self.rs485_port: str | None = None
         self.rs485_baudrate: int = 9600
 
     async def start(self) -> None:
@@ -64,7 +64,9 @@ class BackgroundTasks:
                 room_name = sensor_config.get("room_name", "Flower Room")
 
                 # Create sensor reader
-                reader = SoilSensorReader(self.rs485_port, modbus_id, self.rs485_baudrate)
+                reader = SoilSensorReader(
+                    cast(str, self.rs485_port), modbus_id, self.rs485_baudrate
+                )
                 self.sensor_readers[sensor_name] = reader
                 self.discovered_modbus_ids.add(modbus_id)
 
@@ -145,7 +147,7 @@ class BackgroundTasks:
         """Scan Modbus bus for sensors and auto-register new ones."""
         try:
             # Create temporary Modbus connection for scanning
-            temp_modbus = ModbusRTU(self.rs485_port, self.rs485_baudrate, timeout=0.5)
+            temp_modbus = ModbusRTU(cast(str, self.rs485_port), self.rs485_baudrate, timeout=0.5)
             temp_modbus.connect()
 
             found_new = False
@@ -197,7 +199,7 @@ class BackgroundTasks:
         sensor_name = f"soil_sensor_{modbus_id}"
 
         # Create sensor reader
-        reader = SoilSensorReader(self.rs485_port, modbus_id, self.rs485_baudrate)
+        reader = SoilSensorReader(cast(str, self.rs485_port), modbus_id, self.rs485_baudrate)
 
         try:
             # Connect to sensor

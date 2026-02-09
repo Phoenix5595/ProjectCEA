@@ -14,14 +14,14 @@ Key Design Principles:
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
 
 from shared.logging import get_logger
 
 if TYPE_CHECKING:
-    from app.control.relay_manager import RelayManager
-    from app.hardware.dfr0971 import DFR0971Manager
+    pass
 
 _feature_flags_available = False
 _get_flag_func: Callable[[str, bool], bool] | None = None
@@ -324,7 +324,7 @@ class HardwareBatchExecutor:
                 )
                 if not success:
                     return False, error or "Operation failed"
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 error_msg = f"Operation timed out after {CHAIN_TIMEOUT_SECONDS}s"
                 logger.warning(f"{chain.device_key}: {error_msg}")
                 return False, error_msg

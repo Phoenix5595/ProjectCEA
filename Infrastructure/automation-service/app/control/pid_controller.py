@@ -3,6 +3,10 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from app.database import DatabaseManager
 
 from shared.logging import get_logger
 
@@ -18,7 +22,7 @@ class PIDController:
         ki: float,
         kd: float,
         pwm_period: int = 60,
-        database: object | None = None,
+        database: DatabaseManager | None = None,
         device_type: str | None = None,
     ):
         """Initialize PID controller.
@@ -221,8 +225,8 @@ class PIDController:
 
         try:
             # Try Redis first
-            if self.database._automation_redis and self.database._automation_redis.redis_enabled:
-                redis_params = self.database._automation_redis.read_pid_parameters(self.device_type)
+            if self.database.automation_redis and self.database.automation_redis.redis_enabled:
+                redis_params = self.database.automation_redis.read_pid_parameters(self.device_type)
                 if redis_params:
                     new_kp = redis_params.get("kp")
                     new_ki = redis_params.get("ki")

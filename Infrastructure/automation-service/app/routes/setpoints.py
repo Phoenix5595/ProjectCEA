@@ -34,22 +34,23 @@ class SetpointUpdate(BaseModel):
 # This will be overridden by main app
 def get_database() -> DatabaseManager:
     """Dependency to get database manager."""
-    raise RuntimeError("Dependency not injected")
+    from app.container import ServiceContainer
+
+    return ServiceContainer.get_database(ServiceContainer())
 
 
 def get_config() -> ConfigLoader:
     """Dependency to get config loader."""
-    from app.main import get_config as _get_config
+    from app.container import ServiceContainer
 
-    return _get_config()
+    return ServiceContainer.get_config(ServiceContainer())
 
 
 def get_automation_redis() -> AutomationRedisClient | None:
     """Get automation Redis client."""
-    from app.main import get_database as _get_database
+    from app.container import ServiceContainer
 
-    database = _get_database()
-    return database._automation_redis if database else None
+    return ServiceContainer().automation_redis
 
 
 @router.get("/api/setpoints")
@@ -80,7 +81,7 @@ async def get_setpoints(
     Returns:
         Dict with setpoint values including mode and vpd
     """
-    setpoints = await database.get_setpoint(location, cluster, mode)
+    setpoints = await database.setpoint_repo.get_setpoint(location, cluster, mode)
     if not setpoints:
         # Return empty setpoint object instead of 404, so frontend can always display the form
         # This allows the form to show empty fields when no setpoint exists yet
@@ -108,7 +109,9 @@ async def get_all_setpoints_for_location_cluster(
     Returns:
         List of setpoint dicts, each with mode information
     """
-    setpoints = await database.get_all_setpoints_for_location_cluster(location, cluster)
+    setpoints = await database.setpoint_repo.get_all_setpoints_for_location_cluster(
+        location, cluster
+    )
     return setpoints
 
 
@@ -139,27 +142,31 @@ async def update_setpoints(
     validation_errors = []
 
     if setpoints.heating_setpoint is not None:
-        is_valid, error = validate_setpoint("temperature", setpoints.heating_setpoint, config)
+        is_valid, error = validate_setpoint(
+            "temperature", setpoints.heating_setpoint, config._config
+        )
         if not is_valid:
             validation_errors.append(error)
 
     if setpoints.cooling_setpoint is not None:
-        is_valid, error = validate_setpoint("temperature", setpoints.cooling_setpoint, config)
+        is_valid, error = validate_setpoint(
+            "temperature", setpoints.cooling_setpoint, config._config
+        )
         if not is_valid:
             validation_errors.append(error)
 
     if setpoints.humidity is not None:
-        is_valid, error = validate_setpoint("humidity", setpoints.humidity, config)
+        is_valid, error = validate_setpoint("humidity", setpoints.humidity, config._config)
         if not is_valid:
             validation_errors.append(error)
 
     if setpoints.co2 is not None:
-        is_valid, error = validate_setpoint("co2", setpoints.co2, config)
+        is_valid, error = validate_setpoint("co2", setpoints.co2, config._config)
         if not is_valid:
             validation_errors.append(error)
 
     if setpoints.vpd is not None:
-        is_valid, error = validate_setpoint("vpd", setpoints.vpd, config)
+        is_valid, error = validate_setpoint("vpd", setpoints.vpd, config._config)
         if not is_valid:
             validation_errors.append(error)
 
@@ -167,7 +174,7 @@ async def update_setpoints(
         raise HTTPException(status_code=400, detail="; ".join(validation_errors))
 
     # Get existing setpoints to merge (for the specified mode or default)
-    existing = await database.get_setpoint(location, cluster, setpoints.mode)
+    existing = await database.setpoint_repo.get_setpoint(location, cluster, setpoints.mode)
 
     # Parse expected_version if provided
     expected_version_dt = None
@@ -227,7 +234,7 @@ async def update_setpoints(
 
     # Write to database and Redis with source='api'
     try:
-        success, new_updated_at = await database.set_setpoint(
+        success, new_updated_at = await database.setpoint_repo.set_setpoint(
             location,
             cluster,
             final_heat,
@@ -317,7 +324,7 @@ async def update_setpoints(
     # Only log if there were actual changes
     if changes:
         mode_str = f" (mode: {setpoints.mode})" if setpoints.mode else ""
-        await database.log_config_version(
+        await database.config_repo.log_config_version(
             config_type="setpoint",
             author="api",
             comment=f"Setpoint update for {location}/{cluster}{mode_str}",
@@ -327,7 +334,7 @@ async def update_setpoints(
         )
 
     # Get updated setpoint to broadcast
-    updated_setpoint = await database.get_setpoint(location, cluster, setpoints.mode)
+    updated_setpoint = await database.setpoint_repo.get_setpoint(location, cluster, setpoints.mode)
 
     # Broadcast update to all WebSocket clients
     try:
@@ -362,7 +369,7 @@ async def update_setpoints(
         },
         "warnings": warnings,
         "success": True,
-        "updated_at": updated_setpoint.get("updated_at").isoformat()
+        "updated_at": str(updated_setpoint.get("updated_at"))
         if updated_setpoint and updated_setpoint.get("updated_at")
         else None,
     }
@@ -374,7 +381,10 @@ async def get_effective_setpoints(
 ) -> dict[str, Any]:
     """Get currently effective setpoints from database (real-time values used by control loop)."""
     try:
-        async with database._pool.acquire() as conn:
+        pool = await database._get_pool()
+        if pool is None:
+            raise HTTPException(status_code=500, detail="Database pool not initialized")
+        async with pool.acquire() as conn:
             row = await conn.fetchrow(
                 """
                 SELECT

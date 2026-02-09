@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 import json
 import os
+from typing import Any
 
 import redis.asyncio as redis
 
@@ -49,14 +50,14 @@ class RedisClient:
                 self.redis_url, decode_responses=True, max_connections=10, retry_on_timeout=True
             )
             self.redis_client = redis.Redis(connection_pool=self._state_pool)
-            await self.redis_client.ping()
+            await self.redis_client.ping()  # type: ignore
 
             # Create connection pool for stream writes (decode_responses=False for binary)
             self._stream_pool = redis.ConnectionPool.from_url(
                 self.redis_url, decode_responses=False, max_connections=5, retry_on_timeout=True
             )
             self.stream_client = redis.Redis(connection_pool=self._stream_pool)
-            await self.stream_client.ping()
+            await self.stream_client.ping()  # type: ignore
 
             self.redis_enabled = True
             logger.info(
@@ -120,6 +121,9 @@ class RedisClient:
             }
 
             # Publish to channels
+            assert self.redis_client is not None, (
+                "redis_client must be connected when redis_enabled is True"
+            )
             await self.redis_client.publish("sensor:update", json.dumps(message))
             await self.redis_client.publish("sensor:update:soil", json.dumps(message))
 
@@ -162,7 +166,7 @@ class RedisClient:
             timestamp_ms = int(datetime.now().timestamp() * 1000)
 
             # Create stream entry with type="soil" marker
-            stream_data = {
+            stream_data: dict[Any, Any] = {
                 b"id": f"{sensor_base_name}_{timestamp_ms}".encode(),
                 b"ts": str(timestamp_ms).encode(),
                 b"type": b"soil",  # Mark as soil sensor data

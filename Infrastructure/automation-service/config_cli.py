@@ -26,6 +26,7 @@ import argparse
 import asyncio
 import os
 import sys
+from typing import cast
 
 # Add parent directory to path to import app modules
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -48,7 +49,7 @@ PID_RANGES = {
 VALID_MODES = ["DAY", "NIGHT", "TRANSITION"]
 
 
-def validate_setpoint(name: str, value: float) -> tuple:
+def validate_setpoint(name: str, value: float) -> tuple[bool, str | None]:
     """Validate a setpoint value.
 
     Returns:
@@ -64,7 +65,7 @@ def validate_setpoint(name: str, value: float) -> tuple:
     return True, None
 
 
-def validate_pid(device_type: str, kp: float, ki: float, kd: float) -> tuple:
+def validate_pid(device_type: str, kp: float, ki: float, kd: float) -> tuple[bool, str | None]:
     """Validate PID parameters.
 
     Returns:
@@ -97,7 +98,7 @@ def validate_pid(device_type: str, kp: float, ki: float, kd: float) -> tuple:
     return True, None
 
 
-def validate_mode(mode: str) -> tuple:
+def validate_mode(mode: str) -> tuple[bool, str | None]:
     """Validate mode value.
 
     Returns:
@@ -133,16 +134,16 @@ async def check_schedule_conflicts(
     cluster: str,
     start_time: str,
     end_time: str,
-    day_of_week: int | None,
+    day_of_week: int | list[int] | None,
     mode: str | None,
     exclude_id: int | None = None,
-) -> tuple:
+) -> tuple[bool, str | None]:
     """Check for schedule conflicts.
 
     Returns:
         (has_conflict, error_message)
     """
-    schedules = await db.get_schedules(location, cluster)
+    schedules = await db.schedule_repo.get_schedules(location, cluster)
 
     for schedule in schedules:
         if exclude_id and schedule["id"] == exclude_id:
@@ -188,7 +189,7 @@ async def cmd_setpoint_get(
     """
     if mode:
         # Get specific mode setpoint
-        setpoint = await db.get_setpoint(location, cluster, mode)
+        setpoint = await db.setpoint_repo.get_setpoint(location, cluster, mode)
         if not setpoint:
             print(f"No setpoints found for {location}/{cluster} (mode: {mode})")
             return
@@ -196,10 +197,12 @@ async def cmd_setpoint_get(
         print(f"Setpoints for {location}/{cluster} (mode: {mode}):")
     else:
         # Get default/legacy setpoint (mode=NULL)
-        setpoint = await db.get_setpoint(location, cluster, None)
+        setpoint = await db.setpoint_repo.get_setpoint(location, cluster, None)
         if not setpoint:
             # Try to get all modes
-            all_setpoints = await db.get_all_setpoints_for_location_cluster(location, cluster)
+            all_setpoints = await db.setpoint_repo.get_all_setpoints_for_location_cluster(
+                location, cluster
+            )
             if all_setpoints:
                 print(f"Setpoints for {location}/{cluster} (all modes):")
                 for sp in all_setpoints:
@@ -271,7 +274,7 @@ async def cmd_setpoint_set(
         mode = mode.upper()
 
     # Get existing values for this mode (or mode=NULL for legacy)
-    existing = await db.get_setpoint(location, cluster, mode)
+    existing = await db.setpoint_repo.get_setpoint(location, cluster, mode)
 
     # Validate new values
     changes = {}
@@ -347,14 +350,14 @@ async def cmd_setpoint_set(
         return
 
     # Apply changes
-    success = await db.set_setpoint(
+    success = await db.setpoint_repo.set_setpoint(
         location,
         cluster,
-        changes.get("heating_setpoint"),
-        changes.get("cooling_setpoint"),
-        changes.get("humidity"),
-        changes.get("co2"),
-        changes.get("vpd"),
+        cast(float, changes.get("heating_setpoint")),
+        cast(float, changes.get("cooling_setpoint")),
+        cast(float, changes.get("humidity")),
+        cast(float, changes.get("co2")),
+        cast(float, changes.get("vpd")),
         mode,
         source="cli",
     )
@@ -364,7 +367,7 @@ async def cmd_setpoint_set(
         sys.exit(1)
 
     # Log to config_versions
-    await db.log_config_version(
+    await db.config_repo.log_config_version(
         config_type="setpoint",
         author=author or os.getenv("USER", "unknown"),
         comment=f"Setpoint update for {location}/{cluster}{mode_str}",
@@ -378,7 +381,7 @@ async def cmd_setpoint_set(
 
 async def cmd_pid_get(db: DatabaseManager, device_type: str):
     """Get PID parameters for a device type."""
-    params = await db.get_pid_parameters(device_type)
+    params = await db.pid_repo.get_pid_parameters(device_type)
     if not params:
         print(f"No PID parameters found for {device_type}")
         return
@@ -408,7 +411,7 @@ async def cmd_pid_set(
         sys.exit(1)
 
     # Get existing
-    existing = await db.get_pid_parameters(device_type)
+    existing = await db.pid_repo.get_pid_parameters(device_type)
 
     # Show diff
     print("Changes to apply:")
@@ -426,7 +429,7 @@ async def cmd_pid_set(
         return
 
     # Apply
-    success = await db.set_pid_parameters(
+    success = await db.pid_repo.set_pid_parameters(
         device_type, kp, ki, kd, updated_by=author or os.getenv("USER", "unknown"), source="cli"
     )
 
@@ -435,7 +438,7 @@ async def cmd_pid_set(
         sys.exit(1)
 
     # Log to config_versions
-    await db.log_config_version(
+    await db.config_repo.log_config_version(
         config_type="pid",
         author=author or os.getenv("USER", "unknown"),
         comment=f"PID parameter update for {device_type}",
@@ -447,7 +450,7 @@ async def cmd_pid_set(
 
 async def cmd_schedule_list(db: DatabaseManager, location: str | None, cluster: str | None):
     """List schedules."""
-    schedules = await db.get_schedules(location, cluster)
+    schedules = await db.schedule_repo.get_schedules(location, cluster)
 
     if not schedules:
         print("No schedules found")
@@ -484,7 +487,7 @@ async def cmd_schedule_create(
     start_time: str,
     end_time: str,
     mode: str | None,
-    day_of_week: int | None,
+    day_of_week: int | list[int] | None,
     enabled: bool,
     target_intensity: float | None,
     ramp_up_duration: int | None,
@@ -554,16 +557,17 @@ async def cmd_schedule_create(
         return
 
     # Create
-    schedule_id = await db.create_schedule(
+    final_day_of_week = [day_of_week] if isinstance(day_of_week, int) else day_of_week
+    schedule_id = await db.schedule_repo.create_schedule(
         name,
         location,
         cluster,
         device_name,
         start_time,
         end_time,
-        day_of_week,
+        final_day_of_week,  # type: ignore
         enabled,
-        mode,
+        mode or "light",  # type: ignore
         target_intensity,
         ramp_up_duration,
         ramp_down_duration,
@@ -574,7 +578,7 @@ async def cmd_schedule_create(
         sys.exit(1)
 
     # Log to config_versions
-    await db.log_config_version(
+    await db.config_repo.log_config_version(
         config_type="schedule",
         author=author or os.getenv("USER", "unknown"),
         comment=f"Created schedule: {name}",
@@ -593,7 +597,7 @@ async def cmd_schedule_update(
     start_time: str | None,
     end_time: str | None,
     mode: str | None,
-    day_of_week: int | None,
+    day_of_week: int | list[int] | None,
     enabled: bool | None,
     target_intensity: float | None,
     ramp_up_duration: int | None,
@@ -603,7 +607,7 @@ async def cmd_schedule_update(
 ):
     """Update a schedule."""
     # Get existing schedule
-    schedules = await db.get_schedules()
+    schedules = await db.schedule_repo.get_schedules()
     existing = next((s for s in schedules if s["id"] == schedule_id), None)
     if not existing:
         print(f"Schedule {schedule_id} not found")
@@ -709,17 +713,18 @@ async def cmd_schedule_update(
         return
 
     # Apply
-    success = await db.update_schedule(
+    final_day_of_week = [day_of_week] if isinstance(day_of_week, int) else day_of_week
+    success = await db.schedule_repo.update_schedule(
         schedule_id,
-        name,
-        start_time,
-        end_time,
-        day_of_week,
-        enabled,
-        mode,
-        target_intensity,
-        ramp_up_duration,
-        ramp_down_duration,
+        name=name,
+        start_time=start_time,
+        end_time=end_time,
+        day_of_week=final_day_of_week,
+        enabled=enabled,
+        mode=mode,
+        target_intensity=target_intensity,
+        ramp_up_duration=ramp_up_duration,
+        ramp_down_duration=ramp_down_duration,
     )
 
     if not success:
@@ -727,7 +732,7 @@ async def cmd_schedule_update(
         sys.exit(1)
 
     # Log to config_versions
-    await db.log_config_version(
+    await db.config_repo.log_config_version(
         config_type="schedule",
         author=author or os.getenv("USER", "unknown"),
         comment=f"Updated schedule ID {schedule_id}",
@@ -744,7 +749,7 @@ async def cmd_schedule_delete(
 ):
     """Delete a schedule."""
     # Get existing schedule
-    schedules = await db.get_schedules()
+    schedules = await db.schedule_repo.get_schedules()
     existing = next((s for s in schedules if s["id"] == schedule_id), None)
     if not existing:
         print(f"Schedule {schedule_id} not found")
@@ -760,14 +765,14 @@ async def cmd_schedule_delete(
         return
 
     # Delete
-    success = await db.delete_schedule(schedule_id)
+    success = await db.schedule_repo.delete_schedule(schedule_id)
 
     if not success:
         print("Error: Failed to delete schedule")
         sys.exit(1)
 
     # Log to config_versions
-    await db.log_config_version(
+    await db.config_repo.log_config_version(
         config_type="schedule",
         author=author or os.getenv("USER", "unknown"),
         comment=f"Deleted schedule: {existing['name']}",
@@ -785,7 +790,7 @@ async def cmd_config_show(db: DatabaseManager, location: str, cluster: str):
     print()
 
     # Get setpoints (show all modes)
-    all_setpoints = await db.get_all_setpoints_for_location_cluster(location, cluster)
+    all_setpoints = await db.setpoint_repo.get_all_setpoints_for_location_cluster(location, cluster)
     print("Setpoints:")
     if all_setpoints:
         for sp in all_setpoints:
@@ -804,7 +809,7 @@ async def cmd_config_show(db: DatabaseManager, location: str, cluster: str):
     print()
 
     # Get schedules
-    schedules = await db.get_schedules(location, cluster)
+    schedules = await db.schedule_repo.get_schedules(location, cluster)
     print(f"Schedules ({len(schedules)} total):")
     for sched in schedules:
         if sched.get("enabled", True):
@@ -826,8 +831,9 @@ async def cmd_config_show(db: DatabaseManager, location: str, cluster: str):
 
     # Get PID parameters (would need device types from config, simplified here)
     print("PID Parameters:")
-    all_pid = await db.get_all_pid_parameters()
-    for device_type, params in all_pid.items():
+    all_pid = await db.pid_repo.get_all_pid_parameters()
+    for params in all_pid:
+        device_type = params["device_type"]
         print(f"  {device_type}: Kp={params['kp']}, Ki={params['ki']}, Kd={params['kd']}")
 
 

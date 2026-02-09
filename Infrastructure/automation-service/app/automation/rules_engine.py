@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Any
 
 from shared.logging import get_logger
 
@@ -12,7 +13,7 @@ logger = get_logger(__name__)
 class RulesEngine:
     """Evaluates automation rules based on sensor conditions."""
 
-    def __init__(self, rules: list[dict[str, any]], scheduler):
+    def __init__(self, rules: list[dict[str, Any]], scheduler):
         """Initialize rules engine.
 
         Args:
@@ -74,6 +75,10 @@ class RulesEngine:
             condition_operator = rule.get("condition_operator")
             condition_value = rule.get("condition_value")
 
+            # Validate condition parameters
+            if condition_sensor is None or condition_operator is None or condition_value is None:
+                continue  # Skip if condition parameters are missing
+
             if condition_sensor not in sensor_values:
                 continue
 
@@ -81,9 +86,14 @@ class RulesEngine:
             if sensor_value is None:
                 continue  # Skip if sensor value is missing
 
-            # Evaluate condition
+            # Evaluate condition (convert condition_value to float)
+            try:
+                condition_threshold = float(condition_value)
+            except (ValueError, TypeError):
+                continue  # Skip if condition_value is not a valid number
+
             condition_met = self._evaluate_condition(
-                sensor_value, condition_operator, condition_value
+                sensor_value, condition_operator, condition_threshold
             )
 
             if condition_met:
@@ -130,7 +140,7 @@ class RulesEngine:
             logger.warning(f"Unknown operator: {operator}")
             return False
 
-    def update_rules(self, rules: list[dict[str, any]]):
+    def update_rules(self, rules: list[dict[str, Any]]):
         """Update rules list."""
         self.rules = rules
         logger.info(f"Updated rules: {len(rules)} rules")

@@ -17,9 +17,11 @@ logger = get_logger(__name__)
 class SetpointsMixin:
     """Mixin providing setpoint management functionality."""
 
-    redis_enabled: bool
-    redis_client: redis.Redis | None
-    stream_client: redis.Redis | None
+    def __init__(self):
+        """Initialize mixin with Redis clients."""
+        self.redis_enabled: bool = False
+        self.redis_client: redis.Redis | None = None
+        self.stream_client: redis.Redis | None = None
 
     def read_setpoint(self, location: str, cluster: str) -> dict[str, Any] | None:
         if not self.redis_enabled or not self.redis_client:
@@ -34,8 +36,9 @@ class SetpointsMixin:
             source_key = f"setpoint:{location}:{cluster}:source"
 
             keys = [heat_key, cool_key, temp_key, hum_key, co2_key, source_key]
-            values = self.redis_client.mget(keys)
-            heat, cool, temp, hum, co2, source_data = cast(list[Any], values)  # type: ignore
+            res = self.redis_client.mget(keys)
+            values = cast(list[Any], res)
+            heat, cool, temp, hum, co2, source_data = values
 
             if heat is None and cool is None and temp is None and hum is None and co2 is None:
                 return None
@@ -77,7 +80,8 @@ class SetpointsMixin:
                 f"{prefix}:co2",
                 f"{prefix}:vpd",
             ]
-            values = self.redis_client.mget(keys)
+            res = self.redis_client.mget(keys)
+            values = cast(list[Any], res)
             heat, cool, co2_val, vpd_val = values[0], values[1], values[2], values[3]
             result: dict[str, float] = {}
             if heat is not None:
@@ -334,22 +338,25 @@ class SetpointsMixin:
 
             for var_name, effective, nominal, ramp in variables:
                 if effective is not None:
-                    stream_data: dict[bytes, bytes] = {
-                        b"ts": str(timestamp_ms).encode(),
-                        b"type": b"control",
-                        b"room": location.encode(),
-                        b"cluster": cluster.encode(),
-                        b"variable": var_name.encode(),
-                        b"nominal": str(nominal or effective).encode(),
-                        b"effective": str(effective).encode(),
+                    stream_data: dict[str, Any] = {
+                        "ts": str(timestamp_ms),
+                        "type": "control",
+                        "room": location,
+                        "cluster": cluster,
+                        "variable": var_name,
+                        "nominal": str(nominal or effective),
+                        "effective": str(effective),
                     }
                     if mode:
-                        stream_data[b"mode"] = mode.encode()
+                        stream_data["mode"] = mode
                     if ramp is not None:
-                        stream_data[b"ramp"] = str(ramp).encode()
+                        stream_data["ramp"] = str(ramp)
                     self.stream_client.xadd(
-                        "stream:control", stream_data, maxlen=100000, approximate=True
-                    )  # type: ignore
+                        "stream:control",
+                        cast(dict[Any, Any], stream_data),
+                        maxlen=100000,
+                        approximate=True,
+                    )
         except Exception as e:
             logger.debug(f"Error writing effective setpoints to stream: {e}")
 

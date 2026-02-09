@@ -23,10 +23,9 @@ def get_database() -> DatabaseManager:
 
 def get_automation_redis() -> AutomationRedisClient | None:
     """Get automation Redis client."""
-    from app.main import get_database as _get_database
+    from app.main import container
 
-    database = _get_database()
-    return database._automation_redis if database else None
+    return container.automation_redis
 
 
 @router.get("/api/redis-state/schedule/{location}/{cluster}")

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from typing import Any
 
 from shared.logging import get_logger
 
@@ -14,8 +15,8 @@ class InterlockManager:
 
     def __init__(
         self,
-        device_config: dict[str, any],
-        interlock_rules: list[dict[str, any]],
+        device_config: dict[str, Any],
+        interlock_rules: list[dict[str, Any]],
         device_load_callback: Callable[[str, str, str], float | None] | None = None,
     ):
         """Initialize interlock manager.
@@ -114,16 +115,19 @@ class InterlockManager:
             then_device = rule.get("then_device")
             max_allowed_load = rule.get("max_allowed_load", 0.0)  # Default: 0% = full interlock
 
+            if not when_device or not then_device:
+                continue
+
             if when_device == device_name or then_device == device_name:
                 # Check if the "when" device is ON
-                when_key = (location, cluster, when_device)
+                when_key = (location, cluster, str(when_device))
                 when_state = device_states.get(when_key, 0)
 
                 if when_state == 1:
                     # Get load of "when" device if callback available
                     when_load = None
                     if self.device_load_callback:
-                        when_load = self.device_load_callback(location, cluster, when_device)
+                        when_load = self.device_load_callback(location, cluster, str(when_device))
 
                     if then_device == device_name:
                         # This device is blocked by "when" device

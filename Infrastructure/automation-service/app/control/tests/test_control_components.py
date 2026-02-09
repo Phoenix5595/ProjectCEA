@@ -1,4 +1,5 @@
 """Unit tests for control engine components."""
+
 from __future__ import annotations
 
 import asyncio
@@ -30,28 +31,28 @@ class TestSensorDataManager:
     async def test_get_sensor_values(self):
         """Test getting sensor values for a location/cluster."""
         mock_db = MagicMock()
-        mock_db.get_sensor_value = AsyncMock(side_effect=[25.5, 60.0, None])
+        mock_db.sensor_repo.get_sensor_value = AsyncMock(side_effect=[25.5, 60.0, None])
 
         manager = SensorDataManager(mock_db)
 
         sensor_mapping = {
-            'TestLocation': {
-                'TestCluster': {
-                    'temperature': 'temp_sensor_1',
-                    'humidity': 'humidity_sensor_1',
-                    'co2': 'co2_sensor_1'
+            "TestLocation": {
+                "TestCluster": {
+                    "temperature": "temp_sensor_1",
+                    "humidity": "humidity_sensor_1",
+                    "co2": "co2_sensor_1",
                 }
             }
         }
 
-        values = await manager.get_sensor_values('TestLocation', 'TestCluster', sensor_mapping)
+        values = await manager.get_sensor_values("TestLocation", "TestCluster", sensor_mapping)
 
-        assert values['temp_sensor_1'] == 25.5
-        assert values['humidity_sensor_1'] == 60.0
-        assert values['co2_sensor_1'] is None
+        assert values["temp_sensor_1"] == 25.5
+        assert values["humidity_sensor_1"] == 60.0
+        assert values["co2_sensor_1"] is None
 
         # Verify database calls
-        assert mock_db.get_sensor_value.call_count == 3
+        assert mock_db.sensor_repo.get_sensor_value.call_count == 3
 
     def test_get_sensor_for_setpoint_type(self):
         """Test getting sensor name for setpoint type."""
@@ -59,23 +60,20 @@ class TestSensorDataManager:
         manager = SensorDataManager(mock_db)
 
         sensor_mapping = {
-            'TestLocation': {
-                'TestCluster': {
-                    'temperature': 'temp_sensor_1',
-                    'humidity': 'humidity_sensor_1'
-                }
+            "TestLocation": {
+                "TestCluster": {"temperature": "temp_sensor_1", "humidity": "humidity_sensor_1"}
             }
         }
 
         # Test temperature sensor
         sensor = manager.get_sensor_for_setpoint_type(
-            sensor_mapping, 'TestLocation', 'TestCluster', 'heating'
+            sensor_mapping, "TestLocation", "TestCluster", "heating"
         )
-        assert sensor == 'temp_sensor_1'
+        assert sensor == "temp_sensor_1"
 
         # Test unknown setpoint type
         sensor = manager.get_sensor_for_setpoint_type(
-            sensor_mapping, 'TestLocation', 'TestCluster', 'unknown'
+            sensor_mapping, "TestLocation", "TestCluster", "unknown"
         )
         assert sensor is None
 
@@ -93,10 +91,11 @@ class TestRampManager:
         manager = RampManager()
         current_time = datetime(2023, 1, 1, 12, 0, 0)
 
-        manager.start_ramp('heating', 20.0, 25.0, 60.0, current_time)
+        manager.start_ramp("TestLocation", "TestCluster", "heating", 20.0, 25.0, 60.0, current_time)
 
-        assert 'heating' in manager.active_ramps
-        ramp = manager.active_ramps['heating']
+        ramp_key = ("TestLocation", "TestCluster", "heating")
+        assert ramp_key in manager.active_ramps
+        ramp = manager.active_ramps[ramp_key]
         assert ramp.start_value == 20.0
         assert ramp.target_value == 25.0
         assert ramp.duration_minutes == 60.0
@@ -107,9 +106,11 @@ class TestRampManager:
         start_time = datetime(2023, 1, 1, 12, 0, 0)
         current_time = start_time + timedelta(minutes=30)  # Halfway through
 
-        manager.start_ramp('heating', 20.0, 25.0, 60.0, start_time)
+        manager.start_ramp("TestLocation", "TestCluster", "heating", 20.0, 25.0, 60.0, start_time)
 
-        value, progress = manager.get_ramp_value('heating', 25.0, current_time)
+        value, progress = manager.get_ramp_value(
+            "TestLocation", "TestCluster", "heating", 25.0, current_time
+        )
 
         # Should be halfway: (20 + 25) / 2 = 22.5
         assert value == 22.5
@@ -121,25 +122,29 @@ class TestRampManager:
         start_time = datetime(2023, 1, 1, 12, 0, 0)
         current_time = start_time + timedelta(minutes=65)  # Past completion
 
-        manager.start_ramp('heating', 20.0, 25.0, 60.0, start_time)
+        manager.start_ramp("TestLocation", "TestCluster", "heating", 20.0, 25.0, 60.0, start_time)
 
-        value, progress = manager.get_ramp_value('heating', 25.0, current_time)
+        value, progress = manager.get_ramp_value(
+            "TestLocation", "TestCluster", "heating", 25.0, current_time
+        )
 
         # Should return target value and None progress (ramp cleaned up)
         assert value == 25.0
         assert progress is None
-        assert 'heating' not in manager.active_ramps
+        ramp_key = ("TestLocation", "TestCluster", "heating")
+        assert ramp_key not in manager.active_ramps
 
     def test_cancel_ramp(self):
         """Test canceling a ramp."""
         manager = RampManager()
         current_time = datetime(2023, 1, 1, 12, 0, 0)
 
-        manager.start_ramp('heating', 20.0, 25.0, 60.0, current_time)
-        assert 'heating' in manager.active_ramps
+        manager.start_ramp("TestLocation", "TestCluster", "heating", 20.0, 25.0, 60.0, current_time)
+        ramp_key = ("TestLocation", "TestCluster", "heating")
+        assert ramp_key in manager.active_ramps
 
-        manager.cancel_ramp('heating')
-        assert 'heating' not in manager.active_ramps
+        manager.cancel_ramp("TestLocation", "TestCluster", "heating")
+        assert ramp_key not in manager.active_ramps
 
 
 class TestSetpointManager:
@@ -157,20 +162,20 @@ class TestSetpointManager:
         manager = SetpointManager(mock_db)
 
         setpoint_data = {
-            'heating_setpoint': 22.0,
-            'cooling_setpoint': 28.0,
-            'humidity': 65.0,
-            'co2': 800.0,
-            'vpd': 1.2
+            "heating_setpoint": 22.0,
+            "cooling_setpoint": 28.0,
+            "humidity": 65.0,
+            "co2": 800.0,
+            "vpd": 1.2,
         }
 
         nominal = manager._extract_nominal_setpoints(setpoint_data)
 
-        assert nominal['heating'] == 22.0
-        assert nominal['cooling'] == 28.0
-        assert nominal['humidity'] == 65.0
-        assert nominal['co2'] == 800.0
-        assert nominal['vpd'] == 1.2
+        assert nominal["heating"] == 22.0
+        assert nominal["cooling"] == 28.0
+        assert nominal["humidity"] == 65.0
+        assert nominal["co2"] == 800.0
+        assert nominal["vpd"] == 1.2
 
     @pytest.mark.asyncio
     async def test_compute_effective_setpoints_no_ramp(self):
@@ -180,20 +185,19 @@ class TestSetpointManager:
         current_time = datetime(2023, 1, 1, 12, 0, 0)
 
         setpoint_data = {
-            'heating_setpoint': 22.0,
-            'cooling_setpoint': 28.0,
-            'ramp_in_duration': 0  # No ramping
+            "heating_setpoint": 22.0,
+            "cooling_setpoint": 28.0,
+            "ramp_in_duration": 0,  # No ramping
         }
 
         result = await manager.compute_effective_setpoints(
-            'TestLocation', 'TestCluster', current_time, 'DAY',
-            setpoint_data, None, None
+            "TestLocation", "TestCluster", current_time, "DAY", setpoint_data, None, None
         )
 
-        assert result['effective_heating_setpoint'] == 22.0
-        assert result['effective_cooling_setpoint'] == 28.0
-        assert result['nominal_heating_setpoint'] == 22.0
-        assert result['nominal_cooling_setpoint'] == 28.0
+        assert result["effective_heating_setpoint"] == 22.0
+        assert result["effective_cooling_setpoint"] == 28.0
+        assert result["nominal_heating_setpoint"] == 22.0
+        assert result["nominal_cooling_setpoint"] == 28.0
 
     @pytest.mark.asyncio
     async def test_compute_effective_setpoints_with_ramp(self):
@@ -203,21 +207,26 @@ class TestSetpointManager:
         current_time = datetime(2023, 1, 1, 12, 0, 0)
 
         setpoint_data = {
-            'heating_setpoint': 25.0,  # Target
-            'ramp_in_duration': 60.0
+            "heating_setpoint": 25.0,  # Target
+            "ramp_in_duration": 60.0,
         }
 
-        sensor_values = {'temp_sensor': 20.0}  # Starting point
+        sensor_values = {"temp_sensor": 20.0}  # Starting point
 
         result = await manager.compute_effective_setpoints(
-            'TestLocation', 'TestCluster', current_time, 'PRE_DAY',
-            setpoint_data, sensor_values, 'DAY'  # Mode change
+            "TestLocation",
+            "TestCluster",
+            current_time,
+            "PRE_DAY",
+            setpoint_data,
+            sensor_values,
+            "DAY",  # Mode change
         )
 
         # Should start ramping from sensor value (20.0) to target (25.0)
-        assert result['effective_heating_setpoint'] == 20.0  # Initial value
-        assert result['nominal_heating_setpoint'] == 25.0
-        assert result['ramp_progress_heating'] == 0.0  # Just started
+        assert result["effective_heating_setpoint"] == 20.0  # Initial value
+        assert result["nominal_heating_setpoint"] == 25.0
+        assert result["ramp_progress_heating"] == 0.0  # Just started
 
 
 class TestPIDController:
@@ -268,7 +277,10 @@ class TestPIDControllerManager:
         manager = PIDControllerManager(mock_db)
 
         controller = await manager.get_pid_controller(
-            'location', 'cluster', 'device', 'light'  # Lights don't use PID
+            "location",
+            "cluster",
+            "device",
+            "light",  # Lights don't use PID
         )
 
         assert controller is None
@@ -277,15 +289,13 @@ class TestPIDControllerManager:
     async def test_get_pid_controller_with_pid_params(self):
         """Test getting PID controller with valid parameters."""
         mock_db = MagicMock()
-        mock_db.get_pid_parameters = AsyncMock(return_value={
-            'kp': 1.0, 'ki': 0.1, 'kd': 0.05
-        })
+        mock_db.pid_repo.get_pid_parameters = AsyncMock(
+            return_value={"kp": 1.0, "ki": 0.1, "kd": 0.05}
+        )
 
         manager = PIDControllerManager(mock_db)
 
-        controller = await manager.get_pid_controller(
-            'location', 'cluster', 'device', 'heating'
-        )
+        controller = await manager.get_pid_controller("location", "cluster", "device", "heating")
 
         assert controller is not None
         assert controller.kp == 1.0
@@ -298,9 +308,7 @@ class TestPIDControllerManager:
         mock_db = MagicMock()
         manager = PIDControllerManager(mock_db)
 
-        controller = await manager.get_pid_controller(
-            'location', 'cluster', 'device', 'humidifier'
-        )
+        controller = await manager.get_pid_controller("location", "cluster", "device", "humidifier")
 
         assert controller is None
 
@@ -311,7 +319,7 @@ class TestPIDControllerManager:
         manager = PIDControllerManager(mock_db)
 
         controller = await manager.get_pid_controller(
-            'location', 'cluster', 'device', 'dehumidifier'
+            "location", "cluster", "device", "dehumidifier"
         )
 
         assert controller is None
@@ -320,23 +328,22 @@ class TestPIDControllerManager:
     async def test_process_pid_control(self):
         """Test PID control processing."""
         mock_db = MagicMock()
-        mock_db.get_pid_parameters = AsyncMock(return_value={
-            'kp': 1.0, 'ki': 0.0, 'kd': 0.0
-        })
+        mock_db.pid_repo.get_pid_parameters = AsyncMock(
+            return_value={"kp": 1.0, "ki": 0.0, "kd": 0.0}
+        )
         mock_db.get_control_mode_info = AsyncMock(
-            return_value={'control_mode': 'pid', 'hysteresis_high': 1.0, 'hysteresis_low': 0.5}
+            return_value={"control_mode": "pid", "hysteresis_high": 1.0, "hysteresis_low": 0.5}
         )
 
         manager = PIDControllerManager(mock_db)
 
-        device_info = {'device_type': 'heating'}
-        sensor_values = {'temp_sensor': 20.0}
-        context = {'effective_heating_setpoint': 22.0}
+        device_info = {"device_type": "heating"}
+        sensor_values = {"temp_sensor": 20.0}
+        context = {"effective_heating_setpoint": 22.0}
         current_time = datetime(2023, 1, 1, 12, 0, 0)
 
         output = await manager.process_pid_control(
-            'location', 'cluster', 'device', device_info,
-            sensor_values, current_time, context
+            "location", "cluster", "device", device_info, sensor_values, current_time, context
         )
 
         assert output is not None
@@ -347,7 +354,7 @@ class TestPIDControllerManager:
         mock_db = MagicMock()
         manager = PIDControllerManager(mock_db)
 
-        error = manager._calculate_error('heating', 22.0, 20.0)
+        error = manager._calculate_error("heating", 22.0, 20.0)
         assert error == 2.0  # setpoint - sensor = 22 - 20
 
     def test_calculate_error_cooling(self):
@@ -355,7 +362,7 @@ class TestPIDControllerManager:
         mock_db = MagicMock()
         manager = PIDControllerManager(mock_db)
 
-        error = manager._calculate_error('cooling', 25.0, 28.0)
+        error = manager._calculate_error("cooling", 25.0, 28.0)
         assert error == 3.0  # sensor - setpoint = 28 - 25 (positive = too hot)
 
 
@@ -381,10 +388,10 @@ class TestDeviceController:
         controller = DeviceController(mock_relay, mock_db)
 
         context = {
-            'effective_humidity_setpoint': 60.0,
-            'effective_vpd_setpoint': 1.2,
+            "effective_humidity_setpoint": 60.0,
+            "effective_vpd_setpoint": 1.2,
         }
-        setpoint = controller._get_setpoint_for_device_type('humidifier', context)
+        setpoint = controller._get_setpoint_for_device_type("humidifier", context)
 
         assert setpoint == 1.2
 
@@ -394,8 +401,8 @@ class TestDeviceController:
         mock_db = MagicMock()
         controller = DeviceController(mock_relay, mock_db)
 
-        context = {'effective_vpd_setpoint': 1.0}
-        setpoint = controller._get_setpoint_for_device_type('dehumidifier', context)
+        context = {"effective_vpd_setpoint": 1.0}
+        setpoint = controller._get_setpoint_for_device_type("dehumidifier", context)
 
         assert setpoint == 1.0
 
@@ -405,12 +412,12 @@ class TestDeviceController:
         mock_db = MagicMock()
         controller = DeviceController(mock_relay, mock_db)
 
-        context = {'effective_vpd_setpoint': 1.0, 'current_vpd': 1.3}  # VPD high -> need moisture
-        out = controller._calculate_vpd_based_output('humidifier', context)
+        context = {"effective_vpd_setpoint": 1.0, "current_vpd": 1.3}  # VPD high -> need moisture
+        out = controller._calculate_vpd_based_output("humidifier", context)
         assert out == 1.0
 
-        context_low = {'effective_vpd_setpoint': 1.0, 'current_vpd': 0.8}
-        out_off = controller._calculate_vpd_based_output('humidifier', context_low)
+        context_low = {"effective_vpd_setpoint": 1.0, "current_vpd": 0.8}
+        out_off = controller._calculate_vpd_based_output("humidifier", context_low)
         assert out_off == 0.0
 
     def test_calculate_vpd_based_output_dehumidifier(self):
@@ -419,12 +426,12 @@ class TestDeviceController:
         mock_db = MagicMock()
         controller = DeviceController(mock_relay, mock_db)
 
-        context = {'effective_vpd_setpoint': 1.0, 'current_vpd': 0.8}  # VPD low -> need drying
-        out = controller._calculate_vpd_based_output('dehumidifier', context)
+        context = {"effective_vpd_setpoint": 1.0, "current_vpd": 0.8}  # VPD low -> need drying
+        out = controller._calculate_vpd_based_output("dehumidifier", context)
         assert out == 1.0
 
-        context_high = {'effective_vpd_setpoint': 1.0, 'current_vpd': 1.2}
-        out_off = controller._calculate_vpd_based_output('dehumidifier', context_high)
+        context_high = {"effective_vpd_setpoint": 1.0, "current_vpd": 1.2}
+        out_off = controller._calculate_vpd_based_output("dehumidifier", context_high)
         assert out_off == 0.0
 
     def test_determine_control_mode_manual(self):
@@ -433,12 +440,12 @@ class TestDeviceController:
         mock_db = MagicMock()
         controller = DeviceController(mock_relay, mock_db)
 
-        device_info = {'control_mode': 'manual'}
+        device_info = {"control_mode": "manual"}
         context = {}
 
-        mode, setpoint = controller._determine_control_mode('device', device_info, context)
+        mode, setpoint = controller._determine_control_mode("device", device_info, context)
 
-        assert mode == 'manual'
+        assert mode == "manual"
         assert setpoint is None
 
     def test_determine_control_mode_auto(self):
@@ -447,12 +454,12 @@ class TestDeviceController:
         mock_db = MagicMock()
         controller = DeviceController(mock_relay, mock_db)
 
-        device_info = {'device_type': 'heating', 'control_mode': 'auto'}
-        context = {'effective_heating_setpoint': 22.0}
+        device_info = {"device_type": "heating", "control_mode": "auto"}
+        context = {"effective_heating_setpoint": 22.0}
 
-        mode, setpoint = controller._determine_control_mode('device', device_info, context)
+        mode, setpoint = controller._determine_control_mode("device", device_info, context)
 
-        assert mode == 'auto'
+        assert mode == "auto"
         assert setpoint == 22.0
 
     @pytest.mark.asyncio
@@ -462,12 +469,12 @@ class TestDeviceController:
         mock_db = MagicMock()
         controller = DeviceController(mock_relay, mock_db)
 
-        device_info = {'device_type': 'heating', 'hysteresis': 1.0}
-        sensor_values = {'temp_sensor': 20.0}  # Below setpoint
+        device_info = {"device_type": "heating", "hysteresis": 1.0}
+        sensor_values = {"temp_sensor": 20.0}  # Below setpoint
         setpoint = 22.0
 
         output = await controller._calculate_rule_based_output(
-            'loc', 'clu', 'dev', device_info, sensor_values, setpoint
+            "loc", "clu", "dev", device_info, sensor_values, setpoint
         )
 
         assert output == 1.0  # Should turn on heating
@@ -479,12 +486,12 @@ class TestDeviceController:
         mock_db = MagicMock()
         controller = DeviceController(mock_relay, mock_db)
 
-        device_info = {'device_type': 'heating', 'hysteresis': 1.0}
-        sensor_values = {'temp_sensor': 21.5}  # Within hysteresis of 22.0
+        device_info = {"device_type": "heating", "hysteresis": 1.0}
+        sensor_values = {"temp_sensor": 21.5}  # Within hysteresis of 22.0
         setpoint = 22.0
 
         output = await controller._calculate_rule_based_output(
-            'loc', 'clu', 'dev', device_info, sensor_values, setpoint
+            "loc", "clu", "dev", device_info, sensor_values, setpoint
         )
 
         assert output is None  # Should maintain current state
@@ -497,11 +504,11 @@ class TestDeviceController:
         mock_db = MagicMock()
         controller = DeviceController(mock_relay, mock_db)
 
-        device_info = {'device_type': 'heating', 'channel': 5}
+        device_info = {"device_type": "heating", "channel": 5}
         current_time = datetime(2023, 1, 1, 12, 0, 0)
 
         await controller._apply_control_output(
-            'loc', 'clu', 'device', device_info, 1.0, current_time
+            "loc", "clu", "device", device_info, 1.0, current_time
         )
 
         mock_relay.set_channel_state.assert_called_once_with(5, 1)
@@ -512,24 +519,20 @@ class TestDeviceController:
         mock_db = MagicMock()
         controller = DeviceController(mock_relay, mock_db)
 
-        sensor_values = {
-            'temperature_sensor': 25.0,
-            'temp_backup': 24.5,
-            'humidity_sensor': 60.0
-        }
+        sensor_values = {"temperature_sensor": 25.0, "temp_backup": 24.5, "humidity_sensor": 60.0}
 
         # Find temperature sensor
-        temp_sensor = controller._find_sensor_by_type(sensor_values, ['temperature', 'temp'])
+        temp_sensor = controller._find_sensor_by_type(sensor_values, ["temperature", "temp"])
         assert temp_sensor == 25.0
 
         # Find humidity sensor
-        humidity_sensor = controller._find_sensor_by_type(sensor_values, ['humidity'])
+        humidity_sensor = controller._find_sensor_by_type(sensor_values, ["humidity"])
         assert humidity_sensor == 60.0
 
         # Find non-existent sensor
-        missing_sensor = controller._find_sensor_by_type(sensor_values, ['co2'])
+        missing_sensor = controller._find_sensor_by_type(sensor_values, ["co2"])
         assert missing_sensor is None
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     pytest.main([__file__])

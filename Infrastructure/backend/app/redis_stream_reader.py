@@ -20,7 +20,7 @@ logger = get_logger(__name__)
 class RedisStreamReader:
     """Reads sensor data from Redis Stream by time range and type."""
 
-    def __init__(self, redis_url: str = None, stream_name: str = "sensor:raw"):
+    def __init__(self, redis_url: str | None = None, stream_name: str = "sensor:raw"):
         """Initialize Redis Stream reader.
 
         Args:
@@ -62,7 +62,9 @@ class RedisStreamReader:
                 return 0
 
         try:
-            return self.client.xlen(self.stream_name)
+            assert self.client is not None, "Client must be connected after successful connect()"
+            result = self.client.xlen(self.stream_name)
+            return result if isinstance(result, int) else 0
         except Exception as e:
             logger.warning(f"Error getting stream length: {e}")
             return 0
@@ -97,9 +99,15 @@ class RedisStreamReader:
             # Read entries in-range using stream IDs to avoid full scans
             max_id = f"{end_ms}-9999"
             min_id = f"{start_ms}-0"
-            entries = self.client.xrevrange(
+            assert self.client is not None, "Client must be connected after successful connect()"
+            raw_entries = self.client.xrevrange(
                 self.stream_name, max=max_id, min=min_id, count=max_count
             )
+
+            if not isinstance(raw_entries, list):
+                return []
+
+            entries: list[tuple[bytes, dict[bytes, bytes]]] = raw_entries
 
             if not entries:
                 return []

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import time as dt_time
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from .base import BaseRepository, logger
 
@@ -165,8 +165,8 @@ class ScheduleRepository(BaseRepository):
         enabled: bool = True,
         mode: str = "light",
         target_intensity: float | None = None,
-        ramp_up_duration: int = 30,
-        ramp_down_duration: int = 30,
+        ramp_up_duration: int | None = 30,
+        ramp_down_duration: int | None = 30,
         conn: Connection | None = None,
     ) -> int | None:
         """Create a new schedule."""
@@ -201,7 +201,7 @@ class ScheduleRepository(BaseRepository):
             if conn:
                 return await do_insert(conn)
             async with self.pool.acquire() as new_conn:
-                return await do_insert(new_conn)
+                return await do_insert(cast("Connection", new_conn))
         except Exception as e:
             logger.error(f"Failed to create schedule: {e}")
             return None
@@ -214,8 +214,8 @@ class ScheduleRepository(BaseRepository):
                 if not current:
                     return None
 
-                updates = []
-                params = [schedule_id]
+                updates: list[str] = []
+                params: list[Any] = [schedule_id]
                 param_idx = 2
 
                 for key, value in kwargs.items():
@@ -262,7 +262,7 @@ class ScheduleRepository(BaseRepository):
             if conn:
                 return await do_delete(conn)
             async with self.pool.acquire() as new_conn:
-                return await do_delete(new_conn)
+                return await do_delete(cast("Connection", new_conn))
         except Exception as e:
             logger.error(f"Failed to delete schedules: {e}")
             return 0
@@ -319,27 +319,59 @@ class ScheduleRepository(BaseRepository):
             logger.error(f"Failed to update light schedule target: {e}")
             return False
 
-    async def update_light_schedule_times(
-        self, location: str, cluster: str, device_name: str, start_time: str, end_time: str
-    ) -> bool:
-        """Update start/end times for a light device's day schedule."""
+    async def get_room_schedule(self, location: str, cluster: str) -> dict[str, Any] | None:
+        """Get room schedule (day/night times) for a location/cluster."""
+        try:
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    """
+                    SELECT start_time, end_time, ramp_up_duration, ramp_down_duration
+                    FROM schedules
+                    WHERE location = $1 AND cluster = $2 AND device_name = 'room_schedule'
+                    ORDER BY created_at DESC
+                    LIMIT 1
+                    """,
+                    location,
+                    cluster,
+                )
+                if row:
+                    return {
+                        "day_start_time": str(row["start_time"]),
+                        "day_end_time": str(row["end_time"]),
+                        "night_start_time": str(row["end_time"]),  # Inferred
+                        "night_end_time": str(row["start_time"]),  # Inferred
+                        "ramp_up_duration": row["ramp_up_duration"] or 30,
+                        "ramp_down_duration": row["ramp_down_duration"] or 15,
+                    }
+        except Exception as e:
+            logger.error(f"Failed to get room schedule: {e}")
+        return None
+
+    async def update_light_schedule_ramp_times(
+        self,
+        location: str,
+        cluster: str,
+        ramp_up_minutes: int,
+        ramp_down_minutes: int,
+    ) -> int:
+        """Update ramp times for all DAY light schedules in a location/cluster."""
         try:
             async with self.pool.acquire() as conn:
                 result = await conn.execute(
                     """
                     UPDATE schedules
-                    SET start_time = $4::time, end_time = $5::time, updated_at = NOW()
-                    WHERE location = $1 AND cluster = $2 AND device_name = $3
-                    AND enabled = true AND target_intensity IS NOT NULL
-                    AND target_intensity > 0
-                """,
+                    SET ramp_up_duration = $3, ramp_down_duration = $4
+                    WHERE location = $1 AND cluster = $2
+                    AND device_name LIKE 'light%' AND mode IN ('SUN', 'DAY')
+                    """,
                     location,
                     cluster,
-                    device_name,
-                    start_time,
-                    end_time,
+                    ramp_up_minutes,
+                    ramp_down_minutes,
                 )
-                return result != "UPDATE 0"
+                count = int(result.split()[-1])
+                logger.info(f"Updated {count} light schedules ramp times for {location}/{cluster}")
+                return count
         except Exception as e:
-            logger.error(f"Failed to update light schedule times: {e}")
-            return False
+            logger.error(f"Failed to update light schedule ramp times: {e}")
+            return 0

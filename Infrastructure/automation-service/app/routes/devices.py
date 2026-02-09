@@ -53,9 +53,9 @@ def get_database() -> DatabaseManager:
 
 def get_config() -> ConfigLoader:
     """Dependency to get config loader."""
-    from app.main import get_config as _get_config
+    from app.main import container
 
-    return _get_config()
+    return container.get_config()
 
 
 @router.get("/api/devices")
@@ -141,7 +141,7 @@ async def get_device_details(
         raise HTTPException(status_code=404, detail="Device not found")
 
     # Get device state from database
-    db_state = await database.get_device_state(location, cluster, device)
+    db_state = await database.device_repo.get_device_state(location, cluster, device)
 
     return {
         "location": location,
@@ -176,15 +176,22 @@ async def control_device(
 
     # Set device state
     success, reason = relay_manager.set_device_state(
-        location, cluster, device, request.state, "manual"
+        location, cluster, device, bool(request.state), "manual"
+    )
+
+    # Update database
+    await database.device_repo.set_device_state(
+        location, cluster, device, channel, bool(request.state), "manual"
     )
 
     if not success:
         raise HTTPException(status_code=400, detail=reason or "Failed to set device state")
 
     # Update database
-    await database.set_device_state(location, cluster, device, channel, request.state, "manual")
-    await database.log_control_action(
+    await database.device_repo.set_device_state(
+        location, cluster, device, channel, bool(request.state), "manual"
+    )
+    await database.control_action_repo.log_control_action(
         location,
         cluster,
         device,
@@ -227,7 +234,9 @@ async def set_device_mode(
 
     # Update mode in database
     state = current_state or 0
-    await database.set_device_state(location, cluster, device, channel, state, request.mode)
+    await database.device_repo.set_device_state(
+        location, cluster, device, channel, bool(state), request.mode
+    )
 
     return {
         "location": location,
@@ -264,7 +273,9 @@ async def get_control_history(
             detail="Invalid location or cluster",
         )
     try:
-        return await database.get_control_history(location, cluster, limit)
+        return await database.control_action_repo.get_recent_control_history(
+            location, cluster, limit
+        )
     except Exception as e:
         logger.warning(f"get_control_history failed: {e}")
         return []
@@ -279,7 +290,7 @@ async def get_all_device_mappings(
     Returns:
         List of device mapping dicts with location, cluster, device_name, channel, active_high, safe_state, mcp_board_id
     """
-    return await database.get_all_device_mappings()
+    return await database.device_repo.get_all_device_mappings()
 
 
 @router.get("/api/devices/{location}/{cluster}/{device}/mapping")
@@ -291,7 +302,7 @@ async def get_device_mapping(
     Returns:
         Device mapping dict with channel, active_high, safe_state, mcp_board_id, updated_at
     """
-    mapping = await database.get_device_mapping(location, cluster, device)
+    mapping = await database.device_repo.get_device_mapping(location, cluster, device)
     if mapping is None:
         raise HTTPException(status_code=404, detail="Device mapping not found")
     return {"location": location, "cluster": cluster, "device_name": device, **mapping}
@@ -315,7 +326,7 @@ async def update_device_mapping(
     """
     # Validate mapping
     # Get existing mappings to check for duplicates
-    existing_mappings_list = await database.get_all_device_mappings()
+    existing_mappings_list = await database.device_repo.get_all_device_mappings()
     existing_mappings = {}
     for m in existing_mappings_list:
         key = (m["location"], m["cluster"], m["device_name"])
@@ -323,7 +334,7 @@ async def update_device_mapping(
             existing_mappings[key] = m
 
     is_valid, error_message = validate_device_mapping(
-        mapping.channel, mapping.mcp_board_id, config, existing_mappings
+        mapping.channel, mapping.mcp_board_id, config._config, existing_mappings
     )
 
     if not is_valid:
@@ -334,22 +345,25 @@ async def update_device_mapping(
         raise HTTPException(status_code=400, detail="safe_state must be 0 or 1")
 
     # Update mapping in database
-    success = await database.set_device_mapping(
+    success = await database.device_repo.set_device_mapping(
         location,
         cluster,
         device,
         mapping.channel,
         mapping.active_high,
-        mapping.safe_state,
-        mapping.mcp_board_id,
+        bool(mapping.safe_state),
+        mapping.mcp_board_id if mapping.mcp_board_id is not None else 0,
     )
 
     if not success:
         raise HTTPException(status_code=500, detail="Failed to update device mapping")
 
     # Return updated mapping
-    updated = await database.get_device_mapping(location, cluster, device)
-    return {"location": location, "cluster": cluster, "device_name": device, **updated}
+    updated = await database.device_repo.get_device_mapping(location, cluster, device)
+    result = {"location": location, "cluster": cluster, "device_name": device}
+    if updated is not None:
+        result.update(updated)
+    return result
 
 
 @router.post("/api/devices/{location}/{cluster}/{device}/config")
@@ -575,7 +589,7 @@ async def update_channel_device(
     # Set default values for lights
     if normalized_type == "light":
         device_info["pid_enabled"] = False
-        device_info["interlock_with"] = []
+        device_info["interlock_with"] = ""
         device_info["dimming_enabled"] = True
         device_info["dimming_type"] = "dfr0971"
 

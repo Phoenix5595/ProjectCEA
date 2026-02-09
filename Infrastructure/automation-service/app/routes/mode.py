@@ -20,15 +20,16 @@ class ModeUpdate(BaseModel):
 
 def get_database() -> DatabaseManager:
     """Dependency to get database manager."""
-    from app.main import get_database as _get_database
+    from app.main import container
 
-    return _get_database()
+    return container.get_database()
 
 
 def get_automation_redis() -> AutomationRedisClient | None:
     """Get automation Redis client."""
-    database = get_database()
-    return database._automation_redis if database else None
+    from app.main import container
+
+    return container.get_automation_redis()
 
 
 @router.get("/api/mode/{location}/{cluster}")
@@ -118,6 +119,7 @@ async def get_all_modes(
     # Scan for all mode keys
     modes = {}
     try:
+        assert automation_redis.redis_client is not None, "Redis client must be connected"
         for key in automation_redis.redis_client.scan_iter(match="mode:*"):
             # Parse key: mode:location:cluster
             parts = key.split(":")

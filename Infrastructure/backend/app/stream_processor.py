@@ -15,10 +15,10 @@ from app.models import DataPoint
 try:
     shared_path = os.path.join(os.path.dirname(__file__), "..", "..", "..")
     sys.path.insert(0, shared_path)
-    from shared import calculate_rh as shared_calculate_rh
-    from shared import calculate_vpd as shared_calculate_vpd
-    from shared import get_pressure_state, update_pressure_state
-    from shared import get_sensor_suffix as shared_get_sensor_suffix
+    from shared import calculate_rh as shared_calculate_rh  # type: ignore
+    from shared import calculate_vpd as shared_calculate_vpd  # type: ignore
+    from shared import get_pressure_state, update_pressure_state  # type: ignore
+    from shared import get_sensor_suffix as shared_get_sensor_suffix  # type: ignore
 except ImportError:
     # Fallback implementations
     def shared_get_sensor_suffix(location: str, cluster: str) -> str:
@@ -67,6 +67,8 @@ _pressure_state: dict[tuple[str, str], float] = defaultdict(lambda: 1013.25)
 
 def get_location_from_node(node_id: int | None) -> tuple[str, str]:
     """Map node_id to location and cluster."""
+    if node_id is None:
+        return ("Flower Room", "back")
     mapping = {
         1: ("Flower Room", "back"),
         2: ("Flower Room", "front"),

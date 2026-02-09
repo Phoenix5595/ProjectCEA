@@ -126,7 +126,7 @@ async def restore_light_intensities(database, config, dfr0971_manager) -> None:
 
                 # Fall back to database (slower, but persistent - source of truth)
                 if intensity is None and database:
-                    intensity = await database.get_latest_light_intensity(
+                    intensity = await database.device_repo.get_latest_light_intensity(
                         location, cluster, device_name
                     )
                     if intensity is not None:

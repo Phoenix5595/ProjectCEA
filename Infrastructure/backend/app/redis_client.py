@@ -21,8 +21,6 @@ async def get_redis_client() -> redis.Redis | None:
 
     if _redis_client is not None:
         try:
-            # Test connection
-            await _redis_client.ping()
             return _redis_client
         except Exception:
             # Connection lost, reset
@@ -38,8 +36,6 @@ async def get_redis_client() -> redis.Redis | None:
         )
         _redis_client = redis.Redis(connection_pool=_redis_pool)
 
-        # Test connection
-        await _redis_client.ping()
         logger.info(f"Connected to Redis at {redis_url}")
         return _redis_client
     except Exception as e:

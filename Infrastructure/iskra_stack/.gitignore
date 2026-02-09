@@ -1,0 +1,4 @@
+.env
+!.env.example
+# Generated at container start from template (password from env)
+provisioning/datasources/datasources.yaml

@@ -82,7 +82,11 @@ class HeatingFailureSafety:
             return self._state
 
         # Check heater response if demand is active
-        if heater_demand > 10 and self._demand_start_time:
+        if (
+            heater_demand > 10
+            and self._demand_start_time is not None
+            and self._demand_start_temp is not None
+        ):
             elapsed = (current_time - self._demand_start_time).total_seconds()
             temp_rise = current_temp - self._demand_start_temp
             expected_rise = (elapsed / 60) * self.MIN_RESPONSE_TEMP_RISE * (heater_demand / 100)

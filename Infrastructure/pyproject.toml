@@ -52,15 +52,17 @@ skip-magic-trailing-comma = false
 line-ending = "auto"
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["automation-service/app/control/tests", "automation-service/tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
+addopts = "--cov=automation-service/app --cov-report=term-missing"
 
 [tool.coverage.run]
-source = ["app"]
+source = ["automation-service/app"]
 omit = [
-    "*/tests/*",
+    "automation-service/app/control/tests/*",
+    "tests/*",
     "*/__pycache__/*",
     "*/migrations/*",
 ]
@@ -79,5 +81,7 @@ exclude_lines = [
 [tool.pyright]
 include = ["automation-service/app", "backend/app", "shared"]
 strict = ["automation-service/app/control", "automation-service/app/repositories"]
+extraPaths = ["."]
 reportMissingTypeStubs = false
+reportMissingImports = "none"
 pythonVersion = "3.11"

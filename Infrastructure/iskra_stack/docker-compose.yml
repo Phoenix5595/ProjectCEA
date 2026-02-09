@@ -1,0 +1,89 @@
+# ProjectCEA stack on iskra: database replica + Redis + Grafana
+# DOCKER ONLY ON ISKRA. Mothernode runs PostgreSQL, Grafana, Redis natively (systemd).
+# Replace standalone projectcea_database: stop it, then start this stack (same PGDATA path).
+
+services:
+  projectcea_database:
+    image: timescale/timescaledb:latest-pg15
+    container_name: projectcea_database
+    restart: unless-stopped
+    environment:
+      PRIMARY_HOST: ${PRIMARY_HOST}
+      PRIMARY_PORT: ${PRIMARY_PORT:-5432}
+      REPLICATION_USER: ${REPLICATION_USER:-cea_repl}
+      REPLICATION_PASSWORD: ${REPLICATION_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-cea_sensors}
+      REPLICATION_SLOT: ${REPLICATION_SLOT:-}
+    volumes:
+      - ${PGDATA_HOST_PATH:-/srv/storage1/projectcea_database/data}:/var/lib/postgresql/data
+      - ./docker-entrypoint-replica.sh:/docker-entrypoint-replica.sh:ro
+    ports:
+      - "${POSTGRES_PORT:-5433}:5432"
+    entrypoint: ["/docker-entrypoint-replica.sh"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -h localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+
+  projectcea_redis:
+    image: redis:7-alpine
+    container_name: projectcea_redis
+    restart: unless-stopped
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  projectcea_grafana:
+    image: grafana/grafana:latest
+    container_name: projectcea_grafana
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GF_SECURITY_ADMIN_PASSWORD:-admin}
+      GF_SERVER_ROOT_URL: ${GF_SERVER_ROOT_URL:-http://localhost:3000}
+      GF_INSTALL_PLUGINS: redis-datasource
+      GF_DATASOURCE_DEFAULT_NAME: CEA Sensors
+      POSTGRES_CEA_USER_PASSWORD: ${POSTGRES_CEA_USER_PASSWORD}
+    volumes:
+      - ./provisioning/datasources:/etc/grafana/provisioning/datasources
+      - ./provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./dashboards:/var/lib/grafana/dashboards:ro
+      - ./scripts/grafana-entrypoint.sh:/entrypoint.sh:ro
+      - projectcea_grafana_data:/var/lib/grafana
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    entrypoint: ["/bin/sh", "/entrypoint.sh"]
+    depends_on:
+      projectcea_database:
+        condition: service_healthy
+      projectcea_redis:
+        condition: service_healthy
+
+  projectcea_redis_sync:
+    build:
+      context: .
+      dockerfile: Dockerfile.redis_sync
+    image: projectcea_redis_sync:local
+    container_name: projectcea_redis_sync
+    restart: unless-stopped
+    environment:
+      PGHOST: projectcea_database
+      PGPORT: 5432
+      PGDATABASE: ${POSTGRES_DB:-cea_sensors}
+      PGUSER: cea_user
+      PGPASSWORD: ${POSTGRES_CEA_USER_PASSWORD}
+      REDIS_HOST: projectcea_redis
+      REDIS_PORT: 6379
+      SYNC_INTERVAL_SEC: 10
+    depends_on:
+      projectcea_database:
+        condition: service_healthy
+      projectcea_redis:
+        condition: service_healthy
+
+volumes:
+  projectcea_grafana_data:

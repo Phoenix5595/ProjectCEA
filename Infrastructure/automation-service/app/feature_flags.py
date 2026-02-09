@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import time
 from typing import Any
 
@@ -183,9 +184,12 @@ def get_flag(flag_name: str, default: bool = False) -> bool:
     global _default_manager
     if _default_manager is None:
         try:
-            from app.redis_client import AutomationRedisClient
+            import redis
 
-            _default_manager = FeatureFlagManager(AutomationRedisClient())
+
+            # Create a raw Redis client for feature flags
+            redis_client = redis.Redis.from_url(os.getenv("REDIS_URL", "redis://localhost:6379"))
+            _default_manager = FeatureFlagManager(redis_client)
         except Exception:
             return default
     return _default_manager.get_flag(flag_name)

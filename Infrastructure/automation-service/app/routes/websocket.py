@@ -17,21 +17,21 @@ logger = get_logger(__name__)
 router = APIRouter()
 
 # Store active WebSocket connections
-active_connections: list = []
+active_connections: list[Any] = []
 
 
 def get_database() -> DatabaseManager:
     """Dependency to get database manager."""
-    from app.main import get_database as _get_database
+    from app.main import container
 
-    return _get_database()
+    return container.get_database()
 
 
 def get_relay_manager() -> RelayManager:
     """Dependency to get relay manager."""
-    from app.main import get_relay_manager as _get_relay_manager
+    from app.main import container
 
-    return _get_relay_manager()
+    return container.get_relay_manager()
 
 
 def get_automation_redis() -> AutomationRedisClient | None:
@@ -202,14 +202,13 @@ async def broadcast_schedule_update(schedule_id: int, schedule_data: dict[str, A
         schedule_id: Schedule ID
         schedule_data: Complete schedule data dictionary
     """
+    updated_at = schedule_data.get("updated_at")
     await broadcast_message(
         {
             "type": "schedule_update",
             "schedule_id": schedule_id,
             "schedule": schedule_data,
-            "updated_at": schedule_data.get("updated_at").isoformat()
-            if schedule_data.get("updated_at")
-            else None,
+            "updated_at": updated_at.isoformat() if updated_at is not None else None,
         }
     )
 
@@ -226,6 +225,7 @@ async def broadcast_setpoint_update(
         mode: Mode (DAY/NIGHT/TRANSITION) or None for legacy
         setpoint_data: Complete setpoint data dictionary
     """
+    updated_at = setpoint_data.get("updated_at")
     await broadcast_message(
         {
             "type": "setpoint_update",
@@ -233,9 +233,7 @@ async def broadcast_setpoint_update(
             "cluster": cluster,
             "mode": mode,
             "setpoint": setpoint_data,
-            "updated_at": setpoint_data.get("updated_at").isoformat()
-            if setpoint_data.get("updated_at")
-            else None,
+            "updated_at": updated_at.isoformat() if updated_at is not None else None,
         }
     )
 

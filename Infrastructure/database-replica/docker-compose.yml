@@ -1,0 +1,25 @@
+# ProjectCEA TimescaleDB streaming replica
+# DOCKER ONLY ON ISKRA: this compose runs on iskra only. Mothernode runs
+# PostgreSQL + TimescaleDB natively (systemd); no Docker on mothernode.
+# Replicates from mothernode primary; data on Storage 1 via bind mount.
+# See README for "Before implementing: check these" and mothernode setup.
+
+services:
+  projectcea_database:
+    image: timescale/timescaledb:latest-pg15
+    container_name: projectcea_database
+    restart: unless-stopped
+    environment:
+      PRIMARY_HOST: ${PRIMARY_HOST}
+      PRIMARY_PORT: ${PRIMARY_PORT:-5432}
+      REPLICATION_USER: ${REPLICATION_USER:-cea_repl}
+      REPLICATION_PASSWORD: ${REPLICATION_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-cea_sensors}
+      REPLICATION_SLOT: ${REPLICATION_SLOT:-}
+    volumes:
+      - ${PGDATA_HOST_PATH:-/mnt/storage1/projectcea_database/data}:/var/lib/postgresql/data
+      - ./docker-entrypoint-replica.sh:/docker-entrypoint-replica.sh:ro
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    entrypoint: ["/docker-entrypoint-replica.sh"]
+    command: ["postgres"]

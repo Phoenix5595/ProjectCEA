@@ -21,7 +21,7 @@ def mock_dependencies():
     scheduler = Mock(spec=Scheduler)
     rules_engine = Mock(spec=RulesEngine)
 
-    from app.redis import AutomationRedisClient
+    from app.redis_client import AutomationRedisClient
 
     database._automation_redis = create_autospec(AutomationRedisClient, instance=True)
     database._automation_redis.redis_enabled = True
@@ -60,16 +60,19 @@ async def test_redis_fallback_when_db_fails(mock_dependencies):
     config = mock_dependencies["config"]
     rules_engine = mock_dependencies["rules_engine"]
 
-    # Mock DB failure
-    database.get_light_schedule = AsyncMock(side_effect=Exception("DB Failure"))
-    database.get_climate_schedule = AsyncMock(
+    # Mock repositories
+    database.schedule_repo = Mock()
+    database.schedule_repo.get_room_light_schedule = AsyncMock(side_effect=Exception("DB Failure"))
+    database.schedule_repo.get_climate_schedule = AsyncMock(
         return_value={"pre_day_duration": 0, "pre_night_duration": 0}
     )
-    database.get_setpoint = AsyncMock(
+    database.setpoint_repo = Mock()
+    database.setpoint_repo.get_setpoint = AsyncMock(
         return_value={"heating_setpoint": 20.0, "cooling_setpoint": 25.0}
     )
-    database.log_effective_setpoints = AsyncMock()
-    database.log_automation_state = AsyncMock()
+    database.setpoint_repo.log_effective_setpoints = AsyncMock()
+    database.control_action_repo = Mock()
+    database.control_action_repo.log_automation_state = AsyncMock()
 
     # Mock Redis success
     redis_schedule = {"day_start_time": "06:00:00", "day_end_time": "18:00:00"}
@@ -113,7 +116,7 @@ async def test_redis_fallback_when_db_fails(mock_dependencies):
         assert call_args[6] == "DAY"
 
         # Verify setpoint logging occurred
-        database.log_effective_setpoints.assert_called()
+        database.setpoint_repo.log_effective_setpoints.assert_called()
 
 
 @pytest.mark.asyncio
@@ -125,16 +128,19 @@ async def test_safety_night_when_all_fails(mock_dependencies):
     config = mock_dependencies["config"]
     rules_engine = mock_dependencies["rules_engine"]
 
-    # Mock DB failure
-    database.get_light_schedule = AsyncMock(side_effect=Exception("DB Failure"))
-    database.get_climate_schedule = AsyncMock(
+    # Mock repositories
+    database.schedule_repo = Mock()
+    database.schedule_repo.get_room_light_schedule = AsyncMock(side_effect=Exception("DB Failure"))
+    database.schedule_repo.get_climate_schedule = AsyncMock(
         return_value={"pre_day_duration": 0, "pre_night_duration": 0}
     )
-    database.get_setpoint = AsyncMock(
+    database.setpoint_repo = Mock()
+    database.setpoint_repo.get_setpoint = AsyncMock(
         return_value={"heating_setpoint": 20.0, "cooling_setpoint": 25.0}
     )
-    database.log_effective_setpoints = AsyncMock()
-    database.log_automation_state = AsyncMock()
+    database.setpoint_repo.log_effective_setpoints = AsyncMock()
+    database.control_action_repo = Mock()
+    database.control_action_repo.log_automation_state = AsyncMock()
 
     # Mock Redis failure (None returned)
     database._automation_redis.read_schedule_state.return_value = None
@@ -167,6 +173,6 @@ async def test_safety_night_when_all_fails(mock_dependencies):
         assert call_args[6] == "NIGHT"
 
         # Verify setpoint logging occurred with NIGHT mode
-        database.log_effective_setpoints.assert_called()
-        log_args = database.log_effective_setpoints.call_args.kwargs
+        database.setpoint_repo.log_effective_setpoints.assert_called()
+        log_args = database.setpoint_repo.log_effective_setpoints.call_args.kwargs
         assert log_args["mode"] == "NIGHT"

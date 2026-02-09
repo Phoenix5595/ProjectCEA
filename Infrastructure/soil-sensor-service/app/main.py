@@ -20,10 +20,10 @@ logger = setup_structured_logging(
 )
 
 # Global instances (will be initialized in lifespan)
-config: ConfigLoader = None
-database: DatabaseManager = None
-redis_client: RedisClient = None
-background_tasks: BackgroundTasks = None
+config: ConfigLoader | None = None
+database: DatabaseManager | None = None
+redis_client: RedisClient | None = None
+background_tasks: BackgroundTasks | None = None
 
 
 @asynccontextmanager
@@ -98,16 +98,22 @@ app.add_middleware(
 # Dependency injection functions
 def get_config() -> ConfigLoader:
     """Get config loader."""
+    if config is None:
+        raise RuntimeError("Config not initialized")
     return config
 
 
 def get_database() -> DatabaseManager:
     """Get database manager."""
+    if database is None:
+        raise RuntimeError("Database not initialized")
     return database
 
 
 def get_redis_client() -> RedisClient:
     """Get Redis client."""
+    if redis_client is None:
+        raise RuntimeError("Redis client not initialized")
     return redis_client
 
 

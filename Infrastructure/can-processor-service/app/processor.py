@@ -18,14 +18,14 @@ sys.path.insert(0, shared_path)
 
 # Import shared sensor processing functions
 try:
-    from shared import (
-        calculate_rh,
-        calculate_vpd,
-        get_location_from_node,
-        get_pressure_state,
-        get_sensor_suffix,
-        update_pressure_state,
-        validate_co2_reading,
+    from shared import (  # type: ignore
+        calculate_rh,  # type: ignore
+        calculate_vpd,  # type: ignore
+        get_location_from_node,  # type: ignore
+        get_pressure_state,  # type: ignore
+        get_sensor_suffix,  # type: ignore
+        update_pressure_state,  # type: ignore
+        validate_co2_reading,  # type: ignore
     )
 
     logger.info("Successfully imported shared sensor processing library")

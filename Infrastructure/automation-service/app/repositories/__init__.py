@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from .base import BaseRepository
+from .config import ConfigRepository
 from .control_actions import ControlActionRepository
 from .devices import DeviceRepository
 from .pid import PIDRepository
@@ -18,4 +19,5 @@ __all__ = [
     "PIDRepository",
     "RoomModeRepository",
     "ControlActionRepository",
+    "ConfigRepository",
 ]

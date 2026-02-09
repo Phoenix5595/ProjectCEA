@@ -89,9 +89,13 @@ class DatabaseManager:
 
     async def _get_pool(self) -> asyncpg.Pool:
         """Get database connection pool."""
-        if not self._pool:
+        pool = self._pool
+        if not pool:
             await self._connect_db()
-        return self._pool
+            pool = self._pool
+        if not pool:
+            raise RuntimeError("Failed to connect to database")
+        return pool
 
     async def close(self) -> None:
         """Close database connection pool."""

@@ -186,7 +186,7 @@ class BackgroundTasks:
                         )
                         if redis_params:
                             # Check if different from DB
-                            db_params = await self.database.get_pid_parameters(device_type)
+                            db_params = await self.database.pid_repo.get_pid_parameters(device_type)
                             if db_params:
                                 # Compare and update if different
                                 if (
@@ -194,7 +194,7 @@ class BackgroundTasks:
                                     or redis_params.get("ki") != db_params["ki"]
                                     or redis_params.get("kd") != db_params["kd"]
                                 ):
-                                    await self.database.set_pid_parameters(
+                                    await self.database.pid_repo.set_pid_parameters(
                                         device_type,
                                         redis_params["kp"],
                                         redis_params["ki"],
@@ -280,7 +280,7 @@ class BackgroundTasks:
                     continue
 
                 # Refresh schedules (worker pattern execution)
-                db_schedules = await self.database.get_schedules()
+                db_schedules = await self.database.schedule_repo.get_schedules()
 
                 # Update scheduler in control engine
                 if self.control_engine.scheduler:
@@ -301,7 +301,7 @@ class BackgroundTasks:
                 await asyncio.sleep(flush_interval)
 
                 # Flush batched records (worker pattern execution)
-                flushed_count = await self.database.flush_batch_buffer()
+                flushed_count = await self.database.setpoint_repo.flush_batch_buffer()
                 if flushed_count > 0:
                     logger.debug(f"Flushed {flushed_count} batched records")
 

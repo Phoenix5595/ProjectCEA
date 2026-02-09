@@ -1,0 +1,3934 @@
+{
+    "version": "1.1.407",
+    "time": "1770577794469",
+    "generalDiagnostics": [
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/automation/interlock_manager.py",
+            "severity": "error",
+            "message": "Expected class but received \"(iterable: Iterable[object], /) -> bool\"",
+            "range": {
+                "start": {
+                    "line": 16,
+                    "character": 33
+                },
+                "end": {
+                    "line": 16,
+                    "character": 36
+                }
+            },
+            "rule": "reportGeneralTypeIssues"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/automation/interlock_manager.py",
+            "severity": "error",
+            "message": "Expected class but received \"(iterable: Iterable[object], /) -> bool\"",
+            "range": {
+                "start": {
+                    "line": 17,
+                    "character": 40
+                },
+                "end": {
+                    "line": 17,
+                    "character": 43
+                }
+            },
+            "rule": "reportGeneralTypeIssues"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/automation/interlock_manager.py",
+            "severity": "error",
+            "message": "No overloads for \"get\" match the provided arguments",
+            "range": {
+                "start": {
+                    "line": 119,
+                    "character": 29
+                },
+                "end": {
+                    "line": 119,
+                    "character": 59
+                }
+            },
+            "rule": "reportCallIssue"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/automation/interlock_manager.py",
+            "severity": "error",
+            "message": "Argument of type \"tuple[str, str, Unknown | None]\" cannot be assigned to parameter \"key\" of type \"tuple[str, str, str]\" in function \"get\"\n  \"tuple[str, str, Unknown | None]\" is not assignable to \"tuple[str, str, str]\"\n    Tuple entry 3 is incorrect type\n      Type \"Unknown | None\" is not assignable to type \"str\"\n        \"None\" is not assignable to \"str\"",
+            "range": {
+                "start": {
+                    "line": 119,
+                    "character": 47
+                },
+                "end": {
+                    "line": 119,
+                    "character": 55
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/automation/interlock_manager.py",
+            "severity": "error",
+            "message": "Argument of type \"Unknown | None\" cannot be assigned to parameter of type \"str\"\n  Type \"Unknown | None\" is not assignable to type \"str\"\n    \"None\" is not assignable to \"str\"",
+            "range": {
+                "start": {
+                    "line": 125,
+                    "character": 81
+                },
+                "end": {
+                    "line": 125,
+                    "character": 92
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/automation/rules_engine.py",
+            "severity": "error",
+            "message": "Expected class but received \"(iterable: Iterable[object], /) -> bool\"",
+            "range": {
+                "start": {
+                    "line": 14,
+                    "character": 45
+                },
+                "end": {
+                    "line": 14,
+                    "character": 48
+                }
+            },
+            "rule": "reportGeneralTypeIssues"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/automation/rules_engine.py",
+            "severity": "error",
+            "message": "Argument of type \"Unknown | None\" cannot be assigned to parameter \"operator\" of type \"str\" in function \"_evaluate_condition\"\n  Type \"Unknown | None\" is not assignable to type \"str\"\n    \"None\" is not assignable to \"str\"",
+            "range": {
+                "start": {
+                    "line": 85,
+                    "character": 30
+                },
+                "end": {
+                    "line": 85,
+                    "character": 48
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/automation/rules_engine.py",
+            "severity": "error",
+            "message": "Argument of type \"Unknown | None\" cannot be assigned to parameter \"threshold\" of type \"float\" in function \"_evaluate_condition\"\n  Type \"Unknown | None\" is not assignable to type \"float\"\n    \"None\" is not assignable to \"float\"",
+            "range": {
+                "start": {
+                    "line": 85,
+                    "character": 50
+                },
+                "end": {
+                    "line": 85,
+                    "character": 65
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/automation/rules_engine.py",
+            "severity": "error",
+            "message": "Expected class but received \"(iterable: Iterable[object], /) -> bool\"",
+            "range": {
+                "start": {
+                    "line": 132,
+                    "character": 49
+                },
+                "end": {
+                    "line": 132,
+                    "character": 52
+                }
+            },
+            "rule": "reportGeneralTypeIssues"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/background_tasks.py",
+            "severity": "error",
+            "message": "Cannot access attribute \"flush_batch_buffer\" for class \"DatabaseManager\"\n  Attribute \"flush_batch_buffer\" is unknown",
+            "range": {
+                "start": {
+                    "line": 303,
+                    "character": 52
+                },
+                "end": {
+                    "line": 303,
+                    "character": 70
+                }
+            },
+            "rule": "reportAttributeAccessIssue"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/container.py",
+            "severity": "error",
+            "message": "Argument of type \"MCP23017Driver | None\" cannot be assigned to parameter \"mcp23017\" of type \"MCP23017Driver\" in function \"__init__\"\n  Type \"MCP23017Driver | None\" is not assignable to type \"MCP23017Driver\"\n    \"None\" is not assignable to \"MCP23017Driver\"",
+            "range": {
+                "start": {
+                    "line": 108,
+                    "character": 25
+                },
+                "end": {
+                    "line": 108,
+                    "character": 38
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/container.py",
+            "severity": "error",
+            "message": "Cannot access attribute \"get_rules\" for class \"DatabaseManager\"\n  Attribute \"get_rules\" is unknown",
+            "range": {
+                "start": {
+                    "line": 120,
+                    "character": 40
+                },
+                "end": {
+                    "line": 120,
+                    "character": 49
+                }
+            },
+            "rule": "reportAttributeAccessIssue"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/container.py",
+            "severity": "error",
+            "message": "Argument of type \"ConfigLoader\" cannot be assigned to parameter \"redis_client\" of type \"AutomationRedisClient\" in function \"__init__\"\n  \"ConfigLoader\" is not assignable to \"AutomationRedisClient\"",
+            "range": {
+                "start": {
+                    "line": 125,
+                    "character": 46
+                },
+                "end": {
+                    "line": 125,
+                    "character": 57
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/container.py",
+            "severity": "error",
+            "message": "\"get\" is not a known attribute of \"None\"",
+            "range": {
+                "start": {
+                    "line": 180,
+                    "character": 38
+                },
+                "end": {
+                    "line": 180,
+                    "character": 41
+                }
+            },
+            "rule": "reportOptionalMemberAccess"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/control/control_engine.py",
+            "severity": "error",
+            "message": "Cannot access attribute \"get\" for class \"str\"\n  Attribute \"get\" is unknown",
+            "range": {
+                "start": {
+                    "line": 362,
+                    "character": 55
+                },
+                "end": {
+                    "line": 362,
+                    "character": 58
+                }
+            },
+            "rule": "reportAttributeAccessIssue"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/control/control_engine.py",
+            "severity": "error",
+            "message": "Argument of type \"int\" cannot be assigned to parameter \"state\" of type \"bool\" in function \"set_device_state\"\n  \"int\" is not assignable to \"bool\"",
+            "range": {
+                "start": {
+                    "line": 724,
+                    "character": 98
+                },
+                "end": {
+                    "line": 724,
+                    "character": 103
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/control/heating_safety.py",
+            "severity": "error",
+            "message": "Operator \"-\" not supported for types \"float\" and \"float | None\"\n  Operator \"-\" not supported for types \"float\" and \"None\"",
+            "range": {
+                "start": {
+                    "line": 86,
+                    "character": 24
+                },
+                "end": {
+                    "line": 86,
+                    "character": 62
+                }
+            },
+            "rule": "reportOperatorIssue"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/control/performance_monitor.py",
+            "severity": "error",
+            "message": "Expected class but received \"(iterable: Iterable[object], /) -> bool\"",
+            "range": {
+                "start": {
+                    "line": 28,
+                    "character": 45
+                },
+                "end": {
+                    "line": 28,
+                    "character": 48
+                }
+            },
+            "rule": "reportGeneralTypeIssues"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/control/performance_monitor.py",
+            "severity": "error",
+            "message": "Expected class but received \"(iterable: Iterable[object], /) -> bool\"",
+            "range": {
+                "start": {
+                    "line": 57,
+                    "character": 42
+                },
+                "end": {
+                    "line": 57,
+                    "character": 45
+                }
+            },
+            "rule": "reportGeneralTypeIssues"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/control/pid_autotuner.py",
+            "severity": "error",
+            "message": "Operator \"-\" not supported for types \"datetime\" and \"datetime | None\"\n  Operator \"-\" not supported for types \"datetime\" and \"None\"",
+            "range": {
+                "start": {
+                    "line": 123,
+                    "character": 11
+                },
+                "end": {
+                    "line": 123,
+                    "character": 44
+                }
+            },
+            "rule": "reportOperatorIssue"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/control/pid_controller.py",
+            "severity": "error",
+            "message": "Cannot access attribute \"_automation_redis\" for class \"object\"\n  Attribute \"_automation_redis\" is unknown",
+            "range": {
+                "start": {
+                    "line": 223,
+                    "character": 29
+                },
+                "end": {
+                    "line": 223,
+                    "character": 46
+                }
+            },
+            "rule": "reportAttributeAccessIssue"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/control/pid_controller.py",
+            "severity": "error",
+            "message": "Cannot access attribute \"_automation_redis\" for class \"object\"\n  Attribute \"_automation_redis\" is unknown",
+            "range": {
+                "start": {
+                    "line": 223,
+                    "character": 65
+                },
+                "end": {
+                    "line": 223,
+                    "character": 82
+                }
+            },
+            "rule": "reportAttributeAccessIssue"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/control/pid_controller.py",
+            "severity": "error",
+            "message": "Cannot access attribute \"_automation_redis\" for class \"object\"\n  Attribute \"_automation_redis\" is unknown",
+            "range": {
+                "start": {
+                    "line": 224,
+                    "character": 45
+                },
+                "end": {
+                    "line": 224,
+                    "character": 62
+                }
+            },
+            "rule": "reportAttributeAccessIssue"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/control/relay_manager.py",
+            "severity": "error",
+            "message": "Expected class but received \"(iterable: Iterable[object], /) -> bool\"",
+            "range": {
+                "start": {
+                    "line": 17,
+                    "character": 33
+                },
+                "end": {
+                    "line": 17,
+                    "character": 36
+                }
+            },
+            "rule": "reportGeneralTypeIssues"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/control/relay_manager.py",
+            "severity": "error",
+            "message": "Expected class but received \"(iterable: Iterable[object], /) -> bool\"",
+            "range": {
+                "start": {
+                    "line": 178,
+                    "character": 74
+                },
+                "end": {
+                    "line": 178,
+                    "character": 77
+                }
+            },
+            "rule": "reportGeneralTypeIssues"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/control/setpoint_manager.py",
+            "severity": "error",
+            "message": "Type \"dict[tuple[str, str, str], dict[str, Any]]\" is not assignable to return type \"dict[str, dict[str, Any]]\"",
+            "range": {
+                "start": {
+                    "line": 237,
+                    "character": 15
+                },
+                "end": {
+                    "line": 247,
+                    "character": 9
+                }
+            },
+            "rule": "reportReturnType"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/control/setpoint_manager.py",
+            "severity": "error",
+            "message": "Argument of type \"str\" cannot be assigned to parameter \"key\" of type \"tuple[str, str, str]\" in function \"__setitem__\"\n  \"str\" is not assignable to \"tuple[str, str, str]\"",
+            "range": {
+                "start": {
+                    "line": 650,
+                    "character": 20
+                },
+                "end": {
+                    "line": 650,
+                    "character": 60
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/control/tests/test_control_components.py",
+            "severity": "error",
+            "message": "Arguments missing for parameters \"duration_minutes\", \"current_time\"",
+            "range": {
+                "start": {
+                    "line": 95,
+                    "character": 8
+                },
+                "end": {
+                    "line": 95,
+                    "character": 69
+                }
+            },
+            "rule": "reportCallIssue"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/control/tests/test_control_components.py",
+            "severity": "error",
+            "message": "Argument of type \"Literal['heating']\" cannot be assigned to parameter \"key\" of type \"tuple[str, str, str]\" in function \"__getitem__\"\n  \"Literal['heating']\" is not assignable to \"tuple[str, str, str]\"",
+            "range": {
+                "start": {
+                    "line": 98,
+                    "character": 15
+                },
+                "end": {
+                    "line": 98,
+                    "character": 46
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/control/tests/test_control_components.py",
+            "severity": "error",
+            "message": "Arguments missing for parameters \"duration_minutes\", \"current_time\"",
+            "range": {
+                "start": {
+                    "line": 109,
+                    "character": 8
+                },
+                "end": {
+                    "line": 109,
+                    "character": 67
+                }
+            },
+            "rule": "reportCallIssue"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/control/tests/test_control_components.py",
+            "severity": "error",
+            "message": "Arguments missing for parameters \"nominal_value\", \"current_time\"",
+            "range": {
+                "start": {
+                    "line": 111,
+                    "character": 26
+                },
+                "end": {
+                    "line": 111,
+                    "character": 79
+                }
+            },
+            "rule": "reportCallIssue"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/control/tests/test_control_components.py",
+            "severity": "error",
+            "message": "Arguments missing for parameters \"duration_minutes\", \"current_time\"",
+            "range": {
+                "start": {
+                    "line": 123,
+                    "character": 8
+                },
+                "end": {
+                    "line": 123,
+                    "character": 67
+                }
+            },
+            "rule": "reportCallIssue"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/control/tests/test_control_components.py",
+            "severity": "error",
+            "message": "Arguments missing for parameters \"nominal_value\", \"current_time\"",
+            "range": {
+                "start": {
+                    "line": 125,
+                    "character": 26
+                },
+                "end": {
+                    "line": 125,
+                    "character": 79
+                }
+            },
+            "rule": "reportCallIssue"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/control/tests/test_control_components.py",
+            "severity": "error",
+            "message": "Arguments missing for parameters \"duration_minutes\", \"current_time\"",
+            "range": {
+                "start": {
+                    "line": 137,
+                    "character": 8
+                },
+                "end": {
+                    "line": 137,
+                    "character": 69
+                }
+            },
+            "rule": "reportCallIssue"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/control/tests/test_control_components.py",
+            "severity": "error",
+            "message": "Arguments missing for parameters \"cluster\", \"setpoint_type\"",
+            "range": {
+                "start": {
+                    "line": 140,
+                    "character": 8
+                },
+                "end": {
+                    "line": 140,
+                    "character": 38
+                }
+            },
+            "rule": "reportCallIssue"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/control/tests/test_control_components.py",
+            "severity": "error",
+            "message": "Argument of type \"dict[str, float]\" cannot be assigned to parameter \"sensor_values\" of type \"dict[str, float | None] | None\" in function \"compute_effective_setpoints\"\n  Type \"dict[str, float]\" is not assignable to type \"dict[str, float | None] | None\"\n    \"dict[str, float]\" is not assignable to \"dict[str, float | None]\"\n      Type parameter \"_VT@dict\" is invariant, but \"float\" is not the same as \"float | None\"\n      Consider switching from \"dict\" to \"Mapping\" which is covariant in the value type\n    \"dict[str, float]\" is not assignable to \"None\"",
+            "range": {
+                "start": {
+                    "line": 213,
+                    "character": 27
+                },
+                "end": {
+                    "line": 213,
+                    "character": 40
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/control/tests/test_control_components.py",
+            "severity": "error",
+            "message": "Argument of type \"dict[str, float]\" cannot be assigned to parameter \"sensor_values\" of type \"dict[str, float | None]\" in function \"process_pid_control\"\n  \"dict[str, float]\" is not assignable to \"dict[str, float | None]\"\n    Type parameter \"_VT@dict\" is invariant, but \"float\" is not the same as \"float | None\"\n    Consider switching from \"dict\" to \"Mapping\" which is covariant in the value type",
+            "range": {
+                "start": {
+                    "line": 338,
+                    "character": 12
+                },
+                "end": {
+                    "line": 338,
+                    "character": 25
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/control/tests/test_control_components.py",
+            "severity": "error",
+            "message": "Argument of type \"dict[str, float]\" cannot be assigned to parameter \"sensor_values\" of type \"dict[str, float | None]\" in function \"_calculate_rule_based_output\"\n  \"dict[str, float]\" is not assignable to \"dict[str, float | None]\"\n    Type parameter \"_VT@dict\" is invariant, but \"float\" is not the same as \"float | None\"\n    Consider switching from \"dict\" to \"Mapping\" which is covariant in the value type",
+            "range": {
+                "start": {
+                    "line": 469,
+                    "character": 46
+                },
+                "end": {
+                    "line": 469,
+                    "character": 59
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/control/tests/test_control_components.py",
+            "severity": "error",
+            "message": "Argument of type \"dict[str, float]\" cannot be assigned to parameter \"sensor_values\" of type \"dict[str, float | None]\" in function \"_calculate_rule_based_output\"\n  \"dict[str, float]\" is not assignable to \"dict[str, float | None]\"\n    Type parameter \"_VT@dict\" is invariant, but \"float\" is not the same as \"float | None\"\n    Consider switching from \"dict\" to \"Mapping\" which is covariant in the value type",
+            "range": {
+                "start": {
+                    "line": 486,
+                    "character": 46
+                },
+                "end": {
+                    "line": 486,
+                    "character": 59
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/control/tests/test_control_components.py",
+            "severity": "error",
+            "message": "Argument of type \"dict[str, float]\" cannot be assigned to parameter \"sensor_values\" of type \"dict[str, float | None]\" in function \"_find_sensor_by_type\"\n  \"dict[str, float]\" is not assignable to \"dict[str, float | None]\"\n    Type parameter \"_VT@dict\" is invariant, but \"float\" is not the same as \"float | None\"\n    Consider switching from \"dict\" to \"Mapping\" which is covariant in the value type",
+            "range": {
+                "start": {
+                    "line": 521,
+                    "character": 54
+                },
+                "end": {
+                    "line": 521,
+                    "character": 67
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/control/tests/test_control_components.py",
+            "severity": "error",
+            "message": "Argument of type \"dict[str, float]\" cannot be assigned to parameter \"sensor_values\" of type \"dict[str, float | None]\" in function \"_find_sensor_by_type\"\n  \"dict[str, float]\" is not assignable to \"dict[str, float | None]\"\n    Type parameter \"_VT@dict\" is invariant, but \"float\" is not the same as \"float | None\"\n    Consider switching from \"dict\" to \"Mapping\" which is covariant in the value type",
+            "range": {
+                "start": {
+                    "line": 525,
+                    "character": 58
+                },
+                "end": {
+                    "line": 525,
+                    "character": 71
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/control/tests/test_control_components.py",
+            "severity": "error",
+            "message": "Argument of type \"dict[str, float]\" cannot be assigned to parameter \"sensor_values\" of type \"dict[str, float | None]\" in function \"_find_sensor_by_type\"\n  \"dict[str, float]\" is not assignable to \"dict[str, float | None]\"\n    Type parameter \"_VT@dict\" is invariant, but \"float\" is not the same as \"float | None\"\n    Consider switching from \"dict\" to \"Mapping\" which is covariant in the value type",
+            "range": {
+                "start": {
+                    "line": 529,
+                    "character": 57
+                },
+                "end": {
+                    "line": 529,
+                    "character": 70
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/feature_flags.py",
+            "severity": "error",
+            "message": "Argument of type \"AutomationRedisClient\" cannot be assigned to parameter \"redis_client\" of type \"Redis\" in function \"__init__\"\n  \"AutomationRedisClient\" is not assignable to \"Redis\"",
+            "range": {
+                "start": {
+                    "line": 187,
+                    "character": 50
+                },
+                "end": {
+                    "line": 187,
+                    "character": 73
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/hardware/dfr0971.py",
+            "severity": "error",
+            "message": "\"write_word_data\" is not a known attribute of \"None\"",
+            "range": {
+                "start": {
+                    "line": 146,
+                    "character": 25
+                },
+                "end": {
+                    "line": 146,
+                    "character": 40
+                }
+            },
+            "rule": "reportOptionalMemberAccess"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/hardware/dfr0971.py",
+            "severity": "error",
+            "message": "\"write_word_data\" is not a known attribute of \"None\"",
+            "range": {
+                "start": {
+                    "line": 264,
+                    "character": 29
+                },
+                "end": {
+                    "line": 264,
+                    "character": 44
+                }
+            },
+            "rule": "reportOptionalMemberAccess"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/hardware/dfr0971.py",
+            "severity": "error",
+            "message": "\"write_byte\" is not a known attribute of \"None\"",
+            "range": {
+                "start": {
+                    "line": 390,
+                    "character": 25
+                },
+                "end": {
+                    "line": 390,
+                    "character": 35
+                }
+            },
+            "rule": "reportOptionalMemberAccess"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/hardware/mcp23017.py",
+            "severity": "error",
+            "message": "\"write_byte_data\" is not a known attribute of \"None\"",
+            "range": {
+                "start": {
+                    "line": 73,
+                    "character": 21
+                },
+                "end": {
+                    "line": 73,
+                    "character": 36
+                }
+            },
+            "rule": "reportOptionalMemberAccess"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/hardware/mcp23017.py",
+            "severity": "error",
+            "message": "\"write_byte_data\" is not a known attribute of \"None\"",
+            "range": {
+                "start": {
+                    "line": 75,
+                    "character": 21
+                },
+                "end": {
+                    "line": 75,
+                    "character": 36
+                }
+            },
+            "rule": "reportOptionalMemberAccess"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/hardware/mcp23017.py",
+            "severity": "error",
+            "message": "\"write_byte_data\" is not a known attribute of \"None\"",
+            "range": {
+                "start": {
+                    "line": 77,
+                    "character": 21
+                },
+                "end": {
+                    "line": 77,
+                    "character": 36
+                }
+            },
+            "rule": "reportOptionalMemberAccess"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/hardware/mcp23017.py",
+            "severity": "error",
+            "message": "\"write_byte_data\" is not a known attribute of \"None\"",
+            "range": {
+                "start": {
+                    "line": 78,
+                    "character": 21
+                },
+                "end": {
+                    "line": 78,
+                    "character": 36
+                }
+            },
+            "rule": "reportOptionalMemberAccess"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/hardware/mcp23017.py",
+            "severity": "error",
+            "message": "\"read_byte_data\" is not a known attribute of \"None\"",
+            "range": {
+                "start": {
+                    "line": 94,
+                    "character": 21
+                },
+                "end": {
+                    "line": 94,
+                    "character": 35
+                }
+            },
+            "rule": "reportOptionalMemberAccess"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/hardware/mcp23017.py",
+            "severity": "error",
+            "message": "\"read_byte_data\" is not a known attribute of \"None\"",
+            "range": {
+                "start": {
+                    "line": 146,
+                    "character": 37
+                },
+                "end": {
+                    "line": 146,
+                    "character": 51
+                }
+            },
+            "rule": "reportOptionalMemberAccess"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/hardware/mcp23017.py",
+            "severity": "error",
+            "message": "\"write_byte_data\" is not a known attribute of \"None\"",
+            "range": {
+                "start": {
+                    "line": 155,
+                    "character": 21
+                },
+                "end": {
+                    "line": 155,
+                    "character": 36
+                }
+            },
+            "rule": "reportOptionalMemberAccess"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/hardware/mcp23017.py",
+            "severity": "error",
+            "message": "\"read_byte_data\" is not a known attribute of \"None\"",
+            "range": {
+                "start": {
+                    "line": 192,
+                    "character": 34
+                },
+                "end": {
+                    "line": 192,
+                    "character": 48
+                }
+            },
+            "rule": "reportOptionalMemberAccess"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/redis/ramps.py",
+            "severity": "error",
+            "message": "\"Awaitable[Any]\" is not iterable\n  \"__iter__\" method not defined",
+            "range": {
+                "start": {
+                    "line": 150,
+                    "character": 23
+                },
+                "end": {
+                    "line": 150,
+                    "character": 27
+                }
+            },
+            "rule": "reportGeneralTypeIssues"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/redis/ramps.py",
+            "severity": "error",
+            "message": "Argument of type \"ResponseT\" cannot be assigned to parameter \"s\" of type \"str | bytes | bytearray\" in function \"loads\"\n  Type \"ResponseT\" is not assignable to type \"str | bytes | bytearray\"\n    Type \"Awaitable[Any]\" is not assignable to type \"str | bytes | bytearray\"\n      \"Awaitable[Any]\" is not assignable to \"str\"\n      \"Awaitable[Any]\" is not assignable to \"bytes\"\n      \"Awaitable[Any]\" is not assignable to \"bytearray\"",
+            "range": {
+                "start": {
+                    "line": 155,
+                    "character": 38
+                },
+                "end": {
+                    "line": 155,
+                    "character": 42
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/redis/setpoints.py",
+            "severity": "error",
+            "message": "\"__getitem__\" method not defined on type \"Awaitable[Any]\"",
+            "range": {
+                "start": {
+                    "line": 80,
+                    "character": 43
+                },
+                "end": {
+                    "line": 80,
+                    "character": 49
+                }
+            },
+            "rule": "reportIndexIssue"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/redis/setpoints.py",
+            "severity": "error",
+            "message": "\"__getitem__\" method not defined on type \"Awaitable[Any]\"",
+            "range": {
+                "start": {
+                    "line": 80,
+                    "character": 54
+                },
+                "end": {
+                    "line": 80,
+                    "character": 60
+                }
+            },
+            "rule": "reportIndexIssue"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/redis/setpoints.py",
+            "severity": "error",
+            "message": "\"__getitem__\" method not defined on type \"Awaitable[Any]\"",
+            "range": {
+                "start": {
+                    "line": 80,
+                    "character": 65
+                },
+                "end": {
+                    "line": 80,
+                    "character": 71
+                }
+            },
+            "rule": "reportIndexIssue"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/redis/setpoints.py",
+            "severity": "error",
+            "message": "\"__getitem__\" method not defined on type \"Awaitable[Any]\"",
+            "range": {
+                "start": {
+                    "line": 80,
+                    "character": 76
+                },
+                "end": {
+                    "line": 80,
+                    "character": 82
+                }
+            },
+            "rule": "reportIndexIssue"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/redis/setpoints.py",
+            "severity": "error",
+            "message": "Argument of type \"dict[bytes, bytes]\" cannot be assigned to parameter \"fields\" of type \"Dict[FieldT, EncodableT]\" in function \"xadd\"\n  \"dict[bytes, bytes]\" is not assignable to \"Dict[FieldT, EncodableT]\"\n    Type parameter \"_KT@dict\" is invariant, but \"bytes\" is not the same as \"FieldT\"\n    Type parameter \"_VT@dict\" is invariant, but \"bytes\" is not the same as \"EncodableT\"",
+            "range": {
+                "start": {
+                    "line": 350,
+                    "character": 42
+                },
+                "end": {
+                    "line": 350,
+                    "character": 53
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/repositories/schedules.py",
+            "severity": "error",
+            "message": "Argument of type \"PoolConnectionProxy | Unknown\" cannot be assigned to parameter \"c\" of type \"Connection\" in function \"do_insert\"\n  Type \"PoolConnectionProxy | Unknown\" is not assignable to type \"Connection\"\n    \"PoolConnectionProxy\" is not assignable to \"Connection\"",
+            "range": {
+                "start": {
+                    "line": 203,
+                    "character": 39
+                },
+                "end": {
+                    "line": 203,
+                    "character": 47
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/repositories/schedules.py",
+            "severity": "error",
+            "message": "Argument of type \"time | Any\" cannot be assigned to parameter \"object\" of type \"int\" in function \"append\"\n  Type \"time | Any\" is not assignable to type \"int\"\n    \"time\" is not assignable to \"int\"",
+            "range": {
+                "start": {
+                    "line": 229,
+                    "character": 38
+                },
+                "end": {
+                    "line": 229,
+                    "character": 43
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/repositories/schedules.py",
+            "severity": "error",
+            "message": "Argument of type \"PoolConnectionProxy | Unknown\" cannot be assigned to parameter \"c\" of type \"Connection\" in function \"do_delete\"\n  Type \"PoolConnectionProxy | Unknown\" is not assignable to type \"Connection\"\n    \"PoolConnectionProxy\" is not assignable to \"Connection\"",
+            "range": {
+                "start": {
+                    "line": 264,
+                    "character": 39
+                },
+                "end": {
+                    "line": 264,
+                    "character": 47
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/routes/alarms.py",
+            "severity": "error",
+            "message": "\"get_database\" is unknown import symbol",
+            "range": {
+                "start": {
+                    "line": 23,
+                    "character": 25
+                },
+                "end": {
+                    "line": 23,
+                    "character": 37
+                }
+            },
+            "rule": "reportAttributeAccessIssue"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/routes/alarms.py",
+            "severity": "error",
+            "message": "\"alarm_manager\" is unknown import symbol",
+            "range": {
+                "start": {
+                    "line": 30,
+                    "character": 25
+                },
+                "end": {
+                    "line": 30,
+                    "character": 38
+                }
+            },
+            "rule": "reportAttributeAccessIssue"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/routes/devices.py",
+            "severity": "error",
+            "message": "\"get_config\" is unknown import symbol",
+            "range": {
+                "start": {
+                    "line": 55,
+                    "character": 25
+                },
+                "end": {
+                    "line": 55,
+                    "character": 35
+                }
+            },
+            "rule": "reportAttributeAccessIssue"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/routes/devices.py",
+            "severity": "error",
+            "message": "Argument of type \"int\" cannot be assigned to parameter \"state\" of type \"bool\" in function \"set_device_state\"\n  \"int\" is not assignable to \"bool\"",
+            "range": {
+                "start": {
+                    "line": 185,
+                    "character": 84
+                },
+                "end": {
+                    "line": 185,
+                    "character": 97
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/routes/devices.py",
+            "severity": "error",
+            "message": "Argument of type \"int\" cannot be assigned to parameter \"state\" of type \"bool\" in function \"set_device_state\"\n  \"int\" is not assignable to \"bool\"",
+            "range": {
+                "start": {
+                    "line": 229,
+                    "character": 84
+                },
+                "end": {
+                    "line": 229,
+                    "character": 89
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/routes/devices.py",
+            "severity": "error",
+            "message": "Cannot access attribute \"get_all_device_mappings\" for class \"DatabaseManager\"\n  Attribute \"get_all_device_mappings\" is unknown",
+            "range": {
+                "start": {
+                    "line": 281,
+                    "character": 26
+                },
+                "end": {
+                    "line": 281,
+                    "character": 49
+                }
+            },
+            "rule": "reportAttributeAccessIssue"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/routes/devices.py",
+            "severity": "error",
+            "message": "Cannot access attribute \"get_device_mapping\" for class \"DatabaseManager\"\n  Attribute \"get_device_mapping\" is unknown",
+            "range": {
+                "start": {
+                    "line": 293,
+                    "character": 29
+                },
+                "end": {
+                    "line": 293,
+                    "character": 47
+                }
+            },
+            "rule": "reportAttributeAccessIssue"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/routes/devices.py",
+            "severity": "error",
+            "message": "Cannot access attribute \"get_all_device_mappings\" for class \"DatabaseManager\"\n  Attribute \"get_all_device_mappings\" is unknown",
+            "range": {
+                "start": {
+                    "line": 317,
+                    "character": 44
+                },
+                "end": {
+                    "line": 317,
+                    "character": 67
+                }
+            },
+            "rule": "reportAttributeAccessIssue"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/routes/devices.py",
+            "severity": "error",
+            "message": "Argument of type \"ConfigLoader\" cannot be assigned to parameter \"config\" of type \"dict[str, Any]\" in function \"validate_device_mapping\"\n  \"ConfigLoader\" is not assignable to \"dict[str, Any]\"",
+            "range": {
+                "start": {
+                    "line": 325,
+                    "character": 47
+                },
+                "end": {
+                    "line": 325,
+                    "character": 53
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/routes/devices.py",
+            "severity": "error",
+            "message": "Argument of type \"int\" cannot be assigned to parameter \"safe_state\" of type \"bool\" in function \"set_device_mapping\"\n  \"int\" is not assignable to \"bool\"",
+            "range": {
+                "start": {
+                    "line": 342,
+                    "character": 8
+                },
+                "end": {
+                    "line": 342,
+                    "character": 26
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/routes/devices.py",
+            "severity": "error",
+            "message": "Argument of type \"int | None\" cannot be assigned to parameter \"mcp_board_id\" of type \"int\" in function \"set_device_mapping\"\n  Type \"int | None\" is not assignable to type \"int\"\n    \"None\" is not assignable to \"int\"",
+            "range": {
+                "start": {
+                    "line": 343,
+                    "character": 8
+                },
+                "end": {
+                    "line": 343,
+                    "character": 28
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/routes/devices.py",
+            "severity": "error",
+            "message": "Cannot access attribute \"get_device_mapping\" for class \"DatabaseManager\"\n  Attribute \"get_device_mapping\" is unknown",
+            "range": {
+                "start": {
+                    "line": 350,
+                    "character": 29
+                },
+                "end": {
+                    "line": 350,
+                    "character": 47
+                }
+            },
+            "rule": "reportAttributeAccessIssue"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/routes/failsafe.py",
+            "severity": "error",
+            "message": "\"get_database\" is unknown import symbol",
+            "range": {
+                "start": {
+                    "line": 17,
+                    "character": 25
+                },
+                "end": {
+                    "line": 17,
+                    "character": 37
+                }
+            },
+            "rule": "reportAttributeAccessIssue"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/routes/failsafe.py",
+            "severity": "error",
+            "message": "\"alarm_manager\" is unknown import symbol",
+            "range": {
+                "start": {
+                    "line": 30,
+                    "character": 25
+                },
+                "end": {
+                    "line": 30,
+                    "character": 38
+                }
+            },
+            "rule": "reportAttributeAccessIssue"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/routes/failsafe.py",
+            "severity": "error",
+            "message": "\"scan_iter\" is not a known attribute of \"None\"",
+            "range": {
+                "start": {
+                    "line": 71,
+                    "character": 49
+                },
+                "end": {
+                    "line": 71,
+                    "character": 58
+                }
+            },
+            "rule": "reportOptionalMemberAccess"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/routes/mode.py",
+            "severity": "error",
+            "message": "\"get_database\" is unknown import symbol",
+            "range": {
+                "start": {
+                    "line": 22,
+                    "character": 25
+                },
+                "end": {
+                    "line": 22,
+                    "character": 37
+                }
+            },
+            "rule": "reportAttributeAccessIssue"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/routes/mode.py",
+            "severity": "error",
+            "message": "\"scan_iter\" is not a known attribute of \"None\"",
+            "range": {
+                "start": {
+                    "line": 120,
+                    "character": 49
+                },
+                "end": {
+                    "line": 120,
+                    "character": 58
+                }
+            },
+            "rule": "reportOptionalMemberAccess"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/routes/mode.py",
+            "severity": "error",
+            "message": "\"get\" is not a known attribute of \"None\"",
+            "range": {
+                "start": {
+                    "line": 126,
+                    "character": 53
+                },
+                "end": {
+                    "line": 126,
+                    "character": 56
+                }
+            },
+            "rule": "reportOptionalMemberAccess"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/routes/pid.py",
+            "severity": "error",
+            "message": "\"get_database\" is unknown import symbol",
+            "range": {
+                "start": {
+                    "line": 61,
+                    "character": 25
+                },
+                "end": {
+                    "line": 61,
+                    "character": 37
+                }
+            },
+            "rule": "reportAttributeAccessIssue"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/routes/pid.py",
+            "severity": "error",
+            "message": "\"get_config\" is unknown import symbol",
+            "range": {
+                "start": {
+                    "line": 68,
+                    "character": 25
+                },
+                "end": {
+                    "line": 68,
+                    "character": 35
+                }
+            },
+            "rule": "reportAttributeAccessIssue"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/routes/pid.py",
+            "severity": "error",
+            "message": "Type \"list[dict[str, Any]]\" is not assignable to return type \"dict[str, dict[str, Any]]\"\n  \"list[dict[str, Any]]\" is not assignable to \"dict[str, dict[str, Any]]\"",
+            "range": {
+                "start": {
+                    "line": 82,
+                    "character": 11
+                },
+                "end": {
+                    "line": 82,
+                    "character": 59
+                }
+            },
+            "rule": "reportReturnType"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/routes/pid.py",
+            "severity": "error",
+            "message": "Argument of type \"ConfigLoader\" cannot be assigned to parameter \"config\" of type \"dict[str, Any]\" in function \"validate_pid_parameters\"\n  \"ConfigLoader\" is not assignable to \"dict[str, Any]\"",
+            "range": {
+                "start": {
+                    "line": 137,
+                    "character": 90
+                },
+                "end": {
+                    "line": 137,
+                    "character": 96
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/routes/pid.py",
+            "severity": "error",
+            "message": "Argument of type \"str | None\" cannot be assigned to parameter \"updated_by\" of type \"str\" in function \"set_pid_parameters\"\n  Type \"str | None\" is not assignable to type \"str\"\n    \"None\" is not assignable to \"str\"",
+            "range": {
+                "start": {
+                    "line": 168,
+                    "character": 19
+                },
+                "end": {
+                    "line": 168,
+                    "character": 36
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/routes/pid.py",
+            "severity": "error",
+            "message": "Type \"dict[str, Any] | None\" is not assignable to return type \"dict[str, Any]\"\n  Type \"dict[str, Any] | None\" is not assignable to type \"dict[str, Any]\"\n    \"None\" is not assignable to \"dict[str, Any]\"",
+            "range": {
+                "start": {
+                    "line": 176,
+                    "character": 11
+                },
+                "end": {
+                    "line": 176,
+                    "character": 18
+                }
+            },
+            "rule": "reportReturnType"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/routes/pid.py",
+            "severity": "error",
+            "message": "Cannot access attribute \"get_device_config\" for class \"ConfigLoader\"\n  Attribute \"get_device_config\" is unknown",
+            "range": {
+                "start": {
+                    "line": 214,
+                    "character": 27
+                },
+                "end": {
+                    "line": 214,
+                    "character": 44
+                }
+            },
+            "rule": "reportAttributeAccessIssue"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/routes/pid.py",
+            "severity": "error",
+            "message": "Type \"dict[str, Any] | None\" is not assignable to return type \"dict[str, Any]\"\n  Type \"dict[str, Any] | None\" is not assignable to type \"dict[str, Any]\"\n    \"None\" is not assignable to \"dict[str, Any]\"",
+            "range": {
+                "start": {
+                    "line": 243,
+                    "character": 11
+                },
+                "end": {
+                    "line": 243,
+                    "character": 66
+                }
+            },
+            "rule": "reportReturnType"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/routes/pid.py",
+            "severity": "error",
+            "message": "Argument of type \"str | None\" cannot be assigned to parameter \"updated_by\" of type \"str\" in function \"set_pid_control_mode\"\n  Type \"str | None\" is not assignable to type \"str\"\n    \"None\" is not assignable to \"str\"",
+            "range": {
+                "start": {
+                    "line": 363,
+                    "character": 19
+                },
+                "end": {
+                    "line": 363,
+                    "character": 36
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/routes/redis_state.py",
+            "severity": "error",
+            "message": "\"get_database\" is unknown import symbol",
+            "range": {
+                "start": {
+                    "line": 25,
+                    "character": 25
+                },
+                "end": {
+                    "line": 25,
+                    "character": 37
+                }
+            },
+            "rule": "reportAttributeAccessIssue"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/routes/room_modes.py",
+            "severity": "error",
+            "message": "Cannot access attribute \"set_mode_with_transaction\" for class \"DatabaseManager\"\n  Attribute \"set_mode_with_transaction\" is unknown",
+            "range": {
+                "start": {
+                    "line": 201,
+                    "character": 29
+                },
+                "end": {
+                    "line": 201,
+                    "character": 54
+                }
+            },
+            "rule": "reportAttributeAccessIssue"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/routes/room_modes.py",
+            "severity": "error",
+            "message": "Cannot access attribute \"save_mode_parameters\" for class \"DatabaseManager\"\n  Attribute \"save_mode_parameters\" is unknown",
+            "range": {
+                "start": {
+                    "line": 253,
+                    "character": 13
+                },
+                "end": {
+                    "line": 253,
+                    "character": 33
+                }
+            },
+            "rule": "reportAttributeAccessIssue"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/routes/schedules/base.py",
+            "severity": "error",
+            "message": "\"get_database\" is unknown import symbol",
+            "range": {
+                "start": {
+                    "line": 51,
+                    "character": 25
+                },
+                "end": {
+                    "line": 51,
+                    "character": 37
+                }
+            },
+            "rule": "reportAttributeAccessIssue"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/routes/schedules/base.py",
+            "severity": "error",
+            "message": "Expected 2 positional arguments",
+            "range": {
+                "start": {
+                    "line": 65,
+                    "character": 81
+                },
+                "end": {
+                    "line": 65,
+                    "character": 94
+                }
+            },
+            "rule": "reportCallIssue"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/routes/schedules/base.py",
+            "severity": "error",
+            "message": "Argument of type \"int | None\" cannot be assigned to parameter \"day_of_week\" of type \"list[int] | None\" in function \"create_schedule\"\n  Type \"int | None\" is not assignable to type \"list[int] | None\"\n    Type \"int\" is not assignable to type \"list[int] | None\"\n      \"int\" is not assignable to \"list[int]\"\n      \"int\" is not assignable to \"None\"",
+            "range": {
+                "start": {
+                    "line": 115,
+                    "character": 8
+                },
+                "end": {
+                    "line": 115,
+                    "character": 28
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/routes/schedules/base.py",
+            "severity": "error",
+            "message": "Argument of type \"str | None\" cannot be assigned to parameter \"mode\" of type \"str\" in function \"create_schedule\"\n  Type \"str | None\" is not assignable to type \"str\"\n    \"None\" is not assignable to \"str\"",
+            "range": {
+                "start": {
+                    "line": 117,
+                    "character": 8
+                },
+                "end": {
+                    "line": 117,
+                    "character": 21
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/routes/schedules/base.py",
+            "severity": "error",
+            "message": "Argument of type \"int | None\" cannot be assigned to parameter \"ramp_up_duration\" of type \"int\" in function \"create_schedule\"\n  Type \"int | None\" is not assignable to type \"int\"\n    \"None\" is not assignable to \"int\"",
+            "range": {
+                "start": {
+                    "line": 119,
+                    "character": 8
+                },
+                "end": {
+                    "line": 119,
+                    "character": 33
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/routes/schedules/base.py",
+            "severity": "error",
+            "message": "Argument of type \"int | None\" cannot be assigned to parameter \"ramp_down_duration\" of type \"int\" in function \"create_schedule\"\n  Type \"int | None\" is not assignable to type \"int\"\n    \"None\" is not assignable to \"int\"",
+            "range": {
+                "start": {
+                    "line": 120,
+                    "character": 8
+                },
+                "end": {
+                    "line": 120,
+                    "character": 35
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/routes/schedules/base.py",
+            "severity": "error",
+            "message": "Expected 1 positional argument",
+            "range": {
+                "start": {
+                    "line": 209,
+                    "character": 8
+                },
+                "end": {
+                    "line": 209,
+                    "character": 21
+                }
+            },
+            "rule": "reportCallIssue"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/routes/schedules/climate.py",
+            "severity": "error",
+            "message": "Argument of type \"ConfigLoader\" cannot be assigned to parameter \"config\" of type \"dict[str, Any]\" in function \"validate_setpoint\"\n  \"ConfigLoader\" is not assignable to \"dict[str, Any]\"",
+            "range": {
+                "start": {
+                    "line": 184,
+                    "character": 63
+                },
+                "end": {
+                    "line": 184,
+                    "character": 69
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/routes/schedules/climate.py",
+            "severity": "error",
+            "message": "Argument of type \"ConfigLoader\" cannot be assigned to parameter \"config\" of type \"dict[str, Any]\" in function \"validate_setpoint\"\n  \"ConfigLoader\" is not assignable to \"dict[str, Any]\"",
+            "range": {
+                "start": {
+                    "line": 191,
+                    "character": 63
+                },
+                "end": {
+                    "line": 191,
+                    "character": 69
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/routes/schedules/climate.py",
+            "severity": "error",
+            "message": "Argument of type \"ConfigLoader\" cannot be assigned to parameter \"config\" of type \"dict[str, Any]\" in function \"validate_setpoint\"\n  \"ConfigLoader\" is not assignable to \"dict[str, Any]\"",
+            "range": {
+                "start": {
+                    "line": 197,
+                    "character": 84
+                },
+                "end": {
+                    "line": 197,
+                    "character": 90
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/routes/schedules/climate.py",
+            "severity": "error",
+            "message": "Argument of type \"ConfigLoader\" cannot be assigned to parameter \"config\" of type \"dict[str, Any]\" in function \"validate_setpoint\"\n  \"ConfigLoader\" is not assignable to \"dict[str, Any]\"",
+            "range": {
+                "start": {
+                    "line": 202,
+                    "character": 74
+                },
+                "end": {
+                    "line": 202,
+                    "character": 80
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/routes/schedules/climate.py",
+            "severity": "error",
+            "message": "Argument of type \"ConfigLoader\" cannot be assigned to parameter \"config\" of type \"dict[str, Any]\" in function \"validate_setpoint\"\n  \"ConfigLoader\" is not assignable to \"dict[str, Any]\"",
+            "range": {
+                "start": {
+                    "line": 207,
+                    "character": 74
+                },
+                "end": {
+                    "line": 207,
+                    "character": 80
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/routes/schedules/room.py",
+            "severity": "error",
+            "message": "Argument of type \"PoolConnectionProxy | Unknown\" cannot be assigned to parameter \"conn\" of type \"Connection | None\" in function \"delete_schedules_bulk\"\n  Type \"PoolConnectionProxy | Unknown\" is not assignable to type \"Connection | None\"\n    Type \"PoolConnectionProxy\" is not assignable to type \"Connection | None\"\n      \"PoolConnectionProxy\" is not assignable to \"Connection\"\n      \"PoolConnectionProxy\" is not assignable to \"None\"",
+            "range": {
+                "start": {
+                    "line": 335,
+                    "character": 89
+                },
+                "end": {
+                    "line": 335,
+                    "character": 93
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/routes/schedules/room.py",
+            "severity": "error",
+            "message": "Argument of type \"PoolConnectionProxy | Unknown\" cannot be assigned to parameter \"conn\" of type \"Connection | None\" in function \"create_schedule\"\n  Type \"PoolConnectionProxy | Unknown\" is not assignable to type \"Connection | None\"\n    Type \"PoolConnectionProxy\" is not assignable to type \"Connection | None\"\n      \"PoolConnectionProxy\" is not assignable to \"Connection\"\n      \"PoolConnectionProxy\" is not assignable to \"None\"",
+            "range": {
+                "start": {
+                    "line": 426,
+                    "character": 33
+                },
+                "end": {
+                    "line": 426,
+                    "character": 37
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/routes/schedules/room.py",
+            "severity": "error",
+            "message": "Argument of type \"None\" cannot be assigned to parameter \"ramp_up_duration\" of type \"int\" in function \"create_schedule\"\n  \"None\" is not assignable to \"int\"",
+            "range": {
+                "start": {
+                    "line": 444,
+                    "character": 45
+                },
+                "end": {
+                    "line": 444,
+                    "character": 49
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/routes/schedules/room.py",
+            "severity": "error",
+            "message": "Argument of type \"None\" cannot be assigned to parameter \"ramp_down_duration\" of type \"int\" in function \"create_schedule\"\n  \"None\" is not assignable to \"int\"",
+            "range": {
+                "start": {
+                    "line": 445,
+                    "character": 47
+                },
+                "end": {
+                    "line": 445,
+                    "character": 51
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/routes/schedules/room.py",
+            "severity": "error",
+            "message": "Argument of type \"PoolConnectionProxy | Unknown\" cannot be assigned to parameter \"conn\" of type \"Connection | None\" in function \"create_schedule\"\n  Type \"PoolConnectionProxy | Unknown\" is not assignable to type \"Connection | None\"\n    Type \"PoolConnectionProxy\" is not assignable to type \"Connection | None\"\n      \"PoolConnectionProxy\" is not assignable to \"Connection\"\n      \"PoolConnectionProxy\" is not assignable to \"None\"",
+            "range": {
+                "start": {
+                    "line": 446,
+                    "character": 33
+                },
+                "end": {
+                    "line": 446,
+                    "character": 37
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/routes/schedules/room.py",
+            "severity": "error",
+            "message": "Argument of type \"None\" cannot be assigned to parameter \"ramp_up_duration\" of type \"int\" in function \"create_schedule\"\n  \"None\" is not assignable to \"int\"",
+            "range": {
+                "start": {
+                    "line": 464,
+                    "character": 45
+                },
+                "end": {
+                    "line": 464,
+                    "character": 49
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/routes/schedules/room.py",
+            "severity": "error",
+            "message": "Argument of type \"None\" cannot be assigned to parameter \"ramp_down_duration\" of type \"int\" in function \"create_schedule\"\n  \"None\" is not assignable to \"int\"",
+            "range": {
+                "start": {
+                    "line": 465,
+                    "character": 47
+                },
+                "end": {
+                    "line": 465,
+                    "character": 51
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/routes/schedules/room.py",
+            "severity": "error",
+            "message": "Argument of type \"PoolConnectionProxy | Unknown\" cannot be assigned to parameter \"conn\" of type \"Connection | None\" in function \"create_schedule\"\n  Type \"PoolConnectionProxy | Unknown\" is not assignable to type \"Connection | None\"\n    Type \"PoolConnectionProxy\" is not assignable to type \"Connection | None\"\n      \"PoolConnectionProxy\" is not assignable to \"Connection\"\n      \"PoolConnectionProxy\" is not assignable to \"None\"",
+            "range": {
+                "start": {
+                    "line": 466,
+                    "character": 33
+                },
+                "end": {
+                    "line": 466,
+                    "character": 37
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/routes/schedules/room.py",
+            "severity": "error",
+            "message": "Argument of type \"None\" cannot be assigned to parameter \"ramp_up_duration\" of type \"int\" in function \"create_schedule\"\n  \"None\" is not assignable to \"int\"",
+            "range": {
+                "start": {
+                    "line": 484,
+                    "character": 45
+                },
+                "end": {
+                    "line": 484,
+                    "character": 49
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/routes/schedules/room.py",
+            "severity": "error",
+            "message": "Argument of type \"None\" cannot be assigned to parameter \"ramp_down_duration\" of type \"int\" in function \"create_schedule\"\n  \"None\" is not assignable to \"int\"",
+            "range": {
+                "start": {
+                    "line": 485,
+                    "character": 47
+                },
+                "end": {
+                    "line": 485,
+                    "character": 51
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/routes/schedules/room.py",
+            "severity": "error",
+            "message": "Argument of type \"PoolConnectionProxy | Unknown\" cannot be assigned to parameter \"conn\" of type \"Connection | None\" in function \"create_schedule\"\n  Type \"PoolConnectionProxy | Unknown\" is not assignable to type \"Connection | None\"\n    Type \"PoolConnectionProxy\" is not assignable to type \"Connection | None\"\n      \"PoolConnectionProxy\" is not assignable to \"Connection\"\n      \"PoolConnectionProxy\" is not assignable to \"None\"",
+            "range": {
+                "start": {
+                    "line": 486,
+                    "character": 33
+                },
+                "end": {
+                    "line": 486,
+                    "character": 37
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/routes/schedules/utils.py",
+            "severity": "error",
+            "message": "\"get\" is not a known attribute of \"None\"",
+            "range": {
+                "start": {
+                    "line": 85,
+                    "character": 44
+                },
+                "end": {
+                    "line": 85,
+                    "character": 47
+                }
+            },
+            "rule": "reportOptionalMemberAccess"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/routes/schedules/utils.py",
+            "severity": "error",
+            "message": "\"get\" is not a known attribute of \"None\"",
+            "range": {
+                "start": {
+                    "line": 86,
+                    "character": 42
+                },
+                "end": {
+                    "line": 86,
+                    "character": 45
+                }
+            },
+            "rule": "reportOptionalMemberAccess"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/routes/schedules/utils.py",
+            "severity": "error",
+            "message": "\"get\" is not a known attribute of \"None\"",
+            "range": {
+                "start": {
+                    "line": 87,
+                    "character": 46
+                },
+                "end": {
+                    "line": 87,
+                    "character": 49
+                }
+            },
+            "rule": "reportOptionalMemberAccess"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/routes/schedules/utils.py",
+            "severity": "error",
+            "message": "\"get\" is not a known attribute of \"None\"",
+            "range": {
+                "start": {
+                    "line": 88,
+                    "character": 44
+                },
+                "end": {
+                    "line": 88,
+                    "character": 47
+                }
+            },
+            "rule": "reportOptionalMemberAccess"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/routes/schedules/utils.py",
+            "severity": "error",
+            "message": "\"get\" is not a known attribute of \"None\"",
+            "range": {
+                "start": {
+                    "line": 89,
+                    "character": 46
+                },
+                "end": {
+                    "line": 89,
+                    "character": 49
+                }
+            },
+            "rule": "reportOptionalMemberAccess"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/routes/schedules/utils.py",
+            "severity": "error",
+            "message": "\"get\" is not a known attribute of \"None\"",
+            "range": {
+                "start": {
+                    "line": 90,
+                    "character": 48
+                },
+                "end": {
+                    "line": 90,
+                    "character": 51
+                }
+            },
+            "rule": "reportOptionalMemberAccess"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/routes/setpoints.py",
+            "severity": "error",
+            "message": "\"get_config\" is unknown import symbol",
+            "range": {
+                "start": {
+                    "line": 41,
+                    "character": 25
+                },
+                "end": {
+                    "line": 41,
+                    "character": 35
+                }
+            },
+            "rule": "reportAttributeAccessIssue"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/routes/setpoints.py",
+            "severity": "error",
+            "message": "\"get_database\" is unknown import symbol",
+            "range": {
+                "start": {
+                    "line": 48,
+                    "character": 25
+                },
+                "end": {
+                    "line": 48,
+                    "character": 37
+                }
+            },
+            "rule": "reportAttributeAccessIssue"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/routes/setpoints.py",
+            "severity": "error",
+            "message": "Argument of type \"ConfigLoader\" cannot be assigned to parameter \"config\" of type \"dict[str, Any]\" in function \"validate_setpoint\"\n  \"ConfigLoader\" is not assignable to \"dict[str, Any]\"",
+            "range": {
+                "start": {
+                    "line": 141,
+                    "character": 87
+                },
+                "end": {
+                    "line": 141,
+                    "character": 93
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/routes/setpoints.py",
+            "severity": "error",
+            "message": "Argument of type \"ConfigLoader\" cannot be assigned to parameter \"config\" of type \"dict[str, Any]\" in function \"validate_setpoint\"\n  \"ConfigLoader\" is not assignable to \"dict[str, Any]\"",
+            "range": {
+                "start": {
+                    "line": 146,
+                    "character": 87
+                },
+                "end": {
+                    "line": 146,
+                    "character": 93
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/routes/setpoints.py",
+            "severity": "error",
+            "message": "Argument of type \"ConfigLoader\" cannot be assigned to parameter \"config\" of type \"dict[str, Any]\" in function \"validate_setpoint\"\n  \"ConfigLoader\" is not assignable to \"dict[str, Any]\"",
+            "range": {
+                "start": {
+                    "line": 151,
+                    "character": 76
+                },
+                "end": {
+                    "line": 151,
+                    "character": 82
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/routes/setpoints.py",
+            "severity": "error",
+            "message": "Argument of type \"ConfigLoader\" cannot be assigned to parameter \"config\" of type \"dict[str, Any]\" in function \"validate_setpoint\"\n  \"ConfigLoader\" is not assignable to \"dict[str, Any]\"",
+            "range": {
+                "start": {
+                    "line": 156,
+                    "character": 66
+                },
+                "end": {
+                    "line": 156,
+                    "character": 72
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/routes/setpoints.py",
+            "severity": "error",
+            "message": "Argument of type \"ConfigLoader\" cannot be assigned to parameter \"config\" of type \"dict[str, Any]\" in function \"validate_setpoint\"\n  \"ConfigLoader\" is not assignable to \"dict[str, Any]\"",
+            "range": {
+                "start": {
+                    "line": 161,
+                    "character": 66
+                },
+                "end": {
+                    "line": 161,
+                    "character": 72
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/routes/setpoints.py",
+            "severity": "error",
+            "message": "\"isoformat\" is not a known attribute of \"None\"",
+            "range": {
+                "start": {
+                    "line": 364,
+                    "character": 57
+                },
+                "end": {
+                    "line": 364,
+                    "character": 66
+                }
+            },
+            "rule": "reportOptionalMemberAccess"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/routes/setpoints.py",
+            "severity": "error",
+            "message": "\"acquire\" is not a known attribute of \"None\"",
+            "range": {
+                "start": {
+                    "line": 376,
+                    "character": 34
+                },
+                "end": {
+                    "line": 376,
+                    "character": 41
+                }
+            },
+            "rule": "reportOptionalMemberAccess"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/routes/websocket.py",
+            "severity": "error",
+            "message": "\"get_database\" is unknown import symbol",
+            "range": {
+                "start": {
+                    "line": 24,
+                    "character": 25
+                },
+                "end": {
+                    "line": 24,
+                    "character": 37
+                }
+            },
+            "rule": "reportAttributeAccessIssue"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/routes/websocket.py",
+            "severity": "error",
+            "message": "\"get_relay_manager\" is unknown import symbol",
+            "range": {
+                "start": {
+                    "line": 31,
+                    "character": 25
+                },
+                "end": {
+                    "line": 31,
+                    "character": 42
+                }
+            },
+            "rule": "reportAttributeAccessIssue"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/routes/websocket.py",
+            "severity": "error",
+            "message": "\"isoformat\" is not a known attribute of \"None\"",
+            "range": {
+                "start": {
+                    "line": 209,
+                    "character": 58
+                },
+                "end": {
+                    "line": 209,
+                    "character": 67
+                }
+            },
+            "rule": "reportOptionalMemberAccess"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/routes/websocket.py",
+            "severity": "error",
+            "message": "\"isoformat\" is not a known attribute of \"None\"",
+            "range": {
+                "start": {
+                    "line": 235,
+                    "character": 58
+                },
+                "end": {
+                    "line": 235,
+                    "character": 67
+                }
+            },
+            "rule": "reportOptionalMemberAccess"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/app/validation.py",
+            "severity": "error",
+            "message": "Cannot access attribute \"get_safety_limits\" for class \"dict[str, Any]\"\n  Attribute \"get_safety_limits\" is unknown",
+            "range": {
+                "start": {
+                    "line": 106,
+                    "character": 31
+                },
+                "end": {
+                    "line": 106,
+                    "character": 48
+                }
+            },
+            "rule": "reportAttributeAccessIssue"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/config_cli.py",
+            "severity": "error",
+            "message": "Argument of type \"int | None\" cannot be assigned to parameter \"day_of_week\" of type \"list[int] | None\" in function \"create_schedule\"\n  Type \"int | None\" is not assignable to type \"list[int] | None\"\n    Type \"int\" is not assignable to type \"list[int] | None\"\n      \"int\" is not assignable to \"list[int]\"\n      \"int\" is not assignable to \"None\"",
+            "range": {
+                "start": {
+                    "line": 563,
+                    "character": 8
+                },
+                "end": {
+                    "line": 563,
+                    "character": 19
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/config_cli.py",
+            "severity": "error",
+            "message": "Argument of type \"str | None\" cannot be assigned to parameter \"mode\" of type \"str\" in function \"create_schedule\"\n  Type \"str | None\" is not assignable to type \"str\"\n    \"None\" is not assignable to \"str\"",
+            "range": {
+                "start": {
+                    "line": 565,
+                    "character": 8
+                },
+                "end": {
+                    "line": 565,
+                    "character": 12
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/config_cli.py",
+            "severity": "error",
+            "message": "Argument of type \"int | None\" cannot be assigned to parameter \"ramp_up_duration\" of type \"int\" in function \"create_schedule\"\n  Type \"int | None\" is not assignable to type \"int\"\n    \"None\" is not assignable to \"int\"",
+            "range": {
+                "start": {
+                    "line": 567,
+                    "character": 8
+                },
+                "end": {
+                    "line": 567,
+                    "character": 24
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/config_cli.py",
+            "severity": "error",
+            "message": "Argument of type \"int | None\" cannot be assigned to parameter \"ramp_down_duration\" of type \"int\" in function \"create_schedule\"\n  Type \"int | None\" is not assignable to type \"int\"\n    \"None\" is not assignable to \"int\"",
+            "range": {
+                "start": {
+                    "line": 568,
+                    "character": 8
+                },
+                "end": {
+                    "line": 568,
+                    "character": 26
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/config_cli.py",
+            "severity": "error",
+            "message": "Expected 1 positional argument",
+            "range": {
+                "start": {
+                    "line": 713,
+                    "character": 8
+                },
+                "end": {
+                    "line": 713,
+                    "character": 12
+                }
+            },
+            "rule": "reportCallIssue"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/config_cli.py",
+            "severity": "error",
+            "message": "Cannot access attribute \"items\" for class \"list[dict[str, Any]]\"\n  Attribute \"items\" is unknown",
+            "range": {
+                "start": {
+                    "line": 829,
+                    "character": 39
+                },
+                "end": {
+                    "line": 829,
+                    "character": 44
+                }
+            },
+            "rule": "reportAttributeAccessIssue"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/debug_effective_setpoints.py",
+            "severity": "error",
+            "message": "\"fetchval\" is not a known attribute of \"None\"",
+            "range": {
+                "start": {
+                    "line": 28,
+                    "character": 34
+                },
+                "end": {
+                    "line": 28,
+                    "character": 42
+                }
+            },
+            "rule": "reportOptionalMemberAccess"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/debug_effective_setpoints.py",
+            "severity": "error",
+            "message": "\"fetch\" is not a known attribute of \"None\"",
+            "range": {
+                "start": {
+                    "line": 34,
+                    "character": 34
+                },
+                "end": {
+                    "line": 34,
+                    "character": 39
+                }
+            },
+            "rule": "reportOptionalMemberAccess"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/debug_effective_setpoints.py",
+            "severity": "error",
+            "message": "\"fetchval\" is not a known attribute of \"None\"",
+            "range": {
+                "start": {
+                    "line": 42,
+                    "character": 31
+                },
+                "end": {
+                    "line": 42,
+                    "character": 39
+                }
+            },
+            "rule": "reportOptionalMemberAccess"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/debug_effective_setpoints.py",
+            "severity": "error",
+            "message": "\"fetch\" is not a known attribute of \"None\"",
+            "range": {
+                "start": {
+                    "line": 48,
+                    "character": 31
+                },
+                "end": {
+                    "line": 48,
+                    "character": 36
+                }
+            },
+            "rule": "reportOptionalMemberAccess"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/debug_effective_setpoints.py",
+            "severity": "error",
+            "message": "\"fetch\" is not a known attribute of \"None\"",
+            "range": {
+                "start": {
+                    "line": 56,
+                    "character": 35
+                },
+                "end": {
+                    "line": 56,
+                    "character": 40
+                }
+            },
+            "rule": "reportOptionalMemberAccess"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/debug_effective_setpoints.py",
+            "severity": "error",
+            "message": "\"fetch\" is not a known attribute of \"None\"",
+            "range": {
+                "start": {
+                    "line": 70,
+                    "character": 32
+                },
+                "end": {
+                    "line": 70,
+                    "character": 37
+                }
+            },
+            "rule": "reportOptionalMemberAccess"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/debug_effective_setpoints.py",
+            "severity": "error",
+            "message": "\"fetch\" is not a known attribute of \"None\"",
+            "range": {
+                "start": {
+                    "line": 88,
+                    "character": 38
+                },
+                "end": {
+                    "line": 88,
+                    "character": 43
+                }
+            },
+            "rule": "reportOptionalMemberAccess"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/debug_effective_setpoints.py",
+            "severity": "error",
+            "message": "\"fetch\" is not a known attribute of \"None\"",
+            "range": {
+                "start": {
+                    "line": 104,
+                    "character": 40
+                },
+                "end": {
+                    "line": 104,
+                    "character": 45
+                }
+            },
+            "rule": "reportOptionalMemberAccess"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/debug_effective_setpoints.py",
+            "severity": "error",
+            "message": "\"fetch\" is not a known attribute of \"None\"",
+            "range": {
+                "start": {
+                    "line": 120,
+                    "character": 42
+                },
+                "end": {
+                    "line": 120,
+                    "character": 47
+                }
+            },
+            "rule": "reportOptionalMemberAccess"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/debug_effective_setpoints.py",
+            "severity": "error",
+            "message": "\"fetch\" is not a known attribute of \"None\"",
+            "range": {
+                "start": {
+                    "line": 136,
+                    "character": 44
+                },
+                "end": {
+                    "line": 136,
+                    "character": 49
+                }
+            },
+            "rule": "reportOptionalMemberAccess"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/debug_effective_setpoints.py",
+            "severity": "error",
+            "message": "\"fetch\" is not a known attribute of \"None\"",
+            "range": {
+                "start": {
+                    "line": 153,
+                    "character": 35
+                },
+                "end": {
+                    "line": 153,
+                    "character": 40
+                }
+            },
+            "rule": "reportOptionalMemberAccess"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/debug_mode_transition.py",
+            "severity": "error",
+            "message": "Argument of type \"DatabaseManager\" cannot be assigned to parameter \"current_time\" of type \"datetime | None\" in function \"get_climate_mode\"\n  Type \"DatabaseManager\" is not assignable to type \"datetime | None\"\n    \"DatabaseManager\" is not assignable to \"datetime\"\n    \"DatabaseManager\" is not assignable to \"None\"",
+            "range": {
+                "start": {
+                    "line": 27,
+                    "character": 63
+                },
+                "end": {
+                    "line": 27,
+                    "character": 65
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/debug_mode_transition.py",
+            "severity": "error",
+            "message": "Argument of type \"Literal[1035]\" cannot be assigned to parameter \"day_start_time\" of type \"str | None\" in function \"get_climate_mode\"\n  Type \"Literal[1035]\" is not assignable to type \"str | None\"\n    \"Literal[1035]\" is not assignable to \"str\"\n    \"Literal[1035]\" is not assignable to \"None\"",
+            "range": {
+                "start": {
+                    "line": 27,
+                    "character": 67
+                },
+                "end": {
+                    "line": 27,
+                    "character": 79
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/debug_mode_transition.py",
+            "severity": "error",
+            "message": "Argument of type \"DatabaseManager\" cannot be assigned to parameter \"current_time\" of type \"datetime | None\" in function \"get_climate_mode\"\n  Type \"DatabaseManager\" is not assignable to type \"datetime | None\"\n    \"DatabaseManager\" is not assignable to \"datetime\"\n    \"DatabaseManager\" is not assignable to \"None\"",
+            "range": {
+                "start": {
+                    "line": 37,
+                    "character": 64
+                },
+                "end": {
+                    "line": 37,
+                    "character": 66
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/debug_mode_transition.py",
+            "severity": "error",
+            "message": "Argument of type \"Literal[1034]\" cannot be assigned to parameter \"day_start_time\" of type \"str | None\" in function \"get_climate_mode\"\n  Type \"Literal[1034]\" is not assignable to type \"str | None\"\n    \"Literal[1034]\" is not assignable to \"str\"\n    \"Literal[1034]\" is not assignable to \"None\"",
+            "range": {
+                "start": {
+                    "line": 37,
+                    "character": 68
+                },
+                "end": {
+                    "line": 37,
+                    "character": 82
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/debug_mode_transition.py",
+            "severity": "error",
+            "message": "Argument of type \"DatabaseManager\" cannot be assigned to parameter \"current_time\" of type \"datetime | None\" in function \"get_climate_mode\"\n  Type \"DatabaseManager\" is not assignable to type \"datetime | None\"\n    \"DatabaseManager\" is not assignable to \"datetime\"\n    \"DatabaseManager\" is not assignable to \"None\"",
+            "range": {
+                "start": {
+                    "line": 47,
+                    "character": 64
+                },
+                "end": {
+                    "line": 47,
+                    "character": 66
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/debug_mode_transition.py",
+            "severity": "error",
+            "message": "Argument of type \"Literal[950]\" cannot be assigned to parameter \"day_start_time\" of type \"str | None\" in function \"get_climate_mode\"\n  Type \"Literal[950]\" is not assignable to type \"str | None\"\n    \"Literal[950]\" is not assignable to \"str\"\n    \"Literal[950]\" is not assignable to \"None\"",
+            "range": {
+                "start": {
+                    "line": 47,
+                    "character": 68
+                },
+                "end": {
+                    "line": 47,
+                    "character": 82
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/tests/test_light_schedule_rules.py",
+            "severity": "error",
+            "message": "Operator \"<=\" not supported for types \"float\" and \"float | None\"\n  Operator \"<=\" not supported for types \"float\" and \"None\"",
+            "range": {
+                "start": {
+                    "line": 69,
+                    "character": 11
+                },
+                "end": {
+                    "line": 69,
+                    "character": 39
+                }
+            },
+            "rule": "reportOperatorIssue"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/tests/test_light_schedule_rules.py",
+            "severity": "error",
+            "message": "Operator \"<=\" not supported for \"None\"",
+            "range": {
+                "start": {
+                    "line": 69,
+                    "character": 19
+                },
+                "end": {
+                    "line": 69,
+                    "character": 31
+                }
+            },
+            "rule": "reportOptionalOperand"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/tests/test_light_schedule_rules.py",
+            "severity": "error",
+            "message": "Operator \"<=\" not supported for types \"float\" and \"float | None\"\n  Operator \"<=\" not supported for types \"float\" and \"None\"",
+            "range": {
+                "start": {
+                    "line": 78,
+                    "character": 11
+                },
+                "end": {
+                    "line": 78,
+                    "character": 39
+                }
+            },
+            "rule": "reportOperatorIssue"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/tests/test_light_schedule_rules.py",
+            "severity": "error",
+            "message": "Operator \"<=\" not supported for \"None\"",
+            "range": {
+                "start": {
+                    "line": 78,
+                    "character": 19
+                },
+                "end": {
+                    "line": 78,
+                    "character": 31
+                }
+            },
+            "rule": "reportOptionalOperand"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/tests/test_light_schedule_rules.py",
+            "severity": "error",
+            "message": "Operator \"<=\" not supported for types \"float\" and \"float | None\"\n  Operator \"<=\" not supported for types \"float\" and \"None\"",
+            "range": {
+                "start": {
+                    "line": 83,
+                    "character": 11
+                },
+                "end": {
+                    "line": 83,
+                    "character": 39
+                }
+            },
+            "rule": "reportOperatorIssue"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/tests/test_light_schedule_rules.py",
+            "severity": "error",
+            "message": "Operator \"<=\" not supported for \"None\"",
+            "range": {
+                "start": {
+                    "line": 83,
+                    "character": 19
+                },
+                "end": {
+                    "line": 83,
+                    "character": 31
+                }
+            },
+            "rule": "reportOptionalOperand"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/tests/test_light_schedule_rules.py",
+            "severity": "error",
+            "message": "Operator \"<=\" not supported for types \"Literal[37]\" and \"float | None\"\n  Operator \"<=\" not supported for types \"Literal[37]\" and \"None\"",
+            "range": {
+                "start": {
+                    "line": 96,
+                    "character": 11
+                },
+                "end": {
+                    "line": 96,
+                    "character": 35
+                }
+            },
+            "rule": "reportOperatorIssue"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/tests/test_light_schedule_rules.py",
+            "severity": "error",
+            "message": "Operator \"<=\" not supported for \"None\"",
+            "range": {
+                "start": {
+                    "line": 96,
+                    "character": 17
+                },
+                "end": {
+                    "line": 96,
+                    "character": 29
+                }
+            },
+            "rule": "reportOptionalOperand"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/tests/test_light_schedule_rules.py",
+            "severity": "error",
+            "message": "Operator \"<=\" not supported for types \"Literal[23]\" and \"float | None\"\n  Operator \"<=\" not supported for types \"Literal[23]\" and \"None\"",
+            "range": {
+                "start": {
+                    "line": 105,
+                    "character": 11
+                },
+                "end": {
+                    "line": 105,
+                    "character": 35
+                }
+            },
+            "rule": "reportOperatorIssue"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/tests/test_light_schedule_rules.py",
+            "severity": "error",
+            "message": "Operator \"<=\" not supported for \"None\"",
+            "range": {
+                "start": {
+                    "line": 105,
+                    "character": 17
+                },
+                "end": {
+                    "line": 105,
+                    "character": 29
+                }
+            },
+            "rule": "reportOptionalOperand"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/tests/test_light_schedule_rules.py",
+            "severity": "error",
+            "message": "Operator \"<=\" not supported for types \"float\" and \"float | None\"\n  Operator \"<=\" not supported for types \"float\" and \"None\"",
+            "range": {
+                "start": {
+                    "line": 110,
+                    "character": 11
+                },
+                "end": {
+                    "line": 110,
+                    "character": 38
+                }
+            },
+            "rule": "reportOperatorIssue"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/tests/test_light_schedule_rules.py",
+            "severity": "error",
+            "message": "Operator \"<=\" not supported for \"None\"",
+            "range": {
+                "start": {
+                    "line": 110,
+                    "character": 18
+                },
+                "end": {
+                    "line": 110,
+                    "character": 30
+                }
+            },
+            "rule": "reportOptionalOperand"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/automation-service/tests/test_setpoint_ramp_logic.py",
+            "severity": "error",
+            "message": "Operator \"-\" not supported for \"None\"",
+            "range": {
+                "start": {
+                    "line": 132,
+                    "character": 19
+                },
+                "end": {
+                    "line": 132,
+                    "character": 27
+                }
+            },
+            "rule": "reportOptionalOperand"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/backend/app/redis_client.py",
+            "severity": "error",
+            "message": "\"bool\" is not awaitable\n  \"bool\" is incompatible with protocol \"Awaitable[_T_co@Awaitable]\"\n    \"__await__\" is not present",
+            "range": {
+                "start": {
+                    "line": 24,
+                    "character": 18
+                },
+                "end": {
+                    "line": 24,
+                    "character": 38
+                }
+            },
+            "rule": "reportGeneralTypeIssues"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/backend/app/redis_client.py",
+            "severity": "error",
+            "message": "\"bool\" is not awaitable\n  \"bool\" is incompatible with protocol \"Awaitable[_T_co@Awaitable]\"\n    \"__await__\" is not present",
+            "range": {
+                "start": {
+                    "line": 41,
+                    "character": 14
+                },
+                "end": {
+                    "line": 41,
+                    "character": 34
+                }
+            },
+            "rule": "reportGeneralTypeIssues"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/backend/app/redis_stream_reader.py",
+            "severity": "error",
+            "message": "Expression of type \"None\" cannot be assigned to parameter of type \"str\"\n  \"None\" is not assignable to \"str\"",
+            "range": {
+                "start": {
+                    "line": 22,
+                    "character": 40
+                },
+                "end": {
+                    "line": 22,
+                    "character": 44
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/backend/app/redis_stream_reader.py",
+            "severity": "error",
+            "message": "Type \"ResponseT\" is not assignable to return type \"int\"\n  Type \"ResponseT\" is not assignable to type \"int\"\n    \"Awaitable[Any]\" is not assignable to \"int\"",
+            "range": {
+                "start": {
+                    "line": 64,
+                    "character": 19
+                },
+                "end": {
+                    "line": 64,
+                    "character": 53
+                }
+            },
+            "rule": "reportReturnType"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/backend/app/redis_stream_reader.py",
+            "severity": "error",
+            "message": "\"xlen\" is not a known attribute of \"None\"",
+            "range": {
+                "start": {
+                    "line": 64,
+                    "character": 31
+                },
+                "end": {
+                    "line": 64,
+                    "character": 35
+                }
+            },
+            "rule": "reportOptionalMemberAccess"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/backend/app/redis_stream_reader.py",
+            "severity": "error",
+            "message": "\"xrevrange\" is not a known attribute of \"None\"",
+            "range": {
+                "start": {
+                    "line": 99,
+                    "character": 34
+                },
+                "end": {
+                    "line": 99,
+                    "character": 43
+                }
+            },
+            "rule": "reportOptionalMemberAccess"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/backend/app/redis_stream_reader.py",
+            "severity": "error",
+            "message": "\"Awaitable[Any]\" is not iterable\n  \"__iter__\" method not defined",
+            "range": {
+                "start": {
+                    "line": 107,
+                    "character": 36
+                },
+                "end": {
+                    "line": 107,
+                    "character": 43
+                }
+            },
+            "rule": "reportGeneralTypeIssues"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/backend/app/routes/sensor_data.py",
+            "severity": "error",
+            "message": "\"startswith\" is not a known attribute of \"None\"",
+            "range": {
+                "start": {
+                    "line": 118,
+                    "character": 55
+                },
+                "end": {
+                    "line": 118,
+                    "character": 65
+                }
+            },
+            "rule": "reportOptionalMemberAccess"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/backend/app/routes/sensor_data.py",
+            "severity": "error",
+            "message": "\"replace\" is not a known attribute of \"None\"",
+            "range": {
+                "start": {
+                    "line": 120,
+                    "character": 26
+                },
+                "end": {
+                    "line": 120,
+                    "character": 33
+                }
+            },
+            "rule": "reportOptionalMemberAccess"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/backend/app/routes/sensors.py",
+            "severity": "error",
+            "message": "No overloads for \"get\" match the provided arguments",
+            "range": {
+                "start": {
+                    "line": 92,
+                    "character": 18
+                },
+                "end": {
+                    "line": 92,
+                    "character": 51
+                }
+            },
+            "rule": "reportCallIssue"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/backend/app/routes/sensors.py",
+            "severity": "error",
+            "message": "Argument of type \"str | None\" cannot be assigned to parameter \"key\" of type \"str\" in function \"get\"\n  Type \"str | None\" is not assignable to type \"str\"\n    \"None\" is not assignable to \"str\"",
+            "range": {
+                "start": {
+                    "line": 92,
+                    "character": 34
+                },
+                "end": {
+                    "line": 92,
+                    "character": 44
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/backend/app/stream_processor.py",
+            "severity": "error",
+            "message": "\"calculate_rh\" is unknown import symbol",
+            "range": {
+                "start": {
+                    "line": 17,
+                    "character": 23
+                },
+                "end": {
+                    "line": 17,
+                    "character": 35
+                }
+            },
+            "rule": "reportAttributeAccessIssue"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/backend/app/stream_processor.py",
+            "severity": "error",
+            "message": "\"calculate_vpd\" is unknown import symbol",
+            "range": {
+                "start": {
+                    "line": 18,
+                    "character": 23
+                },
+                "end": {
+                    "line": 18,
+                    "character": 36
+                }
+            },
+            "rule": "reportAttributeAccessIssue"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/backend/app/stream_processor.py",
+            "severity": "error",
+            "message": "\"get_pressure_state\" is unknown import symbol",
+            "range": {
+                "start": {
+                    "line": 19,
+                    "character": 23
+                },
+                "end": {
+                    "line": 19,
+                    "character": 41
+                }
+            },
+            "rule": "reportAttributeAccessIssue"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/backend/app/stream_processor.py",
+            "severity": "error",
+            "message": "\"update_pressure_state\" is unknown import symbol",
+            "range": {
+                "start": {
+                    "line": 19,
+                    "character": 43
+                },
+                "end": {
+                    "line": 19,
+                    "character": 64
+                }
+            },
+            "rule": "reportAttributeAccessIssue"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/backend/app/stream_processor.py",
+            "severity": "error",
+            "message": "\"get_sensor_suffix\" is unknown import symbol",
+            "range": {
+                "start": {
+                    "line": 20,
+                    "character": 23
+                },
+                "end": {
+                    "line": 20,
+                    "character": 40
+                }
+            },
+            "rule": "reportAttributeAccessIssue"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/backend/app/stream_processor.py",
+            "severity": "error",
+            "message": "No overloads for \"get\" match the provided arguments",
+            "range": {
+                "start": {
+                    "line": 76,
+                    "character": 11
+                },
+                "end": {
+                    "line": 76,
+                    "character": 56
+                }
+            },
+            "rule": "reportCallIssue"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/backend/app/stream_processor.py",
+            "severity": "error",
+            "message": "Argument of type \"int | None\" cannot be assigned to parameter \"key\" of type \"int\" in function \"get\"\n  Type \"int | None\" is not assignable to type \"int\"\n    \"None\" is not assignable to \"int\"",
+            "range": {
+                "start": {
+                    "line": 76,
+                    "character": 23
+                },
+                "end": {
+                    "line": 76,
+                    "character": 30
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/can-processor-service/app/can_reader.py",
+            "severity": "error",
+            "message": "Cannot instantiate abstract class \"Bus\"\n  \"BusABC.__init__\" is not implemented\n  \"BusABC.send\" is not implemented",
+            "range": {
+                "start": {
+                    "line": 71,
+                    "character": 23
+                },
+                "end": {
+                    "line": 71,
+                    "character": 84
+                }
+            },
+            "rule": "reportAbstractUsage"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/can-processor-service/app/can_reader.py",
+            "severity": "error",
+            "message": "Cannot assign to attribute \"bus\" for class \"CANReader*\"\n  Type \"BusABC\" is not assignable to type \"Bus | None\"\n    \"BusABC\" is not assignable to \"Bus\"\n    \"BusABC\" is not assignable to \"None\"",
+            "range": {
+                "start": {
+                    "line": 71,
+                    "character": 23
+                },
+                "end": {
+                    "line": 71,
+                    "character": 84
+                }
+            },
+            "rule": "reportAttributeAccessIssue"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/can-processor-service/app/can_reader.py",
+            "severity": "error",
+            "message": "\"CanOperationError\" is not exported from module \"can\"",
+            "range": {
+                "start": {
+                    "line": 92,
+                    "character": 19
+                },
+                "end": {
+                    "line": 92,
+                    "character": 36
+                }
+            },
+            "rule": "reportPrivateImportUsage"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/can-processor-service/app/main.py",
+            "severity": "error",
+            "message": "\"get_location_from_node\" is unknown import symbol",
+            "range": {
+                "start": {
+                    "line": 22,
+                    "character": 4
+                },
+                "end": {
+                    "line": 22,
+                    "character": 26
+                }
+            },
+            "rule": "reportAttributeAccessIssue"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/can-processor-service/app/main.py",
+            "severity": "error",
+            "message": "\"write\" is not a known attribute of \"None\"",
+            "range": {
+                "start": {
+                    "line": 204,
+                    "character": 29
+                },
+                "end": {
+                    "line": 204,
+                    "character": 34
+                }
+            },
+            "rule": "reportOptionalMemberAccess"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/can-processor-service/app/processor.py",
+            "severity": "error",
+            "message": "\"calculate_rh\" is unknown import symbol",
+            "range": {
+                "start": {
+                    "line": 21,
+                    "character": 8
+                },
+                "end": {
+                    "line": 21,
+                    "character": 20
+                }
+            },
+            "rule": "reportAttributeAccessIssue"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/can-processor-service/app/processor.py",
+            "severity": "error",
+            "message": "\"calculate_vpd\" is unknown import symbol",
+            "range": {
+                "start": {
+                    "line": 22,
+                    "character": 8
+                },
+                "end": {
+                    "line": 22,
+                    "character": 21
+                }
+            },
+            "rule": "reportAttributeAccessIssue"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/can-processor-service/app/processor.py",
+            "severity": "error",
+            "message": "\"get_location_from_node\" is unknown import symbol",
+            "range": {
+                "start": {
+                    "line": 23,
+                    "character": 8
+                },
+                "end": {
+                    "line": 23,
+                    "character": 30
+                }
+            },
+            "rule": "reportAttributeAccessIssue"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/can-processor-service/app/processor.py",
+            "severity": "error",
+            "message": "\"get_pressure_state\" is unknown import symbol",
+            "range": {
+                "start": {
+                    "line": 24,
+                    "character": 8
+                },
+                "end": {
+                    "line": 24,
+                    "character": 26
+                }
+            },
+            "rule": "reportAttributeAccessIssue"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/can-processor-service/app/processor.py",
+            "severity": "error",
+            "message": "\"get_sensor_suffix\" is unknown import symbol",
+            "range": {
+                "start": {
+                    "line": 25,
+                    "character": 8
+                },
+                "end": {
+                    "line": 25,
+                    "character": 25
+                }
+            },
+            "rule": "reportAttributeAccessIssue"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/can-processor-service/app/processor.py",
+            "severity": "error",
+            "message": "\"update_pressure_state\" is unknown import symbol",
+            "range": {
+                "start": {
+                    "line": 26,
+                    "character": 8
+                },
+                "end": {
+                    "line": 26,
+                    "character": 29
+                }
+            },
+            "rule": "reportAttributeAccessIssue"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/can-processor-service/app/processor.py",
+            "severity": "error",
+            "message": "\"validate_co2_reading\" is unknown import symbol",
+            "range": {
+                "start": {
+                    "line": 27,
+                    "character": 8
+                },
+                "end": {
+                    "line": 27,
+                    "character": 28
+                }
+            },
+            "rule": "reportAttributeAccessIssue"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/can-processor-service/app/writer.py",
+            "severity": "error",
+            "message": "Expression of type \"None\" cannot be assigned to parameter of type \"dict[str, str]\"\n  \"None\" is not assignable to \"dict[str, str]\"",
+            "range": {
+                "start": {
+                    "line": 35,
+                    "character": 36
+                },
+                "end": {
+                    "line": 35,
+                    "character": 40
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/can-processor-service/app/writer.py",
+            "severity": "error",
+            "message": "Expression of type \"None\" cannot be assigned to parameter of type \"str\"\n  \"None\" is not assignable to \"str\"",
+            "range": {
+                "start": {
+                    "line": 36,
+                    "character": 25
+                },
+                "end": {
+                    "line": 36,
+                    "character": 29
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/can-processor-service/app/writer.py",
+            "severity": "error",
+            "message": "\"extensions\" is not a known attribute of module \"psycopg2\"",
+            "range": {
+                "start": {
+                    "line": 64,
+                    "character": 31
+                },
+                "end": {
+                    "line": 64,
+                    "character": 41
+                }
+            },
+            "rule": "reportAttributeAccessIssue"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/can-processor-service/app/writer.py",
+            "severity": "error",
+            "message": "Argument of type \"Literal[1]\" cannot be assigned to parameter \"value\" of type \"str\" in function \"__setitem__\"\n  \"Literal[1]\" is not assignable to \"str\"",
+            "range": {
+                "start": {
+                    "line": 92,
+                    "character": 12
+                },
+                "end": {
+                    "line": 92,
+                    "character": 45
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/can-processor-service/app/writer.py",
+            "severity": "error",
+            "message": "Argument of type \"Literal[30]\" cannot be assigned to parameter \"value\" of type \"str\" in function \"__setitem__\"\n  \"Literal[30]\" is not assignable to \"str\"",
+            "range": {
+                "start": {
+                    "line": 93,
+                    "character": 12
+                },
+                "end": {
+                    "line": 93,
+                    "character": 50
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/can-processor-service/app/writer.py",
+            "severity": "error",
+            "message": "Argument of type \"Literal[10]\" cannot be assigned to parameter \"value\" of type \"str\" in function \"__setitem__\"\n  \"Literal[10]\" is not assignable to \"str\"",
+            "range": {
+                "start": {
+                    "line": 94,
+                    "character": 12
+                },
+                "end": {
+                    "line": 94,
+                    "character": 54
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/can-processor-service/app/writer.py",
+            "severity": "error",
+            "message": "Argument of type \"Literal[3]\" cannot be assigned to parameter \"value\" of type \"str\" in function \"__setitem__\"\n  \"Literal[3]\" is not assignable to \"str\"",
+            "range": {
+                "start": {
+                    "line": 95,
+                    "character": 12
+                },
+                "end": {
+                    "line": 95,
+                    "character": 51
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/can-processor-service/app/writer.py",
+            "severity": "error",
+            "message": "Argument of type \"Literal[5]\" cannot be assigned to parameter \"value\" of type \"str\" in function \"__setitem__\"\n  \"Literal[5]\" is not assignable to \"str\"",
+            "range": {
+                "start": {
+                    "line": 96,
+                    "character": 12
+                },
+                "end": {
+                    "line": 96,
+                    "character": 50
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/can-processor-service/app/writer.py",
+            "severity": "error",
+            "message": "No overloads for \"connect\" match the provided arguments",
+            "range": {
+                "start": {
+                    "line": 97,
+                    "character": 27
+                },
+                "end": {
+                    "line": 97,
+                    "character": 66
+                }
+            },
+            "rule": "reportCallIssue"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/can-processor-service/app/writer.py",
+            "severity": "error",
+            "message": "Argument of type \"str\" cannot be assigned to parameter \"connection_factory\" of type \"((...) -> connection) | None\" in function \"connect\"\n  Type \"str\" is not assignable to type \"((...) -> connection) | None\"\n    Type \"str\" is not assignable to type \"(...) -> connection\"\n    \"str\" is not assignable to \"None\"",
+            "range": {
+                "start": {
+                    "line": 97,
+                    "character": 46
+                },
+                "end": {
+                    "line": 97,
+                    "character": 65
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/can-processor-service/app/writer.py",
+            "severity": "error",
+            "message": "Argument of type \"str\" cannot be assigned to parameter \"cursor_factory\" of type \"((...) -> cursor) | None\" in function \"connect\"\n  Type \"str\" is not assignable to type \"((...) -> cursor) | None\"\n    Type \"str\" is not assignable to type \"(...) -> cursor\"\n    \"str\" is not assignable to \"None\"",
+            "range": {
+                "start": {
+                    "line": 97,
+                    "character": 46
+                },
+                "end": {
+                    "line": 97,
+                    "character": 65
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/can-processor-service/app/writer.py",
+            "severity": "error",
+            "message": "\"autocommit\" is not a known attribute of \"None\"",
+            "range": {
+                "start": {
+                    "line": 98,
+                    "character": 25
+                },
+                "end": {
+                    "line": 98,
+                    "character": 35
+                }
+            },
+            "rule": "reportOptionalMemberAccess"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/can-processor-service/app/writer.py",
+            "severity": "error",
+            "message": "\"cursor\" is not a known attribute of \"None\"",
+            "range": {
+                "start": {
+                    "line": 99,
+                    "character": 34
+                },
+                "end": {
+                    "line": 99,
+                    "character": 40
+                }
+            },
+            "rule": "reportOptionalMemberAccess"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/can-processor-service/app/writer.py",
+            "severity": "error",
+            "message": "\"cursor\" is not a known attribute of \"None\"",
+            "range": {
+                "start": {
+                    "line": 150,
+                    "character": 38
+                },
+                "end": {
+                    "line": 150,
+                    "character": 44
+                }
+            },
+            "rule": "reportOptionalMemberAccess"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/can-processor-service/app/writer.py",
+            "severity": "error",
+            "message": "\"xadd\" is not a known attribute of \"None\"",
+            "range": {
+                "start": {
+                    "line": 291,
+                    "character": 30
+                },
+                "end": {
+                    "line": 291,
+                    "character": 34
+                }
+            },
+            "rule": "reportOptionalMemberAccess"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/can-processor-service/app/writer.py",
+            "severity": "error",
+            "message": "Argument of type \"dict[bytes, bytes]\" cannot be assigned to parameter \"fields\" of type \"Dict[FieldT, EncodableT]\" in function \"xadd\"\n  \"dict[bytes, bytes]\" is not assignable to \"Dict[FieldT, EncodableT]\"\n    Type parameter \"_KT@dict\" is invariant, but \"bytes\" is not the same as \"FieldT\"\n    Type parameter \"_VT@dict\" is invariant, but \"bytes\" is not the same as \"EncodableT\"",
+            "range": {
+                "start": {
+                    "line": 291,
+                    "character": 53
+                },
+                "end": {
+                    "line": 291,
+                    "character": 64
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/can-processor-service/app/writer.py",
+            "severity": "error",
+            "message": "\"cursor\" is not a known attribute of \"None\"",
+            "range": {
+                "start": {
+                    "line": 360,
+                    "character": 34
+                },
+                "end": {
+                    "line": 360,
+                    "character": 40
+                }
+            },
+            "rule": "reportOptionalMemberAccess"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/can-processor-service/app/writer.py",
+            "severity": "error",
+            "message": "\"pipeline\" is not a known attribute of \"None\"",
+            "range": {
+                "start": {
+                    "line": 466,
+                    "character": 43
+                },
+                "end": {
+                    "line": 466,
+                    "character": 51
+                }
+            },
+            "rule": "reportOptionalMemberAccess"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/can-processor-service/app/writer.py",
+            "severity": "error",
+            "message": "\"exceptions\" is not a known attribute of module \"redis\"",
+            "range": {
+                "start": {
+                    "line": 482,
+                    "character": 21
+                },
+                "end": {
+                    "line": 482,
+                    "character": 31
+                }
+            },
+            "rule": "reportAttributeAccessIssue"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/onewire-worker-service/app/redis_client.py",
+            "severity": "error",
+            "message": "\"bool\" is not awaitable\n  \"bool\" is incompatible with protocol \"Awaitable[_T_co@Awaitable]\"\n    \"__await__\" is not present",
+            "range": {
+                "start": {
+                    "line": 30,
+                    "character": 18
+                },
+                "end": {
+                    "line": 30,
+                    "character": 36
+                }
+            },
+            "rule": "reportGeneralTypeIssues"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/shared/logging.py",
+            "severity": "error",
+            "message": "Argument of type \"dict[str, Any]\" cannot be assigned to parameter \"value\" of type \"str\" in function \"__setitem__\"\n  \"dict[str, Any]\" is not assignable to \"str\"",
+            "range": {
+                "start": {
+                    "line": 32,
+                    "character": 12
+                },
+                "end": {
+                    "line": 32,
+                    "character": 31
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/shared/logging.py",
+            "severity": "error",
+            "message": "Cannot access attribute \"extra\" for class \"LogRecord\"\n  Attribute \"extra\" is unknown",
+            "range": {
+                "start": {
+                    "line": 35,
+                    "character": 47
+                },
+                "end": {
+                    "line": 35,
+                    "character": 52
+                }
+            },
+            "rule": "reportAttributeAccessIssue"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/shared/logging.py",
+            "severity": "error",
+            "message": "Cannot access attribute \"extra\" for class \"LogRecord\"\n  Attribute \"extra\" is unknown",
+            "range": {
+                "start": {
+                    "line": 36,
+                    "character": 39
+                },
+                "end": {
+                    "line": 36,
+                    "character": 44
+                }
+            },
+            "rule": "reportAttributeAccessIssue"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/soil-sensor-service/app/background_tasks.py",
+            "severity": "error",
+            "message": "Cannot assign to attribute \"rs485_port\" for class \"BackgroundTasks*\"\n  \"None\" is not assignable to \"str\"",
+            "range": {
+                "start": {
+                    "line": 40,
+                    "character": 31
+                },
+                "end": {
+                    "line": 40,
+                    "character": 35
+                }
+            },
+            "rule": "reportAttributeAccessIssue"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/soil-sensor-service/app/database.py",
+            "severity": "error",
+            "message": "Type \"Pool | None\" is not assignable to return type \"Pool\"\n  Type \"Pool | None\" is not assignable to type \"Pool\"\n    \"None\" is not assignable to \"Pool\"",
+            "range": {
+                "start": {
+                    "line": 93,
+                    "character": 15
+                },
+                "end": {
+                    "line": 93,
+                    "character": 25
+                }
+            },
+            "rule": "reportReturnType"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/soil-sensor-service/app/main.py",
+            "severity": "error",
+            "message": "Type \"None\" is not assignable to declared type \"ConfigLoader\"\n  \"None\" is not assignable to \"ConfigLoader\"",
+            "range": {
+                "start": {
+                    "line": 22,
+                    "character": 23
+                },
+                "end": {
+                    "line": 22,
+                    "character": 27
+                }
+            },
+            "rule": "reportAssignmentType"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/soil-sensor-service/app/main.py",
+            "severity": "error",
+            "message": "Type \"None\" is not assignable to declared type \"DatabaseManager\"\n  \"None\" is not assignable to \"DatabaseManager\"",
+            "range": {
+                "start": {
+                    "line": 23,
+                    "character": 28
+                },
+                "end": {
+                    "line": 23,
+                    "character": 32
+                }
+            },
+            "rule": "reportAssignmentType"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/soil-sensor-service/app/main.py",
+            "severity": "error",
+            "message": "Type \"None\" is not assignable to declared type \"RedisClient\"\n  \"None\" is not assignable to \"RedisClient\"",
+            "range": {
+                "start": {
+                    "line": 24,
+                    "character": 28
+                },
+                "end": {
+                    "line": 24,
+                    "character": 32
+                }
+            },
+            "rule": "reportAssignmentType"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/soil-sensor-service/app/main.py",
+            "severity": "error",
+            "message": "Type \"None\" is not assignable to declared type \"BackgroundTasks\"\n  \"None\" is not assignable to \"BackgroundTasks\"",
+            "range": {
+                "start": {
+                    "line": 25,
+                    "character": 36
+                },
+                "end": {
+                    "line": 25,
+                    "character": 40
+                }
+            },
+            "rule": "reportAssignmentType"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/soil-sensor-service/app/redis_client.py",
+            "severity": "error",
+            "message": "\"bool\" is not awaitable\n  \"bool\" is incompatible with protocol \"Awaitable[_T_co@Awaitable]\"\n    \"__await__\" is not present",
+            "range": {
+                "start": {
+                    "line": 51,
+                    "character": 18
+                },
+                "end": {
+                    "line": 51,
+                    "character": 42
+                }
+            },
+            "rule": "reportGeneralTypeIssues"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/soil-sensor-service/app/redis_client.py",
+            "severity": "error",
+            "message": "\"bool\" is not awaitable\n  \"bool\" is incompatible with protocol \"Awaitable[_T_co@Awaitable]\"\n    \"__await__\" is not present",
+            "range": {
+                "start": {
+                    "line": 58,
+                    "character": 18
+                },
+                "end": {
+                    "line": 58,
+                    "character": 43
+                }
+            },
+            "rule": "reportGeneralTypeIssues"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/soil-sensor-service/app/redis_client.py",
+            "severity": "error",
+            "message": "\"publish\" is not a known attribute of \"None\"",
+            "range": {
+                "start": {
+                    "line": 122,
+                    "character": 36
+                },
+                "end": {
+                    "line": 122,
+                    "character": 43
+                }
+            },
+            "rule": "reportOptionalMemberAccess"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/soil-sensor-service/app/redis_client.py",
+            "severity": "error",
+            "message": "\"publish\" is not a known attribute of \"None\"",
+            "range": {
+                "start": {
+                    "line": 123,
+                    "character": 36
+                },
+                "end": {
+                    "line": 123,
+                    "character": 43
+                }
+            },
+            "rule": "reportOptionalMemberAccess"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/soil-sensor-service/app/redis_client.py",
+            "severity": "error",
+            "message": "\"pipeline\" is not a known attribute of \"None\"",
+            "range": {
+                "start": {
+                    "line": 129,
+                    "character": 37
+                },
+                "end": {
+                    "line": 129,
+                    "character": 45
+                }
+            },
+            "rule": "reportOptionalMemberAccess"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/soil-sensor-service/app/redis_client.py",
+            "severity": "error",
+            "message": "Argument of type \"dict[bytes, bytes]\" cannot be assigned to parameter \"fields\" of type \"Dict[FieldT, EncodableT]\" in function \"xadd\"\n  \"dict[bytes, bytes]\" is not assignable to \"Dict[FieldT, EncodableT]\"\n    Type parameter \"_KT@dict\" is invariant, but \"bytes\" is not the same as \"FieldT\"\n    Type parameter \"_VT@dict\" is invariant, but \"bytes\" is not the same as \"EncodableT\"",
+            "range": {
+                "start": {
+                    "line": 176,
+                    "character": 30
+                },
+                "end": {
+                    "line": 176,
+                    "character": 41
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/soil-sensor-service/app/routes/sensors.py",
+            "severity": "error",
+            "message": "Argument of type \"datetime\" cannot be assigned to parameter \"object\" of type \"int\" in function \"append\"\n  \"datetime\" is not assignable to \"int\"",
+            "range": {
+                "start": {
+                    "line": 140,
+                    "character": 30
+                },
+                "end": {
+                    "line": 140,
+                    "character": 40
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/soil-sensor-service/app/routes/sensors.py",
+            "severity": "error",
+            "message": "Argument of type \"datetime\" cannot be assigned to parameter \"object\" of type \"int\" in function \"append\"\n  \"datetime\" is not assignable to \"int\"",
+            "range": {
+                "start": {
+                    "line": 145,
+                    "character": 30
+                },
+                "end": {
+                    "line": 145,
+                    "character": 38
+                }
+            },
+            "rule": "reportArgumentType"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/weather-service/app/database.py",
+            "severity": "error",
+            "message": "Type \"Pool | None\" is not assignable to return type \"Pool\"\n  Type \"Pool | None\" is not assignable to type \"Pool\"\n    \"None\" is not assignable to \"Pool\"",
+            "range": {
+                "start": {
+                    "line": 93,
+                    "character": 15
+                },
+                "end": {
+                    "line": 93,
+                    "character": 25
+                }
+            },
+            "rule": "reportReturnType"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/weather-service/app/main.py",
+            "severity": "error",
+            "message": "Type \"None\" is not assignable to declared type \"ConfigLoader\"\n  \"None\" is not assignable to \"ConfigLoader\"",
+            "range": {
+                "start": {
+                    "line": 22,
+                    "character": 23
+                },
+                "end": {
+                    "line": 22,
+                    "character": 27
+                }
+            },
+            "rule": "reportAssignmentType"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/weather-service/app/main.py",
+            "severity": "error",
+            "message": "Type \"None\" is not assignable to declared type \"DatabaseManager\"\n  \"None\" is not assignable to \"DatabaseManager\"",
+            "range": {
+                "start": {
+                    "line": 23,
+                    "character": 28
+                },
+                "end": {
+                    "line": 23,
+                    "character": 32
+                }
+            },
+            "rule": "reportAssignmentType"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/weather-service/app/main.py",
+            "severity": "error",
+            "message": "Type \"None\" is not assignable to declared type \"WeatherClient\"\n  \"None\" is not assignable to \"WeatherClient\"",
+            "range": {
+                "start": {
+                    "line": 24,
+                    "character": 32
+                },
+                "end": {
+                    "line": 24,
+                    "character": 36
+                }
+            },
+            "rule": "reportAssignmentType"
+        },
+        {
+            "file": "/home/antoine/ProjectCEA/Infrastructure/weather-service/app/main.py",
+            "severity": "error",
+            "message": "Type \"None\" is not assignable to declared type \"BackgroundTasks\"\n  \"None\" is not assignable to \"BackgroundTasks\"",
+            "range": {
+                "start": {
+                    "line": 25,
+                    "character": 36
+                },
+                "end": {
+                    "line": 25,
+                    "character": 40
+                }
+            },
+            "rule": "reportAssignmentType"
+        }
+    ],
+    "summary": {
+        "filesAnalyzed": 167,
+        "errorCount": 245,
+        "warningCount": 0,
+        "informationCount": 0,
+        "timeInSec": 43.54
+    }
+}
+

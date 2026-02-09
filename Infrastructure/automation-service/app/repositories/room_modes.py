@@ -2,12 +2,12 @@ from __future__ import annotations
 
 from datetime import time as dt_time
 import time
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from .base import BaseRepository, logger
 
 if TYPE_CHECKING:
-    from asyncpg import Pool
+    from asyncpg import Connection, Pool
 
 
 class RoomModeRepository(BaseRepository):
@@ -26,7 +26,8 @@ class RoomModeRepository(BaseRepository):
         self._mode_id_cache: dict[str, tuple[int, float]] = {}
         self._submode_id_cache: dict[str, tuple[int, float]] = {}
 
-    async def _get_mode_id_cached(self, conn, mode_name: str) -> int | None:
+    async def _get_mode_id_cached(self, conn: Any, mode_name: str) -> int | None:
+        conn = cast("Connection", conn)
         cache_key = mode_name
         if cache_key in self._mode_id_cache:
             mode_id, ts = self._mode_id_cache[cache_key]
@@ -39,7 +40,10 @@ class RoomModeRepository(BaseRepository):
             return result["id"]
         return None
 
-    async def _get_submode_id_cached(self, conn, mode_name: str, submode_name: str) -> int | None:
+    async def _get_submode_id_cached(
+        self, conn: Any, mode_name: str, submode_name: str
+    ) -> int | None:
+        conn = cast("Connection", conn)
         cache_key = f"{mode_name}:{submode_name}"
         if cache_key in self._submode_id_cache:
             submode_id, ts = self._submode_id_cache[cache_key]
@@ -55,7 +59,8 @@ class RoomModeRepository(BaseRepository):
     async def get_room_modes(self) -> list[dict[str, Any]]:
         """Get all available room modes."""
         try:
-            async with self.pool.acquire() as conn:
+            async with self.pool.acquire() as conn_raw:
+                conn: Connection = cast("Connection", conn_raw)
                 rows = await conn.fetch("SELECT * FROM room_modes ORDER BY id")
                 return [dict(row) for row in rows]
         except Exception as e:
@@ -65,7 +70,8 @@ class RoomModeRepository(BaseRepository):
     async def get_flower_submodes(self) -> list[dict[str, Any]]:
         """Get flower submodes."""
         try:
-            async with self.pool.acquire() as conn:
+            async with self.pool.acquire() as conn_raw:
+                conn: Connection = cast("Connection", conn_raw)
                 rows = await conn.fetch("SELECT * FROM flower_submodes ORDER BY id")
                 return [dict(row) for row in rows]
         except Exception as e:
@@ -75,7 +81,8 @@ class RoomModeRepository(BaseRepository):
     async def get_active_mode(self, location: str, cluster: str) -> dict[str, Any] | None:
         """Get active mode for location/cluster."""
         try:
-            async with self.pool.acquire() as conn:
+            async with self.pool.acquire() as conn_raw:
+                conn: Connection = cast("Connection", conn_raw)
                 row = await conn.fetchrow(
                     """SELECT arm.location, arm.cluster, rm.name as mode_name, fs.name as submode_name, arm.mode_id, arm.submode_id
                        FROM room_active_mode arm
@@ -96,7 +103,8 @@ class RoomModeRepository(BaseRepository):
     ) -> bool:
         """Set active mode for location/cluster."""
         try:
-            async with self.pool.acquire() as conn:
+            async with self.pool.acquire() as conn_raw:
+                conn: Connection = cast("Connection", conn_raw)
                 mode_id = await self._get_mode_id_cached(conn, mode_name)
                 if not mode_id:
                     return False
@@ -129,7 +137,8 @@ class RoomModeRepository(BaseRepository):
         climate setpoints, and light settings.
         """
         try:
-            async with self.pool.acquire() as conn:
+            async with self.pool.acquire() as conn_raw:
+                conn: Connection = cast("Connection", conn_raw)
                 mode_id = await self._get_mode_id_cached(conn, mode_name)
                 if not mode_id:
                     return None
@@ -199,7 +208,8 @@ class RoomModeRepository(BaseRepository):
         - Light settings: main/supplemental intensity
         """
         try:
-            async with self.pool.acquire() as conn:
+            async with self.pool.acquire() as conn_raw:
+                conn: Connection = cast("Connection", conn_raw)
                 mode_id = await self._get_mode_id_cached(conn, mode_name)
                 if not mode_id:
                     logger.error(f"Mode '{mode_name}' not found")
@@ -364,7 +374,8 @@ class RoomModeRepository(BaseRepository):
         """
         start_time = time.perf_counter()
         try:
-            async with self.pool.acquire() as conn:
+            async with self.pool.acquire() as conn_raw:
+                conn: Connection = cast("Connection", conn_raw)
                 async with conn.transaction():
                     # Step 1: Get current active mode
                     current = await conn.fetchrow(

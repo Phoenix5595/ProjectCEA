@@ -144,6 +144,9 @@ class DFR0971Driver:
                 # Use write_word_data as per official Python library
                 # Note: write_word_data writes a 16-bit word (little-endian)
                 # For a single byte value, it will be in the low byte
+                assert self.bus is not None, (
+                    "I2C bus must be initialized when not in simulation mode"
+                )
                 self.bus.write_word_data(self.i2c_address, DFR0971_CMD_SET_RANGE, range_value)
 
                 # Add delay to ensure command is processed
@@ -262,6 +265,9 @@ class DFR0971Driver:
                     # Use write_word_data as per official Python library
                     # write_word_data automatically handles little-endian byte order
                     # Format: write_word_data(addr, register, 16-bit_value)
+                    assert self.bus is not None, (
+                        "I2C bus must be initialized when not in simulation mode"
+                    )
                     self.bus.write_word_data(self.i2c_address, reg_addr, dac_value)
 
                     # Success - break out of retry loop
@@ -388,6 +394,9 @@ class DFR0971Driver:
                     self._voltage_range = 10000
                     time.sleep(0.05)
 
+                assert self.bus is not None, (
+                    "I2C bus must be initialized when not in simulation mode"
+                )
                 self.bus.write_byte(self.i2c_address, DFR0971_CMD_STORE)
                 # EEPROM writes can take up to 10ms, wait longer for reliability
                 time.sleep(0.02)
