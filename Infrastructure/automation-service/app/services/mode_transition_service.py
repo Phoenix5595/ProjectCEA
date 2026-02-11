@@ -62,8 +62,8 @@ class ModeTransitionService:
         self,
         location: str,
         cluster: str,
-        new_mode_id: str,
-        new_submode_id: str | None,
+        new_mode_id: int,
+        new_submode_id: int | None,
         triggered_by: str,
     ) -> dict[str, Any]:
         logger.info(

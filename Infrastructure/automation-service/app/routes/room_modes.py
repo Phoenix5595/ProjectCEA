@@ -1,15 +1,14 @@
 from __future__ import annotations
 
 import time
-from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from shared.logging import get_logger
 
 from ..database import DatabaseManager
-from .websocket import broadcast_mode_update
 from ..services.mode_transition_service import ModeTransitionService
-from shared.logging import get_logger
+from .websocket import broadcast_mode_update
 
 logger = get_logger(__name__)
 router = APIRouter(prefix="/api/room-modes", tags=["room-modes"])
@@ -224,8 +223,8 @@ async def set_room_mode(
     result_data = await transition_service.execute_mode_transition(
         location=location,
         cluster=cluster,
-        new_mode_id=str(mode_id),
-        new_submode_id=str(submode_id) if submode_id else None,
+        new_mode_id=mode_id,
+        new_submode_id=submode_id,
         triggered_by="api",
     )
     transaction_time = (time.perf_counter() - start) * 1000
