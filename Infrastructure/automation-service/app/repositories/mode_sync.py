@@ -12,8 +12,8 @@ async def sync_climate_setpoints_from_mode_parameters(
     conn: Connection,
     location: str,
     cluster: str,
-    mode_id: str,
-    submode_id: str | None,
+    mode_id: int,
+    submode_id: int | None,
 ) -> dict[str, Any]:
     """Sync climate setpoints from mode_parameters to setpoints table.
 
