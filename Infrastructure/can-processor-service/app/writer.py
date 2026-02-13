@@ -320,8 +320,10 @@ class DataWriter:
             return False
 
     def queue_db_write(self, decoded, raw_data, sensors, timestamp):
+        # When DB was lost, try reconnect once so recovery does not require service restart
         if not self.db_enabled:
-            return False
+            if not self.connect_db():
+                return False
         item = DBWriteItem(decoded=decoded, raw_data=raw_data, sensors=sensors, timestamp=timestamp)
         try:
             self._db_queue.put_nowait(item)
