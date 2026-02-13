@@ -41,11 +41,11 @@ const LightSlidersPanel = forwardRef<LightSlidersPanelRef, LightSlidersPanelProp
         try {
           const status = await apiClient.getLightStatus(location, cluster, light.device_name)
           
-          const daySchedule = schedules.find((s: any) => 
+          const daySchedule = schedules.find((s: any) =>
             s.device_name === light.device_name &&
-            s.mode === 'DAY' && 
-            s.enabled && 
-            s.target_intensity !== null && 
+            (s.mode === 'SUN' || s.mode === 'DAY') &&
+            s.enabled &&
+            s.target_intensity !== null &&
             s.target_intensity !== undefined
           )
           const dayTargetIntensity = daySchedule?.target_intensity ?? null

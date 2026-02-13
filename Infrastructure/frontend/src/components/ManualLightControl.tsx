@@ -120,12 +120,12 @@ export default function ManualLightControl({ location, cluster, compact = false 
     try {
       const schedules = await apiClient.getSchedules(location, cluster)
       
-      // Find the DAY schedule for this specific device
+      // Find the SUN/DAY schedule for this specific device (backend uses SUN for dimmable lights)
       const daySchedule = schedules.find(
-        s => s.device_name === deviceName && 
-             s.mode === 'DAY' && 
+        s => s.device_name === deviceName &&
+             (s.mode === 'SUN' || s.mode === 'DAY') &&
              s.enabled &&
-             s.target_intensity !== null && 
+             s.target_intensity !== null &&
              s.target_intensity !== undefined
       )
       

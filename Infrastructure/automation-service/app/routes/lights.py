@@ -364,7 +364,7 @@ async def set_target_intensity(
     if device_info.get("device_type") != "light":
         raise HTTPException(status_code=400, detail=f"Device {device_name} is not a light")
 
-    updated = await database.update_light_schedule_target(
+    updated = await database.schedule_repo.update_light_schedule_target(
         location, cluster, device_name, control.target_intensity
     )
 

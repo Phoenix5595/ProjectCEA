@@ -100,14 +100,12 @@ export default function LightManager({ location, cluster, lights }: LightManager
       const scheduleMap: Record<string, any> = {}
       const newInputValues: Record<string, string> = {}
       
-      // Find day schedules for each light
+      // Find day/sun schedules for each light (backend uses SUN for dimmable lights, legacy may use DAY)
       for (const light of lights.filter(l => l.dimming_enabled)) {
-        // Find the day schedule for this light (mode='DAY')
-        // Also check for schedules without mode if they have target_intensity (backward compatibility)
         const daySchedule = allSchedules.find(
-          s => s.device_name === light.device_name && 
+          s => s.device_name === light.device_name &&
                s.enabled &&
-               ((s.mode === 'DAY') || (s.mode === null && s.target_intensity !== null && s.target_intensity !== undefined))
+               ((s.mode === 'SUN' || s.mode === 'DAY') || (s.mode === null && s.target_intensity !== null && s.target_intensity !== undefined))
         )
         
         if (daySchedule) {
@@ -205,86 +203,42 @@ export default function LightManager({ location, cluster, lights }: LightManager
   }
 
   async function handleSaveTargetIntensity(deviceName: string) {
-    let schedule = schedules[deviceName]
-    
-    // If schedule not found, try reloading schedules first (might be stale state)
-    if (!schedule) {
-      await loadSchedules()
-      schedule = schedules[deviceName]
-    }
-    
-    if (!schedule) {
-      /*
-      setErrors(prev => ({
-        ...prev,
-        [deviceName]: 'No schedule found'
-      }))
-      */
-      return
-    }
-
     setSaving(prev => ({ ...prev, [deviceName]: true }))
-    /*
-    setErrors(prev => {
-      const newErrors = { ...prev }
-      delete newErrors[deviceName]
-      return newErrors
-    })
-    */
 
     try {
       const targetIntensity = parseFloat(inputValues[deviceName] ?? '0')
-      
+
       if (isNaN(targetIntensity) || targetIntensity < 0 || targetIntensity > 100) {
         throw new Error('Intensity must be 0-100')
       }
 
-      // Update the schedule with new target_intensity
-      const updateResult = await apiClient.updateSchedule(schedule.id, {
-        target_intensity: targetIntensity
-      })
+      // Use lights target endpoint (POST .../target) - same path as LightSlidersPanel/VerticalLightsBlock;
+      // updates SUN/DAY schedule by device and refreshes scheduler (fix from 6a9a6a5).
+      const result = await apiClient.setLightIntensity(location, cluster, deviceName, targetIntensity)
 
-      // Update schedules state with the API response directly (avoid race condition with reload)
+      const savedIntensity =
+        (result as { target_intensity?: number })?.target_intensity ??
+        Math.round(targetIntensity)
+      const normalizedValue = Math.min(100, Math.max(0, savedIntensity)).toString()
+
       setSchedules(prev => {
         const updated = { ...prev }
-        if (updateResult) {
-          updated[deviceName] = updateResult
+        if (updated[deviceName]) {
+          updated[deviceName] = { ...updated[deviceName], target_intensity: savedIntensity }
         }
         return updated
       })
+      setInputValues(prev => ({ ...prev, [deviceName]: normalizedValue }))
+      setSavedValues(prev => ({ ...prev, [deviceName]: normalizedValue }))
 
-      // Update input value to match saved value (use API response, not state)
-      const savedIntensity = updateResult?.target_intensity ?? targetIntensity
-      // Normalize to integer string (intensities are always whole numbers)
-      const normalizedValue = Math.round(Number(savedIntensity)).toString()
-      setInputValues(prev => {
-        return {
-          ...prev,
-          [deviceName]: normalizedValue
-        }
-      })
-      
-      // Update saved values to reflect what was just saved
-      setSavedValues(prev => {
-        return {
-          ...prev,
-          [deviceName]: normalizedValue
-        }
-      })
-
-      // Refresh immediately
       const refreshStatus = async () => {
         try {
           const status = await apiClient.getLightStatus(location, cluster, deviceName)
-          setLightStatuses(prev => ({
-            ...prev,
-            [deviceName]: status
-          }))
-        } catch (error) {
+          setLightStatuses(prev => ({ ...prev, [deviceName]: status }))
+        } catch {
           // Ignore
         }
       }
-      
       setTimeout(refreshStatus, 500)
       
       /*
@@ -310,13 +264,8 @@ export default function LightManager({ location, cluster, lights }: LightManager
   async function handleSaveAll() {
     const dimmableLights = lights.filter(l => l.dimming_enabled)
     const lightsToSave = dimmableLights.filter(light => {
-      const schedule = schedules[light.device_name]
-      if (!schedule) return false
-      
       const currentValue = inputValues[light.device_name]
       const savedValue = savedValues[light.device_name]
-      
-      // Check if value has changed from saved value
       return currentValue !== undefined && currentValue !== savedValue
     })
 
