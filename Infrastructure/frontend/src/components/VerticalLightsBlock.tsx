@@ -166,14 +166,14 @@ export default function VerticalLightsBlock({ location, cluster }: VerticalLight
                 <div className="flex items-center gap-1 mb-2 text-xs">
                   <div className="flex items-center gap-1">
                     <span className="text-gray-500 text-[12px]">CUR</span>
-                    <span className="bg-gray-800 px-1 py-0.5 rounded text-cyan-400 font-mono text-[12px] min-w-[25px] text-center">
+                    <span className="bg-gray-800 px-1 py-0.5 rounded-sm text-cyan-400 font-mono text-[12px] min-w-[25px] text-center">
                       {currentIntensity}%
                     </span>
                   </div>
                   {dayTarget > 0 && (
                     <div className="flex items-center gap-1">
                       <span className="text-gray-500 text-[12px]">TGT</span>
-                      <span className="bg-gray-800 px-1 py-0.5 rounded text-amber-400 font-mono text-[12px] min-w-[25px] text-center">
+                      <span className="bg-gray-800 px-1 py-0.5 rounded-sm text-amber-400 font-mono text-[12px] min-w-[25px] text-center">
                         {dayTarget}%
                       </span>
                     </div>
@@ -182,9 +182,9 @@ export default function VerticalLightsBlock({ location, cluster }: VerticalLight
                 
                 <div className="flex flex-col items-center flex-1">
                   <div className="relative w-16 h-full min-h-[120px]">
-                    <div className="absolute inset-0 bg-gray-800 rounded overflow-hidden">
+                    <div className="absolute inset-0 bg-gray-800 rounded-sm overflow-hidden">
                       <div 
-                        className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-blue-600 to-blue-400 transition-all"
+                        className="absolute bottom-0 left-0 right-0 bg-linear-to-t from-blue-600 to-blue-400 transition-all"
                         style={{ height: `${sliderPosition}%` }}
                       />
                     </div>
@@ -204,14 +204,14 @@ export default function VerticalLightsBlock({ location, cluster }: VerticalLight
                     />
                     {dayTarget > 0 && (
                       <div 
-                        className="absolute left-0 right-0 h-1 bg-amber-400 rounded"
+                        className="absolute left-0 right-0 h-1 bg-amber-400 rounded-sm"
                         style={{ bottom: `calc(${dayTarget}% - 2px)` }}
                         title={`Sun target: ${dayTarget}%`}
                       />
                     )}
                     {pendingTargets[light.device_name!] !== undefined && (
                       <div 
-                        className="absolute left-0 right-0 h-1 bg-yellow-400 rounded"
+                        className="absolute left-0 right-0 h-1 bg-yellow-400 rounded-sm"
                         style={{ bottom: `calc(${displayTarget}% - 2px)` }}
                         title={`Pending: ${displayTarget}%`}
                       />
@@ -229,7 +229,7 @@ export default function VerticalLightsBlock({ location, cluster }: VerticalLight
                             handleTargetChange(light.device_name!, value)
                           }
                         }}
-                      className="w-12 h-5 px-1 text-[12px] text-center bg-gray-800 border border-gray-700 rounded text-gray-200 focus:outline-none focus:border-cyan-500 transition-colors"
+                      className="w-12 h-5 px-1 text-[12px] text-center bg-gray-800 border border-gray-700 rounded-sm text-gray-200 focus:outline-hidden focus:border-cyan-500 transition-colors"
                       title="Sun target %"
                     />
                     <span className="text-[12px] text-gray-500">%</span>
@@ -244,7 +244,7 @@ export default function VerticalLightsBlock({ location, cluster }: VerticalLight
             <div className="pt-4 border-t border-gray-800 mt-auto">
               <button
                 onClick={savePendingChanges}
-                className="w-full px-3 py-2 bg-cyan-700 hover:bg-cyan-600 rounded text-white text-xs font-bold tracking-wide transition-colors focus:outline-none focus:ring-2 focus:ring-cyan-500/50"
+                className="w-full px-3 py-2 bg-cyan-700 hover:bg-cyan-600 rounded-sm text-white text-xs font-bold tracking-wide transition-colors focus:outline-hidden focus:ring-2 focus:ring-cyan-500/50"
               >
                 Save Pending Changes
               </button>

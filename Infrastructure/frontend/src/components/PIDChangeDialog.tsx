@@ -20,15 +20,15 @@ export default function PIDChangeDialog({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full p-6 border border-gray-200 dark:border-gray-700">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60">
+      <div className="bg-surface-secondary rounded-lg shadow-xl max-w-md w-full p-6 border border-border-default">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
+          <h3 className="text-lg font-bold text-text-default flex items-center gap-2">
             <span>⚡</span> PID Parameters Updated
           </h3>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-500 dark:hover:text-gray-300"
+            className="text-text-muted hover:text-text-secondary"
           >
             <span className="sr-only">Close</span>
             <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -39,22 +39,22 @@ export default function PIDChangeDialog({
 
         <div className="space-y-4">
           <div>
-            <span className="text-sm font-medium text-gray-500 dark:text-gray-400">Device</span>
-            <p className="text-lg font-semibold text-gray-900 dark:text-white capitalize">{deviceType}</p>
+            <span className="text-sm font-medium text-text-muted">Device</span>
+            <p className="text-lg font-semibold text-text-default capitalize">{deviceType}</p>
           </div>
 
-          <div className="bg-gray-50 dark:bg-gray-900/50 rounded-md p-4">
-            <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Changes</h4>
+          <div className="bg-surface-primary/50 rounded-md p-4">
+            <h4 className="text-sm font-medium text-text-secondary mb-2">Changes</h4>
             <div className="space-y-2">
               {['kp', 'ki', 'kd'].map((param) => (
                 <div key={param} className="flex justify-between items-center text-sm">
-                  <span className="text-gray-500 dark:text-gray-400 uppercase w-8">{param}</span>
+                  <span className="text-text-muted uppercase w-8">{param}</span>
                   <div className="flex items-center gap-3 font-mono">
-                    <span className="text-gray-600 dark:text-gray-400">
+                    <span className="text-text-muted">
                       {oldValues[param as keyof typeof oldValues]?.toFixed(3) ?? '-'}
                     </span>
-                    <span className="text-gray-400">→</span>
-                    <span className="text-blue-600 dark:text-blue-400 font-bold">
+                    <span className="text-text-muted">→</span>
+                    <span className="text-accent-primary font-bold">
                       {newValues[param as keyof typeof newValues]?.toFixed(3) ?? '-'}
                     </span>
                   </div>
@@ -64,28 +64,28 @@ export default function PIDChangeDialog({
           </div>
 
           <div>
-            <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Reason</h4>
-            <p className="text-sm text-gray-600 dark:text-gray-400 italic">
+            <h4 className="text-sm font-medium text-text-secondary mb-1">Reason</h4>
+            <p className="text-sm text-text-muted italic">
               "{reason}"
             </p>
           </div>
 
           {tuningMetrics && (
-            <div className="border-t border-gray-200 dark:border-gray-700 pt-3">
-              <h4 className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">
+            <div className="border-t border-border-default pt-3">
+              <h4 className="text-xs font-medium text-text-muted uppercase tracking-wider mb-2">
                 Tuning Metrics
               </h4>
               <div className="grid grid-cols-2 gap-4 text-sm">
                 {tuningMetrics.ku !== undefined && (
                   <div>
-                    <span className="text-gray-500 dark:text-gray-400 block text-xs">Ultimate Gain (Ku)</span>
-                    <span className="font-mono text-gray-900 dark:text-white">{tuningMetrics.ku.toFixed(2)}</span>
+                    <span className="text-text-muted block text-xs">Ultimate Gain (Ku)</span>
+                    <span className="font-mono text-text-default">{tuningMetrics.ku.toFixed(2)}</span>
                   </div>
                 )}
                 {tuningMetrics.tu !== undefined && (
                   <div>
-                    <span className="text-gray-500 dark:text-gray-400 block text-xs">Ultimate Period (Tu)</span>
-                    <span className="font-mono text-gray-900 dark:text-white">{tuningMetrics.tu.toFixed(1)}s</span>
+                    <span className="text-text-muted block text-xs">Ultimate Period (Tu)</span>
+                    <span className="font-mono text-text-default">{tuningMetrics.tu.toFixed(1)}s</span>
                   </div>
                 )}
               </div>
@@ -96,7 +96,7 @@ export default function PIDChangeDialog({
         <div className="mt-6">
           <button
             onClick={onClose}
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-md transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800"
+            className="w-full bg-accent-primary hover:bg-accent-primary/80 text-text-default font-medium py-2 px-4 rounded-md transition-colors focus:outline-hidden focus:ring-2 focus:ring-accent focus:ring-offset-2 focus:ring-offset-surface-primary"
           >
             Dismiss
           </button>

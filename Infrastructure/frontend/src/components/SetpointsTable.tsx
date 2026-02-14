@@ -85,7 +85,7 @@ function TimingInput({ label, value, field, onChange, tooltip }: { label: string
           max={120}
           value={value}
           onChange={(e) => onChange({ [field]: parseInt(e.target.value) || 0 })}
-          className="w-full h-7 px-2 text-[16px] text-center bg-gray-800 border border-gray-700 rounded text-gray-200"
+          className="w-full h-7 px-2 text-[16px] text-center bg-gray-800 border border-gray-700 rounded-sm text-gray-200"
         />
         <span className="text-[12px] text-gray-500 w-6">min</span>
       </div>
@@ -104,7 +104,7 @@ function LeafInput({ label, value, field, currentValue, onChange, tooltip }: { l
           step={0.5}
           value={value}
           onChange={(e) => onChange({ [field]: parseFloat(e.target.value) || 0 })}
-          className={`w-full h-7 px-2 text-[16px] text-center bg-gray-800 border rounded text-green-300 ${changed ? 'border-cyan-500' : 'border-gray-700'}`}
+          className={`w-full h-7 px-2 text-[16px] text-center bg-gray-800 border rounded-sm text-green-300 ${changed ? 'border-cyan-500' : 'border-gray-700'}`}
         />
         <span className="text-[12px] text-gray-500 w-6">°C</span>
       </div>
@@ -142,7 +142,7 @@ function SetpointInput({ label, value, current, onChange, step, color, unit, tip
           step={step}
           value={value}
           onChange={(e) => onChange(parseFloat(e.target.value) || 0)}
-          className={`w-full h-7 px-2 text-[16px] text-center bg-gray-800 border rounded ${color} ${changed ? 'border-cyan-500' : 'border-gray-700'}`}
+          className={`w-full h-7 px-2 text-[16px] text-center bg-gray-800 border rounded-sm ${color} ${changed ? 'border-cyan-500' : 'border-gray-700'}`}
         />
         <span className="text-[12px] text-gray-500 w-6">{unit}</span>
       </div>

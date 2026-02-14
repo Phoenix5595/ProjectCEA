@@ -555,7 +555,7 @@ export default function CircularTimePicker({
                   const val = e.target.value ? parseInt(e.target.value) : null
                   onRampUpChange(val !== null && val > 180 ? 180 : val)
                 }}
-                className="w-full h-6 text-[16px] text-center bg-gray-800 border border-gray-700 rounded text-gray-200 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                className="w-full h-6 text-[16px] text-center bg-gray-800 border border-gray-700 rounded-sm text-gray-200 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
               />
             </div>
           )}
@@ -588,7 +588,7 @@ export default function CircularTimePicker({
                   const val = e.target.value ? parseInt(e.target.value) : null
                   onRampDownChange(val !== null && val > 180 ? 180 : val)
                 }}
-                className="w-full h-6 text-[16px] text-center bg-gray-800 border border-gray-700 rounded text-gray-200 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                className="w-full h-6 text-[16px] text-center bg-gray-800 border border-gray-700 rounded-sm text-gray-200 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
               />
             </div>
           )}

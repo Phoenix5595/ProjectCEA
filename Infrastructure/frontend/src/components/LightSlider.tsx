@@ -55,10 +55,10 @@ export default function LightSlider({
         <div 
           ref={sliderRef}
           onClick={handleSliderClick}
-          className={`relative w-6 h-24 bg-gray-800 rounded cursor-pointer ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+          className={`relative w-6 h-24 bg-gray-800 rounded-sm cursor-pointer ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
         >
           <div 
-            className="absolute bottom-0 left-0 w-full bg-gradient-to-t from-amber-600 to-amber-400 rounded transition-all"
+            className="absolute bottom-0 left-0 w-full bg-linear-to-t from-amber-600 to-amber-400 rounded-sm transition-all"
             style={{ height: `${percentage}%` }}
           />
           {currentPercentage !== null && (
@@ -81,7 +81,7 @@ export default function LightSlider({
             value={localValue}
             onChange={handleInputChange}
             disabled={disabled}
-            className="w-12 h-6 px-1 text-xs text-center bg-gray-800 border border-gray-700 rounded text-gray-200 disabled:opacity-50"
+            className="w-12 h-6 px-1 text-xs text-center bg-gray-800 border border-gray-700 rounded-sm text-gray-200 disabled:opacity-50"
           />
           <span className="text-xs text-gray-500">%</span>
         </div>

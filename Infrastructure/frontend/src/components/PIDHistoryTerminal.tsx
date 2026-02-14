@@ -54,7 +54,7 @@ export default function PIDHistoryTerminal({ deviceType, maxLines = 50 }: PIDHis
   );
 
   return (
-    <div className="w-full font-mono text-[10px] bg-black rounded p-1 max-h-[120px] overflow-y-auto scrollbar-thin scrollbar-thumb-gray-800 scrollbar-track-transparent">
+    <div className="w-full font-mono text-[10px] bg-black rounded-sm p-1 max-h-[120px] overflow-y-auto scrollbar-thin scrollbar-thumb-gray-800 scrollbar-track-transparent">
         {loading && history.length === 0 ? (
           <div className="text-gray-600 italic px-1">$ Loading...</div>
         ) : history.length === 0 ? (

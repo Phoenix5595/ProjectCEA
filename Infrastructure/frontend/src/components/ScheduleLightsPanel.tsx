@@ -27,7 +27,7 @@ export default function ScheduleLightsPanel({
                 type="time" 
                 value={params.day_start_time}
                 onChange={(e) => onChange({ day_start_time: e.target.value })}
-                className="w-full h-7 px-2 text-sm bg-gray-800 border border-gray-700 rounded text-gray-200 focus:border-cyan-500"
+                className="w-full h-7 px-2 text-sm bg-gray-800 border border-gray-700 rounded-sm text-gray-200 focus:border-cyan-500"
               />
             </div>
             <div>
@@ -36,7 +36,7 @@ export default function ScheduleLightsPanel({
                 type="time" 
                 value={params.night_start_time}
                 onChange={(e) => onChange({ night_start_time: e.target.value })}
-                className="w-full h-7 px-2 text-sm bg-gray-800 border border-gray-700 rounded text-gray-200 focus:border-cyan-500"
+                className="w-full h-7 px-2 text-sm bg-gray-800 border border-gray-700 rounded-sm text-gray-200 focus:border-cyan-500"
               />
             </div>
           </div>
@@ -53,7 +53,7 @@ export default function ScheduleLightsPanel({
                   max="120"
                   value={params.pre_day_minutes}
                   onChange={(e) => onChange({ pre_day_minutes: parseInt(e.target.value) || 0 })}
-                  className="w-full h-7 px-1 text-sm bg-gray-800 border border-gray-700 rounded text-gray-200 text-center"
+                  className="w-full h-7 px-1 text-sm bg-gray-800 border border-gray-700 rounded-sm text-gray-200 text-center"
                 />
                 <input
                   type="number"
@@ -61,7 +61,7 @@ export default function ScheduleLightsPanel({
                   max="120"
                   value={params.ramp_up_minutes}
                   onChange={(e) => onChange({ ramp_up_minutes: parseInt(e.target.value) || 0 })}
-                  className="w-full h-7 px-1 text-sm bg-gray-800 border border-gray-700 rounded text-gray-200 text-center"
+                  className="w-full h-7 px-1 text-sm bg-gray-800 border border-gray-700 rounded-sm text-gray-200 text-center"
                   title="Ramp Up"
                 />
               </div>
@@ -75,7 +75,7 @@ export default function ScheduleLightsPanel({
                   max="120"
                   value={params.pre_night_minutes}
                   onChange={(e) => onChange({ pre_night_minutes: parseInt(e.target.value) || 0 })}
-                  className="w-full h-7 px-1 text-sm bg-gray-800 border border-gray-700 rounded text-gray-200 text-center"
+                  className="w-full h-7 px-1 text-sm bg-gray-800 border border-gray-700 rounded-sm text-gray-200 text-center"
                 />
                 <input
                   type="number"
@@ -83,7 +83,7 @@ export default function ScheduleLightsPanel({
                   max="120"
                   value={params.ramp_down_minutes}
                   onChange={(e) => onChange({ ramp_down_minutes: parseInt(e.target.value) || 0 })}
-                  className="w-full h-7 px-1 text-sm bg-gray-800 border border-gray-700 rounded text-gray-200 text-center"
+                  className="w-full h-7 px-1 text-sm bg-gray-800 border border-gray-700 rounded-sm text-gray-200 text-center"
                   title="Ramp Down"
                 />
               </div>

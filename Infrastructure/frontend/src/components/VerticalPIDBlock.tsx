@@ -127,7 +127,7 @@ export default function VerticalPIDBlock() {
           value={device}
           onChange={(e) => setDevice(e.target.value)}
           disabled={saving}
-          className="bg-gray-800 border border-gray-700 rounded text-gray-200 text-xs px-2 py-1 focus:outline-none focus:border-cyan-500 transition-colors"
+          className="bg-gray-800 border border-gray-700 rounded-sm text-gray-200 text-xs px-2 py-1 focus:outline-hidden focus:border-cyan-500 transition-colors"
         >
           <option value="heater">Heater</option>
           <option value="fan">Fan</option>
@@ -139,7 +139,7 @@ export default function VerticalPIDBlock() {
           <button
             onClick={() => handleModeChange('on_off')}
             disabled={saving}
-            className={`px-2 py-1 rounded text-xs font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-cyan-500/50 ${
+            className={`px-2 py-1 rounded text-xs font-medium transition-colors focus:outline-hidden focus:ring-2 focus:ring-cyan-500/50 ${
               mode === 'on_off'
                 ? 'bg-gray-700 text-gray-100 border border-gray-600'
                 : 'bg-gray-800 text-gray-400 border border-gray-700 hover:bg-gray-700'
@@ -150,7 +150,7 @@ export default function VerticalPIDBlock() {
           <button
             onClick={() => handleModeChange('pid')}
             disabled={saving}
-            className={`px-2 py-1 rounded text-xs font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-cyan-500/50 ${
+            className={`px-2 py-1 rounded text-xs font-medium transition-colors focus:outline-hidden focus:ring-2 focus:ring-cyan-500/50 ${
               mode === 'pid'
                 ? 'bg-cyan-900/50 text-cyan-400 border border-cyan-800/50'
                 : 'bg-gray-800 text-gray-400 border border-gray-700 hover:bg-gray-700'
@@ -161,7 +161,7 @@ export default function VerticalPIDBlock() {
           <button
             onClick={() => handleModeChange('auto_pid')}
             disabled={saving}
-            className={`px-2 py-1 rounded text-xs font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-cyan-500/50 ${
+            className={`px-2 py-1 rounded text-xs font-medium transition-colors focus:outline-hidden focus:ring-2 focus:ring-cyan-500/50 ${
               mode === 'auto_pid'
                 ? 'bg-purple-900/50 text-purple-400 border border-purple-800/50'
                 : 'bg-gray-800 text-gray-400 border border-gray-700 hover:bg-gray-700'
@@ -186,7 +186,7 @@ export default function VerticalPIDBlock() {
                 value={tempParameters.kp}
                 onChange={(e) => handleParameterChange('kp', parseFloat(e.target.value))}
                 disabled={isAuto || saving}
-                className="w-full bg-gray-800 border border-gray-700 rounded text-red-400 text-sm px-2 py-1 text-center font-mono focus:outline-none focus:border-cyan-500 transition-colors"
+                className="w-full bg-gray-800 border border-gray-700 rounded-sm text-red-400 text-sm px-2 py-1 text-center font-mono focus:outline-hidden focus:border-cyan-500 transition-colors"
               />
             </div>
             <div className="flex-1">
@@ -199,7 +199,7 @@ export default function VerticalPIDBlock() {
                 value={tempParameters.ki}
                 onChange={(e) => handleParameterChange('ki', parseFloat(e.target.value))}
                 disabled={isAuto || saving}
-                className="w-full bg-gray-800 border border-gray-700 rounded text-green-400 text-sm px-2 py-1 text-center font-mono focus:outline-none focus:border-cyan-500 transition-colors"
+                className="w-full bg-gray-800 border border-gray-700 rounded-sm text-green-400 text-sm px-2 py-1 text-center font-mono focus:outline-hidden focus:border-cyan-500 transition-colors"
               />
             </div>
             <div className="flex-1">
@@ -212,7 +212,7 @@ export default function VerticalPIDBlock() {
                 value={tempParameters.kd}
                 onChange={(e) => handleParameterChange('kd', parseFloat(e.target.value))}
                 disabled={isAuto || saving}
-                className="w-full bg-gray-800 border border-gray-700 rounded text-blue-400 text-sm px-2 py-1 text-center font-mono focus:outline-none focus:border-cyan-500 transition-colors"
+                className="w-full bg-gray-800 border border-gray-700 rounded-sm text-blue-400 text-sm px-2 py-1 text-center font-mono focus:outline-hidden focus:border-cyan-500 transition-colors"
               />
             </div>
           </div>
@@ -223,7 +223,7 @@ export default function VerticalPIDBlock() {
               <button
                 onClick={saveParameters}
                 disabled={saving}
-                className="w-full px-3 py-2 bg-cyan-700 hover:bg-cyan-600 disabled:bg-gray-800 disabled:text-gray-600 rounded text-white text-xs font-bold tracking-wide transition-colors focus:outline-none focus:ring-2 focus:ring-cyan-500/50"
+                className="w-full px-3 py-2 bg-cyan-700 hover:bg-cyan-600 disabled:bg-gray-800 disabled:text-gray-600 rounded-sm text-white text-xs font-bold tracking-wide transition-colors focus:outline-hidden focus:ring-2 focus:ring-cyan-500/50"
               >
                 {saving ? 'Saving...' : 'Save Changes'}
               </button>
@@ -241,7 +241,7 @@ export default function VerticalPIDBlock() {
           ) : (
             <div className="space-y-1">
               {history.slice(0, 10).map((entry, i) => (
-                <div key={i} className="text-xs bg-gray-900/50 rounded px-2 py-1 border border-gray-800/50">
+                <div key={i} className="text-xs bg-gray-900/50 rounded-sm px-2 py-1 border border-gray-800/50">
                   <div className="flex items-center justify-between mb-1">
                     <span className="text-gray-500">{new Date(entry.changed_at || entry.timestamp).toLocaleTimeString()}</span>
                     <span className="text-gray-600">{entry.source || 'Unknown'}</span>

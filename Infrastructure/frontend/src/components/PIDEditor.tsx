@@ -151,7 +151,7 @@ export default function PIDEditor() {
   }
 
   return (
-    <div className="bg-gray-900 rounded p-2 border border-gray-800 h-full flex flex-col">
+    <div className="bg-gray-900 rounded-sm p-2 border border-gray-800 h-full flex flex-col">
       <div className="flex justify-between items-center mb-2">
         <div className="text-xs font-bold text-gray-400 uppercase tracking-wider">
            PID CONTROL
@@ -160,7 +160,7 @@ export default function PIDEditor() {
             <select
                value={selectedDeviceType}
                onChange={(e) => setSelectedDeviceType(e.target.value)}
-               className="h-6 px-1 py-0 bg-gray-800 border border-gray-700 text-gray-300 text-[10px] rounded focus:outline-none"
+               className="h-6 px-1 py-0 bg-gray-800 border border-gray-700 text-gray-300 text-[10px] rounded-sm focus:outline-hidden"
             >
                {DEVICE_TYPES.map(type => (
                   <option key={type} value={type}>{type.toUpperCase()}</option>
@@ -178,7 +178,7 @@ export default function PIDEditor() {
       </div>
 
       {currentMode === 'auto_pid' && autotuneState && (
-        <div className="bg-blue-900/20 p-2 rounded border border-blue-800 mb-2">
+        <div className="bg-blue-900/20 p-2 rounded-sm border border-blue-800 mb-2">
           <div className="flex items-center justify-between mb-1">
             <h4 className="font-semibold text-blue-100 flex items-center gap-2 text-[10px]">
               <span className="relative flex h-1.5 w-1.5">
@@ -212,7 +212,7 @@ export default function PIDEditor() {
               value={hysteresisData.high}
               onChange={(e) => setHysteresisData(prev => ({ ...prev, high: parseFloat(e.target.value) }))}
               onBlur={() => handleModeChange('on_off')}
-              className="border border-gray-700 rounded px-2 py-1 w-full bg-gray-800 text-gray-200 text-xs h-6"
+              className="border border-gray-700 rounded-sm px-2 py-1 w-full bg-gray-800 text-gray-200 text-xs h-6"
             />
           </div>
           <div>
@@ -225,7 +225,7 @@ export default function PIDEditor() {
               value={hysteresisData.low}
               onChange={(e) => setHysteresisData(prev => ({ ...prev, low: parseFloat(e.target.value) }))}
               onBlur={() => handleModeChange('on_off')}
-              className="border border-gray-700 rounded px-2 py-1 w-full bg-gray-800 text-gray-200 text-xs h-6"
+              className="border border-gray-700 rounded-sm px-2 py-1 w-full bg-gray-800 text-gray-200 text-xs h-6"
             />
           </div>
         </div>
@@ -297,7 +297,7 @@ export default function PIDEditor() {
           <button
             onClick={handleSubmit}
             disabled={loading || Object.keys(errors).length > 0}
-            className="bg-cyan-700 hover:bg-cyan-600 text-white px-3 py-0.5 rounded text-[10px] font-bold"
+            className="bg-cyan-700 hover:bg-cyan-600 text-white px-3 py-0.5 rounded-sm text-[10px] font-bold"
           >
             {loading ? '...' : 'SAVE'}
           </button>
