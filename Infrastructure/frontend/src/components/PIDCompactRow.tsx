@@ -151,7 +151,7 @@ export default function PIDCompactRow() {
                 value={kp}
                 onChange={(e) => setKp(parseFloat(e.target.value) || 0)}
                 disabled={isAuto || isOff || loading}
-                className="w-full bg-gray-950 border border-gray-700 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 rounded px-2 py-2 text-center text-sm font-mono text-gray-200 disabled:opacity-50 transition-colors"
+                className="w-full bg-gray-950 border border-gray-700 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 rounded-sm px-2 py-2 text-center text-sm font-mono text-gray-200 disabled:opacity-50 transition-colors"
               />
             </div>
             <div className="space-y-1">
@@ -162,7 +162,7 @@ export default function PIDCompactRow() {
                 value={ki}
                 onChange={(e) => setKi(parseFloat(e.target.value) || 0)}
                 disabled={isAuto || isOff || loading}
-                className="w-full bg-gray-950 border border-gray-700 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 rounded px-2 py-2 text-center text-sm font-mono text-gray-200 disabled:opacity-50 transition-colors"
+                className="w-full bg-gray-950 border border-gray-700 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 rounded-sm px-2 py-2 text-center text-sm font-mono text-gray-200 disabled:opacity-50 transition-colors"
               />
             </div>
             <div className="space-y-1">
@@ -173,7 +173,7 @@ export default function PIDCompactRow() {
                 value={kd}
                 onChange={(e) => setKd(parseFloat(e.target.value) || 0)}
                 disabled={isAuto || isOff || loading}
-                className="w-full bg-gray-950 border border-gray-700 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 rounded px-2 py-2 text-center text-sm font-mono text-gray-200 disabled:opacity-50 transition-colors"
+                className="w-full bg-gray-950 border border-gray-700 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 rounded-sm px-2 py-2 text-center text-sm font-mono text-gray-200 disabled:opacity-50 transition-colors"
               />
             </div>
           </div>
@@ -203,7 +203,7 @@ export default function PIDCompactRow() {
                <button
                  onClick={handleSave}
                  disabled={loading || saving || isAuto}
-                 className="px-4 py-1.5 bg-cyan-700 hover:bg-cyan-600 disabled:bg-gray-800 disabled:text-gray-600 rounded text-white text-[11px] font-bold tracking-wide transition-colors shadow-lg shadow-cyan-900/20"
+                 className="px-4 py-1.5 bg-cyan-700 hover:bg-cyan-600 disabled:bg-gray-800 disabled:text-gray-600 rounded-sm text-white text-[11px] font-bold tracking-wide transition-colors shadow-lg shadow-cyan-900/20"
                >
                  {saving ? 'SAVING...' : 'SAVE CONFIG'}
                </button>
@@ -219,7 +219,7 @@ export default function PIDCompactRow() {
           ) : (
             <div className="space-y-2 max-h-48 overflow-y-auto">
               {history.map((entry, i) => (
-                <div key={i} className="text-xs bg-gray-900/50 rounded px-3 py-2 border border-gray-800/50">
+                <div key={i} className="text-xs bg-gray-900/50 rounded-sm px-3 py-2 border border-gray-800/50">
                   <div className="flex items-center justify-between mb-1">
                     <span className="text-gray-500">{new Date(entry.timestamp).toLocaleString()}</span>
                     <span className="text-gray-600">{entry.reason}</span>

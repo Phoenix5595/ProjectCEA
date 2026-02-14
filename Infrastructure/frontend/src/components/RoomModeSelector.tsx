@@ -67,7 +67,7 @@ export default function RoomModeSelector({
   const isFlowerMode = currentModeName === 'flower'
 
   const displayName = MODE_DISPLAY_NAMES[currentModeName] || currentModeName
-  const bgColor = MODE_COLORS[currentModeName] || 'bg-gray-600'
+  const bgColor = MODE_COLORS[currentModeName] || 'bg-surface-tertiary'
 
   return (
     <div className="flex items-center gap-1">
@@ -75,7 +75,7 @@ export default function RoomModeSelector({
         <button
           onClick={() => !isVegRoom && setIsOpen(!isOpen)}
           disabled={loading || isVegRoom}
-          className={`${bgColor} px-3 py-1 rounded text-white text-xs font-bold uppercase tracking-wider flex items-center gap-2 hover:opacity-90 transition-opacity disabled:opacity-50 ${isVegRoom ? 'cursor-not-allowed' : ''}`}
+          className={`${bgColor} px-3 py-1 rounded-sm text-white text-xs font-bold uppercase tracking-wider flex items-center gap-2 hover:opacity-90 transition-opacity disabled:opacity-50 ${isVegRoom ? 'cursor-not-allowed' : ''}`}
           title={isVegRoom ? 'Veg room is locked to veg mode' : 'Change mode'}
         >
           {loading ? '...' : displayName}
@@ -85,18 +85,18 @@ export default function RoomModeSelector({
         </button>
 
         {isOpen && (
-          <div className="absolute top-full mt-1 right-0 bg-gray-900 border border-gray-700 rounded-lg shadow-xl z-50 min-w-[160px] overflow-hidden">
+          <div className="absolute top-full mt-1 right-0 bg-surface-primary border border-border-default rounded-lg shadow-xl z-50 min-w-[160px] overflow-hidden">
             {modes.map(mode => (
               <button
                 key={mode.id}
                 onClick={() => handleModeSelect(mode.name, mode.name === 'flower' ? submodes[0]?.name : undefined)}
-                className={`w-full px-3 py-2 text-left text-xs hover:bg-gray-800 flex items-center gap-2 ${
-                  currentModeName === mode.name ? 'bg-gray-800 text-white' : 'text-gray-300'
+                className={`w-full px-3 py-2 text-left text-xs hover:bg-surface-secondary flex items-center gap-2 ${
+                  currentModeName === mode.name ? 'bg-surface-secondary text-text-default' : 'text-text-secondary'
                 }`}
               >
-                <span className={`w-2 h-2 rounded-full ${MODE_COLORS[mode.name] || 'bg-gray-600'}`} />
+                <span className={`w-2 h-2 rounded-full ${MODE_COLORS[mode.name] || 'bg-surface-tertiary'}`} />
                 {MODE_DISPLAY_NAMES[mode.name] || mode.name}
-                {mode.is_constant && <span className="text-gray-500 ml-auto">24h</span>}
+                {mode.is_constant && <span className="text-text-subtle ml-auto">24h</span>}
               </button>
             ))}
           </div>
@@ -114,7 +114,7 @@ export default function RoomModeSelector({
               className={`px-2 py-1 text-[10px] font-bold uppercase rounded transition-colors disabled:opacity-50 ${
                 currentSubmodeName === sub.name
                   ? `${SUBMODE_COLORS[sub.name] || 'bg-pink-600'} text-white`
-                  : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+                  : 'bg-surface-secondary text-text-muted hover:bg-surface-tertiary'
               }`}
             >
               {SUBMODE_ABBREV[sub.name] || sub.name.slice(0, 3).toUpperCase()}

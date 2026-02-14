@@ -192,7 +192,7 @@ export default function DeviceManager() {
                           type="text"
                           value={editForm.device_name}
                           onChange={(e) => setEditForm({ ...editForm, device_name: e.target.value })}
-                          className="w-full px-2 py-1 border border-gray-300 dark:border-gray-600 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
+                          className="w-full px-2 py-1 border border-gray-300 dark:border-gray-600 rounded-sm focus:outline-hidden focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
                           placeholder="Device name"
                         />
                       ) : (
@@ -204,7 +204,7 @@ export default function DeviceManager() {
                         <select
                           value={editForm.device_type}
                           onChange={(e) => setEditForm({ ...editForm, device_type: e.target.value, light_name: '' })}
-                          className="w-full px-2 py-1 border border-gray-300 dark:border-gray-600 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
+                          className="w-full px-2 py-1 border border-gray-300 dark:border-gray-600 rounded-sm focus:outline-hidden focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
                         >
                           <option value="">Select type</option>
                           {DEVICE_TYPES.map((type) => (
@@ -228,7 +228,7 @@ export default function DeviceManager() {
                         <select
                           value={editForm.light_name}
                           onChange={(e) => setEditForm({ ...editForm, light_name: e.target.value })}
-                          className="w-full px-2 py-1 border border-gray-300 dark:border-gray-600 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
+                          className="w-full px-2 py-1 border border-gray-300 dark:border-gray-600 rounded-sm focus:outline-hidden focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
                         >
                           <option value="">Select light</option>
                           {Array.from(new Map(lightNames.map(light => [light.name, light])).values()).map((light) => (
@@ -251,7 +251,7 @@ export default function DeviceManager() {
                               const firstCluster = ZONES.find(z => z.location === newLocation)?.cluster || ''
                               setEditForm({ ...editForm, location: newLocation, cluster: firstCluster })
                             }}
-                            className="w-full px-2 py-1 border border-gray-300 dark:border-gray-600 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
+                            className="w-full px-2 py-1 border border-gray-300 dark:border-gray-600 rounded-sm focus:outline-hidden focus:ring-2 focus:ring-blue-500 text-xs bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
                           >
                             {ZONES.filter((z, i, self) => self.findIndex(z2 => z2.location === z.location) === i).map((zone) => (
                               <option key={zone.location} value={zone.location}>
@@ -262,7 +262,7 @@ export default function DeviceManager() {
                           <select
                             value={editForm.cluster}
                             onChange={(e) => setEditForm({ ...editForm, cluster: e.target.value })}
-                            className="w-full px-2 py-1 border border-gray-300 dark:border-gray-600 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
+                            className="w-full px-2 py-1 border border-gray-300 dark:border-gray-600 rounded-sm focus:outline-hidden focus:ring-2 focus:ring-blue-500 text-xs bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
                           >
                             {ZONES.filter(z => z.location === editForm.location).map((zone) => (
                               <option key={`${zone.location}-${zone.cluster}`} value={zone.cluster}>
@@ -285,14 +285,14 @@ export default function DeviceManager() {
                           <button
                             onClick={saveEdit}
                             disabled={saving}
-                            className="px-3 py-1 bg-blue-600 dark:bg-blue-500 text-white rounded hover:bg-blue-700 dark:hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                            className="px-3 py-1 bg-blue-600 dark:bg-blue-500 text-white rounded-sm hover:bg-blue-700 dark:hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
                           >
                             {saving ? 'Saving...' : 'Save'}
                           </button>
                           <button
                             onClick={cancelEdit}
                             disabled={saving}
-                            className="px-3 py-1 bg-gray-300 dark:bg-gray-600 text-gray-700 dark:text-gray-200 rounded hover:bg-gray-400 dark:hover:bg-gray-500 disabled:opacity-50"
+                            className="px-3 py-1 bg-gray-300 dark:bg-gray-600 text-gray-700 dark:text-gray-200 rounded-sm hover:bg-gray-400 dark:hover:bg-gray-500 disabled:opacity-50"
                           >
                             Cancel
                           </button>
@@ -300,7 +300,7 @@ export default function DeviceManager() {
                       ) : (
                         <button
                           onClick={() => startEdit(channel)}
-                          className="px-3 py-1 bg-blue-600 dark:bg-blue-500 text-white rounded hover:bg-blue-700 dark:hover:bg-blue-600"
+                          className="px-3 py-1 bg-blue-600 dark:bg-blue-500 text-white rounded-sm hover:bg-blue-700 dark:hover:bg-blue-600"
                         >
                           {isEmpty ? 'Add' : 'Edit'}
                         </button>

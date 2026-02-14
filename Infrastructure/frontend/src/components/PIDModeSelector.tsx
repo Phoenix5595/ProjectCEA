@@ -37,8 +37,8 @@ export default function PIDModeSelector({ mode, onChange, disabled = false }: PI
             className={`
               flex-1 py-1 rounded border text-[10px] font-bold transition-all
               ${isSelected 
-                ? 'border-cyan-600 bg-cyan-900/40 text-cyan-300 shadow-sm' 
-                : 'border-gray-700 bg-gray-800 text-gray-500 hover:bg-gray-700'
+                ? 'border-cyan-600 bg-cyan-900/40 text-accent-data-dim shadow-xs' 
+                : 'border-border-default bg-surface-secondary text-text-subtle hover:bg-surface-tertiary'
               }
               ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
             `}

@@ -189,21 +189,21 @@ function LightRow({
       <div className="flex items-center gap-2 mb-2">
         <div className="flex items-center gap-1">
           <span className="text-gray-500 text-[10px]">CUR</span>
-          <span className="bg-gray-800 px-1 py-0.5 rounded text-cyan-400 font-mono text-[10px] min-w-[28px] text-center">
+          <span className="bg-gray-800 px-1 py-0.5 rounded-sm text-cyan-400 font-mono text-[10px] min-w-[28px] text-center">
             {currentIntensity}%
           </span>
         </div>
         <div className="flex items-center gap-1">
           <span className="text-gray-500 text-[10px]">TGT</span>
-          <span className="bg-gray-800 px-1 py-0.5 rounded text-amber-400 font-mono text-[10px] min-w-[28px] text-center">
+          <span className="bg-gray-800 px-1 py-0.5 rounded-sm text-amber-400 font-mono text-[10px] min-w-[28px] text-center">
             {dayTarget}%
           </span>
         </div>
       </div>
       <div className="relative w-8 h-32">
-        <div className="absolute inset-0 bg-gray-800 rounded overflow-hidden">
+        <div className="absolute inset-0 bg-gray-800 rounded-sm overflow-hidden">
           <div 
-            className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-blue-600 to-blue-400 transition-all"
+            className="absolute bottom-0 left-0 right-0 bg-linear-to-t from-blue-600 to-blue-400 transition-all"
             style={{ height: `${sliderPosition}%` }}
           />
         </div>
@@ -223,14 +223,14 @@ function LightRow({
         />
         {dayTarget > 0 && (
           <div 
-            className="absolute left-0 right-0 h-1 bg-amber-400 rounded"
+            className="absolute left-0 right-0 h-1 bg-amber-400 rounded-sm"
             style={{ bottom: `calc(${dayTarget}% - 2px)` }}
             title={`Day Target: ${dayTarget}%`}
           />
         )}
         {hasPending && (
           <div 
-            className="absolute left-0 right-0 h-1 bg-yellow-400 rounded"
+            className="absolute left-0 right-0 h-1 bg-yellow-400 rounded-sm"
             style={{ bottom: `calc(${displayTarget}% - 2px)` }}
             title={`Pending: ${displayTarget}%`}
           />
@@ -249,7 +249,7 @@ function LightRow({
             }
           }}
           disabled={disabled}
-          className="w-14 h-6 px-1 text-[12px] text-center bg-gray-800 border border-gray-700 rounded text-gray-200 disabled:opacity-50"
+          className="w-14 h-6 px-1 text-[12px] text-center bg-gray-800 border border-gray-700 rounded-sm text-gray-200 disabled:opacity-50"
         />
         <span className="text-[10px] text-gray-500">%</span>
       </div>

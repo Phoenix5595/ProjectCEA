@@ -32,7 +32,7 @@ export function ScheduleCard({
   onUpdate: (updates: any) => void 
 }) {
   return (
-    <div className="bg-gray-900 rounded p-2 h-full border border-gray-800">
+    <div className="bg-gray-900 rounded-sm p-2 h-full border border-gray-800">
       <div className="text-xs text-gray-400 uppercase mb-2 font-bold tracking-wider">Schedule</div>
       <div className="space-y-2">
         <div className="grid grid-cols-2 gap-2">
@@ -42,7 +42,7 @@ export function ScheduleCard({
               type="time" 
               value={schedule.day_start_time}
               onChange={(e) => onUpdate({ day_start_time: e.target.value })}
-              className="w-full h-7 px-2 text-sm bg-gray-800 border border-gray-700 rounded text-gray-200 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500"
+              className="w-full h-7 px-2 text-sm bg-gray-800 border border-gray-700 rounded-sm text-gray-200 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500"
             />
           </div>
           <div>
@@ -51,7 +51,7 @@ export function ScheduleCard({
               type="time" 
               value={schedule.day_end_time}
               onChange={(e) => onUpdate({ day_end_time: e.target.value })}
-              className="w-full h-7 px-2 text-sm bg-gray-800 border border-gray-700 rounded text-gray-200 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500"
+              className="w-full h-7 px-2 text-sm bg-gray-800 border border-gray-700 rounded-sm text-gray-200 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500"
             />
           </div>
         </div>
@@ -65,7 +65,7 @@ export function ScheduleCard({
                 max="120"
                 value={schedule.pre_day_duration}
                 onChange={(e) => onUpdate({ pre_day_duration: parseInt(e.target.value) || 0 })}
-                className="w-full h-7 px-1 text-sm bg-gray-800 border border-gray-700 rounded text-gray-200 text-center"
+                className="w-full h-7 px-1 text-sm bg-gray-800 border border-gray-700 rounded-sm text-gray-200 text-center"
                 title="Pre-Day"
               />
                <input
@@ -74,7 +74,7 @@ export function ScheduleCard({
                 max="120"
                 value={schedule.pre_night_duration}
                 onChange={(e) => onUpdate({ pre_night_duration: parseInt(e.target.value) || 0 })}
-                className="w-full h-7 px-1 text-sm bg-gray-800 border border-gray-700 rounded text-gray-200 text-center"
+                className="w-full h-7 px-1 text-sm bg-gray-800 border border-gray-700 rounded-sm text-gray-200 text-center"
                 title="Pre-Night"
               />
             </div>
@@ -87,7 +87,7 @@ export function ScheduleCard({
                   step="0.1"
                   value={schedule.leaf_delta_day ?? -2.0}
                   onChange={(e) => onUpdate({ leaf_delta_day: parseFloat(e.target.value) || 0 })}
-                  className="w-full h-7 px-1 text-sm bg-gray-800 border border-gray-700 rounded text-gray-200 text-center"
+                  className="w-full h-7 px-1 text-sm bg-gray-800 border border-gray-700 rounded-sm text-gray-200 text-center"
                   title="Day Delta"
                 />
                <input
@@ -95,7 +95,7 @@ export function ScheduleCard({
                   step="0.1"
                   value={schedule.leaf_delta_night ?? -1.0}
                   onChange={(e) => onUpdate({ leaf_delta_night: parseFloat(e.target.value) || 0 })}
-                  className="w-full h-7 px-1 text-sm bg-gray-800 border border-gray-700 rounded text-gray-200 text-center"
+                  className="w-full h-7 px-1 text-sm bg-gray-800 border border-gray-700 rounded-sm text-gray-200 text-center"
                   title="Night Delta"
                 />
              </div>
@@ -123,15 +123,15 @@ export function SetpointCard({
     onChange({ ...setpoint, [field]: value })
   }
 
-  const inputClass = "w-full h-7 px-2 text-sm bg-gray-800 border border-gray-700 rounded text-gray-200 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500"
+  const inputClass = "w-full h-7 px-2 text-sm bg-gray-800 border border-gray-700 rounded-sm text-gray-200 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500"
   const labelClass = "text-[10px] text-gray-500 uppercase flex items-center gap-1"
 
   return (
-    <div className="bg-gray-900 rounded p-2 h-full border border-gray-800">
+    <div className="bg-gray-900 rounded-sm p-2 h-full border border-gray-800">
       <div className="text-xs text-gray-400 uppercase mb-2 font-bold tracking-wider flex justify-between items-center">
         <span>{title || mode}</span>
         {setpoint.ramp_in_duration > 0 && (
-           <span className="text-[10px] bg-gray-800 px-1 rounded text-cyan-400">Ramp: {setpoint.ramp_in_duration}m</span>
+           <span className="text-[10px] bg-gray-800 px-1 rounded-sm text-cyan-400">Ramp: {setpoint.ramp_in_duration}m</span>
         )}
       </div>
       <div className="grid grid-cols-2 gap-2">
@@ -318,7 +318,7 @@ export default function ClimateScheduleEditor({ location, cluster }: ClimateSche
   return (
     <div className="flex flex-col h-full p-2 gap-2">
       {/* Timeline Section */}
-      <div className="relative h-20 w-full bg-gray-900 border border-gray-800 rounded-lg overflow-hidden flex-shrink-0">
+      <div className="relative h-20 w-full bg-gray-900 border border-gray-800 rounded-lg overflow-hidden shrink-0">
           <SetpointTimeline
             dayStartTime={schedule.day_start_time}
             dayEndTime={schedule.day_end_time}
@@ -347,14 +347,14 @@ export default function ClimateScheduleEditor({ location, cluster }: ClimateSche
           <div className="flex justify-between items-center px-1">
              <div className="flex-1"></div>
              {(error || success) && (
-                <div className={`text-xs px-2 py-0.5 rounded mr-2 ${error ? 'bg-red-900 text-red-200' : 'bg-green-900 text-green-200'}`}>
+                <div className={`text-xs px-2 py-0.5 rounded-sm mr-2 ${error ? 'bg-red-900 text-red-200' : 'bg-green-900 text-green-200'}`}>
                   {error || success}
                 </div>
              )}
              <button
                 onClick={handleSave}
                 disabled={saving}
-                className="px-3 py-1 bg-cyan-700 hover:bg-cyan-600 disabled:opacity-50 text-white text-xs font-bold rounded shadow-sm transition-colors"
+                className="px-3 py-1 bg-cyan-700 hover:bg-cyan-600 disabled:opacity-50 text-white text-xs font-bold rounded-sm shadow-xs transition-colors"
               >
                 {saving ? '...' : 'SAVE'}
              </button>

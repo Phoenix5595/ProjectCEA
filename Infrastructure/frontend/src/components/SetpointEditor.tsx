@@ -208,7 +208,7 @@ export default function SetpointEditor({ location, cluster, onUpdate, mode = nul
             value={inputValues.heating_setpoint ?? formData.heating_setpoint ?? ''}
             onChange={(e) => handleInputChange('heating_setpoint', e.target.value)}
             onBlur={() => handleBlur('heating_setpoint')}
-            className={`border-2 rounded-md px-3 py-2 w-full bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.heating_setpoint ? 'border-red-600 dark:border-red-500' : 'border-gray-400 dark:border-gray-600'}`}
+            className={`border-2 rounded-md px-3 py-2 w-full bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 font-medium focus:outline-hidden focus:ring-2 focus:ring-blue-500 ${errors.heating_setpoint ? 'border-red-600 dark:border-red-500' : 'border-gray-400 dark:border-gray-600'}`}
           />
           <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
             Current: {formatValue(savedValues.heating_setpoint, '°C')}
@@ -230,7 +230,7 @@ export default function SetpointEditor({ location, cluster, onUpdate, mode = nul
             value={inputValues.cooling_setpoint ?? formData.cooling_setpoint ?? ''}
             onChange={(e) => handleInputChange('cooling_setpoint', e.target.value)}
             onBlur={() => handleBlur('cooling_setpoint')}
-            className={`border-2 rounded-md px-3 py-2 w-full bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.cooling_setpoint ? 'border-red-600 dark:border-red-500' : 'border-gray-400 dark:border-gray-600'}`}
+            className={`border-2 rounded-md px-3 py-2 w-full bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 font-medium focus:outline-hidden focus:ring-2 focus:ring-blue-500 ${errors.cooling_setpoint ? 'border-red-600 dark:border-red-500' : 'border-gray-400 dark:border-gray-600'}`}
           />
           <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
             Current: {formatValue(savedValues.cooling_setpoint, '°C')}
@@ -252,7 +252,7 @@ export default function SetpointEditor({ location, cluster, onUpdate, mode = nul
             value={inputValues.co2 ?? formData.co2 ?? ''}
             onChange={(e) => handleInputChange('co2', e.target.value)}
             onBlur={() => handleBlur('co2')}
-            className={`border-2 rounded-md px-3 py-2 w-full bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.co2 ? 'border-red-600 dark:border-red-500' : 'border-gray-400 dark:border-gray-600'}`}
+            className={`border-2 rounded-md px-3 py-2 w-full bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 font-medium focus:outline-hidden focus:ring-2 focus:ring-blue-500 ${errors.co2 ? 'border-red-600 dark:border-red-500' : 'border-gray-400 dark:border-gray-600'}`}
           />
           <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
             Current: {formatValue(savedValues.co2, 'ppm')}
@@ -274,7 +274,7 @@ export default function SetpointEditor({ location, cluster, onUpdate, mode = nul
             value={inputValues.vpd ?? formData.vpd ?? ''}
             onChange={(e) => handleInputChange('vpd', e.target.value)}
             onBlur={() => handleBlur('vpd')}
-            className={`border-2 rounded-md px-3 py-2 w-full bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.vpd ? 'border-red-600 dark:border-red-500' : 'border-gray-400 dark:border-gray-600'}`}
+            className={`border-2 rounded-md px-3 py-2 w-full bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 font-medium focus:outline-hidden focus:ring-2 focus:ring-blue-500 ${errors.vpd ? 'border-red-600 dark:border-red-500' : 'border-gray-400 dark:border-gray-600'}`}
           />
           <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
             Current: {formatValue(savedValues.vpd, 'kPa')}
@@ -298,7 +298,7 @@ export default function SetpointEditor({ location, cluster, onUpdate, mode = nul
             max="240"
             value={rampInDuration}
             onChange={(e) => setRampInDuration(parseInt(e.target.value) || 0)}
-            className={`border-2 rounded-md px-3 py-2 w-full bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.ramp_in_duration ? 'border-red-600 dark:border-red-500' : 'border-gray-400 dark:border-gray-600'}`}
+            className={`border-2 rounded-md px-3 py-2 w-full bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 font-medium focus:outline-hidden focus:ring-2 focus:ring-blue-500 ${errors.ramp_in_duration ? 'border-red-600 dark:border-red-500' : 'border-gray-400 dark:border-gray-600'}`}
           />
           <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
             Current: {savedValues.ramp_in_duration ?? 0} minutes

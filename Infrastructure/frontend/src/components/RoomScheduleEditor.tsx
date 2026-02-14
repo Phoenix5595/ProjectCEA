@@ -167,7 +167,7 @@ export default function RoomScheduleEditor({ location, cluster, period, modeName
               </p>
             </div>
             {showManualLightControl && (
-              <div className="flex-shrink-0">
+              <div className="shrink-0">
                 <ManualLightControl location={location} cluster={cluster} compact={true} />
               </div>
             )}
@@ -206,7 +206,7 @@ export default function RoomScheduleEditor({ location, cluster, period, modeName
               </p>
             </div>
             {showManualLightControl && (
-              <div className="flex-shrink-0">
+              <div className="shrink-0">
                 <ManualLightControl location={location} cluster={cluster} compact={true} />
               </div>
             )}

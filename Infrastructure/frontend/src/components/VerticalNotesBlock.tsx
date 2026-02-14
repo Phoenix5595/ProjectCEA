@@ -115,7 +115,7 @@ export default function VerticalNotesBlock({ location, cluster, currentMode }: V
           value={content}
           onChange={handleContentChange}
           placeholder={`Add your notes for ${currentMode || 'this mode'} here...`}
-          className="w-full bg-gray-800 border border-gray-700 rounded text-gray-200 text-sm px-3 py-2 resize-none min-h-[400px] focus:outline-none focus:border-cyan-500 transition-colors"
+          className="w-full bg-gray-800 border border-gray-700 rounded-sm text-gray-200 text-sm px-3 py-2 resize-none min-h-[400px] focus:outline-hidden focus:border-cyan-500 transition-colors"
           style={{ fontFamily: 'monospace' }}
         />
         <div className="text-gray-500 text-xs text-center">

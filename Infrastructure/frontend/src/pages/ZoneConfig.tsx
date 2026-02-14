@@ -110,11 +110,11 @@ export default function ZoneConfig() {
   }
 
   if (!location || !cluster) {
-    return <div className="text-gray-100">Invalid zone</div>
+    return <div className="text-text-default">Invalid zone</div>
   }
 
   if (loading) {
-    return <div className="min-h-screen bg-gray-950 flex items-center justify-center text-gray-400">Loading...</div>
+    return <div className="min-h-screen bg-surface-base flex items-center justify-center text-gray-400">Loading...</div>
   }
 
   const params = roomMode?.parameters
@@ -123,24 +123,24 @@ export default function ZoneConfig() {
   const lockedPhotoperiod = currentModeName === 'flower' ? 12 : currentModeName === 'veg' ? 18 : null
 
   return (
-    <div className="min-h-screen bg-gray-950 p-2">
+    <div className="min-h-screen bg-surface-base p-2">
       <div className="max-w-[1920px] mx-auto h-[calc(100vh-1rem)] flex flex-col">
-        <div className="sticky top-0 z-10 bg-gray-950 p-1 mb-2">
+        <div className="sticky top-0 z-10 bg-surface-base p-1 mb-2">
           <div className="flex items-center justify-between px-1">
-            <h1 className="text-lg font-bold text-gray-100 flex items-center gap-2">
+            <h1 className="text-lg font-bold text-text-default flex items-center gap-2">
               <span>{location === 'Veg Room' ? '🌱' : location === 'Flower Room' ? '🌻' : '🌿'}</span> 
               {cluster === 'main' ? getLocationDisplayName(location) : `${getLocationDisplayName(location)} - ${cluster}`}
             </h1>
             <div className="flex items-center gap-3">
               {(error || success) && (
-                <div className={`text-xs px-2 py-0.5 rounded ${error ? 'bg-red-900 text-red-200' : 'bg-green-900 text-green-200'}`}>
+                <div className={`text-xs px-2 py-0.5 rounded-sm ${error ? 'bg-red-900 text-red-200' : 'bg-green-900 text-green-200'}`}>
                   {error || success}
                 </div>
               )}
               <button
                 onClick={handleSave}
                 disabled={saving}
-                className="px-3 py-1 bg-cyan-700 hover:bg-cyan-600 disabled:opacity-50 text-white text-xs font-bold rounded transition-colors"
+                className="px-3 py-1 bg-cyan-700 hover:bg-cyan-600 disabled:opacity-50 text-white text-xs font-bold rounded-sm transition-colors"
               >
                 {saving ? '...' : 'SAVE'}
               </button>
@@ -149,7 +149,7 @@ export default function ZoneConfig() {
                 onModeChange={handleModeChange}
                 location={location}
               />
-              <Link to="/" className="text-xs text-gray-400 hover:text-white font-medium flex items-center gap-1 bg-gray-800 px-2 py-1 rounded border border-gray-700 hover:border-gray-500 transition-colors">
+              <Link to="/" className="text-xs text-gray-400 hover:text-white font-medium flex items-center gap-1 bg-gray-800 px-2 py-1 rounded-sm border border-gray-700 hover:border-gray-500 transition-colors">
                 <span>←</span> Back
               </Link>
             </div>
@@ -158,7 +158,7 @@ export default function ZoneConfig() {
 
         {params && (
           <div className="flex-1 flex flex-col gap-2 min-h-0">
-            <div className="h-[270px] flex-shrink-0 bg-gray-900 rounded-lg border border-gray-800 overflow-hidden p-3">
+            <div className="h-[270px] shrink-0 bg-gray-900 rounded-lg border border-gray-800 overflow-hidden p-3">
               <div className="text-[14px] text-gray-400 uppercase font-bold tracking-wider mb-2">Climate Timeline</div>
               {!isConstant && (
                 <SetpointTimeline
@@ -195,7 +195,7 @@ export default function ZoneConfig() {
             <div className="flex gap-2">
               <div className="w-[35%] flex flex-col gap-2">
                 {!isConstant && (
-                  <div className="bg-gray-900 rounded-lg border border-gray-800 p-[11px] flex-shrink-0">
+                  <div className="bg-gray-900 rounded-lg border border-gray-800 p-[11px] shrink-0">
                     <div className="text-[14px] text-gray-400 uppercase font-bold tracking-wider mb-2">Light Schedule</div>
                     <div className="flex justify-center">
                       <CircularTimePicker

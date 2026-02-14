@@ -332,7 +332,7 @@ export default function LightManager({ location, cluster, lights }: LightManager
   }
 
   return (
-    <div className="bg-gray-900 rounded p-2 border border-gray-800 h-full">
+    <div className="bg-gray-900 rounded-sm p-2 border border-gray-800 h-full">
       <div className="flex justify-between items-center mb-2">
         <div className="text-xs font-bold text-gray-400 uppercase tracking-wider">
            LIGHTS
@@ -340,7 +340,7 @@ export default function LightManager({ location, cluster, lights }: LightManager
         <button
           onClick={handleSaveAll}
           disabled={savingAll || getUnsavedCount() === 0}
-          className="px-2 py-0.5 bg-cyan-700 hover:bg-cyan-600 disabled:bg-gray-700 disabled:text-gray-500 disabled:cursor-not-allowed text-white text-[10px] font-bold rounded transition-colors"
+          className="px-2 py-0.5 bg-cyan-700 hover:bg-cyan-600 disabled:bg-gray-700 disabled:text-gray-500 disabled:cursor-not-allowed text-white text-[10px] font-bold rounded-sm transition-colors"
         >
           {savingAll ? '...' : `SAVE (${getUnsavedCount()})`}
         </button>
@@ -361,7 +361,7 @@ export default function LightManager({ location, cluster, lights }: LightManager
           return (
             <div key={light.device_name} className="flex items-center gap-2">
                {/* Name & Status */}
-               <div className="w-16 flex-shrink-0">
+               <div className="w-16 shrink-0">
                   <div className="text-xs text-gray-300 truncate font-medium">{displayName}</div>
                   <div className="flex items-center gap-1">
                      <div className={`w-1.5 h-1.5 rounded-full ${isRelayOn ? 'bg-green-500' : 'bg-gray-600'}`}></div>
@@ -370,7 +370,7 @@ export default function LightManager({ location, cluster, lights }: LightManager
                </div>
 
                {/* Slider Progress Bar Style */}
-               <div className="flex-1 relative h-4 bg-gray-800 rounded overflow-hidden">
+               <div className="flex-1 relative h-4 bg-gray-800 rounded-sm overflow-hidden">
                   <div 
                     className="absolute top-0 left-0 bottom-0 bg-cyan-900"
                     style={{ width: `${sliderValue}%` }}
@@ -402,7 +402,7 @@ export default function LightManager({ location, cluster, lights }: LightManager
                </div>
                
                {/* State Indicator */}
-               <div className="w-4 flex-shrink-0 text-right">
+               <div className="w-4 shrink-0 text-right">
                   {hasUnsavedChanges(light.device_name) && (
                      <span className="text-orange-400 text-[10px]">●</span>
                   )}
@@ -421,7 +421,7 @@ export default function LightManager({ location, cluster, lights }: LightManager
          </button>
          
          {showSchedule && roomSchedule && (
-           <div className="mt-2 p-2 bg-gray-800 rounded space-y-2">
+           <div className="mt-2 p-2 bg-gray-800 rounded-sm space-y-2">
              <div className="grid grid-cols-2 gap-2">
                <div>
                   <label className="text-[10px] text-gray-500 block">Day Start</label>
@@ -429,7 +429,7 @@ export default function LightManager({ location, cluster, lights }: LightManager
                     type="time" 
                     value={roomSchedule.day_start_time || ''} 
                     onChange={e => setRoomSchedule({...roomSchedule, day_start_time: e.target.value})}
-                    className="w-full bg-gray-900 border border-gray-700 rounded text-gray-200 text-xs px-1"
+                    className="w-full bg-gray-900 border border-gray-700 rounded-sm text-gray-200 text-xs px-1"
                   />
                </div>
                <div>
@@ -438,7 +438,7 @@ export default function LightManager({ location, cluster, lights }: LightManager
                     type="time" 
                     value={roomSchedule.day_end_time || ''} 
                     onChange={e => setRoomSchedule({...roomSchedule, day_end_time: e.target.value})}
-                    className="w-full bg-gray-900 border border-gray-700 rounded text-gray-200 text-xs px-1"
+                    className="w-full bg-gray-900 border border-gray-700 rounded-sm text-gray-200 text-xs px-1"
                   />
                </div>
              </div>
@@ -449,7 +449,7 @@ export default function LightManager({ location, cluster, lights }: LightManager
                     type="number" 
                     value={roomSchedule.ramp_up_duration || 0} 
                     onChange={e => setRoomSchedule({...roomSchedule, ramp_up_duration: parseInt(e.target.value) || 0})}
-                    className="w-full bg-gray-900 border border-gray-700 rounded text-gray-200 text-xs px-1"
+                    className="w-full bg-gray-900 border border-gray-700 rounded-sm text-gray-200 text-xs px-1"
                   />
                </div>
                <div>
@@ -458,14 +458,14 @@ export default function LightManager({ location, cluster, lights }: LightManager
                     type="number" 
                     value={roomSchedule.ramp_down_duration || 0} 
                     onChange={e => setRoomSchedule({...roomSchedule, ramp_down_duration: parseInt(e.target.value) || 0})}
-                    className="w-full bg-gray-900 border border-gray-700 rounded text-gray-200 text-xs px-1"
+                    className="w-full bg-gray-900 border border-gray-700 rounded-sm text-gray-200 text-xs px-1"
                   />
                </div>
              </div>
              <button 
                onClick={handleSaveRoomSchedule}
                disabled={roomScheduleSaving}
-               className="w-full bg-blue-700 hover:bg-blue-600 text-white text-xs font-bold py-1 rounded disabled:opacity-50"
+               className="w-full bg-blue-700 hover:bg-blue-600 text-white text-xs font-bold py-1 rounded-sm disabled:opacity-50"
              >
                {roomScheduleSaving ? '...' : 'Update Schedule'}
              </button>
