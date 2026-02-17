@@ -1,0 +1,197 @@
+/* Theme 1: Precision Void — Ultra-clean minimal */
+[data-theme="precision-void"] {
+  --surface-base: #0a0a0a; --surface-primary: #151515;
+  --surface-secondary: #1a1a1a; --surface-tertiary: #262626;
+  --text-default: #fafafa; --text-secondary: #a3a3a3;
+  --text-muted: #737373; --text-subtle: #525252;
+  --accent: #3b82f6; --accent-data: #60a5fa; --accent-setpoint: #fbbf24;
+  --status-success: #4ade80; --status-danger: #f87171; --status-warning: #fbbf24;
+  --border-default: #262626; --border-emphasis: #404040; --border-subtle: #1a1a1a;
+
+  /* Additional coverage for index.css vars */
+  --surface-quaternary: #404040; --surface-quinary: #525252;
+  --text-strong: #ffffff; --text-input: #e5e5e5; --text-faint: #404040;
+  --accent-vivid: #3b82f6; --accent-hover: #2563eb; --accent-active: #1d4ed8; --accent-dim: #1e3a8a;
+  --accent-setpoint-dim: #f59e0b;
+  --btn-primary: #1d4ed8; --btn-primary-hover: #2563eb; --btn-primary-light: #3b82f6;
+  --btn-primary-data: #60a5fa; --btn-primary-text: #93c5fd; --btn-primary-dim: #1e3a5f;
+  --btn-primary-active: #1e40af; --btn-primary-info: #bfdbfe;
+  --status-success-vivid: #22c55e; --status-success-bg: #14532d; --status-success-text: #bbf7d0; --status-success-border: #166534;
+  --status-danger-vivid: #ef4444; --status-danger-bg: #7f1d1d; --status-danger-text: #fecaca; --status-danger-border: #991b1b;
+  --status-warning-vivid: #eab308; --status-warning-bg: #713f12; --status-warning-text: #fef08a; --status-warning-dim: #a16207;
+  --mode-auto: #a855f7; --mode-auto-dim: #581c87; --mode-auto-text: #d8b4fe; --mode-auto-border: #7e22ce;
+  --mode-submode: #db2777; --border-input: #525252;
+  --period-day: #b45309; --period-day-bg: #78350f; --period-preday: #78350f; --period-preday-bg: #451a03;
+  --timeline-night: #3b82f6; --timeline-day: #eab308; --timeline-pre: #a855f7; --timeline-ramp: #713f12; --timeline-now: #ef4444;
+}
+
+/* Theme 2: Control Room Zero — Industrial HMI/SCADA */
+[data-theme="control-room"] {
+  --surface-base: #2a2d35; --surface-primary: #363a44;
+  --surface-secondary: #3f434f; --surface-tertiary: #4b5563;
+  --text-default: #e5e7eb; --text-secondary: #d1d5db;
+  --text-muted: #9ca3af; --text-subtle: #6b7280;
+  --accent: #f59e0b; --accent-data: #67e8f9; --accent-setpoint: #fbbf24;
+  --status-success: #4ade80; --status-danger: #ef4444; --status-warning: #f59e0b;
+  --border-default: #4b5563; --border-emphasis: #6b7280; --border-subtle: #363a44;
+
+  /* Additional coverage for index.css vars */
+  --surface-quaternary: #6b7280; --surface-quinary: #9ca3af;
+  --text-strong: #f9fafb; --text-input: #f3f4f6; --text-faint: #4b5563;
+  --accent-vivid: #f59e0b; --accent-hover: #d97706; --accent-active: #b45309; --accent-dim: #78350f;
+  --accent-setpoint-dim: #d97706;
+  --btn-primary: #4b5563; --btn-primary-hover: #6b7280; --btn-primary-light: #9ca3af;
+  --btn-primary-data: #67e8f9; --btn-primary-text: #22d3ee; --btn-primary-dim: #164e63;
+  --btn-primary-active: #374151; --btn-primary-info: #cffafe;
+  --status-success-vivid: #22c55e; --status-success-bg: #064e3b; --status-success-text: #d1fae5; --status-success-border: #065f46;
+  --status-danger-vivid: #dc2626; --status-danger-bg: #7f1d1d; --status-danger-text: #fee2e2; --status-danger-border: #991b1b;
+  --status-warning-vivid: #d97706; --status-warning-bg: #451a03; --status-warning-text: #fef3c7; --status-warning-dim: #92400e;
+  --mode-auto: #8b5cf6; --mode-auto-dim: #4c1d95; --mode-auto-text: #ddd6fe; --mode-auto-border: #6d28d9;
+  --mode-submode: #be185d; --border-input: #6b7280;
+  --period-day: #b45309; --period-day-bg: #78350f; --period-preday: #78350f; --period-preday-bg: #451a03;
+  --timeline-night: #3b82f6; --timeline-day: #f59e0b; --timeline-pre: #8b5cf6; --timeline-ramp: #713f12; --timeline-now: #ef4444;
+}
+
+/* Theme 3: Verdant Growth — Nature-tech fusion */
+[data-theme="verdant-growth"] {
+  --surface-base: #1a1d1a; --surface-primary: #242826;
+  --surface-secondary: #2d322e; --surface-tertiary: #3d4a38;
+  --text-default: #f5f3ed; --text-secondary: #c8d0c4;
+  --text-muted: #9fa89c; --text-subtle: #6b7a65;
+  --accent: #86c232; --accent-data: #67e8f9; --accent-setpoint: #d4a574;
+  --status-success: #86c232; --status-danger: #ef4444; --status-warning: #d4a574;
+  --border-default: #3d4a38; --border-emphasis: #4d5c46; --border-subtle: #242826;
+
+  /* Additional coverage for index.css vars */
+  --surface-quaternary: #4d5c46; --surface-quinary: #6b7a65;
+  --text-strong: #ffffff; --text-input: #e2e8f0; --text-faint: #4a5568;
+  --accent-vivid: #86c232; --accent-hover: #61892f; --accent-active: #476a22; --accent-dim: #222629;
+  --accent-setpoint-dim: #b5835a;
+  --btn-primary: #86c232; --btn-primary-hover: #97d73c; --btn-primary-light: #a8eb46;
+  --btn-primary-data: #67e8f9; --btn-primary-text: #99f6ff; --btn-primary-dim: #164e63;
+  --btn-primary-active: #61892f; --btn-primary-info: #e6fffa;
+  --status-success-vivid: #86c232; --status-success-bg: #1a2e1a; --status-success-text: #dcfce7; --status-success-border: #22543d;
+  --status-danger-vivid: #e53e3e; --status-danger-bg: #4a1c1c; --status-danger-text: #fff5f5; --status-danger-border: #822727;
+  --status-warning-vivid: #d4a574; --status-warning-bg: #3e2b1c; --status-warning-text: #fffaf0; --status-warning-dim: #7b4a21;
+  --mode-auto: #9f7aea; --mode-auto-dim: #44337a; --mode-auto-text: #e9d8fd; --mode-auto-border: #6b46c1;
+  --mode-submode: #d53f8c; --border-input: #4d5c46;
+  --period-day: #b45309; --period-day-bg: #78350f; --period-preday: #78350f; --period-preday-bg: #451a03;
+  --timeline-night: #4299e1; --timeline-day: #86c232; --timeline-pre: #9f7aea; --timeline-ramp: #713f12; --timeline-now: #f56565;
+}
+
+/* Theme 4: Spectrum Analytics — Bold modern SaaS */
+[data-theme="spectrum"] {
+  --surface-base: #0f0f23; --surface-primary: #1a1a3e;
+  --surface-secondary: #252547; --surface-tertiary: #303060;
+  --text-default: #f8fafc; --text-secondary: #cbd5e1;
+  --text-muted: #94a3b8; --text-subtle: #64748b;
+  --accent: #6366f1; --accent-data: #67e8f9; --accent-setpoint: #fbbf24;
+  --status-success: #10b981; --status-danger: #ec4899; --status-warning: #f59e0b;
+  --border-default: #334155; --border-emphasis: #475569; --border-subtle: #1e293b;
+
+  /* Additional coverage for index.css vars */
+  --surface-quaternary: #475569; --surface-quinary: #64748b;
+  --text-strong: #ffffff; --text-input: #f1f5f9; --text-faint: #475569;
+  --accent-vivid: #6366f1; --accent-hover: #4f46e5; --accent-active: #4338ca; --accent-dim: #312e81;
+  --accent-setpoint-dim: #d97706;
+  --btn-primary: #4f46e5; --btn-primary-hover: #6366f1; --btn-primary-light: #818cf8;
+  --btn-primary-data: #67e8f9; --btn-primary-text: #a5f3fc; --btn-primary-dim: #1e1b4b;
+  --btn-primary-active: #3730a3; --btn-primary-info: #e0e7ff;
+  --status-success-vivid: #059669; --status-success-bg: #064e3b; --status-success-text: #d1fae5; --status-success-border: #065f46;
+  --status-danger-vivid: #db2777; --status-danger-bg: #831843; --status-danger-text: #fce7f3; --status-danger-border: #9d174d;
+  --status-warning-vivid: #d97706; --status-warning-bg: #451a03; --status-warning-text: #fef3c7; --status-warning-dim: #92400e;
+  --mode-auto: #8b5cf6; --mode-auto-dim: #4c1d95; --mode-auto-text: #ddd6fe; --mode-auto-border: #6d28d9;
+  --mode-submode: #e11d48; --border-input: #475569;
+  --period-day: #ea580c; --period-day-bg: #9a3412; --period-preday: #9a3412; --period-preday-bg: #7c2d12;
+  --timeline-night: #3b82f6; --timeline-day: #fbbf24; --timeline-pre: #8b5cf6; --timeline-ramp: #c2410c; --timeline-now: #f43f5e;
+}
+
+/* Theme 5: Obsidian Glass — Premium dark, NO blur effects */
+[data-theme="obsidian"] {
+  --surface-base: #0a0a0f; --surface-primary: #141419;
+  --surface-secondary: #1e1e28; --surface-tertiary: #2a2a3a;
+  --text-default: #ffffff; --text-secondary: #d0d0e0;
+  --text-muted: #a0a0b0; --text-subtle: #6b6b80;
+  --accent: #a78bfa; --accent-data: #60a5fa; --accent-setpoint: #fbbf24;
+  --status-success: #4ade80; --status-danger: #f87171; --status-warning: #fbbf24;
+  --border-default: #2a2a3a; --border-emphasis: #3a3a4f; --border-subtle: #1a1a25;
+
+  /* Additional coverage for index.css vars */
+  --surface-quaternary: #3a3a4f; --surface-quinary: #6b6b80;
+  --text-strong: #ffffff; --text-input: #f5f5f7; --text-faint: #4a4a5e;
+  --accent-vivid: #a78bfa; --accent-hover: #8b5cf6; --accent-active: #7c3aed; --accent-dim: #4c1d95;
+  --accent-setpoint-dim: #d97706;
+  --btn-primary: #7c3aed; --btn-primary-hover: #8b5cf6; --btn-primary-light: #a78bfa;
+  --btn-primary-data: #60a5fa; --btn-primary-text: #bfdbfe; --btn-primary-dim: #2e1065;
+  --btn-primary-active: #6d28d9; --btn-primary-info: #ede9fe;
+  --status-success-vivid: #22c55e; --status-success-bg: #064e3b; --status-success-text: #d1fae5; --status-success-border: #065f46;
+  --status-danger-vivid: #ef4444; --status-danger-bg: #7f1d1d; --status-danger-text: #fee2e2; --status-danger-border: #991b1b;
+  --status-warning-vivid: #eab308; --status-warning-bg: #451a03; --status-warning-text: #fef3c7; --status-warning-dim: #854d0e;
+  --mode-auto: #c084fc; --mode-auto-dim: #6b21a8; --mode-auto-text: #f5f3ff; --mode-auto-border: #9333ea;
+  --mode-submode: #f472b6; --border-input: #3a3a4f;
+  --period-day: #d97706; --period-day-bg: #92400e; --period-preday: #92400e; --period-preday-bg: #78350f;
+  --timeline-night: #60a5fa; --timeline-day: #fbbf24; --timeline-pre: #c084fc; --timeline-ramp: #92400e; --timeline-now: #f87171;
+}
+
+/* Theme 6: Botanical — User's custom palette (DEFAULT) */
+[data-theme="botanical"] {
+  --surface-base: #10150e; --surface-primary: #181e15;
+  --surface-secondary: #2f3d29; --surface-tertiary: #475b3e;
+  --text-default: #f1f5f0; --text-secondary: #c8d6c2;
+  --text-muted: #b18981; --text-subtle: #7e564e;
+  --accent: #b0d52a; --accent-data: #00fff2; --accent-setpoint: #c0dd55;
+  --status-success: #769867; --status-danger: #bd4253; --status-warning: #d78e98;
+  --border-default: #475b3e; --border-emphasis: #5e7953; --border-subtle: #2f3d29;
+
+  /* Full Botanical color scales */
+  --color-fern-50: #f1f5f0; --color-fern-100: #e4eae1;
+  --color-fern-200: #c8d6c2; --color-fern-300: #adc1a4;
+  --color-fern-400: #91ac86; --color-fern-500: #769867;
+  --color-fern-600: #5e7953; --color-fern-700: #475b3e;
+  --color-fern-800: #2f3d29; --color-fern-900: #181e15;
+  --color-fern-950: #10150e;
+
+  --color-lemon-lime-50: #f7fbea; --color-lemon-lime-100: #eff7d4;
+  --color-lemon-lime-200: #dfeeaa; --color-lemon-lime-300: #d0e67f;
+  --color-lemon-lime-400: #c0dd55; --color-lemon-lime-500: #b0d52a;
+  --color-lemon-lime-600: #8daa22; --color-lemon-lime-700: #6a8019;
+  --color-lemon-lime-800: #465511; --color-lemon-lime-900: #232b08;
+  --color-lemon-lime-950: #191e06;
+
+  --color-soft-cyan-50: #e5fffe; --color-soft-cyan-100: #ccfffc;
+  --color-soft-cyan-200: #99fffa; --color-soft-cyan-300: #66fff7;
+  --color-soft-cyan-400: #33fff5; --color-soft-cyan-500: #00fff2;
+  --color-soft-cyan-600: #00ccc2; --color-soft-cyan-700: #009991;
+  --color-soft-cyan-800: #006661; --color-soft-cyan-900: #003330;
+  --color-soft-cyan-950: #002422;
+
+  --color-dusty-taupe-50: #f5f0ef; --color-dusty-taupe-100: #ece1df;
+  --color-dusty-taupe-200: #d8c4c0; --color-dusty-taupe-300: #c5a6a0;
+  --color-dusty-taupe-400: #b18981; --color-dusty-taupe-500: #9e6b61;
+  --color-dusty-taupe-600: #7e564e; --color-dusty-taupe-700: #5f403a;
+  --color-dusty-taupe-800: #3f2b27; --color-dusty-taupe-900: #201513;
+  --color-dusty-taupe-950: #160f0e;
+
+  --color-dusty-mauve-50: #f8ecee; --color-dusty-mauve-100: #f2d9dd;
+  --color-dusty-mauve-200: #e4b4ba; --color-dusty-mauve-300: #d78e98;
+  --color-dusty-mauve-400: #ca6875; --color-dusty-mauve-500: #bd4253;
+  --color-dusty-mauve-600: #973542; --color-dusty-mauve-700: #712832;
+  --color-dusty-mauve-800: #4b1b21; --color-dusty-mauve-900: #260d11;
+  --color-dusty-mauve-950: #1a090c;
+
+  /* Additional coverage for index.css vars */
+  --surface-quaternary: #5e7953; --surface-quinary: #769867;
+  --text-strong: #ffffff; --text-input: #e4eae1; --text-faint: #475b3e;
+  --accent-vivid: #b0d52a; --accent-hover: #8daa22; --accent-active: #6a8019; --accent-dim: #191e06;
+  --accent-setpoint-dim: #8daa22;
+  --btn-primary: #769867; --btn-primary-hover: #5e7953; --btn-primary-light: #91ac86;
+  --btn-primary-data: #00fff2; --btn-primary-text: #ccfffc; --btn-primary-dim: #002422;
+  --btn-primary-active: #475b3e; --btn-primary-info: #ccfffc;
+  --status-success-vivid: #5e7953; --status-success-bg: #181e15; --status-success-text: #c8d6c2; --status-success-border: #2f3d29;
+  --status-danger-vivid: #973542; --status-danger-bg: #1a090c; --status-danger-text: #f2d9dd; --status-danger-border: #4b1b21;
+  --status-warning-vivid: #ca6875; --status-warning-bg: #260d11; --status-warning-text: #e4b4ba; --status-warning-dim: #712832;
+  --mode-auto: #c5a6a0; --mode-auto-dim: #3f2b27; --mode-auto-text: #ece1df; --mode-auto-border: #5f403a;
+  --mode-submode: #bd4253; --border-input: #5e7953;
+  --period-day: #c0dd55; --period-day-bg: #6a8019; --period-preday: #6a8019; --period-preday-bg: #465511;
+  --timeline-night: #009991; --timeline-day: #b0d52a; --timeline-pre: #adc1a4; --timeline-ramp: #6a8019; --timeline-now: #bd4253;
+}
