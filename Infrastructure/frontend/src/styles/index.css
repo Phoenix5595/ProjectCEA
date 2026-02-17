@@ -42,6 +42,26 @@
   src: url('/fonts/jetbrains-mono-bold.woff2') format('woff2');
 }
 
+:root {
+  --surface-base: #030712;
+  --surface-primary: #111827;
+  --surface-secondary: #1f2937;
+  --surface-tertiary: #374151;
+  --text-default: #ffffff;
+  --text-secondary: #d1d5db;
+  --text-muted: #9ca3af;
+  --text-subtle: #6b7280;
+  --accent: #06b6d4;
+  --accent-data: #22d3ee;
+  --accent-setpoint: #fbbf24;
+  --status-success: #4ade80;
+  --status-danger: #f87171;
+  --status-warning: #facc15;
+  --border-default: #374151;
+  --border-emphasis: #4b5563;
+  --border-subtle: #1f2937;
+}
+
 @import 'tailwindcss';
 
 @theme inline {
@@ -67,9 +87,98 @@
   --color-input: hsl(var(--input));
   --color-ring: hsl(var(--ring));
   --radius: var(--radius);
+
+  /* ===== Semantic Design Tokens ===== */
+
+  /* Surfaces */
+  --color-surface-base: #030712;
+  --color-surface-primary: #111827;
+  --color-surface-secondary: #1f2937;
+  --color-surface-tertiary: #374151;
+  --color-surface-quaternary: #4b5563;
+  --color-surface-quinary: #6b7280;
+
+  /* Text */
+  --color-text-default: #ffffff;
+  --color-text-strong: #f3f4f6;
+  --color-text-input: #e5e7eb;
+  --color-text-secondary: #d1d5db;
+  --color-text-muted: #9ca3af;
+  --color-text-subtle: #6b7280;
+  --color-text-faint: #4b5563;
+
+  /* Accent (cyan) */
+  --color-accent-data: #22d3ee;
+  --color-accent-vivid: #06b6d4;
+  --color-accent-hover: #0891b2;
+  --color-accent-active: #0e7490;
+  --color-accent-dim: #164e63;
+
+  /* Setpoint (amber) */
+  --color-accent-setpoint: #fbbf24;
+  --color-accent-setpoint-dim: #f59e0b;
+
+  /* Button primary (blue) */
+  --color-btn-primary: #1d4ed8;
+  --color-btn-primary-hover: #2563eb;
+  --color-btn-primary-light: #3b82f6;
+  --color-btn-primary-data: #60a5fa;
+  --color-btn-primary-text: #93c5fd;
+  --color-btn-primary-dim: #1e3a5f;
+  --color-btn-primary-active: #1e40af;
+  --color-btn-primary-info: #bfdbfe;
+
+  /* Status: success (green) */
+  --color-status-success: #4ade80;
+  --color-status-success-vivid: #22c55e;
+  --color-status-success-bg: #14532d;
+  --color-status-success-text: #bbf7d0;
+  --color-status-success-border: #166534;
+
+  /* Status: danger (red) */
+  --color-status-danger: #f87171;
+  --color-status-danger-vivid: #ef4444;
+  --color-status-danger-bg: #7f1d1d;
+  --color-status-danger-text: #fecaca;
+  --color-status-danger-border: #991b1b;
+
+  /* Status: warning (yellow) */
+  --color-status-warning: #facc15;
+  --color-status-warning-vivid: #eab308;
+  --color-status-warning-bg: #713f12;
+  --color-status-warning-text: #fef08a;
+  --color-status-warning-dim: #a16207;
+
+  /* PID auto mode (purple) */
+  --color-mode-auto: #a855f7;
+  --color-mode-auto-dim: #581c87;
+  --color-mode-auto-text: #d8b4fe;
+  --color-mode-auto-border: #7e22ce;
+
+  /* Submode (pink) */
+  --color-mode-submode: #db2777;
+
+  /* Borders */
+  --color-border-default: #374151;
+  --color-border-emphasis: #4b5563;
+  --color-border-subtle: #1f2937;
+  --color-border-input: #9ca3af;
+
+  /* Period/Mode colors (SetpointsTable) */
+  --color-period-day: #b45309;
+  --color-period-day-bg: #78350f;
+  --color-period-preday: #78350f;
+  --color-period-preday-bg: #451a03;
+
+  /* Timeline bands */
+  --color-timeline-night: #3b82f6;
+  --color-timeline-day: #eab308;
+  --color-timeline-pre: #a855f7;
+  --color-timeline-ramp: #713f12;
+  --color-timeline-now: #ef4444;
 }
 
-@custom-variant dark (&:is(.dark *));
+
 
 /*
   The default border color has changed to `currentcolor` in Tailwind CSS v4,
@@ -89,29 +198,6 @@
   }
 
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
-    --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
-    --primary: 222.2 47.4% 11.2%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 222.2 84% 4.9%;
-    --radius: 0.375rem;
-  }
-
-  .dark {
     --background: 222.2 84% 4.9%;
     --foreground: 210 40% 98%;
     --card: 222.2 84% 4.9%;
@@ -131,6 +217,7 @@
     --border: 217.2 32.6% 17.5%;
     --input: 217.2 32.6% 17.5%;
     --ring: 212.7 26.8% 83.9%;
+    --radius: 0.375rem;
   }
 }
 
@@ -143,9 +230,9 @@ html {
   line-height: 1.5;
   font-weight: 400;
 
-  color-scheme: light dark;
-  color: #1f2937; /* Dark gray for high contrast */
-  background-color: #f3f4f6; /* Light gray background */
+  color-scheme: dark;
+  color: var(--text-default);
+  background-color: var(--surface-base);
 
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -153,23 +240,12 @@ html {
   -moz-osx-font-smoothing: grayscale;
 }
 
-:root.dark {
-  color: #f9fafb; /* Light gray for high contrast */
-  background-color: #000000; /* True black background */
-}
-
 body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
-  background-color: #f3f4f6;
-  color: #1f2937;
-  transition: background-color 0.2s ease, color 0.2s ease;
-}
-
-.dark body {
-  background-color: #000000;
-  color: #f9fafb;
+  background-color: var(--surface-base);
+  color: var(--text-default);
 }
 
 #root {
@@ -178,27 +254,17 @@ body {
 }
 
 
-/* ===== CSS Variables for Theming ===== */
 :root {
-  --bg-primary: #ffffff;
-  --bg-secondary: #f5f5f5;
-  --bg-tertiary: #e5e5e5;
-  --text-primary: #1a1a1a;
-  --text-secondary: #888888;
-  --border: #e0e0e0;
-  --accent-green: #22c55e;
-  --accent-red: #ef4444;
-  --accent-yellow: #eab308;
-  --accent-blue: #3b82f6;
-}
-
-:root.dark {
-  --bg-primary: #0a0a0a;
-  --bg-secondary: #1a1a1a;
-  --bg-tertiary: #2a2a2a;
-  --text-primary: #ffffff;
-  --text-secondary: #888888;
-  --border: #333333;
+  --bg-primary: var(--surface-base);
+  --bg-secondary: var(--surface-primary);
+  --bg-tertiary: var(--surface-secondary);
+  --text-primary: var(--text-default);
+  --text-secondary: var(--text-muted);
+  --border: var(--border-default);
+  --accent-green: var(--status-success);
+  --accent-red: var(--status-danger);
+  --accent-yellow: var(--status-warning);
+  --accent-blue: var(--accent);
 }
 
 /* ===== Dashboard Layout ===== */
@@ -240,12 +306,8 @@ body {
 
 .zone-card:hover {
   border-color: var(--accent-blue);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-  transform: translateY(-2px);
-}
-
-.dark .zone-card:hover {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  transform: translateY(-2px);
 }
 
 .zone-card-title {
@@ -294,7 +356,7 @@ body {
 
 .mode-badge.day {
   background: rgba(234, 179, 8, 0.2);
-  color: #eab308;
+  color: var(--accent-setpoint);
   border: 1px solid rgba(234, 179, 8, 0.3);
 }
 
@@ -304,7 +366,6 @@ body {
   border: 1px solid rgba(99, 102, 241, 0.3);
 }
 
-/* ===== Status Indicators ===== */
 .status-dot {
   width: 8px;
   height: 8px;
