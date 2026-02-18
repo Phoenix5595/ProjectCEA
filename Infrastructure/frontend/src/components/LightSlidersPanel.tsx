@@ -183,19 +183,19 @@ function LightRow({
 
  return (
  <div className={`flex flex-col items-center ${disabled ? 'opacity-50' : ''}`}>
- <div className="text-[12px] text-text-secondary font-medium truncate text-center mb-2" title={label}>
+ <div className="text-[12px] text-text-secondary font-medium text-center mb-2 leading-tight" title={label}>
  {label}
  </div>
  <div className="flex items-center gap-2 mb-2">
  <div className="flex items-center gap-1">
  <span className="text-text-subtle text-[10px]">CUR</span>
- <span className="bg-surface-secondary px-1 py-0.5 rounded-sm text-accent-data font-mono tabular-nums text-[10px] min-w-[28px] text-center">
+ <span className="bg-surface-secondary px-0.5 rounded-sm text-accent-data font-mono tabular-nums text-[10px] min-w-[28px] text-center">
  {currentIntensity}%
  </span>
  </div>
  <div className="flex items-center gap-1">
  <span className="text-text-subtle text-[10px]">TGT</span>
- <span className="bg-surface-secondary px-1 py-0.5 rounded-sm text-accent-setpoint font-mono tabular-nums text-[10px] min-w-[28px] text-center">
+ <span className="bg-surface-secondary px-0.5 rounded-sm text-accent-setpoint font-mono tabular-nums text-[10px] min-w-[28px] text-center">
  {dayTarget}%
  </span>
  </div>
