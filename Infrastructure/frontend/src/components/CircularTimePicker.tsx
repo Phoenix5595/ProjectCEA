@@ -526,8 +526,8 @@ export default function CircularTimePicker({
  </div>
       <div className="pt-1" style={{ width: size }}>
         <div className="grid grid-cols-2 gap-1">
-          <div>
-            <label className="block text-[12px] text-text-muted mb-0.5">Start</label>
+           <div className="flex flex-col items-center">
+             <label className="block text-[12px] text-text-muted mb-0.5">Start</label>
             <input
               type="time"
               value={dayStartTime}
@@ -543,8 +543,8 @@ export default function CircularTimePicker({
               style={{ padding: '0 2px' }}
             />
           </div>
-          <div>
-            <label className="block text-[12px] text-text-muted mb-0.5">End</label>
+           <div className="flex flex-col items-center">
+             <label className="block text-[12px] text-text-muted mb-0.5">End</label>
             <input
               type="time"
               value={dayEndTime}
@@ -561,8 +561,8 @@ export default function CircularTimePicker({
             />
           </div>
           {onRampUpChange && rampUpDuration !== undefined && (
-            <div>
-              <label className="block text-[12px] text-text-muted mb-0.5">↑ min</label>
+             <div className="flex flex-col items-center">
+               <label className="block text-[12px] text-text-muted mb-0.5">↑ min</label>
               <input
                 type="number"
                 min="0"
@@ -577,8 +577,8 @@ export default function CircularTimePicker({
             </div>
           )}
           {onRampDownChange && rampDownDuration !== undefined && (
-            <div>
-              <label className="block text-[12px] text-text-muted mb-0.5">↓ min</label>
+             <div className="flex flex-col items-center">
+               <label className="block text-[12px] text-text-muted mb-0.5">↓ min</label>
               <input
                 type="number"
                 min="0"
