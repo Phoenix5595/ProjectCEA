@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { apiClient } from '../services/api'
 import { logger } from '../utils/logger'
-import { useToast } from '../contexts/ToastContext'
+import { toast } from 'sonner'
 import { ZONES } from '../config/zones'
 
 interface ChannelInfo {
@@ -32,8 +32,7 @@ const DEVICE_TYPES = [
 ]
 
 export default function DeviceManager() {
- const { showToast } = useToast();
- const [channels, setChannels] = useState<ChannelInfo[]>([])
+  const [channels, setChannels] = useState<ChannelInfo[]>([])
  const [lightNames, setLightNames] = useState<LightName[]>([])
  const [loading, setLoading] = useState(true)
  const [editing, setEditing] = useState<number | null>(null)
@@ -100,17 +99,17 @@ export default function DeviceManager() {
  if (editing === null) return
  
  if (!editForm.device_name.trim()) {
- showToast('Device name is required', 'error')
+    toast.error('Device name is required')
  return
  }
  
  if (!editForm.device_type) {
- showToast('Device type is required', 'error')
+    toast.error('Device type is required')
  return
  }
  
  if (editForm.device_type === 'light' && !editForm.light_name) {
- showToast('Light name is required for lights', 'error')
+    toast.error('Light name is required for lights')
  return
  }
  
@@ -129,7 +128,7 @@ export default function DeviceManager() {
  cancelEdit()
  } catch (error) {
  logger.error('Error updating channel device:', error)
- showToast('Failed to update device configuration', 'error')
+    toast.error('Failed to update device configuration')
  } finally {
  setSaving(false)
  }

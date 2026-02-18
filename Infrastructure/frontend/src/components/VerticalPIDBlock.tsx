@@ -1,12 +1,11 @@
 import { useState, useEffect, useCallback } from 'react'
-import { useToast } from '../contexts/ToastContext'
+import { toast } from 'sonner'
 import { apiClient } from '../services/api'
 import type { PIDControlMode, PIDParameters } from '../types/pid'
 import { logger } from '../utils/logger'
 
 export default function VerticalPIDBlock() {
- const { showToast } = useToast()
- const [device, setDevice] = useState('heater')
+  const [device, setDevice] = useState('heater')
  const [loading, setLoading] = useState(false)
  const [saving, setSaving] = useState(false)
  const [history, setHistory] = useState<any[]>([])
@@ -98,11 +97,11 @@ export default function VerticalPIDBlock() {
  setTempParameters(parameters)
  setHasUnsavedChanges(false)
  }
- } catch (err) {
- logger.error('Failed to update PID mode:', err)
- showToast('Failed to update PID mode', 'error')
- }
- }, [device, mode, parameters, showToast])
+} catch (err) {
+  logger.error('Failed to update PID mode:', err)
+  toast.error('Failed to update PID mode')
+  }
+ }, [device, mode, parameters])
 
  if (loading) {
  return (
@@ -186,7 +185,7 @@ export default function VerticalPIDBlock() {
  value={tempParameters.kp}
  onChange={(e) => handleParameterChange('kp', parseFloat(e.target.value))}
  disabled={isAuto || saving}
- className="w-full bg-surface-secondary border border-border-default rounded-sm text-status-danger text-sm px-2 py-1 text-center font-mono focus:outline-hidden focus:border-accent-vivid transition-colors"
+ className="w-full bg-surface-secondary border border-border-default rounded-sm text-status-danger text-sm px-2 py-1 text-center font-mono tabular-nums focus:outline-hidden focus:border-accent-vivid transition-colors"
  />
  </div>
  <div className="flex-1">
@@ -199,7 +198,7 @@ export default function VerticalPIDBlock() {
  value={tempParameters.ki}
  onChange={(e) => handleParameterChange('ki', parseFloat(e.target.value))}
  disabled={isAuto || saving}
- className="w-full bg-surface-secondary border border-border-default rounded-sm text-status-success text-sm px-2 py-1 text-center font-mono focus:outline-hidden focus:border-accent-vivid transition-colors"
+ className="w-full bg-surface-secondary border border-border-default rounded-sm text-status-success text-sm px-2 py-1 text-center font-mono tabular-nums focus:outline-hidden focus:border-accent-vivid transition-colors"
  />
  </div>
  <div className="flex-1">
@@ -212,7 +211,7 @@ export default function VerticalPIDBlock() {
  value={tempParameters.kd}
  onChange={(e) => handleParameterChange('kd', parseFloat(e.target.value))}
  disabled={isAuto || saving}
- className="w-full bg-surface-secondary border border-border-default rounded-sm text-btn-primary-data text-sm px-2 py-1 text-center font-mono focus:outline-hidden focus:border-accent-vivid transition-colors"
+ className="w-full bg-surface-secondary border border-border-default rounded-sm text-btn-primary-data text-sm px-2 py-1 text-center font-mono tabular-nums focus:outline-hidden focus:border-accent-vivid transition-colors"
  />
  </div>
  </div>
@@ -247,9 +246,9 @@ export default function VerticalPIDBlock() {
  <span className="text-text-faint">{entry.source || 'Unknown'}</span>
  </div>
  <div className="flex gap-3 text-xs">
- <span className="text-text-muted">Kp: <span className="text-status-danger/70 font-mono">{typeof entry.kp === 'number' ? entry.kp.toFixed(2) : entry.kp}</span></span>
- <span className="text-text-muted">Ki: <span className="text-status-success/70 font-mono">{typeof entry.ki === 'number' ? entry.ki.toFixed(2) : entry.ki}</span></span>
- <span className="text-text-muted">Kd: <span className="text-btn-primary-data/70 font-mono">{typeof entry.kd === 'number' ? entry.kd.toFixed(2) : entry.kd}</span></span>
+ <span className="text-text-muted">Kp: <span className="text-status-danger/70 font-mono tabular-nums">{typeof entry.kp === 'number' ? entry.kp.toFixed(2) : entry.kp}</span></span>
+ <span className="text-text-muted">Ki: <span className="text-status-success/70 font-mono tabular-nums">{typeof entry.ki === 'number' ? entry.ki.toFixed(2) : entry.ki}</span></span>
+ <span className="text-text-muted">Kd: <span className="text-btn-primary-data/70 font-mono tabular-nums">{typeof entry.kd === 'number' ? entry.kd.toFixed(2) : entry.kd}</span></span>
  </div>
  </div>
  ))}

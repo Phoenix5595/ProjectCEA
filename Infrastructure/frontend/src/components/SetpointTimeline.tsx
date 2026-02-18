@@ -95,7 +95,7 @@ export default function SetpointTimeline({
  {[35, 25, 15].map((value) => (
  <div
  key={value}
- className="absolute text-[9px] text-text-muted font-medium text-right pr-0.5 bg-surface-base/80 px-0.5 rounded-r"
+ className="absolute text-[9px] text-text-muted font-medium text-right pr-0.5 bg-surface-base/80 px-0.5 rounded-r font-mono tabular-nums"
  style={{ 
  top: `${((35 - value) / (35 - 15)) * 100}%`,
  transform: 'translateY(-50%)',
@@ -792,7 +792,7 @@ export default function SetpointTimeline({
  return (
  <div
  key={i}
- className="absolute bottom-0 text-[10px] text-text-subtle font-medium"
+ className="absolute bottom-0 text-[10px] text-text-subtle font-medium font-mono tabular-nums"
  style={{ left: `${(hour / 24) * 100}%`, transform: 'translateX(-50%)' }}
  >
  {String(hour).padStart(2, '0')}
@@ -807,7 +807,7 @@ export default function SetpointTimeline({
  {[2, 1, 0.5].map((value) => (
  <div
  key={`vpd-${value}`}
- className="absolute text-[9px] text-accent-data font-medium text-left pl-0.5 bg-surface-base/80 px-0.5 rounded-l"
+ className="absolute text-[9px] text-accent-data font-medium text-left pl-0.5 bg-surface-base/80 px-0.5 rounded-l font-mono tabular-nums"
  style={{ 
  top: `${((2 - value) / (2 - 0.5)) * 100}%`,
  transform: 'translateY(-50%)',

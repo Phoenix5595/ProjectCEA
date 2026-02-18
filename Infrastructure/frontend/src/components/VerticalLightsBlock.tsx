@@ -166,14 +166,14 @@ export default function VerticalLightsBlock({ location, cluster }: VerticalLight
  <div className="flex items-center gap-1 mb-2 text-xs">
  <div className="flex items-center gap-1">
  <span className="text-text-subtle text-[12px]">CUR</span>
- <span className="bg-surface-secondary px-1 py-0.5 rounded-sm text-accent-data font-mono text-[12px] min-w-[25px] text-center">
+ <span className="bg-surface-secondary px-1 py-0.5 rounded-sm text-accent-data font-mono tabular-nums text-[12px] min-w-[25px] text-center">
  {currentIntensity}%
  </span>
  </div>
  {dayTarget > 0 && (
  <div className="flex items-center gap-1">
  <span className="text-text-subtle text-[12px]">TGT</span>
- <span className="bg-surface-secondary px-1 py-0.5 rounded-sm text-accent-setpoint font-mono text-[12px] min-w-[25px] text-center">
+ <span className="bg-surface-secondary px-1 py-0.5 rounded-sm text-accent-setpoint font-mono tabular-nums text-[12px] min-w-[25px] text-center">
  {dayTarget}%
  </span>
  </div>

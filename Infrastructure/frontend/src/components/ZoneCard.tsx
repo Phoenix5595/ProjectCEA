@@ -53,31 +53,31 @@ export default function ZoneCard({ zone, devices, schedule, setpoints }: ZoneCar
  {setpoints.day.heating_setpoint !== null && setpoints.day.heating_setpoint !== undefined && (
  <div>
  <div className="text-xs text-text-muted mb-1">Heating Setpoint</div>
- <div className="text-lg font-bold text-text-default">{formatTemperature(setpoints.day.heating_setpoint)}</div>
+ <div className="text-lg font-bold text-text-default font-mono tabular-nums">{formatTemperature(setpoints.day.heating_setpoint)}</div>
  </div>
  )}
  {setpoints.day.cooling_setpoint !== null && setpoints.day.cooling_setpoint !== undefined && (
  <div>
  <div className="text-xs text-text-muted mb-1">Cooling Setpoint</div>
- <div className="text-lg font-bold text-text-default">{formatTemperature(setpoints.day.cooling_setpoint)}</div>
+ <div className="text-lg font-bold text-text-default font-mono tabular-nums">{formatTemperature(setpoints.day.cooling_setpoint)}</div>
  </div>
  )}
  {setpoints.day.humidity !== null && setpoints.day.humidity !== undefined && (
  <div>
  <div className="text-xs text-text-muted mb-1">Humidity</div>
- <div className="text-lg font-bold text-text-default">{formatHumidity(setpoints.day.humidity)}</div>
+ <div className="text-lg font-bold text-text-default font-mono tabular-nums">{formatHumidity(setpoints.day.humidity)}</div>
  </div>
  )}
  {setpoints.day.co2 !== null && setpoints.day.co2 !== undefined && (
  <div>
  <div className="text-xs text-text-muted mb-1">CO₂</div>
- <div className="text-lg font-bold text-text-default">{formatCO2(setpoints.day.co2)}</div>
+ <div className="text-lg font-bold text-text-default font-mono tabular-nums">{formatCO2(setpoints.day.co2)}</div>
  </div>
  )}
  {setpoints.day.vpd !== null && setpoints.day.vpd !== undefined && (
  <div>
  <div className="text-xs text-text-muted mb-1">VPD</div>
- <div className="text-lg font-bold text-text-default">{formatVPD(setpoints.day.vpd)}</div>
+ <div className="text-lg font-bold text-text-default font-mono tabular-nums">{formatVPD(setpoints.day.vpd)}</div>
  </div>
  )}
  </div>
@@ -91,31 +91,31 @@ export default function ZoneCard({ zone, devices, schedule, setpoints }: ZoneCar
  {setpoints.night.heating_setpoint !== null && setpoints.night.heating_setpoint !== undefined && (
  <div>
  <div className="text-xs text-text-muted mb-1">Heating Setpoint</div>
- <div className="text-lg font-bold text-text-default">{formatTemperature(setpoints.night.heating_setpoint)}</div>
+ <div className="text-lg font-bold text-text-default font-mono tabular-nums">{formatTemperature(setpoints.night.heating_setpoint)}</div>
  </div>
  )}
  {setpoints.night.cooling_setpoint !== null && setpoints.night.cooling_setpoint !== undefined && (
  <div>
  <div className="text-xs text-text-muted mb-1">Cooling Setpoint</div>
- <div className="text-lg font-bold text-text-default">{formatTemperature(setpoints.night.cooling_setpoint)}</div>
+ <div className="text-lg font-bold text-text-default font-mono tabular-nums">{formatTemperature(setpoints.night.cooling_setpoint)}</div>
  </div>
  )}
  {setpoints.night.humidity !== null && setpoints.night.humidity !== undefined && (
  <div>
  <div className="text-xs text-text-muted mb-1">Humidity</div>
- <div className="text-lg font-bold text-text-default">{formatHumidity(setpoints.night.humidity)}</div>
+ <div className="text-lg font-bold text-text-default font-mono tabular-nums">{formatHumidity(setpoints.night.humidity)}</div>
  </div>
  )}
  {setpoints.night.co2 !== null && setpoints.night.co2 !== undefined && (
  <div>
  <div className="text-xs text-text-muted mb-1">CO₂</div>
- <div className="text-lg font-bold text-text-default">{formatCO2(setpoints.night.co2)}</div>
+ <div className="text-lg font-bold text-text-default font-mono tabular-nums">{formatCO2(setpoints.night.co2)}</div>
  </div>
  )}
  {setpoints.night.vpd !== null && setpoints.night.vpd !== undefined && (
  <div>
  <div className="text-xs text-text-muted mb-1">VPD</div>
- <div className="text-lg font-bold text-text-default">{formatVPD(setpoints.night.vpd)}</div>
+ <div className="text-lg font-bold text-text-default font-mono tabular-nums">{formatVPD(setpoints.night.vpd)}</div>
  </div>
  )}
  </div>
@@ -146,13 +146,13 @@ export default function ZoneCard({ zone, devices, schedule, setpoints }: ZoneCar
  <div className="space-y-1 text-sm">
  <div className="flex justify-between">
  <span className="text-text-muted">Day:</span>
- <span className="font-semibold text-text-default">
+ <span className="font-semibold text-text-default font-mono tabular-nums">
  {schedule.day_start_time} - {schedule.day_end_time}
  </span>
  </div>
  <div className="flex justify-between">
  <span className="text-text-muted">Night:</span>
- <span className="font-semibold text-text-default">
+ <span className="font-semibold text-text-default font-mono tabular-nums">
  {schedule.night_start_time} - {schedule.night_end_time}
  </span>
  </div>
