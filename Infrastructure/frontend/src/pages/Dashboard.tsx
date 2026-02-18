@@ -618,12 +618,12 @@ export default function Dashboard() {
  
  return (
  <div key={index} className="flex items-center justify-between text-xs">
- <span className="text-text-secondary truncate flex-1">
- {displayName}
- </span>
- <div className="flex items-center gap-1">
- <span className="text-accent-data font-mono tabular-nums">
- {(sensorData[`Veg Room_main_${device.device_name}_intensity`] ?? statusDevices?.['Veg Room']?.['main']?.[device.device_name]?.intensity) != null
+<span className="text-text-secondary truncate flex-1 min-w-0">
+{displayName}
+</span>
+<div className="flex items-center gap-1 shrink-0">
+<span className="text-accent-data font-mono tabular-nums">
+{(sensorData[`Veg Room_main_${device.device_name}_intensity`] ?? statusDevices?.['Veg Room']?.['main']?.[device.device_name]?.intensity) != null
  ? `${Number(sensorData[`Veg Room_main_${device.device_name}_intensity`] ?? statusDevices?.['Veg Room']?.['main']?.[device.device_name]?.intensity).toFixed(2)}%`
  : '--%'
  }
@@ -801,12 +801,12 @@ export default function Dashboard() {
  
  return (
  <div key={index} className="flex items-center justify-between text-xs">
- <span className="text-text-secondary truncate flex-1">
- {displayName}
- </span>
- <div className="flex items-center gap-1">
- <span className="text-accent-data font-mono tabular-nums">
- {(sensorData[`Flower Room_main_${device.device_name}_intensity`] ?? statusDevices?.['Flower Room']?.['main']?.[device.device_name]?.intensity) != null
+<span className="text-text-secondary truncate flex-1 min-w-0">
+{displayName}
+</span>
+<div className="flex items-center gap-1 shrink-0">
+<span className="text-accent-data font-mono tabular-nums">
+{(sensorData[`Flower Room_main_${device.device_name}_intensity`] ?? statusDevices?.['Flower Room']?.['main']?.[device.device_name]?.intensity) != null
  ? `${Number(sensorData[`Flower Room_main_${device.device_name}_intensity`] ?? statusDevices?.['Flower Room']?.['main']?.[device.device_name]?.intensity).toFixed(2)}%`
  : '--%'
  }

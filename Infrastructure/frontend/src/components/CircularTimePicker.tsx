@@ -524,75 +524,75 @@ export default function CircularTimePicker({
  className="cursor-pointer"
  />
  </div>
- <div className="pt-1" style={{ width: size }}>
- <div className="grid grid-cols-4 gap-1">
- <div>
- <label className="block text-[12px] text-text-muted mb-0.5">Start</label>
- <input
- type="time"
- value={dayStartTime}
- onChange={(e) => {
- if (lockedPhotoperiodHours === null || lockedPhotoperiodHours === undefined) {
- onDayStartChange(e.target.value)
- }
- }}
- disabled={lockedPhotoperiodHours !== null && lockedPhotoperiodHours !== undefined}
- className={`w-full h-6 text-[16px] text-center bg-surface-secondary border border-border-default rounded text-text-input [&::-webkit-calendar-picker-indicator]:hidden ${
- lockedPhotoperiodHours !== null && lockedPhotoperiodHours !== undefined ? 'opacity-50 cursor-not-allowed' : ''
- }`}
- style={{ padding: '0 2px' }}
- />
- </div>
- {onRampUpChange && rampUpDuration !== undefined && (
- <div>
- <label className="block text-[12px] text-text-muted mb-0.5">↑ min</label>
- <input
- type="number"
- min="0"
- max="180"
- value={rampUpDuration ?? ''}
- onChange={(e) => {
- const val = e.target.value ? parseInt(e.target.value) : null
- onRampUpChange(val !== null && val > 180 ? 180 : val)
- }}
- className="w-full h-6 text-[16px] text-center bg-surface-secondary border border-border-default rounded-sm text-text-input [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
- />
- </div>
- )}
- <div>
- <label className="block text-[12px] text-text-muted mb-0.5">End</label>
- <input
- type="time"
- value={dayEndTime}
- onChange={(e) => {
- if (lockedPhotoperiodHours === null || lockedPhotoperiodHours === undefined) {
- onDayEndChange(e.target.value)
- }
- }}
- disabled={lockedPhotoperiodHours !== null && lockedPhotoperiodHours !== undefined}
- className={`w-full h-6 text-[16px] text-center bg-surface-secondary border border-border-default rounded text-text-input [&::-webkit-calendar-picker-indicator]:hidden ${
- lockedPhotoperiodHours !== null && lockedPhotoperiodHours !== undefined ? 'opacity-50 cursor-not-allowed' : ''
- }`}
- style={{ padding: '0 2px' }}
- />
- </div>
- {onRampDownChange && rampDownDuration !== undefined && (
- <div>
- <label className="block text-[12px] text-text-muted mb-0.5">↓ min</label>
- <input
- type="number"
- min="0"
- max="180"
- value={rampDownDuration ?? ''}
- onChange={(e) => {
- const val = e.target.value ? parseInt(e.target.value) : null
- onRampDownChange(val !== null && val > 180 ? 180 : val)
- }}
- className="w-full h-6 text-[16px] text-center bg-surface-secondary border border-border-default rounded-sm text-text-input [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
- />
- </div>
- )}
- </div>
+      <div className="pt-1" style={{ width: size }}>
+        <div className="grid grid-cols-2 gap-1">
+          <div>
+            <label className="block text-[12px] text-text-muted mb-0.5">Start</label>
+            <input
+              type="time"
+              value={dayStartTime}
+              onChange={(e) => {
+                if (lockedPhotoperiodHours === null || lockedPhotoperiodHours === undefined) {
+                  onDayStartChange(e.target.value)
+                }
+              }}
+              disabled={lockedPhotoperiodHours !== null && lockedPhotoperiodHours !== undefined}
+              className={`w-full h-6 text-[16px] text-center bg-surface-secondary border border-border-default rounded text-text-input [&::-webkit-calendar-picker-indicator]:hidden ${
+                lockedPhotoperiodHours !== null && lockedPhotoperiodHours !== undefined ? 'opacity-50 cursor-not-allowed' : ''
+              }`}
+              style={{ padding: '0 2px' }}
+            />
+          </div>
+          <div>
+            <label className="block text-[12px] text-text-muted mb-0.5">End</label>
+            <input
+              type="time"
+              value={dayEndTime}
+              onChange={(e) => {
+                if (lockedPhotoperiodHours === null || lockedPhotoperiodHours === undefined) {
+                  onDayEndChange(e.target.value)
+                }
+              }}
+              disabled={lockedPhotoperiodHours !== null && lockedPhotoperiodHours !== undefined}
+              className={`w-full h-6 text-[16px] text-center bg-surface-secondary border border-border-default rounded text-text-input [&::-webkit-calendar-picker-indicator]:hidden ${
+                lockedPhotoperiodHours !== null && lockedPhotoperiodHours !== undefined ? 'opacity-50 cursor-not-allowed' : ''
+              }`}
+              style={{ padding: '0 2px' }}
+            />
+          </div>
+          {onRampUpChange && rampUpDuration !== undefined && (
+            <div>
+              <label className="block text-[12px] text-text-muted mb-0.5">↑ min</label>
+              <input
+                type="number"
+                min="0"
+                max="180"
+                value={rampUpDuration ?? ''}
+                onChange={(e) => {
+                  const val = e.target.value ? parseInt(e.target.value) : null
+                  onRampUpChange(val !== null && val > 180 ? 180 : val)
+                }}
+                className="w-full h-6 text-[16px] text-center bg-surface-secondary border border-border-default rounded-sm text-text-input [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+              />
+            </div>
+          )}
+          {onRampDownChange && rampDownDuration !== undefined && (
+            <div>
+              <label className="block text-[12px] text-text-muted mb-0.5">↓ min</label>
+              <input
+                type="number"
+                min="0"
+                max="180"
+                value={rampDownDuration ?? ''}
+                onChange={(e) => {
+                  const val = e.target.value ? parseInt(e.target.value) : null
+                  onRampDownChange(val !== null && val > 180 ? 180 : val)
+                }}
+                className="w-full h-6 text-[16px] text-center bg-surface-secondary border border-border-default rounded-sm text-text-input [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+              />
+            </div>
+          )}
+        </div>
  <div className="flex items-center justify-center gap-2 mt-2 text-text-muted">
  <span className="text-[10px]">Photoperiod:</span>
  <span className="text-sm font-medium text-text-input font-mono tabular-nums">{calculatePhotoperiod().toFixed(1)}h</span>
