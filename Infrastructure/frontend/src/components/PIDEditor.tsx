@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { apiClient } from '../services/api';
 import { logger } from '../utils/logger'
-import { useToast } from '../contexts/ToastContext';
+import { toast } from 'sonner';
 import { validatePIDParameter } from '../utils/validation';
 import type { 
  PIDParameters, 
@@ -17,8 +17,7 @@ const DEVICE_TYPES = ['heater', 'fan', 'co2'];
 
 
 export default function PIDEditor() {
- const { showToast } = useToast();
- const [selectedDeviceType, setSelectedDeviceType] = useState<string>('heater');
+  const [selectedDeviceType, setSelectedDeviceType] = useState<string>('heater');
  const [formData, setFormData] = useState<PIDParameterUpdate>({});
  const [errors, setErrors] = useState<Record<string, string>>({});
  const [loading, setLoading] = useState(false);
@@ -102,10 +101,10 @@ export default function PIDEditor() {
  if (mode === 'auto_pid') {
  loadAutotuneStatus();
  }
- } catch (error) {
- logger.error('Error changing mode:', error);
- showToast('Failed to change mode', 'error');
- }
+} catch (error) {
+  logger.error('Error changing mode:', error);
+  toast.error('Failed to change mode');
+  }
  }
 
  function handleChange(param: 'kp' | 'ki' | 'kd', value: number) {
@@ -122,11 +121,11 @@ export default function PIDEditor() {
  }
  }
 
- async function handleSubmit() {
- if (Object.keys(errors).length > 0) {
- showToast('Please fix validation errors before submitting', 'error');
- return;
- }
+async function handleSubmit() {
+  if (Object.keys(errors).length > 0) {
+  toast.error('Please fix validation errors before submitting');
+  return;
+  }
 
  if (currentParams?.updated_at) {
  const fresh = await apiClient.getPIDParameters(selectedDeviceType);
@@ -143,9 +142,9 @@ export default function PIDEditor() {
  const newParams = await apiClient.updatePIDParameters(selectedDeviceType, formData);
  setCurrentParams(newParams);
  loadPIDParameters();
- } catch (error: any) {
- showToast(`Error updating PID parameters: ${error.response?.data?.detail || error.message}`, 'error');
- } finally {
+} catch (error: any) {
+  toast.error(`Error updating PID parameters: ${error.response?.data?.detail || error.message}`);
+  } finally {
  setLoading(false);
  }
  }

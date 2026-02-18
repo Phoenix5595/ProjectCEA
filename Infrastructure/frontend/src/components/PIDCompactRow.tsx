@@ -151,7 +151,7 @@ export default function PIDCompactRow() {
  value={kp}
  onChange={(e) => setKp(parseFloat(e.target.value) || 0)}
  disabled={isAuto || isOff || loading}
- className="w-full bg-surface-base border border-border-default focus:border-accent-vivid focus:ring-1 focus:ring-accent-vivid rounded-sm px-2 py-2 text-center text-sm font-mono text-text-input disabled:opacity-50 transition-colors"
+ className="w-full bg-surface-base border border-border-default focus:border-accent-vivid focus:ring-1 focus:ring-accent-vivid rounded-sm px-2 py-2 text-center text-sm font-mono tabular-nums text-text-input disabled:opacity-50 transition-colors"
  />
  </div>
  <div className="space-y-1">
@@ -162,7 +162,7 @@ export default function PIDCompactRow() {
  value={ki}
  onChange={(e) => setKi(parseFloat(e.target.value) || 0)}
  disabled={isAuto || isOff || loading}
- className="w-full bg-surface-base border border-border-default focus:border-accent-vivid focus:ring-1 focus:ring-accent-vivid rounded-sm px-2 py-2 text-center text-sm font-mono text-text-input disabled:opacity-50 transition-colors"
+ className="w-full bg-surface-base border border-border-default focus:border-accent-vivid focus:ring-1 focus:ring-accent-vivid rounded-sm px-2 py-2 text-center text-sm font-mono tabular-nums text-text-input disabled:opacity-50 transition-colors"
  />
  </div>
  <div className="space-y-1">
@@ -173,7 +173,7 @@ export default function PIDCompactRow() {
  value={kd}
  onChange={(e) => setKd(parseFloat(e.target.value) || 0)}
  disabled={isAuto || isOff || loading}
- className="w-full bg-surface-base border border-border-default focus:border-accent-vivid focus:ring-1 focus:ring-accent-vivid rounded-sm px-2 py-2 text-center text-sm font-mono text-text-input disabled:opacity-50 transition-colors"
+ className="w-full bg-surface-base border border-border-default focus:border-accent-vivid focus:ring-1 focus:ring-accent-vivid rounded-sm px-2 py-2 text-center text-sm font-mono tabular-nums text-text-input disabled:opacity-50 transition-colors"
  />
  </div>
  </div>
@@ -225,9 +225,9 @@ export default function PIDCompactRow() {
  <span className="text-text-faint">{entry.reason}</span>
  </div>
  <div className="flex gap-4">
- <span className="text-text-muted">Kp: <span className="text-status-danger/70 font-mono line-through">{entry.old_values.kp}</span> → <span className="text-accent-data font-mono">{entry.new_values.kp}</span></span>
- <span className="text-text-muted">Ki: <span className="text-status-danger/70 font-mono line-through">{entry.old_values.ki}</span> → <span className="text-accent-data font-mono">{entry.new_values.ki}</span></span>
- <span className="text-text-muted">Kd: <span className="text-status-danger/70 font-mono line-through">{entry.old_values.kd}</span> → <span className="text-accent-data font-mono">{entry.new_values.kd}</span></span>
+ <span className="text-text-muted">Kp: <span className="text-status-danger/70 font-mono tabular-nums line-through">{entry.old_values.kp}</span> → <span className="text-accent-data font-mono tabular-nums">{entry.new_values.kp}</span></span>
+ <span className="text-text-muted">Ki: <span className="text-status-danger/70 font-mono tabular-nums line-through">{entry.old_values.ki}</span> → <span className="text-accent-data font-mono tabular-nums">{entry.new_values.ki}</span></span>
+ <span className="text-text-muted">Kd: <span className="text-status-danger/70 font-mono tabular-nums line-through">{entry.old_values.kd}</span> → <span className="text-accent-data font-mono tabular-nums">{entry.new_values.kd}</span></span>
  </div>
  </div>
  ))}

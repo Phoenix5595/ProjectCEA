@@ -365,7 +365,7 @@ export default function LightManager({ location, cluster, lights }: LightManager
  <div className="text-xs text-text-secondary truncate font-medium">{displayName}</div>
  <div className="flex items-center gap-1">
  <div className={`w-1.5 h-1.5 rounded-full ${isRelayOn ? 'bg-status-success-vivid' : 'bg-surface-quaternary'}`}></div>
- <span className="text-[10px] text-text-subtle">{status ? `${status.intensity.toFixed(0)}%` : '-'}</span>
+ <span className="text-[10px] text-text-subtle font-mono tabular-nums">{status ? `${status.intensity.toFixed(0)}%` : '-'}</span>
  </div>
  </div>
 
@@ -397,7 +397,7 @@ export default function LightManager({ location, cluster, lights }: LightManager
  />
  
  <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
- <span className="text-[10px] font-bold text-text-secondary shadow-black drop-shadow-md">{sliderValue}%</span>
+ <span className="text-[10px] font-bold text-text-secondary shadow-black drop-shadow-md font-mono tabular-nums">{sliderValue}%</span>
  </div>
  </div>
  

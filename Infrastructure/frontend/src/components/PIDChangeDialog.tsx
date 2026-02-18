@@ -49,7 +49,7 @@ export default function PIDChangeDialog({
  {['kp', 'ki', 'kd'].map((param) => (
  <div key={param} className="flex justify-between items-center text-sm">
  <span className="text-text-muted uppercase w-8">{param}</span>
- <div className="flex items-center gap-3 font-mono">
+ <div className="flex items-center gap-3 font-mono tabular-nums">
  <span className="text-text-muted">
  {oldValues[param as keyof typeof oldValues]?.toFixed(3) ?? '-'}
  </span>
@@ -79,13 +79,13 @@ export default function PIDChangeDialog({
  {tuningMetrics.ku !== undefined && (
  <div>
  <span className="text-text-muted block text-xs">Ultimate Gain (Ku)</span>
- <span className="font-mono text-text-default">{tuningMetrics.ku.toFixed(2)}</span>
+ <span className="font-mono tabular-nums text-text-default">{tuningMetrics.ku.toFixed(2)}</span>
  </div>
  )}
  {tuningMetrics.tu !== undefined && (
  <div>
  <span className="text-text-muted block text-xs">Ultimate Period (Tu)</span>
- <span className="font-mono text-text-default">{tuningMetrics.tu.toFixed(1)}s</span>
+ <span className="font-mono tabular-nums text-text-default">{tuningMetrics.tu.toFixed(1)}s</span>
  </div>
  )}
  </div>

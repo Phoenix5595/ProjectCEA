@@ -595,7 +595,7 @@ export default function CircularTimePicker({
  </div>
  <div className="flex items-center justify-center gap-2 mt-2 text-text-muted">
  <span className="text-[10px]">Photoperiod:</span>
- <span className="text-sm font-medium text-text-input">{calculatePhotoperiod().toFixed(1)}h</span>
+ <span className="text-sm font-medium text-text-input font-mono tabular-nums">{calculatePhotoperiod().toFixed(1)}h</span>
  </div>
  </div>
  </div>

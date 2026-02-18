@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react'
+import { toast } from 'sonner'
 import { apiClient } from '../services/api'
 import { findConflicts } from '../utils/conflictDetection'
 import { wsClient } from '../services/websocket'
-import { useToast } from '../contexts/ToastContext'
 import { logger } from '../utils/logger'
 import type { Schedule, ScheduleCreate, ScheduleUpdate } from '../types/schedule'
 
@@ -26,9 +26,8 @@ export default function ScheduleManager({ location, cluster }: ScheduleManagerPr
  end_time: '18:00',
  enabled: true,
  })
- const [conflicts, setConflicts] = useState<string[]>([])
- const [versionConflict, setVersionConflict] = useState<string | null>(null)
- const { showToast } = useToast()
+const [conflicts, setConflicts] = useState<string[]>([])
+  const [versionConflict, setVersionConflict] = useState<string | null>(null)
 
  useEffect(() => {
  loadSchedules()
@@ -50,21 +49,21 @@ export default function ScheduleManager({ location, cluster }: ScheduleManagerPr
  return prev
  })
  
- // Show toast notification
- showToast(`Schedule "${message.schedule.name}" was updated by another user`, 'info')
- 
- // If we're editing this schedule, refresh it
- if (editingSchedule && editingSchedule.id === message.schedule_id) {
- setEditingSchedule({ ...editingSchedule, ...message.schedule })
- showToast('Schedule was updated. Please review changes before saving.', 'warning', 8000)
- }
+// Show toast notification
+  toast.info(`Schedule "${message.schedule.name}" was updated by another user`)
+  
+  // If we're editing this schedule, refresh it
+  if (editingSchedule && editingSchedule.id === message.schedule_id) {
+  setEditingSchedule({ ...editingSchedule, ...message.schedule })
+  toast.warning('Schedule was updated. Please review changes before saving.')
+  }
  }
  })
  
  return () => {
  unsubscribe()
  }
- }, [location, cluster, editingSchedule, showToast])
+ }, [location, cluster, editingSchedule])
 
  async function loadDevices() {
  try {
@@ -142,12 +141,12 @@ export default function ScheduleManager({ location, cluster }: ScheduleManagerPr
  ramp_down_duration: formData.ramp_down_duration ?? null,
  expected_version: editingSchedule.updated_at || null,
  }
- await apiClient.updateSchedule(editingSchedule.id, update)
- showToast('Schedule updated successfully', 'success')
- } else {
- await apiClient.createSchedule(formData)
- showToast('Schedule created successfully', 'success')
- }
+await apiClient.updateSchedule(editingSchedule.id, update)
+  toast.success('Schedule updated successfully')
+  } else {
+  await apiClient.createSchedule(formData)
+  toast.success('Schedule created successfully')
+  }
  setShowForm(false)
  setEditingSchedule(null)
  setFormData({
@@ -164,18 +163,18 @@ export default function ScheduleManager({ location, cluster }: ScheduleManagerPr
  // Handle version conflict (409)
  if (error.response?.status === 409) {
  const conflictDetail = error.response?.data?.detail
- const message = typeof conflictDetail === 'string' 
- ? conflictDetail 
- : conflictDetail?.detail || 'This schedule was modified by another user. Please refresh and try again.'
- setVersionConflict(message)
- showToast(message, 'error', 10000)
- // Reload schedules to get latest version
- loadSchedules()
- } else {
- const errorMsg = error.response?.data?.detail || error.message || 'Error saving schedule'
- showToast(errorMsg, 'error')
- alert(errorMsg)
- }
+const message = typeof conflictDetail === 'string' 
+  ? conflictDetail 
+  : conflictDetail?.detail || 'This schedule was modified by another user. Please refresh and try again.'
+  setVersionConflict(message)
+  toast.error(message)
+  // Reload schedules to get latest version
+  loadSchedules()
+  } else {
+  const errorMsg = error.response?.data?.detail || error.message || 'Error saving schedule'
+  toast.error(errorMsg)
+  alert(errorMsg)
+  }
  } finally {
  setLoading(false)
  }

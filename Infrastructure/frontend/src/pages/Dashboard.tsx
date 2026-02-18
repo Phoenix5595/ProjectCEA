@@ -527,7 +527,7 @@ export default function Dashboard() {
  <div className="grid grid-cols-2 gap-2 text-xs">
  <div>
  <div className="text-text-subtle">Temperature</div>
- <div className="text-text-default font-mono">
+ <div className="text-text-default font-mono tabular-nums">
  {sensorData['Veg Room_main_dry_bulb_f'] ? 
  `${((sensorData['Veg Room_main_dry_bulb_f'] - 32) * 5/9).toFixed(2)}°C` : 
  '--°C'
@@ -536,7 +536,7 @@ export default function Dashboard() {
  </div>
  <div>
  <div className="text-text-subtle">Humidity</div>
- <div className="text-text-default font-mono">
+ <div className="text-text-default font-mono tabular-nums">
  {sensorData['Veg Room_main_relative_humidity'] ? 
  `${Number(sensorData['Veg Room_main_relative_humidity']).toFixed(2)}%` : 
  '--%'
@@ -545,7 +545,7 @@ export default function Dashboard() {
  </div>
  <div>
  <div className="text-text-subtle">CO2</div>
- <div className="text-text-default font-mono">
+ <div className="text-text-default font-mono tabular-nums">
  {sensorData['Veg Room_main_co2'] ? 
  `${Number(sensorData['Veg Room_main_co2']).toFixed(2)} ppm` : 
  '-- ppm'
@@ -554,7 +554,7 @@ export default function Dashboard() {
  </div>
  <div>
  <div className="text-text-subtle">VPD</div>
- <div className="text-text-default font-mono">
+ <div className="text-text-default font-mono tabular-nums">
  {sensorData['Veg Room_main_vpd'] ? 
  `${Number(sensorData['Veg Room_main_vpd']).toFixed(2)} kPa` : 
  '-- kPa'
@@ -570,7 +570,7 @@ export default function Dashboard() {
  <div className="grid grid-cols-2 gap-2 text-xs">
  <div>
  <div className="text-text-subtle">Heating</div>
- <div className={`font-mono ${getSetpointColor()}`} title="Effective heating setpoint (Veg Room, from Redis)">
+ <div className={`font-mono tabular-nums ${getSetpointColor()}`} title="Effective heating setpoint (Veg Room, from Redis)">
  {sensorData['Veg Room_main_heating_setpoint'] != null
  ? `${Number(sensorData['Veg Room_main_heating_setpoint']).toFixed(2)}°C`
  : '--°C'}
@@ -578,7 +578,7 @@ export default function Dashboard() {
  </div>
  <div>
  <div className="text-text-subtle">Cooling</div>
- <div className={`font-mono ${getSetpointColor()}`} title="Effective cooling setpoint (Veg Room)">
+ <div className={`font-mono tabular-nums ${getSetpointColor()}`} title="Effective cooling setpoint (Veg Room)">
  {sensorData['Veg Room_main_cooling_setpoint'] != null
  ? `${Number(sensorData['Veg Room_main_cooling_setpoint']).toFixed(2)}°C`
  : '--°C'}
@@ -586,7 +586,7 @@ export default function Dashboard() {
  </div>
  <div>
  <div className="text-text-subtle">CO2</div>
- <div className={`font-mono ${getSetpointColor()}`} title="Effective CO2 setpoint (Veg Room)">
+ <div className={`font-mono tabular-nums ${getSetpointColor()}`} title="Effective CO2 setpoint (Veg Room)">
  {sensorData['Veg Room_main_co2_setpoint'] != null
  ? `${Number(sensorData['Veg Room_main_co2_setpoint']).toFixed(2)} ppm`
  : '-- ppm'}
@@ -594,7 +594,7 @@ export default function Dashboard() {
  </div>
  <div>
  <div className="text-text-subtle">VPD</div>
- <div className={`font-mono ${getSetpointColor()}`} title="Effective VPD setpoint (Veg Room)">
+ <div className={`font-mono tabular-nums ${getSetpointColor()}`} title="Effective VPD setpoint (Veg Room)">
  {sensorData['Veg Room_main_vpd_setpoint'] != null
  ? `${Number(sensorData['Veg Room_main_vpd_setpoint']).toFixed(2)} kPa`
  : '-- kPa'}
@@ -622,7 +622,7 @@ export default function Dashboard() {
  {displayName}
  </span>
  <div className="flex items-center gap-1">
- <span className="text-accent-data font-mono">
+ <span className="text-accent-data font-mono tabular-nums">
  {(sensorData[`Veg Room_main_${device.device_name}_intensity`] ?? statusDevices?.['Veg Room']?.['main']?.[device.device_name]?.intensity) != null
  ? `${Number(sensorData[`Veg Room_main_${device.device_name}_intensity`] ?? statusDevices?.['Veg Room']?.['main']?.[device.device_name]?.intensity).toFixed(2)}%`
  : '--%'
@@ -670,7 +670,7 @@ export default function Dashboard() {
  <div className="bg-surface-secondary rounded-sm p-2">
  <div className="text-xs text-text-muted mb-1">Recent on/off</div>
  {controlHistoryByRoom['Veg Room_main']?.length ? (
- <div className="space-y-0.5 text-[10px] text-text-secondary font-mono">
+ <div className="space-y-0.5 text-[10px] text-text-secondary font-mono tabular-nums">
  {controlHistoryByRoom['Veg Room_main'].slice(0, 10).map((entry, i) => (
  <div key={i} title={entry.reason ?? undefined}>
  {formatControlHistoryLine(entry)}
@@ -710,7 +710,7 @@ export default function Dashboard() {
  <div className="grid grid-cols-2 gap-2 text-xs">
  <div>
  <div className="text-text-subtle">Temperature</div>
- <div className="text-text-default font-mono">
+ <div className="text-text-default font-mono tabular-nums">
  {sensorData['Flower Room_main_temperature_sensor'] ? 
  `${Number(sensorData['Flower Room_main_temperature_sensor']).toFixed(2)}°C` : 
  '--°C'
@@ -719,7 +719,7 @@ export default function Dashboard() {
  </div>
  <div>
  <div className="text-text-subtle">Humidity</div>
- <div className="text-text-default font-mono">
+ <div className="text-text-default font-mono tabular-nums">
  {sensorData['Flower Room_main_humidity_sensor'] ? 
  `${Number(sensorData['Flower Room_main_humidity_sensor']).toFixed(2)}%` : 
  '--%'
@@ -728,7 +728,7 @@ export default function Dashboard() {
  </div>
  <div>
  <div className="text-text-subtle">CO2</div>
- <div className="text-text-default font-mono">
+ <div className="text-text-default font-mono tabular-nums">
  {sensorData['Flower Room_main_co2_sensor'] ? 
  `${Number(sensorData['Flower Room_main_co2_sensor']).toFixed(2)} ppm` : 
  '-- ppm'
@@ -737,7 +737,7 @@ export default function Dashboard() {
  </div>
  <div>
  <div className="text-text-subtle">VPD</div>
- <div className="text-text-default font-mono">
+ <div className="text-text-default font-mono tabular-nums">
  {sensorData['Flower Room_main_vpd_sensor'] ? 
  `${Number(sensorData['Flower Room_main_vpd_sensor']).toFixed(2)} kPa` : 
  '-- kPa'
@@ -753,7 +753,7 @@ export default function Dashboard() {
  <div className="grid grid-cols-2 gap-2 text-xs">
  <div>
  <div className="text-text-subtle">Heating</div>
- <div className={`font-mono ${getSetpointColor()}`} title="Effective heating setpoint (Flower Room, from Redis)">
+ <div className={`font-mono tabular-nums ${getSetpointColor()}`} title="Effective heating setpoint (Flower Room, from Redis)">
  {sensorData['Flower Room_main_heating_setpoint'] != null
  ? `${Number(sensorData['Flower Room_main_heating_setpoint']).toFixed(2)}°C`
  : '--°C'}
@@ -761,7 +761,7 @@ export default function Dashboard() {
  </div>
  <div>
  <div className="text-text-subtle">Cooling</div>
- <div className={`font-mono ${getSetpointColor()}`} title="Effective cooling setpoint (Flower Room)">
+ <div className={`font-mono tabular-nums ${getSetpointColor()}`} title="Effective cooling setpoint (Flower Room)">
  {sensorData['Flower Room_main_cooling_setpoint'] != null
  ? `${Number(sensorData['Flower Room_main_cooling_setpoint']).toFixed(2)}°C`
  : '--°C'}
@@ -769,7 +769,7 @@ export default function Dashboard() {
  </div>
  <div>
  <div className="text-text-subtle">CO2</div>
- <div className={`font-mono ${getSetpointColor()}`} title="Effective CO2 setpoint (Flower Room)">
+ <div className={`font-mono tabular-nums ${getSetpointColor()}`} title="Effective CO2 setpoint (Flower Room)">
  {sensorData['Flower Room_main_co2_setpoint'] != null
  ? `${Number(sensorData['Flower Room_main_co2_setpoint']).toFixed(2)} ppm`
  : '-- ppm'}
@@ -777,7 +777,7 @@ export default function Dashboard() {
  </div>
  <div>
  <div className="text-text-subtle">VPD</div>
- <div className={`font-mono ${getSetpointColor()}`} title="Effective VPD setpoint (Flower Room)">
+ <div className={`font-mono tabular-nums ${getSetpointColor()}`} title="Effective VPD setpoint (Flower Room)">
  {sensorData['Flower Room_main_vpd_setpoint'] != null
  ? `${Number(sensorData['Flower Room_main_vpd_setpoint']).toFixed(2)} kPa`
  : '-- kPa'}
@@ -805,7 +805,7 @@ export default function Dashboard() {
  {displayName}
  </span>
  <div className="flex items-center gap-1">
- <span className="text-accent-data font-mono">
+ <span className="text-accent-data font-mono tabular-nums">
  {(sensorData[`Flower Room_main_${device.device_name}_intensity`] ?? statusDevices?.['Flower Room']?.['main']?.[device.device_name]?.intensity) != null
  ? `${Number(sensorData[`Flower Room_main_${device.device_name}_intensity`] ?? statusDevices?.['Flower Room']?.['main']?.[device.device_name]?.intensity).toFixed(2)}%`
  : '--%'
@@ -853,7 +853,7 @@ export default function Dashboard() {
  <div className="bg-surface-secondary rounded-sm p-2">
  <div className="text-xs text-text-muted mb-1">Recent on/off</div>
  {controlHistoryByRoom['Flower Room_main']?.length ? (
- <div className="space-y-0.5 text-[10px] text-text-secondary font-mono">
+ <div className="space-y-0.5 text-[10px] text-text-secondary font-mono tabular-nums">
  {controlHistoryByRoom['Flower Room_main'].slice(0, 10).map((entry, i) => (
  <div key={i} title={entry.reason ?? undefined}>
  {formatControlHistoryLine(entry)}
@@ -893,7 +893,7 @@ export default function Dashboard() {
  <div className="grid grid-cols-2 gap-2 text-xs">
  <div>
  <div className="text-text-subtle">CPU</div>
- <div className="text-text-default font-mono flex items-center gap-1">
+ <div className="text-text-default font-mono tabular-nums flex items-center gap-1">
  <span>{systemStats.cpu_usage != null ? `${Number(systemStats.cpu_usage).toFixed(2)}%` : '—'}</span>
  {systemStats.cpu_usage != null && (
  <div className="w-8 h-1 bg-surface-tertiary rounded-sm overflow-hidden">
@@ -907,7 +907,7 @@ export default function Dashboard() {
  </div>
  <div>
  <div className="text-text-subtle">Memory</div>
- <div className="text-text-default font-mono flex items-center gap-1">
+ <div className="text-text-default font-mono tabular-nums flex items-center gap-1">
  <span>{systemStats.memory_usage != null ? `${Number(systemStats.memory_usage).toFixed(2)}%` : '—'}</span>
  {systemStats.memory_usage != null && (
  <div className="w-8 h-1 bg-surface-tertiary rounded-sm overflow-hidden">
@@ -921,7 +921,7 @@ export default function Dashboard() {
  </div>
  <div>
  <div className="text-text-subtle">Disk</div>
- <div className="text-text-default font-mono flex items-center gap-1">
+ <div className="text-text-default font-mono tabular-nums flex items-center gap-1">
  <span>{systemStats.disk_usage != null ? `${Number(systemStats.disk_usage).toFixed(2)}%` : '—'}</span>
  {systemStats.disk_usage != null && (
  <div className="w-8 h-1 bg-surface-tertiary rounded-sm overflow-hidden">
@@ -935,15 +935,15 @@ export default function Dashboard() {
  </div>
  <div>
  <div className="text-text-subtle">Load Avg</div>
- <div className="text-text-default font-mono text-[10px]">{systemStats.load_avg ?? '—'}</div>
+ <div className="text-text-default font-mono tabular-nums text-[10px]">{systemStats.load_avg ?? '—'}</div>
  </div>
  <div>
  <div className="text-text-subtle">Processes</div>
- <div className="text-text-default font-mono text-[10px]">{systemStats.process_count ?? '—'}</div>
+ <div className="text-text-default font-mono tabular-nums text-[10px]">{systemStats.process_count ?? '—'}</div>
  </div>
  <div>
  <div className="text-text-subtle">Uptime</div>
- <div className="text-text-default font-mono text-[10px]">{systemStats.uptime ?? '—'}</div>
+ <div className="text-text-default font-mono tabular-nums text-[10px]">{systemStats.uptime ?? '—'}</div>
  </div>
  </div>
  </div>
@@ -989,27 +989,27 @@ export default function Dashboard() {
  <div className="grid grid-cols-2 gap-2 text-xs">
  <div>
  <div className="text-text-subtle">Model</div>
- <div className="text-text-default font-mono text-[10px]">Raspberry Pi 5</div>
+ <div className="text-text-default font-mono tabular-nums text-[10px]">Raspberry Pi 5</div>
  </div>
  <div>
  <div className="text-text-subtle">CPU Cores</div>
- <div className="text-text-default font-mono text-[10px]">4x 2.4GHz</div>
+ <div className="text-text-default font-mono tabular-nums text-[10px]">4x 2.4GHz</div>
  </div>
  <div>
  <div className="text-text-subtle">RAM Total</div>
- <div className="text-text-default font-mono text-[10px]">8GB</div>
+ <div className="text-text-default font-mono tabular-nums text-[10px]">8GB</div>
  </div>
  <div>
  <div className="text-text-subtle">Storage</div>
- <div className="text-text-default font-mono text-[10px]">256GB SSD</div>
+ <div className="text-text-default font-mono tabular-nums text-[10px]">256GB SSD</div>
  </div>
  <div>
  <div className="text-text-subtle">Temp</div>
- <div className="text-text-default font-mono text-[10px]">{systemStats.cpu_temp_c != null ? `${Number(systemStats.cpu_temp_c).toFixed(2)}°C` : '—'}</div>
+ <div className="text-text-default font-mono tabular-nums text-[10px]">{systemStats.cpu_temp_c != null ? `${Number(systemStats.cpu_temp_c).toFixed(2)}°C` : '—'}</div>
  </div>
  <div>
  <div className="text-text-subtle">Throttle</div>
- <div className="text-text-default font-mono text-[10px]">{systemStats.throttle_status ?? '—'}</div>
+ <div className="text-text-default font-mono tabular-nums text-[10px]">{systemStats.throttle_status ?? '—'}</div>
  </div>
  </div>
  </div>
@@ -1020,28 +1020,28 @@ export default function Dashboard() {
  <div className="grid grid-cols-2 gap-2 text-xs">
  <div>
  <div className="text-text-subtle">API (8000)</div>
- <div className="text-text-default font-mono flex items-center gap-1">
+ <div className="text-text-default font-mono tabular-nums flex items-center gap-1">
  <div className="w-1.5 h-1.5 rounded-full bg-status-success" />
  <span>Active</span>
  </div>
  </div>
  <div>
  <div className="text-text-subtle">Auto (8001)</div>
- <div className="text-text-default font-mono flex items-center gap-1">
+ <div className="text-text-default font-mono tabular-nums flex items-center gap-1">
  <div className="w-1.5 h-1.5 rounded-full bg-status-success" />
  <span>Active</span>
  </div>
  </div>
  <div>
  <div className="text-text-subtle">CAN Bus</div>
- <div className="text-text-default font-mono flex items-center gap-1">
+ <div className="text-text-default font-mono tabular-nums flex items-center gap-1">
  <div className="w-1.5 h-1.5 rounded-full bg-status-success" />
  <span>250kbps</span>
  </div>
  </div>
  <div>
  <div className="text-text-subtle">WebSocket</div>
- <div className="text-text-default font-mono flex items-center gap-1">
+ <div className="text-text-default font-mono tabular-nums flex items-center gap-1">
  <div className="w-1.5 h-1.5 rounded-full bg-status-success animate-pulse" />
  <span>Live</span>
  </div>
@@ -1077,7 +1077,7 @@ export default function Dashboard() {
  <div className="grid grid-cols-2 gap-2 text-xs">
  <div>
  <div className="text-text-subtle">Lab temp</div>
- <div className="text-text-default font-mono">
+ <div className="text-text-default font-mono tabular-nums">
  {sensorData['Lab_main_lab_temp'] != null
  ? `${Number(sensorData['Lab_main_lab_temp']).toFixed(2)}°C`
  : '--°C'
@@ -1086,7 +1086,7 @@ export default function Dashboard() {
  </div>
  <div>
  <div className="text-text-subtle">Humidity</div>
- <div className="text-text-default font-mono">
+ <div className="text-text-default font-mono tabular-nums">
  {sensorData['Lab_main_relative_humidity'] ? 
  `${Number(sensorData['Lab_main_relative_humidity']).toFixed(2)}%` : 
  '--%'
@@ -1095,7 +1095,7 @@ export default function Dashboard() {
  </div>
  <div>
  <div className="text-text-subtle">CO2</div>
- <div className="text-text-default font-mono">
+ <div className="text-text-default font-mono tabular-nums">
  {sensorData['Lab_main_co2'] ? 
  `${Number(sensorData['Lab_main_co2']).toFixed(2)} ppm` : 
  '-- ppm'
@@ -1104,7 +1104,7 @@ export default function Dashboard() {
  </div>
  <div>
  <div className="text-text-subtle">VPD</div>
- <div className="text-text-default font-mono">
+ <div className="text-text-default font-mono tabular-nums">
  {sensorData['Lab_main_vpd'] ? 
  `${Number(sensorData['Lab_main_vpd']).toFixed(2)} kPa` : 
  '-- kPa'
@@ -1120,7 +1120,7 @@ export default function Dashboard() {
  <div className="grid grid-cols-2 gap-2 text-xs">
  <div>
  <div className="text-text-subtle">Water Level</div>
- <div className="text-accent-data font-mono">
+ <div className="text-accent-data font-mono tabular-nums">
  {sensorData['Lab_main_water_level'] ? 
  `${Number(sensorData['Lab_main_water_level']).toFixed(2)} cm` : 
  '-- cm'
@@ -1129,7 +1129,7 @@ export default function Dashboard() {
  </div>
  <div>
  <div className="text-text-subtle">Water Temp</div>
- <div className="text-accent-data font-mono">
+ <div className="text-accent-data font-mono tabular-nums">
  {sensorData['Lab_main_water_temperature'] ? 
  `${Number(sensorData['Lab_main_water_temperature']).toFixed(2)}°C` : 
  '--°C'
@@ -1138,7 +1138,7 @@ export default function Dashboard() {
  </div>
  <div>
  <div className="text-text-subtle">Water Pressure</div>
- <div className="text-accent-data font-mono">
+ <div className="text-accent-data font-mono tabular-nums">
  {sensorData['Lab_main_water_pressure'] ? 
  `${Number(sensorData['Lab_main_water_pressure']).toFixed(2)} kPa` : 
  '-- kPa'
@@ -1147,7 +1147,7 @@ export default function Dashboard() {
  </div>
  <div>
  <div className="text-text-subtle">pH Level</div>
- <div className="text-accent-data font-mono">
+ <div className="text-accent-data font-mono tabular-nums">
  {sensorData['Lab_main_ph_level'] ? 
  `${Number(sensorData['Lab_main_ph_level']).toFixed(2)}` : 
  '--'
@@ -1185,7 +1185,7 @@ export default function Dashboard() {
  <div className="bg-surface-secondary rounded-sm p-2">
  <div className="text-xs text-text-muted mb-1">Recent on/off</div>
  {controlHistoryByRoom['Lab_main']?.length ? (
- <div className="space-y-0.5 text-[10px] text-text-secondary font-mono">
+ <div className="space-y-0.5 text-[10px] text-text-secondary font-mono tabular-nums">
  {controlHistoryByRoom['Lab_main'].slice(0, 10).map((entry, i) => (
  <div key={i} title={entry.reason ?? undefined}>
  {formatControlHistoryLine(entry)}
