@@ -127,8 +127,8 @@ const LightSlidersPanel = forwardRef<LightSlidersPanelRef, LightSlidersPanelProp
  <div className="text-[14px] text-text-muted uppercase font-bold tracking-wider mb-3">
  Lights ({lights.length})
  </div>
- <div className="flex gap-4">
- {lights.map((light) => {
+  <div className="flex flex-wrap gap-4">
+  {lights.map((light) => {
  const status = statuses[light.device_name]
  const currentIntensity = status?.intensity ?? 0
  const savedTarget = status?.target_intensity ?? currentIntensity
@@ -181,9 +181,9 @@ function LightRow({
  const displayTarget = pendingTarget ?? savedTarget
  const sliderPosition = currentIntensity
 
- return (
- <div className={`flex flex-col items-center ${disabled ? 'opacity-50' : ''}`}>
- <div className="text-[12px] text-text-secondary font-medium text-center mb-2 leading-tight" title={label}>
+  return (
+  <div className={`flex flex-col items-center min-w-[60px] ${disabled ? 'opacity-50' : ''}`}>
+  <div className="text-[12px] text-text-secondary font-medium text-center mb-2 leading-tight" title={label}>
  {label}
  </div>
  <div className="flex items-center gap-2 mb-2">
