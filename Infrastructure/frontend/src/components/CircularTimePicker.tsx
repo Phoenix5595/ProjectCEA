@@ -537,7 +537,7 @@ export default function CircularTimePicker({
                 }
               }}
               disabled={lockedPhotoperiodHours !== null && lockedPhotoperiodHours !== undefined}
-              className={`w-full h-6 text-[16px] text-center bg-surface-secondary border border-border-default rounded text-text-input [&::-webkit-calendar-picker-indicator]:hidden ${
+              className={`w-1/2 h-6 text-[16px] text-center bg-surface-secondary border border-border-default rounded text-text-input [&::-webkit-calendar-picker-indicator]:hidden ${
                 lockedPhotoperiodHours !== null && lockedPhotoperiodHours !== undefined ? 'opacity-50 cursor-not-allowed' : ''
               }`}
               style={{ padding: '0 2px' }}
@@ -554,7 +554,7 @@ export default function CircularTimePicker({
                 }
               }}
               disabled={lockedPhotoperiodHours !== null && lockedPhotoperiodHours !== undefined}
-              className={`w-full h-6 text-[16px] text-center bg-surface-secondary border border-border-default rounded text-text-input [&::-webkit-calendar-picker-indicator]:hidden ${
+              className={`w-1/2 h-6 text-[16px] text-center bg-surface-secondary border border-border-default rounded text-text-input [&::-webkit-calendar-picker-indicator]:hidden ${
                 lockedPhotoperiodHours !== null && lockedPhotoperiodHours !== undefined ? 'opacity-50 cursor-not-allowed' : ''
               }`}
               style={{ padding: '0 2px' }}
@@ -572,7 +572,7 @@ export default function CircularTimePicker({
                   const val = e.target.value ? parseInt(e.target.value) : null
                   onRampUpChange(val !== null && val > 180 ? 180 : val)
                 }}
-                className="w-full h-6 text-[16px] text-center bg-surface-secondary border border-border-default rounded-sm text-text-input [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                className="w-1/2 h-6 text-[16px] text-center bg-surface-secondary border border-border-default rounded-sm text-text-input [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
               />
             </div>
           )}
@@ -588,7 +588,7 @@ export default function CircularTimePicker({
                   const val = e.target.value ? parseInt(e.target.value) : null
                   onRampDownChange(val !== null && val > 180 ? 180 : val)
                 }}
-                className="w-full h-6 text-[16px] text-center bg-surface-secondary border border-border-default rounded-sm text-text-input [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                className="w-1/2 h-6 text-[16px] text-center bg-surface-secondary border border-border-default rounded-sm text-text-input [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
               />
             </div>
           )}
