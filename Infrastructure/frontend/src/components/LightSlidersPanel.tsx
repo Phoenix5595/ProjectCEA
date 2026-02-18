@@ -182,8 +182,8 @@ function LightRow({
  const sliderPosition = currentIntensity
 
   return (
-  <div className={`flex flex-col items-center min-w-[60px] ${disabled ? 'opacity-50' : ''}`}>
-  <div className="text-[12px] text-text-secondary font-medium text-center mb-2 leading-tight" title={label}>
+  <div className={`flex flex-col items-center min-w-[90px] ${disabled ? 'opacity-50' : ''}`}>
+   <div className="text-[12px] text-text-secondary font-medium text-center mb-2 leading-tight" title={label}>
  {label}
  </div>
  <div className="flex items-center gap-2 mb-2">

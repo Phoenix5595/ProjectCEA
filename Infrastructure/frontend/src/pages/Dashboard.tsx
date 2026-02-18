@@ -615,11 +615,16 @@ export default function Dashboard() {
  'light_3': 'Ridgetop Bottom Left'
  }
  const displayName = displayNames[device.device_name] || device.device_name
+ // Split name: first word on row 1, rest on row 2
+ const nameParts = displayName.split(' ')
+ const firstName = nameParts[0]
+ const restName = nameParts.slice(1).join(' ')
  
  return (
  <div key={index} className="flex items-center justify-between text-xs">
-<span className="text-text-secondary truncate flex-1 min-w-0">
-{displayName}
+<span className="text-text-secondary flex-1 min-w-0 leading-tight">
+<span className="block">{firstName}</span>
+{restName && <span className="block text-[10px] text-text-muted">{restName}</span>}
 </span>
 <div className="flex items-center gap-1 shrink-0">
 <span className="text-accent-data font-mono tabular-nums">
