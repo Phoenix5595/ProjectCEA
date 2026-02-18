@@ -11,7 +11,7 @@ export default defineConfig({
     },
   },
   server: {
-    port: 3001,
+    port: 3002,
     host: "0.0.0.0",
     proxy: {
       '/api': {
@@ -21,6 +21,10 @@ export default defineConfig({
       '/ws': {
         target: 'ws://localhost:8000',
         ws: true
+      },
+      '/automation': {
+        target: 'http://localhost:8001',
+        changeOrigin: true
       }
     }
   },
