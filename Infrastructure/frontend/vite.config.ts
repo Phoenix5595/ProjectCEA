@@ -11,8 +11,9 @@ export default defineConfig({
     },
   },
   server: {
-    port: 3002,
+    port: 3001,
     host: "0.0.0.0",
+    allowedHosts: ["mothernode", "localhost", "100.120.60.40"],
     proxy: {
       '/api': {
         target: 'http://localhost:8000',
