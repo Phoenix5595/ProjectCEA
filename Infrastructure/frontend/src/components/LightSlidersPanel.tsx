@@ -183,9 +183,9 @@ function LightRow({
 
   return (
   <div className={`flex flex-col items-center min-w-[90px] ${disabled ? 'opacity-50' : ''}`}>
-   <div className="text-[12px] text-text-secondary font-medium text-center mb-2 leading-tight" title={label}>
- {label}
- </div>
+    <div className="text-[12px] text-text-secondary font-medium text-center mb-2 leading-tight" title={label}>
+      {label.split(' ')[0]}<br/>{label.split(' ').slice(1).join(' ')}
+    </div>
  <div className="flex items-center gap-2 mb-2">
  <div className="flex items-center gap-1">
  <span className="text-text-subtle text-[10px]">CUR</span>
