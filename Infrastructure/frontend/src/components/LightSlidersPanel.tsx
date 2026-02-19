@@ -181,13 +181,17 @@ function LightRow({
  const displayTarget = pendingTarget ?? savedTarget
  const sliderPosition = currentIntensity
 
+  const firstWord = label.split(' ')[0]
+  const restWords = label.split(' ').slice(1).join(' ')
+  
   return (
-  <div className={`flex flex-col items-center min-w-[120px] ${disabled ? 'opacity-50' : ''}`}>
-    <div className="text-[12px] text-text-secondary font-medium text-center mb-2 leading-tight" title={label}>
-      <div>{label.split(' ')[0]}</div>
-      <div>{label.split(' ').slice(1).join(' ')}</div>
+  <div className={`flex items-center gap-2 min-w-[100px] ${disabled ? 'opacity-50' : ''}`}>
+    <div className="text-[11px] text-text-secondary font-medium text-right leading-tight w-12 shrink-0" title={label}>
+      <div>{firstWord}</div>
+      <div>{restWords}</div>
     </div>
- <div className="flex items-center gap-2 mb-2">
+    <div className="flex flex-col items-center">
+  <div className="flex items-center gap-2 mb-1">
  <div className="flex items-center gap-1">
  <span className="text-text-subtle text-[10px]">CUR</span>
  <span className="bg-surface-secondary px-0.5 rounded-sm text-accent-data font-mono tabular-nums text-[10px] min-w-[28px] text-center">
@@ -252,8 +256,9 @@ function LightRow({
  disabled={disabled}
  className="w-14 h-6 px-1 text-[12px] text-center bg-surface-secondary border border-border-default rounded-sm text-text-input disabled:opacity-50"
  />
- <span className="text-[10px] text-text-subtle">%</span>
- </div>
- </div>
- )
+  <span className="text-[10px] text-text-subtle">%</span>
+  </div>
+  </div>
+  </div>
+  )
 }
