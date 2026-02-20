@@ -526,8 +526,8 @@ export default function CircularTimePicker({
  </div>
       <div className="pt-1" style={{ width: size }}>
         <div className="grid grid-cols-2 gap-1">
-           <div className="flex flex-col items-center">
-             <label className="block text-[12px] text-text-muted mb-0.5">Start</label>
+           <div className="flex items-center gap-1">
+             <label className="text-[12px] text-text-muted w-8 shrink-0">Start</label>
             <input
               type="time"
               value={dayStartTime}
@@ -537,14 +537,14 @@ export default function CircularTimePicker({
                 }
               }}
               disabled={lockedPhotoperiodHours !== null && lockedPhotoperiodHours !== undefined}
-              className={`w-1/2 h-6 text-[16px] text-center bg-surface-secondary border border-border-default rounded text-text-input [&::-webkit-calendar-picker-indicator]:hidden ${
+              className={`w-20 h-6 text-[16px] text-center bg-surface-secondary border border-border-default rounded text-text-input [&::-webkit-calendar-picker-indicator]:hidden ${
                 lockedPhotoperiodHours !== null && lockedPhotoperiodHours !== undefined ? 'opacity-50 cursor-not-allowed' : ''
               }`}
               style={{ padding: '0 2px' }}
             />
           </div>
-           <div className="flex flex-col items-center">
-             <label className="block text-[12px] text-text-muted mb-0.5">End</label>
+           <div className="flex items-center gap-1">
+             <label className="text-[12px] text-text-muted w-8 shrink-0">End</label>
             <input
               type="time"
               value={dayEndTime}
@@ -554,15 +554,15 @@ export default function CircularTimePicker({
                 }
               }}
               disabled={lockedPhotoperiodHours !== null && lockedPhotoperiodHours !== undefined}
-              className={`w-1/2 h-6 text-[16px] text-center bg-surface-secondary border border-border-default rounded text-text-input [&::-webkit-calendar-picker-indicator]:hidden ${
+              className={`w-20 h-6 text-[16px] text-center bg-surface-secondary border border-border-default rounded text-text-input [&::-webkit-calendar-picker-indicator]:hidden ${
                 lockedPhotoperiodHours !== null && lockedPhotoperiodHours !== undefined ? 'opacity-50 cursor-not-allowed' : ''
               }`}
               style={{ padding: '0 2px' }}
             />
           </div>
           {onRampUpChange && rampUpDuration !== undefined && (
-             <div className="flex flex-col items-center">
-               <label className="block text-[12px] text-text-muted mb-0.5">↑ min</label>
+             <div className="flex items-center gap-1">
+               <label className="text-[12px] text-text-muted w-8 shrink-0">↑ min</label>
               <input
                 type="number"
                 min="0"
@@ -572,23 +572,23 @@ export default function CircularTimePicker({
                   const val = e.target.value ? parseInt(e.target.value) : null
                   onRampUpChange(val !== null && val > 180 ? 180 : val)
                 }}
-                className="w-1/2 h-6 text-[16px] text-center bg-surface-secondary border border-border-default rounded-sm text-text-input [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-              />
-            </div>
-          )}
-          {onRampDownChange && rampDownDuration !== undefined && (
-             <div className="flex flex-col items-center">
-               <label className="block text-[12px] text-text-muted mb-0.5">↓ min</label>
-              <input
-                type="number"
-                min="0"
-                max="180"
-                value={rampDownDuration ?? ''}
-                onChange={(e) => {
-                  const val = e.target.value ? parseInt(e.target.value) : null
-                  onRampDownChange(val !== null && val > 180 ? 180 : val)
-                }}
-                className="w-1/2 h-6 text-[16px] text-center bg-surface-secondary border border-border-default rounded-sm text-text-input [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+className="w-12 h-6 text-[16px] text-center bg-surface-secondary border border-border-default rounded-sm text-text-input [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                />
+              </div>
+            )}
+            {onRampDownChange && rampDownDuration !== undefined && (
+               <div className="flex items-center gap-1">
+                 <label className="text-[12px] text-text-muted w-8 shrink-0">↓ min</label>
+                <input
+                  type="number"
+                  min="0"
+                  max="180"
+                  value={rampDownDuration ?? ''}
+                  onChange={(e) => {
+                    const val = e.target.value ? parseInt(e.target.value) : null
+                    onRampDownChange(val !== null && val > 180 ? 180 : val)
+                  }}
+                  className="w-12 h-6 text-[16px] text-center bg-surface-secondary border border-border-default rounded-sm text-text-input [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
               />
             </div>
           )}

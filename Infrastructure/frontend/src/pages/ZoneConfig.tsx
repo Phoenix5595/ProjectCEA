@@ -123,9 +123,9 @@ export default function ZoneConfig() {
  const lockedPhotoperiod = currentModeName === 'flower' ? 12 : currentModeName === 'veg' ? 18 : null
 
  return (
- <div className="min-h-screen bg-surface-base p-2">
+ <div className="min-h-screen bg-surface-base p-1">
  <div className="max-w-[1920px] mx-auto h-[calc(100vh-1rem)] flex flex-col">
- <div className="sticky top-0 z-10 bg-surface-base p-1 mb-2">
+ <div className="sticky top-0 z-10 bg-surface-base p-0 mb-1">
  <div className="flex items-center justify-between px-1">
  <h1 className="text-lg font-bold text-text-default flex items-center gap-2">
  <span>{location === 'Veg Room' ? '🌱' : location === 'Flower Room' ? '🌻' : '🌿'}</span> 
@@ -157,8 +157,8 @@ export default function ZoneConfig() {
  </div>
 
  {params && (
- <div className="flex-1 flex flex-col gap-2 min-h-0">
- <div className="h-[270px] shrink-0 bg-surface-primary rounded-lg border border-border-subtle overflow-hidden p-3">
+ <div className="flex-1 flex flex-col gap-1 min-h-0">
+ <div className="h-[270px] shrink-0 bg-surface-primary rounded-lg border border-border-subtle overflow-hidden p-2">
  <div className="text-[14px] text-text-muted uppercase font-bold tracking-wider mb-2">Climate Timeline</div>
  {!isConstant && (
  <SetpointTimeline
@@ -192,54 +192,61 @@ export default function ZoneConfig() {
  )}
  </div>
 
- <div className="flex gap-2">
- <div className="w-[35%] flex flex-col gap-2">
- {!isConstant && (
- <div className="bg-surface-primary rounded-lg border border-border-subtle p-[11px] shrink-0">
- <div className="text-[14px] text-text-muted uppercase font-bold tracking-wider mb-2">Light Schedule</div>
- <div className="flex justify-center">
- <CircularTimePicker
- dayStartTime={params.day_start_time}
- dayEndTime={params.night_start_time}
- onDayStartChange={(time) => handleParamChange({ day_start_time: time })}
- onDayEndChange={(time) => handleParamChange({ night_start_time: time })}
- showPresetButtons={false}
- lockedPhotoperiodHours={lockedPhotoperiod}
- rampUpDuration={params.light_ramp_up_minutes}
- rampDownDuration={params.light_ramp_down_minutes}
- onRampUpChange={(d) => handleParamChange({ light_ramp_up_minutes: d ?? 0 })}
- onRampDownChange={(d) => handleParamChange({ light_ramp_down_minutes: d ?? 0 })}
- size={420}
- />
- </div>
- </div>
- )}
- </div>
- 
- <div className="w-[65%] flex flex-col gap-2">
- <div className="bg-surface-primary rounded-lg border border-border-subtle p-3">
- <div className="text-[14px] text-text-muted uppercase font-bold tracking-wider mb-2">Setpoints</div>
- <SetpointsTable
- params={params}
- currentParams={savedParams || undefined}
- isConstant={isConstant}
- onChange={handleParamChange}
- />
- </div>
- </div>
- </div>
- 
- <div className="grid grid-cols-1 lg:grid-cols-3 gap-2">
- <VerticalLightsBlock location={location} cluster={cluster} />
- {(currentModeName === 'drying' || currentModeName === 'sleep') && (
- <div className="bg-surface-primary rounded-lg border border-border-subtle p-2">
- <div className="text-[14px] text-text-muted uppercase font-bold tracking-wider mb-2">Manual Light Control</div>
- <ManualLightControl location={location} cluster={cluster} compact={true} />
- </div>
- )}
- <VerticalPIDBlock />
- <VerticalNotesBlock location={location} cluster={cluster} currentMode={roomMode?.mode_name} />
- </div>
+  <div className="flex gap-1">
+  <div className="w-[35%]">
+  {!isConstant && (
+  <div className="bg-surface-primary rounded-lg border border-border-subtle p-2">
+  <div className="text-[12px] text-text-muted uppercase font-bold tracking-wider mb-2">Light Schedule</div>
+  <div className="flex justify-center">
+  <CircularTimePicker
+  dayStartTime={params.day_start_time}
+  dayEndTime={params.night_start_time}
+  onDayStartChange={(time) => handleParamChange({ day_start_time: time })}
+  onDayEndChange={(time) => handleParamChange({ night_start_time: time })}
+  showPresetButtons={false}
+  lockedPhotoperiodHours={lockedPhotoperiod}
+  rampUpDuration={params.light_ramp_up_minutes}
+  rampDownDuration={params.light_ramp_down_minutes}
+  onRampUpChange={(d) => handleParamChange({ light_ramp_up_minutes: d ?? 0 })}
+  onRampDownChange={(d) => handleParamChange({ light_ramp_down_minutes: d ?? 0 })}
+  size={420}
+  />
+  </div>
+  </div>
+  )}
+  </div>
+
+  <div className="w-[65%]">
+  <div className="bg-surface-primary rounded-lg border border-border-subtle p-1 h-full overflow-auto">
+  <div className="text-[12px] text-text-muted uppercase font-bold tracking-wider mb-1">Setpoints</div>
+  <SetpointsTable
+  params={params}
+  currentParams={savedParams || undefined}
+  isConstant={isConstant}
+  onChange={handleParamChange}
+  />
+  </div>
+  </div>
+  </div>
+
+  <div className="bg-surface-primary rounded-lg border border-border-subtle p-1">
+  <VerticalLightsBlock location={location} cluster={cluster} compact={true} />
+  </div>
+  
+  <div className="flex gap-1">
+  <div className="w-[35%]">
+  <VerticalNotesBlock location={location} cluster={cluster} currentMode={roomMode?.mode_name} />
+  </div>
+  <div className="w-[65%]">
+  {(currentModeName === 'drying' || currentModeName === 'sleep') && (
+  <div className="bg-surface-primary rounded-lg border border-border-subtle p-2 mb-2">
+  <div className="text-[12px] text-text-muted uppercase font-bold tracking-wider mb-2">Manual Light Control</div>
+  <ManualLightControl location={location} cluster={cluster} compact={true} />
+  </div>
+  )}
+  <VerticalPIDBlock />
+  </div>
+  </div>
  </div>
  )}
  </div>
