@@ -15,11 +15,12 @@ interface LightStatus {
 }
 
 interface VerticalLightsBlockProps {
- location: string | null
- cluster: string | null
+  location: string | null
+  cluster: string | null
+  compact?: boolean
 }
 
-export default function VerticalLightsBlock({ location, cluster }: VerticalLightsBlockProps) {
+export default function VerticalLightsBlock({ location, cluster, compact }: VerticalLightsBlockProps) {
  const [lights, setLights] = useState<LightDevice[]>([])
  const [statuses, setStatuses] = useState<Record<string, LightStatus>>({})
  const [pendingTargets, setPendingTargets] = useState<Record<string, number>>({})
@@ -141,117 +142,118 @@ export default function VerticalLightsBlock({ location, cluster }: VerticalLight
  </div>
  </div>
  
- {lights.length === 0 ? (
- <div className="text-text-subtle text-sm flex-1 flex items-center justify-center">No lights found</div>
- ) : (
- <div className="flex-1 overflow-y-auto">
- <div className="flex gap-0 h-full">
- {lights.map(light => {
- const status = statuses[light.device_name!]
- if (!status) return null
- 
- const currentIntensity = status.intensity
- const savedTarget = status.target_intensity || 0
- const dayTarget = status.day_target_intensity || 0
- const pendingTarget = pendingTargets[light.device_name!]
- const displayTarget = pendingTarget ?? savedTarget
- const sliderPosition = currentIntensity
- const isOn = status && status.intensity > 0
- 
- return (
- <div key={light.device_name} className={`${!isOn ? 'opacity-50' : ''} flex flex-col items-center min-w-[100px] flex-1`}>
- <div className="text-[14px] text-text-secondary font-medium truncate text-center mb-1" title={light.display_name || light.device_name}>
- {light.display_name || light.device_name}
- </div>
- <div className="flex items-center gap-1 mb-2 text-xs">
- <div className="flex items-center gap-1">
- <span className="text-text-subtle text-[12px]">CUR</span>
- <span className="bg-surface-secondary px-1 py-0.5 rounded-sm text-accent-data font-mono tabular-nums text-[12px] min-w-[25px] text-center">
- {currentIntensity}%
- </span>
- </div>
- {dayTarget > 0 && (
- <div className="flex items-center gap-1">
- <span className="text-text-subtle text-[12px]">TGT</span>
- <span className="bg-surface-secondary px-1 py-0.5 rounded-sm text-accent-setpoint font-mono tabular-nums text-[12px] min-w-[25px] text-center">
- {dayTarget}%
- </span>
- </div>
- )}
- </div>
- 
- <div className="flex flex-col items-center flex-1">
- <div className="relative w-16 h-full min-h-[120px]">
- <div className="absolute inset-0 bg-surface-secondary rounded-sm overflow-hidden">
- <div 
- className="absolute bottom-0 left-0 right-0 bg-linear-to-t from-btn-primary-hover to-btn-primary-data transition-all"
- style={{ height: `${sliderPosition}%` }}
- />
- </div>
- <input
- type="range"
- min={0}
- max={100}
- value={displayTarget}
- onChange={(e) => {
- const value = parseInt(e.target.value)
- if (!isNaN(value)) {
- handleTargetChange(light.device_name!, value)
- }
- }}
- className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
- title="Sun target: editable even when lights are off"
- />
- {dayTarget > 0 && (
- <div 
- className="absolute left-0 right-0 h-1 bg-accent-setpoint rounded-sm"
- style={{ bottom: `calc(${dayTarget}% - 2px)` }}
- title={`Sun target: ${dayTarget}%`}
- />
- )}
- {pendingTargets[light.device_name!] !== undefined && (
- <div 
- className="absolute left-0 right-0 h-1 bg-status-warning rounded-sm"
- style={{ bottom: `calc(${displayTarget}% - 2px)` }}
- title={`Pending: ${displayTarget}%`}
- />
- )}
- </div>
- <div className="flex items-center gap-1">
- <input
- type="number"
- min={0}
- max={100}
- value={displayTarget}
- onChange={(e) => {
- const value = parseInt(e.target.value)
- if (!isNaN(value)) {
- handleTargetChange(light.device_name!, value)
- }
- }}
- className="w-12 h-5 px-1 text-[12px] text-center bg-surface-secondary border border-border-default rounded-sm text-text-input focus:outline-hidden focus:border-accent-vivid transition-colors"
- title="Sun target %"
- />
- <span className="text-[12px] text-text-subtle">%</span>
- </div>
- </div>
- </div>
- )
- })}
- </div>
- 
- {hasPendingChanges && (
- <div className="pt-4 border-t border-border-subtle mt-auto">
- <button
- onClick={savePendingChanges}
- className="w-full px-3 py-2 bg-accent-active hover:bg-accent-hover rounded-sm text-text-default text-xs font-bold tracking-wide transition-colors focus:outline-hidden focus:ring-2 focus:ring-accent-vivid/50"
- >
- Save Pending Changes
- </button>
- </div>
- )}
- </div>
- )}
+  {lights.length === 0 ? (
+  <div className="text-text-subtle text-sm flex-1 flex items-center justify-center">No lights found</div>
+  ) : (
+  <div className="flex-1 overflow-y-auto">
+  <div className="flex flex-col gap-2 h-full">
+  {lights.map(light => {
+  const status = statuses[light.device_name!]
+  if (!status) return null
+  
+  const currentIntensity = status.intensity
+  const savedTarget = status.target_intensity || 0
+  const dayTarget = status.day_target_intensity || 0
+  const pendingTarget = pendingTargets[light.device_name!]
+  const displayTarget = pendingTarget ?? savedTarget
+  const sliderPosition = currentIntensity
+  const isOn = status && status.intensity > 0
+  
+  return (
+<div key={light.device_name} className={`${!isOn ? 'opacity-50' : ''} flex items-center gap-2`}>
+  <div className={`${compact ? 'text-[12px] w-[80px]' : 'text-[14px] w-[100px]'} text-text-secondary font-medium truncate`} title={light.display_name || light.device_name}>
+    {light.display_name || light.device_name}
+  </div>
+  
+  <div className="flex items-center gap-1 shrink-0">
+  <span className="text-text-subtle text-[11px]">CUR</span>
+  <span className="bg-surface-secondary px-1 py-0.5 rounded-sm text-accent-data font-mono tabular-nums text-[11px] min-w-[32px] text-center">
+  {currentIntensity}%
+  </span>
+  </div>
+  
+  {dayTarget > 0 && (
+  <div className="flex items-center gap-1 shrink-0">
+  <span className="text-text-subtle text-[11px]">TGT</span>
+  <span className="bg-surface-secondary px-1 py-0.5 rounded-sm text-accent-setpoint font-mono tabular-nums text-[11px] min-w-[32px] text-center">
+  {dayTarget}%
+  </span>
+  </div>
+  )}
+  
+  <div className="flex-1 flex items-center">
+  <div className={`relative w-full ${compact ? 'h-4' : 'h-5'}`}>
+  <div className="absolute inset-0 bg-surface-secondary rounded-sm overflow-hidden">
+  <div 
+  className="absolute top-0 bottom-0 right-0 bg-linear-to-l from-btn-primary-hover to-btn-primary-data transition-all"
+  style={{ width: `${sliderPosition}%` }}
+  />
+  </div>
+  <input
+  type="range"
+  min={0}
+  max={100}
+  value={displayTarget}
+  onChange={(e) => {
+  const value = parseInt(e.target.value)
+  if (!isNaN(value)) {
+  handleTargetChange(light.device_name!, value)
+  }
+  }}
+  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+  title="Sun target: editable even when lights are off"
+  />
+  {dayTarget > 0 && (
+  <div 
+  className="absolute top-0 bottom-0 w-1 bg-accent-setpoint rounded-sm"
+  style={{ right: `calc(${dayTarget}% - 2px)` }}
+  title={`Sun target: ${dayTarget}%`}
+  />
+  )}
+  {pendingTargets[light.device_name!] !== undefined && (
+  <div 
+  className="absolute top-0 bottom-0 w-1 bg-status-warning rounded-sm"
+  style={{ right: `calc(${displayTarget}% - 2px)` }}
+  title={`Pending: ${displayTarget}%`}
+  />
+  )}
+  </div>
+  </div>
+  
+  <div className="flex items-center gap-0.5 shrink-0">
+  <input
+  type="number"
+  min={0}
+  max={100}
+  value={displayTarget}
+  onChange={(e) => {
+  const value = parseInt(e.target.value)
+  if (!isNaN(value)) {
+  handleTargetChange(light.device_name!, value)
+  }
+  }}
+  className="w-12 h-5 px-1 text-[11px] text-center bg-surface-secondary border border-border-default rounded-sm text-text-input focus:outline-hidden focus:border-accent-vivid transition-colors"
+  title="Sun target %"
+  />
+  <span className="text-[11px] text-text-subtle">%</span>
+  </div>
+  </div>
+  )
+  })}
+  </div>
+  
+  {hasPendingChanges && (
+  <div className="pt-2 border-t border-border-subtle mt-auto">
+  <button
+  onClick={savePendingChanges}
+  className="w-full px-3 py-1.5 bg-accent-active hover:bg-accent-hover rounded-sm text-text-default text-xs font-bold tracking-wide transition-colors focus:outline-hidden focus:ring-2 focus:ring-accent-vivid/50"
+  >
+  Save Pending Changes
+  </button>
+  </div>
+  )}
+  </div>
+  )}
  </div>
  )
 }

@@ -15,7 +15,7 @@ export default function SetpointsTable({
 }: SetpointsTableProps) {
  if (isConstant) {
  return (
- <div className="bg-surface-primary rounded-lg border border-border-subtle p-3">
+  <div className="bg-surface-primary rounded-lg border border-border-subtle p-2">
  <div className="text-xs text-text-muted uppercase font-bold tracking-wider mb-2">Constant Setpoints</div>
  <Setpoints2x2 params={params} currentParams={currentParams} onChange={onChange} prefix="night" />
  </div>
@@ -61,17 +61,17 @@ export default function SetpointsTable({
  )
 }
 
-function PeriodCard({ title, colorClass, titleColor, children }: { title: string; colorClass: string; titleColor: string; children: React.ReactNode }) {
- return (
- <div className={`rounded-lg border p-2 ${colorClass}`}>
- <div className={`text-[14px] font-bold uppercase tracking-wider mb-2 ${titleColor}`}>{title}</div>
- {children}
- </div>
- )
+ function PeriodCard({ title, colorClass, titleColor, children }: { title: string; colorClass: string; titleColor: string; children: React.ReactNode }) {
+  return (
+  <div className={`rounded-lg border p-1.5 ${colorClass}`}>
+  <div className={`text-[12px] font-bold uppercase tracking-wider mb-2 ${titleColor}`}>{title}</div>
+  {children}
+  </div>
+  )
 }
 
 function TimingRow({ children }: { children: React.ReactNode }) {
- return <div className="grid grid-cols-2 gap-2 mb-2">{children}</div>
+  return <div className="grid grid-cols-2 gap-1 mb-2">{children}</div>
 }
 
 function TimingInput({ label, value, field, onChange, tooltip }: { label: string; value: number; field: keyof ModeParameters; onChange: (u: Partial<ModeParameters>) => void; tooltip: string }) {
