@@ -27,6 +27,12 @@ export default defineConfig({
         target: 'http://localhost:8001',
         changeOrigin: true
       }
+      ,
+      '/grafana': {
+        target: 'http://localhost:3000',
+        changeOrigin: true,
+        rewrite: (path: string) => path.replace(/^\/grafana/, ''),
+      }
     }
   },
   build: {
@@ -34,4 +40,3 @@ export default defineConfig({
     assetsDir: 'assets'
   }
 })
-
