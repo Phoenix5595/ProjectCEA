@@ -115,7 +115,7 @@ export default function CircularTimePicker({
 
  const centerX = size / 2
  const centerY = size / 2
- const radius = size / 2 - 40
+ const radius = size / 2 - 20
  const markerRadius = radius - 10
 
  // Clear canvas
@@ -149,12 +149,10 @@ export default function CircularTimePicker({
  ctx.lineTo(x2, y2)
  ctx.stroke()
 
- // Draw hour labels
- const labelX = centerX + Math.cos(angle) * (markerRadius - 20)
- const labelY = centerY + Math.sin(angle) * (markerRadius - 20)
- ctx.fillStyle = '#6b7280'
- // Show all 24 hours (0-23)
- ctx.fillText(hour.toString(), labelX, labelY)
+  const labelX = centerX + Math.cos(angle) * (markerRadius - 20)
+  const labelY = centerY + Math.sin(angle) * (markerRadius - 20)
+  ctx.fillStyle = '#6b7280'
+  ctx.fillText(hour.toString(), labelX, labelY)
  }
 
  // Draw period arc - always show the DAY period overlay
@@ -331,7 +329,7 @@ export default function CircularTimePicker({
  const clickX = event.clientX
  const clickY = event.clientY
  const distance = getDistanceFromCenter(event, rect)
- const radius = (canvas.width / 2) - 40
+ const radius = (canvas.width / 2) - 18
 
  // Check if click is near the circle (within 30px of the circle)
  if (Math.abs(distance - radius) > 30) return
@@ -509,9 +507,10 @@ export default function CircularTimePicker({
  }, [isDragging, dragOffset, dayStartTime, dayEndTime, onDayStartChange, onDayEndChange])
 
  return (
- <div className="flex flex-col items-center">
+ <div className="flex items-center gap-3">
+ <div className="flex flex-col items-center shrink-0">
  {label && (
- <label className="block text-sm font-medium text-text-secondary mb-4">
+ <label className="block text-sm font-medium text-text-secondary mb-2">
  {label}
  </label>
  )}
@@ -524,45 +523,48 @@ export default function CircularTimePicker({
  className="cursor-pointer"
  />
  </div>
-      <div className="pt-1" style={{ width: size }}>
-        <div className="grid grid-cols-2 gap-1">
-           <div className="flex items-center gap-1">
-             <label className="text-[12px] text-text-muted w-8 shrink-0">Start</label>
-            <input
-              type="time"
-              value={dayStartTime}
-              onChange={(e) => {
-                if (lockedPhotoperiodHours === null || lockedPhotoperiodHours === undefined) {
-                  onDayStartChange(e.target.value)
-                }
-              }}
-              disabled={lockedPhotoperiodHours !== null && lockedPhotoperiodHours !== undefined}
-              className={`w-20 h-6 text-[16px] text-center bg-surface-secondary border border-border-default rounded text-text-input [&::-webkit-calendar-picker-indicator]:hidden ${
+ </div>
+       <div className="pt-1 flex flex-col justify-center w-fit">
+         <div className="flex flex-col gap-1">
+           <div className="flex flex-col">
+              <label className="text-[12px] text-text-muted shrink-0">Start</label>
+             <input
+               type="text"
+               pattern="[0-2][0-9]:[0-5][0-9]"
+               value={dayStartTime}
+               onChange={(e) => {
+                 if (lockedPhotoperiodHours === null || lockedPhotoperiodHours === undefined) {
+                   onDayStartChange(e.target.value)
+                 }
+               }}
+               disabled={lockedPhotoperiodHours !== null && lockedPhotoperiodHours !== undefined}
+               className={`w-16 h-6 text-[16px] text-center bg-surface-secondary border border-border-default rounded text-text-input ${
                 lockedPhotoperiodHours !== null && lockedPhotoperiodHours !== undefined ? 'opacity-50 cursor-not-allowed' : ''
-              }`}
-              style={{ padding: '0 2px' }}
-            />
-          </div>
-           <div className="flex items-center gap-1">
-             <label className="text-[12px] text-text-muted w-8 shrink-0">End</label>
-            <input
-              type="time"
-              value={dayEndTime}
-              onChange={(e) => {
-                if (lockedPhotoperiodHours === null || lockedPhotoperiodHours === undefined) {
-                  onDayEndChange(e.target.value)
-                }
-              }}
-              disabled={lockedPhotoperiodHours !== null && lockedPhotoperiodHours !== undefined}
-              className={`w-20 h-6 text-[16px] text-center bg-surface-secondary border border-border-default rounded text-text-input [&::-webkit-calendar-picker-indicator]:hidden ${
+               }`}
+               style={{ padding: '0 2px' }}
+             />
+           </div>
+            <div className="flex flex-col">
+              <label className="text-[12px] text-text-muted shrink-0">End</label>
+             <input
+               type="text"
+               pattern="[0-2][0-9]:[0-5][0-9]"
+               value={dayEndTime}
+               onChange={(e) => {
+                 if (lockedPhotoperiodHours === null || lockedPhotoperiodHours === undefined) {
+                   onDayEndChange(e.target.value)
+                 }
+               }}
+               disabled={lockedPhotoperiodHours !== null && lockedPhotoperiodHours !== undefined}
+               className={`w-16 h-6 text-[16px] text-center bg-surface-secondary border border-border-default rounded text-text-input ${
                 lockedPhotoperiodHours !== null && lockedPhotoperiodHours !== undefined ? 'opacity-50 cursor-not-allowed' : ''
-              }`}
-              style={{ padding: '0 2px' }}
-            />
+               }`}
+               style={{ padding: '0 2px' }}
+             />
           </div>
           {onRampUpChange && rampUpDuration !== undefined && (
-             <div className="flex items-center gap-1">
-               <label className="text-[12px] text-text-muted w-8 shrink-0">↑ min</label>
+              <div className="flex flex-col">
+                <label className="text-[12px] text-text-muted shrink-0">Ramp ↑</label>
               <input
                 type="number"
                 min="0"
@@ -577,8 +579,8 @@ className="w-12 h-6 text-[16px] text-center bg-surface-secondary border border-b
               </div>
             )}
             {onRampDownChange && rampDownDuration !== undefined && (
-               <div className="flex items-center gap-1">
-                 <label className="text-[12px] text-text-muted w-8 shrink-0">↓ min</label>
+                <div className="flex flex-col">
+                  <label className="text-[12px] text-text-muted shrink-0">Ramp ↓</label>
                 <input
                   type="number"
                   min="0"
@@ -593,8 +595,8 @@ className="w-12 h-6 text-[16px] text-center bg-surface-secondary border border-b
             </div>
           )}
         </div>
- <div className="flex items-center justify-center gap-2 mt-2 text-text-muted">
- <span className="text-[10px]">Photoperiod:</span>
+ <div className="flex flex-col items-center mt-2 text-text-muted">
+ <span className="text-[12px]">Photoperiod</span>
  <span className="text-sm font-medium text-text-input font-mono tabular-nums">{calculatePhotoperiod().toFixed(1)}h</span>
  </div>
  </div>

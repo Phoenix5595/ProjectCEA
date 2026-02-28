@@ -22,43 +22,43 @@ export default function SetpointsTable({
  )
  }
 
- return (
- <div className="bg-surface-primary rounded-lg border border-border-subtle p-2">
- <div className="grid grid-cols-2 gap-2">
- <PeriodCard title="Day" colorClass="border-period-day/50 bg-period-day-bg/20" titleColor="text-accent-setpoint">
- <TimingRow>
- <TimingInput label="Ramp" value={params.ramp_up_minutes} field="ramp_up_minutes" onChange={onChange} tooltip="Ramp up transition time" />
- <LeafInput label="Leaf Δ" value={params.day_leaf_delta} field="day_leaf_delta" currentValue={currentParams?.day_leaf_delta} onChange={onChange} tooltip="Leaf temp offset (Day + Pre-Night)" />
- </TimingRow>
- <Setpoints2x2 params={params} currentParams={currentParams} onChange={onChange} prefix="day" />
- </PeriodCard>
+  return (
+  <div className="bg-surface-primary rounded-lg border border-border-subtle p-2 overflow-auto">
+  <div className="grid grid-cols-4 gap-2">
+  <PeriodCard title="Pre-Day" colorClass="border-period-preday/50 bg-period-preday-bg/20" titleColor="text-accent-setpoint-dim">
+  <TimingRow>
+  <TimingInput label="Duration" value={params.pre_day_minutes} field="pre_day_minutes" onChange={onChange} tooltip="Pre-day period duration" />
+  <TimingInput label="Ramp" value={params.pre_day_ramp_minutes} field="pre_day_ramp_minutes" onChange={onChange} tooltip="Pre-day ramp transition time" />
+  </TimingRow>
+  <Setpoints2x2 params={params} currentParams={currentParams} onChange={onChange} prefix="pre_day" />
+  </PeriodCard>
 
- <PeriodCard title="Night" colorClass="border-indigo-700/50 bg-indigo-900/20" titleColor="text-indigo-300">
- <TimingRow>
- <TimingInput label="Ramp" value={params.ramp_down_minutes} field="ramp_down_minutes" onChange={onChange} tooltip="Ramp down transition time" />
- <LeafInput label="Leaf Δ" value={params.night_leaf_delta} field="night_leaf_delta" currentValue={currentParams?.night_leaf_delta} onChange={onChange} tooltip="Leaf temp offset (Night + Pre-Day)" />
- </TimingRow>
- <Setpoints2x2 params={params} currentParams={currentParams} onChange={onChange} prefix="night" />
- </PeriodCard>
+  <PeriodCard title="Day" colorClass="border-period-day/50 bg-period-day-bg/20" titleColor="text-accent-setpoint">
+  <TimingRow>
+  <TimingInput label="Ramp" value={params.ramp_up_minutes} field="ramp_up_minutes" onChange={onChange} tooltip="Ramp up transition time" />
+  <LeafInput label="Leaf Δ" value={params.day_leaf_delta} field="day_leaf_delta" currentValue={currentParams?.day_leaf_delta} onChange={onChange} tooltip="Leaf temp offset (Day + Pre-Night)" />
+  </TimingRow>
+  <Setpoints2x2 params={params} currentParams={currentParams} onChange={onChange} prefix="day" />
+  </PeriodCard>
 
- <PeriodCard title="Pre-Day" colorClass="border-period-preday/50 bg-period-preday-bg/20" titleColor="text-accent-setpoint-dim">
- <TimingRow>
- <TimingInput label="Duration" value={params.pre_day_minutes} field="pre_day_minutes" onChange={onChange} tooltip="Pre-day period duration" />
- <TimingInput label="Ramp" value={params.pre_day_ramp_minutes} field="pre_day_ramp_minutes" onChange={onChange} tooltip="Pre-day ramp transition time" />
- </TimingRow>
- <Setpoints2x2 params={params} currentParams={currentParams} onChange={onChange} prefix="pre_day" />
- </PeriodCard>
+  <PeriodCard title="Pre-Night" colorClass="border-indigo-900/50 bg-indigo-950/20" titleColor="text-indigo-400">
+  <TimingRow>
+  <TimingInput label="Duration" value={params.pre_night_minutes} field="pre_night_minutes" onChange={onChange} tooltip="Pre-night period duration" />
+  <TimingInput label="Ramp" value={params.pre_night_ramp_minutes} field="pre_night_ramp_minutes" onChange={onChange} tooltip="Pre-night ramp transition time" />
+  </TimingRow>
+  <Setpoints2x2 params={params} currentParams={currentParams} onChange={onChange} prefix="pre_night" />
+  </PeriodCard>
 
- <PeriodCard title="Pre-Night" colorClass="border-indigo-900/50 bg-indigo-950/20" titleColor="text-indigo-400">
- <TimingRow>
- <TimingInput label="Duration" value={params.pre_night_minutes} field="pre_night_minutes" onChange={onChange} tooltip="Pre-night period duration" />
- <TimingInput label="Ramp" value={params.pre_night_ramp_minutes} field="pre_night_ramp_minutes" onChange={onChange} tooltip="Pre-night ramp transition time" />
- </TimingRow>
- <Setpoints2x2 params={params} currentParams={currentParams} onChange={onChange} prefix="pre_night" />
- </PeriodCard>
- </div>
- </div>
- )
+  <PeriodCard title="Night" colorClass="border-indigo-700/50 bg-indigo-900/20" titleColor="text-indigo-300">
+  <TimingRow>
+  <TimingInput label="Ramp" value={params.ramp_down_minutes} field="ramp_down_minutes" onChange={onChange} tooltip="Ramp down transition time" />
+  <LeafInput label="Leaf Δ" value={params.night_leaf_delta} field="night_leaf_delta" currentValue={currentParams?.night_leaf_delta} onChange={onChange} tooltip="Leaf temp offset (Night + Pre-Day)" />
+  </TimingRow>
+  <Setpoints2x2 params={params} currentParams={currentParams} onChange={onChange} prefix="night" />
+  </PeriodCard>
+  </div>
+  </div>
+  )
 }
 
  function PeriodCard({ title, colorClass, titleColor, children }: { title: string; colorClass: string; titleColor: string; children: React.ReactNode }) {
