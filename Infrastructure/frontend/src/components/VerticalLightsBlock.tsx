@@ -161,13 +161,13 @@ export default function VerticalLightsBlock({ location, cluster, compact }: Vert
   
   return (
 <div key={light.device_name} className={`${!isOn ? 'opacity-50' : ''} flex items-center gap-2`}>
-  <div className={`${compact ? 'text-[12px] w-[80px]' : 'text-[14px] w-[100px]'} text-text-secondary font-medium truncate`} title={light.display_name || light.device_name}>
+   <div className={`${compact ? 'text-[14px] w-[80px]' : 'text-[16px] w-[100px]'} text-text-secondary font-medium truncate`} title={light.display_name || light.device_name}>
     {light.display_name || light.device_name}
   </div>
   
   <div className="flex items-center gap-1 shrink-0">
-  <span className="text-text-subtle text-[11px]">CUR</span>
-  <span className="bg-surface-secondary px-1 py-0.5 rounded-sm text-accent-data font-mono tabular-nums text-[11px] min-w-[32px] text-center">
+   <span className="text-text-subtle text-[13px]">CUR</span>
+   <span className="bg-surface-secondary px-1 py-0.5 rounded-sm text-accent-data font-mono tabular-nums text-[13px] min-w-[32px] text-center">
   {currentIntensity}%
   </span>
   </div>
