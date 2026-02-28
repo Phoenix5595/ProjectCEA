@@ -133,11 +133,11 @@ export default function ZoneConfig({ location: propsLocation, cluster: propsClus
   }
 
   if (!location || !cluster) {
-    return <div className="text-gray-100">Invalid zone</div>
+    return <div className="text-text-default">Invalid zone</div>
   }
 
   if (loading) {
-    return <div className="min-h-screen bg-gray-950 flex items-center justify-center text-gray-400">Loading...</div>
+    return <div className="min-h-screen bg-surface-base flex items-center justify-center text-text-muted">Loading...</div>
   }
 
   const params = roomMode?.parameters

@@ -26,12 +26,12 @@ export default function GrafanaPanel({
   return (
     <div className="w-full">
       {title && (
-        <h3 className="text-lg font-semibold mb-3 text-gray-900 dark:text-gray-100">
+        <h3 className="text-lg font-semibold mb-3 text-text-default">
           {title}
         </h3>
       )}
       <div
-        className="w-full rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700"
+        className="w-full rounded-lg overflow-hidden border border-border-default"
         style={{ height: typeof height === 'number' ? `${height}px` : height }}
       >
         <iframe
