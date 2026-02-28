@@ -118,35 +118,35 @@ const TopRibbon: React.FC<TopRibbonProps> = ({
       {showActions && isControlPage && (
         <div className="flex items-center gap-3 ml-auto">
           {(saveError || saveSuccess) && (
-            <div className={`text-xs px-2 py-0.5 rounded ${saveError ? 'bg-red-900 text-red-200' : 'bg-green-900 text-green-200'}`}>
+            <div className={`text-xs px-2 py-0.5 rounded ${saveError ? 'bg-status-danger-bg text-status-danger-text' : 'bg-status-success-bg text-status-success-text'}`}>
               {saveError || saveSuccess}
             </div>
           )}
           <button
             onClick={onSave}
             disabled={saving}
-            className="px-3 py-1 bg-cyan-700 hover:bg-cyan-600 disabled:opacity-50 text-white text-xs font-bold rounded transition-colors"
+            className="px-3 py-1 bg-accent-vivid hover:bg-accent-hover text-text-default text-xs font-bold rounded transition-colors"
           >
             {saving ? '...' : 'SAVE'}
           </button>
           {currentMode && onModeChange && (
-            <select
-              value={currentMode.submode_name ? `${currentMode.mode_name}:${currentMode.submode_name}` : currentMode.mode_name || ''}
-              onChange={(e) => {
-                const [mode, submode] = e.target.value.split(':');
-                onModeChange(mode, submode);
-              }}
-              className="bg-gray-800 text-gray-200 text-xs px-2 py-1 rounded border border-gray-700"
-            >
-              <option value="veg">Veg</option>
-              <option value="flower:stretch">Flower - Stretch</option>
-              <option value="flower:bulk">Flower - Bulk</option>
-              <option value="flower:ripen">Flower - Ripen</option>
-              <option value="drying">Drying</option>
-              <option value="sleep">Sleep</option>
-            </select>
+              <select
+                value={currentMode.submode_name ? `${currentMode.mode_name}:${currentMode.submode_name}` : currentMode.mode_name || ''}
+                onChange={(e) => {
+                  const [mode, submode] = e.target.value.split(':');
+                  onModeChange(mode, submode);
+                }}
+                className="bg-surface-secondary text-text-secondary text-xs px-2 py-1 rounded border border-border-default"
+              >
+                <option value="veg">Veg</option>
+                <option value="flower:stretch">Flower - Stretch</option>
+                <option value="flower:bulk">Flower - Bulk</option>
+                <option value="flower:ripen">Flower - Ripen</option>
+                <option value="drying">Drying</option>
+                <option value="sleep">Sleep</option>
+              </select>
           )}
-          <Link to="/" className="text-xs text-gray-400 hover:text-white font-medium flex items-center gap-1 bg-gray-800 px-2 py-1 rounded border border-gray-700 hover:border-gray-500 transition-colors">
+      <Link to="/" className="text-xs text-text-muted hover:text-text-default font-medium flex items-center gap-1 bg-surface-secondary px-2 py-1 rounded border border-border-default hover:border-border-emphasis transition-colors">
             <span>←</span> Back
           </Link>
         </div>
