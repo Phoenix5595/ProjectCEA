@@ -3,6 +3,7 @@ interface GrafanaPanelProps {
   panelId?: number
   title?: string
   height?: string | number
+  timeRange?: boolean
 }
 
 export default function GrafanaPanel({
@@ -10,14 +11,17 @@ export default function GrafanaPanel({
   panelId,
   title,
   height = 400,
+  timeRange = false,
 }: GrafanaPanelProps) {
-  const embedUrl = `/grafana/d-solo/${dashboardUid}?orgId=1${panelId ? `&panelId=${panelId}` : ''}&theme=dark`
+  const embedUrl = timeRange
+    ? `/grafana/d/${dashboardUid}?orgId=1&theme=dark&kiosk=1`
+    : `/grafana/d-solo/${dashboardUid}?orgId=1${panelId ? `&panelId=${panelId}` : ''}&theme=dark`
 
   const heightStyle = typeof height === 'number' ? `${height}px` : height
 
   return (
     <div className="w-full flex flex-col">
-      {title && (
+      {title && !timeRange && (
         <h3 className="text-sm font-semibold mb-2 text-text-default">{title}</h3>
       )}
       <div
