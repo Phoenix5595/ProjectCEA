@@ -28,7 +28,7 @@ export default defineConfig({
         changeOrigin: true
       },
       '/grafana': {
-        target: 'http://localhost:3000',
+        target: 'http://iskradocker:3000',
         changeOrigin: true
       }
     }
