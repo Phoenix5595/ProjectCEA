@@ -326,9 +326,9 @@ export default function CircularTimePicker({
  ctx.fill()
  }
 
- useEffect(() => {
- drawClock()
- }, [dayStartTime, dayEndTime, period])
+  useEffect(() => {
+    drawClock()
+  }, [dayStartTime, dayEndTime, period, size])
 
  // Enforce locked photoperiod duration
  useEffect(() => {
