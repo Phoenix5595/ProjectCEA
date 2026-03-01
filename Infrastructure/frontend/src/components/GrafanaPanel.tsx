@@ -14,8 +14,8 @@ export default function GrafanaPanel({
   timeRange = false,
 }: GrafanaPanelProps) {
   const embedUrl = timeRange
-    ? `/grafana/d/${dashboardUid}?orgId=1&theme=dark&kiosk=1`
-    : `/grafana/d-solo/${dashboardUid}?orgId=1${panelId ? `&panelId=${panelId}` : ''}&theme=dark`
+    ? `http://iskradocker:3000/d/${dashboardUid}?orgId=1&theme=dark&kiosk=1&from=now-6h&to=now`
+    : `http://iskradocker:3000/d-solo/${dashboardUid}?orgId=1${panelId ? `&panelId=${panelId}` : ''}&theme=dark&from=now-6h&to=now`
 
   const heightStyle = typeof height === 'number' ? `${height}px` : height
 
