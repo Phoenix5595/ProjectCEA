@@ -81,7 +81,7 @@ const TopRibbon: React.FC<TopRibbonProps> = ({
   const isControlPage = currentPath.includes('/control');
 
   return (
-    <div className="w-full bg-surface-secondary border-t border-b border-border-default h-[50px] flex items-center px-3 gap-3 sticky top-0 z-10">
+    <div className="w-full bg-surface-secondary border-t border-b border-border-default h-[50px] flex items-center px-2 gap-2 sticky top-0 z-10">
       {roomName && (
         <h1 className="text-lg font-bold text-default flex items-center gap-2 whitespace-nowrap">
           <span className="text-xl">{sectorEmojis[sector]}</span>
@@ -124,7 +124,7 @@ const TopRibbon: React.FC<TopRibbonProps> = ({
                   <button
                     key={mode}
                     onClick={() => onModeChange(mode)}
-                    className={`px-3 py-1 text-sm font-bold rounded border transition-all ${
+                    className={`px-2 py-0.5 text-sm font-bold rounded border transition-all ${
                       currentMode.mode_name === mode
                         ? 'bg-accent text-white border-accent'
                         : 'bg-transparent text-text-default border-border-default hover:bg-surface-tertiary hover:border-border-emphasis'
@@ -140,7 +140,7 @@ const TopRibbon: React.FC<TopRibbonProps> = ({
                     <button
                       key={sub}
                       onClick={() => onModeChange('flower', sub)}
-                      className={`px-3 py-1 text-sm font-bold rounded border transition-all ${
+                      className={`px-2 py-0.5 text-sm font-bold rounded border transition-all ${
                         currentMode.submode_name === sub
                           ? 'bg-accent-vivid text-white border-accent-vivid'
                           : 'bg-transparent text-text-default border-border-default hover:bg-surface-tertiary hover:border-border-emphasis'
@@ -162,7 +162,7 @@ const TopRibbon: React.FC<TopRibbonProps> = ({
           <button
             onClick={onSave}
             disabled={saving}
-            className="px-3 py-1 bg-accent-vivid hover:bg-accent-hover text-text-default text-xs font-bold rounded transition-colors"
+            className="px-2 py-0.5 bg-accent-vivid hover:bg-accent-hover text-text-default text-xs font-bold rounded transition-colors"
           >
             {saving ? '...' : 'SAVE'}
           </button>
