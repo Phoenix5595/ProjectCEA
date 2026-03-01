@@ -111,7 +111,7 @@ export const MODE_COLORS: Record<string, string> = {
   veg: 'bg-emerald-600',
   flower: 'bg-pink-600',
   drying: 'bg-amber-600',
-  sleep: 'bg-gray-600'
+  sleep: 'bg-muted'
 }
 
 export const SUBMODE_COLORS: Record<string, string> = {
