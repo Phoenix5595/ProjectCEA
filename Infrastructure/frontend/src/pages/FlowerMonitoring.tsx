@@ -4,7 +4,7 @@ const DASHBOARD_UID = '7467103e-9964-4e06-9fc8-c43610129ba9'
 
 export default function FlowerMonitoring() {
   return (
-    <div className="h-screen bg-surface-base overflow-hidden">
+    <div className="bg-surface-base overflow-hidden -mt-4 -mb-4" style={{ height: 'calc(100vh - 60px)' }}>
       <div className="h-full flex flex-col">
         <h1 className="text-lg font-bold text-text-default px-2 py-1 shrink-0">Flower Room Monitoring</h1>
 
