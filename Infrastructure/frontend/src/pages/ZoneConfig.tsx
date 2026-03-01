@@ -211,7 +211,7 @@ export default function ZoneConfig({ location: propsLocation, cluster: propsClus
               </div>
 
               <div className="w-[70%] flex flex-col gap-1">
-                <div className="bg-surface-primary rounded-lg border border-border-subtle p-1 flex-[55] overflow-auto">
+                <div className="bg-surface-primary rounded-lg border border-border-subtle p-1 flex-[53] overflow-auto">
                   <div className="text-[12px] text-text-muted uppercase font-bold tracking-wider mb-1">Setpoints</div>
                   <SetpointsTable
                     params={params}
@@ -220,7 +220,7 @@ export default function ZoneConfig({ location: propsLocation, cluster: propsClus
                     onChange={handleParamChange}
                   />
                 </div>
-                <div className="flex-[45] overflow-auto">
+                <div className="flex-[47] overflow-auto">
                   <VerticalLightsBlock location={location} cluster={cluster} compact={true} />
                 </div>
               </div>
