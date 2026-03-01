@@ -15,8 +15,8 @@ interface NavItem {
 const navItems: NavItem[] = [
   { label: 'Overview', path: '/', icon: '🏠' },
   { label: 'Laboratory', path: '/laboratory', icon: '🔬' },
-  { label: 'Vegetation', path: '/vegetation', icon: '🌱' },
-  { label: 'Flower', path: '/flower', icon: '🌸' },
+  { label: 'Vegetation', path: '/vegetation/monitoring', icon: '🌱' },
+  { label: 'Flower', path: '/flower/monitoring', icon: '🌸' },
   { label: 'Devices', path: '/devices', icon: '⚙️' },
 ];
 
