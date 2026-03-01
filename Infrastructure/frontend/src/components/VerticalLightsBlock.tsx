@@ -219,22 +219,22 @@ export default function VerticalLightsBlock({ location, cluster, compact }: Vert
   </div>
   </div>
   
-  <div className="flex flex-col items-center gap-1 shrink-0 ml-3">
-  <input
-  type="number"
-  min={0}
-  max={100}
-  value={displayTarget}
-  onChange={(e) => {
-  const value = parseInt(e.target.value)
-  if (!isNaN(value)) {
-  handleTargetChange(light.device_name!, value)
-  }
-  }}
-  className="w-12 h-8 px-1 text-center bg-surface-secondary border border-border-default rounded-sm text-[14px] text-text-input font-mono"
-  />
-  <span className="text-[10px] text-text-subtle font-bold tracking-wide">% SET</span>
-  </div>
+                <div className="flex flex-col items-center gap-1 shrink-0 ml-3">
+                  <input
+                    type="number"
+                    min={0}
+                    max={100}
+                    value={displayTarget}
+                    onChange={(e) => {
+                      const value = parseInt(e.target.value)
+                      if (!isNaN(value)) {
+                        handleTargetChange(light.device_name!, value)
+                      }
+                    }}
+                    className="w-14 h-8 px-1 text-center bg-surface-secondary border border-border-default rounded-sm text-[14px] text-text-input font-mono"
+                  />
+                  <span className="text-[10px] text-text-subtle font-bold tracking-wide">% SET</span>
+                </div>
   
   </div>
   )
