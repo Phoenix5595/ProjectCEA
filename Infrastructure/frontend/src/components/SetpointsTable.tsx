@@ -23,7 +23,7 @@ export default function SetpointsTable({
  }
 
   return (
-  <div className="grid grid-cols-4 gap-2">
+  <div className="grid grid-cols-4 gap-1.5">
   <PeriodCard title="Pre-Day" colorClass="border-period-preday/50 bg-period-preday-bg/20" titleColor="text-accent-setpoint-dim">
   <TimingRow>
   <TimingInput label="Duration" value={params.pre_day_minutes} field="pre_day_minutes" onChange={onChange} tooltip="Pre-day period duration" />
@@ -61,7 +61,7 @@ export default function SetpointsTable({
 
  function PeriodCard({ title, colorClass, titleColor, children }: { title: string; colorClass: string; titleColor: string; children: React.ReactNode }) {
   return (
-  <div className={`rounded-lg border p-1.5 ${colorClass}`}>
+  <div className={`rounded-lg border p-1 ${colorClass}`}>
   <div className={`text-[12px] font-bold uppercase tracking-wider mb-2 ${titleColor}`}>{title}</div>
   {children}
   </div>
@@ -69,13 +69,13 @@ export default function SetpointsTable({
 }
 
 function TimingRow({ children }: { children: React.ReactNode }) {
-  return <div className="grid grid-cols-2 gap-1 mb-2">{children}</div>
+  return <div className="grid grid-cols-2 gap-1 mb-1">{children}</div>
 }
 
 function TimingInput({ label, value, field, onChange, tooltip }: { label: string; value: number; field: keyof ModeParameters; onChange: (u: Partial<ModeParameters>) => void; tooltip: string }) {
  return (
  <div>
- <div className="text-[12px] text-text-muted mb-1 cursor-help" title={tooltip}>{label}</div>
+ <div className="text-[11px] text-text-muted mb-0.5 cursor-help" title={tooltip}>{label}</div>
  <div className="flex items-center gap-1">
  <input
  type="number"
@@ -83,9 +83,9 @@ function TimingInput({ label, value, field, onChange, tooltip }: { label: string
  max={120}
  value={value}
  onChange={(e) => onChange({ [field]: parseInt(e.target.value) || 0 })}
- className="w-full h-7 px-2 text-[16px] text-center bg-surface-secondary border border-border-default rounded-sm text-text-input"
+ className="w-full h-6 px-1.5 text-[14px] text-center bg-surface-secondary border border-border-default rounded-sm text-text-input"
  />
- <span className="text-[12px] text-text-subtle w-6">min</span>
+ <span className="text-[11px] text-text-subtle w-5">min</span>
  </div>
  </div>
  )

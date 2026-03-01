@@ -31,7 +31,8 @@ export default function VerticalLightsBlock({ location, cluster, compact }: Vert
  if (!location || !cluster) return
  
  try {
- const lightDevices = await apiClient.getLightsForZone(location, cluster)
+ const allLights = await apiClient.getLightsForZone(location, cluster)
+ const lightDevices = allLights.filter(l => l.dimming_enabled && l.dimming_board_id !== null && l.dimming_channel !== null)
  setLights(lightDevices)
  
  const schedules = await apiClient.getSchedules(location, cluster)
