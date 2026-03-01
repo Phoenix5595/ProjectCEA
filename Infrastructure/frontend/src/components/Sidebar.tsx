@@ -22,9 +22,7 @@ const navItems: NavItem[] = [
 const Sidebar: React.FC<SidebarProps> = ({ collapsed, onToggle }) => {
   const location = useLocation();
 
-  // Overview is always visible and non-collapsible
-  const overviewItem = navItems[0];
-  const collapsibleItems = navItems.slice(1);
+  const collapsibleItems = navItems;
 
   return (
     <aside
