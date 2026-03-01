@@ -146,9 +146,6 @@ const TopRibbon: React.FC<TopRibbonProps> = ({
                 <option value="sleep">Sleep</option>
               </select>
           )}
-      <Link to="/" className="text-xs text-text-muted hover:text-text-default font-medium flex items-center gap-1 bg-surface-secondary px-2 py-1 rounded border border-border-default hover:border-border-emphasis transition-colors">
-            <span>←</span> Back
-          </Link>
         </div>
       )}
     </div>
