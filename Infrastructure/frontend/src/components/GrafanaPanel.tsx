@@ -4,6 +4,7 @@ interface GrafanaPanelProps {
   title?: string
   width?: string | number
   height?: string | number
+  fullDashboard?: boolean
 }
 
 /**
@@ -16,23 +17,24 @@ export default function GrafanaPanel({
   title,
   width = '100%',
   height = 400,
+  fullDashboard = false,
 }: GrafanaPanelProps) {
-  // Build Grafana embed URL
-  // Using relative /grafana path for same-site authentication
   const baseUrl = '/grafana'
-  const panelParam = panelId ? `&panelId=${panelId}` : ''
-  const embedUrl = `${baseUrl}/d-solo/${dashboardUid}?orgId=1${panelParam}&theme=dark`
+  
+  const embedUrl = fullDashboard
+    ? `${baseUrl}/d/${dashboardUid}?orgId=1&theme=dark&kiosk=tv`
+    : `${baseUrl}/d-solo/${dashboardUid}?orgId=1${panelId ? `&panelId=${panelId}` : ''}&theme=dark`
 
   return (
-    <div className="w-full">
-      {title && (
+    <div className="w-full h-full flex flex-col">
+      {title && !fullDashboard && (
         <h3 className="text-lg font-semibold mb-3 text-text-default">
           {title}
         </h3>
       )}
       <div
-        className="w-full rounded-lg overflow-hidden border border-border-default"
-        style={{ height: typeof height === 'number' ? `${height}px` : height }}
+        className="w-full rounded-lg overflow-hidden border border-border-default flex-grow"
+        style={{ height: typeof height === 'number' ? `${height}px` : height, minHeight: fullDashboard ? '800px' : 'auto' }}
       >
         <iframe
           src={embedUrl}
