@@ -220,7 +220,7 @@ export default function ZoneConfig({ location: propsLocation, cluster: propsClus
                     onChange={handleParamChange}
                   />
                 </div>
-                <div className="bg-surface-primary rounded-lg border border-border-subtle p-1 flex-[45] overflow-auto">
+                <div className="flex-[45] overflow-auto">
                   <VerticalLightsBlock location={location} cluster={cluster} compact={true} />
                 </div>
               </div>
