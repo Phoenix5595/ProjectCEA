@@ -23,7 +23,6 @@ export default function SetpointsTable({
  }
 
   return (
-  <div className="bg-surface-primary rounded-lg border border-border-subtle p-2 overflow-auto">
   <div className="grid grid-cols-4 gap-2">
   <PeriodCard title="Pre-Day" colorClass="border-period-preday/50 bg-period-preday-bg/20" titleColor="text-accent-setpoint-dim">
   <TimingRow>
@@ -56,7 +55,6 @@ export default function SetpointsTable({
   </TimingRow>
   <Setpoints2x2 params={params} currentParams={currentParams} onChange={onChange} prefix="night" />
   </PeriodCard>
-  </div>
   </div>
   )
 }
