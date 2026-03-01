@@ -17,23 +17,48 @@ interface CircularTimePickerProps {
 }
 
 export default function CircularTimePicker({
- dayStartTime,
- dayEndTime,
- onDayStartChange,
- onDayEndChange,
- label,
- period = 'day',
- rampUpDuration,
- rampDownDuration,
- onRampUpChange,
- onRampDownChange,
- showPresetButtons: _showPresetButtons = true,
- lockedPhotoperiodHours = null,
- size = 300
+  dayStartTime,
+  dayEndTime,
+  onDayStartChange,
+  onDayEndChange,
+  label,
+  period = 'day',
+  rampUpDuration,
+  rampDownDuration,
+  onRampUpChange,
+  onRampDownChange,
+  showPresetButtons: _showPresetButtons = true,
+  lockedPhotoperiodHours = null,
+  size: propsSize
 }: CircularTimePickerProps) {
- const canvasRef = useRef<HTMLCanvasElement>(null)
- const [isDragging, setIsDragging] = useState<'start' | 'end' | 'period' | null>(null)
- const [dragOffset, setDragOffset] = useState<number>(0) // Offset in minutes when dragging period
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [size, setSize] = useState(propsSize || 300)
+  const [isDragging, setIsDragging] = useState<'start' | 'end' | 'period' | null>(null)
+  const [dragOffset, setDragOffset] = useState<number>(0) // Offset in minutes when dragging period
+
+  // Handle responsive sizing
+  useEffect(() => {
+    if (propsSize) {
+      setSize(propsSize);
+      return;
+    }
+
+    if (!containerRef.current) return;
+
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const { width, height } = entry.contentRect;
+        const newSize = Math.min(width, height > 0 ? height : width);
+        if (newSize > 0) {
+          setSize(newSize);
+        }
+      }
+    });
+
+    observer.observe(containerRef.current);
+    return () => observer.disconnect();
+  }, [propsSize]);
 
  // Convert time string (HH:MM) to minutes since midnight
  function timeToMinutes(time: string): number {
@@ -506,23 +531,23 @@ export default function CircularTimePicker({
  }
  }, [isDragging, dragOffset, dayStartTime, dayEndTime, onDayStartChange, onDayEndChange])
 
- return (
- <div className="flex items-center gap-3">
- <div className="flex flex-col items-center shrink-0">
- {label && (
- <label className="block text-sm font-medium text-text-secondary mb-2">
- {label}
- </label>
- )}
- <div className="relative">
- <canvas
- ref={canvasRef}
- width={size}
- height={size}
- onMouseDown={handleMouseDown}
- className="cursor-pointer"
- />
- </div>
+  return (
+    <div ref={containerRef} className="flex items-center gap-3 w-full h-full">
+      <div className="flex flex-col items-center flex-1 min-w-0">
+        {label && (
+          <label className="block text-sm font-medium text-text-secondary mb-2">
+            {label}
+          </label>
+        )}
+        <div className="relative w-full aspect-square flex items-center justify-center">
+          <canvas
+            ref={canvasRef}
+            width={size}
+            height={size}
+            onMouseDown={handleMouseDown}
+            className="cursor-pointer max-w-full max-h-full"
+          />
+        </div>
  </div>
        <div className="pt-1 flex flex-col justify-center w-fit">
          <div className="flex flex-col gap-1">
