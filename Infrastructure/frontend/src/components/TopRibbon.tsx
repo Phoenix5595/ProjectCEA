@@ -116,7 +116,44 @@ const TopRibbon: React.FC<TopRibbonProps> = ({
       </nav>
 
       {showActions && isControlPage && (
-        <div className="flex items-center gap-3 ml-auto">
+        <div className="flex items-center gap-2 ml-auto">
+          {currentMode && onModeChange && (
+            <>
+              <div className="flex gap-1">
+                {['veg', 'flower', 'drying', 'sleep'].map((mode) => (
+                  <button
+                    key={mode}
+                    onClick={() => onModeChange(mode)}
+                    className={`px-2 py-1 text-xs font-medium rounded transition-colors ${
+                      currentMode.mode_name === mode
+                        ? 'bg-accent text-surface-base'
+                        : 'bg-surface-tertiary text-text-secondary hover:text-default'
+                    }`}
+                  >
+                    {mode.charAt(0).toUpperCase() + mode.slice(1)}
+                  </button>
+                ))}
+              </div>
+              {currentMode.mode_name === 'flower' && (
+                <div className="flex gap-1 ml-2">
+                  {['stretch', 'bulk', 'ripen'].map((sub) => (
+                    <button
+                      key={sub}
+                      onClick={() => onModeChange('flower', sub)}
+                      className={`px-2 py-1 text-xs font-medium rounded transition-colors ${
+                        currentMode.submode_name === sub
+                          ? 'bg-accent-vivid text-surface-base'
+                          : 'bg-surface-tertiary text-text-secondary hover:text-default'
+                      }`}
+                    >
+                      {sub.charAt(0).toUpperCase() + sub.slice(1)}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+          <div className="flex-1" />
           {(saveError || saveSuccess) && (
             <div className={`text-xs px-2 py-0.5 rounded ${saveError ? 'bg-status-danger-bg text-status-danger-text' : 'bg-status-success-bg text-status-success-text'}`}>
               {saveError || saveSuccess}
@@ -129,23 +166,6 @@ const TopRibbon: React.FC<TopRibbonProps> = ({
           >
             {saving ? '...' : 'SAVE'}
           </button>
-          {currentMode && onModeChange && (
-              <select
-                value={currentMode.submode_name ? `${currentMode.mode_name}:${currentMode.submode_name}` : currentMode.mode_name || ''}
-                onChange={(e) => {
-                  const [mode, submode] = e.target.value.split(':');
-                  onModeChange(mode, submode);
-                }}
-                className="bg-surface-secondary text-text-secondary text-xs px-2 py-1 rounded border border-border-default"
-              >
-                <option value="veg">Veg</option>
-                <option value="flower:stretch">Flower - Stretch</option>
-                <option value="flower:bulk">Flower - Bulk</option>
-                <option value="flower:ripen">Flower - Ripen</option>
-                <option value="drying">Drying</option>
-                <option value="sleep">Sleep</option>
-              </select>
-          )}
         </div>
       )}
     </div>
