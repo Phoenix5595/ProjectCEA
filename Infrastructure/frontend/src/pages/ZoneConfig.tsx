@@ -1,5 +1,5 @@
 import { useParams } from 'react-router-dom'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { apiClient } from '../services/api'
 import { logger } from '../utils/logger'
 import { getLocationDisplayName, getLocationBackendName } from '../config/zones'
@@ -34,25 +34,6 @@ export default function ZoneConfig({ location: propsLocation, cluster: propsClus
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
 
-  useEffect(() => {
-    if (location && cluster) {
-      loadRoomMode()
-    }
-  }, [location, cluster])
-
-  useEffect(() => {
-    setActions({
-      roomName: cluster === 'main' ? getLocationDisplayName(location || '') : `${getLocationDisplayName(location || '')} - ${cluster}`,
-      showActions: true,
-      saving,
-      saveSuccess: success,
-      saveError: error,
-      currentMode: roomMode,
-      onSave: handleSave,
-      onModeChange: handleModeChange,
-    })
-  }, [location, cluster, saving, success, error, roomMode])
-
   async function loadRoomMode() {
     setLoading(true)
     setError(null)
@@ -65,21 +46,6 @@ export default function ZoneConfig({ location: propsLocation, cluster: propsClus
       setError(err.response?.data?.detail || err.message || 'Failed to load')
     } finally {
       setLoading(false)
-    }
-  }
-
-  async function handleModeChange(modeName: string, submodeName?: string) {
-    if (!location || !cluster) return
-    
-    try {
-      const newMode = await apiClient.setRoomMode(location, cluster, { mode_name: modeName, submode_name: submodeName })
-      setRoomMode(newMode)
-      setSavedParams({ ...newMode.parameters })
-      setSuccess('Mode changed')
-      setTimeout(() => setSuccess(null), 2000)
-    } catch (err: any) {
-      logger.error('Error changing mode:', err)
-      setError(err.response?.data?.detail || 'Failed to change mode')
     }
   }
 
@@ -100,7 +66,22 @@ export default function ZoneConfig({ location: propsLocation, cluster: propsClus
     return `${h}:${m}`
   }
 
-  async function handleSave() {
+  const handleModeChange = useCallback(async (modeName: string, submodeName?: string) => {
+    if (!location || !cluster) return
+    
+    try {
+      const newMode = await apiClient.setRoomMode(location, cluster, { mode_name: modeName, submode_name: submodeName })
+      setRoomMode(newMode)
+      setSavedParams({ ...newMode.parameters })
+      setSuccess('Mode changed')
+      setTimeout(() => setSuccess(null), 2000)
+    } catch (err: any) {
+      logger.error('Error changing mode:', err)
+      setError(err.response?.data?.detail || 'Failed to change mode')
+    }
+  }, [location, cluster])
+
+  const handleSave = useCallback(async () => {
     if (!roomMode || !location || !cluster) return
 
     setSaving(true)
@@ -130,7 +111,26 @@ export default function ZoneConfig({ location: propsLocation, cluster: propsClus
     } finally {
       setSaving(false)
     }
-  }
+  }, [roomMode, location, cluster])
+
+  useEffect(() => {
+    if (location && cluster) {
+      loadRoomMode()
+    }
+  }, [location, cluster])
+
+  useEffect(() => {
+    setActions({
+      roomName: cluster === 'main' ? getLocationDisplayName(location || '') : `${getLocationDisplayName(location || '')} - ${cluster}`,
+      showActions: true,
+      saving,
+      saveSuccess: success,
+      saveError: error,
+      currentMode: roomMode,
+      onSave: handleSave,
+      onModeChange: handleModeChange,
+    })
+  }, [location, cluster, saving, success, error, roomMode, handleSave, handleModeChange])
 
   if (!location || !cluster) {
     return <div className="text-text-default">Invalid zone</div>
