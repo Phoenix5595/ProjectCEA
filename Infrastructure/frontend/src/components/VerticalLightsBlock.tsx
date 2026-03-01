@@ -127,15 +127,15 @@ export default function VerticalLightsBlock({ location, cluster, compact }: Vert
  const status = statuses[light.device_name!]
  const isOn = status && status.intensity > 0
  return (
- <div 
- key={light.device_name}
- className={`text-[14px] px-1.5 py-0.5 rounded cursor-help transition-colors ${
- isOn 
- ? 'bg-status-success-bg/50 text-status-success border border-status-success-border/50' 
- : 'bg-surface-secondary text-text-subtle border border-border-default'
- }`}
- title={`${light.display_name || light.device_name}: ${isOn ? 'Sun' : 'Moon'}`}
- >
+              <div 
+                key={light.device_name}
+                className={`text-[14px] px-1 py-0 rounded cursor-help transition-colors ${
+                  isOn 
+                    ? 'bg-status-success-bg/50 text-status-success border border-status-success-border/50' 
+                    : 'bg-surface-secondary text-text-subtle border border-border-default'
+                }`}
+                title={`${light.display_name || light.device_name}: ${isOn ? 'Sun' : 'Moon'}`}
+              >
  {isOn ? '☀️' : '🌙'}
  </div>
  )
