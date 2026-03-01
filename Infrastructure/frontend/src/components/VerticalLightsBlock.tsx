@@ -160,22 +160,22 @@ export default function VerticalLightsBlock({ location, cluster, compact }: Vert
   
   return (
 <div key={light.device_name} className={`${!isOn ? 'opacity-50' : ''} flex items-center gap-3 flex-1 min-h-0 bg-surface-secondary/30 rounded px-2`}>
-   <div className={`${compact ? 'text-[14px] w-[80px]' : 'text-[16px] w-[100px]'} text-text-secondary font-bold truncate tracking-wider shrink-0`} title={light.display_name || light.device_name}>
+   <div className={`${compact ? 'text-[14px] w-[80px]' : 'text-[16px] w-[100px]'} text-text-secondary font-bold whitespace-normal leading-tight tracking-wider shrink-0`} title={light.display_name || light.device_name}>
     {light.display_name || light.device_name}
   </div>
   
-  <div className="flex flex-col items-center justify-center gap-1 shrink-0 w-12">
-    <div className="flex flex-col items-center">
-      <span className="text-text-subtle text-[10px] leading-none mb-0.5">TGT</span>
-      <span className="bg-surface-secondary px-1 py-0.5 rounded-sm text-accent-setpoint font-mono tabular-nums text-[12px] leading-none">
+  <div className="flex flex-col justify-center gap-1 shrink-0 w-16">
+    <div className="flex items-center justify-between bg-surface-secondary px-1 py-0.5 rounded-sm">
+      <span className="text-accent-setpoint font-mono tabular-nums text-[12px] leading-none">
         {dayTarget}%
       </span>
+      <span className="text-text-subtle text-[9px] leading-none">TGT</span>
     </div>
-    <div className="flex flex-col items-center">
-      <span className="text-text-subtle text-[10px] leading-none mb-0.5">CUR</span>
-      <span className="bg-surface-secondary px-1 py-0.5 rounded-sm text-accent-data font-mono tabular-nums text-[12px] leading-none">
+    <div className="flex items-center justify-between bg-surface-secondary px-1 py-0.5 rounded-sm">
+      <span className="text-accent-data font-mono tabular-nums text-[12px] leading-none">
         {currentIntensity}%
       </span>
+      <span className="text-text-subtle text-[9px] leading-none">CUR</span>
     </div>
   </div>
   
