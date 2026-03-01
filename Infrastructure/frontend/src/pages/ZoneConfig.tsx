@@ -189,10 +189,10 @@ export default function ZoneConfig({ location: propsLocation, cluster: propsClus
             </div>
 
             {/* Light Schedule + Setpoints row - NO height constraint */}
-            <div className="flex gap-1 flex-1 min-h-0">
+            <div className="flex gap-1 h-[450px] shrink-0">
               <div className="w-[30%] h-full">
                 {!isConstant && (
-                  <div className="bg-surface-primary rounded-lg border border-border-subtle p-1 h-full flex flex-col">
+                  <div className="bg-surface-primary rounded-lg border border-border-subtle p-1 h-full flex flex-col min-w-[300px]">
                     <div className="text-[12px] text-text-muted uppercase font-bold tracking-wider mb-1">Light Schedule</div>
                     <div className="flex-1 min-h-0">
                       <CircularTimePicker
