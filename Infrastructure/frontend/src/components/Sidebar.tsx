@@ -62,7 +62,7 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onToggle }) => {
               key={item.path}
               to={item.path}
               className={`
-                flex items-center gap-3 px-2 py-2 mx-2 my-0.5 rounded-lg
+                flex items-center gap-3 px-1 py-1 mx-2 my-0.5 rounded-lg
                 transition-all duration-200
                 ${collapsed ? 'justify-center' : ''}
                 ${
