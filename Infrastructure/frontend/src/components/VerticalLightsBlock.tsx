@@ -145,8 +145,7 @@ export default function VerticalLightsBlock({ location, cluster, compact }: Vert
   {lights.length === 0 ? (
   <div className="text-text-subtle text-sm flex-1 flex items-center justify-center">No lights found</div>
   ) : (
-  <div className="flex-1 overflow-y-auto">
-  <div className="flex flex-col gap-2 h-full">
+  <div className="flex-1 overflow-hidden flex flex-col gap-2 min-h-0">
   {lights.map(light => {
   const status = statuses[light.device_name!]
   if (!status) return null
@@ -160,30 +159,29 @@ export default function VerticalLightsBlock({ location, cluster, compact }: Vert
   const isOn = status && status.intensity > 0
   
   return (
-<div key={light.device_name} className={`${!isOn ? 'opacity-50' : ''} flex items-center gap-2`}>
-   <div className={`${compact ? 'text-[14px] w-[80px]' : 'text-[16px] w-[100px]'} text-text-secondary font-medium truncate`} title={light.display_name || light.device_name}>
+<div key={light.device_name} className={`${!isOn ? 'opacity-50' : ''} flex items-center gap-3 flex-1 min-h-0 bg-surface-secondary/30 rounded px-2`}>
+   <div className={`${compact ? 'text-[14px] w-[80px]' : 'text-[16px] w-[100px]'} text-text-secondary font-bold truncate tracking-wider shrink-0`} title={light.display_name || light.device_name}>
     {light.display_name || light.device_name}
   </div>
   
-  <div className="flex items-center gap-1 shrink-0">
-   <span className="text-text-subtle text-[13px]">CUR</span>
-   <span className="bg-surface-secondary px-1 py-0.5 rounded-sm text-accent-data font-mono tabular-nums text-[13px] min-w-[32px] text-center">
-  {currentIntensity}%
-  </span>
+  <div className="flex flex-col items-center justify-center gap-1 shrink-0 w-12">
+    <div className="flex flex-col items-center">
+      <span className="text-text-subtle text-[10px] leading-none mb-0.5">TGT</span>
+      <span className="bg-surface-secondary px-1 py-0.5 rounded-sm text-accent-setpoint font-mono tabular-nums text-[12px] leading-none">
+        {dayTarget}%
+      </span>
+    </div>
+    <div className="flex flex-col items-center">
+      <span className="text-text-subtle text-[10px] leading-none mb-0.5">CUR</span>
+      <span className="bg-surface-secondary px-1 py-0.5 rounded-sm text-accent-data font-mono tabular-nums text-[12px] leading-none">
+        {currentIntensity}%
+      </span>
+    </div>
   </div>
   
-  {dayTarget > 0 && (
-  <div className="flex items-center gap-1 shrink-0">
-  <span className="text-text-subtle text-[11px]">TGT</span>
-  <span className="bg-surface-secondary px-1 py-0.5 rounded-sm text-accent-setpoint font-mono tabular-nums text-[11px] min-w-[32px] text-center">
-  {dayTarget}%
-  </span>
-  </div>
-  )}
-  
-  <div className="flex-1 flex items-center">
-  <div className={`relative w-full ${compact ? 'h-4' : 'h-5'}`}>
-  <div className="absolute inset-0 bg-surface-secondary rounded-sm overflow-hidden">
+  <div className="flex-1 flex items-center h-full py-2">
+  <div className={`relative w-full h-full min-h-[40px]`}>
+  <div className="absolute inset-0 bg-surface-secondary rounded overflow-hidden shadow-inner">
   <div 
   className="absolute top-0 bottom-0 right-0 bg-linear-to-l from-btn-primary-hover to-btn-primary-data transition-all"
   style={{ width: `${sliderPosition}%` }}
@@ -220,7 +218,7 @@ export default function VerticalLightsBlock({ location, cluster, compact }: Vert
   </div>
   </div>
   
-  <div className="flex items-center gap-0.5 shrink-0">
+  <div className="flex flex-col items-center gap-1 shrink-0 ml-3">
   <input
   type="number"
   min={0}
@@ -232,28 +230,27 @@ export default function VerticalLightsBlock({ location, cluster, compact }: Vert
   handleTargetChange(light.device_name!, value)
   }
   }}
-  className="w-12 h-5 px-1 text-[11px] text-center bg-surface-secondary border border-border-default rounded-sm text-text-input focus:outline-hidden focus:border-accent-vivid transition-colors"
-  title="Sun target %"
+  className="w-12 h-8 px-1 text-center bg-surface-secondary border border-border-default rounded-sm text-[14px] text-text-input font-mono"
   />
-  <span className="text-[11px] text-text-subtle">%</span>
+  <span className="text-[10px] text-text-subtle font-bold tracking-wide">% SET</span>
   </div>
+  
   </div>
   )
   })}
   </div>
+  )}
   
   {hasPendingChanges && (
-  <div className="pt-2 border-t border-border-subtle mt-auto">
+  <div className="mt-2 flex justify-end shrink-0">
   <button
   onClick={savePendingChanges}
-  className="w-full px-3 py-1.5 bg-accent-active hover:bg-accent-hover rounded-sm text-text-default text-xs font-bold tracking-wide transition-colors focus:outline-hidden focus:ring-2 focus:ring-accent-vivid/50"
+  className="px-4 py-1.5 bg-accent-vivid hover:bg-accent-hover text-white text-xs font-bold rounded transition-colors"
   >
-  Save Pending Changes
+  APPLY LIGHT CHANGES
   </button>
   </div>
   )}
   </div>
-  )}
- </div>
- )
+  )
 }
