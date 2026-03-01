@@ -53,6 +53,13 @@ const sectorEmojis: Record<Sector, string> = {
   devices: '⚙️',
 };
 
+const sectorDefaultNames: Record<Sector, string> = {
+  laboratory: 'Laboratory',
+  vegetation: 'Vegetation Room',
+  flower: 'Flower Room',
+  devices: 'Device Configuration',
+};
+
 const TopRibbon: React.FC<TopRibbonProps> = ({ 
   sector, 
   activeTab, 
@@ -79,15 +86,15 @@ const TopRibbon: React.FC<TopRibbonProps> = ({
 
   const activeTabId = activeTab || activeTabFromPath?.id || 'overview';
   const isControlPage = currentPath.includes('/control');
+  
+  const displayRoomName = roomName || sectorDefaultNames[sector];
 
   return (
     <div className="w-full bg-surface-secondary border-t border-b border-border-default h-[50px] flex items-center px-2 gap-2 sticky top-0 z-10">
-      {roomName && (
-        <h1 className="text-lg font-bold text-default flex items-center gap-2 whitespace-nowrap">
-          <span className="text-xl">{sectorEmojis[sector]}</span>
-          {roomName}
-        </h1>
-      )}
+      <h1 className="text-lg font-bold text-default flex items-center gap-2 whitespace-nowrap">
+        <span className="text-xl">{sectorEmojis[sector]}</span>
+        {displayRoomName}
+      </h1>
 
       <nav className="flex overflow-x-auto scrollbar-hide">
         <div className="flex min-w-max">

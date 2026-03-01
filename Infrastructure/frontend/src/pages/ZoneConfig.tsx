@@ -130,7 +130,10 @@ export default function ZoneConfig({ location: propsLocation, cluster: propsClus
       onSave: handleSave,
       onModeChange: handleModeChange,
     })
-  }, [location, cluster, saving, success, error, roomMode, handleSave, handleModeChange])
+
+    // Clear actions when leaving the page to prevent "leak" to other sectors
+    return () => setActions({});
+  }, [location, cluster, saving, success, error, roomMode, handleSave, handleModeChange, setActions])
 
   if (!location || !cluster) {
     return <div className="text-text-default">Invalid zone</div>
