@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING, Any
+
+from app.state import StateManager, get_state_manager  # type: ignore
 
 from .base import BaseRepository, logger
 
@@ -15,8 +18,21 @@ class PIDRepository(BaseRepository):
         super().__init__(pool)
 
     async def get_pid_parameters(self, device_type: str) -> dict[str, Any] | None:
-        """Get PID parameters for a device type."""
+        """Get PID parameters for a device type with cache-aside (StateManager)."""
+        # 1) Check StateManager cache first
+        state: StateManager | None = None
         try:
+            state = get_state_manager()
+            if state is not None:
+                cached = await state.get_pid_params(device_type)
+                if cached is not None:
+                    return dict(cached)
+        except Exception as e:
+            logger.debug(f"StateManager unavailable for pid.get_pid_parameters: {e}")
+
+        # 2) DB lookup on cache miss
+        try:
+            state: StateManager | None = get_state_manager()
             async with self.pool.acquire() as conn:
                 row = await conn.fetchrow(
                     """SELECT device_type, kp, ki, kd, control_mode, hysteresis_high, hysteresis_low,
@@ -25,7 +41,18 @@ class PIDRepository(BaseRepository):
                     device_type,
                 )
                 if row:
-                    return dict(row)
+                    result = dict(row)
+                    # 3) Populate cache in StateManager for future fast reads
+                    try:
+                        if state is not None:
+                            kp = result.get("kp")
+                            ki = result.get("ki")
+                            kd = result.get("kd")
+                            if kp is not None and ki is not None and kd is not None:
+                                await state.set_pid_params(device_type, kp, ki, kd, source="db")
+                    except Exception:
+                        pass
+                    return result
         except Exception as e:
             logger.error(f"Failed to get PID parameters: {e}")
         return None
@@ -69,6 +96,14 @@ class PIDRepository(BaseRepository):
                         source,
                         updated_by,
                     )
+                    # Invalidate PID parameter caches on write
+                    try:
+                        state = get_state_manager()
+                        if state is not None:
+                            await state.delete(f"pid:parameters:{device_type}")
+                            await state.delete("pid:parameters:all")
+                    except Exception:
+                        pass
                 return True
         except Exception as e:
             logger.error(f"Failed to set PID parameters: {e}")
@@ -94,7 +129,29 @@ class PIDRepository(BaseRepository):
             return []
 
     async def get_all_pid_parameters(self) -> list[dict[str, Any]]:
-        """Get all PID parameters."""
+        """Get all PID parameters with cache-aside support."""
+        # Try StateManager cache first
+        try:
+            state = get_state_manager()
+            if state is not None:
+                cached_all = await state.get("pid:parameters:all")
+                if cached_all is not None:
+                    data = cached_all
+                    if isinstance(data, (bytes, bytearray)):
+                        data = data.decode()
+                    if isinstance(data, str):
+                        try:
+                            data_list = json.loads(data)
+                            if isinstance(data_list, list):
+                                return data_list
+                        except Exception:
+                            pass
+                    if isinstance(data, list):
+                        return data
+        except Exception:
+            pass
+
+        # DB lookup on miss
         try:
             async with self.pool.acquire() as conn:
                 rows = await conn.fetch(
@@ -102,13 +159,38 @@ class PIDRepository(BaseRepository):
                               source, updated_by, updated_at
                        FROM pid_parameters ORDER BY device_type"""
                 )
-                return [dict(row) for row in rows]
+                data = [dict(row) for row in rows]
         except Exception as e:
             logger.error(f"Failed to get all PID parameters: {e}")
             return []
 
+        # Populate cache
+        try:
+            state = get_state_manager()
+            if state is not None:
+                await state.set("pid:parameters:all", json.dumps(data), ttl=300)
+        except Exception:
+            pass
+
+        return data
+
     async def get_pid_control_mode(self, device_type: str) -> dict[str, Any] | None:
         """Get PID control mode and hysteresis for device type."""
+        # 1) Try StateManager cache first
+        try:
+            state = get_state_manager()
+            if state is not None:
+                cached = await state.get_pid_params(device_type)
+                if isinstance(cached, dict):
+                    return {
+                        "control_mode": cached.get("control_mode"),
+                        "hysteresis_high": cached.get("hysteresis_high"),
+                        "hysteresis_low": cached.get("hysteresis_low"),
+                    }
+        except Exception:
+            pass
+
+        # 2) DB lookup on cache miss
         try:
             async with self.pool.acquire() as conn:
                 row = await conn.fetchrow(
@@ -147,20 +229,46 @@ class PIDRepository(BaseRepository):
                     hysteresis_low,
                     updated_by,
                 )
+                # Invalidate caches on write
+                try:
+                    state = get_state_manager()
+                    if state is not None:
+                        await state.delete(f"pid:parameters:{device_type}")
+                        await state.delete("pid:parameters:all")
+                except Exception:
+                    pass
                 return True
         except Exception as e:
             logger.error(f"Failed to set control mode: {e}")
             return False
 
     async def get_autotune_state(self, device_type: str) -> dict[str, Any] | None:
-        """Get autotune state for device type."""
+        """Get autotune state for device type with cache-aside."""
+        state: StateManager | None = None
+        # Check cache first via StateManager
+        try:
+            state = get_state_manager()
+            if state is not None:
+                cached = await state.get_autotune_state(device_type)
+                if cached is not None:
+                    return dict(cached)
+        except Exception:
+            pass
+        # DB lookup
         try:
             async with self.pool.acquire() as conn:
                 row = await conn.fetchrow(
                     """SELECT * FROM pid_autotune_state WHERE device_type = $1""", device_type
                 )
                 if row:
-                    return dict(row)
+                    result = dict(row)
+                    # Cache result
+                    try:
+                        if state is not None:
+                            await state.set_autotune_state(device_type, result, ttl=300)
+                    except Exception:
+                        pass
+                    return result
         except Exception as e:
             logger.error(f"Failed to get autotune state: {e}")
         return None
@@ -215,6 +323,13 @@ class PIDRepository(BaseRepository):
                         f"UPDATE pid_autotune_state SET {update_clause}, last_update = NOW() WHERE device_type = $1",
                         *params,
                     )
+                # Invalidate autotune cache on write
+                try:
+                    st = get_state_manager()
+                    if st is not None:
+                        await st.delete(f"pid:autotune:{device_type}")
+                except Exception:
+                    pass
                 return True
         except Exception as e:
             logger.error(f"Failed to update autotune state: {e}")
@@ -297,6 +412,14 @@ class PIDRepository(BaseRepository):
                         f"PID parameters updated for {device_type}: Kp={kp}, Ki={ki}, Kd={kd} (reason: {change_reason})"
                     )
 
+                # Invalidate caches on write
+                try:
+                    state = get_state_manager()
+                    if state is not None:
+                        await state.delete(f"pid:parameters:{device_type}")
+                        await state.delete("pid:parameters:all")
+                except Exception:
+                    pass
                 return True
         except Exception as e:
             logger.error(f"Failed to set PID parameters with reason: {e}")

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from shared.logging import get_logger
+from shared.infra_logging import get_logger
 
 from .modbus_rtu import ModbusRTU
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING, Any
 
-from shared.logging import get_logger
+from shared.infra_logging import get_logger
 
 if TYPE_CHECKING:
     import redis

@@ -540,7 +540,7 @@ export default function CircularTimePicker({
               className={`w-full h-6 text-[16px] text-center bg-gray-800 border border-gray-700 rounded text-gray-200 [&::-webkit-calendar-picker-indicator]:hidden ${
                 lockedPhotoperiodHours !== null && lockedPhotoperiodHours !== undefined ? 'opacity-50 cursor-not-allowed' : ''
               }`}
-              style={{ padding: '0 2px' }}
+              style={{ padding: '0 2px', width: '4rem' }}
             />
           </div>
           {onRampUpChange && rampUpDuration !== undefined && (
@@ -573,7 +573,7 @@ export default function CircularTimePicker({
               className={`w-full h-6 text-[16px] text-center bg-gray-800 border border-gray-700 rounded text-gray-200 [&::-webkit-calendar-picker-indicator]:hidden ${
                 lockedPhotoperiodHours !== null && lockedPhotoperiodHours !== undefined ? 'opacity-50 cursor-not-allowed' : ''
               }`}
-              style={{ padding: '0 2px' }}
+              style={{ padding: '0 2px', width: '4rem' }}
             />
           </div>
           {onRampDownChange && rampDownDuration !== undefined && (
@@ -601,4 +601,3 @@ export default function CircularTimePicker({
     </div>
   )
 }
-

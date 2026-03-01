@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-from shared.logging import get_logger
+from shared.infra_logging import get_logger
 
 """
 DFR0971 2-Channel I2C 0-10V DAC Module Driver

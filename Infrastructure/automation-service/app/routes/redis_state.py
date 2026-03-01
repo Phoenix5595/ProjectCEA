@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from app.database import DatabaseManager
 from app.redis_client import AutomationRedisClient
 from app.routes.schedules import _build_schedule_state
-from shared.logging import get_logger
+from shared.infra_logging import get_logger
 
 logger = get_logger(__name__)
 

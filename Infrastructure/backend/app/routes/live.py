@@ -8,7 +8,7 @@ from fastapi import APIRouter, HTTPException
 
 from app.models import LiveSensorValue, LiveSnapshotResponse
 from app.redis_client import get_all_sensor_timestamps, get_all_sensor_values
-from shared.logging import get_logger
+from shared.infra_logging import get_logger
 
 logger = get_logger(__name__)
 

@@ -1,9 +1,9 @@
 {
-  "active_plan": "/home/antoine/ProjectCEA/.sisyphus/plans/mode-switch-architecture-fix.md",
-  "started_at": "2026-02-09T11:35:25.342Z",
+  "active_plan": "/home/antoine/ProjectCEA/.sisyphus/plans/grafana-iframe-fix.md",
+  "started_at": "2026-03-01T18:14:54.936Z",
   "session_ids": [
-    "ses_3bf732ae6ffeQaqp0iBzP1XDac",
     "ses_3a6d527bdffeqOgnyYXLIwqVDc"
   ],
-  "plan_name": "mode-switch-architecture-fix"
+  "plan_name": "grafana-iframe-fix",
+  "agent": "atlas"
 }

@@ -24,7 +24,7 @@ from app.routes import config, live, sensor_data, sensors
 from app.websocket import websocket_manager
 
 # Local imports
-from shared.logging import setup_structured_logging
+from shared.infra_logging import setup_structured_logging
 
 # Configure structured logging
 logger = setup_structured_logging(
@@ -90,9 +90,14 @@ async def lifespan(app: FastAPI):
     # Startup: Start background tasks
     try:
         from app.background_tasks import broadcast_latest_sensor_data
+        from app.events.consumer import ConfigEventConsumer
 
         background_task = asyncio.create_task(broadcast_latest_sensor_data())
         logger.info("✅ Background broadcast task started")
+
+        config_consumer = ConfigEventConsumer()
+        await config_consumer.start()
+        logger.info("✅ Config event consumer started")
 
         # Monitor shutdown event
         async def monitor_shutdown():
@@ -150,6 +155,13 @@ async def lifespan(app: FastAPI):
                 logger.debug("Shutdown monitor cancelled")
             except Exception as e:
                 logger.warning(f"⚠️  Error cancelling shutdown monitor: {e}")
+
+        if "config_consumer" in locals():
+            try:
+                await config_consumer.stop()
+                logger.info("✅ Config event consumer stopped")
+            except Exception as e:
+                logger.warning(f"⚠️  Error stopping config event consumer: {e}")
 
         logger.info(f"✅ Shutdown complete (final reason: {shutdown_reason})")
 

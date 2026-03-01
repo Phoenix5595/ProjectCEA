@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from shared.logging import get_logger
+from shared.infra_logging import get_logger
 
 if TYPE_CHECKING:
     import redis

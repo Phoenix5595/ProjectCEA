@@ -131,6 +131,94 @@ sudo systemctl restart automation-service
 
 ---
 
+## REDIS ARCHITECTURE (Feb 2026)
+
+### Key Schema (cea:* prefix)
+
+All Redis keys follow the standardized schema:
+
+```
+cea:sensor:{location}:{cluster}:{sensor_type}  → Current sensor value
+cea:setpoint:{location}:{cluster}:{device}    → Target values
+cea:schedule:{location}:{cluster}             → Active schedules
+cea:ramp:{location}:{cluster}:{device}        → Active ramp state
+cea:mode:{location}:{cluster}                 → Current mode (CRITICAL - no TTL)
+cea:alarm:{location}:{cluster}:{alarm_type}   → Active alarms
+cea:pid:{device_type}                          → PID parameters
+cea:heartbeat:{service_name}                  → Service liveness
+cea:config:{config_type}:{id}                 → Configuration snapshots
+```
+
+### TTL Strategy
+
+| Category      | Data Type              | TTL      | Rationale                         |
+| ------------ | --------------------- | -------- | -------------------------------- |
+| **Critical** | mode, failsafe        | None     | Must survive restart              |
+| **Runtime**  | setpoints, ramps     | 60s      | Refreshes frequently              |
+| **Transient**| sensor values        | 10s      | Always fresh                     |
+| **Cached**   | schedules, PID       | 300s     | Cache-aside, refresh on write    |
+
+### Key Modules
+
+| Module | Purpose |
+|--------|---------|
+| `app/redis/schema.py` | Key pattern constants and builders |
+| `app/redis/ttl.py` | TTL category constants |
+| `app/redis/validation.py` | Schema validation mixin |
+| `app/redis/migrate.py` | Key migration with rollback |
+
+### StateManager
+
+`app/state/__init__.py` provides in-memory caching with TTL and Redis fallback:
+
+```python
+from app.state import StateManager, get_state_manager
+
+# Enable schema validation (optional)
+state = StateManager(default_ttl=60.0, validate_keys=True)
+
+# Cache-aside pattern
+value = await state.get_mode("Flower Room", "main")
+await state.set_mode("Flower Room", "main", "DAY", ttl=300)
+```
+
+---
+
+## EVENT BUS ARCHITECTURE (Feb 2026)
+
+### Dual-Publish Pattern
+
+Config changes publish to both in-memory queue AND Redis Streams:
+
+- **In-memory**: `asyncio.Queue` for same-process handlers
+- **Redis Streams**: `cea:events:config` for cross-service propagation
+
+### Key Modules
+
+| Module | Purpose |
+|--------|---------|
+| `app/events/__init__.py` | ConfigEventBus (in-memory + Redis dual-publish) |
+| `app/events/redis_streams.py` | RedisStreamPublisher |
+| `app/events/consumer.py` | RedisEventConsumer (reads from stream) |
+
+### Usage
+
+```python
+from app.events import ConfigEventBus, ConfigChangeEvent, ConfigEventType, get_event_bus
+
+# Publish event
+event = ConfigChangeEvent(
+    event_type=ConfigEventType.SCHEDULE_CHANGED,
+    location="Flower Room",
+    cluster="main",
+    config_type="schedules",
+    data={"action": "updated", "schedule_id": 123}
+)
+await get_event_bus().publish(event)
+```
+
+---
+
 ## FUTURE: MULTI-CLUSTER SUPPORT
 
 ### Cluster Naming Convention
@@ -369,4 +457,40 @@ print(f"VPD: {state.vpd_kpa:.2f} kPa")
 
 # Get target humidity for desired VPD
 target_rh = vpd.calculate_target_humidity(target_vpd=1.0, air_temp_c=25.0)
+```
+
+---
+
+## METRICS (Feb 2026)
+
+### Redis Metrics
+
+`app/metrics/redis_metrics.py` tracks cache hit/miss and latency:
+
+```python
+from app.metrics import RedisMetrics
+
+metrics = RedisMetrics()
+metrics.track_hit()
+metrics.track_miss()
+metrics.track_operation_latency("set_get", 5.2)
+
+stats = metrics.get_stats()
+# {'hits': 1, 'misses': 1, 'hit_rate_percent': 50.0, 'latency': {...}}
+```
+
+### Event Metrics
+
+`app/metrics/event_metrics.py` tracks event publish/consume:
+
+```python
+from app.metrics import EventMetrics
+
+events = EventMetrics()
+events.track_published("SCHEDULE_CHANGED")
+events.track_consumed("SCHEDULE_CHANGED")
+events.track_processing_latency("SCHEDULE_CHANGED", 12.5)
+
+stats = events.get_stats()
+# {'published': {'SCHEDULE_CHANGED': 1}, 'consumed': {...}, 'latency_ms': {...}}
 ```

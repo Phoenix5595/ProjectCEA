@@ -186,7 +186,6 @@ def get_flag(flag_name: str, default: bool = False) -> bool:
         try:
             import redis
 
-
             # Create a raw Redis client for feature flags
             redis_client = redis.Redis.from_url(os.getenv("REDIS_URL", "redis://localhost:6379"))
             _default_manager = FeatureFlagManager(redis_client)

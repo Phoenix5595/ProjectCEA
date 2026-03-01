@@ -859,7 +859,7 @@ Wave 7 (Parallel):
 
 ---
 
-- [ ] 10. Test Infrastructure + Visual QA
+- [x] 10. Test Infrastructure + Visual QA
 
   **What to do**:
   - Create `vitest.config.ts`:
@@ -903,7 +903,7 @@ Wave 7 (Parallel):
 
 ---
 
-- [ ] 11. Dev Server Deployment (port 3002)
+- [x] 11. Dev Server Deployment (port 3002)
 
   **What to do**:
   - Update `vite.config.ts` in the UI worktree:

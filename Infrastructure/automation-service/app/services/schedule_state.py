@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from shared.logging import get_logger
+from shared.infra_logging import get_logger
 
 if TYPE_CHECKING:
     from asyncpg import Pool

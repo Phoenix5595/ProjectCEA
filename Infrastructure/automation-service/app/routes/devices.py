@@ -12,7 +12,7 @@ from app.config import ConfigLoader
 from app.control.relay_manager import RelayManager
 from app.database import DatabaseManager
 from app.validation import validate_device_mapping
-from shared.logging import get_logger
+from shared.infra_logging import get_logger
 
 logger = get_logger(__name__)
 

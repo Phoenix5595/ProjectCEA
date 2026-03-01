@@ -12,8 +12,9 @@ from app.config import ConfigLoader
 from app.database import DatabaseManager
 from app.redis_client import AutomationRedisClient
 from app.routes.schedules import _build_schedule_state
+from app.state import get_state_manager
 from app.validation import validate_setpoint
-from shared.logging import get_logger
+from shared.infra_logging import get_logger
 
 logger = get_logger(__name__)
 
@@ -81,7 +82,9 @@ async def get_setpoints(
     Returns:
         Dict with setpoint values including mode and vpd
     """
-    setpoints = await database.setpoint_repo.get_setpoint(location, cluster, mode)
+    # Fetch from StateManager cache (Redis-backed)
+    state = get_state_manager()
+    setpoints = await state.get_setpoint(location, cluster)
     if not setpoints:
         # Return empty setpoint object instead of 404, so frontend can always display the form
         # This allows the form to show empty fields when no setpoint exists yet
@@ -232,37 +235,17 @@ async def update_setpoints(
             f"VPD ramp_in_duration is {final_ramp_in} minutes (>15 min). This may cause stomatal shock, humidity overshoot, or condensation events."
         )
 
-    # Write to database and Redis with source='api'
+    # Write to StateManager (Redis) with TTLs (setpoints) and note the API source
     try:
-        success, new_updated_at = await database.setpoint_repo.set_setpoint(
+        state = get_state_manager()
+        await state.set_setpoint(
             location,
             cluster,
             final_heat,
             final_cool,
             final_hum,
             final_co2,
-            final_vpd,
-            setpoints.mode,
-            final_ramp_in,
-            source="api",
-            expected_version=expected_version_dt,
         )
-
-        if not success:
-            # Check if it's a version conflict
-            if expected_version_dt is not None and new_updated_at is not None:
-                current_version_str = new_updated_at.isoformat()
-                expected_version_str = expected_version_dt.isoformat()
-                raise HTTPException(
-                    status_code=409,
-                    detail={
-                        "detail": "Conflict: This record was modified by another user. Please refresh and try again.",
-                        "conflict_type": "version_mismatch",
-                        "current_version": current_version_str,
-                        "expected_version": expected_version_str,
-                    },
-                )
-            raise HTTPException(status_code=500, detail="Failed to update setpoints in database.")
     except ValueError as e:
         logger.error(f"Configuration error in update_setpoints: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Configuration error: {e}") from e
@@ -333,8 +316,8 @@ async def update_setpoints(
             changes=changes,
         )
 
-    # Get updated setpoint to broadcast
-    updated_setpoint = await database.setpoint_repo.get_setpoint(location, cluster, setpoints.mode)
+    # Get updated setpoint to broadcast (from StateManager)
+    updated_setpoint = await state.get_setpoint(location, cluster)
 
     # Broadcast update to all WebSocket clients
     try:
@@ -369,9 +352,7 @@ async def update_setpoints(
         },
         "warnings": warnings,
         "success": True,
-        "updated_at": str(updated_setpoint.get("updated_at"))
-        if updated_setpoint and updated_setpoint.get("updated_at")
-        else None,
+        "updated_at": str(int(__import__("time").time() * 1000)),
     }
 
 
@@ -379,36 +360,18 @@ async def update_setpoints(
 async def get_effective_setpoints(
     location: str, cluster: str, database: DatabaseManager = Depends(get_database)
 ) -> dict[str, Any]:
-    """Get currently effective setpoints from database (real-time values used by control loop)."""
-    try:
-        pool = await database._get_pool()
-        if pool is None:
-            raise HTTPException(status_code=500, detail="Database pool not initialized")
-        async with pool.acquire() as conn:
-            row = await conn.fetchrow(
-                """
-                SELECT
-                    effective_heating_setpoint, effective_cooling_setpoint,
-                    effective_vpd_setpoint, nominal_heating_setpoint,
-                    nominal_cooling_setpoint, nominal_vpd_setpoint, mode
-                FROM effective_setpoints
-                WHERE location = $1 AND cluster = $2 AND device_name = 'Main'
-                ORDER BY timestamp DESC LIMIT 1
-            """,
-                location,
-                cluster,
-            )
-
-            if row:
-                return {
-                    "heating_setpoint": row["effective_heating_setpoint"],
-                    "cooling_setpoint": row["effective_cooling_setpoint"],
-                    "vpd": row["effective_vpd_setpoint"],
-                    "nominal_heating_setpoint": row["nominal_heating_setpoint"],
-                    "nominal_cooling_setpoint": row["nominal_cooling_setpoint"],
-                    "nominal_vpd_setpoint": row["nominal_vpd_setpoint"],
-                    "mode": row["mode"],
-                }
-            return {}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e)) from e
+    """Get currently effective setpoints from StateManager (Redis-backed)."""
+    # Prefer Redis-backed effective setpoints via StateManager
+    state = get_state_manager()
+    effective = await state.get_effective_setpoints(location, cluster)
+    if effective is None:
+        return {}
+    return {
+        "heating_setpoint": effective.get("heating_setpoint"),
+        "cooling_setpoint": effective.get("cooling_setpoint"),
+        "vpd": effective.get("vpd"),
+        # Humidity is part of effective setpoints in some configurations
+        "humidity": effective.get("humidity"),
+        "co2": effective.get("co2"),
+        "mode": effective.get("mode"),
+    }

@@ -15,7 +15,7 @@ from app.database import DatabaseManager
 from app.redis_client import AutomationRedisClient
 
 # Local imports
-from shared.logging import get_logger
+from shared.infra_logging import get_logger
 
 from .models import ScheduleCreate, ScheduleUpdate
 from .utils import (

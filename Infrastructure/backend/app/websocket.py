@@ -74,6 +74,35 @@ class WebSocketManager:
         for conn in disconnected:
             self.disconnect(conn, location)
 
+    async def broadcast_config_event(
+        self,
+        location: str,
+        payload: dict[str, object],
+    ) -> None:
+        """Broadcast a config change event to WebSocket clients.
+
+        Sends to clients subscribed to the given *location*.  If the location
+        is ``"unknown"`` or ``"all"``, the event is broadcast to **every**
+        connected client.
+        """
+        message_json = json.dumps(payload, default=str)
+
+        if location in ("unknown", "all"):
+            target_locations = list(self.active_connections.keys())
+        else:
+            target_locations = [location] if location in self.active_connections else []
+
+        for loc in target_locations:
+            disconnected: set[WebSocket] = set()
+            for connection in self.active_connections.get(loc, set()):
+                try:
+                    await connection.send_text(message_json)
+                except Exception:
+                    disconnected.add(connection)
+
+            for conn in disconnected:
+                self.disconnect(conn, loc)
+
 
 # Global WebSocket manager instance
 websocket_manager = WebSocketManager()

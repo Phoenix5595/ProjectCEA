@@ -6,6 +6,7 @@ from fastapi import FastAPI
 
 from app.routes import (
     alarms,
+    debug,
     devices,
     failsafe,
     hardware,
@@ -20,9 +21,8 @@ from app.routes import (
     setpoints,
     status,
     websocket,
-    debug,
 )
-from shared.logging import get_logger
+from shared.infra_logging import get_logger
 
 logger = get_logger(__name__)
 

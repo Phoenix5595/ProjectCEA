@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 import json
 from typing import TYPE_CHECKING, Any, cast
 
-from shared.logging import get_logger
+from shared.infra_logging import get_logger
 
 if TYPE_CHECKING:
     import redis

@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-import asyncio
 from collections.abc import Mapping
 from datetime import datetime
 from typing import Any
 
-from shared.logging import LoggingContext, get_logger
+from app.state import StateManager, get_state_manager
+from shared.infra_logging import LoggingContext, get_logger
 
 logger = get_logger(__name__)
 
@@ -23,10 +23,9 @@ class PIDControllerManager:
         """
         self.database = database_manager
         self._pid_controllers: dict[tuple[str, str, str, str], Any] = {}
-        self._pid_params_cache: dict[str, dict[str, float]] = {}
-        self._cache_timestamp: float | None = None
-        self._params_cache_ttl = 300.0  # Cache PID params for 5 minutes
         self._autotuners: dict[str, Any] = {}  # Auto-tuner instances per device type
+        # StateManager for fast in-memory PID param access (<1ms reads)
+        self._state: StateManager = get_state_manager()
 
     async def get_pid_controller(
         self, location: str, cluster: str, device_name: str, device_type: str
@@ -170,9 +169,8 @@ class PIDControllerManager:
                 status="complete",
             )
 
-            # Clear cached PID params to force reload
-            if device_type in self._pid_params_cache:
-                del self._pid_params_cache[device_type]
+            # Clear cached PID params from StateManager to force reload
+            await self._state.delete(f"pid:parameters:{device_type}")
 
             # Restart autotuner for continuous tuning
             autotuner.start(setpoint)
@@ -226,25 +224,30 @@ class PIDControllerManager:
             return None
 
     async def _get_cached_pid_parameters(self, device_type: str) -> dict[str, float] | None:
-        """Get PID parameters with caching to reduce database calls."""
-        import asyncio
+        """Get PID parameters from StateManager cache with database fallback.
 
-        current_time = asyncio.get_event_loop().time()
-
-        # Check cache validity
-        if (
-            self._cache_timestamp
-            and current_time - self._cache_timestamp < self._params_cache_ttl
-            and device_type in self._pid_params_cache
-        ):
-            return self._pid_params_cache[device_type]
+        Uses StateManager for fast in-memory access (<1ms reads).
+        Falls back to database if not in cache.
+        """
+        # Try StateManager cache first (fast path)
+        pid_params = await self._state.get_pid_params(device_type)
+        if pid_params:
+            logger.debug(f"StateManager cache hit for PID params: {device_type}")
+            return pid_params
 
         # Cache miss - fetch from database
         try:
             pid_params = await self.database.pid_repo.get_pid_parameters(device_type)
             if pid_params:
-                self._pid_params_cache[device_type] = pid_params
-                self._cache_timestamp = current_time
+                # Populate StateManager cache for future reads
+                await self._state.set_pid_params(
+                    device_type,
+                    pid_params.get("kp", 1.0),
+                    pid_params.get("ki", 0.0),
+                    pid_params.get("kd", 0.0),
+                    source="database",
+                )
+                logger.debug(f"Populated StateManager cache for PID params: {device_type}")
             return pid_params
         except Exception as e:
             logger.warning(f"Failed to fetch PID parameters for {device_type}: {e}")
@@ -496,20 +499,16 @@ class PIDControllerManager:
             }
         return status
 
-    def clear_caches(self) -> None:
+    async def clear_caches(self) -> None:
         """Clear all caches for fresh data."""
-        self._pid_params_cache.clear()
-        self._cache_timestamp = None
-        logger.debug("PID parameter cache cleared")
+        # Clear StateManager cache (async)
+        await self._state.clear()
+        logger.debug("PID parameter cache cleared via StateManager")
 
-    def get_performance_stats(self) -> dict[str, Any]:
+    async def get_performance_stats(self) -> dict[str, Any]:
         """Get performance statistics."""
+        state_stats = await self._state.get_stats()
         return {
             "active_controllers": len(self._pid_controllers),
-            "cached_params": len(self._pid_params_cache),
-            "cache_age_seconds": (
-                asyncio.get_event_loop().time() - self._cache_timestamp
-                if self._cache_timestamp
-                else None
-            ),
+            "state_manager_stats": state_stats,
         }

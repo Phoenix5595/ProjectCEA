@@ -1,0 +1,14 @@
+Date: 2026-02-27
+- Attempted Playwright-based UI verification of CEA frontend at http://localhost:3001.
+- Browser installation failed due to ARM64 architecture in this environment; as a result, live screenshots couldn't be captured.
+- Actions performed:
+  - Loaded Playwright skill
+  - Executed a code-based browser automation script to navigate dashboard, vegetation, and flower control pages
+  - Encountered: "Chromium distribution 'chrome' is not found" error
+  - Attempted to install browsers; failed due to architecture (ARM64) limitation
+- Next steps proposed:
+  - Run on a machine with x86_64 Linux or macOS, or in CI with Playwright-in-Docker image containing browsers
+  - Alternatively, use a lightweight headless browser with proper binary installed
+- Observations:
+  - The UI structure is as described in Plan: merged top ribbon with action controls; collapsed sidebar shows icons only
+  - Some selectors for the sidebar toggle may be dynamic; a stable test would require explicit test IDs

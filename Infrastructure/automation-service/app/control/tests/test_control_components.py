@@ -6,7 +6,7 @@ import asyncio
 import pytest
 from datetime import datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
-from shared.logging import get_logger
+from shared.infra_logging import get_logger
 
 # Import the components we're testing
 from app.control.sensor_data_manager import SensorDataManager

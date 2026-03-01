@@ -24,7 +24,7 @@ from app.processor import (  # noqa: E402
     validate_decoded_data,
 )
 from app.writer import DataWriter  # noqa: E402
-from shared.logging import setup_structured_logging  # noqa: E402
+from shared.infra_logging import setup_structured_logging  # noqa: E402
 
 # Configure structured logging
 logger = setup_structured_logging(
@@ -171,8 +171,8 @@ def process_can_message(msg):
         # Get raw data
         raw_data = " ".join(f"{b:02X}" for b in msg.data)
 
-        # Get timestamp
-        timestamp = datetime.now()
+        # Get timestamp (use UTC for database consistency)
+        timestamp = datetime.utcnow()
         timestamp_ms = int(timestamp.timestamp() * 1000)
 
         # Extract sensor values (this also calculates RH/VPD if PT100 message)

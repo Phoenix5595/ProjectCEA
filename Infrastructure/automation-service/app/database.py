@@ -13,7 +13,7 @@ import asyncpg
 import redis
 
 # Local imports
-from shared.logging import get_logger
+from shared.infra_logging import get_logger
 
 from .migrations import create_room_modes_tables, run_alembic_migrations
 from .redis_client import AutomationRedisClient

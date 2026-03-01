@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
-from shared.logging import LoggingContext, get_logger
+from shared.infra_logging import LoggingContext, get_logger
 
 if TYPE_CHECKING:
     from ..database import DatabaseManager

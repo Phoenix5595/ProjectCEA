@@ -7,7 +7,7 @@ import asyncio
 from app.alarm_manager import AlarmManager
 from app.control.control_engine import ControlEngine
 from app.database import DatabaseManager
-from shared.logging import get_logger
+from shared.infra_logging import get_logger
 
 logger = get_logger(__name__)
 
@@ -47,8 +47,8 @@ class BackgroundTasks:
         self._heartbeat_task: asyncio.Task | None = None
         self._auto_persist_task: asyncio.Task | None = None
         self._setpoint_history_task: asyncio.Task | None = None
-        self._schedule_refresh_task: asyncio.Task | None = None
         self._batch_flush_task: asyncio.Task | None = None
+        self._config_event_task: asyncio.Task | None = None
 
     async def start(self) -> None:
         """Start background control loop and tasks."""
@@ -61,11 +61,14 @@ class BackgroundTasks:
         self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
         self._auto_persist_task = asyncio.create_task(self._auto_persist_loop())
         self._setpoint_history_task = asyncio.create_task(self._setpoint_history_loop())
-        self._schedule_refresh_task = asyncio.create_task(self._schedule_refresh_loop())
+        # Schedule refresh loop removed: event-driven via config events
         self._batch_flush_task = asyncio.create_task(self._batch_flush_loop())
-        logger.info(f"Background control loop started (interval: {self.update_interval}s)")
+        self._config_event_task = asyncio.create_task(self._config_event_consumer_loop())
         logger.info(
-            "Heartbeat, auto-persist, setpoint history, schedule refresh, and batch flush tasks started"
+            f"Background control loop started (interval: {self.update_interval}s) - event-driven schedule refresh"
+        )
+        logger.info(
+            "Heartbeat, auto-persist, setpoint history, batch flush, and config event consumer tasks started"
         )
 
     async def stop(self) -> None:
@@ -78,8 +81,8 @@ class BackgroundTasks:
             self._heartbeat_task,
             self._auto_persist_task,
             self._setpoint_history_task,
-            self._schedule_refresh_task,
             self._batch_flush_task,
+            self._config_event_task,
         ]
         for task in tasks:
             if task:
@@ -268,29 +271,7 @@ class BackgroundTasks:
             except Exception as e:
                 logger.error(f"Error in setpoint history loop: {e}", exc_info=True)
 
-    async def _schedule_refresh_loop(self) -> None:
-        """Schedule refresh task - reloads schedules from database."""
-        refresh_interval = 60  # Every minute
-
-        while self._running:
-            try:
-                await asyncio.sleep(refresh_interval)
-
-                if not self.database._db_connected:
-                    continue
-
-                # Refresh schedules (worker pattern execution)
-                db_schedules = await self.database.schedule_repo.get_schedules()
-
-                # Update scheduler in control engine
-                if self.control_engine.scheduler:
-                    self.control_engine.scheduler.update_schedules(db_schedules)
-                    logger.info(f"Refreshed {len(db_schedules)} schedules from database")
-
-            except asyncio.CancelledError:
-                break
-            except Exception as e:
-                logger.error(f"Error refreshing schedules: {e}", exc_info=True)
+    # Removed legacy _schedule_refresh_loop in favor of event-driven config changes
 
     async def _batch_flush_loop(self) -> None:
         """Batch flush task - periodically flushes batched database writes."""
@@ -309,3 +290,49 @@ class BackgroundTasks:
                 break
             except Exception as e:
                 logger.error(f"Error in batch flush loop: {e}", exc_info=True)
+
+    async def _config_event_consumer_loop(self) -> None:
+        """Consume config change events and update scheduler immediately.
+
+        This runs as a background task that subscribes to the ConfigEventBus
+        and reacts to configuration changes by updating the scheduler immediately
+        (bypassing the 60-second refresh interval).
+
+        Events handled:
+        - RAMP_TIMES_CHANGED: Refreshes schedules from database and updates scheduler
+        """
+        from app.events import ConfigEventType, get_event_bus
+
+        event_bus = get_event_bus()
+        logger.info("Config event consumer started")
+
+        try:
+            async for event in event_bus.subscribe():
+                try:
+                    logger.info(
+                        "Processing config event: "
+                        + f"{event.event_type.value} for {event.location}/{event.cluster}"
+                    )
+
+                    if event.event_type == ConfigEventType.RAMP_TIMES_CHANGED:
+                        # Fetch fresh schedules and update scheduler
+                        if not self.database._db_connected:
+                            logger.warning(
+                                "Database not connected, cannot refresh schedules for event"
+                            )
+                            continue
+
+                        db_schedules = await self.database.schedule_repo.get_schedules()
+                        if self.control_engine.scheduler:
+                            self.control_engine.scheduler.update_schedules(db_schedules)
+                            logger.info(
+                                "Scheduler updated with "
+                                + f"{len(db_schedules)} schedules after config change event"
+                            )
+
+                except Exception as e:
+                    logger.error(f"Error processing config event: {e}", exc_info=True)
+
+        except asyncio.CancelledError:
+            logger.info("Config event consumer stopped")
+            raise
