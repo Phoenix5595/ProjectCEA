@@ -20,13 +20,13 @@ export default function GrafanaPanel({
   const heightStyle = typeof height === 'number' ? `${height}px` : height
 
   return (
-    <div className="w-full flex flex-col">
+    <div className="w-full h-full flex flex-col">
       {title && !timeRange && (
         <h3 className="text-sm font-semibold mb-2 text-text-default">{title}</h3>
       )}
       <div
-        className="w-full rounded-lg overflow-hidden border border-border-default"
-        style={{ height: heightStyle, minHeight: '100px' }}
+        className="w-full rounded-lg overflow-hidden border border-border-default flex-grow"
+        style={{ height: heightStyle }}
       >
         <iframe
           src={embedUrl}
