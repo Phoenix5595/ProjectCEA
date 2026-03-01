@@ -13,7 +13,6 @@ interface NavItem {
 }
 
 const navItems: NavItem[] = [
-  { label: 'Overview', path: '/', icon: '🏠' },
   { label: 'Laboratory', path: '/laboratory', icon: '🔬' },
   { label: 'Vegetation', path: '/vegetation/monitoring', icon: '🌱' },
   { label: 'Flower', path: '/flower/monitoring', icon: '🌸' },
@@ -43,30 +42,13 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onToggle }) => {
     >
       {/* Logo / Header */}
       <div className="flex items-center justify-center p-3 border-b border-border-default h-[50px]">
-        <img src="/logo.png" alt="CEA" className="w-6 h-6" />
+        <Link to="/">
+          <img src="/logo.png" alt="CEA" className="w-6 h-6" />
+        </Link>
       </div>
 
       {/* Navigation */}
       <nav className="flex-1 flex flex-col py-2 overflow-y-auto">
-        {/* Overview - Always visible */}
-        <Link
-          to={overviewItem.path}
-          className={`
-            flex items-center gap-3 px-3 py-2.5 mx-2 my-0.5 rounded-lg
-            transition-all duration-200
-            ${
-              location.pathname === overviewItem.path
-                ? 'bg-accent text-surface-base font-medium'
-                : 'text-text-secondary hover:bg-surface-tertiary hover:text-default'
-            }
-            ${collapsed ? 'justify-center' : ''}
-          `}
-        >
-          <span className="text-lg flex-shrink-0">{overviewItem.icon}</span>
-          {!collapsed && (
-            <span className="text-sm whitespace-nowrap">Overview</span>
-          )}
-        </Link>
 
         {/* Divider */}
         {!collapsed && (
