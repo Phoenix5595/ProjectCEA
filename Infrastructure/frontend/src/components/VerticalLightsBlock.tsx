@@ -231,7 +231,7 @@ export default function VerticalLightsBlock({ location, cluster, compact }: Vert
                         handleTargetChange(light.device_name!, value)
                       }
                     }}
-                    className="w-14 h-8 px-1 text-center bg-surface-secondary border border-border-default rounded-sm text-[14px] text-text-input font-mono"
+                    className="w-14 h-6 px-1 text-center bg-surface-secondary border border-border-default rounded-sm text-[14px] text-text-input font-mono"
                   />
                   <span className="text-[10px] text-text-subtle font-bold tracking-wide">% SET</span>
                 </div>
