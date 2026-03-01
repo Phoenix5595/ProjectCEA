@@ -124,10 +124,10 @@ const TopRibbon: React.FC<TopRibbonProps> = ({
                   <button
                     key={mode}
                     onClick={() => onModeChange(mode)}
-                    className={`px-2 py-1 text-xs font-medium rounded transition-colors ${
+                    className={`px-3 py-1 text-xs font-bold rounded border transition-all ${
                       currentMode.mode_name === mode
-                        ? 'bg-accent text-surface-base'
-                        : 'bg-surface-tertiary text-text-secondary hover:text-default'
+                        ? 'bg-accent text-white border-accent'
+                        : 'bg-transparent text-text-default border-border-default hover:bg-surface-tertiary hover:border-border-emphasis'
                     }`}
                   >
                     {mode.charAt(0).toUpperCase() + mode.slice(1)}
@@ -140,10 +140,10 @@ const TopRibbon: React.FC<TopRibbonProps> = ({
                     <button
                       key={sub}
                       onClick={() => onModeChange('flower', sub)}
-                      className={`px-2 py-1 text-xs font-medium rounded transition-colors ${
+                      className={`px-3 py-1 text-xs font-bold rounded border transition-all ${
                         currentMode.submode_name === sub
-                          ? 'bg-accent-vivid text-surface-base'
-                          : 'bg-surface-tertiary text-text-secondary hover:text-default'
+                          ? 'bg-accent-vivid text-white border-accent-vivid'
+                          : 'bg-transparent text-text-default border-border-default hover:bg-surface-tertiary hover:border-border-emphasis'
                       }`}
                     >
                       {sub.charAt(0).toUpperCase() + sub.slice(1)}
