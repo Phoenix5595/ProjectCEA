@@ -49,8 +49,9 @@ export default function CircularTimePicker({
     const observer = new ResizeObserver((entries) => {
       for (const entry of entries) {
         const { width, height } = entry.contentRect;
-        const newSize = Math.min(width, height > 0 ? height : width);
-        if (newSize > 0) {
+        // Use a reasonable minimum and prefer width if height is 0 (which happens in some flex layouts)
+        const newSize = Math.max(100, Math.min(width, height > 100 ? height : width));
+        if (newSize > 100) {
           setSize(newSize);
         }
       }
