@@ -39,14 +39,14 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onToggle }) => {
       }}
     >
       {/* Logo / Header */}
-      <div className="flex items-center justify-center p-3 border-b border-border-default h-[50px]">
+      <div className="flex items-center justify-center p-2 border-b border-border-default h-[50px]">
         <Link to="/">
           <img src="/logo.png" alt="CEA" className="w-6 h-6" />
         </Link>
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 flex flex-col py-2 overflow-y-auto">
+      <nav className="flex-1 flex flex-col py-1 overflow-y-auto">
 
         {/* Divider */}
         {!collapsed && (
@@ -62,7 +62,7 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onToggle }) => {
               key={item.path}
               to={item.path}
               className={`
-                flex items-center gap-3 px-3 py-2.5 mx-2 my-0.5 rounded-lg
+                flex items-center gap-3 px-2 py-2 mx-2 my-0.5 rounded-lg
                 transition-all duration-200
                 ${collapsed ? 'justify-center' : ''}
                 ${
@@ -73,9 +73,9 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onToggle }) => {
               `}
               title={collapsed ? item.label : undefined}
             >
-              <span className="text-lg flex-shrink-0">{item.icon}</span>
+              <span className="text-xl flex-shrink-0">{item.icon}</span>
               {!collapsed && (
-                <span className="text-sm whitespace-nowrap">{item.label}</span>
+                <span className="text-base whitespace-nowrap">{item.label}</span>
               )}
             </Link>
           );
