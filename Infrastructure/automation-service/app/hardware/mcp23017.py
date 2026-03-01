@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from shared.logging import get_logger
+from shared.infra_logging import get_logger
 
 """
 MCP23017 I2C Relay Driver

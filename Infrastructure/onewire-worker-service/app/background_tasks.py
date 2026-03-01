@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 
-from shared.logging import get_logger
+from shared.infra_logging import get_logger
 
 from .config import ConfigLoader
 from .onewire_reader import read_temperature_c

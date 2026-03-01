@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from shared.logging import (
+from shared.infra_logging import (
     ConsoleFormatter,
     JsonFormatter,
     LoggingContext,

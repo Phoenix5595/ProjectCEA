@@ -13,7 +13,7 @@ from app.control.scheduler import Scheduler
 from app.database import DatabaseManager
 from app.feature_flags import get_flag
 from app.hardware.dfr0971 import DFR0971Manager
-from shared.logging import get_logger
+from shared.infra_logging import get_logger
 
 logger = get_logger(__name__)
 

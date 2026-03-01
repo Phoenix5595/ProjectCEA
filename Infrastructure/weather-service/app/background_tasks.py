@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 
-from shared.logging import get_logger
+from shared.infra_logging import get_logger
 
 from .config import ConfigLoader
 from .database import DatabaseManager

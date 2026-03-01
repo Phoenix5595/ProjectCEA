@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 import redis
 
-from shared.logging import get_logger
+from shared.infra_logging import get_logger
 
 if TYPE_CHECKING:
     pass

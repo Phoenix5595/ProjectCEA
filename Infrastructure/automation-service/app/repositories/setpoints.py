@@ -4,6 +4,8 @@ from datetime import datetime
 import time
 from typing import TYPE_CHECKING, Any
 
+from app.state import StateManager, get_state_manager  # type: ignore
+
 from .base import BaseRepository, logger
 
 if TYPE_CHECKING:
@@ -17,7 +19,8 @@ class SetpointRepository(BaseRepository):
         super().__init__(pool)
         self._redis_client = redis_client
         self._batch_buffer: list[dict[str, Any]] = []
-        self._batch_interval = 10.0
+        # Reduced from 10s to 5s for faster Grafana updates (trade-off: more DB writes)
+        self._batch_interval = 5.0
         self._last_batch_flush = time.time()
 
     def set_redis_client(self, redis_client: Any) -> None:
@@ -109,18 +112,32 @@ class SetpointRepository(BaseRepository):
             mode: Mode name (day/night/pre_day/pre_night). If None, defaults to 'day'.
         """
         db_mode = mode if mode and mode != "main" else "day"
+
+        # 1) Cache-aside: check StateManager first (fast in-memory / Redis cache underneath)
+        state: StateManager | None = None
+        try:
+            state = get_state_manager()
+            cached_from_state = await state.get_setpoint(location, cluster)
+            if cached_from_state is not None:
+                return cached_from_state
+        except Exception:
+            # If StateManager is unavailable for any reason, fall back to DB cache path
+            logger.debug("Setpoint: StateManager unavailable or error during get_setpoint lookup")
+
+        # 2) Fallback to local in-repository cache as a secondary cache (legacy behavior)
         cache_key = self._get_cache_key("get_setpoint", location, cluster, db_mode)
         cached = self._get_cached_result(cache_key)
         if cached is not None:
             return cached
 
+        # 3) DB lookup on cache miss
         try:
             async with self.pool.acquire() as conn:
                 row = await conn.fetchrow(
                     """SELECT location, cluster, mode, heating_setpoint, cooling_setpoint,
-                              humidity, co2, vpd, ramp_in_duration, updated_at
-                       FROM setpoints
-                       WHERE location = $1 AND cluster = $2 AND mode = $3""",
+                               humidity, co2, vpd, ramp_in_duration, updated_at
+                        FROM setpoints
+                        WHERE location = $1 AND cluster = $2 AND mode = $3""",
                     location,
                     cluster,
                     db_mode,
@@ -128,6 +145,21 @@ class SetpointRepository(BaseRepository):
                 if row:
                     result = dict(row)
                     self._set_cached_result(cache_key, result)
+
+                    # 4) Populate StateManager cache (cache-aside: populate cache on miss)
+                    try:
+                        if state is not None:
+                            await state.set_setpoint(
+                                location,
+                                cluster,
+                                result.get("heating_setpoint"),
+                                result.get("cooling_setpoint"),
+                                result.get("humidity"),
+                                result.get("co2"),
+                            )
+                    except Exception:
+                        pass
+
                     return result
         except Exception as e:
             logger.error(f"Failed to get setpoint: {e}")
@@ -207,6 +239,25 @@ class SetpointRepository(BaseRepository):
                     ramp_in,
                 )
                 self.clear_cache()
+                # Invalidate caches in StateManager and local repository to ensure
+                # subsequent reads fetch fresh data from the DB or StateManager cache.
+                try:
+                    # Local repository cache invalidation (already present)
+                    self.invalidate_cache_for_location_cluster(location, cluster)
+                except Exception:
+                    pass
+
+                try:
+                    state = get_state_manager()
+                    # Invalidate known Redis-backed keys related to this setpoint
+                    if state is not None:
+                        await state.delete(f"setpoint:{location}:{cluster}:heating_setpoint")
+                        await state.delete(f"setpoint:{location}:{cluster}:cooling_setpoint")
+                        await state.delete(f"setpoint:{location}:{cluster}:humidity")
+                        await state.delete(f"setpoint:{location}:{cluster}:co2")
+                        await state.delete(f"setpoint:{location}:{cluster}:source")
+                except Exception:
+                    pass
                 return (True, new_row["updated_at"] if new_row else None)
         except Exception as e:
             logger.error(f"Failed to set setpoint: {e}")

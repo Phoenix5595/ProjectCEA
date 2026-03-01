@@ -8,6 +8,10 @@ from .base import BaseRepository, logger
 if TYPE_CHECKING:
     from asyncpg import Connection, Pool
 
+# State manager and event bus for cache-aside and invalidation
+from app.events import ConfigChangeEvent, ConfigEventType, get_event_bus  # type: ignore
+from app.state import get_state_manager  # type: ignore
+
 
 class ScheduleRepository(BaseRepository):
     """Repository for schedule operations."""
@@ -15,11 +19,62 @@ class ScheduleRepository(BaseRepository):
     def __init__(self, pool: Pool | None = None) -> None:
         super().__init__(pool)
 
+    # ----------------------------
+    # Cache helpers (StateManager)
+    # ----------------------------
+    @staticmethod
+    def _cache_key_schedules(location: str | None, cluster: str | None) -> str:
+        if location and cluster:
+            return f"schedules:loc:{location}:cluster:{cluster}"
+        if location:
+            return f"schedules:loc:{location}"
+        return "schedules:all"
+
+    @staticmethod
+    def _cache_key_climate(location: str, cluster: str) -> str:
+        return f"schedules:loc:{location}:cluster:{cluster}:climate"
+
+    @staticmethod
+    def _cache_key_light(location: str, cluster: str, device_name: str) -> str:
+        return f"schedules:loc:{location}:cluster:{cluster}:light:{device_name}"
+
+    @staticmethod
+    def _cache_key_room_light(location: str, cluster: str) -> str:
+        return f"schedules:loc:{location}:cluster:{cluster}:room_light_schedule"
+
+    @staticmethod
+    def _cache_key_room_schedule(location: str, cluster: str) -> str:
+        return f"schedules:loc:{location}:cluster:{cluster}:room_schedule"
+
+    async def _publish_schedule_changed(
+        self,
+        location: str | None,
+        cluster: str | None,
+        action: str,
+        extra: dict[str, Any] | None = None,
+    ) -> None:
+        bus = get_event_bus()
+        event = ConfigChangeEvent(
+            event_type=ConfigEventType.SCHEDULE_CHANGED,
+            location=location or "all",
+            cluster=cluster or "all",
+            config_type="schedules",
+            data={"action": action, **(extra or {})},
+        )
+        await bus.publish(event)
+
     async def get_schedules(
         self, location: str | None = None, cluster: str | None = None
     ) -> list[dict[str, Any]]:
-        """Get schedules, optionally filtered by location/cluster."""
+        """Get schedules, optionally filtered by location/cluster with cache-aside."""
+        state = get_state_manager()
+        cache_key = self._cache_key_schedules(location, cluster)
         try:
+            # Try in-memory Redis-backed cache first
+            cached = await state.get(cache_key)
+            if cached is not None:
+                return cast("list[dict[str, Any]]", cached)
+
             async with self.pool.acquire() as conn:
                 if location and cluster:
                     rows = await conn.fetch(
@@ -47,7 +102,10 @@ class ScheduleRepository(BaseRepository):
                                   ramp_down_duration, updated_at
                            FROM schedules ORDER BY start_time"""
                     )
-                return [dict(row) for row in rows]
+                result = [dict(row) for row in rows]
+                # Populate cache on miss
+                await state.set(cache_key, result)
+                return result
         except Exception as e:
             logger.error(f"Failed to get schedules: {e}")
             return []
@@ -59,7 +117,12 @@ class ScheduleRepository(BaseRepository):
         the light schedule (get_room_light_schedule). Used with light bounds to compute
         climate mode (PRE_DAY, DAY, PRE_NIGHT, NIGHT) for setpoints.
         """
+        state = get_state_manager()
+        cache_key = self._cache_key_climate(location, cluster)
         try:
+            cached = await state.get(cache_key)
+            if cached is not None:
+                return cast(dict[str, Any], cached)
             async with self.pool.acquire() as conn:
                 row = await conn.fetchrow(
                     """
@@ -76,13 +139,14 @@ class ScheduleRepository(BaseRepository):
                 )
 
                 if row:
-                    return {
+                    data = {
                         "pre_day_duration": row["pre_day_duration"] or 0,
                         "pre_night_duration": row["pre_night_duration"] or 0,
                     }
-
-                # If no climate schedule found, return defaults
-                return {"pre_day_duration": 0, "pre_night_duration": 0}
+                else:
+                    data = {"pre_day_duration": 0, "pre_night_duration": 0}
+                await state.set(cache_key, data)
+                return data
         except Exception as e:
             logger.error(f"Failed to get climate schedule: {e}")
             return {"pre_day_duration": 0, "pre_night_duration": 0}
@@ -91,7 +155,12 @@ class ScheduleRepository(BaseRepository):
         self, location: str, cluster: str, device_name: str
     ) -> dict[str, Any] | None:
         """Get the active day schedule for a light device."""
+        state = get_state_manager()
+        cache_key = self._cache_key_light(location, cluster, device_name)
         try:
+            cached = await state.get(cache_key)
+            if cached is not None:
+                return cast(dict[str, Any], cached)
             async with self.pool.acquire() as conn:
                 row = await conn.fetchrow(
                     """
@@ -108,11 +177,13 @@ class ScheduleRepository(BaseRepository):
                     device_name,
                 )
                 if row:
-                    return {
+                    data = {
                         "start_time": str(row["start_time"])[:5],
                         "end_time": str(row["end_time"])[:5],
                         "target_intensity": row["target_intensity"],
                     }
+                    await state.set(cache_key, data)
+                    return data
         except Exception as e:
             logger.error(f"Failed to get light schedule: {e}")
         return None
@@ -124,7 +195,12 @@ class ScheduleRepository(BaseRepository):
         Used for control loop and for anchoring climate mode (DAY slave to sun,
         NIGHT slave to moon). Climate parameters come from get_climate_schedule.
         """
+        state = get_state_manager()
+        cache_key = self._cache_key_room_light(location, cluster)
         try:
+            cached = await state.get(cache_key)
+            if cached is not None:
+                return cast(dict[str, Any], cached)
             async with self.pool.acquire() as conn:
                 # Get any enabled light schedule to determine day/night times
                 row = await conn.fetchrow(
@@ -143,12 +219,14 @@ class ScheduleRepository(BaseRepository):
                 )
 
                 if row:
-                    return {
+                    data = {
                         "day_start_time": str(row["start_time"])[:5],
                         "day_end_time": str(row["end_time"])[:5],
                         "ramp_up_duration": row.get("ramp_up_duration"),
                         "ramp_down_duration": row.get("ramp_down_duration"),
                     }
+                    await state.set(cache_key, data)
+                    return data
         except Exception as e:
             logger.error(f"Failed to get room light schedule: {e}")
         return None
@@ -170,6 +248,7 @@ class ScheduleRepository(BaseRepository):
         conn: Connection | None = None,
     ) -> int | None:
         """Create a new schedule."""
+        state = get_state_manager()
         try:
             start_parts = [int(p) for p in start_time.split(":")]
             end_parts = [int(p) for p in end_time.split(":")]
@@ -201,6 +280,19 @@ class ScheduleRepository(BaseRepository):
                         f"Created schedule {row['id']}: {name} ({location}/{cluster}) "
                         f"device={device_name} mode={mode} start={start_time} end={end_time}"
                     )
+                    # Invalidate cache by publishing schedule changed event
+                    await self._publish_schedule_changed(
+                        location=location,
+                        cluster=cluster,
+                        action="created",
+                        extra={"schedule_id": row["id"]},
+                    )
+                    try:
+                        s = get_state_manager()
+                        await s.delete(self._cache_key_schedules(location, cluster))
+                        await s.delete(self._cache_key_climate(location, cluster))
+                    except Exception:
+                        pass
                 return row["id"] if row else None
 
             if conn:
@@ -243,6 +335,13 @@ class ScheduleRepository(BaseRepository):
                             f"Updated schedule {schedule_id} ({row['location']}/{row['cluster']}): "
                             f"device={row['device_name']} updates={list(kwargs.keys())}"
                         )
+                        # Invalidate cache via event bus on update
+                        await self._publish_schedule_changed(
+                            location=row["location"],
+                            cluster=row["cluster"],
+                            action="updated",
+                            extra={"schedule_id": row["id"]},
+                        )
                     return dict(row) if row else None
                 return dict(current)
         except Exception as e:
@@ -255,6 +354,13 @@ class ScheduleRepository(BaseRepository):
             async with self.pool.acquire() as conn:
                 await conn.execute("DELETE FROM schedules WHERE id = $1", schedule_id)
                 logger.info(f"Deleted schedule {schedule_id}")
+                # Invalidate cache on delete
+                await self._publish_schedule_changed(
+                    location=None,
+                    cluster=None,
+                    action="deleted",
+                    extra={"schedule_id": schedule_id},
+                )
                 return True
         except Exception as e:
             logger.error(f"Failed to delete schedule: {e}")
@@ -271,9 +377,18 @@ class ScheduleRepository(BaseRepository):
                 return int(result.split()[-1]) if result else 0
 
             if conn:
-                return await do_delete(conn)
-            async with self.pool.acquire() as new_conn:
-                return await do_delete(cast("Connection", new_conn))
+                deleted = await do_delete(conn)
+            else:
+                async with self.pool.acquire() as new_conn:
+                    deleted = await do_delete(cast("Connection", new_conn))
+            if deleted:
+                await self._publish_schedule_changed(
+                    location=None,
+                    cluster=None,
+                    action="bulk_deleted",
+                    extra={"schedule_ids": schedule_ids},
+                )
+            return deleted
         except Exception as e:
             logger.error(f"Failed to delete schedules: {e}")
             return 0
@@ -302,6 +417,12 @@ class ScheduleRepository(BaseRepository):
                 fixed = len(rows)
                 if fixed:
                     logger.info(f"Updated {fixed} light schedules to daily (day_of_week=NULL)")
+                    await self._publish_schedule_changed(
+                        location=None,
+                        cluster=None,
+                        action="fixed_light_weekday",
+                        extra={"count": fixed},
+                    )
                 return fixed
         except Exception as e:
             logger.error(f"Failed to fix light schedules day_of_week: {e}")
@@ -325,14 +446,27 @@ class ScheduleRepository(BaseRepository):
                     device_name,
                     target_intensity,
                 )
-                return result != "UPDATE 0"
+                changed = result != "UPDATE 0"
+                if changed:
+                    await self._publish_schedule_changed(
+                        location=location,
+                        cluster=cluster,
+                        action="updated",
+                        extra={"device_name": device_name},
+                    )
+                return changed
         except Exception as e:
             logger.error(f"Failed to update light schedule target: {e}")
             return False
 
     async def get_room_schedule(self, location: str, cluster: str) -> dict[str, Any] | None:
         """Get room schedule (day/night times) for a location/cluster."""
+        state = get_state_manager()
+        cache_key = self._cache_key_room_schedule(location, cluster)
         try:
+            cached = await state.get(cache_key)
+            if cached is not None:
+                return cast(dict[str, Any], cached)
             async with self.pool.acquire() as conn:
                 row = await conn.fetchrow(
                     """
@@ -346,7 +480,7 @@ class ScheduleRepository(BaseRepository):
                     cluster,
                 )
                 if row:
-                    return {
+                    data = {
                         "day_start_time": str(row["start_time"]),
                         "day_end_time": str(row["end_time"]),
                         "night_start_time": str(row["end_time"]),  # Inferred
@@ -354,6 +488,8 @@ class ScheduleRepository(BaseRepository):
                         "ramp_up_duration": row["ramp_up_duration"] or 30,
                         "ramp_down_duration": row["ramp_down_duration"] or 15,
                     }
+                    await state.set(cache_key, data)
+                    return data
         except Exception as e:
             logger.error(f"Failed to get room schedule: {e}")
         return None
@@ -365,7 +501,7 @@ class ScheduleRepository(BaseRepository):
         ramp_up_minutes: int,
         ramp_down_minutes: int,
     ) -> int:
-        """Update ramp times for all DAY light schedules in a location/cluster."""
+        """Update ramp times for all DAY light schedules and room_schedule in a location/cluster."""
         try:
             async with self.pool.acquire() as conn:
                 result = await conn.execute(
@@ -373,7 +509,10 @@ class ScheduleRepository(BaseRepository):
                     UPDATE schedules
                     SET ramp_up_duration = $3, ramp_down_duration = $4
                     WHERE location = $1 AND cluster = $2
-                    AND device_name LIKE 'light%' AND mode IN ('SUN', 'DAY')
+                    AND (
+                        device_name LIKE 'light%' AND mode IN ('SUN', 'DAY')
+                        OR device_name = 'room_schedule'
+                    )
                     """,
                     location,
                     cluster,
@@ -382,6 +521,13 @@ class ScheduleRepository(BaseRepository):
                 )
                 count = int(result.split()[-1])
                 logger.info(f"Updated {count} light schedules ramp times for {location}/{cluster}")
+                if count:
+                    await self._publish_schedule_changed(
+                        location=location,
+                        cluster=cluster,
+                        action="ramp_times_updated",
+                        extra={"count": count},
+                    )
                 return count
         except Exception as e:
             logger.error(f"Failed to update light schedule ramp times: {e}")

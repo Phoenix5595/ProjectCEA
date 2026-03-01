@@ -12,7 +12,7 @@ from app.config import ConfigLoader
 from app.database import DatabaseManager
 from app.redis_client import RedisClient
 from app.routes import sensors, status
-from shared.logging import setup_structured_logging
+from shared.infra_logging import setup_structured_logging
 
 # Configure structured logging
 logger = setup_structured_logging(

@@ -11,7 +11,7 @@ from pydantic import BaseModel
 from app.config import ConfigLoader
 from app.database import DatabaseManager
 from app.validation import validate_pid_parameters
-from shared.logging import get_logger
+from shared.infra_logging import get_logger
 
 logger = get_logger(__name__)
 

@@ -41,9 +41,23 @@ Sensors → CAN/Modbus → [can-processor/soil-sensor]
 
 | Component | Location | Used By |
 |-----------|----------|---------|
-| `shared/logging.py` | `automation-service/shared/` | All Python services |
+| `shared/infra_logging.py` | `automation-service/shared/` | All Python services |
 | Pydantic models | Each `app/models.py` | Routes, database |
 | Config loader | Each `app/config.py` | Service startup |
+
+## EVENT BUS (Cross-Service)
+
+Config changes propagate across services via Redis Streams:
+
+```
+Automation Service → Redis Stream (cea:events:config) → Backend Service → WebSocket → Frontend
+```
+
+| Component | Location | Purpose |
+|-----------|----------|---------|
+| ConfigEventBus | `automation-service/app/events/__init__.py` | Dual-publish (memory + Redis) |
+| RedisStreamPublisher | `app/events/redis_streams.py` | Publish to Redis Streams |
+| RedisEventConsumer | `app/events/consumer.py` | Read from stream |
 
 ## SERVICE DEPENDENCIES
 

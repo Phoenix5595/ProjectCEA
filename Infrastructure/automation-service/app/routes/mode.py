@@ -9,6 +9,7 @@ from pydantic import BaseModel
 
 from app.database import DatabaseManager
 from app.redis_client import AutomationRedisClient
+from app.state import get_state_manager
 
 router = APIRouter()
 
@@ -40,9 +41,15 @@ async def get_mode(
 ) -> dict[str, Any]:
     """Get mode for a location/cluster.
 
-    Returns:
-        Dict with mode and source information
+    Priority: StateManager cache -> Redis fallback.
     """
+    # StateManager first (cache with Redis fallback)
+    state = get_state_manager()
+    mode = await state.get_mode(location, cluster)
+    if mode is not None:
+        return {"location": location, "cluster": cluster, "mode": mode}
+
+    # Fallback to Redis (cross-service visibility) if not present in StateManager
     if not automation_redis or not automation_redis.redis_enabled:
         raise HTTPException(status_code=503, detail="Redis not available")
 
@@ -51,6 +58,13 @@ async def get_mode(
         # Default to 'auto' if not set
         mode = "auto"
         automation_redis.write_mode(location, cluster, mode, source="system")
+
+    # Populate StateManager cache for future quick reads
+    try:
+        await state.set_mode(location, cluster, mode, source="redis")
+    except Exception:
+        # Do not fail the request if caching fails
+        pass
 
     return {"location": location, "cluster": cluster, "mode": mode}
 
@@ -91,6 +105,14 @@ async def set_mode(
 
     # Write mode to Redis
     success = automation_redis.write_mode(location, cluster, update.mode, source=update.source)
+
+    # Also write to StateManager for in-process cache visibility
+    state = get_state_manager()
+    try:
+        await state.set_mode(location, cluster, update.mode, source=update.source)
+    except Exception:
+        # Non-fatal if state cache update fails
+        pass
 
     if not success:
         raise HTTPException(status_code=500, detail="Failed to set mode")

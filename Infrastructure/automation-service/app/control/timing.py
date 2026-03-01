@@ -98,7 +98,7 @@ class TimingCollector:
 
         logger = None  # Avoid circular import with shared logging
         try:
-            from shared.logging import get_logger
+            from shared.infra_logging import get_logger
 
             logger = get_logger(__name__)
         except ImportError:

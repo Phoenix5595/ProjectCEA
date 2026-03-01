@@ -9,7 +9,7 @@ from pydantic import BaseModel
 
 from app.config import ConfigLoader
 from app.database import DatabaseManager
-from shared.logging import get_logger
+from shared.infra_logging import get_logger
 
 if TYPE_CHECKING:
     from app.automation.interlock_manager import InterlockManager

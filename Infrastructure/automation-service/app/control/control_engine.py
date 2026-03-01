@@ -21,11 +21,12 @@ from app.control.vpd_cascade_controller import (
     VPDCascadeController,
 )
 from app.database import DatabaseManager
+from app.state import StateManager, get_state_manager
 
 # Third-party imports
 # (none in this file)
 # Local imports
-from shared.logging import get_logger
+from shared.infra_logging import get_logger
 
 logger = get_logger(__name__)
 
@@ -84,6 +85,9 @@ class ControlEngine:
             ki=0.5,
             kd=2.0,
         )
+
+        # StateManager for fast in-memory state access (<1ms reads)
+        self._state: StateManager = get_state_manager()
 
         # Ramp restoration will be done asynchronously after Redis is available
         # See _restore_ramps_on_startup() called from run()
@@ -210,20 +214,59 @@ class ControlEngine:
         return stats
 
     async def _restore_ramps_on_startup(self) -> None:
-        """Restore active ramps from Redis on startup."""
+        """Restore active ramps from StateManager (Redis-backed) on startup."""
         try:
+            # Set Redis client for StateManager if available
             redis_client = self.database._automation_redis
-            if redis_client:
+            if redis_client and redis_client.redis_enabled:
+                self._state.set_redis_client(redis_client.redis_client)
+                # Also sync RampManager's redis for backward compatibility
                 self.setpoint_manager.ramp_manager.set_redis(redis_client)
-                restored = self.setpoint_manager.ramp_manager.restore_ramps_from_redis()
+
+            # Restore ramps via StateManager (which handles Redis fallback)
+            persisted_ramps = await self._state.get_persisted_ramps()
+            if persisted_ramps:
+                from datetime import datetime
+
+                now = datetime.now()
+                restored = 0
+                for ramp_data in persisted_ramps:
+                    try:
+                        location = ramp_data.get("location")
+                        cluster = ramp_data.get("cluster")
+                        setpoint_type = ramp_data.get("setpoint_type")
+                        start_time = ramp_data.get("start_time")
+                        duration = ramp_data.get("duration_minutes", 0)
+                        start_value = ramp_data.get("start_value")
+                        target_value = ramp_data.get("target_value")
+
+                        if location and cluster and setpoint_type and start_time:
+                            # Check if ramp is still active
+                            from datetime import timedelta
+
+                            end_time = start_time + timedelta(minutes=int(duration))
+                            if now < end_time:
+                                self.setpoint_manager.ramp_manager.start_ramp(
+                                    location,
+                                    cluster,
+                                    setpoint_type,
+                                    float(start_value or 0),
+                                    float(target_value or 0),
+                                    float(duration),
+                                    start_time,
+                                )
+                                restored += 1
+                    except Exception as ramp_err:
+                        logger.warning(f"Failed to restore ramp {ramp_data}: {ramp_err}")
+
                 if restored > 0:
                     logger.info(
-                        f"Control engine startup: restored {restored} active ramp(s) from Redis"
+                        f"Control engine startup: restored {restored} active ramp(s) via StateManager"
                     )
                 else:
                     logger.info("Control engine startup: no active ramps to restore")
             else:
-                logger.warning("Control engine startup: Redis not available, cannot restore ramps")
+                logger.info("Control engine startup: no persisted ramps found")
         except Exception as e:
             logger.error(f"Failed to restore ramps on startup: {e}")
             self.setpoint_manager.ramp_manager.clear_all_ramps()
@@ -318,10 +361,37 @@ class ControlEngine:
                 previous_mode = self._current_climate_mode.get(climate_mode_key)
                 self._current_climate_mode[climate_mode_key] = current_mode
 
-                # 3. Setpoint retrieval (always execute for the resolved mode)
-                setpoint_data = await self.database.setpoint_repo.get_setpoint(
-                    location, cluster, current_mode
-                )
+                # Also store mode in StateManager for cross-component access
+                await self._state.set_mode(location, cluster, current_mode)
+
+                # 3. Setpoint retrieval with StateManager cache
+                # First try StateManager cache (fast <1ms read), fallback to database
+                setpoint_data: dict[str, Any] | None = None
+
+                # Try to get cached setpoints from StateManager
+                cached_setpoints = await self._state.get_setpoint(location, cluster)
+                if cached_setpoints:
+                    # Use cached setpoints (fast path)
+                    setpoint_data = cached_setpoints
+                    logger.debug(f"StateManager cache hit for setpoints: {location}/{cluster}")
+                else:
+                    # Cache miss - fetch from database and populate cache
+                    setpoint_data = await self.database.setpoint_repo.get_setpoint(
+                        location, cluster, current_mode
+                    )
+                    if setpoint_data:
+                        # Populate StateManager cache for future reads
+                        await self._state.set_setpoint(
+                            location,
+                            cluster,
+                            heating_setpoint=setpoint_data.get("heating_setpoint"),
+                            cooling_setpoint=setpoint_data.get("cooling_setpoint"),
+                            humidity=setpoint_data.get("humidity"),
+                            co2=setpoint_data.get("co2"),
+                        )
+                        logger.debug(
+                            f"Populated StateManager cache for setpoints: {location}/{cluster}"
+                        )
 
                 if not setpoint_data:
                     # Fallback to legacy mode=None
@@ -580,9 +650,7 @@ class ControlEngine:
                 pass
 
             # Get setpoint (use default/legacy for now, can be enhanced to use mode-based)
-            setpoint_data = await self.database.setpoint_repo.get_setpoint(
-                location, cluster, current_mode_str
-            )
+            setpoint_data = await self._state.get_setpoint(location, cluster)
             if not setpoint_data:
                 return  # No setpoint configured
 

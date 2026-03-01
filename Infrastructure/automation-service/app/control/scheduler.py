@@ -13,7 +13,7 @@ from datetime import datetime, time, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from shared.logging import get_logger
+from shared.infra_logging import get_logger
 
 # Timezone constant for consistent scheduling
 LOCAL_TZ = ZoneInfo("America/Toronto")

@@ -1,0 +1,4 @@
+/* Global override: narrow time inputs to a fixed width for better layout in CircularTimePicker */
+input[type="time"] {
+  width: 4rem !important;
+}

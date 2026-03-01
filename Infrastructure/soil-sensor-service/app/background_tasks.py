@@ -6,7 +6,7 @@ import asyncio
 from datetime import datetime
 from typing import Any, cast
 
-from shared.logging import get_logger
+from shared.infra_logging import get_logger
 
 from .config import ConfigLoader
 from .database import DatabaseManager

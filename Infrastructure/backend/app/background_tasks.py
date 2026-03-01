@@ -7,7 +7,7 @@ from datetime import datetime
 
 from app.redis_client import get_all_sensor_values, get_sensor_timestamp
 from app.websocket import websocket_manager
-from shared.logging import get_logger
+from shared.infra_logging import get_logger
 
 logger = get_logger(__name__)
 

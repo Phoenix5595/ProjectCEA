@@ -4,9 +4,11 @@ import time
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from shared.logging import get_logger
+
+from shared.infra_logging import get_logger
 
 from ..database import DatabaseManager
+from ..events import ConfigChangeEvent, ConfigEventType, get_event_bus
 from ..services.mode_transition_service import ModeTransitionService
 from .websocket import broadcast_mode_update
 
@@ -297,6 +299,23 @@ async def update_room_parameters(
             f"Synced light ramp times to schedules: {location}/{cluster} "
             f"ramp_up={light_ramp_up}min, ramp_down={light_ramp_down}min"
         )
+
+        # Publish config change event for immediate scheduler update
+        event_bus = get_event_bus()
+        event = ConfigChangeEvent(
+            event_type=ConfigEventType.RAMP_TIMES_CHANGED,
+            location=location,
+            cluster=cluster,
+            config_type="ramp_times",
+            data={"ramp_up_minutes": light_ramp_up, "ramp_down_minutes": light_ramp_down},
+        )
+        published = await event_bus.publish(event)
+        if published:
+            logger.info(f"Published RAMP_TIMES_CHANGED event for {location}/{cluster}")
+        else:
+            logger.warning(
+                f"Failed to publish RAMP_TIMES_CHANGED event (queue full) for {location}/{cluster}"
+            )
 
     logger.info(f"Parameters updated: {location}/{cluster} mode={mode_name}")
     return await get_room_mode_with_params(location, cluster, db)

@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any, cast
 
 from app.database import DatabaseManager
-from shared.logging import LoggingContext, get_logger
+from shared.infra_logging import LoggingContext, get_logger
 
 if TYPE_CHECKING:
     from app.redis import AutomationRedisClient
@@ -554,9 +554,7 @@ class SetpointManager:
             logger.debug(
                 f"RAMP: {previous_mode} -> {current_mode}, fetching {previous_mode} setpoints as start"
             )
-            prev_setpoint_data = await self.database.setpoint_repo.get_setpoint(
-                location, cluster, previous_mode
-            )
+            prev_setpoint_data = await self._state.get_setpoint(location, cluster)
             if prev_setpoint_data:
                 ramp_starts = _extract_setpoints(prev_setpoint_data)
                 logger.info(f"RAMP: Using {previous_mode} setpoints as ramp start: {ramp_starts}")
@@ -584,7 +582,7 @@ class SetpointManager:
         logger.info(f"RAMP: Inferring previous mode for {current_mode}, trying {primary}")
 
         # Try primary fallback
-        primary_data = await self.database.setpoint_repo.get_setpoint(location, cluster, primary)
+        primary_data = await self._state.get_setpoint(location, cluster)
         if primary_data:
             ramp_starts = _extract_setpoints(primary_data)
             logger.info(f"RAMP: Using {primary} setpoints as ramp start: {ramp_starts}")
@@ -593,9 +591,7 @@ class SetpointManager:
         # Try secondary fallback if primary not found
         if secondary:
             logger.info(f"RAMP: {primary} not found, falling back to {secondary}")
-            secondary_data = await self.database.setpoint_repo.get_setpoint(
-                location, cluster, secondary
-            )
+            secondary_data = await self._state.get_setpoint(location, cluster)
             if secondary_data:
                 ramp_starts = _extract_setpoints(secondary_data)
                 logger.info(f"RAMP: Using {secondary} setpoints as ramp start: {ramp_starts}")

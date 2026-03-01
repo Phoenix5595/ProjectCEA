@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from shared.logging import setup_structured_logging
+from shared.infra_logging import setup_structured_logging
 
 from .background_tasks import BackgroundTasks
 from .config import ConfigLoader

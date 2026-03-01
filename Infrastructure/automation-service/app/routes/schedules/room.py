@@ -9,7 +9,7 @@ from pydantic import BaseModel
 
 from app.config import ConfigLoader
 from app.database import DatabaseManager
-from shared.logging import get_logger
+from shared.infra_logging import get_logger
 
 from .base import (
     get_automation_redis,

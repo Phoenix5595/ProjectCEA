@@ -10,7 +10,7 @@ from app.models import DataPoint, SensorDataResponse
 from app.redis_client import get_all_sensor_values, get_sensor_timestamp, get_sensor_value
 from app.redis_stream_reader import RedisStreamReader
 from app.stream_processor import process_stream_entries_to_sensor_data
-from shared.logging import get_logger
+from shared.infra_logging import get_logger
 
 router = APIRouter(prefix="/api/sensors", tags=["sensors"])
 

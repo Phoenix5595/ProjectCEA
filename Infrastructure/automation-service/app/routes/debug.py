@@ -5,7 +5,7 @@ from typing import Any, cast
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from shared.logging import get_logger
+from shared.infra_logging import get_logger
 
 from ..control.control_engine import ControlEngine
 from ..control.scheduler import Scheduler

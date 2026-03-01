@@ -3,7 +3,7 @@
 import os
 from typing import TYPE_CHECKING
 
-from shared.logging import get_logger
+from shared.infra_logging import get_logger
 
 if TYPE_CHECKING:
     from asyncpg import Pool

@@ -16,7 +16,7 @@ from app.database import DatabaseManager
 from app.hardware.dfr0971 import DFR0971Manager
 from app.hardware.mcp23017 import MCP23017Driver
 from app.redis_client import AutomationRedisClient
-from shared.logging import get_logger
+from shared.infra_logging import get_logger
 
 logger = get_logger(__name__)
 

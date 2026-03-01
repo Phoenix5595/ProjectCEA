@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, cast
 
-from shared.logging import get_logger
+from shared.infra_logging import get_logger
 
 from ..database import DatabaseManager
 from ..repositories.mode_sync import sync_climate_setpoints_from_mode_parameters
