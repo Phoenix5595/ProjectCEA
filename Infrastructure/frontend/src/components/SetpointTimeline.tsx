@@ -1,4 +1,4 @@
-import { useMemo, useEffect, useState } from 'react'
+import React, { useMemo, useEffect, useState } from 'react'
 
 interface SetpointTimelineProps {
  dayStartTime: string
@@ -168,59 +168,59 @@ export default function SetpointTimeline({
  const photoperiodStart = startMin
  const photoperiodEnd = endMin
  
- // Render ramp up period with hatch pattern - at the beginning of photoperiod
- const renderRampUp = () => {
- if (rampUpDuration === 0) return null
- 
- // Hatch pattern using repeating linear gradient
- const hatchPattern = isDarkMode
- ? 'repeating-linear-gradient(45deg, transparent, transparent 4px, rgba(154, 52, 18, 0.5) 4px, rgba(154, 52, 18, 0.5) 8px)'
- : 'repeating-linear-gradient(45deg, transparent, transparent 4px, rgba(251, 146, 60, 0.4) 4px, rgba(251, 146, 60, 0.4) 8px)'
- 
- if (rampUpEndMin >= rampUpStartMin) {
- // Ramp up doesn't cross midnight
- return (
- <div
- key="ramp-up"
- className="absolute top-0 bottom-0 pointer-events-none"
- style={{
- left: `${getPosition(rampUpStartMin)}%`,
- width: `${getPosition(rampUpDuration)}%`,
- zIndex: 5,
- backgroundImage: hatchPattern
- }}
- />
- )
- } else {
- // Ramp up crosses midnight
- const firstPart = 1440 - rampUpStartMin
- const secondPart = rampUpEndMin
- return (
- <>
- <div
- key="ramp-up-1"
- className="absolute top-0 bottom-0 pointer-events-none"
- style={{
- left: `${getPosition(rampUpStartMin)}%`,
- width: `${getPosition(firstPart)}%`,
- zIndex: 5,
- backgroundImage: hatchPattern
- }}
- />
- <div
- key="ramp-up-2"
- className="absolute top-0 bottom-0 pointer-events-none"
- style={{
- left: `${getPosition(0)}%`,
- width: `${getPosition(secondPart)}%`,
- zIndex: 5,
- backgroundImage: hatchPattern
- }}
- />
- </>
- )
- }
- }
+  // Render ramp up period with hatch pattern - at the beginning of photoperiod
+  const renderRampUp = () => {
+  if (rampUpDuration === 0) return null
+  
+  // Hatch pattern using repeating linear gradient
+  const hatchPattern = isDarkMode
+  ? 'repeating-linear-gradient(45deg, transparent, transparent 4px, rgba(154, 52, 18, 0.5) 4px, rgba(154, 52, 18, 0.5) 8px)'
+  : 'repeating-linear-gradient(45deg, transparent, transparent 4px, rgba(251, 146, 60, 0.4) 4px, rgba(251, 146, 60, 0.4) 8px)'
+  
+  if (rampUpEndMin >= rampUpStartMin) {
+  // Ramp up doesn't cross midnight
+  return (
+  <div
+  key="ramp-up"
+  className="absolute top-0 bottom-0 pointer-events-none"
+  style={{
+  left: `${getPosition(rampUpStartMin)}%`,
+  width: `${getPosition(rampUpDuration)}%`,
+  zIndex: 5,
+  backgroundImage: hatchPattern
+  }}
+  />
+  )
+  } else {
+  // Ramp up crosses midnight
+  const firstPart = 1440 - rampUpStartMin
+  const secondPart = rampUpEndMin
+  return (
+  <React.Fragment key="ramp-up-wrap">
+  <div
+  key="ramp-up-1"
+  className="absolute top-0 bottom-0 pointer-events-none"
+  style={{
+  left: `${getPosition(rampUpStartMin)}%`,
+  width: `${getPosition(firstPart)}%`,
+  zIndex: 5,
+  backgroundImage: hatchPattern
+  }}
+  />
+  <div
+  key="ramp-up-2"
+  className="absolute top-0 bottom-0 pointer-events-none"
+  style={{
+  left: `${getPosition(0)}%`,
+  width: `${getPosition(secondPart)}%`,
+  zIndex: 5,
+  backgroundImage: hatchPattern
+  }}
+  />
+  </React.Fragment>
+  )
+  }
+  }
  
  // Render ramp down period with hatch pattern - at the end of photoperiod
  const renderRampDown = () => {
@@ -231,97 +231,97 @@ export default function SetpointTimeline({
  ? 'repeating-linear-gradient(45deg, transparent, transparent 4px, rgba(154, 52, 18, 0.5) 4px, rgba(154, 52, 18, 0.5) 8px)'
  : 'repeating-linear-gradient(45deg, transparent, transparent 4px, rgba(251, 146, 60, 0.4) 4px, rgba(251, 146, 60, 0.4) 8px)'
  
- if (rampDownEndMin >= rampDownStartMin) {
- // Ramp down doesn't cross midnight
- return (
- <div
- key="ramp-down"
- className="absolute top-0 bottom-0 pointer-events-none"
- style={{
- left: `${getPosition(rampDownStartMin)}%`,
- width: `${getPosition(rampDownDuration)}%`,
- zIndex: 5,
- backgroundImage: hatchPattern
- }}
- />
- )
- } else {
- // Ramp down crosses midnight
- const firstPart = 1440 - rampDownStartMin
- const secondPart = rampDownEndMin
- return (
- <>
- <div
- key="ramp-down-1"
- className="absolute top-0 bottom-0 pointer-events-none"
- style={{
- left: `${getPosition(rampDownStartMin)}%`,
- width: `${getPosition(firstPart)}%`,
- zIndex: 5,
- backgroundImage: hatchPattern
- }}
- />
- <div
- key="ramp-down-2"
- className="absolute top-0 bottom-0 pointer-events-none"
- style={{
- left: `${getPosition(0)}%`,
- width: `${getPosition(secondPart)}%`,
- zIndex: 5,
- backgroundImage: hatchPattern
- }}
- />
- </>
- )
- }
- }
- 
- // Render main photoperiod (light orange) - full period
- const renderPhotoperiod = () => {
- if (photoperiodEnd >= photoperiodStart) {
- // Normal case: photoperiod doesn't cross midnight
- const duration = photoperiodEnd - photoperiodStart
- return (
- <div
- key="photoperiod"
- className="absolute top-0 bottom-0 bg-timeline-ramp/50 opacity-40 pointer-events-none"
- style={{
- left: `${getPosition(photoperiodStart)}%`,
- width: `${getPosition(duration)}%`,
- zIndex: 0
- }}
- />
- )
- } else {
- // Photoperiod crosses midnight - split into two divs
- const firstPartDuration = 1440 - photoperiodStart // From start to midnight
- const secondPartDuration = photoperiodEnd // From midnight to end
- return (
- <>
- {/* First part: from start to midnight */}
- <div
- key="photoperiod-1"
- className="absolute top-0 bottom-0 bg-timeline-ramp/50 opacity-40 pointer-events-none"
- style={{
- left: `${getPosition(photoperiodStart)}%`,
- width: `${getPosition(firstPartDuration)}%`,
- zIndex: 0
- }}
- />
- {/* Second part: from midnight to end */}
- <div
- key="photoperiod-2"
- className="absolute top-0 bottom-0 bg-timeline-ramp/50 opacity-40 pointer-events-none"
- style={{
- left: `${getPosition(0)}%`,
- width: `${getPosition(secondPartDuration)}%`,
- zIndex: 0
- }}
- />
- </>
- )
- }
- }
+  if (rampDownEndMin >= rampDownStartMin) {
+  // Ramp down doesn't cross midnight
+  return (
+  <div
+  key="ramp-down"
+  className="absolute top-0 bottom-0 pointer-events-none"
+  style={{
+  left: `${getPosition(rampDownStartMin)}%`,
+  width: `${getPosition(rampDownDuration)}%`,
+  zIndex: 5,
+  backgroundImage: hatchPattern
+  }}
+  />
+  )
+  } else {
+  // Ramp down crosses midnight
+  const firstPart = 1440 - rampDownStartMin
+  const secondPart = rampDownEndMin
+  return (
+  <React.Fragment key="ramp-down-wrap">
+  <div
+  key="ramp-down-1"
+  className="absolute top-0 bottom-0 pointer-events-none"
+  style={{
+  left: `${getPosition(rampDownStartMin)}%`,
+  width: `${getPosition(firstPart)}%`,
+  zIndex: 5,
+  backgroundImage: hatchPattern
+  }}
+  />
+  <div
+  key="ramp-down-2"
+  className="absolute top-0 bottom-0 pointer-events-none"
+  style={{
+  left: `${getPosition(0)}%`,
+  width: `${getPosition(secondPart)}%`,
+  zIndex: 5,
+  backgroundImage: hatchPattern
+  }}
+  />
+  </React.Fragment>
+  )
+  }
+  }
+  
+  // Render main photoperiod (light orange) - full period
+  const renderPhotoperiod = () => {
+  if (photoperiodEnd >= photoperiodStart) {
+  // Normal case: photoperiod doesn't cross midnight
+  const duration = photoperiodEnd - photoperiodStart
+  return (
+  <div
+  key="photoperiod"
+  className="absolute top-0 bottom-0 bg-timeline-ramp/50 opacity-40 pointer-events-none"
+  style={{
+  left: `${getPosition(photoperiodStart)}%`,
+  width: `${getPosition(duration)}%`,
+  zIndex: 0
+  }}
+  />
+  )
+  } else {
+  // Photoperiod crosses midnight - split into two divs
+  const firstPartDuration = 1440 - photoperiodStart // From start to midnight
+  const secondPartDuration = photoperiodEnd // From midnight to end
+  return (
+  <React.Fragment key="photoperiod-wrap">
+  {/* First part: from start to midnight */}
+  <div
+  key="photoperiod-1"
+  className="absolute top-0 bottom-0 bg-timeline-ramp/50 opacity-40 pointer-events-none"
+  style={{
+  left: `${getPosition(photoperiodStart)}%`,
+  width: `${getPosition(firstPartDuration)}%`,
+  zIndex: 0
+  }}
+  />
+  {/* Second part: from midnight to end */}
+  <div
+  key="photoperiod-2"
+  className="absolute top-0 bottom-0 bg-timeline-ramp/50 opacity-40 pointer-events-none"
+  style={{
+  left: `${getPosition(0)}%`,
+  width: `${getPosition(secondPartDuration)}%`,
+  zIndex: 0
+  }}
+  />
+  </React.Fragment>
+  )
+  }
+  }
  
  return (
  <>
@@ -717,44 +717,44 @@ export default function SetpointTimeline({
  }
  }
  
- return <>{segments}</>
- }
- 
- const lines: JSX.Element[] = []
- 
- // Render interpolated lines for each setpoint type
- if (_setpoints.DAY || _setpoints.NIGHT || _setpoints.PRE_DAY || _setpoints.PRE_NIGHT) {
- // Check if any period has heating setpoint
- const hasHeating = [_setpoints.PRE_DAY, _setpoints.DAY, _setpoints.PRE_NIGHT, _setpoints.NIGHT].some(
- sp => sp && typeof sp.heating_setpoint === 'number'
- )
- if (hasHeating) {
- lines.push(renderInterpolatedLine('heating_setpoint', '#ef4444', 'heating') as JSX.Element)
- }
- 
- const hasCooling = [_setpoints.PRE_DAY, _setpoints.DAY, _setpoints.PRE_NIGHT, _setpoints.NIGHT].some(
- sp => sp && typeof sp.cooling_setpoint === 'number'
- )
- if (hasCooling) {
- lines.push(renderInterpolatedLine('cooling_setpoint', '#3b82f6', 'cooling') as JSX.Element)
- }
- 
- const hasVPD = [_setpoints.PRE_DAY, _setpoints.DAY, _setpoints.PRE_NIGHT, _setpoints.NIGHT].some(
- sp => sp && typeof sp.vpd === 'number'
- )
- if (hasVPD) {
- lines.push(renderInterpolatedLine('vpd', '#40e0d0', 'vpd') as JSX.Element)
- }
- 
- const hasCO2 = [_setpoints.PRE_DAY, _setpoints.DAY, _setpoints.PRE_NIGHT, _setpoints.NIGHT].some(
- sp => sp && typeof sp.co2 === 'number'
- )
- if (hasCO2) {
- lines.push(renderInterpolatedLine('co2', '#6b7280', 'co2') as JSX.Element)
- }
- }
- 
- return <>{lines}</>
+  return <React.Fragment key={key}>{segments}</React.Fragment>
+  }
+  
+  const lines: any[] = []
+  
+  // Render interpolated lines for each setpoint type
+  if (_setpoints.DAY || _setpoints.NIGHT || _setpoints.PRE_DAY || _setpoints.PRE_NIGHT) {
+  // Check if any period has heating setpoint
+  const hasHeating = [_setpoints.PRE_DAY, _setpoints.DAY, _setpoints.PRE_NIGHT, _setpoints.NIGHT].some(
+  sp => sp && typeof sp.heating_setpoint === 'number'
+  )
+  if (hasHeating) {
+  lines.push(<React.Fragment key="heating-line">{renderInterpolatedLine('heating_setpoint', '#ef4444', 'heating')}</React.Fragment>)
+  }
+  
+  const hasCooling = [_setpoints.PRE_DAY, _setpoints.DAY, _setpoints.PRE_NIGHT, _setpoints.NIGHT].some(
+  sp => sp && typeof sp.cooling_setpoint === 'number'
+  )
+  if (hasCooling) {
+  lines.push(<React.Fragment key="cooling-line">{renderInterpolatedLine('cooling_setpoint', '#3b82f6', 'cooling')}</React.Fragment>)
+  }
+  
+  const hasVPD = [_setpoints.PRE_DAY, _setpoints.DAY, _setpoints.PRE_NIGHT, _setpoints.NIGHT].some(
+  sp => sp && typeof sp.vpd === 'number'
+  )
+  if (hasVPD) {
+  lines.push(<React.Fragment key="vpd-line">{renderInterpolatedLine('vpd', '#40e0d0', 'vpd')}</React.Fragment>)
+  }
+  
+  const hasCO2 = [_setpoints.PRE_DAY, _setpoints.DAY, _setpoints.PRE_NIGHT, _setpoints.NIGHT].some(
+  sp => sp && typeof sp.co2 === 'number'
+  )
+  if (hasCO2) {
+  lines.push(<React.Fragment key="co2-line">{renderInterpolatedLine('co2', '#6b7280', 'co2')}</React.Fragment>)
+  }
+  }
+  
+  return <React.Fragment key="all-lines">{lines}</React.Fragment>
  })()}
 
  {/* Current time indicator */}
