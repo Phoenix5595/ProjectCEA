@@ -97,9 +97,6 @@ class CANReader:
             else:
                 logger.warning(f"CAN bus error: {error_msg}")
             return None
-        except:
-            logger.error("Unexpected error reading CAN bus")
-            return None
 
     def close(self):
         """Close CAN bus connection."""

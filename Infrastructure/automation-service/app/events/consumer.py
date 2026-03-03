@@ -111,7 +111,7 @@ class RedisEventConsumer:
                 continue
 
             # result is a list of (stream, [(id, {field: value, ...}), ...])
-            for stream_name, messages in result:
+            for _stream_name, messages in result:
                 for msg_id, fields in messages:
                     try:
                         payload: dict[str, Any] = {

@@ -53,7 +53,7 @@ class SchemaValidationMixin:
             # Fallback: attempt to build key examples from schema
             try:
                 # best-effort: if key starts with any known base types
-                for pat in (getattr(build_key, "__call__", lambda: None)(),):
+                for pat in (build_key() if callable(build_key) else None,):
                     if pat and isinstance(pat, str) and key.startswith(pat):
                         ok = True
                         break

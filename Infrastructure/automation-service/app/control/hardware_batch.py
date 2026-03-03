@@ -365,7 +365,7 @@ class HardwareBatchExecutor:
             tasks = [self._execute_chain(chain) for chain in chain_list]
             chain_results = await asyncio.gather(*tasks, return_exceptions=True)
 
-            for chain, chain_result in zip(chain_list, chain_results):
+            for chain, chain_result in zip(chain_list, chain_results, strict=False):
                 if isinstance(chain_result, BaseException):
                     result.failure_count += 1
                     result.results[chain.device_key] = False

@@ -230,9 +230,6 @@ async def update_schedule(
     if not updated_record:
         raise HTTPException(status_code=500, detail="Failed to update schedule")
 
-    success = True
-    new_updated_at = updated_record.get("updated_at")
-
     schedules = await database.schedule_repo.get_schedules(
         existing["location"], existing["cluster"]
     )
