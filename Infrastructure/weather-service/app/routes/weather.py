@@ -11,6 +11,41 @@ from app.weather_client import WeatherClient
 
 router = APIRouter()
 
+CITY_NAME = "Québec City"
+
+
+def degrees_to_cardinal(degrees: float | None) -> str | None:
+    """Convert wind direction degrees to cardinal direction with triple-letter precision.
+
+    Uses 16-point compass rose:
+    N, NNE, NE, ENE, E, ESE, SE, SSE,
+    S, SSW, SW, WSW, W, WNW, NW, NNW
+    """
+    if degrees is None:
+        return None
+
+    directions = [
+        "N",
+        "NNE",
+        "NE",
+        "ENE",
+        "E",
+        "ESE",
+        "SE",
+        "SSE",
+        "S",
+        "SSW",
+        "SW",
+        "WSW",
+        "W",
+        "WNW",
+        "NW",
+        "NNW",
+    ]
+
+    index = round(degrees / 22.5) % 16
+    return directions[index]
+
 
 # Dependency injection (will be overridden in main.py)
 def get_database() -> DatabaseManager:
@@ -45,18 +80,32 @@ async def get_latest_weather(db: DatabaseManager = Depends(get_database)) -> dic
 
             weather_data = {}
             timestamp = None
+            wind_direction_degrees = None
+
             for row in rows:
                 sensor_name = row["sensor_name"]
-                # Remove 'outside_' prefix for response
                 key = sensor_name.replace("outside_", "")
                 weather_data[key] = {"value": row["value"], "unit": row["unit"]}
-                # Use the latest timestamp across all sensors
+
+                if key == "wind_direction":
+                    wind_direction_degrees = row["value"]
+
                 if timestamp is None or row["time"] > timestamp:
                     timestamp = row["time"]
 
-            return {"timestamp": timestamp.isoformat() if timestamp else None, "data": weather_data}
+            wind_cardinal = degrees_to_cardinal(wind_direction_degrees)
+
+            return {
+                "timestamp": timestamp.isoformat() if timestamp else None,
+                "city": CITY_NAME,
+                "data": weather_data,
+                "wind_cardinal": wind_cardinal,
+            }
     except Exception as e:
-        return {"error": str(e)}
+        import logging
+
+        logging.getLogger(__name__).error(f"Error fetching weather data: {e!r}")
+        return {"error": str(e) or repr(e)}
 
 
 @router.post("/fetch")
