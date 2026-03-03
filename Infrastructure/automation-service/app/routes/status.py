@@ -10,7 +10,7 @@ from typing import Any
 from urllib.error import URLError
 from urllib.request import Request, urlopen
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 import psutil
 
 from app.config import ConfigLoader
@@ -155,6 +155,7 @@ async def get_status(
     relay_manager: RelayManager = Depends(get_relay_manager),
     config: ConfigLoader = Depends(get_config),
     pid_controller_manager=Depends(get_pid_controller_manager),
+    health: bool = Query(default=True, description="Include service health checks"),
 ) -> dict[str, Any]:
     """Get full system status."""
     # Get all device states
@@ -210,8 +211,8 @@ async def get_status(
     # Optional: host system stats (CPU, memory, disk, uptime, load, process count, Pi temp/throttle)
     system = _get_system_stats()
 
-    # Optional: service health (backend, weather, etc.)
-    service_health = await _check_service_health()
+    # Optional: service health (backend, weather, etc.) - skip if health=false for faster response
+    service_health = await _check_service_health() if health else []
 
     # Effective setpoints from Redis (same source as control loop; dashboard uses these when backend Redis differs)
     effective_setpoints: dict[str, dict[str, dict[str, float]]] = {}
