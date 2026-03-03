@@ -179,13 +179,12 @@ async def update_setpoints(
     # Get existing setpoints to merge (for the specified mode or default)
     existing = await database.setpoint_repo.get_setpoint(location, cluster, setpoints.mode)
 
-    # Parse expected_version if provided
-    expected_version_dt = None
+    # Parse expected_version if provided (validated but not used in merge)
     if setpoints.expected_version:
         try:
             from datetime import datetime
 
-            expected_version_dt = datetime.fromisoformat(
+            _expected_version_dt = datetime.fromisoformat(
                 setpoints.expected_version.replace("Z", "+00:00")
             )
         except (ValueError, AttributeError):

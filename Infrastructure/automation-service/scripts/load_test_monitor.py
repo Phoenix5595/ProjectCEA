@@ -40,9 +40,9 @@ async def run_load_test(duration_minutes=10):
             # Query the latest tick timestamp from automation_state
             # We group by timestamp to identify a single "tick" across multiple devices
             row = await conn.fetchrow("""
-                SELECT timestamp 
-                FROM automation_state 
-                ORDER BY timestamp DESC 
+                SELECT timestamp
+                FROM automation_state
+                ORDER BY timestamp DESC
                 LIMIT 1
             """)
 
@@ -96,7 +96,7 @@ async def run_load_test(duration_minutes=10):
 - **Average Interval**: {avg_interval:.2f}s
 - **Max Interval**: {max_interval:.2f}s
 - **Slow Ticks (>2s)**: {slow_ticks}
-- **Observations**: 
+- **Observations**:
     - The control loop interval should be 1s for 1Hz.
     - Currently configured at {os.environ.get("CURRENT_INTERVAL", "unknown")}s.
     - If Max Interval > 2s, the 1Hz requirement is NOT met.

@@ -248,7 +248,6 @@ class ScheduleRepository(BaseRepository):
         conn: Connection | None = None,
     ) -> int | None:
         """Create a new schedule."""
-        state = get_state_manager()
         try:
             start_parts = [int(p) for p in start_time.split(":")]
             end_parts = [int(p) for p in end_time.split(":")]

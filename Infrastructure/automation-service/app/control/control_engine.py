@@ -642,7 +642,7 @@ class ControlEngine:
         """
         try:
             # Get current mode to determine which setpoint to use
-            current_mode_str = None
+            # (currently unused but reserved for future scheduler integration)
             if self.database._automation_redis and self.database._automation_redis.redis_enabled:
                 # Try to get current time-based mode from scheduler or Redis
                 # For now, use default setpoint (mode=NULL)

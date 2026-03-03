@@ -614,7 +614,6 @@ class StateManager(SchemaValidationMixin):
         try:
             # Use Redis TTL of 60s for setpoints
             ttl = 60
-            keys_to_write = []
             if heating_setpoint is not None:
                 await self.set(
                     f"setpoint:{location}:{cluster}:heating_setpoint",
