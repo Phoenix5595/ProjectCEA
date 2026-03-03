@@ -14,13 +14,12 @@ Dependencies (assumed to exist in the repo):
 """
 
 import argparse
+from datetime import datetime
 import json
 import logging
 import os
 import re
-from datetime import datetime
-from typing import Any, Dict, List, Optional
-
+from typing import Any
 
 logger = logging.getLogger("RedisMigration")
 logger.setLevel(logging.INFO)
@@ -33,19 +32,21 @@ if not logger.handlers:
 
 
 class RedisMigration:
-    def __init__(self, redis_client: Optional[Any] = None, backup_path: Optional[str] = None) -> None:
+    def __init__(
+        self, redis_client: Any | None = None, backup_path: str | None = None
+    ) -> None:
         # Lazy Redis client; prefer provided client, otherwise create a simple one
         self.redis = redis_client or self._default_redis_client()
         # Backup storage path
         self.backup_path = backup_path or os.path.join(
             os.path.dirname(__file__), "migrate_backup.json"
         )
-        self.scan_results: List[Dict[str, Any]] = []
+        self.scan_results: list[dict[str, Any]] = []
         self._migration_map = self._load_migration_map()
         logger.info("RedisMigration initialized (backup=%s)", self.backup_path)
 
     # ========== Redis helper ==========
-    def _default_redis_client(self) -> Optional[Any]:
+    def _default_redis_client(self) -> Any | None:
         try:
             import redis  # type: ignore
 
@@ -60,6 +61,7 @@ class RedisMigration:
         # Try relative import first (valid Python module path in this repo)
         try:
             from .schema import MIGRATION_MAP  # type: ignore
+
             mm = MIGRATION_MAP  # type: ignore
         except Exception:
             # Fallback: default to empty map if import fails
@@ -68,7 +70,7 @@ class RedisMigration:
         return mm
 
     # ========== Backup/restore ==============
-    def _backup_plan(self, plan: List[Dict[str, Any]]) -> None:
+    def _backup_plan(self, plan: list[dict[str, Any]]) -> None:
         payload = {
             "timestamp": datetime.utcnow().isoformat() + "Z",
             "plan": plan,
@@ -80,18 +82,18 @@ class RedisMigration:
         except Exception as e:
             logger.exception("Failed to write backup: %s", e)
 
-    def _load_backup(self) -> Optional[Dict[str, Any]]:
+    def _load_backup(self) -> dict[str, Any] | None:
         if not os.path.exists(self.backup_path):
             return None
         try:
-            with open(self.backup_path, "r", encoding="utf-8") as f:
+            with open(self.backup_path, encoding="utf-8") as f:
                 return json.load(f)
         except Exception as e:
             logger.exception("Failed to load backup: %s", e)
             return None
 
-    def _collect_patterns_from_migration_map(self, mm) -> List[str]:
-        patterns: List[str] = []
+    def _collect_patterns_from_migration_map(self, mm) -> list[str]:
+        patterns: list[str] = []
         if isinstance(mm, dict):
             patterns = list(mm.keys())
         elif isinstance(mm, (list, tuple)):
@@ -110,7 +112,7 @@ class RedisMigration:
         regex = re.compile("^" + re.escape(pattern).replace("\\*", ".*") + "$")
         return regex.match(key) is not None
 
-    def _resolve_new_key(self, old_key: str) -> Optional[str]:
+    def _resolve_new_key(self, old_key: str) -> str | None:
         mm = self._migration_map
         if not mm:
             return None
@@ -133,6 +135,7 @@ class RedisMigration:
     def _apply_pattern(self, old_pat: str, new_pat: str, old_key: str) -> str:
         if "*" in old_pat and "*" in new_pat:
             import re as _re
+
             regex = _re.compile("^" + _re.escape(old_pat).replace("\\*", "(.*)") + "$")
             m = regex.match(old_key)
             if m:
@@ -142,17 +145,17 @@ class RedisMigration:
         return new_pat
 
     # ========== Core operations ==============
-    def scan_existing_keys(self, batch_size: int = 1000) -> List[Dict[str, Any]]:
+    def scan_existing_keys(self, batch_size: int = 1000) -> list[dict[str, Any]]:
         if self.redis is None:
             logger.error("Redis client not initialized; cannot scan keys")
             return []
-        patterns: List[str] = []
+        patterns: list[str] = []
         mm = self._migration_map
         patterns = self._collect_patterns_from_migration_map(mm)
         if not patterns:
             patterns = ["*"]
 
-        results: List[Dict[str, Any]] = []
+        results: list[dict[str, Any]] = []
         seen: set = set()
         for pat in patterns:
             try:
@@ -167,10 +170,10 @@ class RedisMigration:
         logger.info("Scan complete: %d keys found across patterns %s", len(results), patterns)
         return results
 
-    def dry_run_report(self) -> List[Dict[str, Any]]:
+    def dry_run_report(self) -> list[dict[str, Any]]:
         if not self.scan_results:
             self.scan_existing_keys()
-        plan: List[Dict[str, Any]] = []
+        plan: list[dict[str, Any]] = []
         for item in self.scan_results:
             old_key = item.get("old_key")
             new_key = self._resolve_new_key(old_key) if old_key else None
@@ -180,7 +183,7 @@ class RedisMigration:
         logger.info("Dry run plan: %d migrations", len(plan))
         return plan
 
-    def migrate_keys(self, dry_run: bool = True) -> Dict[str, Any]:
+    def migrate_keys(self, dry_run: bool = True) -> dict[str, Any]:
         # Build plan from dry run
         self.scan_existing_keys()
         plan = self.dry_run_report()
@@ -205,7 +208,9 @@ class RedisMigration:
                 continue
             try:
                 if self.redis.exists(new_key):
-                    logger.warning("Target key exists, skipping migration: %s -> %s", old_key, new_key)
+                    logger.warning(
+                        "Target key exists, skipping migration: %s -> %s", old_key, new_key
+                    )
                     continue
                 # Rename key atomically
                 self.redis.rename(old_key, new_key)
@@ -215,7 +220,7 @@ class RedisMigration:
                     from .ttl import get_ttl_by_key_type  # type: ignore
                 except Exception:
                     try:
-                        from Infrastructure.automation-service.app.redis.ttl import get_ttl_by_key_type  # type: ignore
+                        from app.redis.ttl import get_ttl_by_key_type  # type: ignore
                     except Exception:
                         get_ttl_by_key_type = None  # type: ignore
                 if callable(get_ttl_by_key_type):
@@ -234,7 +239,7 @@ class RedisMigration:
         logger.info("Migration finished: %d migrated", migrated)
         return {"migrated": migrated, "planned": len(plan)}
 
-    def rollback_migration(self) -> Dict[str, Any]:
+    def rollback_migration(self) -> dict[str, Any]:
         backup = self._load_backup()
         if not backup:
             logger.info("No backup found. Nothing to rollback.")
@@ -265,7 +270,7 @@ class RedisMigration:
 def _ensure_redis_cli_available():
     # Quick helper to hint users when Redis is not available in the environment
     try:
-        import redis  # type: ignore
+
         return True
     except Exception:
         logger.warning("redis package not available; ensure Redis client is supplied or installed.")
@@ -278,9 +283,15 @@ def main() -> int:
 
     # dry-run / plan only (default)
     sub.run = None  # type: ignore
-    parser_run = sub.add_parser("run", help="Run migration (requires --apply flag) or default dry-run if not provided")
-    parser_run.add_argument("--apply", action="store_true", help="Apply the migration (not allowed by default)")
-    parser_run.add_argument("--rollback", action="store_true", help="Rollback last migration using backup")
+    parser_run = sub.add_parser(
+        "run", help="Run migration (requires --apply flag) or default dry-run if not provided"
+    )
+    parser_run.add_argument(
+        "--apply", action="store_true", help="Apply the migration (not allowed by default)"
+    )
+    parser_run.add_argument(
+        "--rollback", action="store_true", help="Rollback last migration using backup"
+    )
 
     # Also provide a convenience alias to just dry-run with no flags
     args = parser.parse_args()
