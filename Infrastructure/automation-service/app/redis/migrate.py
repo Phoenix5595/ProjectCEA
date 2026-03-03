@@ -32,9 +32,7 @@ if not logger.handlers:
 
 
 class RedisMigration:
-    def __init__(
-        self, redis_client: Any | None = None, backup_path: str | None = None
-    ) -> None:
+    def __init__(self, redis_client: Any | None = None, backup_path: str | None = None) -> None:
         # Lazy Redis client; prefer provided client, otherwise create a simple one
         self.redis = redis_client or self._default_redis_client()
         # Backup storage path
@@ -270,7 +268,6 @@ class RedisMigration:
 def _ensure_redis_cli_available():
     # Quick helper to hint users when Redis is not available in the environment
     try:
-
         return True
     except Exception:
         logger.warning("redis package not available; ensure Redis client is supplied or installed.")
