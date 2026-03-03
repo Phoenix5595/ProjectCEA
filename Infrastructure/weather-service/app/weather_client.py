@@ -113,12 +113,12 @@ class WeatherClient:
                 rh = self._calculate_rh(weather_data["temperature"], weather_data["dewpoint"])
                 weather_data["relative_humidity"] = rh
 
-            # Parse pressure (in hPa, may be in inches Hg in some formats)
+            # Parse pressure (already in hPa from aviationweather.gov)
             altim = metar_report.get("altim")
             if altim is not None:
-                # altim is typically in inches of mercury, convert to hPa
-                # 1 inHg = 33.8639 hPa
-                pressure_hpa = float(altim) * 33.8639
+                # aviationweather.gov returns hPa directly (e.g., 1033.3)
+                # No conversion needed
+                pressure_hpa = float(altim)
                 weather_data["pressure"] = round(pressure_hpa, 2)
             else:
                 logger.warning("Pressure not found in METAR")
@@ -128,7 +128,11 @@ class WeatherClient:
             wspd = metar_report.get("wspd")
 
             if wdir is not None:
-                weather_data["wind_direction"] = int(wdir)
+                try:
+                    weather_data["wind_direction"] = int(wdir)
+                except ValueError:
+                    if str(wdir).upper() != "VRB":
+                        logger.warning(f"Invalid wind direction value: {wdir}")
             else:
                 logger.warning("Wind direction not found in METAR")
 
