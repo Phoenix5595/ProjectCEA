@@ -31,6 +31,11 @@ SERVICE_HEALTH_URLS = [
     ("onewire-worker", "127.0.0.1", 8004, "/health"),
 ]
 
+# Health check caching (10 second TTL)
+_health_cache: list[dict[str, Any]] | None = None
+_health_cache_time: float = 0
+HEALTH_CACHE_TTL: float = 10.0  # seconds
+
 
 # These will be overridden by main app
 def get_database() -> DatabaseManager:
@@ -110,7 +115,17 @@ def _get_system_stats() -> dict[str, Any] | None:
 
 
 async def _check_service_health() -> list[dict[str, Any]]:
-    """Check health of known services; returns list of {name, status, latency_ms}."""
+    """Check health of known services; returns list of {name, status, latency_ms}.
+    Results are cached for 10 seconds to avoid repeated HTTP calls."""
+
+    global _health_cache, _health_cache_time
+
+    current_time = time.perf_counter()
+    # Return cached result if fresh
+    if _health_cache is not None and (current_time - _health_cache_time) < HEALTH_CACHE_TTL:
+        return _health_cache
+
+    # Cache miss or stale - fetch fresh data
 
     async def _fetch(name: str, host: str, port: int, path: str) -> dict[str, Any]:
         url = f"http://{host}:{port}{path}"
@@ -127,7 +142,12 @@ async def _check_service_health() -> list[dict[str, Any]]:
             return {"name": name, "status": "unreachable", "latency_ms": latency_ms}
 
     tasks = [_fetch(name, host, port, path) for name, host, port, path in SERVICE_HEALTH_URLS]
-    return await asyncio.gather(*tasks)
+    results = await asyncio.gather(*tasks)
+
+    _health_cache = results
+    _health_cache_time = current_time
+
+    return results
 
 
 @router.get("/health")
