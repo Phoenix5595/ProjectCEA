@@ -3,9 +3,11 @@ import { apiClient } from '../services/api'
 import { logger } from '../utils/logger'
 
 interface LightDevice {
- device_name: string
- display_name?: string
- dimming_enabled?: boolean
+  device_name: string
+  display_name?: string
+  dimming_enabled?: boolean
+  dimming_board_id?: string | null
+  dimming_channel?: number | null
 }
 
 interface LightStatus {

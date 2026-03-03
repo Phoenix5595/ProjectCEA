@@ -39,7 +39,7 @@ const Layout: React.FC = () => {
   const sector = getSectorFromPath(location.pathname);
   const showTopRibbon = sector !== null;
 
-  // Close mobile drawer when route changes
+  // Close mobile drawer on route change
   useEffect(() => {
     setMobileDrawerOpen(false);
   }, [location.pathname]);
