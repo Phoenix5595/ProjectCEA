@@ -34,6 +34,7 @@ class ApiClient {
       headers: {
         'Content-Type': 'application/json',
       },
+      timeout: 10000, // 10 second timeout
     });
     
     this.automationClient = axios.create({
@@ -282,14 +283,16 @@ class ApiClient {
     return response.data.devices || {};
   }
 
-  async getLightsForZone(location: string, cluster: string): Promise<Array<{ device_name: string; display_name?: string; dimming_enabled?: boolean }>> {
+  async getLightsForZone(location: string, cluster: string): Promise<Array<{ device_name: string; display_name?: string; dimming_enabled?: boolean; dimming_board_id?: string | null; dimming_channel?: number | null }>> {
     const devices = await this.getDevicesForLocationClusterWithDetails(location, cluster);
     return Object.entries(devices)
       .filter(([_, device]: [string, any]) => device.device_type === 'light')
       .map(([deviceName, device]: [string, any]) => ({
         device_name: deviceName,
         display_name: device.display_name,
-        dimming_enabled: device.dimming_enabled
+        dimming_enabled: device.dimming_enabled,
+        dimming_board_id: device.dimming_board_id,
+        dimming_channel: device.dimming_channel
       }));
   }
 

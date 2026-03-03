@@ -1,43 +1,38 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react'
 
-type Theme = 'light' | 'dark'
+export const THEME_NAMES = [
+  'precision-void',
+  'control-room',
+  'verdant-growth',
+  'spectrum',
+  'obsidian',
+  'botanical'
+] as const
+
+export type ThemeName = (typeof THEME_NAMES)[number]
 
 interface ThemeContextType {
-  theme: Theme
-  toggleTheme: () => void
+  theme: ThemeName
+  setTheme: (theme: ThemeName) => void
+  themes: typeof THEME_NAMES
 }
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined)
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [theme, setTheme] = useState<Theme>(() => {
-    // Check localStorage first, then system preference
-    const stored = localStorage.getItem('theme') as Theme | null
-    if (stored) return stored
-    
-    // Check system preference
-    if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
-      return 'dark'
-    }
-    return 'light'
+  const [theme, setTheme] = useState<ThemeName>(() => {
+    const stored = localStorage.getItem('cea-theme') as ThemeName | null
+    if (stored && THEME_NAMES.includes(stored)) return stored
+    return 'botanical'
   })
 
   useEffect(() => {
-    const root = document.documentElement
-    if (theme === 'dark') {
-      root.classList.add('dark')
-    } else {
-      root.classList.remove('dark')
-    }
-    localStorage.setItem('theme', theme)
+    document.documentElement.setAttribute('data-theme', theme)
+    localStorage.setItem('cea-theme', theme)
   }, [theme])
 
-  const toggleTheme = () => {
-    setTheme(prev => prev === 'light' ? 'dark' : 'light')
-  }
-
   return (
-    <ThemeContext.Provider value={{ theme, toggleTheme }}>
+    <ThemeContext.Provider value={{ theme, setTheme, themes: THEME_NAMES }}>
       {children}
     </ThemeContext.Provider>
   )

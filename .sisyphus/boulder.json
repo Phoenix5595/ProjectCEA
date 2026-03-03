@@ -1,9 +1,9 @@
 {
-  "active_plan": "/home/antoine/ProjectCEA/.sisyphus/plans/grafana-iframe-fix.md",
-  "started_at": "2026-03-01T18:14:54.936Z",
+  "active_plan": "/home/antoine/ProjectCEA/.sisyphus/plans/merge-ui-to-prod.md",
+  "started_at": "2026-03-03T22:10:19.697Z",
   "session_ids": [
     "ses_3a6d527bdffeqOgnyYXLIwqVDc"
   ],
-  "plan_name": "grafana-iframe-fix",
+  "plan_name": "merge-ui-to-prod",
   "agent": "atlas"
 }

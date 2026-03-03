@@ -53,6 +53,13 @@ const sectorEmojis: Record<Sector, string> = {
   devices: '⚙️',
 };
 
+const sectorDefaultNames: Record<Sector, string> = {
+  laboratory: 'Laboratory',
+  vegetation: 'Vegetation Room',
+  flower: 'Flower Room',
+  devices: 'Device Configuration',
+};
+
 const TopRibbon: React.FC<TopRibbonProps> = ({ 
   sector, 
   activeTab, 
@@ -77,17 +84,18 @@ const TopRibbon: React.FC<TopRibbonProps> = ({
     return currentPath.startsWith(tab.path);
   });
 
-  const activeTabId = activeTab || activeTabFromPath?.id || 'overview';
+  // Always derive active tab from URL - don't trust stale prop from parent
+  const activeTabId = activeTabFromPath?.id || activeTab || 'overview';
   const isControlPage = currentPath.includes('/control');
+  
+  const displayRoomName = roomName || sectorDefaultNames[sector];
 
   return (
-    <div className="w-full bg-surface-secondary border-b border-border-default h-12 flex items-center px-4 gap-4">
-      {roomName && (
-        <h1 className="text-base font-bold text-default flex items-center gap-2 whitespace-nowrap">
-          <span>{sectorEmojis[sector]}</span>
-          {roomName}
-        </h1>
-      )}
+    <div className="w-full bg-surface-secondary border-t border-b border-border-default h-[50px] flex items-center px-2 gap-2 sticky top-0 z-10">
+      <h1 className="text-lg font-bold text-default flex items-center gap-2 whitespace-nowrap">
+        <span className="text-xl">{sectorEmojis[sector]}</span>
+        {displayRoomName}
+      </h1>
 
       <nav className="flex overflow-x-auto scrollbar-hide">
         <div className="flex min-w-max">
@@ -99,7 +107,7 @@ const TopRibbon: React.FC<TopRibbonProps> = ({
                 to={tab.path}
                 onClick={() => onTabChange(tab.id)}
                 className={`
-                  relative px-3 py-1.5 text-sm font-medium whitespace-nowrap
+                  relative px-3 py-1.5 text-base font-medium whitespace-nowrap
                   transition-all duration-200 rounded
                   ${
                     isActive
@@ -116,7 +124,44 @@ const TopRibbon: React.FC<TopRibbonProps> = ({
       </nav>
 
       {showActions && isControlPage && (
-        <div className="flex items-center gap-3 ml-auto">
+        <div className="flex items-center gap-2 ml-auto">
+          {currentMode && onModeChange && (
+            <>
+              <div className="flex gap-1">
+                {['veg', 'flower', 'drying', 'sleep'].map((mode) => (
+                  <button
+                    key={mode}
+                    onClick={() => onModeChange(mode)}
+                    className={`px-2 py-0.5 text-sm font-bold rounded border transition-all ${
+                      currentMode.mode_name === mode
+                        ? 'bg-accent text-white border-accent'
+                        : 'bg-transparent text-text-default border-border-default hover:bg-surface-tertiary hover:border-border-emphasis'
+                    }`}
+                  >
+                    {mode.charAt(0).toUpperCase() + mode.slice(1)}
+                  </button>
+                ))}
+              </div>
+              {currentMode.mode_name === 'flower' && (
+                <div className="flex gap-1 ml-2">
+                  {['stretch', 'bulk', 'ripen'].map((sub) => (
+                    <button
+                      key={sub}
+                      onClick={() => onModeChange('flower', sub)}
+                      className={`px-2 py-0.5 text-sm font-bold rounded border transition-all ${
+                        currentMode.submode_name === sub
+                          ? 'bg-accent-vivid text-white border-accent-vivid'
+                          : 'bg-transparent text-text-default border-border-default hover:bg-surface-tertiary hover:border-border-emphasis'
+                      }`}
+                    >
+                      {sub.charAt(0).toUpperCase() + sub.slice(1)}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+          <div className="flex-1" />
           {(saveError || saveSuccess) && (
             <div className={`text-xs px-2 py-0.5 rounded ${saveError ? 'bg-status-danger-bg text-status-danger-text' : 'bg-status-success-bg text-status-success-text'}`}>
               {saveError || saveSuccess}
@@ -125,30 +170,10 @@ const TopRibbon: React.FC<TopRibbonProps> = ({
           <button
             onClick={onSave}
             disabled={saving}
-            className="px-3 py-1 bg-accent-vivid hover:bg-accent-hover disabled:opacity-50 text-white text-xs font-bold rounded transition-colors"
+            className="px-2 py-0.5 bg-accent-vivid hover:bg-accent-hover text-text-default text-xs font-bold rounded transition-colors"
           >
             {saving ? '...' : 'SAVE'}
           </button>
-          {currentMode && onModeChange && (
-              <select
-                value={currentMode.submode_name ? `${currentMode.mode_name}:${currentMode.submode_name}` : currentMode.mode_name || ''}
-                onChange={(e) => {
-                  const [mode, submode] = e.target.value.split(':');
-                  onModeChange(mode, submode);
-                }}
-                className="bg-surface-secondary text-text-secondary text-xs px-2 py-1 rounded border-border-default"
-              >
-              <option value="veg">Veg</option>
-              <option value="flower:stretch">Flower - Stretch</option>
-              <option value="flower:bulk">Flower - Bulk</option>
-              <option value="flower:ripen">Flower - Ripen</option>
-              <option value="drying">Drying</option>
-              <option value="sleep">Sleep</option>
-            </select>
-          )}
-          <Link to="/" className="text-xs text-text-muted hover:text-white font-medium flex items-center gap-1 bg-surface-secondary px-2 py-1 rounded border-border-default hover:border-border-emphasis transition-colors">
-            <span>←</span> Back
-          </Link>
         </div>
       )}
     </div>
