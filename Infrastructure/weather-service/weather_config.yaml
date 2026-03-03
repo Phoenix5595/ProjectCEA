@@ -1,5 +1,5 @@
 # Weather Service Configuration
-# Configuration for Quebec City (Jean Lesage) Weather Station
+# Configuration for Québec City (Jean Lesage) Weather Station
 
 # Weather API configuration
 weather:
@@ -20,7 +20,7 @@ database:
 # Room and device configuration
 room:
   name: "Outside"
-  device_name: "Weather Station Quebec City"
+  device_name: "Weather Station Québec"
 
 
 
