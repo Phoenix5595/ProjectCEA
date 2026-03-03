@@ -84,7 +84,8 @@ const TopRibbon: React.FC<TopRibbonProps> = ({
     return currentPath.startsWith(tab.path);
   });
 
-  const activeTabId = activeTab || activeTabFromPath?.id || 'overview';
+  // Always derive active tab from URL - don't trust stale prop from parent
+  const activeTabId = activeTabFromPath?.id || activeTab || 'overview';
   const isControlPage = currentPath.includes('/control');
   
   const displayRoomName = roomName || sectorDefaultNames[sector];
