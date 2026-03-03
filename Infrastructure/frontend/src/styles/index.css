@@ -1,19 +1,214 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+/* Self-hosted fonts */
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/jetbrains-mono-regular.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/fonts/jetbrains-mono-bold.woff2') format('woff2');
+}
+
+:root {
+  --surface-base: #030712;
+  --surface-primary: #111827;
+  --surface-secondary: #1f2937;
+  --surface-tertiary: #374151;
+  --text-default: #ffffff;
+  --text-secondary: #d1d5db;
+  --text-muted: #9ca3af;
+  --text-subtle: #6b7280;
+  --accent: #06b6d4;
+  --accent-data: #22d3ee;
+  --accent-setpoint: #fbbf24;
+  --status-success: #4ade80;
+  --status-danger: #f87171;
+  --status-warning: #facc15;
+  --border-default: #374151;
+  --border-emphasis: #4b5563;
+  --border-subtle: #1f2937;
+}
+
+@import 'tailwindcss';
+@import './themes.css';
+
+@theme inline {
+  --font-sans: 'JetBrains Mono', ui-monospace, monospace;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+  --color-popover: hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
+  --radius: var(--radius);
+
+  /* ===== Semantic Design Tokens (linked to theme variables) ===== */
+
+  /* Surfaces */
+  --color-surface-base: var(--surface-base);
+  --color-surface-primary: var(--surface-primary);
+  --color-surface-secondary: var(--surface-secondary);
+  --color-surface-tertiary: var(--surface-tertiary);
+  --color-surface-quaternary: var(--surface-quaternary, #4b5563);
+  --color-surface-quinary: var(--surface-quinary, #6b7280);
+
+  /* Text */
+  --color-text-default: var(--text-default);
+  --color-text-strong: var(--text-strong, #f3f4f6);
+  --color-text-input: var(--text-input, #e5e7eb);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-muted: var(--text-muted);
+  --color-text-subtle: var(--text-subtle);
+  --color-text-faint: var(--text-faint, #4b5563);
+
+  /* Accent (cyan) */
+  --color-accent-data: var(--accent-data);
+  --color-accent-vivid: var(--accent);
+  --color-accent-hover: var(--accent-hover, #0891b2);
+  --color-accent-active: var(--accent-active, #0e7490);
+  --color-accent-dim: var(--accent-dim, #164e63);
+
+  /* Setpoint (amber) */
+  --color-accent-setpoint: var(--accent-setpoint);
+  --color-accent-setpoint-dim: var(--accent-setpoint-dim, #f59e0b);
+
+  /* Button primary (blue) */
+  --color-btn-primary: var(--btn-primary, #1d4ed8);
+  --color-btn-primary-hover: var(--btn-primary-hover, #2563eb);
+  --color-btn-primary-light: var(--btn-primary-light, #3b82f6);
+  --color-btn-primary-data: var(--btn-primary-data, #60a5fa);
+  --color-btn-primary-text: var(--btn-primary-text, #93c5fd);
+  --color-btn-primary-dim: var(--btn-primary-dim, #1e3a5f);
+  --color-btn-primary-active: var(--btn-primary-active, #1e40af);
+  --color-btn-primary-info: var(--btn-primary-info, #bfdbfe);
+
+  /* Status: success (green) */
+  --color-status-success: var(--status-success);
+  --color-status-success-vivid: var(--status-success-vivid, #22c55e);
+  --color-status-success-bg: var(--status-success-bg, #14532d);
+  --color-status-success-text: var(--status-success-text, #bbf7d0);
+  --color-status-success-border: var(--status-success-border, #166534);
+
+  /* Status: danger (red) */
+  --color-status-danger: var(--status-danger);
+  --color-status-danger-vivid: var(--status-danger-vivid, #ef4444);
+  --color-status-danger-bg: var(--status-danger-bg, #7f1d1d);
+  --color-status-danger-text: var(--status-danger-text, #fecaca);
+  --color-status-danger-border: var(--status-danger-border, #991b1b);
+
+  /* Status: warning (yellow) */
+  --color-status-warning: var(--status-warning);
+  --color-status-warning-vivid: var(--status-warning-vivid, #eab308);
+  --color-status-warning-bg: var(--status-warning-bg, #713f12);
+  --color-status-warning-text: var(--status-warning-text, #fef08a);
+  --color-status-warning-dim: var(--status-warning-dim, #a16207);
+
+  /* PID auto mode (purple) */
+  --color-mode-auto: var(--mode-auto, #a855f7);
+  --color-mode-auto-dim: var(--mode-auto-dim, #581c87);
+  --color-mode-auto-text: var(--mode-auto-text, #d8b4fe);
+  --color-mode-auto-border: var(--mode-auto-border, #7e22ce);
+
+  /* Submode (pink) */
+  --color-mode-submode: var(--mode-submode, #db2777);
+
+  /* Borders */
+  --color-border-default: var(--border-default);
+  --color-border-emphasis: var(--border-emphasis);
+  --color-border-subtle: var(--border-subtle);
+  --color-border-input: var(--border-input, #9ca3af);
+
+  /* Period/Mode colors (SetpointsTable) */
+  --color-period-day: var(--period-day, #b45309);
+  --color-period-day-bg: var(--period-day-bg, #78350f);
+  --color-period-preday: var(--period-preday, #78350f);
+  --color-period-preday-bg: var(--period-preday-bg, #451a03);
+
+  /* Timeline bands */
+  --color-timeline-night: var(--timeline-night, #3b82f6);
+  --color-timeline-day: var(--timeline-day, #eab308);
+  --color-timeline-pre: var(--timeline-pre, #a855f7);
+  --color-timeline-ramp: var(--timeline-ramp, #713f12);
+  --color-timeline-now: var(--timeline-now, #ef4444);
+}
+
+
+
+/*
+  The default border color has changed to `currentcolor` in Tailwind CSS v4,
+  so we've added these compatibility styles to make sure everything still
+  looks the same as it did with Tailwind CSS v3.
+
+  If we ever want to remove these styles, we need to add an explicit border
+  color utility to any element that depends on these defaults.
+*/
+@layer base {
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-gray-200, currentcolor);
+  }
+
+  :root {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+    --card: 222.2 84% 4.9%;
+    --card-foreground: 210 40% 98%;
+    --popover: 222.2 84% 4.9%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 210 40% 98%;
+    --primary-foreground: 222.2 47.4% 11.2%;
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 212.7 26.8% 83.9%;
+    --radius: 0.375rem;
+  }
+}
 
 html {
   font-size: 16px;
 }
 
+* {
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace !important;
+}
+
 :root {
-  font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
   line-height: 1.5;
   font-weight: 400;
 
-  color-scheme: light dark;
-  color: #1f2937; /* Dark gray for high contrast */
-  background-color: #f3f4f6; /* Light gray background */
+  color-scheme: dark;
+  color: var(--text-default);
+  background-color: var(--surface-base);
 
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -21,23 +216,12 @@ html {
   -moz-osx-font-smoothing: grayscale;
 }
 
-:root.dark {
-  color: #f9fafb; /* Light gray for high contrast */
-  background-color: #000000; /* True black background */
-}
-
 body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
-  background-color: #f3f4f6;
-  color: #1f2937;
-  transition: background-color 0.2s ease, color 0.2s ease;
-}
-
-.dark body {
-  background-color: #000000;
-  color: #f9fafb;
+  background-color: var(--surface-base);
+  color: var(--text-default);
 }
 
 #root {
@@ -46,27 +230,17 @@ body {
 }
 
 
-/* ===== CSS Variables for Theming ===== */
 :root {
-  --bg-primary: #ffffff;
-  --bg-secondary: #f5f5f5;
-  --bg-tertiary: #e5e5e5;
-  --text-primary: #1a1a1a;
-  --text-secondary: #888888;
-  --border: #e0e0e0;
-  --accent-green: #22c55e;
-  --accent-red: #ef4444;
-  --accent-yellow: #eab308;
-  --accent-blue: #3b82f6;
-}
-
-:root.dark {
-  --bg-primary: #0a0a0a;
-  --bg-secondary: #1a1a1a;
-  --bg-tertiary: #2a2a2a;
-  --text-primary: #ffffff;
-  --text-secondary: #888888;
-  --border: #333333;
+  --bg-primary: var(--surface-base);
+  --bg-secondary: var(--surface-primary);
+  --bg-tertiary: var(--surface-secondary);
+  --text-primary: var(--text-default);
+  --text-secondary: var(--text-muted);
+  --border: var(--border-default);
+  --accent-green: var(--status-success);
+  --accent-red: var(--status-danger);
+  --accent-yellow: var(--status-warning);
+  --accent-blue: var(--accent);
 }
 
 /* ===== Dashboard Layout ===== */
@@ -108,12 +282,8 @@ body {
 
 .zone-card:hover {
   border-color: var(--accent-blue);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-  transform: translateY(-2px);
-}
-
-.dark .zone-card:hover {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  transform: translateY(-2px);
 }
 
 .zone-card-title {
@@ -162,7 +332,7 @@ body {
 
 .mode-badge.day {
   background: rgba(234, 179, 8, 0.2);
-  color: #eab308;
+  color: var(--accent-setpoint);
   border: 1px solid rgba(234, 179, 8, 0.3);
 }
 
@@ -172,7 +342,6 @@ body {
   border: 1px solid rgba(99, 102, 241, 0.3);
 }
 
-/* ===== Status Indicators ===== */
 .status-dot {
   width: 8px;
   height: 8px;

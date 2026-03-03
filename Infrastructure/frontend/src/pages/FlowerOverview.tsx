@@ -1,5 +1,6 @@
-import { Navigate } from 'react-router-dom'
-
 export default function FlowerOverview() {
-  return <Navigate to="/flower/monitoring" replace />
+  return (
+    <div className="p-6 bg-surface-base min-h-screen">
+    </div>
+  )
 }

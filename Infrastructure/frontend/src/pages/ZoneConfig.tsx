@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from 'react'
 import { useParams } from 'react-router-dom'
+import { useState, useEffect, useCallback } from 'react'
 import { apiClient } from '../services/api'
 import { logger } from '../utils/logger'
 import { getLocationDisplayName, getLocationBackendName } from '../config/zones'
@@ -34,14 +34,6 @@ export default function ZoneConfig({ location: propsLocation, cluster: propsClus
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
 
-  useEffect(() => {
-    if (location && cluster) {
-      loadRoomMode()
-    }
-  }, [location, cluster])
-
-  // Actions binding will be performed after callback definitions
-
   async function loadRoomMode() {
     setLoading(true)
     setError(null)
@@ -56,20 +48,6 @@ export default function ZoneConfig({ location: propsLocation, cluster: propsClus
       setLoading(false)
     }
   }
-
-  const handleModeChange = useCallback(async (modeName: string, submodeName?: string) => {
-    if (!location || !cluster) return
-    try {
-      const newMode = await apiClient.setRoomMode(location, cluster, { mode_name: modeName, submode_name: submodeName })
-      setRoomMode(newMode)
-      setSavedParams({ ...newMode.parameters })
-      setSuccess('Mode changed')
-      setTimeout(() => setSuccess(null), 2000)
-    } catch (err: any) {
-      logger.error('Error changing mode:', err)
-      setError(err.response?.data?.detail || 'Failed to change mode')
-    }
-  }, [location, cluster, roomMode, savedParams])
 
   function handleParamChange(updates: Partial<ModeParameters>) {
     if (!roomMode) return
@@ -87,6 +65,21 @@ export default function ZoneConfig({ location: propsLocation, cluster: propsClus
     const m = parts[1]?.padStart(2, '0') ?? '00'
     return `${h}:${m}`
   }
+
+  const handleModeChange = useCallback(async (modeName: string, submodeName?: string) => {
+    if (!location || !cluster) return
+    
+    try {
+      const newMode = await apiClient.setRoomMode(location, cluster, { mode_name: modeName, submode_name: submodeName })
+      setRoomMode(newMode)
+      setSavedParams({ ...newMode.parameters })
+      setSuccess('Mode changed')
+      setTimeout(() => setSuccess(null), 2000)
+    } catch (err: any) {
+      logger.error('Error changing mode:', err)
+      setError(err.response?.data?.detail || 'Failed to change mode')
+    }
+  }, [location, cluster])
 
   const handleSave = useCallback(async () => {
     if (!roomMode || !location || !cluster) return
@@ -118,7 +111,13 @@ export default function ZoneConfig({ location: propsLocation, cluster: propsClus
     } finally {
       setSaving(false)
     }
-  }, [location, cluster, roomMode, savedParams])
+  }, [roomMode, location, cluster])
+
+  useEffect(() => {
+    if (location && cluster) {
+      loadRoomMode()
+    }
+  }, [location, cluster])
 
   useEffect(() => {
     setActions({
@@ -131,7 +130,10 @@ export default function ZoneConfig({ location: propsLocation, cluster: propsClus
       onSave: handleSave,
       onModeChange: handleModeChange,
     })
-  }, [location, cluster, saving, success, error, roomMode, handleSave, handleModeChange])
+
+    // Clear actions when leaving the page to prevent "leak" to other sectors
+    return () => setActions({});
+  }, [location, cluster, saving, success, error, roomMode, handleSave, handleModeChange, setActions])
 
   if (!location || !cluster) {
     return <div className="text-text-default">Invalid zone</div>
@@ -147,11 +149,12 @@ export default function ZoneConfig({ location: propsLocation, cluster: propsClus
   const lockedPhotoperiod = currentModeName === 'flower' ? 12 : currentModeName === 'veg' ? 18 : null
 
   return (
-    <div className="min-h-screen bg-surface-base p-2">
+    <div className="min-h-screen bg-surface-base p-1">
       <div className="max-w-[1920px] mx-auto h-[calc(100vh-1rem)] flex flex-col">
         {params && (
-          <div className="flex-1 flex flex-col gap-2 min-h-0">
-            <div className="h-[270px] flex-shrink-0 bg-surface-base rounded-lg border border-border-default overflow-hidden p-3">
+          <div className="flex-1 flex flex-col gap-1 min-h-0">
+            {/* Climate Timeline - 270px fixed */}
+            <div className="h-[270px] shrink-0 bg-surface-primary rounded-lg border border-border-subtle overflow-hidden p-2">
               <div className="text-[14px] text-text-muted uppercase font-bold tracking-wider mb-2">Climate Timeline</div>
               {!isConstant && (
                 <SetpointTimeline
@@ -185,33 +188,33 @@ export default function ZoneConfig({ location: propsLocation, cluster: propsClus
               )}
             </div>
 
-            <div className="flex gap-2">
-              <div className="w-[35%] flex flex-col gap-2">
+            {/* Light Schedule + Setpoints row - NO height constraint */}
+            <div className="flex gap-1 h-[450px] shrink-0">
+              <div className="w-[30%] h-full">
                 {!isConstant && (
-                  <div className="bg-gray-900 rounded-lg border border-gray-800 p-[11px] flex-shrink-0">
-                    <div className="text-[14px] text-text-muted uppercase font-bold tracking-wider mb-2">Light Schedule</div>
-                    <div className="flex justify-center">
+                  <div className="bg-surface-primary rounded-lg border border-border-subtle p-1 h-full flex flex-col min-w-[300px]">
+                    <div className="text-[12px] text-text-muted uppercase font-bold tracking-wider mb-1">Light Schedule</div>
+                    <div className="flex-1 min-h-0">
                       <CircularTimePicker
                         dayStartTime={params.day_start_time}
                         dayEndTime={params.night_start_time}
-                      onDayStartChange={(time) => handleParamChange({ day_start_time: time })}
-                      onDayEndChange={(time) => handleParamChange({ night_start_time: time })}
-                      showPresetButtons={false}
-                      lockedPhotoperiodHours={lockedPhotoperiod}
-                      rampUpDuration={params.light_ramp_up_minutes}
-                      rampDownDuration={params.light_ramp_down_minutes}
-                      onRampUpChange={(d) => handleParamChange({ light_ramp_up_minutes: d ?? 0 })}
-                      onRampDownChange={(d) => handleParamChange({ light_ramp_down_minutes: d ?? 0 })}
-                      size={420}
-                    />
+                        onDayStartChange={(time) => handleParamChange({ day_start_time: time })}
+                        onDayEndChange={(time) => handleParamChange({ night_start_time: time })}
+                        showPresetButtons={false}
+                        lockedPhotoperiodHours={lockedPhotoperiod}
+                        rampUpDuration={params.light_ramp_up_minutes}
+                        rampDownDuration={params.light_ramp_down_minutes}
+                        onRampUpChange={(d) => handleParamChange({ light_ramp_up_minutes: d ?? 0 })}
+                        onRampDownChange={(d) => handleParamChange({ light_ramp_down_minutes: d ?? 0 })}
+                      />
+                    </div>
                   </div>
-                </div>
                 )}
               </div>
-              
-              <div className="w-[65%] flex flex-col gap-2">
-                <div className="bg-gray-900 rounded-lg border border-gray-800 p-3">
-                  <div className="text-[14px] text-text-muted uppercase font-bold tracking-wider mb-2">Setpoints</div>
+
+              <div className="w-[70%] flex flex-col gap-1 h-full overflow-hidden">
+                <div className="bg-surface-primary rounded-lg border border-border-subtle p-1 flex-[55.7] overflow-auto">
+                  <div className="text-[12px] text-text-muted uppercase font-bold tracking-wider mb-1">Setpoints</div>
                   <SetpointsTable
                     params={params}
                     currentParams={savedParams || undefined}
@@ -219,19 +222,27 @@ export default function ZoneConfig({ location: propsLocation, cluster: propsClus
                     onChange={handleParamChange}
                   />
                 </div>
+                <div className="flex-[44.3] overflow-auto">
+                  <VerticalLightsBlock location={location} cluster={cluster} compact={true} />
+                </div>
               </div>
             </div>
-            
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-2">
-              <VerticalLightsBlock location={location} cluster={cluster} />
-              {(currentModeName === 'drying' || currentModeName === 'sleep') && (
-              <div className="bg-gray-900 rounded-lg border border-gray-800 p-2">
-                <div className="text-[14px] text-text-muted uppercase font-bold tracking-wider mb-2">Manual Light Control</div>
-                <ManualLightControl location={location} cluster={cluster} compact={true} />
+
+            {/* Notes + PID/Manual - 35/65 split */}
+            <div className="flex gap-1">
+              <div className="w-[35%]">
+                <VerticalNotesBlock location={location} cluster={cluster} currentMode={roomMode?.mode_name} />
               </div>
-              )}
-              <VerticalPIDBlock />
-              <VerticalNotesBlock location={location} cluster={cluster} currentMode={roomMode?.mode_name} />
+              <div className="w-[65%]">
+                {/* Manual light control only for drying/sleep */}
+                {(currentModeName === 'drying' || currentModeName === 'sleep') && (
+                  <div className="bg-surface-primary rounded-lg border border-border-subtle p-2 mb-1">
+                    <div className="text-[12px] text-text-muted uppercase font-bold tracking-wider mb-2">Manual Light Control</div>
+                    <ManualLightControl location={location} cluster={cluster} compact={true} />
+                  </div>
+                )}
+                <VerticalPIDBlock />
+              </div>
             </div>
           </div>
         )}
