@@ -54,7 +54,8 @@ async def get_latest_weather(db: DatabaseManager = Depends(get_database)) -> dic
                 # Remove 'outside_' prefix for response
                 key = sensor_name.replace("outside_", "")
                 weather_data[key] = {"value": row["value"], "unit": row["unit"]}
-                if timestamp is None:
+                # Use the latest timestamp across all sensors
+                if timestamp is None or row["time"] > timestamp:
                     timestamp = row["time"]
 
             return {"timestamp": timestamp.isoformat() if timestamp else None, "data": weather_data}

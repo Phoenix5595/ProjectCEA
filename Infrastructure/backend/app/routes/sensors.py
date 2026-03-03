@@ -322,9 +322,11 @@ async def get_all_live_sensor_data():
 def get_sensor_suffix(location: str, cluster: str) -> str:
     """Get sensor name suffix based on location and cluster."""
     if location == "Flower Room":
-        return "f" if cluster == "front" else "b"
+        if cluster in ("front", "clusterA"):
+            return "f"
+        return "b"
     elif location == "Veg Room":
         return "v"
     elif location == "Lab":
-        return ""  # Lab sensors might not have suffix
+        return ""
     return ""

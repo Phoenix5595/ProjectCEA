@@ -322,11 +322,13 @@ class DatabaseManager:
     def _get_sensor_suffix(self, location: str, cluster: str) -> str:
         """Get sensor name suffix based on location and cluster."""
         if location == "Flower Room":
-            return "f" if cluster == "front" else "b"
+            if cluster in ("front", "clusterA"):
+                return "f"
+            return "b"
         elif location == "Veg Room":
             return "v"
         elif location == "Lab":
-            return ""  # Lab sensors might not have suffix
+            return ""
         return ""
 
     def _calculate_rh(self, temp_dry: float, temp_wet: float, pressure: float = 1013.25) -> float:
