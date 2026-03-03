@@ -213,16 +213,23 @@ async def get_status(
                     device_entry["load_percent"] = pid_status[pid_key]["load_percent"]
                 devices[location][cluster][device_name] = device_entry
 
-    # Get sensor values
+    # Get sensor values using batch query
     sensors = {}
     sensor_mapping = config.get_sensor_mapping()
+    all_sensor_names: list[str] = []
+    for location, clusters in sensor_mapping.items():
+        for cluster, cluster_sensors in clusters.items():
+            for sensor_type, sensor_name in cluster_sensors.items():
+                all_sensor_names.append(sensor_name)
+
+    batch_values = await database.sensor_repo.get_sensor_values_batch(all_sensor_names)
+
     for location, clusters in sensor_mapping.items():
         sensors[location] = {}
         for cluster, cluster_sensors in clusters.items():
             sensors[location][cluster] = {}
             for sensor_type, sensor_name in cluster_sensors.items():
-                value = await database.sensor_repo.get_sensor_value(sensor_name)
-                sensors[location][cluster][sensor_type] = value
+                sensors[location][cluster][sensor_type] = batch_values.get(sensor_name)
 
     # Get performance metrics
     request_metrics = get_performance_metrics()
