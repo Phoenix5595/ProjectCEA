@@ -322,10 +322,16 @@ class ApiClient {
     return response.data;
   }
 
-  // System Status (automation service) - optimized with health=false for faster polling
+  // System Status (automation service) - optimized with health=false for fast dashboard polling
   async getSystemStatus(): Promise<any> {
     const response = await this.automationClient.get('/api/status?health=false');
     return response.data;
+  }
+
+  // System Health - separate endpoint for health status only (slower, poll less frequently)
+  async getSystemHealth(): Promise<any> {
+    const response = await this.automationClient.get('/api/status?health=true');
+    return response.data.service_health || [];
   }
 
   // Control history (recent on/off log per room)
