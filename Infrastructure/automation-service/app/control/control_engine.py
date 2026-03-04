@@ -76,11 +76,6 @@ class ControlEngine:
             scheduler,
             pid_controller_manager=self.pid_controller_manager,
         )
-        self.setpoint_manager = SetpointManager(
-            redis_client=database._automation_redis,
-            state_manager=self._state,
-        )
-
         # VPD Cascade Controller for intelligent actuator selection
         self.vpd_cascade_controller = VPDCascadeController(
             vpd_deadband=0.05,  # 0.05 kPa deadband
@@ -91,6 +86,12 @@ class ControlEngine:
 
         # StateManager for fast in-memory state access (<1ms reads)
         self._state: StateManager = get_state_manager()
+
+        # Initialize SetpointManager AFTER _state is defined
+        self.setpoint_manager = SetpointManager(
+            redis_client=database._automation_redis,
+            state_manager=self._state,
+        )
 
         # Ramp restoration will be done asynchronously after Redis is available
         # See _restore_ramps_on_startup() called from run()
