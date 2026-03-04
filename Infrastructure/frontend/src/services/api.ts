@@ -322,9 +322,9 @@ class ApiClient {
     return response.data;
   }
 
-  // System Status (automation service)
+  // System Status (automation service) - optimized with health=false for faster polling
   async getSystemStatus(): Promise<any> {
-    const response = await this.automationClient.get('/api/status');
+    const response = await this.automationClient.get('/api/status?health=false');
     return response.data;
   }
 
