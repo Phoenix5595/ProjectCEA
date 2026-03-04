@@ -76,7 +76,7 @@ class ControlEngine:
             scheduler,
             pid_controller_manager=self.pid_controller_manager,
         )
-        self.setpoint_manager = SetpointManager(database)
+        self.setpoint_manager = SetpointManager(database._automation_redis)
 
         # VPD Cascade Controller for intelligent actuator selection
         self.vpd_cascade_controller = VPDCascadeController(
