@@ -76,7 +76,10 @@ class ControlEngine:
             scheduler,
             pid_controller_manager=self.pid_controller_manager,
         )
-        self.setpoint_manager = SetpointManager(database._automation_redis)
+        self.setpoint_manager = SetpointManager(
+            redis_client=database._automation_redis,
+            state_manager=self._state,
+        )
 
         # VPD Cascade Controller for intelligent actuator selection
         self.vpd_cascade_controller = VPDCascadeController(

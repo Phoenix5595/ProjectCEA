@@ -6,7 +6,6 @@ from collections.abc import Mapping
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any, cast
 
-from app.database import DatabaseManager
 from shared.infra_logging import LoggingContext, get_logger
 
 if TYPE_CHECKING:
@@ -342,14 +341,20 @@ class RampManager:
 class SetpointManager:
     """Calculates effective setpoints with ramp transitions."""
 
-    def __init__(self, database: DatabaseManager):
+    def __init__(
+        self,
+        redis_client: AutomationRedisClient | None = None,
+        state_manager=None,  # StateManager for getting previous setpoints
+    ):
         """Initialize setpoint manager.
 
         Args:
-            database: Database manager instance
+            redis_client: Redis client for ramp persistence
+            state_manager: StateManager for getting previous mode setpoints
         """
-        self.database = database
-        self.ramp_manager = RampManager()
+        self._redis = redis_client
+        self.ramp_manager = RampManager(redis_client)
+        self._state = state_manager  # type: ignore
 
     async def compute_effective_setpoints(
         self,
