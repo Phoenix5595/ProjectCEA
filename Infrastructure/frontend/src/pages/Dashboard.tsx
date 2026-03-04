@@ -129,7 +129,6 @@ export default function Dashboard() {
       setpointData,
       vegLive,
       flowerALive,
-      flowerBLive,
       labLive,
       weatherResponse,
       statusResponse,
@@ -149,8 +148,7 @@ export default function Dashboard() {
         'Lab_main_lab_temp', 'Lab_main_water_temperature'
       ]).catch(() => ({})),
       apiClient.getLiveSensorData('Veg Room', 'main').catch(() => ({})),
-      apiClient.getLiveSensorData('Flower Room', 'clusterA').catch(() => ({})),
-      apiClient.getLiveSensorData('Flower Room', 'clusterB').catch(() => ({})),
+      apiClient.getLiveSensorData('Flower Room', 'main').catch(() => ({})),
       apiClient.getLiveSensorData('Lab', 'main').catch(() => ({})),
       apiClient.getLatestWeather().catch(() => null),
       apiClient.getSystemStatus().catch(() => null),
@@ -167,8 +165,7 @@ export default function Dashboard() {
     // Process all live data
     const allLiveFlat = {
       ...parseLiveResponse('Veg Room', 'main', vegLive as any),
-      ...parseLiveResponse('Flower Room', 'clusterA', flowerALive as any),
-      ...parseLiveResponse('Flower Room', 'clusterB', flowerBLive as any),
+      ...parseLiveResponse('Flower Room', 'main', flowerALive as any),
       ...parseLiveResponse('Lab', 'main', labLive as any)
     }
     if (Object.keys(allLiveFlat).length > 0) setSensorData(prev => ({ ...prev, ...allLiveFlat }))
@@ -198,8 +195,9 @@ export default function Dashboard() {
     })
 
     if (statusResponse) {
-      if (statusResponse.devices) setStatusDevices(statusResponse.devices)
-      const ep = statusResponse.effective_setpoints
+      const status = statusResponse as any
+      if (status.devices) setStatusDevices(status.devices)
+      const ep = status.effective_setpoints
       if (ep && typeof ep === 'object') {
         const effectiveFlat: Record<string, number> = {}
         for (const [location, clusters] of Object.entries(ep)) {
@@ -215,7 +213,7 @@ export default function Dashboard() {
         }
         if (Object.keys(effectiveFlat).length > 0) setSensorData(prev => ({ ...prev, ...effectiveFlat }))
       }
-      const sys = statusResponse.system
+      const sys = status.system
       const formatUptime = (sec: number) => {
         const d = Math.floor(sec / 86400)
         const h = Math.floor((sec % 86400) / 3600)
@@ -230,8 +228,8 @@ export default function Dashboard() {
         process_count: sys?.process_count ?? null,
         cpu_temp_c: sys?.cpu_temp_c ?? null,
         throttle_status: sys?.throttle_status ?? null,
-        services: Array.isArray(statusResponse.service_health)
-          ? statusResponse.service_health.map((s: { name: string; status: string; latency_ms?: number }) => ({
+        services: Array.isArray(status.service_health)
+          ? status.service_health.map((s: { name: string; status: string; latency_ms?: number }) => ({
               name: s.name,
               status: s.status as 'running' | 'stopped' | 'error' | 'unreachable',
               latency_ms: s.latency_ms
@@ -300,9 +298,9 @@ export default function Dashboard() {
    useEffect(() => {
    const interval = setInterval(async () => {
    try {
-   const statusResponse = await apiClient.getSystemStatus()
-   if (statusResponse) {
-   const sys = statusResponse.system
+    const statusResponse = await apiClient.getSystemStatus()
+    if (statusResponse) {
+      const sys = (statusResponse as any).system
    const formatUptime = (sec: number) => {
      const d = Math.floor(sec / 86400)
      const h = Math.floor((sec % 86400) / 3600)
@@ -361,16 +359,14 @@ export default function Dashboard() {
   useEffect(() => {
     const refreshLiveSensors = async () => {
       try {
-        const [vegLive, flowerALive, flowerBLive, labLive] = await Promise.all([
+        const [vegLive, flowerLive, labLive] = await Promise.all([
           apiClient.getLiveSensorData('Veg Room', 'main').catch(() => ({})),
-          apiClient.getLiveSensorData('Flower Room', 'clusterA').catch(() => ({})),
-          apiClient.getLiveSensorData('Flower Room', 'clusterB').catch(() => ({})),
+          apiClient.getLiveSensorData('Flower Room', 'main').catch(() => ({})),
           apiClient.getLiveSensorData('Lab', 'main').catch(() => ({}))
         ])
         const allLiveFlat = {
           ...parseLiveResponse('Veg Room', 'main', vegLive as any),
-          ...parseLiveResponse('Flower Room', 'clusterA', flowerALive as any),
-          ...parseLiveResponse('Flower Room', 'clusterB', flowerBLive as any),
+          ...parseLiveResponse('Flower Room', 'main', flowerLive as any),
           ...parseLiveResponse('Lab', 'main', labLive as any)
         }
         if (Object.keys(allLiveFlat).length > 0) setSensorData(prev => ({ ...prev, ...allLiveFlat }))
