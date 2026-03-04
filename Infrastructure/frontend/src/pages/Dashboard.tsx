@@ -296,32 +296,35 @@ export default function Dashboard() {
  return () => clearInterval(interval)
  }, [])
 
-  // Refresh system stats every 5 seconds (fast, no health check)
-  useEffect(() => {
-  const interval = setInterval(async () => {
-  try {
-  const statusResponse = await apiClient.getSystemStatus()
-  if (statusResponse) {
-  const sys = statusResponse.system
-  const formatUptime = (sec: number) => {
-    const d = Math.floor(sec / 86400)
-    const h = Math.floor((sec % 86400) / 3600)
-    return `${d}d ${h}h`
-  }
-  setSystemStats(prev => ({
-    ...prev,
-    cpu_usage: sys?.cpu_percent ?? prev.cpu_usage,
-    memory_usage: sys?.memory_percent ?? prev.memory_usage,
-    disk_usage: sys?.disk_percent ?? prev.disk_usage,
-    uptime: sys?.uptime_seconds != null ? formatUptime(sys.uptime_seconds) : prev.uptime,
-    load_avg: sys?.load_avg ?? prev.load_avg,
-    process_count: sys?.process_count ?? prev.process_count,
-    cpu_temp_c: sys?.cpu_temp_c ?? prev.cpu_temp_c,
-    throttle_status: sys?.throttle_status ?? prev.throttle_status,
-  }))
-  }
-  } catch (error) {
-  }
+   // Refresh system stats every 5 seconds (fast, no health check)
+   useEffect(() => {
+   const interval = setInterval(async () => {
+   try {
+   const statusResponse = await apiClient.getSystemStatus()
+   if (statusResponse) {
+   const sys = statusResponse.system
+   const formatUptime = (sec: number) => {
+     const d = Math.floor(sec / 86400)
+     const h = Math.floor((sec % 86400) / 3600)
+     return `${d}d ${h}h`
+   }
+   setSystemStats(prev => {
+     const current = prev || { cpu_usage: null, memory_usage: null, disk_usage: null, uptime: null, load_avg: null, process_count: null, cpu_temp_c: null, throttle_status: null, services: [] }
+     return {
+       ...current,
+       cpu_usage: sys?.cpu_percent ?? current.cpu_usage,
+       memory_usage: sys?.memory_percent ?? current.memory_usage,
+       disk_usage: sys?.disk_percent ?? current.disk_usage,
+       uptime: sys?.uptime_seconds != null ? formatUptime(sys.uptime_seconds) : current.uptime,
+       load_avg: sys?.load_avg ?? current.load_avg,
+       process_count: sys?.process_count ?? current.process_count,
+       cpu_temp_c: sys?.cpu_temp_c ?? current.cpu_temp_c,
+       throttle_status: sys?.throttle_status ?? current.throttle_status,
+     }
+   })
+   }
+   } catch (error) {
+   }
   }, 5000)
 
   return () => clearInterval(interval)
@@ -332,16 +335,19 @@ export default function Dashboard() {
   const refreshHealth = async () => {
   try {
   const healthData = await apiClient.getSystemHealth()
-  setSystemStats(prev => ({
-    ...prev,
-    services: Array.isArray(healthData)
-      ? healthData.map((s: { name: string; status: string; latency_ms?: number }) => ({
-        name: s.name,
-        status: s.status as 'running' | 'stopped' | 'error' | 'unreachable',
-        latency_ms: s.latency_ms
-      }))
-      : prev.services
-  }))
+  setSystemStats(prev => {
+    const current = prev || { cpu_usage: null, memory_usage: null, disk_usage: null, uptime: null, load_avg: null, process_count: null, cpu_temp_c: null, throttle_status: null, services: [] }
+    return {
+      ...current,
+      services: Array.isArray(healthData)
+        ? healthData.map((s: { name: string; status: string; latency_ms?: number }) => ({
+          name: s.name,
+          status: s.status as 'running' | 'stopped' | 'error' | 'unreachable',
+          latency_ms: s.latency_ms
+        }))
+        : current.services
+    }
+  })
   } catch (error) {
   }
   }
