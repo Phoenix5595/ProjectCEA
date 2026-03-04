@@ -2,11 +2,17 @@
 
 **Generated:** 2026-02-08 | **Branch:** main
 
-## EXECUTIVE OVERVIEW
+## ⚠️ CRITICAL URLS - READ THIS FIRST
 
-ProjectCEA is a production-grade Controlled Environment Agriculture (CEA) automation system built on Raspberry Pi 5. It features 6 FastAPI microservices, real-time control (1-5s loop), and a data-first architecture (1Hz sampling) using CAN bus, RS485, and TimescaleDB.
+| Service | URL | Notes |
+|---------|-----|-------|
+| **Dashboard (Frontend)** | `http://mothernode:8001` | Main CEA dashboard |
+| **Grafana** | `http://iskradocker:3000` | **NOT localhost:3000!** |
+| **Backend API** | `http://mothernode:8000` | Sensor data |
+| **Automation API** | `http://mothernode:8001` | Control & config |
+| **Weather** | `http://mothernode:8003` | Weather service |
 
-For VPD cascade control, PID tuning, light scheduling, and safety interlock details → see `ARCHITECTURE.md`
+**Grafana is on iskradocker, NOT localhost!**
 
 ---
 

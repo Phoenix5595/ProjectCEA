@@ -482,7 +482,7 @@ class ControlEngine:
 
                 # 5. Moon = 0%: use room sun bounds as single source of truth for lights (all relevant rooms have a schedule)
                 is_sun = False
-                if light_schedule:
+                if light_schedule and isinstance(light_schedule, dict):
                     sun_start = light_schedule.get("day_start_time")  # sun window start (HH:MM)
                     sun_end = light_schedule.get("day_end_time")  # sun window end (HH:MM)
                     if sun_start and sun_end:
