@@ -343,7 +343,12 @@ class ControlEngine:
                         )
 
                 # 2. Mode resolution (happens early)
-                if light_schedule and climate_schedule:
+                if (
+                    light_schedule
+                    and isinstance(light_schedule, dict)
+                    and climate_schedule
+                    and isinstance(climate_schedule, dict)
+                ):
                     mode_result = self.scheduler.get_climate_mode(
                         location,
                         cluster,
