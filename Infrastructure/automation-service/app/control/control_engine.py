@@ -381,6 +381,7 @@ class ControlEngine:
                     )
                     if setpoint_data:
                         # Populate StateManager cache for future reads
+                        # Include ramp_in_duration and vpd for effective setpoint ramp calculations
                         await self._state.set_setpoint(
                             location,
                             cluster,
@@ -388,6 +389,8 @@ class ControlEngine:
                             cooling_setpoint=setpoint_data.get("cooling_setpoint"),
                             humidity=setpoint_data.get("humidity"),
                             co2=setpoint_data.get("co2"),
+                            vpd=setpoint_data.get("vpd"),
+                            ramp_in_duration=setpoint_data.get("ramp_in_duration"),
                         )
                         logger.debug(
                             f"Populated StateManager cache for setpoints: {location}/{cluster}"

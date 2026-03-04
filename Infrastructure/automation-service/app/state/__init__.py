@@ -534,7 +534,9 @@ class StateManager(SchemaValidationMixin):
     # ------------------------------------------------------------------
     # Setpoint convenience API (Redis-backed)
     # ------------------------------------------------------------------
-    async def get_setpoint(self, location: str, cluster: str) -> dict[str, float | None] | None:
+    async def get_setpoint(
+        self, location: str, cluster: str
+    ) -> dict[str, float | int | None] | None:
         """Get the current setpoints for a location/cluster.
 
         Returns a dict with keys:
@@ -542,6 +544,8 @@ class StateManager(SchemaValidationMixin):
           - cooling_setpoint
           - humidity
           - co2
+          - vpd
+          - ramp_in_duration
         Values are floats when present, otherwise None. Returns None if nothing is found.
         TTL: 60s are handled by the individual keys.
         """
@@ -550,16 +554,27 @@ class StateManager(SchemaValidationMixin):
             cool_key = f"setpoint:{location}:{cluster}:cooling_setpoint"
             hum_key = f"setpoint:{location}:{cluster}:humidity"
             co2_key = f"setpoint:{location}:{cluster}:co2"
+            vpd_key = f"setpoint:{location}:{cluster}:vpd"
+            ramp_key = f"setpoint:{location}:{cluster}:ramp_in_duration"
 
             heat = await self.get(heat_key)
             cool = await self.get(cool_key)
             hum = await self.get(hum_key)
             co2 = await self.get(co2_key)
+            vpd = await self.get(vpd_key)
+            ramp_in_duration = await self.get(ramp_key)
 
-            if heat is None and cool is None and hum is None and co2 is None:
+            if (
+                heat is None
+                and cool is None
+                and hum is None
+                and co2 is None
+                and vpd is None
+                and ramp_in_duration is None
+            ):
                 return None
 
-            result: dict[str, float | None] = {}
+            result: dict[str, float | int | None] = {}
             if heat is not None:
                 try:
                     result["heating_setpoint"] = float(heat)
@@ -592,6 +607,22 @@ class StateManager(SchemaValidationMixin):
             else:
                 result["co2"] = None
 
+            if vpd is not None:
+                try:
+                    result["vpd"] = float(vpd)
+                except (ValueError, TypeError):
+                    result["vpd"] = None
+            else:
+                result["vpd"] = None
+
+            if ramp_in_duration is not None:
+                try:
+                    result["ramp_in_duration"] = int(ramp_in_duration)
+                except (ValueError, TypeError):
+                    result["ramp_in_duration"] = None
+            else:
+                result["ramp_in_duration"] = None
+
             return result
         except Exception as e:
             logger.debug(f"StateManager: get_setpoint error for {location}/{cluster}: {e}")
@@ -605,10 +636,13 @@ class StateManager(SchemaValidationMixin):
         cooling_setpoint: float | None = None,
         humidity: float | None = None,
         co2: float | None = None,
+        vpd: float | None = None,
+        ramp_in_duration: int | None = None,
     ) -> None:
         """Set the setpoint values for a location/cluster with TTL 60s.
 
         Writes individual Redis keys for each component and a source record for auditing.
+        Includes vpd and ramp_in_duration for effective setpoint ramp calculations.
         """
         now_ms = int(time.time() * 1000)
         try:
@@ -636,6 +670,18 @@ class StateManager(SchemaValidationMixin):
                 await self.set(
                     f"setpoint:{location}:{cluster}:co2",
                     float(co2),
+                    ttl=ttl,
+                )
+            if vpd is not None:
+                await self.set(
+                    f"setpoint:{location}:{cluster}:vpd",
+                    float(vpd),
+                    ttl=ttl,
+                )
+            if ramp_in_duration is not None:
+                await self.set(
+                    f"setpoint:{location}:{cluster}:ramp_in_duration",
+                    int(ramp_in_duration),
                     ttl=ttl,
                 )
 
