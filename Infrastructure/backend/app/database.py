@@ -320,11 +320,8 @@ class DatabaseManager:
         return sensors
 
     def _get_sensor_suffix(self, location: str, cluster: str) -> str:
-        """Get sensor name suffix based on location and cluster."""
         if location == "Flower Room":
-            if cluster in ("front", "clusterA"):
-                return "f"
-            return "b"
+            return "f" if cluster == "front" else "b"
         elif location == "Veg Room":
             return "v"
         elif location == "Lab":
