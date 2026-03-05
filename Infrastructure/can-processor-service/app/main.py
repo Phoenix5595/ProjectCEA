@@ -9,7 +9,7 @@ Reads CAN messages directly from CAN bus, decodes once, processes, and writes to
 - Redis state keys (sensor:*) - live values for frontend
 """
 import argparse  # noqa: E402
-from datetime import datetime  # noqa: E402
+from datetime import UTC, datetime  # noqa: E402
 import os  # noqa: E402
 import signal  # noqa: E402
 import socket  # noqa: E402
@@ -172,7 +172,7 @@ def process_can_message(msg):
         raw_data = " ".join(f"{b:02X}" for b in msg.data)
 
         # Get timestamp (use UTC for database consistency)
-        timestamp = datetime.utcnow()
+        timestamp = datetime.now(UTC)
         timestamp_ms = int(timestamp.timestamp() * 1000)
 
         # Extract sensor values (this also calculates RH/VPD if PT100 message)
