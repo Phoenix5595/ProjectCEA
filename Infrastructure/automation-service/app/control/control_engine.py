@@ -89,6 +89,7 @@ class ControlEngine:
 
         # Initialize SetpointManager AFTER _state is defined
         self.setpoint_manager = SetpointManager(
+            database=database,
             redis_client=database._automation_redis,
             state_manager=self._state,
         )
