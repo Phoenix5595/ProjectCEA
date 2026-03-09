@@ -341,6 +341,20 @@ class ScheduleRepository(BaseRepository):
                             action="updated",
                             extra={"schedule_id": row["id"]},
                         )
+                        # Invalidate cache directly (following create_schedule pattern)
+                        try:
+                            s = get_state_manager()
+                            await s.delete(
+                                self._cache_key_schedules(row["location"], row["cluster"])
+                            )
+                            await s.delete(self._cache_key_climate(row["location"], row["cluster"]))
+                            await s.delete(
+                                self._cache_key_light(
+                                    row["location"], row["cluster"], row["device_name"]
+                                )
+                            )
+                        except Exception:
+                            pass
                     return dict(row) if row else None
                 return dict(current)
         except Exception as e:
@@ -453,6 +467,14 @@ class ScheduleRepository(BaseRepository):
                         action="updated",
                         extra={"device_name": device_name},
                     )
+                    # Invalidate cache directly (following create_schedule pattern)
+                    try:
+                        s = get_state_manager()
+                        await s.delete(self._cache_key_schedules(location, cluster))
+                        await s.delete(self._cache_key_climate(location, cluster))
+                        await s.delete(self._cache_key_light(location, cluster, device_name))
+                    except Exception:
+                        pass
                 return changed
         except Exception as e:
             logger.error(f"Failed to update light schedule target: {e}")

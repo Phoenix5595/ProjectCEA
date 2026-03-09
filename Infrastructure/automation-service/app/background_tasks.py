@@ -330,6 +330,22 @@ class BackgroundTasks:
                                 + f"{len(db_schedules)} schedules after config change event"
                             )
 
+                    if event.event_type == ConfigEventType.SCHEDULE_CHANGED:
+                        # Same handling as RAMP_TIMES_CHANGED - refresh schedules
+                        if not self.database._db_connected:
+                            logger.warning(
+                                "Database not connected, cannot refresh schedules for event"
+                            )
+                            continue
+
+                        db_schedules = await self.database.schedule_repo.get_schedules()
+                        if self.control_engine.scheduler:
+                            self.control_engine.scheduler.update_schedules(db_schedules)
+                            logger.info(
+                                "Scheduler updated with "
+                                + f"{len(db_schedules)} schedules after SCHEDULE_CHANGED event"
+                            )
+
                 except Exception as e:
                     logger.error(f"Error processing config event: {e}", exc_info=True)
 
