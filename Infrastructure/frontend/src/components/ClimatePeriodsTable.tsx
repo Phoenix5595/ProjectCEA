@@ -90,14 +90,14 @@ export default function ClimatePeriodsTable({
               <th className="px-1 py-0 text-left text-text-muted font-medium border-r border-border-subtle w-14">Cool</th>
               <th className="px-1 py-0 text-left text-text-muted font-medium border-r border-border-subtle w-18">VPD</th>
               <th className="px-1 py-0 text-left text-text-muted font-medium border-r border-border-subtle w-18">CO₂</th>
-              <th className="px-1 py-0 text-left text-text-muted font-medium border-r border-border-subtle">Details</th>
-              <th className="px-1 py-0 w-2"></th>
+              <th className="px-0.5 py-0.5 text-left text-text-muted font-medium border-r border-border-subtle">Details</th>
+              <th className="px-0.5 py-0.5 w-2"></th>
             </tr>
           </thead>
           <tbody>
             {periods.map((period, index) => (
               <tr key={index} className="border-b border-border-subtle hover:bg-surface-primary/50 text-left">
-                <td className="px-1 py-0 border-r border-border-subtle">
+                <td className="px-0.5 py-0.5 border-r border-border-subtle">
                   <input
                     type="text"
                     value={period.period_name}
@@ -106,7 +106,7 @@ export default function ClimatePeriodsTable({
                     placeholder="Period name"
                   />
                 </td>
-                <td className="px-1 py-0 border-r border-border-subtle">
+                <td className="px-0.5 py-0.5 border-r border-border-subtle">
                   <input
                     type="text"
                     pattern="[0-9]{2}:[0-9]{2}"
@@ -116,7 +116,7 @@ export default function ClimatePeriodsTable({
                     className="w-16 px-1 py-0 text-sm bg-surface-primary border border-border-subtle rounded text-text-primary focus:border-accent-primary focus:outline-none"
                   />
                 </td>
-                <td className="px-1 py-0 border-r border-border-subtle">
+                <td className="px-0.5 py-0.5 border-r border-border-subtle">
                   <input
                     type="text"
                     pattern="[0-9]{2}:[0-9]{2}"
@@ -126,7 +126,7 @@ export default function ClimatePeriodsTable({
                     className="w-16 px-1 py-0 text-sm bg-surface-primary border border-border-subtle rounded text-text-primary focus:border-accent-primary focus:outline-none"
                   />
                 </td>
-                <td className="px-1 py-0 border-r border-border-subtle">
+                <td className="px-0.5 py-0.5 border-r border-border-subtle">
                   <input
                     type="number"
                     min="0"
@@ -136,7 +136,7 @@ export default function ClimatePeriodsTable({
                     className="w-14 px-1 py-0 text-sm bg-surface-primary border border-border-subtle rounded text-text-primary focus:border-accent-primary focus:outline-none"
                   />
                 </td>
-                <td className="px-1 py-0 border-r border-border-subtle">
+                <td className="px-0.5 py-0.5 border-r border-border-subtle">
                   <input
                     type="number"
                     min="10"
@@ -148,7 +148,7 @@ export default function ClimatePeriodsTable({
                     placeholder="°C"
                   />
                 </td>
-                <td className="px-1 py-0 border-r border-border-subtle">
+                <td className="px-0.5 py-0.5 border-r border-border-subtle">
                   <input
                     type="number"
                     min="10"
@@ -160,7 +160,7 @@ export default function ClimatePeriodsTable({
                     placeholder="°C"
                   />
                 </td>
-                <td className="px-1 py-0 border-r border-border-subtle">
+                <td className="px-0.5 py-0.5 border-r border-border-subtle">
                   <input
                     type="number"
                     min="0"
@@ -172,7 +172,7 @@ export default function ClimatePeriodsTable({
                     placeholder="kPa"
                   />
                 </td>
-                <td className="px-1 py-0 border-r border-border-subtle">
+                <td className="px-0.5 py-0.5 border-r border-border-subtle">
                   <input
                     type="number"
                     min="400"
@@ -183,7 +183,7 @@ export default function ClimatePeriodsTable({
                     placeholder="ppm"
                   />
                 </td>
-                <td className="px-1 py-0 border-r border-border-subtle">
+                <td className="px-0.5 py-0.5 border-r border-border-subtle">
                   <input
                     type="text"
                     value={period.details}
