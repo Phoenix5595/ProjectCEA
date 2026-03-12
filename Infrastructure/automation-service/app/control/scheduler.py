@@ -45,17 +45,50 @@ class Scheduler:
     # Minimum light intensity (10%) - lowest setting at which lights emit light
     MINIMUM_LIGHT_INTENSITY = 10.0
 
-    def __init__(self, schedules: list[dict[str, Any]]):
+    def __init__(self, schedules: list[dict[str, Any]], climate_periods_repo=None):
         """Initialize scheduler.
 
         Args:
             schedules: List of schedule dictionaries from database or config
+            climate_periods_repo: Optional ClimatePeriodRepository for time-based periods
         """
         self.schedules = schedules
-        # Light ramp state persistence (similar to effective setpoint ramp state)
-        # Key: (location, cluster, device_name), Value: ramp state dict
+        self._climate_periods_repo = climate_periods_repo
         self._light_ramp_state: dict[tuple[str, str, str], dict[str, Any]] = {}
         logger.info(f"Initialized scheduler with {len(schedules)} schedules")
+
+    def set_climate_periods_repo(self, repo) -> None:
+        """Set climate periods repository for dual-read support."""
+        self._climate_periods_repo = repo
+
+    async def get_climate_period_setpoints(
+        self, location: str, cluster: str, current_time: datetime | None = None
+    ) -> dict[str, Any] | None:
+        """Get setpoints from active climate period (dual-read pattern)."""
+        if not self._climate_periods_repo:
+            return None
+
+        if current_time is None:
+            current_time = datetime.now(tz=LOCAL_TZ)
+
+        time_str = f"{current_time.hour:02d}:{current_time.minute:02d}"
+
+        try:
+            period = await self._climate_periods_repo.get_active_period(location, cluster, time_str)
+            if period:
+                return {
+                    "heating_setpoint": period.get("heating_setpoint"),
+                    "cooling_setpoint": period.get("cooling_setpoint"),
+                    "vpd_setpoint": period.get("vpd_setpoint"),
+                    "co2_setpoint": period.get("co2_setpoint"),
+                    "ramp_minutes": period.get("ramp_minutes", 0),
+                    "period_name": period.get("period_name"),
+                    "source": "climate_periods",
+                }
+        except Exception as e:
+            logger.error(f"Error getting climate period setpoints: {e}")
+
+        return None
 
     def is_schedule_active(
         self, location: str, cluster: str, device_name: str, current_time: datetime | None = None

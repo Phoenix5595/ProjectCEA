@@ -6,7 +6,8 @@ import { getLocationDisplayName, getLocationBackendName } from '../config/zones'
 import type { RoomModeWithParams, ModeParameters } from '../types/modes'
 import { useControlActions } from '../contexts/ControlActionsContext'
 import SetpointTimeline from '../components/SetpointTimeline'
-import SetpointsTable from '../components/SetpointsTable'
+import ClimatePeriodsTable from '../components/ClimatePeriodsTable'
+import type { ClimatePeriod } from '../components/ClimatePeriodsTable'
 import CircularTimePicker from '../components/CircularTimePicker'
 import VerticalLightsBlock from '../components/VerticalLightsBlock'
 import VerticalPIDBlock from '../components/VerticalPIDBlock'
@@ -28,7 +29,7 @@ export default function ZoneConfig({ location: propsLocation, cluster: propsClus
   const cluster = propsCluster ?? urlCluster ?? 'main'
   
   const [roomMode, setRoomMode] = useState<RoomModeWithParams | null>(null)
-  const [savedParams, setSavedParams] = useState<ModeParameters | null>(null)
+  const [climatePeriods, setClimatePeriods] = useState<ClimatePeriod[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -40,7 +41,22 @@ export default function ZoneConfig({ location: propsLocation, cluster: propsClus
     try {
       const mode = await apiClient.getRoomModeWithParams(location!, cluster!)
       setRoomMode(mode)
-      setSavedParams({ ...mode.parameters })
+
+      const periods = await apiClient.getClimatePeriods(location!, cluster!)
+      if (periods && periods.length > 0) {
+        setClimatePeriods(periods.map((p: any) => ({
+          id: p.id,
+          period_name: p.period_name,
+          start_time: p.start_time,
+          end_time: p.end_time,
+          ramp_minutes: p.ramp_minutes,
+          heating_setpoint: p.heating_setpoint,
+          cooling_setpoint: p.cooling_setpoint,
+          vpd_setpoint: p.vpd_setpoint,
+          co2_setpoint: p.co2_setpoint,
+          details: p.details || ''
+        })))
+      }
     } catch (err: any) {
       logger.error('Error loading room mode:', err)
       setError(err.response?.data?.detail || err.message || 'Failed to load')
@@ -72,7 +88,6 @@ export default function ZoneConfig({ location: propsLocation, cluster: propsClus
     try {
       const newMode = await apiClient.setRoomMode(location, cluster, { mode_name: modeName, submode_name: submodeName })
       setRoomMode(newMode)
-      setSavedParams({ ...newMode.parameters })
       setSuccess('Mode changed')
       setTimeout(() => setSuccess(null), 2000)
     } catch (err: any) {
@@ -89,7 +104,6 @@ export default function ZoneConfig({ location: propsLocation, cluster: propsClus
     try {
       const updated = await apiClient.updateRoomParameters(location, cluster, roomMode.parameters)
       setRoomMode(updated)
-      setSavedParams({ ...updated.parameters })
 
       const p = updated.parameters
       const dayStart = toHHMM(p.day_start_time)
@@ -103,6 +117,8 @@ export default function ZoneConfig({ location: propsLocation, cluster: propsClus
         ramp_down_duration: p.ramp_down_minutes ?? null,
       })
 
+      await apiClient.saveClimatePeriods(location, cluster, climatePeriods)
+
       setSuccess('Saved')
       setTimeout(() => setSuccess(null), 2000)
     } catch (err: any) {
@@ -111,7 +127,7 @@ export default function ZoneConfig({ location: propsLocation, cluster: propsClus
     } finally {
       setSaving(false)
     }
-  }, [roomMode, location, cluster])
+  }, [roomMode, location, cluster, climatePeriods])
 
   useEffect(() => {
     if (location && cluster) {
@@ -214,12 +230,9 @@ export default function ZoneConfig({ location: propsLocation, cluster: propsClus
 
               <div className="w-[70%] flex flex-col gap-1 h-full overflow-hidden">
                 <div className="bg-surface-primary rounded-lg border border-border-subtle p-1 flex-[55.7] overflow-auto">
-                  <div className="text-[12px] text-text-muted uppercase font-bold tracking-wider mb-1">Setpoints</div>
-                  <SetpointsTable
-                    params={params}
-                    currentParams={savedParams || undefined}
-                    isConstant={isConstant}
-                    onChange={handleParamChange}
+                  <ClimatePeriodsTable
+                    periods={climatePeriods}
+                    onChange={setClimatePeriods}
                   />
                 </div>
                 <div className="flex-[44.3] overflow-auto">

@@ -171,6 +171,44 @@ CREATE INDEX IF NOT EXISTS idx_actuator_events_device_time
     ON actuator_events (device_id, time DESC);
 
 -- ============================================
+-- Climate Periods: Time-based climate periods per location/cluster
+-- ============================================
+
+-- Climate Periods: User-configurable climate periods (1-7 per day)
+-- Replaces fixed PRE_DAY/DAY/PRE_NIGHT/NIGHT with flexible periods
+CREATE TABLE IF NOT EXISTS climate_periods (
+    id SERIAL PRIMARY KEY,
+    location TEXT NOT NULL,
+    cluster TEXT NOT NULL,
+    mode_id INTEGER REFERENCES room_modes(id),
+    submode_id INTEGER REFERENCES flower_submodes(id),
+    period_name TEXT NOT NULL,
+    start_time TIME NOT NULL,
+    end_time TIME NOT NULL,
+    ramp_minutes INTEGER DEFAULT 0,
+    heating_setpoint REAL,
+    cooling_setpoint REAL,
+    vpd_setpoint REAL,
+    co2_setpoint INTEGER,
+    details TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(location, cluster, mode_id, submode_id, period_name)
+);
+
+-- Index for fast lookups by location/cluster
+CREATE INDEX IF NOT EXISTS idx_climate_periods_location_cluster 
+    ON climate_periods (location, cluster);
+
+-- Index for lookups by mode
+CREATE INDEX IF NOT EXISTS idx_climate_periods_mode 
+    ON climate_periods (mode_id, submode_id);
+
+-- Index for time-based queries
+CREATE INDEX IF NOT EXISTS idx_climate_periods_time 
+    ON climate_periods (start_time, end_time);
+
+-- ============================================
 -- Continuous Aggregates
 -- ============================================
 

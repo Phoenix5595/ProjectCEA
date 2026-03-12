@@ -118,6 +118,7 @@ class ServiceContainer:
             # 6. Initialize scheduler with schedules from database
             db_schedules = await self.database.schedule_repo.get_schedules()
             self.scheduler = Scheduler(db_schedules)
+            self.scheduler.set_climate_periods_repo(self.database.climate_periods_repo)
             logger.info(f"Scheduler initialized with {len(db_schedules)} schedules")
 
             # 7. Initialize rules engine

@@ -20,6 +20,7 @@ from .redis_client import AutomationRedisClient
 from .repositories.config import ConfigRepository
 from .repositories.control_actions import ControlActionRepository
 from .repositories.devices import DeviceRepository
+from .repositories.climate_periods import ClimatePeriodRepository
 from .repositories.pid import PIDRepository
 from .repositories.room_modes import RoomModeRepository
 from .repositories.schedules import ScheduleRepository
@@ -71,6 +72,7 @@ class DatabaseManager:
         self._room_mode_repo: RoomModeRepository | None = None
         self._control_action_repo: ControlActionRepository | None = None
         self._config_repo: ConfigRepository | None = None
+        self._climate_periods_repo: ClimatePeriodRepository | None = None
 
     async def initialize(self) -> bool:
         """Initialize database connection and run migrations.
@@ -101,6 +103,7 @@ class DatabaseManager:
             self._room_mode_repo = RoomModeRepository(self._pool)
             self._control_action_repo = ControlActionRepository(self._pool)
             self._config_repo = ConfigRepository(self._pool)
+            self._climate_periods_repo = ClimatePeriodRepository(self._pool)
 
             return True
         except Exception as e:
@@ -205,6 +208,12 @@ class DatabaseManager:
         if not self._setpoint_repo:
             raise RuntimeError("SetpointRepository not initialized")
         return self._setpoint_repo
+
+    @property
+    def climate_periods_repo(self) -> ClimatePeriodRepository:
+        if not self._climate_periods_repo:
+            raise RuntimeError("ClimatePeriodRepository not initialized")
+        return self._climate_periods_repo
 
     @property
     def schedule_repo(self) -> ScheduleRepository:
