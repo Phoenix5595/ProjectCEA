@@ -82,16 +82,16 @@ export default function ClimatePeriodsTable({
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-surface-primary border-b border-border-subtle">
-              <th className="px-1 py-0 text-left text-text-muted font-medium border-r border-border-subtle">Period</th>
+              <th className="px-1 py-0 text-left text-text-muted font-medium border-r border-border-subtle w-32">Period</th>
               <th className="px-1 py-0 text-left text-text-muted font-medium border-r border-border-subtle w-16">Start</th>
               <th className="px-1 py-0 text-left text-text-muted font-medium border-r border-border-subtle w-16">End</th>
-              <th className="px-1 py-0 text-left text-text-muted font-medium border-r border-border-subtle">Ramp</th>
-              <th className="px-1 py-0 text-left text-text-muted font-medium border-r border-border-subtle">Heat</th>
-              <th className="px-1 py-0 text-left text-text-muted font-medium border-r border-border-subtle">Cool</th>
-              <th className="px-1 py-0 text-left text-text-muted font-medium border-r border-border-subtle">VPD</th>
-              <th className="px-1 py-0 text-left text-text-muted font-medium border-r border-border-subtle">CO₂</th>
+              <th className="px-1 py-0 text-left text-text-muted font-medium border-r border-border-subtle w-14">Ramp</th>
+              <th className="px-1 py-0 text-left text-text-muted font-medium border-r border-border-subtle w-14">Heat</th>
+              <th className="px-1 py-0 text-left text-text-muted font-medium border-r border-border-subtle w-14">Cool</th>
+              <th className="px-1 py-0 text-left text-text-muted font-medium border-r border-border-subtle w-18">VPD</th>
+              <th className="px-1 py-0 text-left text-text-muted font-medium border-r border-border-subtle w-18">CO₂</th>
               <th className="px-1 py-0 text-left text-text-muted font-medium border-r border-border-subtle">Details</th>
-              <th className="px-1 py-0"></th>
+              <th className="px-1 py-0 w-2"></th>
             </tr>
           </thead>
           <tbody>
@@ -133,7 +133,7 @@ export default function ClimatePeriodsTable({
                     max="240"
                     value={period.ramp_minutes}
                     onChange={(e) => updatePeriod(index, 'ramp_minutes', parseInt(e.target.value) || 0)}
-                    className="w-full px-1 py-0 text-sm bg-surface-primary border border-border-subtle rounded text-text-primary focus:border-accent-primary focus:outline-none"
+                    className="w-14 px-1 py-0 text-sm bg-surface-primary border border-border-subtle rounded text-text-primary focus:border-accent-primary focus:outline-none"
                   />
                 </td>
                 <td className="px-1 py-0 border-r border-border-subtle">
@@ -144,7 +144,7 @@ export default function ClimatePeriodsTable({
                     step="0.5"
                     value={period.heating_setpoint ?? ''}
                     onChange={(e) => updatePeriod(index, 'heating_setpoint', e.target.value ? parseFloat(e.target.value) : null)}
-                    className="w-full px-1 py-0 text-sm bg-surface-primary border border-border-subtle rounded text-text-primary focus:border-accent-primary focus:outline-none"
+                    className="w-14 px-1 py-0 text-sm bg-surface-primary border border-border-subtle rounded text-text-primary focus:border-accent-primary focus:outline-none"
                     placeholder="°C"
                   />
                 </td>
@@ -156,7 +156,7 @@ export default function ClimatePeriodsTable({
                     step="0.5"
                     value={period.cooling_setpoint ?? ''}
                     onChange={(e) => updatePeriod(index, 'cooling_setpoint', e.target.value ? parseFloat(e.target.value) : null)}
-                    className="w-full px-1 py-0 text-sm bg-surface-primary border border-border-subtle rounded text-text-primary focus:border-accent-primary focus:outline-none"
+                    className="w-14 px-1 py-0 text-sm bg-surface-primary border border-border-subtle rounded text-text-primary focus:border-accent-primary focus:outline-none"
                     placeholder="°C"
                   />
                 </td>
@@ -168,7 +168,7 @@ export default function ClimatePeriodsTable({
                     step="0.1"
                     value={period.vpd_setpoint ?? ''}
                     onChange={(e) => updatePeriod(index, 'vpd_setpoint', e.target.value ? parseFloat(e.target.value) : null)}
-                    className="w-full px-1 py-0 text-sm bg-surface-primary border border-border-subtle rounded text-text-primary focus:border-accent-primary focus:outline-none"
+                    className="w-18 px-1 py-0 text-sm bg-surface-primary border border-border-subtle rounded text-text-primary focus:border-accent-primary focus:outline-none"
                     placeholder="kPa"
                   />
                 </td>
@@ -179,7 +179,7 @@ export default function ClimatePeriodsTable({
                     max="2000"
                     value={period.co2_setpoint ?? ''}
                     onChange={(e) => updatePeriod(index, 'co2_setpoint', e.target.value ? parseInt(e.target.value) : null)}
-                    className="w-full px-1 py-0 text-sm bg-surface-primary border border-border-subtle rounded text-text-primary focus:border-accent-primary focus:outline-none"
+                    className="w-18 px-1 py-0 text-sm bg-surface-primary border border-border-subtle rounded text-text-primary focus:border-accent-primary focus:outline-none"
                     placeholder="ppm"
                   />
                 </td>
@@ -192,12 +192,12 @@ export default function ClimatePeriodsTable({
                     placeholder="Notes"
                   />
                 </td>
-                <td className="px-1 py-0">
+                <td className="px-0.5 py-0">
                   <button
                     type="button"
                     onClick={() => removePeriod(index)}
                     disabled={periods.length <= 1}
-                    className="p-1 text-text-muted hover:text-red-400 disabled:opacity-30 disabled:cursor-not-allowed"
+                    className="text-text-muted hover:text-red-400 disabled:opacity-30 disabled:cursor-not-allowed text-xs"
                     title="Remove period"
                   >
                     ✕
