@@ -209,7 +209,7 @@ export default function ZoneConfig({ location: propsLocation, cluster: propsClus
               <div className="w-[30%] h-full">
                 {!isConstant && (
                   <div className="bg-surface-primary rounded-lg border border-border-subtle p-1 h-full flex flex-col min-w-[300px]">
-                    <div className="text-[12px] text-text-muted uppercase font-bold tracking-wider mb-1">Light Schedule</div>
+                    <div className="text-[14px] text-text-muted uppercase font-bold tracking-wider mb-1">Light Schedule</div>
                     <div className="flex-1 min-h-0">
                       <CircularTimePicker
                         dayStartTime={params.day_start_time}
@@ -250,7 +250,7 @@ export default function ZoneConfig({ location: propsLocation, cluster: propsClus
                 {/* Manual light control only for drying/sleep */}
                 {(currentModeName === 'drying' || currentModeName === 'sleep') && (
                   <div className="bg-surface-primary rounded-lg border border-border-subtle p-2 mb-1">
-                    <div className="text-[12px] text-text-muted uppercase font-bold tracking-wider mb-2">Manual Light Control</div>
+                    <div className="text-[14px] text-text-muted uppercase font-bold tracking-wider mb-2">Manual Light Control</div>
                     <ManualLightControl location={location} cluster={cluster} compact={true} />
                   </div>
                 )}
