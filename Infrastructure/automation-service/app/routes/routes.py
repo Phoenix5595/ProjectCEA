@@ -6,6 +6,7 @@ from fastapi import FastAPI
 
 from app.routes import (
     alarms,
+    climate_periods,
     debug,
     devices,
     failsafe,
@@ -37,6 +38,7 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(schedules.router, tags=["schedules"])
     app.include_router(lights.router, tags=["lights"])
     app.include_router(setpoints.router, tags=["setpoints"])
+    app.include_router(climate_periods.router, tags=["climate-periods"])
     app.include_router(devices.router, tags=["devices"])
     app.include_router(hardware.router, tags=["hardware"])
     app.include_router(status.router, tags=["status"])

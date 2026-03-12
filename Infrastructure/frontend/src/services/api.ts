@@ -307,6 +307,16 @@ class ApiClient {
     return response.data;
   }
 
+  async getClimatePeriods(location: string, cluster: string): Promise<any[]> {
+    const response = await this.automationClient.get(`/api/climate-periods/${location}/${cluster}`);
+    return response.data;
+  }
+
+  async saveClimatePeriods(location: string, cluster: string, periods: any[]): Promise<any> {
+    const response = await this.automationClient.post(`/api/climate-periods/${location}/${cluster}`, { periods });
+    return response.data;
+  }
+
   async getRoomSchedule(location: string, cluster: string): Promise<any> {
     const response = await this.automationClient.get(`/api/room-schedule/${location}/${cluster}`);
     return response.data;
