@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect } from 'react'
+import { useMemo } from 'react'
 
 export interface ClimatePeriod {
   period_name: string
@@ -30,10 +30,9 @@ function getCurrentTimeMinutes(): number {
   return now.getHours() * 60 + now.getMinutes()
 }
 
-function drawSunBand(
+function drawBand(
   startMin: number,
   endMin: number,
-  _color: string,
   getPosition: (m: number) => number
 ): { left: number; width: number }[] {
   const segments: { left: number; width: number }[] = []
@@ -57,31 +56,18 @@ export default function ClimatePeriodTimeline({
   compact: _compact = false,
   className = ''
 }: ClimatePeriodTimelineProps) {
-  const [isDarkMode, setIsDarkMode] = useState(false)
-
-  useEffect(() => {
-    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
-    setIsDarkMode(mediaQuery.matches)
-    const handleChange = (e: MediaQueryListEvent) => setIsDarkMode(e.matches)
-    mediaQuery.addEventListener('change', handleChange)
-    return () => mediaQuery.removeEventListener('change', handleChange)
-  }, [])
-
   const { dayStartMin, dayEndMin, nowMin } = useMemo(() => {
     const dayStart = timeToMinutes(lightDayStart)
     const dayEnd = timeToMinutes(lightDayEnd)
     const now = getCurrentTimeMinutes()
-
     return { dayStartMin: dayStart, dayEndMin: dayEnd, nowMin: now }
   }, [lightDayStart, lightDayEnd])
 
   const getPosition = (minutes: number): number => (minutes / 1440) * 100
   const nowPercent = (nowMin / 1440) * 100
 
-  const sunColor = isDarkMode ? 'rgba(154, 52, 18, 0.3)' : 'rgba(251, 146, 60, 0.3)'
-  const sunRampColor = isDarkMode ? 'rgba(154, 52, 18, 0.5)' : 'rgba(251, 146, 60, 0.4)'
-  const lightRampUp = 15
-  const lightRampDown = 15
+  const sunColor = 'rgba(234, 179, 8, 0.85)'
+  const moonColor = 'rgba(168, 85, 247, 0.85)'
 
   const tempScalePositions: { value: number; top: number }[] = [
     { value: 30, top: ((30 - 30) / (30 - 15)) * 100 },
@@ -98,6 +84,9 @@ export default function ClimatePeriodTimeline({
   ]
 
   const tempGridPositions: number[] = [15, 20, 25, 30]
+
+  const sunSegments = drawBand(dayStartMin, dayEndMin, getPosition)
+  const moonSegments = drawBand(dayEndMin, dayStartMin, getPosition)
 
   return (
     <div className={`w-full ${className}`}>
@@ -147,39 +136,31 @@ export default function ClimatePeriodTimeline({
               )
             })}
 
-            <div className="absolute bottom-4 left-0 right-0 z-[1]" style={{ height: '4px' }}>
-              {lightRampUp > 0 && (
-                <div
-                  className="absolute top-0 bottom-0 pointer-events-none"
-                  style={{
-                    left: `${getPosition(dayStartMin - lightRampUp)}%`,
-                    width: `${getPosition(lightRampUp)}%`,
-                    backgroundImage: `repeating-linear-gradient(45deg, transparent, transparent 4px, ${sunRampColor} 4px, ${sunRampColor} 8px)`,
-                    backgroundColor: 'transparent',
-                  }}
-                />
-              )}
-              {(() => {
-                const segments = drawSunBand(dayStartMin, dayEndMin, sunColor, getPosition)
-                return segments.map((seg, i) => (
+            <div className="absolute bottom-4 left-6 right-6 z-[1] h-6">
+              <div className="relative w-full h-full">
+                {moonSegments.map((seg, i) => (
+                  <div
+                    key={`moon-${i}`}
+                    className="absolute top-0 h-full pointer-events-none rounded-sm"
+                    style={{
+                      left: `${seg.left}%`,
+                      width: `${seg.width}%`,
+                      backgroundColor: moonColor,
+                    }}
+                  />
+                ))}
+                {sunSegments.map((seg, i) => (
                   <div
                     key={`sun-${i}`}
-                    className="absolute top-0 bottom-0 pointer-events-none"
-                    style={{ left: `${seg.left}%`, width: `${seg.width}%`, backgroundColor: sunColor }}
+                    className="absolute top-0 h-full pointer-events-none rounded-sm"
+                    style={{
+                      left: `${seg.left}%`,
+                      width: `${seg.width}%`,
+                      backgroundColor: sunColor,
+                    }}
                   />
-                ))
-              })()}
-              {lightRampDown > 0 && (
-                <div
-                  className="absolute top-0 bottom-0 pointer-events-none"
-                  style={{
-                    left: `${getPosition(dayEndMin)}%`,
-                    width: `${getPosition(lightRampDown)}%`,
-                    backgroundImage: `repeating-linear-gradient(45deg, transparent, transparent 4px, ${sunRampColor} 4px, ${sunRampColor} 8px)`,
-                    backgroundColor: 'transparent',
-                  }}
-                />
-              )}
+                ))}
+              </div>
             </div>
 
             <div
