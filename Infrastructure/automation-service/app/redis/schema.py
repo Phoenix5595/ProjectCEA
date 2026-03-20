@@ -1,10 +1,6 @@
 from __future__ import annotations
 
 """Redis key schema constants for ProjectCEA automation service."""
-
-from __future__ import annotations
-
-# 1) OLD_KEY_PATTERNS: patterns currently used by existing code
 OLD_KEY_PATTERNS: list[str] = [
     # Sensor last-good values
     "sensor:{cluster}:{sensor_name}:last_good",

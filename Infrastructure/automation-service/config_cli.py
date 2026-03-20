@@ -26,7 +26,6 @@ import argparse
 import asyncio
 import os
 import sys
-from typing import cast
 
 # Add parent directory to path to import app modules
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -45,8 +44,6 @@ PID_RANGES = {
     "heater": {"kp": (0.0, 100.0), "ki": (0.0, 1.0), "kd": (0.0, 10.0)},
     "co2": {"kp": (0.0, 50.0), "ki": (0.0, 0.5), "kd": (0.0, 5.0)},
 }
-
-VALID_MODES = ["DAY", "NIGHT", "TRANSITION"]
 
 
 def validate_setpoint(name: str, value: float) -> tuple[bool, str | None]:
@@ -99,13 +96,13 @@ def validate_pid(device_type: str, kp: float, ki: float, kd: float) -> tuple[boo
 
 
 def validate_mode(mode: str) -> tuple[bool, str | None]:
-    """Validate mode value.
+    """Validate mode value for schedules.
 
     Returns:
         (is_valid, error_message)
     """
-    if mode.upper() not in VALID_MODES:
-        return False, f"Invalid mode: {mode}. Valid modes: {', '.join(VALID_MODES)}"
+    if mode.upper() not in ["DAY", "NIGHT", "TRANSITION"]:
+        return False, f"Invalid mode: {mode}. Valid modes: DAY, NIGHT, TRANSITION"
     return True, None
 
 
@@ -174,209 +171,6 @@ async def check_schedule_conflicts(
             return True, f"Conflicts with schedule '{schedule['name']}' (ID: {schedule['id']})"
 
     return False, None
-
-
-async def cmd_setpoint_get(
-    db: DatabaseManager, location: str, cluster: str, mode: str | None = None
-):
-    """Get setpoints for a location/cluster.
-
-    Args:
-        db: Database manager
-        location: Location name
-        cluster: Cluster name
-        mode: Optional mode (DAY/NIGHT/TRANSITION). If None, shows default/legacy setpoint.
-    """
-    if mode:
-        # Get specific mode setpoint
-        setpoint = await db.setpoint_repo.get_setpoint(location, cluster, mode)
-        if not setpoint:
-            print(f"No setpoints found for {location}/{cluster} (mode: {mode})")
-            return
-
-        print(f"Setpoints for {location}/{cluster} (mode: {mode}):")
-    else:
-        # Get default/legacy setpoint (mode=NULL)
-        setpoint = await db.setpoint_repo.get_setpoint(location, cluster, None)
-        if not setpoint:
-            # Try to get all modes
-            all_setpoints = await db.setpoint_repo.get_all_setpoints_for_location_cluster(
-                location, cluster
-            )
-            if all_setpoints:
-                print(f"Setpoints for {location}/{cluster} (all modes):")
-                for sp in all_setpoints:
-                    mode_str = sp.get("mode") or "default"
-                    print(f"\n  Mode: {mode_str}")
-                    if sp.get("temperature") is not None:
-                        print(f"    Temperature: {sp['temperature']}°C")
-                    if sp.get("humidity") is not None:
-                        print(f"    Humidity: {sp['humidity']}%")
-                    if sp.get("co2") is not None:
-                        print(f"    CO2: {sp['co2']} ppm")
-                    if sp.get("vpd") is not None:
-                        print(f"    VPD: {sp['vpd']} kPa")
-                return
-            else:
-                print(f"No setpoints found for {location}/{cluster}")
-                return
-
-    print(f"Setpoints for {location}/{cluster}:")
-
-    if setpoint.get("heating_setpoint") is not None:
-        print(f"  Heating Setpoint: {setpoint['heating_setpoint']}°C")
-    if setpoint.get("cooling_setpoint") is not None:
-        print(f"  Cooling Setpoint: {setpoint['cooling_setpoint']}°C")
-    if setpoint.get("humidity") is not None:
-        print(f"  Humidity: {setpoint['humidity']}%")
-    if setpoint.get("co2") is not None:
-        print(f"  CO2: {setpoint['co2']} ppm")
-    if setpoint.get("vpd") is not None:
-        print(f"  VPD: {setpoint['vpd']} kPa")
-    if setpoint.get("mode") is not None:
-        print(f"  Mode: {setpoint['mode']}")
-
-
-async def cmd_setpoint_set(
-    db: DatabaseManager,
-    location: str,
-    cluster: str,
-    heating_setpoint: float | None,
-    cooling_setpoint: float | None,
-    humidity: float | None,
-    co2: float | None,
-    vpd: float | None,
-    mode: str | None,
-    dry_run: bool,
-    author: str | None,
-):
-    """Set setpoints for a location/cluster.
-
-    Args:
-        db: Database manager
-        location: Location name
-        cluster: Cluster name
-        heating_setpoint: Heating setpoint (optional)
-        cooling_setpoint: Cooling setpoint (optional)
-        humidity: Humidity setpoint (optional)
-        co2: CO2 setpoint (optional)
-        vpd: VPD setpoint (optional)
-        mode: Mode (DAY/NIGHT/TRANSITION) or None for legacy/default setpoint
-        dry_run: If True, validate but don't apply changes
-        author: Author name for config version logging
-    """
-    # Validate mode if provided
-    if mode:
-        is_valid, error = validate_mode(mode)
-        if not is_valid:
-            print(f"Validation error: {error}")
-            sys.exit(1)
-        mode = mode.upper()
-
-    # Get existing values for this mode (or mode=NULL for legacy)
-    existing = await db.setpoint_repo.get_setpoint(location, cluster, mode)
-
-    # Validate new values
-    changes = {}
-    errors = []
-
-    if heating_setpoint is not None:
-        is_valid, error = validate_setpoint("temperature", heating_setpoint)
-        if not is_valid:
-            errors.append(error)
-        else:
-            changes["heating_setpoint"] = heating_setpoint
-
-    if cooling_setpoint is not None:
-        is_valid, error = validate_setpoint("temperature", cooling_setpoint)
-        if not is_valid:
-            errors.append(error)
-        else:
-            changes["cooling_setpoint"] = cooling_setpoint
-
-    if humidity is not None:
-        is_valid, error = validate_setpoint("humidity", humidity)
-        if not is_valid:
-            errors.append(error)
-        else:
-            changes["humidity"] = humidity
-
-    if co2 is not None:
-        is_valid, error = validate_setpoint("co2", co2)
-        if not is_valid:
-            errors.append(error)
-        else:
-            changes["co2"] = co2
-
-    if vpd is not None:
-        is_valid, error = validate_setpoint("vpd", vpd)
-        if not is_valid:
-            errors.append(error)
-        else:
-            changes["vpd"] = vpd
-
-    if mode is not None:
-        changes["mode"] = mode
-
-    if errors:
-        print("Validation errors:")
-        for error in errors:
-            print(f"  - {error}")
-        sys.exit(1)
-
-    if not changes:
-        print("No changes specified")
-        return
-
-    # Show diff
-    mode_str = f" (mode: {mode})" if mode else ""
-    print(f"Changes to apply for {location}/{cluster}{mode_str}:")
-    for key, value in changes.items():
-        if key == "mode":
-            old_mode = existing.get("mode") if existing else None
-            if old_mode is not None:
-                print(f"  {key}: {old_mode} → {value}")
-            else:
-                print(f"  {key}: (not set) → {value}")
-        else:
-            old_val = existing.get(key) if existing else None
-            if old_val is not None:
-                print(f"  {key}: {old_val} → {value}")
-            else:
-                print(f"  {key}: (not set) → {value}")
-
-    if dry_run:
-        print("\n[DRY RUN] Changes not applied")
-        return
-
-    # Apply changes
-    success = await db.setpoint_repo.set_setpoint(
-        location,
-        cluster,
-        cast(float, changes.get("heating_setpoint")),
-        cast(float, changes.get("cooling_setpoint")),
-        cast(float, changes.get("humidity")),
-        cast(float, changes.get("co2")),
-        cast(float, changes.get("vpd")),
-        mode,
-        source="cli",
-    )
-
-    if not success:
-        print("Error: Failed to update setpoints")
-        sys.exit(1)
-
-    # Log to config_versions
-    await db.config_repo.log_config_version(
-        config_type="setpoint",
-        author=author or os.getenv("USER", "unknown"),
-        comment=f"Setpoint update for {location}/{cluster}{mode_str}",
-        location=location,
-        cluster=cluster,
-        changes=changes,
-    )
-
-    print("Setpoints updated successfully")
 
 
 async def cmd_pid_get(db: DatabaseManager, device_type: str):
@@ -789,23 +583,16 @@ async def cmd_config_show(db: DatabaseManager, location: str, cluster: str):
     print(f"Effective configuration for {location}/{cluster}:")
     print()
 
-    # Get setpoints (show all modes)
-    all_setpoints = await db.setpoint_repo.get_all_setpoints_for_location_cluster(location, cluster)
-    print("Setpoints:")
-    if all_setpoints:
-        for sp in all_setpoints:
-            mode_str = sp.get("mode") or "default"
-            print(f"  Mode: {mode_str}")
-            if sp.get("temperature") is not None:
-                print(f"    Temperature: {sp['temperature']}°C")
-            if sp.get("humidity") is not None:
-                print(f"    Humidity: {sp['humidity']}%")
-            if sp.get("co2") is not None:
-                print(f"    CO2: {sp['co2']} ppm")
-            if sp.get("vpd") is not None:
-                print(f"    VPD: {sp['vpd']} kPa")
+    periods = await db.climate_periods_repo.get_periods(location, cluster)
+    print("Climate Periods:")
+    if periods:
+        for p in periods:
+            print(f"  {p.get('period_name', 'unnamed')}: {p.get('start_time')}-{p.get('end_time')}")
+            print(f"    Heat: {p.get('heating_setpoint')}°C | Cool: {p.get('cooling_setpoint')}°C")
+            print(f"    VPD: {p.get('vpd_setpoint')} kPa | CO2: {p.get('co2_setpoint')} ppm")
+            print(f"    Ramp: {p.get('ramp_minutes', 0)} min")
     else:
-        print("  (not set)")
+        print("  (no periods defined)")
     print()
 
     # Get schedules
@@ -849,30 +636,6 @@ async def main():
     parser.add_argument("--dry-run", action="store_true", help="Validate but do not apply changes")
 
     subparsers = parser.add_subparsers(dest="command", help="Command to execute")
-
-    # Setpoint commands
-    sp_parser = subparsers.add_parser("setpoint", help="Manage setpoints")
-    sp_subparsers = sp_parser.add_subparsers(dest="setpoint_cmd")
-
-    sp_get = sp_subparsers.add_parser("get", help="Get setpoints")
-    sp_get.add_argument("location", help="Location name")
-    sp_get.add_argument("cluster", help="Cluster name")
-    sp_get.add_argument(
-        "--mode",
-        help="Mode (DAY/NIGHT/TRANSITION). If not specified, shows default/legacy setpoint or all modes.",
-    )
-
-    sp_set = sp_subparsers.add_parser("set", help="Set setpoints")
-    sp_set.add_argument("location", help="Location name")
-    sp_set.add_argument("cluster", help="Cluster name")
-    sp_set.add_argument("--temp", type=float, help="Temperature setpoint (°C)")
-    sp_set.add_argument("--humidity", type=float, help="Humidity setpoint (percent)")
-    sp_set.add_argument("--co2", type=float, help="CO2 setpoint (ppm)")
-    sp_set.add_argument("--vpd", type=float, help="VPD setpoint (kPa)")
-    sp_set.add_argument(
-        "--mode",
-        help="Mode (DAY/NIGHT/TRANSITION). If not specified, uses default/legacy setpoint (mode=NULL).",
-    )
 
     # PID commands
     pid_parser = subparsers.add_parser("pid", help="Manage PID parameters")
@@ -969,25 +732,7 @@ async def main():
 
     try:
         # Route to appropriate command
-        if args.command == "setpoint":
-            if args.setpoint_cmd == "get":
-                await cmd_setpoint_get(db, args.location, args.cluster, args.mode)
-            elif args.setpoint_cmd == "set":
-                await cmd_setpoint_set(
-                    db,
-                    args.location,
-                    args.cluster,
-                    args.heating_setpoint,
-                    args.cooling_setpoint,
-                    args.humidity,
-                    args.co2,
-                    args.vpd,
-                    args.mode,
-                    args.dry_run,
-                    args.author,
-                )
-
-        elif args.command == "pid":
+        if args.command == "pid":
             if args.pid_cmd == "get":
                 await cmd_pid_get(db, args.device_type)
             elif args.pid_cmd == "set":

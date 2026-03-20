@@ -1,13 +1,17 @@
 from __future__ import annotations
 
-from datetime import time
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from app.database import DatabaseManager
-from app.dependencies import get_database
+
+
+def get_database() -> DatabaseManager:
+    """Dependency to get database manager."""
+    raise RuntimeError("Dependency not injected")
+
 
 router = APIRouter(prefix="/api/climate-periods", tags=["climate-periods"])
 
@@ -26,7 +30,7 @@ class PeriodInput(BaseModel):
 
 class PeriodsSaveRequest(BaseModel):
     periods: list[PeriodInput]
-    mode_id: int | None = None
+    mode_id: int
     submode_id: int | None = None
 
 

@@ -19,7 +19,6 @@ from app.routes import (
     room_modes,
     rules,
     schedules,
-    setpoints,
     status,
     websocket,
 )
@@ -37,7 +36,6 @@ def register_routes(app: FastAPI) -> None:
     # API Routes
     app.include_router(schedules.router, tags=["schedules"])
     app.include_router(lights.router, tags=["lights"])
-    app.include_router(setpoints.router, tags=["setpoints"])
     app.include_router(climate_periods.router, tags=["climate-periods"])
     app.include_router(devices.router, tags=["devices"])
     app.include_router(hardware.router, tags=["hardware"])
@@ -64,6 +62,9 @@ def setup_dependency_overrides(app: FastAPI, container) -> None:
         app: FastAPI application instance
         container: ServiceContainer instance with initialized dependencies
     """
+    # Override dependencies in climate_periods module
+    app.dependency_overrides[climate_periods.get_database] = container.get_database
+
     # Override dependencies in schedules module
     app.dependency_overrides[schedules.get_database] = container.get_database
     app.dependency_overrides[schedules.get_scheduler] = container.get_scheduler
@@ -76,10 +77,6 @@ def setup_dependency_overrides(app: FastAPI, container) -> None:
     app.dependency_overrides[lights.get_relay_manager] = container.get_relay_manager
     app.dependency_overrides[lights.get_interlock_manager] = container.get_interlock_manager
     app.dependency_overrides[lights.get_scheduler] = container.get_scheduler
-
-    # Override dependencies in setpoints module
-    app.dependency_overrides[setpoints.get_database] = container.get_database
-    app.dependency_overrides[setpoints.get_config] = container.get_config
 
     # Override dependencies in devices module
     app.dependency_overrides[devices.get_database] = container.get_database

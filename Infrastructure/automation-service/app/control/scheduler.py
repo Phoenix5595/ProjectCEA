@@ -1,10 +1,9 @@
 """Time-based scheduler for device control.
 
 Light (master): two periods only — sun (lights on) and moon (lights off). Intensity is
-binary: in sun window → schedule target + ramps; outside → moon = 0%. Climate (slave):
-PRE_DAY, DAY, PRE_NIGHT, NIGHT are derived from light bounds and used for setpoints only.
-DAY has the same length as sun; NIGHT has the same duration as moon. PRE_DAY/PRE_NIGHT
-exist only if their duration is above 0.
+binary: in sun window → schedule target + ramps; outside → moon = 0%.
+Climate (slave): driven by climate_periods table. Periods define setpoints and ramp_minutes.
+Climate periods are derived from light bounds but stored in climate_periods table.
 """
 
 from __future__ import annotations
@@ -584,38 +583,38 @@ class Scheduler:
 
         target_intensity = None
         for schedule in self.schedules:
-            if not schedule.get("enabled", True):
+            # Filter by location, cluster, and device_name (SAME as get_schedule_intensity)
+            if (
+                schedule.get("location") != location
+                or schedule.get("cluster") != cluster
+                or schedule.get("device_name") != device_name
+            ):
                 continue
 
-            if (
-                schedule.get("location") == location
-                and schedule.get("cluster") == cluster
-                and schedule.get("device_name") == device_name
-            ):
-                # Check day of week
-                day_of_week = schedule.get("day_of_week")
-                if day_of_week is not None and day_of_week != current_weekday:
-                    continue
+            # Check day of week
+            day_of_week = schedule.get("day_of_week")
+            if day_of_week is not None and day_of_week != current_weekday:
+                continue
 
-                # Check time range
-                start_time = self._parse_time(schedule.get("start_time"))
-                end_time = self._parse_time(schedule.get("end_time"))
+            # Check time range
+            start_time = self._parse_time(schedule.get("start_time"))
+            end_time = self._parse_time(schedule.get("end_time"))
 
-                if not start_time or not end_time:
-                    continue
+            if not start_time or not end_time:
+                continue
 
-                is_in_range = False
-                if start_time > end_time:
-                    # Overnight schedule
-                    is_in_range = current_time_obj >= start_time or current_time_obj < end_time
-                else:
-                    # Normal schedule
-                    is_in_range = start_time <= current_time_obj < end_time
+            is_in_range = False
+            if start_time > end_time:
+                # Overnight schedule
+                is_in_range = current_time_obj >= start_time or current_time_obj < end_time
+            else:
+                # Normal schedule
+                is_in_range = start_time <= current_time_obj < end_time
 
-                if is_in_range:
-                    # Found the active schedule - get target_intensity
-                    target_intensity = schedule.get("target_intensity")
-                    break
+            if is_in_range:
+                # Found the active schedule - get target_intensity
+                target_intensity = schedule.get("target_intensity")
+                break
 
         if target_intensity is None:
             # No target intensity in schedule, use effective as nominal
@@ -668,105 +667,6 @@ class Scheduler:
         """Update schedules list."""
         self.schedules = schedules
         logger.info(f"Updated schedules: {len(schedules)} schedules")
-
-    def get_climate_mode(
-        self,
-        location: str,
-        cluster: str,
-        current_time: datetime | None = None,
-        day_start_time: str | None = None,
-        day_end_time: str | None = None,
-        pre_day_duration: int | None = None,
-        pre_night_duration: int | None = None,
-    ) -> tuple[str, int, int] | None:
-        """Get current climate mode (PRE_DAY, DAY, PRE_NIGHT, NIGHT) for a location/cluster.
-
-        Climate periods are slave to light: computed from light sun/moon bounds
-        (day_start_time, day_end_time) plus climate pre_day_duration, pre_night_duration.
-        Used for setpoints only; does not drive light intensity. DAY is slave to sun,
-        NIGHT is slave to moon.
-
-        CRITICAL: Returns DISCRETE mode only (mode, mode_start_time, mode_end_time).
-        Does NOT calculate ramp progress - that belongs in control engine.
-
-        Args:
-            location: Location name
-            cluster: Cluster name
-            current_time: Current time (default: now)
-            day_start_time: Day start time in HH:MM format (from light schedule)
-            day_end_time: Day end time in HH:MM format (from light schedule)
-            pre_day_duration: Pre-day duration in minutes (from climate schedule)
-            pre_night_duration: Pre-night duration in minutes (from climate schedule)
-
-        Returns:
-            Tuple of (mode, mode_start_minutes, mode_end_minutes) or None if insufficient data
-            mode: 'PRE_DAY', 'DAY', 'PRE_NIGHT', or 'NIGHT'
-            mode_start_minutes: Start time in minutes since midnight (0-1439)
-            mode_end_minutes: End time in minutes since midnight (0-1439)
-        """
-        if current_time is None:
-            current_time = datetime.now(tz=LOCAL_TZ)
-
-        # Need day/night times to calculate periods
-        if not day_start_time or not day_end_time:
-            return None
-
-        # Convert times to minutes since midnight
-        day_start_min = self._time_to_minutes(day_start_time)
-        day_end_min = self._time_to_minutes(day_end_time)
-        current_min = current_time.hour * 60 + current_time.minute
-
-        # Default durations to 0 if not provided
-        pre_day_dur = pre_day_duration or 0
-        pre_night_dur = pre_night_duration or 0
-
-        # Calculate pre-day period: starts at (day_start_time - pre_day_duration) % 1440, ends at day_start_time
-        # PRE_DAY occurs DURING the night light period (lights still OFF)
-        pre_day_start_min = (day_start_min - pre_day_dur) % 1440
-        pre_day_end_min = day_start_min
-
-        # Calculate pre-night period: starts at (day_end_time - pre_night_duration) % 1440, ends at day_end_time
-        # PRE_NIGHT occurs DURING the day light period (lights still ON)
-        pre_night_start_min = (day_end_min - pre_night_dur) % 1440
-        pre_night_end_min = day_end_min
-
-        # Calculate DAY period: starts at day_start_time, ends when PRE_NIGHT starts
-        # Pure DAY period (lights ON + climate DAY), PRE_NIGHT replaces the end
-        day_start_actual_min = day_start_min
-        day_end_actual_min = pre_night_start_min
-
-        # Calculate NIGHT period: starts at day_end_time, ends when PRE_DAY starts
-        # Pure NIGHT period (lights OFF + climate NIGHT), PRE_DAY replaces the end
-        night_start_actual_min = day_end_min
-        night_end_actual_min = pre_day_start_min
-
-        # Check which period we're in (priority: PRE_DAY > DAY > PRE_NIGHT > NIGHT)
-        # PRE_DAY period
-        if pre_day_dur > 0 and is_time_in_range(current_min, pre_day_start_min, pre_day_end_min):
-            return ("PRE_DAY", pre_day_start_min, pre_day_end_min)
-
-        # DAY period (only if not in PRE_NIGHT)
-        if pre_night_dur > 0:
-            # If PRE_NIGHT duration > 0, DAY period ends when PRE_NIGHT starts
-            if is_time_in_range(current_min, day_start_actual_min, day_end_actual_min):
-                return ("DAY", day_start_actual_min, day_end_actual_min)
-        else:
-            # If PRE_NIGHT duration = 0, DAY period runs full day
-            if is_time_in_range(current_min, day_start_min, day_end_min):
-                return ("DAY", day_start_min, day_end_min)
-
-        # PRE_NIGHT period
-        if pre_night_dur > 0 and is_time_in_range(
-            current_min, pre_night_start_min, pre_night_end_min
-        ):
-            return ("PRE_NIGHT", pre_night_start_min, pre_night_end_min)
-
-        # NIGHT period (everything else)
-        if is_time_in_range(current_min, night_start_actual_min, night_end_actual_min):
-            return ("NIGHT", night_start_actual_min, night_end_actual_min)
-
-        # Fallback: if we somehow don't match any period, return NIGHT
-        return ("NIGHT", night_start_actual_min, night_end_actual_min)
 
     def _time_to_minutes(self, time_str: str | None) -> int:
         """Convert time string (HH:MM) to minutes since midnight.

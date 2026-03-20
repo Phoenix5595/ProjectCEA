@@ -36,9 +36,10 @@ async def run_load_test():
     db._sensor_repo = MagicMock()
     db._sensor_repo.get_sensor_value = AsyncMock(return_value=25.0)
 
-    db._setpoint_repo = MagicMock()
-    db._setpoint_repo.get_setpoint = AsyncMock(
+    db._climate_periods_repo = MagicMock()
+    db._climate_periods_repo.get_active_period = AsyncMock(
         return_value={
+            "period_name": "DAY",
             "heating_setpoint": 24.0,
             "cooling_setpoint": 26.0,
             "humidity": 60.0,
@@ -46,6 +47,34 @@ async def run_load_test():
             "vpd": 1.2,
         }
     )
+    db._climate_periods_repo.get_periods = AsyncMock(
+        return_value=[
+            {
+                "period_name": "DAY",
+                "start_time": "06:00",
+                "end_time": "18:00",
+                "ramp_minutes": 0,
+                "heating_setpoint": 24.0,
+                "cooling_setpoint": 26.0,
+                "humidity": 60.0,
+                "co2": 1000.0,
+                "vpd": 1.2,
+            },
+            {
+                "period_name": "NIGHT",
+                "start_time": "18:00",
+                "end_time": "06:00",
+                "ramp_minutes": 0,
+                "heating_setpoint": 20.0,
+                "cooling_setpoint": 25.0,
+                "humidity": 65.0,
+                "co2": 800.0,
+                "vpd": 0.8,
+            },
+        ]
+    )
+
+    db._setpoint_repo = MagicMock()
     db._setpoint_repo.log_effective_setpoints = AsyncMock()
 
     db._schedule_repo = MagicMock()
@@ -85,7 +114,7 @@ async def run_load_test():
     # Add missing method that DeviceController expects
     relay_manager.set_channel_state = AsyncMock(return_value=True)
 
-    scheduler = Scheduler([])
+    scheduler = Scheduler([], climate_periods_repo=db._climate_periods_repo)
     rules_engine = RulesEngine([], scheduler)
     alarm_manager = AlarmManager(redis_client, db)
 

@@ -1,6 +1,5 @@
 /** API client for backend communication. */
 import axios, { AxiosInstance } from 'axios';
-import type { Setpoint, SetpointUpdate } from '../types/setpoint';
 import type { SensorDataResponse } from '../types/sensor';
 import type { Device, ControlHistoryEntry } from '../types/device';
 import type { PIDParameters, PIDParameterUpdate, PIDModeInfo, PIDModeUpdate, AutotuneState } from '../types/pid';
@@ -66,23 +65,6 @@ class ApiClient {
         return Promise.reject(error);
       }
     );
-  }
-
-  // Setpoints (automation service)
-  async getSetpoints(location: string, cluster: string, mode?: string): Promise<Setpoint> {
-    const params = mode ? { mode } : {};
-    const response = await this.automationClient.get(`/api/setpoints/${location}/${cluster}`, { params });
-    return response.data;
-  }
-
-  async getAllSetpointsForLocationCluster(location: string, cluster: string): Promise<Setpoint[]> {
-    const response = await this.automationClient.get(`/api/setpoints/${location}/${cluster}/all-modes`);
-    return response.data;
-  }
-
-  async updateSetpoints(location: string, cluster: string, setpoints: SetpointUpdate): Promise<Setpoint> {
-    const response = await this.automationClient.post(`/api/setpoints/${location}/${cluster}`, setpoints);
-    return response.data;
   }
 
   // Sensors (backend service)
@@ -312,8 +294,12 @@ class ApiClient {
     return response.data;
   }
 
-  async saveClimatePeriods(location: string, cluster: string, periods: any[]): Promise<any> {
-    const response = await this.automationClient.post(`/api/climate-periods/${location}/${cluster}`, { periods });
+  async saveClimatePeriods(location: string, cluster: string, periods: any[], modeId?: number, submodeId?: number): Promise<any> {
+    const response = await this.automationClient.post(`/api/climate-periods/${location}/${cluster}`, { 
+      periods,
+      mode_id: modeId ?? null,
+      submode_id: submodeId ?? null
+    });
     return response.data;
   }
 

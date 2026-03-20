@@ -5,8 +5,8 @@ import { logger } from '../utils/logger'
 import { getLocationDisplayName, getLocationBackendName } from '../config/zones'
 import type { RoomModeWithParams, ModeParameters } from '../types/modes'
 import { useControlActions } from '../contexts/ControlActionsContext'
-import SetpointTimeline from '../components/SetpointTimeline'
 import ClimatePeriodsTable from '../components/ClimatePeriodsTable'
+import ClimatePeriodTimeline from '../components/ClimatePeriodTimeline'
 import type { ClimatePeriod } from '../components/ClimatePeriodsTable'
 import CircularTimePicker from '../components/CircularTimePicker'
 import VerticalLightsBlock from '../components/VerticalLightsBlock'
@@ -47,12 +47,12 @@ export default function ZoneConfig({ location: propsLocation, cluster: propsClus
         setClimatePeriods(periods.map((p: any) => ({
           id: p.id,
           period_name: p.period_name,
-          start_time: p.start_time,
-          end_time: p.end_time,
+          start_time: p.start_time ? p.start_time.substring(0, 5) : '00:00',
+          end_time: p.end_time ? p.end_time.substring(0, 5) : '00:00',
           ramp_minutes: p.ramp_minutes,
           heating_setpoint: p.heating_setpoint,
           cooling_setpoint: p.cooling_setpoint,
-          vpd_setpoint: p.vpd_setpoint,
+          vpd_setpoint: p.vpd_setpoint != null ? Math.round(p.vpd_setpoint * 100) / 100 : null,
           co2_setpoint: p.co2_setpoint,
           details: p.details || ''
         })))
@@ -117,13 +117,20 @@ export default function ZoneConfig({ location: propsLocation, cluster: propsClus
         ramp_down_duration: p.ramp_down_minutes ?? null,
       })
 
-      await apiClient.saveClimatePeriods(location, cluster, climatePeriods)
+      await apiClient.saveClimatePeriods(location, cluster, climatePeriods, roomMode?.mode_id ?? undefined, roomMode?.submode_id ?? undefined)
 
       setSuccess('Saved')
       setTimeout(() => setSuccess(null), 2000)
     } catch (err: any) {
       logger.error('Error saving parameters:', err)
-      setError(err.response?.data?.detail || 'Failed to save')
+      const detail = err.response?.data?.detail
+      if (Array.isArray(detail)) {
+        setError(detail.join(', '))
+      } else if (typeof detail === 'object' && detail?.errors) {
+        setError(Array.isArray(detail.errors) ? detail.errors.join(', ') : String(detail.errors))
+      } else {
+        setError(String(detail || 'Failed to save'))
+      }
     } finally {
       setSaving(false)
     }
@@ -169,42 +176,23 @@ export default function ZoneConfig({ location: propsLocation, cluster: propsClus
       <div className="max-w-[1920px] mx-auto h-[calc(100vh-1rem)] flex flex-col">
         {params && (
           <div className="flex-1 flex flex-col gap-1 min-h-0">
-            {/* Climate Timeline - 270px fixed */}
+            {/* Climate Timeline - 270px fixed, full width */}
             <div className="h-[270px] shrink-0 bg-surface-primary rounded-lg border border-border-subtle overflow-hidden p-2">
-              <div className="text-[14px] text-text-muted uppercase font-bold tracking-wider mb-2">Climate Timeline</div>
-              {!isConstant && (
-                <SetpointTimeline
-                  dayStartTime={params.day_start_time}
-                  dayEndTime={params.night_start_time}
-                  preDayDuration={params.pre_day_minutes}
-                  preNightDuration={params.pre_night_minutes}
-                  onDayStartChange={(time) => handleParamChange({ day_start_time: time })}
-                  onDayEndChange={(time) => handleParamChange({ night_start_time: time })}
-                  onPreDayDurationChange={(d) => handleParamChange({ pre_day_minutes: d })}
-                  onPreNightDurationChange={(d) => handleParamChange({ pre_night_minutes: d })}
-                  lightPhotoperiod={{
-                    startTime: params.day_start_time,
-                    endTime: params.night_start_time,
-                    rampUpDuration: params.light_ramp_up_minutes,
-                    rampDownDuration: params.light_ramp_down_minutes
-                  }}
-                  setpoints={{
-                    DAY: { heating_setpoint: params.day_heat_temp, cooling_setpoint: params.day_cool_temp, vpd: params.day_vpd, co2: params.day_co2, ramp_in_duration: params.ramp_up_minutes },
-                    NIGHT: { heating_setpoint: params.night_heat_temp, cooling_setpoint: params.night_cool_temp, vpd: params.night_vpd, co2: params.night_co2, ramp_in_duration: params.ramp_down_minutes },
-                    PRE_DAY: { heating_setpoint: params.pre_day_heat_temp, cooling_setpoint: params.pre_day_cool_temp, vpd: params.pre_day_vpd, co2: params.pre_day_co2, ramp_in_duration: params.pre_day_ramp_minutes },
-                    PRE_NIGHT: { heating_setpoint: params.pre_night_heat_temp, cooling_setpoint: params.pre_night_cool_temp, vpd: params.pre_night_vpd, co2: params.pre_night_co2, ramp_in_duration: params.pre_night_ramp_minutes }
-                  }}
-                  className="h-[calc(100%-28px)]"
+              {!isConstant ? (
+                <ClimatePeriodTimeline
+                  periods={climatePeriods}
+                  lightDayStart={params?.day_start_time || '06:00'}
+                  lightDayEnd={params?.night_start_time || '18:00'}
+                  className="h-full"
                 />
-              )}
-              {isConstant && (
+              ) : (
                 <div className="h-full flex items-center justify-center text-text-subtle text-sm">
                   Constant mode - no timeline
                 </div>
               )}
             </div>
 
-            {/* Light Schedule + Setpoints row - NO height constraint */}
+            {/* Light Schedule + Climate Periods row - 450px */}
             <div className="flex gap-1 h-[450px] shrink-0">
               <div className="w-[30%] h-full">
                 {!isConstant && (
@@ -247,7 +235,6 @@ export default function ZoneConfig({ location: propsLocation, cluster: propsClus
                 <VerticalNotesBlock location={location} cluster={cluster} currentMode={roomMode?.mode_name} />
               </div>
               <div className="w-[65%]">
-                {/* Manual light control only for drying/sleep */}
                 {(currentModeName === 'drying' || currentModeName === 'sleep') && (
                   <div className="bg-surface-primary rounded-lg border border-border-subtle p-2 mb-1">
                     <div className="text-[14px] text-text-muted uppercase font-bold tracking-wider mb-2">Manual Light Control</div>

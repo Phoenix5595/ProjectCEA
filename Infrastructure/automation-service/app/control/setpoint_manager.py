@@ -340,20 +340,20 @@ class RampManager:
 
 
 class SetpointManager:
-    """Calculates effective setpoints with ramp transitions."""
+    """Calculates effective setpoints with ramp transitions for climate periods."""
 
     def __init__(
         self,
-        database: DatabaseManager | None = None,  # DatabaseManager for setpoint queries
+        database: DatabaseManager | None = None,  # DatabaseManager for querying climate periods
         redis_client: AutomationRedisClient | None = None,
-        state_manager=None,  # StateManager for getting previous setpoints
+        state_manager=None,  # StateManager (optional)
     ):
         """Initialize setpoint manager.
 
         Args:
-            database: DatabaseManager for querying setpoints by mode
+            database: DatabaseManager for querying climate_periods
             redis_client: Redis client for ramp persistence
-            state_manager: StateManager for getting previous mode setpoints
+            state_manager: StateManager (optional)
         """
         self.database: DatabaseManager | None = database
         self._redis = redis_client
@@ -365,10 +365,10 @@ class SetpointManager:
         location: str,
         cluster: str,
         current_time: datetime,
-        current_mode: str | None,
+        current_period: str | None,
         setpoint_data: dict[str, Any],
         sensor_values: Mapping[str, float | None] | None = None,
-        previous_mode: str | None = None,
+        previous_period: str | None = None,
     ) -> dict[str, Any]:
         """Compute effective setpoints accounting for ramp transitions.
 
@@ -376,10 +376,10 @@ class SetpointManager:
             location: Location name
             cluster: Cluster name
             current_time: Current timestamp
-            current_mode: Current climate mode (DAY/NIGHT/PRE_DAY/PRE_NIGHT)
-            setpoint_data: Setpoint data from database
+            current_period: Current climate period name
+            setpoint_data: Setpoint data from climate_periods table
             sensor_values: Optional sensor values for ramp start initialization
-            previous_mode: Previous climate mode for transition detection
+            previous_period: Previous climate period name for transition detection
 
         Returns:
             Dict with effective/nominal setpoints and ramp progress values
@@ -394,29 +394,29 @@ class SetpointManager:
             # Store nominal values
             self._store_nominal_values(result, nominal_values)
 
-            # Check for mode transitions that require ramping
-            mode_changed = self._detect_mode_change(current_mode, previous_mode)
+            # Check for period transitions that require ramping
+            period_changed = self._detect_mode_change(current_period, previous_period)
 
-            if mode_changed:
-                # CRITICAL: Clear ALL stale ramps when mode changes to prevent sawtoothing
+            if period_changed:
+                # CRITICAL: Clear ALL stale ramps when period changes to prevent sawtoothing
                 self.ramp_manager.clear_ramps_for_room(location, cluster)
 
                 if ramp_in_duration > 0:
                     await self._handle_mode_transition_ramp(
                         location,
                         cluster,
-                        current_mode,
+                        current_period,
                         nominal_values,
                         sensor_values,
                         ramp_in_duration,
                         current_time,
                         result,
-                        previous_mode,
+                        previous_period,
                     )
                 else:
                     self._apply_nominal_values(result, nominal_values)
             elif self.ramp_manager.has_active_ramps(location, cluster):
-                # Continue applying active ramps (no mode change, but ramps still in progress)
+                # Continue applying active ramps (no period change, but ramps still in progress)
                 self._apply_ramp_values(location, cluster, result, nominal_values, current_time)
             else:
                 # No ramping needed, use nominal values directly
@@ -464,35 +464,35 @@ class SetpointManager:
         result["nominal_co2_setpoint"] = nominal_values["co2"]
         result["nominal_vpd_setpoint"] = nominal_values["vpd"]
 
-    def _detect_mode_change(self, current_mode: str | None, previous_mode: str | None) -> bool:
-        """Detect if a mode change occurred. Returns False on startup."""
-        if previous_mode is None:
+    def _detect_mode_change(self, current_period: str | None, previous_period: str | None) -> bool:
+        """Detect if a period change occurred. Returns False on startup."""
+        if previous_period is None:
             return False
-        return current_mode != previous_mode
+        return current_period != previous_period
 
     async def _handle_mode_transition_ramp(
         self,
         location: str,
         cluster: str,
-        current_mode: str | None,
+        current_period: str | None,
         nominal_values: Mapping[str, float | None],
         sensor_values: Mapping[str, float | None] | None,
         ramp_in_duration: float,
         current_time: datetime,
         result: dict[str, Any],
-        previous_mode: str | None = None,
+        previous_period: str | None = None,
     ) -> None:
-        """Handle ramp transitions when mode changes."""
-        if current_mode is None:
+        """Handle ramp transitions when period changes."""
+        if current_period is None:
             return
 
         logger.debug(
-            f"RAMP DEBUG: {location}/{cluster} - mode_changed=True, current_mode={current_mode}"
+            f"RAMP DEBUG: {location}/{cluster} - period_changed=True, current_period={current_period}"
         )
 
-        # Determine ramp start values based on previous mode
+        # Determine ramp start values based on previous period
         ramp_starts = await self._calculate_ramp_start_values(
-            location, cluster, current_mode, nominal_values, sensor_values, previous_mode
+            location, cluster, current_period, nominal_values, sensor_values, previous_period
         )
 
         # Start ramps for each setpoint type
@@ -536,83 +536,63 @@ class SetpointManager:
         self,
         location: str,
         cluster: str,
-        current_mode: str,
+        current_period: str,
         nominal_values: Mapping[str, float | None],
         sensor_values: Mapping[str, float | None] | None,
-        previous_mode: str | None = None,
+        previous_period: str | None = None,
     ) -> dict[str, float | None]:
-        """Calculate starting values for ramps based on previous mode.
+        """Calculate starting values for ramps based on previous period.
 
-        Uses the previous mode's setpoints as the ramp starting point.
-        Falls back to inferred previous mode if previous_mode is None.
+        Queries the climate_periods table to get the previous period's setpoints
+        as the ramp starting point. Falls back to sensor values or nominal values.
         """
         ramp_starts: dict[str, float | None] = {}
 
-        def _extract_setpoints(setpoint_data: dict[str, Any]) -> dict[str, float | None]:
-            """Helper to extract setpoint values from database record."""
+        def _extract_setpoints_from_period(period_data: dict[str, Any]) -> dict[str, float | None]:
+            """Helper to extract setpoint values from climate period record."""
             return {
-                "heating": setpoint_data.get("heating_setpoint"),
-                "cooling": setpoint_data.get("cooling_setpoint"),
-                "humidity": setpoint_data.get("humidity"),
-                "co2": setpoint_data.get("co2"),
-                "vpd": setpoint_data.get("vpd"),
+                "heating": period_data.get("heating_setpoint"),
+                "cooling": period_data.get("cooling_setpoint"),
+                "humidity": None,  # VPD cascade derives humidity
+                "co2": period_data.get("co2_setpoint"),
+                "vpd": period_data.get("vpd_setpoint"),
             }
 
-        # If we know the previous mode, use its setpoints as ramp start
-        if previous_mode:
+        # If we know the previous period name, look it up in climate_periods table
+        if previous_period:
             logger.debug(
-                f"RAMP: {previous_mode} -> {current_mode}, fetching {previous_mode} setpoints as start"
+                f"RAMP: {previous_period} -> {current_period}, fetching {previous_period} period as start"
             )
-            prev_setpoint_data = await self.database.setpoint_repo.get_setpoint(
-                location, cluster, previous_mode
+            periods = await self.database.climate_periods_repo.get_periods(location, cluster)
+            for period in periods:
+                if period.get("period_name") == previous_period:
+                    ramp_starts = _extract_setpoints_from_period(period)
+                    logger.info(
+                        f"RAMP: Using {previous_period} period setpoints as ramp start: {ramp_starts}"
+                    )
+                    return ramp_starts
+            logger.warning(
+                f"RAMP: Previous period {previous_period} not found for {location}/{cluster}"
             )
-            if prev_setpoint_data:
-                ramp_starts = _extract_setpoints(prev_setpoint_data)
-                logger.info(f"RAMP: Using {previous_mode} setpoints as ramp start: {ramp_starts}")
-                return ramp_starts
-            else:
-                logger.warning(
-                    f"RAMP: {previous_mode} setpoints not found for {location}/{cluster}"
-                )
 
-        # Fallback: Infer previous mode from current mode (backward compatibility / service startup)
-        # Maps current_mode -> (primary_previous, secondary_fallback)
-        mode_fallbacks: dict[str, tuple[str, str | None]] = {
-            "PRE_DAY": ("NIGHT", None),
-            "DAY": ("PRE_DAY", "NIGHT"),  # PRE_DAY if exists, else NIGHT
-            "PRE_NIGHT": ("DAY", None),
-            "NIGHT": ("PRE_NIGHT", "DAY"),  # PRE_NIGHT if exists, else DAY
-        }
-
-        fallbacks = mode_fallbacks.get(current_mode)
-        if not fallbacks:
-            logger.warning(f"RAMP: Unknown mode {current_mode}, cannot determine ramp start")
+        # Fallback: use sensor values if available
+        if sensor_values:
+            logger.debug(
+                f"RAMP: Using sensor values as ramp start fallback for {location}/{cluster}"
+            )
+            ramp_starts = {
+                "heating": sensor_values.get("dry_bulb"),
+                "cooling": sensor_values.get("dry_bulb"),
+                "humidity": sensor_values.get("humidity"),
+                "co2": sensor_values.get("co2"),
+                "vpd": sensor_values.get("vpd"),
+            }
+            logger.info(f"RAMP: Using sensor values as ramp start: {ramp_starts}")
             return ramp_starts
-
-        primary, secondary = fallbacks
-        logger.info(f"RAMP: Inferring previous mode for {current_mode}, trying {primary}")
-
-        # Try primary fallback
-        primary_data = await self.database.setpoint_repo.get_setpoint(location, cluster, primary)
-        if primary_data:
-            ramp_starts = _extract_setpoints(primary_data)
-            logger.info(f"RAMP: Using {primary} setpoints as ramp start: {ramp_starts}")
-            return ramp_starts
-
-        # Try secondary fallback if primary not found
-        if secondary:
-            logger.info(f"RAMP: {primary} not found, falling back to {secondary}")
-            secondary_data = await self.database.setpoint_repo.get_setpoint(
-                location, cluster, secondary
-            )
-            if secondary_data:
-                ramp_starts = _extract_setpoints(secondary_data)
-                logger.info(f"RAMP: Using {secondary} setpoints as ramp start: {ramp_starts}")
-                return ramp_starts
 
         # Ultimate fallback: use nominal values (target = start, so no actual ramp)
         logger.warning(
-            f"RAMP: No previous mode setpoints found for {location}/{cluster}, using nominal values"
+            f"RAMP: No previous period or sensor data for {location}/{cluster}, using nominal values"
         )
         ramp_starts = {
             "heating": nominal_values["heating"],

@@ -42,10 +42,6 @@ app = FastAPI(
             "description": "Schedule management for devices and climate control",
         },
         {
-            "name": "setpoints",
-            "description": "Climate setpoint management (temperature, humidity, CO2, VPD)",
-        },
-        {
             "name": "lights",
             "description": "Light dimming control for DFR0971 modules",
         },

@@ -4,8 +4,6 @@ from datetime import datetime
 import time
 from typing import TYPE_CHECKING, Any
 
-from app.state import StateManager, get_state_manager  # type: ignore
-
 from .base import BaseRepository, logger
 
 if TYPE_CHECKING:
@@ -13,7 +11,7 @@ if TYPE_CHECKING:
 
 
 class SetpointRepository(BaseRepository):
-    """Repository for setpoint operations."""
+    """Repository for effective setpoint logging operations (setpoints table deprecated)."""
 
     def __init__(self, pool: Pool | None = None, redis_client: Any = None) -> None:
         super().__init__(pool)
@@ -100,186 +98,6 @@ class SetpointRepository(BaseRepository):
 
         self._last_batch_flush = time.time()
         return flushed_count
-
-    async def get_setpoint(
-        self, location: str, cluster: str, mode: str | None = None
-    ) -> dict[str, Any] | None:
-        """Get setpoint for location/cluster/mode.
-
-        Args:
-            location: Location name
-            cluster: Cluster name
-            mode: Mode name (day/night/pre_day/pre_night). If None, defaults to 'day'.
-        """
-        db_mode = mode if mode and mode != "main" else "day"
-
-        # 1) Cache-aside: check StateManager first (fast in-memory / Redis cache underneath)
-        state: StateManager | None = None
-        try:
-            state = get_state_manager()
-            cached_from_state = await state.get_setpoint(location, cluster)
-            if cached_from_state is not None:
-                return cached_from_state
-        except Exception:
-            # If StateManager is unavailable for any reason, fall back to DB cache path
-            logger.debug("Setpoint: StateManager unavailable or error during get_setpoint lookup")
-
-        # 2) Fallback to local in-repository cache as a secondary cache (legacy behavior)
-        cache_key = self._get_cache_key("get_setpoint", location, cluster, db_mode)
-        cached = self._get_cached_result(cache_key)
-        if cached is not None:
-            return cached
-
-        # 3) DB lookup on cache miss
-        try:
-            async with self.pool.acquire() as conn:
-                row = await conn.fetchrow(
-                    """SELECT location, cluster, mode, heating_setpoint, cooling_setpoint,
-                               humidity, co2, vpd, ramp_in_duration, updated_at
-                        FROM setpoints
-                        WHERE location = $1 AND cluster = $2 AND mode = $3""",
-                    location,
-                    cluster,
-                    db_mode,
-                )
-                if row:
-                    result = dict(row)
-                    self._set_cached_result(cache_key, result)
-
-                    # 4) Populate StateManager cache (cache-aside: populate cache on miss)
-                    try:
-                        if state is not None:
-                            await state.set_setpoint(
-                                location,
-                                cluster,
-                                result.get("heating_setpoint"),
-                                result.get("cooling_setpoint"),
-                                result.get("humidity"),
-                                result.get("co2"),
-                            )
-                    except Exception:
-                        pass
-
-                    return result
-        except Exception as e:
-            logger.error(f"Failed to get setpoint: {e}")
-        return None
-
-    async def set_setpoint(
-        self,
-        location: str,
-        cluster: str,
-        heating_setpoint: float | None = None,
-        cooling_setpoint: float | None = None,
-        humidity: float | None = None,
-        co2: float | None = None,
-        vpd: float | None = None,
-        mode: str | None = None,
-        ramp_in_duration: int | None = None,
-        source: str = "api",
-        expected_version: datetime | None = None,
-    ) -> tuple[bool, datetime | None]:
-        """Set setpoint with optimistic locking.
-
-        Args:
-            location: Location name
-            cluster: Cluster name
-            heating_setpoint: Heating setpoint temperature
-            cooling_setpoint: Cooling setpoint temperature
-            humidity: Humidity setpoint
-            co2: CO2 setpoint
-            vpd: VPD setpoint
-            mode: Mode name. If None or 'main', defaults to 'day'.
-            ramp_in_duration: Ramp duration in minutes
-            source: Source of update
-            expected_version: For optimistic locking
-
-        Returns:
-            Tuple of (success, new_updated_at)
-        """
-        db_mode = mode if mode and mode != "main" else "day"
-
-        try:
-            async with self.pool.acquire() as conn:
-                if expected_version:
-                    row = await conn.fetchrow(
-                        "SELECT updated_at FROM setpoints WHERE location = $1 AND cluster = $2 AND mode = $3",
-                        location,
-                        cluster,
-                        db_mode,
-                    )
-                    if row:
-                        current = row["updated_at"]
-                        if current and current != expected_version:
-                            return (False, None)
-
-                heat = heating_setpoint if heating_setpoint is not None else 20.0
-                cool = cooling_setpoint if cooling_setpoint is not None else 25.0
-                hum = humidity if humidity is not None else 60.0
-                co2_val = co2 if co2 is not None else 800.0
-                vpd_val = vpd if vpd is not None else 1.0
-                ramp_in = ramp_in_duration if ramp_in_duration is not None else 30
-
-                new_row = await conn.fetchrow(
-                    """INSERT INTO setpoints (location, cluster, mode, heating_setpoint, cooling_setpoint,
-                                             humidity, co2, vpd, ramp_in_duration, updated_at)
-                       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
-                       ON CONFLICT (location, cluster, mode)
-                       DO UPDATE SET heating_setpoint = $4, cooling_setpoint = $5, humidity = $6,
-                                    co2 = $7, vpd = $8, ramp_in_duration = $9, updated_at = NOW()
-                       RETURNING updated_at""",
-                    location,
-                    cluster,
-                    db_mode,
-                    heat,
-                    cool,
-                    hum,
-                    co2_val,
-                    vpd_val,
-                    ramp_in,
-                )
-                self.clear_cache()
-                # Invalidate caches in StateManager and local repository to ensure
-                # subsequent reads fetch fresh data from the DB or StateManager cache.
-                try:
-                    # Local repository cache invalidation (already present)
-                    self.invalidate_cache_for_location_cluster(location, cluster)
-                except Exception:
-                    pass
-
-                try:
-                    state = get_state_manager()
-                    # Invalidate known Redis-backed keys related to this setpoint
-                    if state is not None:
-                        await state.delete(f"setpoint:{location}:{cluster}:heating_setpoint")
-                        await state.delete(f"setpoint:{location}:{cluster}:cooling_setpoint")
-                        await state.delete(f"setpoint:{location}:{cluster}:humidity")
-                        await state.delete(f"setpoint:{location}:{cluster}:co2")
-                        await state.delete(f"setpoint:{location}:{cluster}:source")
-                except Exception:
-                    pass
-                return (True, new_row["updated_at"] if new_row else None)
-        except Exception as e:
-            logger.error(f"Failed to set setpoint: {e}")
-            return (False, None)
-
-    async def get_all_setpoints_for_location_cluster(
-        self, location: str, cluster: str
-    ) -> list[dict[str, Any]]:
-        """Get all setpoints for a location/cluster."""
-        try:
-            async with self.pool.acquire() as conn:
-                rows = await conn.fetch(
-                    """SELECT location, cluster, mode, heating_setpoint, cooling_setpoint,
-                              humidity, co2, vpd, ramp_in_duration, updated_at
-                       FROM setpoints WHERE location = $1 AND cluster = $2""",
-                    location,
-                    cluster,
-                )
-                return [dict(row) for row in rows]
-        except Exception as e:
-            logger.error(f"Failed to get setpoints: {e}")
-            return []
 
     async def get_latest_effective_setpoints(
         self, location: str, cluster: str
@@ -473,32 +291,6 @@ class SetpointRepository(BaseRepository):
         except Exception as e:
             logger.error(f"Error buffering effective setpoints: {e}")
             return False
-
-    def invalidate_cache_for_location_cluster(self, location: str, cluster: str) -> None:
-        """Clear all cached entries matching location/cluster pattern.
-
-        Args:
-            location: Location name
-            cluster: Cluster name
-        """
-        # Patterns to look for in cache keys
-        # Format for get_setpoint cache key: get_setpoint:location:cluster:mode
-        # Format from BaseRepository._get_cache_key: operation:arg1:arg2:...
-        target_pattern = f":{location}:{cluster}:"
-
-        to_delete = [
-            key
-            for key in self._query_cache
-            if key.startswith("get_setpoint:") and target_pattern in key
-        ]
-
-        for key in to_delete:
-            del self._query_cache[key]
-
-        if to_delete:
-            logger.debug(
-                f"Invalidated {len(to_delete)} setpoint cache entries for {location}/{cluster}"
-            )
 
     def invalidate_all_cache(self) -> None:
         """Full cache clear for this repository."""

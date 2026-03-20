@@ -17,10 +17,10 @@ from shared.infra_logging import get_logger
 
 from .migrations import create_room_modes_tables, run_alembic_migrations
 from .redis_client import AutomationRedisClient
+from .repositories.climate_periods import ClimatePeriodRepository
 from .repositories.config import ConfigRepository
 from .repositories.control_actions import ControlActionRepository
 from .repositories.devices import DeviceRepository
-from .repositories.climate_periods import ClimatePeriodRepository
 from .repositories.pid import PIDRepository
 from .repositories.room_modes import RoomModeRepository
 from .repositories.schedules import ScheduleRepository
