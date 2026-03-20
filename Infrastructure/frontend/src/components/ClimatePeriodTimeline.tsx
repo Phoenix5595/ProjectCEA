@@ -30,50 +30,28 @@ function getCurrentTimeMinutes(): number {
   return now.getHours() * 60 + now.getMinutes()
 }
 
-function overlapsWithDaylight(
-  periodStart: number,
-  periodEnd: number,
-  dayStart: number,
-  dayEnd: number
-): boolean {
-  const periodOverlapsDay = (end: number, start: number, dStart: number, dEnd: number): boolean => {
-    if (end >= start) {
-      if (dEnd >= dStart) {
-        return start < dEnd && end > dStart
-      } else {
-        return start < dEnd || end > dStart
-      }
-    } else {
-      if (dEnd >= dStart) {
-        return start < dEnd || end + 1440 > dStart
-      } else {
-        return true
-      }
-    }
+function drawSunBand(
+  startMin: number,
+  endMin: number,
+  _color: string,
+  getPosition: (m: number) => number
+): { left: number; width: number }[] {
+  const segments: { left: number; width: number }[] = []
+  const wrappedEnd = endMin < startMin ? endMin + 1440 : endMin
+  const actualEnd = Math.min(wrappedEnd, 1440)
+  const left = getPosition(startMin % 1440)
+  const width = getPosition(actualEnd) - left
+  if (width > 0) segments.push({ left, width })
+  if (wrappedEnd > 1440) {
+    const left2 = 0
+    const width2 = getPosition(endMin - 1440)
+    if (width2 > 0) segments.push({ left: left2, width: width2 })
   }
-  return periodOverlapsDay(periodEnd, periodStart, dayEnd, dayStart)
-}
-
-function getPeriodColor(periodName: string, isDaylight: boolean): { bg: string } {
-  const name = periodName.toLowerCase()
-  if (isDaylight) {
-    if (name.includes('dawn') || name.includes('morning') || name.includes('sunrise')) {
-      return { bg: 'bg-amber-500/40' }
-    }
-    if (name.includes('dusk') || name.includes('evening') || name.includes('sunset')) {
-      return { bg: 'bg-orange-500/40' }
-    }
-    return { bg: 'bg-yellow-500/40' }
-  } else {
-    if (name.includes('night') || name.includes('dark') || name.includes('sleep')) {
-      return { bg: 'bg-indigo-600/40' }
-    }
-    return { bg: 'bg-purple-600/40' }
-  }
+  return segments
 }
 
 export default function ClimatePeriodTimeline({
-  periods,
+  periods: _periods,
   lightDayStart,
   lightDayEnd,
   compact: _compact = false,
@@ -89,24 +67,13 @@ export default function ClimatePeriodTimeline({
     return () => mediaQuery.removeEventListener('change', handleChange)
   }, [])
 
-  const { periodBands, dayStartMin, dayEndMin, nowMin } = useMemo(() => {
+  const { dayStartMin, dayEndMin, nowMin } = useMemo(() => {
     const dayStart = timeToMinutes(lightDayStart)
     const dayEnd = timeToMinutes(lightDayEnd)
     const now = getCurrentTimeMinutes()
 
-    const bands = periods.map(period => {
-      const startMin = timeToMinutes(period.start_time)
-      let endMin = timeToMinutes(period.end_time)
-      if (endMin < startMin) endMin += 1440
-
-      const isDaylight = overlapsWithDaylight(startMin, endMin, dayStart, dayEnd)
-      const colors = getPeriodColor(period.period_name, isDaylight)
-
-      return { period, startMin, endMin, isDaylight, colors }
-    })
-
-    return { periodBands: bands, dayStartMin: dayStart, dayEndMin: dayEnd, nowMin: now }
-  }, [periods, lightDayStart, lightDayEnd])
+    return { dayStartMin: dayStart, dayEndMin: dayEnd, nowMin: now }
+  }, [lightDayStart, lightDayEnd])
 
   const getPosition = (minutes: number): number => (minutes / 1440) * 100
   const nowPercent = (nowMin / 1440) * 100
@@ -192,14 +159,16 @@ export default function ClimatePeriodTimeline({
                   }}
                 />
               )}
-              <div
-                className="absolute top-0 bottom-0 pointer-events-none"
-                style={{
-                  left: `${getPosition(dayStartMin)}%`,
-                  width: `${getPosition(dayEndMin) - getPosition(dayStartMin)}%`,
-                  backgroundColor: sunColor,
-                }}
-              />
+              {(() => {
+                const segments = drawSunBand(dayStartMin, dayEndMin, sunColor, getPosition)
+                return segments.map((seg, i) => (
+                  <div
+                    key={`sun-${i}`}
+                    className="absolute top-0 bottom-0 pointer-events-none"
+                    style={{ left: `${seg.left}%`, width: `${seg.width}%`, backgroundColor: sunColor }}
+                  />
+                ))
+              })()}
               {lightRampDown > 0 && (
                 <div
                   className="absolute top-0 bottom-0 pointer-events-none"
@@ -212,37 +181,6 @@ export default function ClimatePeriodTimeline({
                 />
               )}
             </div>
-
-            {periodBands.map((band, index) => {
-              const { period, startMin, endMin, colors } = band
-              let left = getPosition(startMin % 1440)
-              let width = getPosition(endMin) - getPosition(startMin % 1440)
-              if (endMin > 1440 || (endMin < startMin && startMin < 1440)) {
-                const firstPartEnd = 1440 - (startMin % 1440)
-                width = getPosition(firstPartEnd) - getPosition(startMin % 1440)
-              }
-              const rampWidthPercent = (period.ramp_minutes / 1440) * 100
-
-              return (
-                <div
-                  key={`${period.period_name}-${index}`}
-                  className={`absolute top-0 bottom-0 ${colors.bg}`}
-                  style={{ left: `${left}%`, width: `${Math.max(width, 0.5)}%`, zIndex: 2 }}
-                >
-                  {period.ramp_minutes > 0 && (
-                    <div
-                      className="absolute top-0 bottom-0"
-                      style={{
-                        left: 0,
-                        width: `${Math.min(rampWidthPercent, 100)}%`,
-                        opacity: 0.4,
-                        backgroundColor: 'rgba(255,255,255,0.3)',
-                      }}
-                    />
-                  )}
-                </div>
-              )
-            })}
 
             <div
               className="absolute top-0 bottom-0 w-0.5 bg-status-danger-vivid z-10"
