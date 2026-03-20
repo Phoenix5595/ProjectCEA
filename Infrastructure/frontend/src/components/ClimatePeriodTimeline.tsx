@@ -30,25 +30,6 @@ function getCurrentTimeMinutes(): number {
   return now.getHours() * 60 + now.getMinutes()
 }
 
-function drawBand(
-  startMin: number,
-  endMin: number,
-  getPosition: (m: number) => number
-): { left: number; width: number }[] {
-  const segments: { left: number; width: number }[] = []
-  const wrappedEnd = endMin < startMin ? endMin + 1440 : endMin
-  const actualEnd = Math.min(wrappedEnd, 1440)
-  const left = getPosition(startMin % 1440)
-  const width = getPosition(actualEnd) - left
-  if (width > 0) segments.push({ left, width })
-  if (wrappedEnd > 1440) {
-    const left2 = 0
-    const width2 = getPosition(endMin - 1440)
-    if (width2 > 0) segments.push({ left: left2, width: width2 })
-  }
-  return segments
-}
-
 export default function ClimatePeriodTimeline({
   periods: _periods,
   lightDayStart,
@@ -84,9 +65,6 @@ export default function ClimatePeriodTimeline({
   ]
 
   const tempGridPositions: number[] = [15, 20, 25, 30]
-
-  const sunSegments = drawBand(dayStartMin, dayEndMin, getPosition)
-  const moonSegments = drawBand(dayEndMin, dayStartMin, getPosition)
 
   return (
     <div className={`w-full ${className}`}>
@@ -138,28 +116,39 @@ export default function ClimatePeriodTimeline({
 
             <div className="absolute bottom-4 left-6 right-6 z-[1] h-6">
               <div className="relative w-full h-full">
-                {moonSegments.map((seg, i) => (
-                  <div
-                    key={`moon-${i}`}
-                    className="absolute top-0 h-full pointer-events-none rounded-sm"
-                    style={{
-                      left: `${seg.left}%`,
-                      width: `${seg.width}%`,
-                      backgroundColor: moonColor,
-                    }}
-                  />
-                ))}
-                {sunSegments.map((seg, i) => (
-                  <div
-                    key={`sun-${i}`}
-                    className="absolute top-0 h-full pointer-events-none rounded-sm"
-                    style={{
-                      left: `${seg.left}%`,
-                      width: `${seg.width}%`,
-                      backgroundColor: sunColor,
-                    }}
-                  />
-                ))}
+                <div
+                  className="absolute rounded-sm"
+                  style={{
+                    top: 0,
+                    height: '24px',
+                    left: `${getPosition(dayStartMin)}%`,
+                    width: `${100 - getPosition(dayStartMin)}%`,
+                    backgroundColor: sunColor,
+                    zIndex: 1,
+                  }}
+                />
+                <div
+                  className="absolute rounded-sm"
+                  style={{
+                    top: 0,
+                    height: '24px',
+                    left: '0%',
+                    width: `${getPosition(dayEndMin)}%`,
+                    backgroundColor: sunColor,
+                    zIndex: 1,
+                  }}
+                />
+                <div
+                  className="absolute rounded-sm"
+                  style={{
+                    top: 0,
+                    height: '24px',
+                    left: `${getPosition(dayEndMin)}%`,
+                    width: `${getPosition(dayStartMin) - getPosition(dayEndMin)}%`,
+                    backgroundColor: moonColor,
+                    zIndex: 2,
+                  }}
+                />
               </div>
             </div>
 
