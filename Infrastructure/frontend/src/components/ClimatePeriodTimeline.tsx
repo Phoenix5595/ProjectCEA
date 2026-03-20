@@ -1,19 +1,7 @@
 import { useMemo } from 'react'
 
-export interface ClimatePeriod {
-  period_name: string
-  start_time: string
-  end_time: string
-  ramp_minutes: number
-  heating_setpoint: number | null
-  cooling_setpoint: number | null
-  vpd_setpoint: number | null
-  co2_setpoint: number | null
-  details: string
-}
-
 export interface ClimatePeriodTimelineProps {
-  periods: ClimatePeriod[]
+  periods?: any[]
   lightDayStart: string
   lightDayEnd: string
   compact?: boolean
@@ -23,11 +11,6 @@ export interface ClimatePeriodTimelineProps {
 function timeToMinutes(time: string): number {
   const [hours, minutes] = time.split(':').map(Number)
   return hours * 60 + minutes
-}
-
-function getCurrentTimeMinutes(): number {
-  const now = new Date()
-  return now.getHours() * 60 + now.getMinutes()
 }
 
 export default function ClimatePeriodTimeline({
@@ -40,15 +23,21 @@ export default function ClimatePeriodTimeline({
   const { dayStartMin, dayEndMin, nowMin } = useMemo(() => {
     const dayStart = timeToMinutes(lightDayStart)
     const dayEnd = timeToMinutes(lightDayEnd)
-    const now = getCurrentTimeMinutes()
-    return { dayStartMin: dayStart, dayEndMin: dayEnd, nowMin: now }
+    const now = new Date()
+    return { 
+      dayStartMin: dayStart, 
+      dayEndMin: dayEnd, 
+      nowMin: now.getHours() * 60 + now.getMinutes() 
+    }
   }, [lightDayStart, lightDayEnd])
 
   const getPosition = (minutes: number): number => (minutes / 1440) * 100
-  const nowPercent = (nowMin / 1440) * 100
 
-  const sunColor = 'rgba(168, 85, 247, 0.85)'
-  const moonColor = 'rgba(234, 179, 8, 0.85)'
+  const sunColor = 'rgba(234, 179, 8, 0.7)'
+  const moonColor = 'rgba(168, 85, 247, 0.7)'
+  
+  const moonWidth = getPosition(dayStartMin) - getPosition(dayEndMin)
+  const sunWidth = 100 - getPosition(dayStartMin)
 
   const tempScalePositions: { value: number; top: number }[] = [
     { value: 30, top: ((30 - 30) / (30 - 15)) * 100 },
@@ -64,11 +53,10 @@ export default function ClimatePeriodTimeline({
     { value: 0.5, top: ((2 - 0.5) / (2 - 0.5)) * 100 },
   ]
 
-  const tempGridPositions: number[] = [15, 20, 25, 30]
-
   return (
     <div className={`w-full ${className}`}>
       <div className="relative bg-surface-base border border-border-subtle rounded-lg overflow-hidden h-full">
+        {/* Temperature scale - left */}
         <div className="absolute left-0 top-2 bottom-4 w-6 z-20 pointer-events-none">
           {tempScalePositions.map(({ value, top }) => (
             <div
@@ -81,6 +69,7 @@ export default function ClimatePeriodTimeline({
           ))}
         </div>
 
+        {/* VPD scale - right */}
         <div className="absolute right-0 top-2 bottom-4 w-6 z-20 pointer-events-none">
           {vpdScalePositions.map(({ value, top }) => (
             <div
@@ -95,6 +84,7 @@ export default function ClimatePeriodTimeline({
 
         <div className="relative h-full pt-2 pl-6 pr-6">
           <div className="relative h-full">
+            {/* Hour markers */}
             {Array.from({ length: 25 }).map((_, i) => (
               <div
                 key={`hour-${i}`}
@@ -103,61 +93,28 @@ export default function ClimatePeriodTimeline({
               />
             ))}
 
-            {tempGridPositions.map((value) => {
-              const top = ((30 - value) / (30 - 15)) * 100
-              return (
-                <div
-                  key={`grid-${value}`}
-                  className="absolute left-0 right-0 h-px bg-surface-secondary opacity-50"
-                  style={{ top: `${top}%` }}
-                />
-              )
-            })}
-
-            <div className="absolute bottom-4 left-6 right-6 z-[1] h-6">
-              <div className="relative w-full h-full">
-                <div
-                  className="absolute rounded-sm"
-                  style={{
-                    top: 0,
-                    height: '24px',
-                    left: '0%',
-                    width: `${getPosition(dayStartMin)}%`,
-                    backgroundColor: moonColor,
-                    zIndex: 1,
-                  }}
-                />
-                <div
-                  className="absolute rounded-sm"
-                  style={{
-                    top: 0,
-                    height: '24px',
-                    left: `${getPosition(dayStartMin)}%`,
-                    width: `${100 - getPosition(dayStartMin)}%`,
-                    backgroundColor: sunColor,
-                    zIndex: 2,
-                  }}
-                />
-                <div
-                  className="absolute rounded-sm"
-                  style={{
-                    top: 0,
-                    height: '24px',
-                    left: '0%',
-                    width: `${getPosition(dayEndMin)}%`,
-                    backgroundColor: sunColor,
-                    zIndex: 2,
-                  }}
-                />
-              </div>
+            {/* Sun/Moon bands - ONLY these, no climate periods, no crosshatching */}
+            <div className="absolute bottom-4 left-0 right-0 z-[1] h-8 flex">
+              {/* Moon: from night_end to day_start */}
+              <div
+                className="h-full rounded-sm"
+                style={{ width: `${moonWidth}%`, backgroundColor: moonColor }}
+              />
+              {/* Sun: from day_start to day_end (wrapping overnight) */}
+              <div
+                className="h-full rounded-sm"
+                style={{ width: `${sunWidth}%`, backgroundColor: sunColor }}
+              />
             </div>
 
+            {/* Now marker */}
             <div
               className="absolute top-0 bottom-0 w-0.5 bg-status-danger-vivid z-10"
-              style={{ left: `${nowPercent}%` }}
+              style={{ left: `${getPosition(nowMin)}%` }}
             />
           </div>
 
+          {/* Hour labels */}
           <div className="absolute bottom-0 left-6 right-6 h-4">
             {Array.from({ length: 13 }).map((_, i) => {
               const hour = i * 2

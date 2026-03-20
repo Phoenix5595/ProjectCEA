@@ -5,9 +5,8 @@ import { logger } from '../utils/logger'
 import { getLocationDisplayName, getLocationBackendName } from '../config/zones'
 import type { RoomModeWithParams, ModeParameters } from '../types/modes'
 import { useControlActions } from '../contexts/ControlActionsContext'
-import ClimatePeriodsTable from '../components/ClimatePeriodsTable'
 import ClimatePeriodTimeline from '../components/ClimatePeriodTimeline'
-import type { ClimatePeriod } from '../components/ClimatePeriodsTable'
+import ClimatePeriodsTable from '../components/ClimatePeriodsTable'
 import CircularTimePicker from '../components/CircularTimePicker'
 import VerticalLightsBlock from '../components/VerticalLightsBlock'
 import VerticalPIDBlock from '../components/VerticalPIDBlock'
@@ -29,7 +28,7 @@ export default function ZoneConfig({ location: propsLocation, cluster: propsClus
   const cluster = propsCluster ?? urlCluster ?? 'main'
   
   const [roomMode, setRoomMode] = useState<RoomModeWithParams | null>(null)
-  const [climatePeriods, setClimatePeriods] = useState<ClimatePeriod[]>([])
+  const [climatePeriods, setClimatePeriods] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -180,7 +179,6 @@ export default function ZoneConfig({ location: propsLocation, cluster: propsClus
             <div className="h-[270px] shrink-0 bg-surface-primary rounded-lg border border-border-subtle overflow-hidden p-2">
               {!isConstant ? (
                 <ClimatePeriodTimeline
-                  periods={climatePeriods}
                   lightDayStart={params?.day_start_time || '06:00'}
                   lightDayEnd={params?.night_start_time || '18:00'}
                   className="h-full"
