@@ -5,7 +5,6 @@ from typing import TYPE_CHECKING, Any, cast
 from shared.infra_logging import get_logger
 
 from ..database import DatabaseManager
-from ..repositories.mode_sync import sync_climate_setpoints_from_mode_parameters
 from ..repositories.room_modes import RoomModeRepository
 
 if TYPE_CHECKING:
@@ -25,7 +24,6 @@ class ModeTransitionResult:
         cluster: str,
         old_mode: dict[str, Any] | None,
         new_mode: dict[str, Any] | None,
-        climate_sync_result: dict[str, Any] | None,
         schedule_sync_result: dict[str, Any] | None,
         message: str = "",
     ):
@@ -34,7 +32,6 @@ class ModeTransitionResult:
         self.cluster = cluster
         self.old_mode = old_mode
         self.new_mode = new_mode
-        self.climate_sync_result = climate_sync_result
         self.schedule_sync_result = schedule_sync_result
         self.message = message
 
@@ -45,7 +42,6 @@ class ModeTransitionResult:
             "cluster": self.cluster,
             "old_mode": self.old_mode,
             "new_mode": self.new_mode,
-            "climate_sync_result": self.climate_sync_result,
             "schedule_sync_result": self.schedule_sync_result,
             "message": self.message,
         }
@@ -76,7 +72,6 @@ class ModeTransitionService:
 
             new_mode_name = ""
             new_submode_name = None
-            climate_sync_result = None
             schedule_sync_result = None
 
             pool = self.db.pool
@@ -96,7 +91,6 @@ class ModeTransitionService:
                             cluster=cluster,
                             old_mode=current_mode,
                             new_mode=None,
-                            climate_sync_result=None,
                             schedule_sync_result=None,
                             message=f"Mode ID {new_mode_id} not found",
                         ).to_dict()
@@ -120,14 +114,9 @@ class ModeTransitionService:
                             cluster=cluster,
                             old_mode=current_mode,
                             new_mode=None,
-                            climate_sync_result=None,
                             schedule_sync_result=None,
                             message="Failed to set active mode",
                         ).to_dict()
-
-                    climate_sync_result = await sync_climate_setpoints_from_mode_parameters(
-                        conn, location, cluster, new_mode_id, new_submode_id
-                    )
 
                     from ..routes.schedules.room import sync_room_schedule_from_mode_parameters
 
@@ -169,8 +158,6 @@ class ModeTransitionService:
                         triggered_by,
                     )
 
-                    self.db.setpoint_repo.invalidate_cache_for_location_cluster(location, cluster)
-
                 # Check for multi-cluster desync
                 try:
                     query = """
@@ -206,7 +193,6 @@ class ModeTransitionService:
                 cluster=cluster,
                 old_mode=current_mode,
                 new_mode=final_mode,
-                climate_sync_result=climate_sync_result,
                 schedule_sync_result=schedule_sync_result,
                 message=f"Successfully transitioned to {new_mode_name}/{new_submode_name or 'None'}",
             ).to_dict()
@@ -220,7 +206,6 @@ class ModeTransitionService:
                 cluster=cluster,
                 old_mode=current_mode,
                 new_mode=None,
-                climate_sync_result=None,
                 schedule_sync_result=None,
                 message=f"Mode transition failed: {str(e)}",
             ).to_dict()

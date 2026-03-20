@@ -9,12 +9,11 @@ from .base import (
     get_scheduler,
 )
 from .base import router as base_router
-from .climate import ClimateScheduleCreate, ClimateScheduleSetpoint
+from .climate import ClimateScheduleCreate
 from .climate import router as climate_router
-from .models import RoomScheduleCreate, ScheduleCreate, ScheduleUpdate
+from .models import ClimateScheduleSetpoint, RoomScheduleCreate, ScheduleCreate, ScheduleUpdate
 from .room import router as room_router
 from .utils import (
-    SETPOINT_MODES,
     _build_schedule_state,
     _parse_time_str,
 )
@@ -32,7 +31,6 @@ __all__ = [
     "get_scheduler",
     "get_config",
     "get_automation_redis",
-    "SETPOINT_MODES",
     "ScheduleCreate",
     "ScheduleUpdate",
     "RoomScheduleCreate",

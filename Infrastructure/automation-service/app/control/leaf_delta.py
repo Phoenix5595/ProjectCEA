@@ -13,8 +13,6 @@ from enum import Enum
 class ClimateMode(Enum):
     DAY = "day"
     NIGHT = "night"
-    PRE_DAY = "pre_day"
-    PRE_NIGHT = "pre_night"
 
 
 def get_leaf_delta(
@@ -23,32 +21,20 @@ def get_leaf_delta(
     leaf_delta_night: float,
     transition_progress: float = 0.0,
 ) -> float:
-    """Get current leaf temperature delta based on mode and transition.
+    """Get current leaf temperature delta based on mode.
 
     Args:
         current_mode: Current climate mode
         leaf_delta_day: Leaf delta for day mode (typically -1.5 to -3.0)
         leaf_delta_night: Leaf delta for night mode (typically -0.5 to -1.5)
-        transition_progress: 0.0-1.0 progress through PRE_DAY or PRE_NIGHT ramp
+        transition_progress: Unused (kept for API compatibility)
 
     Returns:
         Current leaf delta value
     """
     if current_mode == ClimateMode.DAY:
         return leaf_delta_day
-    elif current_mode == ClimateMode.NIGHT:
-        return leaf_delta_night
-    elif current_mode == ClimateMode.PRE_DAY:
-        # Transitioning from night to day
-        # Start with night delta, end with day delta
-        return leaf_delta_night + (leaf_delta_day - leaf_delta_night) * transition_progress
-    elif current_mode == ClimateMode.PRE_NIGHT:
-        # Transitioning from day to night
-        # Start with day delta, end with night delta
-        return leaf_delta_day + (leaf_delta_night - leaf_delta_day) * transition_progress
-    else:
-        # Default to day delta
-        return leaf_delta_day
+    return leaf_delta_night
 
 
 def calculate_transition_progress(
@@ -109,13 +95,6 @@ class LeafDeltaManager:
         self._transition_duration = transition_duration_minutes
 
     def get_current_delta(self, location: str, cluster: str) -> float:
-        """Get current interpolated leaf delta for a room."""
+        """Get current leaf delta for a room."""
         day_delta, night_delta = self.get_room_deltas(location, cluster)
-
-        progress = 1.0
-        if self._current_mode in (ClimateMode.PRE_DAY, ClimateMode.PRE_NIGHT):
-            progress = calculate_transition_progress(
-                self._mode_start_time, self._transition_duration
-            )
-
-        return get_leaf_delta(self._current_mode, day_delta, night_delta, progress)
+        return get_leaf_delta(self._current_mode, day_delta, night_delta)

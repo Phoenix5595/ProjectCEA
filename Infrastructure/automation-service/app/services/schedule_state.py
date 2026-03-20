@@ -10,17 +10,15 @@ if TYPE_CHECKING:
     from asyncpg import Pool
 
     from app.redis_client import AutomationRedisClient
+    from app.repositories.climate_periods import ClimatePeriodRepository
     from app.repositories.schedules import ScheduleRepository
-    from app.repositories.setpoints import SetpointRepository
 
 logger = get_logger(__name__)
-
-SETPOINT_MODES = ("DAY", "NIGHT", "PRE_DAY", "PRE_NIGHT")
 
 
 async def build_schedule_state(
     schedule_repo: ScheduleRepository,
-    setpoint_repo: SetpointRepository,
+    climate_periods_repo: ClimatePeriodRepository,
     location: str,
     cluster: str,
 ) -> dict[str, Any]:
@@ -28,7 +26,7 @@ async def build_schedule_state(
 
     Args:
         schedule_repo: Schedule repository
-        setpoint_repo: Setpoint repository
+        climate_periods_repo: Climate period repository
         location: Location name
         cluster: Cluster name
 
@@ -41,21 +39,22 @@ async def build_schedule_state(
     # Get climate schedule
     climate_schedule = await schedule_repo.get_climate_schedule(location, cluster)
 
-    # Get setpoints for all modes
-    setpoints = {}
-    for mode in SETPOINT_MODES:
-        setpoint_data = await setpoint_repo.get_setpoint(location, cluster, mode)
-        if setpoint_data:
-            setpoints[mode] = {
-                "heating_setpoint": setpoint_data.get("heating_setpoint"),
-                "cooling_setpoint": setpoint_data.get("cooling_setpoint"),
-                "humidity": setpoint_data.get("humidity"),
-                "co2": setpoint_data.get("co2"),
-                "vpd": setpoint_data.get("vpd"),
-                "ramp_in_duration": setpoint_data.get("ramp_in_duration", 0) or 0,
+    # Get climate periods for setpoints
+    periods = await climate_periods_repo.get_periods(location, cluster)
+    periods_data = []
+    for period in periods:
+        periods_data.append(
+            {
+                "period_name": period.get("period_name"),
+                "start_time": str(period.get("start_time")) if period.get("start_time") else None,
+                "end_time": str(period.get("end_time")) if period.get("end_time") else None,
+                "ramp_minutes": period.get("ramp_minutes", 0) or 0,
+                "heating_setpoint": period.get("heating_setpoint"),
+                "cooling_setpoint": period.get("cooling_setpoint"),
+                "vpd_setpoint": period.get("vpd_setpoint"),
+                "co2_setpoint": period.get("co2_setpoint"),
             }
-        else:
-            setpoints[mode] = {}
+        )
 
     # Get light schedules to extract target_intensity
     all_schedules = await schedule_repo.get_schedules(location, cluster)
@@ -89,7 +88,7 @@ async def build_schedule_state(
             if climate_schedule
             else 0,
         },
-        "setpoints": setpoints,
+        "periods": periods_data,
         "lights": lights,
     }
 
@@ -100,12 +99,12 @@ async def load_schedule_state_to_redis(
     pool: Pool,
     redis_client: AutomationRedisClient,
     schedule_repo: ScheduleRepository,
-    setpoint_repo: SetpointRepository,
+    climate_periods_repo: ClimatePeriodRepository,
 ) -> None:
     """Load all schedule state from database to Redis following canonical schema.
 
-    Queries all room schedules, climate schedules, setpoints (including PRE_DAY and PRE_NIGHT),
-    and light schedules from DB, groups by location/cluster, and writes to Redis state.
+    Queries all room schedules, climate schedules, and climate periods from DB,
+    groups by location/cluster, and writes to Redis state.
     Called on service startup to populate Redis with current schedule configuration.
     """
     if not redis_client or not getattr(redis_client, "redis_enabled", False):
@@ -114,13 +113,13 @@ async def load_schedule_state_to_redis(
 
     try:
         async with pool.acquire() as conn:
-            # Get all unique location/cluster pairs
+            # Get all unique location/cluster pairs from schedules and climate_periods
             rows = await conn.fetch("""
                 SELECT DISTINCT location, cluster
                 FROM schedules
                 UNION
                 SELECT DISTINCT location, cluster
-                FROM setpoints
+                FROM climate_periods
             """)
 
             locations_loaded = []
@@ -131,7 +130,7 @@ async def load_schedule_state_to_redis(
 
                 try:
                     schedule_state = await build_schedule_state(
-                        schedule_repo, setpoint_repo, location, cluster
+                        schedule_repo, climate_periods_repo, location, cluster
                     )
 
                     # Write to Redis

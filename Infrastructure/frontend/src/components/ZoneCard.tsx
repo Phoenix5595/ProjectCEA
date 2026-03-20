@@ -1,7 +1,23 @@
 import { Zone, getLocationDisplayName } from '../config/zones'
 import type { Device } from '../types/device'
-import type { Setpoint } from '../types/setpoint'
 import { formatTemperature, formatHumidity, formatCO2, formatVPD } from '../utils/formatters'
+
+interface ZoneSetpoints {
+ day?: {
+   heating_setpoint?: number | null;
+   cooling_setpoint?: number | null;
+   humidity?: number | null;
+   co2?: number | null;
+   vpd?: number | null;
+ }
+ night?: {
+   heating_setpoint?: number | null;
+   cooling_setpoint?: number | null;
+   humidity?: number | null;
+   co2?: number | null;
+   vpd?: number | null;
+ }
+}
 
 interface RoomSchedule {
  day_start_time: string
@@ -10,11 +26,6 @@ interface RoomSchedule {
  night_end_time: string
  ramp_up_duration: number | null
  ramp_down_duration: number | null
-}
-
-interface ZoneSetpoints {
- day?: Setpoint
- night?: Setpoint
 }
 
 interface ZoneCardProps {

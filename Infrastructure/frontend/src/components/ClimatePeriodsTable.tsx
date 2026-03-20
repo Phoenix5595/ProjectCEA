@@ -165,7 +165,7 @@ export default function ClimatePeriodsTable({
                     type="number"
                     min="0"
                     max="5"
-                    step="0.1"
+                    step="0.01"
                     value={period.vpd_setpoint ?? ''}
                     onChange={(e) => updatePeriod(index, 'vpd_setpoint', e.target.value ? parseFloat(e.target.value) : null)}
                     className="w-18 px-1 py-0 text-xs bg-surface-secondary border border-border-default rounded text-text-default focus:border-accent-primary focus:ring-1 focus:ring-accent-primary focus:outline-none placeholder:text-text-subtle"

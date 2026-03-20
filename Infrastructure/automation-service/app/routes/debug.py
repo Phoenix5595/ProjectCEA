@@ -38,44 +38,33 @@ async def get_mode_state(
     location: str,
     cluster: str,
     db: DatabaseManager = Depends(get_database),
-    scheduler: Scheduler = Depends(get_scheduler),
     control_engine: ControlEngine = Depends(get_control_engine),
 ):
     """
     Returns current mode state from all sources for comparison:
     - room_active_mode table (UI mode)
-    - schedules table derived mode (ControlEngine mode)
+    - climate_periods active period
     - mode_parameters for current mode
-    - setpoints for current mode
+    - effective setpoints from memory
     """
     try:
-        # 1. UI Mode (room_active_mode table)
         active_mode = await db.room_mode_repo.get_active_mode(location, cluster)
 
-        # 2. Derived Mode (ControlEngine mode from schedules)
-        # We can get this from control_engine memory to see what it actually thinks
-        # Fallback to recalculating if not found in memory
-        climate_mode_key = (location, cluster)
-        derived_mode = control_engine._current_climate_mode.get(climate_mode_key)
+        climate_periods_key = (location, cluster)
+        derived_mode = control_engine._current_climate_mode.get(climate_periods_key)
 
-        if not derived_mode:
-            light_schedule = await db.schedule_repo.get_room_light_schedule(location, cluster)
-            climate_schedule = await db.schedule_repo.get_climate_schedule(location, cluster)
+        active_period = None
+        if derived_mode:
+            from datetime import datetime
+            from zoneinfo import ZoneInfo
 
-            if light_schedule and climate_schedule:
-                mode_result = scheduler.get_climate_mode(
-                    location,
-                    cluster,
-                    datetime.now(),
-                    light_schedule.get("day_start_time"),
-                    light_schedule.get("day_end_time"),
-                    climate_schedule.get("pre_day_duration"),
-                    climate_schedule.get("pre_night_duration"),
-                )
-                if mode_result:
-                    derived_mode = mode_result[0]
+            tz = ZoneInfo("America/Toronto")
+            now = datetime.now(tz)
+            time_str = f"{now.hour:02d}:{now.minute:02d}"
+            active_period = await db.climate_periods_repo.get_active_period(
+                location, cluster, time_str
+            )
 
-        # 3. Mode Parameters
         mode_params = None
         if active_mode:
             mode_params = await db.room_mode_repo.get_mode_parameters(
@@ -85,24 +74,15 @@ async def get_mode_state(
                 active_mode.get("submode_name"),
             )
 
-        # 4. Setpoints
-        setpoints = None
-        if derived_mode:
-            setpoints = await db.setpoint_repo.get_setpoint(location, cluster, derived_mode)
-            if not setpoints:
-                # Fallback to legacy mode=None
-                setpoints = await db.setpoint_repo.get_setpoint(location, cluster, None)
-
-        # 5. Effective setpoints from memory
-        effective_setpoints = control_engine._effective_setpoints.get(climate_mode_key)
+        effective_setpoints = control_engine._effective_setpoints.get(climate_periods_key)
 
         return {
             "location": location,
             "cluster": cluster,
             "ui_mode": active_mode,
             "derived_mode": derived_mode,
+            "active_period": active_period,
             "mode_parameters": mode_params,
-            "setpoints": setpoints,
             "effective_setpoints": effective_setpoints,
             "timestamp": datetime.now().isoformat(),
         }

@@ -9,8 +9,6 @@ from fastapi import HTTPException
 
 from app.database import DatabaseManager
 
-SETPOINT_MODES = ("DAY", "NIGHT", "PRE_DAY", "PRE_NIGHT")
-
 
 def _parse_time_str(value: str) -> dt_time:
     """Parse 'HH:MM' or 'HH:MM:SS' into a datetime.time."""
@@ -50,21 +48,22 @@ async def _build_schedule_state(
     # Get climate schedule
     climate_schedule = await database.schedule_repo.get_climate_schedule(location, cluster)
 
-    # Get setpoints for all modes
-    setpoints = {}
-    for mode in SETPOINT_MODES:
-        setpoint_data = await database.setpoint_repo.get_setpoint(location, cluster, mode)
-        if setpoint_data:
-            setpoints[mode] = {
-                "heating_setpoint": setpoint_data.get("heating_setpoint"),
-                "cooling_setpoint": setpoint_data.get("cooling_setpoint"),
-                "humidity": setpoint_data.get("humidity"),
-                "co2": setpoint_data.get("co2"),
-                "vpd": setpoint_data.get("vpd"),
-                "ramp_in_duration": setpoint_data.get("ramp_in_duration", 0) or 0,
+    # Get climate periods for setpoints
+    periods = await database.climate_periods_repo.get_periods(location, cluster)
+    periods_data = []
+    for period in periods:
+        periods_data.append(
+            {
+                "period_name": period.get("period_name"),
+                "start_time": str(period.get("start_time")) if period.get("start_time") else None,
+                "end_time": str(period.get("end_time")) if period.get("end_time") else None,
+                "ramp_minutes": period.get("ramp_minutes", 0) or 0,
+                "heating_setpoint": period.get("heating_setpoint"),
+                "cooling_setpoint": period.get("cooling_setpoint"),
+                "vpd_setpoint": period.get("vpd_setpoint"),
+                "co2_setpoint": period.get("co2_setpoint"),
             }
-        else:
-            setpoints[mode] = {}
+        )
 
     # Get light schedules to extract target_intensity
     all_schedules = await database.schedule_repo.get_schedules(location, cluster)
@@ -107,7 +106,7 @@ async def _build_schedule_state(
             if climate_schedule
             else 0,
         },
-        "setpoints": setpoints,
+        "periods": periods_data,
         "lights": lights,
     }
 

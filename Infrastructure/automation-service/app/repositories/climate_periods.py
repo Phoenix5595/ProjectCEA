@@ -1,12 +1,18 @@
 from __future__ import annotations
 
-from datetime import time
+from datetime import datetime
+from datetime import time as datetime_time
 from typing import TYPE_CHECKING, Any
 
 from .base import BaseRepository, logger
 
 if TYPE_CHECKING:
     from asyncpg import Pool
+
+
+def _parse_time(t: str) -> datetime_time:
+    """Parse 'HH:MM' string to time object for PostgreSQL TIME column."""
+    return datetime.strptime(t, "%H:%M").time()
 
 
 class ClimatePeriodRepository(BaseRepository):
@@ -92,14 +98,17 @@ class ClimatePeriodRepository(BaseRepository):
                     mode_id,
                     submode_id,
                     period_name,
-                    start_time,
-                    end_time,
+                    _parse_time(start_time),
+                    _parse_time(end_time),
                     ramp_minutes,
                     heating_setpoint,
                     cooling_setpoint,
                     vpd_setpoint,
                     co2_setpoint,
                     details,
+                )
+                logger.info(
+                    f"save_period result: row={'exists' if row else 'None'}, location={location}, cluster={cluster}, period={period_name}"
                 )
                 return dict(row) if row else None
         except Exception as e:
@@ -228,29 +237,26 @@ class ClimatePeriodRepository(BaseRepository):
 
         period_times.sort(key=lambda x: x[0])
 
-        total_coverage = 0
-        for i, (start, end, name) in enumerate(period_times):
-            if end > start:
-                duration = end - start
+        def overlaps(s1: int, e1: int, s2: int, e2: int) -> bool:
+            """Check if [s1,e1) and [s2,e2) overlap. Handles wrapping intervals."""
+            if e1 > s1 and e2 > s2:
+                return s1 < e2 and s2 < e1
+            elif e1 > s1:
+                return s2 < e1 or e2 > s1
+            elif e2 > s2:
+                return s1 < e2 or e1 > s2
             else:
-                duration = 1440 - start + end
+                return True
 
-            total_coverage += duration
-
+        for i, (start, end, name) in enumerate(period_times):
             for j in range(i + 1, len(period_times)):
                 other_start, other_end, other_name = period_times[j]
-                if end > start:
-                    if other_start >= start and other_start < end:
-                        errors.append(f"Overlap: '{name}' and '{other_name}'")
-                        break
-                else:
-                    if other_start >= start or other_start < end:
-                        errors.append(f"Overlap: '{name}' and '{other_name}'")
-                        break
+                if overlaps(start, end, other_start, other_end):
+                    errors.append(
+                        f"Overlap: '{name}' ({start}-{end}) and '{other_name}' ({other_start}-{other_end})"
+                    )
+                    break
             if errors:
                 break
-
-        if total_coverage != 1440:
-            errors.append(f"Total coverage {total_coverage} min != 1440 min (24h)")
 
         return len(errors) == 0, errors

@@ -5,6 +5,7 @@ from __future__ import annotations
 # Standard library imports
 from datetime import datetime, timedelta
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from app.alarm_manager import AlarmManager
 from app.automation.rules_engine import RulesEngine
@@ -103,6 +104,9 @@ class ControlEngine:
 
         # Track current climate mode per location/cluster
         self._current_climate_mode: dict[tuple[str, str], str] = {}
+
+        # Track current climate period per location/cluster (for period transition detection)
+        self._current_period_name: dict[tuple[str, str], str] = {}
 
         # Track effective setpoints per location/cluster
         # Format: (location, cluster) -> {
@@ -313,139 +317,83 @@ class ControlEngine:
                     sensor_time = (datetime.now() - sensor_start).total_seconds() * 1000
                     self._record_performance_stat("sensor_reading_time", sensor_time)
 
-                # 1. Schedule resolution (DB -> Redis -> NIGHT fallback)
-                # light_schedule = sun/moon bounds (light = master); climate_schedule = pre_day/pre_night.
-                # Together they feed get_climate_mode for climate mode (setpoints only).
-                # Light intensity is determined separately by scheduler from light (sun/moon) schedules.
-                light_schedule = None
-                climate_schedule = None
-                current_mode = "NIGHT"  # Default fallback mode
+                # 1. Get current time in America/Toronto timezone (HH:MM format)
+                toronto_time = datetime.now(ZoneInfo("America/Toronto"))
+                time_str = toronto_time.strftime("%H:%M")
 
+                # 2. Get light schedule for is_sun determination (needed for light intensity)
+                light_schedule = None
                 try:
                     light_schedule = await self.database.schedule_repo.get_room_light_schedule(
                         location, cluster
                     )
-                    climate_schedule = await self.database.schedule_repo.get_climate_schedule(
-                        location, cluster
-                    )
                 except Exception as e:
                     logger.info(
-                        f"Database error fetching schedules for {location}/{cluster}: {e}. "
-                        + "Falling back to Redis."
+                        f"Database error fetching light schedule for {location}/{cluster}: {e}"
                     )
-                    cached_schedule = None
-                    automation_redis = self.database._automation_redis
-                    if automation_redis:
-                        cached_schedule = automation_redis.read_schedule_state(location, cluster)
 
-                    if cached_schedule:
-                        light_schedule = cached_schedule.get("room", cached_schedule)
-                        climate_schedule = cached_schedule.get("climate", cached_schedule)
-                    else:
-                        logger.warning(
-                            f"No cached schedule found for {location}/{cluster}. "
-                            + "Forcing NIGHT mode for safety."
+                # 3. Get active climate period from database
+                active_period = await self.database.climate_periods_repo.get_active_period(
+                    location, cluster, time_str
+                )
+
+                # Track current period name for device_processor compatibility (interlocks, etc.)
+                current_period_name: str = (
+                    active_period.get("period_name", "NO_PERIOD") if active_period else "NO_PERIOD"
+                )
+
+                # Detect period transition for logging
+                period_key = (location, cluster)
+                previous_period = self._current_period_name.get(period_key)
+                if active_period:
+                    self._current_period_name[period_key] = current_period_name
+                    if previous_period and previous_period != current_period_name:
+                        logger.info(
+                            f"PERIOD CHANGE: {location}/{cluster} {previous_period} -> {current_period_name}"
                         )
-
-                # 2. Mode resolution (happens early)
-                if (
-                    light_schedule
-                    and isinstance(light_schedule, dict)
-                    and climate_schedule
-                    and isinstance(climate_schedule, dict)
-                ):
-                    mode_result = self.scheduler.get_climate_mode(
-                        location,
-                        cluster,
-                        current_time,
-                        light_schedule.get("day_start_time"),
-                        light_schedule.get("day_end_time"),
-                        climate_schedule.get("pre_day_duration"),
-                        climate_schedule.get("pre_night_duration"),
+                else:
+                    logger.warning(
+                        f"No climate period found for {location}/{cluster} at {time_str}. "
+                        + "Cannot compute setpoints."
                     )
-                    if mode_result:
-                        current_mode, _, _ = mode_result
 
-                # Store new mode for transition detection
-                climate_mode_key = (location, cluster)
-                previous_mode = self._current_climate_mode.get(climate_mode_key)
-                self._current_climate_mode[climate_mode_key] = current_mode
-
-                # Also store mode in StateManager for cross-component access
-                await self._state.set_mode(location, cluster, current_mode)
-
-                # 3. Setpoint retrieval with StateManager cache
-                # First try StateManager cache (fast <1ms read), fallback to database
                 setpoint_data: dict[str, Any] | None = None
 
-                # Try to get cached setpoints from StateManager
-                cached_setpoints = await self._state.get_setpoint(location, cluster)
-                if cached_setpoints:
-                    # Use cached setpoints (fast path)
-                    setpoint_data = cached_setpoints
-                    logger.debug(f"StateManager cache hit for setpoints: {location}/{cluster}")
-                else:
-                    # Cache miss - fetch from database and populate cache
-                    setpoint_data = await self.database.setpoint_repo.get_setpoint(
-                        location, cluster, current_mode
-                    )
-                    if setpoint_data:
-                        # Populate StateManager cache for future reads
-                        # Include ramp_in_duration and vpd for effective setpoint ramp calculations
-                        await self._state.set_setpoint(
-                            location,
-                            cluster,
-                            heating_setpoint=setpoint_data.get("heating_setpoint"),
-                            cooling_setpoint=setpoint_data.get("cooling_setpoint"),
-                            humidity=setpoint_data.get("humidity"),
-                            co2=setpoint_data.get("co2"),
-                            vpd=setpoint_data.get("vpd"),
-                            ramp_in_duration=setpoint_data.get("ramp_in_duration"),
-                        )
-                        logger.debug(
-                            f"Populated StateManager cache for setpoints: {location}/{cluster}"
-                        )
+                if active_period:
+                    # 4. Build setpoint_data from period fields (bridging to existing SetpointManager interface)
+                    ramp_minutes = active_period.get("ramp_minutes", 0) or 0
 
-                if not setpoint_data:
-                    # Fallback to legacy mode=None
-                    logger.debug(
-                        f"No setpoint found for {location}/{cluster} mode={current_mode}, "
-                        + "falling back to legacy mode=None"
-                    )
-                    setpoint_data = await self.database.setpoint_repo.get_setpoint(
-                        location, cluster, None
-                    )
+                    setpoint_data = {
+                        "heating_setpoint": active_period.get("heating_setpoint"),
+                        "cooling_setpoint": active_period.get("cooling_setpoint"),
+                        "vpd": active_period.get("vpd_setpoint"),
+                        "co2": active_period.get("co2_setpoint"),
+                        # humidity is derived from VPD in VPD cascade controller, not stored in periods
+                        "humidity": None,
+                        # ramp_in_duration is the legacy key name expected by SetpointManager
+                        "ramp_in_duration": ramp_minutes,
+                    }
 
-                # Log setpoint retrieval for verification
-                if setpoint_data:
-                    mode_str = current_mode or "None (legacy)"
                     logger.debug(
-                        f"Retrieved setpoints for {location}/{cluster} mode={mode_str}: "
+                        f"Retrieved climate period for {location}/{cluster} at {time_str}: "
+                        + f"period={current_period_name}, "
                         + f"heating={setpoint_data.get('heating_setpoint')}, "
                         + f"cooling={setpoint_data.get('cooling_setpoint')}, "
-                        + f"ramp_in_duration={setpoint_data.get('ramp_in_duration', 0)}"
+                        + f"ramp_minutes={ramp_minutes}"
                     )
-                    if current_mode in ["PRE_DAY", "PRE_NIGHT"]:
-                        ramp_in = setpoint_data.get("ramp_in_duration", 0) or 0
-                        logger.debug(
-                            f"Retrieved {current_mode} setpoint for {location}/{cluster}: "
-                            + f"heating={setpoint_data.get('heating_setpoint')}, "
-                            + f"cooling={setpoint_data.get('cooling_setpoint')}, "
-                            + f"ramp_in_duration={ramp_in}min"
-                        )
 
-                # 4. Effective setpoint calculation and logging (moved outside conditional)
+                # 5. Effective setpoint calculation and logging (moved outside conditional)
                 effective_data = None
                 if setpoint_data:
-                    # Compute effective setpoints
+                    # Compute effective setpoints (passing period_name where mode is expected)
                     effective_data = await self.setpoint_manager.compute_effective_setpoints(
                         location,
                         cluster,
                         current_time,
-                        current_mode,
+                        current_period_name,  # period_name as current_mode
                         setpoint_data,
                         sensor_values,
-                        previous_mode,
+                        previous_period,  # previous period_name as previous_mode
                     )
 
                     # Add current VPD for humidifier/dehumidifier (VPD-only control)
@@ -462,11 +410,12 @@ class ControlEngine:
                     self._effective_setpoints[(location, cluster)] = effective_data
 
                     # Log to database immediately (before device processing)
+                    # Use period_name in mode column for historical continuity
                     await self.database.setpoint_repo.log_effective_setpoints(
                         location=location,
                         cluster=cluster,
                         device_name="Main",
-                        mode=current_mode,
+                        mode=current_period_name,  # Store period_name as mode
                         effective_heating_setpoint=effective_data["effective_heating_setpoint"],
                         effective_cooling_setpoint=effective_data["effective_cooling_setpoint"],
                         effective_humidity_setpoint=effective_data["effective_humidity_setpoint"],
@@ -485,7 +434,16 @@ class ControlEngine:
                         timestamp=current_time,
                     )
 
-                # 5. Moon = 0%: use room sun bounds as single source of truth for lights (all relevant rooms have a schedule)
+                # 5. Derive current_mode and previous_mode for device_processor compatibility
+                # current_mode is derived from period_name for device processing (interlocks, etc.)
+                current_mode = (
+                    active_period.get("period_name", "UNKNOWN") if active_period else "NO_PERIOD"
+                )
+                climate_mode_key = (location, cluster)
+                previous_mode = self._current_climate_mode.get(climate_mode_key)
+                self._current_climate_mode[climate_mode_key] = current_mode
+
+                # 6. Moon = 0%: use room sun bounds as single source of truth for lights
                 is_sun = False
                 if light_schedule and isinstance(light_schedule, dict):
                     sun_start = light_schedule.get("day_start_time")  # sun window start (HH:MM)
@@ -654,20 +612,13 @@ class ControlEngine:
             context: Automation context dict
         """
         try:
-            # Get current mode to determine which setpoint to use
-            # (currently unused but reserved for future scheduler integration)
-            if self.database._automation_redis and self.database._automation_redis.redis_enabled:
-                # Try to get current time-based mode from scheduler or Redis
-                # For now, use default setpoint (mode=NULL)
-                # TODO: Integrate with scheduler to get current DAY/NIGHT/TRANSITION mode
-                pass
+            # Read VPD setpoint from the already-computed effective setpoints (period-based)
+            # This replaces the stale StateManager cache read that used mode-unaware setpoints.
+            effective_data = self._effective_setpoints.get((location, cluster))
+            if not effective_data:
+                return  # No effective setpoints available
 
-            # Get setpoint (use default/legacy for now, can be enhanced to use mode-based)
-            setpoint_data = await self._state.get_setpoint(location, cluster)
-            if not setpoint_data:
-                return  # No setpoint configured
-
-            vpd_setpoint = setpoint_data.get("vpd")
+            vpd_setpoint = effective_data.get("effective_vpd_setpoint")
             if vpd_setpoint is None:
                 return  # No VPD setpoint configured
 

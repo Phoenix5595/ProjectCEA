@@ -85,6 +85,8 @@ class RoomModeWithParams(BaseModel):
     cluster: str
     mode_name: str
     submode_name: str | None = None
+    mode_id: int | None = None
+    submode_id: int | None = None
     is_constant: bool = False
     parameters: ModeParameters
 
@@ -163,9 +165,25 @@ async def get_room_mode_with_params(
     if not active:
         mode_name = "flower" if "flower" in location.lower() else "veg"
         submode_name = "bulk" if mode_name == "flower" else None
+        mode_id = None
+        submode_id = None
     else:
         mode_name = active["mode_name"]
         submode_name = active.get("submode_name")
+        mode_id = active.get("mode_id")
+        submode_id = active.get("submode_id")
+
+    # If mode_id is still None, look it up from mode_name
+    if mode_id is None:
+        modes = await db.room_mode_repo.get_room_modes()
+        mode_info = next((m for m in modes if m["name"] == mode_name), None)
+        mode_id = mode_info["id"] if mode_info else None
+
+    # If submode_id is still None but we have a submode_name, look it up
+    if submode_id is None and submode_name:
+        submodes = await db.room_mode_repo.get_flower_submodes()
+        submode_info = next((s for s in submodes if s["name"] == submode_name), None)
+        submode_id = submode_info["id"] if submode_info else None
 
     modes = await db.room_mode_repo.get_room_modes()
     mode_info = next((m for m in modes if m["name"] == mode_name), None)
@@ -188,6 +206,8 @@ async def get_room_mode_with_params(
         cluster=cluster,
         mode_name=mode_name,
         submode_name=submode_name,
+        mode_id=mode_id,
+        submode_id=submode_id,
         is_constant=is_constant,
         parameters=ModeParameters(**params),
     )
