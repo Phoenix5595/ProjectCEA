@@ -47,8 +47,8 @@ export default function ClimatePeriodTimeline({
   const getPosition = (minutes: number): number => (minutes / 1440) * 100
   const nowPercent = (nowMin / 1440) * 100
 
-  const sunColor = 'rgba(234, 179, 8, 0.85)'
-  const moonColor = 'rgba(168, 85, 247, 0.85)'
+  const sunColor = 'rgba(168, 85, 247, 0.85)'
+  const moonColor = 'rgba(234, 179, 8, 0.85)'
 
   const tempScalePositions: { value: number; top: number }[] = [
     { value: 30, top: ((30 - 30) / (30 - 15)) * 100 },
@@ -121,10 +121,21 @@ export default function ClimatePeriodTimeline({
                   style={{
                     top: 0,
                     height: '24px',
+                    left: '0%',
+                    width: `${getPosition(dayStartMin)}%`,
+                    backgroundColor: moonColor,
+                    zIndex: 1,
+                  }}
+                />
+                <div
+                  className="absolute rounded-sm"
+                  style={{
+                    top: 0,
+                    height: '24px',
                     left: `${getPosition(dayStartMin)}%`,
                     width: `${100 - getPosition(dayStartMin)}%`,
                     backgroundColor: sunColor,
-                    zIndex: 1,
+                    zIndex: 2,
                   }}
                 />
                 <div
@@ -135,17 +146,6 @@ export default function ClimatePeriodTimeline({
                     left: '0%',
                     width: `${getPosition(dayEndMin)}%`,
                     backgroundColor: sunColor,
-                    zIndex: 1,
-                  }}
-                />
-                <div
-                  className="absolute rounded-sm"
-                  style={{
-                    top: 0,
-                    height: '24px',
-                    left: `${getPosition(dayEndMin)}%`,
-                    width: `${getPosition(dayStartMin) - getPosition(dayEndMin)}%`,
-                    backgroundColor: moonColor,
                     zIndex: 2,
                   }}
                 />
