@@ -184,7 +184,7 @@ class RampsMixin:
             # Scan both old and new key patterns
             old_keys = cast(list, self.redis_client.keys("ramp_persist:*") or [])
             new_keys = cast(list, self.redis_client.keys("cea:ramp_persist:*") or [])
-            all_keys = {k for k in old_keys + new_keys}  # dedup
+            all_keys = set(old_keys + new_keys)  # dedup
             ramps = []
             now = datetime.now()
             for key in all_keys:

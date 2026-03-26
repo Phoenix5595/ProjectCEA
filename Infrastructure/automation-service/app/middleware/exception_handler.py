@@ -9,7 +9,7 @@ from collections.abc import Callable
 import traceback
 from typing import Any
 
-from fastapi import Request, Response
+from fastapi import HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
@@ -101,7 +101,7 @@ async def exception_handler_middleware(request: Request, call_next: Callable) ->
         # Pydantic validation errors
         details = {}
         for error in e.errors():
-            loc = ".".join(str(l) for l in error["loc"])
+            loc = ".".join(str(part) for part in error["loc"])
             details[loc] = error["msg"]
 
         logger.warning(
@@ -160,7 +160,3 @@ async def exception_handler_middleware(request: Request, call_next: Callable) ->
                 request_path=request.url.path,
             ),
         )
-
-
-# Import HTTPException for re-raising
-from fastapi import HTTPException

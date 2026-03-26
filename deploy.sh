@@ -11,10 +11,10 @@ TARGET="$RELEASES/$RELEASE_ID"
 
 echo "=== Deploying release: $RELEASE_ID ==="
 
-# 0. Lint and format (Ruff) on Infrastructure — run but do not fail deploy (pre-existing errors elsewhere)
+# 0. Lint and format (Ruff) on Infrastructure — must pass before release
 echo "[0/7] Running Ruff (lint + format) on Infrastructure..."
 cd "$SOURCE"
-ruff check --fix Infrastructure/ || true
+ruff check --fix Infrastructure/
 ruff format Infrastructure/
 cd - >/dev/null
 
