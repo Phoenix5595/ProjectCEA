@@ -139,7 +139,7 @@ class SetpointRepository(BaseRepository):
         Args:
             location: Location name
             cluster: Cluster name
-            mode: Mode (DAY/NIGHT/PRE_DAY/PRE_NIGHT/TRANSITION) or None
+            mode: Mode (period name from climate_periods) or None
             heating_setpoint: Effective heating setpoint
             cooling_setpoint: Effective cooling setpoint
             humidity: Effective humidity setpoint
@@ -213,7 +213,7 @@ class SetpointRepository(BaseRepository):
         Args:
             location: Location name
             cluster: Cluster name
-            mode: Current mode (DAY/NIGHT/PRE_DAY/PRE_NIGHT) or None
+            mode: Current period name from climate_periods or None
             effective_*: Actual values being used after ramp
             nominal_*: Target values from database
             ramp_progress_*: Progress values (0.0-1.0) or None if not ramping

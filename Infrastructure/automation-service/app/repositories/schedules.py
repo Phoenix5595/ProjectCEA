@@ -31,10 +31,6 @@ class ScheduleRepository(BaseRepository):
         return "schedules:all"
 
     @staticmethod
-    def _cache_key_climate(location: str, cluster: str) -> str:
-        return f"schedules:loc:{location}:cluster:{cluster}:climate"
-
-    @staticmethod
     def _cache_key_light(location: str, cluster: str, device_name: str) -> str:
         return f"schedules:loc:{location}:cluster:{cluster}:light:{device_name}"
 
@@ -109,47 +105,6 @@ class ScheduleRepository(BaseRepository):
         except Exception as e:
             logger.error(f"Failed to get schedules: {e}")
             return []
-
-    async def get_climate_schedule(self, location: str, cluster: str) -> dict[str, Any] | None:
-        """Get climate schedule data (pre_day_duration, pre_night_duration) for a location/cluster.
-
-        Returns climate parameters only; sun/moon (light period) boundaries come from
-        the light schedule (get_room_light_schedule). Used with light bounds to compute
-        climate mode (PRE_DAY, DAY, PRE_NIGHT, NIGHT) for setpoints.
-        """
-        state = get_state_manager()
-        cache_key = self._cache_key_climate(location, cluster)
-        try:
-            cached = await state.get(cache_key)
-            if cached is not None:
-                return cast(dict[str, Any], cached)
-            async with self.pool.acquire() as conn:
-                row = await conn.fetchrow(
-                    """
-                    SELECT pre_day_duration, pre_night_duration
-                    FROM schedules
-                    WHERE location = $1 AND cluster = $2
-                      AND device_name = 'climate'
-                      AND (pre_day_duration IS NOT NULL OR pre_night_duration IS NOT NULL)
-                    ORDER BY updated_at DESC, id ASC
-                    LIMIT 1
-                """,
-                    location,
-                    cluster,
-                )
-
-                if row:
-                    data = {
-                        "pre_day_duration": row["pre_day_duration"] or 0,
-                        "pre_night_duration": row["pre_night_duration"] or 0,
-                    }
-                else:
-                    data = {"pre_day_duration": 0, "pre_night_duration": 0}
-                await state.set(cache_key, data)
-                return data
-        except Exception as e:
-            logger.error(f"Failed to get climate schedule: {e}")
-            return {"pre_day_duration": 0, "pre_night_duration": 0}
 
     async def get_light_schedule(
         self, location: str, cluster: str, device_name: str
@@ -303,7 +258,6 @@ class ScheduleRepository(BaseRepository):
                 try:
                     s = get_state_manager()
                     await s.delete(self._cache_key_schedules(location, cluster))
-                    await s.delete(self._cache_key_climate(location, cluster))
                 except Exception:
                     pass
 
@@ -357,7 +311,6 @@ class ScheduleRepository(BaseRepository):
                             await s.delete(
                                 self._cache_key_schedules(row["location"], row["cluster"])
                             )
-                            await s.delete(self._cache_key_climate(row["location"], row["cluster"]))
                             await s.delete(
                                 self._cache_key_light(
                                     row["location"], row["cluster"], row["device_name"]
@@ -481,7 +434,6 @@ class ScheduleRepository(BaseRepository):
                     try:
                         s = get_state_manager()
                         await s.delete(self._cache_key_schedules(location, cluster))
-                        await s.delete(self._cache_key_climate(location, cluster))
                         await s.delete(self._cache_key_light(location, cluster, device_name))
                     except Exception:
                         pass
@@ -558,7 +510,6 @@ class ScheduleRepository(BaseRepository):
                         s = get_state_manager()
                         # Clear location-specific keys
                         await s.delete(self._cache_key_schedules(location, cluster))
-                        await s.delete(self._cache_key_climate(location, cluster))
                         await s.delete(self._cache_key_room_light(location, cluster))
                         await s.delete(self._cache_key_room_schedule(location, cluster))
                         # Clear global schedules cache - critical for consistency

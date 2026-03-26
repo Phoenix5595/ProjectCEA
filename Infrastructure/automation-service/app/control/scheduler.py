@@ -41,9 +41,6 @@ def is_time_in_range(t: int, start: int, end: int) -> bool:
 class Scheduler:
     """Manages time-based device schedules."""
 
-    # Minimum light intensity (10%) - lowest setting at which lights emit light
-    MINIMUM_LIGHT_INTENSITY = 10.0
-
     def __init__(self, schedules: list[dict[str, Any]], climate_periods_repo=None):
         """Initialize scheduler.
 
@@ -267,6 +264,8 @@ class Scheduler:
         current_time_obj = current_time.time()
         current_weekday = current_time.weekday()  # 0 = Monday, 6 = Sunday
 
+        ramp_key = (location, cluster, device_name)
+
         for schedule in self.schedules:
             if not schedule.get("enabled", True):
                 continue
@@ -276,6 +275,7 @@ class Scheduler:
                 and schedule.get("cluster") == cluster
                 and schedule.get("device_name") == device_name
             ):
+                # Check day of week
                 day_of_week = schedule.get("day_of_week")
                 if day_of_week is not None and day_of_week != current_weekday:
                     continue
@@ -292,33 +292,33 @@ class Scheduler:
                     is_in_range = start_time <= current_time_obj < end_time
 
                 if not is_in_range:
-                    ramp_key = (location, cluster, device_name)
                     if ramp_key in self._light_ramp_state:
                         del self._light_ramp_state[ramp_key]
-                    continue
+                    return None
 
                 # Moon schedule (or legacy NIGHT): lights off. Clear ramp and return 0%.
                 # Sun schedule (or legacy DAY): lights on, use target_intensity below.
                 if schedule.get("mode", "").upper() in ("MOON", "NIGHT"):
-                    ramp_key = (location, cluster, device_name)
                     if ramp_key in self._light_ramp_state:
                         del self._light_ramp_state[ramp_key]
                     return 0.0
 
                 target_intensity = schedule.get("target_intensity")
                 if target_intensity is None:
-                    ramp_key = (location, cluster, device_name)
                     if ramp_key in self._light_ramp_state:
                         del self._light_ramp_state[ramp_key]
                     return None
 
+                # Minimum light intensity (10%) - lowest setting at which lights emit light
+                MINIMUM_LIGHT_INTENSITY = 10.0
+
                 try:
                     t = float(target_intensity)
                     effective_minimum = (
-                        t if t < self.MINIMUM_LIGHT_INTENSITY else self.MINIMUM_LIGHT_INTENSITY
+                        t if t < MINIMUM_LIGHT_INTENSITY else MINIMUM_LIGHT_INTENSITY
                     )
                 except Exception:
-                    effective_minimum = float(self.MINIMUM_LIGHT_INTENSITY)
+                    effective_minimum = float(MINIMUM_LIGHT_INTENSITY)
 
                 ramp_up_duration = schedule.get("ramp_up_duration", 0) or 0
                 ramp_down_duration = schedule.get("ramp_down_duration", 0) or 0
@@ -339,7 +339,6 @@ class Scheduler:
 
                 time_since_start = (current_time - start_datetime).total_seconds() / 60.0
                 time_until_end = (end_datetime - current_time).total_seconds() / 60.0
-                ramp_key = (location, cluster, device_name)
 
                 if ramp_up_duration > 0 and time_since_start < ramp_up_duration:
                     # Ramp up period: Always ramp from 10% (minimum) to sun target (target_intensity)
@@ -348,8 +347,8 @@ class Scheduler:
                         # Calculate where we SHOULD be based on elapsed time (handles service restarts)
                         progress_from_time = min(max(time_since_start / ramp_up_duration, 0.0), 1.0)
                         expected_intensity = (
-                            self.MINIMUM_LIGHT_INTENSITY
-                            + (target_intensity - self.MINIMUM_LIGHT_INTENSITY) * progress_from_time
+                            MINIMUM_LIGHT_INTENSITY
+                            + (target_intensity - MINIMUM_LIGHT_INTENSITY) * progress_from_time
                         )
                         self._light_ramp_state[ramp_key] = {
                             "start_intensity": expected_intensity,
@@ -426,13 +425,12 @@ class Scheduler:
 
                 # RAMP DOWN: Ramp from sun target to effective minimum (0% at moon, 10% otherwise)
                 elif ramp_down_duration > 0 and time_until_end < ramp_down_duration:
-                    _ramp_down_start = end_datetime - timedelta(minutes=ramp_down_duration)
                     # Allow 0% at moon; 10% minimum during sun
                     effective_minimum = min(
-                        self.MINIMUM_LIGHT_INTENSITY,
+                        MINIMUM_LIGHT_INTENSITY,
                         target_intensity
                         if target_intensity is not None
-                        else self.MINIMUM_LIGHT_INTENSITY,
+                        else MINIMUM_LIGHT_INTENSITY,
                     )
 
                     if ramp_key not in self._light_ramp_state:
@@ -522,7 +520,7 @@ class Scheduler:
                             * progress
                         )
 
-                    effective_minimum_val = min(self.MINIMUM_LIGHT_INTENSITY, target_intensity)
+                    effective_minimum_val = min(MINIMUM_LIGHT_INTENSITY, target_intensity)
                     return max(effective_minimum_val, min(intensity, target_intensity))
 
                 # STEADY STATE: Return sun target directly (not in ramp up or ramp down)
@@ -537,8 +535,8 @@ class Scheduler:
                     )
                     return clamped_intensity
 
-        # No active schedule found = moon by definition. Clear ramp and return 0%.
-        ramp_key = (location, cluster, device_name)
+        # No active schedule found = moon by definition
+        # Clear any ramp state for this device
         if ramp_key in self._light_ramp_state:
             del self._light_ramp_state[ramp_key]
 
@@ -576,65 +574,65 @@ class Scheduler:
         if effective_intensity is None:
             return None
 
-        # Find the active schedule directly (same logic as get_schedule_intensity)
-        # This ensures we get the same schedule that get_schedule_intensity found
         current_time_obj = current_time.time()
-        current_weekday = current_time.weekday()  # 0 = Monday, 6 = Sunday
+        current_weekday = current_time.weekday()
+        ramp_key = (location, cluster, device_name)
 
-        target_intensity = None
         for schedule in self.schedules:
-            # Filter by location, cluster, and device_name (SAME as get_schedule_intensity)
+            if not schedule.get("enabled", True):
+                continue
+
             if (
-                schedule.get("location") != location
-                or schedule.get("cluster") != cluster
-                or schedule.get("device_name") != device_name
+                schedule.get("location") == location
+                and schedule.get("cluster") == cluster
+                and schedule.get("device_name") == device_name
             ):
-                continue
+                # Check day of week
+                day_of_week = schedule.get("day_of_week")
+                if day_of_week is not None and day_of_week != current_weekday:
+                    continue
 
-            # Check day of week
-            day_of_week = schedule.get("day_of_week")
-            if day_of_week is not None and day_of_week != current_weekday:
-                continue
+                # Check time range
+                start_time = self._parse_time(schedule.get("start_time"))
+                end_time = self._parse_time(schedule.get("end_time"))
 
-            # Check time range
-            start_time = self._parse_time(schedule.get("start_time"))
-            end_time = self._parse_time(schedule.get("end_time"))
+                if not start_time or not end_time:
+                    continue
 
-            if not start_time or not end_time:
-                continue
+                is_in_range = False
+                if start_time > end_time:
+                    is_in_range = current_time_obj >= start_time or current_time_obj < end_time
+                else:
+                    is_in_range = start_time <= current_time_obj < end_time
 
-            is_in_range = False
-            if start_time > end_time:
-                # Overnight schedule
-                is_in_range = current_time_obj >= start_time or current_time_obj < end_time
-            else:
-                # Normal schedule
-                is_in_range = start_time <= current_time_obj < end_time
+                if not is_in_range:
+                    return None
 
-            if is_in_range:
                 # Found the active schedule - get target_intensity
                 target_intensity = schedule.get("target_intensity")
-                break
 
-        if target_intensity is None:
-            # No target intensity in schedule, use effective as nominal
-            target_intensity = effective_intensity
+                if target_intensity is None:
+                    # No target intensity in schedule, use effective as nominal
+                    target_intensity = effective_intensity
 
-        # Get ramp progress from ramp state
-        ramp_key = (location, cluster, device_name)
-        ramp_progress = None
-        if ramp_key in self._light_ramp_state:
-            ramp_state = self._light_ramp_state[ramp_key]
-            elapsed = (current_time - ramp_state["ramp_start_timestamp"]).total_seconds() / 60.0
-            ramp_progress = min(max(elapsed / ramp_state["ramp_duration"], 0.0), 1.0)
-            if ramp_progress >= 1.0:
-                ramp_progress = None  # Ramp complete
+                # Get ramp progress from ramp state
+                ramp_progress = None
+                if ramp_key in self._light_ramp_state:
+                    ramp_state = self._light_ramp_state[ramp_key]
+                    elapsed = (
+                        current_time - ramp_state["ramp_start_timestamp"]
+                    ).total_seconds() / 60.0
+                    ramp_progress = min(max(elapsed / ramp_state["ramp_duration"], 0.0), 1.0)
+                    if ramp_progress >= 1.0:
+                        ramp_progress = None  # Ramp complete
 
-        return {
-            "effective_intensity": effective_intensity,
-            "nominal_intensity": target_intensity,
-            "ramp_progress": ramp_progress,
-        }
+                return {
+                    "effective_intensity": effective_intensity,
+                    "nominal_intensity": target_intensity,
+                    "ramp_progress": ramp_progress,
+                }
+
+        return None
 
     def _parse_time(self, time_str: str | None) -> time | None:
         """Parse time string to time object.
@@ -694,81 +692,3 @@ class Scheduler:
             logger.error(f"Error converting time '{time_str}' to minutes: {e}")
 
         return 0
-
-    def validate_climate_schedule_conflicts(
-        self, day_start_time: str, day_end_time: str, pre_day_duration: int, pre_night_duration: int
-    ) -> tuple[bool, str | None]:
-        """Validate climate schedule for conflicts.
-
-        Args:
-            day_start_time: Day start time in HH:MM format
-            day_end_time: Day end time in HH:MM format
-            pre_day_duration: Pre-day duration in minutes (0-180)
-            pre_night_duration: Pre-night duration in minutes (0-180)
-
-        Returns:
-            Tuple of (is_valid, error_message)
-
-        Validation Rules:
-            - Both durations must be 0-180 minutes (practical real-world limit)
-            - pre_day_duration must be strictly shorter than night_length
-            - pre_night_duration must be strictly shorter than day_length
-            - Combined durations must be less than night_length (no overlap)
-        """
-        # Convert to minutes
-        day_start_min = self._time_to_minutes(day_start_time)
-        day_end_min = self._time_to_minutes(day_end_time)
-
-        # Calculate day and night lengths
-        if day_end_min > day_start_min:
-            day_length = day_end_min - day_start_min
-            night_length = 1440 - day_length
-        else:
-            night_length = day_start_min - day_end_min
-            day_length = 1440 - night_length
-
-        # Hard limits: 0-180 minutes (3 hours max - practical real-world limit)
-        MAX_RAMP_DURATION = 180
-
-        # Validate non-negative first
-        if pre_day_duration < 0:
-            return (False, "pre_day_duration must be >= 0")
-
-        if pre_night_duration < 0:
-            return (False, "pre_night_duration must be >= 0")
-
-        # Validate max durations (180 min practical limit)
-        if pre_day_duration > MAX_RAMP_DURATION:
-            return (
-                False,
-                f"pre_day_duration ({pre_day_duration} min) exceeds maximum ({MAX_RAMP_DURATION} min)",
-            )
-
-        if pre_night_duration > MAX_RAMP_DURATION:
-            return (
-                False,
-                f"pre_night_duration ({pre_night_duration} min) exceeds maximum ({MAX_RAMP_DURATION} min)",
-            )
-
-        # pre_day can NEVER be as long as night (must be strictly shorter)
-        if pre_day_duration >= night_length:
-            return (
-                False,
-                f"pre_day_duration ({pre_day_duration} min) must be shorter than night_length ({night_length} min)",
-            )
-
-        # pre_night can NEVER be as long as day (must be strictly shorter)
-        if pre_night_duration >= day_length:
-            return (
-                False,
-                f"pre_night_duration ({pre_night_duration} min) must be shorter than day_length ({day_length} min)",
-            )
-
-        # Combined constraint: no overlap during night period
-        if pre_day_duration + pre_night_duration >= night_length:
-            return (
-                False,
-                f"pre_day_duration ({pre_day_duration} min) + pre_night_duration ({pre_night_duration} min) must be less than night_length ({night_length} min)",
-            )
-
-        return (True, None)

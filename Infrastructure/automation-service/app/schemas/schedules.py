@@ -1,4 +1,4 @@
-"""Pydantic models for schedule endpoints."""
+"""Schedules schemas."""
 
 from __future__ import annotations
 
@@ -6,6 +6,8 @@ from pydantic import BaseModel
 
 
 class ScheduleCreate(BaseModel):
+    """Request model for creating a schedule."""
+
     name: str
     location: str
     cluster: str
@@ -21,6 +23,8 @@ class ScheduleCreate(BaseModel):
 
 
 class ScheduleUpdate(BaseModel):
+    """Request model for updating a schedule."""
+
     name: str | None = None
     day_of_week: int | None = None
     start_time: str | None = None
@@ -34,12 +38,19 @@ class ScheduleUpdate(BaseModel):
 
 
 class RoomScheduleCreate(BaseModel):
-    location: str
-    cluster: str
-    schedules: list[dict]
+    """Request model for creating a room schedule."""
+
+    day_start_time: str
+    day_end_time: str
+    night_start_time: str
+    night_end_time: str
+    ramp_up_duration: int | None = None
+    ramp_down_duration: int | None = None
 
 
 class ClimateScheduleSetpoint(BaseModel):
+    """Setpoint values for climate schedule."""
+
     temperature: float | None = None
     humidity: float | None = None
     vpd: float | None = None
@@ -47,9 +58,13 @@ class ClimateScheduleSetpoint(BaseModel):
 
 
 class ClimateScheduleCreate(BaseModel):
-    location: str
-    cluster: str
-    mode: str  # DAY, NIGHT, PRE_DAY, PRE_NIGHT
-    start_time: str  # "HH:MM" format
-    duration_minutes: int
-    setpoints: ClimateScheduleSetpoint
+    """Climate schedule (legacy - fields ignored).
+
+    Note: Climate control now uses climate_periods table for all timing and setpoints.
+    This schema is kept for API compatibility but fields are deprecated.
+    """
+
+    day_start_time: str
+    day_end_time: str
+    pre_day_duration: int = 0  # Deprecated - ignored
+    pre_night_duration: int = 0  # Deprecated - ignored

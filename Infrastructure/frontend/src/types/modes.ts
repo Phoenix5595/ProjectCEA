@@ -17,20 +17,8 @@ export interface FlowerSubmode {
 export interface ModeParameters {
   day_start_time: string
   night_start_time: string
-  ramp_up_minutes: number
-  ramp_down_minutes: number
   light_ramp_up_minutes: number
   light_ramp_down_minutes: number
-  day_heat_temp: number
-  day_cool_temp: number
-  day_vpd: number
-  day_co2: number
-  day_leaf_delta: number
-  night_heat_temp: number
-  night_cool_temp: number
-  night_vpd: number
-  night_co2: number
-  night_leaf_delta: number
   main_light_intensity: number
   supplemental_light_intensity: number
 }
@@ -54,20 +42,8 @@ export interface SetModeRequest {
 export interface UpdateParametersRequest {
   day_start_time?: string
   night_start_time?: string
-  ramp_up_minutes?: number
-  ramp_down_minutes?: number
   light_ramp_up_minutes?: number
   light_ramp_down_minutes?: number
-  day_heat_temp?: number
-  day_cool_temp?: number
-  day_vpd?: number
-  day_co2?: number
-  day_leaf_delta?: number
-  night_heat_temp?: number
-  night_cool_temp?: number
-  night_vpd?: number
-  night_co2?: number
-  night_leaf_delta?: number
   main_light_intensity?: number
   supplemental_light_intensity?: number
 }
