@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from app.redis.schema import get_with_backward_compat, mode_key, set_with_backward_compat
 from shared.infra_logging import get_logger
 
 if TYPE_CHECKING:
@@ -32,8 +33,13 @@ class ModesMixin:
             return None
 
         try:
-            mode_key = f"mode:{location}:{cluster}"
-            mode = self.redis_client.get(mode_key)
+            mode = get_with_backward_compat(
+                self.redis_client,
+                "mode:{location}:{cluster}",
+                mode_key,
+                location=location,
+                cluster=cluster,
+            )
             return str(mode) if mode else None
         except Exception as e:
             logger.warning(f"Error reading mode from Redis: {e}")
@@ -55,10 +61,17 @@ class ModesMixin:
             return False
 
         try:
-            mode_key = f"mode:{location}:{cluster}"
             mode_ttl = 300  # 5 minutes for mode
 
-            self.redis_client.setex(mode_key, mode_ttl, mode)
+            set_with_backward_compat(
+                self.redis_client,
+                "mode:{location}:{cluster}",
+                mode_key,
+                mode,
+                mode_ttl,
+                location=location,
+                cluster=cluster,
+            )
             logger.info(f"Mode set to {mode} for {location}/{cluster} (source: {source})")
             return True
         except Exception as e:

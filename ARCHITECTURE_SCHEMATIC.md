@@ -1,6 +1,6 @@
 # ProjectCEA – Architecture Schematic (Plan-Agent Style)
 
-**Last updated (deployed):** 2026-01-30 — 1-Wire reader (lab/water temp) integrated; Dashboard Lab shows lab_temp and water_temperature.
+**Last updated (deployed):** 2026-03-26 — Climate periods migration: light/climate decoupled, scheduler uses climate_periods table (named periods with ramp_minutes).
 
 > This file is the plan-style schematic: diagram-first, structured sections. Keep in sync with `ARCHITECTURE.md`. When deploying relevant changes, update both and copy previous versions to **`archive/`** (project root) with dated filenames.
 
@@ -122,7 +122,7 @@ sequenceDiagram
 
 1. Read `sensor:*` from Redis.
 2. Load config (zones, setpoints) from DB.
-3. Scheduler: mode (DAY/NIGHT/PRE_DAY/PRE_NIGHT), effective setpoints (ramp).
+3. Scheduler: light mode (DAY/NIGHT sun/moon) + climate periods (named periods with ramp_minutes); effective setpoints resolved from climate_periods.
 4. PID + VPD cascade; safety interlocks.
 5. Device commands → MCP/DFR; state → Redis `automation:*` and DB.
 

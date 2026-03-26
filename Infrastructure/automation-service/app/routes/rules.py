@@ -5,41 +5,11 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel
 
 from app.database import DatabaseManager
+from app.schemas.rules import RuleCreate, RuleToggle, RuleUpdate
 
 router = APIRouter()
-
-
-class RuleCreate(BaseModel):
-    name: str
-    enabled: bool = True
-    location: str
-    cluster: str
-    condition_sensor: str
-    condition_operator: str  # '<', '>', '<=', '>=', '=='
-    condition_value: float
-    action_device: str
-    action_state: int  # 0 = OFF, 1 = ON
-    priority: int = 0
-    schedule_id: int | None = None
-
-
-class RuleUpdate(BaseModel):
-    name: str | None = None
-    enabled: bool | None = None
-    condition_sensor: str | None = None
-    condition_operator: str | None = None
-    condition_value: float | None = None
-    action_device: str | None = None
-    action_state: int | None = None
-    priority: int | None = None
-    schedule_id: int | None = None
-
-
-class RuleToggle(BaseModel):
-    enabled: bool
 
 
 # This will be overridden by main app

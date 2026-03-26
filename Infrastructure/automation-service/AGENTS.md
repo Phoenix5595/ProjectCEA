@@ -35,19 +35,16 @@ automation-service/
 
 ### Light (sun/moon) vs climate (slave to light)
 - **Light (master)**: Two periods only — **sun** (lights on) and **moon** (lights off). Sun schedule defines photoperiod; outside that window = moon = 0%. Drying/sleep room modes = 24h moon. Drives intensity and relay only.
-- **Climate (slave)**: PRE_DAY (if duration > 0), DAY (same length as sun, slave to sun), PRE_NIGHT (if duration > 0), NIGHT (same duration as moon, slave to moon). Drives setpoints only; PRE_DAY/PRE_NIGHT do not change lights.
+- **Climate (slave)**: **`climate_periods`** rows (named periods, start/end, `ramp_minutes`, setpoints). Control resolves the active period via `get_active_period()`; no fixed PRE_DAY / DAY / PRE_NIGHT / NIGHT ladder. Climate does not switch lights; light schedule does.
 - Light intensity is never undefined: either from sun schedule (with ramps) or 0% (moon).
 
-### Climate Modes
-- **DAY**: Lights ON, day setpoints
-- **NIGHT**: Lights OFF, night setpoints
-- **PRE_DAY**: Ramp from NIGHT → PRE_DAY setpoints (lights still OFF)
-- **PRE_NIGHT**: Ramp from DAY → PRE_NIGHT setpoints (lights still ON)
+### Climate periods (replaces fixed PRE_* “modes” for setpoints)
+- Setpoints are keyed by **active `climate_period`** (`period_name` + time window), not by DAY/NIGHT/PRE_* enum.
+- **Lights on/off** still come only from the **light (sun/moon) schedule**, not from climate period names.
 
-### Ramp Logic
-- `ramp_in_duration`: 0-240 minutes
-- PRE_NIGHT: Fetches DAY setpoints, ramps to PRE_NIGHT
-- PRE_DAY: Fetches NIGHT setpoints, ramps to PRE_DAY
+### Climate period ramp logic
+- Each **climate_period** has `ramp_minutes`: interpolates from the **previous period’s** setpoints to the **current period’s** setpoints over that window (see SetpointManager + `climate_periods_repo`).
+- Legacy `ramp_in_duration` / PRE_* mode chains are not the active model.
 
 ### Light ramp (time-based, per-device)
 - Light ramp state is keyed by `(location, cluster, device_name)`. Each device has its own ramp.

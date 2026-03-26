@@ -6,6 +6,11 @@ from datetime import datetime
 import json
 from typing import TYPE_CHECKING, Any
 
+from app.redis.schema import (
+    get_with_backward_compat,
+    pid_key,
+    set_with_backward_compat,
+)
 from shared.infra_logging import get_logger
 
 if TYPE_CHECKING:
@@ -33,8 +38,12 @@ class PIDMixin:
             return None
 
         try:
-            pid_key = f"pid:parameters:{device_type}"
-            pid_data = self.redis_client.get(pid_key)
+            pid_data = get_with_backward_compat(
+                self.redis_client,
+                "pid:parameters:{device_type}",
+                pid_key,
+                device_type,
+            )
 
             if pid_data:
                 return json.loads(str(pid_data))
@@ -68,13 +77,19 @@ class PIDMixin:
             return False
 
         try:
-            pid_key = f"pid:parameters:{device_type}"
             timestamp_ms = updated_at or int(datetime.now().timestamp() * 1000)
             pid_ttl = 300  # 5 minutes for PID parameters
 
             pid_data = {"kp": kp, "ki": ki, "kd": kd, "source": source, "updated_at": timestamp_ms}
 
-            self.redis_client.setex(pid_key, pid_ttl, json.dumps(pid_data))
+            set_with_backward_compat(
+                self.redis_client,
+                "pid:parameters:{device_type}",
+                pid_key,
+                json.dumps(pid_data),
+                pid_ttl,
+                device_type,
+            )
             return True
         except Exception as e:
             logger.warning(f"Error writing PID parameters to Redis: {e}")

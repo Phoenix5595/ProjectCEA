@@ -3,8 +3,16 @@ from __future__ import annotations
 import time
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
 
+from app.schemas.room_modes import (
+    ActiveModeResponse,
+    FlowerSubmode,
+    ModeParameters,
+    RoomMode,
+    RoomModeWithParams,
+    SetModeRequest,
+    UpdateParametersRequest,
+)
 from shared.infra_logging import get_logger
 
 from ..database import DatabaseManager
@@ -20,114 +28,6 @@ def get_database() -> DatabaseManager:
     from ..main import container
 
     return container.get_database()
-
-
-class RoomMode(BaseModel):
-    id: int
-    name: str
-    description: str | None = None
-    photoperiod_hours: int | None = None
-    is_constant: bool = False
-
-
-class FlowerSubmode(BaseModel):
-    id: int
-    name: str
-    description: str | None = None
-    week_start: int | None = None
-    week_end: int | None = None
-
-
-class ActiveModeResponse(BaseModel):
-    location: str
-    cluster: str
-    mode_name: str
-    submode_name: str | None = None
-    mode_id: int | None = None
-    submode_id: int | None = None
-
-
-class ModeParameters(BaseModel):
-    day_start_time: str = "17:00"
-    night_start_time: str = "11:00"
-    ramp_up_minutes: int = 30
-    ramp_down_minutes: int = 30
-    pre_day_ramp_minutes: int = 30
-    pre_night_ramp_minutes: int = 30
-    pre_day_minutes: int = 30
-    pre_night_minutes: int = 30
-    light_ramp_up_minutes: int = 15
-    light_ramp_down_minutes: int = 15
-    pre_day_heat_temp: float = 22.0
-    pre_day_cool_temp: float = 26.0
-    pre_day_vpd: float = 0.9
-    pre_day_co2: int = 700
-    day_heat_temp: float = 24.0
-    day_cool_temp: float = 28.0
-    day_vpd: float = 1.0
-    day_co2: int = 800
-    day_leaf_delta: float = -2.0
-    pre_night_heat_temp: float = 22.0
-    pre_night_cool_temp: float = 26.0
-    pre_night_vpd: float = 0.9
-    pre_night_co2: int = 700
-    night_heat_temp: float = 20.0
-    night_cool_temp: float = 24.0
-    night_vpd: float = 0.8
-    night_co2: int = 600
-    night_leaf_delta: float = -1.0
-    main_light_intensity: int = 100
-    supplemental_light_intensity: int = 0
-
-
-class RoomModeWithParams(BaseModel):
-    location: str
-    cluster: str
-    mode_name: str
-    submode_name: str | None = None
-    mode_id: int | None = None
-    submode_id: int | None = None
-    is_constant: bool = False
-    parameters: ModeParameters
-
-
-class SetModeRequest(BaseModel):
-    mode_name: str
-    submode_name: str | None = None
-    coordinate_clusters: bool = True  # When True, switch all clusters in location together
-
-
-class UpdateParametersRequest(BaseModel):
-    day_start_time: str | None = None
-    night_start_time: str | None = None
-    ramp_up_minutes: int | None = None
-    ramp_down_minutes: int | None = None
-    pre_day_ramp_minutes: int | None = None
-    pre_night_ramp_minutes: int | None = None
-    pre_day_minutes: int | None = None
-    pre_night_minutes: int | None = None
-    light_ramp_up_minutes: int | None = None
-    light_ramp_down_minutes: int | None = None
-    pre_day_heat_temp: float | None = None
-    pre_day_cool_temp: float | None = None
-    pre_day_vpd: float | None = None
-    pre_day_co2: int | None = None
-    day_heat_temp: float | None = None
-    day_cool_temp: float | None = None
-    day_vpd: float | None = None
-    day_co2: int | None = None
-    day_leaf_delta: float | None = None
-    pre_night_heat_temp: float | None = None
-    pre_night_cool_temp: float | None = None
-    pre_night_vpd: float | None = None
-    pre_night_co2: int | None = None
-    night_heat_temp: float | None = None
-    night_cool_temp: float | None = None
-    night_vpd: float | None = None
-    night_co2: int | None = None
-    night_leaf_delta: float | None = None
-    main_light_intensity: int | None = None
-    supplemental_light_intensity: int | None = None
 
 
 @router.get("/modes", response_model=list[RoomMode])

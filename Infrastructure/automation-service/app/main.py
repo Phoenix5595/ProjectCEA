@@ -6,6 +6,7 @@ from fastapi import FastAPI
 
 from app.bootstrap import lifespan_manager
 from app.container import ServiceContainer
+from app.middleware.exception_handler import exception_handler_middleware
 from app.middleware.profiling import profiling_middleware
 from app.middleware_utils import setup_cors, setup_static_files
 from app.routes import register_routes, setup_dependency_overrides
@@ -70,7 +71,7 @@ app = FastAPI(
 
 # Setup middleware
 setup_cors(app)
-app.middleware("http")(profiling_middleware)
+app.middleware("http")(exception_handler_middleware)
 app.middleware("http")(profiling_middleware)
 
 # Setup routes and dependency injection first (before static files to avoid catch-all interception)

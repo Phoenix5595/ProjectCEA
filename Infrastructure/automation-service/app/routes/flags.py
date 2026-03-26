@@ -5,26 +5,11 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
 
 from app.feature_flags import FeatureFlag, FeatureFlagManager
+from app.schemas.flags import FlagResponse, FlagUpdateRequest
 
 router = APIRouter()
-
-
-class FlagUpdateRequest(BaseModel):
-    """Request model for updating a feature flag."""
-
-    enabled: bool
-
-
-class FlagResponse(BaseModel):
-    """Response model for feature flag with optional previous value."""
-
-    name: str
-    enabled: bool
-    description: str
-    previous_enabled: bool | None = None
 
 
 # These will be overridden by main app

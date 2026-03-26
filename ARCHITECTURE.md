@@ -1,6 +1,6 @@
 # ProjectCEA – System Architecture
 
-**Last updated (deployed):** 2026-01-30 — Dashboard: Quebec City weather (CYQB) top-right; real system stats from /api/status.
+**Last updated (deployed):** 2026-03-26 — Climate periods migration: light/climate decoupled, old 4-period setpoint model removed, ClimatePeriodsTable/Timeline in frontend.
 
 **Plan-style schematic:** **`ARCHITECTURE_SCHEMATIC.md`** (Mermaid + tables). Update both when the architecture changes and a deploy is done.
 
@@ -233,7 +233,7 @@ WS   /ws/{location}                             # WebSocket live updates
 - **VPD Cascade Control**: VPD master controller adjusts humidity setpoints
 - **Self-Tuning PID**: Relay feedback auto-tuning with Ziegler-Nichols rules
 - **Light Schedule Management**: Sun/moon periods with configurable ramping
-- **Mode Transitions**: Smooth transitions between DAY/NIGHT/PRE_DAY/PRE_NIGHT
+- **Mode Transitions**: Smooth transitions between DAY/NIGHT (sun/moon photoperiod)
 - **Deadband Control**: Prevents equipment hunting with configurable thresholds
 - **Anti-Windup Protection**: Integral term clamping during output saturation
 
@@ -389,7 +389,7 @@ Where:
 **Photoperiod Control**:
 - **Sun Period**: Lights ON with configurable intensity ramping
 - **Moon Period**: Lights OFF (0% intensity)
-- **Transition Periods**: Optional PRE_DAY/PRE_NIGHT for gradual setpoint changes
+- **Climate Periods**: Named periods (from `climate_periods` table) with configurable ramp_minutes; drives temperature, humidity, CO2 setpoints independently of light schedule
 
 **Ramp Calculation Algorithm**:
 ```

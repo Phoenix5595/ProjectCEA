@@ -5,18 +5,11 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
 
 from app.alarm_manager import AlarmManager
 from app.database import DatabaseManager
 
 router = APIRouter()
-
-
-class AlarmAcknowledgeRequest(BaseModel):
-    """Request to acknowledge an alarm."""
-
-    pass  # No additional fields needed
 
 
 def get_database() -> DatabaseManager:

@@ -5,18 +5,20 @@ from __future__ import annotations
 # Standard library imports
 from datetime import datetime, timedelta
 from typing import Any
-from zoneinfo import ZoneInfo
 
 from app.alarm_manager import AlarmManager
 from app.automation.rules_engine import RulesEngine
 from app.config import ConfigLoader
+from app.control.climate_resolver import ClimatePeriodResolver
 from app.control.device_controller import DeviceController
 from app.control.device_processor import DeviceProcessor
 from app.control.performance_monitor import get_performance_monitor
 from app.control.pid_controller_manager import PIDControllerManager
 from app.control.relay_manager import RelayManager
-from app.control.scheduler import Scheduler, is_time_in_range
+from app.control.scheduler import Scheduler
 from app.control.sensor_data_manager import SensorDataManager
+from app.control.sensor_reader import SensorReader
+from app.control.setpoint_calculator import SetpointCalculator
 from app.control.setpoint_manager import SetpointManager
 from app.control.vpd_cascade_controller import (
     VPDCascadeController,
@@ -69,6 +71,14 @@ class ControlEngine:
         self.pid_controller_manager = PIDControllerManager(database)
         self.device_controller = DeviceController(relay_manager, database, dfr0971_manager)
 
+        # VPD Cascade Controller for intelligent actuator selection (create before DeviceProcessor)
+        self.vpd_cascade_controller = VPDCascadeController(
+            vpd_deadband=0.05,  # 0.05 kPa deadband
+            kp=20.0,
+            ki=0.5,
+            kd=2.0,
+        )
+
         # Initialize new extracted components
         self.device_processor = DeviceProcessor(
             self.device_controller,
@@ -76,13 +86,7 @@ class ControlEngine:
             dfr0971_manager,
             scheduler,
             pid_controller_manager=self.pid_controller_manager,
-        )
-        # VPD Cascade Controller for intelligent actuator selection
-        self.vpd_cascade_controller = VPDCascadeController(
-            vpd_deadband=0.05,  # 0.05 kPa deadband
-            kp=20.0,
-            ki=0.5,
-            kd=2.0,
+            vpd_cascade_controller=self.vpd_cascade_controller,
         )
 
         # StateManager for fast in-memory state access (<1ms reads)
@@ -94,6 +98,11 @@ class ControlEngine:
             redis_client=database._automation_redis,
             state_manager=self._state,
         )
+
+        # Initialize pipeline components
+        self.sensor_reader = SensorReader(database, self._state)
+        self.climate_resolver = ClimatePeriodResolver(scheduler, self.setpoint_manager)
+        self.setpoint_calculator = SetpointCalculator()
 
         # Ramp restoration will be done asynchronously after Redis is available
         # See _restore_ramps_on_startup() called from run()
@@ -128,11 +137,6 @@ class ControlEngine:
         self._sensor_mapping_cache: dict[str, Any] | None = None
         self._cache_timestamp: datetime | None = None
         self._cache_ttl = timedelta(seconds=30)  # Cache for 30 seconds
-
-        # Object pooling for memory optimization
-        self._setpoint_data_pool: list[dict[str, Any]] = []
-        self._sensor_values_pool: list[dict[str, float | None]] = []
-        self._pool_size = 10  # Keep up to 10 objects in each pool
 
         # Performance profiling
         self._profiling_enabled = True
@@ -172,30 +176,6 @@ class ControlEngine:
                 self._cache_timestamp = now
             logger.debug("Refreshed sensor mapping cache")
         return self._sensor_mapping_cache
-
-    def _get_setpoint_data_from_pool(self) -> dict[str, Any]:
-        """Get a setpoint data dict from the object pool or create new one."""
-        if self._setpoint_data_pool:
-            return self._setpoint_data_pool.pop()
-        return {}
-
-    def _return_setpoint_data_to_pool(self, obj: dict[str, Any]) -> None:
-        """Return a setpoint data dict to the object pool."""
-        if len(self._setpoint_data_pool) < self._pool_size:
-            obj.clear()  # Clear before reusing
-            self._setpoint_data_pool.append(obj)
-
-    def _get_sensor_values_from_pool(self) -> dict[str, float | None]:
-        """Get a sensor values dict from the object pool or create new one."""
-        if self._sensor_values_pool:
-            return self._sensor_values_pool.pop()
-        return {}
-
-    def _return_sensor_values_to_pool(self, obj: dict[str, float | None]) -> None:
-        """Return a sensor values dict to the object pool."""
-        if len(self._sensor_values_pool) < self._pool_size:
-            obj.clear()  # Clear before reusing
-            self._sensor_values_pool.append(obj)
 
     def _record_performance_stat(self, key: str, value: float) -> None:
         """Record a performance measurement."""
@@ -306,41 +286,24 @@ class ControlEngine:
                         f"Control loop processing {location}/{cluster} with {len(cluster_devices)} devices"
                     )
 
-                # Get sensor values for this location/cluster (with timing)
+                # Pipeline Step 1: Read sensor values
                 sensor_start = datetime.now() if self._profiling_enabled else None
-                # Debug logging removed
-                sensor_values = await self.sensor_data_manager.get_sensor_values(
+                sensor_values = await self.sensor_reader.read_sensors(
                     location, cluster, sensor_mapping
                 )
-                # Debug logging removed
                 if self._profiling_enabled and sensor_start:
                     sensor_time = (datetime.now() - sensor_start).total_seconds() * 1000
                     self._record_performance_stat("sensor_reading_time", sensor_time)
 
-                # 1. Get current time in America/Toronto timezone (HH:MM format)
-                toronto_time = datetime.now(ZoneInfo("America/Toronto"))
-                time_str = toronto_time.strftime("%H:%M")
-
-                # 2. Get light schedule for is_sun determination (needed for light intensity)
-                light_schedule = None
-                try:
-                    light_schedule = await self.database.schedule_repo.get_room_light_schedule(
-                        location, cluster
-                    )
-                except Exception as e:
-                    logger.info(
-                        f"Database error fetching light schedule for {location}/{cluster}: {e}"
-                    )
-
-                # 3. Get active climate period from database
-                active_period = await self.database.climate_periods_repo.get_active_period(
-                    location, cluster, time_str
+                # Pipeline Step 2: Resolve climate period
+                period_data = await self.climate_resolver.resolve_period(
+                    location, cluster, current_time, self.database
                 )
 
-                # Track current period name for device_processor compatibility (interlocks, etc.)
-                current_period_name: str = (
-                    active_period.get("period_name", "NO_PERIOD") if active_period else "NO_PERIOD"
-                )
+                active_period = period_data["active_period"]
+                current_period_name = period_data["current_period_name"]
+                setpoint_data = period_data["setpoint_data"]
+                light_schedule = period_data["light_schedule"]
 
                 # Detect period transition for logging
                 period_key = (location, cluster)
@@ -353,111 +316,46 @@ class ControlEngine:
                         )
                 else:
                     logger.warning(
-                        f"No climate period found for {location}/{cluster} at {time_str}. "
+                        f"No climate period found for {location}/{cluster} at {period_data['time_str']}. "
                         + "Cannot compute setpoints."
                     )
 
-                setpoint_data: dict[str, Any] | None = None
-
-                if active_period:
-                    # 4. Build setpoint_data from period fields (bridging to existing SetpointManager interface)
-                    ramp_minutes = active_period.get("ramp_minutes", 0) or 0
-
-                    setpoint_data = {
-                        "heating_setpoint": active_period.get("heating_setpoint"),
-                        "cooling_setpoint": active_period.get("cooling_setpoint"),
-                        "vpd": active_period.get("vpd_setpoint"),
-                        "co2": active_period.get("co2_setpoint"),
-                        # humidity is derived from VPD in VPD cascade controller, not stored in periods
-                        "humidity": None,
-                        # ramp_in_duration is the legacy key name expected by SetpointManager
-                        "ramp_in_duration": ramp_minutes,
-                    }
-
-                    logger.debug(
-                        f"Retrieved climate period for {location}/{cluster} at {time_str}: "
-                        + f"period={current_period_name}, "
-                        + f"heating={setpoint_data.get('heating_setpoint')}, "
-                        + f"cooling={setpoint_data.get('cooling_setpoint')}, "
-                        + f"ramp_minutes={ramp_minutes}"
-                    )
-
-                # 5. Effective setpoint calculation and logging (moved outside conditional)
+                # Pipeline Step 3: Calculate effective setpoints
                 effective_data = None
                 if setpoint_data:
-                    # Compute effective setpoints (passing period_name where mode is expected)
-                    effective_data = await self.setpoint_manager.compute_effective_setpoints(
+                    effective_data = await self.setpoint_calculator.calculate_setpoints(
                         location,
                         cluster,
                         current_time,
-                        current_period_name,  # period_name as current_mode
+                        current_period_name,
+                        previous_period,
                         setpoint_data,
                         sensor_values,
-                        previous_period,  # previous period_name as previous_mode
+                        self.setpoint_manager,
                     )
 
-                    # Add current VPD for humidifier/dehumidifier (VPD-only control)
-                    sensor_mapping = self._get_sensor_mapping()
-                    location_sensors = sensor_mapping.get(location, {}) if sensor_mapping else {}
-                    cluster_sensors = location_sensors.get(cluster, {})
-                    vpd_sensor_name = cluster_sensors.get("vpd_sensor")
-                    if vpd_sensor_name:
-                        effective_data["current_vpd"] = sensor_values.get(vpd_sensor_name)
-                    else:
-                        effective_data["current_vpd"] = None
+                    if effective_data:
+                        # Add current VPD for humidifier/dehumidifier control
+                        effective_data = self.setpoint_calculator.add_current_vpd(
+                            effective_data, location, cluster, sensor_values, sensor_mapping
+                        )
 
-                    # Store in context
-                    self._effective_setpoints[(location, cluster)] = effective_data
+                        # Store in context
+                        self._effective_setpoints[(location, cluster)] = effective_data
 
-                    # Log to database immediately (before device processing)
-                    # Use period_name in mode column for historical continuity
-                    await self.database.setpoint_repo.log_effective_setpoints(
-                        location=location,
-                        cluster=cluster,
-                        device_name="Main",
-                        mode=current_period_name,  # Store period_name as mode
-                        effective_heating_setpoint=effective_data["effective_heating_setpoint"],
-                        effective_cooling_setpoint=effective_data["effective_cooling_setpoint"],
-                        effective_humidity_setpoint=effective_data["effective_humidity_setpoint"],
-                        effective_co2_setpoint=effective_data["effective_co2_setpoint"],
-                        effective_vpd_setpoint=effective_data["effective_vpd_setpoint"],
-                        nominal_heating_setpoint=effective_data["nominal_heating_setpoint"],
-                        nominal_cooling_setpoint=effective_data["nominal_cooling_setpoint"],
-                        nominal_humidity_setpoint=effective_data["nominal_humidity_setpoint"],
-                        nominal_co2_setpoint=effective_data["nominal_co2_setpoint"],
-                        nominal_vpd_setpoint=effective_data["nominal_vpd_setpoint"],
-                        ramp_progress_heating=effective_data["ramp_progress_heating"],
-                        ramp_progress_cooling=effective_data["ramp_progress_cooling"],
-                        ramp_progress_humidity=effective_data["ramp_progress_humidity"],
-                        ramp_progress_co2=effective_data["ramp_progress_co2"],
-                        ramp_progress_vpd=effective_data["ramp_progress_vpd"],
-                        timestamp=current_time,
-                    )
+                        # Log to database
+                        await self._log_effective_setpoints(
+                            location, cluster, current_period_name, effective_data, current_time
+                        )
 
-                # 5. Derive current_mode and previous_mode for device_processor compatibility
-                # current_mode is derived from period_name for device processing (interlocks, etc.)
-                current_mode = (
-                    active_period.get("period_name", "UNKNOWN") if active_period else "NO_PERIOD"
-                )
+                # Derive current_mode and previous_mode for device_processor compatibility
+                current_mode = current_period_name if active_period else "NO_PERIOD"
                 climate_mode_key = (location, cluster)
                 previous_mode = self._current_climate_mode.get(climate_mode_key)
                 self._current_climate_mode[climate_mode_key] = current_mode
 
-                # 6. Moon = 0%: use room sun bounds as single source of truth for lights
-                is_sun = False
-                if light_schedule and isinstance(light_schedule, dict):
-                    sun_start = light_schedule.get("day_start_time")  # sun window start (HH:MM)
-                    sun_end = light_schedule.get("day_end_time")  # sun window end (HH:MM)
-                    if sun_start and sun_end:
-                        try:
-                            parts_s = sun_start.split(":")
-                            parts_e = sun_end.split(":")
-                            sun_start_min = int(parts_s[0]) * 60 + int(parts_s[1])
-                            sun_end_min = int(parts_e[0]) * 60 + int(parts_e[1])
-                            current_min = current_time.hour * 60 + current_time.minute
-                            is_sun = is_time_in_range(current_min, sun_start_min, sun_end_min)
-                        except (ValueError, IndexError):
-                            pass
+                # Calculate is_sun for light control
+                is_sun = self.climate_resolver.calculate_is_sun(light_schedule, current_time)
 
                 # 6. Process devices (using extracted component)
                 await self.device_processor.process_devices(
@@ -472,47 +370,7 @@ class ControlEngine:
                     previous_climate_mode=previous_mode,
                 )
 
-                # Log effective light intensities for all dimmable lights (throttled: I2C + scheduler + DB at most every 60s per device to reduce CPU)
-                if self.dfr0971_manager:
-                    for device_name, device_info in cluster_devices.items():
-                        if (
-                            device_info.get("dimming_enabled")
-                            and device_info.get("dimming_type") == "dfr0971"
-                        ):
-                            board_id = device_info.get("dimming_board_id")
-                            channel = device_info.get("dimming_channel")
-                            if board_id is None or channel is None:
-                                continue
-                            log_key = (location, cluster, device_name)
-                            last_log = self._last_light_effective_log.get(log_key)
-                            should_log = (
-                                last_log is None
-                                or (current_time - last_log).total_seconds()
-                                >= self._light_effective_log_interval_sec
-                            )
-                            if not should_log:
-                                continue
-                            # Only do I2C + scheduler + DB when throttle allows
-                            current_intensity = (
-                                self.dfr0971_manager.get_intensity(board_id, channel) or 0.0
-                            )
-                            intensity_details = self.scheduler.get_light_intensity_details(
-                                location, cluster, device_name, current_time, current_intensity
-                            )
-                            if intensity_details:
-                                await self.database.setpoint_repo.log_effective_setpoints(
-                                    location=location,
-                                    cluster=cluster,
-                                    mode=current_mode,
-                                    device_name=device_name,
-                                    effective_light_intensity=intensity_details[
-                                        "effective_intensity"
-                                    ],
-                                    nominal_light_intensity=intensity_details["nominal_intensity"],
-                                    ramp_progress_light=intensity_details["ramp_progress"],
-                                    timestamp=current_time,
-                                )
-                                self._last_light_effective_log[log_key] = current_time
+                # Light intensity logging is done inline in run_control_loop
 
         # Log automation state for all devices
         await self._log_automation_state()
@@ -530,191 +388,10 @@ class ControlEngine:
                     "device_processing_time", device_time / 1000.0
                 )
 
-    async def _get_sensor_values(
-        self, location: str, cluster: str, sensor_mapping: dict[str, Any]
-    ) -> dict[str, float | None]:
-        """Get sensor values for a location/cluster.
-
-        Args:
-            location: Location name
-            cluster: Cluster name
-            sensor_mapping: Sensor mapping from config
-
-        Returns:
-            Dict mapping sensor names to values
-        """
-        sensor_values = {}
-
-        location_sensors = sensor_mapping.get(location, {})
-        cluster_sensors = location_sensors.get(cluster, {})
-
-        for _sensor_type, sensor_name in cluster_sensors.items():
-            if sensor_name:
-                value = await self.database.sensor_repo.get_sensor_value(sensor_name)
-                sensor_values[sensor_name] = value
-
-        return sensor_values
-
-    def _get_sensor_for_setpoint_type(
-        self, location: str, cluster: str, setpoint_type: str
-    ) -> str | None:
-        """Get sensor name for a setpoint type.
-
-        Args:
-            location: Location name
-            cluster: Cluster name
-            setpoint_type: Setpoint type (e.g., 'heating_setpoint', 'cooling_setpoint', 'vpd_setpoint', 'co2')
-
-        Returns:
-            Sensor name or None if not found
-        """
-        sensor_mapping = self.config.get_sensor_mapping()
-        location_sensors = sensor_mapping.get(location, {})
-        cluster_sensors = location_sensors.get(cluster, {})
-
-        # Map setpoint types to sensor names
-        if setpoint_type in ["heating_setpoint", "cooling_setpoint"]:
-            return cluster_sensors.get("temperature_sensor")
-        elif setpoint_type == "vpd" or setpoint_type == "vpd_setpoint":
-            return cluster_sensors.get("vpd_sensor")
-        elif setpoint_type == "co2":
-            return cluster_sensors.get("co2_sensor")
-        elif setpoint_type == "humidity" or setpoint_type == "humidity_setpoint":
-            return cluster_sensors.get("humidity_sensor")
-        else:
-            logger.warning(f"Unknown setpoint_type: {setpoint_type}")
-            return None
-
+    # _get_sensor_values moved to SensorReader
+    # _get_sensor_for_setpoint_type moved to SensorReader
     # _compute_effective_setpoints method moved to SetpointManager
-
-    async def _process_vpd_control(
-        self,
-        location: str,
-        cluster: str,
-        device_name: str,
-        device_info: dict[str, Any],
-        sensor_values: dict[str, float | None],
-        current_time: datetime,
-        context: dict[str, Any],
-    ) -> None:
-        """Process VPD-based control for dehumidifying devices (fans, dehumidifiers).
-
-        When VPD is below setpoint, turn ON dehumidifying devices to increase VPD.
-        When VPD is at or above setpoint, turn OFF dehumidifying devices.
-
-        Args:
-            location: Location name
-            cluster: Cluster name
-            device_name: Device name
-            device_info: Device configuration
-            sensor_values: Available sensor values
-            current_time: Current time
-            context: Automation context dict
-        """
-        try:
-            # Read VPD setpoint from the already-computed effective setpoints (period-based)
-            # This replaces the stale StateManager cache read that used mode-unaware setpoints.
-            effective_data = self._effective_setpoints.get((location, cluster))
-            if not effective_data:
-                return  # No effective setpoints available
-
-            vpd_setpoint = effective_data.get("effective_vpd_setpoint")
-            if vpd_setpoint is None:
-                return  # No VPD setpoint configured
-
-            # Get VPD sensor name from mapping
-            sensor_mapping = self.config.get_sensor_mapping()
-            location_sensors = sensor_mapping.get(location, {})
-            cluster_sensors = location_sensors.get(cluster, {})
-            vpd_sensor_name = cluster_sensors.get("vpd_sensor")
-
-            if not vpd_sensor_name:
-                logger.debug(f"No VPD sensor mapping for {location}/{cluster}")
-                return
-
-            # Get current VPD value
-            current_vpd = sensor_values.get(vpd_sensor_name)
-
-            if current_vpd is None:
-                # Try to get from Redis last good value
-                if (
-                    self.database._automation_redis
-                    and self.database._automation_redis.redis_enabled
-                ):
-                    last_good = self.database._automation_redis.read_last_good_value(
-                        cluster, vpd_sensor_name
-                    )
-                    if last_good:
-                        hold_period = self.config.get("control.last_good_hold_period", 30)
-                        is_valid, age = self.database._automation_redis.check_last_good_age(
-                            cluster, vpd_sensor_name, hold_period
-                        )
-                        if is_valid:
-                            current_vpd = last_good["value"]
-                        else:
-                            # Last good value expired
-                            if self.alarm_manager:
-                                self.alarm_manager.raise_alarm(
-                                    location,
-                                    cluster,
-                                    f"{vpd_sensor_name}_offline",
-                                    "critical",
-                                    f"VPD sensor {vpd_sensor_name} offline for {age:.1f}s",
-                                )
-                            return
-                    else:
-                        return  # No VPD sensor value available
-                else:
-                    return  # No VPD sensor value and no Redis
-
-            # Update last good value if sensor is valid
-            if self.database._automation_redis and self.database._automation_redis.redis_enabled:
-                self.database._automation_redis.write_last_good_value(
-                    cluster, vpd_sensor_name, current_vpd
-                )
-
-            # Control logic: If VPD < setpoint, turn ON dehumidifying device
-            # If VPD >= setpoint, turn OFF dehumidifying device
-            # Add small hysteresis to prevent rapid cycling (0.1 kPa)
-            hysteresis = 0.1  # kPa
-
-            current_state = self.relay_manager.get_device_state(location, cluster, device_name) or 0
-            target_state = 0
-
-            if current_vpd < (vpd_setpoint - hysteresis):
-                # VPD is below setpoint, need to increase VPD → turn ON dehumidifying device
-                target_state = 1
-                context["control_reason"] = "vpd_control"
-            elif current_vpd >= (vpd_setpoint + hysteresis):
-                # VPD is at or above setpoint → turn OFF dehumidifying device
-                target_state = 0
-                context["control_reason"] = "vpd_control"
-            else:
-                # VPD is within hysteresis band, maintain current state
-                target_state = current_state
-                context["control_reason"] = "vpd_control_hysteresis"
-
-            # Set device state if changed
-            if target_state != current_state:
-                await self._set_device_state(
-                    location,
-                    cluster,
-                    device_name,
-                    target_state,
-                    "auto",
-                    f"vpd_control (VPD: {current_vpd:.2f}kPa, setpoint: {vpd_setpoint:.2f}kPa)",
-                    sensor_values,
-                )
-                logger.info(
-                    f"VPD control: {location}/{cluster}/{device_name} "
-                    f"{'ON' if target_state == 1 else 'OFF'} "
-                    f"(VPD: {current_vpd:.2f}kPa, setpoint: {vpd_setpoint:.2f}kPa)"
-                )
-        except Exception as e:
-            logger.error(f"Error in VPD control for {location}/{cluster}/{device_name}: {e}")
-            import traceback
-
-            traceback.print_exc()
+    # _process_vpd_control moved to device_controller
 
     async def _set_device_state(
         self,
@@ -780,6 +457,40 @@ class ControlEngine:
             setpoint,
             load_percent=load_percent,
         )
+
+    async def _log_effective_setpoints(
+        self,
+        location: str,
+        cluster: str,
+        current_period_name: str,
+        effective_data: dict[str, Any],
+        current_time: datetime,
+    ) -> None:
+        """Log effective setpoints to database."""
+        await self.database.setpoint_repo.log_effective_setpoints(
+            location=location,
+            cluster=cluster,
+            device_name="Main",
+            mode=current_period_name,
+            effective_heating_setpoint=effective_data["effective_heating_setpoint"],
+            effective_cooling_setpoint=effective_data["effective_cooling_setpoint"],
+            effective_humidity_setpoint=effective_data["effective_humidity_setpoint"],
+            effective_co2_setpoint=effective_data["effective_co2_setpoint"],
+            effective_vpd_setpoint=effective_data["effective_vpd_setpoint"],
+            nominal_heating_setpoint=effective_data["nominal_heating_setpoint"],
+            nominal_cooling_setpoint=effective_data["nominal_cooling_setpoint"],
+            nominal_humidity_setpoint=effective_data["nominal_humidity_setpoint"],
+            nominal_co2_setpoint=effective_data["nominal_co2_setpoint"],
+            nominal_vpd_setpoint=effective_data["nominal_vpd_setpoint"],
+            ramp_progress_heating=effective_data["ramp_progress_heating"],
+            ramp_progress_cooling=effective_data["ramp_progress_cooling"],
+            ramp_progress_humidity=effective_data["ramp_progress_humidity"],
+            ramp_progress_co2=effective_data["ramp_progress_co2"],
+            ramp_progress_vpd=effective_data["ramp_progress_vpd"],
+            timestamp=current_time,
+        )
+
+    # _log_light_intensities logic moved inline to run_control_loop
 
     async def _log_automation_state(self) -> None:
         """Log automation state for all devices."""

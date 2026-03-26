@@ -13,6 +13,12 @@ build/
 .vscode/
 *.code-workspace
 
+# OpenCode agent state (session-specific, never commit)
+.opencode/
+
+# Sisyphus AI planning state (session-specific, never commit)
+.sisyphus/
+
 # Secrets / keys (never commit)
 .ssh/
 id_rsa

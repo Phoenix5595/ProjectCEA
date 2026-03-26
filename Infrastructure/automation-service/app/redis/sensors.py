@@ -6,6 +6,7 @@ from datetime import datetime
 import json
 from typing import TYPE_CHECKING, Any
 
+from app.redis.schema import get_with_backward_compat, sensor_key, set_with_backward_compat
 from shared.infra_logging import get_logger
 
 if TYPE_CHECKING:
@@ -27,14 +28,22 @@ class SensorsMixin:
             return False
 
         try:
-            last_good_key = f"sensor:{cluster}:{sensor_name}:last_good"
             timestamp_ms = timestamp or int(datetime.now().timestamp() * 1000)
 
             last_good_data = {"value": value, "timestamp": timestamp_ms}
 
             ttl = 40  # Default hold period (30s) + buffer (10s)
 
-            self.redis_client.setex(last_good_key, ttl, json.dumps(last_good_data))
+            set_with_backward_compat(
+                self.redis_client,
+                "sensor:{cluster}:{sensor_name}:last_good",  # old key pattern
+                sensor_key,  # new key builder with location="global"
+                json.dumps(last_good_data),
+                ttl,
+                "global",
+                cluster,
+                sensor_name,  # location, cluster, sensor_name
+            )
             return True
         except Exception as e:
             logger.debug(f"Error writing last good value: {e}")
@@ -45,11 +54,16 @@ class SensorsMixin:
             return None
 
         try:
-            last_good_key = f"sensor:{cluster}:{sensor_name}:last_good"
-            last_good_data = self.redis_client.get(last_good_key)
-
-            if last_good_data:
-                return json.loads(str(last_good_data))
+            result = get_with_backward_compat(
+                self.redis_client,
+                "sensor:{cluster}:{sensor_name}:last_good",  # old key pattern
+                sensor_key,  # new key builder with location="global"
+                "global",
+                cluster,
+                sensor_name,  # location, cluster, sensor_name
+            )
+            if result:
+                return json.loads(str(result))
         except Exception as e:
             logger.debug(f"Error reading last good value: {e}")
         return None
