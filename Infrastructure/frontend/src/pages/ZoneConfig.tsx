@@ -179,6 +179,7 @@ export default function ZoneConfig({ location: propsLocation, cluster: propsClus
             <div className="h-[270px] shrink-0 bg-surface-primary rounded-lg border border-border-subtle overflow-hidden p-2">
               {!isConstant ? (
                 <ClimatePeriodTimeline
+                  periods={climatePeriods}
                   lightDayStart={params?.day_start_time || '06:00'}
                   lightDayEnd={params?.night_start_time || '18:00'}
                   className="h-full"
