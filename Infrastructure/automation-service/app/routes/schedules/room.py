@@ -5,10 +5,10 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, cast
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
 
 from app.config import ConfigLoader
 from app.database import DatabaseManager
+from app.schemas.schedules import RoomScheduleCreate
 from shared.infra_logging import get_logger
 
 from .base import (
@@ -24,15 +24,6 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 router = APIRouter()
-
-
-class RoomScheduleCreate(BaseModel):
-    day_start_time: str
-    day_end_time: str
-    night_start_time: str
-    night_end_time: str
-    ramp_up_duration: int | None = None
-    ramp_down_duration: int | None = None
 
 
 def _to_hhmm(value: Any) -> str:
@@ -292,6 +283,27 @@ async def save_room_schedule(
     schedules_created = 0
     preserved_intensities: dict[str, float] = {}
 
+    # Per-device SUN ramps: use active mode's light_ramp_* (never unscoped mode_parameters LIMIT 1).
+    light_ramp_up = 15
+    light_ramp_down = 15
+    active_mode = await database.room_mode_repo.get_active_mode(location, cluster)
+    mode_params_for_ramps: dict[str, Any] | None = None
+    if active_mode:
+        mode_params_for_ramps = await database.room_mode_repo.get_mode_parameters(
+            location,
+            cluster,
+            str(active_mode.get("mode_name", "veg")),
+            active_mode.get("submode_name"),
+        )
+    if mode_params_for_ramps:
+        light_ramp_up = int(mode_params_for_ramps.get("light_ramp_up_minutes") or 15)
+        light_ramp_down = int(mode_params_for_ramps.get("light_ramp_down_minutes") or 15)
+    elif schedule.ramp_up_duration is not None or schedule.ramp_down_duration is not None:
+        if schedule.ramp_up_duration is not None:
+            light_ramp_up = int(schedule.ramp_up_duration)
+        if schedule.ramp_down_duration is not None:
+            light_ramp_down = int(schedule.ramp_down_duration)
+
     try:
         async with pool.acquire() as conn:
             async with conn.transaction():
@@ -389,22 +401,6 @@ async def save_room_schedule(
                         schedule.ramp_down_duration,
                     )
 
-                light_ramp_up = 15
-                light_ramp_down = 15
-                mode_params_row = await conn.fetchrow(
-                    """
-                    SELECT light_ramp_up_minutes, light_ramp_down_minutes
-                    FROM mode_parameters
-                    WHERE location = $1 AND cluster = $2
-                    LIMIT 1
-                """,
-                    location,
-                    cluster,
-                )
-                if mode_params_row:
-                    light_ramp_up = mode_params_row["light_ramp_up_minutes"] or 15
-                    light_ramp_down = mode_params_row["light_ramp_down_minutes"] or 15
-
                 for device_name, device_info in room_devices.items():
                     device_type = device_info.get("device_type", "")
                     dimming_enabled = device_info.get("dimming_enabled", False)
@@ -500,6 +496,33 @@ async def save_room_schedule(
         logger.error(f"Error saving room schedule for {location}/{cluster}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Database transaction failed: {str(e)}") from e
 
+    # Publish events AFTER transaction commits so consumers read committed data
+    try:
+        from app.events import ConfigChangeEvent, ConfigEventType, get_event_bus
+
+        event_bus = get_event_bus()
+        event = ConfigChangeEvent(
+            event_type=ConfigEventType.SCHEDULE_CHANGED,
+            location=location,
+            cluster=cluster,
+            config_type="schedules",
+            data={"action": "room_schedule_saved", "schedules_created": schedules_created},
+        )
+        await event_bus.publish(event)
+        logger.info(
+            f"Published SCHEDULE_CHANGED event for {location}/{cluster} after transaction commit"
+        )
+
+        # Invalidate cache
+        from app.state import get_state_manager
+
+        state = get_state_manager()
+        await state.delete(f"schedules:loc:{location}:cluster:{cluster}")
+        await state.delete(f"schedules:loc:{location}:cluster:{cluster}:climate")
+        await state.delete("schedules:all")
+    except Exception as e:
+        logger.warning(f"Failed to publish schedule event or invalidate cache: {e}")
+
     await database.config_repo.log_config_version(
         config_type="room_schedule",
         author="system",
@@ -584,7 +607,7 @@ async def sync_room_schedule_from_mode_parameters(
         day_end_time=night_start,
         night_start_time=night_start,
         night_end_time=day_start,
-        ramp_up_duration=params.get("ramp_up_minutes"),
-        ramp_down_duration=params.get("ramp_down_minutes"),
+        ramp_up_duration=params.get("light_ramp_up_minutes"),
+        ramp_down_duration=params.get("light_ramp_down_minutes"),
     )
     return await save_room_schedule(location, cluster, schedule, database, config)
