@@ -1,9 +1,6 @@
 import { useMemo } from 'react'
 import type { ClimatePeriod } from '../types/climatePeriod'
-import {
-  sampleMetricSeries,
-  timeToMinutes,
-} from '../utils/climatePeriodTimeline'
+import { sampleMetricSeries, timeToMinutes } from '../utils/climatePeriodTimeline'
 
 export interface ClimatePeriodTimelineProps {
   periods?: ClimatePeriod[]
@@ -82,14 +79,8 @@ export default function ClimatePeriodTimeline({
       ? [{ startMin: 0, endMin: 1440 }]
       : buildSegments(dayEndMin, dayStartMin)
 
-  const heatSeries = useMemo(
-    () => sampleMetricSeries(periods, 'heating'),
-    [periods]
-  )
-  const coolSeries = useMemo(
-    () => sampleMetricSeries(periods, 'cooling'),
-    [periods]
-  )
+  const heatSeries = useMemo(() => sampleMetricSeries(periods, 'heating'), [periods])
+  const coolSeries = useMemo(() => sampleMetricSeries(periods, 'cooling'), [periods])
   const vpdSeries = useMemo(() => sampleMetricSeries(periods, 'vpd'), [periods])
 
   const tempRange = { min: 15, max: 30 }
@@ -113,14 +104,14 @@ export default function ClimatePeriodTimeline({
   const tempScalePositions = [
     { value: 30, top: 0 },
     { value: 25, top: 100 / 3 },
-    { value: 20, top: (200 / 3) },
+    { value: 20, top: 200 / 3 },
     { value: 15, top: 100 },
   ]
 
   const vpdScalePositions = [
     { value: 2, top: 0 },
     { value: 1.5, top: 100 / 3 },
-    { value: 1, top: (200 / 3) },
+    { value: 1, top: 200 / 3 },
     { value: 0.5, top: 100 },
   ]
 
@@ -231,9 +222,7 @@ export default function ClimatePeriodTimeline({
               </div>
             )}
 
-            <div
-              className="absolute top-0 bottom-4 left-0 right-0 z-[7] flex items-start justify-end gap-2 pointer-events-none pr-1 pt-0.5"
-            >
+            <div className="absolute top-0 bottom-4 left-0 right-0 z-[7] flex items-start justify-end gap-2 pointer-events-none pr-1 pt-0.5">
               {hasPeriods && (
                 <>
                   <span className="text-[8px] font-mono text-orange-600 dark:text-orange-400">

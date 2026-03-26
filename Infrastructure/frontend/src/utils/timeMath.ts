@@ -3,6 +3,8 @@
  * All time math functions are defined here once and imported where needed.
  */
 
+import type { MouseEvent as ReactMouseEvent } from 'react'
+
 /**
  * Convert time string (HH:MM) to minutes since midnight.
  * Handles both simple HH:MM and trimmed input.
@@ -81,7 +83,7 @@ export function calculateMidAngle(
 ): number {
   let midAngle: number
   if (isOvernight) {
-    const midMinutes = (startMinutes + endMinutes + 1440) / 2 % 1440
+    const midMinutes = ((startMinutes + endMinutes + 1440) / 2) % 1440
     midAngle = minutesToAngle(midMinutes)
   } else {
     const startAngle = minutesToAngle(startMinutes)
@@ -98,7 +100,10 @@ export function calculateMidAngle(
  * Get angle from mouse position relative to center.
  * Returns angle in the same coordinate system as minutesToAngle (noon at top = -Math.PI/2)
  */
-export function getAngleFromMouse(event: MouseEvent | React.MouseEvent, rect: DOMRect): number {
+export function getAngleFromMouse(
+  event: globalThis.MouseEvent | ReactMouseEvent,
+  rect: DOMRect
+): number {
   const centerX = rect.left + rect.width / 2
   const centerY = rect.top + rect.height / 2
   const x = event.clientX - centerX
@@ -109,7 +114,10 @@ export function getAngleFromMouse(event: MouseEvent | React.MouseEvent, rect: DO
 /**
  * Get distance from center in pixels.
  */
-export function getDistanceFromCenter(event: MouseEvent | React.MouseEvent, rect: DOMRect): number {
+export function getDistanceFromCenter(
+  event: globalThis.MouseEvent | ReactMouseEvent,
+  rect: DOMRect
+): number {
   const centerX = rect.left + rect.width / 2
   const centerY = rect.top + rect.height / 2
   const x = event.clientX - centerX
