@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -25,6 +26,64 @@ if TYPE_CHECKING:
 router = APIRouter()
 
 logger = get_logger(__name__)
+
+
+def _read_light_status_payload(
+    location: str,
+    cluster: str,
+    device_name: str,
+    device_info: dict[str, Any],
+    dfr0971_manager: Any,
+    database: DatabaseManager | None,
+    scheduler: Any | None,
+) -> dict[str, Any] | None:
+    """Read Redis/driver intensity and scheduler nominal target. Assumes dimming is configured."""
+    board_id = device_info.get("dimming_board_id")
+    channel = device_info.get("dimming_channel")
+    if board_id is None or channel is None:
+        return None
+
+    intensity = None
+    voltage = None
+
+    if database and database._automation_redis:
+        redis_data = database._automation_redis.read_light_intensity(location, cluster, device_name)
+        if redis_data:
+            intensity = redis_data.get("intensity")
+            voltage = redis_data.get("voltage")
+
+    if intensity is None or voltage is None:
+        intensity = dfr0971_manager.get_intensity(board_id, channel)
+        voltage = dfr0971_manager.get_voltage(board_id, channel)
+
+    if intensity is None or voltage is None:
+        logger.warning(
+            f"Failed to read light hardware state for {device_name} ({location}/{cluster})"
+        )
+        return None
+
+    boards = dfr0971_manager.list_boards()
+    board_info = next((b for b in boards if b["board_id"] == board_id), None)
+
+    target_intensity = None
+    if scheduler:
+        intensity_details = scheduler.get_light_intensity_details(
+            location, cluster, device_name, datetime.now(), intensity
+        )
+        if intensity_details:
+            target_intensity = intensity_details.get("nominal_intensity")
+
+    return {
+        "location": location,
+        "cluster": cluster,
+        "device": device_name,
+        "intensity": intensity,
+        "voltage": voltage,
+        "board_id": board_id,
+        "channel": channel,
+        "board_info": board_info,
+        "target_intensity": target_intensity,
+    }
 
 
 # These will be overridden by main app
@@ -178,6 +237,95 @@ async def set_intensity(
     }
 
 
+@router.get("/api/lights/{location}/{cluster}/zone-status")
+async def get_zone_lights_status(
+    location: str,
+    cluster: str,
+    dfr0971_manager=Depends(get_dfr0971_manager),
+    config=Depends(get_config),
+    database=Depends(get_database),
+    scheduler=Depends(get_scheduler),
+) -> dict[str, Any]:
+    """Return intensity + targets for all dimmable lights in one round-trip (ZoneConfig Light intensity)."""
+    devices = config.get_devices()
+    cluster_devices = devices.get(location, {}).get(cluster, {})
+    if not cluster_devices:
+        return {"lights": []}
+
+    schedules_list: list[dict[str, Any]] = []
+    if database:
+        schedules_list = await database.schedule_repo.get_schedules(location, cluster)
+
+    lights_out: list[dict[str, Any]] = []
+    for device_name, device_info in cluster_devices.items():
+        if device_info.get("device_type") != "light":
+            continue
+        if not device_info.get("dimming_enabled", False):
+            continue
+        board_id = device_info.get("dimming_board_id")
+        channel = device_info.get("dimming_channel")
+        # Channel 0 is valid; only skip when actually missing from config
+        if board_id is None or channel is None:
+            continue
+
+        payload = _read_light_status_payload(
+            location,
+            cluster,
+            device_name,
+            device_info,
+            dfr0971_manager,
+            database,
+            scheduler,
+        )
+        if not payload:
+            # Still list the device so the UI can show sliders (same as per-device /status when read fails)
+            target_fallback = None
+            if scheduler:
+                intensity_details = scheduler.get_light_intensity_details(
+                    location, cluster, device_name, datetime.now(), 0.0
+                )
+                if intensity_details:
+                    target_fallback = intensity_details.get("nominal_intensity")
+            boards = dfr0971_manager.list_boards()
+            board_info = next((b for b in boards if b["board_id"] == board_id), None)
+            payload = {
+                "location": location,
+                "cluster": cluster,
+                "device": device_name,
+                "intensity": 0.0,
+                "voltage": 0.0,
+                "board_id": board_id,
+                "channel": channel,
+                "board_info": board_info,
+                "target_intensity": target_fallback,
+            }
+
+        sun_day_target: float | None = None
+        for s in schedules_list:
+            if s.get("device_name") != device_name:
+                continue
+            if not s.get("enabled", True):
+                continue
+            mode = str(s.get("mode") or "").upper()
+            if mode in ("SUN", "DAY") and s.get("target_intensity") is not None:
+                sun_day_target = float(s["target_intensity"])
+                break
+
+        day_target_intensity = sun_day_target
+        if day_target_intensity is None and payload.get("target_intensity") is not None:
+            day_target_intensity = float(payload["target_intensity"])
+
+        lights_out.append(
+            {
+                **payload,
+                "display_name": device_info.get("display_name"),
+                "day_target_intensity": day_target_intensity,
+            }
+        )
+
+    return {"lights": lights_out}
+
+
 @router.get("/api/lights/{location}/{cluster}/{device_name}/status")
 async def get_light_status(
     location: str,
@@ -211,53 +359,20 @@ async def get_light_status(
             status_code=400, detail=f"Device {device_name} missing dimming configuration"
         )
 
-    # Try to read from Redis first (persistent storage)
-    # If not in Redis, read from driver (which tracks current state)
-    intensity = None
-    voltage = None
-
-    if database and database._automation_redis:
-        redis_data = database._automation_redis.read_light_intensity(location, cluster, device_name)
-        if redis_data:
-            intensity = redis_data.get("intensity")
-            voltage = redis_data.get("voltage")
-
-    # Fallback to driver state if not in Redis
-    if intensity is None or voltage is None:
-        intensity = dfr0971_manager.get_intensity(board_id, channel)
-        voltage = dfr0971_manager.get_voltage(board_id, channel)
-
-    if intensity is None or voltage is None:
+    payload = _read_light_status_payload(
+        location,
+        cluster,
+        device_name,
+        device_info,
+        dfr0971_manager,
+        database,
+        scheduler,
+    )
+    if not payload:
         raise HTTPException(
             status_code=500, detail=f"Failed to read status for board {board_id}, channel {channel}"
         )
-
-    # Get board info
-    boards = dfr0971_manager.list_boards()
-    board_info = next((b for b in boards if b["board_id"] == board_id), None)
-
-    # Get target intensity from active schedule (if any)
-    target_intensity = None
-    if scheduler:
-        from datetime import datetime
-
-        intensity_details = scheduler.get_light_intensity_details(
-            location, cluster, device_name, datetime.now(), intensity
-        )
-        if intensity_details:
-            target_intensity = intensity_details.get("nominal_intensity")
-
-    return {
-        "location": location,
-        "cluster": cluster,
-        "device": device_name,
-        "intensity": intensity,
-        "voltage": voltage,
-        "board_id": board_id,
-        "channel": channel,
-        "board_info": board_info,
-        "target_intensity": target_intensity,  # Target intensity from schedule (max intensity for the day)
-    }
+    return payload
 
 
 @router.post("/api/lights/{location}/{cluster}/{device_name}/voltage")
