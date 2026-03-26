@@ -254,6 +254,8 @@ class ScheduleRepository(BaseRepository):
             start_time_obj = dt_time(start_parts[0], start_parts[1])
             end_time_obj = dt_time(end_parts[0], end_parts[1])
 
+            schedule_id: int | None = None
+
             async def do_insert(c: Connection) -> int | None:
                 row = await c.fetchrow(
                     """INSERT INTO schedules (name, location, cluster, device_name, start_time, end_time,
@@ -274,30 +276,38 @@ class ScheduleRepository(BaseRepository):
                     ramp_up_duration,
                     ramp_down_duration,
                 )
-                if row:
-                    logger.info(
-                        f"Created schedule {row['id']}: {name} ({location}/{cluster}) "
-                        f"device={device_name} mode={mode} start={start_time} end={end_time}"
-                    )
-                    # Invalidate cache by publishing schedule changed event
-                    await self._publish_schedule_changed(
-                        location=location,
-                        cluster=cluster,
-                        action="created",
-                        extra={"schedule_id": row["id"]},
-                    )
-                    try:
-                        s = get_state_manager()
-                        await s.delete(self._cache_key_schedules(location, cluster))
-                        await s.delete(self._cache_key_climate(location, cluster))
-                    except Exception:
-                        pass
                 return row["id"] if row else None
 
             if conn:
-                return await do_insert(conn)
-            async with self.pool.acquire() as new_conn:
-                return await do_insert(cast("Connection", new_conn))
+                # When called within a transaction, only do the insert
+                # Event and cache invalidation happen after transaction commits
+                schedule_id = await do_insert(conn)
+            else:
+                # When managing our own connection, do full operation
+                async with self.pool.acquire() as new_conn:
+                    schedule_id = await do_insert(cast("Connection", new_conn))
+
+            # Only publish event and invalidate cache if insert succeeded
+            # and we're not inside a transaction (conn is None)
+            if schedule_id and not conn:
+                logger.info(
+                    f"Created schedule {schedule_id}: {name} ({location}/{cluster}) "
+                    f"device={device_name} mode={mode} start={start_time} end={end_time}"
+                )
+                await self._publish_schedule_changed(
+                    location=location,
+                    cluster=cluster,
+                    action="created",
+                    extra={"schedule_id": schedule_id},
+                )
+                try:
+                    s = get_state_manager()
+                    await s.delete(self._cache_key_schedules(location, cluster))
+                    await s.delete(self._cache_key_climate(location, cluster))
+                except Exception:
+                    pass
+
+            return schedule_id
         except Exception as e:
             logger.error(f"Failed to create schedule: {e}")
             return None
@@ -543,6 +553,18 @@ class ScheduleRepository(BaseRepository):
                 count = int(result.split()[-1])
                 logger.info(f"Updated {count} light schedules ramp times for {location}/{cluster}")
                 if count:
+                    # Invalidate cache BEFORE publishing event so consumers get fresh data
+                    try:
+                        s = get_state_manager()
+                        # Clear location-specific keys
+                        await s.delete(self._cache_key_schedules(location, cluster))
+                        await s.delete(self._cache_key_climate(location, cluster))
+                        await s.delete(self._cache_key_room_light(location, cluster))
+                        await s.delete(self._cache_key_room_schedule(location, cluster))
+                        # Clear global schedules cache - critical for consistency
+                        await s.delete(self._cache_key_schedules(None, None))
+                    except Exception:
+                        pass
                     await self._publish_schedule_changed(
                         location=location,
                         cluster=cluster,
