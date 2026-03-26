@@ -26,12 +26,11 @@ control/
 
 ```
 1. Read sensor values from Redis state keys
-2. Load config snapshot from PostgreSQL
-3. Determine current mode (DAY/NIGHT/PRE_*/via scheduler)
-4. Calculate effective setpoints (with ramp interpolation)
-5. Run PID controllers (heating, cooling, CO2 only); VPD-only for humidifier/dehumidifier
-6. Apply safety constraints (failsafe supervisor)
-7. Write actuator commands
+2. Resolve active climate period from climate_periods (by time) and compute effective setpoints (ramps between periods)
+3. Load photoperiod bounds from room light schedule for is_sun / light intensity
+4. Run PID controllers (heating, cooling, CO2 only); VPD-only for humidifier/dehumidifier
+5. Apply safety constraints (failsafe supervisor)
+6. Write actuator commands
 ```
 
 ## KEY CLASSES
@@ -48,7 +47,7 @@ control/
 | `DeviceController` | `device_controller.py` | Device output (PID, VPD-only, rule-based) |
 | `RelayManager` | `relay_manager.py` | Hardware abstraction |
 
-Light intensity comes from light (sun/moon) via scheduler; setpoints come from climate (get_climate_mode), which is slave to light — DAY = sun length, NIGHT = moon duration.
+Light intensity comes from the scheduler (sun/moon schedules). Environmental setpoints come from the active **climate period** (`climate_periods`), not from a fixed four-mode `get_climate_mode` API (removed).
 
 ## SAFETY LAYERS
 

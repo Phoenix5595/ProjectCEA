@@ -8,10 +8,11 @@ import { useControlActions } from '../contexts/ControlActionsContext'
 import ClimatePeriodTimeline from '../components/ClimatePeriodTimeline'
 import ClimatePeriodsTable from '../components/ClimatePeriodsTable'
 import CircularTimePicker from '../components/CircularTimePicker'
-import VerticalLightsBlock from '../components/VerticalLightsBlock'
+import LightIntensity from '../components/LightIntensity'
 import VerticalPIDBlock from '../components/VerticalPIDBlock'
 import VerticalNotesBlock from '../components/VerticalNotesBlock'
 import ManualLightControl from '../components/ManualLightControl'
+import type { ClimatePeriod } from '../types/climatePeriod'
 
 export interface ZoneConfigProps {
   location?: string;
@@ -28,7 +29,7 @@ export default function ZoneConfig({ location: propsLocation, cluster: propsClus
   const cluster = propsCluster ?? urlCluster ?? 'main'
   
   const [roomMode, setRoomMode] = useState<RoomModeWithParams | null>(null)
-  const [climatePeriods, setClimatePeriods] = useState<any[]>([])
+  const [climatePeriods, setClimatePeriods] = useState<ClimatePeriod[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -107,6 +108,8 @@ export default function ZoneConfig({ location: propsLocation, cluster: propsClus
       const p = updated.parameters
       const dayStart = toHHMM(p.day_start_time)
       const nightStart = toHHMM(p.night_start_time)
+      // Light ramps (CircularTimePicker): must match mode_parameters.light_ramp_* — not ramp_up_minutes
+      // (legacy climate transition fields), or room_schedule / Redis aggregate state show wrong values.
       await apiClient.saveRoomSchedule(location, cluster, {
         day_start_time: dayStart,
         day_end_time: nightStart,
@@ -223,7 +226,7 @@ export default function ZoneConfig({ location: propsLocation, cluster: propsClus
                   />
                 </div>
                 <div className="flex-[44.3] overflow-auto">
-                  <VerticalLightsBlock location={location} cluster={cluster} compact={true} />
+                  <LightIntensity location={location} cluster={cluster} compact={true} />
                 </div>
               </div>
             </div>

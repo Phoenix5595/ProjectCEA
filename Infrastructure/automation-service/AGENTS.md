@@ -33,18 +33,14 @@ automation-service/
 
 ## KEY CONCEPTS
 
-### Light (sun/moon) vs climate (slave to light)
-- **Light (master)**: Two periods only — **sun** (lights on) and **moon** (lights off). Sun schedule defines photoperiod; outside that window = moon = 0%. Drying/sleep room modes = 24h moon. Drives intensity and relay only.
-- **Climate (slave)**: **`climate_periods`** rows (named periods, start/end, `ramp_minutes`, setpoints). Control resolves the active period via `get_active_period()`; no fixed PRE_DAY / DAY / PRE_NIGHT / NIGHT ladder. Climate does not switch lights; light schedule does.
-- Light intensity is never undefined: either from sun schedule (with ramps) or 0% (moon).
+### Light (sun/moon) vs climate periods
+- **Photoperiod (lights)**: **Sun** = lights on (with ramps from `light_ramp_up_minutes` / `light_ramp_down_minutes` on schedules); **moon** = off or 0% outside that window. Boundaries come from `room_schedule` + per-device SUN/MOON rows. Drying/sleep modes may use 24h moon. Light intensity is never undefined: sun schedule (with ramps) or 0% (moon).
+- **Climate**: Setpoints come from **`climate_periods`** (named periods, `start_time`, `end_time`, `ramp_minutes`, targets). The control loop resolves the active period via `get_active_period()` / `ClimatePeriodResolver`; **not** a fixed PRE_DAY / DAY / PRE_NIGHT / NIGHT ladder. Climate does not switch lights; the light schedule does.
+- **Lights on/off** come only from the **light (sun/moon) schedule**, not from climate period names. Period boundaries are independent of photoperiod (operators may align them for convenience).
 
-### Climate periods (replaces fixed PRE_* “modes” for setpoints)
-- Setpoints are keyed by **active `climate_period`** (`period_name` + time window), not by DAY/NIGHT/PRE_* enum.
-- **Lights on/off** still come only from the **light (sun/moon) schedule**, not from climate period names.
-
-### Climate period ramp logic
-- Each **climate_period** has `ramp_minutes`: interpolates from the **previous period’s** setpoints to the **current period’s** setpoints over that window (see SetpointManager + `climate_periods_repo`).
-- Legacy `ramp_in_duration` / PRE_* mode chains are not the active model.
+### Ramp logic (two kinds)
+- **Light ramp**: Per-device on SUN rows — `schedules.ramp_up_duration` / `ramp_down_duration` synced from **`light_ramp_*`** in `mode_parameters` (not legacy `ramp_up_minutes` / `ramp_down_minutes` on room-schedule POST). Scheduler computes intensity vs time since sun start/end.
+- **Climate period ramp**: Each row’s `ramp_minutes` — interpolate from the **previous** period’s setpoints to the **current** period’s over that window (`SetpointManager` + `climate_periods_repo`; bridge field `ramp_in_duration`). Legacy PRE_* mode chains are not the active model.
 
 ### Light ramp (time-based, per-device)
 - Light ramp state is keyed by `(location, cluster, device_name)`. Each device has its own ramp.

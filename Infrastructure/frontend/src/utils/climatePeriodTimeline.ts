@@ -1,5 +1,6 @@
 import type { ClimatePeriod } from '../types/climatePeriod'
 import { timeToMinutes } from './timeMath'
+
 export { timeToMinutes }
 
 /** Exclusive end semantics: [start, end) or wrap [start,1440) U [0,end). */
@@ -32,9 +33,7 @@ export function periodLengthMinutes(startMin: number, endMin: number): number {
 }
 
 export function sortPeriodsByStart(periods: ClimatePeriod[]): ClimatePeriod[] {
-  return [...periods].sort(
-    (a, b) => timeToMinutes(a.start_time) - timeToMinutes(b.start_time)
-  )
+  return [...periods].sort((a, b) => timeToMinutes(a.start_time) - timeToMinutes(b.start_time))
 }
 
 function lerp(a: number | null, b: number | null, t: number): number | null {
