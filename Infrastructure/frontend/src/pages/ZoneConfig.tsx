@@ -112,8 +112,8 @@ export default function ZoneConfig({ location: propsLocation, cluster: propsClus
         day_end_time: nightStart,
         night_start_time: nightStart,
         night_end_time: dayStart,
-        ramp_up_duration: p.ramp_up_minutes ?? null,
-        ramp_down_duration: p.ramp_down_minutes ?? null,
+        ramp_up_duration: p.light_ramp_up_minutes ?? null,
+        ramp_down_duration: p.light_ramp_down_minutes ?? null,
       })
 
       await apiClient.saveClimatePeriods(location, cluster, climatePeriods, roomMode?.mode_id ?? undefined, roomMode?.submode_id ?? undefined)
