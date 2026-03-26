@@ -103,8 +103,9 @@ async def create_room_modes_tables(pool: "Pool") -> None:
             )
         """)
 
-        # Mode parameters table - stores ALL parameters per room/mode/submode combination
+        # Mode parameters table - stores photoperiod/light parameters per room/mode/submode
         # Each mode/submode has its own saved parameters that persist through mode switches
+        # Climate setpoints now live in climate_periods table
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS mode_parameters (
                 id SERIAL PRIMARY KEY,
@@ -113,41 +114,13 @@ async def create_room_modes_tables(pool: "Pool") -> None:
                 mode_id INTEGER REFERENCES room_modes(id) NOT NULL,
                 submode_id INTEGER REFERENCES flower_submodes(id),  -- NULL for non-Flower modes
 
-                -- Schedule parameters
+                -- Photoperiod parameters
                 day_start_time TIME NOT NULL DEFAULT '17:00',
                 night_start_time TIME NOT NULL DEFAULT '11:00',
-                ramp_up_minutes INTEGER NOT NULL DEFAULT 30,
-                ramp_down_minutes INTEGER NOT NULL DEFAULT 30,
-                pre_day_minutes INTEGER NOT NULL DEFAULT 30,
-                pre_night_minutes INTEGER NOT NULL DEFAULT 30,
+
+                -- Light ramp parameters
                 light_ramp_up_minutes INTEGER NOT NULL DEFAULT 15,
                 light_ramp_down_minutes INTEGER NOT NULL DEFAULT 15,
-
-                -- Pre-Day setpoints
-                pre_day_heat_temp REAL NOT NULL DEFAULT 22.0,
-                pre_day_cool_temp REAL NOT NULL DEFAULT 26.0,
-                pre_day_vpd REAL NOT NULL DEFAULT 0.9,
-                pre_day_co2 INTEGER NOT NULL DEFAULT 700,
-
-                -- Day setpoints
-                day_heat_temp REAL NOT NULL DEFAULT 24.0,
-                day_cool_temp REAL NOT NULL DEFAULT 28.0,
-                day_vpd REAL NOT NULL DEFAULT 1.0,
-                day_co2 INTEGER NOT NULL DEFAULT 800,
-                day_leaf_delta REAL NOT NULL DEFAULT -2.0,
-
-                -- Pre-Night setpoints
-                pre_night_heat_temp REAL NOT NULL DEFAULT 22.0,
-                pre_night_cool_temp REAL NOT NULL DEFAULT 26.0,
-                pre_night_vpd REAL NOT NULL DEFAULT 0.9,
-                pre_night_co2 INTEGER NOT NULL DEFAULT 700,
-
-                -- Night setpoints
-                night_heat_temp REAL NOT NULL DEFAULT 20.0,
-                night_cool_temp REAL NOT NULL DEFAULT 24.0,
-                night_vpd REAL NOT NULL DEFAULT 0.8,
-                night_co2 INTEGER NOT NULL DEFAULT 600,
-                night_leaf_delta REAL NOT NULL DEFAULT -1.0,
 
                 -- Light intensity (percentage)
                 main_light_intensity INTEGER NOT NULL DEFAULT 100,

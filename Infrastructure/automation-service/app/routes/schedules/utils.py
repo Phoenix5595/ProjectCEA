@@ -45,10 +45,7 @@ async def _build_schedule_state(
     # Get room schedule
     room_schedule = await database.schedule_repo.get_room_schedule(location, cluster)
 
-    # Get climate schedule
-    climate_schedule = await database.schedule_repo.get_climate_schedule(location, cluster)
-
-    # Get climate periods for setpoints
+    # Get climate periods for setpoints (climate_periods replaced legacy climate schedule)
     periods = await database.climate_periods_repo.get_periods(location, cluster)
     periods_data = []
     for period in periods:
@@ -99,12 +96,7 @@ async def _build_schedule_state(
             "ramp_down_duration": room_data.get("ramp_down_duration", 15) or 15,
         },
         "climate": {
-            "pre_day_duration": climate_schedule.get("pre_day_duration", 0)
-            if climate_schedule
-            else 0,
-            "pre_night_duration": climate_schedule.get("pre_night_duration", 0)
-            if climate_schedule
-            else 0,
+            # Legacy pre_day/pre_night fields removed - system now uses climate_periods
         },
         "periods": periods_data,
         "lights": lights,
