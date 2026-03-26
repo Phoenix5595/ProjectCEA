@@ -1,45 +1,21 @@
-"""Hardware Batch Executor for parallel I2C operations.
+"""Hardware Batch Executor for sequential I2C operations.
 
-This module enables parallel execution of I2C hardware operations across
-different devices while maintaining critical sequencing constraints within
-each device's operation chain.
+This module provides sequential execution of I2C hardware operations with
+critical sequencing constraints within each device's operation chain.
 
 Key Design Principles:
-- Parallelize ACROSS devices (different lights can be controlled simultaneously)
-- Sequence WITHIN device chains (relay ON before dimmer for light ON, etc.)
-- Feature flag PARALLEL_I2C controls parallel vs sequential execution
+- Sequential execution across all devices (deterministic, safe)
+- Sequence within device chains (relay ON before dimmer for light ON, etc.)
 - 500ms timeout per operation chain to prevent control loop stalls
 """
 
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from shared.infra_logging import get_logger
-
-if TYPE_CHECKING:
-    pass
-
-_feature_flags_available = False
-_get_flag_func: Callable[[str, bool], bool] | None = None
-
-try:
-    from app.feature_flags import get_flag as _imported_get_flag
-
-    _feature_flags_available = True
-    _get_flag_func = _imported_get_flag
-except ImportError:
-    pass
-
-
-def get_flag(name: str, default: bool = False) -> bool:
-    if _get_flag_func is not None:
-        return _get_flag_func(name, default)
-    return default
-
 
 logger = get_logger(__name__)
 
@@ -75,7 +51,6 @@ class DeviceOperationChain:
     """A chain of operations for a single device.
 
     Operations within a chain are executed sequentially (order matters).
-    Different chains can be executed in parallel.
     """
 
     device_key: str  # "location/cluster/device_name"
@@ -98,11 +73,10 @@ class BatchResult:
     failure_count: int = 0
     results: dict[str, bool] = field(default_factory=dict)  # device_key -> success
     errors: dict[str, str] = field(default_factory=dict)  # device_key -> error message
-    timing_ms: float = 0.0  # Total execution time in milliseconds
 
 
 class HardwareBatchExecutor:
-    """Batches and parallelizes I2C hardware operations across devices.
+    """Batches and executes I2C hardware operations sequentially across devices.
 
     Usage:
         executor = HardwareBatchExecutor()
@@ -115,10 +89,6 @@ class HardwareBatchExecutor:
         - Light ON: relay ON first, THEN dimmer set (power before signal)
         - Light OFF: dimmer 0 first, THEN relay OFF (signal before power)
         - Binary device: single relay operation
-
-    Parallelization:
-        - When PARALLEL_I2C flag is True: all chains execute in parallel
-        - When PARALLEL_I2C flag is False: chains execute sequentially (safe mode)
     """
 
     def __init__(self) -> None:
@@ -335,79 +305,40 @@ class HardwareBatchExecutor:
         return True, None
 
     async def execute(self) -> BatchResult:
-        """Execute all queued operations.
-
-        When PARALLEL_I2C flag is True: all device chains execute in parallel.
-        When PARALLEL_I2C flag is False: chains execute sequentially (safe mode).
+        """Execute all queued operations sequentially.
 
         Returns:
             BatchResult with success/failure counts and per-device results
         """
-        import time
-
-        start_time = time.perf_counter()
         result = BatchResult()
 
         if not self._chains:
             logger.debug("No operations queued, nothing to execute")
             return result
 
-        parallel_mode = get_flag("PARALLEL_I2C", default=False)
         chain_list = list(self._chains.values())
 
-        logger.debug(
-            f"Executing {len(chain_list)} device chains in "
-            f"{'parallel' if parallel_mode else 'sequential'} mode"
-        )
+        logger.debug(f"Executing {len(chain_list)} device chains sequentially")
 
-        if parallel_mode:
-            # Parallel execution across all chains
-            tasks = [self._execute_chain(chain) for chain in chain_list]
-            chain_results = await asyncio.gather(*tasks, return_exceptions=True)
-
-            for chain, chain_result in zip(chain_list, chain_results, strict=False):
-                if isinstance(chain_result, BaseException):
-                    result.failure_count += 1
-                    result.results[chain.device_key] = False
-                    result.errors[chain.device_key] = str(chain_result)
-                elif isinstance(chain_result, tuple):
-                    success, error = chain_result
-                    if success:
-                        result.success_count += 1
-                        result.results[chain.device_key] = True
-                    else:
-                        result.failure_count += 1
-                        result.results[chain.device_key] = False
-                        result.errors[chain.device_key] = error or "Unknown error"
+        # Sequential execution (safe mode)
+        for chain in chain_list:
+            try:
+                success, error = await self._execute_chain(chain)
+                if success:
+                    result.success_count += 1
+                    result.results[chain.device_key] = True
                 else:
                     result.failure_count += 1
                     result.results[chain.device_key] = False
-                    result.errors[chain.device_key] = (
-                        f"Unexpected result type: {type(chain_result)}"
-                    )
-        else:
-            # Sequential execution (safe mode)
-            for chain in chain_list:
-                try:
-                    success, error = await self._execute_chain(chain)
-                    if success:
-                        result.success_count += 1
-                        result.results[chain.device_key] = True
-                    else:
-                        result.failure_count += 1
-                        result.results[chain.device_key] = False
-                        result.errors[chain.device_key] = error or "Unknown error"
-                except Exception as e:
-                    result.failure_count += 1
-                    result.results[chain.device_key] = False
-                    result.errors[chain.device_key] = str(e)
-
-        elapsed_ms = (time.perf_counter() - start_time) * 1000
-        result.timing_ms = elapsed_ms
+                    result.errors[chain.device_key] = error or "Unknown error"
+            except Exception as e:
+                result.failure_count += 1
+                result.results[chain.device_key] = False
+                result.errors[chain.device_key] = str(e)
 
         logger.info(
             f"Batch execution complete: {result.success_count} success, "
-            f"{result.failure_count} failures in {elapsed_ms:.1f}ms"
+            f"{result.failure_count} failures"
         )
 
         # Clear chains after execution

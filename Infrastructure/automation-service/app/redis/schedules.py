@@ -5,6 +5,11 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING, Any
 
+from app.redis.schema import (
+    get_with_backward_compat,
+    schedule_key,
+    set_with_backward_compat,
+)
 from shared.infra_logging import get_logger
 
 if TYPE_CHECKING:
@@ -26,9 +31,16 @@ class SchedulesMixin:
             return False
 
         try:
-            state_key = f"schedule:state:{location}:{cluster}"
-            self.redis_client.set(state_key, json.dumps(schedule_data))
-            logger.info(f"Wrote schedule state to Redis: {state_key}")
+            set_with_backward_compat(
+                self.redis_client,
+                "schedule:state:{location}:{cluster}",
+                schedule_key,
+                json.dumps(schedule_data),
+                None,
+                location=location,
+                cluster=cluster,
+            )
+            logger.info(f"Wrote schedule state to Redis for {location}/{cluster}")
             return True
         except Exception as e:
             logger.warning(f"Error writing schedule state to Redis: {e}")
@@ -39,8 +51,13 @@ class SchedulesMixin:
             return None
 
         try:
-            state_key = f"schedule:state:{location}:{cluster}"
-            state_data = self.redis_client.get(state_key)
+            state_data = get_with_backward_compat(
+                self.redis_client,
+                "schedule:state:{location}:{cluster}",
+                schedule_key,
+                location=location,
+                cluster=cluster,
+            )
 
             if state_data:
                 return json.loads(str(state_data))

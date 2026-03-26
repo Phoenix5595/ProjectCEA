@@ -159,7 +159,9 @@ class BackgroundTasks:
 
                 # Try to read first register to detect sensor
                 try:
-                    registers = temp_modbus.read_holding_registers(modbus_id, 0x0000, 1)
+                    registers = await asyncio.to_thread(
+                        temp_modbus.read_holding_registers, modbus_id, 0x0000, 1
+                    )
                     if registers is not None:
                         # Found a new sensor!
                         logger.info(f"Discovered new sensor at Modbus ID {modbus_id}")
@@ -256,7 +258,7 @@ class BackgroundTasks:
 
             try:
                 # Read all parameters
-                readings = reader.read_all_parameters()
+                readings = await asyncio.to_thread(reader.read_all_parameters)
 
                 if readings:
                     # Store in database

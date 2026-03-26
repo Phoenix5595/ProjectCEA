@@ -5,6 +5,11 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING
 
+from app.redis.schema import (
+    get_with_backward_compat,
+    heartbeat_key,
+    set_with_backward_compat,
+)
 from shared.infra_logging import get_logger
 
 if TYPE_CHECKING:
@@ -32,7 +37,6 @@ class HeartbeatMixin:
             return False
 
         try:
-            heartbeat_key = f"heartbeat:{service_name}"
             timestamp_ms = int(datetime.now().timestamp() * 1000)
 
             # TTL depends on service type
@@ -43,7 +47,14 @@ class HeartbeatMixin:
             else:
                 ttl = 5  # Default 5 seconds
 
-            self.redis_client.setex(heartbeat_key, ttl, str(timestamp_ms))
+            set_with_backward_compat(
+                self.redis_client,
+                "heartbeat:{service_name}",
+                heartbeat_key,
+                str(timestamp_ms),
+                ttl,
+                service_name,
+            )
             return True
         except Exception as e:
             logger.debug(f"Error writing heartbeat: {e}")
@@ -65,8 +76,12 @@ class HeartbeatMixin:
             return False, None
 
         try:
-            heartbeat_key = f"heartbeat:{service_name}"
-            heartbeat_str = self.redis_client.get(heartbeat_key)
+            heartbeat_str = get_with_backward_compat(
+                self.redis_client,
+                "heartbeat:{service_name}",
+                heartbeat_key,
+                service_name,
+            )
 
             if heartbeat_str is None:
                 return False, None

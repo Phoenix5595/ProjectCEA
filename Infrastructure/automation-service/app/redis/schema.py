@@ -1,5 +1,11 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    import redis as redis_lib
+
 """Redis key schema constants for ProjectCEA automation service."""
 OLD_KEY_PATTERNS: list[str] = [
     # Sensor last-good values
@@ -123,6 +129,49 @@ def heartbeat_key(service_name: str) -> str:
     return build_key("heartbeat", None, None, service_name)
 
 
+# Backward-compatibility helpers for gradual key migration
+def get_with_backward_compat(
+    redis_client: redis_lib.Redis,
+    old_key_pattern: str,
+    new_key_func: Callable[..., str],
+    *args: Any,
+    **kwargs: Any,
+) -> Any:
+    # Try new key first
+    new_key = new_key_func(*args, **kwargs)
+    value = redis_client.get(new_key)
+    if value:
+        return value
+
+    # Fall back to old key
+    old_key = old_key_pattern.format(*args, **kwargs)
+    return redis_client.get(old_key)
+
+
+def set_with_backward_compat(
+    redis_client: redis_lib.Redis,
+    old_key_pattern: str,
+    new_key_func: Callable[..., str],
+    value: str | bytes,
+    ttl: int | None = None,
+    *args: Any,
+    **kwargs: Any,
+) -> None:
+    # Write to new key (primary)
+    new_key = new_key_func(*args, **kwargs)
+    if ttl:
+        redis_client.setex(new_key, ttl, value)
+    else:
+        redis_client.set(new_key, value)
+
+    # Also write to old key for backward compat
+    old_key = old_key_pattern.format(*args, **kwargs)
+    if ttl:
+        redis_client.setex(old_key, ttl, value)
+    else:
+        redis_client.set(old_key, value)
+
+
 # Exported __all__ for explicit API
 __all__ = [
     "OLD_KEY_PATTERNS",
@@ -139,4 +188,6 @@ __all__ = [
     "alarm_key",
     "pid_key",
     "heartbeat_key",
+    "get_with_backward_compat",
+    "set_with_backward_compat",
 ]

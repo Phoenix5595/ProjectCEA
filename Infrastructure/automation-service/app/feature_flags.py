@@ -26,7 +26,6 @@ class FeatureFlagManager:
 
     # Define all available flags with their descriptions
     FLAG_DEFINITIONS: dict[str, str] = {
-        "PARALLEL_I2C": "Enable parallel I2C operations for improved performance",
         "FAST_DFR0971_RETRIES": "Enable fast retry logic for DFR0971 dimming boards",
         "REDIS_BATCH_SENSORS": "Enable batch processing of sensor data in Redis",
     }

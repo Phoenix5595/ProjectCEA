@@ -13,11 +13,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from app.config import ConfigLoader
 from app.database import DatabaseManager
 from app.redis_client import AutomationRedisClient
+from app.schemas.schedules import ScheduleCreate, ScheduleUpdate
 
 # Local imports
 from shared.infra_logging import get_logger
 
-from .models import ScheduleCreate, ScheduleUpdate
 from .utils import (
     _build_schedule_state,
     _ensure_light_schedules_are_daily,

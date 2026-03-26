@@ -3,14 +3,35 @@
 This module provides the StateManager class for in-memory state management
 with TTL (time-to-live) support and Redis fallback for cross-service visibility.
 
-Usage:
+DATA FLOW (Source of Truth):
+============================
+Redis is the source of truth for most data. StateManager is a read-through cache.
+
+| Data Type          | Source of Truth | StateManager Role          |
+|--------------------|-----------------|----------------------------|
+| Effective Setpoints| Redis           | Cache only (DEAD CODE - see below) |
+| Schedules          | PostgreSQL      | Cache-aside (populated on read) |
+| Modes              | Redis           | Dual-write (cache + Redis) |
+| PID params         | Redis           | Dual-write (cache + Redis) |
+| Ramp state         | Redis           | Dual-write (cache + Redis) |
+| Alarms/Failsafe    | Redis           | Dual-write (no TTL)        |
+
+IMPORTANT: SetpointRepository writes effective_setpoints directly to Redis via
+redis_client.write_effective_setpoints(). StateManager.get_effective_setpoints()
+and set_effective_setpoints() are DEAD CODE - never called by production code.
+They are removed to eliminate confusion.
+
+Schedules use cache-aside: DB is source, StateManager caches on read,
+invalidation happens via event bus + direct delete on write.
+
+USAGE:
     from app.state import StateManager
 
     state = StateManager(default_ttl=60.0, max_entries=1000)
     await state.set_redis_client(redis_client)
     await state.initialize_from_redis()
 
-    # Get/set values
+    # Get/set values (dual-write to Redis by default)
     value = await state.get("some:key")
     await state.set("some:key", {"data": "value"}, ttl=120.0)
     await state.delete("some:key")
@@ -530,81 +551,6 @@ class StateManager(SchemaValidationMixin):
         """Delete mode for a specific location/cluster from cache and Redis."""
         key = f"mode:{location}:{cluster}"
         return await self.delete(key)
-
-    # ------------------------------------------------------------------
-    # Effective setpoint API (Redis-backed)
-    # ------------------------------------------------------------------
-    async def get_effective_setpoints(
-        self, location: str, cluster: str
-    ) -> dict[str, float | None] | None:
-        """Get effective (computed) setpoints for a location/cluster.
-
-        Returns dictionary with keys:
-          - heating_setpoint
-          - cooling_setpoint
-          - humidity
-          - co2
-          - vpd
-        TTL: 300s for the Redis keys.
-        """
-        try:
-            prefix = f"effective_setpoint:{location}:{cluster}"
-            heat = await self.get(f"{prefix}:heating_setpoint")
-            cool = await self.get(f"{prefix}:cooling_setpoint")
-            hum = await self.get(f"{prefix}:humidity")
-            co2 = await self.get(f"{prefix}:co2")
-            vpd = await self.get(f"{prefix}:vpd")
-
-            if heat is None and cool is None and hum is None and co2 is None and vpd is None:
-                return None
-
-            result: dict[str, float | None] = {
-                "heating_setpoint": float(heat) if heat is not None else None,
-                "cooling_setpoint": float(cool) if cool is not None else None,
-                "humidity": float(hum) if hum is not None else None,
-                "co2": float(co2) if co2 is not None else None,
-                "vpd": float(vpd) if vpd is not None else None,
-            }
-            return result
-        except Exception as e:
-            logger.debug(
-                f"StateManager: get_effective_setpoints error for {location}/{cluster}: {e}"
-            )
-            return None
-
-    async def set_effective_setpoints(
-        self,
-        location: str,
-        cluster: str,
-        heating_setpoint: float | None = None,
-        cooling_setpoint: float | None = None,
-        humidity: float | None = None,
-        co2: float | None = None,
-        vpd: float | None = None,
-        mode: str | None = None,
-    ) -> None:
-        """Set effective setpoints for a location/cluster with TTL 300s.
-
-        Writes keys under effective_setpoint:<location>:<cluster> with TTL 300s.
-        Only the provided values are written.
-        """
-        try:
-            ttl = 300
-            prefix = f"effective_setpoint:{location}:{cluster}"
-            if heating_setpoint is not None:
-                await self.set(f"{prefix}:heating_setpoint", float(heating_setpoint), ttl=ttl)
-            if cooling_setpoint is not None:
-                await self.set(f"{prefix}:cooling_setpoint", float(cooling_setpoint), ttl=ttl)
-            if humidity is not None:
-                await self.set(f"{prefix}:humidity", float(humidity), ttl=ttl)
-            if co2 is not None:
-                await self.set(f"{prefix}:co2", float(co2), ttl=ttl)
-            if vpd is not None:
-                await self.set(f"{prefix}:vpd", float(vpd), ttl=ttl)
-        except Exception as e:
-            logger.warning(
-                f"StateManager: set_effective_setpoints error for {location}/{cluster}: {e}"
-            )
 
     async def clear(self) -> int:
         """Clear all entries from the cache.

@@ -5,10 +5,15 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
 
 from app.config import ConfigLoader
 from app.database import DatabaseManager
+from app.schemas.lights import (
+    IntensityControl,
+    ScheduleTimeControl,
+    TargetIntensityControl,
+    VoltageControl,
+)
 from shared.infra_logging import get_logger
 
 if TYPE_CHECKING:
@@ -20,20 +25,6 @@ if TYPE_CHECKING:
 router = APIRouter()
 
 logger = get_logger(__name__)
-
-
-class IntensityControl(BaseModel):
-    """Intensity control request."""
-
-    intensity: float  # 0-100%
-    duration: float | None = None  # Optional ramp duration (for future use)
-
-
-class VoltageControl(BaseModel):
-    """Voltage control request."""
-
-    voltage: float  # 0-10V
-    duration: float | None = None  # Optional ramp duration (for future use)
 
 
 # These will be overridden by main app
@@ -329,15 +320,6 @@ async def set_voltage(
         "board_id": board_id,
         "channel": channel,
     }
-
-
-class TargetIntensityControl(BaseModel):
-    target_intensity: float
-
-
-class ScheduleTimeControl(BaseModel):
-    start_time: str
-    end_time: str
 
 
 @router.post("/api/lights/{location}/{cluster}/{device_name}/target")

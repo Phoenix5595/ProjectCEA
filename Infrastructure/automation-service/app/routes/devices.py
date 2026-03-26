@@ -5,39 +5,24 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
 import yaml
 
 from app.config import ConfigLoader
 from app.control.relay_manager import RelayManager
 from app.database import DatabaseManager
+from app.schemas.device import (
+    ChannelDeviceUpdate,
+    DeviceConfigUpdate,
+    DeviceControlRequest,
+    DeviceMappingUpdate,
+    DeviceModeRequest,
+)
 from app.validation import validate_device_mapping
 from shared.infra_logging import get_logger
 
 logger = get_logger(__name__)
 
 router = APIRouter()
-
-
-class DeviceControlRequest(BaseModel):
-    state: int  # 0 = OFF, 1 = ON
-    reason: str | None = "Manual override"
-
-
-class DeviceModeRequest(BaseModel):
-    mode: str  # 'manual', 'auto', 'scheduled'
-
-
-class DeviceMappingUpdate(BaseModel):
-    channel: int
-    active_high: bool = True
-    safe_state: int = 0
-    mcp_board_id: int | None = None
-
-
-class DeviceConfigUpdate(BaseModel):
-    display_name: str | None = None
-    device_type: str | None = None
 
 
 # These will be overridden by main app
@@ -187,10 +172,6 @@ async def control_device(
     if not success:
         raise HTTPException(status_code=400, detail=reason or "Failed to set device state")
 
-    # Update database
-    await database.device_repo.set_device_state(
-        location, cluster, device, channel, bool(request.state), "manual"
-    )
     await database.control_action_repo.log_control_action(
         location,
         cluster,
@@ -503,14 +484,6 @@ async def get_all_channels(config: ConfigLoader = Depends(get_config)) -> dict[s
                     }
 
     return {"channels": channels, "light_names": light_names}
-
-
-class ChannelDeviceUpdate(BaseModel):
-    device_name: str
-    device_type: str
-    location: str
-    cluster: str
-    light_name: str | None = None  # If device_type is "light", specify which light
 
 
 @router.post("/api/devices/channels/{channel}")

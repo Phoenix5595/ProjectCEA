@@ -3,9 +3,11 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
 
 from app.database import DatabaseManager
+from app.schemas.climate_periods import (
+    PeriodsSaveRequest,
+)
 
 
 def get_database() -> DatabaseManager:
@@ -14,30 +16,6 @@ def get_database() -> DatabaseManager:
 
 
 router = APIRouter(prefix="/api/climate-periods", tags=["climate-periods"])
-
-
-class PeriodInput(BaseModel):
-    period_name: str
-    start_time: str
-    end_time: str
-    ramp_minutes: int = 0
-    heating_setpoint: float | None = None
-    cooling_setpoint: float | None = None
-    vpd_setpoint: float | None = None
-    co2_setpoint: int | None = None
-    details: str | None = None
-
-
-class PeriodsSaveRequest(BaseModel):
-    periods: list[PeriodInput]
-    mode_id: int
-    submode_id: int | None = None
-
-
-class MigrationRequest(BaseModel):
-    mode_name: str = "Flower"
-    submode_name: str | None = None
-    dry_run: bool = True
 
 
 @router.get("/{location}/{cluster}")

@@ -6,7 +6,7 @@ React + TypeScript frontend for the CEA (Controlled Environment Agriculture) gre
 
 - **Real-time Dashboard**: View sensor data (temperature, humidity, CO₂, VPD) and device states via WebSocket
 - **Zone-based Configuration**: Edit setpoints, PID parameters, and schedules per zone
-- **Mode-aware Setpoints**: Configure different setpoints for DAY/NIGHT/TRANSITION modes
+- **Climate Periods**: Configure named climate periods with start/end times and ramp_minutes
 - **VPD Control**: Set VPD setpoints that control dehumidifying devices (fans, dehumidifiers)
 - **Schedule Management**: Create, edit, and delete schedules with conflict detection
 - **PID Parameter Editing**: Configure PID parameters for heaters and CO₂ systems
@@ -115,12 +115,6 @@ src/
 - `DELETE /api/schedules/{id}` - Delete schedule
 - `GET /api/mode/{location}/{cluster}` - Get mode
 - `WebSocket /ws` - Real-time updates
-
-## Setpoint Timeline Behavior
-
-- Timeline runs fixed 00:00 → 24:00.
-- PRE_DAY and PRE_NIGHT setpoints/ramp-in take precedence during their periods; DAY lines do not render inside those periods.
-- Ramp-in is shown as a diagonal from the previous period value to the new period value over the configured minutes.
 
 ## Validation
 
