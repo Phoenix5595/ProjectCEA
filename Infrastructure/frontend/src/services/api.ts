@@ -240,6 +240,23 @@ class ApiClient {
     return response.data;
   }
 
+  /** All dimmable lights in zone in one request (avoids N sequential status calls for LightIntensity). */
+  async getZoneLightsStatus(location: string, cluster: string): Promise<{
+    lights: Array<{
+      device: string;
+      display_name?: string;
+      intensity: number;
+      target_intensity?: number | null;
+      day_target_intensity?: number | null;
+      voltage?: number;
+      board_id?: string;
+      channel?: number;
+    }>;
+  }> {
+    const response = await this.automationClient.get(`/api/lights/${location}/${cluster}/zone-status`);
+    return response.data;
+  }
+
   async setLightIntensity(location: string, cluster: string, deviceName: string, intensity: number): Promise<LightStatus> {
     const response = await this.automationClient.post(`/api/lights/${location}/${cluster}/${deviceName}/target`, {
       target_intensity: intensity

@@ -1,7 +1,8 @@
 # Frontend Requirements (CEA)
 
 - Use Node.js 18+ and npm; run `npm run build` for production.
-- After every production build, restart `automation-service.service` to serve updated `dist/`.
+- **Where `dist/` is served from**: `automation-service` runs with `WorkingDirectory=/opt/projectcea/current/Infrastructure/automation-service` (systemd override). Static files are resolved next to that tree: `/opt/projectcea/current/Infrastructure/frontend/dist/`. Building only under `~/ProjectCEA/...` does **not** update the live UI until you either run **`./deploy.sh`** (recommended) or sync: `rsync -a --delete ~/ProjectCEA/Infrastructure/frontend/dist/ /opt/projectcea/current/Infrastructure/frontend/dist/`, then restart `automation-service`.
+- After syncing or deploying, restart `automation-service.service` so the process picks up the new `dist/`.
 - Timeline rendering (`ClimatePeriodTimeline`):
   - 00:00 → 24:00 fixed axis; hour grid; **now** marker.
   - **Climate setpoints** come from **`climate_periods`** (named periods, `ramp_minutes` per period). No fixed PRE_DAY / PRE_NIGHT / DAY / NIGHT ladder in the UI.
@@ -13,5 +14,6 @@
 - ZoneConfig SAVE: (1) `PUT` mode parameters, (2) `POST` room-schedule for photoperiod + **light** ramps, (3) `POST` `/api/climate-periods/{location}/{cluster}` for period rows.
 - **Ramp field split (critical)**: Only **`light_ramp_up_minutes` / `light_ramp_down_minutes`** feed **`POST /api/room-schedule`** as `ramp_up_duration` / `ramp_down_duration`. Do **not** send `ramp_up_minutes` / `ramp_down_minutes` for that POST. Climate ramps are **`climate_periods.ramp_minutes`** per period.
 - **Automation dashboard**: Shows weather data from the weather service (Quebec City, CYQB) in the **top-right** of the sticky header; label "Quebec City". System stats (CPU, memory, disk, uptime, load avg, process count, service health, Pi temp/throttle) use real data from automation-service `/api/status` when available; show "—" or "Unavailable" when data is missing or API fails (no mock/placeholder numbers).
-- ZoneConfig **light intensity** UI is the `LightIntensity` component (`src/components/LightIntensity.tsx`); section label **Light intensity** (not the old generic "Lights" only).
+- ZoneConfig **light intensity** UI is the `LightIntensity` component (`src/components/LightIntensity.tsx`); section label **Light intensity** (not the old generic "Lights" only). It loads via **`GET /api/lights/{location}/{cluster}/zone-status`** (one round-trip). Backend still lists dimmable lights when hardware read fails (defaults CUR to 0). If zone-status is empty or errors, the UI falls back to **`getLightsForZone` + `getSchedules` + per-device `getLightStatus`** (legacy path).
+- **Light schedule (`CircularTimePicker`)**: **Wide** panel when the picker container is at least ~480px wide — clock left, Start/End/Ramps/Photoperiod in a **right column**. **Narrow** panel (under ~480px): controls **below** the dial in **two rows** (row 1: Start & End; row 2: Ramp ↑, Ramp ↓, Photoperiod). Tighter spacing (`p-1` / `gap-1` on ZoneConfig card and within the picker); **do not** shrink field font sizes from the original (`text-[16px]` time/ramp inputs, `text-[12px]` labels, `text-sm` photoperiod value). Tune `STACK_LAYOUT_MAX_WIDTH_PX` in `CircularTimePicker.tsx` if the switch happens too early (lower the number) or too late (raise it). `ResizeObserver` measures the clock cell only for canvas size.
 
