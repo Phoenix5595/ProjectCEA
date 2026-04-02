@@ -94,35 +94,6 @@ class ClimatePeriodResolver:
             "time_str": time_str,
         }
 
-    def calculate_is_sun(
-        self, light_schedule: dict[str, Any] | None, current_time: datetime
-    ) -> bool:
-        """Calculate if current time is within sun window.
-
-        Args:
-            light_schedule: Light schedule dict with day_start_time and day_end_time
-            current_time: Current timestamp
-
-        Returns:
-            True if within sun window, False otherwise
-        """
-        if not light_schedule or not isinstance(light_schedule, dict):
-            return False
-
-        sun_start = light_schedule.get("day_start_time")
-        sun_end = light_schedule.get("day_end_time")
-
-        if not sun_start or not sun_end:
-            return False
-
-        try:
-            from .scheduler import is_time_in_range
-
-            parts_s = sun_start.split(":")
-            parts_e = sun_end.split(":")
-            sun_start_min = int(parts_s[0]) * 60 + int(parts_s[1])
-            sun_end_min = int(parts_e[0]) * 60 + int(parts_e[1])
-            current_min = current_time.hour * 60 + current_time.minute
-            return is_time_in_range(current_min, sun_start_min, sun_end_min)
-        except (ValueError, IndexError):
-            return False
+    def calculate_is_sun(self, current_time: datetime, location: str, cluster: str) -> bool:
+        """Calculate if current time is within photoperiod for a room/cluster."""
+        return self.scheduler.is_in_photoperiod(location, cluster, current_time)

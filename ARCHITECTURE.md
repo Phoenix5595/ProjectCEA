@@ -338,6 +338,12 @@ Sensor Data → can-processor → Queue → Batch Write → TimescaleDB → API 
 Sensor Change → Redis → Backend WebSocket → Frontend React → Re-render
 ```
 
+### Layer responsibilities & frontend data-fetching
+
+- **Ingestion (`can-processor-service`)**: `DataWriter` must keep Redis/stream writes on the hot path; TimescaleDB writes go through the batch queue. Device and sensor ID resolution uses in-memory caches; batch flush should **prefetch** missing IDs (or bulk-resolve) so the flush loop does not execute repeated per-row `SELECT` lookups on cache misses.
+- **Automation (`automation-service`)**: `ControlEngine` coordinates the control tick (sensor read → climate/setpoint resolution → device processing → telemetry). `DeviceProcessor` applies per-cluster device and PID logic. Refactors should **extract named phases** (e.g. hierarchy cache, effective-setpoint logging) behind small modules or protocols without changing loop timing or safety ordering.
+- **Frontend (React SPA)**: **Weather** (Quebec City / CYQB) is loaded where the UI consumes it (e.g. `Dashboard` header interval). **`useSensorPolling`** owns initial devices, bulk setpoint keys, per-zone live sensors, and control history — it must **not** issue HTTP calls whose responses are unused (no duplicate weather or system-status fetches unless results update hook state). **`useSystemStatus`** owns automation-service `/api/status` for the system panel. **Manual light flows** should call **`getSchedules` once per zone** and derive per-light day targets from that list, not refetch schedules per light.
+
 ---
 
 ## Advanced Control Algorithms
@@ -525,7 +531,7 @@ hardware:
 **Rollback Strategy**:
 - **Target**: <30 seconds from detection to recovery
 - **Process**: Symlink switch + service restart
-- **Automation**: `./rollback.sh` handles all steps
+- **Automation**: `./rollback-deploy.sh` handles symlink + service restart
 - **Safety**: Previous release always available for instant rollback
 
 ### Service Management
@@ -812,7 +818,7 @@ automation-service.service (8001)
 ```bash
 # System Operations
 ./deploy.sh                    # Deploy new version
-./rollback.sh                   # Rollback to previous version
+./rollback-deploy.sh            # Rollback to previous release (see deploy_state.json)
 ./restart_all_services.sh       # Restart all services in order
 
 # Service Management

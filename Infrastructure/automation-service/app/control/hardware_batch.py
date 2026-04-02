@@ -73,6 +73,8 @@ class BatchResult:
     failure_count: int = 0
     results: dict[str, bool] = field(default_factory=dict)  # device_key -> success
     errors: dict[str, str] = field(default_factory=dict)  # device_key -> error message
+    # device_key -> light intent (location/cluster/device_name, board/channel, intensity percent)
+    light_intents: dict[str, dict[str, Any]] = field(default_factory=dict)
 
 
 class HardwareBatchExecutor:
@@ -94,6 +96,9 @@ class HardwareBatchExecutor:
     def __init__(self) -> None:
         """Initialize the batch executor."""
         self._chains: dict[str, DeviceOperationChain] = {}
+        # Track the *intended* final state for dimmable lights so callers can persist it
+        # (e.g., Redis/UI) after a successful batch run.
+        self._light_intents: dict[str, dict[str, Any]] = {}
 
     def _get_or_create_chain(
         self, location: str, cluster: str, device_name: str
@@ -132,6 +137,16 @@ class HardwareBatchExecutor:
             relay_channel: Optional relay channel (for power control)
         """
         chain = self._get_or_create_chain(location, cluster, device_name)
+        device_key = chain.device_key
+
+        self._light_intents[device_key] = {
+            "location": location,
+            "cluster": cluster,
+            "device_name": device_name,
+            "board_id": board_id,
+            "channel": dimming_channel,
+            "intensity_percent": int(intensity),
+        }
 
         # Step 1: Relay ON (power before signal)
         if relay_channel is not None and relay_manager is not None:
@@ -184,6 +199,16 @@ class HardwareBatchExecutor:
             relay_channel: Optional relay channel (for power control)
         """
         chain = self._get_or_create_chain(location, cluster, device_name)
+        device_key = chain.device_key
+
+        self._light_intents[device_key] = {
+            "location": location,
+            "cluster": cluster,
+            "device_name": device_name,
+            "board_id": board_id,
+            "channel": dimming_channel,
+            "intensity_percent": 0,
+        }
 
         # Step 1: Set dimmer to 0 (signal before power off)
         if dfr0971_manager is not None:
@@ -341,14 +366,19 @@ class HardwareBatchExecutor:
             f"{result.failure_count} failures"
         )
 
+        # Attach intents before clearing internal queues.
+        result.light_intents = dict(self._light_intents)
+
         # Clear chains after execution
         self._chains.clear()
+        self._light_intents.clear()
 
         return result
 
     def clear(self) -> None:
         """Clear all queued operations without executing."""
         self._chains.clear()
+        self._light_intents.clear()
 
     @property
     def pending_count(self) -> int:

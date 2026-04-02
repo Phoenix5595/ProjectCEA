@@ -6,6 +6,7 @@ import asyncio
 
 from app.alarm_manager import AlarmManager
 from app.control.control_engine import ControlEngine
+from app.control.schedule_merge import merge_schedules_with_config
 from app.database import DatabaseManager
 from shared.infra_logging import get_logger
 
@@ -324,10 +325,13 @@ class BackgroundTasks:
 
                         db_schedules = await self.database.schedule_repo.get_schedules()
                         if self.control_engine.scheduler:
-                            self.control_engine.scheduler.update_schedules(db_schedules)
+                            merged = merge_schedules_with_config(
+                                db_schedules, self.control_engine.config
+                            )
+                            self.control_engine.scheduler.update_schedules(merged)
                             logger.info(
                                 "Scheduler updated with "
-                                + f"{len(db_schedules)} schedules after config change event"
+                                + f"{len(merged)} schedules after config change event"
                             )
 
                     if event.event_type == ConfigEventType.SCHEDULE_CHANGED:
@@ -340,10 +344,13 @@ class BackgroundTasks:
 
                         db_schedules = await self.database.schedule_repo.get_schedules()
                         if self.control_engine.scheduler:
-                            self.control_engine.scheduler.update_schedules(db_schedules)
+                            merged = merge_schedules_with_config(
+                                db_schedules, self.control_engine.config
+                            )
+                            self.control_engine.scheduler.update_schedules(merged)
                             logger.info(
                                 "Scheduler updated with "
-                                + f"{len(db_schedules)} schedules after SCHEDULE_CHANGED event"
+                                + f"{len(merged)} schedules after SCHEDULE_CHANGED event"
                             )
 
                 except Exception as e:

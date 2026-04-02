@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { apiClient } from '../services/api'
 import { logger } from '../utils/logger'
+import type { Schedule } from '../types/schedule'
 
 interface ManualLightControlProps {
  location: string
@@ -116,11 +117,7 @@ export default function ManualLightControl({ location, cluster, compact = false 
  }, 60000) // Update every minute
  }
 
- async function getDayTargetIntensity(deviceName: string): Promise<number> {
- try {
- const schedules = await apiClient.getSchedules(location, cluster)
- 
- // Find the SUN/DAY schedule for this specific device (backend uses SUN for dimmable lights)
+ function dayTargetIntensityFromSchedules(schedules: Schedule[], deviceName: string): number {
  const daySchedule = schedules.find(
  s => s.device_name === deviceName &&
  (s.mode === 'SUN' || s.mode === 'DAY') &&
@@ -128,17 +125,10 @@ export default function ManualLightControl({ location, cluster, compact = false 
  s.target_intensity !== null &&
  s.target_intensity !== undefined
  )
- 
  if (daySchedule && daySchedule.target_intensity !== null && daySchedule.target_intensity !== undefined) {
  return daySchedule.target_intensity
  }
-
- // No day schedule found, default to 100%
  return 100
- } catch (err) {
- logger.error(`Error getting day target intensity for ${deviceName}:`, err)
- return 100 // Default to 100% on error
- }
  }
 
  async function turnOnLights(durationMinutes?: number) {
@@ -169,11 +159,17 @@ export default function ManualLightControl({ location, cluster, compact = false 
  }
  }
 
- // Turn on all lights with day target intensity
+ // One schedule fetch for the zone; derive per-light day targets locally
+ let schedules: Schedule[] = []
+ try {
+ schedules = await apiClient.getSchedules(location, cluster)
+ } catch (err) {
+ logger.error('ManualLightControl: Error loading schedules for turn on:', err)
+ }
+
  for (const light of lightDetails) {
  try {
- // Get day target intensity for this specific light
- const dayTargetIntensity = await getDayTargetIntensity(light.device_name)
+ const dayTargetIntensity = dayTargetIntensityFromSchedules(schedules, light.device_name)
  
  // Set intensity if dimming enabled
  if (light.dimming_enabled) {
@@ -289,11 +285,17 @@ export default function ManualLightControl({ location, cluster, compact = false 
  setActiveMode('auto')
  localStorage.setItem(activeModeStorageKey, 'auto')
 
+ let schedules: Schedule[] = []
+ try {
+ schedules = await apiClient.getSchedules(location, cluster)
+ } catch (err) {
+ logger.error('ManualLightControl: Error loading schedules for restore:', err)
+ }
+
  // Restore all lights: turn ON relay, set to day target intensity, then set mode to auto/scheduled
  for (const light of lightDetails) {
  try {
- // Get day target intensity for this specific light
- const dayTargetIntensity = await getDayTargetIntensity(light.device_name)
+ const dayTargetIntensity = dayTargetIntensityFromSchedules(schedules, light.device_name)
  
  // Set intensity if dimming enabled (set to day target)
  if (light.dimming_enabled) {

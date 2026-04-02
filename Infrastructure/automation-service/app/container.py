@@ -11,6 +11,7 @@ from app.background_tasks import BackgroundTasks
 from app.config import ConfigLoader
 from app.control.control_engine import ControlEngine
 from app.control.relay_manager import RelayManager
+from app.control.schedule_merge import merge_schedules_with_config
 from app.control.scheduler import Scheduler
 from app.database import DatabaseManager
 from app.hardware.dfr0971 import DFR0971Manager
@@ -115,11 +116,18 @@ class ServiceContainer:
             )
             logger.info("Relay manager initialized")
 
-            # 6. Initialize scheduler with schedules from database
+            # 6. Initialize scheduler with schedules from database (+ synthetic SUN rows from room_schedule)
             db_schedules = await self.database.schedule_repo.get_schedules()
-            self.scheduler = Scheduler(db_schedules)
+            control_schedules = merge_schedules_with_config(db_schedules, self.config)
+            self.scheduler = Scheduler(control_schedules)
             self.scheduler.set_climate_periods_repo(self.database.climate_periods_repo)
-            logger.info(f"Scheduler initialized with {len(db_schedules)} schedules")
+            synth_n = len(control_schedules) - len(db_schedules)
+            logger.info(
+                f"Scheduler initialized with {len(control_schedules)} schedules "
+                f"({len(db_schedules)} from DB"
+                + (f", {synth_n} synthetic from room_schedule" if synth_n else "")
+                + ")"
+            )
 
             # 7. Initialize rules engine
             # get_rules is not yet implemented in DatabaseManager

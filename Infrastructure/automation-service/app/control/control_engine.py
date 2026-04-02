@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 # Standard library imports
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Any
 
 from app.alarm_manager import AlarmManager
@@ -12,6 +12,8 @@ from app.config import ConfigLoader
 from app.control.climate_resolver import ClimatePeriodResolver
 from app.control.device_controller import DeviceController
 from app.control.device_processor import DeviceProcessor
+from app.control.engine_config_cache import EngineConfigCache
+from app.control.light_effective_setpoint_logging import log_light_effective_intensities_for_cluster
 from app.control.performance_monitor import get_performance_monitor
 from app.control.pid_controller_manager import PIDControllerManager
 from app.control.relay_manager import RelayManager
@@ -132,11 +134,8 @@ class ControlEngine:
         self._last_light_effective_log: dict[tuple[str, str, str], datetime] = {}
         self._light_effective_log_interval_sec = 60
 
-        # Performance optimizations
-        self._device_hierarchy_cache: dict[str, dict[str, dict[str, dict[str, Any]]]] | None = None
-        self._sensor_mapping_cache: dict[str, Any] | None = None
-        self._cache_timestamp: datetime | None = None
-        self._cache_ttl = timedelta(seconds=30)  # Cache for 30 seconds
+        # Config snapshot cache (device tree + sensor mapping, shared TTL)
+        self._config_cache = EngineConfigCache(ttl_seconds=30.0)
 
         # Performance profiling
         self._profiling_enabled = True
@@ -149,33 +148,6 @@ class ControlEngine:
         self._max_stats_history = 100  # Keep last 100 measurements
 
         logger.info("Control engine initialized")
-
-    def _get_device_hierarchy(self) -> dict[str, dict[str, dict[str, dict[str, Any]]]]:
-        """Get cached device hierarchy or refresh if expired."""
-        now = datetime.now()
-        if (
-            self._device_hierarchy_cache is None
-            or self._cache_timestamp is None
-            or now - self._cache_timestamp > self._cache_ttl
-        ):
-            self._device_hierarchy_cache = self.config.get_devices()
-            self._cache_timestamp = now
-            logger.debug("Refreshed device hierarchy cache")
-        return self._device_hierarchy_cache
-
-    def _get_sensor_mapping(self) -> dict[str, Any]:
-        """Get cached sensor mapping or refresh if expired."""
-        now = datetime.now()
-        if (
-            self._sensor_mapping_cache is None
-            or self._cache_timestamp is None
-            or now - self._cache_timestamp > self._cache_ttl
-        ):
-            self._sensor_mapping_cache = self.config.get_sensor_mapping()
-            if self._cache_timestamp is None:  # Only update if not already set
-                self._cache_timestamp = now
-            logger.debug("Refreshed sensor mapping cache")
-        return self._sensor_mapping_cache
 
     def _record_performance_stat(self, key: str, value: float) -> None:
         """Record a performance measurement."""
@@ -271,8 +243,8 @@ class ControlEngine:
         current_time = datetime.now()
 
         # Get cached device hierarchy and sensor mapping (performance optimization)
-        devices = self._get_device_hierarchy()
-        sensor_mapping = self._get_sensor_mapping()
+        devices = self._config_cache.get_device_hierarchy(self.config.get_devices)
+        sensor_mapping = self._config_cache.get_sensor_mapping(self.config.get_sensor_mapping)
 
         # Debug logging removed
 
@@ -303,7 +275,6 @@ class ControlEngine:
                 active_period = period_data["active_period"]
                 current_period_name = period_data["current_period_name"]
                 setpoint_data = period_data["setpoint_data"]
-                light_schedule = period_data["light_schedule"]
 
                 # Detect period transition for logging
                 period_key = (location, cluster)
@@ -355,7 +326,7 @@ class ControlEngine:
                 self._current_climate_mode[climate_mode_key] = current_mode
 
                 # Calculate is_sun for light control
-                is_sun = self.climate_resolver.calculate_is_sun(light_schedule, current_time)
+                is_sun = self.climate_resolver.calculate_is_sun(current_time, location, cluster)
 
                 # 6. Process devices (using extracted component)
                 await self.device_processor.process_devices(
@@ -370,7 +341,17 @@ class ControlEngine:
                     previous_climate_mode=previous_mode,
                 )
 
-                # Light intensity logging is done inline in run_control_loop
+                await log_light_effective_intensities_for_cluster(
+                    location=location,
+                    cluster=cluster,
+                    cluster_devices=cluster_devices,
+                    current_time=current_time,
+                    is_sun=is_sun,
+                    scheduler=self.scheduler,
+                    database=self.database,
+                    last_light_effective_log=self._last_light_effective_log,
+                    interval_sec=float(self._light_effective_log_interval_sec),
+                )
 
         # Log automation state for all devices
         await self._log_automation_state()

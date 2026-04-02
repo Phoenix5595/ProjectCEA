@@ -36,6 +36,8 @@ class DeviceController:
         self.relay_manager: RelayManager = relay_manager
         self.database: DatabaseManager = database_manager
         self.dfr0971_manager: DFR0971Manager | None = dfr0971_manager
+        self._last_light_command: dict[tuple[str, str, str], int] = {}
+        self._last_applied_light: dict[tuple[str, str, str], int] = {}
 
     async def process_device(
         self,
@@ -499,6 +501,17 @@ class DeviceController:
         try:
             # Convert 0.0-1.0 to 0-100% intensity
             intensity_percent = round(intensity * 100)
+            light_key = (location, cluster, device_name)
+
+            # Idempotent command handling: skip duplicate absolute commands.
+            prev_cmd = self._last_light_command.get(light_key)
+            if prev_cmd == intensity_percent:
+                logger.debug(
+                    f"Skipping duplicate light command for {device_name} "
+                    f"({location}/{cluster}) at {intensity_percent}%"
+                )
+                return
+            self._last_light_command[light_key] = intensity_percent
             relay_ok = True
             dimmer_ok = False
 
@@ -550,28 +563,28 @@ class DeviceController:
                         f"board={board_id} ch={dimming_channel}"
                     )
 
-            # Write to Redis only what hardware actually reflects so Grafana matches reality
+            # Keep last known good hardware level for hold-last behavior on failures.
             hw_ok = relay_ok and dimmer_ok
-            redis_percent = intensity_percent if hw_ok else 0
-            redis_voltage = (redis_percent / 100.0) * 10.0
-
-            if (
-                self.database
-                and hasattr(self.database, "_automation_redis")
-                and self.database._automation_redis
-            ):
-                try:
-                    self.database._automation_redis.write_light_intensity(
-                        location,
-                        cluster,
-                        device_name,
-                        redis_percent,
-                        redis_voltage,
-                        board_id,
-                        dimming_channel,
-                    )
-                except Exception as redis_err:
-                    logger.warning(f"Failed to write light intensity to Redis: {redis_err}")
+            if hw_ok:
+                self._last_applied_light[light_key] = intensity_percent
+                self.write_light_telemetry(
+                    location,
+                    cluster,
+                    device_name,
+                    intensity_percent,
+                    board_id,
+                    dimming_channel,
+                )
+            else:
+                hold_percent = self._last_applied_light.get(light_key, 0)
+                self.write_light_telemetry(
+                    location,
+                    cluster,
+                    device_name,
+                    hold_percent,
+                    board_id,
+                    dimming_channel,
+                )
 
             if hw_ok:
                 logger.debug(
@@ -581,23 +594,25 @@ class DeviceController:
             else:
                 logger.warning(
                     f"Hardware control failed for {device_name} ({location}/{cluster}); "
-                    f"Redis written as 0% so Grafana shows actual state"
+                    f"holding last known light state at {self._last_applied_light.get(light_key, 0)}%"
                 )
 
         except Exception as e:
             logger.error(f"Failed to set dimmable light {device_name}: {e}")
-            # On exception, write 0 to Redis so UI reflects unknown/off state
-            if (
-                self.database
-                and hasattr(self.database, "_automation_redis")
-                and self.database._automation_redis
-            ):
-                try:
-                    self.database._automation_redis.write_light_intensity(
-                        location, cluster, device_name, 0, 0.0, board_id, dimming_channel
-                    )
-                except Exception as redis_err:
-                    logger.warning(f"Failed to write 0 to Redis after error: {redis_err}")
+            light_key = (location, cluster, device_name)
+            hold_percent = self._last_applied_light.get(light_key, 0)
+            self.write_light_telemetry(
+                location,
+                cluster,
+                device_name,
+                hold_percent,
+                board_id,
+                dimming_channel,
+            )
+            logger.warning(
+                f"Exception while controlling {device_name}; "
+                f"holding last known light state at {hold_percent}%"
+            )
 
     async def _control_binary_device(
         self,
@@ -734,3 +749,32 @@ class DeviceController:
             status["dimmable_lights"] = getattr(self.dfr0971_manager, "get_status", lambda: {})()
 
         return status
+
+    def write_light_telemetry(
+        self,
+        location: str,
+        cluster: str,
+        device_name: str,
+        percent: int,
+        board_id: str | None,
+        channel: int | None,
+    ) -> None:
+        """Write light telemetry through a single Redis writer path."""
+        if not (
+            self.database
+            and hasattr(self.database, "_automation_redis")
+            and self.database._automation_redis
+        ):
+            return
+        safe_percent = int(max(0, min(100, percent)))
+        voltage = (safe_percent / 100.0) * 10.0
+        try:
+            self.database._automation_redis.write_light_intensity(
+                location, cluster, device_name, safe_percent, voltage, board_id, channel
+            )
+        except Exception as redis_err:
+            logger.warning(f"Failed to write light telemetry to Redis: {redis_err}")
+
+    def get_last_applied_light_percent(self, location: str, cluster: str, device_name: str) -> int:
+        """Return last known good applied percent for hold-last fallback."""
+        return int(self._last_applied_light.get((location, cluster, device_name), 0))

@@ -12,6 +12,18 @@ from __future__ import annotations
 from typing import Any
 
 
+def merge_schedules_with_config(
+    schedules: list[dict[str, Any]], config: Any
+) -> list[dict[str, Any]]:
+    """Expand DB schedules with synthetic SUN rows from ``room_schedule`` for DFR0971 lights.
+
+    Call this whenever loading schedules into ``Scheduler`` (startup, refresh events, API updates).
+    """
+    if config is None:
+        return list(schedules)
+    return expand_light_schedules_for_control(schedules, config.get_devices())
+
+
 def expand_light_schedules_for_control(
     schedules: list[dict[str, Any]],
     devices: dict[str, dict[str, dict[str, dict[str, Any]]]],

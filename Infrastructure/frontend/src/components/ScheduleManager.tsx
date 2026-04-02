@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { toast } from 'sonner'
 import { apiClient } from '../services/api'
 import { findConflicts } from '../utils/conflictDetection'
@@ -28,12 +28,14 @@ export default function ScheduleManager({ location, cluster }: ScheduleManagerPr
  })
 const [conflicts, setConflicts] = useState<string[]>([])
   const [versionConflict, setVersionConflict] = useState<string | null>(null)
+ const editingScheduleRef = useRef<Schedule | null>(null)
+ editingScheduleRef.current = editingSchedule
 
  useEffect(() => {
  loadSchedules()
  loadDevices()
  
- // Listen for schedule updates from WebSocket
+ // Listen for schedule updates from WebSocket (stable subscription; use ref for edited row)
  const unsubscribe = wsClient.on('schedule_update', (message: any) => {
  if (message.schedule && message.schedule.location === location && message.schedule.cluster === cluster) {
  // Update the schedule in our list
@@ -52,9 +54,9 @@ const [conflicts, setConflicts] = useState<string[]>([])
 // Show toast notification
   toast.info(`Schedule "${message.schedule.name}" was updated by another user`)
   
-  // If we're editing this schedule, refresh it
-  if (editingSchedule && editingSchedule.id === message.schedule_id) {
-  setEditingSchedule({ ...editingSchedule, ...message.schedule })
+  const editing = editingScheduleRef.current
+  if (editing && editing.id === message.schedule_id) {
+  setEditingSchedule({ ...editing, ...message.schedule })
   toast.warning('Schedule was updated. Please review changes before saving.')
   }
  }
@@ -63,7 +65,7 @@ const [conflicts, setConflicts] = useState<string[]>([])
  return () => {
  unsubscribe()
  }
- }, [location, cluster, editingSchedule])
+ }, [location, cluster])
 
  async function loadDevices() {
  try {
@@ -117,7 +119,7 @@ const [conflicts, setConflicts] = useState<string[]>([])
  if (showForm && formData.start_time && formData.end_time) {
  checkConflicts()
  }
- }, [formData.start_time, formData.end_time, formData.day_of_week, formData.mode])
+ }, [showForm, formData.start_time, formData.end_time, formData.day_of_week, formData.mode, formData.name, formData.device_name, schedules, editingSchedule])
 
  async function handleSubmit() {
  if (conflicts.length > 0) {

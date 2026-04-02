@@ -1,4 +1,5 @@
 /** Dashboard room card component for single room display. */
+import { memo } from 'react';
 import { Link } from 'react-router-dom';
 import type { Device } from '../types/device';
 import type { ControlHistoryEntry } from '../types/device';
@@ -78,7 +79,7 @@ function renderTemperature(location: string, cluster: string, sensorData: Record
   return `${Number(value).toFixed(2)}°C`;
 }
 
-export function DashboardRoomCard({
+export const DashboardRoomCard = memo(function DashboardRoomCard({
   location,
   cluster,
   devices,
@@ -272,4 +273,4 @@ export function DashboardRoomCard({
       </div>
     </div>
   );
-}
+});
