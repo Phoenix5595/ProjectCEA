@@ -94,7 +94,7 @@ ProjectCEA/
 | **🎨 Frontend UI** | `Infrastructure/frontend/src/` | React components + state management |
 | **📈 Grafana Dashboards** | `Infrastructure/frontend/grafana/dashboards/` | Analytics + visualization |
 | **🔧 ESP32 Firmware** | `Sensor_Nodes/ESP32/fullV6/` | Sensor node implementation |
-| **⚙️ Deployment** | `deploy.sh`, `rollback.sh` | Production deployment automation |
+| **⚙️ Deployment** | `deploy.sh`, `rollback-deploy.sh` | Production deploy + symlink rollback + NDJSON `/var/lib/projectcea/deploy.log` |
 
 ### Configuration & Validation
 
@@ -192,7 +192,7 @@ Infrastructure/automation-service/app/repositories/
 
 | Rule | Implementation | Reason |
 |------|----------------|--------|
-| **Rollback <30s** | `./rollback.sh` automation | Minimize crop stress |
+| **Rollback <30s** | `./rollback-deploy.sh` (after a successful deploy, uses `deploy_state.json`) | Minimize crop stress |
 | **No bare excepts** | Proper exception handling | System reliability |
 | **Config validation required** | Service startup fails on invalid config | Prevent runtime errors |
 | **Never touch working systems** | Unless explicitly requested | Production stability |
@@ -228,8 +228,8 @@ Infrastructure/automation-service/app/repositories/
 
 ```bash
 # System Operations
-./deploy.sh                    # Deploy new version with verification
-./rollback.sh                   # Emergency rollback (<30s guarantee)
+./deploy.sh                    # Deploy new version; auto-reverts symlink on health fail; NDJSON deploy log
+./rollback-deploy.sh           # Point current at previous release + restart services
 ./restart_all_services.sh       # Restart all services in correct order
 
 # Service Management

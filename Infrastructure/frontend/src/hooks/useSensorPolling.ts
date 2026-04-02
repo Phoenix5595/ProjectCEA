@@ -4,6 +4,7 @@ import { apiClient } from '../services/api';
 import type { Device } from '../types/device';
 import type { ControlHistoryEntry } from '../types/device';
 import { ZONES } from '../config/zones';
+import { parseLiveResponse } from '../utils/sensorLive';
 
 export interface UseSensorPollingOptions {
   interval?: number;
@@ -17,23 +18,6 @@ export interface UseSensorPollingReturn {
   refresh: () => Promise<void>;
 }
 
-/** Parse live API response into flat keys */
-function parseLiveResponse(
-  location: string,
-  cluster: string,
-  liveData: Record<string, { data?: Array<{ value?: number }> }>
-): Record<string, number> {
-  const flat: Record<string, number> = {};
-  if (!liveData || typeof liveData !== 'object') return flat;
-  for (const [sensorType, resp] of Object.entries(liveData)) {
-    const dp = Array.isArray(resp?.data) && resp.data.length > 0 ? resp.data[0] : null;
-    if (dp?.value != null) flat[`${location}_${cluster}_${sensorType}`] = Number(dp.value);
-  }
-  return flat;
-}
-
-
-
 /**
  * Hook for polling sensor data, devices, and control history.
  * Refreshes live sensors every 5 seconds and control history every 30 seconds.
@@ -46,7 +30,7 @@ export function useSensorPolling({ interval = 5000 }: UseSensorPollingOptions = 
 
   const loadInitialData = useCallback(async () => {
     try {
-      const [devicesData, setpointData, , , ...historyResults] = await Promise.all([
+      const [devicesData, setpointData, ...historyResults] = await Promise.all([
         apiClient.getAllDevices().catch(() => []),
         apiClient.getSensorDataBulk([
           'Flower Room_main_heating_setpoint', 'Flower Room_main_cooling_setpoint',
@@ -58,8 +42,6 @@ export function useSensorPolling({ interval = 5000 }: UseSensorPollingOptions = 
           'Flower Room_main_light_2_intensity', 'Flower Room_main_light_3_intensity',
           'Lab_main_lab_temp', 'Lab_main_water_temperature'
         ]).catch(() => ({})),
-        apiClient.getLatestWeather().catch(() => null),
-        apiClient.getSystemStatus().catch(() => null),
         ...ZONES.map(zone => apiClient.getControlHistory(zone.location, zone.cluster, 10).catch(() => []))
       ]);
 

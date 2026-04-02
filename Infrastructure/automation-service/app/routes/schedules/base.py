@@ -11,6 +11,7 @@ from asyncpg import Connection
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.config import ConfigLoader
+from app.control.schedule_merge import merge_schedules_with_config
 from app.database import DatabaseManager
 from app.redis_client import AutomationRedisClient
 from app.schemas.schedules import ScheduleCreate, ScheduleUpdate
@@ -160,6 +161,7 @@ async def update_schedule(
     schedule: ScheduleUpdate,
     database: DatabaseManager = Depends(get_database),
     scheduler=Depends(get_scheduler),
+    config: ConfigLoader = Depends(get_config),
 ) -> dict[str, Any]:
     """Update a schedule."""
     if schedule.mode:
@@ -240,7 +242,7 @@ async def update_schedule(
 
     if scheduler:
         all_schedules = await database.schedule_repo.get_schedules()
-        scheduler.update_schedules(all_schedules)
+        scheduler.update_schedules(merge_schedules_with_config(all_schedules, config))
         logger.info(f"Scheduler refreshed after schedule {schedule_id} update")
 
     try:

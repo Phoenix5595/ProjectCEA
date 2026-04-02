@@ -213,11 +213,14 @@ class ModeTransitionService:
     async def _trigger_scheduler_refresh(self, location: str, cluster: str):
         """Trigger scheduler to refresh schedules from database."""
         try:
+            from ..control.schedule_merge import merge_schedules_with_config
             from ..main import container
 
             control_engine = container.get_control_engine()
+            cfg = container.get_config()
             db_schedules = await self.db.schedule_repo.get_schedules()
-            control_engine.scheduler.update_schedules(db_schedules)
+            merged = merge_schedules_with_config(db_schedules, cfg)
+            control_engine.scheduler.update_schedules(merged)
             logger.info(f"Synchronously refreshed scheduler for {location}/{cluster}")
         except Exception as e:
             logger.error(f"Failed to trigger scheduler refresh: {e}")

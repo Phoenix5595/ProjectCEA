@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { apiClient } from '../services/api';
 import { logger } from '../utils/logger'
 import { toast } from 'sonner';
@@ -25,13 +25,17 @@ export default function PIDEditor() {
  const [currentMode, setCurrentMode] = useState<PIDControlMode>('pid');
  const [hysteresisData, setHysteresisData] = useState({ high: 0.5, low: 0.5 });
  const [autotuneState, setAutotuneState] = useState<AutotuneState | null>(null);
+ const currentModeRef = useRef<PIDControlMode>(currentMode);
+ currentModeRef.current = currentMode;
 
  // Collapse history by default
  const [historyOpen, setHistoryOpen] = useState(false);
 
  useEffect(() => {
  loadAllData();
- const interval = setInterval(loadAutotuneStatus, 2000);
+ const interval = setInterval(() => {
+ void loadAutotuneStatus();
+ }, 2000);
  return () => clearInterval(interval);
  }, [selectedDeviceType]);
 
@@ -80,7 +84,7 @@ export default function PIDEditor() {
  }
 
  async function loadAutotuneStatus() {
- if (currentMode !== 'auto_pid') return;
+ if (currentModeRef.current !== 'auto_pid') return;
  try {
  const status = await apiClient.getAutotuneStatus(selectedDeviceType);
  setAutotuneState(status);

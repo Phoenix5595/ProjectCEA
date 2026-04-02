@@ -11,7 +11,7 @@
 - **System**: Raspberry Pi 5, 6 Python services + React, 2 grow rooms.
 - **Data in**: CAN (ESP32), Modbus (soil), HTTP (weather) → Redis (live) + TimescaleDB (history).
 - **Control**: automation-service 1–5 s tick; backend 8000 (sensors), automation 8001 (control + frontend).
-- **Hardware**: MCP23017 relays (I2C 0), DFR0971 dimming (I2C 1). Deploy: `deploy.sh` / `rollback.sh`.
+- **Hardware**: MCP23017 relays (I2C 0), DFR0971 dimming (I2C 1). Deploy: `deploy.sh` / `rollback-deploy.sh`.
 
 ---
 
@@ -135,7 +135,7 @@ sequenceDiagram
 | Action | Command / Path |
 |--------|----------------|
 | Deploy | `./deploy.sh` |
-| Rollback | `./rollback.sh` (<30 s) |
+| Rollback | `./rollback-deploy.sh` (<30 s) |
 | Prod root | `/opt/projectcea/current` → `releases/<timestamp>-<git>` |
 | Dev root | `/home/antoine/ProjectCEA` |
 

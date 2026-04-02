@@ -240,7 +240,7 @@ class Scheduler:
         device_name: str,
         current_time: datetime | None = None,
         current_intensity: float | None = None,
-    ) -> float | None:
+    ) -> float:
         """Get target intensity for a device from active schedule, with ramp calculation.
 
         Light period only: sun (lights on) or moon (0%). Returns 0.0 when no schedule
@@ -255,14 +255,17 @@ class Scheduler:
             current_intensity: Current light intensity (0-100%), used as ramp start point
 
         Returns:
-            Target intensity (0-100%). 0.0 when in moon (no match or moon/NIGHT schedule).
-            Non-None when a sun schedule matches (with target_intensity and optional ramps).
+            Target intensity (0-100%) as a float. 0.0 when in moon (no matching sun row,
+            or matched MOON/NIGHT schedule). When multiple rows exist per device (MOON + SUN),
+            rows outside the current time window are skipped so the correct row can match.
         """
         if current_time is None:
             current_time = datetime.now(tz=LOCAL_TZ)
 
         current_time_obj = current_time.time()
         current_weekday = current_time.weekday()  # 0 = Monday, 6 = Sunday
+        # Ramp math must subtract datetimes of the same kind (naive vs aware).
+        schedule_tz = current_time.tzinfo
 
         ramp_key = (location, cluster, device_name)
 
@@ -292,9 +295,8 @@ class Scheduler:
                     is_in_range = start_time <= current_time_obj < end_time
 
                 if not is_in_range:
-                    if ramp_key in self._light_ramp_state:
-                        del self._light_ramp_state[ramp_key]
-                    return None
+                    # More than one row per light (e.g. MOON + SUN); try the next schedule.
+                    continue
 
                 # Moon schedule (or legacy NIGHT): lights off. Clear ramp and return 0%.
                 # Sun schedule (or legacy DAY): lights on, use target_intensity below.
@@ -305,9 +307,7 @@ class Scheduler:
 
                 target_intensity = schedule.get("target_intensity")
                 if target_intensity is None:
-                    if ramp_key in self._light_ramp_state:
-                        del self._light_ramp_state[ramp_key]
-                    return None
+                    continue
 
                 # Minimum light intensity (10%) - lowest setting at which lights emit light
                 MINIMUM_LIGHT_INTENSITY = 10.0
@@ -323,19 +323,46 @@ class Scheduler:
                 ramp_up_duration = schedule.get("ramp_up_duration", 0) or 0
                 ramp_down_duration = schedule.get("ramp_down_duration", 0) or 0
 
-                start_datetime = datetime.combine(current_time.date(), start_time)
-                end_datetime = datetime.combine(current_time.date(), end_time)
-                if start_time > end_time:
-                    if current_time_obj >= start_time:
-                        start_datetime = datetime.combine(current_time.date(), start_time)
-                        end_datetime = datetime.combine(
-                            current_time.date() + timedelta(days=1), end_time
-                        )
-                    else:
-                        start_datetime = datetime.combine(
-                            current_time.date() - timedelta(days=1), start_time
-                        )
-                        end_datetime = datetime.combine(current_time.date(), end_time)
+                if schedule_tz is None:
+                    start_datetime = datetime.combine(current_time.date(), start_time)
+                    end_datetime = datetime.combine(current_time.date(), end_time)
+                    if start_time > end_time:
+                        if current_time_obj >= start_time:
+                            start_datetime = datetime.combine(current_time.date(), start_time)
+                            end_datetime = datetime.combine(
+                                current_time.date() + timedelta(days=1), end_time
+                            )
+                        else:
+                            start_datetime = datetime.combine(
+                                current_time.date() - timedelta(days=1), start_time
+                            )
+                            end_datetime = datetime.combine(current_time.date(), end_time)
+                else:
+                    start_datetime = datetime.combine(
+                        current_time.date(), start_time, tzinfo=schedule_tz
+                    )
+                    end_datetime = datetime.combine(
+                        current_time.date(), end_time, tzinfo=schedule_tz
+                    )
+                    if start_time > end_time:
+                        if current_time_obj >= start_time:
+                            start_datetime = datetime.combine(
+                                current_time.date(), start_time, tzinfo=schedule_tz
+                            )
+                            end_datetime = datetime.combine(
+                                current_time.date() + timedelta(days=1),
+                                end_time,
+                                tzinfo=schedule_tz,
+                            )
+                        else:
+                            start_datetime = datetime.combine(
+                                current_time.date() - timedelta(days=1),
+                                start_time,
+                                tzinfo=schedule_tz,
+                            )
+                            end_datetime = datetime.combine(
+                                current_time.date(), end_time, tzinfo=schedule_tz
+                            )
 
                 time_since_start = (current_time - start_datetime).total_seconds() / 60.0
                 time_until_end = (end_datetime - current_time).total_seconds() / 60.0
@@ -542,6 +569,65 @@ class Scheduler:
 
         return 0.0
 
+    def is_in_photoperiod(self, location: str, cluster: str, current_time: datetime) -> bool:
+        """True if current time is in the room's sun (lights-on) window for climate logic.
+
+        Uses per-light SUN/DAY rows when present; otherwise ``room_schedule`` with mode
+        light/DAY. When any per-light SUN/DAY row exists, ``room_schedule`` is ignored
+        for the photoperiod window (narrow per-light sun wins).
+        """
+        current_time_obj = current_time.time()
+        current_weekday = current_time.weekday()
+
+        matching: list[dict[str, Any]] = []
+        for schedule in self.schedules:
+            if not schedule.get("enabled", True):
+                continue
+            if schedule.get("location") != location or schedule.get("cluster") != cluster:
+                continue
+            day_of_week = schedule.get("day_of_week")
+            if day_of_week is not None and day_of_week != current_weekday:
+                continue
+            matching.append(schedule)
+
+        if not matching:
+            return False
+
+        sun_rows = [
+            s
+            for s in matching
+            if s.get("device_name") != "room_schedule"
+            and str(s.get("mode", "")).upper() in ("SUN", "DAY")
+        ]
+        if sun_rows:
+            rows = sun_rows
+        else:
+            rows = [
+                s
+                for s in matching
+                if s.get("device_name") == "room_schedule"
+                and str(s.get("mode", "")).upper() in ("LIGHT", "DAY")
+            ]
+
+        if not rows:
+            return False
+
+        for schedule in rows:
+            mode = str(schedule.get("mode", "")).upper()
+            if mode in ("MOON", "NIGHT"):
+                continue
+            start_time = self._parse_time(schedule.get("start_time"))
+            end_time = self._parse_time(schedule.get("end_time"))
+            if not start_time or not end_time:
+                continue
+            if start_time > end_time:
+                in_range = current_time_obj >= start_time or current_time_obj < end_time
+            else:
+                in_range = start_time <= current_time_obj < end_time
+            if in_range:
+                return True
+        return False
+
     def get_light_intensity_details(
         self,
         location: str,
@@ -570,9 +656,6 @@ class Scheduler:
         effective_intensity = self.get_schedule_intensity(
             location, cluster, device_name, current_time, current_intensity
         )
-
-        if effective_intensity is None:
-            return None
 
         current_time_obj = current_time.time()
         current_weekday = current_time.weekday()
@@ -606,7 +689,7 @@ class Scheduler:
                     is_in_range = start_time <= current_time_obj < end_time
 
                 if not is_in_range:
-                    return None
+                    continue
 
                 # Found the active schedule - get target_intensity
                 target_intensity = schedule.get("target_intensity")

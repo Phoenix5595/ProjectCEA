@@ -47,14 +47,52 @@ export default function CircularTimePicker({
 }: CircularTimePickerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const outerRef = useRef<HTMLDivElement>(null)
-  const clockRef = useRef<HTMLDivElement>(null)
+  /** Flex cell that should receive remaining height (more stable than aspect-square on first paint). */
+  const clockSlotRef = useRef<HTMLDivElement>(null)
+  const clockSquareRef = useRef<HTMLDivElement>(null)
   const [size, setSize] = useState(propsSize || 300)
   const [stackLayout, setStackLayout] = useState(false)
 
-  const updateSizeFromRect = useCallback((width: number, height: number) => {
-    const newSize = Math.max(100, Math.min(width, height > 100 ? height : width))
-    if (newSize > 100) setSize(newSize)
+  /**
+   * Size from the inner `aspect-square` box only when it is actually square (layout settled).
+   * Do **not** use `min(slotWidth, slotHeight)` for a wide flex cell: e.g. 300×100 has ratio 3.0
+   * (below the old 3.5 “skew” threshold) and wrongly produced a 100px dial until window resize.
+   */
+  const isSquareish = useCallback((w: number, h: number, maxAspect = 1.12) => {
+    if (w < 8 || h < 8) return false
+    return Math.max(w, h) / Math.min(w, h) <= maxAspect
   }, [])
+
+  const measureClock = useCallback(() => {
+    if (propsSize) return
+    const sq = clockSquareRef.current
+    if (sq) {
+      const r = sq.getBoundingClientRect()
+      if (isSquareish(r.width, r.height)) {
+        const side = Math.floor(Math.min(r.width, r.height))
+        setSize(Math.max(100, Math.min(side, 900)))
+        return
+      }
+    }
+    const slot = clockSlotRef.current
+    if (slot) {
+      const r = slot.getBoundingClientRect()
+      if (isSquareish(r.width, r.height)) {
+        const side = Math.floor(Math.min(r.width, r.height))
+        setSize(Math.max(100, Math.min(side, 900)))
+      }
+    }
+  }, [propsSize, isSquareish])
+
+  /** Last resort: min of square sides even if aspect slightly off (fonts/layout drift). */
+  const measureClockForce = useCallback(() => {
+    if (propsSize) return
+    const sq = clockSquareRef.current
+    const slot = clockSlotRef.current
+    const r = sq?.getBoundingClientRect() ?? slot?.getBoundingClientRect()
+    if (!r || r.width < 8 || r.height < 8) return
+    setSize(Math.max(100, Math.min(Math.floor(Math.min(r.width, r.height)), 900)))
+  }, [propsSize])
 
   const syncStackFromOuterWidth = useCallback(() => {
     const el = outerRef.current
@@ -82,17 +120,43 @@ export default function CircularTimePicker({
       setSize(propsSize)
       return
     }
-    if (!clockRef.current) return
-    const el = clockRef.current
-    const ro = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        const { width, height } = entry.contentRect
-        updateSizeFromRect(width, height)
-      }
+    const slot = clockSlotRef.current
+    const sq = clockSquareRef.current
+    if (!slot && !sq) return
+    const ro = new ResizeObserver(() => {
+      measureClock()
     })
-    ro.observe(el)
+    if (slot) ro.observe(slot)
+    if (sq) ro.observe(sq)
     return () => ro.disconnect()
-  }, [propsSize, updateSizeFromRect, stackLayout])
+  }, [propsSize, measureClock, stackLayout])
+
+  useEffect(() => {
+    if (propsSize) return
+    const onResize = () => measureClock()
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [propsSize, measureClock])
+
+  /** Re-measure after layout mode changes; defer until nested flex / timeline row have heights. */
+  useLayoutEffect(() => {
+    if (propsSize) return
+    measureClock()
+    let raf1 = 0
+    let raf2 = 0
+    raf1 = requestAnimationFrame(() => {
+      measureClock()
+      raf2 = requestAnimationFrame(() => measureClock())
+    })
+    const timeouts = [0, 16, 50, 100, 200, 400].map((ms) => window.setTimeout(measureClock, ms))
+    const tForce = window.setTimeout(measureClockForce, 500)
+    return () => {
+      cancelAnimationFrame(raf1)
+      cancelAnimationFrame(raf2)
+      timeouts.forEach(clearTimeout)
+      clearTimeout(tForce)
+    }
+  }, [propsSize, measureClock, measureClockForce, stackLayout])
 
   const { handleMouseDown } = useClockInteraction({
     canvasRef,
@@ -127,14 +191,17 @@ export default function CircularTimePicker({
 
   const clockArea = (
     <div
-      ref={clockRef}
+      ref={clockSlotRef}
       className={
         stackLayout
-          ? 'flex flex-1 min-h-0 w-full flex-col items-center justify-center'
-          : 'flex flex-1 min-h-0 min-w-0 flex-col items-center justify-center'
+          ? 'flex flex-1 min-h-0 w-full min-w-0 flex-col items-center justify-center'
+          : 'flex flex-1 min-h-0 min-w-0 w-full flex-col items-center justify-center'
       }
     >
-      <div className="relative w-full aspect-square max-h-full max-w-full flex items-center justify-center">
+      <div
+        ref={clockSquareRef}
+        className="relative w-full aspect-square max-h-full max-w-full min-w-0 flex items-center justify-center"
+      >
         <canvas
           ref={canvasRef}
           width={size}
@@ -312,7 +379,7 @@ export default function CircularTimePicker({
           {controlsRowBottom}
         </>
       ) : (
-        <div className="flex flex-1 min-h-0 flex-row items-center gap-1 w-full">
+        <div className="flex flex-1 min-h-0 flex-row items-stretch gap-1 w-full">
           <div className="flex flex-col items-center flex-1 min-w-0 min-h-0 h-full gap-1">
             {labelEl}
             {clockArea}

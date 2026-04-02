@@ -1,5 +1,5 @@
 /** Main dashboard page component. */
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 
 import { apiClient } from '../services/api';
 import { useTheme } from '../contexts/ThemeContext';
@@ -38,8 +38,14 @@ export default function Dashboard() {
   const [weatherData, setWeatherData] = useState<WeatherData | null>(null);
 
   // Merge WebSocket data with polled data (WS takes precedence if it has data)
-  const mergedDevices = wsDevices.length > 0 ? wsDevices : devices;
-  const mergedSensorData = { ...sensorData, ...wsSensorData };
+  const mergedDevices = useMemo(
+    () => (wsDevices.length > 0 ? wsDevices : devices),
+    [wsDevices, devices]
+  );
+  const mergedSensorData = useMemo(
+    () => ({ ...sensorData, ...wsSensorData }),
+    [sensorData, wsSensorData]
+  );
 
   // Weather refresh (15 minutes)
   useEffect(() => {

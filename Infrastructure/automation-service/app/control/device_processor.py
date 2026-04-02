@@ -6,9 +6,10 @@ from datetime import datetime, time
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from app.control.device_control_context import build_initial_control_context
 from app.control.device_controller import DeviceController
 from app.control.hardware_batch import HardwareBatchExecutor
-from app.control.heating_safety import HeatingFailureSafety, SafetyState
+from app.control.light_decision import LightAuthorityResolver, LightDecision
 from app.control.pid_controller_manager import PIDControllerManager
 from app.control.scheduler import Scheduler
 from app.control.vpd_cascade_controller import (
@@ -57,11 +58,10 @@ class DeviceProcessor:
         self.scheduler = scheduler
         self.pid_controller_manager = pid_controller_manager
         self.vpd_cascade_controller = vpd_cascade_controller
+        self.light_authority_resolver = LightAuthorityResolver()
         # Throttle "no schedule" warning to once per 5 min per device (avoid log spam / CPU)
         self._last_no_schedule_log: dict[tuple[str, str, str], float] = {}
         self._no_schedule_log_interval_sec = 300.0
-        # Heating failure safety: one instance per (location, cluster)
-        self._heating_safety: dict[str, HeatingFailureSafety] = {}
 
     async def process_devices(
         self,
@@ -90,40 +90,14 @@ class DeviceProcessor:
         """
         batch_executor = HardwareBatchExecutor()
 
-        # Track maximum heater demand across all heating devices for safety check
-        max_heater_demand = 0.0
-
         for device_name, device_info in cluster_devices.items():
-            # Build context for device processing
-            context: dict[str, Any] = {}
-            if effective_data:
-                context = {
-                    "effective_heating_setpoint": effective_data.get("effective_heating_setpoint"),
-                    "effective_cooling_setpoint": effective_data.get("effective_cooling_setpoint"),
-                    "effective_humidity_setpoint": effective_data.get(
-                        "effective_humidity_setpoint"
-                    ),
-                    "effective_co2_setpoint": effective_data.get("effective_co2_setpoint"),
-                    "effective_vpd_setpoint": effective_data.get("effective_vpd_setpoint"),
-                    "current_vpd": effective_data.get("current_vpd"),
-                    "failsafe_active": False,  # TODO: implement failsafe logic
-                    "current_mode": current_mode,
-                    "previous_climate_mode": {(location, cluster): previous_climate_mode}
-                    if previous_climate_mode is not None
-                    else {},
-                }
-            else:
-                context = {
-                    "effective_heating_setpoint": None,
-                    "effective_cooling_setpoint": None,
-                    "effective_humidity_setpoint": None,
-                    "effective_co2_setpoint": None,
-                    "effective_vpd_setpoint": None,
-                    "current_vpd": None,
-                    "failsafe_active": False,
-                    "current_mode": current_mode,
-                    "previous_climate_mode": {},
-                }
+            context: dict[str, Any] = build_initial_control_context(
+                location,
+                cluster,
+                effective_data,
+                current_mode,
+                previous_climate_mode,
+            )
 
             # PID path: only for heating, cooling, co2 (VPD is king: humidifier/dehumidifier use VPD only)
             if self.pid_controller_manager and not context.get("failsafe_active", False):
@@ -142,9 +116,6 @@ class DeviceProcessor:
                     )
                     if pid_output is not None:
                         context["pid_output"] = pid_output
-                        # Track max heater demand for safety check
-                        if device_type == "heating":
-                            max_heater_demand = max(max_heater_demand, pid_output)
 
             # VPD cascade path: for humidifier/dehumidifier with intelligent actuator selection
             device_type = device_info.get("device_type", "")
@@ -217,33 +188,21 @@ class DeviceProcessor:
 
             # Light intensity: moon = 0% from room sun bounds; sun = scheduler (ramps, target). All relevant rooms have a schedule.
             if device_info.get("dimming_enabled") and device_info.get("dimming_type") == "dfr0971":
-                if not is_sun:
-                    # Moon: lights off.
-                    context["light_intensity"] = 0.0
-                elif self.scheduler:
-                    intensity_details = self.scheduler.get_light_intensity_details(
-                        location, cluster, device_name, current_time
-                    )
-                    if intensity_details:
-                        # Sun: use schedule (ramps, target). Convert 0-100% to 0.0-1.0
-                        context["light_intensity"] = (
-                            intensity_details["effective_intensity"] / 100.0
-                        )
-                        logger.debug(
-                            f"Light {device_name} sun intensity: {intensity_details['effective_intensity']}%"
-                        )
-                    else:
-                        # Sun window but no schedule details: command 0% (safe fallback)
-                        context["light_intensity"] = 0.0
-                        key = (location, cluster, device_name)
-                        now_ts = current_time.timestamp()
-                        last = self._last_no_schedule_log.get(key, 0.0)
-                        if now_ts - last >= self._no_schedule_log_interval_sec:
-                            self._last_no_schedule_log[key] = now_ts
-                            logger.warning(
-                                f"No sun schedule for {location}/{cluster}/{device_name}; "
-                                f"commanding 0%. Re-save room schedule in ZoneConfig."
-                            )
+                decision = self._build_light_decision(
+                    location=location,
+                    cluster=cluster,
+                    device_name=device_name,
+                    device_info=device_info,
+                    current_time=current_time,
+                    is_sun=is_sun,
+                    failsafe_active=bool(context.get("failsafe_active", False)),
+                )
+                context["light_intensity"] = decision.effective_percent / 100.0
+                context["light_decision"] = decision
+                logger.debug(
+                    f"Light decision {location}/{cluster}/{device_name}: "
+                    f"{decision.effective_percent:.1f}% authority={decision.authority}"
+                )
 
             await self.device_controller.process_device(
                 location,
@@ -269,65 +228,81 @@ class DeviceProcessor:
                     f"{result.success_count} devices processed"
                 )
 
-        # Heating failure safety check
-        await self._check_heating_safety(
-            location, cluster, sensor_values, max_heater_demand, current_time
-        )
+            # Persist intended dimmer state so UI/Grafana reflects reality even when batching.
+            # (Non-batch dimmer control writes to Redis inside DeviceController.)
+            try:
+                redis_client = getattr(self.database, "_automation_redis", None)
+                if redis_client and getattr(result, "light_intents", None):
+                    for device_key, intent in result.light_intents.items():
+                        ok = bool(result.results.get(device_key))
+                        if ok:
+                            percent = int(intent.get("intensity_percent") or 0)
+                        else:
+                            percent = self.device_controller.get_last_applied_light_percent(
+                                intent["location"], intent["cluster"], intent["device_name"]
+                            )
+                        self.device_controller.write_light_telemetry(
+                            intent["location"],
+                            intent["cluster"],
+                            intent["device_name"],
+                            percent,
+                            intent.get("board_id"),
+                            intent.get("channel"),
+                        )
+            except Exception as redis_err:
+                logger.warning(f"Failed to persist batched light intents to Redis: {redis_err}")
 
         # Note: Light intensity logging is handled by ControlEngine.run_control_loop()
         # to ensure scheduler access for proper ramp calculations
 
-    async def _check_heating_safety(
+    def _build_light_decision(
         self,
+        *,
         location: str,
         cluster: str,
-        sensor_values: dict[str, float | None],
-        heater_demand: float,
+        device_name: str,
+        device_info: dict[str, Any],
         current_time: datetime,
-    ) -> None:
-        """Check heating system safety and handle failures.
+        is_sun: bool,
+        failsafe_active: bool,
+    ) -> LightDecision:
+        scheduled_percent = 0.0
+        nominal_percent: float | None = None
+        ramp_progress: float | None = None
 
-        Args:
-            location: Location name
-            cluster: Cluster name
-            sensor_values: Current sensor values
-            heater_demand: Current heater demand (0-100%)
-            current_time: Current timestamp
-        """
-        # Get or create heating safety instance for this location/cluster
-        safety_key = f"{location}:{cluster}"
-        if safety_key not in self._heating_safety:
-            self._heating_safety[safety_key] = HeatingFailureSafety(
-                min_safe_temp=10.0,
-                alert_callback=None,  # Use internal logging for now
+        if is_sun and self.scheduler:
+            intensity_details = self.scheduler.get_light_intensity_details(
+                location, cluster, device_name, current_time
             )
-        heating_safety = self._heating_safety[safety_key]
+            if intensity_details:
+                scheduled_percent = float(intensity_details["effective_intensity"])
+                nominal_raw = intensity_details.get("nominal_intensity")
+                nominal_percent = (
+                    float(nominal_raw) if isinstance(nominal_raw, (int, float)) else None
+                )
+                ramp_raw = intensity_details.get("ramp_progress")
+                ramp_progress = float(ramp_raw) if isinstance(ramp_raw, (int, float)) else None
+            else:
+                key = (location, cluster, device_name)
+                now_ts = current_time.timestamp()
+                last = self._last_no_schedule_log.get(key, 0.0)
+                if now_ts - last >= self._no_schedule_log_interval_sec:
+                    self._last_no_schedule_log[key] = now_ts
+                    logger.warning(
+                        f"No sun schedule for {location}/{cluster}/{device_name}; "
+                        f"commanding 0%. Re-save room schedule in ZoneConfig."
+                    )
 
-        # Get current temperature (try dry_bulb first, then air_temp)
-        current_temp = sensor_values.get("dry_bulb") or sensor_values.get("air_temp") or 0.0
-
-        # Update safety monitor
-        safety_state = heating_safety.update(current_temp, heater_demand, current_time)
-
-        # Handle non-normal states
-        if safety_state == SafetyState.WARNING:
-            logger.warning(
-                f"Heating safety WARNING for {location}/{cluster}: "
-                f"temp={current_temp:.1f}°C, demand={heater_demand:.1f}%"
-            )
-        elif safety_state == SafetyState.CRITICAL:
-            logger.critical(
-                f"Heating safety CRITICAL for {location}/{cluster}: "
-                f"temp={current_temp:.1f}°C, demand={heater_demand:.1f}% - "
-                f"Heater not responding to demand"
-            )
-            # Inhibit exhaust fan to preserve heat
-            # TODO: Implement exhaust inhibition via device controller
-        elif safety_state == SafetyState.EMERGENCY:
-            logger.critical(
-                f"Heating safety EMERGENCY for {location}/{cluster}: "
-                f"temp={current_temp:.1f}°C below emergency threshold! "
-                f"Immediate action required."
-            )
-            # Trigger emergency response
-            # TODO: Activate backup heating, close vents, send alerts
+        authority_device_info = dict(device_info)
+        authority_device_info["_location"] = location
+        authority_device_info["_cluster"] = cluster
+        authority_device_info["_device_name"] = device_name
+        return self.light_authority_resolver.resolve(
+            current_time=current_time,
+            device_info=authority_device_info,
+            is_sun=is_sun,
+            scheduled_percent=scheduled_percent,
+            nominal_percent=nominal_percent,
+            ramp_progress=ramp_progress,
+            failsafe_active=failsafe_active,
+        )

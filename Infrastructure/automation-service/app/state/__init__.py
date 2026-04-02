@@ -71,6 +71,36 @@ logger = get_logger(__name__)
 T = TypeVar("T")
 
 
+def _serialize_for_redis(value: Any) -> str:
+    """Serialize values for Redis. Dict/list/tuple use JSON (not str() repr)."""
+    if isinstance(value, (dict, list, tuple)):
+        return json.dumps(value, default=str)
+    if isinstance(value, str):
+        return value
+    return str(value)
+
+
+def _deserialize_redis_payload(raw: Any) -> Any:
+    """Parse JSON payloads written by _serialize_for_redis; pass through non-JSON strings."""
+    if raw is None:
+        return None
+    if isinstance(raw, (bytes, bytearray)):
+        raw = raw.decode("utf-8", errors="replace")
+    if not isinstance(raw, str):
+        return raw
+    s = raw.strip()
+    if len(s) == 0:
+        return raw
+    if s[0] in '[{"-0123456789tfn':
+        try:
+            return json.loads(s)
+        except json.JSONDecodeError:
+            if s.startswith("[") or s.startswith("{"):
+                logger.warning("StateManager: Corrupt Redis value (repr, not JSON); dropping entry")
+                return None
+    return raw
+
+
 @dataclass
 class CacheEntry(Generic[T]):
     """Cache entry with value and expiration time.
@@ -886,7 +916,12 @@ class StateManager(SchemaValidationMixin):
             return None
 
         try:
-            value = await asyncio.to_thread(self._redis_client.get, key)
+            raw = await asyncio.to_thread(self._redis_client.get, key)
+            value = _deserialize_redis_payload(raw)
+            if raw is not None and value is None:
+                # Corrupt legacy entry (repr, not JSON): remove so next read hits DB
+                await self._delete_from_redis(key)
+                return None
             if value is not None:
                 logger.debug(f"StateManager: Redis fallback hit for '{key}'")
                 # Try to honor Redis TTL for in-memory cache expiration
@@ -949,11 +984,12 @@ class StateManager(SchemaValidationMixin):
             return
 
         try:
+            payload = _serialize_for_redis(value)
             await asyncio.to_thread(
                 self._redis_client.setex,
                 key,
                 ttl,
-                str(value) if not isinstance(value, str) else value,
+                payload,
             )
             logger.debug(f"StateManager: Wrote '{key}' to Redis with TTL {ttl}s")
         except Exception as e:

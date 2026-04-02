@@ -2,6 +2,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { wsClient } from '../services/websocket';
 import type { Device } from '../types/device';
+import { parseLiveResponse as parseLiveResponseUtil } from '../utils/sensorLive';
 
 export interface UseWebSocketOptions {
   onDeviceUpdate?: (device: Device) => void;
@@ -13,20 +14,8 @@ export interface UseWebSocketReturn {
   sensorData: Record<string, number>;
 }
 
-/** Parse live API response into flat keys ${location}_${cluster}_${sensorType} -> number. */
-export function parseLiveResponse(
-  location: string,
-  cluster: string,
-  liveData: Record<string, { data?: Array<{ value?: number }> }>
-): Record<string, number> {
-  const flat: Record<string, number> = {};
-  if (!liveData || typeof liveData !== 'object') return flat;
-  for (const [sensorType, resp] of Object.entries(liveData)) {
-    const dp = Array.isArray(resp?.data) && resp.data.length > 0 ? resp.data[0] : null;
-    if (dp?.value != null) flat[`${location}_${cluster}_${sensorType}`] = Number(dp.value);
-  }
-  return flat;
-}
+/** Re-export for callers that imported from this hook. */
+export const parseLiveResponse = parseLiveResponseUtil;
 
 /**
  * Hook for managing WebSocket connection and handling real-time updates.

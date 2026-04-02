@@ -144,6 +144,31 @@ class DataWriter:
                 logger.error(f"Error in DB flush loop: {e}")
                 time.sleep(0.1)
 
+    def _prefetch_device_ids(self, cursor: Any, device_names: set[str]) -> None:
+        """Load missing device_id rows in one query per batch (avoids N+1 SELECTs)."""
+        missing = [n for n in device_names if n not in self.device_cache]
+        if not missing:
+            return
+        cursor.execute(
+            "SELECT device_id, name FROM device WHERE name = ANY(%s::text[])",
+            (missing,),
+        )
+        for device_id, name in cursor.fetchall():
+            self.device_cache[str(name)] = int(device_id)
+
+    def _prefetch_sensor_ids(self, cursor: Any, by_device: dict[int, set[str]]) -> None:
+        """Load missing (device_id, sensor name) rows grouped per device (one query per device)."""
+        for device_id, names in by_device.items():
+            missing = [s for s in names if (device_id, s) not in self.sensor_cache]
+            if not missing:
+                continue
+            cursor.execute(
+                "SELECT sensor_id, name FROM sensor WHERE device_id = %s AND name = ANY(%s::text[])",
+                (device_id, missing),
+            )
+            for sensor_id, name in cursor.fetchall():
+                self.sensor_cache[(device_id, str(name))] = int(sensor_id)
+
     def _flush_batch(self, items):
         if not items or not self.db_enabled:
             return
@@ -156,6 +181,29 @@ class DataWriter:
                     self._dropped_count += len(items)
                     return
                 cursor = self.db_conn.cursor()
+                device_names: set[str] = set()
+                for item in items:
+                    node_id = item.decoded.get("node_id")
+                    if not node_id:
+                        continue
+                    device_names.add(f"Node {node_id}")
+                self._prefetch_device_ids(cursor, device_names)
+
+                by_device: dict[int, set[str]] = {}
+                for item in items:
+                    node_id = item.decoded.get("node_id")
+                    if not node_id:
+                        continue
+                    device_name = f"Node {node_id}"
+                    if device_name not in self.device_cache:
+                        continue
+                    device_id = self.device_cache[device_name]
+                    for sensor_name, _value, _unit in item.sensors:
+                        cache_key = (device_id, sensor_name)
+                        if cache_key not in self.sensor_cache:
+                            by_device.setdefault(device_id, set()).add(sensor_name)
+                self._prefetch_sensor_ids(cursor, by_device)
+
                 measurements = []
                 for item in items:
                     node_id = item.decoded.get("node_id")
@@ -163,25 +211,12 @@ class DataWriter:
                         continue
                     device_name = f"Node {node_id}"
                     if device_name not in self.device_cache:
-                        cursor.execute(
-                            "SELECT device_id FROM device WHERE name = %s", (device_name,)
-                        )
-                        row = cursor.fetchone()
-                        if not row:
-                            continue
-                        self.device_cache[device_name] = row[0]
+                        continue
                     device_id = self.device_cache[device_name]
                     for sensor_name, value, _unit in item.sensors:
                         cache_key = (device_id, sensor_name)
                         if cache_key not in self.sensor_cache:
-                            cursor.execute(
-                                "SELECT sensor_id FROM sensor WHERE device_id = %s AND name = %s",
-                                (device_id, sensor_name),
-                            )
-                            row = cursor.fetchone()
-                            if not row:
-                                continue
-                            self.sensor_cache[cache_key] = row[0]
+                            continue
                         measurements.append(
                             (item.timestamp, self.sensor_cache[cache_key], value, None)
                         )

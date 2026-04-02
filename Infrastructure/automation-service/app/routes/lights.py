@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.config import ConfigLoader
+from app.control.schedule_merge import merge_schedules_with_config
 from app.database import DatabaseManager
 from app.schemas.lights import (
     IntensityControl,
@@ -252,6 +253,8 @@ async def get_zone_lights_status(
     if not cluster_devices:
         return {"lights": []}
 
+    now = datetime.now()
+
     schedules_list: list[dict[str, Any]] = []
     if database:
         schedules_list = await database.schedule_repo.get_schedules(location, cluster)
@@ -300,6 +303,51 @@ async def get_zone_lights_status(
                 "target_intensity": target_fallback,
             }
 
+        scheduler_effective_intensity: float | None = None
+        scheduler_nominal_intensity: float | None = None
+        scheduler_is_in_photoperiod: bool | None = None
+        if scheduler:
+            try:
+                det = scheduler.get_light_intensity_details(
+                    location,
+                    cluster,
+                    device_name,
+                    now,
+                    float(payload.get("intensity") or 0.0),
+                )
+                if det is not None:
+                    scheduler_effective_intensity = float(det.get("effective_intensity"))
+                    scheduler_nominal_intensity = float(det.get("nominal_intensity"))
+                scheduler_is_in_photoperiod = bool(
+                    scheduler.is_in_photoperiod(location, cluster, now)
+                )
+            except Exception:
+                # Zone status should remain best-effort even if scheduler details fail.
+                pass
+
+        active_schedule_mode: str | None = None
+        for s in schedules_list:
+            if s.get("device_name") != device_name:
+                continue
+            if not s.get("enabled", True):
+                continue
+            # Determine the active row by time window (same rule as Scheduler: [start, end), supports overnight).
+            st = s.get("start_time")
+            et = s.get("end_time")
+            try:
+                st_t = scheduler._parse_time(st) if scheduler else None
+                et_t = scheduler._parse_time(et) if scheduler else None
+            except Exception:
+                st_t = None
+                et_t = None
+            if not st_t or not et_t:
+                continue
+            t = now.time()
+            in_range = (t >= st_t or t < et_t) if st_t > et_t else (st_t <= t < et_t)
+            if in_range:
+                active_schedule_mode = str(s.get("mode") or "").upper() or None
+                break
+
         sun_day_target: float | None = None
         for s in schedules_list:
             if s.get("device_name") != device_name:
@@ -320,6 +368,10 @@ async def get_zone_lights_status(
                 **payload,
                 "display_name": device_info.get("display_name"),
                 "day_target_intensity": day_target_intensity,
+                "scheduler_effective_intensity": scheduler_effective_intensity,
+                "scheduler_nominal_intensity": scheduler_nominal_intensity,
+                "scheduler_is_in_photoperiod": scheduler_is_in_photoperiod,
+                "active_schedule_mode": active_schedule_mode,
             }
         )
 
@@ -471,7 +523,7 @@ async def set_target_intensity(
     # Refresh scheduler with updated schedules
     if scheduler:
         all_schedules = await database.schedule_repo.get_schedules()
-        scheduler.update_schedules(all_schedules)
+        scheduler.update_schedules(merge_schedules_with_config(all_schedules, config))
         logger.info(f"Scheduler refreshed after {device_name} target intensity update")
 
     return {
@@ -499,6 +551,7 @@ async def update_light_schedule(
     cluster: str,
     device_name: str,
     control: ScheduleTimeControl,
+    config=Depends(get_config),
     database=Depends(get_database),
     scheduler=Depends(get_scheduler),
 ) -> dict[str, Any]:
@@ -510,7 +563,7 @@ async def update_light_schedule(
 
     if scheduler:
         all_schedules = await database.schedule_repo.get_schedules()
-        scheduler.update_schedules(all_schedules)
+        scheduler.update_schedules(merge_schedules_with_config(all_schedules, config))
         logger.info(f"Scheduler refreshed after {device_name} schedule time update")
 
     return {
