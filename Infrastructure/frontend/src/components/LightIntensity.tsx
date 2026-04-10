@@ -247,6 +247,7 @@ export default function LightIntensity({ location, cluster, compact }: LightInte
                     </div>
                     <input
                       type="range"
+                      dir="rtl"
                       min={0}
                       max={100}
                       value={displayTarget}
@@ -259,17 +260,18 @@ export default function LightIntensity({ location, cluster, compact }: LightInte
                       className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                       title="Sun target: editable even when lights are off"
                     />
+                    {/* Scale: 0% at right, 100% at left — matches fill + RTL range */}
                     {dayTarget > 0 && (
                       <div
-                        className="absolute top-0 bottom-0 w-1 bg-accent-setpoint rounded-sm"
-                        style={{ right: `calc(${dayTarget}% - 2px)` }}
+                        className="absolute top-0 bottom-0 w-1 bg-accent-setpoint rounded-sm -translate-x-1/2 pointer-events-none"
+                        style={{ left: `${100 - dayTarget}%` }}
                         title={`Sun target: ${dayTarget}%`}
                       />
                     )}
                     {pendingTargets[light.device_name!] !== undefined && (
                       <div
-                        className="absolute top-0 bottom-0 w-1 bg-status-warning rounded-sm"
-                        style={{ right: `calc(${displayTarget}% - 2px)` }}
+                        className="absolute top-0 bottom-0 w-1 bg-status-warning rounded-sm -translate-x-1/2 pointer-events-none"
+                        style={{ left: `${100 - displayTarget}%` }}
                         title={`Pending: ${displayTarget}%`}
                       />
                     )}
