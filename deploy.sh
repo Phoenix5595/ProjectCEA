@@ -44,19 +44,25 @@ restart_services() {
 }
 
 run_health_checks() {
-  sleep 3
+  sleep 2
   local rc=0
-  local pair url name code
+  local pair url name code attempt
   for pair in "http://127.0.0.1:8000/health|backend" "http://127.0.0.1:8001/health|automation" "http://127.0.0.1:8004/health|onewire"; do
     url="${pair%%|*}"
     name="${pair##*|}"
-    code=$(curl -sS -m 30 -o /tmp/cea_health_body.txt -w "%{http_code}" "$url" || echo "000")
+    code="000"
+    for attempt in {1..90}; do
+      code=$(curl -sS -m 10 -o /tmp/cea_health_body.txt -w "%{http_code}" "$url" 2>/dev/null || echo "000")
+      if [[ "$code" == "200" ]]; then
+        log_event "health_ok" "" "$name" "$code"
+        break
+      fi
+      sleep 1
+    done
     if [[ "$code" != "200" ]]; then
       body=$(head -c 400 /tmp/cea_health_body.txt 2>/dev/null | tr '\n' ' ' || true)
       log_event "health_fail" "$body" "$name" "$code"
       rc=1
-    else
-      log_event "health_ok" "" "$name" "$code"
     fi
   done
   return "$rc"
