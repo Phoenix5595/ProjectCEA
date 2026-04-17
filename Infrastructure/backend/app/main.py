@@ -251,7 +251,12 @@ async def read_root():
 
 @app.get("/health")
 async def health_check():
-    """Health check endpoint."""
+    """Liveness probe.
+
+    Cheap — process is responding. Still reports the broadcast background
+    task's state, but does NOT touch Postgres/Redis. Use /ready for hard
+    dependency verification.
+    """
     global background_task
     health_status = {
         "status": "ok",
@@ -261,6 +266,61 @@ async def health_check():
         else "stopped",
     }
     return health_status
+
+
+_READY_TIMEOUT_SEC = 0.5
+
+
+@app.get("/ready")
+async def ready_check():
+    """Readiness probe.
+
+    Verifies every hard dependency (postgres pool) with a 500ms per-check
+    budget. Returns 503 with a JSON body on any failure so orchestrators
+    drain traffic. Broadcast loop state is advisory (reported but does not
+    fail /ready — the API can still serve reads without broadcasts).
+    """
+    import time as _time
+
+    from fastapi.responses import JSONResponse
+
+    from app.dependencies import get_db_manager
+
+    out: dict = {"service": "cea-backend", "checks": {}}
+    ok = True
+
+    t0 = _time.perf_counter()
+    try:
+        db = get_db_manager()
+        pool = await db._get_pool()
+        async with pool.acquire() as conn:
+            val = await asyncio.wait_for(conn.fetchval("SELECT 1"), timeout=_READY_TIMEOUT_SEC)
+        out["checks"]["postgres"] = {
+            "ok": val == 1,
+            "latency_ms": round((_time.perf_counter() - t0) * 1000, 1),
+        }
+        if val != 1:
+            ok = False
+    except asyncio.TimeoutError:
+        out["checks"]["postgres"] = {
+            "ok": False,
+            "detail": f"timeout after {_READY_TIMEOUT_SEC*1000:.0f}ms",
+        }
+        ok = False
+    except Exception as e:
+        out["checks"]["postgres"] = {"ok": False, "detail": f"{type(e).__name__}: {e}"}
+        ok = False
+
+    global background_task
+    if background_task and not background_task.done():
+        out["checks"]["broadcast_task"] = {"ok": True}
+    else:
+        out["checks"]["broadcast_task"] = {"ok": False, "detail": "not running"}
+
+    out["status"] = "ready" if ok else "not_ready"
+    if not ok:
+        return JSONResponse(content=out, status_code=503)
+    return out
 
 
 @app.websocket("/ws/{location}")

@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+from datetime import datetime, time
 import os
 import time as _time
-from datetime import datetime, time
 from typing import Any
 from zoneinfo import ZoneInfo
 

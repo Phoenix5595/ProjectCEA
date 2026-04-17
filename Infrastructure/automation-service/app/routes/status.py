@@ -154,7 +154,10 @@ async def _check_service_health() -> list[dict[str, Any]]:
 async def health_check(
     relay_manager: RelayManager = Depends(get_relay_manager),
 ) -> dict[str, Any]:
-    """Health check endpoint. Includes hardware.mcp (connected, simulation)."""
+    """Liveness probe. Process is responding; reports MCP state for operators.
+
+    Does NOT touch Postgres/Redis — use /ready for hard-dependency checks.
+    """
     mcp = relay_manager.mcp23017
     return {
         "status": "ok",
@@ -167,6 +170,90 @@ async def health_check(
             },
         },
     }
+
+
+_READY_TIMEOUT_SEC = 0.5
+
+
+@router.get("/ready")
+async def ready_check(
+    database: DatabaseManager = Depends(get_database),
+) -> Any:
+    """Readiness probe.
+
+    Verifies every hard dependency the control loop needs within 500ms:
+    postgres pool answers SELECT 1, redis pings back. Returns 503 on any
+    failure so orchestrators drain traffic. MCP/hardware state is advisory
+    and reported but does not fail readiness — the control loop's own
+    degraded-mode logic (Phase 4) is the right place to decide "fail the
+    whole service because hardware is missing".
+    """
+    from fastapi.responses import JSONResponse
+
+    out: dict[str, Any] = {"service": "automation-service", "checks": {}}
+    ok = True
+
+    t0 = time.perf_counter()
+    pool = database.pool
+    if pool is None:
+        out["checks"]["postgres"] = {"ok": False, "detail": "pool not initialized"}
+        ok = False
+    else:
+        try:
+            async with pool.acquire() as conn:
+                val = await asyncio.wait_for(conn.fetchval("SELECT 1"), timeout=_READY_TIMEOUT_SEC)
+            out["checks"]["postgres"] = {
+                "ok": val == 1,
+                "latency_ms": round((time.perf_counter() - t0) * 1000, 1),
+            }
+            if val != 1:
+                ok = False
+        except asyncio.TimeoutError:
+            out["checks"]["postgres"] = {
+                "ok": False,
+                "detail": f"timeout after {_READY_TIMEOUT_SEC*1000:.0f}ms",
+            }
+            ok = False
+        except Exception as e:
+            out["checks"]["postgres"] = {"ok": False, "detail": f"{type(e).__name__}: {e}"}
+            ok = False
+
+    # Automation-service's Redis client is synchronous today; run the ping
+    # in a worker thread so we keep the /ready endpoint itself async and
+    # the event loop stays free. Phase 4 / Phase 6 will convert this path
+    # to redis.asyncio; until then, to_thread is the correct bridge.
+    t1 = time.perf_counter()
+    automation_redis = getattr(database, "_automation_redis", None)
+    raw_client = getattr(automation_redis, "redis_client", None) if automation_redis else None
+    if raw_client is None:
+        out["checks"]["redis"] = {"ok": False, "detail": "client not initialized"}
+        ok = False
+    else:
+        try:
+            pong = await asyncio.wait_for(
+                asyncio.to_thread(raw_client.ping),
+                timeout=_READY_TIMEOUT_SEC,
+            )
+            out["checks"]["redis"] = {
+                "ok": bool(pong),
+                "latency_ms": round((time.perf_counter() - t1) * 1000, 1),
+            }
+            if not pong:
+                ok = False
+        except asyncio.TimeoutError:
+            out["checks"]["redis"] = {
+                "ok": False,
+                "detail": f"timeout after {_READY_TIMEOUT_SEC*1000:.0f}ms",
+            }
+            ok = False
+        except Exception as e:
+            out["checks"]["redis"] = {"ok": False, "detail": f"{type(e).__name__}: {e}"}
+            ok = False
+
+    out["status"] = "ready" if ok else "not_ready"
+    if not ok:
+        return JSONResponse(content=out, status_code=503)
+    return out
 
 
 @router.get("/api/status")
