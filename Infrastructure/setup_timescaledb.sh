@@ -7,9 +7,17 @@ echo "=========================================="
 echo "PostgreSQL and TimescaleDB Installation"
 echo "=========================================="
 
-# Check if running as root
 if [ "$EUID" -ne 0 ]; then 
     echo "Please run as root (use sudo)"
+    exit 1
+fi
+
+# Required: cea_user DB password. No default — refusing to install with a known-leaked value.
+# Generate one with:  openssl rand -base64 24
+if [ -z "${CEA_USER_PASSWORD:-}" ]; then
+    echo "ERROR: CEA_USER_PASSWORD env var is required."
+    echo "  Generate with: openssl rand -base64 24"
+    echo "  Then re-run:   sudo CEA_USER_PASSWORD='<generated>' $0"
     exit 1
 fi
 
@@ -48,14 +56,14 @@ sleep 3
 
 # Create database and user
 echo "Creating database and user..."
-sudo -u postgres psql <<EOF
+sudo -u postgres psql --set=cea_pw="$CEA_USER_PASSWORD" <<'EOF'
 -- Create database
 CREATE DATABASE cea_sensors;
 
--- Create user (adjust password as needed)
-CREATE USER cea_user WITH PASSWORD 'cea_password_change_me';
+-- Create user with operator-supplied password (no plaintext default in this script)
+\set quoted_pw '\'' :cea_pw '\''
+CREATE USER cea_user WITH PASSWORD :quoted_pw;
 
--- Grant privileges
 GRANT ALL PRIVILEGES ON DATABASE cea_sensors TO cea_user;
 
 -- Connect to database and create extension
@@ -74,10 +82,17 @@ echo "PostgreSQL and TimescaleDB installation complete!"
 echo "=========================================="
 echo "Database: cea_sensors"
 echo "User: cea_user"
-echo "Password: cea_password_change_me (CHANGE THIS!)"
+echo "Password: <set via CEA_USER_PASSWORD env var at install time>"
 echo ""
-echo "To change password:"
-echo "  sudo -u postgres psql -c \"ALTER USER cea_user WITH PASSWORD 'your_new_password';\""
+echo "Persist the password where systemd units can read it:"
+echo "  sudo install -d -m 0700 /opt/projectcea/shared/env"
+echo "  echo \"POSTGRES_PASSWORD=\$CEA_USER_PASSWORD\" | sudo install -m 0600 /dev/stdin /opt/projectcea/shared/env/postgres.env"
+echo ""
+echo "To rotate later:"
+echo "  NEW_PW=\$(openssl rand -base64 24)"
+echo "  sudo -u postgres psql -c \"ALTER USER cea_user WITH PASSWORD '\$NEW_PW';\""
+echo "  echo \"POSTGRES_PASSWORD=\$NEW_PW\" | sudo install -m 0600 /dev/stdin /opt/projectcea/shared/env/postgres.env"
+echo "  sudo systemctl restart automation-service cea-backend soil-sensor-service weather-service onewire-worker can-processor"
 echo ""
 echo "Test connection:"
 echo "  psql -h localhost -U cea_user -d cea_sensors"
