@@ -5,6 +5,17 @@
 
 set -euo pipefail
 
+# Concurrency guard: one deploy or rollback at a time. Shared with rollback-deploy.sh
+# so you cannot rollback while a deploy is running and vice versa.
+LOCK_FILE="/var/lock/projectcea-deploy.lock"
+sudo touch "$LOCK_FILE" 2>/dev/null || true
+sudo chmod 666 "$LOCK_FILE" 2>/dev/null || true
+exec 9>"$LOCK_FILE"
+if ! flock -n 9; then
+  echo "[deploy] another deploy/rollback is already running; aborting" >&2
+  exit 1
+fi
+
 SOURCE="/home/antoine/ProjectCEA"
 RELEASES="/opt/projectcea/releases"
 MAX_RELEASES=10
