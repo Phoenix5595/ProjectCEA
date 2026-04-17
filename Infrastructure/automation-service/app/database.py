@@ -181,13 +181,18 @@ class DatabaseManager:
             not self._automation_redis
             or not self._pool
             or not self._schedule_repo
-            or not self._setpoint_repo
+            or not self._climate_periods_repo
         ):
             logger.warning("Components not initialized, skipping schedule state load")
             return
 
+        # load_schedule_state_to_redis expects a ClimatePeriodRepository as the
+        # 4th argument; this previously passed self._setpoint_repo, which caused
+        # `'SetpointRepository' object has no attribute 'get_periods'` at every
+        # startup and left Redis schedule state incomplete (periods empty) for
+        # every cluster.
         await _load_schedule_state(
-            self._pool, self._automation_redis, self._schedule_repo, self._setpoint_repo
+            self._pool, self._automation_redis, self._schedule_repo, self._climate_periods_repo
         )
 
     # Repository properties for access
