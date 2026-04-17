@@ -10,6 +10,102 @@ import yaml
 
 logger = logging.getLogger(__name__)
 
+# Canonical ``device_type`` vocabulary used by the control code
+# (``device_processor``, ``device_controller``, ``pid_controller_manager``,
+# ``vpd_cascade_controller``). Every other code path should eventually use
+# these names only.
+_CANONICAL_DEVICE_TYPES: frozenset[str] = frozenset(
+    {
+        "heating",
+        "cooling",
+        "humidifier",
+        "dehumidifier",
+        "co2",
+        "exhaust",
+        "light",
+    }
+)
+
+# Safe, unambiguous YAML aliases rewritten in-memory to their canonical form on
+# load. ONLY include mappings where every code path agrees on the semantics:
+# - ``heater`` → ``heating``: safety-limits path (config.py) currently checks
+#   ``"heater"``; PID / VPD / device_controller all check ``"heating"``.
+#   Aliasing ``heater → heating`` AND updating the safety-limits branch below
+#   to check ``"heating"`` converges both paths with zero behaviour change for
+#   the single canonical spelling.
+#
+# Explicitly NOT aliased:
+# - ``fan``: ambiguous. ``config.py`` maps it to a cooling PID setpoint,
+#   ``device_controller`` has no handler, and operator intent is unclear
+#   (exhaust? circulation? cooling fan?). Left as-is and surfaced by the
+#   startup validator below so the operator sees a WARNING next time a fan
+#   device is enabled. Decide intent, THEN alias.
+_DEVICE_TYPE_ALIASES: dict[str, str] = {
+    "heater": "heating",
+}
+
+
+def _canonicalize_device_types(config: dict[str, Any]) -> None:
+    """Rewrite YAML ``device_type`` aliases to canonical names in-place.
+
+    Walks ``devices.<room>.<cluster>.<device_name>.device_type`` and:
+    - replaces known aliases with their canonical form (INFO log once per
+      alias), and
+    - emits a WARNING for any ``device_type`` that is neither canonical nor a
+      known alias, so drift is visible at startup.
+
+    Does NOT touch YAML on disk. Operator-facing config stays whatever the
+    operator wrote; canonicalization is a runtime concern.
+    """
+    devices = config.get("devices")
+    if not isinstance(devices, dict):
+        return
+
+    aliases_applied: dict[str, int] = {}
+    unknown_types: dict[str, list[str]] = {}
+
+    for room_name, room in devices.items():
+        if not isinstance(room, dict):
+            continue
+        for cluster_name, cluster in room.items():
+            if not isinstance(cluster, dict):
+                continue
+            for device_name, dev_info in cluster.items():
+                if not isinstance(dev_info, dict):
+                    continue
+                raw = dev_info.get("device_type")
+                if not isinstance(raw, str):
+                    continue
+                if raw in _DEVICE_TYPE_ALIASES:
+                    canonical = _DEVICE_TYPE_ALIASES[raw]
+                    dev_info["device_type"] = canonical
+                    aliases_applied[raw] = aliases_applied.get(raw, 0) + 1
+                elif raw not in _CANONICAL_DEVICE_TYPES:
+                    unknown_types.setdefault(raw, []).append(
+                        f"{room_name}/{cluster_name}/{device_name}"
+                    )
+
+    for alias, count in aliases_applied.items():
+        logger.info(
+            "device_type alias '%s' -> '%s' applied to %d device(s) at YAML load",
+            alias,
+            _DEVICE_TYPE_ALIASES[alias],
+            count,
+        )
+    for unknown, paths in unknown_types.items():
+        preview = ", ".join(paths[:5])
+        extra = f" (+{len(paths) - 5} more)" if len(paths) > 5 else ""
+        logger.warning(
+            "device_type '%s' is not in the canonical set %s and has no known "
+            "alias. %d device(s) affected: %s%s. Control-code behaviour for "
+            "this type may be undefined; consider renaming to a canonical name.",
+            unknown,
+            sorted(_CANONICAL_DEVICE_TYPES),
+            len(paths),
+            preview,
+            extra,
+        )
+
 
 def _merge_flower_room_devices_into_main(config: dict[str, Any]) -> bool:
     """Move Flower Room equipment from legacy ``front``/``back`` under ``devices:`` into ``main``.
@@ -113,6 +209,11 @@ class ConfigLoader:
             except OSError as e:
                 logger.error("Failed to persist Flower Room device merge: %s", e)
                 raise
+        # Canonicalize device_type vocabulary AFTER the flower-room merge (so
+        # every device entry has been moved under its final location) but
+        # BEFORE Pydantic validation (so the schema sees canonical values).
+        # In-memory only; YAML on disk is not rewritten.
+        _canonicalize_device_types(self._config)
         self._validate_config()
 
         # Load schedules if exists
@@ -265,9 +366,13 @@ class ConfigLoader:
                         pid_setpoints = None
                         break
 
-        # Use defaults if not configured
+        # Use defaults if not configured. ``heater`` is aliased to ``heating``
+        # at YAML load by ``_canonicalize_device_types``. The ``fan`` branch is
+        # preserved as-is (not in the alias list — semantics ambiguous, see
+        # _DEVICE_TYPE_ALIASES comment) to avoid changing behaviour for any
+        # fan device until the operator confirms intent.
         if not pid_setpoints:
-            if device_type == "heater":
+            if device_type == "heating":
                 pid_setpoints = {"heating_setpoint": 1}
             elif device_type == "fan":
                 pid_setpoints = {"cooling_setpoint": 1}
