@@ -21,14 +21,16 @@ logger = setup_structured_logging(
 container = ServiceContainer()
 
 # Create FastAPI app
+from shared.fastapi_helpers import docs_kwargs  # noqa: E402
+
 app = FastAPI(
     title="Automation Service",
     description="Device control and automation service for CEA (Controlled Environment Agriculture) system. Provides autonomous climate control, device scheduling, and real-time monitoring.",
     version="1.0.0",
     lifespan=lambda app: lifespan_manager(app, container),
-    docs_url="/docs",
-    redoc_url="/redoc",
-    openapi_url="/openapi.json",
+    # See backend/app/main.py for docs_kwargs() rationale (ENV=production
+    # closes OpenAPI surface).
+    **docs_kwargs(),
     contact={"name": "CEA Automation System", "email": "support@cea.local"},
     license_info={
         "name": "Proprietary",

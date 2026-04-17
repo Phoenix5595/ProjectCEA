@@ -5,24 +5,22 @@ from __future__ import annotations
 import os
 
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from shared.infra_logging import get_logger
+from shared.middleware import setup_cors as _shared_setup_cors
 
 logger = get_logger(__name__)
 
 
 def setup_cors(app: FastAPI) -> None:
-    """Setup CORS middleware."""
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["*"],  # Configure appropriately for production
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
+    """Setup CORS middleware via the shared helper.
+
+    Kept as a thin wrapper so existing imports in app/main.py keep working
+    without touching the automation-service setup_app() call site.
+    """
+    _shared_setup_cors(app, service_name="automation-service")
 
 
 def setup_static_files(app: FastAPI) -> None:

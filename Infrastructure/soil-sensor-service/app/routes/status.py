@@ -6,7 +6,8 @@ import asyncio
 import time
 from typing import Any
 
-from fastapi import APIRouter, Depends, Response, status as http_status
+from fastapi import APIRouter, Depends, Response
+from fastapi import status as http_status
 
 from app.database import DatabaseManager
 
@@ -71,10 +72,10 @@ async def ready(
             }
             if val != 1:
                 ok = False
-        except asyncio.TimeoutError:
+        except TimeoutError:
             out["checks"]["postgres"] = {
                 "ok": False,
-                "detail": f"timeout after {_READY_TIMEOUT_SEC*1000:.0f}ms",
+                "detail": f"timeout after {_READY_TIMEOUT_SEC * 1000:.0f}ms",
             }
             ok = False
         except Exception as e:

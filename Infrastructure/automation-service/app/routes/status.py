@@ -208,10 +208,10 @@ async def ready_check(
             }
             if val != 1:
                 ok = False
-        except asyncio.TimeoutError:
+        except TimeoutError:
             out["checks"]["postgres"] = {
                 "ok": False,
-                "detail": f"timeout after {_READY_TIMEOUT_SEC*1000:.0f}ms",
+                "detail": f"timeout after {_READY_TIMEOUT_SEC * 1000:.0f}ms",
             }
             ok = False
         except Exception as e:
@@ -240,10 +240,10 @@ async def ready_check(
             }
             if not pong:
                 ok = False
-        except asyncio.TimeoutError:
+        except TimeoutError:
             out["checks"]["redis"] = {
                 "ok": False,
-                "detail": f"timeout after {_READY_TIMEOUT_SEC*1000:.0f}ms",
+                "detail": f"timeout after {_READY_TIMEOUT_SEC * 1000:.0f}ms",
             }
             ok = False
         except Exception as e:

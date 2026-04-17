@@ -5,8 +5,6 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-
 from app.background_tasks import BackgroundTasks
 from app.config import ConfigLoader
 from app.database import DatabaseManager
@@ -80,22 +78,21 @@ async def lifespan(app: FastAPI):
         logger.info("Weather service stopped")
 
 
+from shared.fastapi_helpers import docs_kwargs  # noqa: E402
+
 # Create FastAPI app
 app = FastAPI(
     title="Weather Service",
     description="Weather data service for CEA system - YUL Airport",
     version="1.0.0",
     lifespan=lifespan,
+    **docs_kwargs(),  # ENV=production closes /docs, /redoc, /openapi.json.
 )
 
-# CORS middleware
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # Configure appropriately for production
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# CORS middleware (env-driven; unsafe '*' + credentials=True combo removed)
+from shared.middleware import setup_cors  # noqa: E402
+
+setup_cors(app, service_name="weather-service")
 
 
 # Dependency injection functions

@@ -21,8 +21,8 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
 from pathlib import Path
+import sys
 
 try:
     import yaml
@@ -80,7 +80,9 @@ def list_repo_unit_paths() -> None:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--list-units", action="store_true")
     group.add_argument("--list-deploy-managed-units", action="store_true")
