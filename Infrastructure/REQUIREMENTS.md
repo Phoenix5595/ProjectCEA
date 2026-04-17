@@ -86,6 +86,24 @@ Services that participate in deploy + rollback today:
 | onewire-worker | `onewire-worker.service` | n/a | 1-wire temperatures → Redis (no HTTP) |
 | grafana-server | `grafana-server.service` | 3000 | Pi Grafana — disabled in Phase 5c |
 
+## Security posture (Phase 3, in-progress)
+
+Landed in Phase 3.3 / 3.5 / 3.6:
+- **Secret redaction in logs**: `shared/infra_logging.SecretRedactionFilter` is auto-attached to every handler configured through `setup_structured_logging()`. It scrubs URL userinfo, `POSTGRES_PASSWORD=`, `X-API-Key:`, `Authorization: Bearer`, `token=`, `api_key=` *after* message rendering and *before* the formatter, so both JSON and console output are clean. Idempotent. False-positive risk intentionally > false-negative risk.
+- **OpenAPI surface**: `shared/fastapi_helpers.docs_kwargs()` closes `/docs`, `/redoc`, `/openapi.json` on every service when `ENV=production` is set in the process environment. Default (ENV unset) = docs reachable. Single operator flag; no code redeploy needed to flip.
+- **CORS**: `shared/middleware.setup_cors()` replaces per-service blocks. If `FRONTEND_ORIGINS=<comma-list>` is set, runs the explicit allow-list + credentials=True; else falls back to `allow_origins=["*"]` with credentials=False (browser-spec-correct). The unsafe `*`+`credentials=True` pair shipped by three services was silently rejected by browsers and is now gone.
+
+Operator-controlled knobs (both reversible without a code deploy):
+- `ENV=production` in each service's env → close `/docs` et al. Set via systemd drop-in `Environment=ENV=production` or (preferred) an `EnvironmentFile=/opt/projectcea/shared/env/cea.env` once the shared env file exists.
+- `FRONTEND_ORIGINS=http://mothernode:5173,http://mothernode:8080` → locked-down CORS with cookie/credential support. Required the day the SPA moves behind Caddy (Phase 3.4b).
+
+Still deferred (phase 3 remainder):
+- 3.1 `require_api_key` FastAPI dependency + frontend `X-API-Key`. Breaking change; rolled with 3.4c.
+- 3.2 WebSocket auth + origin check.
+- 3.4a–d Caddy + bind `127.0.0.1`. Four staged deploys × 24h soak per plan.
+- 3.7 systemd hardening. Blocked on 2.1c (drop-in retirement).
+- 3.8 `LoadCredential=` for DB password. Blocked on Phase 6 shared secrets module.
+
 ## Frontend port / origin map
 
 - SPA dev server: `http://mothernode:5173`
