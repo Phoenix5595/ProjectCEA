@@ -115,8 +115,13 @@ Landed in Phase 3.4a (additive, no behavior change):
 - **Validation** (done 3.4a): HTTP GET/POST to all three API ports, SPA static at `/`, and WebSocket `Upgrade: 101` on both `/ws` and `/ws/<location>` — all 200/101 through Caddy, bodies byte-matched direct vs proxied.
 - **Invariants**: direct ports 8000/8001/8002/8003/8004 remain open until Phase 3.4d; SPA still hits them directly until Phase 3.4b; auto-HTTPS stays off until TLS is actually needed. WebSocket upgrades pass through unmodified (Caddy preserves `Connection: Upgrade`).
 
+Landed in Phase 3.4b (frontend moves behind Caddy):
+- **Central endpoint config**: `Infrastructure/frontend/src/config/env.ts` is the single source of truth for `BACKEND_API_URL`, `AUTOMATION_API_URL`, `WEATHER_API_URL`, `buildWebSocketUrl()`, and `CEA_API_KEY`. By default all three base URLs resolve to the Caddy entrypoint — `window.location.origin` when the SPA is already served from :8080 (same-origin, no CORS), or `http://<hostname>:8080` when served from anywhere else (legacy :8001 access path).
+- **Per-service escape hatches preserved**: `VITE_BACKEND_API_URL`, `VITE_AUTOMATION_API_URL`, `VITE_WEATHER_API_URL`, `VITE_WEBSOCKET_URL` still win if set, so an operator can peel one client back to a direct port without a full rebuild.
+- **X-API-Key wiring**: If `VITE_CEA_API_KEY` is non-empty at build time, every axios client sends `X-API-Key: <key>` and the WebSocket URL gets `?token=<key>` appended. Server-side enforcement stays gated by `CEA_API_KEY_REQUIRE=true`; the header is inert until 3.4c flips the gate.
+- **No hardcoded ports remain in the built bundle** (verified by grepping `dist/assets/*.js`; only appearance is the SSR fallback `ws://localhost:8080/ws`).
+
 Still deferred (phase 3 remainder):
-- 3.4b Frontend switches to Caddy URL + `X-API-Key` header wiring.
 - 3.4c Flip `CEA_API_KEY_REQUIRE=true`; canary on weather-service first.
 - 3.4d Bind services to `127.0.0.1`; close LAN boundary.
 - 3.7 systemd hardening. Blocked on 2.1c (drop-in retirement).
