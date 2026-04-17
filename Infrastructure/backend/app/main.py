@@ -14,7 +14,6 @@ import signal
 import sys
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
 # Third-party imports
@@ -166,14 +165,17 @@ async def lifespan(app: FastAPI):
         logger.info(f"✅ Shutdown complete (final reason: {shutdown_reason})")
 
 
+from shared.fastapi_helpers import docs_kwargs  # noqa: E402
+
 app = FastAPI(
     title="CEA Dashboard v8 API",
     description="Backend API service for CEA (Controlled Environment Agriculture) dashboard. Provides sensor data, device status, and real-time monitoring endpoints.",
     version="1.0.0",
     lifespan=lifespan,
-    docs_url="/docs",
-    redoc_url="/redoc",
-    openapi_url="/openapi.json",
+    # docs_url / redoc_url / openapi_url default to /docs, /redoc,
+    # /openapi.json in dev. In production (ENV=production) docs_kwargs()
+    # returns all three as None so the OpenAPI surface is closed.
+    **docs_kwargs(),
     contact={"name": "CEA Dashboard", "email": "support@cea.local"},
     tags_metadata=[
         {
@@ -216,21 +218,11 @@ async def global_exception_handler(request: Request, exc: Exception):
     )
 
 
-# Add CORS middleware (API-only). Allow any origin so dashboard works when opened by hostname or LAN IP (e.g. http://mothernode:8001).
-env_origins = os.environ.get("FRONTEND_ORIGINS")
-if env_origins:
-    allow_origins = [o.strip() for o in env_origins.split(",") if o.strip()]
-    allow_credentials = True
-else:
-    allow_origins = ["*"]
-    allow_credentials = False  # required when using allow_origins=["*"]
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=allow_origins,
-    allow_credentials=allow_credentials,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# Add CORS middleware (API-only). Env-driven allow-list; falls back to
+# '*' without credentials when FRONTEND_ORIGINS is unset.
+from shared.middleware import setup_cors  # noqa: E402
+
+setup_cors(app, service_name="cea-backend")
 
 # Include routers
 app.include_router(sensors.router)

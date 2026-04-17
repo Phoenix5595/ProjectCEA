@@ -5,9 +5,123 @@ from __future__ import annotations
 from datetime import datetime
 import json
 import logging
+import re
 import sys
 import threading
 from typing import Any
+
+
+# =====================================================================
+# Secret redaction (finding #1.1)
+# =====================================================================
+#
+# Defense-in-depth filter. Runs after message formatting on every log
+# record so anything a developer forgot to scrub by hand gets caught
+# before it lands in the journal / stdout.
+#
+# We redact:
+#   - URL-embedded credentials: redis://user:pass@host, postgres://...
+#   - password=<value> or POSTGRES_PASSWORD=<value>
+#   - Authorization: Bearer <token>
+#   - X-API-Key: <value>
+#   - api_key=<value> or token=<value> in query-string form
+#
+# Rules intentionally over-match rather than under-match: a false positive
+# (a non-secret accidentally redacted) is cheap; a false negative (a real
+# secret written to disk) is not. Patterns compiled once at import.
+_REDACTED = "<REDACTED>"
+
+_REDACTION_PATTERNS: list[tuple[re.Pattern[str], str]] = [
+    # scheme://user:pass@host -> scheme://<REDACTED>@host
+    # match any scheme that looks like a network URL with userinfo.
+    (
+        re.compile(r"(?P<scheme>[A-Za-z][A-Za-z0-9+\-.]*://)[^\s/@]+:[^\s/@]+@"),
+        rf"\g<scheme>{_REDACTED}@",
+    ),
+    # password=... (and POSTGRES_PASSWORD=..., REDIS_PASSWORD=..., etc.)
+    # value terminated by whitespace, quote, comma, ; or end-of-line.
+    (
+        re.compile(
+            r'(?P<key>(?:[A-Z_]*PASSWORD|password))\s*=\s*["\']?(?P<val>[^\s"\',;]+)',
+            re.IGNORECASE,
+        ),
+        rf"\g<key>={_REDACTED}",
+    ),
+    # Authorization: Bearer <token>
+    (
+        re.compile(
+            r"(?P<hdr>Authorization\s*:\s*Bearer)\s+(?P<val>[^\s]+)",
+            re.IGNORECASE,
+        ),
+        rf"\g<hdr> {_REDACTED}",
+    ),
+    # X-API-Key: <value> (HTTP header form)
+    (
+        re.compile(
+            r"(?P<hdr>X-API-Key\s*:)\s*(?P<val>[^\s,;]+)",
+            re.IGNORECASE,
+        ),
+        rf"\g<hdr> {_REDACTED}",
+    ),
+    # token=... or api_key=... in query strings / form data
+    (
+        re.compile(
+            r"(?P<key>(?:api[_-]?key|token|secret))\s*=\s*(?P<val>[^\s&;]+)",
+            re.IGNORECASE,
+        ),
+        rf"\g<key>={_REDACTED}",
+    ),
+]
+
+
+def redact_secrets(s: str) -> str:
+    """Redact known secret patterns in ``s``. Idempotent. Returns a new str.
+
+    Safe to call on arbitrary text; patterns are anchored to common
+    credential shapes (URL userinfo, key=value, HTTP headers). Non-matching
+    text is returned unchanged.
+    """
+    if not s:
+        return s
+    out = s
+    for pat, repl in _REDACTION_PATTERNS:
+        out = pat.sub(repl, out)
+    return out
+
+
+class SecretRedactionFilter(logging.Filter):
+    """Last-chance redaction filter attached to every handler.
+
+    Mutates ``record.msg`` in place (and ``record.args`` when the formatted
+    message exposes a secret via ``%`` substitution). ``record.args`` is
+    tuple-of-values, rarely holds raw tokens in practice, but covered for
+    belt-and-braces.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        # First, bake args into msg so we can scan the final string. This
+        # mirrors what logging.Handler.format() will do downstream. Using
+        # getMessage() preserves both the %-style and brace-style patterns.
+        try:
+            rendered = record.getMessage()
+        except Exception:
+            # If formatting the message raised, don't swallow the log —
+            # let the handler surface the original error.
+            return True
+
+        redacted = redact_secrets(rendered)
+        if redacted != rendered:
+            # Overwrite the raw message with the already-redacted rendered
+            # form and clear args so the handler doesn't double-substitute.
+            record.msg = redacted
+            record.args = None
+
+        # Exception text is a common leak point (stack traces quoting a
+        # connect string). Scrub it too if present.
+        if record.exc_text:
+            record.exc_text = redact_secrets(record.exc_text)
+
+        return True
 
 
 class JsonFormatter(logging.Formatter):
@@ -208,11 +322,15 @@ def setup_structured_logging(
         else:
             console_handler.setFormatter(ConsoleFormatter())
 
+        # Last-chance secret redaction on every record (finding #1.1,
+        # Phase 3.6). Runs before the formatter so both JSON and console
+        # handlers get scrubbed output.
+        console_handler.addFilter(SecretRedactionFilter())
+
         root.addHandler(console_handler)
 
     _root_logger = root
 
-    # Log startup message
     root.info(f"Structured logging initialized for {service_name}")
 
     return root

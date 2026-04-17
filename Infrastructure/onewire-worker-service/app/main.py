@@ -47,7 +47,14 @@ async def lifespan(app: FastAPI):
         logger.info("onewire-worker stopped")
 
 
-app = FastAPI(title="1-Wire Reader Service", version="1.0.0", lifespan=lifespan)
+from shared.fastapi_helpers import docs_kwargs  # noqa: E402
+
+app = FastAPI(
+    title="1-Wire Reader Service",
+    version="1.0.0",
+    lifespan=lifespan,
+    **docs_kwargs(),  # ENV=production closes /docs, /redoc, /openapi.json.
+)
 
 
 @app.get("/health")
