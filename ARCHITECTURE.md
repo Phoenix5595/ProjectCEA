@@ -149,6 +149,7 @@ ProjectCEA is a sophisticated Controlled Environment Agriculture (CEA) automatio
 - **`effective_setpoint:*`**: Current target values (no TTL)
   - Example: `effective_setpoint:flower_room:main:temperature` → 24.0
   - Purpose: Persistent setpoint storage
+  - **Per-dimmer light** (DFR0971): `effective_setpoint:{loc}:{cluster}:light:{device_name}:effective_intensity` (and `:nominal_intensity`, `:ramp_progress_light`) so multiple fixtures in one cluster do not overwrite each other in Redis.
 
 **Performance Characteristics**:
 - **Read Latency**: <1ms for GET operations
@@ -177,6 +178,7 @@ ProjectCEA is a sophisticated Controlled Environment Agriculture (CEA) automatio
   - Purpose: >24 hour time range queries
 - **`effective_setpoints`**: Setpoint change history
   - Purpose: Control algorithm analysis and debugging
+  - **Per-light Grafana curves** use **`effective_light_intensity`** here (throttled DB logger from the automation loop). ZoneConfig **live CUR** reads **`light:{location}:{cluster}:{device_name}`** in Redis first; those paths are intentionally different.
 - **`automation_state`**: Device state change history
   - Purpose: Equipment runtime analysis and maintenance scheduling
 
@@ -223,7 +225,7 @@ WS   /ws/{location}                             # WebSocket live updates
 **Control Loop Architecture**:
 1. **Sensor Data Acquisition**: Redis `sensor:*` key retrieval (<1ms latency)
 2. **Configuration Loading**: Database snapshot of zones, devices, setpoints
-3. **Scheduler Processing**: Time-based mode determination and setpoint calculation
+3. **Scheduler Processing**: Time-based mode determination and setpoint calculation (`merge_schedules_with_config` adds synthetic **SUN** from `room_schedule` and synthetic **MOON** as the photoperiod complement when missing, so `get_light_intensity_details` always resolves)
 4. **Control Algorithm Execution**: PID controllers + VPD cascade logic
 5. **Safety Interlock Evaluation**: Equipment protection and failure detection
 6. **Device Command Generation**: Relay and PWM output calculations

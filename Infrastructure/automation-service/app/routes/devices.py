@@ -7,6 +7,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 import yaml
 
+from app.cluster_config import ensure_configured_cluster, iter_flower_main_merged_devices
 from app.config import ConfigLoader
 from app.control.relay_manager import RelayManager
 from app.database import DatabaseManager
@@ -23,6 +24,13 @@ from shared.infra_logging import get_logger
 logger = get_logger(__name__)
 
 router = APIRouter()
+
+
+def _api_cluster_for_device_row(location: str, cluster: str) -> str:
+    """Devices UI and control plane use ``main`` for Flower; legacy YAML may still tag ``front``/``back``."""
+    if location == "Flower Room" and cluster in ("front", "back"):
+        return "main"
+    return cluster
 
 
 # These will be overridden by main app
@@ -77,21 +85,32 @@ async def get_devices_for_location_cluster(
     config: ConfigLoader = Depends(get_config),
 ) -> dict[str, Any]:
     """Get devices for a specific location/cluster with configuration."""
+    ensure_configured_cluster(config.get_devices(), location, cluster)
     devices = {}
     device_states = relay_manager.get_all_states()
     device_configs = config.get_devices()
 
     # Get all devices from config for this location/cluster
     location_config = device_configs.get(location, {})
-    cluster_config = location_config.get(cluster, {})
+    if location == "Flower Room" and cluster == "main":
+        cluster_config_items = iter_flower_main_merged_devices(location_config)
+    else:
+        raw = location_config.get(cluster, {})
+        cluster_config_items = [
+            (cluster, name, info) for name, info in raw.items() if isinstance(info, dict)
+        ]
 
     # Iterate over all devices in config (not just those with states)
-    for device_name, device_info in cluster_config.items():
+    seen_names: set[str] = set()
+    for src_cluster, device_name, device_info in cluster_config_items:
+        if device_name in seen_names:
+            continue
+        seen_names.add(device_name)
         # Get state from relay manager (default to 0 if not found)
-        key = (location, cluster, device_name)
+        key = (location, src_cluster, device_name)
         state = device_states.get(key, 0)
-        mode = relay_manager.get_device_mode(location, cluster, device_name) or "auto"
-        channel = relay_manager.get_channel(location, cluster, device_name)
+        mode = relay_manager.get_device_mode(location, src_cluster, device_name) or "auto"
+        channel = relay_manager.get_channel(location, src_cluster, device_name)
 
         devices[device_name] = {
             "state": state,
@@ -247,12 +266,7 @@ async def get_control_history(
             status_code=400,
             detail="Parameter 'limit' must be an integer between 1 and 100",
         )
-    devices_config = config.get_devices()
-    if location not in devices_config or cluster not in devices_config.get(location, {}):
-        raise HTTPException(
-            status_code=400,
-            detail="Invalid location or cluster",
-        )
+    ensure_configured_cluster(config.get_devices(), location, cluster)
     try:
         return await database.control_action_repo.get_recent_control_history(
             location, cluster, limit
@@ -460,7 +474,7 @@ async def get_all_channels(config: ConfigLoader = Depends(get_config)) -> dict[s
                                 "name": display_name,
                                 "device_name": device_name,
                                 "location": location,
-                                "cluster": cluster,
+                                "cluster": _api_cluster_for_device_row(location, cluster),
                             }
                         )
 
@@ -479,7 +493,7 @@ async def get_all_channels(config: ConfigLoader = Depends(get_config)) -> dict[s
                         "display_name": display_name,
                         "device_type": device_type,
                         "location": location,
-                        "cluster": cluster,
+                        "cluster": _api_cluster_for_device_row(location, cluster),
                         "light_name": display_name if device_type == "light" else None,
                     }
 
@@ -527,13 +541,15 @@ async def update_channel_device(
     # Get the full config
     full_config = config._config
 
+    effective_cluster = "main" if update.location == "Flower Room" else update.cluster
+
     # Ensure devices structure exists
     if "devices" not in full_config:
         full_config["devices"] = {}
     if update.location not in full_config["devices"]:
         full_config["devices"][update.location] = {}
-    if update.cluster not in full_config["devices"][update.location]:
-        full_config["devices"][update.location][update.cluster] = {}
+    if effective_cluster not in full_config["devices"][update.location]:
+        full_config["devices"][update.location][effective_cluster] = {}
 
     device_configs = full_config["devices"]
 
@@ -543,7 +559,7 @@ async def update_channel_device(
             for dev_name, dev_info in list(devices.items()):
                 if dev_info.get("channel") == channel and (
                     loc != update.location
-                    or clust != update.cluster
+                    or clust != effective_cluster
                     or dev_name != update.device_name
                 ):
                     # Remove old device if channel is being reassigned
@@ -566,7 +582,7 @@ async def update_channel_device(
         device_info["dimming_enabled"] = True
         device_info["dimming_type"] = "dfr0971"
 
-    device_configs[update.location][update.cluster][update.device_name] = device_info
+    device_configs[update.location][effective_cluster][update.device_name] = device_info
 
     # Write back to YAML
     try:
@@ -583,6 +599,43 @@ async def update_channel_device(
         "display_name": device_info.get("display_name"),
         "device_type": normalized_type,
         "location": update.location,
-        "cluster": update.cluster,
+        "cluster": effective_cluster,
+        "success": True,
+    }
+
+
+@router.delete("/api/devices/channels/{channel}")
+async def clear_channel_device(
+    channel: int, config: ConfigLoader = Depends(get_config)
+) -> dict[str, Any]:
+    """Clear a channel assignment by removing mapped device(s) on that channel."""
+    if channel < 0 or channel > 15:
+        raise HTTPException(status_code=400, detail="Channel must be between 0 and 15")
+
+    full_config = config._config
+    devices_root = full_config.get("devices", {})
+    removed: list[dict[str, str]] = []
+
+    for location, clusters in list(devices_root.items()):
+        for cluster, devices in list(clusters.items()):
+            for device_name, device_info in list(devices.items()):
+                if device_info.get("channel") == channel:
+                    del devices[device_name]
+                    removed.append(
+                        {"location": location, "cluster": cluster, "device_name": device_name}
+                    )
+
+    try:
+        with open(config.config_path, "w") as f:
+            yaml.dump(full_config, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
+        config.reload()
+    except Exception as e:
+        logger.error(f"Error writing config while clearing channel: {e}")
+        raise HTTPException(status_code=500, detail="Failed to update configuration file") from e
+
+    return {
+        "channel": channel,
+        "cleared": True,
+        "removed_devices": removed,
         "success": True,
     }

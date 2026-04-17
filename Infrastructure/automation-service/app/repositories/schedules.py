@@ -406,24 +406,29 @@ class ScheduleRepository(BaseRepository):
 
     async def update_light_schedule_target(
         self, location: str, cluster: str, device_name: str, target_intensity: float
-    ) -> bool:
-        """Update target_intensity for a light device's sun schedule (not moon)."""
+    ) -> int:
+        """Update target_intensity for a light device's sun schedule (not moon).
+
+        Returns:
+            Number of schedule rows updated (0 if none matched).
+        """
         try:
             async with self.pool.acquire() as conn:
-                result = await conn.execute(
+                rows = await conn.fetch(
                     """
                     UPDATE schedules
                     SET target_intensity = $4, updated_at = NOW()
                     WHERE location = $1 AND cluster = $2 AND device_name = $3
                     AND enabled = true AND mode IN ('SUN', 'DAY')
+                    RETURNING id
                 """,
                     location,
                     cluster,
                     device_name,
                     target_intensity,
                 )
-                changed = result != "UPDATE 0"
-                if changed:
+                n = len(rows)
+                if n:
                     await self._publish_schedule_changed(
                         location=location,
                         cluster=cluster,
@@ -434,13 +439,16 @@ class ScheduleRepository(BaseRepository):
                     try:
                         s = get_state_manager()
                         await s.delete(self._cache_key_schedules(location, cluster))
+                        await s.delete(self._cache_key_schedules(location, None))
+                        # POST /lights/.../target uses get_schedules() with no filter → key schedules:all
+                        await s.delete(self._cache_key_schedules(None, None))
                         await s.delete(self._cache_key_light(location, cluster, device_name))
                     except Exception:
                         pass
-                return changed
+                return n
         except Exception as e:
             logger.error(f"Failed to update light schedule target: {e}")
-            return False
+            return 0
 
     async def get_room_schedule(self, location: str, cluster: str) -> dict[str, Any] | None:
         """Get room schedule (day/night times) for a location/cluster."""

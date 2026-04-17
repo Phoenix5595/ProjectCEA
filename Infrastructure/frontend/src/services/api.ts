@@ -4,7 +4,7 @@ import type { SensorDataResponse } from '../types/sensor';
 import type { Device, ControlHistoryEntry } from '../types/device';
 import type { PIDParameters, PIDParameterUpdate, PIDModeInfo, PIDModeUpdate, AutotuneState } from '../types/pid';
 import type { Schedule, ScheduleCreate, ScheduleUpdate } from '../types/schedule';
-import type { LightStatus } from '../types/light';
+import type { LightStatus, LightTargetSetResponse } from '../types/light';
 import type { RoomMode, FlowerSubmode, RoomModeWithParams, SetModeRequest, UpdateParametersRequest } from '../types/modes';
 
 function defaultApiUrl(port: number): string {
@@ -78,6 +78,11 @@ class ApiClient {
     return response.data ?? {};
   }
 
+  async getAllLiveSensorData(): Promise<Array<{ sensor: string; value: number; time: string; unit: string }>> {
+    const response = await this.backendClient.get('/api/sensors/live/all');
+    return Array.isArray(response.data) ? response.data : [];
+  }
+
   // Devices (automation service)
   async getAllDevices(): Promise<Device[]> {
     const response = await this.automationClient.get('/api/devices');
@@ -86,6 +91,46 @@ class ApiClient {
 
   async getDevicesForLocationCluster(location: string, cluster: string): Promise<{ location: string; cluster: string; devices: Record<string, any> }> {
     const response = await this.automationClient.get(`/api/devices/${location}/${cluster}`);
+    return response.data;
+  }
+
+  // DFR0971 (automation service)
+  async getDfrAssignments(): Promise<{
+    boards: Array<{ board_id: number; i2c_address: string; name?: string; available?: boolean }>;
+    assignments: Record<
+      string,
+      {
+        '0': { location: string; cluster: string; device_name: string; display_name?: string | null } | null;
+        '1': { location: string; cluster: string; device_name: string; display_name?: string | null } | null;
+      }
+    >;
+    lights: Array<{
+      location: string;
+      cluster: string;
+      device_name: string;
+      display_name?: string | null;
+      dimming_board_id?: number | null;
+      dimming_channel?: number | null;
+    }>;
+  }> {
+    const response = await this.automationClient.get('/api/lights/dfr/assignments');
+    return response.data;
+  }
+
+  async assignDfrChannel(
+    location: string,
+    cluster: string,
+    deviceName: string,
+    boardId: number | null,
+    dimmingChannel: number | null
+  ): Promise<any> {
+    const response = await this.automationClient.put('/api/lights/dfr/assign', {
+      location,
+      cluster,
+      device_name: deviceName,
+      board_id: boardId,
+      dimming_channel: dimmingChannel,
+    });
     return response.data;
   }
 
@@ -129,6 +174,16 @@ class ApiClient {
         light_name: lightName
       }
     );
+    return response.data;
+  }
+
+  async getRelayBoardState(): Promise<{ channels: boolean[]; mcp_connected: boolean; simulation: boolean }> {
+    const response = await this.automationClient.get('/api/hardware/relays/state');
+    return response.data;
+  }
+
+  async clearChannelDevice(channel: number): Promise<any> {
+    const response = await this.automationClient.delete(`/api/devices/channels/${channel}`);
     return response.data;
   }
 
@@ -248,6 +303,8 @@ class ApiClient {
       intensity: number;
       target_intensity?: number | null;
       day_target_intensity?: number | null;
+      schedule_sun_target_intensity?: number | null;
+      scheduler_nominal_intensity?: number | null;
       voltage?: number;
       board_id?: string;
       channel?: number;
@@ -257,7 +314,12 @@ class ApiClient {
     return response.data;
   }
 
-  async setLightIntensity(location: string, cluster: string, deviceName: string, intensity: number): Promise<LightStatus> {
+  async setLightIntensity(
+    location: string,
+    cluster: string,
+    deviceName: string,
+    intensity: number
+  ): Promise<LightTargetSetResponse> {
     const response = await this.automationClient.post(`/api/lights/${location}/${cluster}/${deviceName}/target`, {
       target_intensity: intensity
     });
@@ -306,8 +368,22 @@ class ApiClient {
     return response.data;
   }
 
-  async getClimatePeriods(location: string, cluster: string): Promise<any[]> {
-    const response = await this.automationClient.get(`/api/climate-periods/${location}/${cluster}`);
+  async getClimatePeriods(
+    location: string,
+    cluster: string,
+    modeId?: number | null,
+    submodeId?: number | null
+  ): Promise<any[]> {
+    const params: Record<string, number> = {};
+    if (modeId != null) {
+      params.mode_id = modeId;
+      if (submodeId != null) {
+        params.submode_id = submodeId;
+      }
+    }
+    const response = await this.automationClient.get(`/api/climate-periods/${location}/${cluster}`, {
+      params: Object.keys(params).length > 0 ? params : undefined,
+    });
     return response.data;
   }
 

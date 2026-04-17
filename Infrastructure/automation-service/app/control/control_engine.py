@@ -17,7 +17,7 @@ from app.control.light_effective_setpoint_logging import log_light_effective_int
 from app.control.performance_monitor import get_performance_monitor
 from app.control.pid_controller_manager import PIDControllerManager
 from app.control.relay_manager import RelayManager
-from app.control.scheduler import Scheduler
+from app.control.scheduler import LOCAL_TZ, Scheduler
 from app.control.sensor_data_manager import SensorDataManager
 from app.control.sensor_reader import SensorReader
 from app.control.setpoint_calculator import SetpointCalculator
@@ -133,6 +133,7 @@ class ControlEngine:
         # Throttle light effective_setpoints DB logging to reduce CPU/IO (log at most every 60s per device)
         self._last_light_effective_log: dict[tuple[str, str, str], datetime] = {}
         self._light_effective_log_interval_sec = 60
+        self._last_light_sun_schedule_gap_error: dict[tuple[str, str, str], float] = {}
 
         # Config snapshot cache (device tree + sensor mapping, shared TTL)
         self._config_cache = EngineConfigCache(ttl_seconds=30.0)
@@ -240,7 +241,7 @@ class ControlEngine:
 
         loop_start_time = datetime.now() if self._profiling_enabled else None
 
-        current_time = datetime.now()
+        current_time = datetime.now(tz=LOCAL_TZ)
 
         # Get cached device hierarchy and sensor mapping (performance optimization)
         devices = self._config_cache.get_device_hierarchy(self.config.get_devices)
@@ -351,6 +352,9 @@ class ControlEngine:
                     database=self.database,
                     last_light_effective_log=self._last_light_effective_log,
                     interval_sec=float(self._light_effective_log_interval_sec),
+                    redis_client=getattr(self.database, "_automation_redis", None),
+                    last_sun_schedule_gap_error=self._last_light_sun_schedule_gap_error,
+                    sun_schedule_gap_error_interval_sec=60.0,
                 )
 
         # Log automation state for all devices

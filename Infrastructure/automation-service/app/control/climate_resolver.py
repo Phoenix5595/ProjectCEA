@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
+from app.control.scheduler import LOCAL_TZ
 from shared.infra_logging import get_logger
 
 logger = get_logger(__name__)
@@ -41,10 +42,11 @@ class ClimatePeriodResolver:
         Returns:
             Dict with period info, setpoint_data, effective_data, and current_period_name
         """
-        from zoneinfo import ZoneInfo
-
-        # Get current time in America/Toronto timezone (HH:MM format)
-        toronto_time = datetime.now(ZoneInfo("America/Toronto"))
+        # Wall clock for climate_periods lookup — align with control loop ``current_time``.
+        if current_time.tzinfo is None:
+            toronto_time = current_time.replace(tzinfo=LOCAL_TZ)
+        else:
+            toronto_time = current_time.astimezone(LOCAL_TZ)
         time_str = toronto_time.strftime("%H:%M")
 
         # Get light schedule for is_sun determination

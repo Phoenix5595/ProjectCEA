@@ -284,6 +284,8 @@ class SetpointRepository(BaseRepository):
                     ramp_progress_humidity=ramp_progress_humidity,
                     ramp_progress_co2=ramp_progress_co2,
                     ramp_progress_vpd=ramp_progress_vpd,
+                    nominal_light_intensity=nominal_light_intensity,
+                    ramp_progress_light=ramp_progress_light,
                     mode=mode,
                 )
 

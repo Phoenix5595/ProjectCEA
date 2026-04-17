@@ -2,7 +2,7 @@ import { useParams } from 'react-router-dom'
 import { useState, useEffect, useCallback } from 'react'
 import { apiClient } from '../services/api'
 import { logger } from '../utils/logger'
-import { getLocationDisplayName, getLocationBackendName } from '../config/zones'
+import { getLocationDisplayName, getLocationBackendName, getClusterDisplayName } from '../config/zones'
 import type { RoomModeWithParams, ModeParameters } from '../types/modes'
 import { useControlActions } from '../contexts/ControlActionsContext'
 import ClimatePeriodTimeline from '../components/ClimatePeriodTimeline'
@@ -17,6 +17,21 @@ import type { ClimatePeriod } from '../types/climatePeriod'
 export interface ZoneConfigProps {
   location?: string;
   cluster?: string;
+}
+
+function mapPeriodsFromApi(periods: any[]): ClimatePeriod[] {
+  return periods.map((p: any) => ({
+    id: p.id,
+    period_name: p.period_name,
+    start_time: p.start_time ? p.start_time.substring(0, 5) : '00:00',
+    end_time: p.end_time ? p.end_time.substring(0, 5) : '00:00',
+    ramp_minutes: p.ramp_minutes,
+    heating_setpoint: p.heating_setpoint,
+    cooling_setpoint: p.cooling_setpoint,
+    vpd_setpoint: p.vpd_setpoint != null ? Math.round(p.vpd_setpoint * 100) / 100 : null,
+    co2_setpoint: p.co2_setpoint,
+    details: p.details || ''
+  }))
 }
 
 export default function ZoneConfig({ location: propsLocation, cluster: propsCluster }: ZoneConfigProps) {
@@ -35,6 +50,24 @@ export default function ZoneConfig({ location: propsLocation, cluster: propsClus
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
 
+  const loadClimatePeriodsForMode = useCallback(
+    async (mode: RoomModeWithParams) => {
+      if (!location || !cluster) return
+      const periods = await apiClient.getClimatePeriods(
+        location,
+        cluster,
+        mode.mode_id ?? undefined,
+        mode.submode_id ?? undefined
+      )
+      if (periods && periods.length > 0) {
+        setClimatePeriods(mapPeriodsFromApi(periods))
+      } else {
+        setClimatePeriods([])
+      }
+    },
+    [location, cluster]
+  )
+
   async function loadRoomMode() {
     setLoading(true)
     setError(null)
@@ -42,21 +75,7 @@ export default function ZoneConfig({ location: propsLocation, cluster: propsClus
       const mode = await apiClient.getRoomModeWithParams(location!, cluster!)
       setRoomMode(mode)
 
-      const periods = await apiClient.getClimatePeriods(location!, cluster!)
-      if (periods && periods.length > 0) {
-        setClimatePeriods(periods.map((p: any) => ({
-          id: p.id,
-          period_name: p.period_name,
-          start_time: p.start_time ? p.start_time.substring(0, 5) : '00:00',
-          end_time: p.end_time ? p.end_time.substring(0, 5) : '00:00',
-          ramp_minutes: p.ramp_minutes,
-          heating_setpoint: p.heating_setpoint,
-          cooling_setpoint: p.cooling_setpoint,
-          vpd_setpoint: p.vpd_setpoint != null ? Math.round(p.vpd_setpoint * 100) / 100 : null,
-          co2_setpoint: p.co2_setpoint,
-          details: p.details || ''
-        })))
-      }
+      await loadClimatePeriodsForMode(mode)
     } catch (err: any) {
       logger.error('Error loading room mode:', err)
       setError(err.response?.data?.detail || err.message || 'Failed to load')
@@ -88,13 +107,14 @@ export default function ZoneConfig({ location: propsLocation, cluster: propsClus
     try {
       const newMode = await apiClient.setRoomMode(location, cluster, { mode_name: modeName, submode_name: submodeName })
       setRoomMode(newMode)
+      await loadClimatePeriodsForMode(newMode)
       setSuccess('Mode changed')
       setTimeout(() => setSuccess(null), 2000)
     } catch (err: any) {
       logger.error('Error changing mode:', err)
       setError(err.response?.data?.detail || 'Failed to change mode')
     }
-  }, [location, cluster])
+  }, [location, cluster, loadClimatePeriodsForMode])
 
   const handleSave = useCallback(async () => {
     if (!roomMode || !location || !cluster) return
@@ -119,7 +139,13 @@ export default function ZoneConfig({ location: propsLocation, cluster: propsClus
         ramp_down_duration: p.light_ramp_down_minutes ?? null,
       })
 
-      await apiClient.saveClimatePeriods(location, cluster, climatePeriods, roomMode?.mode_id ?? undefined, roomMode?.submode_id ?? undefined)
+      await apiClient.saveClimatePeriods(
+        location,
+        cluster,
+        climatePeriods,
+        updated.mode_id ?? undefined,
+        updated.submode_id ?? undefined
+      )
 
       setSuccess('Saved')
       setTimeout(() => setSuccess(null), 2000)
@@ -146,7 +172,10 @@ export default function ZoneConfig({ location: propsLocation, cluster: propsClus
 
   useEffect(() => {
     setActions({
-      roomName: cluster === 'main' ? getLocationDisplayName(location || '') : `${getLocationDisplayName(location || '')} - ${cluster}`,
+      roomName:
+        cluster === 'main'
+          ? getLocationDisplayName(location || '')
+          : `${getLocationDisplayName(location || '')} - ${getClusterDisplayName(location || '', cluster)}`,
       showActions: true,
       saving,
       saveSuccess: success,

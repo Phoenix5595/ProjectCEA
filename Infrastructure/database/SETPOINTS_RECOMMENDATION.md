@@ -41,7 +41,7 @@ INSERT INTO setpoints (room_id, variable, target) VALUES (1, 'vpd', 1.2);
 ```sql
 -- One row for all setpoints:
 INSERT INTO setpoints (location, cluster, temperature, humidity, co2, vpd, mode)
-VALUES ('Flower Room', 'back', 24.0, 60.0, 1000.0, 1.2, 'DAY');
+VALUES ('Flower Room', 'main', 24.0, 60.0, 1000.0, 1.2, 'DAY');
 ```
 
 ## Action Items

@@ -6,6 +6,7 @@ from datetime import datetime
 import json
 from typing import TYPE_CHECKING, Any, cast
 
+from app.redis.schema import effective_setpoint_light_field_key
 from shared.infra_logging import get_logger
 
 if TYPE_CHECKING:
@@ -250,24 +251,45 @@ class SetpointsMixin:
             if ramp_progress_vpd is not None:
                 pipe.setex(f"{prefix}:ramp_progress_vpd", setpoint_ttl, str(ramp_progress_vpd))
 
-            if device_name is not None:
-                pipe.setex(f"{prefix}:device_name", setpoint_ttl, device_name)
-
-            if effective_light_intensity is not None:
-                pipe.setex(
-                    f"{prefix}:effective_light_intensity",
-                    setpoint_ttl,
-                    str(effective_light_intensity),
+            has_light_fields = (
+                effective_light_intensity is not None
+                or nominal_light_intensity is not None
+                or ramp_progress_light is not None
+            )
+            if has_light_fields and not device_name:
+                logger.warning(
+                    "Skipping Redis light effective setpoints: device_name required when writing "
+                    "effective_light_intensity, nominal_light_intensity, or ramp_progress_light"
                 )
-            if nominal_light_intensity is not None:
-                pipe.setex(
-                    f"{prefix}:nominal_light_intensity", setpoint_ttl, str(nominal_light_intensity)
-                )
-            if ramp_progress_light is not None:
-                pipe.setex(f"{prefix}:ramp_progress_light", setpoint_ttl, str(ramp_progress_light))
+            elif has_light_fields and device_name:
+                if effective_light_intensity is not None:
+                    pipe.setex(
+                        effective_setpoint_light_field_key(
+                            location, cluster, device_name, "effective_intensity"
+                        ),
+                        setpoint_ttl,
+                        str(effective_light_intensity),
+                    )
+                if nominal_light_intensity is not None:
+                    pipe.setex(
+                        effective_setpoint_light_field_key(
+                            location, cluster, device_name, "nominal_intensity"
+                        ),
+                        setpoint_ttl,
+                        str(nominal_light_intensity),
+                    )
+                if ramp_progress_light is not None:
+                    pipe.setex(
+                        effective_setpoint_light_field_key(
+                            location, cluster, device_name, "ramp_progress_light"
+                        ),
+                        setpoint_ttl,
+                        str(ramp_progress_light),
+                    )
 
             pipe.execute()
 
+            skip_light_stream = has_light_fields and not device_name
             self._write_effective_setpoints_to_stream(
                 location,
                 cluster,
@@ -288,9 +310,10 @@ class SetpointsMixin:
                 effective_vpd_setpoint,
                 nominal_vpd_setpoint,
                 ramp_progress_vpd,
-                effective_light_intensity,
-                nominal_light_intensity,
-                ramp_progress_light,
+                None if skip_light_stream else effective_light_intensity,
+                None if skip_light_stream else nominal_light_intensity,
+                None if skip_light_stream else ramp_progress_light,
+                None if skip_light_stream else device_name,
             )
 
             return True
@@ -322,6 +345,7 @@ class SetpointsMixin:
         eff_light: float | None,
         nom_light: float | None,
         ramp_light: float | None,
+        light_device_name: str | None = None,
     ) -> None:
         if not self.stream_client:
             return
@@ -351,6 +375,8 @@ class SetpointsMixin:
                         stream_data["mode"] = mode
                     if ramp is not None:
                         stream_data["ramp"] = str(ramp)
+                    if var_name == "light" and light_device_name:
+                        stream_data["device_name"] = light_device_name
                     self.stream_client.xadd(
                         "stream:control",
                         cast(dict[Any, Any], stream_data),

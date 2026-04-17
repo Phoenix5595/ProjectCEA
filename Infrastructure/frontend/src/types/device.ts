@@ -20,6 +20,9 @@ export interface DeviceState {
 /** Control history entry (recent on/off log). */
 export interface ControlHistoryEntry {
   timestamp: string;
+  location?: string;
+  cluster?: string;
+  channel?: number | null;
   device_name: string;
   old_state: number | null;
   new_state: number | null;

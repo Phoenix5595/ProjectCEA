@@ -1,4 +1,7 @@
-/** System status panel component for dashboard. */
+/**
+ * Legacy right-column Mothernode panel (includes Hardware/Network blocks).
+ * Kept in repo for reference; the main dashboard uses `MothernodeRibbon` instead — do not wire this back without review.
+ */
 import type { SystemStats } from '../hooks/useSystemStatus';
 
 export interface SystemStatusPanelProps {

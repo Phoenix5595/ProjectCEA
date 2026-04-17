@@ -14,76 +14,22 @@ hardware:
 # Device Configuration
 # MCP: 16 relay channels (0-15). DFR0971: 6 dimming channels (3 boards × 2 channels each).
 # Map each device to its MCP23017 channel (0-15); lights also need dimming_board_id + dimming_channel (0 or 1).
-# Each location can have multiple clusters (e.g., "Flower Room" has "front" and "back")
+# Flower Room: all equipment under `main` only. Use `sensors:` (front/back/main) for sensor clusters.
 devices:
   "Flower Room":
-    front:
-      # Example: Heater on channel 0
+    main:
       heater_1:
-        channel: 0                    # MCP23017 channel (0-15)
-        device_type: "heater"         # Device type for control logic
-        pid_enabled: true              # Use PID control (for heaters, CO2)
-        interlock_with:                # Devices that must be OFF for this to turn ON
+        channel: 0
+        device_type: "heater"
+        pid_enabled: true
+        interlock_with:
           - "exhaust_fan"
-      
-      # Example: Exhaust fan on channel 1
       exhaust_fan:
         channel: 1
         device_type: "fan"
         pid_enabled: false
         interlock_with: []
-      
-      # Example: Dehumidifier on channel 2
-      dehumidifier_1:
-        channel: 2
-        device_type: "dehumidifier"
-        pid_enabled: false
-        interlock_with: []
-      
-      # Example: Grow light on channel 3
-      light_1:
-        channel: 3
-        device_type: "light"
-        pid_enabled: false
-        interlock_with: []
-      
-      # Example: Water pump on channel 4
-      pump_1:
-        channel: 4
-        device_type: "pump"
-        pid_enabled: false
-        interlock_with: []
-      
-      # Example: CO2 enrichment on channel 5
-      co2_1:
-        channel: 5
-        device_type: "co2"
-        pid_enabled: true              # CO2 uses PID control
-        interlock_with: []
-      
-      # Add more devices as needed...
-      # device_name:
-      #   channel: X
-      #   device_type: "heater" | "fan" | "dehumidifier" | "humidifier" | "light" | "pump" | "co2" | "vent"
-      #   pid_enabled: true | false
-      #   interlock_with: []  # List of device names that must be OFF
-    
-    back:
-      # Same structure as front
-      heater_1:
-        channel: 6
-        device_type: "heater"
-        pid_enabled: true
-        interlock_with:
-          - "exhaust_fan"
-      
-      exhaust_fan:
-        channel: 7
-        device_type: "fan"
-        pid_enabled: false
-        interlock_with: []
-      
-      # Add more devices...
+      # Add lights, dehumidifier, etc.
   
   "Veg Room":
     main:

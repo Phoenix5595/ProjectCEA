@@ -114,14 +114,18 @@ This document describes the normalized database schema for the CEA (Controlled E
 
 ## Migration
 
+### Flower Room: devices / DB control cluster → `main`
+
+After updating `automation_config.yaml` so Flower **`devices:`** use **`main` only**, run **`migrate_flower_devices_to_main.sql`** (with backup) so Postgres rows for schedules, `climate_periods`, `device_mappings`, etc. use **`Flower Room` + `main`**. CAN node IDs and Redis sensor keys remain **`front`** / **`back`** for telemetry suffixes.
+
 ### From can_messages to Normalized Schema
 
 The migration script (`migrate_to_normalized_schema.py`) performs:
 
 1. **Metadata Creation**:
    - Creates rooms from node_id mapping:
-     - node_id 1 → "Flower Room" (back)
-     - node_id 2 → "Flower Room" (front)
+     - node_id 1 → "Flower Room" (back) — **sensor cluster** for CAN telemetry only
+     - node_id 2 → "Flower Room" (front) — **sensor cluster** for CAN telemetry only (Automation **devices** / control DB use **`Flower Room` + `main`**; see `migrate_flower_devices_to_main.sql`.)
      - node_id 3 → "Veg Room" (main)
      - node_id 4 → "Lab" (main)
      - node_id 5 → "Outside" (main)

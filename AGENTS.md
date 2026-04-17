@@ -146,6 +146,7 @@ ProjectCEA/
 - **PID Repository**: Stores and retrieves PID controller parameters and tuning data
 - **RoomMode Repository**: Controls room operational modes and transitions
 - **Schedule Repository**: Manages light schedules and photoperiod controls
+- **Schedule cache invalidation**: `schedule_repo.get_schedules()` uses StateManager keys `schedules:all`, `schedules:loc:{location}`, and `schedules:loc:{location}:cluster:{cluster}`. Any write that changes `schedules` rows (especially `update_light_schedule_target` for POST `/api/lights/.../target`) must invalidate **all** keys that unfiltered `get_schedules()` can hit; otherwise the in-process `Scheduler` reloads stale rows and light targets lag the DB.
 - **Sensor Repository**: Handles sensor data validation and storage
 - **Setpoint Repository**: Manages environmental setpoints and targets
 - **Config Repository**: System configuration and parameter storage

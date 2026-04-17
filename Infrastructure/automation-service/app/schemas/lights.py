@@ -30,3 +30,13 @@ class ScheduleTimeControl(BaseModel):
 
     start_time: str
     end_time: str
+
+
+class DfrChannelAssignControl(BaseModel):
+    """Assign/unassign a DFR0971 board/channel to a dimmable light device."""
+
+    location: str
+    cluster: str
+    device_name: str
+    board_id: int | None = None
+    dimming_channel: int | None = None

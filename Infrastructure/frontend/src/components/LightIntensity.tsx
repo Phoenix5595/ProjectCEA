@@ -1,6 +1,15 @@
 import { useState, useEffect, useCallback } from 'react'
+import { toast } from 'sonner'
 import { apiClient } from '../services/api'
 import { logger } from '../utils/logger'
+
+/** Subset of fields used by this widget (zone-status and legacy per-device load). */
+interface LightIntensityRowStatus {
+  intensity: number
+  target_intensity?: number | null
+  day_target_intensity?: number | null
+  schedule_sun_target_intensity?: number | null
+}
 
 interface LightDevice {
   device_name: string
@@ -8,12 +17,6 @@ interface LightDevice {
   dimming_enabled?: boolean
   dimming_board_id?: string | null
   dimming_channel?: number | null
-}
-
-interface LightStatus {
-  intensity: number
-  target_intensity?: number | null
-  day_target_intensity?: number | null
 }
 
 export interface LightIntensityProps {
@@ -24,7 +27,7 @@ export interface LightIntensityProps {
 
 export default function LightIntensity({ location, cluster, compact }: LightIntensityProps) {
   const [lights, setLights] = useState<LightDevice[]>([])
-  const [statuses, setStatuses] = useState<Record<string, LightStatus>>({})
+  const [statuses, setStatuses] = useState<Record<string, LightIntensityRowStatus>>({})
   const [pendingTargets, setPendingTargets] = useState<Record<string, number>>({})
   const [loading, setLoading] = useState(true)
   const [hasPendingChanges, setHasPendingChanges] = useState(false)
@@ -67,13 +70,16 @@ export default function LightIntensity({ location, cluster, compact }: LightInte
     })
 
     const results = await Promise.all(statusPromises)
-    const statusMap: Record<string, LightStatus> = {}
+    const statusMap: Record<string, LightIntensityRowStatus> = {}
     results.forEach(({ deviceName, status, dayTargetIntensity }) => {
       if (status) {
+        const sunTarget =
+          dayTargetIntensity ?? status.schedule_sun_target_intensity ?? status.day_target_intensity ?? null
         statusMap[deviceName] = {
           intensity: status.intensity,
           target_intensity: status.target_intensity ?? null,
-          day_target_intensity: dayTargetIntensity ?? status.target_intensity ?? null,
+          day_target_intensity: sunTarget,
+          schedule_sun_target_intensity: sunTarget,
         }
       }
     })
@@ -105,12 +111,18 @@ export default function LightIntensity({ location, cluster, compact }: LightInte
       }))
       setLights(lightDevices)
 
-      const statusMap: Record<string, LightStatus> = {}
+      const statusMap: Record<string, LightIntensityRowStatus> = {}
       for (const row of rows) {
+        const sunTarget =
+          row.schedule_sun_target_intensity ??
+          row.day_target_intensity ??
+          row.target_intensity ??
+          null
         statusMap[row.device] = {
           intensity: row.intensity,
           target_intensity: row.target_intensity ?? null,
-          day_target_intensity: row.day_target_intensity ?? row.target_intensity ?? null,
+          day_target_intensity: sunTarget,
+          schedule_sun_target_intensity: sunTarget,
         }
       }
       setStatuses(statusMap)
@@ -147,14 +159,29 @@ export default function LightIntensity({ location, cluster, compact }: LightInte
 
   async function savePendingChanges() {
     const entries = Object.entries(pendingTargets)
+    const nextPending: Record<string, number> = { ...pendingTargets }
+    const failed: string[] = []
     for (const [deviceName, target] of entries) {
       try {
-        await apiClient.setLightIntensity(location!, cluster!, deviceName, target)
+        const res = await apiClient.setLightIntensity(location!, cluster!, deviceName, target)
+        if (res.rows_updated !== undefined && res.rows_updated < 1) {
+          failed.push(deviceName)
+          continue
+        }
+        delete nextPending[deviceName]
       } catch (err) {
         logger.error(`Failed to set light intensity for ${deviceName}:`, err)
+        failed.push(deviceName)
       }
     }
-    setPendingTargets({})
+    setPendingTargets(nextPending)
+    if (failed.length > 0) {
+      toast.error(
+        `Light target update failed for: ${failed.join(', ')}. Pending changes kept for those fixtures.`
+      )
+    } else if (entries.length > 0) {
+      toast.success('Light targets applied')
+    }
     await fetchLightsAndStatus()
   }
 
@@ -203,8 +230,12 @@ export default function LightIntensity({ location, cluster, compact }: LightInte
             if (!status) return null
 
             const currentIntensity = status.intensity
-            const savedTarget = status.target_intensity || 0
-            const dayTarget = status.day_target_intensity || 0
+            const dayTarget =
+              status.day_target_intensity ??
+              status.schedule_sun_target_intensity ??
+              status.target_intensity ??
+              0
+            const savedTarget = dayTarget
             const pendingTarget = pendingTargets[light.device_name!]
             const displayTarget = pendingTarget ?? savedTarget
             const sliderPosition = currentIntensity

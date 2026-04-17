@@ -174,11 +174,22 @@ interlocks:
   action: force_off
 sensors:
   Flower Room:
+    # Sensor clusters only (front/back). Control loop uses `main` PVs (same as back canopy node).
     main:
+      temperature_sensor: dry_bulb_b
+      humidity_sensor: rh_b
+      co2_sensor: co2_b
+      vpd_sensor: vpd_b
+    front:
       temperature_sensor: dry_bulb_f
       humidity_sensor: rh_f
       co2_sensor: co2_f
       vpd_sensor: vpd_f
+    back:
+      temperature_sensor: dry_bulb_b
+      humidity_sensor: rh_b
+      co2_sensor: co2_b
+      vpd_sensor: vpd_b
   Veg Room:
     main:
       temperature_sensor: dry_bulb_v

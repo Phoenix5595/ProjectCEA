@@ -80,6 +80,7 @@ automation-service.service
 | Never | Reason |
 |-------|--------|
 | Skip Redis Stream writes | Recent data queries fail |
+| Invalidate only per-cluster schedule cache after a global `get_schedules()` consumer | `schedules:all` must be cleared when schedule rows change (e.g. light `target_intensity`); otherwise automation’s merged scheduler lags the DB |
 | Use different TTL per service | 10s standard, except schedule state (no TTL) |
 | Start services out of order | Dependencies will fail |
 | Edit `.service` without daemon-reload | Config won't apply |

@@ -36,8 +36,8 @@ Sensor_Nodes/
 
 | Node ID | Location | Cluster |
 |---------|----------|---------|
-| 1 | Flower Room | back |
-| 2 | Flower Room | front |
+| 1 | Flower Room | back (sensor cluster / CAN node — not the automation `devices` cluster) |
+| 2 | Flower Room | front (sensor cluster / CAN node — not the automation `devices` cluster) |
 | 3 | Veg Room | main |
 | 4 | Lab | main |
 | 5 | Outside | main |
