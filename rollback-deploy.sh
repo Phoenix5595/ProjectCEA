@@ -6,6 +6,16 @@
 
 set -euo pipefail
 
+# Concurrency guard: shared with deploy.sh. Cannot run mid-deploy.
+LOCK_FILE="/var/lock/projectcea-deploy.lock"
+sudo touch "$LOCK_FILE" 2>/dev/null || true
+sudo chmod 666 "$LOCK_FILE" 2>/dev/null || true
+exec 9>"$LOCK_FILE"
+if ! flock -n 9; then
+  echo "[rollback] a deploy or rollback is already running; aborting" >&2
+  exit 1
+fi
+
 SOURCE="/home/antoine/ProjectCEA"
 RELEASES="/opt/projectcea/releases"
 STATE="/var/lib/projectcea/deploy_state.json"
