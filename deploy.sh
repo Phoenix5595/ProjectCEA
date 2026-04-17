@@ -57,13 +57,31 @@ restart_services() {
 run_health_checks() {
   sleep 2
   local rc=0
-  local pair url name code attempt
+  local pair url name code curl_rc attempt body
+  # Per-run, per-service body file so we never read a stale body from a
+  # prior deploy's successful curl (that is how 2025-04-17's deploy ended
+  # up logging onewire's body on the backend-health-fail line).
+  local bodydir="/tmp/cea_health_$$"
+  mkdir -p "$bodydir"
+  trap 'rm -rf "$bodydir" 2>/dev/null || true' RETURN
   for pair in "http://127.0.0.1:8000/health|backend" "http://127.0.0.1:8001/health|automation" "http://127.0.0.1:8004/health|onewire"; do
     url="${pair%%|*}"
     name="${pair##*|}"
     code="000"
     for attempt in {1..90}; do
-      code=$(curl -sS -m 10 -o /tmp/cea_health_body.txt -w "%{http_code}" "$url" 2>/dev/null || echo "000")
+      : > "$bodydir/$name.body"
+      # Capture curl's exit code explicitly. The previous form used
+      # `|| echo "000"`, which concatenated curl's partial `%{http_code}`
+      # output with "000" on timeout (producing "200000"). That triggered
+      # a false-negative health_fail -> auto-rollback even when services
+      # were green.
+      set +e
+      code=$(curl -sS -m 10 -o "$bodydir/$name.body" -w "%{http_code}" "$url" 2>/dev/null)
+      curl_rc=$?
+      set -e
+      if [[ $curl_rc -ne 0 ]] || [[ -z "$code" ]]; then
+        code="000"
+      fi
       if [[ "$code" == "200" ]]; then
         log_event "health_ok" "" "$name" "$code"
         break
@@ -71,7 +89,7 @@ run_health_checks() {
       sleep 1
     done
     if [[ "$code" != "200" ]]; then
-      body=$(head -c 400 /tmp/cea_health_body.txt 2>/dev/null | tr '\n' ' ' || true)
+      body=$(head -c 400 "$bodydir/$name.body" 2>/dev/null | tr '\n' ' ' || true)
       log_event "health_fail" "$body" "$name" "$code"
       rc=1
     fi
