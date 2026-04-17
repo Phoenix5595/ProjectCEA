@@ -153,23 +153,23 @@ class BackgroundTasks:
             found_new = False
 
             for modbus_id in range(start_id, end_id + 1):
-                # Skip if already discovered
                 if modbus_id in self.discovered_modbus_ids:
                     continue
 
-                # Try to read first register to detect sensor
                 try:
                     registers = await asyncio.to_thread(
                         temp_modbus.read_holding_registers, modbus_id, 0x0000, 1
                     )
                     if registers is not None:
-                        # Found a new sensor!
                         logger.info(f"Discovered new sensor at Modbus ID {modbus_id}")
-                        await self._auto_register_sensor(modbus_id)
-                        found_new = True
-                        self.discovered_modbus_ids.add(modbus_id)
+                        # Only mark as discovered when registration (and wiring into the
+                        # polling list) actually succeeds. A failed registration must be
+                        # retried on the next scan, otherwise a transient DB/bus hiccup
+                        # silently loses a sensor until the service restarts.
+                        if await self._auto_register_sensor(modbus_id):
+                            found_new = True
+                            self.discovered_modbus_ids.add(modbus_id)
                 except Exception:
-                    # Sensor not found or error, continue scanning
                     pass
 
             temp_modbus.disconnect()
@@ -188,47 +188,58 @@ class BackgroundTasks:
             logger.error(f"Error scanning bus: {e}")
             # Don't raise, keep trying
 
-    async def _auto_register_sensor(self, modbus_id: int) -> None:
-        """Auto-register a newly discovered sensor."""
-        # Generate default name and bed assignment
+    async def _auto_register_sensor(self, modbus_id: int) -> bool:
+        """Auto-register a newly discovered sensor.
+
+        Returns True on success (sensor is now wired into the polling loop),
+        False on any failure (caller must NOT mark the modbus_id as discovered
+        so the next scan retries).
+        """
         sensor_count = len(self.sensor_readers) + 1
 
-        # Alternate between Front Bed and Back Bed
         bed_names = ["Front Bed", "Back Bed"]
         bed_name = bed_names[(sensor_count - 1) % len(bed_names)]
         room_name = "Flower Room"
 
         sensor_name = f"soil_sensor_{modbus_id}"
 
-        # Create sensor reader
         reader = SoilSensorReader(cast(str, self.rs485_port), modbus_id, self.rs485_baudrate)
 
         try:
-            # Connect to sensor
             reader.connect()
 
-            # Ensure database hierarchy exists
             room_id, rack_id = await self.database.ensure_hierarchy(room_name, bed_name)
 
-            # Register sensor device and get sensor IDs
             device_id, sensor_ids = await self.database.register_sensor_device(
                 rack_id, sensor_name, modbus_id, bed_name
             )
 
-            # Add to tracking
+            # Wire into polling. _poll_all_sensors iterates self.sensor_configs, so
+            # auto-discovered sensors MUST be appended here or they'd be silently
+            # skipped every polling cycle despite being in sensor_readers/sensor_ids.
             self.sensor_readers[sensor_name] = reader
             self.sensor_ids[sensor_name] = sensor_ids
+            self.sensor_configs.append(
+                {
+                    "name": sensor_name,
+                    "modbus_id": modbus_id,
+                    "bed_name": bed_name,
+                    "room_name": room_name,
+                }
+            )
 
             logger.info(
                 f"Auto-registered sensor: {sensor_name} (Modbus ID: {modbus_id}, Bed: {bed_name})"
             )
+            return True
 
         except Exception as e:
             logger.error(f"Failed to auto-register sensor Modbus ID {modbus_id}: {e}")
             try:
                 reader.disconnect()
-            except Exception as e:
-                logger.warning(f"Error disconnecting reader: {e}")
+            except Exception as disc_err:
+                logger.warning(f"Error disconnecting reader: {disc_err}")
+            return False
 
     async def _polling_loop(self) -> None:
         """Main polling loop."""
