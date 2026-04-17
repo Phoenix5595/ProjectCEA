@@ -1,4 +1,5 @@
 /** WebSocket client for real-time updates. */
+import { buildWebSocketUrl } from '../config/env';
 import { logger } from '../utils/logger';
 
 export type WebSocketMessageType = 
@@ -29,15 +30,10 @@ class WebSocketClient {
   private isConnecting = false;
 
   constructor(url?: string) {
-    // WebSocket is served by automation service (port 8001)
-    // Use environment variable or default to current hostname (not localhost)
-    const wsUrl =
-      url ||
-      import.meta.env.VITE_WEBSOCKET_URL ||
-      (typeof window === 'undefined'
-        ? 'ws://localhost:8001/ws'
-        : `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.hostname}:8001/ws`);
-    this.url = wsUrl;
+    // Post Phase 3.4a the WS is reachable through Caddy on :8080 (exact path
+    // `/ws` is routed to automation-service). Central resolution + optional
+    // `?token=<api_key>` lives in `config/env.buildWebSocketUrl`.
+    this.url = url || buildWebSocketUrl();
   }
 
   connect(): void {

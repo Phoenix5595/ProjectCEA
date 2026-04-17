@@ -6,21 +6,7 @@ import type { PIDParameters, PIDParameterUpdate, PIDModeInfo, PIDModeUpdate, Aut
 import type { Schedule, ScheduleCreate, ScheduleUpdate } from '../types/schedule';
 import type { LightStatus, LightTargetSetResponse } from '../types/light';
 import type { RoomMode, FlowerSubmode, RoomModeWithParams, SetModeRequest, UpdateParametersRequest } from '../types/modes';
-
-function defaultApiUrl(port: number): string {
-  // When accessed from another device, "localhost" points to the user's device,
-  // so default to the current page hostname instead.
-  if (typeof window === 'undefined') return `http://localhost:${port}`;
-  const protocol = window.location.protocol === 'https:' ? 'https:' : 'http:';
-  return `${protocol}//${window.location.hostname}:${port}`;
-}
-
-// Backend service (sensor data) - port 8000
-const BACKEND_API_URL = import.meta.env.VITE_BACKEND_API_URL || defaultApiUrl(8000);
-// Automation service (configuration) - port 8001
-const AUTOMATION_API_URL = import.meta.env.VITE_AUTOMATION_API_URL || defaultApiUrl(8001);
-// Weather service - port 8003
-const WEATHER_API_URL = import.meta.env.VITE_WEATHER_API_URL || defaultApiUrl(8003);
+import { AUTOMATION_API_URL, BACKEND_API_URL, CEA_API_KEY, WEATHER_API_URL } from '../config/env';
 
 class ApiClient {
   private backendClient: AxiosInstance;
@@ -28,28 +14,29 @@ class ApiClient {
   private weatherClient: AxiosInstance;
 
   constructor() {
+    const baseHeaders: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+    if (CEA_API_KEY) {
+      baseHeaders['X-API-Key'] = CEA_API_KEY;
+    }
+
     this.backendClient = axios.create({
       baseURL: BACKEND_API_URL,
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      timeout: 10000, // 10 second timeout
+      headers: { ...baseHeaders },
+      timeout: 10000,
     });
-    
+
     this.automationClient = axios.create({
       baseURL: AUTOMATION_API_URL,
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      timeout: 30000, // 30 second timeout
+      headers: { ...baseHeaders },
+      timeout: 30000,
     });
 
     this.weatherClient = axios.create({
       baseURL: WEATHER_API_URL,
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      timeout: 10000, // 10 second timeout for weather data
+      headers: { ...baseHeaders },
+      timeout: 10000,
     });
     
     // Add response interceptor for better error handling
