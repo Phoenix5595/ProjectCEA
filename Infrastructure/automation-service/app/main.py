@@ -72,7 +72,11 @@ app = FastAPI(
 )
 
 # Setup middleware
+from shared.auth import APIKeyAuthMiddleware  # noqa: E402
+
 setup_cors(app)
+# API-key gate for /api/*. No-op until CEA_API_KEY_REQUIRE=true (phase 3.4c).
+app.add_middleware(APIKeyAuthMiddleware)
 app.middleware("http")(exception_handler_middleware)
 app.middleware("http")(profiling_middleware)
 

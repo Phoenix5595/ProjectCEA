@@ -220,9 +220,12 @@ async def global_exception_handler(request: Request, exc: Exception):
 
 # Add CORS middleware (API-only). Env-driven allow-list; falls back to
 # '*' without credentials when FRONTEND_ORIGINS is unset.
+from shared.auth import APIKeyAuthMiddleware  # noqa: E402
 from shared.middleware import setup_cors  # noqa: E402
 
 setup_cors(app, service_name="cea-backend")
+# API-key gate for /api/*. No-op until CEA_API_KEY_REQUIRE=true (phase 3.4c).
+app.add_middleware(APIKeyAuthMiddleware)
 
 # Include routers
 app.include_router(sensors.router)
@@ -315,17 +318,29 @@ async def ready_check():
     return out
 
 
+from shared.auth import WebSocketConnectionLimiter, check_websocket_auth  # noqa: E402
+
+_ws_limiter = WebSocketConnectionLimiter()
+
+
 @app.websocket("/ws/{location}")
 async def websocket_endpoint(websocket: WebSocket, location: str):
     """WebSocket endpoint for real-time sensor updates."""
-    await websocket_manager.connect(websocket, location)
+    # Phase 3.2: auth (token or origin) + connection cap. No-op when
+    # CEA_API_KEY_REQUIRE=false (the guard just returns True).
+    if not await check_websocket_auth(websocket):
+        return
+    if not await _ws_limiter.acquire(websocket):
+        return
     try:
-        while True:
-            # Keep connection alive and handle incoming messages
-            await websocket.receive_text()
-            # Could handle client messages here if needed
-    except WebSocketDisconnect:
-        websocket_manager.disconnect(websocket, location)
+        await websocket_manager.connect(websocket, location)
+        try:
+            while True:
+                await websocket.receive_text()
+        except WebSocketDisconnect:
+            websocket_manager.disconnect(websocket, location)
+    finally:
+        _ws_limiter.release()
 
 
 # Serve favicon BEFORE mounting static files (so it takes precedence)

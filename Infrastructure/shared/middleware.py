@@ -16,7 +16,7 @@ from shared.infra_logging import get_logger
 logger = get_logger(__name__)
 
 
-def _parse_origins_env(var_name: str = "FRONTEND_ORIGINS") -> list[str]:
+def parse_origins_env(var_name: str = "FRONTEND_ORIGINS") -> list[str]:
     raw = os.environ.get(var_name, "").strip()
     if not raw:
         return []
@@ -41,7 +41,7 @@ def setup_cors(app: FastAPI, *, service_name: str = "unknown") -> None:
     silently broken anyway — but it signaled intent that we want to
     fix.
     """
-    origins = _parse_origins_env()
+    origins = parse_origins_env()
     if origins:
         logger.info(
             "CORS [%s]: explicit allow-list (%d origins), credentials on",
