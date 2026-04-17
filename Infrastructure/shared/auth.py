@@ -134,15 +134,12 @@ class APIKeyAuthMiddleware:
             return
 
         headers = {
-            k.decode("latin-1").lower(): v.decode("latin-1")
-            for k, v in scope.get("headers", [])
+            k.decode("latin-1").lower(): v.decode("latin-1") for k, v in scope.get("headers", [])
         }
         provided = headers.get("x-api-key", "")
 
         if not provided or not hmac.compare_digest(provided, expected):
-            logger.warning(
-                "API-key auth rejected: path=%s method=%s", path, method
-            )
+            logger.warning("API-key auth rejected: path=%s method=%s", path, method)
             await _send_plain(send, 401, b"invalid api key")
             return
 

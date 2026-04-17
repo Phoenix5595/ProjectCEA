@@ -97,10 +97,28 @@ Operator-controlled knobs (both reversible without a code deploy):
 - `ENV=production` in each service's env → close `/docs` et al. Set via systemd drop-in `Environment=ENV=production` or (preferred) an `EnvironmentFile=/opt/projectcea/shared/env/cea.env` once the shared env file exists.
 - `FRONTEND_ORIGINS=http://mothernode:5173,http://mothernode:8080` → locked-down CORS with cookie/credential support. Required the day the SPA moves behind Caddy (Phase 3.4b).
 
+Landed in Phase 3.1 / 3.2 (gated, default off):
+- **API-key enforcement**: `shared/auth.APIKeyAuthMiddleware` is installed on all five FastAPI apps (cea-backend, automation-service, soil-sensor-service, weather-service, onewire-worker). Enforcement is gated by `CEA_API_KEY_REQUIRE=true`; the middleware is a no-op otherwise. When enforcement is on, any HTTP request whose path matches the protected prefixes (`/api`, `/weather`, `/status` etc — see `_is_protected_path`) must carry `X-API-Key: <CEA_API_KEY>`; `OPTIONS` preflights, `/health`, `/ready`, `/docs`, `/openapi.json`, `/redoc`, `/ws` are always exempt. Comparison uses `hmac.compare_digest`. Missing `CEA_API_KEY` while enforcement is on returns 503 (explicit misconfig, not silent pass-through).
+- **WebSocket auth + origin check**: `shared/auth.check_websocket_auth` accepts `?token=<key>` (hmac-equal) or a matching `Origin` in `FRONTEND_ORIGINS`; otherwise closes with 1008. Integrated into `/ws` (automation-service) and `/ws/{location}` (cea-backend). Same `CEA_API_KEY_REQUIRE` gate.
+- **WebSocket connection cap**: `shared/auth.WebSocketConnectionLimiter` closes excess connections with 1013. `CEA_WS_MAX_CONNECTIONS` env (default 100) sets the per-process ceiling.
+
+Landed in Phase 3.4a (additive, no behavior change):
+- **Caddy reverse proxy**: `caddy` v2.11.x installed from the official Cloudsmith repo, enabled at boot. Repo-canonical config at `Infrastructure/caddy/Caddyfile` is installed to `/etc/caddy/Caddyfile`. Listens **only on :8080** for now; :80 and :443 remain closed (`auto_https off`). Log writer is `/var/log/caddy/caddy.log` (owner `caddy:caddy`, rotated at 10 MB × 5 files). Admin API disabled.
+- **Routing rules** (specific-first):
+  - `/api/sensors`, `/api/sensors/*`, `/api/sensor-data`, `/api/sensor-data/*` → `127.0.0.1:8000` (cea-backend)
+  - `/ws/*` (any trailing path segment) → `127.0.0.1:8000` (backend per-location WS)
+  - `/weather`, `/weather/*` → `127.0.0.1:8003` (weather-service)
+  - `/grafana/*` (path-stripped) → `127.0.0.1:3000` (Pi Grafana; currently unused — see Phase 5)
+  - `/svc/soil/*`, `/svc/onewire/*` (path-stripped) → `127.0.0.1:8002` / `:8004`
+  - `/ws` exactly → `127.0.0.1:8001` (automation-service WS)
+  - catch-all → `127.0.0.1:8001` (automation-service API + SPA static)
+- **Validation** (done 3.4a): HTTP GET/POST to all three API ports, SPA static at `/`, and WebSocket `Upgrade: 101` on both `/ws` and `/ws/<location>` — all 200/101 through Caddy, bodies byte-matched direct vs proxied.
+- **Invariants**: direct ports 8000/8001/8002/8003/8004 remain open until Phase 3.4d; SPA still hits them directly until Phase 3.4b; auto-HTTPS stays off until TLS is actually needed. WebSocket upgrades pass through unmodified (Caddy preserves `Connection: Upgrade`).
+
 Still deferred (phase 3 remainder):
-- 3.1 `require_api_key` FastAPI dependency + frontend `X-API-Key`. Breaking change; rolled with 3.4c.
-- 3.2 WebSocket auth + origin check.
-- 3.4a–d Caddy + bind `127.0.0.1`. Four staged deploys × 24h soak per plan.
+- 3.4b Frontend switches to Caddy URL + `X-API-Key` header wiring.
+- 3.4c Flip `CEA_API_KEY_REQUIRE=true`; canary on weather-service first.
+- 3.4d Bind services to `127.0.0.1`; close LAN boundary.
 - 3.7 systemd hardening. Blocked on 2.1c (drop-in retirement).
 - 3.8 `LoadCredential=` for DB password. Blocked on Phase 6 shared secrets module.
 
