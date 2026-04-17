@@ -90,9 +90,12 @@ app = FastAPI(
 )
 
 # CORS middleware (env-driven; unsafe '*' + credentials=True combo removed)
+from shared.auth import APIKeyAuthMiddleware  # noqa: E402
 from shared.middleware import setup_cors  # noqa: E402
 
 setup_cors(app, service_name="weather-service")
+# API-key gate for /api/*. No-op until CEA_API_KEY_REQUIRE=true.
+app.add_middleware(APIKeyAuthMiddleware)
 
 
 # Dependency injection functions

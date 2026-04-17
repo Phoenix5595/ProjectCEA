@@ -47,6 +47,7 @@ async def lifespan(app: FastAPI):
         logger.info("onewire-worker stopped")
 
 
+from shared.auth import APIKeyAuthMiddleware  # noqa: E402
 from shared.fastapi_helpers import docs_kwargs  # noqa: E402
 
 app = FastAPI(
@@ -55,6 +56,8 @@ app = FastAPI(
     lifespan=lifespan,
     **docs_kwargs(),  # ENV=production closes /docs, /redoc, /openapi.json.
 )
+# API-key gate for /api/*. No-op until CEA_API_KEY_REQUIRE=true.
+app.add_middleware(APIKeyAuthMiddleware)
 
 
 @app.get("/health")

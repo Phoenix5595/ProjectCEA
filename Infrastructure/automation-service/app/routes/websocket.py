@@ -10,6 +10,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from app.control.relay_manager import RelayManager
 from app.database import DatabaseManager
 from app.redis_client import AutomationRedisClient
+from shared.auth import WebSocketConnectionLimiter, check_websocket_auth
 from shared.infra_logging import get_logger
 
 logger = get_logger(__name__)
@@ -18,6 +19,9 @@ router = APIRouter()
 
 # Store active WebSocket connections
 active_connections: list[Any] = []
+
+# Phase 3.2 connection cap. No-op when CEA_API_KEY_REQUIRE=false.
+_ws_limiter = WebSocketConnectionLimiter()
 
 
 def get_database() -> DatabaseManager:
@@ -75,6 +79,12 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
     - Mode changes
     - Alarm updates
     """
+    # Phase 3.2: auth (token or origin) + connection cap. No-op when
+    # CEA_API_KEY_REQUIRE=false.
+    if not await check_websocket_auth(websocket):
+        return
+    if not await _ws_limiter.acquire(websocket):
+        return
     await websocket.accept()
     active_connections.append(websocket)
     logger.info(f"WebSocket client connected. Total connections: {len(active_connections)}")
@@ -127,6 +137,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
     finally:
         if websocket in active_connections:
             active_connections.remove(websocket)
+        _ws_limiter.release()
         logger.info(f"WebSocket client disconnected. Total connections: {len(active_connections)}")
 
 
