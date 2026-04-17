@@ -116,41 +116,41 @@ async def get_sensor_data(
 
     if use_stream:
         try:
-            stream_reader = RedisStreamReader(stream_name="sensor:raw")
-            if stream_reader.connect():
-                logger.debug(
-                    f"API: Checking Redis Stream for recent data (time range: {duration_hours:.2f} hours)"
-                )
-                stream_entries = stream_reader.read_by_time_range(
-                    start_time=start_time,
-                    end_time=end_time,
-                    sensor_type="can",  # Only CAN sensors for this endpoint
-                    max_count=20000,
-                )
-
-                if stream_entries:
-                    logger.debug(f"API: Found {len(stream_entries)} entries in Redis Stream")
-                    # Process stream entries to sensor data points
-                    stream_sensor_data = process_stream_entries_to_sensor_data(
-                        stream_entries, location, cluster
+            # Async-context-managed: connect + close guaranteed, no stale
+            # connection leak on exception. Per-request connection for now
+            # (Phase 4 may pool these).
+            async with RedisStreamReader(stream_name="sensor:raw") as stream_reader:
+                if stream_reader.client is None:
+                    # connect() failed inside __aenter__ — fall through to DB.
+                    use_stream = False
+                else:
+                    logger.debug(
+                        f"API: Checking Redis Stream for recent data (time range: {duration_hours:.2f} hours)"
+                    )
+                    stream_entries = await stream_reader.read_by_time_range(
+                        start_time=start_time,
+                        end_time=end_time,
+                        sensor_type="can",  # Only CAN sensors for this endpoint
+                        max_count=20000,
                     )
 
-                    if stream_sensor_data:
-                        logger.debug(
-                            f"API: Processed {len(stream_sensor_data)} sensor types from Stream"
+                    if stream_entries:
+                        logger.debug(f"API: Found {len(stream_entries)} entries in Redis Stream")
+                        stream_sensor_data = process_stream_entries_to_sensor_data(
+                            stream_entries, location, cluster
                         )
-                        sensor_data = stream_sensor_data
-                        # Check if we have sufficient data coverage
-                        total_points = sum(len(points) for points in sensor_data.values())
-                        if total_points > 0:
-                            logger.debug(
-                                f"API: Using data from Redis Stream ({total_points} total data points)"
-                            )
-                            # Use stream data, but also check DB for any gaps if needed
-                            # For now, use stream data if we have any
-                            use_stream = True
 
-                stream_reader.close()
+                        if stream_sensor_data:
+                            logger.debug(
+                                f"API: Processed {len(stream_sensor_data)} sensor types from Stream"
+                            )
+                            sensor_data = stream_sensor_data
+                            total_points = sum(len(points) for points in sensor_data.values())
+                            if total_points > 0:
+                                logger.debug(
+                                    f"API: Using data from Redis Stream ({total_points} total data points)"
+                                )
+                                use_stream = True
         except Exception as e:
             logger.warning(f"Error reading from Redis Stream: {e}, falling back to database")
             use_stream = False
