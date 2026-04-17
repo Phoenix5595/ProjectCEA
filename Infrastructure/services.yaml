@@ -1,0 +1,84 @@
+# Single source of truth for every CEA systemd unit we manage.
+# Consumed by:
+#   - Infrastructure/scripts/service_list.py (helper library)
+#   - deploy.sh     (restart order, health checks)
+#   - rollback-deploy.sh (restart order)
+# Ordering notes (referenced by start_order):
+#   1 = infra prerequisites (CAN bus up before can-processor)
+#   2 = ingestion + backend (reads CAN, writes Redis/TSDB; FastAPI on 8000)
+#   3 = sensor/weather workers (soil, weather, 1-wire)
+#   4 = automation-service (the hardware-facing control loop on 8001; LAST
+#       intentionally — it depends on everything above, and is the most
+#       blast-radius sensitive, since it drives lights)
+#
+# Fields:
+#   name         : human / friendly name (also used in log lines)
+#   unit         : systemd unit filename (without path)
+#   repo_unit    : path to the canonical unit file inside the repo, relative
+#                  to the repo root. `null` means "not yet in repo" — TODO
+#                  during Phase 2.1 rollout.
+#   start_order  : ascending integer; services with the same order can start
+#                  in parallel (but deploy.sh currently restarts sequentially)
+#   health_url   : HTTP GET URL for post-deploy health check, OR null if the
+#                  unit doesn't expose HTTP (can-processor, can-setup, etc.)
+#   hardware_facing : true if the unit talks to real hardware (GPIO, I2C,
+#                  1-Wire, CAN, RS485). Used by the rollout guard in Phase
+#                  2.1 to stage hardware-facing services LAST.
+#
+services:
+  - name: can-setup
+    unit: can-setup.service
+    repo_unit: null  # TODO Phase 2.1: port /etc/systemd/system/can-setup.service into repo
+    start_order: 1
+    health_url: null
+    hardware_facing: true  # brings up can0
+
+  - name: can-processor
+    unit: can-processor.service
+    repo_unit: null  # TODO Phase 2.1: port /etc/systemd/system/can-processor.service into repo
+    start_order: 2
+    health_url: null  # long-running daemon, no FastAPI
+    hardware_facing: true  # reads CAN bus
+
+  - name: cea-backend
+    unit: cea-backend.service
+    repo_unit: Infrastructure/cea-backend.service
+    start_order: 2
+    health_url: http://127.0.0.1:8000/health
+    hardware_facing: false
+
+  - name: onewire-worker
+    unit: onewire-worker.service
+    repo_unit: Infrastructure/onewire-worker.service
+    start_order: 3
+    health_url: http://127.0.0.1:8004/health
+    hardware_facing: true  # reads /sys/bus/w1 DS18B20
+
+  - name: soil-sensor-service
+    unit: soil-sensor-service.service
+    repo_unit: Infrastructure/soil-sensor-service.service
+    start_order: 3
+    health_url: http://127.0.0.1:8002/health
+    hardware_facing: true  # RS485 Modbus
+
+  - name: weather-service
+    unit: weather-service.service
+    repo_unit: Infrastructure/weather-service.service
+    start_order: 3
+    health_url: http://127.0.0.1:8003/health
+    hardware_facing: false  # HTTP pulls only
+
+  - name: automation-service
+    unit: automation-service.service
+    repo_unit: Infrastructure/automation-service.service
+    start_order: 4
+    health_url: http://127.0.0.1:8001/health
+    hardware_facing: true  # drives DFR0971 dimmers + MCP relays — lights live here
+
+  - name: redis-aof-check
+    unit: redis-aof-check.service
+    repo_unit: Infrastructure/redis-aof-check.service
+    start_order: 0  # runs before redis-server on boot only; not restarted by deploy.sh
+    health_url: null
+    hardware_facing: false
+    deploy_managed: false  # oneshot, excluded from deploy.sh restart loop
