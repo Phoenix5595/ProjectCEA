@@ -393,11 +393,29 @@ class DeviceController:
             context: Automation context (for log reason and load_percent)
         """
         device_type = device_info.get("device_type", "")
-        channel = device_info.get("channel")
+        relay_channel = device_info.get("channel")
+        is_dfr0971_light = bool(
+            device_info.get("dimming_enabled") and device_info.get("dimming_type") == "dfr0971"
+        )
 
-        if channel is None:
+        # Binary actuators require a relay channel. DFR0971 lights may omit relay (dimmer-only);
+        # _control_dimmable_light already handles relay_channel is None.
+        if not is_dfr0971_light and relay_channel is None:
             logger.warning(f"No channel configured for {device_name}")
             return
+
+        # control_history.channel: relay index when present; else DFR0971 dimming_channel (no relay).
+        history_channel: int
+        if is_dfr0971_light:
+            dim_ch = device_info.get("dimming_channel")
+            if relay_channel is not None:
+                history_channel = int(relay_channel)
+            elif dim_ch is not None:
+                history_channel = int(dim_ch)
+            else:
+                history_channel = -1
+        else:
+            history_channel = int(relay_channel)  # guarded above
 
         # Capture old state before applying (for control history log)
         old_state: int | None = None
@@ -408,7 +426,7 @@ class DeviceController:
 
         try:
             # Handle different device types
-            if device_info.get("dimming_enabled") and device_info.get("dimming_type") == "dfr0971":
+            if is_dfr0971_light:
                 # Dimmable light control
                 await self._control_dimmable_light(
                     location, cluster, device_name, device_info, control_output, batch_executor
@@ -420,7 +438,7 @@ class DeviceController:
                     cluster,
                     device_name,
                     device_type,
-                    channel,
+                    history_channel,
                     control_output,
                     batch_executor,
                 )
@@ -431,7 +449,7 @@ class DeviceController:
                 cluster,
                 device_name,
                 device_type,
-                channel,
+                history_channel,
                 control_output,
                 current_time,
                 old_state=old_state,
@@ -679,7 +697,11 @@ class DeviceController:
         old_state: int | None = None,
         context: dict[str, Any] | None = None,
     ) -> None:
-        """Log a control action to the database."""
+        """Log a control action to the database.
+
+        For DFR0971 lights without a relay, ``channel`` may be the dimming_channel value
+        (0–1) or ``-1`` if dimming config was incomplete.
+        """
         try:
             new_state = 1 if control_output > 0.5 else 0
             reason = self._reason_for_device_type(device_type, new_state)

@@ -201,8 +201,10 @@ async def get_live_sensor_data(
     """
     get_logger(__name__)
 
-    # Get sensor suffix based on location/cluster
+    # Get sensor suffix based on location/cluster (strict for canonical cluster mapping)
     suffix = get_sensor_suffix(location, cluster)
+    if location == "Flower Room" and suffix is None:
+        return {}
 
     # Map of sensor types to check
     sensor_types = []
@@ -319,11 +321,15 @@ async def get_all_live_sensor_data():
     return result
 
 
-def get_sensor_suffix(location: str, cluster: str) -> str:
+def get_sensor_suffix(location: str, cluster: str) -> str | None:
     if location == "Flower Room":
-        return "f" if cluster == "front" else "b"
+        if cluster == "front":
+            return "f"
+        if cluster == "back":
+            return "b"
+        return None
     elif location == "Veg Room":
         return "v"
     elif location == "Lab":
         return ""
-    return ""
+    return None

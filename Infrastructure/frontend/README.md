@@ -52,7 +52,7 @@ sudo systemctl restart automation-service.service
 ### Zones
 
 Zones are hardcoded in `src/config/zones.ts`:
-- Flower Room (front, back)
+- Flower Room: control `main`; sensor views `front` / `back`
 - Veg Room (main)
 - Lab (main)
 

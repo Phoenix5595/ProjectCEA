@@ -9,11 +9,25 @@ export interface LightStatus {
   board_id: number;
   channel: number;
   target_intensity?: number | null;  // 0-100% (target intensity from schedule, max for the day)
+  scheduler_nominal_intensity?: number | null;
+  /** Present on zone-status aggregate; optional on per-device `/status`. */
+  day_target_intensity?: number | null;
+  schedule_sun_target_intensity?: number | null;
   board_info?: {
     board_id: number;
     i2c_address: number;
     name?: string;
   };
+}
+
+/** Response from POST .../lights/.../target */
+export interface LightTargetSetResponse {
+  success: boolean;
+  location: string;
+  cluster: string;
+  device: string;
+  target_intensity: number;
+  rows_updated?: number;
 }
 
 export interface LightDevice {

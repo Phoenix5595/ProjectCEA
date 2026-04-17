@@ -4,6 +4,8 @@ import time
 
 from fastapi import APIRouter, Depends, HTTPException
 
+from app.cluster_config import ensure_configured_cluster
+from app.config import ConfigLoader
 from app.schemas.room_modes import (
     ActiveModeResponse,
     FlowerSubmode,
@@ -30,6 +32,12 @@ def get_database() -> DatabaseManager:
     return container.get_database()
 
 
+def get_config() -> ConfigLoader:
+    from ..main import container
+
+    return container.get_config()
+
+
 @router.get("/modes", response_model=list[RoomMode])
 async def get_room_modes(db: DatabaseManager = Depends(get_database)):
     modes = await db.room_mode_repo.get_room_modes()
@@ -43,7 +51,13 @@ async def get_flower_submodes(db: DatabaseManager = Depends(get_database)):
 
 
 @router.get("/active/{location}/{cluster}", response_model=ActiveModeResponse)
-async def get_active_mode(location: str, cluster: str, db: DatabaseManager = Depends(get_database)):
+async def get_active_mode(
+    location: str,
+    cluster: str,
+    db: DatabaseManager = Depends(get_database),
+    config: ConfigLoader = Depends(get_config),
+):
+    ensure_configured_cluster(config.get_devices(), location, cluster)
     active = await db.room_mode_repo.get_active_mode(location, cluster)
     if not active:
         if "flower" in location.lower():
@@ -58,8 +72,12 @@ async def get_active_mode(location: str, cluster: str, db: DatabaseManager = Dep
 
 @router.get("/room/{location}/{cluster}", response_model=RoomModeWithParams)
 async def get_room_mode_with_params(
-    location: str, cluster: str, db: DatabaseManager = Depends(get_database)
+    location: str,
+    cluster: str,
+    db: DatabaseManager = Depends(get_database),
+    config: ConfigLoader = Depends(get_config),
 ):
+    ensure_configured_cluster(config.get_devices(), location, cluster)
     active = await db.room_mode_repo.get_active_mode(location, cluster)
 
     if not active:
@@ -119,7 +137,9 @@ async def set_room_mode(
     cluster: str,
     request: SetModeRequest,
     db: DatabaseManager = Depends(get_database),
+    config: ConfigLoader = Depends(get_config),
 ):
+    ensure_configured_cluster(config.get_devices(), location, cluster)
     total_start = time.perf_counter()
 
     # Resolve IDs for the new transition service
@@ -184,7 +204,9 @@ async def update_room_parameters(
     cluster: str,
     request: UpdateParametersRequest,
     db: DatabaseManager = Depends(get_database),
+    config: ConfigLoader = Depends(get_config),
 ):
+    ensure_configured_cluster(config.get_devices(), location, cluster)
     active = await db.room_mode_repo.get_active_mode(location, cluster)
     if not active:
         mode_name = "flower" if "flower" in location.lower() else "veg"

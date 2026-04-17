@@ -52,6 +52,29 @@ class ClimatePeriodRepository(BaseRepository):
             logger.error(f"Failed to get climate periods: {e}")
             return []
 
+    async def get_periods_for_room_mode(
+        self, location: str, cluster: str, mode_id: int, submode_id: int | None
+    ) -> list[dict[str, Any]]:
+        """Periods for one (mode_id, submode_id) slice, NULL-safe on submode (veg / legacy)."""
+        query = """
+            SELECT id, location, cluster, mode_id, submode_id, period_name,
+                   start_time, end_time, ramp_minutes,
+                   heating_setpoint, cooling_setpoint, vpd_setpoint, co2_setpoint,
+                   details, created_at, updated_at
+            FROM climate_periods
+            WHERE location = $1 AND cluster = $2
+              AND mode_id = $3
+              AND submode_id IS NOT DISTINCT FROM $4
+            ORDER BY start_time
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(query, location, cluster, mode_id, submode_id)
+                return [dict(row) for row in rows]
+        except Exception as e:
+            logger.error(f"Failed to get climate periods for room mode: {e}")
+            return []
+
     async def save_period(
         self,
         location: str,

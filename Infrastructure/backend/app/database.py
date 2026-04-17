@@ -97,6 +97,7 @@ class DatabaseManager:
         logger.debug(
             f"DB: Query params: location={location}, cluster={cluster}, start_time={start_time}, end_time={end_time}"
         )
+        patterns = self._sensor_name_patterns(location, cluster)
 
         # For larger time ranges, use continuous aggregates for better performance
         use_hourly = duration_hours >= 12
@@ -120,11 +121,20 @@ class DatabaseManager:
                     WHERE r.name = $1
                     AND md.time >= $2
                     AND md.time <= $3
+                    AND (
+                        $4::text[] IS NULL
+                        OR EXISTS (
+                            SELECT 1
+                            FROM unnest($4::text[]) AS pat
+                            WHERE s.name LIKE pat
+                        )
+                    )
                     ORDER BY md.time ASC, s.name ASC
                 """,
                     location,
                     start_time,
                     end_time,
+                    patterns,
                 )
             elif use_hourly:  # >=12 hours, use hourly aggregates
                 logger.debug("DB: Using hourly continuous aggregates for medium time range")
@@ -143,11 +153,20 @@ class DatabaseManager:
                     WHERE r.name = $1
                     AND mh.time >= $2
                     AND mh.time <= $3
+                    AND (
+                        $4::text[] IS NULL
+                        OR EXISTS (
+                            SELECT 1
+                            FROM unnest($4::text[]) AS pat
+                            WHERE s.name LIKE pat
+                        )
+                    )
                     ORDER BY mh.time ASC, s.name ASC
                 """,
                     location,
                     start_time,
                     end_time,
+                    patterns,
                 )
             else:
                 # For smaller ranges, get all data points from measurement table
@@ -166,11 +185,20 @@ class DatabaseManager:
                     WHERE r.name = $1
                     AND m.time >= $2
                     AND m.time <= $3
+                    AND (
+                        $4::text[] IS NULL
+                        OR EXISTS (
+                            SELECT 1
+                            FROM unnest($4::text[]) AS pat
+                            WHERE s.name LIKE pat
+                        )
+                    )
                     ORDER BY m.time ASC, s.name ASC
                 """,
                     location,
                     start_time,
                     end_time,
+                    patterns,
                 )
 
         logger.debug(f"DB: Found {len(rows)} rows in database")
@@ -240,12 +268,31 @@ class DatabaseManager:
 
         return sensor_data
 
+    def _sensor_name_patterns(self, location: str, cluster: str) -> list[str] | None:
+        """Cluster-aware sensor-name filtering for normalized schema queries.
+
+        The measurement schema does not carry a cluster column directly; cluster identity
+        is encoded by suffix conventions (e.g. `_f`, `_b`, `_v`).
+        """
+        if location == "Flower Room":
+            if cluster == "front":
+                return ["%_f"]
+            if cluster == "back":
+                return ["%_b"]
+            return []
+        if location == "Veg Room":
+            if cluster == "main":
+                return ["%_v"]
+            return []
+        # Lab/Outside/main and other locations are room-keyed without suffix split.
+        return None
+
     def _get_node_id(self, location: str, cluster: str) -> int:
         """Map location/cluster to CAN node ID.
 
-        Node IDs from v7 NodeMapping.cpp:
-        - 1: Flower Room, back
-        - 2: Flower Room, front
+        Node IDs from v7 NodeMapping.cpp (sensor / CAN clusters, not automation `devices:`):
+        - 1: Flower Room, back (telemetry)
+        - 2: Flower Room, front (telemetry)
         - 3: Veg Room, main
         """
         mapping = {
@@ -256,7 +303,12 @@ class DatabaseManager:
             ("Lab", "main"): 4,
             ("Outside", "main"): 5,
         }
-        node_id = mapping.get((location, cluster), 1)
+        node_id = mapping.get((location, cluster))
+        if node_id is None:
+            logger.warning(
+                f"DB: Unknown location/cluster mapping for node ID: {location}/{cluster}"
+            )
+            node_id = 1
         logger.debug(f"DB: Mapped {location}/{cluster} -> node_id={node_id}")
         return node_id
 
@@ -319,14 +371,18 @@ class DatabaseManager:
 
         return sensors
 
-    def _get_sensor_suffix(self, location: str, cluster: str) -> str:
+    def _get_sensor_suffix(self, location: str, cluster: str) -> str | None:
         if location == "Flower Room":
-            return "f" if cluster == "front" else "b"
+            if cluster == "front":
+                return "f"
+            if cluster == "back":
+                return "b"
+            return None
         elif location == "Veg Room":
             return "v"
         elif location == "Lab":
             return ""
-        return ""
+        return None
 
     def _calculate_rh(self, temp_dry: float, temp_wet: float, pressure: float = 1013.25) -> float:
         """Calculate relative humidity from dry and wet bulb temperatures."""

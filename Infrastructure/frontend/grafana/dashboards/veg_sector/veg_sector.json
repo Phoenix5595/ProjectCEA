@@ -1145,6 +1145,71 @@
             "cellOptions": {
               "type": "auto"
             },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 120
+              },
+              {
+                "color": "red",
+                "value": 300
+              }
+            ]
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 24,
+        "x": 0,
+        "y": 32
+      },
+      "id": 7,
+      "options": {
+        "cellHeight": "sm",
+        "showHeader": true,
+        "sortBy": []
+      },
+      "pluginVersion": "12.3.1",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "bf6vebq5ipybke"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT device_name AS \"device\", EXTRACT(EPOCH FROM (NOW() - MAX(timestamp)))::bigint AS age_s_last_sample FROM effective_setpoints WHERE location = 'Veg Room' AND cluster = 'main' AND device_name IN ('light_1','light_2','light_3') AND effective_light_intensity IS NOT NULL GROUP BY device_name ORDER BY device_name",
+          "refId": "A"
+        }
+      ],
+      "title": "Light effective_setpoints \u2014 sample freshness",
+      "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "bf6vebq5ipybke"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
             "footer": {
               "reducers": []
             },
@@ -1233,7 +1298,7 @@
         "h": 10,
         "w": 24,
         "x": 0,
-        "y": 32
+        "y": 36
       },
       "id": 6,
       "options": {

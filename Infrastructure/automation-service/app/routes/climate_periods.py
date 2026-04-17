@@ -1,13 +1,15 @@
+"""Climate periods API (ZoneConfig table + persistence)."""
+
 from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.database import DatabaseManager
-from app.schemas.climate_periods import (
-    PeriodsSaveRequest,
-)
+from app.schemas.climate_periods import PeriodsSaveRequest
+
+router = APIRouter(prefix="/api/climate-periods", tags=["climate-periods"])
 
 
 def get_database() -> DatabaseManager:
@@ -15,15 +17,32 @@ def get_database() -> DatabaseManager:
     raise RuntimeError("Dependency not injected")
 
 
-router = APIRouter(prefix="/api/climate-periods", tags=["climate-periods"])
-
-
 @router.get("/{location}/{cluster}")
 async def get_climate_periods(
-    location: str, cluster: str, database: DatabaseManager = Depends(get_database)
+    location: str,
+    cluster: str,
+    mode_id: int | None = Query(
+        None,
+        description="When set, return only periods for this room mode (and submode if provided).",
+    ),
+    submode_id: int | None = Query(
+        None,
+        description="Flower submode id; omit for modes with no submode (matches NULL in DB).",
+    ),
+    database: DatabaseManager = Depends(get_database),
 ) -> list[dict[str, Any]]:
-    """Get all climate periods for a location/cluster."""
-    periods = await database.climate_periods_repo.get_periods(location, cluster)
+    """Get climate periods for a location/cluster.
+
+    If ``mode_id`` is provided, rows are filtered to that mode and submode
+    (``submode_id IS NOT DISTINCT FROM`` the query param, so NULL matches veg).
+    If omitted, all rows for the room are returned (admin / legacy).
+    """
+    if mode_id is not None:
+        periods = await database.climate_periods_repo.get_periods_for_room_mode(
+            location, cluster, mode_id, submode_id
+        )
+    else:
+        periods = await database.climate_periods_repo.get_periods(location, cluster)
     return [dict(p) for p in periods]
 
 
@@ -71,10 +90,19 @@ async def save_climate_periods(
 
 @router.get("/{location}/{cluster}/validate")
 async def validate_climate_periods(
-    location: str, cluster: str, database: DatabaseManager = Depends(get_database)
+    location: str,
+    cluster: str,
+    mode_id: int | None = Query(None),
+    submode_id: int | None = Query(None),
+    database: DatabaseManager = Depends(get_database),
 ) -> dict[str, Any]:
     """Validate 24h coverage for climate periods."""
-    periods = await database.climate_periods_repo.get_periods(location, cluster)
+    if mode_id is not None:
+        periods = await database.climate_periods_repo.get_periods_for_room_mode(
+            location, cluster, mode_id, submode_id
+        )
+    else:
+        periods = await database.climate_periods_repo.get_periods(location, cluster)
     valid, errors = database.climate_periods_repo.validate_24h_coverage([dict(p) for p in periods])
     return {"valid": valid, "errors": errors, "period_count": len(periods)}
 

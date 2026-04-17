@@ -373,10 +373,19 @@ class Scheduler:
                     if ramp_key not in self._light_ramp_state:
                         # Calculate where we SHOULD be based on elapsed time (handles service restarts)
                         progress_from_time = min(max(time_since_start / ramp_up_duration, 0.0), 1.0)
-                        expected_intensity = (
+                        expected_from_time = (
                             MINIMUM_LIGHT_INTENSITY
                             + (target_intensity - MINIMUM_LIGHT_INTENSITY) * progress_from_time
                         )
+                        expected_intensity = expected_from_time
+                        if current_intensity is not None:
+                            try:
+                                ci = float(current_intensity)
+                                t_float = float(target_intensity)
+                                ci_clamped = max(MINIMUM_LIGHT_INTENSITY, min(ci, t_float))
+                                expected_intensity = ci_clamped
+                            except (TypeError, ValueError):
+                                expected_intensity = expected_from_time
                         self._light_ramp_state[ramp_key] = {
                             "start_intensity": expected_intensity,
                             "target_intensity": target_intensity,

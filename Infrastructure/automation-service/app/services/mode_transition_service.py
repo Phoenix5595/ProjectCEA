@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING, Any, cast
 
 from shared.infra_logging import get_logger
@@ -74,6 +75,15 @@ class ModeTransitionService:
             new_submode_name = None
             schedule_sync_result = None
 
+            old_mode_id: int | None = None
+            if current_mode and current_mode.get("mode_id") is not None:
+                try:
+                    old_mode_id = int(current_mode["mode_id"])
+                except (TypeError, ValueError):
+                    old_mode_id = None
+            # Flower bulk ↔ late, etc.: same room_modes.id — do not rewrite schedules from submode-specific params.
+            submode_only_transition = old_mode_id is not None and int(new_mode_id) == old_mode_id
+
             pool = self.db.pool
             if not pool:
                 raise RuntimeError("Database pool not initialized")
@@ -120,42 +130,67 @@ class ModeTransitionService:
 
                     from ..routes.schedules.room import sync_room_schedule_from_mode_parameters
 
-                    try:
-                        schedule_sync_result = await sync_room_schedule_from_mode_parameters(
-                            location, cluster
+                    if submode_only_transition:
+                        schedule_sync_result = {
+                            "skipped": True,
+                            "reason": "submode_only_transition",
+                        }
+                        logger.info(
+                            "Skipping sync_room_schedule_from_mode_parameters for %s/%s: "
+                            "mode_id unchanged (%s), submode-only transition",
+                            location,
+                            cluster,
+                            new_mode_id,
                         )
-                    except Exception as e:
-                        schedule_sync_result = {"error": str(e)}
+                    else:
+                        try:
+                            schedule_sync_result = await sync_room_schedule_from_mode_parameters(
+                                location, cluster
+                            )
+                        except Exception as e:
+                            schedule_sync_result = {"error": str(e)}
 
+                    # mode_transition_history id columns are INTEGER in production (asyncpg rejects str).
+                    # Human-readable names live in parameters_synced.
+                    params_sync: dict[str, Any] = {
+                        "old_mode_name": current_mode["mode_name"] if current_mode else None,
+                        "old_submode_name": current_mode.get("submode_name")
+                        if current_mode
+                        else None,
+                        "new_mode_name": new_mode_name,
+                        "new_submode_name": new_submode_name,
+                        "schedule_sync": schedule_sync_result,
+                    }
                     await conn.execute(
                         """
                         INSERT INTO mode_transition_history (
                             location, cluster,
                             old_mode_id, old_submode_id,
                             new_mode_id, new_submode_id,
-                            old_mode_name, old_submode_name,
-                            new_mode_name, new_submode_name,
-                            triggered_by, transition_at
+                            triggered_by,
+                            parameters_synced,
+                            success
                         ) VALUES (
                             $1, $2,
                             $3, $4,
                             $5, $6,
-                            $7, $8,
-                            $9, $10,
-                            $11, NOW()
+                            $7,
+                            $8::jsonb,
+                            true
                         )
                         """,
                         location,
                         cluster,
-                        current_mode["mode_id"] if current_mode else None,
-                        current_mode.get("submode_id") if current_mode else None,
-                        new_mode_id,
-                        new_submode_id,
-                        current_mode["mode_name"] if current_mode else None,
-                        current_mode.get("submode_name") if current_mode else None,
-                        new_mode_name,
-                        new_submode_name,
+                        int(current_mode["mode_id"])
+                        if current_mode and current_mode.get("mode_id") is not None
+                        else None,
+                        int(current_mode["submode_id"])
+                        if current_mode and current_mode.get("submode_id") is not None
+                        else None,
+                        int(new_mode_id),
+                        int(new_submode_id) if new_submode_id is not None else None,
                         triggered_by,
+                        json.dumps(params_sync),
                     )
 
                 # Check for multi-cluster desync
@@ -175,7 +210,8 @@ class ModeTransitionService:
 
             try:
                 await self._trigger_scheduler_refresh(location, cluster)
-                self._clear_light_ramp_state(location, cluster)
+                if not submode_only_transition:
+                    self._clear_light_ramp_state(location, cluster)
             except Exception as e:
                 logger.error(f"Failed to refresh scheduler after mode transition: {e}")
 

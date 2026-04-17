@@ -1,4 +1,7 @@
-/** Dashboard room card component for single room display. */
+/**
+ * Legacy column-layout room card for the main dashboard.
+ * Kept in repo for reference; the main dashboard uses `DashboardRows` instead — do not wire this back without review.
+ */
 import { memo } from 'react';
 import { Link } from 'react-router-dom';
 import type { Device } from '../types/device';

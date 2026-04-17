@@ -7,8 +7,9 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from shared.infra_logging import get_logger
 
+from ..config import ConfigLoader
 from ..control.control_engine import ControlEngine
-from ..control.scheduler import Scheduler
+from ..control.scheduler import LOCAL_TZ, Scheduler
 from ..database import DatabaseManager
 
 logger = get_logger(__name__)
@@ -31,6 +32,12 @@ def get_control_engine() -> ControlEngine:
     from ..main import container
 
     return container.get_control_engine()
+
+
+def get_config() -> ConfigLoader:
+    from ..main import container
+
+    return container.get_config()
 
 
 @router.get("/mode-state/{location}/{cluster}")
@@ -148,6 +155,94 @@ async def get_ramp_states(
         }
     except Exception as e:
         logger.error(f"Error in get_ramp_states: {e}")
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@router.get("/light-schedule-health/{location}/{cluster}")
+async def get_light_schedule_health(
+    location: str,
+    cluster: str,
+    scheduler: Scheduler = Depends(get_scheduler),
+    db: DatabaseManager = Depends(get_database),
+    config: ConfigLoader = Depends(get_config),
+):
+    """Per-light schedule resolution and last Grafana DB sample age (effective_setpoints)."""
+    try:
+        devices = config.get_devices()
+        cluster_devices = devices.get(location, {}).get(cluster, {})
+        now = datetime.now(tz=LOCAL_TZ)
+        pool = db.pool
+
+        lights_out: list[dict[str, Any]] = []
+
+        for device_name, device_info in cluster_devices.items():
+            if device_info.get("device_type") != "light":
+                continue
+            if (
+                not device_info.get("dimming_enabled")
+                or device_info.get("dimming_type") != "dfr0971"
+            ):
+                continue
+
+            has_any = has_sun = has_moon = False
+            for s in scheduler.schedules:
+                if s.get("location") != location or s.get("cluster") != cluster:
+                    continue
+                if s.get("device_name") != device_name:
+                    continue
+                has_any = True
+                mode = str(s.get("mode", "")).upper()
+                if mode in ("SUN", "DAY"):
+                    has_sun = True
+                if mode in ("MOON", "NIGHT"):
+                    has_moon = True
+
+            det = scheduler.get_light_intensity_details(location, cluster, device_name, now, 0.0)
+            details_resolvable = det is not None
+            effective_if_any = float(det["effective_intensity"]) if det else None
+
+            last_light_row_age_sec: float | None = None
+            row = None
+            if pool:
+                async with pool.acquire() as conn:
+                    row = await conn.fetchrow(
+                        """
+                        SELECT MAX(timestamp) AS ts FROM effective_setpoints
+                        WHERE location = $1 AND cluster = $2 AND device_name = $3
+                          AND effective_light_intensity IS NOT NULL
+                        """,
+                        location,
+                        cluster,
+                        device_name,
+                    )
+            if row and row["ts"] is not None:
+                ts = row["ts"]
+                if getattr(ts, "tzinfo", None) is None:
+                    ts = ts.replace(tzinfo=LOCAL_TZ)
+                else:
+                    ts = ts.astimezone(LOCAL_TZ)
+                last_light_row_age_sec = (now - ts).total_seconds()
+
+            lights_out.append(
+                {
+                    "device_name": device_name,
+                    "has_any_schedule_row": has_any,
+                    "has_sun_or_day_row": has_sun,
+                    "has_moon_or_night_row": has_moon,
+                    "details_resolvable_now": details_resolvable,
+                    "effective_intensity_if_any": effective_if_any,
+                    "last_effective_light_row_age_sec": last_light_row_age_sec,
+                }
+            )
+
+        return {
+            "location": location,
+            "cluster": cluster,
+            "now": now.isoformat(),
+            "lights": lights_out,
+        }
+    except Exception as e:
+        logger.error(f"Error in get_light_schedule_health: {e}")
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 

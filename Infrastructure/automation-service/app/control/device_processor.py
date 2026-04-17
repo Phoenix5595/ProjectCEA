@@ -62,6 +62,9 @@ class DeviceProcessor:
         # Throttle "no schedule" warning to once per 5 min per device (avoid log spam / CPU)
         self._last_no_schedule_log: dict[tuple[str, str, str], float] = {}
         self._no_schedule_log_interval_sec = 300.0
+        # Throttle per-device light batch failure warnings (I2C timeouts, dimmer errors)
+        self._last_batch_light_fail_log: dict[str, float] = {}
+        self._batch_light_fail_log_interval_sec = 60.0
 
     async def process_devices(
         self,
@@ -228,6 +231,24 @@ class DeviceProcessor:
                     f"{result.success_count} devices processed"
                 )
 
+            light_intents = getattr(result, "light_intents", None) or {}
+            if light_intents and result.failure_count > 0:
+                now_ts = current_time.timestamp()
+                for device_key, _intent in light_intents.items():
+                    if result.results.get(device_key):
+                        continue
+                    err = result.errors.get(device_key, "unknown error")
+                    last = self._last_batch_light_fail_log.get(device_key, 0.0)
+                    if now_ts - last >= self._batch_light_fail_log_interval_sec:
+                        self._last_batch_light_fail_log[device_key] = now_ts
+                        logger.warning(
+                            "Light hardware batch chain failed for %s (%s/%s): %s",
+                            device_key,
+                            location,
+                            cluster,
+                            err,
+                        )
+
             # Persist intended dimmer state so UI/Grafana reflects reality even when batching.
             # (Non-batch dimmer control writes to Redis inside DeviceController.)
             try:
@@ -271,8 +292,17 @@ class DeviceProcessor:
         ramp_progress: float | None = None
 
         if is_sun and self.scheduler:
+            current_intensity: float | None = None
+            redis_client = getattr(self.database, "_automation_redis", None)
+            if redis_client and getattr(redis_client, "redis_enabled", False):
+                try:
+                    data = redis_client.read_light_intensity(location, cluster, device_name)
+                    if data and data.get("intensity") is not None:
+                        current_intensity = float(data["intensity"])
+                except (TypeError, ValueError):
+                    current_intensity = None
             intensity_details = self.scheduler.get_light_intensity_details(
-                location, cluster, device_name, current_time
+                location, cluster, device_name, current_time, current_intensity
             )
             if intensity_details:
                 scheduled_percent = float(intensity_details["effective_intensity"])

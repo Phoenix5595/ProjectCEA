@@ -4,7 +4,7 @@ import DeviceManager from '../components/DeviceManager'
 export default function DeviceConfig() {
  return (
  <div className="min-h-screen bg-surface-base p-4">
- <div className="max-w-6xl mx-auto">
+ <div className="mx-auto max-w-[1800px]">
  <div className="mb-4 flex items-center gap-4">
  <Link
  to="/"

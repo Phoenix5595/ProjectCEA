@@ -7,10 +7,13 @@ from typing import TYPE_CHECKING, Any
 
 from fastapi import APIRouter, Depends, HTTPException
 
+from app.cluster_config import iter_flower_main_merged_devices
 from app.config import ConfigLoader
 from app.control.schedule_merge import merge_schedules_with_config
+from app.control.scheduler import LOCAL_TZ
 from app.database import DatabaseManager
 from app.schemas.lights import (
+    DfrChannelAssignControl,
     IntensityControl,
     ScheduleTimeControl,
     TargetIntensityControl,
@@ -27,6 +30,35 @@ if TYPE_CHECKING:
 router = APIRouter()
 
 logger = get_logger(__name__)
+
+
+def _schedule_row_active_for_device(
+    row: dict[str, Any],
+    device_name: str,
+    now: datetime,
+    scheduler: Any | None,
+) -> bool:
+    """True if this schedule row applies to ``now`` for the device (weekday + [start,end) like Scheduler)."""
+    if row.get("device_name") != device_name:
+        return False
+    if not row.get("enabled", True):
+        return False
+    dow = row.get("day_of_week")
+    if dow is not None and dow != now.weekday():
+        return False
+    st = row.get("start_time")
+    et = row.get("end_time")
+    try:
+        st_t = scheduler._parse_time(st) if scheduler else None
+        et_t = scheduler._parse_time(et) if scheduler else None
+    except Exception:
+        return False
+    if not st_t or not et_t:
+        return False
+    t = now.time()
+    if st_t > et_t:
+        return t >= st_t or t < et_t
+    return st_t <= t < et_t
 
 
 def _read_light_status_payload(
@@ -69,7 +101,7 @@ def _read_light_status_payload(
     target_intensity = None
     if scheduler:
         intensity_details = scheduler.get_light_intensity_details(
-            location, cluster, device_name, datetime.now(), intensity
+            location, cluster, device_name, datetime.now(tz=LOCAL_TZ), intensity
         )
         if intensity_details:
             target_intensity = intensity_details.get("nominal_intensity")
@@ -83,7 +115,9 @@ def _read_light_status_payload(
         "board_id": board_id,
         "channel": channel,
         "board_info": board_info,
+        # Nominal from the active schedule row (same as scheduler nominal); POST /target updates DB SUN row.
         "target_intensity": target_intensity,
+        "scheduler_nominal_intensity": target_intensity,
     }
 
 
@@ -123,6 +157,160 @@ async def list_boards(dfr0971_manager=Depends(get_dfr0971_manager)) -> dict[str,
     """List all configured DFR0971 boards."""
     boards = dfr0971_manager.list_boards()
     return {"boards": boards, "count": len(boards)}
+
+
+def _iter_all_dfr0971_lights(config: ConfigLoader) -> list[dict[str, Any]]:
+    devices = config.get_devices() or {}
+    out: list[dict[str, Any]] = []
+    for location, clusters in devices.items():
+        if not isinstance(clusters, dict):
+            continue
+        for cluster, devs in clusters.items():
+            if not isinstance(devs, dict):
+                continue
+            for device_name, device_info in devs.items():
+                if not isinstance(device_info, dict):
+                    continue
+                if device_info.get("device_type") != "light":
+                    continue
+                if (
+                    not device_info.get("dimming_enabled")
+                    or device_info.get("dimming_type") != "dfr0971"
+                ):
+                    continue
+                out.append(
+                    {
+                        "location": location,
+                        "cluster": cluster,
+                        "device_name": device_name,
+                        "display_name": device_info.get("display_name"),
+                        "dimming_board_id": device_info.get("dimming_board_id"),
+                        "dimming_channel": device_info.get("dimming_channel"),
+                    }
+                )
+    return out
+
+
+@router.get("/api/lights/dfr/assignments")
+async def get_dfr_assignments(
+    config: ConfigLoader = Depends(get_config),
+    dfr0971_manager=Depends(get_dfr0971_manager),
+) -> dict[str, Any]:
+    """Return DFR0971 boards + per-board channel assignments + all dimmable DFR lights."""
+    boards = dfr0971_manager.list_boards()
+    lights = _iter_all_dfr0971_lights(config)
+
+    # board_id -> {0: assignment|null, 1: assignment|null}
+    assignments: dict[str, dict[str, Any | None]] = {}
+    for b in boards:
+        bid = b.get("board_id")
+        if bid is None:
+            continue
+        assignments[str(bid)] = {"0": None, "1": None}
+
+    for light in lights:
+        bid = light.get("dimming_board_id")
+        ch = light.get("dimming_channel")
+        if bid is None or ch is None:
+            continue
+        key = str(bid)
+        ch_key = str(ch)
+        if key not in assignments:
+            assignments[key] = {"0": None, "1": None}
+        if ch_key not in ("0", "1"):
+            continue
+        assignments[key][ch_key] = {
+            "location": light["location"],
+            "cluster": light["cluster"],
+            "device_name": light["device_name"],
+            "display_name": light.get("display_name"),
+        }
+
+    return {"boards": boards, "assignments": assignments, "lights": lights}
+
+
+@router.put("/api/lights/dfr/assign")
+async def assign_dfr_channel(
+    control: DfrChannelAssignControl,
+    config: ConfigLoader = Depends(get_config),
+) -> dict[str, Any]:
+    """Assign (or clear) a DFR0971 (board_id, channel) mapping for a dimmable light device."""
+    device_configs = config.get_devices() or {}
+    device_info = (
+        device_configs.get(control.location, {}).get(control.cluster, {}).get(control.device_name)
+    )
+    if not isinstance(device_info, dict):
+        raise HTTPException(
+            status_code=404,
+            detail=f"Device not found: {control.location}/{control.cluster}/{control.device_name}",
+        )
+    if device_info.get("device_type") != "light":
+        raise HTTPException(status_code=400, detail="Target device is not a light")
+    if not device_info.get("dimming_enabled") or device_info.get("dimming_type") != "dfr0971":
+        raise HTTPException(
+            status_code=400, detail="Target light is not configured for DFR0971 dimming"
+        )
+
+    if control.board_id is None or control.dimming_channel is None:
+        ok = config.update_light_dimming_assignment(
+            control.location,
+            control.cluster,
+            control.device_name,
+            board_id=None,
+            dimming_channel=None,
+        )
+        if not ok:
+            raise HTTPException(status_code=500, detail="Failed to clear DFR assignment")
+        config.reload()
+        return {
+            "success": True,
+            "location": control.location,
+            "cluster": control.cluster,
+            "device_name": control.device_name,
+            "board_id": None,
+            "dimming_channel": None,
+        }
+
+    if control.dimming_channel not in (0, 1):
+        raise HTTPException(status_code=400, detail="dimming_channel must be 0 or 1")
+
+    # Global uniqueness: (board_id, dimming_channel) can only belong to one light.
+    requested_pair = (int(control.board_id), int(control.dimming_channel))
+    for light in _iter_all_dfr0971_lights(config):
+        if (
+            light["location"] == control.location
+            and light["cluster"] == control.cluster
+            and light["device_name"] == control.device_name
+        ):
+            continue
+        if (light.get("dimming_board_id"), light.get("dimming_channel")) == requested_pair:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"DFR channel already assigned to "
+                    f"{light['location']}/{light['cluster']}/{light['device_name']}"
+                ),
+            )
+
+    ok = config.update_light_dimming_assignment(
+        control.location,
+        control.cluster,
+        control.device_name,
+        board_id=int(control.board_id),
+        dimming_channel=int(control.dimming_channel),
+    )
+    if not ok:
+        raise HTTPException(status_code=500, detail="Failed to update DFR assignment")
+    config.reload()
+
+    return {
+        "success": True,
+        "location": control.location,
+        "cluster": control.cluster,
+        "device_name": control.device_name,
+        "board_id": int(control.board_id),
+        "dimming_channel": int(control.dimming_channel),
+    }
 
 
 @router.post("/api/lights/{location}/{cluster}/{device_name}/intensity")
@@ -249,18 +437,29 @@ async def get_zone_lights_status(
 ) -> dict[str, Any]:
     """Return intensity + targets for all dimmable lights in one round-trip (ZoneConfig Light intensity)."""
     devices = config.get_devices()
-    cluster_devices = devices.get(location, {}).get(cluster, {})
-    if not cluster_devices:
+    location_config = devices.get(location, {}) or {}
+    if location == "Flower Room" and cluster == "main":
+        device_entries = iter_flower_main_merged_devices(location_config)
+    else:
+        raw = location_config.get(cluster, {}) or {}
+        device_entries = [
+            (cluster, name, info) for name, info in raw.items() if isinstance(info, dict)
+        ]
+    if not device_entries:
         return {"lights": []}
 
-    now = datetime.now()
+    now = datetime.now(tz=LOCAL_TZ)
 
     schedules_list: list[dict[str, Any]] = []
     if database:
         schedules_list = await database.schedule_repo.get_schedules(location, cluster)
 
     lights_out: list[dict[str, Any]] = []
-    for device_name, device_info in cluster_devices.items():
+    seen_device_names: set[str] = set()
+    for src_cluster, device_name, device_info in device_entries:
+        if device_name in seen_device_names:
+            continue
+        seen_device_names.add(device_name)
         if device_info.get("device_type") != "light":
             continue
         if not device_info.get("dimming_enabled", False):
@@ -273,7 +472,7 @@ async def get_zone_lights_status(
 
         payload = _read_light_status_payload(
             location,
-            cluster,
+            src_cluster,
             device_name,
             device_info,
             dfr0971_manager,
@@ -285,7 +484,7 @@ async def get_zone_lights_status(
             target_fallback = None
             if scheduler:
                 intensity_details = scheduler.get_light_intensity_details(
-                    location, cluster, device_name, datetime.now(), 0.0
+                    location, cluster, device_name, now, 0.0
                 )
                 if intensity_details:
                     target_fallback = intensity_details.get("nominal_intensity")
@@ -301,6 +500,7 @@ async def get_zone_lights_status(
                 "channel": channel,
                 "board_info": board_info,
                 "target_intensity": target_fallback,
+                "scheduler_nominal_intensity": target_fallback,
             }
 
         scheduler_effective_intensity: float | None = None
@@ -327,37 +527,33 @@ async def get_zone_lights_status(
 
         active_schedule_mode: str | None = None
         for s in schedules_list:
-            if s.get("device_name") != device_name:
+            if not _schedule_row_active_for_device(s, device_name, now, scheduler):
                 continue
-            if not s.get("enabled", True):
-                continue
-            # Determine the active row by time window (same rule as Scheduler: [start, end), supports overnight).
-            st = s.get("start_time")
-            et = s.get("end_time")
-            try:
-                st_t = scheduler._parse_time(st) if scheduler else None
-                et_t = scheduler._parse_time(et) if scheduler else None
-            except Exception:
-                st_t = None
-                et_t = None
-            if not st_t or not et_t:
-                continue
-            t = now.time()
-            in_range = (t >= st_t or t < et_t) if st_t > et_t else (st_t <= t < et_t)
-            if in_range:
-                active_schedule_mode = str(s.get("mode") or "").upper() or None
-                break
+            active_schedule_mode = str(s.get("mode") or "").upper() or None
+            break
 
+        # Prefer SUN/DAY target from the row that is active at ``now`` (matches Scheduler semantics).
         sun_day_target: float | None = None
         for s in schedules_list:
-            if s.get("device_name") != device_name:
-                continue
-            if not s.get("enabled", True):
+            if not _schedule_row_active_for_device(s, device_name, now, scheduler):
                 continue
             mode = str(s.get("mode") or "").upper()
             if mode in ("SUN", "DAY") and s.get("target_intensity") is not None:
                 sun_day_target = float(s["target_intensity"])
                 break
+
+        # Moon / outside sun window: active row is MOON/NIGHT, so the loop above yields None even though
+        # POST /target updates enabled SUN/DAY rows. Surface stored sun target for ZoneConfig sliders.
+        if sun_day_target is None:
+            for s in schedules_list:
+                if s.get("device_name") != device_name:
+                    continue
+                if s.get("enabled") is False:
+                    continue
+                mode = str(s.get("mode") or "").upper()
+                if mode in ("SUN", "DAY") and s.get("target_intensity") is not None:
+                    sun_day_target = float(s["target_intensity"])
+                    break
 
         day_target_intensity = sun_day_target
         if day_target_intensity is None and payload.get("target_intensity") is not None:
@@ -368,6 +564,8 @@ async def get_zone_lights_status(
                 **payload,
                 "display_name": device_info.get("display_name"),
                 "day_target_intensity": day_target_intensity,
+                # Same as day_target_intensity: SUN/DAY row target in DB (what ZoneConfig POST /target updates).
+                "schedule_sun_target_intensity": day_target_intensity,
                 "scheduler_effective_intensity": scheduler_effective_intensity,
                 "scheduler_nominal_intensity": scheduler_nominal_intensity,
                 "scheduler_is_in_photoperiod": scheduler_is_in_photoperiod,
@@ -513,11 +711,11 @@ async def set_target_intensity(
     if device_info.get("device_type") != "light":
         raise HTTPException(status_code=400, detail=f"Device {device_name} is not a light")
 
-    updated = await database.schedule_repo.update_light_schedule_target(
+    rows_updated = await database.schedule_repo.update_light_schedule_target(
         location, cluster, device_name, control.target_intensity
     )
 
-    if not updated:
+    if rows_updated == 0:
         raise HTTPException(status_code=404, detail=f"No active schedule found for {device_name}")
 
     # Refresh scheduler with updated schedules
@@ -532,6 +730,7 @@ async def set_target_intensity(
         "cluster": cluster,
         "device": device_name,
         "target_intensity": control.target_intensity,
+        "rows_updated": rows_updated,
     }
 
 

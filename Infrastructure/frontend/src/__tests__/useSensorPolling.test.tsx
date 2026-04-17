@@ -5,7 +5,9 @@ import { useSensorPolling } from '../hooks/useSensorPolling';
 const getAllDevices = vi.fn().mockResolvedValue([]);
 const getSensorDataBulk = vi.fn().mockResolvedValue({});
 const getControlHistory = vi.fn().mockResolvedValue([]);
+const getDevicesForLocationCluster = vi.fn().mockResolvedValue({ devices: {} });
 const getLiveSensorData = vi.fn().mockResolvedValue({});
+const getAllLiveSensorData = vi.fn().mockResolvedValue([]);
 const getLatestWeather = vi.fn().mockResolvedValue(null);
 const getSystemStatus = vi.fn().mockResolvedValue(null);
 
@@ -14,7 +16,9 @@ vi.mock('../services/api', () => ({
     getAllDevices: () => getAllDevices(),
     getSensorDataBulk: () => getSensorDataBulk(),
     getControlHistory: () => getControlHistory(),
+    getDevicesForLocationCluster: () => getDevicesForLocationCluster(),
     getLiveSensorData: () => getLiveSensorData(),
+    getAllLiveSensorData: () => getAllLiveSensorData(),
     getLatestWeather: () => getLatestWeather(),
     getSystemStatus: () => getSystemStatus(),
   },
@@ -25,7 +29,9 @@ describe('useSensorPolling', () => {
     getAllDevices.mockClear();
     getSensorDataBulk.mockClear();
     getControlHistory.mockClear();
+    getDevicesForLocationCluster.mockClear();
     getLiveSensorData.mockClear();
+    getAllLiveSensorData.mockClear();
     getLatestWeather.mockClear();
     getSystemStatus.mockClear();
   });
@@ -41,6 +47,8 @@ describe('useSensorPolling', () => {
     expect(getSystemStatus).not.toHaveBeenCalled();
     expect(getSensorDataBulk).toHaveBeenCalled();
     expect(getControlHistory).toHaveBeenCalled();
+    expect(getDevicesForLocationCluster).toHaveBeenCalled();
+    expect(getAllLiveSensorData).toHaveBeenCalled();
 
     unmount();
   });

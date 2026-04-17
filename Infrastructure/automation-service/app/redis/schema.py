@@ -15,8 +15,9 @@ OLD_KEY_PATTERNS: list[str] = [
     # Setpoints (per location/cluster)
     "setpoint:{location}:{cluster}:{name}",
     "setpoint:{location}:{cluster}:source",
-    # Effective setpoints
+    # Effective setpoints (climate + per-light under :light:{device}:…)
     "effective_setpoint:{location}:{cluster}:{name}",
+    "effective_setpoint:{location}:{cluster}:light:{device_name}:{field}",
     # Schedule state
     "schedule:state:{location}:{cluster}",
     # Ramp state keys
@@ -104,6 +105,16 @@ def effective_setpoint_key(location: str, cluster: str, name: str) -> str:
     return build_key("effective_setpoint", location, cluster, name)
 
 
+def effective_setpoint_light_field_key(
+    location: str, cluster: str, device_name: str, field: str
+) -> str:
+    """Legacy non-cea key for per-dimmer light effective/nominal/ramp in Redis.
+
+    ``field`` is one of: ``effective_intensity``, ``nominal_intensity``, ``ramp_progress_light``.
+    """
+    return f"effective_setpoint:{location}:{cluster}:light:{device_name}:{field}"
+
+
 def schedule_key(location: str, cluster: str) -> str:
     return build_key("schedule", location, cluster, "state")
 
@@ -182,6 +193,7 @@ __all__ = [
     "mode_key",
     "setpoint_key",
     "effective_setpoint_key",
+    "effective_setpoint_light_field_key",
     "schedule_key",
     "ramp_key",
     "ramp_persist_key",

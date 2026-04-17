@@ -20,6 +20,8 @@
 ## Dashboards
 - Panels should pick the view/aggregate that matches their time range (raw for live, hourly for 12h+, daily for multi-day).
 - Alert rules should use raw data for live sensitivity; aggregates are acceptable for historical summaries.
+- **Room light intensity** (`effective_setpoints.effective_light_intensity`): always filter by **`device_name`** (`light_1`, `light_2`, …). Flower/Veg sector dashboards include a **“Light effective_setpoints — sample freshness”** table: age in seconds since the last row per light (alert if a fixture stops logging). Curves are fed by the **TimescaleDB** logger (throttled in the automation loop), not Redis `light:*` keys used for live UI.
+- **Optional operator panel**: add a small table query with `SELECT DISTINCT device_name FROM effective_setpoints WHERE location = '$room' AND cluster = 'main' AND effective_light_intensity IS NOT NULL AND $__timeFilter(timestamp)` so actual DB names are visible if YAML/DB labels drift from `light_1`…`light_3`.
 
 ## Naming
 - Use sensor display mappings from frontend when showing names; backend keys remain unchanged.

@@ -11,6 +11,56 @@ import yaml
 logger = logging.getLogger(__name__)
 
 
+def _merge_flower_room_devices_into_main(config: dict[str, Any]) -> bool:
+    """Move Flower Room equipment from legacy ``front``/``back`` under ``devices:`` into ``main``.
+
+    The schema requires all Flower actuators under ``main`` only. Channel saves from the UI
+    sometimes still wrote ``front``/``back``; merging fixes validation and control APIs that
+    read ``Flower Room``/``main``.
+
+    Returns:
+        True if ``config`` was modified.
+    """
+    devices = config.get("devices")
+    if not isinstance(devices, dict):
+        return False
+    fr = devices.get("Flower Room")
+    if not isinstance(fr, dict):
+        return False
+
+    changed = False
+    main = fr.get("main")
+    if not isinstance(main, dict):
+        if main is not None:
+            logger.warning("Flower Room 'main' is not a dict; replacing with an empty dict")
+        main = {}
+        fr["main"] = main
+        changed = True
+
+    for legacy in ("front", "back"):
+        leg = fr.get(legacy)
+        if not isinstance(leg, dict) or len(leg) == 0:
+            continue
+        changed = True
+        for device_name, dev_info in leg.items():
+            if device_name in main:
+                logger.warning(
+                    "Flower Room: skipping merge of device %r from %r — already defined under main",
+                    device_name,
+                    legacy,
+                )
+                continue
+            main[device_name] = dev_info
+        del fr[legacy]
+
+    for legacy in ("front", "back"):
+        if legacy in fr and isinstance(fr[legacy], dict) and len(fr[legacy]) == 0:
+            del fr[legacy]
+            changed = True
+
+    return changed
+
+
 class ConfigLoader:
     """Loads and parses YAML configuration files."""
 
@@ -46,6 +96,23 @@ class ConfigLoader:
         # Load main config
         with open(self.config_path) as f:
             self._config = yaml.safe_load(f) or {}
+        if _merge_flower_room_devices_into_main(self._config):
+            try:
+                with open(self.config_path, "w") as f:
+                    yaml.dump(
+                        self._config,
+                        f,
+                        default_flow_style=False,
+                        sort_keys=False,
+                        allow_unicode=True,
+                    )
+                logger.info(
+                    "Merged Flower Room device entries from legacy clusters into main; saved %s",
+                    self.config_path,
+                )
+            except OSError as e:
+                logger.error("Failed to persist Flower Room device merge: %s", e)
+                raise
         self._validate_config()
 
         # Load schedules if exists
@@ -294,4 +361,55 @@ class ConfigLoader:
             return True
         except Exception as e:
             logger.error(f"Error updating device config: {e}")
+            return False
+
+    def update_light_dimming_assignment(
+        self,
+        location: str,
+        cluster: str,
+        device_name: str,
+        *,
+        board_id: int | None,
+        dimming_channel: int | None,
+    ) -> bool:
+        """Update a light device's DFR0971 dimming mapping in YAML.
+
+        This only updates configuration fields; hardware commands are handled by the control loop.
+        """
+        try:
+            devices_root = self._config.get("devices", {})
+            if location not in devices_root or cluster not in devices_root.get(location, {}):
+                raise ValueError(f"Unknown location/cluster: {location}/{cluster}")
+            devs = devices_root[location][cluster]
+            if device_name not in devs:
+                raise ValueError(f"Device {device_name} not found in {location}/{cluster}")
+
+            device_config = devs[device_name]
+            if not isinstance(device_config, dict):
+                raise ValueError(
+                    f"Invalid device config shape for {location}/{cluster}/{device_name}"
+                )
+
+            if board_id is None or dimming_channel is None:
+                device_config.pop("dimming_board_id", None)
+                device_config.pop("dimming_channel", None)
+            else:
+                device_config["dimming_board_id"] = int(board_id)
+                device_config["dimming_channel"] = int(dimming_channel)
+
+            with open(self.config_path, "w") as f:
+                yaml.dump(
+                    self._config, f, default_flow_style=False, sort_keys=False, allow_unicode=True
+                )
+            logger.info(
+                "Updated light dimming assignment: %s/%s/%s board_id=%s channel=%s",
+                location,
+                cluster,
+                device_name,
+                board_id,
+                dimming_channel,
+            )
+            return True
+        except Exception as e:
+            logger.error(f"Error updating light dimming assignment: {e}")
             return False

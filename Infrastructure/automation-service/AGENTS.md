@@ -34,7 +34,10 @@ automation-service/
 ## KEY CONCEPTS
 
 ### Light (sun/moon) vs climate periods
-- **Photoperiod (lights)**: **Sun** = lights on (with ramps from `light_ramp_up_minutes` / `light_ramp_down_minutes` on schedules); **moon** = off or 0% outside that window. Boundaries come from `room_schedule` + per-device SUN/MOON rows. Drying/sleep modes may use 24h moon. Light intensity is never undefined: sun schedule (with ramps) or 0% (moon).
+- **Photoperiod (lights)**: **Sun** = lights on (with ramps from `light_ramp_up_minutes` / `light_ramp_down_minutes` on schedules); **moon** = off or 0% outside that window. Boundaries come from `room_schedule` + per-device SUN/MOON rows. On scheduler load, **`merge_schedules_with_config`** synthesizes missing per-light **SUN** from `room_schedule` and missing **MOON** as the complement of that photoperiod so `get_light_intensity_details` does not return `None` outside sun. Drying/sleep modes may use 24h moon. Light intensity is never undefined: sun schedule (with ramps) or 0% (moon).
+- **Schedule cache vs POST `/target`**: `get_schedules()` with no `location`/`cluster` reads cache key **`schedules:all`**. `update_light_schedule_target` must delete **`schedules:all`** and **`schedules:loc:{location}`** as well as **`schedules:loc:{location}:cluster:{cluster}`** after updating Postgres. If only the per-cluster key is cleared, `lights.set_target_intensity` → `get_schedules()` → `merge_schedules_with_config` can feed **stale** rows into `scheduler.update_schedules`, so the control loop keeps the previous target for multiple ticks. See `REQUIREMENTS.md` (Schedule cache invalidation).
+- **Grafana vs ZoneConfig CUR**: Grafana light trends read **`effective_setpoints.effective_light_intensity`** (Postgres). The ZoneConfig slider **CUR** prefers Redis **`light:{loc}:{cluster}:{device}`** updated after dimmer commands.
+- **Debug**: `GET /api/debug/light-schedule-health/{location}/{cluster}` — per-light schedule coverage and whether details resolve at “now”.
 - **Climate**: Setpoints come from **`climate_periods`** (named periods, `start_time`, `end_time`, `ramp_minutes`, targets). The control loop resolves the active period via `get_active_period()` / `ClimatePeriodResolver`; **not** a fixed PRE_DAY / DAY / PRE_NIGHT / NIGHT ladder. Climate does not switch lights; the light schedule does.
 - **Lights on/off** come only from the **light (sun/moon) schedule**, not from climate period names. Period boundaries are independent of photoperiod (operators may align them for convenience).
 
@@ -51,6 +54,7 @@ automation-service/
 - **DFR0971** (dimming) → I2C bus 1, addresses 0x88 / 0x89 / 0x90. 6 dimming channels total (3 boards × 2 channels).
 - Each DFR0971 board has 2 channels (0-1).
 - Channel conflicts are prevented by startup validation using Pydantic models; ensure no duplicate channel assignments.
+- **DFR assignment management** (Devices UI): Use `GET /api/lights/dfr/assignments` and `PUT /api/lights/dfr/assign` to view/assign board channels. Assignments are **globally unique** for `(board_id, channel)` and only mutate YAML (`devices.*.*.dimming_board_id` / `dimming_channel`) plus `config.reload()` — no direct hardware writes.
 - Do not use the same I2C bus for both unless intentionally single-bus; never swap roles (MCP for dimming, DFR for relays). Config: `automation_config.yaml` `hardware.mcp_i2c_bus` and `hardware.dfr0971_i2c_bus`.
 
 - Troubleshooting steps:
@@ -141,6 +145,14 @@ cea:pid:{device_type}                          → PID parameters
 cea:heartbeat:{service_name}                  → Service liveness
 cea:config:{config_type}:{id}                 → Configuration snapshots
 ```
+
+**Legacy (non-`cea:`) keys still written by the control loop** include `effective_setpoint:{location}:{cluster}:…` for climate (heating/cooling/co2/vpd) and **per-dimmer light** telemetry:
+
+- `effective_setpoint:{location}:{cluster}:light:{device_name}:effective_intensity`
+- `effective_setpoint:{location}:{cluster}:light:{device_name}:nominal_intensity`
+- `effective_setpoint:{location}:{cluster}:light:{device_name}:ramp_progress_light`
+
+Do **not** use a single cluster-level `effective_setpoint:…:effective_light_intensity` for multiple lights (last-writer overwrite). **`stream:control`** entries with `variable: light` include **`device_name`** when present.
 
 ### TTL Strategy
 
@@ -265,8 +277,8 @@ Location examples: Flower Room, Veg Room, Lab, Water Management
 Cluster examples: main, secondary, backup
 
 Full examples:
-- Flower Room / main (current front sensors)
-- Flower Room / secondary (future back sensors)
+- Flower Room / **main** — canonical control + `devices:` in YAML (actuators, lights).
+- Flower Room / **front** and **back** — sensor-only clusters (`sensors:` + CAN ingestion), not separate device trees.
 - Veg Room / main (only cluster needed)
 - Lab / main (TBD configuration)
 

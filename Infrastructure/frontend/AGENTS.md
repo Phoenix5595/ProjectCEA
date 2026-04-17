@@ -62,6 +62,7 @@ Without (2), lights would not track photoperiod in `schedules`. Without (3), cli
 | `CircularTimePicker` | Radial time selection | 657 |
 | `LightIntensity` | Light intensity panel in ZoneConfig | — |
 | `ScheduleManager` | Schedule list + CRUD | 514 |
+| `DfrBoardsPanel` | Devices → DFR0971 board/channel assignment + light display_name rename | — |
 
 ## DEVELOPMENT
 

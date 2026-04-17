@@ -627,31 +627,31 @@
         {
           "format": "time_series",
           "hide": false,
-          "rawSql": "SELECT\n  timestamp AS \"time\",\n  'Heating Setpoint - Main' AS metric,\n  effective_heating_setpoint AS value\nFROM effective_setpoints\nWHERE location = 'Flower Room'\n  AND cluster = 'main'\n  AND effective_heating_setpoint IS NOT NULL\n  AND timestamp >= $__timeFrom()\n  AND timestamp <= $__timeTo()\nORDER BY timestamp",
+          "rawSql": "SELECT\n  timestamp AS \"time\",\n  'Heating Setpoint - Main' AS metric,\n  effective_heating_setpoint AS value\nFROM effective_setpoints\nWHERE location = 'Flower Room'\n  AND cluster = '$cluster'\n  AND effective_heating_setpoint IS NOT NULL\n  AND timestamp >= $__timeFrom()\n  AND timestamp <= $__timeTo()\nORDER BY timestamp",
           "refId": "B"
         },
         {
           "format": "time_series",
           "hide": false,
-          "rawSql": "SELECT\n  timestamp AS \"time\",\n  'VPD Setpoint - Main' AS metric,\n  effective_vpd_setpoint AS value\nFROM effective_setpoints\nWHERE location = 'Flower Room'\n  AND cluster = 'main'\n  AND effective_vpd_setpoint IS NOT NULL\n  AND timestamp >= $__timeFrom()\n  AND timestamp <= $__timeTo()\nORDER BY timestamp",
+          "rawSql": "SELECT\n  timestamp AS \"time\",\n  'VPD Setpoint - Main' AS metric,\n  effective_vpd_setpoint AS value\nFROM effective_setpoints\nWHERE location = 'Flower Room'\n  AND cluster = '$cluster'\n  AND effective_vpd_setpoint IS NOT NULL\n  AND timestamp >= $__timeFrom()\n  AND timestamp <= $__timeTo()\nORDER BY timestamp",
           "refId": "C"
         },
         {
           "format": "time_series",
           "hide": false,
-          "rawSql": "SELECT\n  timestamp AS \"time\",\n  'Cooling Setpoint - Main' AS metric,\n  effective_cooling_setpoint AS value\nFROM effective_setpoints\nWHERE location = 'Flower Room'\n  AND cluster = 'main'\n  AND effective_cooling_setpoint IS NOT NULL\n  AND timestamp >= $__timeFrom()\n  AND timestamp <= $__timeTo()\nORDER BY timestamp",
+          "rawSql": "SELECT\n  timestamp AS \"time\",\n  'Cooling Setpoint - Main' AS metric,\n  effective_cooling_setpoint AS value\nFROM effective_setpoints\nWHERE location = 'Flower Room'\n  AND cluster = '$cluster'\n  AND effective_cooling_setpoint IS NOT NULL\n  AND timestamp >= $__timeFrom()\n  AND timestamp <= $__timeTo()\nORDER BY timestamp",
           "refId": "E"
         },
         {
           "format": "time_series",
           "hide": false,
-          "rawSql": "WITH time_points AS (\n  SELECT generate_series(\n    date_trunc('minute', $__timeFrom()::timestamptz),\n    $__timeTo()::timestamptz + INTERVAL '1 minute',\n    INTERVAL '1 minute'\n  ) AS utc_time\n),\nlocal_points AS (\n  SELECT\n    utc_time,\n    timezone('America/Toronto', utc_time) AS local_time\n  FROM time_points\n),\nroom_schedule AS (\n  SELECT start_time AS day_start_time, end_time AS day_end_time\n  FROM schedules\n  WHERE location = 'Flower Room' \n    AND cluster = 'main'\n    AND device_name = 'room_schedule'\n    AND enabled = true\n  ORDER BY created_at DESC\n  LIMIT 1\n)\nSELECT \n  lp.utc_time AS \"time\",\n  'DAY Period Overlay' AS metric,\n  CASE \n    WHEN EXISTS (SELECT 1 FROM room_schedule)\n      AND (\n        SELECT CASE \n          WHEN (SELECT day_start_time FROM room_schedule) <= (SELECT day_end_time FROM room_schedule)\n            THEN lp.local_time::time >= (SELECT day_start_time FROM room_schedule) \n                 AND lp.local_time::time < (SELECT day_end_time FROM room_schedule)\n          ELSE lp.local_time::time >= (SELECT day_start_time FROM room_schedule) \n               OR lp.local_time::time < (SELECT day_end_time FROM room_schedule)\n        END\n      )\n    THEN 100.0\n    ELSE NULL\n  END AS value\nFROM local_points lp",
+          "rawSql": "WITH time_points AS (\n  SELECT generate_series(\n    date_trunc('minute', $__timeFrom()::timestamptz),\n    $__timeTo()::timestamptz + INTERVAL '1 minute',\n    INTERVAL '1 minute'\n  ) AS utc_time\n),\nlocal_points AS (\n  SELECT\n    utc_time,\n    timezone('America/Toronto', utc_time) AS local_time\n  FROM time_points\n),\nroom_schedule AS (\n  SELECT start_time AS day_start_time, end_time AS day_end_time\n  FROM schedules\n  WHERE location = 'Flower Room' \n    AND cluster = '$cluster'\n    AND device_name = 'room_schedule'\n    AND enabled = true\n  ORDER BY created_at DESC\n  LIMIT 1\n)\nSELECT \n  lp.utc_time AS \"time\",\n  'DAY Period Overlay' AS metric,\n  CASE \n    WHEN EXISTS (SELECT 1 FROM room_schedule)\n      AND (\n        SELECT CASE \n          WHEN (SELECT day_start_time FROM room_schedule) <= (SELECT day_end_time FROM room_schedule)\n            THEN lp.local_time::time >= (SELECT day_start_time FROM room_schedule) \n                 AND lp.local_time::time < (SELECT day_end_time FROM room_schedule)\n          ELSE lp.local_time::time >= (SELECT day_start_time FROM room_schedule) \n               OR lp.local_time::time < (SELECT day_end_time FROM room_schedule)\n        END\n      )\n    THEN 100.0\n    ELSE NULL\n  END AS value\nFROM local_points lp",
           "refId": "D"
         },
         {
           "format": "time_series",
           "hide": false,
-          "rawSql": "WITH time_points AS (\n  SELECT generate_series(\n    date_trunc('minute', $__timeFrom()::timestamptz),\n    $__timeTo()::timestamptz + INTERVAL '1 minute',\n    INTERVAL '1 minute'\n  ) AS utc_time\n),\nlocal_points AS (\n  SELECT\n    utc_time,\n    timezone('America/Toronto', utc_time) AS local_time\n  FROM time_points\n),\nroom_schedule AS (\n  SELECT start_time AS day_start_time, end_time AS day_end_time\n  FROM schedules\n  WHERE location = 'Flower Room' \n    AND cluster = 'main'\n    AND device_name = 'room_schedule'\n    AND enabled = true\n  ORDER BY created_at DESC\n  LIMIT 1\n)\nSELECT \n  lp.utc_time AS \"time\",\n  'NIGHT Period Overlay' AS metric,\n  CASE \n    WHEN EXISTS (SELECT 1 FROM room_schedule)\n      AND NOT (\n        SELECT CASE \n          WHEN (SELECT day_start_time FROM room_schedule) <= (SELECT day_end_time FROM room_schedule)\n            THEN lp.local_time::time >= (SELECT day_start_time FROM room_schedule) \n                 AND lp.local_time::time < (SELECT day_end_time FROM room_schedule)\n          ELSE lp.local_time::time >= (SELECT day_start_time FROM room_schedule) \n               OR lp.local_time::time < (SELECT day_end_time FROM room_schedule)\n        END\n      )\n    THEN 100.0\n    ELSE NULL\n  END AS value\nFROM local_points lp",
+          "rawSql": "WITH time_points AS (\n  SELECT generate_series(\n    date_trunc('minute', $__timeFrom()::timestamptz),\n    $__timeTo()::timestamptz + INTERVAL '1 minute',\n    INTERVAL '1 minute'\n  ) AS utc_time\n),\nlocal_points AS (\n  SELECT\n    utc_time,\n    timezone('America/Toronto', utc_time) AS local_time\n  FROM time_points\n),\nroom_schedule AS (\n  SELECT start_time AS day_start_time, end_time AS day_end_time\n  FROM schedules\n  WHERE location = 'Flower Room' \n    AND cluster = '$cluster'\n    AND device_name = 'room_schedule'\n    AND enabled = true\n  ORDER BY created_at DESC\n  LIMIT 1\n)\nSELECT \n  lp.utc_time AS \"time\",\n  'NIGHT Period Overlay' AS metric,\n  CASE \n    WHEN EXISTS (SELECT 1 FROM room_schedule)\n      AND NOT (\n        SELECT CASE \n          WHEN (SELECT day_start_time FROM room_schedule) <= (SELECT day_end_time FROM room_schedule)\n            THEN lp.local_time::time >= (SELECT day_start_time FROM room_schedule) \n                 AND lp.local_time::time < (SELECT day_end_time FROM room_schedule)\n          ELSE lp.local_time::time >= (SELECT day_start_time FROM room_schedule) \n               OR lp.local_time::time < (SELECT day_end_time FROM room_schedule)\n        END\n      )\n    THEN 100.0\n    ELSE NULL\n  END AS value\nFROM local_points lp",
           "refId": "F"
         }
       ],
@@ -1437,7 +1437,7 @@
           "format": "time_series",
           "hide": true,
           "rawQuery": true,
-          "rawSql": "SELECT timestamp AS \"time\", device_name || ' - State' AS metric, device_state * 100 AS value FROM automation_state WHERE location = 'Flower Room' AND cluster = 'main' AND device_name = 'exhaust_fan' AND timestamp >= $__timeFrom() AND timestamp <= $__timeTo() ORDER BY timestamp",
+          "rawSql": "SELECT timestamp AS \"time\", device_name || ' - State' AS metric, device_state * 100 AS value FROM automation_state WHERE location = 'Flower Room' AND cluster = '$cluster' AND device_name = 'exhaust_fan' AND timestamp >= $__timeFrom() AND timestamp <= $__timeTo() ORDER BY timestamp",
           "refId": "B",
           "sql": {
             "columns": [
@@ -1462,7 +1462,7 @@
           "format": "time_series",
           "hide": true,
           "rawQuery": true,
-          "rawSql": "SELECT timestamp AS \"time\", device_name || ' - State' AS metric, device_state * 100 AS value FROM automation_state WHERE location = 'Flower Room' AND cluster = 'main' AND device_name = 'Midea Cube 50 pints' AND timestamp >= $__timeFrom() AND timestamp <= $__timeTo() ORDER BY timestamp",
+          "rawSql": "SELECT timestamp AS \"time\", device_name || ' - State' AS metric, device_state * 100 AS value FROM automation_state WHERE location = 'Flower Room' AND cluster = '$cluster' AND device_name = 'Midea Cube 50 pints' AND timestamp >= $__timeFrom() AND timestamp <= $__timeTo() ORDER BY timestamp",
           "refId": "F",
           "sql": {
             "columns": [
@@ -1487,7 +1487,7 @@
           "format": "time_series",
           "hide": true,
           "rawQuery": true,
-          "rawSql": "SELECT timestamp AS \"time\", device_name || ' - State' AS metric, device_state * 100 AS value FROM automation_state WHERE location = 'Flower Room' AND cluster = 'main' AND device_name = 'Heater Flower' AND timestamp >= $__timeFrom() AND timestamp <= $__timeTo() ORDER BY timestamp",
+          "rawSql": "SELECT timestamp AS \"time\", device_name || ' - State' AS metric, device_state * 100 AS value FROM automation_state WHERE location = 'Flower Room' AND cluster = '$cluster' AND device_name = 'Heater Flower' AND timestamp >= $__timeFrom() AND timestamp <= $__timeTo() ORDER BY timestamp",
           "refId": "G",
           "sql": {
             "columns": [
@@ -1509,30 +1509,95 @@
         },
         {
           "format": "time_series",
-          "rawSql": "SELECT timestamp AS \"time\", device_name || ' - PID Output' AS metric, COALESCE(pid_output, 0) AS value FROM automation_state WHERE location = 'Flower Room' AND cluster = 'main' AND device_name = 'Heater Flower' AND timestamp >= $__timeFrom() AND timestamp <= $__timeTo() ORDER BY timestamp",
+          "rawSql": "SELECT timestamp AS \"time\", device_name || ' - PID Output' AS metric, COALESCE(pid_output, 0) AS value FROM automation_state WHERE location = 'Flower Room' AND cluster = '$cluster' AND device_name = 'Heater Flower' AND timestamp >= $__timeFrom() AND timestamp <= $__timeTo() ORDER BY timestamp",
           "refId": "K"
         },
         {
           "format": "time_series",
           "hide": false,
-          "rawSql": "WITH light_data AS (\n  SELECT timestamp, effective_light_intensity\n  FROM effective_setpoints\n  WHERE location = 'Flower Room' \n    AND cluster = 'main' \n    AND device_name = 'light_1'\n    AND effective_light_intensity IS NOT NULL\n    AND timestamp >= $__timeFrom()\n    AND timestamp <= $__timeTo()\n),\nlast_value AS (\n  SELECT effective_light_intensity, timestamp\n  FROM light_data\n  ORDER BY timestamp DESC\n  LIMIT 1\n)\nSELECT timestamp AS \"time\", 'light_1 - Intensity' AS metric, effective_light_intensity AS value\nFROM light_data\nUNION ALL\nSELECT $__timeTo() AS \"time\", 'light_1 - Intensity' AS metric, effective_light_intensity AS value\nFROM last_value\nWHERE effective_light_intensity IS NOT NULL\nORDER BY \"time\"",
+          "rawSql": "WITH light_data AS (\n  SELECT timestamp, effective_light_intensity\n  FROM effective_setpoints\n  WHERE location = 'Flower Room' \n    AND cluster = '$cluster' \n    AND device_name = 'light_1'\n    AND effective_light_intensity IS NOT NULL\n    AND timestamp >= $__timeFrom()\n    AND timestamp <= $__timeTo()\n),\nlast_value AS (\n  SELECT effective_light_intensity, timestamp\n  FROM light_data\n  ORDER BY timestamp DESC\n  LIMIT 1\n)\nSELECT timestamp AS \"time\", 'light_1 - Intensity' AS metric, effective_light_intensity AS value\nFROM light_data\nUNION ALL\nSELECT $__timeTo() AS \"time\", 'light_1 - Intensity' AS metric, effective_light_intensity AS value\nFROM last_value\nWHERE effective_light_intensity IS NOT NULL\nORDER BY \"time\"",
           "refId": "L"
         },
         {
           "format": "time_series",
           "hide": false,
-          "rawSql": "WITH light_data AS (\n  SELECT timestamp, effective_light_intensity\n  FROM effective_setpoints\n  WHERE location = 'Flower Room' \n    AND cluster = 'main' \n    AND device_name = 'light_2'\n    AND effective_light_intensity IS NOT NULL\n    AND timestamp >= $__timeFrom()\n    AND timestamp <= $__timeTo()\n),\nlast_value AS (\n  SELECT effective_light_intensity, timestamp\n  FROM light_data\n  ORDER BY timestamp DESC\n  LIMIT 1\n)\nSELECT timestamp AS \"time\", 'light_2 - Intensity' AS metric, effective_light_intensity AS value\nFROM light_data\nUNION ALL\nSELECT $__timeTo() AS \"time\", 'light_2 - Intensity' AS metric, effective_light_intensity AS value\nFROM last_value\nWHERE effective_light_intensity IS NOT NULL\nORDER BY \"time\"",
+          "rawSql": "WITH light_data AS (\n  SELECT timestamp, effective_light_intensity\n  FROM effective_setpoints\n  WHERE location = 'Flower Room' \n    AND cluster = '$cluster' \n    AND device_name = 'light_2'\n    AND effective_light_intensity IS NOT NULL\n    AND timestamp >= $__timeFrom()\n    AND timestamp <= $__timeTo()\n),\nlast_value AS (\n  SELECT effective_light_intensity, timestamp\n  FROM light_data\n  ORDER BY timestamp DESC\n  LIMIT 1\n)\nSELECT timestamp AS \"time\", 'light_2 - Intensity' AS metric, effective_light_intensity AS value\nFROM light_data\nUNION ALL\nSELECT $__timeTo() AS \"time\", 'light_2 - Intensity' AS metric, effective_light_intensity AS value\nFROM last_value\nWHERE effective_light_intensity IS NOT NULL\nORDER BY \"time\"",
           "refId": "M"
         },
         {
           "format": "time_series",
           "hide": false,
-          "rawSql": "WITH light_data AS (\n  SELECT timestamp, effective_light_intensity\n  FROM effective_setpoints\n  WHERE location = 'Flower Room' \n    AND cluster = 'main' \n    AND device_name = 'light_3'\n    AND effective_light_intensity IS NOT NULL\n    AND timestamp >= $__timeFrom()\n    AND timestamp <= $__timeTo()\n),\nlast_value AS (\n  SELECT effective_light_intensity, timestamp\n  FROM light_data\n  ORDER BY timestamp DESC\n  LIMIT 1\n)\nSELECT timestamp AS \"time\", 'light_3 - Intensity' AS metric, effective_light_intensity AS value\nFROM light_data\nUNION ALL\nSELECT $__timeTo() AS \"time\", 'light_3 - Intensity' AS metric, effective_light_intensity AS value\nFROM last_value\nWHERE effective_light_intensity IS NOT NULL\nORDER BY \"time\"",
+          "rawSql": "WITH light_data AS (\n  SELECT timestamp, effective_light_intensity\n  FROM effective_setpoints\n  WHERE location = 'Flower Room' \n    AND cluster = '$cluster' \n    AND device_name = 'light_3'\n    AND effective_light_intensity IS NOT NULL\n    AND timestamp >= $__timeFrom()\n    AND timestamp <= $__timeTo()\n),\nlast_value AS (\n  SELECT effective_light_intensity, timestamp\n  FROM light_data\n  ORDER BY timestamp DESC\n  LIMIT 1\n)\nSELECT timestamp AS \"time\", 'light_3 - Intensity' AS metric, effective_light_intensity AS value\nFROM light_data\nUNION ALL\nSELECT $__timeTo() AS \"time\", 'light_3 - Intensity' AS metric, effective_light_intensity AS value\nFROM last_value\nWHERE effective_light_intensity IS NOT NULL\nORDER BY \"time\"",
           "refId": "N"
         }
       ],
       "title": "CO2 & Pressure",
       "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "bf6vebq5ipybke"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 120
+              },
+              {
+                "color": "red",
+                "value": 300
+              }
+            ]
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 24,
+        "x": 0,
+        "y": 32
+      },
+      "id": 7,
+      "options": {
+        "cellHeight": "sm",
+        "showHeader": true,
+        "sortBy": []
+      },
+      "pluginVersion": "12.3.1",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "bf6vebq5ipybke"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT device_name AS \"device\", EXTRACT(EPOCH FROM (NOW() - MAX(timestamp)))::bigint AS age_s_last_sample FROM effective_setpoints WHERE location = 'Flower Room' AND cluster = '$cluster' AND device_name IN ('light_1','light_2','light_3') AND effective_light_intensity IS NOT NULL GROUP BY device_name ORDER BY device_name",
+          "refId": "A"
+        }
+      ],
+      "title": "Light effective_setpoints \u2014 sample freshness",
+      "type": "table"
     },
     {
       "datasource": {
@@ -1634,7 +1699,7 @@
         "h": 10,
         "w": 24,
         "x": 0,
-        "y": 32
+        "y": 36
       },
       "id": 6,
       "options": {
@@ -1667,7 +1732,21 @@
     "timescaledb"
   ],
   "templating": {
-    "list": []
+    "list": [
+      {
+        "name": "cluster",
+        "label": "Cluster",
+        "type": "custom",
+        "query": "front,back",
+        "multi": false,
+        "includeAll": false,
+        "current": {
+          "text": "back",
+          "value": "back",
+          "selected": true
+        }
+      }
+    ]
   },
   "time": {
     "from": "now-3h",

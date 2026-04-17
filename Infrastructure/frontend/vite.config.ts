@@ -13,7 +13,8 @@ export default defineConfig({
   server: {
     port: 3001,
     host: "0.0.0.0",
-    allowedHosts: ["mothernode", "localhost", "100.120.60.40"],
+    // ".ts.net" allows Tailscale MagicDNS hostnames; add machine FQDNs if needed
+    allowedHosts: ['mothernode', 'localhost', '100.120.60.40', '.ts.net'],
     proxy: {
       '/api': {
         target: 'http://localhost:8000',

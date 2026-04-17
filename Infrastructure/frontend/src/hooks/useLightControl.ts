@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { toast } from 'sonner'
 import { apiClient } from '../services/api'
 import { logger } from '../utils/logger'
 
@@ -109,14 +110,29 @@ export function useLightControl(location: string, cluster: string): UseLightCont
 
   async function saveAll() {
     const entries = Object.entries(pendingTargets)
+    const nextPending = { ...pendingTargets }
+    const failed: string[] = []
     for (const [deviceName, target] of entries) {
       try {
-        await apiClient.setLightIntensity(location, cluster, deviceName, target)
+        const res = await apiClient.setLightIntensity(location, cluster, deviceName, target)
+        if (res.rows_updated !== undefined && res.rows_updated < 1) {
+          failed.push(deviceName)
+          continue
+        }
+        delete nextPending[deviceName]
       } catch (err) {
         logger.error(`Failed to set light intensity for ${deviceName}:`, err)
+        failed.push(deviceName)
       }
     }
-    setPendingTargets({})
+    setPendingTargets(nextPending)
+    if (failed.length > 0) {
+      toast.error(
+        `Light target update failed for: ${failed.join(', ')}. Pending changes kept for those fixtures.`
+      )
+    } else if (entries.length > 0) {
+      toast.success('Light targets applied')
+    }
     await fetchLightsAndStatus()
   }
 
