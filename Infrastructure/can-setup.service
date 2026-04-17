@@ -1,0 +1,16 @@
+[Unit]
+Description=CAN Interface Setup (can0)
+# Brings up the can0 interface before network-online.target so any service
+# depending on network-online can also assume CAN is up.
+After=network.target
+Before=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/bash /opt/projectcea/current/Infrastructure/can-processor-service/setup_can.sh
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

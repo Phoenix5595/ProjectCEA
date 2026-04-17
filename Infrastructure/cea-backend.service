@@ -2,25 +2,23 @@
 Description=CEA Dashboard Backend
 After=redis-server.service postgresql.service can-processor.service network-online.target
 Requires=redis-server.service postgresql.service
-Wants=can-processor.service
+Wants=can-processor.service network-online.target
 OnFailure=service-error-handler@%n.service
 
 [Service]
 Type=simple
-User=antoine
-Group=antoine
-WorkingDirectory=/home/antoine/ProjectCEA/Infrastructure/backend
-Environment="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/local/bin"
-Environment="PYTHONPATH=/home/antoine/ProjectCEA/Infrastructure/automation-service"
-Environment="REDIS_URL=redis://localhost:6379"
-Environment="POSTGRES_HOST=localhost"
-Environment="POSTGRES_DB=cea_sensors"
-Environment="POSTGRES_USER=cea_user"
-# POSTGRES_PASSWORD must be set via systemd environment file or override
-# Create /etc/systemd/system/cea-backend.service.d/override.conf with:
-# [Service]
-# Environment="POSTGRES_PASSWORD=your_password_here"
-ExecStart=/usr/bin/python3 -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+User=root
+Group=root
+WorkingDirectory=/opt/projectcea/current/Infrastructure/backend
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=PYTHONPATH=/opt/projectcea/current/Infrastructure:/opt/projectcea/current/Infrastructure/automation-service
+Environment=REDIS_URL=redis://localhost:6379
+Environment=POSTGRES_HOST=localhost
+Environment=POSTGRES_DB=cea_sensors
+Environment=POSTGRES_USER=cea_user
+# See automation-service.service for the EnvironmentFile rationale.
+EnvironmentFile=-/opt/projectcea/shared/env/postgres.env
+ExecStart=/opt/projectcea/current/Infrastructure/backend/.venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 Restart=on-failure
 RestartSec=5
 StandardOutput=journal
@@ -28,4 +26,3 @@ StandardError=journal
 
 [Install]
 WantedBy=multi-user.target
-

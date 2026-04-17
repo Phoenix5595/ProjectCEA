@@ -28,14 +28,14 @@
 services:
   - name: can-setup
     unit: can-setup.service
-    repo_unit: null  # TODO Phase 2.1: port /etc/systemd/system/can-setup.service into repo
+    repo_unit: Infrastructure/can-setup.service
     start_order: 1
     health_url: null
     hardware_facing: true  # brings up can0
 
   - name: can-processor
     unit: can-processor.service
-    repo_unit: null  # TODO Phase 2.1: port /etc/systemd/system/can-processor.service into repo
+    repo_unit: Infrastructure/can-processor.service
     start_order: 2
     health_url: null  # long-running daemon, no FastAPI
     hardware_facing: true  # reads CAN bus
