@@ -1,0 +1,88 @@
+# ProjectCEA reverse proxy (Phase 3.4a).
+#
+# Purpose: single local entrypoint for the SPA + all microservices. Listens on
+# :8080 only for now (Phase 3.4a) so the existing direct ports (8000/8001/8003)
+# keep working; the frontend still talks to those directly until Phase 3.4b.
+#
+# Later phases:
+#   3.4b: SPA switches to http://<host>:8080 and sends X-API-Key.
+#   3.4c: CEA_API_KEY_REQUIRE=true (canary on weather first).
+#   3.4d: Flip every FastAPI unit to --host 127.0.0.1 so Caddy is the only LAN entry.
+#
+# NOTE: Caddy automatically preserves WebSocket upgrades in `reverse_proxy`.
+
+{
+	# No admin API exposure, no auto-HTTPS (we're intentionally HTTP on :8080).
+	admin off
+	auto_https off
+	log default {
+		output file /var/log/caddy/caddy.log {
+			roll_size 10mb
+			roll_keep 5
+		}
+		format json
+		level INFO
+	}
+}
+
+:8080 {
+	encode gzip
+
+	# ------------------------------------------------------------------
+	# Backend (sensor data) - port 8000
+	# ------------------------------------------------------------------
+	@backend_api path /api/sensors /api/sensors/* /api/sensor-data /api/sensor-data/*
+	handle @backend_api {
+		reverse_proxy 127.0.0.1:8000
+	}
+
+	# Backend WebSocket is `/ws/<location>` (one or more path segments).
+	@backend_ws path /ws/*
+	handle @backend_ws {
+		reverse_proxy 127.0.0.1:8000
+	}
+
+	# ------------------------------------------------------------------
+	# Weather service - port 8003
+	# ------------------------------------------------------------------
+	@weather path /weather /weather/*
+	handle @weather {
+		reverse_proxy 127.0.0.1:8003
+	}
+
+	# ------------------------------------------------------------------
+	# Grafana (local Pi instance, currently unused; prod Grafana lives on
+	# iskradocker and will be relocated to iskraprojectcea in Phase 5).
+	# Exposed under /grafana/* so it coexists with the SPA at /.
+	# ------------------------------------------------------------------
+	handle_path /grafana/* {
+		reverse_proxy 127.0.0.1:3000
+	}
+
+	# ------------------------------------------------------------------
+	# Soil / onewire services - not consumed by the SPA today but exposed
+	# under explicit prefixes for future expansion & operator tooling.
+	# (Keeps the top-level path space clean for the automation SPA.)
+	# ------------------------------------------------------------------
+	handle_path /svc/soil/* {
+		reverse_proxy 127.0.0.1:8002
+	}
+	handle_path /svc/onewire/* {
+		reverse_proxy 127.0.0.1:8004
+	}
+
+	# ------------------------------------------------------------------
+	# Automation service WebSocket (exact /ws, no trailing segment).
+	# ------------------------------------------------------------------
+	@auto_ws path /ws
+	handle @auto_ws {
+		reverse_proxy 127.0.0.1:8001
+	}
+
+	# ------------------------------------------------------------------
+	# Fallback: automation service (API + SPA static assets at /).
+	# ------------------------------------------------------------------
+	handle {
+		reverse_proxy 127.0.0.1:8001
+	}
+}

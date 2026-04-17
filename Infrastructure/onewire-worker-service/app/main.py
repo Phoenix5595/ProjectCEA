@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import asyncio
-import time
 from contextlib import asynccontextmanager
+import time
 from typing import Any
 
-from fastapi import FastAPI, Response, status as http_status
+from fastapi import FastAPI, Response
+from fastapi import status as http_status
 
 from shared.infra_logging import setup_structured_logging
 
@@ -85,10 +86,10 @@ async def ready(response: Response) -> dict[str, Any]:
             }
             if not pong:
                 ok = False
-        except asyncio.TimeoutError:
+        except TimeoutError:
             out["checks"]["redis"] = {
                 "ok": False,
-                "detail": f"timeout after {_READY_TIMEOUT_SEC*1000:.0f}ms",
+                "detail": f"timeout after {_READY_TIMEOUT_SEC * 1000:.0f}ms",
             }
             ok = False
         except Exception as e:

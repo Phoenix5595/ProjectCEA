@@ -5,6 +5,7 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+
 from app.background_tasks import BackgroundTasks
 from app.config import ConfigLoader
 from app.database import DatabaseManager
