@@ -21,7 +21,7 @@ This report documents findings from a comprehensive code review of the ProjectCE
 
 **Severity:** CRITICAL  
 **Files:**
-- `Infrastructure/automation-service/debug_db_simple.py:10` - Hardcoded password `'Lenin1917'`
+- `Infrastructure/automation-service/debug_db_simple.py:10` - Hardcoded password (redacted; original value rotated in Phase 1.1)
 - `Infrastructure/automation-service/debug_effective_setpoints.py:7` - Hardcoded password in environment variable
 
 **Issue:** Database passwords are hardcoded in debug/test scripts. These files may be committed to version control.

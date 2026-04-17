@@ -15,7 +15,7 @@ Environment="REDIS_URL=redis://localhost:6379"
 Environment="POSTGRES_HOST=localhost"
 Environment="POSTGRES_DB=cea_sensors"
 Environment="POSTGRES_USER=cea_user"
-Environment="POSTGRES_PASSWORD=Lenin1917"
+EnvironmentFile=-/opt/projectcea/shared/env/postgres.env
 ExecStart=/usr/bin/python3 -m uvicorn app.main:app --host 0.0.0.0 --port 8002
 Restart=on-failure
 RestartSec=5

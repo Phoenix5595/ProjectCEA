@@ -5,11 +5,16 @@ import time
 
 import asyncpg
 
-# Database connection parameters from environment or defaults
 POSTGRES_HOST = os.environ.get("POSTGRES_HOST", "localhost")
 POSTGRES_DB = os.environ.get("POSTGRES_DB", "cea_sensors")
 POSTGRES_USER = os.environ.get("POSTGRES_USER", "cea_user")
-POSTGRES_PASSWORD = os.environ.get("POSTGRES_PASSWORD", "cea_password_change_me")
+try:
+    POSTGRES_PASSWORD = os.environ["POSTGRES_PASSWORD"]
+except KeyError as _err:
+    raise SystemExit(
+        "POSTGRES_PASSWORD env var is required. "
+        "Source /opt/projectcea/shared/env/postgres.env or export the value before running."
+    ) from _err
 
 
 async def run_load_test(duration_minutes=10):
