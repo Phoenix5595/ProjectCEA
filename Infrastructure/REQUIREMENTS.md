@@ -30,10 +30,16 @@ Single growing record of cross-service infrastructure requirements for ProjectCE
 
 ## Systemd unit topology
 
-- Base units in `Infrastructure/<name>.service` are the canonical source. Drop-ins under `Infrastructure/systemd-overrides/<name>.service.d/` capture all runtime overrides currently in `/etc/systemd/system/` and are committed to the repo.
-- Phase 2.1 will lift the drop-in content into the base units and remove the runtime drop-ins, eliminating the base/override mismatch.
-- All app services run under user `antoine` (override flips automation/cea-backend/etc. to `User=root` today — flagged for Phase 3 hardening).
+- Base units in `Infrastructure/<name>.service` are the canonical source of truth for every CEA systemd unit. They now encode the full merged behaviour (drop-in + base) that was captured in Phase 0 and landed in Phase 2.1a, so a fresh Pi can be reproduced from the repo alone: `git clone` → `deploy.sh` → `Infrastructure/scripts/sync_systemd_units.sh`.
+- `Infrastructure/services.yaml` is the single source of truth enumerating every service (name, unit filename, `repo_unit` path, `start_order`, `health_url`, `hardware_facing` flag, optional `deploy_managed: false`). `Infrastructure/scripts/service_list.py` parses it and is the only supported way for other scripts (deploy.sh, rollback-deploy.sh, sync_systemd_units.sh) to enumerate units.
+- Runtime drop-ins under `/etc/systemd/system/<unit>.service.d/override.conf` (mirrored for audit under `Infrastructure/systemd-overrides/`) are still in force on the live Pi and override the base on a per-directive basis; they will be retired in Phase 2.1c (one service per deploy, automation-service last to keep lights-blast-radius minimal). Until then, `sync_systemd_units.sh` writing a new base unit is a runtime no-op — systemd merges them and drop-in values win for single-value keys.
+- All hardware-facing app services run as `User=root` (GPIO / I2C / 1-Wire / RS485 / CAN) — flagged for Phase 3 hardening (non-root user + device capabilities).
 - `WorkingDirectory` is always `/opt/projectcea/current/Infrastructure/<svc>` at runtime; `.venv/bin/python` is the only Python interpreter used by services.
+- NEVER write `Environment="POSTGRES_PASSWORD=..."` inline in a base unit file. Even if the drop-in neutralizes it with `Environment=\n` reset, the on-disk unit is world-readable (`/etc/systemd/system/*.service` is mode `0644` by default) and the literal leaks to any account with shell access. The Phase 2.1a rewrite removed the last remaining literal (stale pre-rotation value in soil-sensor-service) and this rule is enforced by the repo unit files.
+
+### Sync procedure
+
+`sudo Infrastructure/scripts/sync_systemd_units.sh --dry-run` shows per-unit diffs. Running without `--dry-run` interactively confirms, then backs each changed file up to `/var/lib/projectcea/systemd-backup/<UTC-timestamp>/` and installs the repo version; `--reenable` additionally reenables every changed unit so `[Install]`-section changes (WantedBy/RequiredBy) take effect on boot. Rollback prints the rsync command against the backup dir. NOT wired into `deploy.sh` on purpose: auto-rollback only reverts the code symlink, and a bad unit file persisting in `/etc/systemd/system/` after a rollback would be a foot-gun.
 
 ## Offsite / replication
 
