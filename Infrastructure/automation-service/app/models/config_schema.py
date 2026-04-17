@@ -150,14 +150,34 @@ class AppConfig(BaseModel):
                         room_channels_seen.add(ch)
                     dt = props.get("device_type")
                     if dt is not None:
+                        # Accepts both legacy YAML spellings AND canonical names.
+                        # Legacy names are rewritten in-memory to canonical by
+                        # ConfigLoader._canonicalize_device_types() BEFORE this
+                        # validator runs, so values reaching this point are
+                        # normally canonical. Legacy names remain in the
+                        # allow-list so any raw YAML-driven validator call
+                        # (fixtures, tests, direct AppConfig construction) keeps
+                        # working while the vocabulary migration is in flight.
                         allowed = {
+                            # Canonical (used by control code: device_processor,
+                            # device_controller, pid_controller_manager, etc.)
+                            "heating",
+                            "cooling",
+                            "humidifier",
+                            "dehumidifier",
+                            "co2",
+                            "exhaust",
+                            "light",
+                            # Legacy/YAML aliases not yet canonicalized away.
+                            # 'heater' is now always rewritten to 'heating'
+                            # before reaching here, but kept for resilience.
+                            # 'fan' intentionally not aliased yet (ambiguous
+                            # semantics — see config.py alias comment).
                             "fan",
                             "heater",
-                            "light",
-                            "dehumidifier",
-                            "humidifier",
-                            "co2",
                             "vent",
+                            # Hardware-category names that occasionally appear
+                            # in fixtures / input-output entries.
                             "relay",
                             "sensor",
                             "output",
