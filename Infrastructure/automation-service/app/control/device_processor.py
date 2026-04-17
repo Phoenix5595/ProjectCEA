@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import time as _time
 from datetime import datetime, time
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -24,10 +26,22 @@ from shared.infra_logging import get_logger
 
 logger = get_logger(__name__)
 
-# Fallback sun window when room has no schedule (climate stays NIGHT): 06:00–22:00 local
 _FALLBACK_DAY_START = time(6, 0)
 _FALLBACK_DAY_END = time(22, 0)
 _LOCAL_TZ = ZoneInfo("America/Toronto")
+
+
+def _read_failsafe_flag_from_env() -> bool:
+    """Resolve FAILSAFE_ENFORCEMENT_ENABLED once at startup.
+
+    Off by default: when a ``failsafe:<loc>:<cluster>`` key exists in Redis we log
+    a throttled 'would-have-entered failsafe' WARNING and let normal control
+    continue. Flipping the env var to ``true`` (and restarting the service)
+    wires the real Redis state into the control context, which short-circuits
+    the device_controller and forces lights to 0%.
+    """
+    raw = os.environ.get("FAILSAFE_ENFORCEMENT_ENABLED", "false").strip().lower()
+    return raw in ("1", "true", "yes", "on")
 
 
 class DeviceProcessor:
@@ -65,6 +79,17 @@ class DeviceProcessor:
         # Throttle per-device light batch failure warnings (I2C timeouts, dimmer errors)
         self._last_batch_light_fail_log: dict[str, float] = {}
         self._batch_light_fail_log_interval_sec = 60.0
+        # Failsafe wiring (phase 1.3). Env flag resolved once; flipping requires
+        # a service restart. When disabled, we still observe Redis failsafe
+        # state and log a throttled warning per cluster so operators can verify
+        # the pipeline is wiring up before enabling enforcement.
+        self._failsafe_enforcement_enabled = _read_failsafe_flag_from_env()
+        self._last_failsafe_observe_log: dict[tuple[str, str], float] = {}
+        self._failsafe_observe_log_interval_sec = 60.0
+        logger.info(
+            "Failsafe enforcement %s (FAILSAFE_ENFORCEMENT_ENABLED)",
+            "ENABLED" if self._failsafe_enforcement_enabled else "DISABLED (observe-only)",
+        )
 
     async def process_devices(
         self,
@@ -93,6 +118,14 @@ class DeviceProcessor:
         """
         batch_executor = HardwareBatchExecutor()
 
+        # Resolve failsafe state once per (location, cluster) per tick. Reading the
+        # same Redis key per-device would multiply round-trips for no benefit —
+        # failsafe is a cluster-wide condition.
+        failsafe_present = self._is_failsafe_present(location, cluster)
+        failsafe_active_effective = failsafe_present and self._failsafe_enforcement_enabled
+        if failsafe_present and not self._failsafe_enforcement_enabled:
+            self._log_failsafe_observed(location, cluster)
+
         for device_name, device_info in cluster_devices.items():
             context: dict[str, Any] = build_initial_control_context(
                 location,
@@ -100,6 +133,7 @@ class DeviceProcessor:
                 effective_data,
                 current_mode,
                 previous_climate_mode,
+                failsafe_active=failsafe_active_effective,
             )
 
             # PID path: only for heating, cooling, co2 (VPD is king: humidifier/dehumidifier use VPD only)
@@ -275,6 +309,45 @@ class DeviceProcessor:
 
         # Note: Light intensity logging is handled by ControlEngine.run_control_loop()
         # to ensure scheduler access for proper ramp calculations
+
+    def _is_failsafe_present(self, location: str, cluster: str) -> bool:
+        """Return True iff ``failsafe:<loc>:<cluster>`` exists in Redis.
+
+        Any read error (Redis down, timeout, malformed payload) is treated as
+        "no failsafe" so a transient Redis outage cannot silently force the
+        whole cluster into failsafe. The AlarmManager is still the single
+        writer of the key; critical alarms go through it and will re-trigger
+        when Redis recovers.
+        """
+        redis_client = getattr(self.database, "_automation_redis", None)
+        if redis_client is None or not getattr(redis_client, "redis_enabled", False):
+            return False
+        try:
+            failsafe_data = redis_client.read_failsafe(location, cluster)
+        except Exception as exc:
+            logger.debug(
+                "Failsafe Redis read failed for %s/%s: %s; treating as inactive",
+                location,
+                cluster,
+                exc,
+            )
+            return False
+        return failsafe_data is not None
+
+    def _log_failsafe_observed(self, location: str, cluster: str) -> None:
+        """Throttled observe-only warning so enforcement rollout is verifiable."""
+        key = (location, cluster)
+        now = _time.monotonic()
+        last = self._last_failsafe_observe_log.get(key, 0.0)
+        if now - last < self._failsafe_observe_log_interval_sec:
+            return
+        self._last_failsafe_observe_log[key] = now
+        logger.warning(
+            "FAILSAFE observed in Redis for %s/%s but enforcement disabled "
+            "(FAILSAFE_ENFORCEMENT_ENABLED=false). Control loop continuing as normal.",
+            location,
+            cluster,
+        )
 
     def _build_light_decision(
         self,
