@@ -18,6 +18,7 @@ Environment=POSTGRES_DB=cea_sensors
 Environment=POSTGRES_USER=cea_user
 # See automation-service.service for the EnvironmentFile rationale.
 EnvironmentFile=-/opt/projectcea/shared/env/postgres.env
+EnvironmentFile=-/opt/projectcea/shared/env/api_key.env
 ExecStart=/opt/projectcea/current/Infrastructure/backend/.venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 Restart=on-failure
 RestartSec=5

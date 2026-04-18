@@ -29,19 +29,25 @@ logger = get_logger(__name__)
 
 
 # Paths exempt from API-key enforcement. These are intentionally open:
-#   - /health, /ready   : orchestrator probes (never carry secrets)
-#   - /ws, /ws/*        : handled by check_websocket_auth instead
-#   - /                 : root (SPA index or welcome JSON)
+#   - /health, /ready, /status  : orchestrator probes (never carry secrets)
+#   - /ws, /ws/*                : handled by check_websocket_auth instead
 #   - /docs, /redoc,
-#     /openapi.json     : gated separately via docs_kwargs()
+#     /openapi.json             : gated separately via docs_kwargs()
 #   - /logo.png,
 #     /favicon.*,
-#     /assets/*         : static content served from SPA bundle
-# All other paths (prefix /api/) MUST carry the key when enforcement is
-# on.
+#     /assets/*, /static/*      : SPA bundle / static content
+#
+# Everything else is PROTECTED when enforcement is on. That includes
+# ``/api/*`` (cea-backend, automation-service) and any non-/api/ route
+# a service chooses to expose (``/weather/*``, ``/soil/*``, etc.). The
+# "deny by default, allow list known-open" model means a new endpoint
+# added tomorrow is automatically gated — no risk of it silently
+# slipping past because nobody remembered to add "/foo" to a protect
+# list.
 _OPEN_PREFIXES: tuple[str, ...] = (
     "/health",
     "/ready",
+    "/status",
     "/ws",
     "/docs",
     "/redoc",
@@ -49,7 +55,13 @@ _OPEN_PREFIXES: tuple[str, ...] = (
     "/logo.png",
     "/favicon",
     "/assets",
+    "/static",
 )
+
+# Exact-match paths that must stay open even though their prefix is
+# something like "/" which would otherwise be matched by the catch-all
+# protect branch.
+_OPEN_EXACT: frozenset[str] = frozenset({"/", ""})
 
 
 def auth_required() -> bool:
@@ -68,21 +80,37 @@ def _expected_key() -> str | None:
     return k or None
 
 
+def _path_matches_open_prefix(path: str, prefix: str) -> bool:
+    """True if ``path`` is the exempt ``prefix`` or a child of it.
+
+    Boundaries recognised: exact match, ``/`` (directory child, e.g.
+    ``/assets/app.js``), or ``.`` (filename suffix, e.g.
+    ``/favicon.ico``). A bare prefix match without a boundary would
+    let ``/healthz`` masquerade as ``/health`` — rejected.
+    """
+    if path == prefix:
+        return True
+    if len(path) > len(prefix) and path.startswith(prefix):
+        boundary = path[len(prefix)]
+        return boundary in "/."
+    return False
+
+
 def _is_protected_path(path: str) -> bool:
     """True if ``path`` must carry an API key when enforcement is on.
 
-    Protection surface is ``/api/*``. A route like ``/health`` or
-    ``/logo.png`` is always open. Static assets and SPA fallback routes
-    (``/`` and any non-api path) stay open because the SPA needs to
-    fetch them before it is logged in.
+    Deny-by-default: every non-exempt HTTP path is protected. Static
+    assets (/assets, /logo.png), docs (/docs, /openapi.json),
+    orchestrator probes (/health, /ready, /status), the SPA root ("/"),
+    and WebSocket upgrades (/ws*, handled by ``check_websocket_auth``)
+    are the only exemptions. See ``_OPEN_PREFIXES`` / ``_OPEN_EXACT``.
     """
-    if not path.startswith("/api/") and path != "/api":
+    if path in _OPEN_EXACT:
         return False
-    # Path starts with /api. Check against the open list anyway (belt +
-    # braces). Nothing today starts with both ``/api`` and one of the
-    # open prefixes, but keep the guard so future routes cannot silently
-    # slip past.
-    return not any(path.startswith(p) for p in _OPEN_PREFIXES)
+    for p in _OPEN_PREFIXES:
+        if _path_matches_open_prefix(path, p):
+            return False
+    return True
 
 
 class APIKeyAuthMiddleware:

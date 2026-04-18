@@ -16,6 +16,7 @@ Environment=PYTHONPATH=/opt/projectcea/current/Infrastructure
 Environment=REDIS_URL=redis://localhost:6379
 # 1-Wire worker has no DB today, but the env file is harmless if loaded.
 EnvironmentFile=-/opt/projectcea/shared/env/postgres.env
+EnvironmentFile=-/opt/projectcea/shared/env/api_key.env
 ExecStart=/opt/projectcea/current/Infrastructure/onewire-worker-service/.venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 8004
 Restart=on-failure
 RestartSec=5
