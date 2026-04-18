@@ -180,6 +180,53 @@ Infrastructure/automation-service/app/repositories/
 └── config.py             # Config repository
 ```
 
+### Cluster Topology Contract (Critical)
+
+The codebase distinguishes **device clusters** from **sensor sub-clusters**.
+This distinction is non-negotiable; mixing them is the most common
+source of "endpoint returns nothing" / 404 bugs.
+
+| Concept              | Purpose                                  | Identifier(s)         |
+|----------------------|------------------------------------------|-----------------------|
+| **Device cluster**   | Room-wide actuator / relay / dimmer set  | always `main`         |
+| **Sensor sub-cluster** | Physically separated sensor groupings  | room-specific         |
+
+Per-room mapping (canonical, **single source of truth**):
+
+| Room          | Device cluster | Sensor sub-clusters     |
+|---------------|----------------|-------------------------|
+| `Flower Room` | `main`         | `front`, `back`         |
+| `Veg Room`    | `main`         | `main`                  |
+| `Lab`         | `main`         | `main`                  |
+| `Outside`     | `main`         | `main`                  |
+
+Implementation rule:
+
+- **Source of truth (Python services):** `Infrastructure/shared/cluster_topology.py`
+- **Source of truth (frontend):** `Infrastructure/frontend/src/config/clusterTopology.ts`
+- These two files **must stay in sync** — the TS file is a hand-mirror
+  of the Python module. CI doesn't enforce this yet; treat any change
+  to one as a change to both.
+
+API contract (enforced as of Phase 5e):
+
+- `GET /api/devices/{room}/{cluster}` accepts the room's **device** cluster only.
+  Passing a sensor sub-cluster (`front`, `back`) returns **400**, not 404.
+- `GET /api/sensors/{room}/{cluster}` accepts the room's **sensor** clusters only.
+  Passing a device cluster for a room that has named sub-clusters
+  (e.g. `Flower Room/main`) returns **400** with a hint message
+  pointing the caller at the correct sub-cluster.
+- These 400s replaced the previous "silently return empty dict"
+  behavior, which masked frontend wiring bugs.
+
+Frontend rule:
+
+- The dashboard polls **device** endpoints over `ZONES` (one entry per
+  room, all `cluster: "main"`).
+- The dashboard polls **sensor** endpoints over `getDashboardPollZones()`
+  (which fans out Flower Room into `front` + `back`).
+- Iterating sensor sub-clusters against the *device* endpoint is a bug.
+
 ### Hardware Rules (Critical)
 
 | Rule | Hardware Mapping | Reason |

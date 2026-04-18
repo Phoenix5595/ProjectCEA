@@ -1,30 +1,93 @@
-/** Hardcoded zone definitions for the CEA system. */
+/**
+ * Zone helpers built on top of `clusterTopology.ts`.
+ *
+ * Phase 5e: this file used to inline the Flower-specific cluster list
+ * (`FLOWER_DASHBOARD_CLUSTERS = ['front', 'back']`) and the per-room
+ * device cluster list, which made the room → cluster knowledge live in
+ * three places (here, `clusterTopology.ts`, and a half-dozen call
+ * sites). Now everything threads through the topology registry; the
+ * exports below are kept for back-compat so the rest of the SPA does
+ * not need a coordinated rename.
+ */
+
+import {
+  deviceClusterFor,
+  knownRooms,
+  sensorClustersFor,
+  TOPOLOGY,
+} from './clusterTopology';
 
 export interface Zone {
   location: string;
   cluster: string;
 }
 
-export const ZONES: Zone[] = [
-  // Flower actuators / control APIs use `main` only; `front`/`back` are sensor clusters.
-  { location: "Flower Room", cluster: "main" },
-  { location: "Veg Room", cluster: "main" },
-  { location: "Lab", cluster: "main" }
-];
+/**
+ * Device-plane zones (one entry per room, cluster = device cluster).
+ * Use this for actuator polling and control. Iterating sensor
+ * sub-clusters against `/api/devices/...` produced the 404 noise the
+ * Phase 5e fix is removing — that mistake lives in
+ * `getDashboardPollZones()` below, which is **only** for sensor-plane
+ * polling.
+ */
+export const ZONES: Zone[] = knownRooms()
+  .filter((r) => r !== 'Outside') // Outside has no device-plane UI today.
+  .map((location) => ({ location, cluster: deviceClusterFor(location) }));
 
-/** Flower sensor clusters for dashboard / live comparison (not device namespaces). */
-export const FLOWER_DASHBOARD_CLUSTERS: string[] = ['front', 'back'];
+/**
+ * @deprecated Prefer `sensorClustersFor('Flower Room')`. Kept as a
+ * named export so `useSensorPolling`, `getFlowerDualClimateLayers`,
+ * and old call sites compile until they're updated. The value is
+ * always derived from `TOPOLOGY` so the policy stays single-sourced.
+ */
+export const FLOWER_DASHBOARD_CLUSTERS: string[] = [
+  ...(TOPOLOGY['Flower Room']?.sensorClusters ?? []),
+];
 
 /** Vertical order on the main dashboard (matches ZONES order: Flower, Veg, Lab). */
 export const DASHBOARD_ROW_ZONES: Zone[] = [...ZONES];
 
 /**
- * All (location, cluster) pairs to poll for live sensors and bulk keys.
- * Includes ZONES plus any extra Flower clusters not already in ZONES.
+ * Sensor-plane zones — one entry per `(room, sensor sub-cluster)`.
+ * Use this for `/api/sensors/{room}/{cluster}` and `/live` polling;
+ * Flower fans out into `front` + `back`, every other room is `main`.
+ *
+ * Pre-Phase-5e the only available list was `getDashboardPollZones()`,
+ * which is a *superset* (it also includes the device cluster). Calling
+ * the sensor endpoint with the device cluster used to silently return
+ * `{}`; the Phase 5e backend now returns 400 on that mismatch, so a
+ * dedicated sensor-only list is required here.
+ */
+export function getSensorPollZones(): Zone[] {
+  const out: Zone[] = [];
+  for (const location of knownRooms()) {
+    if (location === 'Outside') continue; // No dashboard rows for Outside.
+    for (const cluster of sensorClustersFor(location)) {
+      out.push({ location, cluster });
+    }
+  }
+  return out;
+}
+
+/**
+ * Union of every `(location, cluster)` pair the dashboard touches —
+ * device clusters **and** sensor sub-clusters. This is the right set
+ * for sensor-plane polling (`/api/sensors/...` and live snapshots)
+ * and for bulk Redis-key fan-out (`buildDashboardBulkSensorKeys`),
+ * which mixes per-room setpoints (keyed by the *device* cluster, e.g.
+ * `Flower Room_main_heating_setpoint`) with per-cluster live values
+ * (e.g. `Flower Room_front_dry_bulb_f`).
+ *
+ * **Do not** pass the result to `/api/devices/...` — Flower's `front`
+ * and `back` are sensor sub-clusters and the device endpoint will
+ * (correctly) reject them with a 400 + hint. Use `ZONES` directly for
+ * device polling. Phase 5e fixed `useSensorPolling` to do exactly that.
  */
 export function getDashboardPollZones(): Zone[] {
   const seen = new Set<string>();
   const out: Zone[] = [];
+  // Device clusters first (legacy ordering — preserves Flower's `main`
+  // entry at the top so dashboard rows render in their historical order).
   for (const z of ZONES) {
     const k = `${z.location}\0${z.cluster}`;
     if (!seen.has(k)) {
@@ -32,12 +95,14 @@ export function getDashboardPollZones(): Zone[] {
       out.push(z);
     }
   }
-  for (const cluster of FLOWER_DASHBOARD_CLUSTERS) {
-    if (ZONES.some((z) => z.location === 'Flower Room' && z.cluster === cluster)) continue;
-    const k = `Flower Room\0${cluster}`;
-    if (!seen.has(k)) {
+  // Then sensor sub-clusters that aren't already represented.
+  for (const location of knownRooms()) {
+    if (location === 'Outside') continue;
+    for (const cluster of sensorClustersFor(location)) {
+      const k = `${location}\0${cluster}`;
+      if (seen.has(k)) continue;
       seen.add(k);
-      out.push({ location: 'Flower Room', cluster });
+      out.push({ location, cluster });
     }
   }
   return out;
