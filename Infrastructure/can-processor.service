@@ -17,6 +17,7 @@ Environment=POSTGRES_HOST=localhost
 Environment=POSTGRES_DB=cea_sensors
 Environment=POSTGRES_USER=cea_user
 EnvironmentFile=-/opt/projectcea/shared/env/postgres.env
+EnvironmentFile=-/opt/projectcea/shared/env/api_key.env
 # NOTE: do NOT add PrivateTmp, ProtectHome, or ProtectSystem=strict here; on
 # some kernels/filesystems where /var/tmp is a symlink to /tmp this causes
 # exit code 226/NAMESPACE and the CAN processor won't start.
