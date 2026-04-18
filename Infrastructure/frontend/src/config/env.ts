@@ -71,6 +71,25 @@ export function buildWebSocketUrl(): string {
 export const CEA_API_KEY: string =
   (import.meta.env.VITE_CEA_API_KEY as string | undefined) ?? '';
 
+/**
+ * Grafana base URL used by `<GrafanaPanel>` to build the iframe `src`
+ * for embedded dashboards (`/d/<uid>`) and panels (`/d-solo/<uid>`).
+ *
+ * Phase 5b moved Grafana off `iskradocker:3000` and onto
+ * `iskraprojectcea:3001` — the same VM as the DB replica, fewer
+ * network hops, and the iskradocker monitoring stack can shed its
+ * CEA-specific bits in 5c.
+ *
+ * The env is required at *build time* (it ends up baked into the
+ * static bundle the SPA serves). The default points at the new host
+ * so a missing `.env` still gets a working app instead of opaque
+ * iframe load errors.
+ */
+export const GRAFANA_BASE_URL: string = (
+  (import.meta.env.VITE_GRAFANA_BASE_URL as string | undefined) ??
+  'http://iskraprojectcea:3001'
+).replace(/\/$/, '');
+
 function appendToken(url: string): string {
   if (!CEA_API_KEY) return url;
   const sep = url.includes('?') ? '&' : '?';
