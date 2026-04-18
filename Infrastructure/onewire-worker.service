@@ -22,5 +22,18 @@ RestartSec=5
 StandardOutput=journal
 StandardError=journal
 
+# --- Phase 3.7 exploit containment (additive).
+# Services still run as root for direct hardware access (GPIO / I2C / 1-Wire /
+# RS485 / CAN). The directives below narrow the kernel attack surface reachable
+# from them without touching hardware paths: no modprobe, no RT scheduling, no
+# setuid exec, no /proc/sys mutation anywhere in the control / sensor code.
+NoNewPrivileges=yes
+LockPersonality=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+
 [Install]
 WantedBy=multi-user.target
