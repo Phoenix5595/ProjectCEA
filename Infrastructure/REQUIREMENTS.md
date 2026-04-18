@@ -121,11 +121,22 @@ Landed in Phase 3.4b (frontend moves behind Caddy):
 - **X-API-Key wiring**: If `VITE_CEA_API_KEY` is non-empty at build time, every axios client sends `X-API-Key: <key>` and the WebSocket URL gets `?token=<key>` appended. Server-side enforcement stays gated by `CEA_API_KEY_REQUIRE=true`; the header is inert until 3.4c flips the gate.
 - **No hardcoded ports remain in the built bundle** (verified by grepping `dist/assets/*.js`; only appearance is the SSR fallback `ws://localhost:8080/ws`).
 
+Landed in Phase 3.7 (systemd hardening, additive drop-ins):
+- **Seven exploit-containment directives** applied to every runtime service base unit (`automation-service`, `cea-backend`, `can-processor`, `onewire-worker`, `soil-sensor-service`, `weather-service`): `NoNewPrivileges=yes`, `LockPersonality=yes`, `RestrictSUIDSGID=yes`, `RestrictRealtime=yes`, `ProtectKernelTunables=yes`, `ProtectKernelModules=yes`, `ProtectControlGroups=yes`. Services still run as root (required for direct hardware access); hardening narrows the *kernel* attack surface reachable from that root without touching hardware paths.
+- **Drop-in cleanup**: the `NoNewPrivileges=false` line was removed from every `Infrastructure/systemd-overrides/*/override.conf` drop-in because it was explicitly neutralising the new base-unit setting. The other leftover `=false` knobs in the drop-ins (`PrivateTmp`, `ProtectSystem`, `ProtectHome`) were left in place — they match systemd's system-service defaults for these units, so removing them would be a no-op.
+- **Validation**: `systemctl show -p NoNewPrivileges,LockPersonality,...` confirms all seven directives merge to `yes`; `systemd-analyze security` marks all seven ✓; no `permission denied` / `operation not permitted` / `EPERM` / `seccomp` in journals after a rolling restart; automation-service lights-restore path verified (`Batch execution complete: N success, 0 failures`).
+
+Landed in Phase 3.8 (Postgres password via `LoadCredential=`):
+- **Runtime secret flow**: `/opt/projectcea/shared/env/postgres_password` (mode `0600`, owner `antoine:antoine`, parent dir `0700`) is the single on-disk source. Every service base unit has `LoadCredential=postgres_password:/opt/projectcea/shared/env/postgres_password`; systemd copies it into the per-unit credential directory (`$CREDENTIALS_DIRECTORY`, mode `0400`, owned root) before handing control to the service.
+- **App-side loader**: `shared.db_credentials.load_postgres_password()` is the single authoritative path for fetching the password. Priority: (1) `$CREDENTIALS_DIRECTORY/postgres_password`; (2) fallback to the `POSTGRES_PASSWORD` env var (loaded via `EnvironmentFile=-postgres.env`, kept for safety in case the credential file is missing); (3) raise `RuntimeError` if neither is populated.
+- **Call sites migrated** (6 total): `backend/app/database.py`, `automation-service/app/database.py`, `automation-service/alembic/env.py`, `weather-service/app/database.py`, `soil-sensor-service/app/database.py`, `can-processor-service/app/writer.py`. All now call `load_postgres_password()` instead of `os.getenv("POSTGRES_PASSWORD")`.
+- **Security benefit**: The password is no longer exposed via `systemctl show <unit> -p Environment` nor `/proc/<pid>/environ` once the env-var fallback is eventually retired. Rotation stays at a single file write plus `systemctl daemon-reload && restart`.
+- **Rotation** (supersedes the Phase 1.1b procedure when the env-var fallback is retired): `sudo -u antoine bash -c 'printf "%s" "$NEW" > /opt/projectcea/shared/env/postgres_password.tmp && mv /opt/projectcea/shared/env/postgres_password.tmp /opt/projectcea/shared/env/postgres_password && chmod 0600 /opt/projectcea/shared/env/postgres_password'` → rotate the DB user → `systemctl daemon-reload && systemctl restart <units>`.
+
 Still deferred (phase 3 remainder):
 - 3.4c Flip `CEA_API_KEY_REQUIRE=true`; canary on weather-service first.
 - 3.4d Bind services to `127.0.0.1`; close LAN boundary.
-- 3.7 systemd hardening. Blocked on 2.1c (drop-in retirement).
-- 3.8 `LoadCredential=` for DB password. Blocked on Phase 6 shared secrets module.
+- Retire the `POSTGRES_PASSWORD` env-var fallback once 3.8 has soaked in production; drop the `EnvironmentFile=-postgres.env` line from every base unit and scrub the `POSTGRES_PASSWORD=` line from `postgres.env` itself (keep the file for other future keys).
 
 ## Frontend port / origin map
 
