@@ -9,6 +9,7 @@ from typing import Any
 
 import asyncpg
 
+from shared.db_credentials import load_postgres_password
 from shared.infra_logging import get_logger
 
 logger = get_logger(__name__)
@@ -25,9 +26,7 @@ class DatabaseManager:
                       If None, uses environment variables or defaults.
         """
         if db_config is None:
-            password = os.getenv("POSTGRES_PASSWORD")
-            if not password:
-                raise ValueError("POSTGRES_PASSWORD environment variable is required")
+            password = load_postgres_password()
             self.db_config = {
                 "host": os.getenv("POSTGRES_HOST", "localhost"),
                 "database": os.getenv("POSTGRES_DB", "cea_sensors"),

@@ -6,6 +6,8 @@ import os
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
+from shared.db_credentials import load_postgres_password
+
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config
@@ -22,7 +24,12 @@ def get_database_url() -> str:
     port = os.getenv("POSTGRES_PORT", "5432")
     database = os.getenv("POSTGRES_DB", "cea_sensors")
     user = os.getenv("POSTGRES_USER", "cea_user")
-    password = os.getenv("POSTGRES_PASSWORD", "")
+    # Prefer systemd LoadCredential (Phase 3.8), fall back to POSTGRES_PASSWORD
+    # env var, and finally to "" (local dev peer-auth — unchanged behaviour).
+    try:
+        password = load_postgres_password()
+    except RuntimeError:
+        password = ""
 
     if password:
         return f"postgresql://{user}:{password}@{host}:{port}/{database}"

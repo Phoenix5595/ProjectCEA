@@ -24,6 +24,15 @@ RestartSec=5
 StandardOutput=journal
 StandardError=journal
 
+# --- Phase 3.8: pass the Postgres password via systemd credentials.
+# `LoadCredential=` copies the source file into a per-unit credential
+# directory (owned by root, mode 0400) and exports CREDENTIALS_DIRECTORY.
+# The app reads $CREDENTIALS_DIRECTORY/postgres_password via
+# shared.db_credentials.load_postgres_password(). The env var path
+# (POSTGRES_PASSWORD via EnvironmentFile above) is retained as a
+# fallback so a broken credential file cannot brick the service.
+LoadCredential=postgres_password:/opt/projectcea/shared/env/postgres_password
+
 # --- Phase 3.7 exploit containment (additive).
 # Services still run as root for direct hardware access (GPIO / I2C / 1-Wire /
 # RS485 / CAN). The directives below narrow the kernel attack surface reachable

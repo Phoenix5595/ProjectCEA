@@ -13,6 +13,7 @@ import asyncpg
 import redis
 
 # Local imports
+from shared.db_credentials import load_postgres_password
 from shared.infra_logging import get_logger
 
 from .migrations import create_room_modes_tables, run_alembic_migrations
@@ -42,9 +43,7 @@ class DatabaseManager:
             redis_url: Redis connection URL. If None, uses environment variable or default.
         """
         if db_config is None:
-            password = os.getenv("POSTGRES_PASSWORD")
-            if not password:
-                raise ValueError("POSTGRES_PASSWORD environment variable is required")
+            password = load_postgres_password()
             self.db_config = {
                 "host": os.getenv("POSTGRES_HOST", "localhost"),
                 "database": os.getenv("POSTGRES_DB", "cea_sensors"),
