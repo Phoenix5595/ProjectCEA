@@ -29,6 +29,17 @@
 	encode gzip
 
 	# ------------------------------------------------------------------
+	# Cache policy (prevents stale SPA-bundle bugs after redeploy).
+	#   /assets/*   → content-hashed, safe to cache forever (immutable).
+	#   everything else (incl. index.html / SPA routes) → must revalidate,
+	#   so browsers always pick up a freshly-deployed index.html that
+	#   points at the newest hashed chunks.
+	# ------------------------------------------------------------------
+	@hashed_assets path /assets/*
+	header @hashed_assets Cache-Control "public, max-age=31536000, immutable"
+	header ?Cache-Control "no-cache, must-revalidate"
+
+	# ------------------------------------------------------------------
 	# Backend (sensor data) - port 8000
 	# ------------------------------------------------------------------
 	@backend_api path /api/sensors /api/sensors/* /api/sensor-data /api/sensor-data/*
