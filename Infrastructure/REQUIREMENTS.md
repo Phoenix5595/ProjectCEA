@@ -2,6 +2,20 @@
 
 Single growing record of cross-service infrastructure requirements for ProjectCEA. Edit in place as the system evolves; do not split into per-phase files.
 
+## Cluster topology contract (Phase 5e)
+
+- Two cluster *types* exist and are not interchangeable:
+  - **Device cluster** — room-wide actuator namespace; always `main` today. Exposed by `/api/devices/{room}/{cluster}`, `/api/lights/...`, `/api/control/...`.
+  - **Sensor sub-cluster** — physically distinct sensor group. Only `Flower Room` is split (`front` + `back`); `Veg Room`, `Lab`, `Outside` use a single sensor cluster also called `main`. Exposed by `/api/sensors/{room}/{cluster}` and the live snapshot endpoint.
+- **Single source of truth (Python services):** `Infrastructure/shared/cluster_topology.py`.
+- **Single source of truth (frontend):** `Infrastructure/frontend/src/config/clusterTopology.ts`.
+- The two files are intentionally tiny mirrors. Any change to room → cluster mapping touches both, plus `ProjectCEA/AGENTS.md` → "Cluster Topology Contract". CI does not enforce parity yet.
+- API contract:
+  - Sending the device cluster to a sensor URL on a multi-cluster room (e.g. `GET /api/sensors/Flower Room/main`) returns **400** with a hint message naming the valid sub-clusters. Pre-Phase-5e this silently returned `{}` and masked frontend wiring bugs.
+  - Sending a sensor sub-cluster to a device URL (e.g. `GET /api/devices/Flower Room/front`) returns **400** with a hint that says `main` is the only device cluster.
+  - Unknown room name → **404** (`UnknownRoomError`).
+- Frontend rule: poll `/api/devices/...` over `ZONES` (device-plane); poll `/api/sensors/...` over `getSensorPollZones()`; reserve `getDashboardPollZones()` for the bulk-Redis-key fan-out where both planes' keys are mixed.
+
 ## Identity & secrets
 
 - The single DB user for application services is `cea_user` on database `cea_sensors`.

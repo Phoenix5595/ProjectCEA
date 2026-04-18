@@ -19,6 +19,11 @@ from app.schemas.device import (
     DeviceModeRequest,
 )
 from app.validation import validate_device_mapping
+from shared.cluster_topology import (
+    ClusterMismatchError,
+    UnknownRoomError,
+    assert_device_cluster,
+)
 from shared.infra_logging import get_logger
 
 logger = get_logger(__name__)
@@ -31,6 +36,25 @@ def _api_cluster_for_device_row(location: str, cluster: str) -> str:
     if location == "Flower Room" and cluster in ("front", "back"):
         return "main"
     return cluster
+
+
+def _validate_device_cluster_or_400(location: str, cluster: str) -> None:
+    """Reject device requests whose ``cluster`` is a sensor sub-cluster.
+
+    Phase 5e: the dashboard previously fanned out ``getDashboardPollZones``
+    (which includes Flower's ``front`` / ``back`` sensor sub-clusters)
+    against the *device* endpoint, which then 404'd with the generic
+    ``"Unknown location/cluster"`` message — wasted DB hits and noise
+    in every browser console. This check rejects the wrong-type case
+    with a 400 + hint **before** ``ensure_configured_cluster`` runs,
+    so the caller is told exactly which cluster to use.
+    """
+    try:
+        assert_device_cluster(location, cluster)
+    except ClusterMismatchError as exc:
+        raise HTTPException(status_code=400, detail=exc.hint) from exc
+    except UnknownRoomError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 # These will be overridden by main app
@@ -85,6 +109,7 @@ async def get_devices_for_location_cluster(
     config: ConfigLoader = Depends(get_config),
 ) -> dict[str, Any]:
     """Get devices for a specific location/cluster with configuration."""
+    _validate_device_cluster_or_400(location, cluster)
     ensure_configured_cluster(config.get_devices(), location, cluster)
     devices = {}
     device_states = relay_manager.get_all_states()

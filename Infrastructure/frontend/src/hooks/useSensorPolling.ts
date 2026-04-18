@@ -7,6 +7,7 @@ import {
   ZONES,
   FLOWER_DASHBOARD_CLUSTERS,
   getDashboardPollZones,
+  getSensorPollZones,
   buildDashboardBulkSensorKeys,
 } from '../config/zones';
 import { parseLiveResponse } from '../utils/sensorLive';
@@ -28,9 +29,15 @@ export interface UseSensorPollingReturn {
 }
 
 async function loadLightDisplayNamesMap(): Promise<Record<string, string>> {
-  const pollZones = getDashboardPollZones();
+  // Phase 5e: this used to iterate `getDashboardPollZones()`, which
+  // fans Flower out into `front`/`back` (sensor sub-clusters). The
+  // /api/devices endpoint correctly rejects those — pre-Phase-5e with
+  // a 404 ("Unknown location/cluster"), now with a 400 + hint — so
+  // every dashboard tick wasted two requests and dirtied the browser
+  // console. ZONES is the device-plane registry (one entry per room,
+  // cluster = "main"), which is exactly what /api/devices wants.
   const pairs = await Promise.all(
-    pollZones.map(async (zone) => {
+    ZONES.map(async (zone) => {
       try {
         const res = await apiClient.getDevicesForLocationCluster(zone.location, zone.cluster);
         const devs = res?.devices as Record<string, { display_name?: string }> | undefined;
@@ -101,7 +108,12 @@ export function useSensorPolling({ interval = 5000 }: UseSensorPollingOptions = 
 
     const refreshLiveSensors = async () => {
       try {
-        const pollZones = getDashboardPollZones();
+        // Sensor-plane only: Flower fans into front+back; every other
+        // room is `main`. Hitting /api/sensors/Flower Room/main/live
+        // would now (post-Phase-5e) return a 400 instead of silently
+        // returning {}, so we no longer iterate the device-plane
+        // entries here.
+        const pollZones = getSensorPollZones();
         const liveDataResults = await Promise.all(
           pollZones.map((zone) => apiClient.getLiveSensorData(zone.location, zone.cluster).catch(() => ({})))
         );

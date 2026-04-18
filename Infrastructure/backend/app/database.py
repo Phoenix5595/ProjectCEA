@@ -10,6 +10,7 @@ import os
 import asyncpg
 
 from app.models import DataPoint
+from shared.cluster_topology import sensor_name_like_pattern
 from shared.db_credentials import load_postgres_password
 from shared.infra_logging import get_logger
 
@@ -292,21 +293,25 @@ class DatabaseManager:
     def _sensor_name_patterns(self, location: str, cluster: str) -> list[str] | None:
         """Cluster-aware sensor-name filtering for normalized schema queries.
 
-        The measurement schema does not carry a cluster column directly; cluster identity
-        is encoded by suffix conventions (e.g. `_f`, `_b`, `_v`).
+        The ``measurement`` table has no cluster column; cluster identity
+        is encoded by suffix conventions on ``sensor.name`` (``_f`` /
+        ``_b`` for Flower front/back; ``_v`` for Veg). Lab / Outside have
+        no suffix split, so we return ``None`` (= no filter).
+
+        The mapping is owned by ``shared.cluster_topology``; this
+        method just adapts it to the asyncpg ``LIKE ANY ($1::text[])``
+        shape used in the SQL above.
+
+        Phase 5e: this used to encode the room→suffix table inline and
+        silently returned ``[]`` (= match nothing) when callers passed
+        the wrong cluster type for the room (e.g. ``Flower Room/main``).
+        That swallowed real wiring bugs. The route layer now validates
+        the cluster up-front via ``assert_sensor_cluster`` and returns
+        a 400 with a hint, so by the time we reach this method the
+        ``(location, cluster)`` pair is guaranteed valid.
         """
-        if location == "Flower Room":
-            if cluster == "front":
-                return ["%_f"]
-            if cluster == "back":
-                return ["%_b"]
-            return []
-        if location == "Veg Room":
-            if cluster == "main":
-                return ["%_v"]
-            return []
-        # Lab/Outside/main and other locations are room-keyed without suffix split.
-        return None
+        pattern = sensor_name_like_pattern(location, cluster)
+        return None if pattern is None else [pattern]
 
     def _get_node_id(self, location: str, cluster: str) -> int:
         """Map location/cluster to CAN node ID.

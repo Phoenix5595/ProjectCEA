@@ -42,8 +42,16 @@ Sensors → CAN/Modbus → [can-processor/soil-sensor]
 | Component | Location | Used By |
 |-----------|----------|---------|
 | `shared/infra_logging.py` | `automation-service/shared/` | All Python services |
+| `shared/cluster_topology.py` | `Infrastructure/shared/` | Backend, automation; **canonical** room→cluster registry. See **Cluster Topology Contract** in `ProjectCEA/AGENTS.md`. |
 | Pydantic models | Each `app/models.py` | Routes, database |
 | Config loader | Each `app/config.py` | Service startup |
+
+> **Cluster topology**: `main` is the device cluster (room-wide
+> actuators); `front`/`back` are sensor sub-clusters (Flower Room only).
+> See `ProjectCEA/AGENTS.md` → "Cluster Topology Contract" for the full
+> rules. Two source-of-truth files must stay in sync:
+> `Infrastructure/shared/cluster_topology.py` (Python) and
+> `Infrastructure/frontend/src/config/clusterTopology.ts` (frontend).
 
 ## EVENT BUS (Cross-Service)
 

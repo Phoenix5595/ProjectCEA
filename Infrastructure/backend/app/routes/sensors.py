@@ -4,18 +4,41 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 
 from app.models import DataPoint, SensorDataResponse
 from app.redis_client import get_all_sensor_values, get_sensor_timestamp, get_sensor_value
 from app.redis_stream_reader import RedisStreamReader
 from app.stream_processor import process_stream_entries_to_sensor_data
+from shared.cluster_topology import (
+    ClusterMismatchError,
+    UnknownRoomError,
+    assert_sensor_cluster,
+)
 from shared.infra_logging import get_logger
 
 router = APIRouter(prefix="/api/sensors", tags=["sensors"])
 
 # Import from dependencies to avoid circular imports
 from app.dependencies import get_db_manager  # noqa: E402
+
+
+def _validate_sensor_cluster_or_400(location: str, cluster: str) -> None:
+    """Reject sensor requests whose ``cluster`` is the wrong type for ``location``.
+
+    Wraps ``shared.cluster_topology.assert_sensor_cluster`` and converts
+    its exceptions into FastAPI ``HTTPException(400)`` responses. The
+    ``hint`` field of ``ClusterMismatchError`` is forwarded verbatim so
+    the API client gets a directly actionable error (e.g. "'main' is
+    the device cluster for 'Flower Room'; sensor data lives under
+    ['front', 'back']").
+    """
+    try:
+        assert_sensor_cluster(location, cluster)
+    except ClusterMismatchError as exc:
+        raise HTTPException(status_code=400, detail=exc.hint) from exc
+    except UnknownRoomError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 def parse_datetime_param(param: str | None) -> datetime | None:
@@ -54,6 +77,15 @@ async def get_sensor_data(
         time_range: Time range string if start/end not provided (e.g., "1 Hour")
     """
     logger = get_logger(__name__)
+
+    # Phase 5e: validate cluster against the canonical topology BEFORE
+    # touching the DB. Pre-Phase-5e the wrong-type case (e.g.
+    # `Flower Room/main`) silently returned an empty dict, which
+    # masked frontend wiring bugs (the dashboard polled sensor URLs
+    # with device-cluster names) and made every "no data" alert
+    # ambiguous. We now reject up-front with a 400 + hint message,
+    # so a misconfigured caller is told exactly which cluster to use.
+    _validate_sensor_cluster_or_400(location, cluster)
 
     db = get_db_manager()
 
@@ -201,10 +233,14 @@ async def get_live_sensor_data(
     """
     get_logger(__name__)
 
-    # Get sensor suffix based on location/cluster (strict for canonical cluster mapping)
+    # Phase 5e: same up-front validation as the historical endpoint.
+    # The legacy short-circuit ("Flower Room + missing suffix → return
+    # {}") is still semantically what we want, but expressing it as a
+    # 400 makes the contract observable to the caller (and surfaces
+    # unknown rooms instead of silently returning nothing).
+    _validate_sensor_cluster_or_400(location, cluster)
+
     suffix = get_sensor_suffix(location, cluster)
-    if location == "Flower Room" and suffix is None:
-        return {}
 
     # Map of sensor types to check
     sensor_types = []
