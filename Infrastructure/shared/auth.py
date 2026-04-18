@@ -45,11 +45,11 @@ logger = get_logger(__name__)
 # Ordering note: ``/api/`` catches both ``/api/foo`` and the bare
 # ``/api`` root via ``_path_matches_protected_prefix`` boundary logic.
 _PROTECTED_PREFIXES: tuple[str, ...] = (
-    "/api",       # cea-backend + automation-service JSON API
-    "/weather",   # weather-service (8003)
-    "/svc",       # /svc/soil/*, /svc/onewire/* (routed by Caddy)
-    "/soil",      # soil-sensor-service direct (8002)
-    "/onewire",   # onewire-worker direct (8004)
+    "/api",  # cea-backend + automation-service JSON API
+    "/weather",  # weather-service (8003)
+    "/svc",  # /svc/soil/*, /svc/onewire/* (routed by Caddy)
+    "/soil",  # soil-sensor-service direct (8002)
+    "/onewire",  # onewire-worker direct (8004)
 )
 
 
