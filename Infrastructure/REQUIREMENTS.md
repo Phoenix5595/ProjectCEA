@@ -133,9 +133,15 @@ Landed in Phase 3.8 (Postgres password via `LoadCredential=`):
 - **Security benefit**: The password is no longer exposed via `systemctl show <unit> -p Environment` nor `/proc/<pid>/environ` once the env-var fallback is eventually retired. Rotation stays at a single file write plus `systemctl daemon-reload && restart`.
 - **Rotation** (supersedes the Phase 1.1b procedure when the env-var fallback is retired): `sudo -u antoine bash -c 'printf "%s" "$NEW" > /opt/projectcea/shared/env/postgres_password.tmp && mv /opt/projectcea/shared/env/postgres_password.tmp /opt/projectcea/shared/env/postgres_password && chmod 0600 /opt/projectcea/shared/env/postgres_password'` → rotate the DB user → `systemctl daemon-reload && systemctl restart <units>`.
 
-Still deferred (phase 3 remainder):
-- 3.4c Flip `CEA_API_KEY_REQUIRE=true`; canary on weather-service first.
-- 3.4d Bind services to `127.0.0.1`; close LAN boundary.
+Landed in Phase 3.4c/3.4d (API-key enforcement + localhost bind):
+- **Protection surface is deny-by-default.** The API-key middleware (`shared.auth.APIKeyAuthMiddleware`) now protects *every* HTTP path except an allow-list: `/`, `/health`, `/ready`, `/status`, `/ws*` (auth is enforced inside the WebSocket handler), `/docs`, `/redoc`, `/openapi.json`, `/logo.png`, `/favicon.*`, `/assets/*`, `/static/*`. Boundary logic requires exact match, `/` separator, or `.` filename-suffix — `/healthz` / `/wsfoo` are therefore still protected. Flipped from the Phase 3.1 model that only gated `/api/*`, which was letting weather-service's `/weather/*` routes bypass enforcement.
+- **One shared key across the fleet**: `/opt/projectcea/shared/env/api_key.env` (mode 0600 antoine:antoine) holds `CEA_API_KEY` + `CEA_API_KEY_REQUIRE=true`. Every runtime service base unit has `EnvironmentFile=-/opt/projectcea/shared/env/api_key.env`, so enforcement is uniform.
+- **SPA wiring**: `Infrastructure/frontend/.env.production` (gitignored) mirrors the key as `VITE_CEA_API_KEY`. `npm run build` bakes it into exactly 1 chunk and every axios client sends `X-API-Key`. WebSocket URL gets `?token=<key>` appended. Verified: no trace of `VITE_CEA_API_KEY` in built bundle (Vite substituted at build time); key never appears in any journal line (secret redaction covers it).
+- **Localhost binding (3.4d)**: every uvicorn process now runs with `--host 127.0.0.1` (`automation-service`, `cea-backend`, `onewire-worker`, `soil-sensor-service`, `weather-service`). Direct LAN access to :8000–:8004 is closed; Caddy on `*:8080` is the single LAN/Tailscale-reachable entrypoint. The `can-processor` daemon is already a non-listening writer, so unchanged.
+- **Key rotation**: `printf 'CEA_API_KEY=%s\nCEA_API_KEY_REQUIRE=true\n' "$NEW" | sudo -u antoine tee /opt/projectcea/shared/env/api_key.env.tmp >/dev/null && sudo -u antoine mv /opt/projectcea/shared/env/api_key.env.tmp /opt/projectcea/shared/env/api_key.env && sudo chmod 0600 /opt/projectcea/shared/env/api_key.env` → update `frontend/.env.production` with the same value → `./deploy.sh` (rebuilds SPA with the new key) → `sudo systemctl restart <all services>`.
+- **Rollback**: remove the `CEA_API_KEY_REQUIRE` line from `api_key.env` and restart; enforcement disables fleet-wide without a code redeploy. To also re-open the LAN boundary: revert each drop-in's `--host 127.0.0.1` back to `--host 0.0.0.0` — backups in `/var/lib/projectcea/systemd-backup/20260418T132354Z/dropins/pre-34d/`.
+
+Still deferred:
 - Retire the `POSTGRES_PASSWORD` env-var fallback once 3.8 has soaked in production; drop the `EnvironmentFile=-postgres.env` line from every base unit and scrub the `POSTGRES_PASSWORD=` line from `postgres.env` itself (keep the file for other future keys).
 
 ## Frontend port / origin map
