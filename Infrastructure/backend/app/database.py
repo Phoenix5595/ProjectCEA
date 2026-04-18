@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime
 import math
 import os
@@ -13,6 +14,76 @@ from shared.db_credentials import load_postgres_password
 from shared.infra_logging import get_logger
 
 logger = get_logger(__name__)
+
+
+@dataclass(frozen=True)
+class _AggregateTier:
+    """One step in the time-series aggregate-tier ladder.
+
+    The backend reads from the *coarsest* tier whose buckets still
+    give the requested time range a useful resolution. This keeps long
+    look-backs (weeks/months) from scanning the raw `measurement`
+    hypertable, which is the single hottest table on the Pi.
+
+    Each CAGG (created by Alembic migration 005_phase5a_reconcile)
+    exposes the same value shape: ``bucket`` (TIMESTAMPTZ),
+    ``avg_value``, ``min_value``, ``max_value``, ``sample_count``.
+    Raw `measurement` uses ``time`` and ``value``. Both are normalised
+    here so the rest of the query body is identical.
+
+    The fields are interpolated into the SQL string via Python f-string
+    formatting; they are NEVER reachable from request input — the
+    tier list below is the only source — so this is safe (no
+    SQL-injection surface).
+    """
+
+    name: str  # short label used in logs ("raw", "1min", ...)
+    table: str  # SQL identifier
+    time_col: str  # column to use for ORDER BY / WHERE bounds
+    value_col: str  # column whose value we expose as `value`
+
+
+# Coarsest first. _pick_tier walks this list and returns the first tier
+# whose `min_duration_hours` is <= the requested range. Thresholds are
+# deliberately conservative (~50–500 buckets per range, never fewer
+# than ~50) so charts never look granular-but-empty.
+_AGGREGATE_LADDER: list[tuple[float, _AggregateTier]] = [
+    (
+        30.0 * 24,
+        _AggregateTier(
+            name="daily", table="measurement_daily", time_col="bucket", value_col="avg_value"
+        ),
+    ),
+    (
+        7.0 * 24,
+        _AggregateTier(
+            name="hourly", table="measurement_hourly", time_col="bucket", value_col="avg_value"
+        ),
+    ),
+    (
+        24.0,
+        _AggregateTier(
+            name="5min", table="measurement_5min", time_col="bucket", value_col="avg_value"
+        ),
+    ),
+    (
+        2.0,
+        _AggregateTier(
+            name="1min", table="measurement_1min", time_col="bucket", value_col="avg_value"
+        ),
+    ),
+    (0.0, _AggregateTier(name="raw", table="measurement", time_col="time", value_col="value")),
+]
+
+
+def _pick_aggregate_tier(duration_hours: float) -> _AggregateTier:
+    """Return the coarsest tier appropriate for the requested range."""
+    for min_h, tier in _AGGREGATE_LADDER:
+        if duration_hours >= min_h:
+            return tier
+    # Walked the whole list (impossible because last entry's min is
+    # 0.0) — degrade safely to raw.
+    return _AGGREGATE_LADDER[-1][1]
 
 
 class DatabaseManager:
@@ -98,107 +169,58 @@ class DatabaseManager:
         )
         patterns = self._sensor_name_patterns(location, cluster)
 
-        # For larger time ranges, use continuous aggregates for better performance
-        use_hourly = duration_hours >= 12
-        use_daily = duration_hours >= 72
+        # Pick the coarsest aggregate tier that still resolves the range.
+        # Phase 5d: replaced the previous 3-step ladder (raw / hourly /
+        # daily) — which incidentally referenced a non-existent column
+        # (`mh.time` / `md.time` instead of the actual `bucket`) and
+        # would have crashed if exercised — with a 5-step ladder driven
+        # by `_pick_aggregate_tier`. The coarsest-fit policy means a
+        # 30-day chart now reads ~30 daily rows from the daily CAGG
+        # instead of millions of raw `measurement` rows.
+        tier = _pick_aggregate_tier(duration_hours)
+        logger.debug(
+            "DB: range=%.2fh -> tier=%s (table=%s)",
+            duration_hours,
+            tier.name,
+            tier.table,
+        )
+
+        # SAFETY: every interpolated identifier comes from the hard-coded
+        # `_AGGREGATE_LADDER`; nothing here is reachable from request
+        # input, so no SQL-injection surface.
+        sql = f"""
+            SELECT
+                m.{tier.time_col}    AS time,
+                s.name               AS sensor_name,
+                s.unit               AS sensor_unit,
+                m.{tier.value_col}   AS value
+            FROM {tier.table} m
+            JOIN sensor s ON m.sensor_id = s.sensor_id
+            JOIN device d ON s.device_id = d.device_id
+            LEFT JOIN rack rk ON d.rack_id = rk.rack_id
+            JOIN room r ON rk.room_id = r.room_id
+            WHERE r.name = $1
+              AND m.{tier.time_col} >= $2
+              AND m.{tier.time_col} <= $3
+              AND (
+                  $4::text[] IS NULL
+                  OR EXISTS (
+                      SELECT 1
+                        FROM unnest($4::text[]) AS pat
+                       WHERE s.name LIKE pat
+                  )
+              )
+            ORDER BY m.{tier.time_col} ASC, s.name ASC
+        """
 
         async with pool.acquire() as conn:
-            if use_daily:  # multi-day ranges, use daily aggregates
-                logger.debug("DB: Using daily continuous aggregates for large time range")
-                rows = await conn.fetch(
-                    """
-                    SELECT
-                        md.time,
-                        s.name as sensor_name,
-                        s.unit as sensor_unit,
-                        md.avg_value as value
-                    FROM measurement_daily md
-                    JOIN sensor s ON md.sensor_id = s.sensor_id
-                    JOIN device d ON s.device_id = d.device_id
-                    LEFT JOIN rack rk ON d.rack_id = rk.rack_id
-                    JOIN room r ON rk.room_id = r.room_id
-                    WHERE r.name = $1
-                    AND md.time >= $2
-                    AND md.time <= $3
-                    AND (
-                        $4::text[] IS NULL
-                        OR EXISTS (
-                            SELECT 1
-                            FROM unnest($4::text[]) AS pat
-                            WHERE s.name LIKE pat
-                        )
-                    )
-                    ORDER BY md.time ASC, s.name ASC
-                """,
-                    location,
-                    start_time,
-                    end_time,
-                    patterns,
-                )
-            elif use_hourly:  # >=12 hours, use hourly aggregates
-                logger.debug("DB: Using hourly continuous aggregates for medium time range")
-                rows = await conn.fetch(
-                    """
-                    SELECT
-                        mh.time,
-                        s.name as sensor_name,
-                        s.unit as sensor_unit,
-                        mh.avg_value as value
-                    FROM measurement_hourly mh
-                    JOIN sensor s ON mh.sensor_id = s.sensor_id
-                    JOIN device d ON s.device_id = d.device_id
-                    LEFT JOIN rack rk ON d.rack_id = rk.rack_id
-                    JOIN room r ON rk.room_id = r.room_id
-                    WHERE r.name = $1
-                    AND mh.time >= $2
-                    AND mh.time <= $3
-                    AND (
-                        $4::text[] IS NULL
-                        OR EXISTS (
-                            SELECT 1
-                            FROM unnest($4::text[]) AS pat
-                            WHERE s.name LIKE pat
-                        )
-                    )
-                    ORDER BY mh.time ASC, s.name ASC
-                """,
-                    location,
-                    start_time,
-                    end_time,
-                    patterns,
-                )
-            else:
-                # For smaller ranges, get all data points from measurement table
-                rows = await conn.fetch(
-                    """
-                    SELECT
-                        m.time,
-                        s.name as sensor_name,
-                        s.unit as sensor_unit,
-                        m.value
-                    FROM measurement m
-                    JOIN sensor s ON m.sensor_id = s.sensor_id
-                    JOIN device d ON s.device_id = d.device_id
-                    LEFT JOIN rack rk ON d.rack_id = rk.rack_id
-                    JOIN room r ON rk.room_id = r.room_id
-                    WHERE r.name = $1
-                    AND m.time >= $2
-                    AND m.time <= $3
-                    AND (
-                        $4::text[] IS NULL
-                        OR EXISTS (
-                            SELECT 1
-                            FROM unnest($4::text[]) AS pat
-                            WHERE s.name LIKE pat
-                        )
-                    )
-                    ORDER BY m.time ASC, s.name ASC
-                """,
-                    location,
-                    start_time,
-                    end_time,
-                    patterns,
-                )
+            rows = await conn.fetch(
+                sql,
+                location,
+                start_time,
+                end_time,
+                patterns,
+            )
 
         logger.debug(f"DB: Found {len(rows)} rows in database")
 

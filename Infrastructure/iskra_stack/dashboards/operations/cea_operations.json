@@ -1,0 +1,260 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": { "type": "grafana", "uid": "-- Grafana --" },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "description": "ProjectCEA platform health: streaming replication lag (Pi -> iskraprojectcea), TimescaleDB CAGG/compression/retention job status, and hypertable size growth. Use this to spot replication drift and stuck background workers before they show up as missing data on the operator dashboards.",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Replication: in recovery?",
+      "description": "True means this node is a streaming replica catching up from the Pi primary. False on the replica means replication has been promoted/broken and you are looking at a divergent copy.",
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 0 },
+      "datasource": { "type": "postgres", "uid": "cea_postgres" },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT pg_is_in_recovery()::int AS value;"
+        }
+      ],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "value",
+        "colorMode": "background"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "type": "value", "options": { "0": { "text": "PROMOTED", "color": "red" } } },
+            { "type": "value", "options": { "1": { "text": "REPLICA OK", "color": "green" } } }
+          ],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] }
+        }
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Replication lag (seconds)",
+      "description": "Wall-clock seconds between the most recent transaction committed on the Pi and the moment that transaction was replayed here. Spikes above ~30s mean the Pi is producing WAL faster than this replica can apply it (or the network path between them is degraded).",
+      "gridPos": { "h": 4, "w": 5, "x": 4, "y": 0 },
+      "datasource": { "type": "postgres", "uid": "cea_postgres" },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COALESCE(EXTRACT(EPOCH FROM (now() - pg_last_xact_replay_timestamp())), 0)::int AS value;"
+        }
+      ],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "value",
+        "colorMode": "background"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 30 },
+              { "color": "red", "value": 120 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "WAL replay backlog",
+      "description": "Bytes the WAL receiver has buffered but not yet replayed. Should be near zero. Sustained growth means apply is slower than receive (CPU bound on the replica, or a long-running query holding off conflict resolution).",
+      "gridPos": { "h": 4, "w": 5, "x": 9, "y": 0 },
+      "datasource": { "type": "postgres", "uid": "cea_postgres" },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COALESCE(pg_wal_lsn_diff(pg_last_wal_receive_lsn(), pg_last_wal_replay_lsn()), 0)::bigint AS value;"
+        }
+      ],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "value",
+        "colorMode": "background"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 1048576 },
+              { "color": "red", "value": 67108864 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Last replayed transaction",
+      "description": "Timestamp of the most recently replayed commit. If this stops advancing while the Pi keeps writing, replication has stalled.",
+      "gridPos": { "h": 4, "w": 10, "x": 14, "y": 0 },
+      "datasource": { "type": "postgres", "uid": "cea_postgres" },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT pg_last_xact_replay_timestamp() AS value;"
+        }
+      ],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "value",
+        "colorMode": "value"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "dateTimeAsIso",
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] }
+        }
+      }
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Replication lag over time (seconds)",
+      "description": "Sampled by Grafana on the dashboard refresh interval. Use this together with the WAL backlog panel to tell apart 'network slow' (lag grows but backlog stays low) from 'replica slow to apply' (both grow).",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 4 },
+      "datasource": { "type": "postgres", "uid": "cea_postgres" },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT now() AS time, COALESCE(EXTRACT(EPOCH FROM (now() - pg_last_xact_replay_timestamp())), 0) AS \"lag_seconds\";"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10, "spanNulls": true }
+        }
+      },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } }
+    },
+    {
+      "id": 20,
+      "type": "table",
+      "title": "TimescaleDB background jobs",
+      "description": "One row per scheduled job (CAGG refresh, compression, retention). Look for last_run_status != 'Success', total_failures > 0, or next_start far in the past.",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 12 },
+      "datasource": { "type": "postgres", "uid": "cea_postgres" },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT j.hypertable_name AS hypertable, j.proc_name, s.last_run_status, s.last_successful_finish, s.last_run_duration::text AS last_duration, s.next_start, s.total_runs, s.total_failures FROM timescaledb_information.jobs j LEFT JOIN timescaledb_information.job_stats s USING (job_id) WHERE j.hypertable_name IS NOT NULL ORDER BY j.hypertable_name, j.proc_name;"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "align": "auto", "filterable": true },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "transparent", "value": null }] }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "last_run_status" },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  { "type": "value", "options": { "Success": { "color": "green", "index": 0 } } },
+                  { "type": "value", "options": { "Failed":  { "color": "red",   "index": 1 } } }
+                ]
+              },
+              { "id": "custom.cellOptions", "value": { "type": "color-background", "mode": "basic" } }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "total_failures" },
+            "properties": [
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    { "color": "green", "value": null },
+                    { "color": "red", "value": 1 }
+                  ]
+                }
+              },
+              { "id": "custom.cellOptions", "value": { "type": "color-background", "mode": "basic" } }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 30,
+      "type": "table",
+      "title": "Hypertable & CAGG sizes",
+      "description": "On-disk total per hypertable. The four _materialized_hypertable_* rows are the storage backing each continuous aggregate (1min/5min/hourly/daily) -- see the friendly name in the cagg_view column. This is the real-world payoff of the tier selector: a 40-day query on raw scans the 'measurement' row; routed to 'measurement_daily' it scans <1 MB.",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 22 },
+      "datasource": { "type": "postgres", "uid": "cea_postgres" },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "WITH chunk_sizes AS (SELECT c.hypertable_name, c.chunk_schema, c.chunk_name, c.is_compressed, pg_total_relation_size(format('%I.%I', c.chunk_schema, c.chunk_name)::regclass) AS bytes FROM timescaledb_information.chunks c), per_ht AS (SELECT hypertable_name, count(*) AS chunks, count(*) FILTER (WHERE is_compressed) AS compressed_chunks, sum(bytes) AS total_bytes FROM chunk_sizes GROUP BY hypertable_name) SELECT COALESCE(ca.view_name, p.hypertable_name) AS hypertable, ca.view_name AS cagg_view, p.chunks, p.compressed_chunks, pg_size_pretty(p.total_bytes) AS total_size, p.total_bytes FROM per_ht p LEFT JOIN timescaledb_information.continuous_aggregates ca ON ca.materialization_hypertable_name = p.hypertable_name ORDER BY p.total_bytes DESC;"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "custom": { "align": "auto", "filterable": true } },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "total_bytes" },
+            "properties": [{ "id": "custom.hidden", "value": true }]
+          }
+        ]
+      }
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["operations", "platform", "cea"],
+  "templating": { "list": [] },
+  "time": { "from": "now-15m", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "CEA Operations: replication & background jobs",
+  "uid": "cea-operations-platform",
+  "version": 1,
+  "weekStart": ""
+}
