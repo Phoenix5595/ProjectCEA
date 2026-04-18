@@ -261,8 +261,11 @@ SELECT add_continuous_aggregate_policy('measurement_daily',
 -- View: Measurement with full metadata (for Grafana queries)
 -- Join path: measurement -> sensor -> device -> (rack -> room OR direct room lookup for devices without racks)
 -- Handles both devices with racks and devices without racks (e.g., weather stations)
+-- Definition reconciled with live DB in Alembic revision 005 (Phase 5a).
+-- measurement -> sensor -> device -> rack -> room. Devices without a rack
+-- surface NULL room fields; weather/outside sensors fall into this bucket.
 CREATE OR REPLACE VIEW measurement_with_metadata AS
-SELECT 
+SELECT
     m.time,
     m.sensor_id,
     m.value,
@@ -273,20 +276,15 @@ SELECT
     d.device_id,
     d.name AS device_name,
     d.type AS device_type,
-    COALESCE(r_from_rack.room_id, r_direct.room_id) AS room_id,
-    COALESCE(r_from_rack.name, r_direct.name) AS room_name,
-    COALESCE(r_from_rack.target_vpd, r_direct.target_vpd) AS target_vpd,
-    COALESCE(r_from_rack.target_temp, r_direct.target_temp) AS target_temp
+    r.room_id,
+    r.name AS room_name,
+    r.target_vpd,
+    r.target_temp
 FROM measurement m
 JOIN sensor s ON m.sensor_id = s.sensor_id
 JOIN device d ON s.device_id = d.device_id
--- Path 1: Device -> Rack -> Room (for devices with racks)
 LEFT JOIN rack rk ON d.rack_id = rk.rack_id
-LEFT JOIN room r_from_rack ON rk.room_id = r_from_rack.room_id
--- Path 2: Direct room lookup for devices without racks (e.g., weather stations in "Outside" room)
--- This assumes devices without racks might be associated with rooms directly by name matching
--- For now, we'll rely on rack path, but this structure allows for future direct device-room associations
-LEFT JOIN room r_direct ON r_direct.room_id IS NULL;  -- Placeholder for future direct associations
+LEFT JOIN room r ON rk.room_id = r.room_id;
 
 -- ============================================
 -- Comments for Documentation
