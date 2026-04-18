@@ -28,40 +28,29 @@ from shared.middleware import parse_origins_env
 logger = get_logger(__name__)
 
 
-# Paths exempt from API-key enforcement. These are intentionally open:
-#   - /health, /ready, /status  : orchestrator probes (never carry secrets)
-#   - /ws, /ws/*                : handled by check_websocket_auth instead
-#   - /docs, /redoc,
-#     /openapi.json             : gated separately via docs_kwargs()
-#   - /logo.png,
-#     /favicon.*,
-#     /assets/*, /static/*      : SPA bundle / static content
+# Prefixes that REQUIRE a valid X-API-Key when enforcement is on.
+# Anything not matching one of these is open — which means SPA HTML
+# routes (e.g. ``/flower/monitoring``), font files (``/fonts/*``),
+# static assets, favicons, health/ready probes, docs, and WebSocket
+# upgrades all fall through without auth.
 #
-# Everything else is PROTECTED when enforcement is on. That includes
-# ``/api/*`` (cea-backend, automation-service) and any non-/api/ route
-# a service chooses to expose (``/weather/*``, ``/soil/*``, etc.). The
-# "deny by default, allow list known-open" model means a new endpoint
-# added tomorrow is automatically gated — no risk of it silently
-# slipping past because nobody remembered to add "/foo" to a protect
-# list.
-_OPEN_PREFIXES: tuple[str, ...] = (
-    "/health",
-    "/ready",
-    "/status",
-    "/ws",
-    "/docs",
-    "/redoc",
-    "/openapi.json",
-    "/logo.png",
-    "/favicon",
-    "/assets",
-    "/static",
+# The allow-list approach is safe because the automation-service also
+# serves the SPA static bundle, and the SPA's React Router uses arbitrary
+# pretty URLs (``/flower/monitoring``, ``/vegetation/overview``, …) that
+# only resolve to ``index.html``. None of those SPA paths leak data —
+# they return bytes that the browser would have loaded anyway via ``/``.
+# The only thing worth guarding is the JSON surface under well-known
+# service prefixes; those are enumerated below.
+#
+# Ordering note: ``/api/`` catches both ``/api/foo`` and the bare
+# ``/api`` root via ``_path_matches_protected_prefix`` boundary logic.
+_PROTECTED_PREFIXES: tuple[str, ...] = (
+    "/api",       # cea-backend + automation-service JSON API
+    "/weather",   # weather-service (8003)
+    "/svc",       # /svc/soil/*, /svc/onewire/* (routed by Caddy)
+    "/soil",      # soil-sensor-service direct (8002)
+    "/onewire",   # onewire-worker direct (8004)
 )
-
-# Exact-match paths that must stay open even though their prefix is
-# something like "/" which would otherwise be matched by the catch-all
-# protect branch.
-_OPEN_EXACT: frozenset[str] = frozenset({"/", ""})
 
 
 def auth_required() -> bool:
@@ -80,41 +69,48 @@ def _expected_key() -> str | None:
     return k or None
 
 
-def _path_matches_open_prefix(path: str, prefix: str) -> bool:
-    """True if ``path`` is the exempt ``prefix`` or a child of it.
+def _path_matches_protected_prefix(path: str, prefix: str) -> bool:
+    """True if ``path`` is ``prefix`` or a child of it.
 
-    Boundaries recognised: exact match, ``/`` (directory child, e.g.
-    ``/assets/app.js``), or ``.`` (filename suffix, e.g.
-    ``/favicon.ico``). A bare prefix match without a boundary would
-    let ``/healthz`` masquerade as ``/health`` — rejected.
+    Boundary is ``/`` so ``/apiary`` is NOT treated as ``/api``.
+    Exact match also counts so a service exposing just ``/api`` root
+    remains protected.
     """
     if path == prefix:
         return True
     if len(path) > len(prefix) and path.startswith(prefix):
-        boundary = path[len(prefix)]
-        return boundary in "/."
+        return path[len(prefix)] == "/"
     return False
 
 
 def _is_protected_path(path: str) -> bool:
     """True if ``path`` must carry an API key when enforcement is on.
 
-    Deny-by-default: every non-exempt HTTP path is protected. Static
-    assets (/assets, /logo.png), docs (/docs, /openapi.json),
-    orchestrator probes (/health, /ready, /status), the SPA root ("/"),
-    and WebSocket upgrades (/ws*, handled by ``check_websocket_auth``)
-    are the only exemptions. See ``_OPEN_PREFIXES`` / ``_OPEN_EXACT``.
+    Allow-by-default: only explicit JSON-API prefixes in
+    :data:`_PROTECTED_PREFIXES` are gated. Everything else — SPA HTML
+    routes (React-Router paths like ``/flower/monitoring``), static
+    assets (``/assets``, ``/fonts``, ``/logo.png``, ``/favicon.ico``),
+    docs (``/docs``, ``/openapi.json``), orchestrator probes
+    (``/health``, ``/ready``), and WebSocket upgrades (``/ws``,
+    handled by :func:`check_websocket_auth`) — passes through.
     """
-    if path in _OPEN_EXACT:
-        return False
-    for p in _OPEN_PREFIXES:
-        if _path_matches_open_prefix(path, p):
-            return False
-    return True
+    for p in _PROTECTED_PREFIXES:
+        if _path_matches_protected_prefix(path, p):
+            return True
+    return False
 
 
 class APIKeyAuthMiddleware:
-    """ASGI middleware enforcing ``X-API-Key`` on ``/api/*`` HTTP paths.
+    """ASGI middleware enforcing ``X-API-Key`` on JSON-API HTTP paths.
+
+    Protected prefixes are enumerated in :data:`_PROTECTED_PREFIXES`
+    (``/api``, ``/weather``, ``/svc``, ``/soil``, ``/onewire``).
+    Everything else — SPA React-Router URLs, static assets, fonts,
+    docs, health probes, WebSocket upgrades — passes through. This is
+    intentional: the automation-service serves BOTH the JSON API and
+    the SPA bundle, and React-Router navigates to arbitrary pretty
+    URLs like ``/flower/monitoring`` that merely resolve to
+    ``index.html``; those are not secrets.
 
     Attach via ``app.add_middleware(APIKeyAuthMiddleware)``. Evaluation
     order: installed after :func:`shared.middleware.setup_cors` so that
