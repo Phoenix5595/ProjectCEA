@@ -42,3 +42,16 @@ providers:
     allowUiUpdates: true
     options:
       path: /var/lib/grafana/dashboards/laboratory
+
+  # Phase 5d: platform-health dashboard. Lives in its own "Operations"
+  # folder so operators don't see it next to the room dashboards, and so
+  # we can later restrict it to admins via folder permissions.
+  - name: Operations
+    orgId: 1
+    folder: Operations
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards/operations
