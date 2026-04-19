@@ -3,102 +3,52 @@
 from __future__ import annotations
 
 from datetime import datetime
-import os
-import sys
 from typing import Any
 
+from shared import (
+    calculate_rh,
+    calculate_vpd,
+    get_pressure_state,
+    update_pressure_state,
+    validate_co2_reading,
+)
 from shared.infra_logging import get_logger
 
 logger = get_logger(__name__)
 
-# Add the shared library to the path
-current_dir = os.path.dirname(os.path.abspath(__file__))
-shared_path = os.path.join(current_dir, "..", "..", "..")
-sys.path.insert(0, shared_path)
 
-# Import shared sensor processing functions
-try:
-    from shared import (  # type: ignore
-        calculate_rh,  # type: ignore
-        calculate_vpd,  # type: ignore
-        get_location_from_node,  # type: ignore
-        get_pressure_state,  # type: ignore
-        get_sensor_suffix,  # type: ignore
-        update_pressure_state,  # type: ignore
-        validate_co2_reading,  # type: ignore
-    )
-
-    logger.info("Successfully imported shared sensor processing library")
-except ImportError as e:
-    # Use print since logger might not be available if shared import failed
-    print(f"Warning: Failed to import shared sensor processing library: {e}", file=sys.stderr)
-    try:
-        logger.warning(f"Failed to import shared sensor processing library: {e}")
-    except Exception:
-        pass  # Logger not available
-
-    # Define minimal fallback implementations
-    def get_sensor_suffix(location: str, cluster: str) -> str:
-        suffix_map = {
-            ("Veg Room", "clusterA"): "_f",
-            ("Veg Room", "clusterB"): "_b",
-            ("Flower Room", "clusterA"): "_f",
-            ("Flower Room", "clusterB"): "_b",
-            ("Mother Room", "clusterA"): "_f",
-            ("Mother Room", "clusterB"): "_b",
-        }
-        return suffix_map.get((location, cluster), "_f")
-
-    def get_location_from_node(node_id):
-        if node_id is None:
-            return ("Unknown", "Unknown")
-        node_map = {
-            1: ("Veg Room", "clusterB"),  # Node 1 has _b sensors in DB
-            2: ("Veg Room", "clusterA"),  # Node 2 has _f sensors in DB
-            3: ("Flower Room", "clusterA"),
-            4: ("Flower Room", "clusterB"),
-            5: ("Mother Room", "clusterA"),
-            6: ("Mother Room", "clusterB"),
-        }
-        return node_map.get(node_id, ("Unknown", f"node_{node_id}"))
-
-    def calculate_rh(temp_dry, temp_wet, pressure=1013.25):
-        if temp_dry <= temp_wet:
-            return 100.0
-        import math
-
-        a, b = 17.27, 237.3
-        es_dry = 6.1078 * math.exp((a * temp_dry) / (b + temp_dry))
-        es_wet = 6.1078 * math.exp((a * temp_wet) / (b + temp_wet))
-        e = es_wet - (
-            (pressure / 1000) * (temp_dry - temp_wet) * 0.00066 * (1 + 0.00115 * temp_wet)
-        )
-        return max(0.0, min(100.0, (e / es_dry) * 100.0))
-
-    def calculate_vpd(temp_dry, temp_wet, pressure=1013.25):
-        if temp_dry <= temp_wet:
-            return 0.0
-        import math
-
-        a, b = 17.27, 237.3
-        es_dry = 0.6108 * math.exp((a * temp_dry) / (b + temp_dry))
-        es_wet = 0.6108 * math.exp((a * temp_wet) / (b + temp_wet))
-        e = es_wet - (
-            (pressure / 1000) * (temp_dry - temp_wet) * 0.00066 * (1 + 0.00115 * temp_wet)
-        )
-        return max(0.0, es_dry - e)
-
-    def validate_co2_reading(sensor_name, value, timestamp):
-        return value >= 0
-
-    def update_pressure_state(location, cluster, pressure):
-        pass
-
-    def get_pressure_state(location, cluster):
-        return 1013.25
+# ---------------------------------------------------------------------------
+# Cluster + node mapping (CAN-processor-local; will be unified against
+# shared.cluster_topology in a follow-up Phase 6 step). The historical
+# clusterA/clusterB strings are preserved here because the on-disk Postgres
+# rows + Grafana dashboards still key off the resulting `_f` / `_b` suffix
+# convention; renaming clusterA → front would touch the data plane and is
+# done as its own migration, not silently inside the lift.
+# ---------------------------------------------------------------------------
+def get_sensor_suffix(location: str, cluster: str) -> str:
+    suffix_map = {
+        ("Veg Room", "clusterA"): "_f",
+        ("Veg Room", "clusterB"): "_b",
+        ("Flower Room", "clusterA"): "_f",
+        ("Flower Room", "clusterB"): "_b",
+        ("Mother Room", "clusterA"): "_f",
+        ("Mother Room", "clusterB"): "_b",
+    }
+    return suffix_map.get((location, cluster), "_f")
 
 
-logger = get_logger(__name__)
+def get_location_from_node(node_id):
+    if node_id is None:
+        return ("Unknown", "Unknown")
+    node_map = {
+        1: ("Veg Room", "clusterB"),
+        2: ("Veg Room", "clusterA"),
+        3: ("Flower Room", "clusterA"),
+        4: ("Flower Room", "clusterB"),
+        5: ("Mother Room", "clusterA"),
+        6: ("Mother Room", "clusterB"),
+    }
+    return node_map.get(node_id, ("Unknown", f"node_{node_id}"))
 
 
 def validate_decoded_data(decoded: dict[str, Any]) -> bool:

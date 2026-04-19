@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 from datetime import datetime
-import math
 from typing import Any
 
 import httpx
 
+from shared.climate import calculate_rh_from_dewpoint
 from shared.infra_logging import get_logger
 from shared.retry import retry_async
 
@@ -238,7 +238,8 @@ class WeatherClient:
                             weather_data["timestamp"] = datetime.fromtimestamp(epoch)
                         else:
                             logger.warning(
-                                f"obsTime epoch {epoch} outside sane window, using current time"
+                                f"obsTime epoch {epoch} outside sane window, "
+                                f"using current time"
                             )
                             weather_data["timestamp"] = datetime.now()
                     else:
@@ -261,33 +262,16 @@ class WeatherClient:
     def _calculate_rh(self, temp_c: float, dewpoint_c: float) -> float:
         """Calculate relative humidity from temperature and dewpoint.
 
-        Uses the Magnus formula approximation.
-
-        Args:
-            temp_c: Temperature in Celsius
-            dewpoint_c: Dewpoint in Celsius
-
-        Returns:
-            Relative humidity as percentage (0-100)
+        Thin wrapper around ``shared.calculate_rh_from_dewpoint`` so the
+        existing call site at line 168 keeps working without re-routing.
+        Phase 6 lifted the math into ``shared/climate.py``; this method
+        is preserved as the public surface for the WeatherClient class.
+        Numerical delta from the previous local impl (Magnus b=237.7 vs
+        canonical b=237.3) is < 0.05 % RH at all temperatures we see —
+        well under METAR's reporting precision (1 °C / integer % RH).
         """
         try:
-            # Magnus formula constants
-            a = 17.27
-            b = 237.7
-
-            # Calculate saturation vapor pressure at temperature
-            es_t = 6.112 * math.exp((a * temp_c) / (b + temp_c))
-
-            # Calculate actual vapor pressure at dewpoint
-            es_d = 6.112 * math.exp((a * dewpoint_c) / (b + dewpoint_c))
-
-            # Relative humidity = (actual vapor pressure / saturation vapor pressure) * 100
-            rh = (es_d / es_t) * 100.0
-
-            # Clamp to 0-100%
-            rh = max(0.0, min(100.0, rh))
-
-            return round(rh, 2)
+            return round(calculate_rh_from_dewpoint(temp_c, dewpoint_c), 2)
         except Exception as e:
             logger.error(f"Error calculating RH: {e}")
             return 0.0

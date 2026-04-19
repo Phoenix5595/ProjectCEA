@@ -2,67 +2,32 @@
 
 from __future__ import annotations
 
-from collections import defaultdict
 from datetime import datetime
-import math
-import os
-import sys
 from typing import Any
 
 from app.models import DataPoint
-
-# Import shared sensor processing functions
-try:
-    shared_path = os.path.join(os.path.dirname(__file__), "..", "..", "..")
-    sys.path.insert(0, shared_path)
-    from shared import calculate_rh as shared_calculate_rh  # type: ignore
-    from shared import calculate_vpd as shared_calculate_vpd  # type: ignore
-    from shared import get_pressure_state, update_pressure_state  # type: ignore
-    from shared import get_sensor_suffix as shared_get_sensor_suffix  # type: ignore
-except ImportError:
-    # Fallback implementations
-    def shared_get_sensor_suffix(location: str, cluster: str) -> str:
-        suffix_map = {
-            ("Veg Room", "clusterA"): "_f",
-            ("Veg Room", "clusterB"): "_b",
-            ("Flower Room", "clusterA"): "_f",
-            ("Flower Room", "clusterB"): "_b",
-            ("Mother Room", "clusterA"): "_f",
-            ("Mother Room", "clusterB"): "_b",
-        }
-        return suffix_map.get((location, cluster), "_f")
-
-    def shared_calculate_rh(temp_dry, temp_wet, pressure=1013.25):
-        if temp_dry <= temp_wet:
-            return 100.0
-        a, b = 17.27, 237.3
-        es_dry = 6.1078 * math.exp((a * temp_dry) / (b + temp_dry))
-        es_wet = 6.1078 * math.exp((a * temp_wet) / (b + temp_wet))
-        e = es_wet - (
-            (pressure / 1000) * (temp_dry - temp_wet) * 0.00066 * (1 + 0.00115 * temp_wet)
-        )
-        return max(0.0, min(100.0, (e / es_dry) * 100.0))
-
-    def shared_calculate_vpd(temp_dry, temp_wet, pressure=1013.25):
-        if temp_dry <= temp_wet:
-            return 0.0
-        a, b = 17.27, 237.3
-        es_dry = 0.6108 * math.exp((a * temp_dry) / (b + temp_dry))
-        es_wet = 0.6108 * math.exp((a * temp_wet) / (b + temp_wet))
-        e = es_wet - (
-            (pressure / 1000) * (temp_dry - temp_wet) * 0.00066 * (1 + 0.00115 * temp_wet)
-        )
-        return max(0.0, es_dry - e)
-
-    def update_pressure_state(location, cluster, pressure):
-        pass
-
-    def get_pressure_state(location, cluster):
-        return 1013.25
+from shared import (
+    calculate_rh,
+    calculate_vpd,
+    get_pressure_state,
+    update_pressure_state,
+)
 
 
-# State tracker for pressure values per location/cluster (local to stream processor)
-_pressure_state: dict[tuple[str, str], float] = defaultdict(lambda: 1013.25)
+# Cluster suffix mapping. Mirrors processor.py in can-processor-service so
+# both write the same sensor key shape. Will be unified through
+# shared.cluster_topology in a follow-up Phase 6 step (see processor.py
+# for the full rationale on why the data-plane rename is deferred).
+def shared_get_sensor_suffix(location: str, cluster: str) -> str:
+    suffix_map = {
+        ("Veg Room", "clusterA"): "_f",
+        ("Veg Room", "clusterB"): "_b",
+        ("Flower Room", "clusterA"): "_f",
+        ("Flower Room", "clusterB"): "_b",
+        ("Mother Room", "clusterA"): "_f",
+        ("Mother Room", "clusterB"): "_b",
+    }
+    return suffix_map.get((location, cluster), "_f")
 
 
 def get_location_from_node(node_id: int | None) -> tuple[str, str]:
@@ -95,16 +60,6 @@ def get_sensor_suffix(location: str, cluster: str) -> str:
         adapted_cluster = "clusterA"  # Default to clusterA for main
 
     return shared_get_sensor_suffix(location, adapted_cluster)
-
-
-def calculate_rh(temp_dry: float, temp_wet: float, pressure: float = 1013.25) -> float:
-    """Calculate relative humidity using shared library."""
-    return shared_calculate_rh(temp_dry, temp_wet, pressure)
-
-
-def calculate_vpd(temp_dry: float, temp_wet: float, pressure: float = 1013.25) -> float:
-    """Calculate vapor pressure deficit using shared library."""
-    return shared_calculate_vpd(temp_dry, temp_wet, pressure)
 
 
 def extract_sensor_values_from_decoded(
@@ -142,7 +97,7 @@ def extract_sensor_values_from_decoded(
         temp_dry = decoded.get("temp_dry_c")
         temp_wet = decoded.get("temp_wet_c")
         if temp_dry is not None and temp_wet is not None:
-            pressure = _pressure_state[(location, cluster)]
+            pressure = get_pressure_state(location, cluster)
             rh = round(calculate_rh(float(temp_dry), float(temp_wet), pressure), 3)
             vpd = round(calculate_vpd(float(temp_dry), float(temp_wet), pressure), 3)
             rh_key = f"rh_{suffix}" if suffix else "rh"
@@ -173,7 +128,7 @@ def extract_sensor_values_from_decoded(
             pressure_value = float(decoded["pressure_hpa"])
             sensor_key = f"pressure_{suffix}" if suffix else "pressure"
             sensors.append((sensor_key, pressure_value, "hPa"))
-            _pressure_state[(location, cluster)] = pressure_value
+            update_pressure_state(location, cluster, pressure_value)
 
     elif message_type == "VL53" or message_type == "VL53L0X":
         if "distance_mm" in decoded and decoded["distance_mm"] is not None:
