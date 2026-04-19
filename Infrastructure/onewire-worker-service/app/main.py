@@ -2,22 +2,19 @@
 
 from __future__ import annotations
 
-import asyncio
 from contextlib import asynccontextmanager
-import time
 from typing import Any
 
 from fastapi import FastAPI, Response
 from fastapi import status as http_status
 
+from shared.health import all_ok, check_redis_async_client
 from shared.infra_logging import setup_structured_logging
 
 from .background_tasks import BackgroundTasks
 from .config import ConfigLoader
 from .onewire_reader import read_temperature_c
 from .redis_client import RedisClient
-
-_READY_TIMEOUT_SEC = 0.5
 
 logger = setup_structured_logging(
     service_name="onewire-worker", log_level="INFO", console_output=True, json_format=True
@@ -70,40 +67,18 @@ async def health():
 @app.get("/ready")
 async def ready(response: Response) -> dict[str, Any]:
     """Readiness: redis reachable within 500ms. Onewire has no DB dependency."""
-    out: dict[str, Any] = {"service": "onewire-worker", "checks": {}}
-    ok = True
-
-    t0 = time.perf_counter()
-    if redis_client is None or redis_client.client is None:
-        out["checks"]["redis"] = {"ok": False, "detail": "client not initialized"}
-        ok = False
-    else:
-        try:
-            pong = await asyncio.wait_for(redis_client.client.ping(), timeout=_READY_TIMEOUT_SEC)
-            out["checks"]["redis"] = {
-                "ok": bool(pong),
-                "latency_ms": round((time.perf_counter() - t0) * 1000, 1),
-            }
-            if not pong:
-                ok = False
-        except TimeoutError:
-            out["checks"]["redis"] = {
-                "ok": False,
-                "detail": f"timeout after {_READY_TIMEOUT_SEC * 1000:.0f}ms",
-            }
-            ok = False
-        except Exception as e:
-            out["checks"]["redis"] = {"ok": False, "detail": f"{type(e).__name__}: {e}"}
-            ok = False
-
+    raw_client = redis_client.client if redis_client else None
+    out: dict[str, Any] = {
+        "service": "onewire-worker",
+        "checks": {"redis": await check_redis_async_client(raw_client)},
+    }
     if background_tasks is None or not background_tasks.running:
         out["checks"]["background_task"] = {"ok": False, "detail": "not running"}
-        ok = False
     else:
         out["checks"]["background_task"] = {"ok": True}
 
-    out["status"] = "ready" if ok else "not_ready"
-    if not ok:
+    out["status"] = "ready" if all_ok(out["checks"]) else "not_ready"
+    if out["status"] != "ready":
         response.status_code = http_status.HTTP_503_SERVICE_UNAVAILABLE
     return out
 

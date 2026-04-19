@@ -262,48 +262,40 @@ async def health_check():
     return health_status
 
 
-_READY_TIMEOUT_SEC = 0.5
-
-
 @app.get("/ready")
 async def ready_check():
     """Readiness probe.
 
-    Verifies every hard dependency (postgres pool) with a 500ms per-check
-    budget. Returns 503 with a JSON body on any failure so orchestrators
-    drain traffic. Broadcast loop state is advisory (reported but does not
-    fail /ready — the API can still serve reads without broadcasts).
-    """
-    import time as _time
+    Verifies every hard dependency (postgres pool) via shared.health with
+    a 500ms per-check budget. Returns 503 with a JSON body on any failure
+    so orchestrators drain traffic. Broadcast loop state is advisory
+    (reported but does not fail /ready — the API can still serve reads
+    without broadcasts; the broadcast task only feeds WebSockets).
 
+    The pool is fetched via ``db._get_pool()`` which lazily connects on
+    first call; if the initial connect failed the helper raises and
+    ``check_postgres_pool`` reports ``ok=False`` with the exception
+    detail. Same end-state as the pre-Phase 6 inline check.
+    """
     from fastapi.responses import JSONResponse
 
     from app.dependencies import get_db_manager
+    from shared.health import all_ok, check_postgres_pool
 
-    out: dict = {"service": "cea-backend", "checks": {}}
-    ok = True
-
-    t0 = _time.perf_counter()
     try:
-        db = get_db_manager()
-        pool = await db._get_pool()
-        async with pool.acquire() as conn:
-            val = await asyncio.wait_for(conn.fetchval("SELECT 1"), timeout=_READY_TIMEOUT_SEC)
-        out["checks"]["postgres"] = {
-            "ok": val == 1,
-            "latency_ms": round((_time.perf_counter() - t0) * 1000, 1),
-        }
-        if val != 1:
-            ok = False
-    except TimeoutError:
-        out["checks"]["postgres"] = {
-            "ok": False,
-            "detail": f"timeout after {_READY_TIMEOUT_SEC * 1000:.0f}ms",
-        }
-        ok = False
+        pool = await get_db_manager()._get_pool()
     except Exception as e:
-        out["checks"]["postgres"] = {"ok": False, "detail": f"{type(e).__name__}: {e}"}
-        ok = False
+        pool = None
+        pool_init_error = f"{type(e).__name__}: {e}"
+    else:
+        pool_init_error = None
+
+    out: dict = {
+        "service": "cea-backend",
+        "checks": {"postgres": await check_postgres_pool(pool)},
+    }
+    if pool_init_error and not out["checks"]["postgres"].get("ok"):
+        out["checks"]["postgres"]["detail"] = pool_init_error
 
     global background_task
     if background_task and not background_task.done():
@@ -311,8 +303,8 @@ async def ready_check():
     else:
         out["checks"]["broadcast_task"] = {"ok": False, "detail": "not running"}
 
-    out["status"] = "ready" if ok else "not_ready"
-    if not ok:
+    out["status"] = "ready" if all_ok(out["checks"]) else "not_ready"
+    if out["status"] != "ready":
         return JSONResponse(content=out, status_code=503)
     return out
 

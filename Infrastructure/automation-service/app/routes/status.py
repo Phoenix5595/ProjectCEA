@@ -18,6 +18,7 @@ from app.control.performance_monitor import get_performance_monitor
 from app.control.relay_manager import RelayManager
 from app.database import DatabaseManager
 from app.middleware.profiling import get_performance_metrics
+from shared.health import all_ok, check_postgres_pool, check_redis_sync_client
 
 router = APIRouter()
 
@@ -172,86 +173,38 @@ async def health_check(
     }
 
 
-_READY_TIMEOUT_SEC = 0.5
-
-
 @router.get("/ready")
 async def ready_check(
     database: DatabaseManager = Depends(get_database),
 ) -> Any:
     """Readiness probe.
 
-    Verifies every hard dependency the control loop needs within 500ms:
-    postgres pool answers SELECT 1, redis pings back. Returns 503 on any
-    failure so orchestrators drain traffic. MCP/hardware state is advisory
-    and reported but does not fail readiness — the control loop's own
-    degraded-mode logic (Phase 4) is the right place to decide "fail the
-    whole service because hardware is missing".
+    Verifies every hard dependency the control loop needs within 500ms via
+    shared.health: postgres pool answers SELECT 1, redis pings back.
+    Returns 503 on any failure so orchestrators drain traffic. MCP/hardware
+    state is advisory and reported elsewhere (/health, /api/status) but
+    does not fail readiness — the control loop's own degraded-mode logic
+    (Phase 4) decides "fail the whole service because hardware is missing".
+
+    Note: automation-service's Redis client is still synchronous, so we use
+    ``check_redis_sync_client`` which bridges via ``asyncio.to_thread``.
+    When this path migrates to ``redis.asyncio`` switch to
+    ``check_redis_async_client``.
     """
     from fastapi.responses import JSONResponse
 
-    out: dict[str, Any] = {"service": "automation-service", "checks": {}}
-    ok = True
-
-    t0 = time.perf_counter()
-    pool = database.pool
-    if pool is None:
-        out["checks"]["postgres"] = {"ok": False, "detail": "pool not initialized"}
-        ok = False
-    else:
-        try:
-            async with pool.acquire() as conn:
-                val = await asyncio.wait_for(conn.fetchval("SELECT 1"), timeout=_READY_TIMEOUT_SEC)
-            out["checks"]["postgres"] = {
-                "ok": val == 1,
-                "latency_ms": round((time.perf_counter() - t0) * 1000, 1),
-            }
-            if val != 1:
-                ok = False
-        except TimeoutError:
-            out["checks"]["postgres"] = {
-                "ok": False,
-                "detail": f"timeout after {_READY_TIMEOUT_SEC * 1000:.0f}ms",
-            }
-            ok = False
-        except Exception as e:
-            out["checks"]["postgres"] = {"ok": False, "detail": f"{type(e).__name__}: {e}"}
-            ok = False
-
-    # Automation-service's Redis client is synchronous today; run the ping
-    # in a worker thread so we keep the /ready endpoint itself async and
-    # the event loop stays free. Phase 4 / Phase 6 will convert this path
-    # to redis.asyncio; until then, to_thread is the correct bridge.
-    t1 = time.perf_counter()
     automation_redis = getattr(database, "_automation_redis", None)
     raw_client = getattr(automation_redis, "redis_client", None) if automation_redis else None
-    if raw_client is None:
-        out["checks"]["redis"] = {"ok": False, "detail": "client not initialized"}
-        ok = False
-    else:
-        try:
-            pong = await asyncio.wait_for(
-                asyncio.to_thread(raw_client.ping),
-                timeout=_READY_TIMEOUT_SEC,
-            )
-            out["checks"]["redis"] = {
-                "ok": bool(pong),
-                "latency_ms": round((time.perf_counter() - t1) * 1000, 1),
-            }
-            if not pong:
-                ok = False
-        except TimeoutError:
-            out["checks"]["redis"] = {
-                "ok": False,
-                "detail": f"timeout after {_READY_TIMEOUT_SEC * 1000:.0f}ms",
-            }
-            ok = False
-        except Exception as e:
-            out["checks"]["redis"] = {"ok": False, "detail": f"{type(e).__name__}: {e}"}
-            ok = False
 
-    out["status"] = "ready" if ok else "not_ready"
-    if not ok:
+    out: dict[str, Any] = {
+        "service": "automation-service",
+        "checks": {
+            "postgres": await check_postgres_pool(database.pool),
+            "redis": await check_redis_sync_client(raw_client),
+        },
+    }
+    out["status"] = "ready" if all_ok(out["checks"]) else "not_ready"
+    if out["status"] != "ready":
         return JSONResponse(content=out, status_code=503)
     return out
 
