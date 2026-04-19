@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
@@ -393,8 +394,11 @@ async def set_intensity(
         if control.intensity > 0:
             relay_manager.set_device_state(location, cluster, device_name, 1)
 
-    # Set intensity (dimmer)
-    success = dfr0971_manager.set_intensity(board_id, channel, control.intensity)
+    # Set intensity (dimmer) - dfr0971 driver does ~50-100ms of I2C bus sleeps,
+    # so offload to a worker thread to keep the event loop responsive.
+    success = await asyncio.to_thread(
+        dfr0971_manager.set_intensity, board_id, channel, control.intensity
+    )
 
     if not success:
         raise HTTPException(
@@ -664,8 +668,10 @@ async def set_voltage(
             status_code=400, detail=f"Device {device_name} missing dimming configuration"
         )
 
-    # Set voltage
-    success = dfr0971_manager.set_voltage(board_id, channel, control.voltage)
+    # Set voltage - offloaded to worker thread (driver does blocking I2C sleeps).
+    success = await asyncio.to_thread(
+        dfr0971_manager.set_voltage, board_id, channel, control.voltage
+    )
 
     if not success:
         raise HTTPException(

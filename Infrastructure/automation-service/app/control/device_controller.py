@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Mapping
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
@@ -545,8 +546,11 @@ class DeviceController:
                         logger.warning(
                             f"Relay ON failed for {device_name} ({location}/{cluster}): {relay_reason}"
                         )
-                    dimmer_ok = self.dfr0971_manager.set_intensity(
-                        board_id, dimming_channel, intensity_percent
+                    dimmer_ok = await asyncio.to_thread(
+                        self.dfr0971_manager.set_intensity,
+                        board_id,
+                        dimming_channel,
+                        intensity_percent,
                     )
                     if not dimmer_ok:
                         logger.warning(
@@ -555,7 +559,12 @@ class DeviceController:
                         )
                 else:
                     # Set dimmer to 0 first, then turn relay OFF (signal before power)
-                    dimmer_ok = self.dfr0971_manager.set_intensity(board_id, dimming_channel, 0)
+                    dimmer_ok = await asyncio.to_thread(
+                        self.dfr0971_manager.set_intensity,
+                        board_id,
+                        dimming_channel,
+                        0,
+                    )
                     if not dimmer_ok:
                         logger.warning(
                             f"Dimmer set to 0 failed for {device_name} ({location}/{cluster})"
@@ -572,8 +581,11 @@ class DeviceController:
                 )
             else:
                 # No relay configured, just set dimmer
-                dimmer_ok = self.dfr0971_manager.set_intensity(
-                    board_id, dimming_channel, intensity_percent
+                dimmer_ok = await asyncio.to_thread(
+                    self.dfr0971_manager.set_intensity,
+                    board_id,
+                    dimming_channel,
+                    intensity_percent,
                 )
                 if not dimmer_ok:
                     logger.warning(
