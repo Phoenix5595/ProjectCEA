@@ -138,27 +138,33 @@ class AutomationRedisClient:
             return False
 
     def close(self) -> None:
-        """Close Redis connections and disconnect connection pools."""
+        """Close Redis connections and disconnect connection pools.
+
+        Each cleanup step is best-effort: a SIGTERM shutdown may race the
+        redis-py teardown, in which case the close call raises
+        ``ConnectionError`` / ``RuntimeError``. We log at debug since
+        there's nothing actionable on the shutdown path.
+        """
         if self.redis_client:
             try:
                 self.redis_client.close()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("redis_client.close() failed during shutdown: %s", e)
         if self.stream_client:
             try:
                 self.stream_client.close()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("stream_client.close() failed during shutdown: %s", e)
         if self._state_pool:
             try:
                 self._state_pool.disconnect()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("state_pool.disconnect() failed during shutdown: %s", e)
         if self._stream_pool:
             try:
                 self._stream_pool.disconnect()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("stream_pool.disconnect() failed during shutdown: %s", e)
         self.redis_enabled = False
         self.ops = RedisOperations(None, None, False, self.redis_ttl)
         logger.info("Redis connection closed")

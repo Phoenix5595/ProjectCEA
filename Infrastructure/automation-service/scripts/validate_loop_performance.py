@@ -141,9 +141,8 @@ async def run_load_test():
 
         try:
             await engine.run_control_loop()
-        except Exception:
-            # print(f"Error in iteration {i}: {e}")
-            pass
+        except Exception as e:
+            print(f"  iter {i}: {type(e).__name__}: {e}")
 
         execution_time = time.perf_counter() - start_time
         total_execution_time += execution_time

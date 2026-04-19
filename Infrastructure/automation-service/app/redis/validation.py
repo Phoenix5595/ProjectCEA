@@ -50,15 +50,18 @@ class SchemaValidationMixin:
                 except re.error:
                     continue
         else:
-            # Fallback: attempt to build key examples from schema
+            # Fallback: attempt to build key examples from schema. The
+            # build_key() callable can raise if the schema module is partial
+            # or being reloaded; in that case we leave ok=False (the warning
+            # below fires) and debug-log so an operator can correlate.
             try:
                 # best-effort: if key starts with any known base types
                 for pat in (build_key() if callable(build_key) else None,):
                     if pat and isinstance(pat, str) and key.startswith(pat):
                         ok = True
                         break
-            except Exception:
-                pass
+            except Exception as e:
+                self._logger.debug("schema build_key() probe failed for %s: %s", key, e)
         if not ok:
             self._logger.warning("SchemaValidation: key format invalid: %s", key)
         return ok

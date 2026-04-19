@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import pathlib
 import sys
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -51,14 +52,11 @@ async def test_execute_mode_transition_basic_mock():
         # so we'll just verify the service is correctly wired for now
         # and it attempts to get the current mode.
 
-        try:
-            # This will likely fail due to the complex transaction logic in the service,
-            # but it verifies we can call the method.
+        # This will likely fail due to the complex transaction logic in the service,
+        # but it verifies we can call the method.
+        with contextlib.suppress(Exception):  # expected: simplified mock setup
             await service.execute_mode_transition(
                 location, cluster, new_mode_id, new_submode_id, triggered_by
             )
-        except Exception:
-            # Expected to fail in this simplified mock setup
-            pass
 
         assert mock_repo.get_active_mode.called

@@ -95,26 +95,33 @@ class RedisConnectionMixin:
             return False
 
     def close(self) -> None:
-        """Close Redis connections and disconnect connection pools."""
+        """Close Redis connections and disconnect connection pools.
+
+        All four cleanup steps are best-effort: if a client/pool is already
+        closed (typical during a SIGTERM race) the underlying redis-py call
+        raises ``ConnectionError`` / ``RuntimeError``; we log at debug
+        rather than propagate because the caller is already on the
+        shutdown path and there's nothing to recover.
+        """
         if self.redis_client:
             try:
                 self.redis_client.close()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("redis_client.close() failed during shutdown: %s", e)
         if self.stream_client:
             try:
                 self.stream_client.close()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("stream_client.close() failed during shutdown: %s", e)
         if self._state_pool:
             try:
                 self._state_pool.disconnect()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("state_pool.disconnect() failed during shutdown: %s", e)
         if self._stream_pool:
             try:
                 self._stream_pool.disconnect()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("stream_pool.disconnect() failed during shutdown: %s", e)
         self.redis_enabled = False
         logger.info("Redis connection closed")

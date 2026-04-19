@@ -223,9 +223,10 @@ async def check_websocket_auth(ws: WebSocket) -> bool:
     # Neither token nor origin matched.
     try:
         await ws.close(code=1008, reason="auth")
-    except Exception:
-        # Connection may already be gone; swallow and move on.
-        pass
+    except Exception as e:
+        # Connection may already be gone (client disconnected before our
+        # rejection landed); debug-log and move on.
+        logger.debug("WebSocket close-after-auth-fail raised: %s", e)
     logger.warning(
         "WebSocket auth rejected: path=%s origin=%s",
         ws.scope.get("path", ""),
@@ -270,8 +271,9 @@ class WebSocketConnectionLimiter:
         if self.active >= self.limit:
             try:
                 await ws.close(code=1013, reason="too many connections")
-            except Exception:
-                pass
+            except Exception as e:
+                # Client may have already vanished; debug-log only.
+                logger.debug("WebSocket close-on-cap-hit raised: %s", e)
             logger.warning(
                 "WebSocket cap hit: active=%d limit=%d path=%s",
                 self.active,

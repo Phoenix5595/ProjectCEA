@@ -178,19 +178,25 @@ async def get_all_sensor_timestamps(sensor_names: list[str]) -> dict[str, int]:
 
 
 async def close_redis_client():
-    """Close Redis client connection."""
+    """Close Redis client connection.
+
+    Both teardown calls are best-effort: a SIGTERM during a request may
+    race the close, in which case redis-py raises ``ConnectionError``.
+    Logged at debug since there's nothing to recover on the shutdown
+    path.
+    """
     global _redis_client, _redis_pool
 
     if _redis_client:
         try:
             await _redis_client.close()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Redis client close failed during shutdown: %s", e)
         _redis_client = None
 
     if _redis_pool:
         try:
             await _redis_pool.disconnect()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Redis pool disconnect failed during shutdown: %s", e)
         _redis_pool = None

@@ -181,8 +181,12 @@ class RedisEventConsumer:
                     except Exception as e:  # pragma: no cover
                         # Ensure one bad message doesn't break the whole loop
                         logger.exception("Error processing Redis stream message: %s", e)
-                        # Best effort: nack by acknowledging so we don't loop on it
+                        # Best effort: nack by acknowledging so we don't loop on it.
+                        # If the inner ack also fails we already logged the
+                        # outer error above; debug-log this one so operators
+                        # can see the double-failure but we don't promote it
+                        # to warning (the loop will keep going either way).
                         try:
                             await self._redis.xack(self.stream, self.group, msg_id)
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            logger.debug("Inner xack(%s) failed during error path: %s", msg_id, e)
