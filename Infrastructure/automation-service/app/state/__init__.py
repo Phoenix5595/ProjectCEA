@@ -842,14 +842,16 @@ class StateManager(SchemaValidationMixin):
 
     async def get_failsafe(self, location: str, cluster: str) -> dict[str, Any] | None:
         key = f"failsafe:{location}:{cluster}"
-        # In-memory first
+        # In-memory first; if the local lookup races with eviction or hits a
+        # corrupted cache entry, log and fall through to the Redis fallback
+        # below rather than fail the read.
         try:
             async with self._lock:
                 if key in self._failsafe_cache:
                     val = self._failsafe_cache[key].value
                     return val if isinstance(val, dict) else None
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("failsafe in-memory cache lookup failed for %s: %s", key, e)
 
         # Redis fallback
         if self._redis_enabled and self._redis_client:

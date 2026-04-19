@@ -19,6 +19,9 @@ from app.control.relay_manager import RelayManager
 from app.database import DatabaseManager
 from app.middleware.profiling import get_performance_metrics
 from shared.health import all_ok, check_postgres_pool, check_redis_sync_client
+from shared.infra_logging import get_logger
+
+logger = get_logger(__name__)
 
 router = APIRouter()
 
@@ -60,37 +63,43 @@ def get_pid_controller_manager():
 
 
 def _get_system_stats() -> dict[str, Any] | None:
-    """Collect host system stats (CPU, memory, disk, uptime, load, process count, Pi temp/throttle)."""
+    """Collect host system stats (CPU, memory, disk, uptime, load, process count, Pi temp/throttle).
+
+    Every metric is wrapped in its own try-block: psutil can raise
+    ``AccessDenied``, ``NoSuchProcess``, or platform-specific OSErrors
+    that we cannot meaningfully recover from at the metric-collection
+    layer. We degrade gracefully (omit the missing metric, keep going)
+    while logging at debug so an operator pulling logs can see *which*
+    metric stopped working — pre-Phase 6 these were ``except Exception:
+    pass`` which silenced real psutil regressions.
+    """
     out: dict[str, Any] = {}
-    try:
-        out["cpu_percent"] = round(psutil.cpu_percent(interval=0.1), 1)
-    except Exception:
-        pass
-    try:
+
+    def _safe(label: str, fn) -> None:
+        try:
+            fn()
+        except Exception as e:
+            logger.debug("system stat %r unavailable: %s", label, e)
+
+    _safe("cpu_percent", lambda: out.update(cpu_percent=round(psutil.cpu_percent(interval=0.1), 1)))
+
+    def _mem() -> None:
         vm = psutil.virtual_memory()
         out["memory_percent"] = round(vm.percent, 1)
         out["memory_used_mb"] = round(vm.used / (1024 * 1024), 0)
         out["memory_total_mb"] = round(vm.total / (1024 * 1024), 0)
-    except Exception:
-        pass
-    try:
-        du = psutil.disk_usage("/")
-        out["disk_percent"] = round(du.percent, 1)
-    except Exception:
-        pass
-    try:
-        out["uptime_seconds"] = int(time.time() - psutil.boot_time())
-    except Exception:
-        pass
-    try:
-        load = psutil.getloadavg()
-        out["load_avg"] = ", ".join(f"{x:.1f}" for x in load)
-    except Exception:
-        pass
-    try:
-        out["process_count"] = len(psutil.pids())
-    except Exception:
-        pass
+
+    _safe("memory", _mem)
+    _safe("disk_percent", lambda: out.update(disk_percent=round(psutil.disk_usage("/").percent, 1)))
+    _safe(
+        "uptime_seconds",
+        lambda: out.update(uptime_seconds=int(time.time() - psutil.boot_time())),
+    )
+    _safe(
+        "load_avg",
+        lambda: out.update(load_avg=", ".join(f"{x:.1f}" for x in psutil.getloadavg())),
+    )
+    _safe("process_count", lambda: out.update(process_count=len(psutil.pids())))
     # Raspberry Pi CPU temp (millidegrees -> °C)
     try:
         with open("/sys/class/thermal/thermal_zone0/temp", encoding="utf-8") as f:

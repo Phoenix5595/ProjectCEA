@@ -258,8 +258,8 @@ class ScheduleRepository(BaseRepository):
                 try:
                     s = get_state_manager()
                     await s.delete(self._cache_key_schedules(location, cluster))
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug("schedule cache invalidation skipped: %s", e)
 
             return schedule_id
         except Exception as e:
@@ -316,8 +316,8 @@ class ScheduleRepository(BaseRepository):
                                     row["location"], row["cluster"], row["device_name"]
                                 )
                             )
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            logger.debug("schedule cache invalidation skipped: %s", e)
                     return dict(row) if row else None
                 return dict(current)
         except Exception as e:
@@ -443,8 +443,8 @@ class ScheduleRepository(BaseRepository):
                         # POST /lights/.../target uses get_schedules() with no filter → key schedules:all
                         await s.delete(self._cache_key_schedules(None, None))
                         await s.delete(self._cache_key_light(location, cluster, device_name))
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug("light schedule cache invalidation skipped: %s", e)
                 return n
         except Exception as e:
             logger.error(f"Failed to update light schedule target: {e}")
@@ -522,8 +522,8 @@ class ScheduleRepository(BaseRepository):
                         await s.delete(self._cache_key_room_schedule(location, cluster))
                         # Clear global schedules cache - critical for consistency
                         await s.delete(self._cache_key_schedules(None, None))
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug("ramp-time cache invalidation skipped: %s", e)
                     await self._publish_schedule_changed(
                         location=location,
                         cluster=cluster,

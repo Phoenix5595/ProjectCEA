@@ -130,8 +130,8 @@ class ConfigEventConsumer:
         if self._redis is not None:
             try:
                 await self._redis.aclose()  # type: ignore[union-attr]
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Redis aclose() raised during stop(): %s", e)
             self._redis = None
         logger.info("Config event consumer stopped")
 
