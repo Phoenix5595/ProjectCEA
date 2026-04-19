@@ -114,6 +114,17 @@ class _RoomTopology:
 # ``frontend/src/config/clusterTopology.ts`` to match.
 # ---------------------------------------------------------------------------
 _TOPOLOGY: Final[dict[str, _RoomTopology]] = {
+    # Flower Room: dual-bench layout, two sub-clusters defined.
+    #
+    # Wiring status (as of 2026-04): only `back` is physically connected
+    # and producing telemetry; `front` is configured in code/dashboards
+    # but its sensor harness is not in service yet. We deliberately keep
+    # `front` in the topology — removing it would (a) break the
+    # dashboard layout the operator already uses for the planned wiring,
+    # and (b) hide the contract that `back` is one of two clusters, not
+    # the only one. The frontend's `[flower-cluster-warning]` log entry
+    # for `front` is the expected runtime signal of the unwired state.
+    # When the front sensors come online, no code change is required.
     "Flower Room": _RoomTopology(
         device_cluster="main",
         sensor_subclusters=("front", "back"),
@@ -327,10 +338,14 @@ def _sensor_hint(
     # Caller passed a sub-cluster name to an unsplit room.
     if not topo.sensor_subclusters:
         return (
-            f"{room!r} has no sensor sub-clusters; use /api/sensors/{room}/{topo.device_cluster}."
+            f"{room!r} has no sensor sub-clusters; "
+            f"use /api/sensors/{room}/{topo.device_cluster}."
         )
     # Generic: name not in the valid sub-cluster set.
-    return f"{cluster!r} is not a sensor cluster for {room!r}; valid options: {list(valid)}."
+    return (
+        f"{cluster!r} is not a sensor cluster for {room!r}; "
+        f"valid options: {list(valid)}."
+    )
 
 
 __all__ = [
