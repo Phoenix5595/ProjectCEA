@@ -1,50 +1,25 @@
-"""Configuration loader for YAML config files."""
+"""Configuration loader for the weather service."""
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any
 
-import yaml
-
-from shared.infra_logging import get_logger
-
-logger = get_logger(__name__)
+from shared.config import YamlConfigLoader
 
 
-class ConfigLoader:
-    """Loads and parses YAML configuration files for weather service."""
+class ConfigLoader(YamlConfigLoader):
+    """Loads and parses ``weather_config.yaml``."""
 
-    def __init__(self, config_path: str | None = None):
-        """Initialize config loader.
-
-        Args:
-            config_path: Path to weather_config.yaml. If None, searches in common locations.
-        """
-        if config_path is None:
-            # Try common locations
-            possible_paths = [
+    def __init__(self, config_path: str | None = None) -> None:
+        super().__init__(
+            config_path,
+            search_paths=[
                 Path(__file__).parent.parent / "weather_config.yaml",
                 Path("/home/antoine/ProjectCEA/Infrastructure/weather-service/weather_config.yaml"),
-            ]
-            for path in possible_paths:
-                if path.exists():
-                    config_path = str(path)
-                    break
-
-        if config_path is None or not Path(config_path).exists():
-            raise FileNotFoundError(f"Config file not found: {config_path}")
-
-        self.config_path = Path(config_path)
-        self._config: dict[str, Any] = {}
-        self.load()
-
-    def load(self) -> None:
-        """Load configuration from YAML file."""
-        with open(self.config_path) as f:
-            self._config = yaml.safe_load(f) or {}
-
-        logger.info(f"Loaded config from {self.config_path}")
+            ],
+        )
 
     def get_weather_config(self) -> dict[str, Any]:
         """Get weather API configuration."""
@@ -58,17 +33,20 @@ class ConfigLoader:
         )
 
     def get_database_config(self) -> dict[str, Any]:
-        """Get database configuration."""
-        import os
+        """Get database configuration.
 
+        ``POSTGRES_PASSWORD`` from the environment overrides the YAML value
+        if present (and is required if YAML doesn't carry one). This is
+        intentionally service-local — the shared base loader stays mechanical.
+        """
         db_config = self._config.get("database", {})
-        # Override password from environment variable if available
         password = os.getenv("POSTGRES_PASSWORD")
         if password:
             db_config["password"] = password
         elif "password" not in db_config:
             raise ValueError(
-                "POSTGRES_PASSWORD environment variable or database.password in config file is required"
+                "POSTGRES_PASSWORD environment variable or database.password "
+                "in config file is required"
             )
         return {
             "host": db_config.get("host", "localhost"),
@@ -81,16 +59,3 @@ class ConfigLoader:
     def get_room_config(self) -> dict[str, Any]:
         """Get room and device configuration."""
         return self._config.get("room", {"name": "Outside", "device_name": "Weather Station YUL"})
-
-    def get(self, key: str, default: Any = None) -> Any:
-        """Get configuration value using dot notation (e.g., 'weather.station_icao')."""
-        keys = key.split(".")
-        value = self._config
-        for k in keys:
-            if isinstance(value, dict):
-                value = value.get(k)
-                if value is None:
-                    return default
-            else:
-                return default
-        return value
