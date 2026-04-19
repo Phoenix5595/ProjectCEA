@@ -9,8 +9,27 @@ from typing import Any
 import httpx
 
 from shared.infra_logging import get_logger
+from shared.retry import retry_async
 
 logger = get_logger(__name__)
+
+# Transient errors worth retrying. 5xx is server-side and usually clears on
+# its own; timeouts / connect / read errors are network-side. 4xx is NOT in
+# this list - if we send a bad station code, retrying will not fix it.
+_TRANSIENT_NETWORK_ERRORS: tuple[type[BaseException], ...] = (
+    httpx.TimeoutException,
+    httpx.ConnectError,
+    httpx.ReadError,
+    httpx.RemoteProtocolError,
+)
+
+
+class _TransientHTTPError(Exception):
+    """Wraps an HTTPStatusError we want the retry loop to re-attempt."""
+
+    def __init__(self, status_code: int, url: str):
+        super().__init__(f"upstream returned {status_code} for {url}")
+        self.status_code = status_code
 
 
 class WeatherClient:
@@ -34,47 +53,83 @@ class WeatherClient:
     async def fetch_metar(self) -> dict[str, Any] | None:
         """Fetch METAR data for the configured station.
 
+        Retries transient network failures (timeout / connect / read /
+        remote-protocol error) and 5xx upstream responses with exponential
+        backoff + full jitter. 4xx responses are NOT retried (they signal a
+        contract problem on our side, e.g. a bad station code) and parse
+        failures are NOT retried (the upstream already gave us a response;
+        another fetch will not change the data shape).
+
         Returns:
             Dictionary with parsed weather data, or None if fetch/parse failed
+            after all retry attempts.
         """
         try:
-            # Aviation Weather Center METAR API
-            # Format: https://aviationweather.gov/api/data/metar?ids=STATION&format=json
-            url = f"{self.api_url}?ids={self.station_icao}&format=json"
-
-            logger.debug(f"Fetching METAR from {url}")
-            response = await self.client.get(url)
-            response.raise_for_status()
-
-            data = response.json()
-
-            # API returns a list of METAR reports
-            if not data or not isinstance(data, list) or len(data) == 0:
-                logger.warning(f"No METAR data returned for {self.station_icao}")
-                return None
-
-            # Get the first (most recent) report
-            metar_report = data[0]
-
-            # Parse METAR data
-            weather_data = self._parse_metar(metar_report)
-
-            if weather_data:
-                logger.info(f"Successfully fetched weather data for {self.station_icao}")
-            else:
-                logger.warning(f"Failed to parse METAR data for {self.station_icao}")
-
-            return weather_data
-
-        except httpx.TimeoutException:
-            logger.error(f"Timeout fetching METAR data for {self.station_icao}")
+            metar_report = await retry_async(
+                self._do_fetch_metar,
+                retry_on=(*_TRANSIENT_NETWORK_ERRORS, _TransientHTTPError),
+                max_attempts=3,
+                base_delay=1.0,
+                max_delay=10.0,
+                label=f"weather METAR {self.station_icao}",
+            )
+        except _TransientHTTPError as e:
+            logger.error(
+                f"HTTP error fetching METAR for {self.station_icao} after retries: {e.status_code}"
+            )
+            return None
+        except _TRANSIENT_NETWORK_ERRORS as e:
+            logger.error(
+                f"Network error fetching METAR for {self.station_icao} after retries: "
+                f"{type(e).__name__}: {e}"
+            )
             return None
         except httpx.HTTPStatusError as e:
-            logger.error(f"HTTP error fetching METAR: {e.response.status_code}")
+            # Non-retryable HTTP error (4xx).
+            logger.error(
+                f"HTTP {e.response.status_code} fetching METAR for {self.station_icao} "
+                "(not retried; check station code / API URL)"
+            )
             return None
         except Exception as e:
             logger.error(f"Error fetching METAR data: {e}", exc_info=True)
             return None
+
+        if metar_report is None:
+            # Upstream responded but had no rows for our station.
+            return None
+
+        weather_data = self._parse_metar(metar_report)
+        if weather_data:
+            logger.info(f"Successfully fetched weather data for {self.station_icao}")
+        else:
+            logger.warning(f"Failed to parse METAR data for {self.station_icao}")
+        return weather_data
+
+    async def _do_fetch_metar(self) -> dict[str, Any] | None:
+        """One attempt at hitting the METAR endpoint.
+
+        Returns the first (most recent) report dict on success, or None
+        when the upstream replied 200 with an empty list (no data is not
+        a transient failure - retrying will not help, and the outer
+        wrapper will handle it). Raises on transient errors so the retry
+        helper can re-attempt.
+        """
+        url = f"{self.api_url}?ids={self.station_icao}&format=json"
+        logger.debug(f"Fetching METAR from {url}")
+
+        response = await self.client.get(url)
+        # Promote 5xx to a retryable type; let 4xx fall through as
+        # HTTPStatusError so the outer except logs it and returns None.
+        if 500 <= response.status_code < 600:
+            raise _TransientHTTPError(response.status_code, url)
+        response.raise_for_status()
+
+        data = response.json()
+        if not data or not isinstance(data, list) or len(data) == 0:
+            logger.warning(f"No METAR data returned for {self.station_icao}")
+            return None
+        return data[0]
 
     def _parse_metar(self, metar_report: dict[str, Any]) -> dict[str, Any] | None:
         """Parse METAR report into structured weather data.
