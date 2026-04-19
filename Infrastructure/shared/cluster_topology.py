@@ -338,14 +338,10 @@ def _sensor_hint(
     # Caller passed a sub-cluster name to an unsplit room.
     if not topo.sensor_subclusters:
         return (
-            f"{room!r} has no sensor sub-clusters; "
-            f"use /api/sensors/{room}/{topo.device_cluster}."
+            f"{room!r} has no sensor sub-clusters; use /api/sensors/{room}/{topo.device_cluster}."
         )
     # Generic: name not in the valid sub-cluster set.
-    return (
-        f"{cluster!r} is not a sensor cluster for {room!r}; "
-        f"valid options: {list(valid)}."
-    )
+    return f"{cluster!r} is not a sensor cluster for {room!r}; valid options: {list(valid)}."
 
 
 __all__ = [
