@@ -169,8 +169,11 @@ class BackgroundTasks:
                         if await self._auto_register_sensor(modbus_id):
                             found_new = True
                             self.discovered_modbus_ids.add(modbus_id)
-                except Exception:
-                    pass
+                except Exception as e:
+                    # Probe of a slot with no device is the common case here -
+                    # debug-level so a tail -f can confirm the scan is running
+                    # without flooding journal at INFO.
+                    logger.debug(f"Modbus probe id={modbus_id} no response ({type(e).__name__})")
 
             temp_modbus.disconnect()
 

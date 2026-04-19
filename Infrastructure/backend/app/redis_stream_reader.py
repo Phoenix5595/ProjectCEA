@@ -213,8 +213,10 @@ class RedisStreamReader:
         if self.client:
             try:
                 await self.client.aclose()
-            except Exception:
-                pass
+            except Exception as e:
+                # Shutdown-only path; the process is going away. Debug-log so
+                # we have a breadcrumb if a hang ever shows up here.
+                logger.debug(f"RedisStreamReader.close: aclose() raised {type(e).__name__}: {e}")
             self.client = None
 
     async def __aenter__(self) -> RedisStreamReader:
