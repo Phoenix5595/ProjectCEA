@@ -50,8 +50,8 @@ class PIDRepository(BaseRepository):
                             kd = result.get("kd")
                             if kp is not None and ki is not None and kd is not None:
                                 await state.set_pid_params(device_type, kp, ki, kd, source="db")
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug(f"PID cache populate failed for {device_type}: {e}")
                     return result
         except Exception as e:
             logger.error(f"Failed to get PID parameters: {e}")
@@ -102,8 +102,8 @@ class PIDRepository(BaseRepository):
                         if state is not None:
                             await state.delete(f"pid:parameters:{device_type}")
                             await state.delete("pid:parameters:all")
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug(f"PID cache invalidation failed for {device_type}: {e}")
                 return True
         except Exception as e:
             logger.error(f"Failed to set PID parameters: {e}")
@@ -144,12 +144,12 @@ class PIDRepository(BaseRepository):
                             data_list = json.loads(data)
                             if isinstance(data_list, list):
                                 return data_list
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            logger.debug(f"PID cache JSON decode failed (treating as miss): {e}")
                     if isinstance(data, list):
                         return data
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"PID get_all cache lookup failed (falling back to DB): {e}")
 
         # DB lookup on miss
         try:
@@ -169,8 +169,8 @@ class PIDRepository(BaseRepository):
             state = get_state_manager()
             if state is not None:
                 await state.set("pid:parameters:all", json.dumps(data), ttl=300)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"PID get_all cache populate failed: {e}")
 
         return data
 
@@ -187,8 +187,8 @@ class PIDRepository(BaseRepository):
                         "hysteresis_high": cached.get("hysteresis_high"),
                         "hysteresis_low": cached.get("hysteresis_low"),
                     }
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"PID control-mode cache lookup failed for {device_type}: {e}")
 
         # 2) DB lookup on cache miss
         try:
@@ -235,8 +235,10 @@ class PIDRepository(BaseRepository):
                     if state is not None:
                         await state.delete(f"pid:parameters:{device_type}")
                         await state.delete("pid:parameters:all")
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug(
+                        f"PID control-mode cache invalidation failed for {device_type}: {e}"
+                    )
                 return True
         except Exception as e:
             logger.error(f"Failed to set control mode: {e}")
@@ -252,8 +254,8 @@ class PIDRepository(BaseRepository):
                 cached = await state.get_autotune_state(device_type)
                 if cached is not None:
                     return dict(cached)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Autotune cache lookup failed for {device_type}: {e}")
         # DB lookup
         try:
             async with self.pool.acquire() as conn:
@@ -266,8 +268,8 @@ class PIDRepository(BaseRepository):
                     try:
                         if state is not None:
                             await state.set_autotune_state(device_type, result, ttl=300)
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug(f"Autotune cache populate failed for {device_type}: {e}")
                     return result
         except Exception as e:
             logger.error(f"Failed to get autotune state: {e}")
@@ -328,8 +330,8 @@ class PIDRepository(BaseRepository):
                     st = get_state_manager()
                     if st is not None:
                         await st.delete(f"pid:autotune:{device_type}")
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug(f"Autotune cache invalidation failed for {device_type}: {e}")
                 return True
         except Exception as e:
             logger.error(f"Failed to update autotune state: {e}")
@@ -418,8 +420,10 @@ class PIDRepository(BaseRepository):
                     if state is not None:
                         await state.delete(f"pid:parameters:{device_type}")
                         await state.delete("pid:parameters:all")
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug(
+                        f"PID set-with-reason cache invalidation failed for {device_type}: {e}"
+                    )
                 return True
         except Exception as e:
             logger.error(f"Failed to set PID parameters with reason: {e}")
