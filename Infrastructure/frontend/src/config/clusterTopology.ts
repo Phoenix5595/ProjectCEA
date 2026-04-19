@@ -9,6 +9,24 @@
  * change to both, and update `ProjectCEA/AGENTS.md` →
  * "Cluster Topology Contract" if the rules themselves change.
  *
+ * Two terms, kept distinct:
+ *
+ * - **Device cluster** — room-wide actuator namespace. Always `"main"`.
+ *   Used by `/api/devices/{room}/{cluster}`, `/api/lights/...`,
+ *   `/api/control/...`. Every room has exactly one.
+ * - **Sensor sub-cluster** — *physically* distinct sensor groupings.
+ *   Only Flower Room is split today (`front` + `back`). Veg / Lab /
+ *   Outside have NO sensor sub-clusters (they are unsplit rooms).
+ *
+ * Hierarchy: device cluster `main` is the **parent**; sensor
+ * sub-clusters `front` / `back` are **children** of Flower's `main`.
+ * `main` is a device-cluster name only — never registered as a sensor
+ * sub-cluster. The single place `main` appears in a sensor URL is for
+ * unsplit rooms (Veg / Lab / Outside), where the URL slot reuses the
+ * device-cluster name as a *room-wide sentinel* meaning "this room
+ * has no physical sub-grouping". `sensorSubclustersFor("Veg Room")`
+ * returns `[]` precisely so this distinction stays visible in code.
+ *
  * Why a separate file from `zones.ts`:
  *
  * - `zones.ts` is loaded with helpers that mix *policy* (which clusters
@@ -19,19 +37,18 @@
  *   it. Adding a sensor sub-cluster to (say) Veg Room now means
  *   editing `TOPOLOGY` here and `_TOPOLOGY` in the Python module —
  *   nothing else.
- *
- * Two terms, kept distinct:
- *
- * - **Device cluster** — room-wide actuator namespace; every room's
- *   device cluster is `"main"`. `/api/devices/{room}/{cluster}` etc.
- * - **Sensor sub-cluster** — physically distinct sensor group. Only
- *   Flower Room is split today (front + back); other rooms expose a
- *   single sensor cluster also called `"main"`.
  */
 
 export interface RoomTopology {
+  /** Device cluster name; always `"main"` today. */
   readonly deviceCluster: string;
-  readonly sensorClusters: readonly string[];
+  /**
+   * Ordered list of *physical* sensor sub-cluster identifiers under
+   * this room. `[]` for rooms with no physical sub-grouping (Veg /
+   * Lab / Outside). `"main"` is **never** a member of this list —
+   * see module docstring.
+   */
+  readonly sensorSubclusters: readonly string[];
 }
 
 /**
@@ -46,19 +63,19 @@ export const TOPOLOGY: Readonly<Record<string, RoomTopology>> = {
   'Flower Room': {
     deviceCluster: 'main',
     // Order matters for UI (front first) and for deterministic poll fan-out.
-    sensorClusters: ['front', 'back'],
+    sensorSubclusters: ['front', 'back'],
   },
   'Veg Room': {
     deviceCluster: 'main',
-    sensorClusters: ['main'],
+    sensorSubclusters: [],
   },
   Lab: {
     deviceCluster: 'main',
-    sensorClusters: ['main'],
+    sensorSubclusters: [],
   },
   Outside: {
     deviceCluster: 'main',
-    sensorClusters: ['main'],
+    sensorSubclusters: [],
   },
 };
 
@@ -70,14 +87,48 @@ export function deviceClusterFor(room: string): string {
   return TOPOLOGY[room]?.deviceCluster ?? 'main';
 }
 
+/**
+ * Return the *physical* sensor sub-clusters under a room. Returns `[]`
+ * for unsplit rooms — use `sensorUrlClustersFor` instead if you want
+ * the URL slugs to fan out polling against `/api/sensors/...`.
+ */
+export function sensorSubclustersFor(room: string): readonly string[] {
+  return TOPOLOGY[room]?.sensorSubclusters ?? [];
+}
+
+/**
+ * Return the URL `{cluster}` slugs accepted by
+ * `/api/sensors/{room}/...`. For rooms with sub-clusters, this is the
+ * sub-cluster list. For unsplit rooms it is `[deviceCluster]` — the
+ * device-cluster name reused as a sentinel so the URL shape stays
+ * uniform across rooms. Mirrors `sensor_url_clusters_for` in the
+ * Python module.
+ */
+export function sensorUrlClustersFor(room: string): readonly string[] {
+  const t = TOPOLOGY[room];
+  if (!t) return ['main'];
+  return t.sensorSubclusters.length > 0 ? t.sensorSubclusters : [t.deviceCluster];
+}
+
+/** @deprecated Prefer `sensorUrlClustersFor`. */
 export function sensorClustersFor(room: string): readonly string[] {
-  return TOPOLOGY[room]?.sensorClusters ?? ['main'];
+  return sensorUrlClustersFor(room);
 }
 
 export function isDeviceCluster(room: string, cluster: string): boolean {
   return TOPOLOGY[room]?.deviceCluster === cluster;
 }
 
+/**
+ * True only for *physical* sensor sub-clusters (Flower's `front`/`back`).
+ * Returns `false` for the device-cluster sentinel even on unsplit rooms
+ * where `cluster === 'main'` is a valid sensor URL slug.
+ */
+export function isSensorSubcluster(room: string, cluster: string): boolean {
+  return TOPOLOGY[room]?.sensorSubclusters.includes(cluster) ?? false;
+}
+
+/** True if `cluster` is any valid sensor URL slug for `room`. */
 export function isSensorCluster(room: string, cluster: string): boolean {
-  return TOPOLOGY[room]?.sensorClusters.includes(cluster) ?? false;
+  return sensorUrlClustersFor(room).includes(cluster);
 }

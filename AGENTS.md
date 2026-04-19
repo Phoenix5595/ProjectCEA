@@ -186,19 +186,44 @@ The codebase distinguishes **device clusters** from **sensor sub-clusters**.
 This distinction is non-negotiable; mixing them is the most common
 source of "endpoint returns nothing" / 404 bugs.
 
+The two namespaces are kept **strictly separate** by design:
+
+- `main` is a **device-cluster name only**. It is never registered as
+  a sensor sub-cluster.
+- `front` and `back` are **sensor sub-cluster names only**. They never
+  appear on the device plane; the device plane rejects them with a
+  400.
+
+Hierarchy:
+
+```
+Room
+ └── main                 (device cluster — actuators/relays/dimmer)
+      ├── front           (Flower Room sensor sub-cluster)
+      └── back            (Flower Room sensor sub-cluster)
+```
+
 | Concept              | Purpose                                  | Identifier(s)         |
 |----------------------|------------------------------------------|-----------------------|
 | **Device cluster**   | Room-wide actuator / relay / dimmer set  | always `main`         |
-| **Sensor sub-cluster** | Physically separated sensor groupings  | room-specific         |
+| **Sensor sub-cluster** | Physically separated sensor groupings  | `front`, `back` (Flower Room only) |
 
 Per-room mapping (canonical, **single source of truth**):
 
-| Room          | Device cluster | Sensor sub-clusters     |
-|---------------|----------------|-------------------------|
-| `Flower Room` | `main`         | `front`, `back`         |
-| `Veg Room`    | `main`         | `main`                  |
-| `Lab`         | `main`         | `main`                  |
-| `Outside`     | `main`         | `main`                  |
+| Room          | Device cluster | Sensor sub-clusters | Sensor URL slug(s) |
+|---------------|----------------|---------------------|--------------------|
+| `Flower Room` | `main`         | `front`, `back`     | `front`, `back`    |
+| `Veg Room`    | `main`         | *(none)*            | `main` †           |
+| `Lab`         | `main`         | *(none)*            | `main` †           |
+| `Outside`     | `main`         | *(none)*            | `main` †           |
+
+† For unsplit rooms (no physical sub-grouping), the
+`/api/sensors/{room}/{cluster}` URL slot reuses the device-cluster
+name (`main`) as a *room-wide sentinel* meaning "this room has no
+sensor sub-clusters". This is a transport-layer detail of the URL
+shape — `main` is **not** registered as a sensor sub-cluster in the
+topology data (`sensor_subclusters_for("Veg Room")` returns the empty
+tuple, by design, so the namespace separation stays visible in code).
 
 Implementation rule:
 
@@ -206,16 +231,20 @@ Implementation rule:
 - **Source of truth (frontend):** `Infrastructure/frontend/src/config/clusterTopology.ts`
 - These two files **must stay in sync** — the TS file is a hand-mirror
   of the Python module. CI doesn't enforce this yet; treat any change
-  to one as a change to both.
+  to one as a change to both, and update this section.
 
 API contract (enforced as of Phase 5e):
 
 - `GET /api/devices/{room}/{cluster}` accepts the room's **device** cluster only.
   Passing a sensor sub-cluster (`front`, `back`) returns **400**, not 404.
-- `GET /api/sensors/{room}/{cluster}` accepts the room's **sensor** clusters only.
-  Passing a device cluster for a room that has named sub-clusters
-  (e.g. `Flower Room/main`) returns **400** with a hint message
-  pointing the caller at the correct sub-cluster.
+- `GET /api/sensors/{room}/{cluster}` accepts the room's sensor URL
+  slug(s) only:
+  - Split rooms (Flower) accept `front` / `back`. Passing the device
+    cluster (`Flower Room/main`) returns **400** with a hint pointing
+    at the correct sub-cluster.
+  - Unsplit rooms (Veg / Lab / Outside) accept the device-cluster
+    sentinel (`main`). Passing `front` / `back` returns **400** with
+    a hint that the room has no sensor sub-clusters.
 - These 400s replaced the previous "silently return empty dict"
   behavior, which masked frontend wiring bugs.
 
@@ -223,9 +252,13 @@ Frontend rule:
 
 - The dashboard polls **device** endpoints over `ZONES` (one entry per
   room, all `cluster: "main"`).
-- The dashboard polls **sensor** endpoints over `getDashboardPollZones()`
-  (which fans out Flower Room into `front` + `back`).
-- Iterating sensor sub-clusters against the *device* endpoint is a bug.
+- The dashboard polls **sensor** endpoints over `getSensorPollZones()`,
+  which iterates `sensorUrlClustersFor(room)` — Flower fans out into
+  `front` + `back`; unsplit rooms emit a single entry with `main`.
+- `getDashboardPollZones()` is the union (device clusters + Flower
+  sub-clusters) used **only** for sensor-plane polling and bulk Redis
+  fan-out, never for the device plane. Iterating sensor sub-clusters
+  against the *device* endpoint is a bug.
 
 ### Hardware Rules (Critical)
 
