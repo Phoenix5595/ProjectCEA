@@ -4,13 +4,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-import os
 
 import asyncpg
 
 from app.models import DataPoint
 from shared.cluster_topology import sensor_name_like_pattern
-from shared.db_credentials import load_postgres_password
+from shared.db import create_pool, db_config_from_env
 from shared.infra_logging import get_logger
 
 logger = get_logger(__name__)
@@ -98,40 +97,23 @@ class DatabaseManager:
             db_config: Database connection config dict with host, database, user, password.
                       If None, uses environment variables or defaults.
         """
-        if db_config is None:
-            password = load_postgres_password()
-            self.db_config = {
-                "host": os.getenv("POSTGRES_HOST", "localhost"),
-                "database": os.getenv("POSTGRES_DB", "cea_sensors"),
-                "user": os.getenv("POSTGRES_USER", "cea_user"),
-                "password": password,
-                "port": int(os.getenv("POSTGRES_PORT", "5432")),
-            }
-        else:
-            self.db_config = db_config
+        self.db_config = db_config if db_config is not None else db_config_from_env()
         self._pool: asyncpg.Pool | None = None
 
     async def _get_pool(self) -> asyncpg.Pool:
         """Get or create connection pool.
 
         Raises:
-            ConnectionError: If connection pool creation fails
+            ConnectionError: If connection pool creation fails after the
+                shared retry loop exhausts its attempts.
         """
         if self._pool is None:
-            try:
-                self._pool = await asyncpg.create_pool(
-                    host=self.db_config["host"],
-                    database=self.db_config["database"],
-                    user=self.db_config["user"],
-                    password=self.db_config["password"],
-                    port=self.db_config["port"],
-                    min_size=2,
-                    max_size=10,
-                    command_timeout=30,  # Query timeout in seconds
-                    server_settings={"application_name": "cea_backend"},
-                )
-            except Exception as e:
-                raise ConnectionError(f"Failed to connect to TimescaleDB: {e}") from e
+            # Phase 6: gained a 5-attempt exponential-backoff retry as a side
+            # effect of the lift. Previously a transient Postgres unavailability
+            # at first-request time would crash the request with ConnectionError
+            # *and* leave the pool unset for retries to re-trip. Now create_pool
+            # absorbs transient failures internally.
+            self._pool = await create_pool(self.db_config, application_name="cea_backend")
         return self._pool
 
     async def close(self):

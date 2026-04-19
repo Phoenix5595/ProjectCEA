@@ -7,6 +7,10 @@ from shared.climate import (
     calculate_rh_from_dewpoint,
     calculate_vpd,
 )
+from shared.db import (
+    create_pool,
+    db_config_from_env,
+)
 from shared.infra_logging import (
     ConsoleFormatter,
     JsonFormatter,
@@ -40,4 +44,7 @@ __all__ = [
     "update_pressure_state",
     # Sensor validation (Phase 6 lift; see shared/sensor_validation.py).
     "validate_co2_reading",
+    # asyncpg pool factory + env-driven config (Phase 6 lift; see shared/db.py).
+    "create_pool",
+    "db_config_from_env",
 ]
