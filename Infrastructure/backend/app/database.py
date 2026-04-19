@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-import math
 import os
 
 import asyncpg
@@ -410,23 +409,13 @@ class DatabaseManager:
             return ""
         return None
 
-    def _calculate_rh(self, temp_dry: float, temp_wet: float, pressure: float = 1013.25) -> float:
-        """Calculate relative humidity from dry and wet bulb temperatures."""
-        # Simplified calculation - should match v7 implementation
-        es_dry = 6.112 * math.exp((17.67 * temp_dry) / (temp_dry + 243.5))
-        es_wet = 6.112 * math.exp((17.67 * temp_wet) / (temp_wet + 243.5))
-        e = es_wet - 0.000662 * pressure * (temp_dry - temp_wet)
-        rh = (e / es_dry) * 100.0
-        return max(0.0, min(100.0, rh))
-
-    def _calculate_vpd(self, temp_dry: float, temp_wet: float, pressure: float = 1013.25) -> float:
-        """Calculate VPD from dry and wet bulb temperatures."""
-        es = 6.112 * math.exp((17.67 * temp_dry) / (temp_dry + 243.5))
-        ea = 6.112 * math.exp((17.67 * temp_wet) / (temp_wet + 243.5)) - 0.000662 * pressure * (
-            temp_dry - temp_wet
-        )
-        vpd = (es - ea) / 10.0  # Convert to kPa
-        return max(0.0, vpd)
+    # NOTE: _calculate_rh / _calculate_vpd were removed in Phase 6's
+    # climate-math lift. They were defined here with Bolton coefficients
+    # (17.67 / 243.5) but never called from anywhere in the backend — the
+    # actual derivation of RH/VPD lives in the can-processor pipeline now,
+    # which uses the canonical shared.calculate_rh / shared.calculate_vpd.
+    # If a future caller wants to compute these here, import them from
+    # ``shared`` rather than re-introducing a divergent local copy.
 
     def _downsample(self, data: list[DataPoint], target_points: int) -> list[DataPoint]:
         """Downsample data to target number of points."""
