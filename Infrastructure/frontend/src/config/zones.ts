@@ -13,7 +13,8 @@
 import {
   deviceClusterFor,
   knownRooms,
-  sensorClustersFor,
+  sensorSubclustersFor,
+  sensorUrlClustersFor,
   TOPOLOGY,
 } from './clusterTopology';
 
@@ -35,22 +36,26 @@ export const ZONES: Zone[] = knownRooms()
   .map((location) => ({ location, cluster: deviceClusterFor(location) }));
 
 /**
- * @deprecated Prefer `sensorClustersFor('Flower Room')`. Kept as a
+ * @deprecated Prefer `sensorSubclustersFor('Flower Room')`. Kept as a
  * named export so `useSensorPolling`, `getFlowerDualClimateLayers`,
  * and old call sites compile until they're updated. The value is
  * always derived from `TOPOLOGY` so the policy stays single-sourced.
  */
 export const FLOWER_DASHBOARD_CLUSTERS: string[] = [
-  ...(TOPOLOGY['Flower Room']?.sensorClusters ?? []),
+  ...(TOPOLOGY['Flower Room']?.sensorSubclusters ?? []),
 ];
 
 /** Vertical order on the main dashboard (matches ZONES order: Flower, Veg, Lab). */
 export const DASHBOARD_ROW_ZONES: Zone[] = [...ZONES];
 
 /**
- * Sensor-plane zones — one entry per `(room, sensor sub-cluster)`.
- * Use this for `/api/sensors/{room}/{cluster}` and `/live` polling;
- * Flower fans out into `front` + `back`, every other room is `main`.
+ * Sensor-plane zones — one entry per sensor URL slug.
+ *
+ * For Flower Room this fans out into `front` + `back` (the physical
+ * sub-clusters). For every other room it returns a single entry with
+ * `cluster = "main"`, which is the device-cluster name reused as a
+ * room-wide sentinel for unsplit rooms (Veg / Lab / Outside have no
+ * sensor sub-clusters; see `clusterTopology.ts` docstring).
  *
  * Pre-Phase-5e the only available list was `getDashboardPollZones()`,
  * which is a *superset* (it also includes the device cluster). Calling
@@ -62,7 +67,7 @@ export function getSensorPollZones(): Zone[] {
   const out: Zone[] = [];
   for (const location of knownRooms()) {
     if (location === 'Outside') continue; // No dashboard rows for Outside.
-    for (const cluster of sensorClustersFor(location)) {
+    for (const cluster of sensorUrlClustersFor(location)) {
       out.push({ location, cluster });
     }
   }
@@ -95,10 +100,13 @@ export function getDashboardPollZones(): Zone[] {
       out.push(z);
     }
   }
-  // Then sensor sub-clusters that aren't already represented.
+  // Then sensor sub-clusters that aren't already represented. We
+  // intentionally use `sensorSubclustersFor` (not the URL-cluster
+  // helper) here so unsplit rooms don't emit a duplicate `main` entry —
+  // the `ZONES` loop above already handled the device-plane `main`.
   for (const location of knownRooms()) {
     if (location === 'Outside') continue;
-    for (const cluster of sensorClustersFor(location)) {
+    for (const cluster of sensorSubclustersFor(location)) {
       const k = `${location}\0${cluster}`;
       if (seen.has(k)) continue;
       seen.add(k);

@@ -46,12 +46,24 @@ Sensors → CAN/Modbus → [can-processor/soil-sensor]
 | Pydantic models | Each `app/models.py` | Routes, database |
 | Config loader | Each `app/config.py` | Service startup |
 
-> **Cluster topology**: `main` is the device cluster (room-wide
-> actuators); `front`/`back` are sensor sub-clusters (Flower Room only).
-> See `ProjectCEA/AGENTS.md` → "Cluster Topology Contract" for the full
-> rules. Two source-of-truth files must stay in sync:
+> **Cluster topology** (strict separation):
+>
+> - `main` is a **device-cluster name only** — never registered as a
+>   sensor sub-cluster.
+> - `front` / `back` are **sensor sub-cluster names only** — Flower
+>   Room is the only room that has any.
+> - Hierarchy: device `main` is the parent; sensor `front` / `back`
+>   are children of Flower's `main`.
+> - For unsplit rooms (Veg / Lab / Outside) the
+>   `/api/sensors/{room}/{cluster}` URL slot reuses `main` as a
+>   *room-wide sentinel* — a transport detail, not a sensor sub-cluster
+>   registration. `sensor_subclusters_for("Veg Room")` returns `()`.
+>
+> Two source-of-truth files must stay in sync:
 > `Infrastructure/shared/cluster_topology.py` (Python) and
 > `Infrastructure/frontend/src/config/clusterTopology.ts` (frontend).
+> See `ProjectCEA/AGENTS.md` → "Cluster Topology Contract" for the
+> full table and validation rules.
 
 ## EVENT BUS (Cross-Service)
 
