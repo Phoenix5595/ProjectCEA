@@ -216,16 +216,36 @@ class WeatherClient:
                 # No precipitation data available
                 weather_data["precipitation"] = None
 
-            # Add timestamp
+            # Add timestamp.
+            #
+            # aviationweather.gov returns obsTime in *two* shapes depending on
+            # the endpoint version: an ISO-8601 string (e.g.
+            # "2024-01-15T10:30:00Z") OR a Unix epoch integer in seconds
+            # (e.g. 1776600420). The original code only handled ISO and fell
+            # through to datetime.now() for the int form, which silently
+            # dropped the real observation time.
             obs_time = metar_report.get("obsTime")
-            if obs_time:
+            if obs_time is not None and obs_time != "":
                 try:
-                    # Parse ISO format timestamp
-                    # Handle various formats: "2024-01-15T10:30:00Z" or "2024-01-15T10:30:00+00:00"
-                    time_str = str(obs_time)
-                    if time_str.endswith("Z"):
-                        time_str = time_str.replace("Z", "+00:00")
-                    weather_data["timestamp"] = datetime.fromisoformat(time_str)
+                    if isinstance(obs_time, (int, float)) or (
+                        isinstance(obs_time, str) and obs_time.isdigit()
+                    ):
+                        epoch = int(obs_time)
+                        # Defensive sanity bound: anything before 2010 or
+                        # >1 day in the future is almost certainly a parse
+                        # mistake (e.g. milliseconds vs seconds).
+                        if 1_262_304_000 <= epoch <= int(datetime.now().timestamp()) + 86_400:
+                            weather_data["timestamp"] = datetime.fromtimestamp(epoch)
+                        else:
+                            logger.warning(
+                                f"obsTime epoch {epoch} outside sane window, using current time"
+                            )
+                            weather_data["timestamp"] = datetime.now()
+                    else:
+                        time_str = str(obs_time)
+                        if time_str.endswith("Z"):
+                            time_str = time_str.replace("Z", "+00:00")
+                        weather_data["timestamp"] = datetime.fromisoformat(time_str)
                 except Exception as e:
                     logger.warning(f"Failed to parse timestamp {obs_time}: {e}, using current time")
                     weather_data["timestamp"] = datetime.now()
