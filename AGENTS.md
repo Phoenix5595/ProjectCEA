@@ -212,10 +212,21 @@ Per-room mapping (canonical, **single source of truth**):
 
 | Room          | Device cluster | Sensor sub-clusters | Sensor URL slug(s) |
 |---------------|----------------|---------------------|--------------------|
-| `Flower Room` | `main`         | `front`, `back`     | `front`, `back`    |
+| `Flower Room` | `main`         | `front` ‡, `back`   | `front` ‡, `back`  |
 | `Veg Room`    | `main`         | *(none)*            | `main` †           |
 | `Lab`         | `main`         | *(none)*            | `main` †           |
 | `Outside`     | `main`         | *(none)*            | `main` †           |
+
+‡ Flower Room **wiring status (2026-04)**: only `back` is physically
+connected and producing telemetry; `front` is defined in the topology
+because the dual-bench layout is the planned wiring, but the front
+sensor harness is not in service yet. `GET /api/sensors/Flower Room/front`
+correctly returns **HTTP 200 with an empty payload** (the contract
+accepts the URL slug; there is just no data behind it). The frontend
+emits a `[flower-cluster-warning] Configured Flower cluster 'front' has
+no live sensor stream` log entry for the same reason — this is the
+expected runtime signal of the unwired state, not a bug. When the
+front sensors come online, no code change is required.
 
 † For unsplit rooms (no physical sub-grouping), the
 `/api/sensors/{room}/{cluster}` URL slot reuses the device-cluster
