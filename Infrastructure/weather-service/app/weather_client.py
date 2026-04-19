@@ -238,8 +238,7 @@ class WeatherClient:
                             weather_data["timestamp"] = datetime.fromtimestamp(epoch)
                         else:
                             logger.warning(
-                                f"obsTime epoch {epoch} outside sane window, "
-                                f"using current time"
+                                f"obsTime epoch {epoch} outside sane window, using current time"
                             )
                             weather_data["timestamp"] = datetime.now()
                     else:

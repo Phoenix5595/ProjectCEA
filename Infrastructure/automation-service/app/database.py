@@ -2,18 +2,13 @@
 
 from __future__ import annotations
 
-import asyncio
-
-# Standard library imports
 import os
 from typing import Any
 
-# Third-party imports
 import asyncpg
 import redis
 
-# Local imports
-from shared.db_credentials import load_postgres_password
+from shared.db import create_pool, db_config_from_env
 from shared.infra_logging import get_logger
 
 from .migrations import create_room_modes_tables, run_alembic_migrations
@@ -42,25 +37,13 @@ class DatabaseManager:
                       If None, uses environment variables or defaults.
             redis_url: Redis connection URL. If None, uses environment variable or default.
         """
-        if db_config is None:
-            password = load_postgres_password()
-            self.db_config = {
-                "host": os.getenv("POSTGRES_HOST", "localhost"),
-                "database": os.getenv("POSTGRES_DB", "cea_sensors"),
-                "user": os.getenv("POSTGRES_USER", "cea_user"),
-                "password": password,
-                "port": int(os.getenv("POSTGRES_PORT", "5432")),
-            }
-        else:
-            self.db_config = db_config
+        self.db_config = db_config if db_config is not None else db_config_from_env()
         self.redis_url = redis_url or os.getenv("REDIS_URL", "redis://localhost:6379")
         self._pool: asyncpg.Pool | None = None
         self._redis_client: redis.Redis | None = None
         self._redis_enabled = False
         self._automation_redis: AutomationRedisClient | None = None
         self._db_connected = False
-        self._retry_delay = 1.0  # Initial retry delay in seconds
-        self._max_retry_delay = 60.0  # Maximum retry delay
 
         # Repository instances (initialized in initialize())
         self._sensor_repo: SensorRepository | None = None
@@ -110,36 +93,9 @@ class DatabaseManager:
             return False
 
     async def _connect_db(self) -> None:
-        """Connect to TimescaleDB with retry logic."""
-        max_retries = 5
-        for attempt in range(max_retries):
-            try:
-                self._pool = await asyncpg.create_pool(
-                    host=self.db_config["host"],
-                    database=self.db_config["database"],
-                    user=self.db_config["user"],
-                    password=self.db_config["password"],
-                    port=self.db_config["port"],
-                    min_size=2,
-                    max_size=10,
-                    command_timeout=30,  # Query timeout in seconds
-                    server_settings={"application_name": "automation_service"},
-                )
-                self._db_connected = True
-                self._retry_delay = 1.0  # Reset retry delay on success
-                logger.info("Connected to TimescaleDB")
-                return
-            except Exception as e:
-                if attempt < max_retries - 1:
-                    wait_time = min(self._retry_delay * (2**attempt), self._max_retry_delay)
-                    logger.warning(
-                        f"Database connection attempt {attempt + 1} failed: {e}. Retrying in {wait_time}s..."
-                    )
-                    await asyncio.sleep(wait_time)
-                else:
-                    raise ConnectionError(
-                        f"Failed to connect to TimescaleDB after {max_retries} attempts: {e}"
-                    ) from e
+        """Connect to TimescaleDB; retry/backoff handled by shared.db.create_pool."""
+        self._pool = await create_pool(self.db_config, application_name="automation_service")
+        self._db_connected = True
 
     async def _connect_redis(self) -> None:
         """Connect to Redis."""
