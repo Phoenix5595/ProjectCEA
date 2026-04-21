@@ -6,9 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime
 import json
 import os
-import queue
 import threading
-import time
 from typing import Any, cast
 
 import psycopg2
@@ -17,6 +15,7 @@ import psycopg2.extras
 import redis
 import redis.exceptions
 
+from shared.db_batch_writer import BatchQueue
 from shared.db_credentials import load_postgres_password
 from shared.infra_logging import get_logger
 from shared.redis_client import close_sync, create_sync_client
@@ -83,14 +82,14 @@ class DataWriter:
         self.device_cache: dict[str, int] = {}  # {device_name: device_id}
         self.sensor_cache: dict[tuple[int, str], int] = {}  # {(device_id, sensor_name): sensor_id}
 
-        # Async batching for DB writes
-        self._db_queue = queue.Queue(maxsize=10000)
-        self._flush_thread = None
-        self._stop_flush = threading.Event()
         self._db_write_lock = threading.Lock()
-        self._queued_count = 0
-        self._flushed_count = 0
-        self._dropped_count = 0
+        self._batch_queue: BatchQueue = BatchQueue(
+            flush_callback=self._flush_batch,
+            max_queue=10_000,
+            flush_threshold=50,
+            flush_interval_sec=0.1,
+            name="can-db-flush",
+        )
 
     def connect_db(self) -> bool:
         """Connect to TimescaleDB with optimizations for high throughput."""
@@ -112,43 +111,12 @@ class DataWriter:
             cursor.close()
             self.db_enabled = True
             logger.info("Connected to TimescaleDB (async batching enabled)")
-            self._start_flush_thread()
+            self._batch_queue.start()
             return True
         except Exception as e:
             logger.error(f"Failed to connect to TimescaleDB: {e}")
             self.db_enabled = False
             return False
-
-    def _start_flush_thread(self):
-        if self._flush_thread and self._flush_thread.is_alive():
-            return
-        self._stop_flush.clear()
-        self._flush_thread = threading.Thread(
-            target=self._flush_loop, name="db-batch-flush", daemon=True
-        )
-        self._flush_thread.start()
-        logger.info("Started DB batch flush thread (100ms interval, 50 msg threshold)")
-
-    def _flush_loop(self):
-        while not self._stop_flush.is_set():
-            try:
-                start_time = time.time()
-                items = []
-                while len(items) < 50:
-                    remaining = 0.1 - (time.time() - start_time)
-                    if remaining <= 0:
-                        break
-                    try:
-                        item = self._db_queue.get(timeout=remaining)
-                        items.append(item)
-                        self._db_queue.task_done()
-                    except queue.Empty:
-                        break
-                if items:
-                    self._flush_batch(items)
-            except Exception as e:
-                logger.error(f"Error in DB flush loop: {e}")
-                time.sleep(0.1)
 
     def _prefetch_device_ids(self, cursor: Any, device_names: set[str]) -> None:
         """Load missing device_id rows in one query per batch (avoids N+1 SELECTs)."""
@@ -176,16 +144,20 @@ class DataWriter:
                 self.sensor_cache[(device_id, str(name))] = int(sensor_id)
 
     def _flush_batch(self, items):
+        """Flush callback invoked by :class:`BatchQueue`.
+
+        BatchQueue owns the queued/flushed/dropped counters: a clean return
+        from this callback counts as ``flushed += len(items)``; raising
+        counts as ``dropped += len(items)`` and BatchQueue logs the error.
+        """
         if not items or not self.db_enabled:
-            return
+            raise RuntimeError("db not enabled; dropping batch")
         with self._db_write_lock:
+            if not self._check_db_connection():
+                raise RuntimeError("db connection unavailable; dropping batch")
+            if self.db_conn is None:
+                raise RuntimeError("db connection is None; dropping batch")
             try:
-                if not self._check_db_connection():
-                    self._dropped_count += len(items)
-                    return
-                if self.db_conn is None:
-                    self._dropped_count += len(items)
-                    return
                 cursor = self.db_conn.cursor()
                 device_names: set[str] = set()
                 for item in items:
@@ -233,11 +205,11 @@ class DataWriter:
                         measurements,
                         page_size=500,
                     )
-                    self._flushed_count += len(items)
                 cursor.close()
-            except Exception as e:
-                logger.error(f"Error flushing batch: {e}")
-                self._dropped_count += len(items)
+            except Exception:
+                # Re-raise so BatchQueue counts the batch as dropped +
+                # emits the flush-callback error log.
+                raise
 
     def _check_db_connection(self) -> bool:
         """Check if database connection is alive and reconnect if needed.
@@ -354,24 +326,24 @@ class DataWriter:
             if not self.connect_db():
                 return False
         item = DBWriteItem(decoded=decoded, raw_data=raw_data, sensors=sensors, timestamp=timestamp)
-        try:
-            self._db_queue.put_nowait(item)
-            self._queued_count += 1
-            queue_size = self._db_queue.qsize()
-            if queue_size > 8000 and queue_size % 1000 == 0:
-                logger.warning(f"DB write queue depth high: {queue_size}/10000")
-            return True
-        except queue.Full:
-            self._dropped_count += 1
+        ok = self._batch_queue.put(item)
+        if not ok:
             logger.error("DB write queue full, dropping measurement")
             return False
+        # Surface sustained backpressure at ~80% queue depth. BatchQueue
+        # exposes ``in_queue`` via its stats() snapshot.
+        in_queue = self._batch_queue.stats()["in_queue"]
+        if in_queue > 8000 and in_queue % 1000 == 0:
+            logger.warning(f"DB write queue depth high: {in_queue}/10000")
+        return True
 
     def get_stats(self):
+        stats = self._batch_queue.stats()
         return {
-            "queued": self._queued_count,
-            "flushed": self._flushed_count,
-            "dropped": self._dropped_count,
-            "pending": self._db_queue.qsize(),
+            "queued": stats["queued"],
+            "flushed": stats["flushed"],
+            "dropped": stats["dropped"],
+            "pending": stats["in_queue"],
         }
 
     def write_to_db(
@@ -577,18 +549,9 @@ class DataWriter:
 
     def close(self):
         """Close all connections and stop flush thread."""
-        self._stop_flush.set()
-        if self._flush_thread and self._flush_thread.is_alive():
-            self._flush_thread.join(timeout=2.0)
-        # Flush remaining
-        remaining = []
-        while not self._db_queue.empty():
-            try:
-                remaining.append(self._db_queue.get_nowait())
-            except Exception:
-                break
-        if remaining:
-            self._flush_batch(remaining)
+        # BatchQueue.stop() drains remaining items and invokes the flush
+        # callback one last time before joining the worker thread.
+        self._batch_queue.stop(drain_timeout_sec=2.0)
         stats = self.get_stats()
         logger.info(
             f"DB batch stats: queued={stats['queued']}, flushed={stats['flushed']}, dropped={stats['dropped']}"

@@ -134,9 +134,7 @@ def sensor_full_ts(location: str, cluster: str, sensor_type: str) -> str:
     return f"cea:sensor:{location}:{cluster}:{sensor_type}_ts"
 
 
-def sensor_last_good(
-    location: str, cluster: str, sensor_name: str, *, legacy: bool = False
-) -> str:
+def sensor_last_good(location: str, cluster: str, sensor_name: str, *, legacy: bool = False) -> str:
     """Last-known-good cached value, used during short sensor outages so the
     control loop doesn't immediately enter failsafe.
 

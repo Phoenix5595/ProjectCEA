@@ -8,6 +8,7 @@ from typing import Any
 import asyncpg
 
 from shared.db import create_pool, db_config_from_env
+from shared.db_batch_writer import insert_measurements_async
 from shared.infra_logging import get_logger
 
 logger = get_logger(__name__)
@@ -198,23 +199,13 @@ class DatabaseManager:
             timestamp = datetime.now()
 
         pool = await self._get_pool()
+        rows = [
+            (timestamp, sensor_id, float(readings[sensor_type]), "ok")
+            for sensor_type, sensor_id in sensor_ids.items()
+            if sensor_type in readings
+        ]
         try:
-            async with pool.acquire() as conn:
-                async with conn.transaction():
-                    # Insert all measurements
-                    for sensor_type, sensor_id in sensor_ids.items():
-                        if sensor_type in readings:
-                            await conn.execute(
-                                """INSERT INTO measurement (time, sensor_id, value, status)
-                                   VALUES ($1, $2, $3, $4)
-                                   ON CONFLICT (time, sensor_id) DO UPDATE
-                                   SET value = EXCLUDED.value, status = EXCLUDED.status""",
-                                timestamp,
-                                sensor_id,
-                                readings[sensor_type],
-                                "ok",
-                            )
-
+            await insert_measurements_async(pool, rows)
             return True
         except Exception as e:
             logger.error(f"Error storing measurements: {e}")
