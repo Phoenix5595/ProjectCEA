@@ -4,7 +4,7 @@ FastAPI backend for the CEA Dashboard providing REST API and WebSocket endpoints
 
 ## Overview
 
-The backend serves only API and WebSocket endpoints (no frontend UI from FastAPI root); `/` returns an API status payload. CORS must allow only configured frontend origins (localhost:3000, Tailscale/external host as configured via env) while permitting websockets. Favicon route should respond without requiring the React build (fallback to `backend/static/favicon.png` or `frontend/public/favicon.png` if present). Health check is available at `/health` for monitoring.
+The backend serves only API and WebSocket endpoints (no frontend UI from FastAPI root); `/` returns an API status payload. CORS must allow only configured frontend origins (the Vite dev server at `localhost:3001`, the Tailscale/external host, and any other origin configured via env) while permitting websockets. Favicon route should respond without requiring the React build (fallback to `backend/static/favicon.png` or `frontend/public/favicon.png` if present). Health check is available at `/health` for monitoring.
 
 ## Setup
 

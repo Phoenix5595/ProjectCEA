@@ -1,5 +1,21 @@
 # Grafana Setup for CEA Sensors
 
+> **State since Phase 5c (2026-04-19):** production Grafana runs as the
+> `projectcea_grafana` container on `iskraprojectcea` (host port 3001,
+> see `Infrastructure/iskra_stack/docker-compose.yml`). The Pi-local
+> `grafana-server` is `inactive`/`disabled` and no longer proxied by
+> Caddy. For new setups use the iskra docker stack — the "Install on
+> Raspberry Pi" section below is retained only as historical reference.
+>
+> Canonical URLs:
+> - **Grafana UI:** `http://iskraprojectcea:3001`
+> - **SPA embed:** driven by `VITE_GRAFANA_BASE_URL`
+>   (defaults to `http://iskraprojectcea:3001`).
+> - **Datasources inside the container:** `projectcea_database:5432`,
+>   `projectcea_redis:6379` (Docker-internal DNS).
+>
+> Queries, schema guidance, and alerting workflow below are unchanged.
+
 Complete guide for setting up and using Grafana to visualize sensor data from the CEA project.
 
 ## Table of Contents
@@ -767,4 +783,8 @@ Based on previous alarm system configuration:
 
 ## Service Configuration
 
-See `Infrastructure/frontend/grafana.service` for systemd service file.
+Grafana now runs in a container on `iskraprojectcea` (Phase 5c, 2026-04-19).
+The Docker stack lives in `Infrastructure/iskra_stack/docker-compose.yml`
+(service name `projectcea_grafana`, bound to host port 3001). The legacy
+Pi-local `grafana-server` systemd unit and its `grafana.service` file were
+removed as part of Phase 5c decommissioning.

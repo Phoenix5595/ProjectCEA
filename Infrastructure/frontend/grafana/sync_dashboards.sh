@@ -3,8 +3,8 @@ set -e
 # Sync Grafana dashboards back to JSON files
 # Usage: ./sync_dashboards.sh [password]
 
-GRAFANA_URL="http://localhost:3000"
-GRAFANA_USER="antoine"
+GRAFANA_URL="${GRAFANA_URL:-http://iskraprojectcea:3001}"
+GRAFANA_USER="${GRAFANA_USER:-admin}"
 GRAFANA_PASS="${1:-admin}"
 DASH_DIR="/home/antoine/ProjectCEA/Infrastructure/frontend/grafana/dashboards"
 

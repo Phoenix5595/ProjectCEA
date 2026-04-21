@@ -46,3 +46,6 @@ test_*.py
 /n
 /n.pub
 
+
+# Phase 5c follow-up: Pi Grafana decommission backups (contains SMTP creds)
+Infrastructure/frontend/grafana/pi-decommission-backup-*/

@@ -66,15 +66,12 @@ Single growing record of cross-service infrastructure requirements for ProjectCE
 
 ## Grafana topology (Phase 5 will change this)
 
-Current state (pre-Phase-5):
-- Pi `grafana-server` (v13.0.0) is installed but the operator does not use it (latency on raw `measurement` table is too high).
-- Production Grafana is the `grafana` container on `iskradocker` (v12.3.2), embedded by the SPA's Monitoring tabs via the literal URL `http://iskradocker:3000` in `Infrastructure/frontend/src/components/GrafanaPanel.tsx`. Datasource points at `192.168.1.74:5432` (Pi LAN). Dashboard tree on iskradocker last synced Feb 2 — no automation.
-
-Post-Phase-5b state:
-- Production Grafana moves to `iskraprojectcea` (`projectcea_grafana` container in `~/docker-compose-projectcea-new.yml`). Datasource = `projectcea_database:5432` (Docker network loopback to local replica). Version pinned to match Pi.
-- SPA URL is env-driven: `VITE_GRAFANA_EMBED_BASE_URL` (default `http://iskraprojectcea:3000`).
-- Pi `grafana-server` is `inactive`/`disabled` (kept installed as escape hatch).
-- iskradocker CEA datasource + bind-mount removed; backup tarball at `/var/lib/projectcea/backups/iskradocker-cea-grafana-pre-refactor.tgz`.
+Current state (Phase 5c complete, 2026-04-19):
+- Production Grafana is the `projectcea_grafana` container on `iskraprojectcea`, pinned to `grafana/grafana:11.6.0` (see `Infrastructure/iskra_stack/docker-compose.yml`). Datasource = `projectcea_database:5432` (Docker network loopback to the local WAL replica).
+- SPA embed URL is env-driven via `VITE_GRAFANA_BASE_URL` (default `http://iskraprojectcea:3001`; host port 3001 because the container's 3000 conflicted with another homelab service on that VM).
+- Unified alerting rules + the `Tony` email contact point + the Gmail SMTP relay were migrated from the Pi `grafana-server` to `projectcea_grafana` on 2026-04-19. JSON exports of the pre-migration Pi state are preserved under `Infrastructure/frontend/grafana/pi-decommission-backup-*/` (gitignored; the SMTP app password is in that folder at mode 0600).
+- Pi `grafana-server` is `inactive`/`disabled` (no longer auto-starting; package + `/var/lib/grafana` retained as an escape hatch, delete later).
+- The legacy `iskradocker` CEA datasource + bind-mount were removed earlier in Phase 5c; backup tarball at `/var/lib/projectcea/backups/iskradocker-cea-grafana-pre-refactor.tgz`.
 
 ## Backups
 
@@ -100,7 +97,7 @@ Services that participate in deploy + rollback today:
 | soil-sensor-service | `soil-sensor-service.service` | 8002 | Modbus → Redis + DB |
 | weather-service | `weather-service.service` | 8004 | External API → Redis + DB |
 | onewire-worker | `onewire-worker.service` | n/a | 1-wire temperatures → Redis (no HTTP) |
-| grafana-server | `grafana-server.service` | 3000 | Pi Grafana — disabled in Phase 5c |
+| grafana-server | _decommissioned_ | _n/a_ | Pi Grafana — `inactive`/`disabled` since Phase 5c (2026-04-19). Production Grafana now runs as `projectcea_grafana` on `iskraprojectcea:3001` (Docker container; see `Infrastructure/iskra_stack/docker-compose.yml`). |
 
 ## Security posture (Phase 3, in-progress)
 
@@ -124,7 +121,7 @@ Landed in Phase 3.4a (additive, no behavior change):
   - `/api/sensors`, `/api/sensors/*`, `/api/sensor-data`, `/api/sensor-data/*` → `127.0.0.1:8000` (cea-backend)
   - `/ws/*` (any trailing path segment) → `127.0.0.1:8000` (backend per-location WS)
   - `/weather`, `/weather/*` → `127.0.0.1:8003` (weather-service)
-  - `/grafana/*` (path-stripped) → `127.0.0.1:3000` (Pi Grafana; currently unused — see Phase 5)
+  - _(no local `/grafana/*` proxy — removed Phase 5c: the SPA embeds `projectcea_grafana` directly via `VITE_GRAFANA_BASE_URL` = `http://iskraprojectcea:3001`)_
   - `/svc/soil/*`, `/svc/onewire/*` (path-stripped) → `127.0.0.1:8002` / `:8004`
   - `/ws` exactly → `127.0.0.1:8001` (automation-service WS)
   - catch-all → `127.0.0.1:8001` (automation-service API + SPA static)
@@ -165,4 +162,4 @@ Still deferred:
 - SPA dev server: `http://mothernode:5173`
 - API base (cea-backend): `http://mothernode:8000`
 - Automation service direct: `http://mothernode:8001`
-- Grafana embed: `http://iskradocker:3000` today → `http://iskraprojectcea:3000` post-5b → Caddy `/grafana` post-3.4 (when terminating TLS).
+- Grafana embed: `http://iskraprojectcea:3001` (canonical since Phase 5c, 2026-04-19). Previous stops on the migration path — `iskradocker:3000` and the Pi-local `grafana-server:3000` — are both fully decommissioned.

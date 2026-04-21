@@ -3,7 +3,7 @@ set -e
 # Import CEA Sensors Dashboard to Grafana
 # Usage: ./import_dashboard.sh [grafana_url] [admin_password]
 
-GRAFANA_URL="${1:-http://localhost:3000}"
+GRAFANA_URL="${1:-http://iskraprojectcea:3001}"
 GRAFANA_USER="${GRAFANA_USER:-admin}"
 GRAFANA_PASS="${2:-admin}"
 
