@@ -14,6 +14,7 @@ from shared.redis_client import (
     create_async_client,
     redis_url_from_env,
 )
+from shared.redis_keys import SENSOR_RAW_MAXLEN, SENSOR_RAW_STREAM
 
 logger = get_logger(__name__)
 
@@ -166,9 +167,8 @@ class RedisClient:
                 b"readings": json.dumps(readings).encode(),
             }
 
-            # Write to Redis Stream with automatic trimming (keep last 100,000 messages)
             await self.stream_client.xadd(
-                "sensor:raw", stream_data, maxlen=100000, approximate=True
+                SENSOR_RAW_STREAM, stream_data, maxlen=SENSOR_RAW_MAXLEN, approximate=True
             )
             return True
         except Exception as e:

@@ -25,6 +25,7 @@ from app.processor import (  # noqa: E402
 )
 from app.writer import DataWriter  # noqa: E402
 from shared.infra_logging import setup_structured_logging  # noqa: E402
+from shared.redis_keys import SENSOR_RAW_STREAM  # noqa: E402
 
 # Configure structured logging
 logger = setup_structured_logging(
@@ -281,7 +282,7 @@ def main():
         sys.exit(1)
 
     # Initialize data writer
-    data_writer = DataWriter(redis_ttl=10, stream_name="sensor:raw")
+    data_writer = DataWriter(redis_ttl=10, stream_name=SENSOR_RAW_STREAM)
 
     if not data_writer.connect_db():
         logger.error("Failed to connect to TimescaleDB. Exiting.")

@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 from app.redis.schema import effective_setpoint_light_field_key
 from shared.infra_logging import get_logger
+from shared.redis_keys import CONTROL_STREAM, CONTROL_STREAM_MAXLEN
 
 if TYPE_CHECKING:
     import redis
@@ -378,9 +379,9 @@ class SetpointsMixin:
                     if var_name == "light" and light_device_name:
                         stream_data["device_name"] = light_device_name
                     self.stream_client.xadd(
-                        "stream:control",
+                        CONTROL_STREAM,
                         cast(dict[Any, Any], stream_data),
-                        maxlen=100000,
+                        maxlen=CONTROL_STREAM_MAXLEN,
                         approximate=True,
                     )
         except Exception as e:

@@ -20,6 +20,7 @@ import redis.exceptions
 from shared.db_credentials import load_postgres_password
 from shared.infra_logging import get_logger
 from shared.redis_client import close_sync, create_sync_client
+from shared.redis_keys import SENSOR_RAW_MAXLEN
 
 logger = get_logger(__name__)
 
@@ -326,10 +327,12 @@ class DataWriter:
                 decoded_json = json.dumps(decoded_data)
                 stream_data[b"decoded"] = decoded_json.encode()
 
-            # Write to Redis Stream with automatic trimming (keep last 100,000 messages)
             if self.redis_client:
                 self.redis_client.xadd(
-                    self.stream_name, cast(Any, stream_data), maxlen=1100000, approximate=True
+                    self.stream_name,
+                    cast(Any, stream_data),
+                    maxlen=SENSOR_RAW_MAXLEN,
+                    approximate=True,
                 )
             return True
         except Exception as e:
