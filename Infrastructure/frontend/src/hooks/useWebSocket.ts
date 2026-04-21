@@ -32,10 +32,8 @@ export function useWebSocket({ onDeviceUpdate, onSensorUpdate }: UseWebSocketOpt
   onSensorUpdateRef.current = onSensorUpdate;
 
   useEffect(() => {
-    // Connect WebSocket
-    wsClient.connect();
+    wsClient.acquire();
 
-    // Subscribe to device updates
     const unsubscribeDevice = wsClient.on('device_update', (message) => {
       setDevices(prev => prev.map(device => 
         device.location === message.location && 
@@ -77,7 +75,7 @@ export function useWebSocket({ onDeviceUpdate, onSensorUpdate }: UseWebSocketOpt
     return () => {
       unsubscribeDevice();
       unsubscribeSensor();
-      wsClient.disconnect();
+      wsClient.release();
     };
   }, []);
 
