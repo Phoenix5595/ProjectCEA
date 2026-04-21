@@ -141,56 +141,6 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         logger.info(f"WebSocket client disconnected. Total connections: {len(active_connections)}")
 
 
-# Function to broadcast sensor updates (called from background tasks)
-async def broadcast_sensor_update(
-    location: str, cluster: str, sensor_name: str, value: float, timestamp: float
-) -> None:
-    """Broadcast sensor update to all WebSocket clients.
-
-    Args:
-        location: Location name
-        cluster: Cluster name
-        sensor_name: Sensor name
-        value: Sensor value
-        timestamp: Timestamp (Unix timestamp)
-    """
-    await broadcast_message(
-        {
-            "type": "sensor_update",
-            "location": location,
-            "cluster": cluster,
-            "sensor": sensor_name,
-            "value": value,
-            "timestamp": timestamp,
-        }
-    )
-
-
-# Function to broadcast device state changes (called from control engine)
-async def broadcast_device_update(
-    location: str, cluster: str, device_name: str, state: int, mode: str
-) -> None:
-    """Broadcast device state change to all WebSocket clients.
-
-    Args:
-        location: Location name
-        cluster: Cluster name
-        device_name: Device name
-        state: Device state (0/1)
-        mode: Device mode
-    """
-    await broadcast_message(
-        {
-            "type": "device_update",
-            "location": location,
-            "cluster": cluster,
-            "device": device_name,
-            "state": state,
-            "mode": mode,
-        }
-    )
-
-
 # Function to broadcast mode changes
 async def broadcast_mode_update(location: str, cluster: str, mode: str) -> None:
     """Broadcast mode change to all WebSocket clients.
@@ -224,31 +174,6 @@ async def broadcast_schedule_update(schedule_id: int, schedule_data: dict[str, A
     )
 
 
-# Function to broadcast setpoint updates
-async def broadcast_setpoint_update(
-    location: str, cluster: str, mode: str | None, setpoint_data: dict[str, Any]
-) -> None:
-    """Broadcast setpoint update to all WebSocket clients.
-
-    Args:
-        location: Location name
-        cluster: Cluster name
-        mode: Mode (DAY/NIGHT/TRANSITION) or None for legacy
-        setpoint_data: Complete setpoint data dictionary
-    """
-    updated_at = setpoint_data.get("updated_at")
-    await broadcast_message(
-        {
-            "type": "setpoint_update",
-            "location": location,
-            "cluster": cluster,
-            "mode": mode,
-            "setpoint": setpoint_data,
-            "updated_at": updated_at.isoformat() if updated_at is not None else None,
-        }
-    )
-
-
 # Function to broadcast room schedule updates
 async def broadcast_room_schedule_update(
     location: str, cluster: str, schedule_data: dict[str, Any]
@@ -263,27 +188,6 @@ async def broadcast_room_schedule_update(
     await broadcast_message(
         {
             "type": "room_schedule_update",
-            "location": location,
-            "cluster": cluster,
-            "schedule": schedule_data,
-        }
-    )
-
-
-# Function to broadcast climate schedule updates
-async def broadcast_climate_schedule_update(
-    location: str, cluster: str, schedule_data: dict[str, Any]
-) -> None:
-    """Broadcast climate schedule update to all WebSocket clients.
-
-    Args:
-        location: Location name
-        cluster: Cluster name
-        schedule_data: Climate schedule data dictionary
-    """
-    await broadcast_message(
-        {
-            "type": "climate_schedule_update",
             "location": location,
             "cluster": cluster,
             "schedule": schedule_data,

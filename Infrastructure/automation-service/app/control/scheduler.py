@@ -20,24 +20,6 @@ LOCAL_TZ = ZoneInfo("America/Toronto")
 logger = get_logger(__name__)
 
 
-def is_time_in_range(t: int, start: int, end: int) -> bool:
-    """Check if time t (in minutes since midnight) is in range [start, end).
-    Handles overnight wrap-around correctly.
-
-    Args:
-        t: Time in minutes since midnight (0-1439)
-        start: Start time in minutes since midnight (0-1439)
-        end: End time in minutes since midnight (0-1439)
-
-    Returns:
-        True if t is in range [start, end), False otherwise
-    """
-    if start <= end:
-        return start <= t < end
-    else:
-        return t >= start or t < end
-
-
 class Scheduler:
     """Manages time-based device schedules."""
 
