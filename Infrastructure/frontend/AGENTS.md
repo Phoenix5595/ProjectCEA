@@ -22,7 +22,7 @@ frontend/
 │   └── contexts/            # React context providers
 ├── public/
 ├── dist/                    # Production build output
-├── vite.config.ts           # Dev proxy: /api → :8000, /ws → :8001
+├── vite.config.ts           # Dev proxy: /api, /ws, /automation → Caddy :8080
 └── package.json
 ```
 
@@ -82,11 +82,22 @@ sudo systemctl restart automation-service
 
 ## ENVIRONMENT
 
+Single source of truth: [`src/config/env.ts`](src/config/env.ts).
+
+After Phase 3.4b every client defaults to Caddy on `:8080`; per-service
+`VITE_*_URL` overrides exist only as emergency escape hatches.
+
 ```bash
-# .env (gitignored)
-VITE_BACKEND_API_URL=http://mothernode:8000
-VITE_AUTOMATION_API_URL=http://mothernode:8001
-VITE_WEBSOCKET_URL=ws://mothernode:8000/ws
+# .env (gitignored) — every var optional unless marked required
+VITE_API_BASE_URL=            # Override Caddy base (default: <current origin>:8080)
+VITE_BACKEND_API_URL=         # Escape hatch: point backend client elsewhere
+VITE_AUTOMATION_API_URL=      # Escape hatch: point automation client elsewhere
+VITE_WEATHER_API_URL=         # Escape hatch: point weather client elsewhere
+VITE_WEBSOCKET_URL=           # Escape hatch: override WS URL entirely
+VITE_CEA_API_KEY=             # Build-time API key (X-API-Key header + ?token=)
+VITE_GRAFANA_BASE_URL=        # REQUIRED at build time for Grafana iframes;
+                              # defaults to http://iskraprojectcea:3001 with a
+                              # console.warn if unset (Phase 7.4).
 ```
 
 ## ANTI-PATTERNS

@@ -80,14 +80,31 @@ export const CEA_API_KEY: string =
  * network hops, and the iskradocker monitoring stack can shed its
  * CEA-specific bits in 5c.
  *
- * The env is required at *build time* (it ends up baked into the
- * static bundle the SPA serves). The default points at the new host
- * so a missing `.env` still gets a working app instead of opaque
- * iframe load errors.
+ * Phase 7.4: the env is required at *build time* (it ends up baked into
+ * the static bundle). We warn loudly at bundle boot if it's missing so
+ * an operator notices the silent fallback before iframes start 404-ing
+ * against a wrong host. There is no Caddy `/grafana` reverse-proxy
+ * entry (see Infrastructure/caddy/Caddyfile), so the iframe continues
+ * to point at the Grafana host directly.
  */
+const GRAFANA_BASE_URL_DEFAULT = 'http://iskraprojectcea:3001';
+const GRAFANA_BASE_URL_ENV = import.meta.env.VITE_GRAFANA_BASE_URL as
+  | string
+  | undefined;
+
+if (!GRAFANA_BASE_URL_ENV && typeof window !== 'undefined') {
+  // Build-time var missing — bundle will still work against the default,
+  // but this is a deploy-config smell worth surfacing.
+  // eslint-disable-next-line no-console
+  console.warn(
+    '[config/env] VITE_GRAFANA_BASE_URL not set at build time; ' +
+      `falling back to ${GRAFANA_BASE_URL_DEFAULT}. Set it in the deploy env ` +
+      'to silence this warning (Phase 7.4).',
+  );
+}
+
 export const GRAFANA_BASE_URL: string = (
-  (import.meta.env.VITE_GRAFANA_BASE_URL as string | undefined) ??
-  'http://iskraprojectcea:3001'
+  GRAFANA_BASE_URL_ENV ?? GRAFANA_BASE_URL_DEFAULT
 ).replace(/\/$/, '');
 
 function appendToken(url: string): string {
