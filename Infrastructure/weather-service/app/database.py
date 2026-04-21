@@ -8,6 +8,7 @@ from typing import Any
 import asyncpg
 
 from shared.db import create_pool, db_config_from_env
+from shared.db_batch_writer import insert_measurements_async
 from shared.infra_logging import get_logger
 
 logger = get_logger(__name__)
@@ -179,38 +180,27 @@ class DatabaseManager:
         if timestamp is None:
             timestamp = weather_data.get("timestamp", datetime.now())
 
+        sensor_mapping = {
+            "outside_temp": "temperature",
+            "outside_rh": "relative_humidity",
+            "outside_pressure": "pressure",
+            "outside_wind_speed": "wind_speed",
+            "outside_wind_direction": "wind_direction",
+            "outside_precipitation": "precipitation",
+        }
+        rows = []
+        for sensor_name, data_key in sensor_mapping.items():
+            sensor_id = sensor_ids.get(sensor_name)
+            if not sensor_id or data_key not in weather_data:
+                continue
+            value = weather_data[data_key]
+            if value is None:
+                continue
+            rows.append((timestamp, sensor_id, float(value), "ok"))
+
         pool = await self._get_pool()
         try:
-            async with pool.acquire() as conn:
-                async with conn.transaction():
-                    # Map weather_data keys to sensor names
-                    sensor_mapping = {
-                        "outside_temp": "temperature",
-                        "outside_rh": "relative_humidity",
-                        "outside_pressure": "pressure",
-                        "outside_wind_speed": "wind_speed",
-                        "outside_wind_direction": "wind_direction",
-                        "outside_precipitation": "precipitation",
-                    }
-
-                    # Insert all measurements
-                    for sensor_name, data_key in sensor_mapping.items():
-                        sensor_id = sensor_ids.get(sensor_name)
-                        if sensor_id and data_key in weather_data:
-                            value = weather_data[data_key]
-                            # Skip None values (e.g., precipitation may not be available)
-                            if value is not None:
-                                await conn.execute(
-                                    """INSERT INTO measurement (time, sensor_id, value, status)
-                                       VALUES ($1, $2, $3, $4)
-                                       ON CONFLICT (time, sensor_id) DO UPDATE
-                                       SET value = EXCLUDED.value, status = EXCLUDED.status""",
-                                    timestamp,
-                                    sensor_id,
-                                    float(value),
-                                    "ok",
-                                )
-
+            await insert_measurements_async(pool, rows)
             return True
         except Exception as e:
             logger.error(f"Error storing weather measurements: {e}")
