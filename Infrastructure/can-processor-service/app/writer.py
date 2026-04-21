@@ -19,6 +19,7 @@ import redis.exceptions
 
 from shared.db_credentials import load_postgres_password
 from shared.infra_logging import get_logger
+from shared.redis_client import close_sync, create_sync_client
 
 logger = get_logger(__name__)
 
@@ -68,6 +69,11 @@ class DataWriter:
         self.redis_state_client: redis.Redis | None = (
             None  # Separate client for state writes (decode_responses=True)
         )
+        # Pools tracked as fields so ``close()`` can call ``pool.disconnect()``
+        # (pre-lift this was leaked on shutdown — pools were GC'd eventually
+        # but not explicitly disconnected during the SIGTERM window).
+        self._redis_stream_pool: redis.ConnectionPool | None = None
+        self._redis_state_pool: redis.ConnectionPool | None = None
 
         self.db_enabled = False
         self.redis_enabled = False
@@ -269,33 +275,19 @@ class DataWriter:
     def connect_redis(self) -> bool:
         """Connect to Redis with connection pooling for better performance."""
         try:
-            # Create connection pool for stream client (binary mode)
-            stream_pool = redis.ConnectionPool.from_url(
+            self.redis_client, self._redis_stream_pool = create_sync_client(
                 self.redis_url,
-                decode_responses=False,  # Keep binary for stream writes
+                decode_responses=False,
                 max_connections=10,
-                socket_connect_timeout=5,
-                socket_timeout=5,
-                retry_on_timeout=True,
+                name="can-redis-stream",
             )
-            self.redis_client = redis.Redis(connection_pool=stream_pool)
-            self.redis_client.ping()
-
-            # Create connection pool for state client (decode_responses=True)
-            # This is reused across all write_to_redis_state calls instead of creating new clients
-            state_pool = redis.ConnectionPool.from_url(
+            self.redis_state_client, self._redis_state_pool = create_sync_client(
                 self.redis_url,
-                decode_responses=True,  # Decode for state key operations
+                decode_responses=True,
                 max_connections=10,
-                socket_connect_timeout=5,
-                socket_timeout=5,
-                retry_on_timeout=True,
+                name="can-redis-state",
             )
-            self.redis_state_client = redis.Redis(connection_pool=state_pool)
-            self.redis_state_client.ping()
-
             self.redis_enabled = True
-            logger.info(f"Connected to Redis at {self.redis_url} (with connection pooling)")
             return True
         except Exception as e:
             logger.warning(f"Failed to connect to Redis: {e}. Continuing without Redis.")
@@ -605,16 +597,9 @@ class DataWriter:
                 logger.debug(f"Error closing DB connection: {e}")
             self.db_conn = None
 
-        if self.redis_client:
-            try:
-                self.redis_client.close()
-            except Exception as e:
-                logger.debug(f"Error closing Redis client: {e}")
-            self.redis_client = None
-
-        if self.redis_state_client:
-            try:
-                self.redis_state_client.close()
-            except Exception as e:
-                logger.debug(f"Error closing Redis state client: {e}")
-            self.redis_state_client = None
+        close_sync(self.redis_client, self._redis_stream_pool, name="can-redis-stream")
+        close_sync(self.redis_state_client, self._redis_state_pool, name="can-redis-state")
+        self.redis_client = None
+        self.redis_state_client = None
+        self._redis_stream_pool = None
+        self._redis_state_pool = None

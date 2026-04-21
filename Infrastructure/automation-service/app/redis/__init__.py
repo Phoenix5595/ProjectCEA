@@ -20,13 +20,13 @@ Usage:
 from __future__ import annotations
 
 from datetime import datetime
-import os
 from typing import TYPE_CHECKING, Any
 
 import redis
 
 from app.redis.redis_operations import RedisOperations
 from shared.infra_logging import get_logger
+from shared.redis_client import close_sync, create_sync_client, redis_url_from_env
 
 if TYPE_CHECKING:
     pass
@@ -71,7 +71,7 @@ class AutomationRedisClient:
             redis_url: Redis connection URL. If None, uses environment variable or default.
             redis_ttl: TTL for Redis state keys in seconds (default: 10)
         """
-        self.redis_url = redis_url or os.getenv("REDIS_URL", "redis://localhost:6379")
+        self.redis_url = redis_url or redis_url_from_env()
         self.redis_ttl = redis_ttl
         self.redis_client: redis.Redis | None = None
         self.stream_client: redis.Redis | None = None
@@ -96,40 +96,20 @@ class AutomationRedisClient:
             True if successful, False otherwise
         """
         try:
-            # Create connection pool for state keys (decode_responses=True)
-            self._state_pool = redis.ConnectionPool.from_url(
+            self.redis_client, self._state_pool = create_sync_client(
                 self.redis_url,
                 decode_responses=True,
                 max_connections=20,
-                socket_connect_timeout=5,
-                socket_timeout=5,
-                retry_on_timeout=True,
-                health_check_interval=30,
+                name="automation-redis-state",
             )
-            self.redis_client = redis.Redis(connection_pool=self._state_pool)
-            self.redis_client.ping()
-
-            # Create connection pool for stream writes (decode_responses=False for binary)
-            self._stream_pool = redis.ConnectionPool.from_url(
+            self.stream_client, self._stream_pool = create_sync_client(
                 self.redis_url,
                 decode_responses=False,
                 max_connections=10,
-                socket_connect_timeout=5,
-                socket_timeout=5,
-                retry_on_timeout=True,
-                health_check_interval=30,
+                name="automation-redis-stream",
             )
-            self.stream_client = redis.Redis(connection_pool=self._stream_pool)
-            self.stream_client.ping()
-
             self.redis_enabled = True
-
-            # Re-initialize operations with actual clients
             self.ops = RedisOperations(self.redis_client, self.stream_client, True, self.redis_ttl)
-
-            logger.info(
-                f"Connected to Redis: {self.redis_url} (with connection pooling: state=20, stream=10)"
-            )
             return True
         except Exception as e:
             logger.warning(f"Redis connection failed: {e}. Will continue without Redis.")
@@ -138,36 +118,15 @@ class AutomationRedisClient:
             return False
 
     def close(self) -> None:
-        """Close Redis connections and disconnect connection pools.
-
-        Each cleanup step is best-effort: a SIGTERM shutdown may race the
-        redis-py teardown, in which case the close call raises
-        ``ConnectionError`` / ``RuntimeError``. We log at debug since
-        there's nothing actionable on the shutdown path.
-        """
-        if self.redis_client:
-            try:
-                self.redis_client.close()
-            except Exception as e:
-                logger.debug("redis_client.close() failed during shutdown: %s", e)
-        if self.stream_client:
-            try:
-                self.stream_client.close()
-            except Exception as e:
-                logger.debug("stream_client.close() failed during shutdown: %s", e)
-        if self._state_pool:
-            try:
-                self._state_pool.disconnect()
-            except Exception as e:
-                logger.debug("state_pool.disconnect() failed during shutdown: %s", e)
-        if self._stream_pool:
-            try:
-                self._stream_pool.disconnect()
-            except Exception as e:
-                logger.debug("stream_pool.disconnect() failed during shutdown: %s", e)
+        """Close Redis connections + pools (best-effort, SIGTERM-safe)."""
+        close_sync(self.redis_client, self._state_pool, name="automation-redis-state")
+        close_sync(self.stream_client, self._stream_pool, name="automation-redis-stream")
+        self.redis_client = None
+        self.stream_client = None
+        self._state_pool = None
+        self._stream_pool = None
         self.redis_enabled = False
         self.ops = RedisOperations(None, None, False, self.redis_ttl)
-        logger.info("Redis connection closed")
 
     # ========================================================================
     # Alarms - delegate to ops.alarms

@@ -2,44 +2,41 @@
 
 from __future__ import annotations
 
-import os
-
 import redis.asyncio as redis
 
 from shared.infra_logging import get_logger
+from shared.redis_client import close_async, create_async_client
 
 logger = get_logger(__name__)
 
-# Redis connection pool (singleton)
 _redis_pool: redis.ConnectionPool | None = None
 _redis_client: redis.Redis | None = None
 
 
 async def get_redis_client() -> redis.Redis | None:
-    """Get or create Redis client connection."""
+    """Get or create Redis client connection.
+
+    Returns ``None`` on connect failure (keeps the pre-lift warn-and-
+    continue contract — callers no-op when Redis is unavailable so the
+    historical/DB path still serves). ``create_async_client`` itself
+    raises ``redis.exceptions.ConnectionError`` which we catch here.
+    """
     global _redis_client, _redis_pool
 
     if _redis_client is not None:
-        try:
-            return _redis_client
-        except Exception:
-            # Connection lost, reset
-            _redis_client = None
-            _redis_pool = None
-
-    # Create new connection
-    redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
+        return _redis_client
 
     try:
-        _redis_pool = redis.ConnectionPool.from_url(
-            redis_url, decode_responses=True, max_connections=10
+        _redis_client, _redis_pool = await create_async_client(
+            decode_responses=True,
+            max_connections=10,
+            name="backend-redis",
         )
-        _redis_client = redis.Redis(connection_pool=_redis_pool)
-
-        logger.info(f"Connected to Redis at {redis_url}")
         return _redis_client
     except Exception as e:
         logger.warning(f"Failed to connect to Redis: {e}. Live sensor data will not be available.")
+        _redis_client = None
+        _redis_pool = None
         return None
 
 
@@ -178,25 +175,8 @@ async def get_all_sensor_timestamps(sensor_names: list[str]) -> dict[str, int]:
 
 
 async def close_redis_client():
-    """Close Redis client connection.
-
-    Both teardown calls are best-effort: a SIGTERM during a request may
-    race the close, in which case redis-py raises ``ConnectionError``.
-    Logged at debug since there's nothing to recover on the shutdown
-    path.
-    """
+    """Close Redis client connection (best-effort, SIGTERM-safe)."""
     global _redis_client, _redis_pool
-
-    if _redis_client:
-        try:
-            await _redis_client.close()
-        except Exception as e:
-            logger.debug("Redis client close failed during shutdown: %s", e)
-        _redis_client = None
-
-    if _redis_pool:
-        try:
-            await _redis_pool.disconnect()
-        except Exception as e:
-            logger.debug("Redis pool disconnect failed during shutdown: %s", e)
-        _redis_pool = None
+    await close_async(_redis_client, _redis_pool, name="backend-redis")
+    _redis_client = None
+    _redis_pool = None
