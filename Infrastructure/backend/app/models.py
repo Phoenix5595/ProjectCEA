@@ -25,14 +25,6 @@ class SensorDataResponse(BaseModel):
     unit: str
 
 
-class LocationResponse(BaseModel):
-    """Available location information."""
-
-    name: str
-    type: str
-    clusters: list[str]
-
-
 class WebSocketMessage(BaseModel):
     """WebSocket message format."""
 
