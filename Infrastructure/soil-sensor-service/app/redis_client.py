@@ -4,12 +4,16 @@ from __future__ import annotations
 
 from datetime import datetime
 import json
-import os
 from typing import Any
 
 import redis.asyncio as redis
 
 from shared.infra_logging import get_logger
+from shared.redis_client import (
+    close_async,
+    create_async_client,
+    redis_url_from_env,
+)
 
 logger = get_logger(__name__)
 
@@ -17,7 +21,9 @@ logger = get_logger(__name__)
 class RedisClient:
     """Redis client for publishing sensor data updates.
 
-    Uses connection pooling for better performance and resource efficiency.
+    Uses two connection pools:
+      * state pool (``decode_responses=True``) for ``sensor:*`` keys + pub/sub
+      * stream pool (``decode_responses=False``) for ``XADD sensor:raw`` binary writes
     """
 
     def __init__(self, redis_url: str | None = None):
@@ -26,43 +32,30 @@ class RedisClient:
         Args:
             redis_url: Redis connection URL. If None, uses environment variable or default.
         """
-        self.redis_url = redis_url or os.getenv("REDIS_URL", "redis://localhost:6379")
+        self.redis_url = redis_url or redis_url_from_env()
         self.redis_client: redis.Redis | None = None
-        self.stream_client: redis.Redis | None = None  # Separate client for stream (binary mode)
-        self._state_pool: redis.ConnectionPool | None = None  # Connection pool for state client
-        self._stream_pool: redis.ConnectionPool | None = None  # Connection pool for stream client
+        self.stream_client: redis.Redis | None = None
+        self._state_pool: redis.ConnectionPool | None = None
+        self._stream_pool: redis.ConnectionPool | None = None
         self.redis_enabled = False
-        self.redis_ttl = 10  # 10 seconds TTL for state keys (consistent with CAN sensors)
+        self.redis_ttl = 10  # consistent with CAN + onewire TTL
 
     async def connect(self) -> bool:
-        """Connect to Redis with connection pooling for better performance.
-
-        Creates two connection pools:
-        - State pool (decode_responses=True) for state key operations
-        - Stream pool (decode_responses=False) for binary stream writes
-
-        Returns:
-            True if successful, False otherwise
-        """
+        """Connect both Redis pools (state + binary stream)."""
         try:
-            # Create connection pool for state keys (decode_responses=True)
-            self._state_pool = redis.ConnectionPool.from_url(
-                self.redis_url, decode_responses=True, max_connections=10, retry_on_timeout=True
+            self.redis_client, self._state_pool = await create_async_client(
+                self.redis_url,
+                decode_responses=True,
+                max_connections=10,
+                name="soil-redis-state",
             )
-            self.redis_client = redis.Redis(connection_pool=self._state_pool)
-            await self.redis_client.ping()  # type: ignore
-
-            # Create connection pool for stream writes (decode_responses=False for binary)
-            self._stream_pool = redis.ConnectionPool.from_url(
-                self.redis_url, decode_responses=False, max_connections=5, retry_on_timeout=True
+            self.stream_client, self._stream_pool = await create_async_client(
+                self.redis_url,
+                decode_responses=False,
+                max_connections=5,
+                name="soil-redis-stream",
             )
-            self.stream_client = redis.Redis(connection_pool=self._stream_pool)
-            await self.stream_client.ping()  # type: ignore
-
             self.redis_enabled = True
-            logger.info(
-                f"Connected to Redis: {self.redis_url} (with connection pooling: state=10, stream=5)"
-            )
             return True
         except Exception as e:
             logger.warning(f"Redis connection failed: {e}. Will continue without Redis.")
@@ -70,17 +63,14 @@ class RedisClient:
             return False
 
     async def close(self) -> None:
-        """Close Redis connections and disconnect connection pools."""
-        if self.redis_client:
-            await self.redis_client.close()
-        if self.stream_client:
-            await self.stream_client.close()
-        if self._state_pool:
-            await self._state_pool.disconnect()
-        if self._stream_pool:
-            await self._stream_pool.disconnect()
+        """Close both pools (best-effort, SIGTERM-safe)."""
+        await close_async(self.redis_client, self._state_pool, name="soil-redis-state")
+        await close_async(self.stream_client, self._stream_pool, name="soil-redis-stream")
+        self.redis_client = None
+        self.stream_client = None
+        self._state_pool = None
+        self._stream_pool = None
         self.redis_enabled = False
-        logger.info("Redis connection closed")
 
     async def publish_sensor_update(
         self,

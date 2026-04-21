@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
-from collections.abc import Awaitable
 from datetime import datetime
-import os
-from typing import Any, cast
 
 import redis.asyncio as redis
 
 from shared.infra_logging import get_logger
+from shared.redis_client import (
+    close_async,
+    create_async_client,
+    redis_url_from_env,
+)
 
 logger = get_logger(__name__)
 
@@ -18,7 +20,7 @@ class RedisClient:
     """Publish sensor values to Redis state keys (sensor:*, sensor:*:ts)."""
 
     def __init__(self, redis_url: str | None = None) -> None:
-        self.redis_url = redis_url or os.getenv("REDIS_URL", "redis://localhost:6379")
+        self.redis_url = redis_url or redis_url_from_env()
         self.client: redis.Redis | None = None
         self._pool: redis.ConnectionPool | None = None
         self.redis_enabled = False
@@ -26,13 +28,13 @@ class RedisClient:
 
     async def connect(self) -> bool:
         try:
-            self._pool = redis.ConnectionPool.from_url(
-                self.redis_url, decode_responses=True, max_connections=5
+            self.client, self._pool = await create_async_client(
+                self.redis_url,
+                decode_responses=True,
+                max_connections=5,
+                name="onewire-redis",
             )
-            self.client = redis.Redis(connection_pool=self._pool)
-            await cast(Awaitable[Any], self.client.ping())
             self.redis_enabled = True
-            logger.info(f"Connected to Redis: {self.redis_url}")
             return True
         except Exception as e:
             logger.warning(f"Redis connection failed: {e}")
@@ -40,12 +42,10 @@ class RedisClient:
             return False
 
     async def close(self) -> None:
-        if self.client:
-            await self.client.close()
-        if self._pool:
-            await self._pool.disconnect()
+        await close_async(self.client, self._pool, name="onewire-redis")
+        self.client = None
+        self._pool = None
         self.redis_enabled = False
-        logger.info("Redis connection closed")
 
     async def set_sensor_value(self, sensor_name: str, value: float) -> bool:
         if not self.redis_enabled or not self.client:
