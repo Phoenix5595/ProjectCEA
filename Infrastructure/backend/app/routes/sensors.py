@@ -16,6 +16,7 @@ from shared.cluster_topology import (
     assert_sensor_cluster,
 )
 from shared.infra_logging import get_logger
+from shared.redis_keys import SENSOR_RAW_STREAM
 
 router = APIRouter(prefix="/api/sensors", tags=["sensors"])
 
@@ -151,7 +152,7 @@ async def get_sensor_data(
             # Async-context-managed: connect + close guaranteed, no stale
             # connection leak on exception. Per-request connection for now
             # (Phase 4 may pool these).
-            async with RedisStreamReader(stream_name="sensor:raw") as stream_reader:
+            async with RedisStreamReader(stream_name=SENSOR_RAW_STREAM) as stream_reader:
                 if stream_reader.client is None:
                     # connect() failed inside __aenter__ — fall through to DB.
                     use_stream = False

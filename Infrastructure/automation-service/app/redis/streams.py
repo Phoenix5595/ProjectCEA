@@ -7,6 +7,7 @@ import json
 from typing import TYPE_CHECKING
 
 from shared.infra_logging import get_logger
+from shared.redis_keys import SENSOR_RAW_MAXLEN, SENSOR_RAW_STREAM
 
 if TYPE_CHECKING:
     import redis
@@ -63,7 +64,9 @@ class StreamsMixin:
             if control_reason:
                 stream_data[b"control_reason"] = control_reason.encode()
 
-            self.stream_client.xadd("sensor:raw", stream_data, maxlen=100000, approximate=True)  # type: ignore
+            self.stream_client.xadd(  # type: ignore
+                SENSOR_RAW_STREAM, stream_data, maxlen=SENSOR_RAW_MAXLEN, approximate=True
+            )
             return True
         except Exception as e:
             logger.warning(f"Error writing to Redis Stream: {e}")
