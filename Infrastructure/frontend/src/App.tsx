@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { Toaster } from 'sonner'
 import { ThemeProvider } from './contexts/ThemeContext'
 import { ControlActionsProvider } from './contexts/ControlActionsContext'
+import ErrorBoundary from './components/ErrorBoundary'
 import ThemeSwitcher from './components/ThemeSwitcher'
 import Layout from './components/Layout'
 
@@ -26,6 +27,7 @@ function App() {
       <ControlActionsProvider>
         <Toaster position="top-right" richColors closeButton />
         <BrowserRouter>
+          <ErrorBoundary>
           <Suspense fallback={<div className="flex items-center justify-center h-screen text-muted">Loading...</div>}>
             <Routes>
               <Route path="/zone/Veg Room/main" element={<Navigate to="/vegetation/control" replace />} />
@@ -53,6 +55,7 @@ function App() {
               </Route>
             </Routes>
           </Suspense>
+          </ErrorBoundary>
         </BrowserRouter>
         <ThemeSwitcher />
       </ControlActionsProvider>

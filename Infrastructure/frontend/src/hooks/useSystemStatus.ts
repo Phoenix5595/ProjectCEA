@@ -44,7 +44,7 @@ export function useSystemStatus(): UseSystemStatusReturn {
       try {
         const statusResponse = await apiClient.getSystemStatus();
         if (statusResponse) {
-          const sys = (statusResponse as any).system;
+          const sys = statusResponse.system;
           setSystemStats(prev => {
             const current = prev || {
               cpu_usage: null, memory_usage: null, disk_usage: null,
@@ -56,14 +56,15 @@ export function useSystemStatus(): UseSystemStatusReturn {
               memory_usage: sys?.memory_percent ?? current.memory_usage,
               disk_usage: sys?.disk_percent ?? current.disk_usage,
               uptime: sys?.uptime_seconds != null ? formatUptime(sys.uptime_seconds) : current.uptime,
-              load_avg: sys?.load_avg ?? current.load_avg,
+              load_avg: Array.isArray(sys?.load_avg)
+                ? sys?.load_avg.map((n) => n.toFixed(2)).join(' / ')
+                : current.load_avg,
               process_count: sys?.process_count ?? current.process_count,
               cpu_temp_c: sys?.cpu_temp_c ?? current.cpu_temp_c,
               throttle_status: sys?.throttle_status ?? current.throttle_status,
             };
           });
-          
-          // Also update status devices if available
+
           if (statusResponse.devices) {
             setStatusDevices(statusResponse.devices);
           }
@@ -91,7 +92,7 @@ export function useSystemStatus(): UseSystemStatusReturn {
           return {
             ...current,
             services: Array.isArray(healthData)
-              ? healthData.map((s: { name: string; status: string; latency_ms?: number }) => ({
+              ? healthData.map((s) => ({
                   name: s.name,
                   status: s.status as 'running' | 'stopped' | 'error' | 'unreachable',
                   latency_ms: s.latency_ms

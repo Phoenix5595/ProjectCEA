@@ -1,6 +1,7 @@
 import { useParams } from 'react-router-dom'
 import { useState, useEffect, useCallback } from 'react'
 import { apiClient } from '../services/api'
+import { extractErrorMessage } from '../utils/errors'
 import { logger } from '../utils/logger'
 import { getLocationDisplayName, getLocationBackendName, getClusterDisplayName } from '../config/zones'
 import type { RoomModeWithParams, ModeParameters } from '../types/modes'
@@ -19,17 +20,30 @@ export interface ZoneConfigProps {
   cluster?: string;
 }
 
-function mapPeriodsFromApi(periods: any[]): ClimatePeriod[] {
-  return periods.map((p: any) => ({
+interface RawClimatePeriod {
+  id?: number
+  period_name: string
+  start_time?: string | null
+  end_time?: string | null
+  ramp_minutes: number
+  heating_setpoint?: number | null
+  cooling_setpoint?: number | null
+  vpd_setpoint?: number | null
+  co2_setpoint?: number | null
+  details?: string | null
+}
+
+function mapPeriodsFromApi(periods: RawClimatePeriod[]): ClimatePeriod[] {
+  return periods.map((p) => ({
     id: p.id,
     period_name: p.period_name,
     start_time: p.start_time ? p.start_time.substring(0, 5) : '00:00',
     end_time: p.end_time ? p.end_time.substring(0, 5) : '00:00',
     ramp_minutes: p.ramp_minutes,
-    heating_setpoint: p.heating_setpoint,
-    cooling_setpoint: p.cooling_setpoint,
+    heating_setpoint: p.heating_setpoint ?? null,
+    cooling_setpoint: p.cooling_setpoint ?? null,
     vpd_setpoint: p.vpd_setpoint != null ? Math.round(p.vpd_setpoint * 100) / 100 : null,
-    co2_setpoint: p.co2_setpoint,
+    co2_setpoint: p.co2_setpoint ?? null,
     details: p.details || ''
   }))
 }
@@ -60,7 +74,7 @@ export default function ZoneConfig({ location: propsLocation, cluster: propsClus
         mode.submode_id ?? undefined
       )
       if (periods && periods.length > 0) {
-        setClimatePeriods(mapPeriodsFromApi(periods))
+        setClimatePeriods(mapPeriodsFromApi(periods as unknown as RawClimatePeriod[]))
       } else {
         setClimatePeriods([])
       }
@@ -76,9 +90,9 @@ export default function ZoneConfig({ location: propsLocation, cluster: propsClus
       setRoomMode(mode)
 
       await loadClimatePeriodsForMode(mode)
-    } catch (err: any) {
+    } catch (err) {
       logger.error('Error loading room mode:', err)
-      setError(err.response?.data?.detail || err.message || 'Failed to load')
+      setError(extractErrorMessage(err, 'Failed to load'))
     } finally {
       setLoading(false)
     }
@@ -110,9 +124,9 @@ export default function ZoneConfig({ location: propsLocation, cluster: propsClus
       await loadClimatePeriodsForMode(newMode)
       setSuccess('Mode changed')
       setTimeout(() => setSuccess(null), 2000)
-    } catch (err: any) {
+    } catch (err) {
       logger.error('Error changing mode:', err)
-      setError(err.response?.data?.detail || 'Failed to change mode')
+      setError(extractErrorMessage(err, 'Failed to change mode'))
     }
   }, [location, cluster, loadClimatePeriodsForMode])
 
@@ -142,22 +156,26 @@ export default function ZoneConfig({ location: propsLocation, cluster: propsClus
       await apiClient.saveClimatePeriods(
         location,
         cluster,
-        climatePeriods,
+        climatePeriods as unknown as Record<string, unknown>[],
         updated.mode_id ?? undefined,
         updated.submode_id ?? undefined
       )
 
       setSuccess('Saved')
       setTimeout(() => setSuccess(null), 2000)
-    } catch (err: any) {
+    } catch (err) {
       logger.error('Error saving parameters:', err)
-      const detail = err.response?.data?.detail
+      const response = (err as { response?: { data?: { detail?: unknown } } })?.response
+      const detail = response?.data?.detail
       if (Array.isArray(detail)) {
         setError(detail.join(', '))
-      } else if (typeof detail === 'object' && detail?.errors) {
-        setError(Array.isArray(detail.errors) ? detail.errors.join(', ') : String(detail.errors))
+      } else if (detail && typeof detail === 'object' && 'errors' in detail) {
+        const errs = (detail as { errors?: unknown }).errors
+        setError(Array.isArray(errs) ? errs.join(', ') : String(errs))
+      } else if (typeof detail === 'string') {
+        setError(detail)
       } else {
-        setError(String(detail || 'Failed to save'))
+        setError(extractErrorMessage(err, 'Failed to save'))
       }
     } finally {
       setSaving(false)

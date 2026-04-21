@@ -203,7 +203,7 @@ export const DashboardRoomCard = memo(function DashboardRoomCard({
                     const firstName = nameParts[0];
                     const restName = nameParts.slice(1).join(' ');
                     const intensityKey = `${location}_${cluster}_${deviceName}_intensity`;
-                    const intensity = sensorData[intensityKey] ?? (statusDevices as any)?.[location]?.[cluster]?.[deviceName]?.intensity;
+                    const intensity = sensorData[intensityKey] ?? (statusDevices as Record<string, Record<string, Record<string, { intensity?: number }>>>)?.[location]?.[cluster]?.[deviceName]?.intensity;
                     
                     return (
                       <div key={index} className="flex items-center justify-between text-xs">
@@ -239,7 +239,7 @@ export const DashboardRoomCard = memo(function DashboardRoomCard({
                 <div className="text-xs text-text-muted mb-2">Device Status</div>
                 <div className="space-y-1">
                   {nonLightDevices.map((device, index) => {
-                    const loadPct = (statusDevices as any)?.[location]?.[cluster]?.[device.device_name]?.load_percent;
+                    const loadPct = (statusDevices as Record<string, Record<string, Record<string, { load_percent?: number }>>>)?.[location]?.[cluster]?.[device.device_name]?.load_percent;
                     return (
                       <div key={index} className="flex items-center justify-between text-xs">
                         <span className="text-text-secondary truncate flex-1">{device.device_name}</span>
