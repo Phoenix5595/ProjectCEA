@@ -60,7 +60,7 @@ devices:
         device_type: dehumidifier
       Heater Flower:
         channel: 0
-        device_type: heater
+        device_type: heating
   Veg Room:
     main:
       exhaust_fan:
@@ -103,7 +103,7 @@ devices:
         safety_level: 40
       Heater Veg:
         channel: 6
-        device_type: heater
+        device_type: heating
       Ivation 35 pints:
         channel: 7
         device_type: dehumidifier
