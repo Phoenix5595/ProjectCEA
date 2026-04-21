@@ -12,6 +12,7 @@ from app.database import DatabaseManager
 from app.redis_client import RedisClient
 from app.routes import sensors, status
 from shared.infra_logging import setup_structured_logging
+from shared.lifespan import notify_started, notify_stopping
 
 # Configure structured logging
 logger = setup_structured_logging(
@@ -54,6 +55,7 @@ async def lifespan(app: FastAPI):
         await background_tasks.start()
 
         logger.info("Soil sensor service started successfully")
+        notify_started("soil-sensor-service", logger)
 
         yield
 
@@ -62,7 +64,7 @@ async def lifespan(app: FastAPI):
         raise
     finally:
         # Shutdown
-        logger.info("Shutting down soil sensor service...")
+        notify_stopping("soil-sensor-service", logger)
 
         if background_tasks:
             await background_tasks.stop()
