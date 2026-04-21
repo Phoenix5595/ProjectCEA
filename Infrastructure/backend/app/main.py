@@ -23,6 +23,7 @@ from app.websocket import websocket_manager
 
 # Local imports
 from shared.infra_logging import setup_structured_logging
+from shared.lifespan import notify_started, notify_stopping
 
 # Configure structured logging
 logger = setup_structured_logging(
@@ -110,6 +111,8 @@ async def lifespan(app: FastAPI):
         shutdown_reason = f"Startup error: {type(e).__name__}"
         raise
 
+    notify_started("backend-service", logger)
+
     try:
         yield
     except Exception as e:
@@ -117,6 +120,7 @@ async def lifespan(app: FastAPI):
         logger.error(f"❌ Error in lifespan context: {e}", exc_info=True)
         raise
     finally:
+        notify_stopping("backend-service", logger)
         # Shutdown: Cancel background tasks
         logger.info(f"🛑 Shutting down (reason: {shutdown_reason})")
         logger.info(

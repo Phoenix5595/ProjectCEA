@@ -12,7 +12,6 @@ import argparse  # noqa: E402
 from datetime import UTC, datetime  # noqa: E402
 import os  # noqa: E402
 import signal  # noqa: E402
-import socket  # noqa: E402
 import sys  # noqa: E402
 import time  # noqa: E402
 
@@ -26,6 +25,7 @@ from app.processor import (  # noqa: E402
 from app.writer import DataWriter  # noqa: E402
 from shared.infra_logging import setup_structured_logging  # noqa: E402
 from shared.redis_keys import SENSOR_RAW_STREAM  # noqa: E402
+from shared.systemd import notify_ready, notify_stopping, notify_watchdog  # noqa: E402
 
 # Configure structured logging
 logger = setup_structured_logging(
@@ -53,34 +53,6 @@ WATCHDOG_INTERVAL = 15  # seconds (WatchdogSec=30, ping at half interval)
 # Stats logging
 last_stats_log = 0.0
 STATS_LOG_INTERVAL = 60
-
-
-def sd_notify(state: str) -> bool:
-    """Send notification to systemd.
-
-    Args:
-        state: Notification string (e.g., "READY=1", "WATCHDOG=1", "STOPPING=1")
-
-    Returns:
-        True if notification sent successfully, False otherwise
-    """
-    notify_socket = os.environ.get("NOTIFY_SOCKET")
-    if not notify_socket:
-        return False
-
-    try:
-        # Handle abstract socket (starts with @)
-        if notify_socket.startswith("@"):
-            notify_socket = "\0" + notify_socket[1:]
-
-        sock = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
-        sock.connect(notify_socket)
-        sock.sendall(state.encode())
-        sock.close()
-        return True
-    except Exception as e:
-        logger.warning(f"Failed to send sd_notify({state}): {e}")
-        return False
 
 
 def signal_handler(sig, frame):
@@ -304,7 +276,7 @@ def main():
     logger.info("-" * 60)
 
     # Notify systemd we're ready
-    if sd_notify("READY=1"):
+    if notify_ready():
         logger.info("Notified systemd: READY")
 
     consecutive_errors = 0
@@ -318,7 +290,7 @@ def main():
                 global last_stats_log
                 now = time.time()
                 if now - last_watchdog_ping >= WATCHDOG_INTERVAL:
-                    sd_notify("WATCHDOG=1")
+                    notify_watchdog()
                     last_watchdog_ping = now
 
                 if now - last_stats_log >= STATS_LOG_INTERVAL:
@@ -353,7 +325,7 @@ def main():
 
     finally:
         # Notify systemd we're stopping
-        sd_notify("STOPPING=1")
+        notify_stopping()
 
         logger.info("-" * 60)
         logger.info("Shutting down...")

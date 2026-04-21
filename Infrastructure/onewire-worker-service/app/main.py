@@ -10,6 +10,7 @@ from fastapi import status as http_status
 
 from shared.health import all_ok, check_redis_async_client
 from shared.infra_logging import setup_structured_logging
+from shared.lifespan import notify_started, notify_stopping
 
 from .background_tasks import BackgroundTasks
 from .config import ConfigLoader
@@ -35,9 +36,10 @@ async def lifespan(app: FastAPI):
         await redis_client.connect()
         background_tasks = BackgroundTasks(config, redis_client)
         await background_tasks.start()
-        logger.info("onewire-worker started")
+        notify_started("onewire-worker", logger)
         yield
     finally:
+        notify_stopping("onewire-worker", logger)
         if background_tasks:
             await background_tasks.stop()
         if redis_client:
