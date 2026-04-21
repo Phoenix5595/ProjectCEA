@@ -10,7 +10,6 @@
 #   3.4d: Flip every FastAPI unit to --host 127.0.0.1 so Caddy is the only LAN entry.
 #
 # NOTE: Caddy automatically preserves WebSocket upgrades in `reverse_proxy`.
-
 {
 	# No admin API exposure, no auto-HTTPS (we're intentionally HTTP on :8080).
 	admin off
@@ -27,6 +26,21 @@
 
 :8080 {
 	encode gzip
+
+	# ------------------------------------------------------------------
+	# Per-site access log. Keeps HTTP traffic records separate from the
+	# global caddy.log (internal/diagnostic messages) and gives them a
+	# higher retention (20 MB × 5 files). Added live 2026-04-18 — pulled
+	# back into the repo 2026-04-21 during Phase 5c/6 cleanup drift audit.
+	# ------------------------------------------------------------------
+	log {
+		output file /var/log/caddy/access.log {
+			roll_size 20mb
+			roll_keep 5
+		}
+		format json
+		level INFO
+	}
 
 	# ------------------------------------------------------------------
 	# Cache policy (prevents stale SPA-bundle bugs after redeploy).
@@ -62,13 +76,11 @@
 	}
 
 	# ------------------------------------------------------------------
-	# Grafana (local Pi instance, currently unused; prod Grafana lives on
-	# iskradocker and will be relocated to iskraprojectcea in Phase 5).
-	# Exposed under /grafana/* so it coexists with the SPA at /.
+	# Grafana (Phase 5c): the SPA embeds projectcea_grafana directly
+	# at http://iskraprojectcea:3001 (via VITE_GRAFANA_BASE_URL). The
+	# Pi-local grafana-server was decommissioned 2026-04-19; no local
+	# /grafana/* proxy is needed here anymore.
 	# ------------------------------------------------------------------
-	handle_path /grafana/* {
-		reverse_proxy 127.0.0.1:3000
-	}
 
 	# ------------------------------------------------------------------
 	# Soil / onewire services - not consumed by the SPA today but exposed

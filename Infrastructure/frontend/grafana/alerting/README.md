@@ -1,5 +1,24 @@
 # Grafana Alerting Setup for CEA Sensors
 
+> **State since Phase 5c (2026-04-19):** production Grafana is
+> `projectcea_grafana` (a container on `iskraprojectcea`, host port 3001).
+> The Gmail SMTP relay + `Tony` contact point + the Dry Bulb / Wet Bulb /
+> RH Back alert rules were migrated from the Pi `grafana-server` to the
+> iskra container on 2026-04-19. Original exports are preserved under
+> `Infrastructure/frontend/grafana/pi-decommission-backup-*/` (gitignored).
+>
+> **Operational deltas vs what this guide says:**
+> - UI URL is `http://iskraprojectcea:3001` (not `http://localhost:3000`).
+> - SMTP is configured via `GF_SMTP_*` environment variables in
+>   `Infrastructure/iskra_stack/docker-compose.yml` (the Gmail app
+>   password comes from `GRAFANA_SMTP_PASSWORD` in iskra's local
+>   `.env`), **not** by editing `/etc/grafana/grafana.ini` on the Pi.
+> - Logs: `sudo docker logs -f projectcea_grafana` on iskraprojectcea
+>   (not `journalctl -u grafana-server`).
+>
+> The UI workflow below (contact points, alert rules, thresholds) is
+> unchanged — just run it against the iskra instance.
+
 This guide explains how to set up email and push notifications for sensor threshold alerts in Grafana.
 
 ## Overview
@@ -24,7 +43,7 @@ Grafana provides built-in alerting capabilities that can:
 
 **Location in Grafana UI (Grafana 8+ / 12.x):**
 
-1. Open Grafana: `http://localhost:3000`
+1. Open Grafana: `http://iskraprojectcea:3001`
 2. Click the **Alerting** icon (bell icon) in the left sidebar
 3. Navigate to: **Alerting** → **Contact points** → **New contact point**
 4. Configure the email channel:
@@ -129,7 +148,7 @@ For push notifications via webhook (Slack, Discord, Telegram, etc.):
 
 The JSON files in `alert-rules/` are dashboard JSON files that include alert rules. Import them as dashboards:
 
-1. **Open Grafana**: `http://localhost:3000`
+1. **Open Grafana**: `http://iskraprojectcea:3001`
 2. **Go to Dashboards**: Click **Dashboards** → **Import** (or click **+** → **Import**)
 3. **Upload JSON file**:
    - Click **Upload JSON file**

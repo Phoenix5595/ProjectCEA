@@ -102,6 +102,22 @@ services:
       # Datasource secret — interpolated by Grafana's native $VAR
       # support inside provisioning YAMLs (see template).
       - POSTGRES_CEA_USER_PASSWORD=${POSTGRES_CEA_USER_PASSWORD}
+      # SMTP — migrated from Pi grafana-server (Phase 5c follow-up,
+      # 2026-04-19). The unified-alerting contact points live in
+      # Grafana's SQLite DB (in the projectcea_grafana_data named
+      # volume) and route to antoine.olivier.dion@gmail.com via this
+      # SMTP relay. The app password is stored only in iskra's local
+      # .env (never committed); see .env.example for the var name.
+      # Reference exports of the original rules + contact point are
+      # kept in Infrastructure/frontend/grafana/pi-decommission-backup-*
+      # (gitignored) for re-import via the /api/v1/provisioning API.
+      - GF_SMTP_ENABLED=true
+      - GF_SMTP_HOST=smtp.gmail.com:587
+      - GF_SMTP_USER=antoine.olivier.dion@gmail.com
+      - GF_SMTP_PASSWORD=${GRAFANA_SMTP_PASSWORD}
+      - GF_SMTP_FROM_ADDRESS=antoine.olivier.dion@gmail.com
+      - GF_SMTP_FROM_NAME=Siberian Jungle Alert Transmission
+      - GF_SMTP_SKIP_VERIFY=false
     volumes:
       - projectcea_grafana_data:/var/lib/grafana
       # Provisioning: mounted read-only so the source of truth lives

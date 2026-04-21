@@ -27,11 +27,11 @@ export default defineConfig({
       '/automation': {
         target: 'http://localhost:8001',
         changeOrigin: true
-      },
-      '/grafana': {
-        target: 'http://localhost:3000',
-        changeOrigin: true
       }
+      // Phase 5c: Grafana embeds now go directly to
+      // VITE_GRAFANA_BASE_URL (http://iskraprojectcea:3001) from the
+      // SPA, so no dev-server proxy is needed. The Pi-local Grafana
+      // on :3000 was decommissioned 2026-04-19.
     }
   },
   build: {
