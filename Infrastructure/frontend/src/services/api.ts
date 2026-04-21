@@ -6,7 +6,58 @@ import type { PIDParameters, PIDParameterUpdate, PIDModeInfo, PIDModeUpdate, Aut
 import type { Schedule, ScheduleCreate, ScheduleUpdate } from '../types/schedule';
 import type { LightStatus, LightTargetSetResponse } from '../types/light';
 import type { RoomMode, FlowerSubmode, RoomModeWithParams, SetModeRequest, UpdateParametersRequest } from '../types/modes';
+import type { ChannelInfo, LightNameOption } from '../types/relay';
 import { AUTOMATION_API_URL, BACKEND_API_URL, CEA_API_KEY, WEATHER_API_URL } from '../config/env';
+
+/** Opaque JSON object returned by backend endpoints that don't have a typed contract yet. */
+type JsonObject = Record<string, unknown>;
+
+/** Minimal shape of a device entry embedded in API responses. */
+interface RawDevice {
+  device_type?: string;
+  display_name?: string;
+  dimming_enabled?: boolean;
+  dimming_board_id?: string | null;
+  dimming_channel?: number | null;
+  mode?: string;
+  state?: number;
+  channel?: number;
+}
+
+interface WeatherMeasurement {
+  value?: number | string;
+  unit?: string;
+}
+
+export interface WeatherResponse {
+  timestamp?: string;
+  data?: {
+    temp?: WeatherMeasurement;
+    temperature?: WeatherMeasurement;
+    rh?: WeatherMeasurement;
+    humidity?: WeatherMeasurement;
+    pressure?: WeatherMeasurement;
+    wind_speed?: WeatherMeasurement;
+    wind_direction?: WeatherMeasurement;
+    description?: { value?: string };
+    [key: string]: unknown;
+  };
+}
+
+export interface SystemStatusResponse {
+  system?: {
+    cpu_percent?: number;
+    memory_percent?: number;
+    disk_percent?: number;
+    uptime_seconds?: number;
+    load_avg?: number[];
+    process_count?: number;
+    cpu_temp_c?: number;
+    throttle_status?: string;
+  };
+  devices?: Record<string, Record<string, Record<string, { intensity?: number; load_percent?: number }>>>;
+  service_health?: Array<{ name: string; status: string; latency_ms?: number }>;
+}
 
 class ApiClient {
   private backendClient: AxiosInstance;
@@ -76,7 +127,7 @@ class ApiClient {
     return response.data;
   }
 
-  async getDevicesForLocationCluster(location: string, cluster: string): Promise<{ location: string; cluster: string; devices: Record<string, any> }> {
+  async getDevicesForLocationCluster(location: string, cluster: string): Promise<{ location: string; cluster: string; devices: Record<string, RawDevice> }> {
     const response = await this.automationClient.get(`/api/devices/${location}/${cluster}`);
     return response.data;
   }
@@ -110,7 +161,7 @@ class ApiClient {
     deviceName: string,
     boardId: number | null,
     dimmingChannel: number | null
-  ): Promise<any> {
+  ): Promise<JsonObject> {
     const response = await this.automationClient.put('/api/lights/dfr/assign', {
       location,
       cluster,
@@ -127,7 +178,7 @@ class ApiClient {
     device: string,
     displayName?: string,
     deviceType?: string
-  ): Promise<any> {
+  ): Promise<JsonObject> {
     const response = await this.automationClient.post(
       `/api/devices/${location}/${cluster}/${device}/config`,
       {
@@ -138,7 +189,7 @@ class ApiClient {
     return response.data;
   }
 
-  async getChannels(): Promise<{ channels: Record<string, any>; light_names: any[] }> {
+  async getChannels(): Promise<{ channels: Record<string, ChannelInfo>; light_names: LightNameOption[] }> {
     const response = await this.automationClient.get('/api/devices/channels');
     return response.data;
   }
@@ -150,7 +201,7 @@ class ApiClient {
     location: string,
     cluster: string,
     lightName?: string
-  ): Promise<any> {
+  ): Promise<JsonObject> {
     const response = await this.automationClient.post(
       `/api/devices/channels/${channel}`,
       {
@@ -169,7 +220,7 @@ class ApiClient {
     return response.data;
   }
 
-  async clearChannelDevice(channel: number): Promise<any> {
+  async clearChannelDevice(channel: number): Promise<JsonObject> {
     const response = await this.automationClient.delete(`/api/devices/channels/${channel}`);
     return response.data;
   }
@@ -318,7 +369,7 @@ class ApiClient {
     return response.data;
   }
 
-  async updateLightSchedule(location: string, cluster: string, deviceName: string, startTime: string, endTime: string): Promise<any> {
+  async updateLightSchedule(location: string, cluster: string, deviceName: string, startTime: string, endTime: string): Promise<JsonObject> {
     const response = await this.automationClient.put(`/api/lights/${location}/${cluster}/${deviceName}/schedule`, {
       start_time: startTime,
       end_time: endTime
@@ -326,7 +377,7 @@ class ApiClient {
     return response.data;
   }
 
-  async getDevicesForLocationClusterWithDetails(location: string, cluster: string): Promise<Record<string, any>> {
+  async getDevicesForLocationClusterWithDetails(location: string, cluster: string): Promise<Record<string, RawDevice>> {
     const response = await this.automationClient.get(`/api/devices/${location}/${cluster}`);
     return response.data.devices || {};
   }
@@ -334,8 +385,8 @@ class ApiClient {
   async getLightsForZone(location: string, cluster: string): Promise<Array<{ device_name: string; display_name?: string; dimming_enabled?: boolean; dimming_board_id?: string | null; dimming_channel?: number | null }>> {
     const devices = await this.getDevicesForLocationClusterWithDetails(location, cluster);
     return Object.entries(devices)
-      .filter(([_, device]: [string, any]) => device.device_type === 'light')
-      .map(([deviceName, device]: [string, any]) => ({
+      .filter(([_, device]) => device.device_type === 'light')
+      .map(([deviceName, device]) => ({
         device_name: deviceName,
         display_name: device.display_name,
         dimming_enabled: device.dimming_enabled,
@@ -345,12 +396,12 @@ class ApiClient {
   }
 
   // Room Schedule (automation service)
-  async getClimateSchedule(location: string, cluster: string): Promise<any> {
+  async getClimateSchedule(location: string, cluster: string): Promise<JsonObject> {
     const response = await this.automationClient.get(`/api/climate-schedule/${location}/${cluster}`);
     return response.data;
   }
 
-  async saveClimateSchedule(location: string, cluster: string, schedule: any): Promise<any> {
+  async saveClimateSchedule(location: string, cluster: string, schedule: JsonObject): Promise<JsonObject> {
     const response = await this.automationClient.post(`/api/climate-schedule/${location}/${cluster}`, schedule);
     return response.data;
   }
@@ -360,7 +411,7 @@ class ApiClient {
     cluster: string,
     modeId?: number | null,
     submodeId?: number | null
-  ): Promise<any[]> {
+  ): Promise<JsonObject[]> {
     const params: Record<string, number> = {};
     if (modeId != null) {
       params.mode_id = modeId;
@@ -374,7 +425,7 @@ class ApiClient {
     return response.data;
   }
 
-  async saveClimatePeriods(location: string, cluster: string, periods: any[], modeId?: number, submodeId?: number): Promise<any> {
+  async saveClimatePeriods(location: string, cluster: string, periods: JsonObject[], modeId?: number, submodeId?: number): Promise<JsonObject> {
     const response = await this.automationClient.post(`/api/climate-periods/${location}/${cluster}`, { 
       periods,
       mode_id: modeId ?? null,
@@ -383,29 +434,29 @@ class ApiClient {
     return response.data;
   }
 
-  async getRoomSchedule(location: string, cluster: string): Promise<any> {
+  async getRoomSchedule(location: string, cluster: string): Promise<JsonObject> {
     const response = await this.automationClient.get(`/api/room-schedule/${location}/${cluster}`);
     return response.data;
   }
 
-  async saveRoomSchedule(location: string, cluster: string, schedule: any): Promise<void> {
+  async saveRoomSchedule(location: string, cluster: string, schedule: JsonObject): Promise<void> {
     await this.automationClient.post(`/api/room-schedule/${location}/${cluster}`, schedule);
   }
 
   // Weather Service
-  async getLatestWeather(): Promise<any> {
+  async getLatestWeather(): Promise<WeatherResponse> {
     const response = await this.weatherClient.get('/weather/latest');
     return response.data;
   }
 
   // System Status (automation service) - optimized with health=false for fast dashboard polling
-  async getSystemStatus(): Promise<any> {
+  async getSystemStatus(): Promise<SystemStatusResponse> {
     const response = await this.automationClient.get('/api/status?health=false');
     return response.data;
   }
 
   // System Health - separate endpoint for health status only (slower, poll less frequently)
-  async getSystemHealth(): Promise<any> {
+  async getSystemHealth(): Promise<Array<{ name: string; status: string; latency_ms?: number }>> {
     const response = await this.automationClient.get('/api/status?health=true');
     return response.data.service_health || [];
   }
@@ -429,7 +480,7 @@ class ApiClient {
     device: string,
     state: number,
     reason?: string
-  ): Promise<any> {
+  ): Promise<JsonObject> {
     const response = await this.automationClient.post(
       `/api/devices/${location}/${cluster}/${device}/control`,
       {
@@ -445,7 +496,7 @@ class ApiClient {
     cluster: string,
     device: string,
     mode: 'manual' | 'auto' | 'scheduled'
-  ): Promise<any> {
+  ): Promise<JsonObject> {
     const response = await this.automationClient.post(
       `/api/devices/${location}/${cluster}/${device}/mode`,
       { mode }

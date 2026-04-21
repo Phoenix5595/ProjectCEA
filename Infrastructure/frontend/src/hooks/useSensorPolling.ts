@@ -120,7 +120,11 @@ export function useSensorPolling({ interval = 5000 }: UseSensorPollingOptions = 
 
         const allLiveFlat: Record<string, number> = {};
         pollZones.forEach((zone, index) => {
-          const parsed = parseLiveResponse(zone.location, zone.cluster, liveDataResults[index] as any);
+          const parsed = parseLiveResponse(
+            zone.location,
+            zone.cluster,
+            liveDataResults[index] as Parameters<typeof parseLiveResponse>[2],
+          );
           Object.assign(allLiveFlat, parsed);
         });
 

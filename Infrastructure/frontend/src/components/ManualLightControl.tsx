@@ -1,7 +1,14 @@
 import { useState, useEffect, useRef } from 'react'
 import { apiClient } from '../services/api'
+import { extractErrorMessage } from '../utils/errors'
 import { logger } from '../utils/logger'
 import type { Schedule } from '../types/schedule'
+
+interface RawLightDevice {
+  device_type?: string
+  display_name?: string
+  dimming_enabled?: boolean
+}
 
 interface ManualLightControlProps {
  location: string
@@ -43,13 +50,13 @@ export default function ManualLightControl({ location, cluster, compact = false 
  logger.debug('ManualLightControl: Raw devices received', devices)
  const allDevices = Object.entries(devices)
  logger.debug('ManualLightControl: All device entries', allDevices.map(([name, dev]) => ({ name, type: dev?.device_type })))
- const lights = allDevices
- .filter(([_, device]: [string, any]) => {
+ const lights = (allDevices as [string, RawLightDevice][])
+ .filter(([_, device]) => {
  const isLight = device?.device_type === 'light'
  logger.debug('ManualLightControl: Device', _, 'type:', device?.device_type, 'isLight:', isLight)
  return isLight
  })
- .map(([deviceName, device]: [string, any]) => ({
+ .map(([deviceName, device]) => ({
  device_name: deviceName,
  display_name: device.display_name,
  dimming_enabled: device.dimming_enabled || false
@@ -181,9 +188,9 @@ export default function ManualLightControl({ location, cluster, compact = false 
 
  // Set to manual mode to override everything
  await apiClient.setDeviceMode(location, cluster, light.device_name, 'manual')
- } catch (err: any) {
+ } catch (err) {
  logger.error(`Error controlling light ${light.device_name}:`, err)
- setError(err.response?.data?.detail || `Failed to control ${light.device_name}`)
+ setError(extractErrorMessage(err, `Failed to control ${light.device_name}`))
  }
  }
 
@@ -212,9 +219,9 @@ export default function ManualLightControl({ location, cluster, compact = false 
  restoreMode(currentSavedMode || savedMode)
  }, durationMinutes * 60000)
  }
- } catch (err: any) {
+ } catch (err) {
  logger.error('Error turning on lights:', err)
- setError(err.response?.data?.detail || 'Failed to turn on lights')
+ setError(extractErrorMessage(err, 'Failed to turn on lights'))
  } finally {
  setLoading(false)
  }
@@ -249,14 +256,14 @@ export default function ManualLightControl({ location, cluster, compact = false 
 
  // Set to manual mode to keep it off until changed
  await apiClient.setDeviceMode(location, cluster, light.device_name, 'manual')
- } catch (err: any) {
+ } catch (err) {
  logger.error(`Error controlling light ${light.device_name}:`, err)
- setError(err.response?.data?.detail || `Failed to control ${light.device_name}`)
+ setError(extractErrorMessage(err, `Failed to control ${light.device_name}`))
  }
  }
- } catch (err: any) {
+ } catch (err) {
  logger.error('Error turning off lights:', err)
- setError(err.response?.data?.detail || 'Failed to turn off lights')
+ setError(extractErrorMessage(err, 'Failed to turn off lights'))
  } finally {
  setLoading(false)
  }
@@ -307,16 +314,16 @@ export default function ManualLightControl({ location, cluster, compact = false 
 
  // Set to auto/scheduled mode (activates schedule)
  await apiClient.setDeviceMode(location, cluster, light.device_name, mode)
- } catch (err: any) {
+ } catch (err) {
  logger.error(`Error restoring mode for ${light.device_name}:`, err)
- setError(err.response?.data?.detail || `Failed to restore mode for ${light.device_name}`)
+ setError(extractErrorMessage(err, `Failed to restore mode for ${light.device_name}`))
  }
  }
 
  setLastDefaultMode(null)
- } catch (err: any) {
+ } catch (err) {
  logger.error('Error restoring mode:', err)
- setError(err.response?.data?.detail || 'Failed to restore mode')
+ setError(extractErrorMessage(err, 'Failed to restore mode'))
  } finally {
  setLoading(false)
  }

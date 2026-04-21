@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 
 import { apiClient } from '../../services/api'
+import { extractErrorMessage } from '../../utils/errors'
 import { logger } from '../../utils/logger'
 
 type DfrBoard = {
@@ -123,10 +124,9 @@ export default function DfrBoardsPanel() {
 
       await refresh()
       toast.success('DFR assignment updated')
-    } catch (err: any) {
+    } catch (err) {
       logger.error('Failed to update DFR assignment', err)
-      const msg = err?.response?.data?.detail || 'Failed to update DFR assignment'
-      toast.error(String(msg))
+      toast.error(extractErrorMessage(err, 'Failed to update DFR assignment'))
       await refresh()
     } finally {
       setWorkingKey(null)

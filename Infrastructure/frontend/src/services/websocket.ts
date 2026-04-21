@@ -28,7 +28,7 @@ export type WebSocketMessageType =
 
 export interface WebSocketMessage {
   type: WebSocketMessageType;
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 type MessageHandler = (message: WebSocketMessage) => void;
@@ -89,7 +89,7 @@ class WebSocketClient {
     };
   }
 
-  send(message: any): void {
+  send(message: unknown): void {
     if (this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(message));
     } else {

@@ -4,11 +4,20 @@ import { apiClient } from '../services/api'
 import type { PIDControlMode, PIDParameters } from '../types/pid'
 import { logger } from '../utils/logger'
 
+interface PIDHistoryItem {
+  changed_at?: string
+  timestamp?: string
+  source?: string
+  kp?: number | string
+  ki?: number | string
+  kd?: number | string
+}
+
 export default function VerticalPIDBlock() {
   const [device, setDevice] = useState('heater')
  const [loading, setLoading] = useState(false)
  const [saving, setSaving] = useState(false)
- const [history, setHistory] = useState<any[]>([])
+ const [history, setHistory] = useState<PIDHistoryItem[]>([])
  const [parameters, setParameters] = useState<PIDParameters>({
  kp: 0,
  ki: 0,
@@ -242,7 +251,7 @@ export default function VerticalPIDBlock() {
  {history.slice(0, 10).map((entry, i) => (
  <div key={i} className="text-xs bg-surface-primary/50 rounded-sm px-2 py-1 border border-border-subtle/50">
  <div className="flex items-center justify-between mb-1">
- <span className="text-text-subtle">{new Date(entry.changed_at || entry.timestamp).toLocaleTimeString()}</span>
+ <span className="text-text-subtle">{new Date(entry.changed_at || entry.timestamp || 0).toLocaleTimeString()}</span>
  <span className="text-text-faint">{entry.source || 'Unknown'}</span>
  </div>
  <div className="flex gap-3 text-xs">

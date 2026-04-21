@@ -14,6 +14,22 @@ export interface UseWebSocketReturn {
   sensorData: Record<string, number>;
 }
 
+interface DeviceUpdatePayload {
+  location: string;
+  cluster: string;
+  device: string;
+  state: number;
+  mode: string;
+}
+
+interface SensorUpdatePayload {
+  location: string;
+  cluster: string;
+  sensor?: string;
+  sensor_type?: string;
+  value: number;
+}
+
 /** Re-export for callers that imported from this hook. */
 export const parseLiveResponse = parseLiveResponseUtil;
 
@@ -34,16 +50,16 @@ export function useWebSocket({ onDeviceUpdate, onSensorUpdate }: UseWebSocketOpt
   useEffect(() => {
     wsClient.acquire();
 
-    const unsubscribeDevice = wsClient.on('device_update', (message) => {
-      setDevices(prev => prev.map(device => 
-        device.location === message.location && 
-        device.cluster === message.cluster && 
+    const unsubscribeDevice = wsClient.on('device_update', (raw) => {
+      const message = raw as unknown as DeviceUpdatePayload;
+      setDevices(prev => prev.map(device =>
+        device.location === message.location &&
+        device.cluster === message.cluster &&
         device.device_name === message.device
         ? { ...device, state: message.state, mode: message.mode }
         : device
       ));
-      
-      // Also call the optional callback for parent component
+
       if (onDeviceUpdateRef.current) {
         onDeviceUpdateRef.current({
           location: message.location,
@@ -56,17 +72,16 @@ export function useWebSocket({ onDeviceUpdate, onSensorUpdate }: UseWebSocketOpt
       }
     });
 
-    // Subscribe to sensor updates
-    const unsubscribeSensor = wsClient.on('sensor_update', (message) => {
-      const sensorKey = (message as { sensor?: string; sensor_type?: string }).sensor ?? (message as { sensor_type?: string }).sensor_type;
+    const unsubscribeSensor = wsClient.on('sensor_update', (raw) => {
+      const message = raw as unknown as SensorUpdatePayload;
+      const sensorKey = message.sensor ?? message.sensor_type;
       if (!sensorKey) return;
       const key = `${message.location}_${message.cluster}_${sensorKey}`;
       setSensorData(prev => ({
         ...prev,
         [key]: message.value
       }));
-      
-      // Also call the optional callback
+
       if (onSensorUpdateRef.current) {
         onSensorUpdateRef.current(key, message.value);
       }
