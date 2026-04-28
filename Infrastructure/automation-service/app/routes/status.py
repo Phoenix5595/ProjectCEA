@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime
+import json
 import subprocess
 import time
 from typing import Any
@@ -317,4 +318,11 @@ async def get_status(
         result["system"] = system
     if effective_setpoints:
         result["effective_setpoints"] = effective_setpoints
+    if redis_client and redis_client.redis_enabled and redis_client.redis_client:
+        raw_degraded = await asyncio.to_thread(redis_client.redis_client.get, "automation:degraded")
+        if raw_degraded:
+            try:
+                result["degraded"] = json.loads(raw_degraded)
+            except (TypeError, ValueError):
+                result["degraded"] = {"active": True, "reason": str(raw_degraded)}
     return result

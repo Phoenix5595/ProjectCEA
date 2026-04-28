@@ -6,6 +6,9 @@ interface GrafanaPanelProps {
   title?: string
   height?: string | number
   timeRange?: boolean
+  from?: string
+  to?: string
+  refresh?: string
 }
 
 export default function GrafanaPanel({
@@ -14,11 +17,23 @@ export default function GrafanaPanel({
   title,
   height = 400,
   timeRange = false,
+  from = 'now-6h',
+  to = 'now',
+  refresh,
 }: GrafanaPanelProps) {
   // Base URL is build-time env (VITE_GRAFANA_BASE_URL); see config/env.ts.
+  const timeParams = new URLSearchParams({
+    orgId: '1',
+    theme: 'dark',
+    from,
+    to,
+  })
+  if (refresh) {
+    timeParams.set('refresh', refresh)
+  }
   const embedUrl = timeRange
-    ? `${GRAFANA_BASE_URL}/d/${dashboardUid}?orgId=1&theme=dark&kiosk=1&from=now-6h&to=now`
-    : `${GRAFANA_BASE_URL}/d-solo/${dashboardUid}?orgId=1${panelId ? `&panelId=${panelId}` : ''}&theme=dark&from=now-6h&to=now`
+    ? `${GRAFANA_BASE_URL}/d/${dashboardUid}?${timeParams.toString()}&kiosk=1`
+    : `${GRAFANA_BASE_URL}/d-solo/${dashboardUid}?${timeParams.toString()}${panelId ? `&panelId=${panelId}` : ''}`
 
   const heightStyle = typeof height === 'number' ? `${height}px` : height
 

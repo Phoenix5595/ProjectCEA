@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import asyncio
 import time
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from app.cluster_config import ensure_configured_cluster
+from app.cluster_config import ensure_configured_cluster, iter_flower_main_merged_devices
 from app.config import ConfigLoader
+from app.control.relay_manager import RelayManager
 from app.schemas.room_modes import (
     ActiveModeResponse,
     FlowerSubmode,
@@ -36,6 +38,90 @@ def get_config() -> ConfigLoader:
     from ..main import container
 
     return container.get_config()
+
+
+def get_relay_manager() -> RelayManager:
+    from ..main import container
+
+    return container.get_relay_manager()
+
+
+def get_dfr0971_manager():
+    from ..main import container
+
+    return container.get_dfr0971_manager()
+
+
+def _iter_configured_light_devices(
+    config: ConfigLoader, location: str, cluster: str
+) -> list[tuple[str, str, dict]]:
+    devices = config.get_devices()
+    location_config = devices.get(location, {}) or {}
+    if location == "Flower Room" and cluster == "main":
+        device_entries = iter_flower_main_merged_devices(location_config)
+    else:
+        raw = location_config.get(cluster, {}) or {}
+        device_entries = [
+            (cluster, name, info) for name, info in raw.items() if isinstance(info, dict)
+        ]
+
+    lights: list[tuple[str, str, dict]] = []
+    seen: set[str] = set()
+    for src_cluster, device_name, device_info in device_entries:
+        if device_name in seen:
+            continue
+        seen.add(device_name)
+        if device_info.get("device_type") == "light":
+            lights.append((src_cluster, device_name, device_info))
+    return lights
+
+
+async def _force_lights_off_for_drying(
+    location: str,
+    cluster: str,
+    config: ConfigLoader,
+    relay_manager: RelayManager,
+    dfr0971_manager,
+    database: DatabaseManager,
+) -> None:
+    for src_cluster, device_name, device_info in _iter_configured_light_devices(
+        config, location, cluster
+    ):
+        board_id = device_info.get("dimming_board_id")
+        dimming_channel = device_info.get("dimming_channel")
+        if (
+            dfr0971_manager is not None
+            and device_info.get("dimming_enabled")
+            and board_id is not None
+            and dimming_channel is not None
+        ):
+            dimmer_ok = await asyncio.to_thread(
+                dfr0971_manager.set_intensity, board_id, dimming_channel, 0
+            )
+            if not dimmer_ok:
+                logger.warning(
+                    "Drying mode failed to force DFR0971 intensity to 0 for %s/%s/%s",
+                    location,
+                    src_cluster,
+                    device_name,
+                )
+            automation_redis = getattr(database, "_automation_redis", None)
+            if automation_redis:
+                automation_redis.write_light_intensity(
+                    location, src_cluster, device_name, 0.0, 0.0, board_id, dimming_channel
+                )
+
+        success, reason = await asyncio.to_thread(
+            relay_manager.set_device_state, location, src_cluster, device_name, 0
+        )
+        if not success:
+            logger.warning(
+                "Drying mode failed to force light relay OFF for %s/%s/%s: %s",
+                location,
+                src_cluster,
+                device_name,
+                reason,
+            )
 
 
 @router.get("/modes", response_model=list[RoomMode])
@@ -138,6 +224,8 @@ async def set_room_mode(
     request: SetModeRequest,
     db: DatabaseManager = Depends(get_database),
     config: ConfigLoader = Depends(get_config),
+    relay_manager: RelayManager = Depends(get_relay_manager),
+    dfr0971_manager=Depends(get_dfr0971_manager),
 ):
     ensure_configured_cluster(config.get_devices(), location, cluster)
     total_start = time.perf_counter()
@@ -180,8 +268,13 @@ async def set_room_mode(
 
     logger.info(f"Mode switch: {location}/{cluster} -> {request.mode_name}/{request.submode_name}")
 
+    if request.mode_name.strip().lower() == "drying":
+        await _force_lights_off_for_drying(
+            location, cluster, config, relay_manager, dfr0971_manager, db
+        )
+
     start = time.perf_counter()
-    result = await get_room_mode_with_params(location, cluster, db)
+    result = await get_room_mode_with_params(location, cluster, db=db, config=config)
     logger.info(
         f"MODE_SWITCH_TIMING: get_room_mode_with_params took {(time.perf_counter() - start) * 1000:.2f}ms"
     )
@@ -260,4 +353,4 @@ async def update_room_parameters(
             )
 
     logger.info(f"Parameters updated: {location}/{cluster} mode={mode_name}")
-    return await get_room_mode_with_params(location, cluster, db)
+    return await get_room_mode_with_params(location, cluster, db=db, config=config)

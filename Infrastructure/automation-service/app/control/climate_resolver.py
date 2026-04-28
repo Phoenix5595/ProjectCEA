@@ -56,9 +56,19 @@ class ClimatePeriodResolver:
         except Exception as e:
             logger.info(f"Database error fetching light schedule for {location}/{cluster}: {e}")
 
-        # Get active climate period from database
+        mode_id = None
+        submode_id = None
+        try:
+            active_mode = await database.room_mode_repo.get_active_mode(location, cluster)
+            if active_mode:
+                mode_id = active_mode.get("mode_id")
+                submode_id = active_mode.get("submode_id")
+        except Exception as e:
+            logger.info(f"Database error fetching active room mode for {location}/{cluster}: {e}")
+
+        # Get active climate period from database for the active room mode.
         active_period = await database.climate_periods_repo.get_active_period(
-            location, cluster, time_str
+            location, cluster, time_str, mode_id=mode_id, submode_id=submode_id
         )
 
         # Track current period name

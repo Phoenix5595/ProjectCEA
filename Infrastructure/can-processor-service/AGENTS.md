@@ -39,9 +39,13 @@ At 100 msgs/sec: Can survive 100 seconds of DB unavailability
 ### Node Configuration
 
 Current nodes:
-- Node 1: Flower Room Back (_b suffix)
-- Node 2: Flower Room Front (_f suffix)  
-- Node 3: Veg Room Main (_v suffix)
+- Node 1: Flower Room / back (`_b` suffix)
+- Node 2: Flower Room / front (`_f` suffix)
+- Node 3: Veg Room / main (`_v` suffix)
+
+The service emits canonical topology names (`back`, `front`, `main`) and
+derives sensor-name suffixes through `shared.cluster_topology`; do not revive
+the legacy firmware-era `clusterA` / `clusterB` labels in Redis or Postgres.
 
 Future nodes:
 - Node 4: Flower Room Secondary cluster

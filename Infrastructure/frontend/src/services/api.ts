@@ -57,6 +57,13 @@ export interface SystemStatusResponse {
   };
   devices?: Record<string, Record<string, Record<string, { intensity?: number; load_percent?: number }>>>;
   service_health?: Array<{ name: string; status: string; latency_ms?: number }>;
+  degraded?: {
+    active?: boolean;
+    reason?: string;
+    failure_count?: number;
+    success_count?: number;
+    updated_at?: string;
+  };
 }
 
 class ApiClient {

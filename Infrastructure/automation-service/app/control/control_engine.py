@@ -119,6 +119,9 @@ class ControlEngine:
         # Track current climate period per location/cluster (for period transition detection)
         self._current_period_name: dict[tuple[str, str], str] = {}
 
+        # Drying rooms must run scheduled lighting as MOON while still allowing manual override.
+        self._drying_forced_moon: set[tuple[str, str]] = set()
+
         # Track effective setpoints per location/cluster
         # Format: (location, cluster) -> {
         #   'effective_heating_setpoint': float,
@@ -174,6 +177,12 @@ class ControlEngine:
             else:
                 stats[key] = {"avg": 0.0, "min": 0.0, "max": 0.0, "count": 0}
         return stats
+
+    async def _is_drying_mode(self, location: str, cluster: str) -> bool:
+        """Return true when this room/cluster's active room mode is drying."""
+        active_mode = await self.database.room_mode_repo.get_active_mode(location, cluster)
+        mode_name = str((active_mode or {}).get("mode_name") or "").strip().lower()
+        return mode_name == "drying"
 
     async def _restore_ramps_on_startup(self) -> None:
         """Restore active ramps from StateManager (Redis-backed) on startup."""
@@ -328,6 +337,18 @@ class ControlEngine:
 
                 # Calculate is_sun for light control
                 is_sun = self.climate_resolver.calculate_is_sun(current_time, location, cluster)
+                room_key = (location, cluster)
+                if await self._is_drying_mode(location, cluster):
+                    if room_key not in self._drying_forced_moon:
+                        logger.info(
+                            "Drying mode active for %s/%s: forcing scheduled light authority to MOON",
+                            location,
+                            cluster,
+                        )
+                    self._drying_forced_moon.add(room_key)
+                    is_sun = False
+                elif room_key in self._drying_forced_moon:
+                    self._drying_forced_moon.remove(room_key)
 
                 # 6. Process devices (using extracted component)
                 await self.device_processor.process_devices(

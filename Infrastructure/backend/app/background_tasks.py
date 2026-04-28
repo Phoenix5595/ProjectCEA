@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime
 
-from app.redis_client import get_all_sensor_values, get_sensor_timestamp
+from app.redis_client import get_all_sensor_timestamps, get_all_sensor_values
 from app.websocket import websocket_manager
 from shared.infra_logging import get_logger
 
@@ -94,6 +94,7 @@ async def broadcast_latest_sensor_data():
                 continue
 
             consecutive_errors = 0  # Reset on success
+            timestamps_ms = await get_all_sensor_timestamps(list(sensor_values.keys()))
 
             # Broadcast each sensor value
             for sensor_name, value in sensor_values.items():
@@ -104,7 +105,7 @@ async def broadcast_latest_sensor_data():
                         continue  # Skip unknown sensors
 
                     # Get timestamp
-                    ts_ms = await get_sensor_timestamp(sensor_name)
+                    ts_ms = timestamps_ms.get(sensor_name)
                     if ts_ms:
                         timestamp = datetime.fromtimestamp(ts_ms / 1000.0)
                     else:

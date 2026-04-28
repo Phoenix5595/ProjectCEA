@@ -12,41 +12,31 @@ from shared import (
     update_pressure_state,
     validate_co2_reading,
 )
+from shared.cluster_topology import ClusterMismatchError, sensor_name_like_pattern
 from shared.infra_logging import get_logger
 
 logger = get_logger(__name__)
 
 
-# ---------------------------------------------------------------------------
-# Cluster + node mapping (CAN-processor-local; will be unified against
-# shared.cluster_topology in a follow-up Phase 6 step). The historical
-# clusterA/clusterB strings are preserved here because the on-disk Postgres
-# rows + Grafana dashboards still key off the resulting `_f` / `_b` suffix
-# convention; renaming clusterA → front would touch the data plane and is
-# done as its own migration, not silently inside the lift.
-# ---------------------------------------------------------------------------
 def get_sensor_suffix(location: str, cluster: str) -> str:
-    suffix_map = {
-        ("Veg Room", "clusterA"): "_f",
-        ("Veg Room", "clusterB"): "_b",
-        ("Flower Room", "clusterA"): "_f",
-        ("Flower Room", "clusterB"): "_b",
-        ("Mother Room", "clusterA"): "_f",
-        ("Mother Room", "clusterB"): "_b",
-    }
-    return suffix_map.get((location, cluster), "_f")
+    """Return the canonical measurement-name suffix for a sensor cluster."""
+    try:
+        pattern = sensor_name_like_pattern(location, cluster)
+    except ClusterMismatchError as exc:
+        logger.warning("Invalid CAN sensor cluster %s/%s: %s", location, cluster, exc)
+        return ""
+    if pattern and pattern.startswith("%"):
+        return pattern[1:]
+    return ""
 
 
 def get_location_from_node(node_id):
     if node_id is None:
         return ("Unknown", "Unknown")
     node_map = {
-        1: ("Veg Room", "clusterB"),
-        2: ("Veg Room", "clusterA"),
-        3: ("Flower Room", "clusterA"),
-        4: ("Flower Room", "clusterB"),
-        5: ("Mother Room", "clusterA"),
-        6: ("Mother Room", "clusterB"),
+        1: ("Flower Room", "back"),
+        2: ("Flower Room", "front"),
+        3: ("Veg Room", "main"),
     }
     return node_map.get(node_id, ("Unknown", f"node_{node_id}"))
 

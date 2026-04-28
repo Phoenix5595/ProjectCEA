@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
 from typing import Any
 
@@ -101,7 +102,7 @@ class DatabaseManager:
         """Connect to Redis."""
         try:
             self._redis_client = redis.Redis.from_url(self.redis_url, decode_responses=True)
-            self._redis_client.ping()
+            await asyncio.to_thread(self._redis_client.ping)
             self._redis_enabled = True
             logger.info(f"Connected to Redis: {self.redis_url}")
         except Exception as e:

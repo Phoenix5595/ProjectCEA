@@ -339,9 +339,9 @@ export default function ManualLightControl({ location, cluster, compact = false 
  })
  
  return (
- <div className={`${compact ? "" : "mt-4 pt-4 border-t border-border-subtle"} bg-surface-base/80`} style={{ minHeight: compact ? 'auto' : '100px', padding: compact ? '8px' : '12px', borderRadius: '4px', width: compact ? 'fit-content' : '100%', display: 'inline-block' }}>
+ <div className={compact ? "flex h-full w-full min-h-0 flex-col justify-center gap-2 bg-surface-base/80 p-2 rounded-sm" : "mt-4 pt-4 border-t border-border-subtle bg-surface-base/80 p-3 rounded-sm w-full"}>
  {!compact && <div className="text-sm font-medium text-text-secondary mb-2">Manual Control</div>}
- {compact && <div className="text-xs font-medium text-text-secondary mb-1.5">Manual Control</div>}
+ {compact && <div className="text-xs font-medium text-text-secondary uppercase tracking-wider">Manual Override</div>}
  {loadingDetails && (
  <div className="text-xs text-text-muted mb-2">Loading lights...</div>
  )}
@@ -360,11 +360,11 @@ export default function ManualLightControl({ location, cluster, compact = false 
  </div>
  )}
  {!loadingDetails && lightDetails.length > 0 ? (
- <div className="flex flex-wrap gap-2">
+ <div className={compact ? "grid grid-cols-2 gap-2 sm:grid-cols-3" : "flex flex-wrap gap-2"}>
  <button
  onClick={() => restoreMode(lastDefaultMode || 'auto')}
  disabled={loading}
- className={`px-3 py-1.5 text-sm font-medium bg-btn-primary-light text-text-default rounded hover:bg-btn-primary-hover disabled:opacity-50 disabled:cursor-not-allowed ${
+className={`px-3 py-1.5 text-sm font-medium bg-btn-primary-light text-text-default rounded hover:bg-btn-primary-hover disabled:opacity-50 disabled:cursor-not-allowed ${
  activeMode === 'auto' ? 'ring-2 ring-btn-primary-text ring-offset-2' : ''
  }`}
  >

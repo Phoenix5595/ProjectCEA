@@ -48,6 +48,20 @@ function mapPeriodsFromApi(periods: RawClimatePeriod[]): ClimatePeriod[] {
   }))
 }
 
+function createConstantPeriod(modeName: string): ClimatePeriod {
+  return {
+    period_name: `${modeName.charAt(0).toUpperCase()}${modeName.slice(1)} Constant`,
+    start_time: '00:00',
+    end_time: '00:00',
+    ramp_minutes: 0,
+    heating_setpoint: null,
+    cooling_setpoint: null,
+    vpd_setpoint: null,
+    co2_setpoint: null,
+    details: '24h constant setpoints'
+  }
+}
+
 export default function ZoneConfig({ location: propsLocation, cluster: propsCluster }: ZoneConfigProps) {
   const { location: locationParam, cluster: urlCluster } = useParams<{ location: string; cluster: string }>()
   const { setActions } = useControlActions()
@@ -75,6 +89,8 @@ export default function ZoneConfig({ location: propsLocation, cluster: propsClus
       )
       if (periods && periods.length > 0) {
         setClimatePeriods(mapPeriodsFromApi(periods as unknown as RawClimatePeriod[]))
+      } else if (mode.is_constant) {
+        setClimatePeriods([createConstantPeriod(mode.mode_name)])
       } else {
         setClimatePeriods([])
       }
@@ -153,10 +169,15 @@ export default function ZoneConfig({ location: propsLocation, cluster: propsClus
         ramp_down_duration: p.light_ramp_down_minutes ?? null,
       })
 
+      const periodsToSave =
+        roomMode.is_constant && climatePeriods.length === 0
+          ? [createConstantPeriod(roomMode.mode_name)]
+          : climatePeriods
+
       await apiClient.saveClimatePeriods(
         location,
         cluster,
-        climatePeriods as unknown as Record<string, unknown>[],
+        periodsToSave as unknown as Record<string, unknown>[],
         updated.mode_id ?? undefined,
         updated.submode_id ?? undefined
       )
@@ -244,10 +265,12 @@ export default function ZoneConfig({ location: propsLocation, cluster: propsClus
             {/* Light Schedule + Climate Periods row - 450px */}
             <div className="flex gap-1 h-[450px] shrink-0">
               <div className="w-[30%] h-full">
-                {!isConstant && (
-                  <div className="bg-surface-primary rounded-lg border border-border-subtle p-1 h-full flex flex-col min-w-[300px]">
-                    <div className="text-[14px] text-text-muted uppercase font-bold tracking-wider mb-1">Light Schedule</div>
-                    <div className="flex-1 min-h-0 h-full flex flex-col">
+                <div className="bg-surface-primary rounded-lg border border-border-subtle p-1 h-full flex flex-col min-w-[300px]">
+                  <div className="text-[14px] text-text-muted uppercase font-bold tracking-wider mb-1">
+                    {isConstant ? 'Manual Light Control' : 'Light Schedule'}
+                  </div>
+                  <div className="flex-1 min-h-0 h-full flex flex-col">
+                    {!isConstant ? (
                       <CircularTimePicker
                         dayStartTime={params.day_start_time}
                         dayEndTime={params.night_start_time}
@@ -260,9 +283,11 @@ export default function ZoneConfig({ location: propsLocation, cluster: propsClus
                         onRampUpChange={(d) => handleParamChange({ light_ramp_up_minutes: d ?? 0 })}
                         onRampDownChange={(d) => handleParamChange({ light_ramp_down_minutes: d ?? 0 })}
                       />
-                    </div>
+                    ) : (
+                      <ManualLightControl location={location} cluster={cluster} compact={true} />
+                    )}
                   </div>
-                )}
+                </div>
               </div>
 
               <div className="w-[70%] flex flex-col gap-1 h-full overflow-hidden">
@@ -284,12 +309,6 @@ export default function ZoneConfig({ location: propsLocation, cluster: propsClus
                 <VerticalNotesBlock location={location} cluster={cluster} currentMode={roomMode?.mode_name} />
               </div>
               <div className="w-[65%]">
-                {(currentModeName === 'drying' || currentModeName === 'sleep') && (
-                  <div className="bg-surface-primary rounded-lg border border-border-subtle p-2 mb-1">
-                    <div className="text-[14px] text-text-muted uppercase font-bold tracking-wider mb-2">Manual Light Control</div>
-                    <ManualLightControl location={location} cluster={cluster} compact={true} />
-                  </div>
-                )}
                 <VerticalPIDBlock />
               </div>
             </div>

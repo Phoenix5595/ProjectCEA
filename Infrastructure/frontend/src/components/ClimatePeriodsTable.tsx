@@ -29,6 +29,10 @@ const ZONE = {
 const inputBase =
   'px-1 py-0 text-xs border border-border-default rounded text-text-default focus:border-accent-primary focus:ring-1 focus:ring-accent-primary focus:outline-none placeholder:text-text-subtle'
 
+function isAllDayPeriod(period: ClimatePeriod): boolean {
+  return period.start_time === period.end_time
+}
+
 interface ClimatePeriodsTableProps {
   periods: ClimatePeriod[]
   onChange: (periods: ClimatePeriod[]) => void
@@ -154,24 +158,34 @@ export default function ClimatePeriodsTable({
                   />
                 </td>
                 <td className="px-1 py-1 border-r border-border-subtle group-hover:bg-surface-secondary/50">
-                  <input
-                    type="text"
-                    pattern="[0-9]{2}:[0-9]{2}"
-                    placeholder="HH:MM"
-                    value={period.start_time}
-                    onChange={(e) => updatePeriod(index, 'start_time', e.target.value)}
-                    className={`w-16 text-xs bg-surface-secondary ${inputBase}`}
-                  />
+                  <div className="flex flex-col gap-0.5">
+                    <input
+                      type="text"
+                      pattern="[0-9]{2}:[0-9]{2}"
+                      placeholder="HH:MM"
+                      value={period.start_time}
+                      onChange={(e) => updatePeriod(index, 'start_time', e.target.value)}
+                      className={`w-16 text-xs bg-surface-secondary ${inputBase}`}
+                    />
+                    {isAllDayPeriod(period) && (
+                      <span className="text-[9px] uppercase tracking-wide text-text-subtle">All day</span>
+                    )}
+                  </div>
                 </td>
                 <td className="px-1 py-1 border-r border-border-subtle group-hover:bg-surface-secondary/50">
-                  <input
-                    type="text"
-                    pattern="[0-9]{2}:[0-9]{2}"
-                    placeholder="HH:MM"
-                    value={period.end_time}
-                    onChange={(e) => updatePeriod(index, 'end_time', e.target.value)}
-                    className={`w-16 text-xs bg-surface-secondary ${inputBase}`}
-                  />
+                  <div className="flex flex-col gap-0.5">
+                    <input
+                      type="text"
+                      pattern="[0-9]{2}:[0-9]{2}"
+                      placeholder="HH:MM"
+                      value={period.end_time}
+                      onChange={(e) => updatePeriod(index, 'end_time', e.target.value)}
+                      className={`w-16 text-xs bg-surface-secondary ${inputBase}`}
+                    />
+                    {isAllDayPeriod(period) && (
+                      <span className="text-[9px] uppercase tracking-wide text-text-subtle">24h</span>
+                    )}
+                  </div>
                 </td>
                 <td className="px-1 py-1 border-r border-border-subtle group-hover:bg-surface-secondary/50">
                   <input

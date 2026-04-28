@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from contextlib import asynccontextmanager
 from typing import Any
 
@@ -92,7 +93,7 @@ async def readings():
         return {}
     out = {}
     for device_id, sensor_name in config.get_devices().items():
-        temp = read_temperature_c(device_id)
+        temp = await asyncio.to_thread(read_temperature_c, device_id)
         out[sensor_name] = temp
     return out
 
