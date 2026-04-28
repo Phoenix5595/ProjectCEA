@@ -28,6 +28,10 @@ services:
       REPLICATION_PASSWORD: ${REPLICATION_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB:-cea_sensors}
       REPLICATION_SLOT: ${REPLICATION_SLOT:-}
+      # Grafana runs 1s live dashboards with many concurrent panel queries.
+      # The default 50 was inherited from the replica base backup and is too
+      # low for this host; keep the replica explicitly above the primary.
+      POSTGRES_MAX_CONNECTIONS: ${POSTGRES_MAX_CONNECTIONS:-150}
     volumes:
       - ${PGDATA_HOST_PATH:-/srv/storage1/projectcea_database/data}:/var/lib/postgresql/data
       - ./docker-entrypoint-replica.sh:/docker-entrypoint-replica.sh:ro

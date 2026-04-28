@@ -14,6 +14,7 @@ export default function FlowerMonitoring() {
           <GrafanaPanel 
             dashboardUid={DASHBOARD_UID} 
             timeRange={true}
+            refresh="1s"
             height="100%" 
           />
         </div>

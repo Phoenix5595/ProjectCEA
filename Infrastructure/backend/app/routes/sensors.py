@@ -7,7 +7,11 @@ from datetime import datetime, timedelta
 from fastapi import APIRouter, HTTPException, Query, Request
 
 from app.models import DataPoint, SensorDataResponse
-from app.redis_client import get_all_sensor_values, get_sensor_timestamp, get_sensor_value
+from app.redis_client import (
+    get_all_sensor_timestamps,
+    get_all_sensor_values,
+    get_sensor_value,
+)
 from app.redis_stream_reader import RedisStreamReader
 from app.stream_processor import process_stream_entries_to_sensor_data
 from shared.cluster_topology import (
@@ -266,12 +270,13 @@ async def get_live_sensor_data(
                 sensor_types.append(base_type)
 
     response = {}
+    timestamps_ms = await get_all_sensor_timestamps(sensor_types)
 
     # Read from Redis for each sensor
     for sensor_type in sensor_types:
         value = await get_sensor_value(sensor_type)
         if value is not None:
-            ts_ms = await get_sensor_timestamp(sensor_type)
+            ts_ms = timestamps_ms.get(sensor_type)
             if ts_ms:
                 timestamp = datetime.fromtimestamp(ts_ms / 1000.0)
             else:
@@ -335,10 +340,11 @@ async def get_all_live_sensor_data():
         "water_level": "mm",
     }
 
+    timestamps_ms = await get_all_sensor_timestamps(list(sensor_values.keys()))
     result = []
     for sensor_name, value in sensor_values.items():
         # Get timestamp
-        ts_ms = await get_sensor_timestamp(sensor_name)
+        ts_ms = timestamps_ms.get(sensor_name)
         if ts_ms:
             timestamp = datetime.fromtimestamp(ts_ms / 1000.0)
         else:

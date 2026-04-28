@@ -115,8 +115,18 @@ log_event "deploy_start" ""
 
 echo "[0/7] Running Ruff (lint + format) on Infrastructure..."
 cd "$SOURCE"
-ruff check --fix Infrastructure/
-ruff format Infrastructure/
+RUFF_PATHS=(
+  Infrastructure/backend/app
+  Infrastructure/automation-service/app
+  Infrastructure/can-processor-service/app
+  Infrastructure/soil-sensor-service/app
+  Infrastructure/onewire-worker-service/app
+  Infrastructure/weather-service/app
+  Infrastructure/shared
+  Infrastructure/scripts
+)
+ruff check --fix "${RUFF_PATHS[@]}"
+ruff format "${RUFF_PATHS[@]}"
 cd - >/dev/null
 
 echo "[1/7] Copying code..."
@@ -163,6 +173,14 @@ if [[ "$HEALTH_RC" -ne 0 ]]; then
   log_event "deploy_fail" "health_checks_failed"
   echo "=== DEPLOY FAILED (health); symlink restored when possible ===" >&2
   exit 1
+fi
+
+if [[ "${DEPLOY_ISKRA:-0}" == "1" ]]; then
+  echo "[7b/7] Syncing and verifying iskraprojectcea stack..."
+  log_event "iskra_sync_start" ""
+  "$SOURCE/Infrastructure/scripts/sync_to_iskra.sh"
+  "$SOURCE/Infrastructure/scripts/verify_iskra.sh"
+  log_event "iskra_sync_ok" ""
 fi
 
 MANIFEST_PATH="/opt/projectcea/current/deploy_manifest.json"

@@ -1,13 +1,9 @@
-# ProjectCEA reverse proxy (Phase 3.4a).
+# ProjectCEA reverse proxy (Phase 3.4 complete).
 #
-# Purpose: single local entrypoint for the SPA + all microservices. Listens on
-# :8080 only for now (Phase 3.4a) so the existing direct ports (8000/8001/8003)
-# keep working; the frontend still talks to those directly until Phase 3.4b.
-#
-# Later phases:
-#   3.4b: SPA switches to http://<host>:8080 and sends X-API-Key.
-#   3.4c: CEA_API_KEY_REQUIRE=true (canary on weather first).
-#   3.4d: Flip every FastAPI unit to --host 127.0.0.1 so Caddy is the only LAN entry.
+# Purpose: single LAN/Tailscale entrypoint for the SPA + all microservices.
+# FastAPI services bind to 127.0.0.1; Caddy listens on :8080 and forwards to
+# loopback backends. API-key enforcement is handled by the shared FastAPI
+# middleware and the SPA sends X-API-Key from the production bundle.
 #
 # NOTE: Caddy automatically preserves WebSocket upgrades in `reverse_proxy`.
 {

@@ -1,0 +1,49 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "links": [],
+  "panels": [
+    {
+      "datasource": null,
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1,
+      "options": {
+        "content": "# Laboratory Water\n\nPlaceholder dashboard provisioned by ProjectCEA so the SPA route resolves. Add water-management panels here when the lab water sensors are wired.",
+        "mode": "markdown"
+      },
+      "pluginVersion": "11.6.0",
+      "title": "Laboratory Water",
+      "type": "text"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 40,
+  "tags": [
+    "projectcea",
+    "laboratory"
+  ],
+  "templating": {
+    "list": []
+  },
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "timezone": "browser",
+  "title": "Laboratory Water",
+  "uid": "lab-water",
+  "version": 1
+}

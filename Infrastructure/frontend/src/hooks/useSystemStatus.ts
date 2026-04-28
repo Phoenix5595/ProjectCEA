@@ -21,6 +21,13 @@ export interface SystemStats {
 export interface UseSystemStatusReturn {
   systemStats: SystemStats | null;
   statusDevices: Record<string, Record<string, Record<string, { intensity?: number; load_percent?: number }>>> | null;
+  degraded: {
+    active?: boolean;
+    reason?: string;
+    failure_count?: number;
+    success_count?: number;
+    updated_at?: string;
+  } | null;
 }
 
 /** Format uptime from seconds to human-readable string */
@@ -37,6 +44,7 @@ function formatUptime(sec: number): string {
 export function useSystemStatus(): UseSystemStatusReturn {
   const [systemStats, setSystemStats] = useState<SystemStats | null>(null);
   const [statusDevices, setStatusDevices] = useState<Record<string, Record<string, Record<string, { intensity?: number; load_percent?: number }>>> | null>(null);
+  const [degraded, setDegraded] = useState<UseSystemStatusReturn['degraded']>(null);
 
   // System stats polling (5 seconds)
   useEffect(() => {
@@ -68,6 +76,7 @@ export function useSystemStatus(): UseSystemStatusReturn {
           if (statusResponse.devices) {
             setStatusDevices(statusResponse.devices);
           }
+          setDegraded(statusResponse.degraded ?? null);
         }
       } catch (error) {
         console.warn('System stats refresh failed', error);
@@ -110,5 +119,5 @@ export function useSystemStatus(): UseSystemStatusReturn {
     return () => clearInterval(healthInterval);
   }, []);
 
-  return { systemStats, statusDevices };
+  return { systemStats, statusDevices, degraded };
 }

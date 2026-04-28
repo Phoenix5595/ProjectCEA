@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import UTC, datetime
+import json
 
 from app.alarm_manager import AlarmManager
 from app.control.control_engine import ControlEngine
@@ -50,6 +52,9 @@ class BackgroundTasks:
         self._setpoint_history_task: asyncio.Task | None = None
         self._batch_flush_task: asyncio.Task | None = None
         self._config_event_task: asyncio.Task | None = None
+        self._control_failure_count = 0
+        self._control_success_count = 0
+        self._degraded_active = False
 
     async def start(self) -> None:
         """Start background control loop and tasks."""
@@ -120,6 +125,7 @@ class BackgroundTasks:
                         retry_delay = 1.0
                         logger.info("Database connection restored")
                     except Exception as e:
+                        await self._record_control_failure(f"database reconnect failed: {e}")
                         logger.warning(
                             f"Database connection failed: {e}. Retrying in {retry_delay}s..."
                         )
@@ -131,6 +137,7 @@ class BackgroundTasks:
                 # Debug logging removed
                 await self.control_engine.run_control_loop()
                 # Debug logging removed
+                await self._record_control_success()
 
                 # Reset retry delay on success
                 retry_delay = 1.0
@@ -141,9 +148,71 @@ class BackgroundTasks:
             except asyncio.CancelledError:
                 break
             except Exception as e:
+                await self._record_control_failure(str(e))
                 logger.error(f"Error in control loop: {e}", exc_info=True)
                 # Continue running even on error
                 await asyncio.sleep(self.update_interval)
+
+    async def _record_control_failure(self, reason: str) -> None:
+        """Enter degraded mode after repeated control-loop failures."""
+        self._control_failure_count += 1
+        self._control_success_count = 0
+        if self._control_failure_count < 3 and not self._degraded_active:
+            return
+
+        self._degraded_active = True
+        payload = {
+            "active": True,
+            "reason": reason,
+            "failure_count": self._control_failure_count,
+            "success_count": self._control_success_count,
+            "updated_at": datetime.now(UTC).isoformat(),
+        }
+        await self._write_degraded_state(payload)
+        logger.warning(
+            "Control loop degraded mode active after %s consecutive failures: %s",
+            self._control_failure_count,
+            reason,
+        )
+
+    async def _record_control_success(self) -> None:
+        """Clear degraded mode after a stable success window."""
+        self._control_failure_count = 0
+        if not self._degraded_active:
+            return
+
+        self._control_success_count += 1
+        if self._control_success_count < 10:
+            payload = {
+                "active": True,
+                "reason": "recovering",
+                "failure_count": self._control_failure_count,
+                "success_count": self._control_success_count,
+                "updated_at": datetime.now(UTC).isoformat(),
+            }
+            await self._write_degraded_state(payload)
+            return
+
+        self._degraded_active = False
+        payload = {
+            "active": False,
+            "reason": "recovered after 10 successful control ticks",
+            "failure_count": self._control_failure_count,
+            "success_count": self._control_success_count,
+            "updated_at": datetime.now(UTC).isoformat(),
+        }
+        await self._write_degraded_state(payload)
+        logger.info("Control loop degraded mode cleared after 10 successful ticks")
+
+    async def _write_degraded_state(self, payload: dict[str, object]) -> None:
+        """Best-effort write of the control-loop degraded state to Redis."""
+        redis_client = None
+        if self.database._automation_redis and self.database._automation_redis.redis_enabled:
+            redis_client = self.database._automation_redis.redis_client
+        if redis_client is None:
+            logger.debug("Skipping automation:degraded write; Redis unavailable")
+            return
+        await asyncio.to_thread(redis_client.set, "automation:degraded", json.dumps(payload))
 
     async def _heartbeat_loop(self) -> None:
         """Heartbeat task - writes automation service heartbeat."""

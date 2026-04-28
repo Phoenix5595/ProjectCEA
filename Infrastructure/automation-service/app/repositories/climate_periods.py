@@ -172,21 +172,30 @@ class ClimatePeriodRepository(BaseRepository):
             return False
 
     async def get_active_period(
-        self, location: str, cluster: str, reference_time: str
+        self,
+        location: str,
+        cluster: str,
+        reference_time: str,
+        mode_id: int | None = None,
+        submode_id: int | None = None,
     ) -> dict[str, Any] | None:
         """Get the active period at a given time (HH:MM format)."""
         query = """
-            SELECT id, location, cluster, period_name,
+            SELECT id, location, cluster, mode_id, submode_id, period_name,
                    start_time, end_time, ramp_minutes,
                    heating_setpoint, cooling_setpoint, vpd_setpoint, co2_setpoint,
                    details
             FROM climate_periods
             WHERE location = $1 AND cluster = $2
-            ORDER BY start_time
         """
+        params: list[Any] = [location, cluster]
+        if mode_id is not None:
+            query += " AND mode_id = $3 AND submode_id IS NOT DISTINCT FROM $4"
+            params.extend([mode_id, submode_id])
+        query += " ORDER BY start_time"
         try:
             async with self.pool.acquire() as conn:
-                rows = await conn.fetch(query, location, cluster)
+                rows = await conn.fetch(query, *params)
                 if not rows:
                     return None
 
@@ -198,6 +207,9 @@ class ClimatePeriodRepository(BaseRepository):
                     end_parts = str(row["end_time"]).split(":")
                     start_mins = int(start_parts[0]) * 60 + int(start_parts[1])
                     end_mins = int(end_parts[0]) * 60 + int(end_parts[1])
+
+                    if start_mins == end_mins:
+                        return dict(row)
 
                     if start_mins <= end_mins:
                         if start_mins <= ref_mins < end_mins:

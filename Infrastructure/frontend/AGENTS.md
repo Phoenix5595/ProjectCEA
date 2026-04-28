@@ -14,7 +14,7 @@ frontend/
 │   │   ├── ClimatePeriodTimeline.tsx # 24h sun/moon + climate setpoint curves
 │   │   ├── CircularTimePicker.tsx # 657 lines - clock UI
 │   │   ├── LightIntensity.tsx    # ZoneConfig dimmable light targets (CUR/TGT)
-│   │   └── ScheduleManager.tsx   # Schedule CRUD
+│   │   └── DfrBoardsPanel.tsx    # DFR0971 channel assignment UI
 │   ├── pages/               # Route pages
 │   ├── services/            # API + WebSocket clients
 │   ├── types/               # TypeScript interfaces
@@ -61,7 +61,6 @@ Without (2), lights would not track photoperiod in `schedules`. Without (3), cli
 | `ClimatePeriodTimeline` | 24h sun/moon + heat/cool/VPD curves | — |
 | `CircularTimePicker` | Radial time selection | 657 |
 | `LightIntensity` | Light intensity panel in ZoneConfig | — |
-| `ScheduleManager` | Schedule list + CRUD | 514 |
 | `DfrBoardsPanel` | Devices → DFR0971 board/channel assignment + light display_name rename | — |
 
 ## DEVELOPMENT
@@ -100,6 +99,11 @@ VITE_GRAFANA_BASE_URL=        # REQUIRED at build time for Grafana iframes;
                               # console.warn if unset (Phase 7.4).
 ```
 
+Monitoring embeds (`/flower/monitoring`, `/vegetation/monitoring`) intentionally
+preserve Grafana's time-range controls and `refresh=1s` live cadence. Those are
+operator requirements; optimize slow dashboards through SQL/panel/datasource
+work, not by removing time-range flexibility or live refresh.
+
 ## ANTI-PATTERNS
 
 | Never | Reason |
@@ -117,8 +121,8 @@ VITE_GRAFANA_BASE_URL=        # REQUIRED at build time for Grafana iframes;
 
 ### Locations
 - Provisioned from: `/var/lib/grafana/dashboards/`
-- Sync script: `Infrastructure/frontend/grafana/sync_dashboards.sh`
-- Auto-sync: Every 5 minutes via systemd timer
+- Sync script: `Infrastructure/scripts/sync_to_iskra.sh`
+- Production host: `projectcea_grafana` on `iskraprojectcea:3001`
 
 ### Data Sources
 

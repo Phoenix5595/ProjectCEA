@@ -200,12 +200,39 @@ class ConfigEventConsumer:
                         logger.exception(
                             "Error processing config event message %s: %s", msg_id, exc
                         )
+                        await self._write_dlq(msg_id, fields, exc)
 
                     # Acknowledge regardless – avoid infinite re-delivery of bad msgs
                     try:
                         await self._redis.xack(self.stream, self.group, msg_id)
-                    except Exception:  # pragma: no cover
-                        pass
+                    except Exception as exc:  # pragma: no cover
+                        logger.warning("Failed to ACK config event message %s: %s", msg_id, exc)
+
+    async def _write_dlq(
+        self,
+        msg_id: str,
+        fields: dict[str, Any],
+        exc: Exception,
+    ) -> None:
+        """Best-effort DLQ write before acknowledging a failed event."""
+        if self._redis is None:
+            return
+        try:
+            await self._redis.xadd(
+                "sensor:dlq",
+                {
+                    "source_stream": self.stream,
+                    "source_group": self.group,
+                    "source_message_id": msg_id,
+                    "error": str(exc),
+                    "payload": json.dumps(fields, sort_keys=True, default=str),
+                    "timestamp": datetime.now().isoformat(),
+                },
+                maxlen=1000,
+                approximate=True,
+            )
+        except Exception as dlq_exc:  # pragma: no cover
+            logger.warning("Failed to write config event %s to DLQ: %s", msg_id, dlq_exc)
 
     # ------------------------------------------------------------------
     # Message processing

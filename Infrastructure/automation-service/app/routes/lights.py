@@ -453,6 +453,14 @@ async def get_zone_lights_status(
         return {"lights": []}
 
     now = datetime.now(tz=LOCAL_TZ)
+    drying_mode = False
+    if database:
+        try:
+            active_mode = await database.room_mode_repo.get_active_mode(location, cluster)
+            drying_mode = str((active_mode or {}).get("mode_name") or "").strip().lower() == "drying"
+        except Exception:
+            # Zone status is best-effort; a mode lookup miss should not hide light rows.
+            drying_mode = False
 
     schedules_list: list[dict[str, Any]] = []
     if database:
@@ -529,12 +537,19 @@ async def get_zone_lights_status(
                 # Zone status should remain best-effort even if scheduler details fail.
                 pass
 
+        if drying_mode:
+            scheduler_effective_intensity = 0.0
+            scheduler_nominal_intensity = 0.0
+            scheduler_is_in_photoperiod = False
+
         active_schedule_mode: str | None = None
         for s in schedules_list:
             if not _schedule_row_active_for_device(s, device_name, now, scheduler):
                 continue
             active_schedule_mode = str(s.get("mode") or "").upper() or None
             break
+        if drying_mode:
+            active_schedule_mode = "MOON"
 
         # Prefer SUN/DAY target from the row that is active at ``now`` (matches Scheduler semantics).
         sun_day_target: float | None = None

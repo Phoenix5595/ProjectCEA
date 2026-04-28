@@ -33,7 +33,7 @@ export default function Dashboard() {
 
   const { devices: wsDevices, sensorData: wsSensorData } = useWebSocket();
   const { devices, sensorData, controlHistoryByRoom, loading } = useSensorPolling();
-  const { systemStats, statusDevices } = useSystemStatus();
+  const { systemStats, statusDevices, degraded } = useSystemStatus();
 
   const [weatherData, setWeatherData] = useState<WeatherData | null>(null);
 
@@ -139,6 +139,15 @@ export default function Dashboard() {
             </div>
           </div>
         </div>
+        {degraded?.active && (
+          <div
+            role="alert"
+            className="mb-2 rounded-lg border border-amber-500/60 bg-amber-500/15 px-3 py-2 text-sm text-amber-100"
+          >
+            <strong>Control loop degraded:</strong> {degraded.reason || 'recovering'} · failures{' '}
+            {degraded.failure_count ?? 0} · recovery ticks {degraded.success_count ?? 0}/10
+          </div>
+        )}
 
         {/* Main Content */}
         <div className="flex-1 flex flex-col lg:flex-row gap-2 min-h-0">

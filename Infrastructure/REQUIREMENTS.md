@@ -35,6 +35,26 @@ Single growing record of cross-service infrastructure requirements for ProjectCE
 - AOF on, `appendfsync everysec`. Max 1 second of writes lost on crash.
 - Configuration verified in `/etc/redis/redis.conf`. Do not regress without an explicit replacement durability story for `schedules:*`, `automation:degraded`, control-state keys.
 
+## Degraded mode and reconnect behavior
+
+- The automation control loop MUST publish `automation:degraded` when the loop
+  has three consecutive runtime failures and MUST clear it only after ten
+  consecutive successful ticks. The key is a JSON object with `active`,
+  `reason`, `failure_count`, `success_count`, and `updated_at` so the frontend,
+  journals, and Redis CLI all report the same state.
+- Degraded mode is an observability state, not an automatic lights-off command.
+  The existing failsafe/interlock layers remain responsible for crop-safety
+  actuation. Do not hide repeated loop failures behind log-only retries.
+- CAN bus reads MUST attempt to bring `can0` back up and recreate the socketcan
+  `Bus` after interface-down or recv errors, using capped exponential backoff.
+  A transient CAN flap should not require a manual service restart.
+- Backend Redis Stream consumers MUST route unprocessable config events to
+  `sensor:dlq` before acknowledging them, including the original stream,
+  message id, payload, and error string.
+- Async services must not call blocking sensor/hardware reads directly inside
+  the event loop. Use `asyncio.to_thread()` for 1-Wire file reads and other
+  synchronous drivers.
+
 ## Time synchronization
 
 - `systemd-timesyncd` active; `NTPSynchronized=yes` is required at deploy preflight (`Infrastructure/scripts/verify_time.sh`).
@@ -63,13 +83,47 @@ Single growing record of cross-service infrastructure requirements for ProjectCE
 - Pi PG is `15.16` + TSDB `2.23.1`. The replica MUST match these versions or replication breaks; preflight `verify_iskra.sh` enforces this.
 - `pg_stat_replication.replay_lag` healthy band: `< 1s` steady-state, `< 5s` transient. Anything sustained `> 30s` blocks Phase 5 DDL.
 - Pi → iskraprojectcea sync of `Infrastructure/iskra_stack/dashboards/` and `provisioning/` is via `Infrastructure/scripts/sync_to_iskra.sh` (rsync, with `--delete` safety guard refusing >3 deletions without `CONFIRM=1`).
+- `Infrastructure/scripts/verify_iskra.sh` is the supported preflight for the
+  replica/Grafana host. `deploy.sh` may run the sync/verify path when
+  `DEPLOY_ISKRA=1`; normal Pi deploys leave the offsite stack untouched.
 
 ## Grafana topology (Phase 5 will change this)
 
 Current state (Phase 5c complete, 2026-04-19):
 - Production Grafana is the `projectcea_grafana` container on `iskraprojectcea`, pinned to `grafana/grafana:11.6.0` (see `Infrastructure/iskra_stack/docker-compose.yml`). Datasource = `projectcea_database:5432` (Docker network loopback to the local WAL replica).
 - SPA embed URL is env-driven via `VITE_GRAFANA_BASE_URL` (default `http://iskraprojectcea:3001`; host port 3001 because the container's 3000 conflicted with another homelab service on that VM).
+- Grafana Postgres datasource pools are capped in provisioning:
+  `maxOpenConns=32`, `maxIdleConns=8`, `connMaxLifetime=300` on each
+  Postgres datasource. The Iskra replica MUST start with
+  `POSTGRES_MAX_CONNECTIONS=150` (see `Infrastructure/iskra_stack/`) so 1s
+  full-dashboard fan-out has enough headroom on the server while Grafana still
+  cannot consume every replica connection.
+- Frontend Monitoring embeds (`/flower/monitoring`, `/vegetation/monitoring`)
+  MUST keep `refresh=1s`; live monitoring cadence is non-negotiable. They MUST
+  preserve Grafana's normal time-range controls and support multiple operator
+  time windows; do not force a single bounded window from the frontend. Speed
+  improvements must come from query fixes, aggregate-aware SQL, panel
+  reduction, datasource tuning, or replica capacity, not from removing live
+  refresh or time-range flexibility.
+- Grafana cluster-value tables should be dense operator readouts. Hide redundant
+  `Sensor` / `Value` table headers on compact current-value panels when the
+  panel title already identifies the cluster/table context.
+- Frontend light status badges are relay indicators. The adjacent intensity
+  readout is separate dimmer telemetry and must not be used to reinterpret relay
+  ON/OFF. In drying mode, scheduled light authority must force the light relays
+  OFF and DFR0971 intensities to 0% so relay badges show moon/off and dimmer
+  telemetry shows 0%; manual light controls remain available for explicit
+  operator action. In constant modes that expose manual light controls
+  (`drying`, `sleep`), render those controls in ZoneConfig's left light-control
+  column where the circular photoperiod picker appears for scheduled modes,
+  using the same card frame/title/flex sizing format as the circular picker.
 - Unified alerting rules + the `Tony` email contact point + the Gmail SMTP relay were migrated from the Pi `grafana-server` to `projectcea_grafana` on 2026-04-19. JSON exports of the pre-migration Pi state are preserved under `Infrastructure/frontend/grafana/pi-decommission-backup-*/` (gitignored; the SMTP app password is in that folder at mode 0600).
+- Sensor missing-data alert rules must distinguish missing samples from datasource
+  execution failures. Keep `noDataState=NoData` so genuinely absent telemetry
+  still emails, but set `execErrState=KeepLastState` so transient Grafana
+  datasource/database/auth errors do not email as if a connected sensor cluster
+  stopped reporting. Datasource health should be monitored separately by the
+  operations dashboard/alerts.
 - Pi `grafana-server` is `inactive`/`disabled` (no longer auto-starting; package + `/var/lib/grafana` retained as an escape hatch, delete later).
 - The legacy `iskradocker` CEA datasource + bind-mount were removed earlier in Phase 5c; backup tarball at `/var/lib/projectcea/backups/iskradocker-cea-grafana-pre-refactor.tgz`.
 
@@ -99,7 +153,7 @@ Services that participate in deploy + rollback today:
 | onewire-worker | `onewire-worker.service` | n/a | 1-wire temperatures → Redis (no HTTP) |
 | grafana-server | _decommissioned_ | _n/a_ | Pi Grafana — `inactive`/`disabled` since Phase 5c (2026-04-19). Production Grafana now runs as `projectcea_grafana` on `iskraprojectcea:3001` (Docker container; see `Infrastructure/iskra_stack/docker-compose.yml`). |
 
-## Security posture (Phase 3, in-progress)
+## Security posture (Phase 3 complete)
 
 Landed in Phase 3.3 / 3.5 / 3.6:
 - **Secret redaction in logs**: `shared/infra_logging.SecretRedactionFilter` is auto-attached to every handler configured through `setup_structured_logging()`. It scrubs URL userinfo, `POSTGRES_PASSWORD=`, `X-API-Key:`, `Authorization: Bearer`, `token=`, `api_key=` *after* message rendering and *before* the formatter, so both JSON and console output are clean. Idempotent. False-positive risk intentionally > false-negative risk.
@@ -154,8 +208,13 @@ Landed in Phase 3.4c/3.4d (API-key enforcement + localhost bind):
 - **Key rotation**: `printf 'CEA_API_KEY=%s\nCEA_API_KEY_REQUIRE=true\n' "$NEW" | sudo -u antoine tee /opt/projectcea/shared/env/api_key.env.tmp >/dev/null && sudo -u antoine mv /opt/projectcea/shared/env/api_key.env.tmp /opt/projectcea/shared/env/api_key.env && sudo chmod 0600 /opt/projectcea/shared/env/api_key.env` → update `frontend/.env.production` with the same value → `./deploy.sh` (rebuilds SPA with the new key) → `sudo systemctl restart <all services>`.
 - **Rollback**: remove the `CEA_API_KEY_REQUIRE` line from `api_key.env` and restart; enforcement disables fleet-wide without a code redeploy. To also re-open the LAN boundary: revert each drop-in's `--host 127.0.0.1` back to `--host 0.0.0.0` — backups in `/var/lib/projectcea/systemd-backup/20260418T132354Z/dropins/pre-34d/`.
 
-Still deferred:
-- Retire the `POSTGRES_PASSWORD` env-var fallback once 3.8 has soaked in production; drop the `EnvironmentFile=-postgres.env` line from every base unit and scrub the `POSTGRES_PASSWORD=` line from `postgres.env` itself (keep the file for other future keys).
+Remaining cleanup:
+- Retire the `POSTGRES_PASSWORD` env-var fallback after the `LoadCredential=`
+  path has soaked in production; drop `EnvironmentFile=-postgres.env` from every
+  DB-using base unit and scrub `POSTGRES_PASSWORD=` from `postgres.env` itself.
+  This is cleanup only: the authoritative Phase 3.8 runtime path is already
+  `$CREDENTIALS_DIRECTORY/postgres_password` via
+  `shared.db_credentials.load_postgres_password()`.
 
 ## Frontend port / origin map
 

@@ -44,6 +44,8 @@ PGCONF
   chown postgres:postgres "$PGDATA/postgresql.conf" 2>/dev/null || true
 fi
 
-# Start postgres server (no args: use PGDATA from env)
+# Start postgres server (no args: use PGDATA from env). Iskra is the Grafana
+# read replica, so allow a higher connection ceiling than the Pi primary while
+# keeping the setting explicit in compose.
 export PGDATA
-exec gosu postgres postgres
+exec gosu postgres postgres -c "max_connections=${POSTGRES_MAX_CONNECTIONS:-150}"

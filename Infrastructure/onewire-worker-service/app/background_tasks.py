@@ -47,7 +47,7 @@ class BackgroundTasks:
         while self.running:
             try:
                 for device_id, sensor_name in devices.items():
-                    temp = read_temperature_c(device_id)
+                    temp = await asyncio.to_thread(read_temperature_c, device_id)
                     if temp is not None and self.redis_client.redis_enabled:
                         await self.redis_client.set_sensor_value(sensor_name, temp)
                         logger.debug(f"{sensor_name}={temp}°C")

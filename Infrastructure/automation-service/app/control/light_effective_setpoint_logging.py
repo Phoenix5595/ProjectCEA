@@ -69,6 +69,20 @@ async def log_light_effective_intensities_for_cluster(
                 except (TypeError, ValueError):
                     current_intensity = None
 
+            if not is_sun:
+                await database.setpoint_repo.log_effective_setpoints(
+                    location=location,
+                    cluster=cluster,
+                    device_name=device_name,
+                    mode="MOON",
+                    effective_light_intensity=0.0,
+                    nominal_light_intensity=0.0,
+                    ramp_progress_light=None,
+                    timestamp=current_time,
+                )
+                last_light_effective_log[key] = current_time
+                continue
+
             det = scheduler.get_light_intensity_details(
                 location, cluster, device_name, current_time, current_intensity
             )

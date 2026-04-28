@@ -17,7 +17,7 @@ Environment=POSTGRES_DB=cea_sensors
 Environment=POSTGRES_USER=cea_user
 EnvironmentFile=-/opt/projectcea/shared/env/postgres.env
 EnvironmentFile=-/opt/projectcea/shared/env/api_key.env
-ExecStart=/opt/projectcea/current/Infrastructure/weather-service/.venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 8003
+ExecStart=/opt/projectcea/current/Infrastructure/weather-service/.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8003
 Restart=on-failure
 RestartSec=5
 StandardOutput=journal
