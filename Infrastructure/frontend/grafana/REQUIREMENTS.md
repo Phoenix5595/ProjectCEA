@@ -16,6 +16,11 @@
 - Live/short (≤1h): query raw data only (no aggregation or caching).
 - Medium (≥12h): prefer hourly continuous aggregates.
 - Multi-day: prefer daily aggregates for trend panels.
+- Dashboards and Grafana server defaults use Quebec local time
+  (`America/Toronto`) for operator wall-clock display. SQL timestamps come from
+  `TIMESTAMPTZ`; Grafana/database exports intended for analytics or AI training
+  must explicitly emit UTC ISO timestamps instead of depending on the session
+  timezone.
 
 ## Dashboards
 - Panels should pick the view/aggregate that matches their time range (raw for live, hourly for 12h+, daily for multi-day).

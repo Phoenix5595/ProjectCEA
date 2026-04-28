@@ -605,7 +605,7 @@
   "templating": { "list": [] },
   "time": { "from": "now-24h", "to": "now" },
   "timepicker": {},
-  "timezone": "browser",
+  "timezone": "America/Toronto",
   "title": "Flower Sector: Soil",
   "uid": "flower-sector-soil",
   "version": 1,
