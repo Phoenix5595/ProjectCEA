@@ -55,6 +55,16 @@ This document describes the normalized database schema for the CEA (Controlled E
 - `value` (REAL)
 - `status` (TEXT, optional)
 
+**Time zone semantics:**
+- Timestamp columns use `TIMESTAMPTZ` so stored values represent real instants
+  independent of display timezone.
+- Production DB sessions use Quebec local time (`America/Toronto`) for operator
+  display and local schedule processing.
+- Exports for analytics, AI training, backups, or cross-system processing must
+  explicitly convert to UTC ISO output, for example:
+  `to_char(time AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`.
+  Never depend on the active DB session timezone for exported files.
+
 **Indexes:**
 - `(sensor_id, time DESC)` - Primary index for fast queries
 - `(time DESC)` - Time index for chunking

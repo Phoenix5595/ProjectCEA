@@ -32,6 +32,9 @@ services:
       # The default 50 was inherited from the replica base backup and is too
       # low for this host; keep the replica explicitly above the primary.
       POSTGRES_MAX_CONNECTIONS: ${POSTGRES_MAX_CONNECTIONS:-150}
+      # Keep timestamptz display/casts aligned with Quebec local time and the Pi
+      # primary. Storage/replication still preserve UTC instants.
+      POSTGRES_TIMEZONE: ${POSTGRES_TIMEZONE:-America/Toronto}
     volumes:
       - ${PGDATA_HOST_PATH:-/srv/storage1/projectcea_database/data}:/var/lib/postgresql/data
       - ./docker-entrypoint-replica.sh:/docker-entrypoint-replica.sh:ro
@@ -103,6 +106,7 @@ services:
       - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
       - GF_AUTH_ANONYMOUS_ORG_NAME=Main Org.
       - GF_DASHBOARDS_MIN_REFRESH_INTERVAL=1s
+      - GF_DATE_FORMATS_DEFAULT_TIMEZONE=America/Toronto
       # Datasource secret — interpolated by Grafana's native $VAR
       # support inside provisioning YAMLs (see template).
       - POSTGRES_CEA_USER_PASSWORD=${POSTGRES_CEA_USER_PASSWORD}

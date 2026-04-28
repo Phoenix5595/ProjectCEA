@@ -44,8 +44,12 @@ PGCONF
   chown postgres:postgres "$PGDATA/postgresql.conf" 2>/dev/null || true
 fi
 
-# Start postgres server (no args: use PGDATA from env). Iskra is the Grafana
-# read replica, so allow a higher connection ceiling than the Pi primary while
-# keeping the setting explicit in compose.
+# Start postgres server. Iskra is the Grafana read replica, so allow a higher
+# connection ceiling than the Pi primary while keeping the setting explicit in
+# compose. The replica must also use Quebec local time, matching the primary:
+# timestamptz storage remains UTC internally, but text formatting and ::time
+# casts used by dashboards/alert SQL follow the session timezone.
 export PGDATA
-exec gosu postgres postgres -c "max_connections=${POSTGRES_MAX_CONNECTIONS:-150}"
+exec gosu postgres postgres \
+  -c "max_connections=${POSTGRES_MAX_CONNECTIONS:-150}" \
+  -c "timezone=${POSTGRES_TIMEZONE:-America/Toronto}"

@@ -252,7 +252,7 @@
   "templating": { "list": [] },
   "time": { "from": "now-15m", "to": "now" },
   "timepicker": {},
-  "timezone": "browser",
+  "timezone": "America/Toronto",
   "title": "CEA Operations: replication & background jobs",
   "uid": "cea-operations-platform",
   "version": 1,

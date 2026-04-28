@@ -108,6 +108,17 @@ Current state (Phase 5c complete, 2026-04-19):
 - Grafana cluster-value tables should be dense operator readouts. Hide redundant
   `Sensor` / `Value` table headers on compact current-value panels when the
   panel title already identifies the cluster/table context.
+- Grafana operator dashboards and database sessions must use the grow room's
+  Quebec local timezone (`America/Toronto`) for wall-clock display and local
+  schedule processing. Dashboard `timezone` is fixed to `America/Toronto`,
+  Grafana's default timezone is configured as `America/Toronto` for
+  anonymous/server-rendered views, and the Iskra replica database MUST default
+  sessions to `America/Toronto` so SQL-formatted text timestamps and
+  `timestamptz::time` schedule comparisons match the Pi primary.
+- Historical exports for analytics, AI training, backups, or cross-system
+  processing MUST explicitly emit UTC ISO timestamps from `timestamptz` columns
+  (for example `time AT TIME ZONE 'UTC'` formatted with a trailing `Z`). Do not
+  rely on the current DB session timezone when exporting data.
 - Frontend light status badges are relay indicators. The adjacent intensity
   readout is separate dimmer telemetry and must not be used to reinterpret relay
   ON/OFF. In drying mode, scheduled light authority must force the light relays
