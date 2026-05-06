@@ -457,7 +457,9 @@ async def get_zone_lights_status(
     if database:
         try:
             active_mode = await database.room_mode_repo.get_active_mode(location, cluster)
-            drying_mode = str((active_mode or {}).get("mode_name") or "").strip().lower() == "drying"
+            drying_mode = (
+                str((active_mode or {}).get("mode_name") or "").strip().lower() == "drying"
+            )
         except Exception:
             # Zone status is best-effort; a mode lookup miss should not hide light rows.
             drying_mode = False

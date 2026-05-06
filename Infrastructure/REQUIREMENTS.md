@@ -2,6 +2,15 @@
 
 Single growing record of cross-service infrastructure requirements for ProjectCEA. Edit in place as the system evolves; do not split into per-phase files.
 
+## Runtime-only validation contract (Phase 8)
+
+- Validation surface is live `/health` + `/ready`, `journalctl`, and operator
+  Grafana dashboards.
+- The repository no longer retains a test suite for ongoing operation. Deploy
+  and rollback checks are runtime health checks, not pytest/vitest gates.
+- Data exports for analytics/AI still require explicit UTC ISO timestamp output
+  from `TIMESTAMPTZ` fields.
+
 ## Cluster topology contract (Phase 5e)
 
 - Two cluster *types* exist and are kept **strictly separate**:

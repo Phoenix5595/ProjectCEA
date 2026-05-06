@@ -1,5 +1,10 @@
 # Grafana Requirements for CEA
 
+## Validation Surface
+- Grafana/dashboard changes are validated through live panel freshness,
+  datasource health, and operator alerts; no retained dashboard test harness is
+  kept in this repository.
+
 ## Data Source
 - PostgreSQL with TimescaleDB enabled (checkbox on in Grafana).
 - Host/DB/user/password must match the backend (`cea_sensors` / `cea_user`).

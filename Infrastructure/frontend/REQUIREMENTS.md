@@ -1,5 +1,8 @@
 # Frontend Requirements (CEA)
 
+- **Validation surface**: production runtime checks (`/health`, `journalctl`,
+  Grafana embed freshness, operator UI behavior). No retained frontend test
+  suite (`vitest`/`jest`) in this repository post-campaign.
 - **Data-fetching boundaries**: Weather (weather-service via backend) is fetched in **`Dashboard`** (header, ~15 min refresh). System stats use **`useSystemStatus`** → automation `/api/status`. **`useSensorPolling`** loads devices, bulk setpoints, per-zone live sensors, control history, and **light `display_name` maps** via **`GET /api/devices/{location}/{cluster}`** (one call per `ZONES` entry on load + every 120s) — do not add unused `getLatestWeather` / `getSystemStatus` calls there. **`ScheduleManager`**: subscribe to schedule WebSocket updates with stable effect deps (avoid re-subscribing on every `editingSchedule` change unless required). **`ManualLightControl`**: fetch **`getSchedules(location, cluster)` once** per action and compute per-light day target intensity from that array (no N× schedule requests per light).
 - **Flower cluster policy (canonical)**:
   - **Control / actuators**: `ZONES` entry is **`Flower Room` + `main`**. ZoneConfig and all Flower control routes use **`/flower/control`** (no `:cluster`). Legacy `/flower/control/front|back` redirects to `/flower/control`.
