@@ -12,6 +12,7 @@ from shared.redis_client import (
     create_async_client,
     redis_url_from_env,
 )
+from shared.redis_keys import sensor_full, sensor_full_ts, sensor_short, sensor_short_ts
 
 logger = get_logger(__name__)
 
@@ -53,8 +54,17 @@ class RedisClient:
         try:
             ts_ms = int(datetime.now().timestamp() * 1000)
             pipe = self.client.pipeline()
-            pipe.setex(f"sensor:{sensor_name}", self.redis_ttl, str(value))
-            pipe.setex(f"sensor:{sensor_name}:ts", self.redis_ttl, str(ts_ms))
+            # Dual-write during key migration:
+            # - short form (sensor:{name}) is used by dashboard bulk reads
+            # - full form (cea:sensor:{location}:{cluster}:{sensor_type}) is used by automation
+            #
+            # 1-wire sensors are logically scoped to Lab/main.
+            location = "Lab"
+            cluster = "main"
+            pipe.setex(sensor_short(sensor_name), self.redis_ttl, str(value))
+            pipe.setex(sensor_short_ts(sensor_name), self.redis_ttl, str(ts_ms))
+            pipe.setex(sensor_full(location, cluster, sensor_name), self.redis_ttl, str(value))
+            pipe.setex(sensor_full_ts(location, cluster, sensor_name), self.redis_ttl, str(ts_ms))
             await pipe.execute()
             return True
         except Exception as e:

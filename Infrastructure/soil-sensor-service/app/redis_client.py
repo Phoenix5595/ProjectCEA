@@ -14,7 +14,14 @@ from shared.redis_client import (
     create_async_client,
     redis_url_from_env,
 )
-from shared.redis_keys import SENSOR_RAW_MAXLEN, SENSOR_RAW_STREAM
+from shared.redis_keys import (
+    SENSOR_RAW_MAXLEN,
+    SENSOR_RAW_STREAM,
+    sensor_full,
+    sensor_full_ts,
+    sensor_short,
+    sensor_short_ts,
+)
 
 logger = get_logger(__name__)
 
@@ -119,12 +126,22 @@ class RedisClient:
             await self.redis_client.publish("sensor:update:soil", json.dumps(message))
 
             # Store in state with TTL
-            state_key = f"sensor:{sensor_name}"
-            ts_key = f"sensor:{sensor_name}:ts"
+            # Dual-write during key migration:
+            # - short form (sensor:{name}) is used by some dashboard readers
+            # - full form (cea:sensor:{location}:{cluster}:{sensor_type}) is used by automation
+            #
+            # Soil sensors are currently scoped to main.
+            cluster = "main"
+            state_key = sensor_short(sensor_name)
+            ts_key = sensor_short_ts(sensor_name)
+            full_key = sensor_full(location, cluster, sensor_name)
+            full_ts_key = sensor_full_ts(location, cluster, sensor_name)
 
             pipe = self.redis_client.pipeline()
             pipe.setex(state_key, self.redis_ttl, str(value))
             pipe.setex(ts_key, self.redis_ttl, str(timestamp_ms))
+            pipe.setex(full_key, self.redis_ttl, str(value))
+            pipe.setex(full_ts_key, self.redis_ttl, str(timestamp_ms))
             await pipe.execute()
 
             return True
