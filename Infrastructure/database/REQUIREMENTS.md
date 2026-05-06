@@ -1,5 +1,11 @@
 # CEA Database Schema Requirements
 
+## Validation Surface
+
+- Database changes are validated in production via service health endpoints,
+  journals, and Grafana/data freshness checks; this repository does not retain
+  a standalone DB test suite post-campaign.
+
 ## Overview
 
 This document describes the normalized database schema for the CEA (Controlled Environment Agriculture) project. The schema implements a hierarchical structure for rooms, racks, devices, and sensors, with a unified time-series measurement table.

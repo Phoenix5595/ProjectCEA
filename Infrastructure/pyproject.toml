@@ -51,33 +51,6 @@ skip-magic-trailing-comma = false
 # Automatically detect the appropriate line ending
 line-ending = "auto"
 
-[tool.pytest.ini_options]
-testpaths = ["automation-service/app/control/tests", "automation-service/tests"]
-python_files = ["test_*.py"]
-python_classes = ["Test*"]
-python_functions = ["test_*"]
-addopts = "--cov=automation-service/app --cov-report=term-missing"
-
-[tool.coverage.run]
-source = ["automation-service/app"]
-omit = [
-    "automation-service/app/control/tests/*",
-    "tests/*",
-    "*/__pycache__/*",
-    "*/migrations/*",
-]
-
-[tool.coverage.report]
-exclude_lines = [
-    "pragma: no cover",
-    "def __repr__",
-    "raise AssertionError",
-    "raise NotImplementedError",
-    "if __name__ == .__main__.:",
-    "if TYPE_CHECKING:",
-    "@abstractmethod",
-]
-
 [tool.pyright]
 include = ["automation-service/app", "backend/app", "shared"]
 strict = ["automation-service/app/control", "automation-service/app/repositories"]

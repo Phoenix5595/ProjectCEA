@@ -1,5 +1,7 @@
 # Automation Service Requirements
 
+- **Validation surface**: runtime `/health` and `/ready`, `journalctl`, and
+  Grafana/operator observability. No retained pytest suite in this repository.
 - **Control loop structure**: `ControlEngine` orchestrates each tick; `DeviceProcessor` runs per-cluster device and PID steps. Refactors may split **phase helpers** (e.g. device hierarchy cache, light effective-setpoint logging throttles, performance stats) into dedicated modules **without** changing actuator ordering, interlocks, or tick cadence. Prefer explicit interfaces over growing `ControlEngine` methods.
 - **Flower cluster topology (canonical)**:
   - **Devices / control / YAML `devices:`**: Flower room uses **`main` only** (all actuators and light names). Do not place equipment under `front` or `back`.
