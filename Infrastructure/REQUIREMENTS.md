@@ -42,6 +42,7 @@ Single growing record of cross-service infrastructure requirements for ProjectCE
 ## Redis durability
 
 - AOF on, `appendfsync everysec`. Max 1 second of writes lost on crash.
+- **Dual-write contract (live key consolidation):** Until superseded keys are retired, current-value writers MUST populate both the short form (`sensor:{name}` and `sensor:{name}:ts`) and the fully qualified form (`cea:sensor:{location}:{cluster}:{sensor_type}` and `cea:sensor:{location}:{cluster}:{sensor_type}_ts`) for every measurement the topology expects. Schedule state writers MUST keep all three in-use schedule-state keys aligned: `schedule:state:{location}:{cluster}`, `cea:schedule:{location}:{cluster}:state`, and `cea:schedule:state:{location}:{cluster}`. Use `Infrastructure/shared/redis_keys.py` builders; do not add new ad-hoc key literals.
 - Configuration verified in `/etc/redis/redis.conf`. Do not regress without an explicit replacement durability story for `schedules:*`, `automation:degraded`, control-state keys.
 
 ## Degraded mode and reconnect behavior

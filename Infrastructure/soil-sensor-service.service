@@ -6,7 +6,8 @@ Wants=network-online.target
 OnFailure=service-error-handler@%n.service
 
 [Service]
-Type=simple
+Type=notify
+NotifyAccess=main
 # Root for RS485 / /dev/ttyUSB* access on Raspberry Pi.
 User=root
 Group=root

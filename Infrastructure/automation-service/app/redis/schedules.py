@@ -11,6 +11,7 @@ from app.redis.schema import (
     set_with_backward_compat,
 )
 from shared.infra_logging import get_logger
+from shared.redis_keys import schedule_state_infix
 
 if TYPE_CHECKING:
     import redis
@@ -40,6 +41,11 @@ class SchedulesMixin:
                 location=location,
                 cluster=cluster,
             )
+            # Also write the third legacy schedule-state form so older readers
+            # that weren't migrated to either of the above shapes keep working.
+            self.redis_client.set(
+                schedule_state_infix(location, cluster), json.dumps(schedule_data)
+            )
             logger.info(f"Wrote schedule state to Redis for {location}/{cluster}")
             return True
         except Exception as e:
@@ -61,6 +67,10 @@ class SchedulesMixin:
 
             if state_data:
                 return json.loads(str(state_data))
+            # Third legacy form fallback.
+            legacy_infix = self.redis_client.get(schedule_state_infix(location, cluster))
+            if legacy_infix:
+                return json.loads(str(legacy_infix))
         except Exception as e:
             logger.debug(f"Error reading schedule state from Redis: {e}")
         return None

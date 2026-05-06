@@ -19,7 +19,13 @@ from shared.db_batch_writer import BatchQueue
 from shared.db_credentials import load_postgres_password
 from shared.infra_logging import get_logger
 from shared.redis_client import close_sync, create_sync_client
-from shared.redis_keys import SENSOR_RAW_MAXLEN
+from shared.redis_keys import (
+    SENSOR_RAW_MAXLEN,
+    sensor_full,
+    sensor_full_ts,
+    sensor_short,
+    sensor_short_ts,
+)
 
 logger = get_logger(__name__)
 
@@ -457,7 +463,11 @@ class DataWriter:
             return False
 
     def write_to_redis_state(
-        self, sensors: list[tuple[str, float, str]], timestamp_ms: int
+        self,
+        location: str,
+        cluster: str,
+        sensors: list[tuple[str, float, str]],
+        timestamp_ms: int,
     ) -> bool:
         """Write sensor values to Redis state keys.
 
@@ -494,12 +504,19 @@ class DataWriter:
             for sensor_name, value, _unit in sensors:
                 # Set sensor value with NO TTL (persistent) - values should always be in Redis
                 # This prevents database fallback and reduces CPU usage
-                key = f"sensor:{sensor_name}"
+                # Dual-write during key migration:
+                # - short form (sensor:{name}) is used by dashboard bulk reads
+                # - full form (cea:sensor:{location}:{cluster}:{sensor_type}) is used by automation
+                key = sensor_short(sensor_name)
                 pipe.set(key, str(value))  # No TTL - persistent key
+                pipe.set(sensor_full(location, cluster, sensor_name), str(value))  # No TTL
 
                 # Set timestamp (also persistent)
-                ts_key = f"sensor:{sensor_name}:ts"
+                ts_key = sensor_short_ts(sensor_name)
                 pipe.set(ts_key, str(timestamp_ms))  # No TTL - persistent key
+                pipe.set(
+                    sensor_full_ts(location, cluster, sensor_name), str(timestamp_ms)
+                )  # No TTL
 
             # Execute all commands
             pipe.execute()
@@ -543,7 +560,12 @@ class DataWriter:
         result["db"] = self.queue_db_write(decoded, raw_data, sensors, timestamp)
 
         # Write to Redis state immediately
-        result["redis"] = self.write_to_redis_state(sensors, timestamp_ms)
+        node_id = decoded.get("node_id")
+        # Local import to keep this module's imports stable and avoid cycles.
+        from app.processor import get_location_from_node
+
+        location, cluster = get_location_from_node(node_id)
+        result["redis"] = self.write_to_redis_state(location, cluster, sensors, timestamp_ms)
 
         return result
 
