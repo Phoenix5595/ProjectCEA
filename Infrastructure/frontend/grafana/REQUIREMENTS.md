@@ -28,6 +28,7 @@
   timezone.
 
 ## Dashboards
+- **Production Grafana** for operators: **`iskraprojectcea`**. After changing dashboard JSON in this repo, deploy or import on that host (SSH as needed) so provisioning matches [`iskra_stack/dashboards/`](../iskra_stack/dashboards/) or your live path.
 - Panels should pick the view/aggregate that matches their time range (raw for live, hourly for 12h+, daily for multi-day).
 - Alert rules should use raw data for live sensitivity; aggregates are acceptable for historical summaries.
 - **Room light intensity** (`effective_setpoints.effective_light_intensity`): always filter by **`device_name`** (`light_1`, `light_2`, …). Flower/Veg sector dashboards include a **“Light effective_setpoints — sample freshness”** table: age in seconds since the last row per light (alert if a fixture stops logging). Curves are fed by the **TimescaleDB** logger (throttled in the automation loop), not Redis `light:*` keys used for live UI.
@@ -44,4 +45,9 @@
 - Filter by mode (DAY/NIGHT) based on schedule matching at each timestamp.
 - Only `DAY` and `NIGHT` modes are considered; legacy `NULL`/`TRANSITION` values are ignored.
 - Default to NIGHT when no DAY schedule matches; ensure a DAY overlay series returns `100` during day and `NULL` otherwise and is styled as a translucent yellow fill.
+
+## Photoperiod chart overlays (DAY / NIGHT shading on temperature–VPD graphs)
+- Overlays combine **`schedules`** (`device_name = 'room_schedule'`) with **time-resolved room mode** from **`mode_transition_history`**: for each minute `t`, use the latest row with `triggered_at <= t` for that `location`/`cluster`, join `new_mode_id` → `room_modes.name`.
+- **Moon-authority modes** (`drying`, `sleep`) must suppress the DAY band and show NIGHT for the full 24h for those intervals. The SQL list **`('drying', 'sleep')`** must stay aligned with [`shared/room_light_authority.py`](../../shared/room_light_authority.py) (`MOON_AUTHORITY_MODE_NAMES`).
+- **Before the first** `mode_transition_history` row for a room/cluster, overlays use **schedule only** (same as legacy behavior); do not assume a room mode for that period.
 

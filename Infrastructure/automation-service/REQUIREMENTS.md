@@ -22,12 +22,13 @@
 - **Cluster safety behavior**: For configured Flower clusters, missing live data should degrade safely (warning/alarm path) but keep cluster identity intact; for non-configured clusters discovered in DB/Redis, expose warning state only (no implicit control path creation).
 - **Photoperiod (lights)**: Sun/moon window and **light** fade durations come from `mode_parameters` (`day_start_time`, `night_start_time`, `light_ramp_up_minutes`, `light_ramp_down_minutes`) and are written to `schedules` (`room_schedule` + per-device SUN/MOON). **`POST /api/room-schedule`** must use **`light_ramp_*`** for `ramp_up_duration` / `ramp_down_duration`, not legacy `ramp_up_minutes` / `ramp_down_minutes`.
 - **Mode vs submode (lights)**: `ModeTransitionService` must **not** call `sync_room_schedule_from_mode_parameters` when only the **flower submode** changes (`new_mode_id ==` previous `mode_id`). Submode switches update `room_active_mode` and climate paths as needed, but **DB light schedules and sun targets stay tied to the parent mode**, not per submode. Skip `_clear_light_ramp_state` for the same submode-only transition so in-progress ramps are not reset.
-- **Drying mode light behavior**: when `room_active_mode.mode_name = 'drying'`,
+- **Moon-authority room modes (drying, sleep)**: when `room_active_mode.mode_name`
+  is **`drying`** or **`sleep`** (canonical list: `shared.room_light_authority.MOON_AUTHORITY_MODE_NAMES`),
   scheduled/automatic light authority MUST be treated as **MOON** regardless of
   the room schedule or current clock time. The control loop must command
   scheduled lights to 0%, write DFR0971 intensity telemetry as 0%, set light
   relays OFF, and log light effective setpoints as MOON/0%. Mode changes into
-  drying must also immediately set configured DFR0971 intensities to 0% and
+  either mode must also immediately set configured DFR0971 intensities to 0% and
   relays OFF so frontend relay badges show moon/off without waiting for the
   next control-loop tick. Manual light controls remain visible; do not remove
   the manual controls from the UI.
