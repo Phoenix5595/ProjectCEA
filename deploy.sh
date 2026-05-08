@@ -139,6 +139,8 @@ for svc in backend automation-service can-processor-service soil-sensor-service 
   SVC_DIR="$TARGET/Infrastructure/$svc"
   if [[ -f "$SVC_DIR/requirements.txt" ]]; then
     echo "  - $svc"
+    # Never reuse a venv copied from the repo via rsync (broken shebangs under /opt).
+    sudo rm -rf "$SVC_DIR/.venv"
     # Use absolute paths: some sudo configs reset cwd, which breaks `.venv` relative paths.
     sudo python3 -m venv "$SVC_DIR/.venv"
     sudo "$SVC_DIR/.venv/bin/pip" install -q --upgrade pip
