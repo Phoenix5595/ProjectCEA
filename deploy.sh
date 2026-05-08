@@ -136,15 +136,16 @@ sudo chown -R root:root "$TARGET"
 
 echo "[2/7] Building Python venvs..."
 for svc in backend automation-service can-processor-service soil-sensor-service onewire-worker-service weather-service; do
-  if [[ -f "$TARGET/Infrastructure/$svc/requirements.txt" ]]; then
+  SVC_DIR="$TARGET/Infrastructure/$svc"
+  if [[ -f "$SVC_DIR/requirements.txt" ]]; then
     echo "  - $svc"
-    cd "$TARGET/Infrastructure/$svc"
-    sudo python3 -m venv .venv
-    sudo .venv/bin/pip install -q --upgrade pip
+    # Use absolute paths: some sudo configs reset cwd, which breaks `.venv` relative paths.
+    sudo python3 -m venv "$SVC_DIR/.venv"
+    sudo "$SVC_DIR/.venv/bin/pip" install -q --upgrade pip
     # Fresh venvs: ensure resolver deps match current pip (avoids
     # SpecifierSet.filter(..., key=) TypeError with older packaging).
-    sudo .venv/bin/pip install -q --upgrade "setuptools>=69" "packaging>=24.2"
-    sudo .venv/bin/pip install -q -r requirements.txt
+    sudo "$SVC_DIR/.venv/bin/pip" install -q --upgrade "setuptools>=69" "packaging>=24.2"
+    sudo "$SVC_DIR/.venv/bin/pip" install -q -r "$SVC_DIR/requirements.txt"
   fi
 done
 
