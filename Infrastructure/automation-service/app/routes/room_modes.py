@@ -18,6 +18,7 @@ from app.schemas.room_modes import (
     UpdateParametersRequest,
 )
 from shared.infra_logging import get_logger
+from shared.room_light_authority import is_moon_authority_mode
 
 from ..database import DatabaseManager
 from ..events import ConfigChangeEvent, ConfigEventType, get_event_bus
@@ -76,7 +77,7 @@ def _iter_configured_light_devices(
     return lights
 
 
-async def _force_lights_off_for_drying(
+async def _force_lights_off_for_moon_authority_mode(
     location: str,
     cluster: str,
     config: ConfigLoader,
@@ -100,7 +101,7 @@ async def _force_lights_off_for_drying(
             )
             if not dimmer_ok:
                 logger.warning(
-                    "Drying mode failed to force DFR0971 intensity to 0 for %s/%s/%s",
+                    "Moon-authority mode failed to force DFR0971 intensity to 0 for %s/%s/%s",
                     location,
                     src_cluster,
                     device_name,
@@ -116,7 +117,7 @@ async def _force_lights_off_for_drying(
         )
         if not success:
             logger.warning(
-                "Drying mode failed to force light relay OFF for %s/%s/%s: %s",
+                "Moon-authority mode failed to force light relay OFF for %s/%s/%s: %s",
                 location,
                 src_cluster,
                 device_name,
@@ -268,8 +269,8 @@ async def set_room_mode(
 
     logger.info(f"Mode switch: {location}/{cluster} -> {request.mode_name}/{request.submode_name}")
 
-    if request.mode_name.strip().lower() == "drying":
-        await _force_lights_off_for_drying(
+    if is_moon_authority_mode(request.mode_name.strip()):
+        await _force_lights_off_for_moon_authority_mode(
             location, cluster, config, relay_manager, dfr0971_manager, db
         )
 

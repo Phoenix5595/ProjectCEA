@@ -92,7 +92,7 @@
       "targets": [
         {
           "format": "table",
-          "rawSql": "WITH sensor_data AS (SELECT DISTINCT ON (s.sensor_id) CASE s.name WHEN 'dry_bulb_v' THEN 'Dry Bulb' WHEN 'wet_bulb_v' THEN 'Wet Bulb' WHEN 'rh_v' THEN 'RH' WHEN 'vpd_v' THEN 'VPD' WHEN 'co2_v' THEN 'CO2' WHEN 'pressure_v' THEN 'Pressure' WHEN 'secondary_temp_v' THEN 'Secondary Temp' WHEN 'secondary_rh_v' THEN 'Secondary RH' WHEN 'water_level_v' THEN 'Water Level' ELSE s.name END AS sensor_name, m.value AS value_num, CASE WHEN s.name LIKE 'dry_bulb%' OR s.name LIKE 'secondary_temp%' THEN '\u00b0C' WHEN s.name LIKE 'wet_bulb%' THEN '\u00b0C' WHEN s.name LIKE 'rh%' AND s.name NOT LIKE 'secondary_rh%' THEN '%' WHEN s.name LIKE 'secondary_rh%' THEN '%' WHEN s.name LIKE 'vpd%' THEN ' kPa' WHEN s.name LIKE 'co2%' THEN ' ppm' WHEN s.name LIKE 'pressure%' THEN ' hPa' WHEN s.name LIKE 'water_level%' THEN ' mm' ELSE '' END AS unit, m.time AS time_val, CASE WHEN s.name LIKE 'dry_bulb%' THEN 1 WHEN s.name LIKE 'wet_bulb%' THEN 2 WHEN s.name LIKE 'rh%' AND s.name NOT LIKE 'secondary_rh%' THEN 3 WHEN s.name LIKE 'vpd%' THEN 4 WHEN s.name LIKE 'co2%' THEN 5 WHEN s.name LIKE 'pressure%' THEN 6 WHEN s.name LIKE 'secondary_temp%' THEN 7 WHEN s.name LIKE 'secondary_rh%' THEN 8 WHEN s.name LIKE 'water_level%' THEN 9 ELSE 10 END AS sort_order FROM measurement m JOIN sensor s ON m.sensor_id = s.sensor_id WHERE s.name LIKE '%_v' AND m.time >= NOW() - INTERVAL '10 minutes' ORDER BY s.sensor_id, m.time DESC), combined AS (SELECT sensor_name AS \"Data\", sort_order, 1 AS row_type FROM sensor_data UNION ALL SELECT (value_num::text || unit) AS \"Data\", sort_order, 2 AS row_type FROM sensor_data UNION ALL SELECT 'Last Update' AS \"Data\", 999 AS sort_order, 1 AS row_type FROM sensor_data UNION ALL SELECT TO_CHAR(MAX(time_val), 'YYYY/MM/DD HH24:MI:SS') AS \"Data\", 999 AS sort_order, 2 AS row_type FROM sensor_data) SELECT \"Data\" FROM combined ORDER BY sort_order, row_type",
+          "rawSql": "WITH sensor_data AS (SELECT DISTINCT ON (s.sensor_id) CASE s.name WHEN 'dry_bulb_v' THEN 'Dry Bulb' WHEN 'wet_bulb_v' THEN 'Wet Bulb' WHEN 'rh_v' THEN 'RH' WHEN 'vpd_v' THEN 'VPD' WHEN 'co2_v' THEN 'CO2' WHEN 'pressure_v' THEN 'Pressure' WHEN 'secondary_temp_v' THEN 'Secondary Temp' WHEN 'secondary_rh_v' THEN 'Secondary RH' WHEN 'water_level_v' THEN 'Water Level' ELSE s.name END AS sensor_name, m.value AS value_num, CASE WHEN s.name LIKE 'dry_bulb%' OR s.name LIKE 'secondary_temp%' THEN '°C' WHEN s.name LIKE 'wet_bulb%' THEN '°C' WHEN s.name LIKE 'rh%' AND s.name NOT LIKE 'secondary_rh%' THEN '%' WHEN s.name LIKE 'secondary_rh%' THEN '%' WHEN s.name LIKE 'vpd%' THEN ' kPa' WHEN s.name LIKE 'co2%' THEN ' ppm' WHEN s.name LIKE 'pressure%' THEN ' hPa' WHEN s.name LIKE 'water_level%' THEN ' mm' ELSE '' END AS unit, m.time AS time_val, CASE WHEN s.name LIKE 'dry_bulb%' THEN 1 WHEN s.name LIKE 'wet_bulb%' THEN 2 WHEN s.name LIKE 'rh%' AND s.name NOT LIKE 'secondary_rh%' THEN 3 WHEN s.name LIKE 'vpd%' THEN 4 WHEN s.name LIKE 'co2%' THEN 5 WHEN s.name LIKE 'pressure%' THEN 6 WHEN s.name LIKE 'secondary_temp%' THEN 7 WHEN s.name LIKE 'secondary_rh%' THEN 8 WHEN s.name LIKE 'water_level%' THEN 9 ELSE 10 END AS sort_order FROM measurement m JOIN sensor s ON m.sensor_id = s.sensor_id WHERE s.name LIKE '%_v' AND m.time >= NOW() - INTERVAL '10 minutes' ORDER BY s.sensor_id, m.time DESC), combined AS (SELECT sensor_name AS \"Data\", sort_order, 1 AS row_type FROM sensor_data UNION ALL SELECT (value_num::text || unit) AS \"Data\", sort_order, 2 AS row_type FROM sensor_data UNION ALL SELECT 'Last Update' AS \"Data\", 999 AS sort_order, 1 AS row_type FROM sensor_data UNION ALL SELECT TO_CHAR(MAX(time_val), 'YYYY/MM/DD HH24:MI:SS') AS \"Data\", 999 AS sort_order, 2 AS row_type FROM sensor_data) SELECT \"Data\" FROM combined ORDER BY sort_order, row_type",
           "refId": "A"
         }
       ],
@@ -175,7 +175,7 @@
             "properties": [
               {
                 "id": "displayName",
-                "value": "Dry Bulb (\u00b0C)"
+                "value": "Dry Bulb (°C)"
               }
             ]
           },
@@ -187,7 +187,7 @@
             "properties": [
               {
                 "id": "displayName",
-                "value": "Wet Bulb (\u00b0C)"
+                "value": "Wet Bulb (°C)"
               }
             ]
           },
@@ -242,7 +242,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "Wet Bulb (\u00b0C)"
+              "options": "Wet Bulb (°C)"
             },
             "properties": [
               {
@@ -257,7 +257,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "Dry Bulb (\u00b0C)"
+              "options": "Dry Bulb (°C)"
             },
             "properties": [
               {
@@ -600,13 +600,13 @@
         {
           "format": "time_series",
           "hide": false,
-          "rawSql": "WITH time_points AS (\n  SELECT generate_series(\n    date_trunc('minute', $__timeFrom()::timestamptz),\n    $__timeTo()::timestamptz + INTERVAL '1 minute',\n    INTERVAL '1 minute'\n  ) AS utc_time\n),\nlocal_points AS (\n  SELECT\n    utc_time,\n    timezone('America/Toronto', utc_time) AS local_time\n  FROM time_points\n),\nroom_schedule AS (\n  SELECT start_time AS day_start_time, end_time AS day_end_time\n  FROM schedules\n  WHERE location = 'Veg Room' \n    AND cluster = 'main'\n    AND device_name = 'room_schedule'\n    AND enabled = true\n  ORDER BY created_at DESC\n  LIMIT 1\n)\nSELECT \n  lp.utc_time AS \"time\",\n  'DAY Period Overlay' AS metric,\n  CASE \n    WHEN EXISTS (SELECT 1 FROM room_schedule)\n      AND (\n        SELECT CASE \n          WHEN (SELECT day_start_time FROM room_schedule) <= (SELECT day_end_time FROM room_schedule)\n            THEN lp.local_time::time >= (SELECT day_start_time FROM room_schedule) \n                 AND lp.local_time::time < (SELECT day_end_time FROM room_schedule)\n          ELSE lp.local_time::time >= (SELECT day_start_time FROM room_schedule) \n               OR lp.local_time::time < (SELECT day_end_time FROM room_schedule)\n        END\n      )\n    THEN 100.0\n    ELSE NULL\n  END AS value\nFROM local_points lp",
+          "rawSql": "WITH time_points AS (\n  SELECT generate_series(\n    date_trunc('minute', $__timeFrom()::timestamptz),\n    $__timeTo()::timestamptz + INTERVAL '1 minute',\n    INTERVAL '1 minute'\n  ) AS utc_time\n),\nlocal_points AS (\n  SELECT\n    utc_time,\n    timezone('America/Toronto', utc_time) AS local_time\n  FROM time_points\n),\nroom_schedule AS (\n  SELECT start_time AS day_start_time, end_time AS day_end_time\n  FROM schedules\n  WHERE location = 'Veg Room'\n    AND cluster = 'main'\n    AND device_name = 'room_schedule'\n    AND enabled = true\n  ORDER BY created_at DESC\n  LIMIT 1\n),\nlocal_with_mode AS (\n  SELECT\n    lp.utc_time,\n    lp.local_time,\n    COALESCE(lower(ms.mode_name) IN ('drying', 'sleep'), false) AS is_moon_authority\n  FROM local_points lp\n  LEFT JOIN LATERAL (\n    SELECT rm.name AS mode_name\n    FROM mode_transition_history h\n    JOIN room_modes rm ON rm.id = h.new_mode_id\n    WHERE h.location = 'Veg Room'\n      AND h.cluster = 'main'\n      AND h.triggered_at <= lp.utc_time\n    ORDER BY h.triggered_at DESC\n    LIMIT 1\n  ) ms ON true\n)\nSELECT\n  lwm.utc_time AS \"time\",\n  'DAY Period Overlay' AS metric,\n  CASE\n    WHEN lwm.is_moon_authority THEN NULL\n    WHEN EXISTS (SELECT 1 FROM room_schedule)\n      AND (\n        SELECT CASE\n          WHEN (SELECT day_start_time FROM room_schedule) <= (SELECT day_end_time FROM room_schedule)\n            THEN lwm.local_time::time >= (SELECT day_start_time FROM room_schedule)\n                 AND lwm.local_time::time < (SELECT day_end_time FROM room_schedule)\n          ELSE lwm.local_time::time >= (SELECT day_start_time FROM room_schedule)\n               OR lwm.local_time::time < (SELECT day_end_time FROM room_schedule)\n        END\n      )\n    THEN 100.0\n    ELSE NULL\n  END AS value\nFROM local_with_mode lwm\n",
           "refId": "D"
         },
         {
           "format": "time_series",
           "hide": false,
-          "rawSql": "WITH time_points AS (\n  SELECT generate_series(\n    date_trunc('minute', $__timeFrom()::timestamptz),\n    $__timeTo()::timestamptz + INTERVAL '1 minute',\n    INTERVAL '1 minute'\n  ) AS utc_time\n),\nlocal_points AS (\n  SELECT\n    utc_time,\n    timezone('America/Toronto', utc_time) AS local_time\n  FROM time_points\n),\nroom_schedule AS (\n  SELECT start_time AS day_start_time, end_time AS day_end_time\n  FROM schedules\n  WHERE location = 'Veg Room' \n    AND cluster = 'main'\n    AND device_name = 'room_schedule'\n    AND enabled = true\n  ORDER BY created_at DESC\n  LIMIT 1\n)\nSELECT \n  lp.utc_time AS \"time\",\n  'NIGHT Period Overlay' AS metric,\n  CASE \n    WHEN EXISTS (SELECT 1 FROM room_schedule)\n      AND NOT (\n        SELECT CASE \n          WHEN (SELECT day_start_time FROM room_schedule) <= (SELECT day_end_time FROM room_schedule)\n            THEN lp.local_time::time >= (SELECT day_start_time FROM room_schedule) \n                 AND lp.local_time::time < (SELECT day_end_time FROM room_schedule)\n          ELSE lp.local_time::time >= (SELECT day_start_time FROM room_schedule) \n               OR lp.local_time::time < (SELECT day_end_time FROM room_schedule)\n        END\n      )\n    THEN 100.0\n    ELSE NULL\n  END AS value\nFROM local_points lp",
+          "rawSql": "WITH time_points AS (\n  SELECT generate_series(\n    date_trunc('minute', $__timeFrom()::timestamptz),\n    $__timeTo()::timestamptz + INTERVAL '1 minute',\n    INTERVAL '1 minute'\n  ) AS utc_time\n),\nlocal_points AS (\n  SELECT\n    utc_time,\n    timezone('America/Toronto', utc_time) AS local_time\n  FROM time_points\n),\nroom_schedule AS (\n  SELECT start_time AS day_start_time, end_time AS day_end_time\n  FROM schedules\n  WHERE location = 'Veg Room'\n    AND cluster = 'main'\n    AND device_name = 'room_schedule'\n    AND enabled = true\n  ORDER BY created_at DESC\n  LIMIT 1\n),\nlocal_with_mode AS (\n  SELECT\n    lp.utc_time,\n    lp.local_time,\n    COALESCE(lower(ms.mode_name) IN ('drying', 'sleep'), false) AS is_moon_authority\n  FROM local_points lp\n  LEFT JOIN LATERAL (\n    SELECT rm.name AS mode_name\n    FROM mode_transition_history h\n    JOIN room_modes rm ON rm.id = h.new_mode_id\n    WHERE h.location = 'Veg Room'\n      AND h.cluster = 'main'\n      AND h.triggered_at <= lp.utc_time\n    ORDER BY h.triggered_at DESC\n    LIMIT 1\n  ) ms ON true\n)\nSELECT\n  lwm.utc_time AS \"time\",\n  'NIGHT Period Overlay' AS metric,\n  CASE\n    WHEN lwm.is_moon_authority THEN 100.0\n    WHEN EXISTS (SELECT 1 FROM room_schedule)\n      AND NOT (\n        SELECT CASE\n          WHEN (SELECT day_start_time FROM room_schedule) <= (SELECT day_end_time FROM room_schedule)\n            THEN lwm.local_time::time >= (SELECT day_start_time FROM room_schedule)\n                 AND lwm.local_time::time < (SELECT day_end_time FROM room_schedule)\n          ELSE lwm.local_time::time >= (SELECT day_start_time FROM room_schedule)\n               OR lwm.local_time::time < (SELECT day_end_time FROM room_schedule)\n        END\n      )\n    THEN 100.0\n    ELSE NULL\n  END AS value\nFROM local_with_mode lwm\n",
           "refId": "F"
         }
       ],
@@ -1249,7 +1249,7 @@
             "uid": "bf6vebq5ipybke"
           },
           "format": "table",
-          "rawSql": "SELECT CASE sensor_name WHEN 'dry_bulb_v' THEN 'Dry Bulb (\u00b0C)' WHEN 'wet_bulb_v' THEN 'Wet Bulb (\u00b0C)' WHEN 'rh_v' THEN 'RH (%)' WHEN 'vpd_v' THEN 'VPD (kPa)' WHEN 'co2_v' THEN 'CO2 (ppm)' WHEN 'pressure_v' THEN 'Pressure (hPa)' WHEN 'secondary_temp_v' THEN 'Secondary Temp (\u00b0C)' WHEN 'secondary_rh_v' THEN 'Secondary RH (%)' WHEN 'water_level_v' THEN 'Water Level (mm)' ELSE sensor_name END AS \"Sensor\", MIN(value) AS \"Min\", MAX(value) AS \"Max\", AVG(value) AS \"Average\", COALESCE(STDDEV(value), 0) AS \"Std Dev\" FROM measurement_with_metadata WHERE time >= $__timeFrom() AND time <= $__timeTo() AND sensor_name LIKE '%_v' GROUP BY sensor_name ORDER BY CASE WHEN sensor_name LIKE 'dry_bulb%' THEN 1 WHEN sensor_name LIKE 'wet_bulb%' THEN 2 WHEN sensor_name LIKE 'rh%' AND sensor_name NOT LIKE 'secondary_rh%' THEN 3 WHEN sensor_name LIKE 'vpd%' THEN 4 WHEN sensor_name LIKE 'co2%' THEN 5 WHEN sensor_name LIKE 'pressure%' THEN 6 WHEN sensor_name LIKE 'secondary_temp%' THEN 7 WHEN sensor_name LIKE 'secondary_rh%' THEN 8 WHEN sensor_name LIKE 'water_level%' THEN 9 ELSE 10 END, sensor_name",
+          "rawSql": "SELECT CASE sensor_name WHEN 'dry_bulb_v' THEN 'Dry Bulb (°C)' WHEN 'wet_bulb_v' THEN 'Wet Bulb (°C)' WHEN 'rh_v' THEN 'RH (%)' WHEN 'vpd_v' THEN 'VPD (kPa)' WHEN 'co2_v' THEN 'CO2 (ppm)' WHEN 'pressure_v' THEN 'Pressure (hPa)' WHEN 'secondary_temp_v' THEN 'Secondary Temp (°C)' WHEN 'secondary_rh_v' THEN 'Secondary RH (%)' WHEN 'water_level_v' THEN 'Water Level (mm)' ELSE sensor_name END AS \"Sensor\", MIN(value) AS \"Min\", MAX(value) AS \"Max\", AVG(value) AS \"Average\", COALESCE(STDDEV(value), 0) AS \"Std Dev\" FROM measurement_with_metadata WHERE time >= $__timeFrom() AND time <= $__timeTo() AND sensor_name LIKE '%_v' GROUP BY sensor_name ORDER BY CASE WHEN sensor_name LIKE 'dry_bulb%' THEN 1 WHEN sensor_name LIKE 'wet_bulb%' THEN 2 WHEN sensor_name LIKE 'rh%' AND sensor_name NOT LIKE 'secondary_rh%' THEN 3 WHEN sensor_name LIKE 'vpd%' THEN 4 WHEN sensor_name LIKE 'co2%' THEN 5 WHEN sensor_name LIKE 'pressure%' THEN 6 WHEN sensor_name LIKE 'secondary_temp%' THEN 7 WHEN sensor_name LIKE 'secondary_rh%' THEN 8 WHEN sensor_name LIKE 'water_level%' THEN 9 ELSE 10 END, sensor_name",
           "refId": "A"
         }
       ],
