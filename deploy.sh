@@ -141,6 +141,9 @@ for svc in backend automation-service can-processor-service soil-sensor-service 
     cd "$TARGET/Infrastructure/$svc"
     sudo python3 -m venv .venv
     sudo .venv/bin/pip install -q --upgrade pip
+    # Fresh venvs: ensure resolver deps match current pip (avoids
+    # SpecifierSet.filter(..., key=) TypeError with older packaging).
+    sudo .venv/bin/pip install -q --upgrade "setuptools>=69" "packaging>=24.2"
     sudo .venv/bin/pip install -q -r requirements.txt
   fi
 done
