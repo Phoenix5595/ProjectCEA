@@ -80,8 +80,15 @@ fi
 # (Timescale background workers + parallel query) and max_locks_per_transaction=128;
 # bump comfortably past that here. They are passed via -c so they override
 # postgresql.conf left behind by an earlier pg_basebackup.
+#
+# Base backups from a Debian/Ubuntu primary often ship PGDATA postgresql.conf
+# with listen_addresses = localhost only. Grafana and redis_sync reach this
+# container via the Docker bridge (projectcea_database:5432); without '*' the
+# host shows "connection refused" for cross-container TCP while pg_isready on
+# localhost still passes the healthcheck.
 export PGDATA
 exec gosu postgres postgres \
+  -c "listen_addresses=*" \
   -c "max_connections=${POSTGRES_MAX_CONNECTIONS:-150}" \
   -c "max_worker_processes=${POSTGRES_MAX_WORKER_PROCESSES:-32}" \
   -c "max_locks_per_transaction=${POSTGRES_MAX_LOCKS_PER_XACT:-256}" \
