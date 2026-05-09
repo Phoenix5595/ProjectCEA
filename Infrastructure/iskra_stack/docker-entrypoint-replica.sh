@@ -87,10 +87,14 @@ fi
 # host shows "connection refused" for cross-container TCP while pg_isready on
 # localhost still passes the healthcheck.
 #
-# Grafana dashboards refresh every 1s with dozens of panels → many concurrent
-# SELECTs on the same hypertables. Parallel workers + JIT on this small VM
-# often show up as LWLock:LockManager waits and pegged CPU; serial plans and
-# no JIT keep latency predictable for short time-window queries.
+# Hot standby: heavy Grafana + redis_sync SELECTs can overlap WAL cleanup on
+# the replica. Without feedback, PostgreSQL cancels queries with
+# "canceling statement due to conflict with recovery" — panels and Redis
+# mirror then lag arbitrarily (operators see "back cluster" or live values not
+# tracking new data). hot_standby_feedback=on tells the primary to defer
+# vacuum of rows still visible to the standby (watch mothernode autovacuum /
+# bloat; normally fine for this workload). Set POSTGRES_HOT_STANDBY_FEEDBACK=off
+# only if you intentionally prefer canceled queries over primary retention.
 export PGDATA
 exec gosu postgres postgres \
   -c "listen_addresses=*" \
@@ -98,7 +102,5 @@ exec gosu postgres postgres \
   -c "max_worker_processes=${POSTGRES_MAX_WORKER_PROCESSES:-32}" \
   -c "max_locks_per_transaction=${POSTGRES_MAX_LOCKS_PER_XACT:-256}" \
   -c "max_prepared_transactions=${POSTGRES_MAX_PREPARED_TRANSACTIONS:-0}" \
-  -c "max_parallel_workers=${POSTGRES_MAX_PARALLEL_WORKERS:-0}" \
-  -c "max_parallel_workers_per_gather=${POSTGRES_MAX_PARALLEL_WORKERS_PER_GATHER:-0}" \
-  -c "jit=${POSTGRES_JIT:-off}" \
+  -c "hot_standby_feedback=${POSTGRES_HOT_STANDBY_FEEDBACK:-on}" \
   -c "timezone=${POSTGRES_TIMEZONE:-America/Toronto}"
