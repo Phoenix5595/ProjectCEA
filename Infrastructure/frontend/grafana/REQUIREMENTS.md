@@ -8,6 +8,7 @@
 ## Data Source
 - PostgreSQL with TimescaleDB enabled (checkbox on in Grafana).
 - Host/DB/user/password must match the backend (`cea_sensors` / `cea_user`).
+- **Iskraprojectcea:** time-series panels use the **local replica** (`projectcea_database`). If “last 1h” is empty but the Pi is healthy, check mothernode first: `SELECT active, restart_lsn FROM pg_replication_slots WHERE slot_name = 'iskra_recovery';` and `pg_stat_replication`. Stale Grafana almost always means a broken WAL path, not missing sensors.
 - Connection pooling (documented only): max open 100, max idle 100, max lifetime 4h, connection timeout 10s.
 
 ## Query Guidance

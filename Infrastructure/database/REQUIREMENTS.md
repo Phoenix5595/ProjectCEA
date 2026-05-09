@@ -15,6 +15,21 @@ This document describes the normalized database schema for the CEA (Controlled E
 - **PostgreSQL** (latest stable)
 - **TimescaleDB** extension for time-series optimization
 
+## Physical primary (mothernode) — streaming WAL for Iskra
+
+The Pi primary that hosts `cea_sensors` feeds the **iskraprojectcea** standby. These settings are enforced in `postgresql.conf` / `ALTER SYSTEM` (runtime `SHOW` is authoritative):
+
+| Setting | Value | Notes |
+|---------|-------|--------|
+| `wal_keep_size` | `4GB` | Extra WAL buffer beyond slot retention. |
+| `max_slot_wal_keep_size` | `16GB` | Safety cap: if a replication slot falls this far behind on WAL bytes, PostgreSQL may invalidate the slot; re-base the replica. |
+| `max_wal_senders` | `5` | Headroom for `pg_basebackup` + standby; **requires PostgreSQL restart** to change. |
+| `wal_level` | `replica` | Required for physical replication. |
+
+`wal_keep_size` and `max_slot_wal_keep_size` accept `systemctl reload postgresql@15-main`. Changing `max_wal_senders` requires `systemctl restart postgresql@15-main` (brief disconnect for app pools; services reconnect).
+
+Replication slot **`iskra_recovery`** must exist on the primary (`pg_create_physical_replication_slot`) and be **consumed** by the standby (`REPLICATION_SLOT` in iskra `.env`). An unused slot with `restart_lsn` NULL does not pin WAL; the standby can fall off after `wal_keep_size` is exceeded.
+
 ## Schema Structure
 
 ### Metadata Tables (Normalized Hierarchy)

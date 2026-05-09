@@ -10,6 +10,7 @@ Single Docker Compose stack on **iskraprojectcea** that groups: **projectcea_dat
 
 - [ ] **Storage 1 path**: Set `PGDATA_HOST_PATH` in `.env` (e.g. `/srv/storage1/projectcea_database/data`). PGDATA must exist and be owned by `999:999`.
 - [ ] **Mothernode replication**: Replication user and `postgresql.conf` / `pg_hba.conf` on mothernode must allow replication from iskra (Tailscale IP 100.72.106.76 for `cea_repl`). See `Infrastructure/database-replica/README.md`. After changing `pg_hba.conf` on mothernode, **reload PostgreSQL** then **on iskra** run: `sg docker -c "docker compose restart projectcea_database"` (or `./scripts/restart-replica-after-pghba.sh`).
+- [ ] **Replication slot (mandatory)**: On the primary, `SELECT pg_create_physical_replication_slot('iskra_recovery');`. Then in iskra `.env`, set `REPLICATION_SLOT=iskra_recovery`. The standby entrypoint refuses to start with this unset. Without an active slot the primary will recycle WAL the standby still needs (capped by `wal_keep_size` + `max_slot_wal_keep_size` on mothernode), Grafana will silently freeze, and you will need to re-base from scratch (see "Recovery: standby fell behind / WAL removed" below).
 - [ ] **Passwords**: Copy `.env.example` to `.env` and set `REPLICATION_PASSWORD`, `GRAFANA_ADMIN_PASSWORD` (e.g. `openssl rand -hex 16`), `POSTGRES_CEA_USER_PASSWORD` (same as `cea_user` on mothernode).
 
 ## On iskra (step-by-step)
@@ -29,7 +30,8 @@ Do these steps **on iskra** (e.g. via SSH).
    cp .env.example .env
    ```
    Edit `.env` and set:
-   - `PRIMARY_HOST` – mothernode hostname (e.g. `mothernode.tail7a351e.ts.net`)
+   - `PRIMARY_HOST` – mothernode hostname (e.g. `mothernode.tail7a351e.ts.net`). Also used by Grafana’s **CEA Primary (ops)** datasource (alert rules).
+   - `REPLICATION_SLOT` – must be `iskra_recovery` (matches the physical slot on the primary).
    - `REPLICATION_PASSWORD` – same as on mothernode for `cea_repl`
    - `POSTGRES_CEA_USER_PASSWORD` – same as `cea_user` password on mothernode (for Grafana + redis_sync). Replication keeps `pg_authid` byte-for-byte identical, so this **must** match the rotated value on the primary.
    - `GRAFANA_ADMIN_PASSWORD` – Grafana admin password (use `openssl rand -hex 16`)
@@ -111,10 +113,48 @@ Redis is filled by **projectcea_redis_sync** (sync-from-DB):
 - `.env.example` / `.env`: DB replica, Grafana, Redis sync config.
 - `docker-entrypoint-replica.sh`: Replica entrypoint; creates minimal `postgresql.conf` in PGDATA when missing (e.g. if primary uses `/etc/postgresql`).
 - `provisioning/datasources/datasources.yaml.template`: Grafana datasources. The `${POSTGRES_CEA_USER_PASSWORD}` placeholder is interpolated by Grafana itself at provisioning time using its built-in env-var support — the file is mounted into the container directly as `cea-datasources.yaml`, no envsubst step required.
+- `provisioning/alerting/replication_slot.yaml`: Provisioned alert against the Pi primary (`CEA Primary (ops)` datasource) for the `iskra_recovery` replication slot.
 - `provisioning/dashboards/dashboards.yaml`: Dashboard providers (veg_sector, flower_sector, flower_sector_soil, laboratory).
 - `dashboards/`: Dashboard JSONs (veg_sector, flower_sector, flower_sector_soil; laboratory is a placeholder folder).
 - `scripts/redis_sync.py`: Sync script (used by built image).
 - `Dockerfile.redis_sync`: Builds image for projectcea_redis_sync.
+
+## Recovery: standby fell behind / WAL removed
+
+Symptoms: Grafana panels show no recent data; primary log repeats `requested WAL segment ... has already been removed` for `cea_repl`; `pg_stat_replication` on mothernode is empty; `pg_replication_slots` shows `iskra_recovery` with `active = f` and often `restart_lsn` NULL if the standby never consumed the slot.
+
+**Order matters.** Use the actual `PGDATA_HOST_PATH` from iskra `.env` (repo default was `/srv/storage1/...`; some installs use `/var/lib/projectcea_database/data`).
+
+1. **On iskraprojectcea**: stop dependents and the DB container:
+   ```bash
+   cd ~/ProjectCEA/Infrastructure/iskra_stack
+   sg docker -c "docker compose stop projectcea_grafana projectcea_redis_sync projectcea_database"
+   ```
+2. **On iskraprojectcea**: ensure `.env` contains `REPLICATION_SLOT=iskra_recovery` (required by `docker-entrypoint-replica.sh`).
+3. **On iskraprojectcea**: wipe PGDATA (example for `/var/lib/projectcea_database/data` — adjust to your `PGDATA_HOST_PATH`):
+   ```bash
+   docker run --rm -v /var/lib/projectcea_database/data:/data alpine:3.20 sh -c 'rm -rf /data/* /data/.[!.]*'
+   ```
+   Or `sudo rm -rf ...` if you have host access. Ensure the directory is empty before the next step.
+4. **On mothernode** (as `postgres` superuser):
+   ```bash
+   sudo -u postgres psql -d cea_sensors <<'SQL'
+   SELECT pg_drop_replication_slot('iskra_recovery');
+   SELECT pg_create_physical_replication_slot('iskra_recovery');
+   SQL
+   ```
+5. **On iskraprojectcea**: start the database and wait for `pg_basebackup` + “ready to accept read-only connections” in `docker logs -f projectcea_database`, then bring the rest up:
+   ```bash
+   sg docker -c "docker compose up -d projectcea_database"
+   # wait for base backup
+   sg docker -c "docker compose up -d projectcea_redis_sync projectcea_grafana"
+   ```
+6. **Verify on mothernode**:
+   ```sql
+   SELECT application_name, client_addr, state FROM pg_stat_replication;
+   SELECT slot_name, active, restart_lsn FROM pg_replication_slots WHERE slot_name = 'iskra_recovery';
+   ```
+   Expect one streaming row and `active = t` with a non-null `restart_lsn` that advances.
 
 ## Architecture docs
 
@@ -131,7 +171,8 @@ cd ~/ProjectCEA/Infrastructure/iskra_stack
 
 # 1. .env (create from example, then edit with your values)
 cp .env.example .env
-# Set: PRIMARY_HOST, REPLICATION_PASSWORD, POSTGRES_CEA_USER_PASSWORD, GRAFANA_ADMIN_PASSWORD, PGDATA_HOST_PATH
+# Set: PRIMARY_HOST, REPLICATION_SLOT=iskra_recovery, REPLICATION_PASSWORD,
+# POSTGRES_CEA_USER_PASSWORD, GRAFANA_ADMIN_PASSWORD, PGDATA_HOST_PATH
 
 # 2. PGDATA ownership (postgres in container = UID 999)
 sudo chown -R 999:999 /srv/storage1/projectcea_database/data

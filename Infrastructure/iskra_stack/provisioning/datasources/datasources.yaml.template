@@ -43,3 +43,24 @@ datasources:
     uid: bf9yw6nuqt81sa
     url: projectcea_redis:6379
     editable: false
+
+  # Read-only connection to the Pi primary for ops alerts (replication slot /
+  # WAL). Host/port come from Grafana container env (PRIMARY_HOST, PRIMARY_PORT).
+  # Mothernode pg_hba must allow cea_user from iskra Tailscale IP.
+  - name: CEA Primary (ops)
+    type: postgres
+    uid: cea_primary_ops
+    url: ${PRIMARY_HOST}:${PRIMARY_PORT}
+    database: cea_sensors
+    user: cea_user
+    secureJsonData:
+      password: ${POSTGRES_CEA_USER_PASSWORD}
+    jsonData:
+      sslmode: disable
+      postgresVersion: 1500
+      timescaledb: true
+      maxOpenConns: 4
+      maxIdleConns: 2
+      connMaxLifetime: 300
+    isDefault: false
+    editable: false

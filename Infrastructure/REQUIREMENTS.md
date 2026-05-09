@@ -92,6 +92,13 @@ Single growing record of cross-service infrastructure requirements for ProjectCE
 - Streaming replication target: `iskraprojectcea` (Tailscale `100.72.106.76`). Container `projectcea_database` (`timescale/timescaledb:2.23.1-pg15` — pin in Phase 0.5).
 - Pi PG is `15.16` + TSDB `2.23.1`. The replica MUST match these versions or replication breaks; preflight `verify_iskra.sh` enforces this.
 - `pg_stat_replication.replay_lag` healthy band: `< 1s` steady-state, `< 5s` transient. Anything sustained `> 30s` blocks Phase 5 DDL.
+
+### Replication durability (Iskra Grafana)
+
+- Iskra Grafana time-series reads the **streaming physical standby** (`projectcea_database`). If replication breaks, dashboards show stale or empty data while the Pi primary keeps ingesting CAN data.
+- Mothernode MUST expose a physical replication slot named **`iskra_recovery`**. The standby MUST consume it: `Infrastructure/iskra_stack/.env` on iskra **requires** `REPLICATION_SLOT=iskra_recovery`; `docker-entrypoint-replica.sh` refuses an empty value and always writes `primary_slot_name` into `postgresql.auto.conf` after `pg_basebackup`.
+- Primary WAL policy (mothernode `cea_sensors`): `wal_keep_size = 4GB`, `max_slot_wal_keep_size = 16GB`, `max_wal_senders = 5` (see `Infrastructure/database/REQUIREMENTS.md`). If Iskra is offline longer than the slot can retain WAL under `max_slot_wal_keep_size`, the slot is dropped and the replica must be **re-based** (runbook: `Infrastructure/iskra_stack/README.md` section *Recovery: standby fell behind / WAL removed*).
+- Grafana on iskra includes a provisioned alert (`provisioning/alerting/replication_slot.yaml`) that queries the Pi primary via datasource **CEA Primary (ops)**; mothernode `pg_hba.conf` must allow `cea_user` from iskra’s Tailscale IP for that path.
 - Pi → iskraprojectcea sync of `Infrastructure/iskra_stack/dashboards/` and `provisioning/` is via `Infrastructure/scripts/sync_to_iskra.sh` (rsync, with `--delete` safety guard refusing >3 deletions without `CONFIRM=1`).
 - `Infrastructure/scripts/verify_iskra.sh` is the supported preflight for the
   replica/Grafana host. `deploy.sh` may run the sync/verify path when
