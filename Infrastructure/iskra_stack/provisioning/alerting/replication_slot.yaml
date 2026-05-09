@@ -1,6 +1,7 @@
 # Provisioned alert: physical slot iskra_recovery on the Pi primary.
-# Evaluated every minute against datasource CEA_Primary_Ops (mothernode).
-# Default notification policy routes email (existing Grafana SMTP + contact point).
+# Evaluated every minute against datasource CEA Primary (ops) (mothernode).
+# Routes to the migrated email contact point "Tony" (see Grafana UI → Alerting →
+# Contact points). Do not rename that contact point without updating this file.
 apiVersion: 1
 groups:
   - orgId: 1
@@ -104,4 +105,8 @@ groups:
             Re-base iskra replica and verify REPLICATION_SLOT in iskra .env.
         labels:
           team: cea_ops
+        # Direct contact point (creates an internal route; does not replace the
+        # root notification policy tree).
+        notification_settings:
+          receiver: Tony
         isPaused: false

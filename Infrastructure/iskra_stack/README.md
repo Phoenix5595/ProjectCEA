@@ -113,7 +113,7 @@ Redis is filled by **projectcea_redis_sync** (sync-from-DB):
 - `.env.example` / `.env`: DB replica, Grafana, Redis sync config.
 - `docker-entrypoint-replica.sh`: Replica entrypoint; creates minimal `postgresql.conf` in PGDATA when missing (e.g. if primary uses `/etc/postgresql`).
 - `provisioning/datasources/datasources.yaml.template`: Grafana datasources. The `${POSTGRES_CEA_USER_PASSWORD}` placeholder is interpolated by Grafana itself at provisioning time using its built-in env-var support — the file is mounted into the container directly as `cea-datasources.yaml`, no envsubst step required.
-- `provisioning/alerting/replication_slot.yaml`: Provisioned alert against the Pi primary (`CEA Primary (ops)` datasource) for the `iskra_recovery` replication slot.
+- `provisioning/alerting/replication_slot.yaml`: Provisioned alert against the Pi primary (`CEA Primary (ops)` datasource) for the `iskra_recovery` replication slot. Notifications go to contact point **Tony** (email migrated from the Pi Grafana). If you rename that contact point in Grafana, update `notification_settings.receiver` in this YAML.
 - `provisioning/dashboards/dashboards.yaml`: Dashboard providers (veg_sector, flower_sector, flower_sector_soil, laboratory).
 - `dashboards/`: Dashboard JSONs (veg_sector, flower_sector, flower_sector_soil; laboratory is a placeholder folder).
 - `scripts/redis_sync.py`: Sync script (used by built image).
