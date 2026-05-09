@@ -1,0 +1,107 @@
+# Provisioned alert: physical slot iskra_recovery on the Pi primary.
+# Evaluated every minute against datasource CEA_Primary_Ops (mothernode).
+# Default notification policy routes email (existing Grafana SMTP + contact point).
+apiVersion: 1
+groups:
+  - orgId: 1
+    name: replication_slot_1m
+    folder: Operations
+    interval: 1m
+    rules:
+      - uid: cea_iskra_repl_slot_risk
+        title: Primary replication slot iskra_recovery unhealthy
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: cea_primary_ops
+            model:
+              datasource:
+                type: postgres
+                uid: cea_primary_ops
+              editorMode: code
+              format: table
+              intervalMs: 1000
+              maxDataPoints: 43200
+              rawSql: |
+                SELECT (
+                  CASE
+                    WHEN NOT active THEN 1
+                    WHEN restart_lsn IS NOT NULL
+                         AND pg_wal_lsn_diff(pg_current_wal_lsn(), restart_lsn) > 8589934592
+                    THEN 1
+                    ELSE 0
+                  END
+                )::double precision AS breach
+                FROM pg_replication_slots
+                WHERE slot_name = 'iskra_recovery';
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            relativeTimeRange:
+              from: 0
+              to: 0
+            model:
+              conditions:
+                - evaluator:
+                    params: []
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - B
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              reducer: last
+              refId: B
+              type: reduce
+          - refId: C
+            datasourceUid: __expr__
+            relativeTimeRange:
+              from: 0
+              to: 0
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 0
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - C
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: B
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C
+              type: threshold
+        noDataState: Alerting
+        execErrState: Alerting
+        for: 5m
+        annotations:
+          summary: >-
+            Physical slot iskra_recovery on mothernode is inactive, missing, or
+            retaining more than 8 GiB of WAL (approaching max_slot_wal_keep_size).
+            Re-base iskra replica and verify REPLICATION_SLOT in iskra .env.
+        labels:
+          team: cea_ops
+        isPaused: false

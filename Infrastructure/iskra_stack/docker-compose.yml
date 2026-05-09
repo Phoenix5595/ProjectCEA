@@ -27,7 +27,7 @@ services:
       REPLICATION_USER: ${REPLICATION_USER:-cea_repl}
       REPLICATION_PASSWORD: ${REPLICATION_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB:-cea_sensors}
-      REPLICATION_SLOT: ${REPLICATION_SLOT:-}
+      REPLICATION_SLOT: ${REPLICATION_SLOT}
       # Grafana runs 1s live dashboards with many concurrent panel queries.
       # The default 50 was inherited from the replica base backup and is too
       # low for this host; keep the replica explicitly above the primary.
@@ -110,6 +110,10 @@ services:
       # Datasource secret — interpolated by Grafana's native $VAR
       # support inside provisioning YAMLs (see template).
       - POSTGRES_CEA_USER_PASSWORD=${POSTGRES_CEA_USER_PASSWORD}
+      # Read-only alerts against the Pi primary (replication slot / WAL). Same
+      # host as the streaming source; must be reachable from this container.
+      - PRIMARY_HOST=${PRIMARY_HOST}
+      - PRIMARY_PORT=${PRIMARY_PORT:-5432}
       # SMTP — migrated from Pi grafana-server (Phase 5c follow-up,
       # 2026-04-19). The unified-alerting contact points live in
       # Grafana's SQLite DB (in the projectcea_grafana_data named
@@ -131,6 +135,7 @@ services:
       # Provisioning: mounted read-only so the source of truth lives
       # in the repo, not inside the container's writable layer.
       - ./provisioning/datasources/datasources.yaml.template:/etc/grafana/provisioning/datasources/cea-datasources.yaml:ro
+      - ./provisioning/alerting:/etc/grafana/provisioning/alerting:ro
       - ./provisioning/dashboards/dashboards.yaml:/etc/grafana/provisioning/dashboards/cea-dashboards.yaml:ro
       - ./dashboards:/var/lib/grafana/dashboards:ro
     ports:
