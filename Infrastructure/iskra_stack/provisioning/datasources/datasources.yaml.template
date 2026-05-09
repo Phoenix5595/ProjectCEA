@@ -15,6 +15,9 @@ datasources:
       sslmode: disable
       postgresVersion: 1500
       timescaledb: true
+      # See Infrastructure/REQUIREMENTS.md: 32 open / 8 idle per Postgres DS so
+      # 1s refresh fan-out stays concurrent while the replica caps server-side
+      # load (POSTGRES_MAX_CONNECTIONS=150). Do not shrink without updating that doc.
       maxOpenConns: 32
       maxIdleConns: 8
       connMaxLifetime: 300
