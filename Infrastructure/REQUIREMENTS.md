@@ -120,18 +120,16 @@ Current state (Phase 5c complete, 2026-04-19):
   should lean on **Redis** (`projectcea_redis`); time-series stays on the **local
   WAL replica** so the Pi primary is not hammered (`iskra_stack/README.md` first
   paragraph). That architecture is unchanged.
-- **Not the same issue as a stale/frozen replica:** after a full `pg_basebackup`
-  re-base, the standby must run with **`max_worker_processes` (and related GUCs)
-  ≥ the primary** or PostgreSQL refuses recovery. Satisfying that with the
-  primary’s `postgresql.conf` still in PGDATA can re-enable **parallel workers +
-  JIT** on a small VM; combined with 1s refresh that showed up as **`LWLock:
-  LockManager` waits and very high `projectcea_database` CPU**, which feels like
-  “everything is slow” even though `replay_lag` is fine. The mitigation is
-  **replica-only** `-c max_parallel_workers=0`,
-  `-c max_parallel_workers_per_gather=0`, and `-c jit=off` in
-  `docker-entrypoint-replica.sh` (see `iskra_stack/README.md`), **not** reducing
-  Grafana `maxOpenConns` below 32 (that only queues panel queries and makes
-  loads feel slower).
+- **Hot standby vs live dashboards:** Grafana and `redis_sync` issue many
+  concurrent `SELECT`s on the replica while WAL replay removes dead row versions.
+  Without **`hot_standby_feedback=on`** on the standby, PostgreSQL cancels queries
+  with **`canceling statement due to conflict with recovery`**; `redis_sync`
+  then retries (keys age out / panels show stale **back** or **front** cluster
+  values even though `replay_lag` is tiny). The Iskra entrypoint enables
+  feedback by default (see `Infrastructure/iskra_stack/docker-entrypoint-replica.sh`).
+  Trade-off: the primary may defer vacuum cleanup slightly — keep mothernode
+  autovacuum healthy and watch table bloat if the replica is offline for long
+  periods.
 - Frontend Monitoring embeds (`/flower/monitoring`, `/vegetation/monitoring`)
   MUST keep `refresh=1s`; live monitoring cadence is non-negotiable. They MUST
   preserve Grafana's normal time-range controls and support multiple operator

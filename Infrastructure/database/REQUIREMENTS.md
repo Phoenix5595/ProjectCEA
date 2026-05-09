@@ -30,6 +30,8 @@ The Pi primary that hosts `cea_sensors` feeds the **iskraprojectcea** standby. T
 
 Replication slot **`iskra_recovery`** must exist on the primary (`pg_create_physical_replication_slot`) and be **consumed** by the standby (`REPLICATION_SLOT` in iskra `.env`). An unused slot with `restart_lsn` NULL does not pin WAL; the standby can fall off after `wal_keep_size` is exceeded.
 
+**Iskra standby (`projectcea_database`):** enable **`hot_standby_feedback = on`** (set in `iskra_stack/docker-entrypoint-replica.sh` via `postgres -c`) so Grafana/`redis_sync` queries are not canceled by **`conflict with recovery`** during replay. The primary receives xmin hints and may retain dead tuples a bit longer; this is normal for an analytics replica — rely on autovacuum on the Pi.
+
 ## Schema Structure
 
 ### Metadata Tables (Normalized Hierarchy)
