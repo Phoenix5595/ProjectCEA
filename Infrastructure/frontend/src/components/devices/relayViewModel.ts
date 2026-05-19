@@ -2,6 +2,8 @@ import type { ControlHistoryEntry } from '../../types/device'
 import type { ChannelInfo } from '../../types/relay'
 
 export const RELAY_CHANNEL_COUNT = 16
+export const RELAY_MATRIX_ROWS = 8
+export const RELAY_MATRIX_BANK_SIZE = 8
 export const RELAY_CHANNELS = Array.from({ length: RELAY_CHANNEL_COUNT }, (_, index) => index)
 
 export interface LocationClusterPair {
@@ -28,11 +30,25 @@ export function makeDeviceKey(location: string, cluster: string, deviceName: str
 }
 
 export function getRelayPinLabel(channel: number): string {
-  if (channel < 8) {
+  if (channel < RELAY_MATRIX_BANK_SIZE) {
     return `GPA${channel}`
   }
 
-  return `GPB${channel - 8}`
+  return `GPB${channel - RELAY_MATRIX_BANK_SIZE}`
+}
+
+export function getRelaySilkscreenLabel(channel: number): string {
+  return `K${channel + 1}`
+}
+
+export function splitRelayBanks(channels: RelayChannelViewModel[]): {
+  bankA: RelayChannelViewModel[]
+  bankB: RelayChannelViewModel[]
+} {
+  return {
+    bankA: channels.slice(0, RELAY_MATRIX_BANK_SIZE),
+    bankB: channels.slice(RELAY_MATRIX_BANK_SIZE, RELAY_CHANNEL_COUNT),
+  }
 }
 
 export function getChannelDisplayType(channel: ChannelInfo): string | null {

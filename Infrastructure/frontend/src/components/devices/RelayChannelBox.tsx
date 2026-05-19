@@ -1,10 +1,10 @@
 import type { RelayChannelViewModel } from './relayViewModel'
-import { formatElapsedSince } from './relayViewModel'
+import { formatElapsedSince, getRelaySilkscreenLabel } from './relayViewModel'
 
 interface RelayChannelBoxProps {
   channel: RelayChannelViewModel
   nowMs: number
-  compact?: boolean
+  variant?: 'panel' | 'compact'
   isEditing?: boolean
   onSelect?: (channel: number) => void
   statusText?: string
@@ -26,10 +26,41 @@ function stateBadgeClasses(tone: 'unknown' | 'active' | 'idle'): string {
   return 'bg-surface-tertiary text-text-muted border border-border-emphasis'
 }
 
+function RelayGlyph({
+  isAssigned,
+  isActive,
+  isStateKnown,
+}: {
+  isAssigned: boolean
+  isActive: boolean
+  isStateKnown: boolean
+}) {
+  const fillClass = !isStateKnown
+    ? 'bg-surface-tertiary border-status-warning-border/60'
+    : isActive
+      ? 'bg-btn-primary-data/30 border-btn-primary-data/70'
+      : isAssigned
+        ? 'bg-btn-primary-dim/40 border-border-emphasis'
+        : 'bg-surface-tertiary border-border-emphasis'
+
+  return <div className={`h-7 w-4 shrink-0 rounded-sm border ${fillClass}`} aria-hidden />
+}
+
+function RelayStatusLed({ tone }: { tone: 'unknown' | 'active' | 'idle' }) {
+  const ledClass =
+    tone === 'unknown'
+      ? 'bg-status-warning-vivid shadow-[0_0_4px_var(--status-warning-vivid)]'
+      : tone === 'active'
+        ? 'bg-status-success-vivid shadow-[0_0_5px_var(--status-success-vivid)]'
+        : 'bg-surface-quinary border border-border-emphasis'
+
+  return <span className={`h-2 w-2 shrink-0 rounded-full ${ledClass}`} aria-hidden />
+}
+
 export default function RelayChannelBox({
   channel,
   nowMs,
-  compact = false,
+  variant = 'panel',
   isEditing = false,
   onSelect,
   statusText,
@@ -38,23 +69,25 @@ export default function RelayChannelBox({
   onToggleMenu,
   onMenuAction,
 }: RelayChannelBoxProps) {
+  const isCompact = variant === 'compact'
   const elapsedLabel = formatElapsedSince(channel.lastStateChangeAt, nowMs)
-  const locationLabel = channel.location || null
+  const silkscreen = getRelaySilkscreenLabel(channel.channel)
+  const locationLabel = channel.location || 'Unassigned location'
+  const deviceLabel = channel.deviceName || 'Unassigned'
+  const typeLabel = channel.displayType || '-'
+
+  const resolvedTone: 'unknown' | 'active' | 'idle' =
+    statusTone || (!channel.isStateKnown ? 'unknown' : channel.isActive ? 'active' : 'idle')
+  const resolvedText = statusText || (!channel.isStateKnown ? 'Unknown' : channel.isActive ? 'ON' : 'IDLE')
+  const canControl = Boolean(channel.assignedDeviceName && channel.location && channel.cluster)
 
   const interactiveClasses = onSelect
-    ? 'cursor-pointer hover:border-btn-primary-hover hover:shadow-md'
+    ? 'cursor-pointer hover:border-btn-primary-hover hover:bg-surface-primary/40'
     : ''
 
-  const surfaceClasses = channel.isStateKnown
-    ? channel.isActive
-      ? 'bg-status-success-bg/15 border-status-success-border/70'
-      : 'bg-surface-secondary border-border-emphasis'
-    : 'bg-surface-secondary/80 border-status-warning-border/60'
-
   const baseClasses = [
-    'relative w-full rounded-md border p-1 text-left transition-all overflow-visible',
-    compact ? 'h-[96px] p-2' : 'h-[120px] p-2',
-    surfaceClasses,
+    'group/relay relative w-full rounded-sm border border-border-emphasis bg-surface-primary/80 text-left transition-all overflow-visible',
+    isCompact ? 'min-h-[52px] p-1' : 'min-h-[60px] p-1.5',
     interactiveClasses,
     isEditing ? 'ring-2 ring-btn-primary-light' : '',
     isMenuOpen ? 'z-30' : 'z-0',
@@ -62,83 +95,80 @@ export default function RelayChannelBox({
     .filter(Boolean)
     .join(' ')
 
-  const resolvedTone: 'unknown' | 'active' | 'idle' = statusTone || (!channel.isStateKnown ? 'unknown' : channel.isActive ? 'active' : 'idle')
-  const resolvedText = statusText || (!channel.isStateKnown ? 'Unknown' : channel.isActive ? 'ON' : 'IDLE')
-  const canControl = Boolean(channel.assignedDeviceName && channel.location && channel.cluster)
+  const tooltipTitle = `${silkscreen} · CH ${channel.channel} · ${channel.pinLabel} · ${deviceLabel} · ${locationLabel} · ${elapsedLabel}`
 
   const menu = isMenuOpen ? (
     <div
-      className="absolute right-0 top-6 z-20 w-32 rounded-md border border-border-emphasis bg-surface-primary p-1 shadow-lg"
+      className="absolute right-0 top-5 z-20 w-32 rounded-sm border border-border-emphasis bg-surface-primary p-1 shadow-lg"
       onClick={(event) => event.stopPropagation()}
     >
-      <button type="button" className="w-full rounded px-2 py-1 text-left text-xs hover:bg-surface-secondary" onClick={() => onMenuAction?.(channel.channel, 'auto')}>
+      <button type="button" className="w-full rounded-sm px-2 py-1 text-left text-xs hover:bg-surface-secondary" onClick={() => onMenuAction?.(channel.channel, 'auto')}>
         Auto
       </button>
-      <button type="button" className="w-full rounded px-2 py-1 text-left text-xs hover:bg-surface-secondary" onClick={() => onMenuAction?.(channel.channel, 'timer-5m')}>
+      <button type="button" className="w-full rounded-sm px-2 py-1 text-left text-xs hover:bg-surface-secondary" onClick={() => onMenuAction?.(channel.channel, 'timer-5m')}>
         ON 5m
       </button>
-      <button type="button" className="w-full rounded px-2 py-1 text-left text-xs hover:bg-surface-secondary" onClick={() => onMenuAction?.(channel.channel, 'timer-10m')}>
+      <button type="button" className="w-full rounded-sm px-2 py-1 text-left text-xs hover:bg-surface-secondary" onClick={() => onMenuAction?.(channel.channel, 'timer-10m')}>
         ON 10m
       </button>
-      <button type="button" className="w-full rounded px-2 py-1 text-left text-xs hover:bg-surface-secondary" onClick={() => onMenuAction?.(channel.channel, 'timer-30m')}>
+      <button type="button" className="w-full rounded-sm px-2 py-1 text-left text-xs hover:bg-surface-secondary" onClick={() => onMenuAction?.(channel.channel, 'timer-30m')}>
         ON 30m
       </button>
-      <button type="button" className="w-full rounded px-2 py-1 text-left text-xs hover:bg-surface-secondary" onClick={() => onMenuAction?.(channel.channel, 'timer-1h')}>
+      <button type="button" className="w-full rounded-sm px-2 py-1 text-left text-xs hover:bg-surface-secondary" onClick={() => onMenuAction?.(channel.channel, 'timer-1h')}>
         ON 1h
       </button>
-      <button type="button" className="w-full rounded px-2 py-1 text-left text-xs hover:bg-surface-secondary" onClick={() => onMenuAction?.(channel.channel, 'off')}>
+      <button type="button" className="w-full rounded-sm px-2 py-1 text-left text-xs hover:bg-surface-secondary" onClick={() => onMenuAction?.(channel.channel, 'off')}>
         Off
       </button>
     </div>
   ) : null
 
   const content = (
-    <>
-      <div className="flex items-start justify-between gap-1.5">
-        <div>
-          <div className="flex items-center gap-1.5">
-            <span className="text-[11px] font-semibold text-text-input">CH {channel.channel}</span>
-            <span className="rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase bg-surface-tertiary text-text-secondary border border-border-emphasis">
-              {channel.pinLabel}
-            </span>
-          </div>
-          <div className="mt-0.5 text-[10px] text-text-muted truncate whitespace-nowrap">
-            {locationLabel || 'Unassigned location'}
-          </div>
-        </div>
-        <div className="relative">
-          <button
-            type="button"
-            disabled={!canControl}
-            onClick={(event) => {
-              event.stopPropagation()
-              if (!canControl) {
-                return
-              }
-              onToggleMenu?.(channel.channel)
-            }}
-            className={`rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase ${stateBadgeClasses(resolvedTone)} ${canControl ? 'cursor-pointer' : 'cursor-not-allowed opacity-70'}`}
-            title={canControl ? 'Click for control mode' : 'Assign a device first'}
-          >
-            {resolvedText}
-          </button>
-          {menu}
-        </div>
+    <div className="flex items-stretch gap-1.5" title={tooltipTitle}>
+      <div className="flex shrink-0 flex-col items-center justify-center gap-0.5">
+        <span className="font-mono text-[9px] font-bold uppercase tracking-tight text-text-muted">{silkscreen}</span>
+        <RelayGlyph isAssigned={channel.isAssigned} isActive={channel.isActive} isStateKnown={channel.isStateKnown} />
+        <RelayStatusLed tone={resolvedTone} />
       </div>
 
-      <div className="mt-1.5 text-[10px] text-text-muted">
-        Last change: <span className="font-mono text-text-secondary">{elapsedLabel}</span>
-      </div>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-start justify-between gap-1">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-1">
+              <span className="text-[10px] font-semibold text-text-input">CH {channel.channel}</span>
+              <span className="rounded-sm px-1 py-px font-mono text-[8px] font-semibold uppercase bg-surface-tertiary text-text-secondary border border-border-emphasis">
+                {channel.pinLabel}
+              </span>
+            </div>
+            <div className="truncate text-[9px] text-text-muted">{locationLabel}</div>
+          </div>
+          <div className="relative shrink-0">
+            <button
+              type="button"
+              disabled={!canControl}
+              onClick={(event) => {
+                event.stopPropagation()
+                if (!canControl) {
+                  return
+                }
+                onToggleMenu?.(channel.channel)
+              }}
+              className={`rounded-sm px-1 py-px text-[8px] font-semibold uppercase ${stateBadgeClasses(resolvedTone)} ${canControl ? 'cursor-pointer' : 'cursor-not-allowed opacity-70'}`}
+              title={canControl ? 'Click for control mode' : 'Assign a device first'}
+            >
+              {resolvedText}
+            </button>
+            {menu}
+          </div>
+        </div>
 
-      <div className="mt-1.5 space-y-0.5">
-        <div className="text-xs font-medium text-text-default truncate">
-          {channel.deviceName || 'Unassigned'}
-        </div>
-        <div className="text-[11px] text-text-secondary truncate">
-          {channel.displayType || '-'}
+        <div className="mt-0.5 truncate text-[9px] font-medium text-text-default">{deviceLabel}</div>
+        <div className="flex items-center justify-between gap-1 text-[8px] text-text-secondary">
+          <span className="truncate">{typeLabel}</span>
+          <span className="shrink-0 font-mono text-text-muted">{elapsedLabel}</span>
         </div>
       </div>
-    </>
+    </div>
   )
 
   if (!onSelect) {
@@ -151,4 +181,3 @@ export default function RelayChannelBox({
     </button>
   )
 }
-

@@ -30,8 +30,8 @@ Use this as the authoritative mapping when building the Figma UI kit from the re
 
 - **Device manager page content**: `Infrastructure/frontend/src/components/DeviceManager.tsx`
 - **DFR boards panel**: `Infrastructure/frontend/src/components/devices/DfrBoardsPanel.tsx`
-- **Relay matrix**: `Infrastructure/frontend/src/components/devices/RelayChannelMatrix.tsx`
-- **Relay channel box**: `Infrastructure/frontend/src/components/devices/RelayChannelBox.tsx`
+- **Relay matrix (SCADA 4-column panel, 2×8)**: `Infrastructure/frontend/src/components/devices/RelayChannelMatrix.tsx`
+- **Relay channel box (horizontal SCADA cell, K1–K16 + LED)**: `Infrastructure/frontend/src/components/devices/RelayChannelBox.tsx`
 - **Relay view models (labels, mapping helpers)**: `Infrastructure/frontend/src/components/devices/relayViewModel.ts`
 
 ## Monitoring (Grafana embeds)

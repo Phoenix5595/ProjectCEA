@@ -807,16 +807,21 @@ export default function DeviceManager() {
           </div>
         </div>
 
-        <div ref={matrixPanelRef} className="rounded-lg border border-border-subtle bg-surface-primary p-2 shadow-md md:col-span-1">
+        <div
+          ref={matrixPanelRef}
+          className="min-w-[320px] rounded-lg border border-border-subtle bg-surface-primary p-2 shadow-md md:col-span-1 md:min-w-[360px]"
+        >
           <div className="mb-2 flex items-start justify-between gap-1">
             <div>
               <h3 className="text-lg font-semibold text-text-default">Relay Matrix</h3>
+              <p className="font-mono text-[10px] text-text-muted">16-CH module · MCP23017</p>
             </div>
           </div>
 
           <RelayChannelMatrix
             channels={relayChannels}
             nowMs={nowMs}
+            variant="panel"
             editingChannel={editing}
             onSelectChannel={openEditFromRelayBox}
             statusByChannel={statusByChannel}
