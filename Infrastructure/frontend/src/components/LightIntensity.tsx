@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, forwardRef, useImperativeHandle } from 'react'
 import { toast } from 'sonner'
 import { apiClient } from '../services/api'
 import { logger } from '../utils/logger'
@@ -25,12 +25,15 @@ export interface LightIntensityProps {
   compact?: boolean
 }
 
-export default function LightIntensity({ location, cluster, compact }: LightIntensityProps) {
+const LightIntensity = forwardRef<{ savePendingChanges: () => Promise<void> }, LightIntensityProps>(
+  function LightIntensity({ location, cluster, compact }, ref) {
   const [lights, setLights] = useState<LightDevice[]>([])
   const [statuses, setStatuses] = useState<Record<string, LightIntensityRowStatus>>({})
   const [pendingTargets, setPendingTargets] = useState<Record<string, number>>({})
   const [loading, setLoading] = useState(true)
-  const [hasPendingChanges, setHasPendingChanges] = useState(false)
+  useImperativeHandle(ref, () => ({
+    savePendingChanges,
+  }))
 
   const fetchLightsAndStatusLegacy = useCallback(async () => {
     if (!location || !cluster) return
@@ -144,9 +147,6 @@ export default function LightIntensity({ location, cluster, compact }: LightInte
     return () => clearInterval(interval)
   }, [fetchLightsAndStatus])
 
-  useEffect(() => {
-    setHasPendingChanges(Object.keys(pendingTargets).length > 0)
-  }, [pendingTargets])
 
   function handleTargetChange(deviceName: string, value: number) {
     const clampedValue = Math.max(0, Math.min(100, value))
@@ -154,7 +154,6 @@ export default function LightIntensity({ location, cluster, compact }: LightInte
       ...prev,
       [deviceName]: clampedValue,
     }))
-    setHasPendingChanges(true)
   }
 
   async function savePendingChanges() {
@@ -331,16 +330,9 @@ export default function LightIntensity({ location, cluster, compact }: LightInte
         </div>
       )}
 
-      {hasPendingChanges && (
-        <div className="mt-2 flex justify-end shrink-0">
-          <button
-            onClick={savePendingChanges}
-            className="px-4 py-1.5 bg-accent-vivid hover:bg-accent-hover text-white text-xs font-bold rounded transition-colors"
-          >
-            APPLY LIGHT CHANGES
-          </button>
-        </div>
-      )}
+      
     </div>
   )
 }
+)
+export default LightIntensity
