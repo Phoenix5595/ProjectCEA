@@ -1,5 +1,5 @@
 import { useParams } from 'react-router-dom'
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { apiClient } from '../services/api'
 import { extractErrorMessage } from '../utils/errors'
 import { logger } from '../utils/logger'
@@ -15,9 +15,12 @@ import VerticalNotesBlock from '../components/VerticalNotesBlock'
 import ManualLightControl from '../components/ManualLightControl'
 import type { ClimatePeriod } from '../types/climatePeriod'
 
+export type ZoneConfigSection = 'control' | 'automation';
+
 export interface ZoneConfigProps {
   location?: string;
   cluster?: string;
+  section?: ZoneConfigSection;
 }
 
 interface RawClimatePeriod {
@@ -62,10 +65,15 @@ function createConstantPeriod(modeName: string): ClimatePeriod {
   }
 }
 
-export default function ZoneConfig({ location: propsLocation, cluster: propsCluster }: ZoneConfigProps) {
+export default function ZoneConfig({
+  location: propsLocation,
+  cluster: propsCluster,
+  section = 'control',
+}: ZoneConfigProps) {
   const { location: locationParam, cluster: urlCluster } = useParams<{ location: string; cluster: string }>()
   const { setActions } = useControlActions()
-  
+  const lightIntensityRef = useRef<{ savePendingChanges: () => Promise<void> }>(null)
+
   const location = propsLocation 
     ? getLocationBackendName(propsLocation)
     : (locationParam ? getLocationBackendName(locationParam) : null)
@@ -73,7 +81,7 @@ export default function ZoneConfig({ location: propsLocation, cluster: propsClus
   
   const [roomMode, setRoomMode] = useState<RoomModeWithParams | null>(null)
   const [climatePeriods, setClimatePeriods] = useState<ClimatePeriod[]>([])
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(section === 'control')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
@@ -182,6 +190,8 @@ export default function ZoneConfig({ location: propsLocation, cluster: propsClus
         updated.submode_id ?? undefined
       )
 
+      await lightIntensityRef.current?.savePendingChanges()
+
       setSuccess('Saved')
       setTimeout(() => setSuccess(null), 2000)
     } catch (err) {
@@ -204,12 +214,23 @@ export default function ZoneConfig({ location: propsLocation, cluster: propsClus
   }, [roomMode, location, cluster, climatePeriods])
 
   useEffect(() => {
-    if (location && cluster) {
-      loadRoomMode()
+    if (location && cluster && section === 'control') {
+      loadRoomMode();
     }
-  }, [location, cluster])
+  }, [location, cluster, section]);
 
   useEffect(() => {
+    if (section !== 'control') {
+      setActions({
+        roomName:
+          cluster === 'main'
+            ? getLocationDisplayName(location || '')
+            : `${getLocationDisplayName(location || '')} - ${getClusterDisplayName(location || '', cluster)}`,
+        showActions: false,
+      });
+      return () => setActions({});
+    }
+
     setActions({
       roomName:
         cluster === 'main'
@@ -222,18 +243,44 @@ export default function ZoneConfig({ location: propsLocation, cluster: propsClus
       currentMode: roomMode,
       onSave: handleSave,
       onModeChange: handleModeChange,
-    })
+    });
 
-    // Clear actions when leaving the page to prevent "leak" to other sectors
     return () => setActions({});
-  }, [location, cluster, saving, success, error, roomMode, handleSave, handleModeChange, setActions])
+  }, [
+    section,
+    location,
+    cluster,
+    saving,
+    success,
+    error,
+    roomMode,
+    handleSave,
+    handleModeChange,
+    setActions,
+  ]);
 
   if (!location || !cluster) {
-    return <div className="text-text-default">Invalid zone</div>
+    return <div className="text-text-default">Invalid zone</div>;
+  }
+
+  if (section === 'automation') {
+    return (
+      <div className="min-h-screen bg-surface-base p-1">
+        <div className="max-w-[1920px] mx-auto h-[calc(100vh-1rem)] flex flex-col min-h-0">
+          <div className="flex-1 min-h-0">
+            <VerticalPIDBlock />
+          </div>
+        </div>
+      </div>
+    );
   }
 
   if (loading) {
-    return <div className="min-h-screen bg-surface-base flex items-center justify-center text-text-muted">Loading...</div>
+    return (
+      <div className="min-h-screen bg-surface-base flex items-center justify-center text-text-muted">
+        Loading...
+      </div>
+    );
   }
 
   const params = roomMode?.parameters
@@ -298,19 +345,13 @@ export default function ZoneConfig({ location: propsLocation, cluster: propsClus
                   />
                 </div>
                 <div className="flex-[44.3] overflow-auto">
-                  <LightIntensity location={location} cluster={cluster} compact={true} />
+                  <LightIntensity ref={lightIntensityRef} location={location} cluster={cluster} compact={true} />
                 </div>
               </div>
             </div>
 
-            {/* Notes + PID/Manual - 35/65 split */}
-            <div className="flex gap-1">
-              <div className="w-[35%]">
-                <VerticalNotesBlock location={location} cluster={cluster} currentMode={roomMode?.mode_name} />
-              </div>
-              <div className="w-[65%]">
-                <VerticalPIDBlock />
-              </div>
+            <div className="flex-1 min-h-[160px]">
+              <VerticalNotesBlock location={location} cluster={cluster} currentMode={roomMode?.mode_name} />
             </div>
           </div>
         )}
