@@ -38,6 +38,7 @@ const Layout: React.FC = () => {
   // Determine sector from current path
   const sector = getSectorFromPath(location.pathname);
   const showTopRibbon = sector !== null;
+  const isDashboard = location.pathname === '/';
 
   // Close mobile drawer on route change
   useEffect(() => {
@@ -118,11 +119,8 @@ const Layout: React.FC = () => {
       <div
         className={`
           transition-all duration-300 ease-in-out
-          ${isMobile ? 'ml-0' : collapsed ? 'ml-16' : 'ml-56'}
+          ${isMobile ? 'ml-0' : collapsed ? 'ml-12' : 'ml-52'}
         `}
-        style={{
-          marginLeft: isMobile ? 0 : collapsed ? '4rem' : '14rem',
-        }}
       >
         {/* TopRibbon - only shown on sector pages */}
         {showTopRibbon && sector && (
@@ -141,8 +139,8 @@ const Layout: React.FC = () => {
           />
         )}
 
-        {/* Page Content */}
-        <main className="p-4">
+        {/* Page Content — dashboard is full-bleed so top/bottom ribbons align with sidebar chrome */}
+        <main className={isDashboard ? 'p-0' : 'p-4'}>
           <Outlet />
         </main>
       </div>
