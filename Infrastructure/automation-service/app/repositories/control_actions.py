@@ -1,11 +1,37 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 from .base import BaseRepository, logger
 
 if TYPE_CHECKING:
     from asyncpg import Pool
+
+# Column list for log_automation_state_batch copy_records_to_table.
+# ⚠️ MUST match the automation_state table schema exactly.
+# Source: Infrastructure/database/cea_schema.sql (automation_state table).
+# If a migration adds/removes columns, update this list.
+AUTOMATION_STATE_COLUMNS = [
+    "timestamp",
+    "location",
+    "cluster",
+    "device_name",
+    "device_state",
+    "device_mode",
+    "pid_output",
+    "duty_cycle_percent",
+    "active_rule_ids",
+    "active_schedule_ids",
+    "control_reason",
+    "schedule_ramp_up_duration",
+    "schedule_ramp_down_duration",
+    "schedule_photoperiod_hours",
+    "pid_kp",
+    "pid_ki",
+    "pid_kd",
+    "updated_at",
+]
 
 
 class ControlActionRepository(BaseRepository):
@@ -170,4 +196,63 @@ class ControlActionRepository(BaseRepository):
                 return True
         except Exception as e:
             logger.error(f"Failed to log automation state: {e}")
+            return False
+
+    async def log_automation_state_batch(
+        self,
+        records: list[dict[str, Any]],
+    ) -> bool:
+        """Log multiple automation state records in a single INSERT.
+
+        This is a SAME-TICK optimization — records are collected during the tick
+        and written immediately. NOT a deferred flush.
+
+        Args:
+            records: List of dicts, each containing all automation_state columns
+
+        Returns:
+            True if successful, False otherwise
+        """
+        if not records:
+            return True
+
+        try:
+            async with self.pool.acquire() as conn:
+                # Build multi-row VALUES clause
+                columns = AUTOMATION_STATE_COLUMNS
+
+                # Use asyncpg's copy_records_to_table for efficient bulk insert
+                rows = []
+                for r in records:
+                    rows.append(
+                        (
+                            r.get("timestamp", datetime.now()),
+                            r["location"],
+                            r["cluster"],
+                            r["device_name"],
+                            r["device_state"],
+                            r["device_mode"],
+                            r.get("pid_output"),
+                            r.get("duty_cycle_percent"),
+                            r.get("active_rule_ids", []),
+                            r.get("active_schedule_ids", []),
+                            r.get("control_reason", "unknown"),
+                            r.get("schedule_ramp_up_duration"),
+                            r.get("schedule_ramp_down_duration"),
+                            r.get("schedule_photoperiod_hours"),
+                            r.get("pid_kp"),
+                            r.get("pid_ki"),
+                            r.get("pid_kd"),
+                            datetime.now(),
+                        )
+                    )
+
+                await conn.copy_records_to_table(
+                    "automation_state",
+                    records=rows,
+                    columns=columns,
+                )
+                return True
+        except Exception as e:
+            logger.error(f"Failed to batch log automation state: {e}")
             return False
