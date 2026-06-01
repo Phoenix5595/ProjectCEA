@@ -1,5 +1,5 @@
 import { useParams } from 'react-router-dom'
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { apiClient } from '../services/api'
 import { extractErrorMessage } from '../utils/errors'
 import { logger } from '../utils/logger'
@@ -13,6 +13,10 @@ import LightIntensity from '../components/LightIntensity'
 import VerticalPIDBlock from '../components/VerticalPIDBlock'
 import VerticalNotesBlock from '../components/VerticalNotesBlock'
 import ManualLightControl from '../components/ManualLightControl'
+import RelayChannelMatrix from '../components/devices/RelayChannelMatrix'
+import { buildRelayChannelViewModels } from '../components/devices/relayViewModel'
+import type { RelayChannelViewModel } from '../components/devices/relayViewModel'
+import type { ChannelInfo } from '../types/relay'
 import type { ClimatePeriod } from '../types/climatePeriod'
 
 export type ZoneConfigSection = 'control' | 'automation';
@@ -85,6 +89,141 @@ export default function ZoneConfig({
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
+
+  // Relay matrix state
+  const [relayChannels, setRelayChannels] = useState<RelayChannelViewModel[]>([]) // eslint-disable-line @typescript-eslint/no-unused-vars
+  const [relayState, setRelayState] = useState<boolean[] | null>(null)
+  // @ts-ignore
+  const [mcpConnected, setMcpConnected] = useState<boolean>(true)
+  const [channelInfoList, setChannelInfoList] = useState<ChannelInfo[]>([])
+
+  const fetchRelayData = useCallback(async () => {
+    try {
+      const stateRes = await apiClient.getRelayBoardState()
+      setRelayState(stateRes.channels)
+      setMcpConnected(stateRes.mcp_connected)
+    } catch (err) {
+      logger.error('Failed to fetch relay board state:', err)
+      setRelayState(null)
+      setMcpConnected(false)
+    }
+  }, [])
+
+  const loadChannels = useCallback(async () => {
+    try {
+      const res = await apiClient.getChannels()
+      setChannelInfoList(Object.values(res.channels))
+    } catch (err) {
+      logger.error('Failed to fetch channel assignments:', err)
+    }
+  }, [])
+
+  // Load channel assignments once on mount
+  useEffect(() => {
+    loadChannels()
+  }, [loadChannels])
+
+  // Poll relay state every 5 seconds
+  useEffect(() => {
+    fetchRelayData()
+    const interval = setInterval(fetchRelayData, 5000)
+    return () => clearInterval(interval)
+  }, [fetchRelayData])
+
+  // Build view models when channel data or relay state changes
+  useEffect(() => {
+    setRelayChannels(buildRelayChannelViewModels(channelInfoList, relayState, {}))
+  }, [channelInfoList, relayState])
+
+  // Relay menu state — consumed by RelayChannelMatrix + timer effect in upcoming tasks
+  // @ts-ignore
+  const [menuOpenChannel, setMenuOpenChannel] = useState<number | null>(null)
+  const [manualTimersByChannel, setManualTimersByChannel] = useState<Record<number, number>>({})
+  // @ts-ignore
+  const [timerActionInFlight, setTimerActionInFlight] = useState<Record<number, boolean>>({})
+
+  const handleRelayMenuAction = useCallback(async (channel: number, action: 'auto' | 'timer-5m' | 'timer-10m' | 'timer-30m' | 'timer-1h' | 'off') => {
+    const ch = relayChannels.find((c: { channel: number }) => c.channel === channel)
+    if (!ch?.assignedDeviceName || !ch.location) return
+
+    const device = ch.assignedDeviceName
+    const location = ch.location
+    const cluster = ch.cluster || 'main' // Device cluster, not sensor sub-cluster
+
+    // Close dropdown
+    setMenuOpenChannel(null)
+
+    // Track in-flight state
+    setTimerActionInFlight(prev => ({ ...prev, [channel]: true }))
+    try {
+      if (action === 'auto') {
+        await apiClient.setDeviceMode(location, cluster, device, 'auto')
+      } else if (action === 'off') {
+        await apiClient.setDeviceMode(location, cluster, device, 'manual')
+        await apiClient.controlDevice(location, cluster, device, 0, 'Manual override: OFF')
+      } else {
+        // Timer actions: ON for N minutes, then auto
+        const minutes = action === 'timer-5m' ? 5 : action === 'timer-10m' ? 10 : action === 'timer-30m' ? 30 : 60
+        await apiClient.setDeviceMode(location, cluster, device, 'manual')
+        await apiClient.controlDevice(location, cluster, device, 1, `Manual override: ON ${minutes}m`)
+        setManualTimersByChannel(prev => ({
+          ...prev,
+          [channel]: Date.now() + minutes * 60 * 1000,
+        }))
+      }
+    } catch (err) {
+      logger.error(`Relay action failed for channel ${channel}:`, err)
+    } finally {
+      setTimerActionInFlight(prev => ({ ...prev, [channel]: false }))
+    }
+  }, [relayChannels])
+
+  // Timer expiration: auto-revert to 'auto' when manual timer expires
+  useEffect(() => {
+    const activeTimers = Object.entries(manualTimersByChannel).filter(([, expiry]) => expiry > 0)
+    if (activeTimers.length === 0) return
+
+    const timer = setInterval(() => {
+      const now = Date.now()
+      const expired: number[] = []
+      Object.entries(manualTimersByChannel).forEach(([channelStr, expiry]) => {
+        if (expiry > 0 && expiry <= now) expired.push(Number(channelStr))
+      })
+      if (expired.length > 0) {
+        setManualTimersByChannel(prev => {
+          const next = { ...prev }
+          expired.forEach(ch => delete next[ch])
+          return next
+        })
+        // handleRelayMenuAction will be defined by the time this runs (Task 3 adds it)
+        // eslint-disable-next-line @typescript-eslint/no-use-before-define
+        expired.forEach(channel => {
+          handleRelayMenuAction(channel, 'auto')
+        })
+      }
+    }, 1000)
+    return () => clearInterval(timer)
+  }, [manualTimersByChannel])
+
+  // Timer countdown text for active manual timers
+  // @ts-ignore
+  const statusByChannel = useMemo(() => {
+    const map: Record<number, { text: string; tone: 'unknown' | 'active' | 'idle' }> = {}
+    const now = Date.now()
+    for (const ch of relayChannels) {
+      const expiry = manualTimersByChannel[ch.channel]
+      if (expiry && expiry > now) {
+        const remaining = Math.ceil((expiry - now) / 1000)
+        const minutes = Math.floor(remaining / 60)
+        const seconds = remaining % 60
+        map[ch.channel] = {
+          text: `${minutes}:${String(seconds).padStart(2, '0')}`,
+          tone: 'active',
+        }
+      }
+    }
+    return map
+  }, [relayChannels, manualTimersByChannel])
 
   const loadClimatePeriodsForMode = useCallback(
     async (mode: RoomModeWithParams) => {
@@ -311,7 +450,7 @@ export default function ZoneConfig({
 
             {/* Light Schedule + Climate Periods row - 450px */}
             <div className="flex gap-1 h-[450px] shrink-0">
-              <div className="w-[30%] h-full">
+              <div className="w-[25%] h-full">
                 <div className="bg-surface-primary rounded-lg border border-border-subtle p-1 h-full flex flex-col min-w-[300px]">
                   <div className="text-[14px] text-text-muted uppercase font-bold tracking-wider mb-1">
                     {isConstant ? 'Manual Light Control' : 'Light Schedule'}
@@ -337,7 +476,7 @@ export default function ZoneConfig({
                 </div>
               </div>
 
-              <div className="w-[70%] flex flex-col gap-1 h-full overflow-hidden">
+              <div className="w-[40%] flex flex-col gap-1 h-full overflow-hidden">
                 <div className="bg-surface-primary rounded-lg border border-border-subtle p-1 flex-[55.7] overflow-auto">
                   <ClimatePeriodsTable
                     periods={climatePeriods}
@@ -347,6 +486,22 @@ export default function ZoneConfig({
                 <div className="flex-[44.3] overflow-auto">
                   <LightIntensity ref={lightIntensityRef} location={location} cluster={cluster} compact={true} />
                 </div>
+              </div>
+              <div className="w-[35%] h-full">
+                {!mcpConnected && (
+                  <div className="mb-1 rounded-sm border border-status-error-border/80 bg-status-error-bg/30 px-2 py-1 text-[10px] font-semibold text-status-error-text">
+                    MCP23017 disconnected
+                  </div>
+                )}
+                <RelayChannelMatrix
+                  channels={relayChannels}
+                  nowMs={Date.now()}
+                  variant="compact"
+                  statusByChannel={statusByChannel}
+                  menuOpenChannel={menuOpenChannel}
+                  onToggleMenu={(ch: number) => setMenuOpenChannel(prev => prev === ch ? null : ch)}
+                  onMenuAction={handleRelayMenuAction}
+                />
               </div>
             </div>
 
