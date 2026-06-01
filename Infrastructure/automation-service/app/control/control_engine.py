@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 # Standard library imports
+import asyncio
+from collections.abc import Coroutine
 from datetime import datetime
 from typing import Any
 
@@ -104,7 +106,7 @@ class ControlEngine:
 
         # Initialize pipeline components
         self.sensor_reader = SensorReader(database, self._state)
-        self.climate_resolver = ClimatePeriodResolver(scheduler, self.setpoint_manager)
+        self.climate_resolver = ClimatePeriodResolver(scheduler, self.setpoint_manager, self._state)
         self.setpoint_calculator = SetpointCalculator()
 
         # Ramp restoration will be done asynchronously after Redis is available
@@ -134,9 +136,14 @@ class ControlEngine:
         # }
         self._effective_setpoints: dict[tuple[str, str], dict[str, Any]] = {}
 
-        # Throttle light effective_setpoints DB logging to reduce CPU/IO (log at most every 60s per device)
+        # Light effective setpoint logging interval (seconds per device).
+        # With 1s control tick and 6 dimmers (3 DFR0971 boards × 2 channels):
+        #   6 devices × 1/10s = 0.6 writes/s to effective_setpoints hypertable.
+        # TimescaleDB compression after 7 days keeps storage manageable.
+        # REVIEW: 2026-05-31 — 10s chosen for faster diagnostic visibility.
+        # Original was 60s. If DB write throughput becomes a concern, revert to 30s or 60s.
         self._last_light_effective_log: dict[tuple[str, str, str], datetime] = {}
-        self._light_effective_log_interval_sec = 60
+        self._light_effective_log_interval_sec = 10
         self._last_light_sun_schedule_gap_error: dict[tuple[str, str, str], float] = {}
 
         # Config snapshot cache (device tree + sensor mapping, shared TTL)
@@ -151,6 +158,8 @@ class ControlEngine:
             "device_processing_time": [],
         }
         self._max_stats_history = 100  # Keep last 100 measurements
+
+        self._pending_db_writes: list[Coroutine[Any, Any, Any]] = []
 
         logger.info("Control engine initialized")
 
@@ -378,6 +387,10 @@ class ControlEngine:
                     sun_schedule_gap_error_interval_sec=60.0,
                 )
 
+        if self._pending_db_writes:
+            _ = await asyncio.gather(*self._pending_db_writes, return_exceptions=True)
+            self._pending_db_writes.clear()
+
         # Log automation state for all devices
         await self._log_automation_state()
 
@@ -446,22 +459,25 @@ class ControlEngine:
                 sensor_value = value
                 break
 
-        # Log to database
-        await self.database.device_repo.set_device_state(
-            location, cluster, device_name, channel, bool(state), mode
+        self._pending_db_writes.append(
+            self.database.device_repo.set_device_state(
+                location, cluster, device_name, channel, bool(state), mode
+            )
         )
-        await self.database.control_action_repo.log_control_action(
-            location,
-            cluster,
-            device_name,
-            channel,
-            current_state,
-            state,
-            mode,
-            reason,
-            sensor_value,
-            setpoint,
-            load_percent=load_percent,
+        self._pending_db_writes.append(
+            self.database.control_action_repo.log_control_action(
+                location,
+                cluster,
+                device_name,
+                channel,
+                current_state,
+                state,
+                mode,
+                reason,
+                sensor_value,
+                setpoint,
+                load_percent=load_percent,
+            )
         )
 
     async def _log_effective_setpoints(
@@ -499,8 +515,11 @@ class ControlEngine:
     # _log_light_intensities logic moved inline to run_control_loop
 
     async def _log_automation_state(self) -> None:
-        """Log automation state for all devices."""
+        """Log automation state for all devices using batch INSERT."""
         devices = self.config.get_devices()
+
+        current_time = datetime.now()
+        records: list[dict[str, Any]] = []
 
         for location, clusters in devices.items():
             for cluster, cluster_devices in clusters.items():
@@ -515,24 +534,32 @@ class ControlEngine:
                         self.relay_manager.get_device_mode(location, cluster, device_name) or "auto"
                     )
 
-                    await self.database.control_action_repo.log_automation_state(
-                        location,
-                        cluster,
-                        device_name,
-                        current_state,
-                        current_mode,
-                        context.get("pid_output"),
-                        context.get("duty_cycle_percent"),
-                        context.get("active_rule_ids", []),
-                        context.get("active_schedule_ids", []),
-                        context.get("control_reason", "unknown"),
-                        context.get("schedule_ramp_up_duration"),
-                        context.get("schedule_ramp_down_duration"),
-                        context.get("schedule_photoperiod_hours"),
-                        context.get("pid_kp"),
-                        context.get("pid_ki"),
-                        context.get("pid_kd"),
+                    records.append(
+                        {
+                            "timestamp": current_time,
+                            "location": location,
+                            "cluster": cluster,
+                            "device_name": device_name,
+                            "device_state": current_state,
+                            "device_mode": current_mode,
+                            "pid_output": context.get("pid_output"),
+                            "duty_cycle_percent": context.get("duty_cycle_percent"),
+                            "active_rule_ids": context.get("active_rule_ids", []),
+                            "active_schedule_ids": context.get("active_schedule_ids", []),
+                            "control_reason": context.get("control_reason", "unknown"),
+                            "schedule_ramp_up_duration": context.get("schedule_ramp_up_duration"),
+                            "schedule_ramp_down_duration": context.get(
+                                "schedule_ramp_down_duration"
+                            ),
+                            "schedule_photoperiod_hours": context.get("schedule_photoperiod_hours"),
+                            "pid_kp": context.get("pid_kp"),
+                            "pid_ki": context.get("pid_ki"),
+                            "pid_kd": context.get("pid_kd"),
+                        }
                     )
+
+        if records:
+            await self.database.control_action_repo.log_automation_state_batch(records)
 
     async def restore_ramp_state_from_database(self) -> None:
         """Handle ramp state on service startup.
