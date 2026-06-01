@@ -8,7 +8,6 @@ import type { RoomModeWithParams, ModeParameters } from '../types/modes'
 import { useControlActions } from '../contexts/ControlActionsContext'
 import ClimatePeriodTimeline from '../components/ClimatePeriodTimeline'
 import ClimatePeriodsTable from '../components/ClimatePeriodsTable'
-import CircularTimePicker from '../components/CircularTimePicker'
 import LightIntensity from '../components/LightIntensity'
 import VerticalPIDBlock from '../components/VerticalPIDBlock'
 import VerticalNotesBlock from '../components/VerticalNotesBlock'
@@ -305,7 +304,7 @@ export default function ZoneConfig({
       const p = updated.parameters
       const dayStart = toHHMM(p.day_start_time)
       const nightStart = toHHMM(p.night_start_time)
-      // Light ramps (CircularTimePicker): must match mode_parameters.light_ramp_* — not ramp_up_minutes
+      // Light ramps: must match mode_parameters.light_ramp_* — not ramp_up_minutes
       // (legacy climate transition fields), or room_schedule / Redis aggregate state show wrong values.
       await apiClient.saveRoomSchedule(location, cluster, {
         day_start_time: dayStart,
@@ -433,13 +432,20 @@ export default function ZoneConfig({
         {params && (
           <div className="flex-1 flex flex-col gap-1 min-h-0">
             {/* Climate Timeline - 270px fixed, full width */}
-            <div className="h-[270px] shrink-0 bg-surface-primary rounded-lg border border-border-subtle overflow-hidden p-2">
+            <div className="h-[300px] shrink-0 bg-surface-primary rounded-lg border border-border-subtle overflow-hidden p-2">
               {!isConstant ? (
                 <ClimatePeriodTimeline
                   periods={climatePeriods}
                   lightDayStart={params?.day_start_time || '06:00'}
                   lightDayEnd={params?.night_start_time || '18:00'}
                   className="h-full"
+                  onDayStartChange={(time) => handleParamChange({ day_start_time: time })}
+                  onDayEndChange={(time) => handleParamChange({ night_start_time: time })}
+                  lockedPhotoperiodHours={lockedPhotoperiod}
+                  rampUpDuration={params.light_ramp_up_minutes}
+                  rampDownDuration={params.light_ramp_down_minutes}
+                  onRampUpChange={(d) => handleParamChange({ light_ramp_up_minutes: d ?? 0 })}
+                  onRampDownChange={(d) => handleParamChange({ light_ramp_down_minutes: d ?? 0 })}
                 />
               ) : (
                 <div className="h-full flex items-center justify-center text-text-subtle text-sm">
@@ -448,46 +454,26 @@ export default function ZoneConfig({
               )}
             </div>
 
-            {/* Light Schedule + Climate Periods row - 450px */}
+            {/* Climate Periods + Relay Matrix row - 450px */}
             <div className="flex gap-1 h-[450px] shrink-0">
-              <div className="w-[25%] h-full">
-                <div className="bg-surface-primary rounded-lg border border-border-subtle p-1 h-full flex flex-col min-w-[300px]">
-                  <div className="text-[14px] text-text-muted uppercase font-bold tracking-wider mb-1">
-                    {isConstant ? 'Manual Light Control' : 'Light Schedule'}
-                  </div>
-                  <div className="flex-1 min-h-0 h-full flex flex-col">
-                    {!isConstant ? (
-                      <CircularTimePicker
-                        dayStartTime={params.day_start_time}
-                        dayEndTime={params.night_start_time}
-                        onDayStartChange={(time) => handleParamChange({ day_start_time: time })}
-                        onDayEndChange={(time) => handleParamChange({ night_start_time: time })}
-                        showPresetButtons={false}
-                        lockedPhotoperiodHours={lockedPhotoperiod}
-                        rampUpDuration={params.light_ramp_up_minutes}
-                        rampDownDuration={params.light_ramp_down_minutes}
-                        onRampUpChange={(d) => handleParamChange({ light_ramp_up_minutes: d ?? 0 })}
-                        onRampDownChange={(d) => handleParamChange({ light_ramp_down_minutes: d ?? 0 })}
+              <div className="flex-1 flex flex-col gap-1 h-full overflow-hidden">
+                {!isConstant ? (
+                  <>
+                    <div className="bg-surface-primary rounded-lg border border-border-subtle p-1 flex-[55.7] overflow-auto">
+                      <ClimatePeriodsTable
+                        periods={climatePeriods}
+                        onChange={setClimatePeriods}
                       />
-                    ) : (
-                      <ManualLightControl location={location} cluster={cluster} compact={true} />
-                    )}
-                  </div>
-                </div>
+                    </div>
+                    <div className="flex-[44.3] overflow-auto">
+                      <LightIntensity ref={lightIntensityRef} location={location} cluster={cluster} compact={true} />
+                    </div>
+                  </>
+                ) : (
+                  <ManualLightControl location={location} cluster={cluster} compact={true} />
+                )}
               </div>
-
-              <div className="w-[40%] flex flex-col gap-1 h-full overflow-hidden">
-                <div className="bg-surface-primary rounded-lg border border-border-subtle p-1 flex-[55.7] overflow-auto">
-                  <ClimatePeriodsTable
-                    periods={climatePeriods}
-                    onChange={setClimatePeriods}
-                  />
-                </div>
-                <div className="flex-[44.3] overflow-auto">
-                  <LightIntensity ref={lightIntensityRef} location={location} cluster={cluster} compact={true} />
-                </div>
-              </div>
-              <div className="w-[35%] h-full">
+              <div className="flex-1 h-full">
                 {!mcpConnected && (
                   <div className="mb-1 rounded-sm border border-status-error-border/80 bg-status-error-bg/30 px-2 py-1 text-[10px] font-semibold text-status-error-text">
                     MCP23017 disconnected

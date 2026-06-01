@@ -1,10 +1,9 @@
 {
-  "active_plan": "/home/antoine/ProjectCEA/.sisyphus/plans/climate-period-ramp-migration.md",
-  "started_at": "2026-03-18T21:03:39.423Z",
-  "session_ids": [
-    "ses_2fdec348fffe8mGVUTt4a7HobB"
-  ],
-  "plan_name": "climate-period-ramp-migration",
+  "active_plan": "/home/antoine/ProjectCEA/.sisyphus/plans/climate-timeline-sliders.md",
+  "started_at": "2026-06-01T01:00:08.343Z",
+  "completed_at": "2026-06-01T01:16:00.000Z",
+  "session_ids": ["ses_17f8a36b2ffejk3nqeF6mDPu0Y"],
+  "plan_name": "climate-timeline-sliders",
   "agent": "atlas",
-  "status": "in-progress"
+  "status": "complete"
 }
