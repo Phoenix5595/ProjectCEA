@@ -5,11 +5,14 @@ from __future__ import annotations
 import asyncio
 from datetime import UTC, datetime
 import json
+import time
 
 from app.alarm_manager import AlarmManager
+from app.calendar.sync_worker import CalendarSyncWorker
 from app.control.control_engine import ControlEngine
 from app.control.schedule_merge import merge_schedules_with_config
 from app.database import DatabaseManager
+from app.services.calendar_mode_scheduler import CalendarModeScheduler
 from shared.infra_logging import get_logger
 
 logger = get_logger(__name__)
@@ -52,9 +55,17 @@ class BackgroundTasks:
         self._setpoint_history_task: asyncio.Task | None = None
         self._batch_flush_task: asyncio.Task | None = None
         self._config_event_task: asyncio.Task | None = None
+        self._calendar_sync_task: asyncio.Task | None = None
+        self._last_calendar_mode_tick: float = 0.0
+        self._calendar_mode_interval = 60.0
+        self._calendar_scheduler: CalendarModeScheduler | None = None
+        self._calendar_sync_interval = 300.0
+        self._last_calendar_sync_tick: float = 0.0
         self._control_failure_count = 0
         self._control_success_count = 0
         self._degraded_active = False
+        self._last_control_error_time: float = 0.0
+        self._consecutive_control_errors: int = 0
 
     async def start(self) -> None:
         """Start background control loop and tasks."""
@@ -70,6 +81,12 @@ class BackgroundTasks:
         # Schedule refresh loop removed: event-driven via config events
         self._batch_flush_task = asyncio.create_task(self._batch_flush_loop())
         self._config_event_task = asyncio.create_task(self._config_event_consumer_loop())
+        self._calendar_sync_task = asyncio.create_task(self._calendar_sync_loop())
+        try:
+            scheduler = CalendarModeScheduler(self.database)
+            await scheduler.run_catchup()
+        except Exception as e:
+            logger.warning("Calendar mode catch-up failed: %s", e)
         logger.info(
             f"Background control loop started (interval: {self.update_interval}s) - event-driven schedule refresh"
         )
@@ -89,6 +106,7 @@ class BackgroundTasks:
             self._setpoint_history_task,
             self._batch_flush_task,
             self._config_event_task,
+            self._calendar_sync_task,
         ]
         for task in tasks:
             if task:
@@ -110,7 +128,7 @@ class BackgroundTasks:
         logger.info(f"Control loop interval updated to {self.update_interval}s")
 
     async def _control_loop(self) -> None:
-        """Main control loop - refactored as a worker pattern."""
+        """Main control loop - refactored as a worker pattern with fixed-rate scheduling."""
         retry_delay = 1.0
         max_retry_delay = 60.0
 
@@ -133,25 +151,52 @@ class BackgroundTasks:
                         retry_delay = min(retry_delay * 2, max_retry_delay)
                         continue
 
+                # Fixed-rate scheduling: record deadline before execution
+                deadline = time.monotonic() + self.update_interval
+
                 # Run control loop (worker pattern execution)
-                # Debug logging removed
                 await self.control_engine.run_control_loop()
-                # Debug logging removed
+                await self._maybe_run_calendar_mode_scheduler()
                 await self._record_control_success()
 
                 # Reset retry delay on success
                 retry_delay = 1.0
 
-                # Wait for next iteration
-                await asyncio.sleep(self.update_interval)
+                # Sleep until deadline, or skip if we already exceeded it (tick overrun handling)
+                remaining = deadline - time.monotonic()
+                if remaining > 0:
+                    await asyncio.sleep(remaining)
+                else:
+                    # Tick exceeded interval — log warning and catch up immediately
+                    logger.warning(
+                        f"Control loop tick exceeded interval by {-remaining * 1000:.1f}ms "
+                        f"(interval={self.update_interval}s), skipping sleep to catch up"
+                    )
 
             except asyncio.CancelledError:
                 break
             except Exception as e:
                 await self._record_control_failure(str(e))
-                logger.error(f"Error in control loop: {e}", exc_info=True)
-                # Continue running even on error
+                # Adaptive backoff: track error time, cap iteration rate at 1/s
+                now = time.monotonic()
+                if (
+                    self._last_control_error_time > 0
+                    and now - self._last_control_error_time < self.update_interval
+                ):
+                    # Second+ consecutive error: rate-limit logging
+                    self._consecutive_control_errors += 1
+                    if self._consecutive_control_errors % 10 == 0:
+                        logger.warning(
+                            f"Control loop error (x{self._consecutive_control_errors}): {e}"
+                        )
+                else:
+                    # First error or after reset: log at ERROR
+                    self._consecutive_control_errors = 1
+                    logger.error(f"Error in control loop: {e}", exc_info=True)
+                self._last_control_error_time = now
+                # Prevent tight spin: sleep for update_interval before retry
                 await asyncio.sleep(self.update_interval)
+                continue
 
     async def _record_control_failure(self, reason: str) -> None:
         """Enter degraded mode after repeated control-loop failures."""
@@ -220,7 +265,7 @@ class BackgroundTasks:
 
         while self._running:
             try:
-                await asyncio.sleep(heartbeat_interval)
+                deadline = time.monotonic() + heartbeat_interval
 
                 # Write automation service heartbeat (worker pattern execution)
                 if (
@@ -229,10 +274,18 @@ class BackgroundTasks:
                 ):
                     self.database._automation_redis.write_heartbeat("automation-service")
 
+                remaining = deadline - time.monotonic()
+                if remaining > 0:
+                    await asyncio.sleep(remaining)
+                else:
+                    logger.warning(
+                        f"heartbeat loop tick exceeded interval by {-remaining * 1000:.1f}ms, skipping sleep"
+                    )
             except asyncio.CancelledError:
                 break
             except Exception as e:
                 logger.error(f"Error in heartbeat loop: {e}", exc_info=True)
+                continue
 
     async def _auto_persist_loop(self) -> None:
         """Auto-persist task - syncs Redis PID parameters to database."""
@@ -240,12 +293,19 @@ class BackgroundTasks:
 
         while self._running:
             try:
-                await asyncio.sleep(persist_interval)
+                deadline = time.monotonic() + persist_interval
 
                 if (
                     not self.database._automation_redis
                     or not self.database._automation_redis.redis_enabled
                 ):
+                    remaining = deadline - time.monotonic()
+                    if remaining > 0:
+                        await asyncio.sleep(remaining)
+                    else:
+                        logger.warning(
+                            f"auto-persist loop tick exceeded interval by {-remaining * 1000:.1f}ms, skipping sleep"
+                        )
                     continue
 
                 # Sync PID parameters from Redis to DB (worker pattern execution)
@@ -284,10 +344,18 @@ class BackgroundTasks:
                 if synced_count > 0:
                     logger.info(f"Auto-persisted {synced_count} PID parameter sets")
 
+                remaining = deadline - time.monotonic()
+                if remaining > 0:
+                    await asyncio.sleep(remaining)
+                else:
+                    logger.warning(
+                        f"auto-persist loop tick exceeded interval by {-remaining * 1000:.1f}ms, skipping sleep"
+                    )
             except asyncio.CancelledError:
                 break
             except Exception as e:
                 logger.error(f"Error in auto-persist loop: {e}", exc_info=True)
+                continue
 
     async def _setpoint_history_loop(self) -> None:
         """Setpoint history task - logs current setpoints to history table."""
@@ -295,9 +363,16 @@ class BackgroundTasks:
 
         while self._running:
             try:
-                await asyncio.sleep(history_interval)
+                deadline = time.monotonic() + history_interval
 
                 if not self.database._db_connected:
+                    remaining = deadline - time.monotonic()
+                    if remaining > 0:
+                        await asyncio.sleep(remaining)
+                    else:
+                        logger.warning(
+                            f"setpoint history loop tick exceeded interval by {-remaining * 1000:.1f}ms, skipping sleep"
+                        )
                     continue
 
                 # Log setpoint history (worker pattern execution)
@@ -336,10 +411,18 @@ class BackgroundTasks:
                 except Exception as e:
                     logger.error(f"Error logging setpoint history: {e}", exc_info=True)
 
+                remaining = deadline - time.monotonic()
+                if remaining > 0:
+                    await asyncio.sleep(remaining)
+                else:
+                    logger.warning(
+                        f"setpoint history loop tick exceeded interval by {-remaining * 1000:.1f}ms, skipping sleep"
+                    )
             except asyncio.CancelledError:
                 break
             except Exception as e:
                 logger.error(f"Error in setpoint history loop: {e}", exc_info=True)
+                continue
 
     # Removed legacy _schedule_refresh_loop in favor of event-driven config changes
 
@@ -349,17 +432,25 @@ class BackgroundTasks:
 
         while self._running:
             try:
-                await asyncio.sleep(flush_interval)
+                deadline = time.monotonic() + flush_interval
 
                 # Flush batched records (worker pattern execution)
                 flushed_count = await self.database.setpoint_repo.flush_batch_buffer()
                 if flushed_count > 0:
                     logger.debug(f"Flushed {flushed_count} batched records")
 
+                remaining = deadline - time.monotonic()
+                if remaining > 0:
+                    await asyncio.sleep(remaining)
+                else:
+                    logger.warning(
+                        f"batch flush loop tick exceeded interval by {-remaining * 1000:.1f}ms, skipping sleep"
+                    )
             except asyncio.CancelledError:
                 break
             except Exception as e:
                 logger.error(f"Error in batch flush loop: {e}", exc_info=True)
+                continue
 
     async def _config_event_consumer_loop(self) -> None:
         """Consume config change events and update scheduler immediately.
@@ -422,9 +513,68 @@ class BackgroundTasks:
                                 + f"{len(merged)} schedules after SCHEDULE_CHANGED event"
                             )
 
+                        # Invalidate schedule cache in StateManager
+                        state = getattr(self.control_engine, "_state", None)
+                        if state:
+                            await state.delete(f"schedule:{event.location}:{event.cluster}")
+
+                    if event.event_type == ConfigEventType.MODE_CHANGED:
+                        # Invalidate mode cache in StateManager
+                        state = getattr(self.control_engine, "_state", None)
+                        if state:
+                            await state.delete_mode(event.location, event.cluster)
+
+                    if event.event_type == ConfigEventType.PID_PARAMS_CHANGED:
+                        # Invalidate PID params cache in StateManager
+                        state = getattr(self.control_engine, "_state", None)
+                        if state:
+                            device_type = event.data.get("device_type") if event.data else None
+                            if device_type:
+                                await state.delete(f"pid:parameters:{device_type}")
+
+                    if event.event_type == ConfigEventType.SETPOINT_CHANGED:
+                        # Invalidate climate period cache for this location/cluster
+                        state = getattr(self.control_engine, "_state", None)
+                        if state and event.location and event.cluster:
+                            # Partial invalidation: clear all climate period entries for this room
+                            # StateManager doesn't have pattern delete, so we accept stale reads for 30s TTL
+                            logger.debug(
+                                f"Setpoint changed for {event.location}/{event.cluster}, "
+                                "climate period cache will expire naturally in 30s"
+                            )
+
                 except Exception as e:
                     logger.error(f"Error processing config event: {e}", exc_info=True)
 
         except asyncio.CancelledError:
             logger.info("Config event consumer stopped")
             raise
+
+    async def _maybe_run_calendar_mode_scheduler(self) -> None:
+        now = time.monotonic()
+        if now - self._last_calendar_mode_tick < self._calendar_mode_interval:
+            return
+        self._last_calendar_mode_tick = now
+        try:
+            if self._calendar_scheduler is None:
+                self._calendar_scheduler = CalendarModeScheduler(self.database)
+            await self._calendar_scheduler.run_tick()
+        except Exception as e:
+            logger.warning("Calendar mode scheduler tick failed: %s", e)
+
+    async def _calendar_sync_loop(self) -> None:
+        import time
+
+        worker = CalendarSyncWorker(self.database)
+        while self._running:
+            try:
+                now = time.monotonic()
+                if now - self._last_calendar_sync_tick >= self._calendar_sync_interval:
+                    self._last_calendar_sync_tick = now
+                    await worker.run_sync()
+                await asyncio.sleep(30)
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.warning("Calendar sync loop error: %s", e)
+                await asyncio.sleep(60)
