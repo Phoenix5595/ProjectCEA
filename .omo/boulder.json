@@ -1,0 +1,55 @@
+{
+  "active_plan": "/home/antoine/ProjectCEA/.omo/plans/relay-timestamp-fix.md",
+  "started_at": "2026-06-02T20:59:06.438Z",
+  "completed_at": "2026-06-02T21:08:11.000Z",
+  "session_ids": [
+    "opencode:ses_18c68c91effeL6URAUZwAx7NhB"
+  ],
+  "plan_name": "relay-timestamp-fix",
+  "agent": "atlas",
+  "status": "completed",
+  "session_origins": {
+    "opencode:ses_18c68c91effeL6URAUZwAx7NhB": "direct"
+  },
+  "task_sessions": {},
+  "schema_version": 2,
+  "works": {
+    "code-quality-fixes-legacy": {
+      "work_id": "code-quality-fixes-legacy",
+      "active_plan": "/home/antoine/ProjectCEA/.sisyphus/plans/code-quality-fixes.md",
+      "plan_name": "code-quality-fixes",
+      "status": "complete",
+      "started_at": "2026-06-02T13:18:13.069Z",
+      "session_ids": [
+        "opencode:ses_177b3bbc9ffeluG2x04cE6jeuY"
+      ],
+      "session_origins": {
+        "opencode:ses_177b3bbc9ffeluG2x04cE6jeuY": "direct"
+      },
+      "agent": "atlas",
+      "task_sessions": {}
+    },
+    "relay-timestamp-fix-d88c96a3": {
+      "work_id": "relay-timestamp-fix-d88c96a3",
+      "active_plan": "/home/antoine/ProjectCEA/.omo/plans/relay-timestamp-fix.md",
+      "plan_name": "relay-timestamp-fix",
+      "status": "completed",
+      "started_at": "2026-06-02T20:59:06.438Z",
+      "updated_at": "2026-06-02T21:10:29.529Z",
+      "session_ids": [
+        "opencode:ses_18c68c91effeL6URAUZwAx7NhB"
+      ],
+      "session_origins": {
+        "opencode:ses_18c68c91effeL6URAUZwAx7NhB": "direct"
+      },
+      "agent": "atlas",
+      "task_sessions": {},
+      "ended_at": "2026-06-02T21:10:29.529Z",
+      "elapsed_ms": 683091
+    }
+  },
+  "active_work_id": "relay-timestamp-fix-d88c96a3",
+  "updated_at": "2026-06-02T21:10:29.529Z",
+  "ended_at": "2026-06-02T21:10:29.529Z",
+  "elapsed_ms": 683091
+}

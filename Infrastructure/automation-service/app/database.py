@@ -12,8 +12,9 @@ import redis
 from shared.db import create_pool, db_config_from_env
 from shared.infra_logging import get_logger
 
-from .migrations import create_room_modes_tables, run_alembic_migrations
+from .migrations import create_calendar_tables, create_room_modes_tables, run_alembic_migrations
 from .redis_client import AutomationRedisClient
+from .repositories.calendar import CalendarRepository
 from .repositories.climate_periods import ClimatePeriodRepository
 from .repositories.config import ConfigRepository
 from .repositories.control_actions import ControlActionRepository
@@ -56,6 +57,7 @@ class DatabaseManager:
         self._control_action_repo: ControlActionRepository | None = None
         self._config_repo: ConfigRepository | None = None
         self._climate_periods_repo: ClimatePeriodRepository | None = None
+        self._calendar_repo: CalendarRepository | None = None
 
     async def initialize(self) -> bool:
         """Initialize database connection and run migrations.
@@ -70,6 +72,7 @@ class DatabaseManager:
             run_alembic_migrations()
             if self._pool:
                 await create_room_modes_tables(self._pool)
+                await create_calendar_tables(self._pool)
 
             await self._connect_redis()
 
@@ -87,6 +90,7 @@ class DatabaseManager:
             self._control_action_repo = ControlActionRepository(self._pool)
             self._config_repo = ConfigRepository(self._pool)
             self._climate_periods_repo = ClimatePeriodRepository(self._pool)
+            self._calendar_repo = CalendarRepository(self._pool)
 
             return True
         except Exception as e:
@@ -205,6 +209,12 @@ class DatabaseManager:
         if not self._config_repo:
             raise RuntimeError("ConfigRepository not initialized")
         return self._config_repo
+
+    @property
+    def calendar_repo(self) -> CalendarRepository:
+        if not self._calendar_repo:
+            raise RuntimeError("CalendarRepository not initialized")
+        return self._calendar_repo
 
     @property
     def automation_redis(self) -> AutomationRedisClient | None:

@@ -6,6 +6,7 @@ from fastapi import FastAPI
 
 from app.routes import (
     alarms,
+    calendar,
     climate_periods,
     debug,
     devices,
@@ -48,6 +49,7 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(failsafe.router, tags=["failsafe"])
     app.include_router(websocket.router, tags=["websocket"])
     app.include_router(room_modes.router, tags=["room-modes"])
+    app.include_router(calendar.router, tags=["calendar"])
     app.include_router(redis_state.router, tags=["redis-state"])
     app.include_router(debug.router, tags=["debug"])
     # Health (with hardware.mcp) is served by status.router GET /health
@@ -85,6 +87,8 @@ def setup_dependency_overrides(app: FastAPI, container) -> None:
 
     # Override dependencies in hardware module
     app.dependency_overrides[hardware.get_relay_manager] = container.get_relay_manager
+    app.dependency_overrides[hardware.get_automation_redis] = container.get_automation_redis
+    app.dependency_overrides[hardware.get_database] = container.get_database
 
     # Override dependencies in status module
     app.dependency_overrides[status.get_database] = container.get_database
@@ -114,5 +118,7 @@ def setup_dependency_overrides(app: FastAPI, container) -> None:
     app.dependency_overrides[debug.get_database] = container.get_database
     app.dependency_overrides[debug.get_scheduler] = container.get_scheduler
     app.dependency_overrides[debug.get_control_engine] = container.get_control_engine
+
+    app.dependency_overrides[calendar.get_database] = container.get_database
 
     logger.info("Dependency overrides configured")

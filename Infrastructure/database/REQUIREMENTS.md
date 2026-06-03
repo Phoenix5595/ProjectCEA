@@ -30,7 +30,7 @@ The Pi primary that hosts `cea_sensors` feeds the **iskraprojectcea** standby. T
 
 Replication slot **`iskra_recovery`** must exist on the primary (`pg_create_physical_replication_slot`) and be **consumed** by the standby (`REPLICATION_SLOT` in iskra `.env`). An unused slot with `restart_lsn` NULL does not pin WAL; the standby can fall off after `wal_keep_size` is exceeded.
 
-**Iskra standby (`projectcea_database`):** enable **`hot_standby_feedback = on`** (set in `iskra_stack/docker-entrypoint-replica.sh` via `postgres -c`) so Grafana/`redis_sync` queries are not canceled by **`conflict with recovery`** during replay. The primary receives xmin hints and may retain dead tuples a bit longer; this is normal for an analytics replica — rely on autovacuum on the Pi.
+**Iskra standby (`projectcea_database`):** enable **`hot_standby_feedback = on`** (set in `iskra_stack/docker-entrypoint-replica.sh` via `postgres -c`) so Grafana/`redis_sync` queries are not canceled by **`conflict with recovery`** during replay. The primary receives xmin hints and may retain dead tuples a bit longer; this is normal for an analytics replica — rely on autovacuum on the Pi. On the same `-c` path, default **`jit = off`** and **`max_parallel_workers_per_gather = 0`** so overlapping Grafana SELECTs avoid parallel-worker churn under frequent cancellation (CPU headroom does not fix that failure mode).
 
 ## Schema Structure
 
@@ -101,6 +101,27 @@ Replication slot **`iskra_recovery`** must exist on the primary (`pg_create_phys
 - `measurement_hourly`: Hourly min/max/avg per sensor
 - `measurement_daily`: Daily min/max/avg per sensor
 
+### View: `latest_sensor_values` (Grafana / `redis_sync`)
+
+- **Purpose:** One row per registered sensor — the latest `measurement` row —
+  joined to `sensor` / `device` / `room` metadata for **`redis_sync`** and any
+  Postgres “latest” panels. **`redis_sync`** mirrors rows to **`sensor:<name>`**
+  / **`sensor:<name>:ts`** and builds **Grafana Flower table hashes**
+  **`cea:grafana:flower_averages`**, **`cea:grafana:flower_front`**,
+  **`cea:grafana:flower_back`** (see **`Infrastructure/iskra_stack/scripts/redis_sync.py`**).
+- **Required shape:** Implemented as `sensor` **`JOIN LATERAL … ON TRUE`**
+  `(SELECT time, value, status FROM measurement mm WHERE mm.sensor_id = s.sensor_id ORDER BY time DESC LIMIT 1)` so the planner uses **one index probe per
+  sensor** instead of scanning all hypertable chunks (the old `DISTINCT ON (sensor_id) … ORDER BY sensor_id, time DESC` over `measurement` forced multi-million-row paths for `max(time)`-style work).
+- **Apply DDL on the Pi primary only**; streaming replica inherits the view
+  definition. Source files: `grafana_optimized_views.sql`,
+  `migrate_latest_sensor_values_lateral.sql`.
+
+### Flower Room Flower-sector naming (`*_f` / `*_b`)
+
+- Grafana Flower dashboards expect **`rh_f`** and **`vpd_f`** logical sensors on the **front CAN node** (device **`Node 2`**, same device as `dry_bulb_f`). If those rows were missing, provision them with **`migrate_flower_front_rh_vpd_sensors.sql`** on the primary (idempotent `ON CONFLICT DO NOTHING`).
+- **Operational truth:** live greenhouse judgment uses **`*_b`** when the front cluster is unplugged or silent—no rows for `*_f` is normal hardware-wise until CAN returns.
+- **Dashboard contract:** live stat tables MUST NOT **inner-join** front + back for tier averages when front has zero samples — averages must allow **back-only** values when **`*_f`** is missing. On Iskra, **`redis_sync`** applies the same rule when building **`cea:grafana:flower_averages`**; Grafana reads **`HGETALL`** on that key (not Postgres).
+
 ### Optional Tables
 
 1. **crop_batch**
@@ -109,6 +130,13 @@ Replication slot **`iskra_recovery`** must exist on the primary (`pg_create_phys
    - `start_date` (DATE)
    - `end_date` (DATE, optional)
    - `room_id` (FK → room)
+   - Linked to **`calendar_event.crop_batch_id`** when created by the flower grow wizard.
+
+2. **calendar_event** (see `add_calendar_tables.sql`)
+   - Planned grow phases, tasks; soft-delete via `deleted_at`; `ical_uid` for CalDAV; `grow_plan_id` UUID for bulk plans.
+
+3. **calendar_room_profile**, **calendar_mode_application**, **calendar_sync_connection**, **grow_plan_idempotency**
+   - See `Infrastructure/database/add_calendar_tables.sql` and `Infrastructure/frontend/calendar-requirements.txt`.
 
 2. **setpoints** (Created and managed by automation-service)
    - `id` (PK, BIGSERIAL)
@@ -140,10 +168,8 @@ Replication slot **`iskra_recovery`** must exist on the primary (`pg_create_phys
 - **Retention**: 90 days raw data, then compress
 - **Compression**: Automatic compression on chunks older than 90 days
 - **Query Performance**: 
-  - Live/short (≤1 hour): Query raw `measurement` / `measurement_with_metadata`
-  - Medium (≥12 hours): Use hourly continuous aggregates
-  - Multi-day ranges: Use daily continuous aggregates
-  - Historical data (> 90 days): Prefer aggregates; compressed chunks stay readable
+  - **Iskra Flower operator graphs (panel ref A):** use **`get_sensor_data_optimized`** — **≤ 1 h** raw **`measurement`**; **> 1 h–≤ 6 h** **`measurement_1min`**; **> 6 h–≤ 24 h** **`measurement_5min`**; **> 24 h** **`measurement_hourly`** (see **`grafana_performance_migration.sql`**; existing DBs: **`migrate_get_sensor_routing_1min_through_6h.sql`**). Routing compares **`FLOOR` of span length in whole seconds** so Grafana presets slightly over a nominal boundary (e.g. a few ms past 6 h) do not skip to the next tier. After DDL, run **`verify_get_sensor_routing.sql`** to confirm the live function and **~60 s** median gaps for a 3 h window. **`measurement_daily`** exists but is **not** selected by that function today.
+  - **Other APIs / ad-hoc:** Live/short (≤1 hour): raw **`measurement`** / **`measurement_with_metadata`** where appropriate; multi-day and historical analytics: prefer continuous aggregates or compressed chunk reads as documented elsewhere.
 
 ## Migration
 
@@ -212,6 +238,13 @@ Get measurements for a specific sensor.
 - `limit` (optional, default: 100, max: 1000)
 
 ## Grafana Integration
+
+- **TimescaleDB contract:** dashboards and helper SQL MAY use **`time_bucket`**, **`last`**, and continuous-aggregate views. There is no supported “vanilla PostgreSQL only” mode for operator graphs; replica and primary MUST run TimescaleDB with the extension loaded.
+- **Postgres datasource (Iskra):** provisioned from **[`../iskra_stack/provisioning/datasources/datasources.yaml.template`](../iskra_stack/provisioning/datasources/datasources.yaml.template)** — **`jsonData.database`** MUST be **`cea_sensors`** (Grafana 12+ SQL path). Pool **`connMaxLifetime`** is kept short (**90** s) so Grafana does not reuse TCP sessions the replica already closed; if panels show **`db query error` / `driver: bad connection`**, restart **`projectcea_grafana`** after confirming **`projectcea_database`** is healthy.
+- **Iskra Flower dashboard (mandatory):** provisioned **[`Infrastructure/iskra_stack/dashboards/flower_sector/flower_sector.json`](../iskra_stack/dashboards/flower_sector/flower_sector.json)** — main climate graph (panel **id 4**, ref **A**) and **CO₂ & Pressure** (panel **id 5**, ref **A**) **MUST** call **`get_sensor_data_optimized(...)`** defined in **[`grafana_performance_migration.sql`](grafana_performance_migration.sql)** (routing thresholds also updated by **[`migrate_get_sensor_routing_1min_through_6h.sql`](migrate_get_sensor_routing_1min_through_6h.sql)** on already-provisioned primaries). **Prerequisites on the Pi primary** (replica applies via WAL): run that migration (or equivalent DDL), create continuous aggregates **`measurement_1min`**, **`measurement_5min`**, **`measurement_hourly`**, **`measurement_daily`**, add refresh policies, create **`measurement_*_grafana`** views, **backfill** CAGGs for historical windows, and grant **`cea_user` EXECUTE** on **`get_sensor_data_optimized`** (and **`get_sensor_stats`** if used). Missing objects cause Grafana SQL errors or empty series.
+- **Flower cluster tables (panels 1–3):** **Averages**, **Front Cluster**, **Back Cluster** **MUST** use the **Redis** datasource (**`HGETALL`**) on **`cea:grafana:flower_averages`**, **`cea:grafana:flower_front`**, **`cea:grafana:flower_back`**, populated by **[`../iskra_stack/scripts/redis_sync.py`](../iskra_stack/scripts/redis_sync.py)** each sync interval. On Iskra, **`SYNC_INTERVAL_SEC`** in **`docker-compose.yml`** should stay **short** (default **1 s**) so these tables track the dashboard’s **1 s** refresh; graphs query Postgres every refresh, so a long sync interval feels stale. Rebuild/restart **`projectcea_redis_sync`** after editing that script. The Grafana Redis plugin returns **`HGETALL`** as **one wide row** (each hash field is a **column**), not **`Field` / `Value`** rows — those panels **MUST** apply a **Transpose** transformation with **`firstFieldName`: Sensor** and **`restFieldsName`: Value** so the table shows the usual two-column **Sensor | Value** layout.
+- **Trailing-edge behavior:** continuous aggregates refresh on a schedule; the **last few minutes** of a curve can lag raw **`measurement`** — operators may perceive light “buffering” vs pre-CAGG dashboards. **`get_sensor_data_optimized`** uses **raw `measurement`** only when the selected span is **≤ 1 hour** (see **`Infrastructure/REQUIREMENTS.md`** routing table).
+- **Statistics table:** the Flower **Statistics** panel may remain on **`measurement_with_metadata`** with an explicit **`sensor_name IN (...)`** filter because **`get_sensor_stats`** returns **min/max/avg** only (no **Std Dev**). Future work: extend **`get_sensor_stats`** or add a CAGG-aware stats path if **Std Dev** must come from rollups.
 
 ### Query Examples
 

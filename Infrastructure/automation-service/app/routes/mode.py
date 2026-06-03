@@ -10,8 +10,11 @@ from pydantic import BaseModel
 from app.database import DatabaseManager
 from app.redis_client import AutomationRedisClient
 from app.state import get_state_manager
+from shared.infra_logging import get_logger
 
 router = APIRouter()
+
+logger = get_logger(__name__)
 
 
 class ModeUpdate(BaseModel):
@@ -62,9 +65,9 @@ async def get_mode(
     # Populate StateManager cache for future quick reads
     try:
         await state.set_mode(location, cluster, mode, source="redis")
-    except Exception:
+    except Exception as e:
+        logger.error(f"Failed to cache mode for {location}/{cluster}: {e}", exc_info=True)
         # Do not fail the request if caching fails
-        pass
 
     return {"location": location, "cluster": cluster, "mode": mode}
 
@@ -110,9 +113,9 @@ async def set_mode(
     state = get_state_manager()
     try:
         await state.set_mode(location, cluster, update.mode, source=update.source)
-    except Exception:
+    except Exception as e:
+        logger.error(f"Failed to cache mode for {location}/{cluster}: {e}", exc_info=True)
         # Non-fatal if state cache update fails
-        pass
 
     if not success:
         raise HTTPException(status_code=500, detail="Failed to set mode")
@@ -155,8 +158,8 @@ async def get_all_modes(
                         "cluster": cluster,
                         "mode": mode,
                     }
-    except Exception:
+    except (ConnectionError, OSError) as e:
+        logger.error(f"Failed to scan mode keys: {e}", exc_info=True)
         # If scan fails, return empty dict
-        pass
 
     return modes

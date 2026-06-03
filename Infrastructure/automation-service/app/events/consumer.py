@@ -7,7 +7,7 @@ from typing import Any
 try:
     # Redis asyncio client (redis-py >= 4.x)
     import redis.asyncio as aioredis  # type: ignore
-except Exception:  # pragma: no cover
+except ImportError:  # pragma: no cover
     aioredis = None  # type: ignore
 
 # Import from the same package using a relative import to avoid package import issues
@@ -56,9 +56,9 @@ class RedisEventConsumer:
         try:
             if self._redis is not None:
                 await self._redis.ping()
-        except Exception:  # pragma: no cover
+        except (ConnectionError, OSError) as e:  # pragma: no cover
+            logger.warning("Redis ping failed in consumer: %s", e)
             # Non-fatal: consumer can still operate; errors surfaced when reading
-            pass
         self._initialized = True
 
     async def _ensure_consumer_group(self) -> None:
@@ -132,7 +132,7 @@ class RedisEventConsumer:
                         if isinstance(ts_raw, str):
                             try:
                                 event_ts = datetime.fromisoformat(ts_raw)
-                            except Exception:
+                            except (ValueError, TypeError):
                                 event_ts = datetime.now()
                         else:
                             event_ts = datetime.now()
@@ -148,7 +148,7 @@ class RedisEventConsumer:
                                 data_str = str(data_raw)
                             try:
                                 data = json.loads(data_str)  # type: ignore
-                            except Exception:
+                            except (json.JSONDecodeError, ValueError, TypeError):
                                 # Fallback: store raw string under a key
                                 data = {"raw": data_str}
 

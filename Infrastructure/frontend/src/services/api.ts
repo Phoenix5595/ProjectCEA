@@ -6,6 +6,13 @@ import type { PIDParameters, PIDParameterUpdate, PIDModeInfo, PIDModeUpdate, Aut
 import type { Schedule, ScheduleCreate, ScheduleUpdate } from '../types/schedule';
 import type { LightStatus, LightTargetSetResponse } from '../types/light';
 import type { RoomMode, FlowerSubmode, RoomModeWithParams, SetModeRequest, UpdateParametersRequest } from '../types/modes';
+import type {
+  CalendarEventsResponse,
+  CalendarEventDto,
+  CalendarRoomProfile,
+  FlowerGrowPlanRequest,
+  ModeScheduleResponse,
+} from '../types/calendar';
 import type { ChannelInfo, LightNameOption } from '../types/relay';
 import { AUTOMATION_API_URL, BACKEND_API_URL, CEA_API_KEY, WEATHER_API_URL } from '../config/env';
 
@@ -222,7 +229,7 @@ class ApiClient {
     return response.data;
   }
 
-  async getRelayBoardState(): Promise<{ channels: boolean[]; mcp_connected: boolean; simulation: boolean }> {
+  async getRelayBoardState(): Promise<{ channels: boolean[]; timestamps: (string | null)[]; mcp_connected: boolean; simulation: boolean }> {
     const response = await this.automationClient.get('/api/hardware/relays/state');
     return response.data;
   }
@@ -535,6 +542,86 @@ class ApiClient {
   async updateRoomParameters(location: string, cluster: string, params: UpdateParametersRequest): Promise<RoomModeWithParams> {
     const response = await this.automationClient.put(`/api/room-modes/room/${location}/${cluster}/parameters`, params);
     return response.data;
+  }
+
+  // Calendar (automation service)
+  async getCalendarRooms(): Promise<CalendarRoomProfile[]> {
+    const response = await this.automationClient.get('/api/calendar/rooms');
+    return response.data;
+  }
+
+  async getCalendarEvents(
+    from: string,
+    to: string,
+    location?: string,
+    cursor?: string
+  ): Promise<CalendarEventsResponse> {
+    const params: Record<string, string> = { from, to };
+    if (location) params.location = location;
+    if (cursor) params.cursor = cursor;
+    const response = await this.automationClient.get('/api/calendar/events', { params });
+    return response.data;
+  }
+
+  async createFlowerGrowPlan(body: FlowerGrowPlanRequest): Promise<{
+    grow_plan_id: string;
+    crop_batch_id: number;
+    events: CalendarEventDto[];
+  }> {
+    const response = await this.automationClient.post('/api/calendar/grow-plans/flower', body);
+    return response.data;
+  }
+
+  async deleteGrowPlan(growPlanId: string): Promise<{ deleted: number }> {
+    const response = await this.automationClient.delete(`/api/calendar/grow-plans/${growPlanId}`);
+    return response.data;
+  }
+
+  async getModeSchedule(
+    location: string,
+    cluster: string,
+    date?: string
+  ): Promise<ModeScheduleResponse> {
+    const params = date ? { date } : {};
+    const response = await this.automationClient.get(
+      `/api/calendar/mode-schedule/${encodeURIComponent(location)}/${encodeURIComponent(cluster)}`,
+      { params }
+    );
+    return response.data;
+  }
+
+  async getCalendarSyncConnection(): Promise<JsonObject | null> {
+    const response = await this.automationClient.get('/api/calendar/sync/connections');
+    return response.data;
+  }
+
+  async saveCalendarSyncConnection(body: {
+    caldav_base_url: string;
+    username: string;
+    app_password: string;
+    target_calendar_url: string;
+    display_name?: string;
+  }): Promise<JsonObject> {
+    const response = await this.automationClient.post('/api/calendar/sync/connections', body);
+    return response.data;
+  }
+
+  async testCalendarSyncConnection(body: {
+    caldav_base_url: string;
+    username: string;
+    app_password: string;
+  }): Promise<Array<{ name: string; url: string }>> {
+    const response = await this.automationClient.post('/api/calendar/sync/connections/test', body);
+    return response.data;
+  }
+
+  async runCalendarSync(): Promise<JsonObject> {
+    const response = await this.automationClient.post('/api/calendar/sync/run');
+    return response.data;
+  }
+
+  async deleteCalendarSyncConnection(): Promise<void> {
+    await this.automationClient.delete('/api/calendar/sync/connections');
   }
 }
 

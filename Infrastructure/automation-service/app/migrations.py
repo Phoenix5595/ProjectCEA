@@ -141,3 +141,20 @@ async def create_room_modes_tables(pool: "Pool") -> None:
         """)
 
         logger.info("Room modes tables created/verified")
+
+
+async def create_calendar_tables(pool: "Pool") -> None:
+    """Create calendar subsystem tables and seed room profiles."""
+    sql_path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+        "database",
+        "add_calendar_tables.sql",
+    )
+    if not os.path.exists(sql_path):
+        logger.warning("add_calendar_tables.sql not found at %s", sql_path)
+        return
+    with open(sql_path, encoding="utf-8") as f:
+        script = f.read()
+    async with pool.acquire() as conn:
+        await conn.execute(script)
+    logger.info("Calendar tables created/verified")

@@ -22,6 +22,8 @@
  *   so shipping the key early is harmless until the gate flips.
  */
 
+import { logger } from '../utils/logger';
+
 function currentOrigin(port: number): string {
   if (typeof window === 'undefined') return `http://localhost:${port}`;
   const protocol = window.location.protocol === 'https:' ? 'https:' : 'http:';
@@ -95,8 +97,7 @@ const GRAFANA_BASE_URL_ENV = import.meta.env.VITE_GRAFANA_BASE_URL as
 if (!GRAFANA_BASE_URL_ENV && typeof window !== 'undefined') {
   // Build-time var missing — bundle will still work against the default,
   // but this is a deploy-config smell worth surfacing.
-  // eslint-disable-next-line no-console
-  console.warn(
+  logger.warn(
     '[config/env] VITE_GRAFANA_BASE_URL not set at build time; ' +
       `falling back to ${GRAFANA_BASE_URL_DEFAULT}. Set it in the deploy env ` +
       'to silence this warning (Phase 7.4).',

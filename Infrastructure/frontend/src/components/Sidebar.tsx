@@ -32,14 +32,14 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onToggle }) => {
         flex flex-col
         transition-all duration-300 ease-in-out
         z-40
-        ${collapsed ? 'w-16' : 'w-56'}
+        ${collapsed ? 'w-12' : 'w-52'}
       `}
       style={{
-        width: collapsed ? '4rem' : '14rem',
+        width: collapsed ? '3rem' : '13rem',
       }}
     >
       {/* Logo / Header */}
-      <div className="flex items-center justify-center p-2 border-b border-border-default h-[50px]">
+      <div className="flex items-center justify-center px-1 py-2 border-b border-border-default h-[50px]">
         <Link to="/">
           <img src="/logo.png" alt="CEA" className="w-6 h-6" />
         </Link>
@@ -62,9 +62,9 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onToggle }) => {
               key={item.path}
               to={item.path}
               className={`
-                flex items-center gap-3 px-1 py-1 mx-2 my-0.5 rounded-lg
+                flex items-center gap-1 py-1 my-0.5 rounded-lg
                 transition-all duration-200
-                ${collapsed ? 'justify-center' : ''}
+                ${collapsed ? 'justify-center px-0 mx-0' : 'px-1.5 mx-1'}
                 ${
                   isActive
                     ? 'bg-accent text-surface-base font-medium'
@@ -84,8 +84,8 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onToggle }) => {
 
       {/* Footer */}
       <div className={`
-        p-3 border-t border-border-default flex flex-col gap-2
-        ${collapsed ? 'items-center' : ''}
+        border-t border-border-default flex flex-col gap-2
+        ${collapsed ? 'items-center p-1.5' : 'p-2'}
       `}>
         {!collapsed && (
           <p className="text-xs text-text-muted">

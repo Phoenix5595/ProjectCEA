@@ -6,11 +6,11 @@
 
 | Service | URL | Notes |
 |---------|-----|-------|
-| **Dashboard (Frontend)** | `http://mothernode:8001` | Main CEA dashboard |
+| **Dashboard (Frontend)** | `http://mothernode:8080` | Main CEA dashboard (served via Caddy reverse proxy) |
 | **Grafana** | `http://iskraprojectcea:3001` | `projectcea_grafana` container (Phase 5c, 2026-04-19). NOT `localhost:3000` (Pi Grafana decommissioned) and NOT `iskradocker:3000` (pre-5b). |
-| **Backend API** | `http://mothernode:8000` | Sensor data |
-| **Automation API** | `http://mothernode:8001` | Control & config |
-| **Weather** | `http://mothernode:8003` | Weather service |
+| **Backend API** | `http://mothernode:8080` | Sensor data (proxied through Caddy `:8080` → `:8000`) |
+| **Automation API** | `http://mothernode:8080` | Control & config (proxied through Caddy `:8080` → `:8001`) |
+| **Weather** | `http://mothernode:8080` | Weather service (proxied through Caddy `:8080` → `:8003`)
 
 **Grafana is on iskradocker, NOT localhost!**
 

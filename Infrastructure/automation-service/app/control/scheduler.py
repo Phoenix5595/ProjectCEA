@@ -299,7 +299,10 @@ class Scheduler:
                     effective_minimum = (
                         t if t < MINIMUM_LIGHT_INTENSITY else MINIMUM_LIGHT_INTENSITY
                     )
-                except Exception:
+                except (ValueError, TypeError) as e:
+                    logger.error(
+                        f"Failed to parse target_intensity {target_intensity}: {e}", exc_info=True
+                    )
                     effective_minimum = float(MINIMUM_LIGHT_INTENSITY)
 
                 ramp_up_duration = schedule.get("ramp_up_duration", 0) or 0

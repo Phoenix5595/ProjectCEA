@@ -1,5 +1,5 @@
-import { Navigate } from 'react-router-dom'
+import CalendarOverviewPage from '../components/calendar/CalendarOverviewPage';
 
 export default function LaboratoryOverview() {
-  return <Navigate to="/laboratory/climate" replace />
+  return <CalendarOverviewPage location="Lab" />;
 }

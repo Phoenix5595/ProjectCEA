@@ -8,24 +8,19 @@ from fastapi import APIRouter
 
 router = APIRouter(prefix="/api/config", tags=["config"])
 
-# Import from dependencies to avoid circular imports
-from app.dependencies import get_config_loader  # noqa: E402
+from app.dependencies import get_config_repository  # noqa: E402
 
 
 @router.get("", response_model=dict[str, Any])
 async def get_config():
     """Get full dashboard configuration."""
-    config_loader = get_config_loader()
-    # Return the full config dict
-    import yaml
-
-    with open(config_loader.config_path) as f:
-        return yaml.safe_load(f)
+    config_repo = get_config_repository()
+    return config_repo.get_full_config()
 
 
 @router.get("/locations")
 async def get_locations():
     """Get list of available locations."""
-    config_loader = get_config_loader()
-    locations = config_loader.get_locations()
+    config_repo = get_config_repository()
+    locations = config_repo.get_locations()
     return {"locations": locations}

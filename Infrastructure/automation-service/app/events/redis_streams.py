@@ -3,7 +3,7 @@ import logging
 try:
     # Redis asyncio client (redis-py >= 4.x)
     import redis.asyncio as aioredis  # type: ignore
-except Exception:  # pragma: no cover
+except ImportError:  # pragma: no cover
     aioredis = None  # type: ignore
 
 logger = logging.getLogger(__name__)
@@ -37,9 +37,9 @@ class RedisStreamPublisher:
         # Optional: test connection
         try:
             await self._redis.ping()
-        except Exception:  # pragma: no cover
+        except (ConnectionError, OSError) as e:  # pragma: no cover
+            logger.warning("Redis ping failed in publisher: %s", e)
             # If ping fails, still keep the client; publish will surface errors gracefully
-            pass
         self._initialized = True
 
     async def publish(self, event_data: dict[str, object]):

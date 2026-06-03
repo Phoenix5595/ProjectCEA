@@ -1,4 +1,13 @@
-"""Configuration loader for YAML config files."""
+"""Configuration loader for YAML config files.
+
+This is NOT a subclass of ``shared.config.YamlConfigLoader`` — that is
+intentional. The shared loader provides mechanical YAML loading with
+search-path resolution; this loader adds Pydantic schema validation
+(``ConfigSchema``), device-type canonicalization (``heater → heating``,
+etc.), and Flower Room legacy config merging. Forcing it into the shared
+hierarchy would pollute other services. See ``shared/config.py:20-29``
+for the full rationale.
+"""
 
 from __future__ import annotations
 

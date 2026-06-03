@@ -1,6 +1,5 @@
+import CalendarOverviewPage from '../components/calendar/CalendarOverviewPage';
+
 export default function VegetationOverview() {
-  return (
-    <div className="p-6 bg-surface-base min-h-screen">
-    </div>
-  )
+  return <CalendarOverviewPage location="Veg Room" />;
 }

@@ -9,7 +9,7 @@ from typing import Any
 
 from fastapi import APIRouter
 
-from ..control.timing import get_timing_collector
+from app.control.timing import get_timing_collector
 
 router = APIRouter()
 
@@ -57,7 +57,7 @@ async def reset_timing_data() -> dict[str, str]:
     Returns:
         Confirmation message.
     """
-    from ..control.timing import reset_timing_collector
+    from app.control.timing import reset_timing_collector
 
     reset_timing_collector()
     return {"message": "Timing data reset successfully"}

@@ -9,8 +9,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from app.alarm_manager import AlarmManager
 from app.database import DatabaseManager
 from app.redis_client import AutomationRedisClient
+from shared.infra_logging import get_logger
 
 router = APIRouter()
+
+logger = get_logger(__name__)
 
 
 def get_database() -> DatabaseManager:
@@ -84,9 +87,9 @@ async def get_all_failsafes(
                         "cluster": cluster,
                         **failsafe_data,
                     }
-    except Exception:
+    except (ConnectionError, OSError) as e:
+        logger.error(f"Failed to scan failsafe keys: {e}", exc_info=True)
         # If scan fails, return empty dict
-        pass
 
     return failsafes
 
