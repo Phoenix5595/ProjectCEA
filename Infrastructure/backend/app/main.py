@@ -48,7 +48,7 @@ def setup_signal_handlers():
             signal.SIGHUP: "SIGHUP",
         }
         shutdown_reason = signal_names.get(signum, f"Signal {signum}")
-        logger.warning(f"⚠️  Received {shutdown_reason}, initiating graceful shutdown...")
+        logger.warning(f"Received {shutdown_reason}, initiating graceful shutdown...")
         # Set the shutdown event instead of calling sys.exit
         shutdown_event.set()
 
@@ -64,12 +64,12 @@ def handle_exception(exc_type, exc_value, exc_traceback):
     global shutdown_reason
     if issubclass(exc_type, KeyboardInterrupt):
         shutdown_reason = "KeyboardInterrupt (unhandled)"
-        logger.warning("⚠️  Unhandled KeyboardInterrupt")
+        logger.warning("Unhandled KeyboardInterrupt")
         return
 
     shutdown_reason = f"Unhandled exception: {exc_type.__name__}"
     logger.error(
-        f"❌ Unhandled exception: {exc_type.__name__}: {exc_value}",
+        f"Unhandled exception: {exc_type.__name__}: {exc_value}",
         exc_info=(exc_type, exc_value, exc_traceback),
     )
 
@@ -92,22 +92,22 @@ async def lifespan(app: FastAPI):
         from app.events.consumer import ConfigEventConsumer
 
         background_task = asyncio.create_task(broadcast_latest_sensor_data())
-        logger.info("✅ Background broadcast task started")
+        logger.info("Background broadcast task started")
 
         config_consumer = ConfigEventConsumer()
         await config_consumer.start()
-        logger.info("✅ Config event consumer started")
+        logger.info("Config event consumer started")
 
         # Monitor shutdown event
         async def monitor_shutdown():
             """Monitor for shutdown signals."""
             await shutdown_event.wait()
-            logger.info(f"🛑 Shutdown event triggered (reason: {shutdown_reason})")
+            logger.info(f"Shutdown event triggered (reason: {shutdown_reason})")
 
         shutdown_monitor = asyncio.create_task(monitor_shutdown())
 
     except Exception as e:
-        logger.error(f"❌ Error starting background tasks: {e}", exc_info=True)
+        logger.error(f"Error starting background tasks: {e}", exc_info=True)
         shutdown_reason = f"Startup error: {type(e).__name__}"
         raise
 
@@ -117,14 +117,14 @@ async def lifespan(app: FastAPI):
         yield
     except Exception as e:
         shutdown_reason = f"Lifespan error: {type(e).__name__}: {str(e)}"
-        logger.error(f"❌ Error in lifespan context: {e}", exc_info=True)
+        logger.error(f"Error in lifespan context: {e}", exc_info=True)
         raise
     finally:
         notify_stopping("backend-service", logger)
         # Shutdown: Cancel background tasks
-        logger.info(f"🛑 Shutting down (reason: {shutdown_reason})")
+        logger.info(f"Shutting down (reason: {shutdown_reason})")
         logger.info(
-            f"📊 Shutdown context: background_task={background_task is not None}, "
+            f"Shutdown context: background_task={background_task is not None}, "
             f"task_done={background_task.done() if background_task else 'N/A'}"
         )
 
@@ -132,40 +132,40 @@ async def lifespan(app: FastAPI):
         if background_task:
             try:
                 if not background_task.done():
-                    logger.info("🔄 Cancelling background task...")
+                    logger.info("Cancelling background task...")
                     background_task.cancel()
                     try:
                         await asyncio.wait_for(background_task, timeout=5.0)
-                        logger.info("✅ Background task cancelled successfully")
+                        logger.info("Background task cancelled successfully")
                     except TimeoutError:
-                        logger.warning("⚠️  Background task did not cancel within 5 second timeout")
+                        logger.warning("Background task did not cancel within 5 second timeout")
                     except asyncio.CancelledError:
-                        logger.info("✅ Background task cancellation confirmed")
+                        logger.info("Background task cancellation confirmed")
                     except Exception as e:
                         logger.error(
-                            f"❌ Unexpected error while waiting for background task cancellation: {e}",
+                            f"Unexpected error while waiting for background task cancellation: {e}",
                             exc_info=True,
                         )
                 else:
-                    logger.info("ℹ️  Background task already completed")
+                    logger.info("Background task already completed")
             except Exception as e:
-                logger.error(f"❌ Error during background task shutdown: {e}", exc_info=True)
+                logger.error(f"Error during background task shutdown: {e}", exc_info=True)
 
         if "shutdown_monitor" in locals():
             try:
                 shutdown_monitor.cancel()
                 logger.debug("Shutdown monitor cancelled")
             except Exception as e:
-                logger.warning(f"⚠️  Error cancelling shutdown monitor: {e}")
+                logger.warning(f"Error cancelling shutdown monitor: {e}")
 
         if "config_consumer" in locals():
             try:
                 await config_consumer.stop()
-                logger.info("✅ Config event consumer stopped")
+                logger.info("Config event consumer stopped")
             except Exception as e:
-                logger.warning(f"⚠️  Error stopping config event consumer: {e}")
+                logger.warning(f"Error stopping config event consumer: {e}")
 
-        logger.info(f"✅ Shutdown complete (final reason: {shutdown_reason})")
+        logger.info(f"Shutdown complete (final reason: {shutdown_reason})")
 
 
 from shared.fastapi_helpers import docs_kwargs  # noqa: E402
@@ -196,6 +196,14 @@ app = FastAPI(
     ],
 )
 
+# Register structured API error handler (specific to APIError subclasses).
+# Must be registered before the catch-all Exception handler so FastAPI
+# dispatches NotFoundError / ValidationAPIError / ConflictError to this
+# handler and everything else falls through to the generic handler below.
+from app.middleware.exception_handler import APIError, api_error_handler  # noqa: E402
+
+app.add_exception_handler(APIError, api_error_handler)
+
 # Add exception handler for HTTP exceptions (but not all exceptions to avoid catching too much)
 from fastapi import Request  # noqa: E402
 from fastapi.responses import JSONResponse  # noqa: E402
@@ -209,7 +217,7 @@ async def global_exception_handler(request: Request, exc: Exception):
         raise
 
     logger.error(
-        f"❌ Unhandled exception in {request.method} {request.url.path}: {exc}", exc_info=True
+        f"Unhandled exception in {request.method} {request.url.path}: {exc}", exc_info=True
     )
     # Don't set shutdown_reason for request exceptions - these shouldn't crash the server
     return JSONResponse(

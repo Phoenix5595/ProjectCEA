@@ -8,6 +8,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from app.cluster_config import ensure_configured_cluster, iter_flower_main_merged_devices
 from app.config import ConfigLoader
 from app.control.relay_manager import RelayManager
+from app.database import DatabaseManager
+from app.events import ConfigChangeEvent, ConfigEventType, get_event_bus
 from app.schemas.room_modes import (
     ActiveModeResponse,
     FlowerSubmode,
@@ -17,12 +19,10 @@ from app.schemas.room_modes import (
     SetModeRequest,
     UpdateParametersRequest,
 )
+from app.services.mode_transition_service import ModeTransitionService
 from shared.infra_logging import get_logger
 from shared.room_light_authority import is_moon_authority_mode
 
-from ..database import DatabaseManager
-from ..events import ConfigChangeEvent, ConfigEventType, get_event_bus
-from ..services.mode_transition_service import ModeTransitionService
 from .websocket import broadcast_mode_update
 
 logger = get_logger(__name__)
@@ -30,25 +30,25 @@ router = APIRouter(prefix="/api/room-modes", tags=["room-modes"])
 
 
 def get_database() -> DatabaseManager:
-    from ..main import container
+    from app.main import container
 
     return container.get_database()
 
 
 def get_config() -> ConfigLoader:
-    from ..main import container
+    from app.main import container
 
     return container.get_config()
 
 
 def get_relay_manager() -> RelayManager:
-    from ..main import container
+    from app.main import container
 
     return container.get_relay_manager()
 
 
 def get_dfr0971_manager():
-    from ..main import container
+    from app.main import container
 
     return container.get_dfr0971_manager()
 

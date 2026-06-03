@@ -80,7 +80,7 @@ class SchemaValidationMixin:
                     if re.fullmatch(pat, key):
                         try:
                             return TTLCategory[name]
-                        except Exception:
+                        except KeyError:
                             return None
                 except re.error:
                     continue

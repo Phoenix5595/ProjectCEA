@@ -3,6 +3,8 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
+import asyncpg
+
 from .base import BaseRepository, logger
 
 if TYPE_CHECKING:
@@ -55,6 +57,8 @@ class ControlActionRepository(BaseRepository):
         load_percent: float | None = None,
     ) -> bool:
         """Log a control action to control_history table."""
+        if old_state is not None and new_state is not None and old_state == new_state:
+            return True
         if reason is not None and len(reason) > 256:
             reason = reason[:256]
         if load_percent is not None:
@@ -123,6 +127,92 @@ class ControlActionRepository(BaseRepository):
             logger.error(f"Failed to get control history: {e}")
             return []
 
+    async def get_control_history_filtered(
+        self,
+        location: str,
+        cluster: str,
+        limit: int = 100,
+        channel: int | None = None,
+        since: str | None = None,
+        until: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Return control_history rows with optional channel and time filters."""
+        try:
+            async with self.pool.acquire() as conn:
+                query = """
+                    SELECT timestamp, location, cluster, device_name, old_state, new_state, mode, reason, load_percent, channel
+                    FROM control_history
+                    WHERE location = $1 AND cluster = $2
+                """
+                params: list[Any] = [location, cluster]
+                param_idx = 3
+
+                if channel is not None:
+                    query += f" AND channel = ${param_idx}"
+                    params.append(channel)
+                    param_idx += 1
+                if since is not None:
+                    query += f" AND timestamp >= ${param_idx}"
+                    params.append(since)
+                    param_idx += 1
+                if until is not None:
+                    query += f" AND timestamp <= ${param_idx}"
+                    params.append(until)
+                    param_idx += 1
+
+                query += f" ORDER BY timestamp DESC LIMIT ${param_idx}"
+                params.append(limit)
+
+                rows = await conn.fetch(query, *params)
+                out: list[dict[str, Any]] = []
+                for row in rows:
+                    ts = row["timestamp"]
+                    out.append(
+                        {
+                            "timestamp": ts.isoformat() if hasattr(ts, "isoformat") else str(ts),
+                            "location": row["location"],
+                            "cluster": row["cluster"],
+                            "device_name": row["device_name"],
+                            "old_state": row["old_state"],
+                            "new_state": row["new_state"],
+                            "mode": row["mode"],
+                            "reason": row["reason"],
+                            "load_percent": row["load_percent"],
+                            "channel": row["channel"],
+                        }
+                    )
+                return out
+        except Exception as e:
+            logger.error(f"Failed to get filtered control history: {e}")
+            return []
+
+    async def get_last_changed_per_channel(self) -> list[dict[str, Any]]:
+        """Return the most recent timestamp per relay channel (0-15).
+
+        Returns a list of 16 dicts: {"channel": int, "last_changed": str | None}
+        where last_changed is ISO8601 or null if never changed.
+
+        Bounded to last 30 days to prevent full hypertable scan.
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch("""
+                    SELECT channel, MAX(timestamp) AS last_changed
+                    FROM control_history
+                    WHERE channel BETWEEN 0 AND 15
+                      AND timestamp > NOW() - INTERVAL '30 days'
+                    GROUP BY channel
+                    ORDER BY channel
+                """)
+            channel_map: dict[int, str | None] = {}
+            for row in rows:
+                ts = row["last_changed"]
+                channel_map[row["channel"]] = ts.isoformat() if ts else None
+            return [{"channel": i, "last_changed": channel_map.get(i)} for i in range(16)]
+        except Exception as e:
+            logger.error(f"Failed to get last changed per channel: {e}")
+            return []
+
     async def log_automation_state(
         self,
         location: str,
@@ -172,7 +262,7 @@ class ControlActionRepository(BaseRepository):
                         pid_ki,
                         pid_kd,
                     )
-                except Exception:
+                except asyncpg.PostgresError:
                     # Fallback for older schemas
                     await conn.execute(
                         """

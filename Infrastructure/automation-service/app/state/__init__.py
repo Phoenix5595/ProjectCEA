@@ -44,7 +44,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 import json
 import time
-from typing import TYPE_CHECKING, Any, Generic, TypeVar
+from typing import TYPE_CHECKING, Any, Generic, TypedDict, TypeVar
 
 from shared.infra_logging import get_logger
 
@@ -69,6 +69,53 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 T = TypeVar("T")
+
+
+# ---------------------------------------------------------------------------
+# TypedDict definitions for structured state payloads
+# ---------------------------------------------------------------------------
+
+
+class PIDParams(TypedDict):
+    """PID controller parameters stored in Redis."""
+
+    kp: float
+    ki: float
+    kd: float
+    updated_at: str | None
+
+
+class RampState(TypedDict):
+    """Active or persisted ramp state for setpoint transitions."""
+
+    location: str
+    cluster: str
+    setpoint_type: str
+    start_value: float
+    target_value: float
+    start_time: str
+    end_time: str
+    ramp_minutes: float
+
+
+class AlarmDict(TypedDict):
+    """Alarm entry as stored in Redis / in-memory cache."""
+
+    type: str
+    message: str
+    severity: str
+    timestamp: str
+    acknowledged: bool
+
+
+class FailsafeState(TypedDict, total=False):
+    """Failsafe state for a location/cluster pair."""
+
+    active: bool
+    reason: str
+    timestamp: str
+    device: str
+    severity: str
 
 
 def _serialize_for_redis(value: Any) -> str:
@@ -211,7 +258,7 @@ class StateManager(SchemaValidationMixin):
     # ------------------------------------------------------------------
     # PID Parameter API (migrated from Redis mixin)
     # ------------------------------------------------------------------
-    async def get_pid_params(self, device_type: str) -> dict[str, Any] | None:
+    async def get_pid_params(self, device_type: str) -> PIDParams | None:
         """Get PID parameters for a given device type from cache/Redis.
 
         Args:
@@ -235,7 +282,7 @@ class StateManager(SchemaValidationMixin):
         try:
             return json.loads(data_str)
         except Exception:
-            return {"raw": data_str}
+            return {"raw": data_str}  # pyright: ignore[reportReturnType]
 
     async def set_pid_params(
         self,
@@ -311,7 +358,7 @@ class StateManager(SchemaValidationMixin):
     # ------------------------------------------------------------------
     async def get_ramp_state(
         self, location: str, cluster: str, setpoint_type: str
-    ) -> dict[str, Any] | None:
+    ) -> RampState | None:
         """Get active ramp state for a given location/cluster/setpoint_type.
 
         Returns the ramp data as a dict, or None if not present.
@@ -338,7 +385,7 @@ class StateManager(SchemaValidationMixin):
         try:
             return json.loads(data_str)
         except Exception:
-            return {"raw": data_str}
+            return {"raw": data_str}  # pyright: ignore[reportReturnType]
 
     async def set_ramp_state(
         self, location: str, cluster: str, setpoint_type: str, ramp_data: dict[str, Any]
@@ -616,7 +663,7 @@ class StateManager(SchemaValidationMixin):
 
         return len(expired_keys)
 
-    async def get_stats(self) -> dict[str, Any]:
+    async def get_stats(self) -> dict[str, int | float | str]:
         """Get cache statistics.
 
         Returns:

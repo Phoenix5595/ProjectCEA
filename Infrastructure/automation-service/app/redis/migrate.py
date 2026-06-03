@@ -61,7 +61,7 @@ class RedisMigration:
             from .schema import MIGRATION_MAP  # type: ignore
 
             mm = MIGRATION_MAP  # type: ignore
-        except Exception:
+        except ImportError:
             # Fallback: default to empty map if import fails
             mm = {}
         logger.debug("Migration map loaded: %s", type(mm))
@@ -216,15 +216,16 @@ class RedisMigration:
                 ttl = None
                 try:
                     from .ttl import get_ttl_by_key_type  # type: ignore
-                except Exception:
+                except ImportError:
                     try:
                         from app.redis.ttl import get_ttl_by_key_type  # type: ignore
-                    except Exception:
+                    except ImportError:
                         get_ttl_by_key_type = None  # type: ignore
                 if callable(get_ttl_by_key_type):
                     try:
                         ttl = get_ttl_by_key_type(old_key)  # type: ignore
-                    except Exception:
+                    except Exception as e:
+                        logger.warning("Failed to get TTL for key %s: %s", old_key, e)
                         ttl = None
                 if ttl:
                     try:
@@ -269,8 +270,10 @@ def _ensure_redis_cli_available():
     # Quick helper to hint users when Redis is not available in the environment
     try:
         return True
-    except Exception:
-        logger.warning("redis package not available; ensure Redis client is supplied or installed.")
+    except Exception as e:
+        logger.warning(
+            "redis package not available; ensure Redis client is supplied or installed: %s", e
+        )
         return False
 
 

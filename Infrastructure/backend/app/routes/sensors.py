@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 
 from fastapi import APIRouter, HTTPException, Query, Request
 
+from app.middleware.exception_handler import ValidationAPIError
 from app.models import DataPoint, SensorDataResponse
 from app.redis_client import (
     get_all_sensor_timestamps,
@@ -25,7 +26,7 @@ from shared.redis_keys import SENSOR_RAW_STREAM
 router = APIRouter(prefix="/api/sensors", tags=["sensors"])
 
 # Import from dependencies to avoid circular imports
-from app.dependencies import get_db_manager  # noqa: E402
+from app.dependencies import get_sensor_repository  # noqa: E402
 
 
 def _validate_sensor_cluster_or_400(location: str, cluster: str) -> None:
@@ -41,7 +42,7 @@ def _validate_sensor_cluster_or_400(location: str, cluster: str) -> None:
     try:
         assert_sensor_cluster(location, cluster)
     except ClusterMismatchError as exc:
-        raise HTTPException(status_code=400, detail=exc.hint) from exc
+        raise ValidationAPIError(message=exc.hint) from exc
     except UnknownRoomError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
@@ -92,7 +93,7 @@ async def get_sensor_data(
     # so a misconfigured caller is told exactly which cluster to use.
     _validate_sensor_cluster_or_400(location, cluster)
 
-    db = get_db_manager()
+    sensor_repo = get_sensor_repository()
 
     # Debug: Log raw query parameters
     query_params = dict(request.query_params)
@@ -195,7 +196,7 @@ async def get_sensor_data(
     # If stream didn't provide data or time range is too old, query database
     if not sensor_data or not use_stream:
         logger.debug("API: Querying TimescaleDB for sensor data")
-        sensor_data = await db.get_all_sensors_for_location(location, cluster, start_time, end_time)
+        sensor_data = await sensor_repo.get_sensor_data(location, cluster, start_time, end_time)
 
     logger.debug(f"API: Retrieved {len(sensor_data)} sensor types: {list(sensor_data.keys())}")
     for sensor_type, data_points in sensor_data.items():
@@ -245,29 +246,8 @@ async def get_live_sensor_data(
     # unknown rooms instead of silently returning nothing).
     _validate_sensor_cluster_or_400(location, cluster)
 
-    suffix = get_sensor_suffix(location, cluster)
-
-    # Map of sensor types to check
-    sensor_types = []
-    if location == "Lab":
-        sensor_types = ["lab_temp", "water_temperature"]
-    else:
-        base_types = [
-            "dry_bulb",
-            "wet_bulb",
-            "co2",
-            "rh",
-            "vpd",
-            "pressure",
-            "secondary_temp",
-            "secondary_rh",
-            "water_level",
-        ]
-        for base_type in base_types:
-            if suffix:
-                sensor_types.append(f"{base_type}_{suffix}")
-            else:
-                sensor_types.append(base_type)
+    sensor_repo = get_sensor_repository()
+    sensor_types = await sensor_repo.get_live_sensors(location, cluster)
 
     response = {}
     timestamps_ms = await get_all_sensor_timestamps(sensor_types)
@@ -362,17 +342,3 @@ async def get_all_live_sensor_data():
         )
 
     return result
-
-
-def get_sensor_suffix(location: str, cluster: str) -> str | None:
-    if location == "Flower Room":
-        if cluster == "front":
-            return "f"
-        if cluster == "back":
-            return "b"
-        return None
-    elif location == "Veg Room":
-        return "v"
-    elif location == "Lab":
-        return ""
-    return None

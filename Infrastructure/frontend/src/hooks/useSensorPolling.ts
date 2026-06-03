@@ -11,6 +11,7 @@ import {
   buildDashboardBulkSensorKeys,
 } from '../config/zones';
 import { parseLiveResponse } from '../utils/sensorLive';
+import { logger } from '../utils/logger';
 
 export interface UseSensorPollingOptions {
   interval?: number;
@@ -96,7 +97,7 @@ export function useSensorPolling({ interval = 5000 }: UseSensorPollingOptions = 
       setControlHistoryByRoom(historyMap);
 
     } catch (error) {
-      console.error('Error loading initial sensor data:', error);
+      logger.error('Error loading initial sensor data:', error);
     } finally {
       setLoading(false);
     }
@@ -139,7 +140,7 @@ export function useSensorPolling({ interval = 5000 }: UseSensorPollingOptions = 
           return { ...next, ...allLiveFlat };
         });
       } catch (err) {
-        console.warn('Live sensor refresh failed', err);
+        logger.warn('Live sensor refresh failed', err);
       }
     };
 
@@ -185,11 +186,11 @@ export function useSensorPolling({ interval = 5000 }: UseSensorPollingOptions = 
 
         setFlowerClusterWarnings(warnings);
         for (const message of warnings) {
-          console.warn(`[flower-cluster-warning] ${message}`);
+          logger.warn(`[flower-cluster-warning] ${message}`);
         }
       } catch (error) {
         setFlowerClusterWarnings(['Failed to compare configured vs discovered Flower clusters.']);
-        console.warn('[flower-cluster-warning] comparison failed', error);
+        logger.warn('[flower-cluster-warning] comparison failed', error);
       }
     };
 

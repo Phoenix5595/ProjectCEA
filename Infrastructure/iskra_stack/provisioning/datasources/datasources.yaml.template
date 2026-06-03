@@ -12,15 +12,21 @@ datasources:
     secureJsonData:
       password: ${POSTGRES_CEA_USER_PASSWORD}
     jsonData:
+      # Grafana 12+ SQL datasource reads default DB from jsonData; keep in sync
+      # with top-level `database` so pools always open cea_sensors.
+      database: cea_sensors
       sslmode: disable
       postgresVersion: 1500
       timescaledb: true
-      # See Infrastructure/REQUIREMENTS.md: 32 open / 8 idle per Postgres DS so
-      # 1s refresh fan-out stays concurrent while the replica caps server-side
-      # load (POSTGRES_MAX_CONNECTIONS=150). Do not shrink without updating that doc.
-      maxOpenConns: 32
-      maxIdleConns: 8
-      connMaxLifetime: 300
+      # See Infrastructure/REQUIREMENTS.md: pool sizing vs 1s refresh fan-out on
+      # the replica (POSTGRES_MAX_CONNECTIONS=150). Raised from 32 → 48 after overlay
+      # merge; adjust with monitoring if replica CPU or conn wait rises.
+      maxOpenConns: 48
+      maxIdleConns: 12
+      # Aggressive recycle: idle TCP or replica restart leaves dead conns in the
+      # pool → intermittent "driver: bad connection" on /api/ds/query until Grafana
+      # restarts. After DB maintenance, restart projectcea_grafana as well.
+      connMaxLifetime: 90
     isDefault: true
     editable: false
 
@@ -33,12 +39,13 @@ datasources:
     secureJsonData:
       password: ${POSTGRES_CEA_USER_PASSWORD}
     jsonData:
+      database: cea_sensors
       sslmode: disable
       postgresVersion: 1500
       timescaledb: true
-      maxOpenConns: 32
-      maxIdleConns: 8
-      connMaxLifetime: 300
+      maxOpenConns: 48
+      maxIdleConns: 12
+      connMaxLifetime: 90
     editable: false
 
   - name: Redis
@@ -59,11 +66,12 @@ datasources:
     secureJsonData:
       password: ${POSTGRES_CEA_USER_PASSWORD}
     jsonData:
+      database: cea_sensors
       sslmode: disable
       postgresVersion: 1500
       timescaledb: true
       maxOpenConns: 4
       maxIdleConns: 2
-      connMaxLifetime: 300
+      connMaxLifetime: 90
     isDefault: false
     editable: false

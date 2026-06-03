@@ -129,6 +129,23 @@ class AutomationRedisClient:
         self.ops = RedisOperations(None, None, False, self.redis_ttl)
 
     # ========================================================================
+    # Raw key access (for cache-aside patterns)
+    # ========================================================================
+
+    def get(self, key: str) -> Any:
+        """Get a raw key from Redis. Returns None if key doesn't exist or Redis is disabled.
+
+        Args:
+            key: The Redis key to fetch.
+
+        Returns:
+            Value as str (decode_responses=True), or None.
+        """
+        if not self.redis_enabled or self.redis_client is None:
+            return None
+        return self.redis_client.get(key)
+
+    # ========================================================================
     # Alarms - delegate to ops.alarms
     # ========================================================================
 

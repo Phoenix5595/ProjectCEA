@@ -3,7 +3,6 @@ import { toast } from 'sonner'
 
 import { normalizeDeviceControlCluster, ZONES } from '../config/zones'
 import { apiClient } from '../services/api'
-import type { ControlHistoryEntry } from '../types/device'
 import { DEVICE_TYPES } from '../types/relay'
 import type {
   ChannelInfo,
@@ -15,12 +14,10 @@ import { logger } from '../utils/logger'
 import DfrBoardsPanel from './devices/DfrBoardsPanel'
 import RelayChannelMatrix from './devices/RelayChannelMatrix'
 import {
-  buildLastStateChangeMap,
   buildRelayChannelViewModels,
   getChannelDisplayName,
   getReadableDeviceType,
   getRelayPinLabel,
-  getUniqueLocationClusterPairs,
 } from './devices/relayViewModel'
 
 interface ChannelEditForm {
@@ -40,6 +37,13 @@ const EMPTY_EDIT_FORM: ChannelEditForm = {
   location: DEFAULT_LOCATION,
   cluster: DEFAULT_CLUSTER,
   light_name: '',
+}
+
+const DEFAULT_RELAY_STATE: RelayBoardStateResponse = {
+  channels: Array(16).fill(false),
+  timestamps: Array(16).fill(null),
+  mcp_connected: false,
+  simulation: false,
 }
 
 function toUiDeviceType(deviceType: string | null): DeviceTypeOption | '' {
@@ -78,8 +82,7 @@ function getDefaultLocationCluster(channelInfo: ChannelInfo | null): {
 export default function DeviceManager() {
   const [channels, setChannels] = useState<ChannelInfo[]>([])
   const [lightNames, setLightNames] = useState<LightNameOption[]>([])
-  const [relayState, setRelayState] = useState<RelayBoardStateResponse | null>(null)
-  const [lastStateChangeByDevice, setLastStateChangeByDevice] = useState<Record<string, string>>({})
+  const [relayState, setRelayState] = useState<RelayBoardStateResponse>(DEFAULT_RELAY_STATE)
   const [loading, setLoading] = useState(true)
   const [loadingError, setLoadingError] = useState<string | null>(null)
   const [editing, setEditing] = useState<number | null>(null)
@@ -128,10 +131,10 @@ export default function DeviceManager() {
     () =>
       buildRelayChannelViewModels(
         displayChannels,
-        relayState?.channels || null,
-        lastStateChangeByDevice
+        relayState.channels,
+        {}
       ),
-    [displayChannels, relayState, lastStateChangeByDevice]
+    [displayChannels, relayState]
   )
 
   const statusByChannel = useMemo(() => {
@@ -239,7 +242,7 @@ export default function DeviceManager() {
       setRelayState(response)
     } catch (error) {
       logger.warn('Unable to refresh relay board state', error)
-      setRelayState(null)
+      setRelayState(DEFAULT_RELAY_STATE)
     }
   }
 
@@ -342,46 +345,6 @@ export default function DeviceManager() {
 
     return () => window.clearInterval(intervalId)
   }, [manualTimersByChannel, persistedChannelMap])
-
-  useEffect(() => {
-    const locationClusterPairs = getUniqueLocationClusterPairs(channels)
-    if (!locationClusterPairs.length) {
-      setLastStateChangeByDevice({})
-      return
-    }
-
-    let active = true
-
-    const refreshControlHistory = async () => {
-      const historyByZone = await Promise.all(
-        locationClusterPairs.map(async ({ location, cluster }) => {
-          try {
-            return await apiClient.getControlHistory(location, cluster, 100)
-          } catch (error) {
-            logger.warn(`Unable to load control history for ${location}/${cluster}`, error)
-            return [] as ControlHistoryEntry[]
-          }
-        })
-      )
-
-      if (!active) {
-        return
-      }
-
-      const mergedHistory = historyByZone.flat()
-      setLastStateChangeByDevice(buildLastStateChangeMap(mergedHistory))
-    }
-
-    void refreshControlHistory()
-    const intervalId = window.setInterval(() => {
-      void refreshControlHistory()
-    }, 15000)
-
-    return () => {
-      active = false
-      window.clearInterval(intervalId)
-    }
-  }, [channels])
 
   function startEdit(channel: number) {
     if (editing === channel) {
@@ -569,21 +532,17 @@ export default function DeviceManager() {
     }
   }
 
-  const relayStatusLabel = relayState
-    ? relayState.mcp_connected
-      ? relayState.simulation
-        ? 'Simulation'
-        : 'Connected'
-      : 'Unavailable'
+  const relayStatusLabel = relayState.mcp_connected
+    ? relayState.simulation
+      ? 'Simulation'
+      : 'Connected'
     : 'Unavailable'
 
-  const relayStatusClasses = relayState
-    ? relayState.mcp_connected
-      ? relayState.simulation
-        ? 'bg-status-warning-bg/40 text-status-warning-text border-status-warning-border/60'
-        : 'bg-status-success-bg/40 text-status-success-text border-status-success-border/70'
-      : 'bg-status-danger-bg/40 text-status-danger-text border-status-danger-border/60'
-    : 'bg-surface-tertiary text-text-muted border-border-emphasis'
+  const relayStatusClasses = relayState.mcp_connected
+    ? relayState.simulation
+      ? 'bg-status-warning-bg/40 text-status-warning-text border-status-warning-border/60'
+      : 'bg-status-success-bg/40 text-status-success-text border-status-success-border/70'
+    : 'bg-status-danger-bg/40 text-status-danger-text border-status-danger-border/60'
 
   if (loading) {
     return (
@@ -626,7 +585,7 @@ export default function DeviceManager() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+      <div className="grid grid-cols-1 gap-6 md:grid-cols-[7fr_3fr]">
         <div ref={tablePanelRef} className="rounded-lg border border-border-subtle bg-surface-primary shadow-md md:col-span-1">
           <div className="border-b border-border-subtle px-2 py-1">
             <h3 className="text-lg font-semibold text-text-default">Channel Assignment Table</h3>
@@ -811,13 +770,6 @@ export default function DeviceManager() {
           ref={matrixPanelRef}
           className="min-w-[320px] rounded-lg border border-border-subtle bg-surface-primary p-2 shadow-md md:col-span-1 md:min-w-[360px]"
         >
-          <div className="mb-2 flex items-start justify-between gap-1">
-            <div>
-              <h3 className="text-lg font-semibold text-text-default">Relay Matrix</h3>
-              <p className="font-mono text-[10px] text-text-muted">16-CH module · MCP23017</p>
-            </div>
-          </div>
-
           <RelayChannelMatrix
             channels={relayChannels}
             nowMs={nowMs}

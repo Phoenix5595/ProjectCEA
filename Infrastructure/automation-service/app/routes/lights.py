@@ -53,7 +53,8 @@ def _schedule_row_active_for_device(
     try:
         st_t = scheduler._parse_time(st) if scheduler else None
         et_t = scheduler._parse_time(et) if scheduler else None
-    except Exception:
+    except (ValueError, TypeError) as e:
+        logger.error(f"Failed to parse schedule time st={st} et={et}: {e}", exc_info=True)
         return False
     if not st_t or not et_t:
         return False
@@ -459,7 +460,11 @@ async def get_zone_lights_status(
         try:
             active_mode = await database.room_mode_repo.get_active_mode(location, cluster)
             moon_authority_mode = is_moon_authority_mode((active_mode or {}).get("mode_name"))
-        except Exception:
+        except Exception as e:
+            logger.error(
+                f"Failed to look up moon authority mode for {location}/{cluster}: {e}",
+                exc_info=True,
+            )
             # Zone status is best-effort; a mode lookup miss should not hide light rows.
             moon_authority_mode = False
 
@@ -534,9 +539,12 @@ async def get_zone_lights_status(
                 scheduler_is_in_photoperiod = bool(
                     scheduler.is_in_photoperiod(location, cluster, now)
                 )
-            except Exception:
+            except Exception as e:
+                logger.error(
+                    f"Failed to get scheduler light intensity details for {location}/{cluster}/{device_name}: {e}",
+                    exc_info=True,
+                )
                 # Zone status should remain best-effort even if scheduler details fail.
-                pass
 
         if moon_authority_mode:
             scheduler_effective_intensity = 0.0

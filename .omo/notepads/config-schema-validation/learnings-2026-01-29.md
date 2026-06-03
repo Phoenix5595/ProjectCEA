@@ -1,0 +1,6 @@
+- Updated AGENTS.md to document hardware mapping:
+- MCP23017 (relays) → I2C bus 0, address 0x27
+- DFR0971 (dimming) → I2C bus 1, addresses 0x88/0x89/0x90
+- Each DFR0971 board has 2 channels (0-1); total max 6 dimming channels
+- Startup validation (Pydantic) checks for channel conflicts
+- Troubleshooting steps added (i2cdetect, API endpoints, status endpoint, journalctl)

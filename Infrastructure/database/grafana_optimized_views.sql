@@ -9,8 +9,8 @@
 -- Uses a window function for better performance than subqueries
 
 CREATE OR REPLACE VIEW latest_sensor_values AS
-SELECT DISTINCT ON (sensor_id)
-    m.sensor_id,
+SELECT
+    s.sensor_id,
     m.time,
     m.value,
     m.status,
@@ -18,14 +18,19 @@ SELECT DISTINCT ON (sensor_id)
     s.unit AS sensor_unit,
     d.name AS device_name,
     r.name AS room_name
-FROM measurement m
-JOIN sensor s ON m.sensor_id = s.sensor_id
+FROM sensor s
+JOIN LATERAL (
+    SELECT time, value, status
+    FROM measurement mm
+    WHERE mm.sensor_id = s.sensor_id
+    ORDER BY time DESC
+    LIMIT 1
+) m ON TRUE
 JOIN device d ON s.device_id = d.device_id
 LEFT JOIN rack rk ON d.rack_id = rk.rack_id
-LEFT JOIN room r ON rk.room_id = r.room_id
-ORDER BY m.sensor_id, m.time DESC;
+LEFT JOIN room r ON rk.room_id = r.room_id;
 
-COMMENT ON VIEW latest_sensor_values IS 'Optimized view for getting latest value per sensor - faster than MAX(time) subqueries';
+COMMENT ON VIEW latest_sensor_values IS 'Latest value per sensor: LATERAL + ORDER BY time DESC LIMIT 1 uses idx_measurement_sensor_time; avoids scanning all chunks (see migrate_latest_sensor_values_lateral.sql).';
 
 -- ============================================
 -- Function: Get Latest Values by Sensor Name Pattern

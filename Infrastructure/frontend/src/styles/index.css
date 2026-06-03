@@ -59,7 +59,17 @@
   --color-border: hsl(var(--border));
   --color-input: hsl(var(--input));
   --color-ring: hsl(var(--ring));
-  --radius: var(--radius);
+
+  /* Sharp corners app-wide (override Tailwind defaults). */
+  --radius-xs: 0;
+  --radius-sm: 2px;
+  --radius-md: 2px;
+  --radius-lg: 3px;
+  --radius-xl: 4px;
+  --radius-2xl: 4px;
+  --radius-3xl: 6px;
+  --radius-4xl: 6px;
+  --radius: 2px;
 
   /* ===== Semantic Design Tokens (linked to theme variables) ===== */
 
@@ -190,7 +200,7 @@
     --border: 217.2 32.6% 17.5%;
     --input: 217.2 32.6% 17.5%;
     --ring: 212.7 26.8% 83.9%;
-    --radius: 0.375rem;
+    --radius: 2px;
   }
 }
 
@@ -274,7 +284,7 @@ body {
 .zone-card {
   background: var(--bg-secondary);
   border: 1px solid var(--border);
-  border-radius: 0.75rem;
+  border-radius: 3px;
   padding: 1rem;
   transition: all 0.2s ease;
   cursor: pointer;
@@ -303,7 +313,7 @@ body {
 .setpoint-item {
   padding: 0.5rem;
   background: var(--bg-tertiary);
-  border-radius: 0.5rem;
+  border-radius: 2px;
 }
 
 .setpoint-label {
@@ -324,7 +334,7 @@ body {
   display: inline-flex;
   align-items: center;
   padding: 0.25rem 0.75rem;
-  border-radius: 9999px;
+  border-radius: 2px;
   font-size: 0.75rem;
   font-weight: 600;
   text-transform: uppercase;
@@ -446,4 +456,490 @@ body {
 /* Main dashboard only: slightly larger font (room/zone dashboard unchanged) */
 .main-dashboard {
   font-size: 18px;
+}
+
+/* Grow calendar — high-contrast panel + spaced grid (shadcn / Linear-inspired) */
+.grow-cal-panel {
+  border: 1px solid var(--border-emphasis);
+  border-radius: var(--radius-md);
+  background: var(--surface-primary);
+  padding: 0;
+  box-shadow: 0 1px 0 color-mix(in srgb, var(--text-default) 6%, transparent);
+}
+
+.grow-cal-toolbar-btn {
+  padding: 0.25rem 0.625rem;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-emphasis);
+  background: var(--surface-secondary);
+  color: var(--text-secondary);
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.grow-cal-toolbar-btn:hover {
+  background: var(--surface-tertiary);
+  color: var(--text-default);
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border-emphasis));
+}
+
+.grow-cal-toolbar-btn--primary {
+  background: var(--accent);
+  color: var(--surface-base);
+  border-color: var(--accent-data);
+}
+
+.grow-cal-toolbar-btn--primary:hover {
+  background: var(--accent-hover, #0891b2);
+  color: var(--surface-base);
+}
+
+.grow-cal-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0 0.5rem 0.25rem;
+  font-size: 0.625rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.grow-cal-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0;
+  border: none;
+  background: transparent;
+}
+
+/* Dashboard grow calendar: fill column width, proportional cells */
+.grow-calendar--fill {
+  container-type: inline-size;
+}
+
+.grow-calendar--fill .rdp-root {
+  width: 100%;
+  max-width: 100%;
+  --rdp-day-width: clamp(1.75rem, 9cqw, 2.75rem);
+  --rdp-day-height: clamp(7rem, 36cqw, 11rem);
+  --rdp-day_button-width: clamp(1.75rem, 9cqw, 2.75rem);
+  --rdp-day_button-height: clamp(7rem, 36cqw, 11rem);
+}
+
+.grow-calendar--fill .rdp-months,
+.grow-calendar--fill .rdp-month {
+  width: 100%;
+  max-width: 100%;
+}
+
+.grow-calendar--fill .rdp-month_grid {
+  width: 100%;
+  table-layout: fixed;
+}
+
+.grow-calendar--fill .rdp-weekday,
+.grow-calendar--fill .rdp-day {
+  width: 14.28%;
+}
+
+.grow-calendar-picker {
+  --rdp-accent-color: var(--accent-data);
+  --rdp-accent-background-color: color-mix(in srgb, var(--accent) 22%, var(--surface-primary));
+  --rdp-today-color: var(--accent-data);
+  --rdp-outside-opacity: 1;
+  --rdp-weekday-opacity: 1;
+  --rdp-dropdown-gap: 0;
+  --rdp-months-gap: 0;
+  --rdp-weekday-padding: 0.35rem 0;
+  --rdp-day_button-border-radius: var(--radius-sm);
+  /* Square column width, height 4× width (2× previous 1:2 cells) */
+  --grow-cal-day-aspect: 1 / 4;
+  color: var(--text-default);
+}
+
+.grow-calendar-picker .rdp-month {
+  gap: 0;
+}
+
+.grow-calendar-picker .rdp-months {
+  gap: 0;
+}
+
+.grow-calendar-picker .rdp-month_caption {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 2.25rem;
+  margin-bottom: 0;
+  padding: 0.25rem 0.25rem 0;
+}
+
+.grow-calendar-picker .rdp-caption_label {
+  font-size: 1em;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--text-default);
+}
+
+.grow-calendar-picker .rdp-nav {
+  gap: 0;
+}
+
+.grow-calendar-picker .rdp-button_previous,
+.grow-calendar-picker .rdp-button_next {
+  width: 1.75rem;
+  height: 1.75rem;
+  border: 1px solid var(--border-emphasis);
+  border-radius: var(--radius-sm);
+  background: var(--surface-secondary);
+  color: var(--text-default);
+}
+
+.grow-calendar-picker .rdp-button_previous:hover:not(:disabled),
+.grow-calendar-picker .rdp-button_next:hover:not(:disabled) {
+  background: var(--surface-tertiary);
+  border-color: var(--accent-data);
+}
+
+.grow-calendar-picker .rdp-chevron {
+  fill: var(--text-default);
+  width: 0.875rem;
+  height: 0.875rem;
+}
+
+/* Month table: 1px grid lines between all cells */
+.grow-calendar-picker .rdp-month_grid {
+  width: 100%;
+  border-collapse: collapse;
+  border-spacing: 0;
+  table-layout: fixed;
+  border: 1px solid var(--border-emphasis);
+  background: var(--border-emphasis);
+}
+
+.grow-calendar-picker .rdp-weekdays {
+  background: var(--surface-tertiary);
+}
+
+.grow-calendar-picker .rdp-weekday {
+  padding: 0.35rem 0.25rem;
+  font-size: 0.625em;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  opacity: 1;
+  border: 1px solid var(--border-emphasis);
+  background: var(--surface-tertiary);
+}
+
+.grow-calendar-picker .rdp-day {
+  aspect-ratio: var(--grow-cal-day-aspect);
+  padding: 0;
+  vertical-align: top;
+  border: 1px solid var(--border-emphasis);
+  background: var(--surface-base);
+}
+
+.grow-calendar-picker .rdp-day_button {
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-start;
+  width: 100%;
+  height: 100%;
+  min-height: var(--rdp-day-height, 2.5rem);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+}
+
+.grow-calendar-picker .rdp-selected .rdp-day_button {
+  background: transparent;
+}
+
+.grow-cal-day-btn {
+  display: grid;
+  grid-template-rows: min-content minmax(0, 1fr);
+  grid-template-columns: 1fr;
+  align-content: start;
+  justify-items: stretch;
+  width: 100%;
+  height: 100%;
+  min-height: 100%;
+  padding: 0;
+  gap: 0;
+  border-radius: 0;
+  border: none;
+  background: var(--surface-base);
+  color: var(--text-default);
+  line-height: 1.1;
+  transition: background 0.12s, box-shadow 0.12s;
+}
+
+.grow-cal-day-btn:hover:not(:disabled) {
+  background: var(--surface-secondary);
+}
+
+.grow-cal-day-btn--today {
+  border-color: var(--accent-data);
+  box-shadow:
+    inset 0 0 0 1px var(--accent-data),
+    0 0 0 1px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+.grow-cal-day-btn--today .grow-cal-day-num {
+  color: var(--accent-data);
+}
+
+.grow-cal-day-btn--selected {
+  background: color-mix(in srgb, var(--accent) 32%, var(--surface-base));
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.grow-cal-day-btn--selected .grow-cal-day-num {
+  color: var(--text-default);
+  font-weight: 700;
+}
+
+.grow-calendar-picker .rdp-outside {
+  opacity: 1;
+}
+
+.grow-cal-day-btn--outside {
+  background: var(--surface-primary);
+  border-color: var(--border-subtle);
+  opacity: 1;
+}
+
+.grow-cal-day-btn--outside .grow-cal-day-num {
+  color: var(--text-faint, #4b5563);
+  font-weight: 500;
+}
+
+.grow-cal-day-btn--outside .grow-cal-marker-text,
+.grow-cal-day-btn--outside .grow-cal-phase-text,
+.grow-cal-day-btn--outside .grow-cal-more {
+  color: var(--text-faint, #4b5563);
+  opacity: 0.85;
+}
+
+.grow-cal-day-btn--outside .grow-cal-marker-dot--task {
+  background: color-mix(in srgb, var(--accent-data) 45%, var(--surface-tertiary));
+}
+
+.grow-cal-day-btn--outside .grow-cal-marker-dot--note {
+  background: color-mix(in srgb, var(--accent-setpoint) 45%, var(--surface-tertiary));
+}
+
+.grow-cal-day-btn--outside .grow-cal-phase {
+  opacity: 0.45;
+}
+
+.grow-cal-day-btn--marked {
+  border-color: color-mix(in srgb, var(--accent) 30%, var(--border-default));
+}
+
+.grow-cal-day-num {
+  grid-row: 1;
+  grid-column: 1;
+  justify-self: start;
+  align-self: start;
+  width: 100%;
+  box-sizing: border-box;
+  flex-shrink: 0;
+  padding: 2px 4px 3px;
+  font-size: 0.85em;
+  font-weight: 700;
+  line-height: 1;
+  text-align: left;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.grow-cal-day-markers {
+  grid-row: 2;
+  grid-column: 1;
+  align-self: start;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  min-height: 0;
+  width: 100%;
+  overflow: hidden;
+  padding: 0 2px 2px;
+}
+
+/* Markers: no inner chip/cell — dot or phase strip + text only */
+.grow-cal-marker {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  max-width: 100%;
+  padding: 0;
+  border: none;
+  background: transparent;
+}
+
+.grow-cal-marker-dot {
+  width: 5px;
+  height: 5px;
+  flex-shrink: 0;
+}
+
+.grow-cal-marker-dot--task {
+  border-radius: 9999px;
+  background: var(--accent-data);
+}
+
+.grow-cal-marker-dot--note {
+  border-radius: 1px;
+  background: var(--accent-setpoint);
+}
+
+.grow-cal-marker-text {
+  font-size: 0.55rem;
+  font-weight: 600;
+  line-height: 1.15;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  flex: 1;
+}
+
+.grow-cal-marker--task .grow-cal-marker-text {
+  color: var(--accent-data);
+}
+
+.grow-cal-marker--note .grow-cal-marker-text {
+  color: var(--accent-setpoint);
+}
+
+.grow-cal-more {
+  font-size: 0.5rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  line-height: 1.1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.grow-cal-phase {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  max-width: 100%;
+  min-height: 0;
+  padding: 0 2px;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.grow-cal-phase-text {
+  font-size: 0.55rem;
+  font-weight: 700;
+  line-height: 1.15;
+  color: #030712;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  flex: 1;
+}
+
+.grow-cal-phase.bg-slate-500 .grow-cal-phase-text {
+  color: #f9fafb;
+}
+
+.grow-cal-legend-phase {
+  min-width: 2.5rem;
+  max-width: 4.75rem;
+  min-height: 0.75rem;
+}
+
+/* Day detail panel (legacy class names) */
+.grow-cal-bar {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 0 2px;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.grow-cal-bar-text {
+  font-size: 0.55rem;
+  font-weight: 700;
+  line-height: 1.15;
+  color: #030712;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  flex: 1;
+}
+
+.grow-cal-bar.bg-slate-500 .grow-cal-bar-text {
+  color: #f9fafb;
+}
+
+.grow-calendar--fill .grow-cal-day-btn {
+  min-height: 100%;
+}
+
+.grow-cal-day-detail {
+  border: 1px solid var(--border-emphasis);
+  border-radius: var(--radius-md);
+  background: var(--surface-secondary);
+  padding: 0.625rem 0.75rem;
+  font-size: 0.875rem;
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--surface-base) 60%, transparent);
+}
+
+.grow-cal-detail-close {
+  width: 1.5rem;
+  height: 1.5rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.125rem;
+  line-height: 1;
+  color: var(--text-muted);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--surface-primary);
+}
+
+.grow-cal-detail-close:hover {
+  color: var(--text-default);
+  border-color: var(--border-emphasis);
+  background: var(--surface-tertiary);
+}
+
+/* Pill badges/buttons: square corners; tiny status dots stay circular */
+.rounded-full {
+  border-radius: var(--radius-sm);
+}
+
+.w-1.rounded-full,
+.w-1\.5.rounded-full,
+.w-2.rounded-full,
+.h-1.rounded-full,
+.h-1\.5.rounded-full,
+.h-2.rounded-full,
+.size-1.rounded-full,
+.size-1\.5.rounded-full,
+.size-2.rounded-full {
+  border-radius: 9999px;
 }

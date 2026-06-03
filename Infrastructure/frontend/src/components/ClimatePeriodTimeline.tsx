@@ -300,24 +300,12 @@ export default function ClimatePeriodTimeline({
               {moonSegments.map((segment, index) => (
                 <div
                   key={`moon-${index}-${segment.startMin}-${segment.endMin}`}
-                  className="absolute h-full"
+                  className="absolute h-full cursor-grab"
+                  data-testid="timeline-night-band"
                   style={{
                     left: `${getPosition(segment.startMin)}%`,
                     width: `${getPosition(segment.endMin - segment.startMin)}%`,
                     backgroundColor: moonColor,
-                  }}
-                />
-              ))}
-
-              {sunSegments.map((segment, index) => (
-                <div
-                  key={`sun-${index}-${segment.startMin}-${segment.endMin}`}
-                  className="absolute h-full cursor-grab"
-                  data-testid="timeline-day-band"
-                  style={{
-                    left: `${getPosition(segment.startMin)}%`,
-                    width: `${getPosition(segment.endMin - segment.startMin)}%`,
-                    backgroundColor: sunColor,
                   }}
                   onMouseDown={handleBodyMouseDown}
                   onContextMenu={(e) => {
@@ -335,8 +323,8 @@ export default function ClimatePeriodTimeline({
                       backgroundColor: 'rgba(6, 182, 212, 0.1)',
                       cursor: 'ew-resize',
                     }}
-                    data-testid="timeline-handle-start"
-                    onMouseDown={handleEdgeMouseDown('start')}
+                    data-testid="timeline-handle-night-start"
+                    onMouseDown={handleEdgeMouseDown('end')}
                   />
                   <div
                     className="absolute right-0 top-0 h-full w-5 cursor-ew-resize z-10 opacity-60 hover:opacity-100 transition-opacity"
@@ -345,8 +333,8 @@ export default function ClimatePeriodTimeline({
                       backgroundColor: 'rgba(6, 182, 212, 0.1)',
                       cursor: 'ew-resize',
                     }}
-                    data-testid="timeline-handle-end"
-                    onMouseDown={handleEdgeMouseDown('end')}
+                    data-testid="timeline-handle-night-end"
+                    onMouseDown={handleEdgeMouseDown('start')}
                   />
                   {rampUpDuration != null && rampUpDuration > 0 && (
                     <div
@@ -369,6 +357,18 @@ export default function ClimatePeriodTimeline({
                     />
                   )}
                 </div>
+              ))}
+
+              {sunSegments.map((segment, index) => (
+                <div
+                  key={`sun-${index}-${segment.startMin}-${segment.endMin}`}
+                  className="absolute h-full"
+                  style={{
+                    left: `${getPosition(segment.startMin)}%`,
+                    width: `${getPosition(segment.endMin - segment.startMin)}%`,
+                    backgroundColor: sunColor,
+                  }}
+                />
               ))}
             </div>
 

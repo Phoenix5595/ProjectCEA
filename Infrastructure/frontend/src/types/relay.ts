@@ -34,6 +34,7 @@ export interface RelayChannelsResponse {
 
 export interface RelayBoardStateResponse {
   channels: boolean[]
+  timestamps: (string | null)[]
   mcp_connected: boolean
   simulation: boolean
 }

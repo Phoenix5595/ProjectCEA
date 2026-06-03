@@ -1,6 +1,8 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
 
+import { AppRibbon } from './chrome/AppRibbon';
+
 export type Sector = 'laboratory' | 'vegetation' | 'flower' | 'devices';
 
 interface TopRibbonProps {
@@ -34,16 +36,16 @@ const sectorTabs: Record<Sector, Tab[]> = {
     { id: 'overview', label: 'Overview', path: '/vegetation' },
     { id: 'monitoring', label: 'Monitoring', path: '/vegetation/monitoring' },
     { id: 'control', label: 'Control', path: '/vegetation/control' },
+    { id: 'automation', label: 'Automation', path: '/vegetation/automation' },
   ],
   flower: [
     { id: 'overview', label: 'Overview', path: '/flower' },
     { id: 'monitoring', label: 'Monitoring', path: '/flower/monitoring' },
     { id: 'control', label: 'Control', path: '/flower/control' },
+    { id: 'automation', label: 'Automation', path: '/flower/automation' },
     { id: 'soil', label: 'Soil', path: '/flower/soil' },
   ],
-  devices: [
-    { id: 'overview', label: 'Overview', path: '/devices' },
-  ],
+  devices: [{ id: 'overview', label: 'Overview', path: '/devices' }],
 };
 
 const sectorEmojis: Record<Sector, string> = {
@@ -60,9 +62,9 @@ const sectorDefaultNames: Record<Sector, string> = {
   devices: 'Device Configuration',
 };
 
-const TopRibbon: React.FC<TopRibbonProps> = ({ 
-  sector, 
-  activeTab, 
+const TopRibbon: React.FC<TopRibbonProps> = ({
+  sector,
+  activeTab,
   onTabChange,
   roomName,
   showActions = false,
@@ -84,21 +86,20 @@ const TopRibbon: React.FC<TopRibbonProps> = ({
     return currentPath.startsWith(tab.path);
   });
 
-  // Always derive active tab from URL - don't trust stale prop from parent
   const activeTabId = activeTabFromPath?.id || activeTab || 'overview';
   const isControlPage = currentPath.includes('/control');
-  
+
   const displayRoomName = roomName || sectorDefaultNames[sector];
 
   return (
-    <div className="w-full bg-surface-secondary border-t border-b border-border-default h-[50px] flex items-center px-2 gap-2 sticky top-0 z-10">
-      <h1 className="text-lg font-bold text-default flex items-center gap-2 whitespace-nowrap">
-        <span className="text-xl">{sectorEmojis[sector]}</span>
+    <AppRibbon position="top" sticky>
+      <h1 className="text-base font-bold text-text-default flex items-center gap-1 whitespace-nowrap shrink-0">
+        <span className="text-xl leading-none">{sectorEmojis[sector]}</span>
         {displayRoomName}
       </h1>
 
-      <nav className="flex overflow-x-auto scrollbar-hide">
-        <div className="flex min-w-max">
+      <nav className="flex overflow-x-auto scrollbar-hide min-w-0 flex-1">
+        <div className="flex min-w-max gap-0.5">
           {tabs.map((tab) => {
             const isActive = activeTabId === tab.id;
             return (
@@ -107,12 +108,12 @@ const TopRibbon: React.FC<TopRibbonProps> = ({
                 to={tab.path}
                 onClick={() => onTabChange(tab.id)}
                 className={`
-                  relative px-3 py-1.5 text-base font-medium whitespace-nowrap
-                  transition-all duration-200 rounded
+                  px-1.5 py-1 text-sm font-medium whitespace-nowrap
+                  transition-all duration-200 rounded-lg
                   ${
                     isActive
                       ? 'bg-accent text-surface-base'
-                      : 'text-text-secondary hover:text-default hover:bg-surface-tertiary'
+                      : 'text-text-secondary hover:text-text-default hover:bg-surface-tertiary'
                   }
                 `}
               >
@@ -124,7 +125,7 @@ const TopRibbon: React.FC<TopRibbonProps> = ({
       </nav>
 
       {showActions && isControlPage && (
-        <div className="flex items-center gap-2 ml-auto">
+        <div className="flex items-center gap-1 ml-auto shrink-0">
           {currentMode && onModeChange && (
             <>
               <div className="flex gap-1">
@@ -161,9 +162,14 @@ const TopRibbon: React.FC<TopRibbonProps> = ({
               )}
             </>
           )}
-          <div className="flex-1" />
           {(saveError || saveSuccess) && (
-            <div className={`text-xs px-2 py-0.5 rounded ${saveError ? 'bg-status-danger-bg text-status-danger-text' : 'bg-status-success-bg text-status-success-text'}`}>
+            <div
+              className={`text-xs px-2 py-0.5 rounded ${
+                saveError
+                  ? 'bg-status-danger-bg text-status-danger-text'
+                  : 'bg-status-success-bg text-status-success-text'
+              }`}
+            >
               {saveError || saveSuccess}
             </div>
           )}
@@ -176,7 +182,7 @@ const TopRibbon: React.FC<TopRibbonProps> = ({
           </button>
         </div>
       )}
-    </div>
+    </AppRibbon>
   );
 };
 

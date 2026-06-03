@@ -13,7 +13,7 @@ import VerticalPIDBlock from '../components/VerticalPIDBlock'
 import VerticalNotesBlock from '../components/VerticalNotesBlock'
 import ManualLightControl from '../components/ManualLightControl'
 import RelayChannelMatrix from '../components/devices/RelayChannelMatrix'
-import { buildRelayChannelViewModels } from '../components/devices/relayViewModel'
+import { buildRelayChannelViewModels, makeDeviceKey } from '../components/devices/relayViewModel'
 import type { RelayChannelViewModel } from '../components/devices/relayViewModel'
 import type { ChannelInfo } from '../types/relay'
 import type { ClimatePeriod } from '../types/climatePeriod'
@@ -92,6 +92,8 @@ export default function ZoneConfig({
   // Relay matrix state
   const [relayChannels, setRelayChannels] = useState<RelayChannelViewModel[]>([]) // eslint-disable-line @typescript-eslint/no-unused-vars
   const [relayState, setRelayState] = useState<boolean[] | null>(null)
+  const [relayTimestamps, setRelayTimestamps] = useState<(string | null)[]>(Array(16).fill(null))
+  const [nowMs, setNowMs] = useState(Date.now())
   // @ts-ignore
   const [mcpConnected, setMcpConnected] = useState<boolean>(true)
   const [channelInfoList, setChannelInfoList] = useState<ChannelInfo[]>([])
@@ -100,6 +102,7 @@ export default function ZoneConfig({
     try {
       const stateRes = await apiClient.getRelayBoardState()
       setRelayState(stateRes.channels)
+      setRelayTimestamps(stateRes.timestamps ?? Array(16).fill(null))
       setMcpConnected(stateRes.mcp_connected)
     } catch (err) {
       logger.error('Failed to fetch relay board state:', err)
@@ -129,10 +132,24 @@ export default function ZoneConfig({
     return () => clearInterval(interval)
   }, [fetchRelayData])
 
+  // Tick nowMs every second for elapsed time display
+  useEffect(() => {
+    const interval = setInterval(() => setNowMs(Date.now()), 1000)
+    return () => clearInterval(interval)
+  }, [])
+
   // Build view models when channel data or relay state changes
   useEffect(() => {
-    setRelayChannels(buildRelayChannelViewModels(channelInfoList, relayState, {}))
-  }, [channelInfoList, relayState])
+    const lastStateMap: Record<string, string> = {}
+    channelInfoList.forEach((info) => {
+      const ts = relayTimestamps[info.channel]
+      if (ts && info.location && info.cluster && info.device_name) {
+        const key = makeDeviceKey(info.location, info.cluster, info.device_name)
+        lastStateMap[key] = ts
+      }
+    })
+    setRelayChannels(buildRelayChannelViewModels(channelInfoList, relayState, lastStateMap))
+  }, [channelInfoList, relayState, relayTimestamps])
 
   // Relay menu state — consumed by RelayChannelMatrix + timer effect in upcoming tasks
   // @ts-ignore
@@ -455,17 +472,17 @@ export default function ZoneConfig({
             </div>
 
             {/* Climate Periods + Relay Matrix row - 450px */}
-            <div className="flex gap-1 h-[450px] shrink-0">
+            <div className="flex gap-1 h-[580px] shrink-0">
               <div className="flex-1 flex flex-col gap-1 h-full overflow-hidden">
                 {!isConstant ? (
                   <>
-                    <div className="bg-surface-primary rounded-lg border border-border-subtle p-1 flex-[55.7] overflow-auto">
+                    <div className="bg-surface-primary rounded-lg border border-border-subtle p-1 flex-[56] overflow-auto">
                       <ClimatePeriodsTable
                         periods={climatePeriods}
                         onChange={setClimatePeriods}
                       />
                     </div>
-                    <div className="flex-[44.3] overflow-auto">
+                    <div className="flex-[44] overflow-auto">
                       <LightIntensity ref={lightIntensityRef} location={location} cluster={cluster} compact={true} />
                     </div>
                   </>
@@ -481,7 +498,7 @@ export default function ZoneConfig({
                 )}
                 <RelayChannelMatrix
                   channels={relayChannels}
-                  nowMs={Date.now()}
+                    nowMs={nowMs}
                   variant="compact"
                   statusByChannel={statusByChannel}
                   menuOpenChannel={menuOpenChannel}

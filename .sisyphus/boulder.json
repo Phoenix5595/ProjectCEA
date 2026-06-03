@@ -1,9 +1,9 @@
 {
-  "active_plan": "/home/antoine/ProjectCEA/.sisyphus/plans/climate-timeline-sliders.md",
-  "started_at": "2026-06-01T01:00:08.343Z",
-  "completed_at": "2026-06-01T01:16:00.000Z",
-  "session_ids": ["ses_17f8a36b2ffejk3nqeF6mDPu0Y"],
-  "plan_name": "climate-timeline-sliders",
+  "active_plan": "/home/antoine/ProjectCEA/.sisyphus/plans/relay-elapsed-time.md",
+  "started_at": "2026-06-01T21:43:58.584Z",
+  "completed_at": "2026-06-02T20:44:46.000Z",
+  "session_ids": ["ses_18c68c91effeL6URAUZwAx7NhB"],
+  "plan_name": "relay-elapsed-time",
   "agent": "atlas",
   "status": "complete"
 }

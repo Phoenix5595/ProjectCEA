@@ -9,7 +9,7 @@ BEGIN;
 -- PHASE 1: Create Continuous Aggregates
 -- ============================================
 
--- 1-minute aggregate (for 1-6h range)
+-- 1-minute aggregate (for spans up to 6h via get_sensor_data_optimized; see migrate_get_sensor_routing_1min_through_6h.sql on existing DBs)
 CREATE MATERIALIZED VIEW IF NOT EXISTS measurement_1min
 WITH (timescaledb.continuous) AS
 SELECT 
@@ -23,7 +23,7 @@ FROM measurement
 GROUP BY bucket, sensor_id
 WITH NO DATA;
 
--- 5-minute aggregate (for 6-24h range)
+-- 5-minute aggregate (for spans >6h and <=24h via get_sensor_data_optimized)
 CREATE MATERIALIZED VIEW IF NOT EXISTS measurement_5min
 WITH (timescaledb.continuous) AS
 SELECT 
@@ -172,11 +172,13 @@ RETURNS TABLE (
     max_val REAL
 ) AS $$
 DECLARE
-    v_duration INTERVAL;
+    v_span_s bigint;
 BEGIN
-    v_duration := p_to - p_from;
-    
-    IF v_duration > INTERVAL '24 hours' THEN
+    -- Whole-second span avoids Grafana $__timeTo/$__timeFrom being a few ms over
+    -- a nominal preset (e.g. "Last 6 hours") and incorrectly selecting 5min CAGG.
+    v_span_s := FLOOR(GREATEST(EXTRACT(EPOCH FROM (p_to - p_from)), 0::numeric))::bigint;
+
+    IF v_span_s > 86400 THEN
         -- Use hourly aggregate for >24h
         RETURN QUERY
         SELECT m.time, m.sensor_name, m.avg_value, m.min_value, m.max_value
@@ -185,8 +187,8 @@ BEGIN
           AND m.time >= p_from AND m.time <= p_to
         ORDER BY m.time;
         
-    ELSIF v_duration > INTERVAL '3 hours' THEN
-        -- Use 5-minute aggregate for 3h-24h
+    ELSIF v_span_s > 21600 THEN
+        -- Use 5-minute aggregate for (6h, 24h]
         RETURN QUERY
         SELECT m.time, m.sensor_name, m.avg_value, m.min_value, m.max_value
         FROM measurement_5min_grafana m
@@ -194,8 +196,8 @@ BEGIN
           AND m.time >= p_from AND m.time <= p_to
         ORDER BY m.time;
         
-    ELSIF v_duration > INTERVAL '1 hour' THEN
-        -- Use 1-minute aggregate for 1h-3h
+    ELSIF v_span_s > 3600 THEN
+        -- Use 1-minute aggregate for (1h, 6h]
         RETURN QUERY
         SELECT m.time, m.sensor_name, m.avg_value, m.min_value, m.max_value
         FROM measurement_1min_grafana m
@@ -216,8 +218,8 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql STABLE;
 
-COMMENT ON FUNCTION get_sensor_data_optimized IS 
-'Auto-routes to optimal aggregate based on time range. Returns time, sensor_name, value, min_val, max_val.';
+COMMENT ON FUNCTION get_sensor_data_optimized IS
+'Span routing (whole seconds): <=1h raw; (1h,6h] measurement_1min; (6h,24h] measurement_5min; >24h measurement_hourly. Returns time, sensor_name, value, min_val, max_val.';
 
 -- ============================================
 -- PHASE 5: Statistics Function for Min/Max Panels
@@ -235,25 +237,25 @@ RETURNS TABLE (
     avg_value REAL
 ) AS $$
 DECLARE
-    v_duration INTERVAL;
+    v_span_s bigint;
 BEGIN
-    v_duration := p_to - p_from;
-    
-    IF v_duration > INTERVAL '24 hours' THEN
+    v_span_s := FLOOR(GREATEST(EXTRACT(EPOCH FROM (p_to - p_from)), 0::numeric))::bigint;
+
+    IF v_span_s > 86400 THEN
         RETURN QUERY
         SELECT m.sensor_name, MIN(m.min_value), MAX(m.max_value), AVG(m.avg_value)::REAL
         FROM measurement_hourly_grafana m
         WHERE m.sensor_name = ANY(p_sensor_names)
           AND m.time >= p_from AND m.time <= p_to
         GROUP BY m.sensor_name;
-    ELSIF v_duration > INTERVAL '3 hours' THEN
+    ELSIF v_span_s > 21600 THEN
         RETURN QUERY
         SELECT m.sensor_name, MIN(m.min_value), MAX(m.max_value), AVG(m.avg_value)::REAL
         FROM measurement_5min_grafana m
         WHERE m.sensor_name = ANY(p_sensor_names)
           AND m.time >= p_from AND m.time <= p_to
         GROUP BY m.sensor_name;
-    ELSIF v_duration > INTERVAL '1 hour' THEN
+    ELSIF v_span_s > 3600 THEN
         RETURN QUERY
         SELECT m.sensor_name, MIN(m.min_value), MAX(m.max_value), AVG(m.avg_value)::REAL
         FROM measurement_1min_grafana m

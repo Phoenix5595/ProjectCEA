@@ -78,7 +78,7 @@ async def broadcast_latest_sensor_data():
         "water_level": "mm",
     }
 
-    logger.info("🔄 Background broadcast task starting (reading from Redis)...")
+    logger.info("Background broadcast task starting (reading from Redis)...")
 
     while True:
         try:
@@ -129,19 +129,19 @@ async def broadcast_latest_sensor_data():
                     )
 
                 except Exception as e:
-                    logger.warning(f"⚠️  Error broadcasting {sensor_name}: {e}")
+                    logger.warning(f"Error broadcasting {sensor_name}: {e}")
                     # Continue with other sensors even if one fails
 
             # Wait 0.5 seconds before next broadcast for faster updates
             await asyncio.sleep(0.5)
 
         except asyncio.CancelledError:
-            logger.info("🛑 Background broadcast task cancelled")
+            logger.info("Background broadcast task cancelled")
             raise
         except Exception as e:
             consecutive_errors += 1
             logger.error(
-                f"❌ Unexpected error in background broadcast task (error #{consecutive_errors}): {e}",
+                f"Unexpected error in background broadcast task (error #{consecutive_errors}): {e}",
                 exc_info=True,
             )
 
@@ -150,5 +150,5 @@ async def broadcast_latest_sensor_data():
             await asyncio.sleep(wait_time)
 
             if consecutive_errors >= max_consecutive_errors:
-                logger.warning("⚠️  Too many consecutive errors, waiting longer before retry")
+                logger.warning("Too many consecutive errors, waiting longer before retry")
                 consecutive_errors = 0

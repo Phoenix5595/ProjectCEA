@@ -277,10 +277,12 @@ async def get_control_history(
     location: str | None = None,
     cluster: str | None = None,
     limit: int = 10,
+    channel: int | None = None,
+    since: str | None = None,
+    until: str | None = None,
     database: DatabaseManager = Depends(get_database),
     config: ConfigLoader = Depends(get_config),
 ) -> list[dict[str, Any]]:
-    """Get recent control history for a location/cluster (for dashboard log)."""
     if not location or not cluster:
         raise HTTPException(
             status_code=400,
@@ -293,8 +295,8 @@ async def get_control_history(
         )
     ensure_configured_cluster(config.get_devices(), location, cluster)
     try:
-        return await database.control_action_repo.get_recent_control_history(
-            location, cluster, limit
+        return await database.control_action_repo.get_control_history_filtered(
+            location, cluster, limit, channel, since, until
         )
     except Exception as e:
         logger.warning(f"get_control_history failed: {e}")

@@ -3,10 +3,9 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING, Any, cast
 
+from app.database import DatabaseManager
+from app.repositories.room_modes import RoomModeRepository
 from shared.infra_logging import get_logger
-
-from ..database import DatabaseManager
-from ..repositories.room_modes import RoomModeRepository
 
 if TYPE_CHECKING:
     from asyncpg import Connection
@@ -128,7 +127,7 @@ class ModeTransitionService:
                             message="Failed to set active mode",
                         ).to_dict()
 
-                    from ..routes.schedules.room import sync_room_schedule_from_mode_parameters
+                    from app.routes.schedules.room import sync_room_schedule_from_mode_parameters
 
                     if submode_only_transition:
                         schedule_sync_result = {
@@ -249,8 +248,8 @@ class ModeTransitionService:
     async def _trigger_scheduler_refresh(self, location: str, cluster: str):
         """Trigger scheduler to refresh schedules from database."""
         try:
-            from ..control.schedule_merge import merge_schedules_with_config
-            from ..main import container
+            from app.control.schedule_merge import merge_schedules_with_config
+            from app.main import container
 
             control_engine = container.get_control_engine()
             cfg = container.get_config()
@@ -264,7 +263,7 @@ class ModeTransitionService:
     def _clear_light_ramp_state(self, location: str, cluster: str):
         """Clear light ramp state for specific location/cluster."""
         try:
-            from ..main import container
+            from app.main import container
 
             control_engine = container.get_control_engine()
             scheduler = control_engine.scheduler

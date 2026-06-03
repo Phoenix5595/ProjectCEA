@@ -1,5 +1,7 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react'
 
+import { logger } from '../utils/logger'
+
 interface ErrorBoundaryProps {
   children: ReactNode
   fallback?: ReactNode
@@ -21,10 +23,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo): void {
-    // Preserve stack + component stack for post-mortem debugging without
-    // swallowing the browser's own error dispatch.
-    // eslint-disable-next-line no-console
-    console.error('[ErrorBoundary] rendering error', error, errorInfo)
+    logger.error('[ErrorBoundary] rendering error', error, errorInfo)
   }
 
   handleReload = (): void => {

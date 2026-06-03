@@ -63,8 +63,8 @@ Each aggregate stores **avg + min + max** to preserve swing visibility:
 
 | Aggregate | Bucket | Columns | Use Case |
 |-----------|--------|---------|----------|
-| `measurement_1min` | 1 min | avg_value, min_value, max_value | 1h-24h queries |
-| `measurement_5min` | 5 min | avg_value, min_value, max_value | 1-7d queries |
+| `measurement_1min` | 1 min | avg_value, min_value, max_value | Grafana **`get_sensor_data_optimized`**: span **(1 h, 6 h]** |
+| `measurement_5min` | 5 min | avg_value, min_value, max_value | Grafana: **(6 h, 24 h]**; backend API ladder uses wider ranges |
 | `measurement_hourly` | 1 hour | avg_value, min_value, max_value | >7d queries |
 | `measurement_daily` | 1 day | avg_value, min_value, max_value | Monthly+ trends |
 
@@ -81,8 +81,8 @@ Each aggregate stores **avg + min + max** to preserve swing visibility:
 | Duration | Source | Rationale |
 |----------|--------|-----------|
 | **< 1 hour** | Raw measurement table | Live tracking, every 1s reading |
-| **1h - 3h** | measurement_1min | 1-min buckets capture swings |
-| **3h - 24h** | measurement_5min | Balance detail vs performance |
+| **1h - 6h** | measurement_1min | 1-min buckets capture swings in half-day views |
+| **6h - 24h** | measurement_5min | Balance detail vs performance |
 | **> 24h** | measurement_hourly | Long-term trends |
 
 ### FORBIDDEN
@@ -90,7 +90,7 @@ Each aggregate stores **avg + min + max** to preserve swing visibility:
 | Action | Why |
 |--------|-----|
 | Using hourly aggregate for <24h | **HIDES CRITICAL SWINGS** |
-| Using 5-minute aggregate for <3h | **LOSES PRECISION** |
+| Using 5-minute aggregate for ≤6h | **LOSES PRECISION** |
 | Any aggregation for <1h | **MUST BE RAW DATA** |
 | Removing min/max from aggregates | **SWINGS BECOME INVISIBLE** |
 

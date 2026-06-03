@@ -5,37 +5,36 @@ from typing import Any, cast
 
 from fastapi import APIRouter, Depends, HTTPException
 
+from app.config import ConfigLoader
+from app.control.control_engine import ControlEngine
+from app.control.scheduler import LOCAL_TZ, Scheduler
+from app.database import DatabaseManager
 from shared.infra_logging import get_logger
-
-from ..config import ConfigLoader
-from ..control.control_engine import ControlEngine
-from ..control.scheduler import LOCAL_TZ, Scheduler
-from ..database import DatabaseManager
 
 logger = get_logger(__name__)
 router = APIRouter(prefix="/api/debug", tags=["debug"])
 
 
 def get_database() -> DatabaseManager:
-    from ..main import container
+    from app.main import container
 
     return container.get_database()
 
 
 def get_scheduler() -> Scheduler:
-    from ..main import container
+    from app.main import container
 
     return container.get_scheduler()
 
 
 def get_control_engine() -> ControlEngine:
-    from ..main import container
+    from app.main import container
 
     return container.get_control_engine()
 
 
 def get_config() -> ConfigLoader:
-    from ..main import container
+    from app.main import container
 
     return container.get_config()
 

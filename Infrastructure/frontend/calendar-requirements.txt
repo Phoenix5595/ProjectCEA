@@ -1,0 +1,18 @@
+# Calendar subsystem requirements (growing list)
+# Timezone: America/Toronto for all calendar day boundaries (UI, API, scheduler, sync).
+# UI labels: French weekday/month names via react-day-picker `locale={fr}` (compact: abbreviated weekdays). Week starts Sunday (`weekStartsOn={0}`, dim. first).
+
+1. Home dashboard (/) shows one shared month calendar; events color-coded by room (Flower / Veg / Lab).
+2. Sector Overview pages (/flower, /vegetation, /laboratory) show full calendar filtered to that room.
+3. calendar_event uses soft-delete (deleted_at); sync_status pending_delete until Nextcloud CalDAV DELETE ack.
+4. Grow plan wizard (flower) creates crop_batch + linked calendar_event rows with grow_plan_id and phase_order 1-9.
+5. Flower length splits into stretch (default 21d), bulk (computed), ripen (default 21d); minimum 6 weeks total flower.
+6. CalendarModeScheduler applies Flower Room mode/submode on phase start dates; catch-up on startup; idle -> veg after harvest.
+7. GET /api/calendar/events supports pagination (limit, cursor) and optional location filter.
+8. POST grow-plans/flower requires idempotency_key; rejects overlapping Flower phases with HTTP 409.
+9. DELETE grow-plans/{id} soft-deletes all linked events (required).
+10. Nextcloud CalDAV only (no Google); single shared calendar v1; per-room calendars via calendar_room_profile (future M4+).
+11. Initial sync: push baseline, pull once, then incremental two-way with ical_uid matching.
+12. Irrigation threshold calendar events: deferred until irrigation save path exists; will use event_type irrigation_threshold when wired.
+13. Month grid day cells: **square width**, tall cells (aspect 1:4). Week starts **Sunday** (dim.). Day number is always **top-left**. **`showOutsideDays`**: trailing/leading days from previous and next month appear in the grid, grayed out (`grow-cal-day-btn--outside`). Per-day markers have **no nested chip/cell** around tasks/notes: cyan dot + truncated title, amber square dot + note text, colored **phase strip** with title inside (room color). Legend row is **flat** (no bordered pills): dot/strip sample + uppercase label only.
+14. Visual design: high-contrast panel (`grow-cal-panel`); month grid uses collapsed table borders (`1px` `border-emphasis` lines on every weekday and day cell); labeled markers use `truncateMarkerLabel` / `noteMarkerLabel` (default max 16 chars); overflow shows +N tasks/notes/phases.

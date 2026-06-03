@@ -1,6 +1,7 @@
 /** System status polling hook for dashboard. */
 import { useEffect, useState } from 'react';
 import { apiClient } from '../services/api';
+import { logger } from '../utils/logger';
 
 export interface SystemStats {
   cpu_usage: number | null;
@@ -79,7 +80,7 @@ export function useSystemStatus(): UseSystemStatusReturn {
           setDegraded(statusResponse.degraded ?? null);
         }
       } catch (error) {
-        console.warn('System stats refresh failed', error);
+        logger.warn('System stats refresh failed', error);
       }
     };
 
@@ -110,7 +111,7 @@ export function useSystemStatus(): UseSystemStatusReturn {
           };
         });
       } catch (error) {
-        console.warn('Service health refresh failed', error);
+        logger.warn('Service health refresh failed', error);
       }
     };
 

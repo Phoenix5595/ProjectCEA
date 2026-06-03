@@ -14,7 +14,7 @@ cryptography>=41.0.0
 
 # Development dependencies
 ruff>=0.1.0
-safety>=2.3.0
+safety==3.2.11
 pytest>=8.0
 pytest-asyncio>=0.23
 pytest-mock>=3.12

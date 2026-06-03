@@ -13,10 +13,17 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass, field
+from datetime import UTC
+import json
 import time
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
+from app.redis.schema import RELAY_CHANNELS, RELAY_TIMESTAMPS
 from shared.infra_logging import get_logger
+
+if TYPE_CHECKING:
+    from app.hardware.mcp23017 import MCP23017Driver
+    from app.redis_client import AutomationRedisClient
 
 logger = get_logger(__name__)
 
@@ -98,13 +105,24 @@ class HardwareBatchExecutor:
         - Binary device: single relay operation
     """
 
-    def __init__(self) -> None:
-        """Initialize the batch executor."""
+    def __init__(
+        self,
+        mcp23017: MCP23017Driver | None = None,
+        redis_client: AutomationRedisClient | None = None,
+    ) -> None:
+        """Initialize the batch executor.
+
+        Args:
+            mcp23017: Optional MCP23017 driver for reading post-execution relay states.
+            redis_client: Optional AutomationRedisClient for persisting relay states.
+        """
         self._chains: dict[str, DeviceOperationChain] = {}
         # Track the *intended* final state for dimmable lights so callers can persist it
         # (e.g., Redis/UI) after a successful batch run.
         self._light_intents: dict[str, dict[str, Any]] = {}
         self._chain_timeout_count: int = 0
+        self._mcp: MCP23017Driver | None = mcp23017
+        self._redis: AutomationRedisClient | None = redis_client
 
     def _get_or_create_chain(
         self, location: str, cluster: str, device_name: str
@@ -383,6 +401,16 @@ class HardwareBatchExecutor:
                 # Put in relay group (runs first) — the dimmer part will be sequential within
                 relay_chains.append(chain)
 
+        relay_states_before: dict[str, int] = {}
+        for chain in relay_chains:
+            for op in chain.operations:
+                if isinstance(op, RelayOperation):
+                    key = f"{op.location}::{op.cluster}::{op.device_name}"
+                    current = op.relay_manager.get_device_state(
+                        op.location, op.cluster, op.device_name
+                    )
+                    relay_states_before[key] = current or 0
+
         # Define async coroutines for each bus group
         async def _execute_relay_group() -> dict[str, tuple[bool, str | None]]:
             results: dict[str, tuple[bool, str | None]] = {}
@@ -429,6 +457,53 @@ class HardwareBatchExecutor:
 
         if self._chain_timeout_count > 0:
             logger.warning(f"Chain timeouts this batch: {self._chain_timeout_count}")
+
+        # Persist relay channel states + per-channel timestamps to Redis.
+        # Timestamps are updated ONLY for channels whose state changed this tick,
+        # so elapsed-time displays are stable and event-driven (no DB polling).
+        if (
+            self._mcp is not None
+            and self._redis is not None
+            and getattr(self._redis, "redis_enabled", False)
+        ):
+            try:
+                from datetime import datetime
+
+                relay_states = self._mcp.get_all_channels()
+                relay_json = json.dumps(relay_states)
+                redis_raw = self._redis.redis_client
+                if redis_raw is not None:
+                    redis_raw.set(RELAY_CHANNELS, relay_json)
+
+                    # Read existing timestamps or seed null array
+                    raw_ts = redis_raw.get(RELAY_TIMESTAMPS)
+                    timestamps: list[str | None] = (
+                        json.loads(raw_ts) if raw_ts else [None] * len(relay_states)
+                    )
+
+                    now_iso = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+                    for chain in relay_chains:
+                        success, _ = relay_results.get(chain.device_key, (False, None))
+                        if not success:
+                            continue
+                        for op in chain.operations:
+                            if isinstance(op, RelayOperation):
+                                key = f"{op.location}::{op.cluster}::{op.device_name}"
+                                before = relay_states_before.get(key, 0)
+                                if before != op.state:
+                                    channel = op.relay_manager.get_channel(
+                                        op.location, op.cluster, op.device_name
+                                    )
+                                    if channel is not None and 0 <= channel <= 15:
+                                        timestamps[channel] = now_iso
+
+                    redis_raw.set(RELAY_TIMESTAMPS, json.dumps(timestamps))
+
+                logger.debug(
+                    f"Wrote relay states + timestamps to Redis: {len(relay_states)} channels"
+                )
+            except Exception as exc:
+                logger.warning("Failed to write relay channel states to Redis: %s", exc)
 
         # Attach intents before clearing internal queues.
         result.light_intents = dict(self._light_intents)
