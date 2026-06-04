@@ -5,6 +5,7 @@ interface RelayChannelBoxProps {
   channel: RelayChannelViewModel
   nowMs: number
   variant?: 'panel' | 'compact'
+  currentLocation?: string | null
   isEditing?: boolean
   onSelect?: (channel: number) => void
   statusText?: string
@@ -61,6 +62,7 @@ export default function RelayChannelBox({
   channel,
   nowMs,
   variant = 'panel',
+  currentLocation = null,
   isEditing = false,
   onSelect,
   statusText,
@@ -76,19 +78,24 @@ export default function RelayChannelBox({
   const deviceLabel = channel.deviceName || 'Unassigned'
   const typeLabel = channel.displayType || '-'
 
+  const isAssignedToRoom = !currentLocation || channel.location === currentLocation
+
   const resolvedTone: 'unknown' | 'active' | 'idle' =
     statusTone || (!channel.isStateKnown ? 'unknown' : channel.isActive ? 'active' : 'idle')
   const resolvedText = statusText || (!channel.isStateKnown ? 'Unknown' : channel.isActive ? 'ON' : 'IDLE')
-  const canControl = Boolean(channel.assignedDeviceName && channel.location && channel.cluster)
+  const canControl = isAssignedToRoom && Boolean(channel.assignedDeviceName && channel.location && channel.cluster)
 
   const interactiveClasses = onSelect
     ? 'cursor-pointer hover:border-btn-primary-hover hover:bg-surface-primary/40'
     : ''
 
   const baseClasses = [
-    'group/relay relative w-full rounded-sm border border-border-emphasis bg-surface-primary/80 text-left transition-all overflow-visible',
+    'group/relay relative w-full rounded-sm border text-left transition-all overflow-visible',
+    isAssignedToRoom
+      ? 'bg-surface-primary/80 border-border-emphasis'
+      : 'bg-surface-tertiary/40 border-border-subtle opacity-50',
     isCompact ? 'min-h-[52px] p-1' : 'min-h-[60px] p-1.5',
-    interactiveClasses,
+    isAssignedToRoom ? interactiveClasses : '',
     isEditing ? 'ring-2 ring-btn-primary-light' : '',
     isMenuOpen ? 'z-30' : 'z-0',
   ]
@@ -126,7 +133,6 @@ export default function RelayChannelBox({
   const content = (
     <div className="flex items-stretch gap-1.5" title={tooltipTitle}>
       <div className="flex shrink-0 flex-col items-center justify-center gap-0.5">
-        <span className="font-mono text-[9px] font-bold uppercase tracking-tight text-text-muted">{silkscreen}</span>
         <RelayGlyph isAssigned={channel.isAssigned} isActive={channel.isActive} isStateKnown={channel.isStateKnown} />
         <RelayStatusLed tone={resolvedTone} />
       </div>
@@ -136,9 +142,6 @@ export default function RelayChannelBox({
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-1">
               <span className="text-[10px] font-semibold text-text-input">CH {channel.channel}</span>
-              <span className="rounded-sm px-1 py-px font-mono text-[8px] font-semibold uppercase bg-surface-tertiary text-text-secondary border border-border-emphasis">
-                {channel.pinLabel}
-              </span>
             </div>
             <div className="truncate text-[9px] text-text-muted">{locationLabel}</div>
           </div>
