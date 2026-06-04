@@ -585,7 +585,7 @@ export default function DeviceManager() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 gap-6 md:grid-cols-[7fr_3fr]">
+      <div className="grid grid-cols-1 gap-6 md:grid-cols-[65fr_35fr]">
         <div ref={tablePanelRef} className="rounded-lg border border-border-subtle bg-surface-primary shadow-md md:col-span-1">
           <div className="border-b border-border-subtle px-2 py-1">
             <h3 className="text-lg font-semibold text-text-default">Channel Assignment Table</h3>

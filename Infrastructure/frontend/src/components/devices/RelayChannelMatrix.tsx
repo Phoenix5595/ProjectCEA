@@ -10,6 +10,7 @@ interface RelayChannelMatrixProps {
   /** @deprecated Use variant="compact" instead */
   compact?: boolean
   variant?: RelayMatrixVariant
+  location?: string
   editingChannel?: number | null
   onSelectChannel?: (channel: number) => void
   statusByChannel?: Record<number, { text: string; tone: 'unknown' | 'active' | 'idle' }>
@@ -51,6 +52,7 @@ function LowLevelInputStrip() {
 interface ChannelBoxRenderProps {
   nowMs: number
   variant: RelayMatrixVariant
+  currentLocation: string | undefined
   editingChannel: number | null
   onSelectChannel?: (channel: number) => void
   statusByChannel?: Record<number, { text: string; tone: 'unknown' | 'active' | 'idle' }>
@@ -66,6 +68,7 @@ function renderChannelBox(channel: RelayChannelViewModel, props: ChannelBoxRende
       channel={channel}
       nowMs={props.nowMs}
       variant={props.variant}
+      currentLocation={props.currentLocation}
       isEditing={props.editingChannel === channel.channel}
       onSelect={props.onSelectChannel}
       statusText={props.statusByChannel?.[channel.channel]?.text}
@@ -90,6 +93,7 @@ export default function RelayChannelMatrix({
   nowMs,
   compact = false,
   variant: variantProp,
+  location,
   editingChannel = null,
   onSelectChannel,
   statusByChannel,
@@ -104,6 +108,7 @@ export default function RelayChannelMatrix({
   const boxProps: ChannelBoxRenderProps = {
     nowMs,
     variant,
+    currentLocation: location,
     editingChannel: editingChannel ?? null,
     onSelectChannel,
     statusByChannel,
@@ -162,11 +167,7 @@ export default function RelayChannelMatrix({
             gridColumn: isPanel ? 3 : 2,
             gridRow: '1 / -1',
           }}
-        >
-          <span className="rotate-180 font-mono text-[8px] font-semibold uppercase tracking-widest text-text-subtle [writing-mode:vertical-rl]">
-            COM
-          </span>
-        </div>
+        />
 
         {Array.from({ length: RELAY_MATRIX_ROWS }, (_, rowIndex) => {
           const channelA = bankA[rowIndex]

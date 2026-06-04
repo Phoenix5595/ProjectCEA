@@ -490,7 +490,7 @@ export default function ZoneConfig({
                   <ManualLightControl location={location} cluster={cluster} compact={true} />
                 )}
               </div>
-              <div className="flex-1 h-full">
+              <div className="w-[35%] h-full">
                 {!mcpConnected && (
                   <div className="mb-1 rounded-sm border border-status-error-border/80 bg-status-error-bg/30 px-2 py-1 text-[10px] font-semibold text-status-error-text">
                     MCP23017 disconnected
@@ -498,8 +498,9 @@ export default function ZoneConfig({
                 )}
                 <RelayChannelMatrix
                   channels={relayChannels}
-                    nowMs={nowMs}
+                  nowMs={nowMs}
                   variant="compact"
+                  location={location}
                   statusByChannel={statusByChannel}
                   menuOpenChannel={menuOpenChannel}
                   onToggleMenu={(ch: number) => setMenuOpenChannel(prev => prev === ch ? null : ch)}
