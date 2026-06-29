@@ -1,0 +1,46 @@
+Task: Configure Jellyfin HTTPS via Tailscale serve on port 8443
+Date: 2026-06-23
+Host: iskradocker (Tailnet: tail7a351e.ts.net)
+
+---
+Step (a): Start Tailscale HTTPS reverse proxy
+Command: tailscale serve --bg --https=8443 http://localhost:8096
+Output:
+  Available within your tailnet:
+  https://iskradocker.tail7a351e.ts.net:8443/
+  |-- proxy http://localhost:8096
+  Serve started and running in the background.
+
+---
+Step (a-bis): Warm-up / cert-provision
+Command: curl -fsSI --max-time 60 https://iskradocker.tail7a351e.ts.net:8443/web/
+Result: HTTP/2 200 (first attempt, no retries needed)
+Headers:
+  accept-ranges: bytes
+  cache-control: no-cache
+  content-type: text/html
+  date: Tue, 23 Jun 2026 14:20:16 GMT
+
+---
+Step (b): Verify HTTPS responds
+Command: curl -fsSI https://iskradocker.tail7a351e.ts.net:8443/web/
+Result: HTTP/2 200
+Headers:
+  accept-ranges: bytes
+  cache-control: no-cache
+  content-type: text/html
+  date: Tue, 23 Jun 2026 14:20:27 GMT
+
+---
+Step (c): Verify Jellyfin public system info endpoint
+Command: curl -fsS https://iskradocker.tail7a351e.ts.net:8443/System/Info/Public
+Result: JSON response with ServerName="Iskra"
+Body:
+  {"LocalAddress":"http://127.0.0.1:8096","ServerName":"Iskra","Version":"10.11.11","ProductName":"Jellyfin Server","OperatingSystem":"","Id":"8fd71cfee32d4987a84d64c0dfade9b4","StartupWizardCompleted":true}
+
+---
+Conclusion:
+- Tailscale serve is running on port 8443, proxying to Jellyfin on localhost:8096.
+- HTTPS endpoint responds with HTTP/2 200.
+- Jellyfin public info endpoint returns valid JSON with ServerName "Iskra".
+- No changes were made to Jellyfin configuration, network mode, or Watchtower labels.

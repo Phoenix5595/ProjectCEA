@@ -1,0 +1,59 @@
+F2 No Leftover Artifacts Check — iskradocker-nextcloud-fix
+===========================================================
+Date: 2026-06-22
+Auditor: Sisyphus-Junior
+Host: iskradocker (100.123.38.1)
+
+---
+
+CHECK 1: Backup files in /tmp/
+Command: ls -lh /tmp/nextcloud-* 2>&1
+Output:
+-rw-rw-r-- 1 antoine antoine 1.3K Jun 22 22:19 /tmp/nextcloud-config-backup.php
+-rw-rw-r-- 1 antoine antoine 3.3M Jun 22 22:19 /tmp/nextcloud-db-backup-20260622-221944.sql
+-rwxr-xr-x 1 antoine antoine 3.8K Jun 22 22:19 /tmp/nextcloud-nginx-backup.conf
+
+Assessment: 3 backup files present (config, database, nginx). These are expected to remain as a rollback safety net. PASS.
+
+---
+
+CHECK 2: No failed containers
+Command: docker ps -a --filter "status=exited" --format '{{.Names}} {{.Status}}'
+Output:
+cliproxyapi-caddy Exited (0) 4 months ago
+
+Assessment: Only one exited container (cliproxyapi-caddy), which is unrelated to Nextcloud and exited cleanly (code 0). No Nextcloud-related containers in failed state. PASS.
+
+---
+
+CHECK 3: No temporary artifacts from upgrade
+Command: docker system df
+Output:
+TYPE            TOTAL     ACTIVE    SIZE      RECLAIMABLE
+Images          35        30        35.47GB   25.55GB (72%)
+Containers      33        31        1.187GB   8.192kB (0%)
+Local Volumes   16        13        20.6GB    17.86kB (0%)
+Build Cache     0         0         0B        0B
+
+Assessment: Docker disk usage appears normal. Reclaimable image space (25.55GB) is typical for a system with multiple images; old nextcloud:31-fpm image may be among reclaimable layers until Watchtower cleans it. No unusual bloat or temporary artifacts detected. PASS.
+
+---
+
+CHECK 4: No leftover maintenance mode
+Command: docker exec --user www-data nextcloud-app php occ status | grep maintenance
+Output:
+  - maintenance: false
+
+Assessment: Nextcloud is NOT in maintenance mode. PASS.
+
+---
+
+VERDICT: APPROVE
+
+All 4 checks passed:
+1. Backup files present and expected (rollback safety net)
+2. No failed Nextcloud containers
+3. No unusual Docker image bloat or temporary artifacts
+4. Nextcloud maintenance mode is false
+
+No leftover artifacts from the nextcloud-fix operation were detected.

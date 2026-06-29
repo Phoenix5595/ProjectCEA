@@ -1,0 +1,29 @@
+Task: Suppress AppAPI deploy daemon warning on Nextcloud 33.0.5.1
+Date: 2026-06-22
+Host: iskradocker
+
+=== FINDINGS ===
+
+1. app_api status:
+   - Command: docker exec --user www-data nextcloud-app php occ app:list | grep app_api
+   - Output:   - app_api: 33.0.0 (installed 32.0.0)
+   - Interpretation: The app is INSTALLED but NOT ENABLED (no [enabled] tag)
+
+2. Disable attempt:
+   - Command: docker exec --user www-data nextcloud-app php occ app:disable app_api
+   - Output: No such app enabled: app_api
+   - Interpretation: Confirms app_api is already disabled
+
+3. Verification:
+   - Command: docker exec --user www-data nextcloud-app php occ setupchecks 2>&1 | grep -c "AppAPI deploy daemon"
+   - Output: 0
+   - Interpretation: AppAPI deploy daemon warning is NOT present in setupchecks
+
+=== CONCLUSION ===
+The AppAPI deploy daemon warning is already suppressed. The app_api app was 
+likely disabled during the previous v32→v33 upgrade (T2). No action needed.
+
+=== COMMANDS USED ===
+docker exec --user www-data nextcloud-app php occ app:list | grep app_api
+docker exec --user www-data nextcloud-app php occ app:disable app_api
+docker exec --user www-data nextcloud-app php occ setupchecks 2>&1 | grep -c "AppAPI deploy daemon"

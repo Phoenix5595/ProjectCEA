@@ -1,0 +1,104 @@
+# Task 1: Git-init compose directory on iskradocker
+# Date: 2026-06-22
+# Target: /home/antoine/docker/compose/
+
+## Baseline Verification (pre-change)
+$ ssh iskradocker 'cd /home/antoine/docker/compose && git rev-parse --is-inside-work-tree'
+fatal: not a git repository (or any of the parent directories): .git
+EXIT:128
+=> CONFIRMED: Not a git repo before starting
+
+## Directory Contents (showing secret/backup files present)
+$ ls -la /home/antoine/docker/compose/
+-rw-------  .env
+-rwxr-xr-x  .env.bak.1776520673
+-rw-rw-r--  Caddyfile-https
+-rwxr-xr-x  backup.yml.disabled
+-rw-rw-r--  monitoring.yml.bak.20260418-153322
+-rw-rw-r--  nextcloud.yml.backup
+-rw-rw-r--  proxy.yml.backup-20260217-222043
+-rwxr-xr-x  proxy.yml.bak
+
+## Git Init
+$ ssh iskradocker 'cd /home/antoine/docker/compose && git init'
+Initialized empty Git repository in /home/antoine/docker/compose/.git/
+
+## .gitignore Contents
+$ cat /home/antoine/docker/compose/.gitignore
+# Secrets
+.env
+.env.*
+
+# Backup files
+*.bak
+*.bak.*
+*.backup*
+
+# Disabled configs
+*.disabled
+
+# HTTPS Caddyfile (contains TLS certs/paths)
+Caddyfile-https
+
+## Git Add & Commit
+$ ssh iskradocker 'cd /home/antoine/docker/compose && git add . && git status --short'
+A  .gitignore
+A  AGENTS.md
+A  Caddyfile
+A  agent.md
+A  backup.yml
+A  books.yml
+A  dashboard-local.yml
+A  dashboard-minimal.yml
+A  dashboard-simple.yml
+A  dashboard-working.yml
+A  dashboard.yml
+A  docs/runbooks/immich-pgvecto-to-vectorchord.md
+A  infra.yml
+A  kopia.yml
+A  media.yml
+A  monitoring.yml
+A  nextcloud-nginx.conf
+A  nextcloud.yml
+A  photos.yml
+A  proxy.yml
+
+$ ssh iskradocker 'cd /home/antoine/docker/compose && git commit -m "chore(compose): initial commit of iskra homelab compose configs"'
+[master (root-commit) d7d1fb0] chore(compose): initial commit of iskra homelab compose configs
+ 20 files changed, 1378 insertions(+)
+
+## Automated Verification
+
+### 1. Inside worktree?
+$ ssh iskradocker 'cd /home/antoine/docker/compose && git rev-parse --is-inside-work-tree'
+true
+=> PASS
+
+### 2. No .env files tracked?
+$ ssh iskradocker 'cd /home/antoine/docker/compose && git status --porcelain | grep -E "\.env" || echo "CLEAN"'
+CLEAN
+=> PASS
+
+### 3. .gitignore patterns work?
+$ ssh iskradocker 'cd /home/antoine/docker/compose && git check-ignore -v .env .env.bak .env.dashboard'
+.gitignore:2:.env	.env
+.gitignore:6:*.bak	.env.bak
+.gitignore:3:.env.*	.env.dashboard
+=> PASS
+
+### 4. Commit exists?
+$ ssh iskradocker 'cd /home/antoine/docker/compose && git log --oneline -1'
+d7d1fb0 chore(compose): initial commit of iskra homelab compose configs
+=> PASS
+
+## Manual QA
+$ ssh iskradocker 'cd /home/antoine/docker/compose && git add -f .env && git status --porcelain | grep -E "\.env" && git reset .env && git status --porcelain | grep -E "\.env" || echo "CLEAN after reset"'
+A  .env
+CLEAN after reset
+=> PASS: Force-staging works, reset removes it
+
+## Summary
+- Git repo initialized at /home/antoine/docker/compose/
+- .gitignore created with patterns for .env, backups, disabled configs, Caddyfile-https
+- 20 files committed (no secrets, no backups)
+- All verification steps passed

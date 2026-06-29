@@ -1,0 +1,50 @@
+Task 3: Add Watchtower auto-update labels to Immich containers
+Completed: 2026-06-22
+
+=== MODIFIED FILE ===
+File: /home/antoine/docker/compose/photos.yml (on iskradocker)
+Changes: Added labels block with com.centurylinklabs.watchtower.enable=true to:
+  - immich-server
+  - immich-machine-learning
+  - immich-redis
+Excluded: immich-postgres (NO label added)
+
+=== CONTAINER RECREATE ===
+Command: cd /home/antoine/docker/compose && docker compose --env-file ../.env -f photos.yml up -d immich-server immich-machine-learning immich-redis
+Result: immich_redis Recreated, immich_machine_learning Recreated, immich_server Recreated
+Note: immich_postgres was left Running (NOT recreated)
+
+=== HEALTH PROBE ===
+Command: curl -fsS http://127.0.0.1:2283/api/server/ping
+Result: {"res":"pong"}
+Status: PASS
+
+=== LABEL VERIFICATION ===
+
+immich_server:
+  {"com.centurylinklabs.watchtower.enable":"true","com.docker.compose.config-hash":"325f5ed3b8b09aa2705450b5addd8bd38a146913a9542412eefcda63857c576f","com.docker.compose.container-number":"1","com.docker.compose.depends_on":"immich-postgres:service_started:false,immich-redis:service_started:false","com.docker.compose.image":"sha256:c15bff75068effb03f4355997d03dc7e0fc58720c2b54ad6f7f10d1bc57efaa5","com.docker.compose.oneoff":"False","com.docker.compose.project":"compose","com.docker.compose.project.config_files":"/home/antoine/docker/compose/photos.yml","com.docker.compose.project.environment_file":"/home/antoine/docker/.env","com.docker.compose.project.working_dir":"/home/antoine/docker/compose","com.docker.compose.replace":"immich_server","com.docker.compose.service":"immich-server","com.docker.compose.version":"5.0.2","org.opencontainers.image.created":"2026-04-13T14:54:41.977Z","org.opencontainers.image.description":"High performance self-hosted photo and video management solution.","org.opencontainers.image.licenses":"AGPL-3.0","org.opencontainers.image.revision":"95e57a24cb11b4bcff39b770ae2d81443434c210","org.opencontainers.image.source":"https://github.com/immich-app/immich","org.opencontainers.image.title":"immich","org.opencontainers.image.url":"https://github.com/immich-app/immich","org.opencontainers.image.version":"v2.7.5"}
+  Status: PASS (label present)
+
+immich_machine_learning:
+  {"com.centurylinklabs.watchtower.enable":"true","com.docker.compose.config-hash":"c23ff719e0bffc5352b69355653e5933a28afaddaaf6634051d14dbe6f2e9ab6","com.docker.compose.container-number":"1","com.docker.compose.depends_on":"","com.docker.compose.image":"sha256:a2501141440f10516d329fdfba2c68082e19eb9ba6016c061ac80d23beadf7f3","com.docker.compose.oneoff":"False","com.docker.compose.project":"compose","com.docker.compose.project.config_files":"/home/antoine/docker/compose/photos.yml","com.docker.compose.project.environment_file":"/home/antoine/docker/.env","com.docker.compose.project.working_dir":"/home/antoine/docker/compose","com.docker.compose.replace":"immich_machine_learning","com.docker.compose.service":"immich-machine-learning","com.docker.compose.version":"5.0.2","org.opencontainers.image.created":"2026-04-13T14:54:41.416Z","org.opencontainers.image.description":"High performance self-hosted photo and video management solution.","org.opencontainers.image.licenses":"AGPL-3.0","org.opencontainers.image.revision":"95e57a24cb11b4bcff39b770ae2d81443434c210","org.opencontainers.image.source":"https://github.com/immich-app/immich","org.opencontainers.image.title":"immich","org.opencontainers.image.url":"https://github.com/immich-app/immich","org.opencontainers.image.version":"v2.7.5"}
+  Status: PASS (label present)
+
+immich_redis:
+  {"com.centurylinklabs.watchtower.enable":"true","com.docker.compose.config-hash":"b81c5c8480b6f7a1c83d4e17b4c31131365ae8d6ce529bfa8f5aa901f3ad2d7a","com.docker.compose.container-number":"1","com.docker.compose.depends_on":"","com.docker.compose.image":"sha256:fea8b3e67b15729d4bb70589eb03367bab9ad1ee89c876f54327fc7c6e618571","com.docker.compose.oneoff":"False","com.docker.compose.project":"compose","com.docker.compose.project.config_files":"/home/antoine/docker/compose/photos.yml","com.docker.compose.project.environment_file":"/home/antoine/docker/.env","com.docker.compose.project.working_dir":"/home/antoine/docker/compose","com.docker.compose.replace":"immich_redis","com.docker.compose.service":"immich-redis","com.docker.compose.version":"5.0.2"}
+  Status: PASS (label present)
+
+immich_postgres:
+  absent
+  Status: PASS (label correctly absent)
+
+=== DB RECREATION CHECK ===
+Postgres start time before: 2026-06-22T20:37:51.217250241Z
+Postgres start time after:  2026-06-22T20:37:51.217250241Z
+Status: PASS (NOT recreated)
+
+=== SUMMARY ===
+All acceptance criteria met:
+- 3 target containers have Watchtower label
+- immich-postgres does NOT have the label
+- Health probe passes (pong)
+- Database container was NOT recreated

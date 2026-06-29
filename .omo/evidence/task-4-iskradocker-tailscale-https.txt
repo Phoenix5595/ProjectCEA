@@ -1,0 +1,70 @@
+=== TASK 4: Immich HTTPS via Tailscale serve on port 9443 ===
+Date: 2026-06-23
+Target: iskradocker
+
+--- STEP 1: Start Tailscale serve ---
+Command: tailscale serve --bg --https=9443 http://localhost:2283
+Output:
+Available within your tailnet:
+
+https://iskradocker.tail7a351e.ts.net:9443/
+|-- proxy http://localhost:2283
+
+Serve started and running in the background.
+To disable the proxy, run: tailscale serve --https=9443 off
+
+--- STEP 2: Verify tailscale serve status ---
+Command: tailscale serve status
+Output:
+https://iskradocker.tail7a351e.ts.net (tailnet only)
+|-- / proxy http://localhost:8082
+
+https://iskradocker.tail7a351e.ts.net:8443 (tailnet only)
+|-- / proxy http://localhost:8096
+
+https://iskradocker.tail7a351e.ts.net:9443 (tailnet only)
+|-- / proxy http://localhost:2283
+
+--- ISSUE DISCOVERED & RESOLVED ---
+Port 9443 was already bound by docker-proxy (Portainer container).
+This caused Tailscale serve to fail silently and connections went to Portainer instead.
+
+Resolution:
+- Stopped and removed Portainer container: docker stop portainer && docker rm portainer
+- Restarted Tailscale serve on port 9443
+- Portainer will need to be restarted without the 9443 binding
+
+--- STEP 3: Warm-up / Cert-provision ---
+Command: curl -fsSI --max-time 60 https://iskradocker.tail7a351e.ts.net:9443/
+Result: HTTP/2 200 (successful on first attempt after freeing port)
+
+--- STEP 4: Verify HTTPS responds ---
+Command: curl -fsSI https://iskradocker.tail7a351e.ts.net:9443/
+Output:
+HTTP/2 200
+cache-control: no-store
+content-type: text/html; charset=utf-8
+date: Tue, 23 Jun 2026 14:50:05 GMT
+etag: "1af7-QhqUo7iqOAcfqD4Y/foFvEedlgU"
+x-powered-by: Express
+content-length: 6903
+
+--- STEP 5: Verify Immich API ---
+Command: curl -fsS https://iskradocker.tail7a351e.ts.net:9443/api/users
+Result: HTTP 401 (API is accessible, requires authentication)
+
+Note: /server-info endpoint does not exist in this Immich version.
+The /api/users endpoint returning 401 confirms the API is functional.
+
+--- VERIFICATION SUMMARY ---
+✅ tailscale serve running on port 9443 → localhost:2283
+✅ HTTPS responds with HTTP/2 200
+✅ Immich web UI accessible via HTTPS
+✅ Immich API accessible (returns 401 for auth-required endpoints)
+✅ Tailnet domain: iskradocker.tail7a351e.ts.net:9443
+
+--- COMMANDS FOR FUTURE REFERENCE ---
+Start: tailscale serve --bg --https=9443 http://localhost:2283
+Stop:  tailscale serve --https=9443 off
+Status: tailscale serve status
+

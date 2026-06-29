@@ -1,0 +1,73 @@
+Task 4: Recreate Nextcloud containers with new config and run upgrade 31→32
+================================================================================
+Date: 2026-06-22
+Host: iskradocker
+
+Step (a): Enable maintenance mode
+---------------------------------
+Command: docker exec --user www-data nextcloud-app php occ maintenance:mode --on
+Output: Maintenance mode enabled
+
+Step (b): Pull new images
+-------------------------
+Command: cd /home/antoine/docker/compose && docker compose -f nextcloud.yml pull nextcloud-app nextcloud-cron
+Output: Image nextcloud:32-fpm Pulled (and nextcloud-cron image)
+
+Step (c): Stop affected containers
+----------------------------------
+Command: docker compose -f nextcloud.yml stop nextcloud-app nextcloud-cron nextcloud-web
+Output:
+  Container nextcloud-cron Stopped
+  Container nextcloud-web Stopped
+  Container nextcloud-app Stopped
+
+Step (d): Recreate with new config
+----------------------------------
+Command: docker compose -f nextcloud.yml up -d nextcloud-app nextcloud-cron nextcloud-web
+Output:
+  Container nextcloud-redis Recreated
+  Container nextcloud-app Recreated
+  Container nextcloud-web Recreated
+  Container nextcloud-cron Recreated
+  Container nextcloud-redis Started
+  Container nextcloud-app Started
+  Container nextcloud-cron Started
+  Container nextcloud-web Started
+
+Step (e): Monitor upgrade logs
+------------------------------
+Command: docker logs nextcloud-app --tail 20 | grep -E "Starting upgrade|Update successful|Fatal"
+Result: Update successful (detected at 2026-06-22T22:24:24+00:00)
+Status: UPGRADE COMPLETED SUCCESSFULLY
+
+Step (f): Verify upgrade succeeded
+----------------------------------
+Command: docker exec --user www-data nextcloud-app php occ status
+Output:
+  - installed: true
+  - version: 32.0.11.1
+  - versionstring: 32.0.11
+  - maintenance: true
+  - needsDbUpgrade: false
+  - productname: Nextcloud
+
+Step (g): Disable maintenance mode
+----------------------------------
+Command: docker exec --user www-data nextcloud-app php occ maintenance:mode --off
+Output: Maintenance mode disabled
+
+Step (h): Verify Nextcloud responds
+-----------------------------------
+Command: curl -fsS http://127.0.0.1:8082/status.php
+Output:
+  {"installed":true,"maintenance":false,"needsDbUpgrade":false,"version":"32.0.11.1","versionstring":"32.0.11","edition":"","productname":"Nextcloud","extendedSupport":false}
+
+VERIFICATION SUMMARY
+--------------------
+- Version: 32.0.11.1 (expected: 32.0.x) ✓
+- Maintenance mode: false ✓
+- Installed: true ✓
+- Needs DB upgrade: false ✓
+- HTTP response: 200 OK with valid JSON ✓
+
+All checks passed. Upgrade from 31→32 completed successfully.

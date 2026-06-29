@@ -1,0 +1,44 @@
+Task 5: Configure Nextcloud settings via occ command
+=====================================================
+
+Date: 2026-06-22
+Host: iskradocker (100.123.38.1)
+Nextcloud Version: 32.0.11.1
+
+---
+
+1. SET default_phone_region TO 'CA'
+   Command: docker exec --user www-data nextcloud-app php occ config:system:set default_phone_region --value="CA"
+   Result: System config value default_phone_region set to string CA
+   Status: SUCCESS
+
+2. SET maintenance_window_start TO 2 (integer)
+   Command: docker exec --user www-data nextcloud-app php occ config:system:set maintenance_window_start --type=integer --value=2
+   Result: System config value maintenance_window_start set to integer 2
+   Status: SUCCESS
+
+3. VERIFY trusted_domains
+   Command: docker exec --user www-data nextcloud-app php occ config:system:get trusted_domains
+   Result:
+     - localhost
+     - 192.168.1.77
+     - iskradocker
+     - 100.123.38.1 (Tailscale IP)
+   Status: VERIFIED - includes iskradocker hostname and Tailscale IP
+
+4. CONFIG EXPORT VERIFICATION
+   Command: docker exec nextcloud-app cat /var/www/html/config/config.php | grep -E "default_phone_region|maintenance_window_start"
+   Result:
+     'maintenance_window_start' => 2,
+     'default_phone_region' => 'CA',
+   Status: VERIFIED - both settings present in config.php
+
+---
+
+SUMMARY:
+- default_phone_region: 'CA' (ISO 3166-1 code for Canada)
+- maintenance_window_start: 2 (2 AM in 24h format, integer type)
+- trusted_domains: includes localhost, 192.168.1.77, iskradocker, 100.123.38.1
+
+All settings configured successfully using occ command as www-data user.
+No direct config.php modifications were made.

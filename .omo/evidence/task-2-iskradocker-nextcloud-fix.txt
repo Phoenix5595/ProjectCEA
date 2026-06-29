@@ -1,0 +1,36 @@
+Task 2: Update nextcloud.yml to use Nextcloud 32-fpm
+=====================================================
+
+Date: 2026-06-22
+Host: iskradocker
+File: /home/antoine/docker/compose/nextcloud.yml
+
+CHANGES MADE:
+-------------
+1. nextcloud-app image: nextcloud:31-fpm → nextcloud:32-fpm
+2. nextcloud-cron image: nextcloud:31-fpm → nextcloud:32-fpm
+
+VERIFICATION:
+-------------
+Image tags and Watchtower labels confirmed:
+
+    image: nextcloud:32-fpm
+      - "com.centurylinklabs.watchtower.enable=true"
+    image: nginx:alpine
+      - "com.centurylinklabs.watchtower.enable=true"
+    image: postgres:16-alpine
+    image: redis:7-alpine
+      - "com.centurylinklabs.watchtower.enable=true"
+    image: nextcloud:32-fpm
+      - "com.centurylinklabs.watchtower.enable=true"
+
+CHECKLIST:
+----------
+✓ nextcloud-app updated to nextcloud:32-fpm
+✓ nextcloud-cron updated to nextcloud:32-fpm
+✓ Watchtower labels present on app service
+✓ Watchtower labels present on cron service
+✓ nextcloud-web unchanged (nginx:alpine)
+✓ nextcloud-db unchanged (postgres:16-alpine)
+✓ nextcloud-redis unchanged (redis:7-alpine)
+✓ No other services modified

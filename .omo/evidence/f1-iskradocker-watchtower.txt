@@ -1,0 +1,154 @@
+================================================================================
+F1 Plan Compliance Audit: iskradocker-watchtower
+================================================================================
+Audit Date: 2026-06-22
+Auditor: Sisyphus-Junior (automated)
+Target Host: iskradocker (100.123.38.1)
+Plan Reference: F1 - iskradocker-watchtower
+================================================================================
+
+CHECK 1: Watchtower config unchanged
+------------------------------------
+Command: docker inspect compose-watchtower-1 --format '{{json .Args}}'
+Result: ["--interval","3600","--label-enable","--cleanup"]
+
+Required elements:
+  --interval 3600    : FOUND
+  --label-enable     : FOUND
+  --cleanup          : FOUND
+
+Status: PASS
+
+================================================================================
+
+CHECK 2: Labels on approved containers (must ALL be 'true')
+-----------------------------------------------------------
+Approved containers: nextcloud-app, nextcloud-web, nextcloud-redis, nextcloud-cron,
+                     jellyfin, immich-server, immich-machine-learning, immich-redis
+
+Container: nextcloud-app
+  Command: docker inspect nextcloud-app --format '{{json .Config.Labels}}' | jq -r '.["com.centurylinklabs.watchtower.enable"]'
+  Result: true
+  Status: PASS
+
+Container: nextcloud-web
+  Command: docker inspect nextcloud-web --format '{{json .Config.Labels}}' | jq -r '.["com.centurylinklabs.watchtower.enable"]'
+  Result: true
+  Status: PASS
+
+Container: nextcloud-redis
+  Command: docker inspect nextcloud-redis --format '{{json .Config.Labels}}' | jq -r '.["com.centurylinklabs.watchtower.enable"]'
+  Result: true
+  Status: PASS
+
+Container: nextcloud-cron
+  Command: docker inspect nextcloud-cron --format '{{json .Config.Labels}}' | jq -r '.["com.centurylinklabs.watchtower.enable"]'
+  Result: true
+  Status: PASS
+
+Container: jellyfin
+  Command: docker inspect jellyfin --format '{{json .Config.Labels}}' | jq -r '.["com.centurylinklabs.watchtower.enable"]'
+  Result: true
+  Status: PASS
+
+Container: immich-server (actual name: immich_server)
+  Command: docker inspect immich_server --format '{{json .Config.Labels}}' | jq -r '.["com.centurylinklabs.watchtower.enable"]'
+  Result: true
+  Status: PASS
+
+Container: immich-machine-learning (actual name: immich_machine_learning)
+  Command: docker inspect immich_machine_learning --format '{{json .Config.Labels}}' | jq -r '.["com.centurylinklabs.watchtower.enable"]'
+  Result: true
+  Status: PASS
+
+Container: immich-redis (actual name: immich_redis)
+  Command: docker inspect immich_redis --format '{{json .Config.Labels}}' | jq -r '.["com.centurylinklabs.watchtower.enable"]'
+  Result: true
+  Status: PASS
+
+Check 2 Summary: 8/8 containers PASS
+
+================================================================================
+
+CHECK 3: NO labels on DB containers (must be absent or null)
+------------------------------------------------------------
+DB containers: nextcloud-db, immich-postgres
+
+Container: nextcloud-db
+  Command: docker inspect nextcloud-db --format '{{json .Config.Labels}}' | jq -r '.["com.centurylinklabs.watchtower.enable"]'
+  Result: null
+  Status: PASS
+
+Container: immich-postgres (actual name: immich_postgres)
+  Command: docker inspect immich_postgres --format '{{json .Config.Labels}}' | jq -r '.["com.centurylinklabs.watchtower.enable"]'
+  Result: null
+  Status: PASS
+
+Check 3 Summary: 2/2 containers PASS
+
+================================================================================
+
+CHECK 4: cliproxyapi unchanged (already had label, still has it)
+----------------------------------------------------------------
+Container: cliproxyapi
+  Command: docker inspect cliproxyapi --format '{{json .Config.Labels}}' | jq -r '.["com.centurylinklabs.watchtower.enable"]'
+  Result: true
+  Status: PASS
+
+================================================================================
+
+CHECK 5: NO labels on *arr stack (must be absent or null)
+----------------------------------------------------------
+*arr containers: qbittorrent, prowlarr, radarr, sonarr, bazarr, jellyseerr
+
+Container: qbittorrent
+  Command: docker inspect qbittorrent --format '{{json .Config.Labels}}' | jq -r '.["com.centurylinklabs.watchtower.enable"]'
+  Result: null
+  Status: PASS
+
+Container: prowlarr
+  Command: docker inspect prowlarr --format '{{json .Config.Labels}}' | jq -r '.["com.centurylinklabs.watchtower.enable"]'
+  Result: null
+  Status: PASS
+
+Container: radarr
+  Command: docker inspect radarr --format '{{json .Config.Labels}}' | jq -r '.["com.centurylinklabs.watchtower.enable"]'
+  Result: null
+  Status: PASS
+
+Container: sonarr
+  Command: docker inspect sonarr --format '{{json .Config.Labels}}' | jq -r '.["com.centurylinklabs.watchtower.enable"]'
+  Result: null
+  Status: PASS
+
+Container: bazarr
+  Command: docker inspect bazarr --format '{{json .Config.Labels}}' | jq -r '.["com.centurylinklabs.watchtower.enable"]'
+  Result: null
+  Status: PASS
+
+Container: jellyseerr
+  Command: docker inspect jellyseerr --format '{{json .Config.Labels}}' | jq -r '.["com.centurylinklabs.watchtower.enable"]'
+  Result: null
+  Status: PASS
+
+Check 5 Summary: 6/6 containers PASS
+
+================================================================================
+FINAL VERDICT
+================================================================================
+
+Result: APPROVE
+
+All 5 check groups passed:
+  1. Watchtower config: PASS (all required args present)
+  2. Approved container labels: PASS (8/8 containers have label=true)
+  3. DB container labels: PASS (2/2 containers have no label/null)
+  4. cliproxyapi label: PASS (label=true, unchanged)
+  5. *arr stack labels: PASS (6/6 containers have no label/null)
+
+Total checks: 19/19 PASS
+Zero failures detected.
+
+================================================================================
+END OF AUDIT
+================================================================================

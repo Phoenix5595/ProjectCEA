@@ -820,9 +820,7 @@ class DeviceController:
                             f"Restored {device_name} ({location}/{cluster}) to state {state}"
                         )
                     else:
-                        logger.warning(
-                            f"Failed to restore {device_name} ({location}/{cluster})"
-                        )
+                        logger.warning(f"Failed to restore {device_name} ({location}/{cluster})")
 
                 except Exception as e:
                     logger.warning(f"Error restoring state for {device_name}: {e}")
