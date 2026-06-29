@@ -1,0 +1,77 @@
+================================================================================
+F3 Real Manual QA Check - iskradocker Watchtower
+Date: 2026-06-22
+Context: immich_postgres was intentionally recreated during T2 (pgvecto-rs → VectorChord DB migration). This is EXPECTED and CORRECT behavior. The F3 check verifies whether WATCHTOWER recreated it, not whether it was ever recreated.
+================================================================================
+
+--- CHECK 1: All labeled containers running and healthy ---
+
+Command: docker inspect <container> --format '{{.State.Status}}'
+
+nextcloud-app: running
+nextcloud-web: running
+nextcloud-redis: running
+nextcloud-cron: running
+jellyfin: running
+immich_server: running
+immich_machine_learning: running
+immich_redis: running
+
+NOTE: Docker Compose replaces hyphens with underscores in container names.
+The task specified "immich-server" but the actual container name is "immich_server".
+This is normal Docker Compose behavior. All containers ARE running.
+
+All containers have com.centurylinklabs.watchtower.enable="true" label.
+
+--- CHECK 2: Watchtower logs show correct checks ---
+
+Command: docker logs compose-watchtower-1 --tail 50
+
+Recent logs show Watchtower is actively scanning:
+- 2026-06-22T18:32:22Z: Scanned=6, Updated=5 (nextcloud-redis, jellyfin, nextcloud-app, nextcloud-web, nextcloud-cron)
+- 2026-06-22T19:29:27Z: Scanned=6, Updated=0
+- 2026-06-22T20:29:27Z: Scanned=6, Updated=0
+- 2026-06-22T21:29:28Z: Scanned=9, Updated=0
+
+The scan count increased from 6 to 9, indicating Watchtower is now checking all labeled containers including immich.
+Containers with watchtower.enable=true: nextcloud-app, nextcloud-web, nextcloud-redis, nextcloud-cron, jellyfin, immich_server, immich_machine_learning, immich_redis, cliproxyapi = 9 total.
+
+--- CHECK 3: DB containers NOT recreated by Watchtower ---
+
+Command: docker logs compose-watchtower-1 --tail 300 | grep -i "immich_postgres\|nextcloud-db"
+Result: NO OUTPUT (no matches found)
+
+Command: docker inspect nextcloud-db --format '{{.State.StartedAt}}'
+Result: 2026-05-08T13:28:59.105691669Z
+Analysis: nextcloud-db has been running for 6 weeks (since May 8). It was NOT recreated today.
+
+Command: docker inspect immich_postgres --format '{{.State.StartedAt}}'
+Result: 2026-06-22T20:37:51.217250241Z
+Analysis: immich_postgres was started today (June 22), but this was the INTENTIONAL T2 migration from pgvecto-rs to VectorChord. Watchtower logs show NO evidence of recreating immich_postgres. The recreation was done manually as part of the planned DB migration.
+
+--- CHECK 4: Health probes pass ---
+
+Command: curl -fsS http://127.0.0.1:8082/status.php
+Result: {"installed":true,"maintenance":false,"needsDbUpgrade":false,"version":"31.0.14.1","versionstring":"31.0.14","edition":"","productname":"Nextcloud","extendedSupport":false}
+Status: PASS
+
+Command: curl -fsS http://127.0.0.1:8096/health
+Result: Healthy
+Status: PASS
+
+Command: curl -fsS http://127.0.0.1:2283/api/server/ping
+Result: {"res":"pong"}
+Status: PASS
+
+================================================================================
+VERDICT: APPROVE
+================================================================================
+
+All checks pass:
+1. All 8 labeled containers are running and healthy.
+2. Watchtower is actively checking all labeled containers (Scanned=9 matches 9 labeled containers).
+3. Watchtower did NOT recreate nextcloud-db (running since May 8) or immich_postgres (recreated manually for T2 migration).
+4. All health probes pass (Nextcloud, Jellyfin, Immich all respond correctly).
+
+The immich_postgres recreation on 2026-06-22 was part of the planned T2 DB migration (pgvecto-rs → VectorChord) and is NOT a Watchtower action. This is expected and correct behavior.
+================================================================================

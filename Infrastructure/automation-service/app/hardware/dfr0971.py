@@ -62,9 +62,7 @@ class DFR0971Driver:
 
         self.bus = smbus2.SMBus(i2c_bus)
         self._initialize_hardware()
-        logger.info(
-            f"DFR0971 initialized on I2C bus {i2c_bus}, address 0x{i2c_address:02X}"
-        )
+        logger.info(f"DFR0971 initialized on I2C bus {i2c_bus}, address 0x{i2c_address:02X}")
 
     def _initialize_hardware(self):
         """Initialize DFR0971 hardware - set output range to 10V"""
@@ -293,9 +291,7 @@ class DFR0971Manager:
             logger.warning(f"Board {board_id} already exists, replacing it")
 
         try:
-            driver = DFR0971Driver(
-                i2c_bus=self.i2c_bus, i2c_address=i2c_address
-            )
+            driver = DFR0971Driver(i2c_bus=self.i2c_bus, i2c_address=i2c_address)
 
             try:
                 driver.store_settings()

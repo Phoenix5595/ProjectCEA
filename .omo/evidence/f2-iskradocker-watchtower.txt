@@ -1,0 +1,44 @@
+F2 No Leftover Artifacts Check - Re-run after fix
+Date: 2026-06-22
+Host: iskradocker
+
+========================================
+CHECK 1: No leftover script
+Command: ls /home/antoine/docker/scripts/iskradocker-autoupdate.sh 2>&1
+Result: ls: cannot access '/home/antoine/docker/scripts/iskradocker-autoupdate.sh': No such file or directory
+Status: PASS
+
+========================================
+CHECK 2: No leftover systemd units
+Command: ls /etc/systemd/system/iskradocker-autoupdate.* 2>&1
+Result: ls: cannot access '/etc/systemd/system/iskradocker-autoupdate.*': No such file or directory
+Status: PASS
+
+========================================
+CHECK 3: No dangling symlinks in timers.target.wants
+Command: ls /etc/systemd/system/timers.target.wants/iskradocker* 2>&1
+Result: ls: cannot access '/etc/systemd/system/timers.target.wants/iskradocker*': No such file or directory
+Status: PASS
+
+========================================
+CHECK 4: No .git in compose dir
+Command: ls -la /home/antoine/docker/compose/.git 2>&1
+Result: ls: cannot access '/home/antoine/docker/compose/.git': No such file or directory
+Status: PASS
+
+========================================
+CHECK 5: No custom timer/service files anywhere
+Command: find /etc/systemd/system -name '*iskradocker*' -o -name '*autoupdate*' 2>/dev/null
+Result: (empty)
+Status: PASS
+
+========================================
+CHECK 6: No cron jobs for autoupdate
+Command: crontab -l 2>/dev/null | grep -i autoupdate || echo "No autoupdate cron jobs found"
+Result: No autoupdate cron jobs found
+Status: PASS
+
+========================================
+VERDICT: APPROVE
+
+All 6 checks passed. No leftover artifacts from the old iskradocker-autoupdate systemd timer/service remain on iskradocker.

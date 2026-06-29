@@ -1,0 +1,86 @@
+F4 Scope Fidelity Check — iskradocker-nextcloud-fix
+=====================================================
+Date: 2026-06-22
+Host: iskradocker (SSH via antoine)
+
+---
+1. Only Nextcloud components changed
+---
+nextcloud-db image:
+  postgres:16-alpine
+  Status: PASS (unchanged)
+
+nextcloud-redis image:
+  redis:7-alpine
+  Status: PASS (unchanged)
+
+nextcloud-web image:
+  nginx:alpine
+  Status: PASS (unchanged)
+
+---
+2. Watchtower labels intact
+---
+nextcloud-app:
+  true
+nextcloud-web:
+  true
+nextcloud-redis:
+  true
+nextcloud-cron:
+  true
+  Status: PASS (all true)
+
+---
+3. No email/SMTP configured
+---
+Command: docker exec nextcloud-app cat /var/www/html/config/config.php | grep -i "mail\|smtp"
+Output: (empty)
+  Status: PASS (not configured)
+
+---
+4. No HTTPS enabled
+---
+Command: docker exec nextcloud-app cat /var/www/html/config/config.php | grep "overwriteprotocol"
+Output:
+  'overwriteprotocol' => 'http',
+  Status: PASS (HTTP, not HTTPS)
+
+---
+5. No custom scripts/timers added
+---
+Command: find /etc/systemd/system -name '*nextcloud*' -o -name '*iskradocker*' 2>/dev/null
+Output:
+  /etc/systemd/system/snap.nextcloud.php-fpm.service
+  /etc/systemd/system/snap.nextcloud.logrotate.service
+  /etc/systemd/system/snap.nextcloud.nextcloud-fixer.service
+  /etc/systemd/system/multi-user.target.wants/snap.nextcloud.php-fpm.service
+  /etc/systemd/system/multi-user.target.wants/snap.nextcloud.nextcloud-fixer.service
+  /etc/systemd/system/multi-user.target.wants/snap-nextcloud-53545.mount
+  /etc/systemd/system/multi-user.target.wants/snap.nextcloud.mysql.service
+  /etc/systemd/system/multi-user.target.wants/snap-nextcloud-53473.mount
+  /etc/systemd/system/multi-user.target.wants/snap.nextcloud.apache.service
+  /etc/systemd/system/multi-user.target.wants/snap.nextcloud.redis-server.service
+  /etc/systemd/system/multi-user.target.wants/snap.nextcloud.nextcloud-cron.service
+  /etc/systemd/system/multi-user.target.wants/snap.nextcloud.renew-certs.service
+  /etc/systemd/system/snap-nextcloud-53545.mount
+  /etc/systemd/system/snap.nextcloud.mysql.service
+  /etc/systemd/system/snap-nextcloud-53473.mount
+  /etc/systemd/system/snap.nextcloud.apache.service
+  /etc/systemd/system/snap.nextcloud.redis-server.service
+  /etc/systemd/system/snapd.mounts.target.wants/snap-nextcloud-53545.mount
+  /etc/systemd/system/snapd.mounts.target.wants/snap-nextcloud-53473.mount
+  /etc/systemd/system/snap.nextcloud.logrotate.timer
+  /etc/systemd/system/timers.target.wants/snap.nextcloud.logrotate.timer
+  /etc/systemd/system/snap.nextcloud.nextcloud-cron.service
+  /etc/systemd/system/snap.nextcloud.renew-certs.service
+
+Note: All entries are Ubuntu snap package services (snap.nextcloud.*), which are
+pre-existing system services, not custom scripts/timers added by the plan.
+No *iskradocker* entries found.
+  Status: PASS (no custom additions)
+
+=====================================================
+VERDICT: APPROVE
+=====================================================
+All 5 scope fidelity checks passed. No unintended modifications detected.

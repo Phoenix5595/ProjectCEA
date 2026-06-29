@@ -1,0 +1,133 @@
+# iskradocker-updates — PLAN DRAFT (durable resume point)
+
+slug: iskradocker-updates
+status: APPROVED-v2 (write plan now)
+pending_action: write .omo/plans/iskradocker-updates.md
+classify: Standard (5+files, multiple services, infra/security impact)
+
+## SCOPE NOTE (v2 final)
+User decided NOT to decommission Watchtower — cliproxyapi is being decommissioned
+soon, so leave Watchtower as-is (only manages cliproxyapi). Cron will NOT touch
+cliproxyapi. Cron manages only: nextcloud (app/cron/web/redis), immich
+(server/ML/redis), jellyfin. Manual-only (excluded): immich_postgres, nextcloud-db.
+Watchtower + cliproxyapi are explicitly OUT OF SCOPE for this plan.
+
+## User request
+"write a plan to ensure nextcloud, jellyfin and immich on my server called iskra in the vm iskradocker stay updated. i made a plan but i forgot it."
+
+Intent routing: **CLEAR** + explicit interview opt-in ("ask me questions if needed").
+User's "forgotten plan" search: nothing found in markdown or `.bash_history`; closest
+signal is bash history showing the user investigated watchtower labels on cliproxyapi
+(`docker inspect cliproxyapi --format ... | tr ',' '\n' | grep watchtower`).
+
+## Grounding — verified facts (with paths/evidence)
+
+### Hosts
+- `iskra` (bare host): NO docker. (evidence: `docker: command not found`)
+- `iskradocker` (VM on iskra): ALL homelab containers run here.
+- Compose working dir: `/home/antoine/docker/compose/` (SSH user `antoine`, sudoer).
+
+### The 3 target stacks — compose source-of-truth verified via `docker inspect` labels:
+| Stack       | Compose file (on disk, IS the source of truth) | Project |
+|-------------|------------------------------------------------|---------|
+| Nextcloud   | `/home/antoine/docker/compose/nextcloud.yml`  | `compose` |
+| Immich      | `/home/antoine/docker/compose/photos.yml`     | `compose` |
+| Jellyfin    | `/home/antoine/docker/compose/media.yml`      | `compose` |
+
+(AGENTS.md note about "media deployed as Portainer stack" is OUTDATED — running
+jellyfin container's label proves compose file on disk is the source of truth.)
+
+### Image tag strategy per relevant service
+| Container               | Image                                         | Tag kind         | Auto-update safe? |
+|-------------------------|-----------------------------------------------|------------------|-------------------|
+| nextcloud-app           | `nextcloud:31-fpm`                            | major-major.minor pinned (31.x patch) | yes within major |
+| nextcloud-cron          | `nextcloud:31-fpm`                            | same as app      | yes within major  |
+| nextcloud-web           | `nginx:alpine`                                | rolling          | yes               |
+| nextcloud-db            | `postgres:16-alpine`                          | major pinned     | yes within major 16, NEVER bump to 17 |
+| nextcloud-redis         | `redis:7-alpine`                              | major pinned     | yes within major 7 |
+| immich_server           | `ghcr.io/immich-app/immich-server:release`   | tracks release   | yes (whitelist)   |
+| immich_machine_learning | `ghcr.io/immich-app/immich-machine-learning:release` | tracks release | yes (whitelist) |
+| immich_redis            | `docker.io/valkey/valkey:8-bookworm`          | major pinned     | yes within major 8 |
+| immich_postgres         | `ghcr.io/tensorchord/pgvecto-rs:pg14-v0.2.0`  | **HARD-PINNED**  | **NEVER auto** — coupled to Immich release; pgvecto upgrades are migrations |
+| jellyfin                | `jellyfin/jellyfin:latest`                     | fully unpinned   | yes               |
+
+### Existing Watchtower (@ `compose/proxy.yml`)
+- Container `compose-watchtower-1`, image `containrrr/watchtower`.
+- Args: `--interval 3600 --label-enable --cleanup` (verified via `docker inspect`).
+- `--label-enable` = OPT-IN per-container label `com.centurylinklabs.watchtower.enable=true`.
+- `--cleanup` = **removes the OLD image after update** (so local rollback cache is gone).
+- Currently ONLY `cliproxyapi` (proxy.yml) is enrolled. None of nextcloud/jellyfin/immich.
+- Author notes the user investigated the watchtower-label mechanism in bash history.
+
+### Existing backup: Kopia (also on iskradocker, separate from this project's CEA stack)
+- Container `kopia`, image `kopia/kopia:latest`, up 3 weeks.
+- Hourly snapshots with retention `latest,hourly,daily,weekly,monthly,annual` for:
+  - `/backup/compose` (~48 KB — the compose dir) ✓
+  - `/backup/nextcloud` (17.4 GB — nextcloud data) ✓
+  - `/backup/photos` (78.8 GB — immich upload dir) ✓
+  - `/backup/config` (1.1 GB — /srv/config) ✓
+  - `/backup/docker.env` ✓
+- Home dir backup script: `/home/antoine/docker/kopia-homelab-snapshot.sh` (homelab paths).
+- B2 offsite: `/home/antoine/docker/kopia-sync-to-b2.sh`.
+
+### NOT tracked by git
+- `/home/antoine/docker` is NOT a git repo (verified: `git rev-parse` → fatal).
+
+### Conventions documented in `compose/AGENTS.md`
+- Compose location: `~/docker/compose/`
+- Config persistence: `/srv/config/<service>/`
+- Media storage: `/srv/storage1/`, `/srv/storage2/`
+- LinuxServer.io images preferred, PUID=1000 PGID=1000.
+- Restart policy: `unless-stopped` for all.
+- Override env file via `~/docker/.env`.
+
+## Topology lock (5 independent components)
+
+| ID | Component | One-line outcome |
+|----|-----------|------------------|
+| C1 | Update mechanism choice | Pick automated cadence + provider (watchtower-extend / scheduled-script / manual). |
+| C2 | Auto-update whitelist (which containers) | Decide which of the 10 target containers get auto vs manual handling. |
+| C3 | Pre-update + rollback safety | Snapshot + image re-tag mechanism so a bad update is reversible in <5 min. |
+| C4 | DB / pgvecto-rs special handling | Never auto-bump immich_postgres; document the per-Immich-release manual bump runbook. |
+| C5 | Config version control | `/home/antoine/docker/compose/` becomes a git repo with `.gitignore` for `.env*`. |
+
+## Forks surviving the two filters (owner-decisions)
+
+### ASK (3 — owner-decisions, ranked by foggiest-gap)
+
+**Fork 1 — Update mechanism (THE big fork).**
+WHY: determines the entire approach; trades off convenience vs reversibility.
+Default: scheduled cron script (weekly Sun 04:00 ET) that pulls+recreates+health-checks,
+pre-snapshots via existing Kopia, pre-tags old image for rollback. Alternative: extend
+existing Watchtower (zero-touch, but `--cleanup` removes old image → no rollback).
+
+**Fork 2 — Notification model.**
+WHY:илка화 user has 3 services with different down-impact; silent auto-apply vs
+review-then-approve matters. Default: silent apply + email/Telegram on success/failure.
+Alternative: notify-only (no auto-apply, user clicks apply) / full manual.
+
+**Fork 3 — Maintenance-window awareness.**
+WHY: 30s-2min downtime per service during recreate. Default: bind to Sun 04:00 ET.
+Alternative: per-service windows / no window (immediate).
+
+### ADOPTED AS DEFAULTS (announced, not asked)
+
+- **Fork A (pgvecto/DB treatment):** HARD RULE — `immich_postgres` stays pinned at
+  `pg14-v0.2.0`; `nextcloud-db` stays on `postgres:16-alpine`; both are EXCLUDED from
+  any auto-update mechanism. Bumps per Immich's published minimum pgvecto version / per
+  Postgres major-release migration runbook. Rationale: fact-based (Immich docs + Postgres
+  major-upgrade docs), not a preference fork.
+- **Fork B (rollback mechanism):** pre-update local image re-tag
+  (`docker tag <name>:<tag> <name>:rollback-<ts>`) before each pull, kept for N=4 weeks.
+  Plus existing Kopia hourly snapshots already cover data. The cron/job script does both.
+- **Fork C (git init):** init `/home/antoine/docker/compose/` as git repo on iskradocker
+  (`git init`, `.gitignore` `.env* *.backup *.bak*`); first commit captures current state.
+  Complements (does not replace) Kopia `/backup/compose` hourly snapshots.
+- **Fork D (test strategy):** each scheduled update job runs
+  `docker compose -f <file>.yml up -d`, then health-check (`/health` or container health
+  status), and auto-rollbacks on failure using the pre-tagged rollback image.
+
+## Approval gate
+status: awaiting-approval
+pending_action: write `/.omo/plans/iskradocker-updates.md`
+approach: scheduled-script mechanism default; ask user the 3 forks (mechanism, notification, window) + confirm adopted defaults.

@@ -134,20 +134,20 @@ class AppConfig(BaseModel):
                         "or legacy both 'front' and 'back' keys"
                     )
 
-            dfr_channels_seen: set[tuple[int, int]] = set()
+        dfr_channels_seen: set[tuple[int, int]] = set()
+        all_channels_seen: set[int] = set()
 
-            for room_key, room_val in devices.items():
-                room_channels_seen = set()
-                for props in iter_device_props({room_key: room_val}):
-                    ch = props.get("channel")
-                    if isinstance(ch, int):
-                        if ch < 0 or ch > 15:
-                            raise ValueError(
-                                f"hardware channel must be between 0 and 15 (got {ch})"
-                            )
-                        if ch in room_channels_seen:
-                            duplicates = True
-                        room_channels_seen.add(ch)
+        for room_key, room_val in devices.items():
+            for props in iter_device_props({room_key: room_val}):
+                ch = props.get("channel")
+                if isinstance(ch, int):
+                    if ch < 0 or ch > 15:
+                        raise ValueError(
+                            f"hardware channel must be between 0 and 15 (got {ch})"
+                        )
+                    if ch in all_channels_seen:
+                        duplicates = True
+                    all_channels_seen.add(ch)
                     dt = props.get("device_type")
                     if dt is not None:
                         # Accepts both legacy YAML spellings AND canonical names.

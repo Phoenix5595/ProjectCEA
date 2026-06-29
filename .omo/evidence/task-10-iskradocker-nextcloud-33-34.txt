@@ -1,0 +1,92 @@
+Task 10 Evidence: Re-run all post-33 fixes on Nextcloud 34.0.0.12
+Date: 2026-06-22
+Host: iskradocker
+Nextcloud Version: 34.0.0.12
+
+================================================================================
+(a) WebDAV Self-Connectivity Fix (T3)
+================================================================================
+Command: docker exec --user www-data nextcloud-app php occ setupchecks 2>&1 | grep -c "Your web server is not yet properly set up"
+Result: 0
+Status: PASS — WebDAV fix still applies on v34. overwrite.cli.url remains set to http://nextcloud-web.
+
+================================================================================
+(b) 2FA Status Check (T4 — SKIPPED per user request)
+================================================================================
+Command: docker exec --user www-data nextcloud-app php occ app:list | grep twofactor_totp
+Result:   - twofactor_totp: 16.0.0
+Status: PASS — App is present (bundled). NOT enabled per user preference (T4 marked as skipped).
+Action: None taken (as instructed: do NOT install unless explicitly requested).
+
+================================================================================
+(c) DB Missing Indices (T5)
+================================================================================
+Command: docker exec --user www-data nextcloud-app php occ db:add-missing-indices
+Result: (no output — idempotent, nothing new to add)
+Verification: docker exec --user www-data nextcloud-app php occ setupchecks 2>&1 | grep -c "missing optional indices"
+Result: 0
+Status: PASS — No missing indices on v34.
+
+================================================================================
+(d) AppAPI Deploy Daemon Warning (T6)
+================================================================================
+Command: docker exec --user www-data nextcloud-app php occ app:list | grep app_api
+Result:   - app_api: 34.0.0 (installed 32.0.0)
+Note: App is installed but NOT enabled.
+Disable command: docker exec --user www-data nextcloud-app php occ app:disable app_api
+Result: No such app enabled: app_api
+Verification: docker exec --user www-data nextcloud-app php occ setupchecks 2>&1 | grep -c "AppAPI deploy daemon"
+Result: 0
+Status: PASS — AppAPI warning still suppressed on v34.
+
+================================================================================
+(e) Log Level Management (T7)
+================================================================================
+Command: docker exec --user www-data nextcloud-app php occ log:tail 20
+Result: Only 1 warning (updater backup folder missing — expected, benign).
+Action: docker exec --user www-data nextcloud-app php occ log:manage --level 2
+Result: Enabled logging backend: file / Log level: Warning (2) / Log timezone: UTC
+Status: PASS — Log level set to Warning. Old Info/Debug entries cleared from tail view.
+
+================================================================================
+(f) NEW v34-Specific Warnings Catalog
+================================================================================
+Full setupchecks run. No ✗ (errors) found.
+
+Warnings (⚠):
+1. Mimetype migrations available:
+   "One or more mimetype migrations are available. Occasionally new mimetypes are added to better handle certain file types. Migrating the mimetypes take a long time on larger instances so this is not done automatically during upgrades. Use the command `occ maintenance:repair --include-expensive` to perform the migrations."
+   → NEW in v34 (was not present on v33). This is an optional, expensive maintenance task. Not critical for functionality.
+
+2. HTTP headers:
+   "Some headers are not set correctly on your instance - The `Strict-Transport-Security` HTTP header is not set (should be at least `15552000` seconds). For enhanced security, it is recommended to enable HSTS."
+   → ACCEPTED (intentional — no HTTPS configured).
+
+Info (ℹ) — accepted/expected:
+- Errors in the log: 1 warning in the logs since June 15, 2026, 11:31:23 PM (benign updater backup folder)
+- Brute-force Throttle: Your remote address could not be determined. (expected behind reverse proxy)
+- Forwarded for headers: Your remote address could not be determined. (expected behind reverse proxy)
+- HTTPS access and URLs: Your instance is generating insecure URLs. (ACCEPTED — no HTTPS)
+- Second factor configuration: Second factor providers are available but two-factor authentication is not enforced. (ACCEPTED — user skipped T4)
+- Email test: You have not set or verified your email server configuration. (ACCEPTED — not configuring email)
+- Configuration server ID: Server identifier isn't configured. (ACCEPTED — single PHP server)
+
+================================================================================
+(g) Final Verification
+================================================================================
+Command: docker exec --user www-data nextcloud-app php occ setupchecks 2>&1 | grep "✗"
+Result: (no output)
+Status: PASS — Zero fixable errors. Only accepted warnings remain (HTTPS, heartbeat/HSTS, email).
+
+================================================================================
+Summary
+================================================================================
+All post-33 fixes verified on v34.0.0.12:
+- WebDAV: OK
+- DB indices: OK
+- AppAPI: OK (still disabled)
+- Logs: OK (level 2)
+- 2FA: App present, not enabled (per user preference)
+
+NEW v34 warning: Mimetype migrations available (optional, non-critical).
+No files modified. All changes via occ commands only.

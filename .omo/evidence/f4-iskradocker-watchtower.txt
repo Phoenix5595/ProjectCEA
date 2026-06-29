@@ -1,0 +1,85 @@
+F4 Scope Fidelity Check — iskradocker-watchtower
+=================================================
+Date: 2026-06-22
+Host: iskradocker
+Reviewer: Sisyphus-Junior
+
+================================================================================
+CHECK 1: cliproxyapi still managed by Watchtower (unchanged)
+================================================================================
+Command:
+  docker inspect cliproxyapi --format '{{json .Config.Labels}}' | jq -r '.["com.centurylinklabs.watchtower.enable"]'
+
+Result:
+  true
+
+Status: PASS
+
+================================================================================
+CHECK 2: *arr stack NOT labeled for Watchtower
+================================================================================
+Command:
+  for c in qbittorrent prowlarr radarr sonarr bazarr jellyseerr; do
+    echo -n "$c: "
+    docker inspect $c --format '{{json .Config.Labels}}' | jq -r '.["com.centurylinklabs.watchtower.enable"] // "absent"'
+  done
+
+Results:
+  qbittorrent: absent
+  prowlarr: absent
+  radarr: absent
+  sonarr: absent
+  bazarr: absent
+  jellyseerr: absent
+
+Status: PASS (all 6 containers are absent)
+
+================================================================================
+CHECK 3: Only approved containers have Watchtower label
+================================================================================
+Command:
+  docker ps -q | xargs -I {} docker inspect {} --format '{{.Name}} {{json .Config.Labels}}' | grep -i watchtower.enable
+
+Containers with watchtower label found:
+  1. /cliproxyapi
+  2. /nextcloud-app
+  3. /nextcloud-web
+  4. /nextcloud-redis
+  5. /nextcloud-cron
+  6. /jellyfin
+  7. /immich_server
+  8. /immich_machine_learning
+  9. /immich_redis
+
+Approved list:
+  cliproxyapi, nextcloud-app, nextcloud-web, nextcloud-redis, nextcloud-cron,
+  jellyfin, immich-server, immich-machine-learning, immich-redis
+
+Not found (expected):
+  nextcloud-db, immich-postgres, any *arr container
+
+Status: PASS (exactly 9 approved containers labeled, no extras)
+
+================================================================================
+CHECK 4: No custom autoupdate/watchtower scripts or timers
+================================================================================
+Command:
+  find /home/antoine/docker -name '*autoupdate*' -o -name '*watchtower*' 2>/dev/null | grep -v compose/proxy.yml | grep -v AGENTS.md
+
+Result:
+  (empty)
+
+Status: PASS
+
+================================================================================
+VERDICT
+================================================================================
+APPROVE
+
+All 4 checks passed:
+  [PASS] Check 1 — cliproxyapi watchtower label = true
+  [PASS] Check 2 — All *arr containers have no watchtower label (absent)
+  [PASS] Check 3 — Only 9 approved containers have watchtower label
+  [PASS] Check 4 — No custom autoupdate/watchtower scripts found
+
+No deviations from the iskradocker-watchtower plan scope detected.

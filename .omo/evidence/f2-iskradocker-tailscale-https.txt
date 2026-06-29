@@ -1,0 +1,46 @@
+=== Final Verification F2: iskradocker-tailscale-https ===
+Date: 2026-06-23
+
+---
+1. No leftover test cert files in /tmp
+Command: ls /tmp/ts-test.* 2>/dev/null
+Result: (empty output)
+Status: PASS
+
+---
+2. Tailscale serve status shows exactly 3 rules
+Command: tailscale serve status
+Result:
+https://iskradocker.tail7a351e.ts.net:9443 (tailnet only)
+|-- / proxy http://localhost:2283
+
+https://iskradocker.tail7a351e.ts.net (tailnet only)
+|-- / proxy http://localhost:8082
+
+https://iskradocker.tail7a351e.ts.net:8443 (tailnet only)
+|-- / proxy http://localhost:8096
+
+Status: PASS (exactly 3 rules)
+
+---
+3. nginx config syntactically valid
+Command: docker exec nextcloud-web nginx -t
+Result:
+nginx: the configuration file /etc/nginx/nginx.conf syntax is ok
+nginx: configuration file /etc/nginx/nginx.conf test is successful
+Status: PASS
+
+---
+4. Nextcloud trusted_domains consecutive indices 0-5
+Command: docker exec --user www-data nextcloud-app php occ config:system:get trusted_domains
+Result:
+localhost
+192.168.1.77
+iskradocker
+100.123.38.1
+nextcloud-web
+iskradocker.tail7a351e.ts.net
+Status: PASS (6 entries, indices 0-5)
+
+---
+OVERALL: ALL CHECKS PASSED

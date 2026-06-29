@@ -1,0 +1,72 @@
+================================================================================
+F4 SCOPE FIDELITY CHECK: iskradocker-tailscale-https
+================================================================================
+Date: 2026-06-23
+Host: iskradocker (100.123.38.1)
+User: antoine
+================================================================================
+
+[PASS] CHECK 1 — No ports opened to WAN
+Command: sudo iptables -L INPUT -n | grep -E "443|8443|9443"
+Result: (empty — no public-facing rules found)
+Note: iptables-legacy tables present, but no matching rules in INPUT chain.
+
+[PASS] CHECK 2 — No new Docker containers added
+Command: docker ps --format "{{.Names}}" | wc -l
+Result: 27 containers running
+Container list:
+  bazarr
+  blackbox
+  cadvisor
+  calibre-gui
+  calibre-web
+  cliproxyapi
+  compose-watchtower-1
+  grafana
+  homepage
+  immich_machine_learning
+  immich_postgres
+  immich_redis
+  immich_server
+  jellyfin
+  jellyseerr
+  kopia
+  nextcloud-app
+  nextcloud-cron
+  nextcloud-db
+  nextcloud-redis
+  nextcloud-web
+  node_exporter
+  prometheus
+  prowlarr
+  qbittorrent
+  radarr
+  sonarr
+
+[PASS] CHECK 3 — No new systemd timers for scoped services
+Command: systemctl list-timers --all 2>/dev/null | grep -i nextcloud\|jellyfin\|immich\|tailscale
+Result: Found 1 timer: snap.nextcloud.logrotate.timer (pre-existing snap package timer, not new)
+No new timers for jellyfin, immich, or tailscale.
+
+[PASS] CHECK 4 — No cron jobs added for scoped services
+Command: crontab -l 2>/dev/null | grep -i nextcloud\|jellyfin\|immich\|tailscale
+Result: (empty — no matching cron jobs)
+
+[PASS] CHECK 5 — CLIProxyAPI dashboard Caddyfile unchanged (hash recorded)
+Command: md5sum /home/antoine/docker/compose/Caddyfile-https
+Result: e42498e417bb83cdd7055f587e8ed03c  /home/antoine/docker/compose/Caddyfile-https
+
+[PASS] CHECK 6 — Watchtower labels intact on nextcloud-app
+Command: docker inspect nextcloud-app --format '{{.Config.Labels}}' | grep -i watchtower
+Result: com.centurylinklabs.watchtower.enable:true
+
+[PASS] CHECK 7 — nextcloud-db / nextcloud-redis / immich_postgres not recreated
+Command: docker inspect <container> --format '{{.State.StartedAt}}'
+Results:
+  nextcloud-db:    2026-05-08T13:28:59.105691669Z  (old — not recreated)
+  nextcloud-redis: 2026-06-22T22:23:17.53506809Z   (old — not recreated)
+  immich_postgres: 2026-06-22T20:37:51.217250241Z  (old — not recreated)
+
+================================================================================
+VERDICT: ALL CHECKS PASSED — Scope boundaries respected.
+================================================================================
