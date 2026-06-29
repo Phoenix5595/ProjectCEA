@@ -99,6 +99,19 @@ class ServiceContainer:
             # 3. Initialize hardware
             await self._init_hardware()
 
+            # 3a. Startup fail-safe: force every MCP23017 relay OFF before any
+            # restore step runs. Guarantees a clean OFF state across unclean
+            # reboots regardless of what the OLAT latches retained.
+            if self.mcp23017 is not None:
+                try:
+                    self.mcp23017.all_off()
+                    logger.info(
+                        "Startup force-off: all MCP23017 relays set to OFF "
+                        f"(active_low={self.mcp23017.active_low})"
+                    )
+                except Exception as e:
+                    logger.warning(f"Startup force-off failed (continuing): {e}")
+
             # 4. Initialize interlock manager
             devices = self.config.get_devices()
             interlocks = self.config.get("interlocks", [])
@@ -191,10 +204,15 @@ class ServiceContainer:
 
         MCP23017 = relays only (on/off), typically bus 0.
         DFR0971 = dimming only (0-10V), typically bus 1.
+
+        Both drivers are real-hardware-only. Probe failure is FATAL: the
+        service refuses to start with relays/dimmers in an unknown state
+        rather than continuing with the bus in a degraded state, which
+        could mask a wiring fault at exactly the moment the crop needs
+        protection.
         """
         assert self.config is not None, "Config must be loaded before hardware initialization"
         hardware_config = self.config.get("hardware", {})
-        simulation = hardware_config.get("simulation", False)
         i2c_bus_legacy = hardware_config.get("i2c_bus", 1)
 
         # Separate buses: MCP for relays, DFR0971 for dimming (fallback to legacy i2c_bus)
@@ -211,47 +229,58 @@ class ServiceContainer:
             )
 
         # Initialize MCP23017 relay driver (relays only)
-        require_mcp = hardware_config.get("require_mcp", False)
+        # Polarity: SainSmart 16-channel board is active-LOW ("Low Level Trigger").
+        # Default active_low=True keeps the safe SainSmart behavior; flip to False
+        # in hardware_config for active-HIGH boards.
+        active_low = hardware_config.get("active_low", True)
         try:
             self.mcp23017 = MCP23017Driver(
-                i2c_bus=mcp_i2c_bus, i2c_address=i2c_address, simulation=simulation
+                i2c_bus=mcp_i2c_bus,
+                i2c_address=i2c_address,
+                active_low=active_low,
             )
             logger.info(
-                f"MCP23017 initialized on bus {mcp_i2c_bus} (relays only, addr=0x{i2c_address:02x}, simulation={simulation})"
+                f"MCP23017 initialized on bus {mcp_i2c_bus} "
+                f"(relays only, addr=0x{i2c_address:02x}, active_low={active_low})"
             )
-            if not simulation and not self.mcp23017.probe():
-                if require_mcp:
-                    raise RuntimeError(
-                        "MCP23017 probe failed (I2C not responding); require_mcp is true"
-                    )
-                logger.warning("MCP23017 probe failed, falling back to simulation mode")
-                self.mcp23017 = MCP23017Driver(simulation=True)
         except Exception as e:
-            if require_mcp and "probe failed" in str(e):
-                raise
             logger.error(f"Failed to initialize MCP23017: {e}")
-            self.mcp23017 = MCP23017Driver(simulation=True)
-            logger.warning("Using MCP23017 in simulation mode")
+            raise RuntimeError(f"MCP23017 initialization failed on bus {mcp_i2c_bus}: {e}") from e
+
+        if not self.mcp23017.probe():
+            logger.error(
+                f"MCP23017 probe failed (I2C not responding on bus {mcp_i2c_bus} "
+                f"at 0x{i2c_address:02x}); refusing to start with relays in an "
+                f"unknown state"
+            )
+            raise RuntimeError(
+                f"MCP23017 probe failed (I2C not responding on bus {mcp_i2c_bus} "
+                f"at 0x{i2c_address:02x}); hardware is required"
+            )
 
         # Initialize DFR0971 light dimming manager (dimming only)
         if dfr0971_boards:
             try:
-                self.dfr0971_manager = DFR0971Manager(
-                    i2c_bus=dfr0971_i2c_bus, simulation=simulation
-                )
-                # Add each board to the manager
+                self.dfr0971_manager = DFR0971Manager(i2c_bus=dfr0971_i2c_bus)
+                # Add each board to the manager; a board that fails to add
+                # is FATAL because we cannot dim a light we cannot address.
                 for board in dfr0971_boards:
                     board_id = board.get("board_id", 0)
                     i2c_addr = board.get("i2c_address", 0x58)
                     board_name = board.get("name", f"Board {board_id}")
-                    self.dfr0971_manager.add_board(board_id, i2c_addr, board_name)
+                    if not self.dfr0971_manager.add_board(board_id, i2c_addr, board_name):
+                        raise RuntimeError(
+                            f"DFR0971 board {board_id} at 0x{i2c_addr:02x} failed to initialize"
+                        )
                 logger.info(
                     f"DFR0971 manager initialized on bus {dfr0971_i2c_bus} (dimming only) "
                     f"with {len(dfr0971_boards)} boards"
                 )
             except Exception as e:
                 logger.error(f"Failed to initialize DFR0971 manager: {e}")
-                self.dfr0971_manager = None
+                raise RuntimeError(
+                    f"DFR0971 initialization failed on bus {dfr0971_i2c_bus}: {e}"
+                ) from e
         else:
             logger.info("No DFR0971 boards configured")
             self.dfr0971_manager = None

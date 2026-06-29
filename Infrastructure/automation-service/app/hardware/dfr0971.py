@@ -10,7 +10,6 @@ from shared.infra_logging import get_logger
 DFR0971 2-Channel I2C 0-10V DAC Module Driver
 Controls DFR0971 modules for HLG320B light dimming
 Supports multiple boards with different I2C addresses
-Supports simulation mode when hardware is not connected
 """
 
 logger = get_logger(__name__)
@@ -44,50 +43,31 @@ class DFR0971Driver:
     Handles one DFR0971 board (one I2C address, 2 channels)
     """
 
-    def __init__(
-        self, i2c_bus: int = 1, i2c_address: int = DFR0971_DEFAULT_ADDRESS, simulation: bool = False
-    ):
+    def __init__(self, i2c_bus: int = 1, i2c_address: int = DFR0971_DEFAULT_ADDRESS):
         """
         Initialize DFR0971 driver
 
         Args:
             i2c_bus: I2C bus number (usually 1 on Raspberry Pi)
             i2c_address: I2C address of DFR0971 (default 0x58)
-            simulation: If True, simulate hardware without actual I2C communication
         """
         self.i2c_bus = i2c_bus
         self.i2c_address = i2c_address
-        self.simulation = simulation
         self.bus: Any = None
         self._channel_states = [0.0, 0.0]  # Track voltage for channels 0 and 1
         self._range_set = False
         self._voltage_range = 10000  # 10V range in millivolts
 
-        if not simulation:
-            try:
-                import smbus2
+        import smbus2
 
-                self.bus = smbus2.SMBus(i2c_bus)
-                self._initialize_hardware()
-                logger.info(
-                    f"DFR0971 initialized on I2C bus {i2c_bus}, address 0x{i2c_address:02X}"
-                )
-            except ImportError:
-                logger.warning("smbus2 not available, falling back to simulation mode")
-                self.simulation = True
-            except Exception as e:
-                logger.error(f"Failed to initialize DFR0971 hardware: {e}")
-                logger.warning("Falling back to simulation mode")
-                self.simulation = True
-
-        if self.simulation:
-            logger.info(f"DFR0971 running in simulation mode (address 0x{i2c_address:02X})")
+        self.bus = smbus2.SMBus(i2c_bus)
+        self._initialize_hardware()
+        logger.info(
+            f"DFR0971 initialized on I2C bus {i2c_bus}, address 0x{i2c_address:02X}"
+        )
 
     def _initialize_hardware(self):
         """Initialize DFR0971 hardware - set output range to 10V"""
-        if self.simulation:
-            return
-
         try:
             import time
 
@@ -98,7 +78,6 @@ class DFR0971Driver:
             self._set_output_range(DFR0971_RANGE_10V)
             time.sleep(0.05)
 
-            # Store settings to EEPROM
             try:
                 self.store_settings()
                 time.sleep(0.1)
@@ -113,13 +92,10 @@ class DFR0971Driver:
 
     def _set_output_range(self, range_value: int):
         """Set output range (5V or 10V)"""
-        if self.simulation:
-            return
-
         import time
 
         try:
-            assert self.bus is not None, "I2C bus must be initialized when not in simulation mode"
+            assert self.bus is not None, "I2C bus must be initialized"
             self.bus.write_word_data(self.i2c_address, DFR0971_CMD_SET_RANGE, range_value)
             time.sleep(0.02)
 
@@ -149,16 +125,9 @@ class DFR0971Driver:
             logger.error(f"Invalid channel number: {channel} (must be 0 or 1)")
             return False
 
-        # Clamp voltage to valid range
         voltage = max(0.0, min(10.0, voltage))
 
         try:
-            if self.simulation:
-                self._channel_states[channel] = voltage
-                logger.debug(f"Simulation: Channel {channel} set to {voltage:.2f}V")
-                return True
-
-            # Ensure output range is set before setting voltage
             if not self._range_set:
                 try:
                     self._set_output_range(DFR0971_RANGE_10V)
@@ -166,8 +135,6 @@ class DFR0971Driver:
                 except Exception as e:
                     logger.warning(f"Failed to set output range before voltage write: {e}")
 
-            # Convert voltage (0.0-10.0) to DAC value
-            # Formula: (voltage / 10.0) * 4095 << 4
             dac_12bit = int((voltage / 10.0) * 4095)
             dac_12bit = max(0, min(4095, dac_12bit))
             dac_value = dac_12bit << 4
@@ -181,7 +148,7 @@ class DFR0971Driver:
 
             import time
 
-            assert self.bus is not None, "I2C bus must be initialized when not in simulation mode"
+            assert self.bus is not None, "I2C bus must be initialized"
             self.bus.write_word_data(self.i2c_address, reg_addr, dac_value)
             time.sleep(0.05)
 
@@ -259,14 +226,10 @@ class DFR0971Driver:
         Returns:
             True if successful, False otherwise
         """
-        if self.simulation:
-            logger.debug("Simulation: Settings stored")
-            return True
-
         import time
 
         try:
-            assert self.bus is not None, "I2C bus must be initialized when not in simulation mode"
+            assert self.bus is not None, "I2C bus must be initialized"
             self.bus.write_byte(self.i2c_address, DFR0971_CMD_STORE)
             time.sleep(0.02)
             logger.debug("DFR0971 settings stored to EEPROM")
@@ -280,7 +243,7 @@ class DFR0971Driver:
 
     def close(self):
         """Close I2C connection and cleanup"""
-        if self.bus and not self.simulation:
+        if self.bus:
             try:
                 self.bus.close()
                 logger.info(f"DFR0971 I2C connection closed (address 0x{self.i2c_address:02X})")
@@ -302,16 +265,14 @@ class DFR0971Manager:
     Provides unified interface to control multiple boards
     """
 
-    def __init__(self, i2c_bus: int = 1, simulation: bool = False):
+    def __init__(self, i2c_bus: int = 1):
         """
         Initialize DFR0971 manager
 
         Args:
             i2c_bus: I2C bus number (usually 1 on Raspberry Pi)
-            simulation: If True, simulate hardware without actual I2C communication
         """
         self.i2c_bus = i2c_bus
-        self.simulation = simulation
         self._boards: dict[int, DFR0971Driver] = {}
         self._board_configs: dict[int, DFR0971Board] = {}
         self._i2c_to_board: dict[int, int] = {}
@@ -333,17 +294,16 @@ class DFR0971Manager:
 
         try:
             driver = DFR0971Driver(
-                i2c_bus=self.i2c_bus, i2c_address=i2c_address, simulation=self.simulation
+                i2c_bus=self.i2c_bus, i2c_address=i2c_address
             )
 
-            if not self.simulation:
-                try:
-                    driver.store_settings()
-                    logger.info(
-                        f"DFR0971 board {board_id} initialized at address 0x{i2c_address:02X} (range set to 10V)"
-                    )
-                except Exception as e:
-                    logger.warning(f"Could not store settings for board {board_id}: {e}")
+            try:
+                driver.store_settings()
+                logger.info(
+                    f"DFR0971 board {board_id} initialized at address 0x{i2c_address:02X} (range set to 10V)"
+                )
+            except Exception as e:
+                logger.warning(f"Could not store settings for board {board_id}: {e}")
 
             self._boards[board_id] = driver
             self._board_configs[board_id] = DFR0971Board(

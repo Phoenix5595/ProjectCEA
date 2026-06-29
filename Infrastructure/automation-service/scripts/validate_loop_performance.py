@@ -3,7 +3,7 @@ from datetime import datetime
 import os
 import sys
 import time
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 # Add the application and shared directory to the path
 sys.path.append(os.path.join(os.getcwd(), "Infrastructure/automation-service"))
@@ -21,12 +21,45 @@ from app.database import DatabaseManager
 from app.hardware.mcp23017 import MCP23017Driver
 
 
+class _FakeSMBus:
+    """In-memory stand-in for smbus2.SMBus used during the load test.
+
+    The control loop hits MCP23017 once per tick (read current GPIOA to
+    compare against the desired state). This fake records writes and
+    returns what was last written so the driver's read-modify-write
+    cycle works without real hardware.
+    """
+
+    _instances: list["_FakeSMBus"] = []
+
+    def __init__(self, bus: int) -> None:
+        self.bus = bus
+        self.regs: dict[tuple[int, int], int] = {}
+        _FakeSMBus._instances.append(self)
+
+    def write_byte_data(self, addr: int, reg: int, value: int) -> None:
+        self.regs[(addr, reg)] = value & 0xFF
+
+    def read_byte_data(self, addr: int, reg: int) -> int:
+        return self.regs.get((addr, reg), 0)
+
+    def write_byte(self, addr: int, value: int) -> None:
+        return
+
+    def write_word_data(self, addr: int, reg: int, value: int) -> None:
+        self.regs[(addr, reg)] = value & 0xFF
+        self.regs[(addr, (reg + 1) & 0xFF)] = (value >> 8) & 0xFF
+
+    def close(self) -> None:
+        return
+
+
 async def run_load_test():
     print("Starting 1Hz Control Loop Load Test (Simulated 10 minutes)...")
 
-    # Initialize components with simulation mode
+    # Initialize components with the real MCP23017 driver; hardware I2C
+    # is replaced with _FakeSMBus via unittest.mock.patch below.
     config = ConfigLoader("Infrastructure/automation-service/automation_config.yaml")
-    config._config["hardware"]["simulation"] = True
     config._config["control"]["update_interval"] = 1
 
     db = DatabaseManager()
@@ -103,11 +136,12 @@ async def run_load_test():
     redis_client.check_last_good_age = MagicMock(return_value=(True, 1.0))
     db._automation_redis = redis_client
 
-    mcp_driver = MCP23017Driver(
-        i2c_bus=config.get("hardware.mcp_i2c_bus", 0),
-        i2c_address=config.get("hardware.i2c_address", 0x27),
-        simulation=True,
-    )
+    with patch("smbus2.SMBus", new=_FakeSMBus):
+        mcp_driver = MCP23017Driver(
+            i2c_bus=config.get("hardware.mcp_i2c_bus", 0),
+            i2c_address=config.get("hardware.i2c_address", 0x27),
+            active_low=config.get("hardware.active_low", True),
+        )
     interlock_manager = InterlockManager(config.get_devices(), config.get_interlocks())
     relay_manager = RelayManager(mcp_driver, config.get_devices(), interlock_manager)
 

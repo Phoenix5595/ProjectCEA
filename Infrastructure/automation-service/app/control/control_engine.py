@@ -74,7 +74,13 @@ class ControlEngine:
         # Initialize extracted components
         self.sensor_data_manager = SensorDataManager(database)
         self.pid_controller_manager = PIDControllerManager(database)
-        self.device_controller = DeviceController(relay_manager, database, dfr0971_manager)
+        control_cfg = config.get_control_config() if config is not None else {}
+        self.device_controller = DeviceController(
+            relay_manager,
+            database,
+            dfr0971_manager,
+            binary_hysteresis=float(control_cfg.get("binary_hysteresis", 0.1)),
+        )
 
         # VPD Cascade Controller for intelligent actuator selection (create before DeviceProcessor)
         self.vpd_cascade_controller = VPDCascadeController(

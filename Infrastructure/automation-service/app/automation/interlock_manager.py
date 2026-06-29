@@ -32,6 +32,12 @@ class InterlockManager:
         self.device_load_callback = device_load_callback
         self._build_interlock_map()
         logger.info("Initialized interlock manager with load-based interlock support")
+        if len(self.interlock_rules) == 0:
+            logger.warning(
+                "No interlock rules configured. Safety rule "
+                "'heating failure -> exhaust inhibition' (AGENTS.md) is NOT enforced. "
+                "This is intentional per user decision; corrected interlock deferred to future plan."
+            )
 
     def _build_interlock_map(self):
         """Build interlock mapping from config."""
