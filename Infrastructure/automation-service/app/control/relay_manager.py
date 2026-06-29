@@ -184,8 +184,17 @@ class RelayManager:
             state: 0 = OFF, 1 = ON
 
         Returns:
-            True if successful, False otherwise
+            True if successful, False otherwise. Refuses and returns False
+            (with a WARNING log) if ``channel`` is not in the current device
+            channel map, so callers cannot accidentally toggle an unmapped
+            or removed device's relay.
         """
+        if channel not in self._channel_map:
+            logger.warning(
+                f"Refusing to set channel {channel} to {'ON' if state else 'OFF'}: "
+                f"channel is not in the current device channel map"
+            )
+            return False
         success = self.mcp23017.set_channel(channel, state == 1)
         if success:
             # Update internal state if we know the device

@@ -8,8 +8,8 @@ hardware:
   mcp_i2c_bus: 0          # Relays only (MCP23017); MCP is connected on bus 0
   dfr0971_i2c_bus: 1      # Dimming only (DF Robot DAC), typically bus 1
   i2c_address: 0x20        # MCP23017 I2C address (0x20-0x27, check with: i2cdetect -y 1)
-  simulation: false       # Set to true for testing without hardware
-  require_mcp: false      # If true, startup fails when MCP23017 probe fails; else fallback to simulation
+  active_low: true         # SainSmart 16-channel relay board is active-LOW ("Low Level Trigger"); flip to false for active-HIGH boards
+  require_mcp: true        # FATAL on probe failure — no silent simulation fallback (real hardware required)
 
 # Device Configuration
 # MCP: 16 relay channels (0-15). DFR0971: 6 dimming channels (3 boards × 2 channels each).
@@ -114,6 +114,14 @@ control:
   
   # Control Loop Settings
   update_interval: 2       # seconds - How often control runs (1-5 max, non-negotiable)
+
+  # Binary-device hysteresis band. Devices that are currently OFF only transition
+  # ON when the control output > 0.5 + binary_hysteresis, and devices currently ON
+  # only transition OFF when output < 0.5 - binary_hysteresis. In the band the
+  # prior state is preserved and no hardware write is issued, which prevents the
+  # relay chatter seen on R8/R10 (ch7/ch9) when PID output hovers at the threshold.
+  # Per-device override: devices.<loc>.<cluster>.<device>.binary_hysteresis
+  binary_hysteresis: 0.1
 
 # Interlock Rules (Safety)
 # These are global rules that prevent conflicting device states

@@ -177,7 +177,6 @@ async def health_check(
         "hardware": {
             "mcp": {
                 "connected": mcp.is_connected(),
-                "simulation": mcp.simulation,
             },
         },
     }

@@ -53,7 +53,7 @@ async def relay_test(
     """Run relay channel test: toggle each channel, read back, report pass/fail.
 
     Commissioning endpoint: briefly turns relays ON then OFF. Use single channel
-    or all. In simulation mode runs the same flow and reports mcp_connected: false.
+    or all. Real hardware is required; ``mcp_connected`` reports probe status.
     """
     if body.channel is not None:
         if body.channel < 0 or body.channel > 15:
@@ -103,7 +103,6 @@ async def relay_state(
 ) -> dict[str, Any]:
     mcp = relay_manager.mcp23017
     mcp_connected = mcp.is_connected()
-    simulation = mcp.simulation
 
     # Try Redis cache first
     channels: list[bool] | None = None
@@ -149,5 +148,4 @@ async def relay_state(
         "channels": channels,
         "timestamps": timestamps,
         "mcp_connected": mcp_connected,
-        "simulation": simulation,
     }
