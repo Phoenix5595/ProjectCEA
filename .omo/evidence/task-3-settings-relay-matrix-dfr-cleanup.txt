@@ -1,0 +1,107 @@
+## Task 3 Verification: /api/hardware/relays/state timestamps accuracy
+
+### Date: 2026-07-05
+
+---
+
+### 1. Endpoint returns `timestamps: (string|null)[]` array of 16 elements
+
+**Source:** `Infrastructure/automation-service/app/routes/hardware.py:98-151`
+
+The `relay_state` endpoint constructs:
+```python
+timestamps: list[str | None] = [None] * 16
+```
+
+It reads from Redis cache (`RELAY_TIMESTAMPS`) and falls back to TimescaleDB `control_action_repo.get_last_changed_per_channel()` only if all 16 entries are null (cold start). The returned JSON contains exactly 16 elements.
+
+**Curl output (live):**
+```json
+{
+    "channels": [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false],
+    "timestamps": [
+        null,
+        null,
+        "2026-06-24T00:00:24.918995Z",
+        "2026-07-05T14:00:00.811634Z",
+        "2026-07-05T14:00:00.811634Z",
+        "2026-07-05T14:00:00.811634Z",
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+    ],
+    "mcp_connected": true
+}
+```
+
+- Array length: 16 elements ✓
+- Types: mix of ISO 8601 strings and `null` ✓
+- `null` entries correspond to channels that have never changed state ✓
+
+---
+
+### 2. Timestamps reflect actual relay transitions (not spurious in-band hysteresis output)
+
+**Source:** `Infrastructure/automation-service/app/control/device_controller.py` (Todo 2 fix)
+
+Todo 2 changed `_log_control_action` line 767 from:
+```python
+new_state = 1 if control_output > 0.5 else 0
+```
+to:
+```python
+new_state = self.relay_manager.get_device_state(location, cluster, device_name) or 0
+```
+
+This ensures `new_state` is the **actual** relay state after hysteresis is applied, not the raw control output. The `control_action_repo.log_control_action` short-circuits on `old_state == new_state`, so no spurious log is written when hysteresis preserves the state.
+
+The timestamps in the endpoint come from:
+1. Redis `RELAY_TIMESTAMPS` — updated by `hardware_batch` only when a channel **actually changes state**
+2. DB fallback `get_last_changed_per_channel()` — queries the `control_history` table where only real transitions are logged
+
+Therefore, the timestamps accurately reflect physical relay transitions, not in-band hysteresis noise. ✓
+
+---
+
+### 3. NO new endpoint was created
+
+**Command:** `grep -r "state-changes" Infrastructure/automation-service/app/routes/ Infrastructure/frontend/src/`
+
+**Result:** `No state-changes endpoint found (exit code: 1)`
+
+No new endpoint, no new API client method, no new types. ✓
+
+---
+
+### 4. Frontend already consumes the field
+
+**Source:** `Infrastructure/frontend/src/services/api.ts:238`
+
+```typescript
+async getRelayBoardState(): Promise<{ channels: boolean[]; timestamps: (string | null)[]; mcp_connected: boolean; simulation: boolean }> {
+    const response = await this.automationClient.get('/api/hardware/relays/state');
+    return response.data;
+}
+```
+
+The frontend type already includes `timestamps: (string | null)[]`. ✓
+
+---
+
+### Summary
+
+| Check | Status |
+|-------|--------|
+| 16-element timestamps array | PASS |
+| Timestamps reflect actual transitions | PASS |
+| No new endpoint created | PASS |
+| Frontend type matches | PASS |
+
+All verification criteria met. No code changes required.

@@ -311,6 +311,8 @@ class BackgroundTasks:
                 # Sync PID parameters from Redis to DB (worker pattern execution)
                 device_types = ["heater", "co2"]
                 synced_count = 0
+                default_location = "Flower Room"
+                default_cluster = "main"
 
                 for device_type in device_types:
                     try:
@@ -319,7 +321,9 @@ class BackgroundTasks:
                         )
                         if redis_params:
                             # Check if different from DB
-                            db_params = await self.database.pid_repo.get_pid_parameters(device_type)
+                            db_params = await self.database.pid_repo.get_pid_parameters(
+                                default_location, default_cluster, device_type
+                            )
                             if db_params:
                                 # Compare and update if different
                                 if (
@@ -328,6 +332,8 @@ class BackgroundTasks:
                                     or redis_params.get("kd") != db_params["kd"]
                                 ):
                                     await self.database.pid_repo.set_pid_parameters(
+                                        default_location,
+                                        default_cluster,
                                         device_type,
                                         redis_params["kp"],
                                         redis_params["ki"],

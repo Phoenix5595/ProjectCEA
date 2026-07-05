@@ -1,0 +1,158 @@
+# Plan draft: settings-relay-matrix-dfr-cleanup
+
+**Status:** awaiting-approval (approval brief presented, waiting for user OK)
+**Started:** 2026-06-30
+**Routing:** CLEAR intent — user explicitly asked to be interviewed for UI decisions.
+Two-filter result: Component 2 is discoverable (researched, no question);
+Components 1 + 3 are genuine owner-decisions → asked.
+
+## Deploy-truth finding (2026-06-30)
+
+Last successful `./deploy.sh`: release `20260629-182808-9535f69`,
+landed 2026-06-29 18:31:50 EDT — exactly when running `automation-service`
+started. `deploy_state.json` confirms.
+
+After that deploy, these local (uncommitted) edits were made today and never deployed:
+- `routes/routes.py` — Jun 30 08:45 (registers `system_config.router`)
+- `routes/devices.py` — modified (uses config.write_full_config + lock)
+- `SystemSettingsPanel.tsx` — Jun 30 10:07 (untracked)
+- `app/routes/system_config.py` — untracked (route file)
+- `app/schemas/system_config.py` — untracked (schema)
+- `dist/` rebuilt by hand at Jun 30 10:17 (NOT via deploy.sh)
+
+That is why SystemSettingsPanel is wired but `/api/config` returns 404 against the
+running process: the route module was never imported.
+
+→ C2 fix collapses into "commit + ./deploy.sh"; no code change for C2.
+
+## Symptom 3 root cause (CONFIRMED, no question)
+
+`DeviceManager.tsx:134-138` calls:
+  buildRelayChannelViewModels(displayChannels, relayState.channels, {})
+
+The third arg is `{}` — the empty `lastStateChangeByDevice` map. That makes
+`lastStateChangeAt = null` for every channel, so `formatElapsedSince(null, nowMs)`
+permanently returns `'Unknown'`. The label is not "frozen"; it never had a value.
+
+Fix: fetch control history per ZONE inside DeviceManager (same call signature as
+`useSensorPolling`: `apiClient.getControlHistory(zone.location, zone.cluster, 10)`),
+run `buildLastStateChangeMap(history)` (already exported from `relayViewModel.ts`),
+pass result as the third arg.
+
+## Symptom 1 — flagged for on-device investigation, not pre-committed fix
+
+The statusByChannel + manualTimersByChannel state path looks correct in source;
+direct API probe confirms control endpoint works
+(`POST /api/devices/Flower Room/main/Heater Flower/control` → 200 success:true).
+Cannot reproduce from source alone. Plan: investigate on the deployed UI after
+release; if the countdown truly doesn't render, capture the failing step and
+add a targeted fix as a follow-up — do NOT pre-emptively rewrite it.
+
+## User UI decisions (recorded)
+
+C1 — cut from matrix (multi-select answer): **panel chrome** + **RelayGlyph**
+  → Delete: header "16-CH Relay Module", subtitle "MCP23017 · SainSmart layout",
+    TerminalStrip A/B decorations, "Left (R 1–8) / Right (R 16–9)" column labels,
+    "Low-level Input" footer strip.
+  → Delete from each box: the 4px-wide colored vertical bar (`RelayGlyph`).
+  → KEEP: row numbers, status badge, LED dot, device name, type label,
+    elapsed label, location label, control menu, tooltip.
+
+C1 symptom of "not working" (multi-select answer): **symptom 1 + symptom 3**
+  → Symptom 3 (elapsed "Unknown") — root cause confirmed above; plan: wire map.
+  → Symptom 1 (timer MM:SS countdown not appearing) — investigate on
+    deployed UI; do not commit to a code path yet.
+
+C3 — DFR layout (single-select answer): "the channels inside a DFR board
+  should be side by side, not top and below"
+  → Change `<div className="grid grid-cols-1 ...">` (currently stacks the two
+    `renderChannel` calls per board card) to `grid-cols-2`.
+  → NO other layout change requested. User did NOT ask to drop the square
+    aspect or the rename field. Out of scope to touch them.
+
+## Request (paraphrased)
+
+Three issues in the Devices page (Devices & Relays tab + Settings tab):
+
+1. **Relay matrix** (`RelayChannelMatrix` + `RelayChannelBox`): "lots of space used
+   for useless information, and the timing fields aren't working."
+2. **SystemSettingsPanel** (the YAML config editor): "I just made this; can't see
+   it in the settings section of the frontend; it should be there."
+3. **DfrBoardsPanel** (DFR0971 section): "takes up too much space, much space
+   is unused and will never be."
+
+User correction of scope: the "new zone" was a misspeak — they meant the
+newly-added SystemSettingsPanel (the YAML-backed settings component).
+
+## Topology lock (3 independent components)
+
+| ID | Component | Files | Outcome |
+|----|-----------|-------|---------|
+| C1 | Relay matrix UI cleanup + timing fix | `RelayChannelMatrix.tsx`, `RelayChannelBox.tsx`, `DeviceManager.tsx` (timer state) | Trim useless info, fix broken timing |
+| C2 | SystemSettingsPanel not visible | `SystemSettingsPanel.tsx` (FE), `app/routes/system_config.py` (BE), `app/routes/routes.py` registration | Render the YAML editor in Settings tab |
+| C3 | DFR panel space reclamation | `DfrBoardsPanel.tsx` | Collapse waste, reclaim vertical space |
+
+## Findings (grounded)
+
+### C2 — root cause CONFIRMED by direct probe (no question needed)
+
+- `SystemSettingsPanel.tsx`, `app/schemas/system_config.py`, `app/routes/system_config.py` are all UNTRACKED (`??` in `git status`).
+- `app/routes/routes.py` is M (modified) — adds `from app.routes import ... system_config` + `app.include_router(system_config.router, ...)` + DI override.
+- The new TSX/TS/py files were saved **2026-06-30 08:45–10:07 EDT**.
+- `npm run build` was run **2026-06-30 10:17** — fresh `dist/assets/DeviceConfig-De48FDTo.js` contains both `SystemSettings` render code AND `DfrBoards` body (grep-confirmed). Build is good.
+- `automation-service` last started **Mon 2026-06-29 18:31:50 EDT** — BEFORE the new route file was saved.
+- Direct probe with the correct `X-API-Key`: `GET /api/config` → **HTTP 404 `{"error":"Not found"}`**.
+- Python imports route modules at startup (`register_routes` in `routes/routes.py`); the running process has NOT imported `system_config.router`.
+- Therefore SystemSettingsPanel mounts, calls `apiClient.getConfig()` → 404 → `loadConfig` catch → `config=null` → renders `Failed to load settings` (line 440 of SystemSettingsPanel.tsx).
+
+**Fix for C2 is trivial — one command, no plan slot needed:**
+`sudo systemctl restart automation-service`
+
+After restart: `system_config.router` loads, `/api/config` returns 200, panel renders.
+I will present this as a found fact in the next message and let the user verify
+before deciding whether C2 even belongs in the plan.
+
+### C1 — relay matrix (need owner input)
+
+Current per-box elements (from `RelayChannelBox.tsx`):
+1. `RelayGlyph` — vertical colored bar, visual state
+2. `RelayStatusLed` — colored dot (may duplicate glyph)
+3. Header label `R{n} · CH {channel}`
+4. `locationLabel` (or "Unassigned location")
+5. Status badge button — text ON/IDLE/MM:SS, tone active/idle/unknown
+6. `deviceLabel` (or "Unassigned")
+7. `typeLabel` — readable device type
+8. `elapsedLabel` — `formatElapsedSince(lastStateChangeAt)`
+
+Panel-variant chrome (from `RelayChannelMatrix.tsx`):
+- "16-CH Relay Module" header
+- "MCP23017 · SainSmart layout" subtitle
+- `TerminalStrip` decorations (bank A / bank B)
+- "Left (R 1–8)" / "Right (R 16–9)" column headers
+- Row-number gutter (1..8 both sides)
+- "Low-level Input" footer strip
+
+"Timing fields" candidates — what could be "not working":
+- Timer menu actions (`timer-5m/10m/30m/1h`) → `manualTimersByChannel` state, countdown rendered via `statusByChannel` (`MM:SS` text).
+- The `elapsedLabel` since last state change.
+- The 5s `refreshRelayState` polling interval.
+- Auto-completion effect when countdown hits zero (lines 295-349 of DeviceManager.tsx).
+
+Need user to say which elements are junk and which "timing" is broken.
+
+### C3 — DFR panel wasted space (structural, need owner input)
+
+Current layout (`DfrBoardsPanel.tsx`):
+- 3-column grid of board cards, each `aspect-square` (forces square)
+- 2 channels per card, each with select dropdown + display-name input + Save button + "Device key: <name>" mono text
+- Square aspect on a 2-channel card leaves 30-50% vertical whitespace
+
+Potential junk / never-used fields:
+- "Device key: <name>" mono text under each channel
+- The per-channel "Display name" inline rename (only useful if lights get renamed often)
+- The standalone `aspect-square` constraint
+- The 3-column grid when there are exactly 3 boards
+
+## Pending questions
+
+Presented separately via `question` tool after this draft is saved.

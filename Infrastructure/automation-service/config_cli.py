@@ -173,9 +173,11 @@ async def check_schedule_conflicts(
     return False, None
 
 
-async def cmd_pid_get(db: DatabaseManager, device_type: str):
+async def cmd_pid_get(
+    db: DatabaseManager, device_type: str, location: str = "Flower Room", cluster: str = "main"
+):
     """Get PID parameters for a device type."""
-    params = await db.pid_repo.get_pid_parameters(device_type)
+    params = await db.pid_repo.get_pid_parameters(location, cluster, device_type)
     if not params:
         print(f"No PID parameters found for {device_type}")
         return
@@ -196,6 +198,8 @@ async def cmd_pid_set(
     kd: float,
     dry_run: bool,
     author: str | None,
+    location: str = "Flower Room",
+    cluster: str = "main",
 ):
     """Set PID parameters for a device type."""
     # Validate
@@ -205,7 +209,7 @@ async def cmd_pid_set(
         sys.exit(1)
 
     # Get existing
-    existing = await db.pid_repo.get_pid_parameters(device_type)
+    existing = await db.pid_repo.get_pid_parameters(location, cluster, device_type)
 
     # Show diff
     print("Changes to apply:")
@@ -224,7 +228,14 @@ async def cmd_pid_set(
 
     # Apply
     success = await db.pid_repo.set_pid_parameters(
-        device_type, kp, ki, kd, updated_by=author or os.getenv("USER", "unknown"), source="cli"
+        location,
+        cluster,
+        device_type,
+        kp,
+        ki,
+        kd,
+        updated_by=author or os.getenv("USER", "unknown"),
+        source="cli",
     )
 
     if not success:
@@ -643,12 +654,20 @@ async def main():
 
     pid_get = pid_subparsers.add_parser("get", help="Get PID parameters")
     pid_get.add_argument("device_type", help="Device type (heater, co2, etc.)")
+    pid_get.add_argument(
+        "--location", default="Flower Room", help="Location name (default: Flower Room)"
+    )
+    pid_get.add_argument("--cluster", default="main", help="Cluster name (default: main)")
 
     pid_set = pid_subparsers.add_parser("set", help="Set PID parameters")
     pid_set.add_argument("device_type", help="Device type (heater, co2, etc.)")
     pid_set.add_argument("--kp", type=float, required=True, help="Proportional gain")
     pid_set.add_argument("--ki", type=float, required=True, help="Integral gain")
     pid_set.add_argument("--kd", type=float, required=True, help="Derivative gain")
+    pid_set.add_argument(
+        "--location", default="Flower Room", help="Location name (default: Flower Room)"
+    )
+    pid_set.add_argument("--cluster", default="main", help="Cluster name (default: main)")
 
     # Schedule commands
     sched_parser = subparsers.add_parser("schedule", help="Manage schedules")
@@ -734,10 +753,18 @@ async def main():
         # Route to appropriate command
         if args.command == "pid":
             if args.pid_cmd == "get":
-                await cmd_pid_get(db, args.device_type)
+                await cmd_pid_get(db, args.device_type, args.location, args.cluster)
             elif args.pid_cmd == "set":
                 await cmd_pid_set(
-                    db, args.device_type, args.kp, args.ki, args.kd, args.dry_run, args.author
+                    db,
+                    args.device_type,
+                    args.kp,
+                    args.ki,
+                    args.kd,
+                    args.dry_run,
+                    args.author,
+                    args.location,
+                    args.cluster,
                 )
 
         elif args.command == "schedule":

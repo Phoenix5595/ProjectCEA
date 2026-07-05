@@ -104,6 +104,19 @@ sudo systemctl restart automation-service
 
 ---
 
+## SERVICE RESTART PERMISSIONS
+
+The `cea` system user needs passwordless sudo to restart the automation service. This is required for the `POST /api/config/restart` endpoint.
+
+- **Sudoers file**: `install/sudoers-cea-restart`
+- **Installed to**: `/etc/sudoers.d/sudoers-cea-restart`
+- **Command allowed**: `sudo /bin/systemctl restart automation-service.service`
+- **Install script**: `Infrastructure/scripts/install-sudoers.sh` (called by `deploy.sh`)
+
+If this rule is removed, `POST /api/config/restart` will fail because the `cea` user cannot restart the service without a password.
+
+---
+
 ## DATA FLOW: Sensors → Control → Storage
 
 ### 1. CAN Processor writes sensor values to:

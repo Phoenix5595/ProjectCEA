@@ -21,6 +21,7 @@ from app.routes import (
     rules,
     schedules,
     status,
+    system_config,
     websocket,
 )
 from shared.infra_logging import get_logger
@@ -52,6 +53,7 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(calendar.router, tags=["calendar"])
     app.include_router(redis_state.router, tags=["redis-state"])
     app.include_router(debug.router, tags=["debug"])
+    app.include_router(system_config.router, tags=["system-config"])
     # Health (with hardware.mcp) is served by status.router GET /health
 
     logger.info("All routes registered")
@@ -120,5 +122,8 @@ def setup_dependency_overrides(app: FastAPI, container) -> None:
     app.dependency_overrides[debug.get_control_engine] = container.get_control_engine
 
     app.dependency_overrides[calendar.get_database] = container.get_database
+
+    # Override dependencies in system_config module
+    app.dependency_overrides[system_config.get_config] = container.get_config
 
     logger.info("Dependency overrides configured")

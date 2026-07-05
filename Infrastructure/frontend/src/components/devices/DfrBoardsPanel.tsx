@@ -278,7 +278,7 @@ export default function DfrBoardsPanel() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 gap-2 flex-1 overflow-auto">
+              <div className="grid grid-cols-2 gap-2 flex-1 overflow-auto">
                 {renderChannel(0, a0)}
                 {renderChannel(1, a1)}
               </div>

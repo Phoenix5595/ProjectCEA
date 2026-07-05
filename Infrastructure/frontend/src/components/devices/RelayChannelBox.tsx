@@ -1,5 +1,5 @@
 import type { RelayChannelViewModel } from './relayViewModel'
-import { formatElapsedSince, getRelaySilkscreenLabel } from './relayViewModel'
+import { formatElapsedSince, getRelayNumber } from './relayViewModel'
 
 interface RelayChannelBoxProps {
   channel: RelayChannelViewModel
@@ -25,26 +25,6 @@ function stateBadgeClasses(tone: 'unknown' | 'active' | 'idle'): string {
   }
 
   return 'bg-surface-tertiary text-text-muted border border-border-emphasis'
-}
-
-function RelayGlyph({
-  isAssigned,
-  isActive,
-  isStateKnown,
-}: {
-  isAssigned: boolean
-  isActive: boolean
-  isStateKnown: boolean
-}) {
-  const fillClass = !isStateKnown
-    ? 'bg-surface-tertiary border-status-warning-border/60'
-    : isActive
-      ? 'bg-btn-primary-data/30 border-btn-primary-data/70'
-      : isAssigned
-        ? 'bg-btn-primary-dim/40 border-border-emphasis'
-        : 'bg-surface-tertiary border-border-emphasis'
-
-  return <div className={`h-7 w-4 shrink-0 rounded-sm border ${fillClass}`} aria-hidden />
 }
 
 function RelayStatusLed({ tone }: { tone: 'unknown' | 'active' | 'idle' }) {
@@ -73,7 +53,7 @@ export default function RelayChannelBox({
 }: RelayChannelBoxProps) {
   const isCompact = variant === 'compact'
   const elapsedLabel = formatElapsedSince(channel.lastStateChangeAt, nowMs)
-  const silkscreen = getRelaySilkscreenLabel(channel.channel)
+  const relayNum = getRelayNumber(channel.channel)
   const locationLabel = channel.location || 'Unassigned location'
   const deviceLabel = channel.deviceName || 'Unassigned'
   const typeLabel = channel.displayType || '-'
@@ -102,7 +82,7 @@ export default function RelayChannelBox({
     .filter(Boolean)
     .join(' ')
 
-  const tooltipTitle = `${silkscreen} · CH ${channel.channel} · ${channel.pinLabel} · ${deviceLabel} · ${locationLabel} · ${elapsedLabel}`
+  const tooltipTitle = `R${relayNum} · CH ${channel.channel} · ${channel.pinLabel} · ${deviceLabel} · ${locationLabel} · ${elapsedLabel}`
 
   const menu = isMenuOpen ? (
     <div
@@ -132,8 +112,7 @@ export default function RelayChannelBox({
 
   const content = (
     <div className="flex items-stretch gap-1.5" title={tooltipTitle}>
-      <div className="flex shrink-0 flex-col items-center justify-center gap-0.5">
-        <RelayGlyph isAssigned={channel.isAssigned} isActive={channel.isActive} isStateKnown={channel.isStateKnown} />
+      <div className="flex shrink-0 items-center justify-center">
         <RelayStatusLed tone={resolvedTone} />
       </div>
 
@@ -141,7 +120,7 @@ export default function RelayChannelBox({
         <div className="flex items-start justify-between gap-1">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-1">
-              <span className="text-[10px] font-semibold text-text-input">CH {channel.channel}</span>
+              <span className="text-[10px] font-semibold text-text-input">R{relayNum} · CH {channel.channel}</span>
             </div>
             <div className="truncate text-[9px] text-text-muted">{locationLabel}</div>
           </div>

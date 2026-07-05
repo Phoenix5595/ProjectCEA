@@ -764,7 +764,7 @@ class DeviceController:
         (0–1) or ``-1`` if dimming config was incomplete.
         """
         try:
-            new_state = 1 if control_output > 0.5 else 0
+            new_state = self.relay_manager.get_device_state(location, cluster, device_name) or 0
             reason = self._reason_for_device_type(device_type, new_state)
             load_percent = None
             if context:

@@ -12,7 +12,10 @@ for the full rationale.
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
+import tempfile
+import threading
 from typing import Any
 
 import yaml
@@ -194,6 +197,7 @@ class ConfigLoader:
         self._config: dict[str, Any] = {}
         self._schedules: list[dict[str, Any]] = []
         self._rules: list[dict[str, Any]] = []
+        self._config_lock = threading.Lock()
         self.load()
 
     def load(self) -> None:
@@ -427,6 +431,69 @@ class ConfigLoader:
             logger.error(error_msg)
             raise ValueError(error_msg) from e
 
+    def validate_in_memory(self, candidate: dict[str, Any]) -> dict[str, Any]:
+        """Validate a candidate config dict in-memory using AppConfig.
+
+        Args:
+            candidate: Full config dict to validate.
+
+        Returns:
+            The candidate dict (passthrough on success).
+
+        Raises:
+            ValueError: If validation fails.
+        """
+        from pydantic import ValidationError
+
+        from app.models.config_schema import AppConfig
+
+        try:
+            AppConfig.model_validate(candidate)
+        except ValidationError as e:
+            errors = []
+            for error in e.errors():
+                field_path = " -> ".join(str(loc) for loc in error["loc"])
+                errors.append(f"  {field_path}: {error['msg']}")
+            error_msg = "In-memory config validation failed:\n" + "\n".join(errors)
+            logger.error(error_msg)
+            raise ValueError(error_msg) from e
+        return candidate
+
+    def write_full_config(self, merged_raw: dict[str, Any]) -> None:
+        """Atomically write the full config dict to disk (temp file + os.replace).
+
+        The caller is responsible for holding self._config_lock for the duration
+        of the write.  This method validates the candidate in-memory before
+        writing, then performs an atomic replace.
+
+        Args:
+            merged_raw: The complete merged config dict to persist.
+
+        Raises:
+            ValueError: If in-memory validation fails.
+            OSError: If the atomic write fails.
+        """
+        self.validate_in_memory(merged_raw)
+
+        dir_path = self.config_path.parent
+        fd, tmp_path = tempfile.mkstemp(dir=dir_path, suffix=".yaml")
+        try:
+            with os.fdopen(fd, "w") as f:
+                yaml.dump(
+                    merged_raw,
+                    f,
+                    default_flow_style=False,
+                    sort_keys=False,
+                    allow_unicode=True,
+                )
+            os.replace(tmp_path, self.config_path)
+        except OSError:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+            raise
+
     def update_device_config(
         self,
         location: str,
@@ -447,35 +514,29 @@ class ConfigLoader:
         Returns:
             True if successful, False otherwise
         """
-        try:
-            # Ensure devices structure exists
-            if "devices" not in self._config:
-                self._config["devices"] = {}
-            if location not in self._config["devices"]:
-                self._config["devices"][location] = {}
-            if cluster not in self._config["devices"][location]:
-                self._config["devices"][location][cluster] = {}
-            if device_name not in self._config["devices"][location][cluster]:
-                raise ValueError(f"Device {device_name} not found in {location}/{cluster}")
+        with self._config_lock:
+            try:
+                if "devices" not in self._config:
+                    self._config["devices"] = {}
+                if location not in self._config["devices"]:
+                    self._config["devices"][location] = {}
+                if cluster not in self._config["devices"][location]:
+                    self._config["devices"][location][cluster] = {}
+                if device_name not in self._config["devices"][location][cluster]:
+                    raise ValueError(f"Device {device_name} not found in {location}/{cluster}")
 
-            # Update fields
-            device_config = self._config["devices"][location][cluster][device_name]
-            if display_name is not None:
-                device_config["display_name"] = display_name
-            if device_type is not None:
-                device_config["device_type"] = device_type
+                device_config = self._config["devices"][location][cluster][device_name]
+                if display_name is not None:
+                    device_config["display_name"] = display_name
+                if device_type is not None:
+                    device_config["device_type"] = device_type
 
-            # Write back to YAML file
-            with open(self.config_path, "w") as f:
-                yaml.dump(
-                    self._config, f, default_flow_style=False, sort_keys=False, allow_unicode=True
-                )
-
-            logger.info(f"Updated device config: {location}/{cluster}/{device_name}")
-            return True
-        except Exception as e:
-            logger.error(f"Error updating device config: {e}")
-            return False
+                self.write_full_config(self._config)
+                logger.info(f"Updated device config: {location}/{cluster}/{device_name}")
+                return True
+            except Exception as e:
+                logger.error(f"Error updating device config: {e}")
+                return False
 
     def update_light_dimming_assignment(
         self,
@@ -490,40 +551,38 @@ class ConfigLoader:
 
         This only updates configuration fields; hardware commands are handled by the control loop.
         """
-        try:
-            devices_root = self._config.get("devices", {})
-            if location not in devices_root or cluster not in devices_root.get(location, {}):
-                raise ValueError(f"Unknown location/cluster: {location}/{cluster}")
-            devs = devices_root[location][cluster]
-            if device_name not in devs:
-                raise ValueError(f"Device {device_name} not found in {location}/{cluster}")
+        with self._config_lock:
+            try:
+                devices_root = self._config.get("devices", {})
+                if location not in devices_root or cluster not in devices_root.get(location, {}):
+                    raise ValueError(f"Unknown location/cluster: {location}/{cluster}")
+                devs = devices_root[location][cluster]
+                if device_name not in devs:
+                    raise ValueError(f"Device {device_name} not found in {location}/{cluster}")
 
-            device_config = devs[device_name]
-            if not isinstance(device_config, dict):
-                raise ValueError(
-                    f"Invalid device config shape for {location}/{cluster}/{device_name}"
+                device_config = devs[device_name]
+                if not isinstance(device_config, dict):
+                    raise ValueError(
+                        f"Invalid device config shape for {location}/{cluster}/{device_name}"
+                    )
+
+                if board_id is None or dimming_channel is None:
+                    device_config.pop("dimming_board_id", None)
+                    device_config.pop("dimming_channel", None)
+                else:
+                    device_config["dimming_board_id"] = int(board_id)
+                    device_config["dimming_channel"] = int(dimming_channel)
+
+                self.write_full_config(self._config)
+                logger.info(
+                    "Updated light dimming assignment: %s/%s/%s board_id=%s channel=%s",
+                    location,
+                    cluster,
+                    device_name,
+                    board_id,
+                    dimming_channel,
                 )
-
-            if board_id is None or dimming_channel is None:
-                device_config.pop("dimming_board_id", None)
-                device_config.pop("dimming_channel", None)
-            else:
-                device_config["dimming_board_id"] = int(board_id)
-                device_config["dimming_channel"] = int(dimming_channel)
-
-            with open(self.config_path, "w") as f:
-                yaml.dump(
-                    self._config, f, default_flow_style=False, sort_keys=False, allow_unicode=True
-                )
-            logger.info(
-                "Updated light dimming assignment: %s/%s/%s board_id=%s channel=%s",
-                location,
-                cluster,
-                device_name,
-                board_id,
-                dimming_channel,
-            )
-            return True
-        except Exception as e:
-            logger.error(f"Error updating light dimming assignment: {e}")
-            return False
+                return True
+            except Exception as e:
+                logger.error(f"Error updating light dimming assignment: {e}")
+                return False

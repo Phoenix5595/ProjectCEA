@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from datetime import datetime
 from typing import Any
 
-from app.state import StateManager, get_state_manager
+from app.state import PIDParams, StateManager, get_state_manager
 from shared.infra_logging import LoggingContext, get_logger
 
 logger = get_logger(__name__)
@@ -54,10 +54,14 @@ class PIDControllerManager:
         return self._pid_controllers.get(key)
 
     # Control mode integration
-    async def get_control_mode_info(self, device_type: str) -> dict[str, Any]:
+    async def get_control_mode_info(
+        self, location: str, cluster: str, device_type: str
+    ) -> dict[str, Any]:
         """Get control mode info for a device type with caching."""
         try:
-            mode_info = await self.database.pid_repo.get_pid_control_mode(device_type)
+            mode_info = await self.database.pid_repo.get_pid_control_mode(
+                location, cluster, device_type
+            )
             if mode_info:
                 return mode_info
         except Exception as e:
@@ -126,6 +130,8 @@ class PIDControllerManager:
         # Update autotune state in database
         n_cycles = min(len(autotuner._peaks), len(autotuner._troughs))
         await self.database.pid_repo.update_autotune_state(
+            "Flower Room",
+            "main",
             device_type,
             is_active=autotuner.is_active,
             cycles_completed=n_cycles,
@@ -148,6 +154,8 @@ class PIDControllerManager:
 
             # Save new PID parameters with reason
             await self.database.pid_repo.set_pid_parameters_with_reason(
+                "Flower Room",
+                "main",
                 device_type,
                 tuning_result.kp,
                 tuning_result.ki,
@@ -158,6 +166,8 @@ class PIDControllerManager:
 
             # Update autotune state with results
             await self.database.pid_repo.update_autotune_state(
+                "Flower Room",
+                "main",
                 device_type,
                 is_active=False,
                 current_ku=tuning_result.ultimate_gain,
@@ -202,7 +212,7 @@ class PIDControllerManager:
 
         try:
             # Get PID parameters with caching
-            pid_params = await self._get_cached_pid_parameters(device_type)
+            pid_params = await self._get_cached_pid_parameters(location, cluster, device_type)
             if not pid_params:
                 logger.debug(f"No PID parameters found for device_type {device_type}")
                 return None
@@ -223,35 +233,90 @@ class PIDControllerManager:
             logger.error(f"Failed to create PID controller for {device_name} ({device_type}): {e}")
             return None
 
-    async def _get_cached_pid_parameters(self, device_type: str) -> dict[str, float] | None:
+    async def _get_cached_pid_parameters(
+        self, location: str, cluster: str, device_type: str
+    ) -> PIDParams | None:
         """Get PID parameters from StateManager cache with database fallback.
 
         Uses StateManager for fast in-memory access (<1ms reads).
         Falls back to database if not in cache.
         """
         # Try StateManager cache first (fast path)
-        pid_params = await self._state.get_pid_params(device_type)
+        pid_params = await self._state.get_pid_params(location, cluster, device_type)
         if pid_params:
-            logger.debug(f"StateManager cache hit for PID params: {device_type}")
+            logger.debug(
+                f"StateManager cache hit for PID params: {location}/{cluster}/{device_type}"
+            )
             return pid_params
 
         # Cache miss - fetch from database
         try:
-            pid_params = await self.database.pid_repo.get_pid_parameters(device_type)
+            pid_params = await self.database.pid_repo.get_pid_parameters(
+                location, cluster, device_type
+            )
             if pid_params:
                 # Populate StateManager cache for future reads
                 await self._state.set_pid_params(
+                    location,
+                    cluster,
                     device_type,
                     pid_params.get("kp", 1.0),
                     pid_params.get("ki", 0.0),
                     pid_params.get("kd", 0.0),
+                    binary_hysteresis=pid_params.get("binary_hysteresis"),
                     source="database",
                 )
-                logger.debug(f"Populated StateManager cache for PID params: {device_type}")
+                logger.debug(
+                    f"Populated StateManager cache for PID params: {location}/{cluster}/{device_type}"
+                )
             return pid_params
         except Exception as e:
-            logger.warning(f"Failed to fetch PID parameters for {device_type}: {e}")
+            logger.warning(
+                f"Failed to fetch PID parameters for {location}/{cluster}/{device_type}: {e}"
+            )
             return None
+
+    async def get_binary_hysteresis(self, location: str, cluster: str, device_type: str) -> float:
+        """Get binary hysteresis for a location/cluster/device_type with caching.
+
+        Tries StateManager cache first, then database, falling back to
+        the global default (0.1) on any error.
+        """
+        cache_key = f"pid:parameters:{location}:{cluster}:{device_type}"
+        try:
+            # 1) Try StateManager cache first
+            cached = await self._state.get_pid_params(location, cluster, device_type)
+            if cached and "binary_hysteresis" in cached:
+                return float(cached["binary_hysteresis"])
+        except Exception as e:
+            logger.debug(f"PID binary_hysteresis cache lookup failed: {e}")
+
+        # 2) Fetch from database
+        try:
+            result = await self.database.pid_repo.get_binary_hysteresis(
+                location, cluster, device_type
+            )
+            hysteresis = result.get("binary_hysteresis", 0.1)
+            # Populate cache for future reads
+            try:
+                await self._state.set_pid_params(
+                    location,
+                    cluster,
+                    device_type,
+                    result.get("kp", 1.0),
+                    result.get("ki", 0.0),
+                    result.get("kd", 0.0),
+                    binary_hysteresis=hysteresis,
+                    source="database",
+                )
+            except Exception as e:
+                logger.debug(f"PID binary_hysteresis cache populate failed: {e}")
+            return float(hysteresis)
+        except Exception as e:
+            logger.warning(f"Failed to fetch binary hysteresis for {device_type}: {e}")
+
+        # 3) Global default fallback
+        return 0.1
 
     async def process_pid_control(
         self,
@@ -283,7 +348,7 @@ class PIDControllerManager:
             device_type = device_info.get("device_type", "")
 
             # Get control mode for this device type
-            mode_info = await self.get_control_mode_info(device_type)
+            mode_info = await self.get_control_mode_info(location, cluster, device_type)
             control_mode = mode_info.get("control_mode", "pid")
 
             # Route based on control mode
@@ -441,10 +506,12 @@ class PIDControllerManager:
         else:
             return 0.0
 
-    async def reload_pid_parameters(self, device_type: str) -> bool:
+    async def reload_pid_parameters(self, location: str, cluster: str, device_type: str) -> bool:
         """Reload PID parameters for all controllers of a device type.
 
         Args:
+            location: Location name
+            cluster: Cluster name
             device_type: Device type to reload
 
         Returns:
@@ -452,7 +519,9 @@ class PIDControllerManager:
         """
         try:
             # Get updated PID parameters
-            pid_params = await self.database.pid_repo.get_pid_parameters(device_type)
+            pid_params = await self.database.pid_repo.get_pid_parameters(
+                location, cluster, device_type
+            )
             if not pid_params:
                 logger.warning(f"No PID parameters found for device_type {device_type}")
                 return False
