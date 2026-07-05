@@ -30,6 +30,9 @@ class HardwareConfig(BaseModel):
 
 
 class DeviceConfig(BaseModel):
+    # DEPRECATED: Use LightDevice or Device from app.models.device_registry
+    # for new code.  This model is kept for YAML-bootstrap backward
+    # compatibility during the migration to DB-backed device registry.
     device_type: DeviceType
     channel: int
     dimming_board: str | None = None
@@ -56,7 +59,7 @@ class AutomationConfig(BaseModel):
 
 class AppConfig(BaseModel):
     # permissive top-level keys to accommodate varied YAML shapes in fixtures
-    devices: Any | None = None
+    devices: dict | None = None
     hardware: dict | None = None
     automation: dict | None = None
     control: dict | None = None
