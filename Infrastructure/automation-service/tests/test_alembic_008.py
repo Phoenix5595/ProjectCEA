@@ -165,9 +165,9 @@ class TestDeviceRegistryMigration:
         assert "idx_device_registry_relay" in indexes, "Missing idx_device_registry_relay"
 
     def test_downgrade_removes_table(self, engine):
-        """Downgrade by one revision drops device_registry."""
-        result = _alembic_cmd("downgrade", "-1")
-        assert result.returncode == 0, f"alembic downgrade -1 failed:\n{result.stderr}"
+        """Downgrade to 007 drops device_registry."""
+        result = _alembic_cmd("downgrade", "007_pid_per_room")
+        assert result.returncode == 0, f"alembic downgrade failed:\n{result.stderr}"
 
         assert not self._table_exists(engine, "device_registry"), (
             "device_registry still exists after downgrade"
@@ -178,8 +178,8 @@ class TestDeviceRegistryMigration:
         # Ensure we're at head first
         _alembic_cmd("upgrade", "head").check_returncode()
 
-        # Downgrade
-        _alembic_cmd("downgrade", "-1").check_returncode()
+        # Downgrade to 007 (before 008 created the table)
+        _alembic_cmd("downgrade", "007_pid_per_room").check_returncode()
         assert not self._table_exists(engine, "device_registry")
 
         # Upgrade again
