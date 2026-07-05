@@ -3,6 +3,7 @@ import { toast } from 'sonner'
 
 import { apiClient } from '../../services/api'
 import { extractErrorMessage } from '../../utils/errors'
+import { getRelayNumber, getRelayPinLabel } from './relayViewModel'
 import { logger } from '../../utils/logger'
 
 type DfrBoard = {
@@ -202,7 +203,7 @@ export default function DfrBoardsPanel() {
             return (
               <div className="rounded-md border border-border-subtle bg-surface-secondary p-2 space-y-2">
                 <div className="flex items-center justify-between">
-                  <div className="text-xs font-semibold text-text-default">Channel {ch}</div>
+                  <div className="text-xs font-semibold text-text-default">R{getRelayNumber(ch)} · {getRelayPinLabel(ch)}</div>
                   <div className="text-[11px] text-text-subtle">
                     {assignment ? `${assignment.location}` : 'Unassigned'}
                   </div>

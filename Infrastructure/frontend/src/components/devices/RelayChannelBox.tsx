@@ -63,7 +63,7 @@ export default function RelayChannelBox({
   const resolvedTone: 'unknown' | 'active' | 'idle' =
     statusTone || (!channel.isStateKnown ? 'unknown' : channel.isActive ? 'active' : 'idle')
   const resolvedText = statusText || (!channel.isStateKnown ? 'Unknown' : channel.isActive ? 'ON' : 'IDLE')
-  const canControl = isAssignedToRoom && Boolean(channel.assignedDeviceName && channel.location && channel.cluster)
+  const canControl = true
 
   const interactiveClasses = onSelect
     ? 'cursor-pointer hover:border-btn-primary-hover hover:bg-surface-primary/40'
@@ -82,16 +82,18 @@ export default function RelayChannelBox({
     .filter(Boolean)
     .join(' ')
 
-  const tooltipTitle = `R${relayNum} · CH ${channel.channel} · ${channel.pinLabel} · ${deviceLabel} · ${locationLabel} · ${elapsedLabel}`
+  const tooltipTitle = `R${relayNum} · ${channel.pinLabel} · ${deviceLabel} · ${locationLabel} · ${elapsedLabel}`
 
   const menu = isMenuOpen ? (
     <div
       className="absolute right-0 top-5 z-20 w-32 rounded-sm border border-border-emphasis bg-surface-primary p-1 shadow-lg"
       onClick={(event) => event.stopPropagation()}
     >
-      <button type="button" className="w-full rounded-sm px-2 py-1 text-left text-xs hover:bg-surface-secondary" onClick={() => onMenuAction?.(channel.channel, 'auto')}>
-        Auto
-      </button>
+      {channel.isAssigned && (
+        <button type="button" className="w-full rounded-sm px-2 py-1 text-left text-xs hover:bg-surface-secondary" onClick={() => onMenuAction?.(channel.channel, 'auto')}>
+          Auto
+        </button>
+      )}
       <button type="button" className="w-full rounded-sm px-2 py-1 text-left text-xs hover:bg-surface-secondary" onClick={() => onMenuAction?.(channel.channel, 'timer-5m')}>
         ON 5m
       </button>
@@ -120,7 +122,7 @@ export default function RelayChannelBox({
         <div className="flex items-start justify-between gap-1">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-1">
-              <span className="text-[10px] font-semibold text-text-input">R{relayNum} · CH {channel.channel}</span>
+              <span className="text-[10px] font-semibold text-text-input">R{relayNum} · {channel.pinLabel}</span>
             </div>
             <div className="truncate text-[9px] text-text-muted">{locationLabel}</div>
           </div>
@@ -136,7 +138,7 @@ export default function RelayChannelBox({
                 onToggleMenu?.(channel.channel)
               }}
               className={`rounded-sm px-1 py-px text-[8px] font-semibold uppercase ${stateBadgeClasses(resolvedTone)} ${canControl ? 'cursor-pointer' : 'cursor-not-allowed opacity-70'}`}
-              title={canControl ? 'Click for control mode' : 'Assign a device first'}
+              title={canControl ? 'Click for control mode' : 'Toggle relay channel'}
             >
               {resolvedText}
             </button>

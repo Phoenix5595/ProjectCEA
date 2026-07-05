@@ -577,6 +577,14 @@ class ApiClient {
     return response.data;
   }
 
+  async controlChannel(channel: number, state: 0 | 1, durationSeconds?: number): Promise<JsonObject> {
+    const response = await this.automationClient.post(
+      `/api/hardware/relays/channel/${channel}/state`,
+      { state, duration_seconds: durationSeconds ?? null }
+    );
+    return response.data;
+  }
+
   async setDeviceMode(
     location: string,
     cluster: string,

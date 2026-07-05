@@ -386,7 +386,9 @@ class ServiceContainer:
         try:
             canonical = json.dumps(restart_subset, sort_keys=True, separators=(",", ":"))
         except TypeError as e:
-            logger.warning("Failed to compute restart-hash sidecar (non-serializable config): %s", e)
+            logger.warning(
+                "Failed to compute restart-hash sidecar (non-serializable config): %s", e
+            )
             return
         hash_value = hashlib.sha256(canonical.encode()).hexdigest()
         sidecar_data = {"hash": hash_value, "subset": restart_subset}

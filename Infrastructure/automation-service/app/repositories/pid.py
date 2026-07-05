@@ -44,7 +44,6 @@ class PIDRepository(BaseRepository):
         self, location: str, cluster: str, device_type: str
     ) -> dict[str, Any]:
         """Get PID parameters for a location/cluster/device_type with cache-aside (StateManager)."""
-        cache_key = f"pid:parameters:{location}:{cluster}:{device_type}"
         # 1) Check StateManager cache first
         state: StateManager | None = None
         try:

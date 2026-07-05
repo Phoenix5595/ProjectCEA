@@ -180,28 +180,19 @@ class RelayManager:
         """Set channel state directly by channel number.
 
         Args:
-            channel: Channel number
+            channel: Channel number (0-15)
             state: 0 = OFF, 1 = ON
 
         Returns:
-            True if successful, False otherwise. Refuses and returns False
-            (with a WARNING log) if ``channel`` is not in the current device
-            channel map, so callers cannot accidentally toggle an unmapped
-            or removed device's relay.
+            True if successful, False otherwise.
         """
-        if channel not in self._channel_map:
-            logger.warning(
-                f"Refusing to set channel {channel} to {'ON' if state else 'OFF'}: "
-                f"channel is not in the current device channel map"
-            )
-            return False
         success = self.mcp23017.set_channel(channel, state == 1)
         if success:
-            # Update internal state if we know the device
+            # Update internal state if this channel is mapped to a device
             device_key = self._channel_map.get(channel)
             if device_key:
                 self._current_states[device_key] = state
-            logger.debug(f"Channel {channel} set to {'ON' if state == 1 else 'OFF'}")
+            logger.info(f"Channel {channel} set to {'ON' if state == 1 else 'OFF'}")
         return success
 
     def restore_states(self, states: dict[tuple[str, str, str], dict[str, Any]]):

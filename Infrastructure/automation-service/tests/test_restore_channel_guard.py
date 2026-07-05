@@ -12,6 +12,7 @@ Two guards are exercised:
 
 These tests run with no real hardware, database, or Redis.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -38,7 +39,10 @@ from app.control.relay_manager import RelayManager
 # RelayManager.set_channel_state guard
 # ---------------------------------------------------------------------------
 
-def _bare_relay_manager(channel_map: dict[int, tuple[str, str, str]]) -> tuple[RelayManager, MagicMock]:
+
+def _bare_relay_manager(
+    channel_map: dict[int, tuple[str, str, str]],
+) -> tuple[RelayManager, MagicMock]:
     """Build a RelayManager with a specific _channel_map, bypassing __init__.
 
     __init__ calls _build_device_maps which needs a real device_config and
@@ -61,13 +65,13 @@ def _bare_relay_manager(channel_map: dict[int, tuple[str, str, str]]) -> tuple[R
 
 
 class TestSetChannelStateGuard:
-    """Channel not in _channel_map is refused; hardware is not touched."""
+    """Channel not in _channel_map is still allowed; hardware IS touched."""
 
-    def test_unmapped_channel_returns_false(self):
+    def test_unmapped_channel_returns_true_and_calls_hardware(self):
         rm, mcp = _bare_relay_manager({1: ("Flower Room", "main", "exhaust_fan")})
         result = asyncio.run(rm.set_channel_state(11, 1))
-        assert result is False
-        mcp.set_channel.assert_not_called()
+        assert result is True
+        mcp.set_channel.assert_called_once_with(11, True)
 
     def test_mapped_channel_returns_true_and_calls_hardware(self):
         rm, mcp = _bare_relay_manager({1: ("Flower Room", "main", "exhaust_fan")})
@@ -75,20 +79,20 @@ class TestSetChannelStateGuard:
         assert result is True
         mcp.set_channel.assert_called_once_with(1, True)
 
-    def test_unmapped_channel_logs_warning(self, caplog):
+    def test_unmapped_channel_logs_info(self, caplog):
         rm, _mcp = _bare_relay_manager({1: ("Flower Room", "main", "exhaust_fan")})
-        with caplog.at_level(logging.WARNING, logger="app.control.relay_manager"):
+        with caplog.at_level(logging.INFO, logger="app.control.relay_manager"):
             result = asyncio.run(rm.set_channel_state(11, 1))
-        assert result is False
-        warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
-        assert warnings, "Expected a WARNING log when channel is unmapped"
+        assert result is True
+        infos = [r for r in caplog.records if r.levelno == logging.INFO]
+        assert infos, "Expected an INFO log when channel is set"
         # Must mention the channel number for debuggability
-        assert any("11" in r.getMessage() for r in warnings), (
-            f"WARNING must mention the channel number, got: {[r.getMessage() for r in warnings]}"
+        assert any("11" in r.getMessage() for r in infos), (
+            f"INFO must mention the channel number, got: {[r.getMessage() for r in infos]}"
         )
 
     def test_unmapped_channel_does_not_pollute_state(self):
-        """Refusing the write must not leave a stale entry in _current_states."""
+        """Unmapped channel write must not leave a stale entry in _current_states."""
         rm, _mcp = _bare_relay_manager({1: ("Flower Room", "main", "exhaust_fan")})
         asyncio.run(rm.set_channel_state(11, 1))
         assert 11 not in rm._current_states
@@ -107,6 +111,7 @@ class TestSetChannelStateGuard:
 # ---------------------------------------------------------------------------
 # DeviceController.restore_device_states guard
 # ---------------------------------------------------------------------------
+
 
 def _make_controller_with_db(device_states: dict) -> tuple[DeviceController, MagicMock]:
     relay_manager = MagicMock()
@@ -143,15 +148,12 @@ class TestRestoreDeviceStatesGuard:
     @pytest.mark.asyncio
     async def test_skips_unmapped_channel_logs_warning(self, caplog):
         """The skip should emit a WARNING identifying the unmapped channel."""
-        controller, rm = _make_controller_with_db(
-            {"ghost_device": {"channel": 11, "state": 1}}
-        )
+        controller, rm = _make_controller_with_db({"ghost_device": {"channel": 11, "state": 1}})
         with caplog.at_level(logging.WARNING, logger="app.control.device_controller"):
             await controller.restore_device_states("Flower Room", "main")
         warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
         assert any("11" in r.getMessage() for r in warnings), (
-            f"Expected a WARNING referencing channel 11, got: "
-            f"{[r.getMessage() for r in warnings]}"
+            f"Expected a WARNING referencing channel 11, got: {[r.getMessage() for r in warnings]}"
         )
         # No set_channel_state calls at all (the only row is unmapped)
         rm.set_channel_state.assert_not_called()
@@ -159,9 +161,7 @@ class TestRestoreDeviceStatesGuard:
     @pytest.mark.asyncio
     async def test_mapped_channel_still_restored(self):
         """Mapped rows are restored normally (regression check on the guard)."""
-        controller, rm = _make_controller_with_db(
-            {"exhaust_fan": {"channel": 1, "state": 0}}
-        )
+        controller, rm = _make_controller_with_db({"exhaust_fan": {"channel": 1, "state": 0}})
         await controller.restore_device_states("Flower Room", "main")
         rm.set_channel_state.assert_awaited_once_with(1, 0)
 
@@ -177,13 +177,15 @@ class TestRestoreDeviceStatesGuard:
         rm.set_channel_state = AsyncMock(return_value=True)
         database = MagicMock()
         database.device_repo = MagicMock()
-        database.device_repo.get_device_states = AsyncMock(return_value={
-            "exhaust_fan": {"channel": 1, "state": 1},
-            "light_1": {"channel": 3, "state": 0},
-            "light_3": {"channel": 5, "state": 1},
-            "ghost_a": {"channel": 11, "state": 1},
-            "ghost_b": {"channel": 12, "state": 0},
-        })
+        database.device_repo.get_device_states = AsyncMock(
+            return_value={
+                "exhaust_fan": {"channel": 1, "state": 1},
+                "light_1": {"channel": 3, "state": 0},
+                "light_3": {"channel": 5, "state": 1},
+                "ghost_a": {"channel": 11, "state": 1},
+                "ghost_b": {"channel": 12, "state": 0},
+            }
+        )
         controller = DeviceController(rm, database, binary_hysteresis=0.1)
         await controller.restore_device_states("Flower Room", "main")
         called_channels = {call.args[0] for call in rm.set_channel_state.await_args_list}

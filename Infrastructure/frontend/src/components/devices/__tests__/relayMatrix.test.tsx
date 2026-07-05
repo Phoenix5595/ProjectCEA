@@ -75,13 +75,13 @@ describe('RelayChannelMatrix panel variant', () => {
 })
 
 describe('RelayChannelMatrix compact variant', () => {
-  it('shows R{n} · CH {channel} labels in compact mode', () => {
+  it('shows R{n} · GPA/GPB pin labels in compact mode', () => {
     render(<RelayChannelMatrix channels={vm16} variant="compact" nowMs={Date.now()} />)
 
-    // relay 1 = channel 15
-    expect(screen.getByText('R1 · CH 15')).toBeInTheDocument()
+    // relay 1 = channel 15 = GPB7
+    expect(screen.getByText('R1 · GPB7')).toBeInTheDocument()
 
-    // relay 16 = channel 7
-    expect(screen.getByText('R16 · CH 7')).toBeInTheDocument()
+    // relay 16 = channel 7 = GPA7
+    expect(screen.getByText('R16 · GPA7')).toBeInTheDocument()
   })
 })

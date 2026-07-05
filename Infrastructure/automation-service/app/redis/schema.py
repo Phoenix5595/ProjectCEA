@@ -145,6 +145,10 @@ def heartbeat_key(service_name: str) -> str:
     return build_key("heartbeat", None, None, service_name)
 
 
+def relay_raw_override_key(channel: int) -> str:
+    return f"cea:relay:manual_override:{channel}"
+
+
 # Backward-compatibility helpers for gradual key migration
 def get_with_backward_compat(
     redis_client: redis_lib.Redis,
@@ -207,6 +211,7 @@ __all__ = [
     "alarm_key",
     "pid_key",
     "heartbeat_key",
+    "relay_raw_override_key",
     "get_with_backward_compat",
     "set_with_backward_compat",
 ]

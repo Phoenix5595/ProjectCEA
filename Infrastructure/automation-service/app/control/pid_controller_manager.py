@@ -282,7 +282,6 @@ class PIDControllerManager:
         Tries StateManager cache first, then database, falling back to
         the global default (0.1) on any error.
         """
-        cache_key = f"pid:parameters:{location}:{cluster}:{device_type}"
         try:
             # 1) Try StateManager cache first
             cached = await self._state.get_pid_params(location, cluster, device_type)
