@@ -36,6 +36,7 @@ class LightDevice(BaseModel):
     (relay_channel may be None when unbound).
     """
 
+    device_id: int | None = Field(default=None, description="Primary key from device_registry")
     device_type: Literal["light"] = "light"
     board_id: int = Field(ge=0, description="DFR0971 board identifier (0, 1, 2)")
     dimming_channel: int = Field(ge=0, le=1, description="DFR0971 channel on the board (0 or 1)")
