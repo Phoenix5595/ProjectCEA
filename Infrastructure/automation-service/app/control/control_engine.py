@@ -5,7 +5,8 @@ from __future__ import annotations
 # Standard library imports
 import asyncio
 from collections.abc import Coroutine
-from datetime import datetime
+from datetime import UTC, datetime
+import json
 from typing import Any
 
 from app.alarm_manager import AlarmManager
@@ -28,6 +29,7 @@ from app.control.vpd_cascade_controller import (
     VPDCascadeController,
 )
 from app.database import DatabaseManager
+from app.redis.schema import relay_raw_override_key
 from app.state import StateManager, get_state_manager
 
 # Third-party imports
@@ -269,6 +271,12 @@ class ControlEngine:
         except Exception as e:
             logger.error(f"Failed to expire manual overrides: {e}")
 
+        # Expire raw channel overrides before processing devices
+        try:
+            await self._expire_raw_channel_overrides()
+        except Exception as e:
+            logger.error(f"Failed to expire raw channel overrides: {e}")
+
         loop_start_time = datetime.now() if self._profiling_enabled else None
 
         current_time = datetime.now(tz=LOCAL_TZ)
@@ -445,6 +453,32 @@ class ControlEngine:
             await self.database.control_action_repo.clear_manual_expiry(
                 row["location"], row["cluster"], row["device_name"]
             )
+
+    async def _expire_raw_channel_overrides(self) -> None:
+        """Sweep and expire raw channel overrides whose timer has passed.
+
+        Checks each channel 0-15 for an expired Redis override record
+        (cea:relay:manual_override:{channel}) and turns the channel OFF
+        plus deletes the key.
+        """
+        automation_redis = self.database._automation_redis
+        if automation_redis is None or automation_redis.redis_client is None:
+            return
+
+        redis_client = automation_redis.redis_client
+
+        for channel in range(16):
+            key = relay_raw_override_key(channel)
+            raw = await asyncio.to_thread(redis_client.get, key)
+            if raw is None:
+                continue
+
+            payload = json.loads(str(raw))
+            expires_at = datetime.fromisoformat(payload["expires_at"])
+            if expires_at <= datetime.now(UTC):
+                await self.relay_manager.set_channel_state(channel, 0)
+                await asyncio.to_thread(redis_client.delete, key)
+                logger.info(f"Raw channel {channel} manual override expired, turned OFF")
 
     async def _set_device_state(
         self,

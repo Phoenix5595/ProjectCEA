@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import UTC, datetime, timedelta
 import json
 from typing import Any
 
@@ -11,7 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.control.relay_manager import RelayManager
 from app.database import DatabaseManager
-from app.redis.schema import RELAY_CHANNELS, RELAY_TIMESTAMPS
+from app.redis.schema import RELAY_CHANNELS, RELAY_TIMESTAMPS, relay_raw_override_key
 from app.redis_client import AutomationRedisClient
 from shared.infra_logging import get_logger
 
@@ -92,6 +93,83 @@ async def relay_test(
     return {
         "results": results,
         "mcp_connected": mcp.is_connected(),
+    }
+
+
+class RelayChannelControlRequest(BaseModel):
+    """Request body for POST /api/hardware/relays/channel/{channel}/state."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    state: int = Field(ge=0, le=1)  # 0 = OFF, 1 = ON
+    duration_seconds: int | None = Field(default=None, ge=1, le=3600)
+
+
+@router.post("/api/hardware/relays/channel/{channel}/state")
+async def set_relay_channel_state(
+    channel: int,
+    body: RelayChannelControlRequest,
+    relay_manager: RelayManager = Depends(get_relay_manager),
+    automation_redis: AutomationRedisClient = Depends(get_automation_redis),
+) -> dict[str, Any]:
+    """Set a single relay channel ON or OFF directly (raw control).
+
+    Bypasses device mapping—useful for commissioning or controlling
+    unassigned channels. Channel must be 0-15.
+    """
+    if channel < 0 or channel > 15:
+        raise HTTPException(
+            status_code=400,
+            detail="channel must be 0-15",
+        )
+
+    override_key = relay_raw_override_key(channel)
+
+    if body.state == 1:
+        if body.duration_seconds is not None:
+            expires_at = datetime.now(UTC) + timedelta(seconds=body.duration_seconds)
+            success = await relay_manager.set_channel_state(channel, 1)
+            if not success:
+                raise HTTPException(
+                    status_code=503,
+                    detail=f"Failed to set channel {channel} to ON",
+                )
+            if automation_redis.redis_client is not None:
+                await asyncio.to_thread(
+                    automation_redis.redis_client.setex,
+                    override_key,
+                    body.duration_seconds + 86400,
+                    json.dumps({"expires_at": expires_at.isoformat(), "state": 1}),
+                )
+        else:
+            if automation_redis.redis_client is not None:
+                await asyncio.to_thread(
+                    automation_redis.redis_client.delete,
+                    override_key,
+                )
+            success = await relay_manager.set_channel_state(channel, 1)
+            if not success:
+                raise HTTPException(
+                    status_code=503,
+                    detail=f"Failed to set channel {channel} to ON",
+                )
+    else:
+        if automation_redis.redis_client is not None:
+            await asyncio.to_thread(
+                automation_redis.redis_client.delete,
+                override_key,
+            )
+        success = await relay_manager.set_channel_state(channel, 0)
+        if not success:
+            raise HTTPException(
+                status_code=503,
+                detail=f"Failed to set channel {channel} to OFF",
+            )
+
+    return {
+        "channel": channel,
+        "state": body.state,
+        "ok": True,
     }
 
 

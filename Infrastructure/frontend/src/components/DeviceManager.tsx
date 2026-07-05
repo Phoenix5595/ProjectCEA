@@ -18,6 +18,7 @@ import {
   buildRelayChannelViewModels,
   getChannelDisplayName,
   getReadableDeviceType,
+  getRelayNumber,
   getRelayPinLabel,
   makeDeviceKey,
 } from './devices/relayViewModel'
@@ -340,42 +341,59 @@ export default function DeviceManager() {
     action: 'auto' | 'timer-5m' | 'timer-10m' | 'timer-30m' | 'timer-1h' | 'off'
   ) {
     const channelInfo = persistedChannelMap.get(channel)
-    if (!channelInfo?.device_name || !channelInfo.location || !channelInfo.cluster) {
-      toast.error('Assign this channel before controlling it')
-      return
-    }
-
-    const { location, device_name: deviceName } = channelInfo
-    const cluster = normalizeDeviceControlCluster(location, channelInfo.cluster)
+    const isAssigned = !!(channelInfo?.device_name && channelInfo.location && channelInfo.cluster)
 
     try {
-      if (action === 'auto') {
-        await apiClient.setDeviceMode(location, cluster, deviceName, 'auto')
-        toast.success(`Channel ${channel} set to auto`)
-      } else if (action === 'off') {
-        await apiClient.setDeviceMode(location, cluster, deviceName, 'manual')
-        await apiClient.controlDevice(location, cluster, deviceName, 0, 'Manual off from relay menu')
-        toast.success(`Channel ${channel} turned off`)
-      } else {
-        const durationSeconds =
-          action === 'timer-5m'
-            ? 300
-            : action === 'timer-10m'
-            ? 600
-            : action === 'timer-30m'
-            ? 1800
-            : 3600
+      if (isAssigned) {
+        const location = channelInfo.location!
+        const deviceName = channelInfo.device_name!
+        const rawCluster = channelInfo.cluster!
+        const cluster = normalizeDeviceControlCluster(location, rawCluster)
 
-        await apiClient.setDeviceMode(location, cluster, deviceName, 'manual')
-        await apiClient.controlDevice(
-          location,
-          cluster,
-          deviceName,
-          1,
-          'Manual timed activation',
-          durationSeconds
-        )
-        toast.success(`Channel ${channel} manual activation started`)
+        if (action === 'auto') {
+          await apiClient.setDeviceMode(location, cluster, deviceName, 'auto')
+          toast.success(`Channel ${channel} set to auto`)
+        } else if (action === 'off') {
+          await apiClient.setDeviceMode(location, cluster, deviceName, 'manual')
+          await apiClient.controlDevice(location, cluster, deviceName, 0, 'Manual off from relay menu')
+          toast.success(`Channel ${channel} turned off`)
+        } else {
+          const durationSeconds =
+            action === 'timer-5m'
+              ? 300
+              : action === 'timer-10m'
+              ? 600
+              : action === 'timer-30m'
+              ? 1800
+              : 3600
+
+          await apiClient.setDeviceMode(location, cluster, deviceName, 'manual')
+          await apiClient.controlDevice(
+            location,
+            cluster,
+            deviceName,
+            1,
+            'Manual timed activation',
+            durationSeconds
+          )
+          toast.success(`Channel ${channel} manual activation started`)
+        }
+      } else {
+        if (action === 'off') {
+          await apiClient.controlChannel(channel, 0)
+          toast.success(`Relay R${getRelayNumber(channel)} (${getRelayPinLabel(channel)}) turned off`)
+        } else if (action !== 'auto') {
+          const durationSeconds =
+            action === 'timer-5m'
+              ? 300
+              : action === 'timer-10m'
+              ? 600
+              : action === 'timer-30m'
+              ? 1800
+              : 3600
+          await apiClient.controlChannel(channel, 1, durationSeconds)
+          toast.success(`Relay R${getRelayNumber(channel)} (${getRelayPinLabel(channel)}) ON for ${durationSeconds / 60}m`)
+        }
       }
 
       await refreshRelayState()
@@ -575,7 +593,7 @@ export default function DeviceManager() {
                   <thead className="bg-surface-secondary">
                     <tr>
                       <th className="px-2 py-1 text-left text-xs font-medium uppercase tracking-wider text-text-muted">
-                        Channel
+                        Relay
                       </th>
                       <th className="px-2 py-1 text-left text-xs font-medium uppercase tracking-wider text-text-muted">
                         Device Type
@@ -615,7 +633,7 @@ export default function DeviceManager() {
                             }}
                             title="Double-click to clear this row"
                           >
-                            <div>{relayChannel.channel}</div>
+                            <div>R{getRelayNumber(relayChannel.channel)}</div>
                             <div className="text-xs text-text-muted">{getRelayPinLabel(relayChannel.channel)}</div>
                           </td>
 
