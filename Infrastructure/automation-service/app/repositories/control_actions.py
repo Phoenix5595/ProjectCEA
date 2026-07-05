@@ -55,6 +55,7 @@ class ControlActionRepository(BaseRepository):
         sensor_value: float | None = None,
         setpoint: float | None = None,
         load_percent: float | None = None,
+        manual_expires_at: datetime | None = None,
     ) -> bool:
         """Log a control action to control_history table."""
         if old_state is not None and new_state is not None and old_state == new_state:
@@ -68,8 +69,8 @@ class ControlActionRepository(BaseRepository):
                 await conn.execute(
                     """
                     INSERT INTO control_history
-                    (timestamp, location, cluster, device_name, channel, old_state, new_state, mode, reason, sensor_value, setpoint, load_percent)
-                    VALUES (NOW(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+                    (timestamp, location, cluster, device_name, channel, old_state, new_state, mode, reason, sensor_value, setpoint, load_percent, manual_expires_at)
+                    VALUES (NOW(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
                 """,
                     location,
                     cluster,
@@ -82,6 +83,7 @@ class ControlActionRepository(BaseRepository):
                     sensor_value,
                     setpoint,
                     load_percent,
+                    manual_expires_at,
                 )
                 return True
         except Exception as e:
@@ -212,6 +214,65 @@ class ControlActionRepository(BaseRepository):
         except Exception as e:
             logger.error(f"Failed to get last changed per channel: {e}")
             return []
+
+    async def get_expired_manual_overrides(self) -> list[dict[str, Any]]:
+        """Return control_history rows where manual_expires_at has passed.
+
+        Uses the partial index idx_control_history_manual_expires for
+        efficient lookup of expired manual overrides.
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(
+                    """
+                    SELECT location, cluster, device_name, channel
+                    FROM control_history
+                    WHERE manual_expires_at IS NOT NULL
+                      AND manual_expires_at <= NOW()
+                      AND mode = 'manual'
+                    """
+                )
+                return [
+                    {
+                        "location": row["location"],
+                        "cluster": row["cluster"],
+                        "device_name": row["device_name"],
+                        "channel": row["channel"],
+                    }
+                    for row in rows
+                ]
+        except Exception as e:
+            logger.error(f"Failed to get expired manual overrides: {e}")
+            return []
+
+    async def clear_manual_expiry(self, location: str, cluster: str, device_name: str) -> bool:
+        """Clear manual_expires_at for a device in control_history.
+
+        Updates all rows for the device where manual_expires_at is set
+        and mode is manual, preventing re-processing on subsequent ticks.
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                await conn.execute(
+                    """
+                    UPDATE control_history
+                    SET manual_expires_at = NULL
+                    WHERE location = $1
+                      AND cluster = $2
+                      AND device_name = $3
+                      AND manual_expires_at IS NOT NULL
+                      AND mode = 'manual'
+                    """,
+                    location,
+                    cluster,
+                    device_name,
+                )
+                return True
+        except Exception as e:
+            logger.error(
+                f"Failed to clear manual expiry for {location}/{cluster}/{device_name}: {e}"
+            )
+            return False
 
     async def log_automation_state(
         self,

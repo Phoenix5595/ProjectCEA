@@ -14,6 +14,12 @@ import type {
   ModeScheduleResponse,
 } from '../types/calendar';
 import type { ChannelInfo, LightNameOption } from '../types/relay';
+import type {
+  SystemConfigResponse,
+  ConfigUpdateRequest,
+  ConfigUpdateResponse,
+  RestartServiceResponse,
+} from '../types/systemConfig';
 import { AUTOMATION_API_URL, BACKEND_API_URL, CEA_API_KEY, WEATHER_API_URL } from '../config/env';
 
 /** Opaque JSON object returned by backend endpoints that don't have a typed contract yet. */
@@ -29,6 +35,7 @@ interface RawDevice {
   mode?: string;
   state?: number;
   channel?: number;
+  manual_expires_at?: string | null;
 }
 
 interface WeatherMeasurement {
@@ -301,6 +308,69 @@ class ApiClient {
     return response.data;
   }
 
+  // Per-room PID methods — v2 routes /api/pid/{parameters,mode}/{location}/{cluster}/{device_type}.
+  // Legacy device-only methods above remain for backward compatibility.
+  async getPIDParametersForRoom(
+    location: string,
+    cluster: string,
+    deviceType: string
+  ): Promise<PIDParameters> {
+    const response = await this.automationClient.get(
+      `/api/pid/parameters/${encodeURIComponent(location)}/${encodeURIComponent(cluster)}/${encodeURIComponent(deviceType)}`
+    );
+    return response.data;
+  }
+
+  async updatePIDParametersForRoom(
+    location: string,
+    cluster: string,
+    deviceType: string,
+    params: PIDParameterUpdate
+  ): Promise<PIDParameters> {
+    const response = await this.automationClient.post(
+      `/api/pid/parameters/${encodeURIComponent(location)}/${encodeURIComponent(cluster)}/${encodeURIComponent(deviceType)}`,
+      params
+    );
+    return response.data;
+  }
+
+  async getPIDParameterHistoryForRoom(
+    location: string,
+    cluster: string,
+    deviceType: string,
+    limit: number = 50
+  ): Promise<import('../types/pid').PIDHistoryEntry[]> {
+    const response = await this.automationClient.get(
+      `/api/pid/parameters/${encodeURIComponent(location)}/${encodeURIComponent(cluster)}/${encodeURIComponent(deviceType)}/history`,
+      { params: { limit } }
+    );
+    return response.data;
+  }
+
+  async getPIDModeForRoom(
+    location: string,
+    cluster: string,
+    deviceType: string
+  ): Promise<PIDModeInfo> {
+    const response = await this.automationClient.get(
+      `/api/pid/mode/${encodeURIComponent(location)}/${encodeURIComponent(cluster)}/${encodeURIComponent(deviceType)}`
+    );
+    return response.data;
+  }
+
+  async setPIDModeForRoom(
+    location: string,
+    cluster: string,
+    deviceType: string,
+    update: PIDModeUpdate
+  ): Promise<PIDModeInfo> {
+    const response = await this.automationClient.post(
+      `/api/pid/mode/${encodeURIComponent(location)}/${encodeURIComponent(cluster)}/${encodeURIComponent(deviceType)}`,
+      update
+    );
+    return response.data;
+  }
+
   // Schedules (automation service)
   async getSchedules(location?: string, cluster?: string): Promise<Schedule[]> {
     const params: Record<string, string> = {};
@@ -493,13 +563,15 @@ class ApiClient {
     cluster: string,
     device: string,
     state: number,
-    reason?: string
+    reason?: string,
+    durationSeconds?: number
   ): Promise<JsonObject> {
     const response = await this.automationClient.post(
       `/api/devices/${location}/${cluster}/${device}/control`,
       {
         state,
-        reason: reason || 'Manual override'
+        reason: reason || 'Manual override',
+        duration_seconds: durationSeconds
       }
     );
     return response.data;
@@ -622,6 +694,22 @@ class ApiClient {
 
   async deleteCalendarSyncConnection(): Promise<void> {
     await this.automationClient.delete('/api/calendar/sync/connections');
+  }
+
+  // System Config (automation service)
+  async getConfig(): Promise<SystemConfigResponse> {
+    const response = await this.automationClient.get('/api/config');
+    return response.data;
+  }
+
+  async putConfig(update: ConfigUpdateRequest): Promise<ConfigUpdateResponse> {
+    const response = await this.automationClient.put('/api/config', update);
+    return response.data;
+  }
+
+  async restartService(): Promise<RestartServiceResponse> {
+    const response = await this.automationClient.post('/api/config/restart');
+    return response.data;
   }
 }
 

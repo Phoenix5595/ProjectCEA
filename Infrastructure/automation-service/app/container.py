@@ -82,6 +82,9 @@ class ServiceContainer:
             self.config = ConfigLoader()
             logger.info("Configuration loaded")
 
+            # Write restart-hash sidecar on startup
+            self._write_restart_hash_sidecar()
+
             # 2. Initialize database
             self.database = DatabaseManager()
             await self.database.initialize()
@@ -360,3 +363,36 @@ class ServiceContainer:
     def get_automation_redis(self) -> AutomationRedisClient | None:
         """Get automation Redis client."""
         return self.automation_redis
+
+    def _write_restart_hash_sidecar(self) -> None:
+        """Compute and write the restart-hash sidecar next to the config file."""
+        import hashlib
+        import json
+        from pathlib import Path
+
+        assert self.config is not None
+        raw = self.config._config
+        control = raw.get("control") or {}
+        restart_subset = {
+            "hardware": raw.get("hardware", {}),
+            "control": {
+                "safety_limits": control.get("safety_limits", {}),
+                "update_interval": control.get("update_interval"),
+                "last_good_hold_period": control.get("last_good_hold_period"),
+                "binary_hysteresis": control.get("binary_hysteresis"),
+                "pid_limits": control.get("pid_limits", {}),
+            },
+        }
+        try:
+            canonical = json.dumps(restart_subset, sort_keys=True, separators=(",", ":"))
+        except TypeError as e:
+            logger.warning("Failed to compute restart-hash sidecar (non-serializable config): %s", e)
+            return
+        hash_value = hashlib.sha256(canonical.encode()).hexdigest()
+        sidecar_data = {"hash": hash_value, "subset": restart_subset}
+        sidecar_path = Path(self.config.config_path).parent / "automation_config.restart_hash"
+        try:
+            sidecar_path.write_text(json.dumps(sidecar_data, sort_keys=True))
+            logger.info("Restart-hash sidecar written: %s", sidecar_path)
+        except OSError as e:
+            logger.warning("Failed to write restart-hash sidecar: %s", e)

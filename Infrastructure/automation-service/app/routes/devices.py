@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
-import yaml
 
 from app.cluster_config import ensure_configured_cluster, iter_flower_main_merged_devices
 from app.config import ConfigLoader
@@ -216,6 +216,10 @@ async def control_device(
     if not success:
         raise HTTPException(status_code=400, detail=reason or "Failed to set device state")
 
+    manual_expires_at: datetime | None = None
+    if request.duration_seconds is not None and request.state == 1:
+        manual_expires_at = datetime.now(UTC) + timedelta(seconds=request.duration_seconds)
+
     await database.control_action_repo.log_control_action(
         location,
         cluster,
@@ -226,6 +230,7 @@ async def control_device(
         "manual",
         request.reason or "Manual override",
         load_percent=None,
+        manual_expires_at=manual_expires_at,
     )
 
     return {
@@ -611,10 +616,9 @@ async def update_channel_device(
 
     device_configs[update.location][effective_cluster][update.device_name] = device_info
 
-    # Write back to YAML
     try:
-        with open(config.config_path, "w") as f:
-            yaml.dump(full_config, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
+        with config._config_lock:
+            config.write_full_config(full_config)
         config.reload()
     except Exception as e:
         logger.error(f"Error writing config: {e}")
@@ -653,8 +657,8 @@ async def clear_channel_device(
                     )
 
     try:
-        with open(config.config_path, "w") as f:
-            yaml.dump(full_config, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
+        with config._config_lock:
+            config.write_full_config(full_config)
         config.reload()
     except Exception as e:
         logger.error(f"Error writing config while clearing channel: {e}")

@@ -6,6 +6,56 @@ export const RELAY_MATRIX_ROWS = 8
 export const RELAY_MATRIX_BANK_SIZE = 8
 export const RELAY_CHANNELS = Array.from({ length: RELAY_CHANNEL_COUNT }, (_, index) => index)
 
+/**
+ * Physical relay → code channel map.
+ * Source: .omo/evidence/task-3-relay-mcp-bugfix.md — User bench verification (2026-06-29).
+ * Port A (ch0-7) drives bottom row left→right; Port B (ch8-15) drives top row right→left.
+ *
+ * Mapping confirmed by direct observation (user toggled channels, watched physical relays):
+ * relay  1=ch15,  2=ch0,  3=ch14,  4=ch1,  5=ch13,  6=ch2,  7=ch12,  8=ch3,
+ * relay  9=ch11, 10=ch4, 11=ch10, 12=ch5, 13=ch9,  14=ch6,  15=ch8,  16=ch7
+ */
+export const RELAY_TO_CHANNEL: Readonly<Record<number, number>> = {
+  1: 15, 2: 0, 3: 14, 4: 1, 5: 13, 6: 2, 7: 12, 8: 3,
+  9: 11, 10: 4, 11: 10, 12: 5, 13: 9, 14: 6, 15: 8, 16: 7,
+}
+
+export const CHANNEL_TO_RELAY: Readonly<Record<number, number>> = Object.entries(RELAY_TO_CHANNEL).reduce(
+  (acc, [relay, channel]) => {
+    acc[channel] = Number(relay)
+    return acc
+  },
+  {} as Record<number, number>
+)
+
+export function getRelayNumber(channel: number): number {
+  return CHANNEL_TO_RELAY[channel] ?? channel + 1
+}
+
+/**
+ * Split a 16-channel view-model array into two physical layout columns for matrix rendering.
+ * - leftColumn[0..7]  = physical relays 1→8 (top→bottom)
+ * - rightColumn[0..7] = physical relays 16→9 (top→bottom)
+ *
+ * Each entry is the RelayChannelViewModel whose channel matches RELAY_TO_CHANNEL[relay#].
+ * Source: .omo/evidence/task-3-relay-mcp-bugfix.md — Port A drives the bottom row left→right,
+ * Port B drives the top row right→left, producing the reversed wiring pattern.
+ */
+export function splitRelayByPhysicalLayout(
+  channels: RelayChannelViewModel[]
+): { leftColumn: RelayChannelViewModel[]; rightColumn: RelayChannelViewModel[] } {
+  const byChannel = new Map<number, RelayChannelViewModel>(channels.map((vm) => [vm.channel, vm]))
+
+  const leftColumn = [1, 2, 3, 4, 5, 6, 7, 8].map(
+    (relay) => byChannel.get(RELAY_TO_CHANNEL[relay])!
+  )
+  const rightColumn = [16, 15, 14, 13, 12, 11, 10, 9].map(
+    (relay) => byChannel.get(RELAY_TO_CHANNEL[relay])!
+  )
+
+  return { leftColumn, rightColumn }
+}
+
 export interface LocationClusterPair {
   location: string
   cluster: string

@@ -162,6 +162,9 @@ NOTES_DIR="${NOTES_DATA_DIR:-/var/lib/projectcea/notes}"
 sudo mkdir -p "$NOTES_DIR"
 sudo chown -R "${NOTES_USER:-antoine}:${NOTES_GROUP:-antoine}" /var/lib/projectcea 2>/dev/null || true
 
+echo "[4b/7] Ensuring sudoers rule for cea user..."
+"$SOURCE/Infrastructure/scripts/install-sudoers.sh"
+
 echo "[5/7] Switching symlink..."
 sudo ln -sfn "$TARGET" /opt/projectcea/current
 

@@ -16,12 +16,14 @@ export interface PIDParameters {
   control_mode?: PIDControlMode;
   hysteresis_high?: number;
   hysteresis_low?: number;
+  binary_hysteresis?: number;
 }
 
 export interface PIDParameterUpdate {
   kp?: number;
   ki?: number;
   kd?: number;
+  binary_hysteresis?: number;
   source?: string;
   updated_by?: string;
 }

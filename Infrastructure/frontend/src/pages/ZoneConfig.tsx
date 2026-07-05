@@ -151,12 +151,9 @@ export default function ZoneConfig({
     setRelayChannels(buildRelayChannelViewModels(channelInfoList, relayState, lastStateMap))
   }, [channelInfoList, relayState, relayTimestamps])
 
-  // Relay menu state — consumed by RelayChannelMatrix + timer effect in upcoming tasks
+  // Relay menu state — consumed by RelayChannelMatrix
   // @ts-ignore
   const [menuOpenChannel, setMenuOpenChannel] = useState<number | null>(null)
-  const [manualTimersByChannel, setManualTimersByChannel] = useState<Record<number, number>>({})
-  // @ts-ignore
-  const [timerActionInFlight, setTimerActionInFlight] = useState<Record<number, boolean>>({})
 
   const handleRelayMenuAction = useCallback(async (channel: number, action: 'auto' | 'timer-5m' | 'timer-10m' | 'timer-30m' | 'timer-1h' | 'off') => {
     const ch = relayChannels.find((c: { channel: number }) => c.channel === channel)
@@ -169,8 +166,6 @@ export default function ZoneConfig({
     // Close dropdown
     setMenuOpenChannel(null)
 
-    // Track in-flight state
-    setTimerActionInFlight(prev => ({ ...prev, [channel]: true }))
     try {
       if (action === 'auto') {
         await apiClient.setDeviceMode(location, cluster, device, 'auto')
@@ -178,68 +173,36 @@ export default function ZoneConfig({
         await apiClient.setDeviceMode(location, cluster, device, 'manual')
         await apiClient.controlDevice(location, cluster, device, 0, 'Manual override: OFF')
       } else {
-        // Timer actions: ON for N minutes, then auto
         const minutes = action === 'timer-5m' ? 5 : action === 'timer-10m' ? 10 : action === 'timer-30m' ? 30 : 60
         await apiClient.setDeviceMode(location, cluster, device, 'manual')
-        await apiClient.controlDevice(location, cluster, device, 1, `Manual override: ON ${minutes}m`)
-        setManualTimersByChannel(prev => ({
-          ...prev,
-          [channel]: Date.now() + minutes * 60 * 1000,
-        }))
+        await apiClient.controlDevice(location, cluster, device, 1, `Manual override: ON ${minutes}m`, minutes * 60)
       }
     } catch (err) {
       logger.error(`Relay action failed for channel ${channel}:`, err)
-    } finally {
-      setTimerActionInFlight(prev => ({ ...prev, [channel]: false }))
     }
   }, [relayChannels])
 
-  // Timer expiration: auto-revert to 'auto' when manual timer expires
-  useEffect(() => {
-    const activeTimers = Object.entries(manualTimersByChannel).filter(([, expiry]) => expiry > 0)
-    if (activeTimers.length === 0) return
-
-    const timer = setInterval(() => {
-      const now = Date.now()
-      const expired: number[] = []
-      Object.entries(manualTimersByChannel).forEach(([channelStr, expiry]) => {
-        if (expiry > 0 && expiry <= now) expired.push(Number(channelStr))
-      })
-      if (expired.length > 0) {
-        setManualTimersByChannel(prev => {
-          const next = { ...prev }
-          expired.forEach(ch => delete next[ch])
-          return next
-        })
-        // handleRelayMenuAction will be defined by the time this runs (Task 3 adds it)
-        // eslint-disable-next-line @typescript-eslint/no-use-before-define
-        expired.forEach(channel => {
-          handleRelayMenuAction(channel, 'auto')
-        })
-      }
-    }, 1000)
-    return () => clearInterval(timer)
-  }, [manualTimersByChannel])
-
-  // Timer countdown text for active manual timers
   // @ts-ignore
   const statusByChannel = useMemo(() => {
     const map: Record<number, { text: string; tone: 'unknown' | 'active' | 'idle' }> = {}
     const now = Date.now()
     for (const ch of relayChannels) {
-      const expiry = manualTimersByChannel[ch.channel]
-      if (expiry && expiry > now) {
-        const remaining = Math.ceil((expiry - now) / 1000)
-        const minutes = Math.floor(remaining / 60)
-        const seconds = remaining % 60
-        map[ch.channel] = {
-          text: `${minutes}:${String(seconds).padStart(2, '0')}`,
-          tone: 'active',
+      const ts = ch.lastStateChangeAt
+      if (ts && ch.isActive) {
+        const elapsedMs = now - new Date(ts).getTime()
+        if (elapsedMs >= 0 && elapsedMs < 60 * 60 * 1000) {
+          const remaining = Math.ceil((60 * 60 * 1000 - elapsedMs) / 1000)
+          const minutes = Math.floor(remaining / 60)
+          const seconds = remaining % 60
+          map[ch.channel] = {
+            text: `${minutes}:${String(seconds).padStart(2, '0')}`,
+            tone: 'active',
+          }
         }
       }
     }
     return map
-  }, [relayChannels, manualTimersByChannel])
+  }, [relayChannels])
 
   const loadClimatePeriodsForMode = useCallback(
     async (mode: RoomModeWithParams) => {
@@ -423,7 +386,7 @@ export default function ZoneConfig({
       <div className="min-h-screen bg-surface-base p-1">
         <div className="max-w-[1920px] mx-auto h-[calc(100vh-1rem)] flex flex-col min-h-0">
           <div className="flex-1 min-h-0">
-            <VerticalPIDBlock />
+            <VerticalPIDBlock location={location} cluster={cluster} />
           </div>
         </div>
       </div>

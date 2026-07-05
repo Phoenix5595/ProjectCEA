@@ -10,6 +10,7 @@ class DeviceControlRequest(BaseModel):
 
     state: int  # 0 = OFF, 1 = ON
     reason: str | None = "Manual override"
+    duration_seconds: int | None = None
 
 
 class DeviceModeRequest(BaseModel):

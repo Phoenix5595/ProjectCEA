@@ -263,6 +263,12 @@ class ControlEngine:
             await self._restore_ramps_on_startup()
             self._ramps_restored = True
 
+        # Expire manual overrides before processing devices
+        try:
+            await self._expire_manual_overrides()
+        except Exception as e:
+            logger.error(f"Failed to expire manual overrides: {e}")
+
         loop_start_time = datetime.now() if self._profiling_enabled else None
 
         current_time = datetime.now(tz=LOCAL_TZ)
@@ -417,6 +423,28 @@ class ControlEngine:
     # _get_sensor_for_setpoint_type moved to SensorReader
     # _compute_effective_setpoints method moved to SetpointManager
     # _process_vpd_control moved to device_controller
+
+    async def _expire_manual_overrides(self) -> None:
+        """Sweep and expire manual overrides whose timer has passed.
+
+        Queries control_history for rows where manual_expires_at <= NOW(),
+        reverts each device to auto mode (state=0), logs the transition,
+        and clears the expiry flag so the row is not re-processed.
+        """
+        expired = await self.database.control_action_repo.get_expired_manual_overrides()
+        for row in expired:
+            await self._set_device_state(
+                row["location"],
+                row["cluster"],
+                row["device_name"],
+                0,
+                "auto",
+                "manual_timer_expired",
+                {},
+            )
+            await self.database.control_action_repo.clear_manual_expiry(
+                row["location"], row["cluster"], row["device_name"]
+            )
 
     async def _set_device_state(
         self,

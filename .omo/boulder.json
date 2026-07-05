@@ -1,499 +1,185 @@
 {
-  "active_plan": "/home/antoine/ProjectCEA/.omo/plans/iskradocker-tailscale-https.md",
-  "started_at": "2026-06-23T14:16:00.400Z",
-  "completed_at": "2026-06-02T21:08:11.000Z",
-  "session_ids": [
-    "opencode:ses_110119ebfffeZXvZToaBvK0UNh"
-  ],
-  "plan_name": "iskradocker-tailscale-https",
-  "agent": "atlas",
-  "status": "completed",
-  "session_origins": {
-    "opencode:ses_110119ebfffeZXvZToaBvK0UNh": "direct"
-  },
-  "task_sessions": {
-    "todo:1": {
-      "task_key": "todo:1",
-      "task_label": "1",
-      "task_title": "Set Tailscale operator + verify HTTPS cert provisioning capability",
-      "session_id": "opencode:ses_10b2895b3ffe9lys0Q2i4sE6Wr",
-      "agent": "Sisyphus-Junior",
-      "category": "quick",
-      "updated_at": "2026-06-23T14:19:16.013Z",
-      "started_at": "2026-06-23T14:18:53.436Z",
-      "status": "completed",
-      "ended_at": "2026-06-23T14:19:16.013Z",
-      "elapsed_ms": 22577
-    },
-    "todo:2": {
-      "task_key": "todo:2",
-      "task_label": "2",
-      "task_title": "Configure Nextcloud HTTPS (tailscale serve + occ config + nginx HTTPS on)",
-      "session_id": "opencode:ses_10b261af8ffeHjFzIjNHNyCJ5n",
-      "agent": "Sisyphus-Junior",
-      "category": "unspecified-high",
-      "updated_at": "2026-06-23T14:45:28.021Z",
-      "started_at": "2026-06-23T14:26:06.141Z",
-      "status": "completed",
-      "ended_at": "2026-06-23T14:45:28.021Z",
-      "elapsed_ms": 1161880
-    },
-    "todo:4": {
-      "task_key": "todo:4",
-      "task_label": "4",
-      "task_title": "Configure Immich HTTPS via Tailscale serve",
-      "session_id": "opencode:ses_10b0e41d2ffeInwfWMpEESR83r",
-      "agent": "Sisyphus-Junior",
-      "category": "quick",
-      "updated_at": "2026-06-23T14:51:31.590Z",
-      "started_at": "2026-06-23T14:51:10.968Z",
-      "status": "completed",
-      "ended_at": "2026-06-23T14:51:31.590Z",
-      "elapsed_ms": 20622
-    },
-    "todo:5": {
-      "task_key": "todo:5",
-      "task_label": "5",
-      "task_title": "Update AGENTS.md with HTTPS access details",
-      "session_id": "opencode:ses_10b08a776ffeHwhqg6s9Gi2AOI",
-      "agent": "Sisyphus-Junior",
-      "category": "quick",
-      "updated_at": "2026-06-23T14:54:13.684Z",
-      "started_at": "2026-06-23T14:53:52.012Z",
-      "status": "completed",
-      "ended_at": "2026-06-23T14:54:13.684Z",
-      "elapsed_ms": 21672
-    },
-    "final-wave:f1": {
-      "task_key": "final-wave:f1",
-      "task_label": "F1",
-      "task_title": "Plan compliance audit — verify: tailscale serve shows 3 rules (443→8082, 8443→8096, 9443→2283); Nextcloud occ overwriteprotocol=https; trusted_domains index 5 = ts.net FQDN; nextcloud-nginx.conf has `fastcgi_param HTTPS on;`; AGENTS.md mentions tailscale serve + auto cert; CLIProxyAPI dashboard untouched (Caddyfile-https unchanged on :7443)",
-      "session_id": "opencode:ses_10b067374ffeVkuNfOX2N9M220",
-      "agent": "Sisyphus-Junior",
-      "category": "quick",
-      "updated_at": "2026-06-23T15:01:05.329Z",
-      "started_at": "2026-06-23T14:54:52.311Z",
-      "status": "completed",
-      "ended_at": "2026-06-23T15:01:05.329Z",
-      "elapsed_ms": 373018
-    }
-  },
   "schema_version": 2,
+  "active_work_id": "settings-relay-matrix-dfr-cleanup",
   "works": {
-    "code-quality-fixes-legacy": {
-      "work_id": "code-quality-fixes-legacy",
-      "active_plan": "/home/antoine/ProjectCEA/.sisyphus/plans/code-quality-fixes.md",
-      "plan_name": "code-quality-fixes",
-      "status": "complete",
-      "started_at": "2026-06-02T13:18:13.069Z",
+    "settings-relay-matrix-dfr-cleanup": {
+      "work_id": "settings-relay-matrix-dfr-cleanup",
+      "active_plan": "/home/antoine/ProjectCEA/.omo/plans/settings-relay-matrix-dfr-cleanup.md",
+      "plan_name": "settings-relay-matrix-dfr-cleanup",
       "session_ids": [
-        "opencode:ses_177b3bbc9ffeluG2x04cE6jeuY"
+        "opencode:ses_0e70fc228ffeBshhzGKaAPSeMu"
       ],
-      "session_origins": {
-        "opencode:ses_177b3bbc9ffeluG2x04cE6jeuY": "direct"
-      },
-      "agent": "atlas",
-      "task_sessions": {}
-    },
-    "relay-timestamp-fix-d88c96a3": {
-      "work_id": "relay-timestamp-fix-d88c96a3",
-      "active_plan": "/home/antoine/ProjectCEA/.omo/plans/relay-timestamp-fix.md",
-      "plan_name": "relay-timestamp-fix",
-      "status": "completed",
-      "started_at": "2026-06-02T20:59:06.438Z",
-      "updated_at": "2026-06-02T21:10:29.529Z",
-      "session_ids": [
-        "opencode:ses_18c68c91effeL6URAUZwAx7NhB"
-      ],
-      "session_origins": {
-        "opencode:ses_18c68c91effeL6URAUZwAx7NhB": "direct"
-      },
-      "agent": "atlas",
-      "task_sessions": {},
-      "ended_at": "2026-06-02T21:10:29.529Z",
-      "elapsed_ms": 683091
-    },
-    "iskradocker-watchtower-de9b8b2c": {
-      "work_id": "iskradocker-watchtower-de9b8b2c",
-      "active_plan": "/home/antoine/ProjectCEA/.omo/plans/iskradocker-watchtower.md",
-      "plan_name": "iskradocker-watchtower",
-      "status": "completed",
-      "started_at": "2026-06-22T18:14:20.304Z",
-      "updated_at": "2026-06-22T21:59:30.063Z",
-      "session_ids": [
-        "opencode:ses_110119ebfffeZXvZToaBvK0UNh"
-      ],
-      "session_origins": {
-        "opencode:ses_110119ebfffeZXvZToaBvK0UNh": "direct"
-      },
-      "agent": "atlas",
+      "status": "active",
+      "worktree_path": null,
+      "started_at": "2026-07-05T13:56:32.359Z",
+      "session_origins": {},
       "task_sessions": {
         "todo:1": {
           "task_key": "todo:1",
           "task_label": "1",
-          "task_title": "Add Watchtower labels to Nextcloud + Jellyfin",
-          "session_id": "opencode:ses_10f7505b4ffe0TiQIJdoQYg4YR",
+          "task_title": "Alembic migration 006: add manual_expires_at column + partial index to control_history",
+          "session_id": "opencode:ses_0cd6cdaa4ffeumzwCnP2KjtoUO",
           "agent": "Sisyphus-Junior",
-          "category": "unspecified-high",
-          "updated_at": "2026-06-22T18:20:41.198Z",
-          "started_at": "2026-06-22T18:19:50.491Z",
+          "category": "quick",
+          "updated_at": "2026-07-05T14:06:52.030Z",
+          "started_at": "2026-07-05T14:02:36.327Z",
           "status": "completed",
-          "ended_at": "2026-06-22T18:20:41.198Z",
-          "elapsed_ms": 50707
-        },
-        "todo:2": {
-          "task_key": "todo:2",
-          "task_label": "2",
-          "task_title": "Execute immich DB migration (pgvecto → VectorChord) — MANUAL, user-gated",
-          "session_id": "opencode:ses_10f0a9138ffewqAZxzNyj4r0YI",
-          "agent": "Sisyphus-Junior",
-          "category": "unspecified-high",
-          "started_at": "2026-06-22T20:34:46.429Z",
-          "status": "completed",
-          "updated_at": "2026-06-22T20:59:25.393Z",
-          "ended_at": "2026-06-22T20:59:25.393Z",
-          "elapsed_ms": 1478964
+          "ended_at": "2026-07-05T14:06:52.030Z",
+          "elapsed_ms": 255703
         },
         "todo:3": {
           "task_key": "todo:3",
           "task_label": "3",
-          "task_title": "Add Watchtower labels to Immich containers (after T2 migration)",
-          "session_id": "opencode:ses_10ede1238ffeShV9Ciuot7giPh",
+          "task_title": "NO-OP: verify existing /api/hardware/relays/state timestamps are accurate after todo 2 fix",
+          "session_id": "opencode:ses_0cd64b6b6ffeezvHmOeX0sdps6",
           "agent": "Sisyphus-Junior",
-          "category": "unspecified-high",
-          "updated_at": "2026-06-22T21:15:24.992Z",
-          "started_at": "2026-06-22T21:11:59.088Z",
+          "category": "quick",
+          "updated_at": "2026-07-05T14:16:15.256Z",
+          "started_at": "2026-07-05T14:11:22.004Z",
           "status": "completed",
-          "ended_at": "2026-06-22T21:15:24.992Z",
-          "elapsed_ms": 205904
+          "ended_at": "2026-07-05T14:16:15.256Z",
+          "elapsed_ms": 293252
         },
         "todo:4": {
           "task_key": "todo:4",
           "task_label": "4",
-          "task_title": "Update AGENTS.md docs to document the auto-update mechanism",
-          "session_id": "opencode:ses_10ecfae17ffeZlEKIKXRbbUyxm",
+          "task_title": "Add duration_seconds to DeviceControlRequest; route computes manual_expires_at",
+          "session_id": "opencode:ses_0cd5ab815ffegFv8PWMi9zujDX",
           "agent": "Sisyphus-Junior",
-          "category": "unspecified-high",
-          "updated_at": "2026-06-22T21:32:08.243Z",
-          "started_at": "2026-06-22T21:26:21.465Z",
+          "category": "deep",
+          "updated_at": "2026-07-05T14:23:38.675Z",
+          "started_at": "2026-07-05T14:20:54.406Z",
           "status": "completed",
-          "ended_at": "2026-06-22T21:32:08.243Z",
-          "elapsed_ms": 346778
-        },
-        "final-wave:f1": {
-          "task_key": "final-wave:f1",
-          "task_label": "F1",
-          "task_title": "Plan compliance audit — verify: Watchtower config unchanged (`--interval 3600 --label-enable --cleanup`); labels on exactly nextcloud-app, nextcloud-web, nextcloud-redis, nextcloud-cron, jellyfin, immich-server, immich-machine-learning, immich-redis; NO labels on nextcloud-db, immich-postgres; NO labels added/changed on cliproxyapi; NO labels on *arr stack. Tool: `docker inspect` each container + `docker inspect compose-watchtower-1 --format '{{json .Args}}'`.",
-          "session_id": "opencode:ses_10eb15a6dffei0Kybz0KlgcJ8m",
-          "agent": "Sisyphus-Junior",
-          "category": "unspecified-high",
-          "started_at": "2026-06-22T21:43:46.654Z",
-          "status": "completed",
-          "updated_at": "2026-06-22T21:56:57.600Z",
-          "ended_at": "2026-06-22T21:56:57.600Z",
-          "elapsed_ms": 790946
-        }
-      },
-      "ended_at": "2026-06-22T21:59:30.063Z",
-      "elapsed_ms": 13509759
-    },
-    "iskradocker-nextcloud-fix-0a61cb74": {
-      "work_id": "iskradocker-nextcloud-fix-0a61cb74",
-      "active_plan": "/home/antoine/ProjectCEA/.omo/plans/iskradocker-nextcloud-fix.md",
-      "plan_name": "iskradocker-nextcloud-fix",
-      "status": "active",
-      "started_at": "2026-06-22T22:18:51.291Z",
-      "updated_at": "2026-06-22T22:18:51.291Z",
-      "session_ids": [
-        "opencode:ses_110119ebfffeZXvZToaBvK0UNh"
-      ],
-      "session_origins": {
-        "opencode:ses_110119ebfffeZXvZToaBvK0UNh": "direct"
-      },
-      "agent": "atlas",
-      "task_sessions": {}
-    },
-    "iskradocker-nextcloud-fix-6cfc408f": {
-      "work_id": "iskradocker-nextcloud-fix-6cfc408f",
-      "active_plan": "/home/antoine/ProjectCEA/.omo/plans/iskradocker-nextcloud-fix.md",
-      "plan_name": "iskradocker-nextcloud-fix",
-      "status": "completed",
-      "started_at": "2026-06-22T22:18:51.322Z",
-      "updated_at": "2026-06-22T22:43:23.149Z",
-      "session_ids": [
-        "opencode:ses_110119ebfffeZXvZToaBvK0UNh"
-      ],
-      "session_origins": {
-        "opencode:ses_110119ebfffeZXvZToaBvK0UNh": "direct"
-      },
-      "agent": "atlas",
-      "task_sessions": {
-        "todo:1": {
-          "task_key": "todo:1",
-          "task_label": "1",
-          "task_title": "Backup Nextcloud state before upgrade",
-          "session_id": "opencode:ses_10e952665ffe0N4Q85cwoh226W",
-          "agent": "Sisyphus-Junior",
-          "category": "unspecified-high",
-          "updated_at": "2026-06-22T22:20:58.349Z",
-          "started_at": "2026-06-22T22:20:38.817Z",
-          "status": "completed",
-          "ended_at": "2026-06-22T22:20:58.349Z",
-          "elapsed_ms": 19532
-        },
-        "todo:4": {
-          "task_key": "todo:4",
-          "task_label": "4",
-          "task_title": "Recreate Nextcloud containers with new config and run upgrade",
-          "session_id": "opencode:ses_10e939efcffe2QUejGVXV7JMJ8",
-          "agent": "Sisyphus-Junior",
-          "category": "unspecified-high",
-          "updated_at": "2026-06-22T22:25:50.832Z",
-          "started_at": "2026-06-22T22:25:25.171Z",
-          "status": "completed",
-          "ended_at": "2026-06-22T22:25:50.832Z",
-          "elapsed_ms": 25661
+          "ended_at": "2026-07-05T14:23:38.675Z",
+          "elapsed_ms": 164269
         },
         "todo:5": {
           "task_key": "todo:5",
           "task_label": "5",
-          "task_title": "Configure Nextcloud settings via occ command",
-          "session_id": "opencode:ses_10e8f4e49ffeweOqIr8jK2o7yR",
+          "task_title": "Control loop auto-expiry sweep for manual overrides",
+          "session_id": "opencode:ses_0cd53ca84ffejvPmnocWveYqU2",
           "agent": "Sisyphus-Junior",
-          "category": "unspecified-high",
-          "updated_at": "2026-06-22T22:27:57.905Z",
-          "started_at": "2026-06-22T22:27:32.371Z",
+          "category": "deep",
+          "started_at": "2026-07-05T14:24:40.261Z",
           "status": "completed",
-          "ended_at": "2026-06-22T22:27:57.905Z",
-          "elapsed_ms": 25534
+          "updated_at": "2026-07-05T14:40:10.640Z",
+          "ended_at": "2026-07-05T14:40:10.640Z",
+          "elapsed_ms": 930379
         },
         "todo:6": {
           "task_key": "todo:6",
           "task_label": "6",
-          "task_title": "Run Nextcloud maintenance repair",
-          "session_id": "opencode:ses_10e8d5ba1ffejA0t6m4DHA3YmI",
+          "task_title": "DeviceManager: replace ad-hoc timer state with polled device data",
+          "session_id": "opencode:ses_0cd2c43e2ffeB7MgCy3D57h8bp",
           "agent": "Sisyphus-Junior",
-          "category": "unspecified-high",
-          "updated_at": "2026-06-22T22:29:33.259Z",
-          "started_at": "2026-06-22T22:29:14.821Z",
+          "category": "visual-engineering",
+          "started_at": "2026-07-05T14:44:27.112Z",
           "status": "completed",
-          "ended_at": "2026-06-22T22:29:33.259Z",
-          "elapsed_ms": 18438
+          "updated_at": "2026-07-05T15:19:27.537Z",
+          "ended_at": "2026-07-05T15:19:27.537Z",
+          "elapsed_ms": 2100425
         },
-        "final-wave:f1": {
-          "task_key": "final-wave:f1",
-          "task_label": "F1",
-          "task_title": "Plan compliance audit — verify: nextcloud.yml uses 32-fpm; nginx has .well-known rewrites with correct syntax (try_files, not try_uri); config.php has phone_region + maintenance_window; occ repair ran successfully; maintenance mode was used during upgrade",
-          "session_id": "opencode:ses_10e82fd52ffeA6fKm3n0mnwudL",
+        "todo:17": {
+          "task_key": "todo:17",
+          "task_label": "17",
+          "task_title": "Commit + ./deploy.sh (deploy 1 of 2): state-change tracking + frontend cleanup",
+          "session_id": "opencode:ses_0cd22657fffegemklq2MIGtylo",
           "agent": "Sisyphus-Junior",
           "category": "unspecified-high",
-          "started_at": "2026-06-22T22:30:40.938Z",
-          "status": "completed",
-          "updated_at": "2026-06-22T22:42:55.000Z",
-          "ended_at": "2026-06-22T22:42:55.000Z",
-          "elapsed_ms": 734062
+          "updated_at": "2026-07-05T15:22:59.183Z",
+          "started_at": "2026-07-05T15:22:59.183Z",
+          "status": "running"
         }
       },
-      "ended_at": "2026-06-22T22:43:23.149Z",
-      "elapsed_ms": 1471827
-    },
-    "iskradocker-nextcloud-33-34-3cc73682": {
-      "work_id": "iskradocker-nextcloud-33-34-3cc73682",
-      "active_plan": "/home/antoine/ProjectCEA/.omo/plans/iskradocker-nextcloud-33-34.md",
-      "plan_name": "iskradocker-nextcloud-33-34",
-      "status": "completed",
-      "started_at": "2026-06-22T22:50:12.273Z",
-      "updated_at": "2026-06-22T23:37:19.173Z",
-      "session_ids": [
-        "opencode:ses_110119ebfffeZXvZToaBvK0UNh"
-      ],
-      "session_origins": {
-        "opencode:ses_110119ebfffeZXvZToaBvK0UNh": "direct"
-      },
-      "agent": "atlas",
-      "task_sessions": {
-        "todo:1": {
-          "task_key": "todo:1",
-          "task_label": "1",
-          "task_title": "Backup Nextcloud before 33 upgrade",
-          "session_id": "opencode:ses_10e7835e0ffem6HfGQYxSTx1QY",
-          "agent": "Sisyphus-Junior",
-          "category": "unspecified-high",
-          "updated_at": "2026-06-22T22:52:31.729Z",
-          "started_at": "2026-06-22T22:52:15.976Z",
-          "status": "completed",
-          "ended_at": "2026-06-22T22:52:31.729Z",
-          "elapsed_ms": 15753
-        },
-        "todo:2": {
-          "task_key": "todo:2",
-          "task_label": "2",
-          "task_title": "Upgrade Nextcloud 32→33",
-          "session_id": "opencode:ses_10e76d7c1ffen4Asi7PVj3WdzH",
-          "agent": "Sisyphus-Junior",
-          "category": "unspecified-high",
-          "updated_at": "2026-06-22T22:57:55.890Z",
-          "started_at": "2026-06-22T22:57:24.680Z",
-          "status": "completed",
-          "ended_at": "2026-06-22T22:57:55.890Z",
-          "elapsed_ms": 31210
-        },
-        "todo:3": {
-          "task_key": "todo:3",
-          "task_label": "3",
-          "task_title": "Fix WebDAV self-connectivity",
-          "session_id": "opencode:ses_10e71e0faffe4pBKKaw1PRCPdy",
-          "agent": "Sisyphus-Junior",
-          "category": "quick",
-          "started_at": "2026-06-22T23:00:36.824Z",
-          "status": "completed",
-          "updated_at": "2026-06-22T23:17:29.293Z",
-          "ended_at": "2026-06-22T23:17:29.292Z",
-          "elapsed_ms": 1012468
-        },
-        "todo:5": {
-          "task_key": "todo:5",
-          "task_label": "5",
-          "task_title": "Add missing database indices",
-          "session_id": "opencode:ses_10e5f3a90ffe8jru2BSMqOvnqo",
-          "agent": "Sisyphus-Junior",
-          "category": "quick",
-          "updated_at": "2026-06-22T23:22:46.020Z",
-          "started_at": "2026-06-22T23:20:32.424Z",
-          "status": "completed",
-          "ended_at": "2026-06-22T23:22:46.020Z",
-          "elapsed_ms": 133596
-        },
-        "todo:9": {
-          "task_key": "todo:9",
-          "task_label": "9",
-          "task_title": "Upgrade Nextcloud 33→34",
-          "session_id": "opencode:ses_10e5a21b9ffepgvRAp3hAL3zWj",
-          "agent": "Sisyphus-Junior",
-          "category": "unspecified-high",
-          "updated_at": "2026-06-22T23:28:13.559Z",
-          "started_at": "2026-06-22T23:27:53.626Z",
-          "status": "completed",
-          "ended_at": "2026-06-22T23:28:13.559Z",
-          "elapsed_ms": 19933
-        },
-        "todo:10": {
-          "task_key": "todo:10",
-          "task_label": "10",
-          "task_title": "Fix post-34 issues",
-          "session_id": "opencode:ses_10e561189ffeS983mZrf7oOM2w",
-          "agent": "Sisyphus-Junior",
-          "category": "quick",
-          "updated_at": "2026-06-22T23:32:58.935Z",
-          "started_at": "2026-06-22T23:32:39.324Z",
-          "status": "completed",
-          "ended_at": "2026-06-22T23:32:58.935Z",
-          "elapsed_ms": 19611
-        },
-        "final-wave:f1": {
-          "task_key": "final-wave:f1",
-          "task_label": "F1",
-          "task_title": "Plan compliance audit — verify: image tags are 33-fpm then 34-fpm; backups before each upgrade; WebDAV fixed; 2FA app enabled; DB indices added; AppAPI suppressed; logs clean; AGENTS.md updated",
-          "session_id": "opencode:ses_10e519049ffecaTKZNDtwy8X76",
-          "agent": "Sisyphus-Junior",
-          "category": "quick",
-          "updated_at": "2026-06-22T23:35:20.195Z",
-          "started_at": "2026-06-22T23:34:59.996Z",
-          "status": "completed",
-          "ended_at": "2026-06-22T23:35:20.195Z",
-          "elapsed_ms": 20199
-        }
-      },
-      "ended_at": "2026-06-22T23:37:19.173Z",
-      "elapsed_ms": 2826900
-    },
-    "iskradocker-tailscale-https-5009efad": {
-      "work_id": "iskradocker-tailscale-https-5009efad",
-      "active_plan": "/home/antoine/ProjectCEA/.omo/plans/iskradocker-tailscale-https.md",
-      "plan_name": "iskradocker-tailscale-https",
-      "status": "completed",
-      "started_at": "2026-06-23T14:16:00.400Z",
-      "updated_at": "2026-06-23T15:02:24.129Z",
-      "session_ids": [
-        "opencode:ses_110119ebfffeZXvZToaBvK0UNh"
-      ],
-      "session_origins": {
-        "opencode:ses_110119ebfffeZXvZToaBvK0UNh": "direct"
-      },
-      "agent": "atlas",
-      "task_sessions": {
-        "todo:1": {
-          "task_key": "todo:1",
-          "task_label": "1",
-          "task_title": "Set Tailscale operator + verify HTTPS cert provisioning capability",
-          "session_id": "opencode:ses_10b2895b3ffe9lys0Q2i4sE6Wr",
-          "agent": "Sisyphus-Junior",
-          "category": "quick",
-          "updated_at": "2026-06-23T14:19:16.013Z",
-          "started_at": "2026-06-23T14:18:53.436Z",
-          "status": "completed",
-          "ended_at": "2026-06-23T14:19:16.013Z",
-          "elapsed_ms": 22577
-        },
-        "todo:2": {
-          "task_key": "todo:2",
-          "task_label": "2",
-          "task_title": "Configure Nextcloud HTTPS (tailscale serve + occ config + nginx HTTPS on)",
-          "session_id": "opencode:ses_10b261af8ffeHjFzIjNHNyCJ5n",
-          "agent": "Sisyphus-Junior",
-          "category": "unspecified-high",
-          "updated_at": "2026-06-23T14:45:28.021Z",
-          "started_at": "2026-06-23T14:26:06.141Z",
-          "status": "completed",
-          "ended_at": "2026-06-23T14:45:28.021Z",
-          "elapsed_ms": 1161880
-        },
-        "todo:4": {
-          "task_key": "todo:4",
-          "task_label": "4",
-          "task_title": "Configure Immich HTTPS via Tailscale serve",
-          "session_id": "opencode:ses_10b0e41d2ffeInwfWMpEESR83r",
-          "agent": "Sisyphus-Junior",
-          "category": "quick",
-          "updated_at": "2026-06-23T14:51:31.590Z",
-          "started_at": "2026-06-23T14:51:10.968Z",
-          "status": "completed",
-          "ended_at": "2026-06-23T14:51:31.590Z",
-          "elapsed_ms": 20622
-        },
-        "todo:5": {
-          "task_key": "todo:5",
-          "task_label": "5",
-          "task_title": "Update AGENTS.md with HTTPS access details",
-          "session_id": "opencode:ses_10b08a776ffeHwhqg6s9Gi2AOI",
-          "agent": "Sisyphus-Junior",
-          "category": "quick",
-          "updated_at": "2026-06-23T14:54:13.684Z",
-          "started_at": "2026-06-23T14:53:52.012Z",
-          "status": "completed",
-          "ended_at": "2026-06-23T14:54:13.684Z",
-          "elapsed_ms": 21672
-        },
-        "final-wave:f1": {
-          "task_key": "final-wave:f1",
-          "task_label": "F1",
-          "task_title": "Plan compliance audit — verify: tailscale serve shows 3 rules (443→8082, 8443→8096, 9443→2283); Nextcloud occ overwriteprotocol=https; trusted_domains index 5 = ts.net FQDN; nextcloud-nginx.conf has `fastcgi_param HTTPS on;`; AGENTS.md mentions tailscale serve + auto cert; CLIProxyAPI dashboard untouched (Caddyfile-https unchanged on :7443)",
-          "session_id": "opencode:ses_10b067374ffeVkuNfOX2N9M220",
-          "agent": "Sisyphus-Junior",
-          "category": "quick",
-          "updated_at": "2026-06-23T15:01:05.329Z",
-          "started_at": "2026-06-23T14:54:52.311Z",
-          "status": "completed",
-          "ended_at": "2026-06-23T15:01:05.329Z",
-          "elapsed_ms": 373018
-        }
-      },
-      "ended_at": "2026-06-23T15:02:24.129Z",
-      "elapsed_ms": 2783729
+      "updated_at": "2026-07-05T15:22:59.182Z"
     }
   },
-  "active_work_id": "iskradocker-tailscale-https-5009efad",
-  "updated_at": "2026-06-23T15:02:24.129Z",
-  "ended_at": "2026-06-23T15:02:24.129Z",
-  "elapsed_ms": 2783729
+  "session_ids": [
+    "opencode:ses_0e70fc228ffeBshhzGKaAPSeMu"
+  ],
+  "session_origins": {},
+  "task_sessions": {
+    "todo:1": {
+      "task_key": "todo:1",
+      "task_label": "1",
+      "task_title": "Alembic migration 006: add manual_expires_at column + partial index to control_history",
+      "session_id": "opencode:ses_0cd6cdaa4ffeumzwCnP2KjtoUO",
+      "agent": "Sisyphus-Junior",
+      "category": "quick",
+      "updated_at": "2026-07-05T14:06:52.030Z",
+      "started_at": "2026-07-05T14:02:36.327Z",
+      "status": "completed",
+      "ended_at": "2026-07-05T14:06:52.030Z",
+      "elapsed_ms": 255703
+    },
+    "todo:3": {
+      "task_key": "todo:3",
+      "task_label": "3",
+      "task_title": "NO-OP: verify existing /api/hardware/relays/state timestamps are accurate after todo 2 fix",
+      "session_id": "opencode:ses_0cd64b6b6ffeezvHmOeX0sdps6",
+      "agent": "Sisyphus-Junior",
+      "category": "quick",
+      "updated_at": "2026-07-05T14:16:15.256Z",
+      "started_at": "2026-07-05T14:11:22.004Z",
+      "status": "completed",
+      "ended_at": "2026-07-05T14:16:15.256Z",
+      "elapsed_ms": 293252
+    },
+    "todo:4": {
+      "task_key": "todo:4",
+      "task_label": "4",
+      "task_title": "Add duration_seconds to DeviceControlRequest; route computes manual_expires_at",
+      "session_id": "opencode:ses_0cd5ab815ffegFv8PWMi9zujDX",
+      "agent": "Sisyphus-Junior",
+      "category": "deep",
+      "updated_at": "2026-07-05T14:23:38.675Z",
+      "started_at": "2026-07-05T14:20:54.406Z",
+      "status": "completed",
+      "ended_at": "2026-07-05T14:23:38.675Z",
+      "elapsed_ms": 164269
+    },
+    "todo:5": {
+      "task_key": "todo:5",
+      "task_label": "5",
+      "task_title": "Control loop auto-expiry sweep for manual overrides",
+      "session_id": "opencode:ses_0cd53ca84ffejvPmnocWveYqU2",
+      "agent": "Sisyphus-Junior",
+      "category": "deep",
+      "started_at": "2026-07-05T14:24:40.261Z",
+      "status": "completed",
+      "updated_at": "2026-07-05T14:40:10.640Z",
+      "ended_at": "2026-07-05T14:40:10.640Z",
+      "elapsed_ms": 930379
+    },
+    "todo:6": {
+      "task_key": "todo:6",
+      "task_label": "6",
+      "task_title": "DeviceManager: replace ad-hoc timer state with polled device data",
+      "session_id": "opencode:ses_0cd2c43e2ffeB7MgCy3D57h8bp",
+      "agent": "Sisyphus-Junior",
+      "category": "visual-engineering",
+      "started_at": "2026-07-05T14:44:27.112Z",
+      "status": "completed",
+      "updated_at": "2026-07-05T15:19:27.537Z",
+      "ended_at": "2026-07-05T15:19:27.537Z",
+      "elapsed_ms": 2100425
+    },
+    "todo:17": {
+      "task_key": "todo:17",
+      "task_label": "17",
+      "task_title": "Commit + ./deploy.sh (deploy 1 of 2): state-change tracking + frontend cleanup",
+      "session_id": "opencode:ses_0cd22657fffegemklq2MIGtylo",
+      "agent": "Sisyphus-Junior",
+      "category": "unspecified-high",
+      "updated_at": "2026-07-05T15:22:59.183Z",
+      "started_at": "2026-07-05T15:22:59.183Z",
+      "status": "running"
+    }
+  },
+  "active_plan": "/home/antoine/ProjectCEA/.omo/plans/settings-relay-matrix-dfr-cleanup.md",
+  "plan_name": "settings-relay-matrix-dfr-cleanup",
+  "status": "active",
+  "started_at": "2026-07-05T13:56:32.359Z",
+  "updated_at": "2026-07-05T15:22:59.182Z",
+  "worktree_path": null
 }

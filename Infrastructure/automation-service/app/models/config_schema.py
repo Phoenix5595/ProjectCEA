@@ -142,9 +142,7 @@ class AppConfig(BaseModel):
                 ch = props.get("channel")
                 if isinstance(ch, int):
                     if ch < 0 or ch > 15:
-                        raise ValueError(
-                            f"hardware channel must be between 0 and 15 (got {ch})"
-                        )
+                        raise ValueError(f"hardware channel must be between 0 and 15 (got {ch})")
                     if ch in all_channels_seen:
                         duplicates = True
                     all_channels_seen.add(ch)
@@ -256,6 +254,36 @@ class AppConfig(BaseModel):
                         raise ValueError(
                             "Flower Room default_setpoints (legacy) must define both 'front' and "
                             f"'back' clusters (missing: {', '.join(missing)})"
+                        )
+
+        # Validate pid_limits min<=max and non-negative
+        pid_limits = control.get("pid_limits")
+        if isinstance(pid_limits, dict):
+            for device_type, limits in pid_limits.items():
+                if not isinstance(limits, dict):
+                    continue
+                for param in ("kp", "ki", "kd"):
+                    min_key = f"{param}_min"
+                    max_key = f"{param}_max"
+                    min_val = limits.get(min_key)
+                    max_val = limits.get(max_key)
+                    if min_val is not None and isinstance(min_val, (int, float)) and min_val < 0:
+                        raise ValueError(
+                            f"control.pid_limits.{device_type}.{min_key} must be non-negative"
+                        )
+                    if max_val is not None and isinstance(max_val, (int, float)) and max_val < 0:
+                        raise ValueError(
+                            f"control.pid_limits.{device_type}.{max_key} must be non-negative"
+                        )
+                    if (
+                        min_val is not None
+                        and max_val is not None
+                        and isinstance(min_val, (int, float))
+                        and isinstance(max_val, (int, float))
+                        and min_val > max_val
+                    ):
+                        raise ValueError(
+                            f"control.pid_limits.{device_type}.{min_key} must be <= {max_key}"
                         )
 
         return values

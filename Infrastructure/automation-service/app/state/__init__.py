@@ -258,16 +258,20 @@ class StateManager(SchemaValidationMixin):
     # ------------------------------------------------------------------
     # PID Parameter API (migrated from Redis mixin)
     # ------------------------------------------------------------------
-    async def get_pid_params(self, device_type: str) -> PIDParams | None:
-        """Get PID parameters for a given device type from cache/Redis.
+    async def get_pid_params(
+        self, location: str, cluster: str, device_type: str
+    ) -> PIDParams | None:
+        """Get PID parameters for a given location/cluster/device_type from cache/Redis.
 
         Args:
+            location: Location name (e.g., 'Flower Room')
+            cluster: Cluster name (e.g., 'main')
             device_type: Device type (e.g., 'heater', 'co2')
 
         Returns:
             Dict containing kp/ki/kd and metadata, or None if not found
         """
-        pid_key = f"pid:parameters:{device_type}"
+        pid_key = f"pid:parameters:{location}:{cluster}:{device_type}"
         data = await self.get(pid_key)
         if data is None:
             return None
@@ -286,40 +290,50 @@ class StateManager(SchemaValidationMixin):
 
     async def set_pid_params(
         self,
+        location: str,
+        cluster: str,
         device_type: str,
         kp: float,
         ki: float,
         kd: float,
+        binary_hysteresis: float | None = None,
         source: str = "api",
         updated_at: int | None = None,
     ) -> bool:
-        """Set PID parameters for a given device type with a 300s TTL.
+        """Set PID parameters for a given location/cluster/device_type with a 300s TTL.
 
         Args:
+            location: Location name
+            cluster: Cluster name
             device_type: Device type
             kp: Proportional gain
             ki: Integral gain
             kd: Derivative gain
+            binary_hysteresis: Optional binary hysteresis value
             source: Source of parameters ('api', 'config')
             updated_at: Optional timestamp in milliseconds
 
         Returns:
             True if written successfully, False otherwise
         """
-        pid_key = f"pid:parameters:{device_type}"
+        pid_key = f"pid:parameters:{location}:{cluster}:{device_type}"
         timestamp_ms = updated_at or int(time.time() * 1000)
-        payload = {
+        payload: dict[str, Any] = {
             "kp": kp,
             "ki": ki,
             "kd": kd,
             "source": source,
             "updated_at": timestamp_ms,
         }
+        if binary_hysteresis is not None:
+            payload["binary_hysteresis"] = binary_hysteresis
         try:
             await self.set(pid_key, json.dumps(payload), ttl=300)
             return True
         except Exception as e:
-            logger.warning(f"StateManager: Failed to set PID params for {device_type}: {e}")
+            logger.warning(
+                f"StateManager: Failed to set PID params for {location}/{cluster}/{device_type}: {e}"
+            )
             return False
 
     # Autotune state handling for PID controllers

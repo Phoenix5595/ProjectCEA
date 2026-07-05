@@ -381,6 +381,15 @@ body {
   50% { opacity: 0.5; }
 }
 
+@keyframes flash-red {
+  0%, 100% { background-color: #dc2626; }
+  50% { background-color: #7f1d1d; }
+}
+
+.flash-red {
+  animation: flash-red 0.8s ease-in-out infinite;
+}
+
 /* ===== Device Status ===== */
 .device-status {
   display: flex;

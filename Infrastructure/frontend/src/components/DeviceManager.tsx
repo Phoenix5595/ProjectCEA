@@ -13,11 +13,13 @@ import type {
 import { logger } from '../utils/logger'
 import DfrBoardsPanel from './devices/DfrBoardsPanel'
 import RelayChannelMatrix from './devices/RelayChannelMatrix'
+import SystemSettingsPanel from './devices/SystemSettingsPanel'
 import {
   buildRelayChannelViewModels,
   getChannelDisplayName,
   getReadableDeviceType,
   getRelayPinLabel,
+  makeDeviceKey,
 } from './devices/relayViewModel'
 
 interface ChannelEditForm {
@@ -80,6 +82,7 @@ function getDefaultLocationCluster(channelInfo: ChannelInfo | null): {
 }
 
 export default function DeviceManager() {
+  const [activeTab, setActiveTab] = useState<'devices' | 'settings'>('devices')
   const [channels, setChannels] = useState<ChannelInfo[]>([])
   const [lightNames, setLightNames] = useState<LightNameOption[]>([])
   const [relayState, setRelayState] = useState<RelayBoardStateResponse>(DEFAULT_RELAY_STATE)
@@ -89,10 +92,8 @@ export default function DeviceManager() {
   const [editForm, setEditForm] = useState<ChannelEditForm>(EMPTY_EDIT_FORM)
   const [saving, setSaving] = useState(false)
   const [nowMs, setNowMs] = useState(Date.now())
-  const [manualTimersByChannel, setManualTimersByChannel] = useState<Record<number, number>>({})
   const [menuOpenChannel, setMenuOpenChannel] = useState<number | null>(null)
   const [isClearingEdit, setIsClearingEdit] = useState(false)
-  const timerActionInFlight = useRef<Set<number>>(new Set())
   const tablePanelRef = useRef<HTMLDivElement | null>(null)
   const matrixPanelRef = useRef<HTMLDivElement | null>(null)
 
@@ -127,37 +128,49 @@ export default function DeviceManager() {
     [displayChannels]
   )
 
-  const relayChannels = useMemo(
-    () =>
-      buildRelayChannelViewModels(
-        displayChannels,
-        relayState.channels,
-        {}
-      ),
-    [displayChannels, relayState]
-  )
+  const relayChannels = useMemo(() => {
+    const lastStateMap: Record<string, string> = {}
+    displayChannels.forEach((channelInfo) => {
+      const ts = relayState.timestamps[channelInfo.channel]
+      if (ts && channelInfo.location && channelInfo.cluster && channelInfo.device_name) {
+        const key = makeDeviceKey(channelInfo.location, channelInfo.cluster, channelInfo.device_name)
+        lastStateMap[key] = ts
+      }
+    })
+    return buildRelayChannelViewModels(
+      displayChannels,
+      relayState.channels,
+      lastStateMap
+    )
+  }, [displayChannels, relayState])
 
   const statusByChannel = useMemo(() => {
     const statuses: Record<number, { text: string; tone: 'unknown' | 'active' | 'idle' }> = {}
 
     relayChannels.forEach((relayChannel) => {
-      const timerEndAt = manualTimersByChannel[relayChannel.channel]
-      if (timerEndAt && timerEndAt > nowMs) {
-        const remainingMs = timerEndAt - nowMs
-        const totalSeconds = Math.max(0, Math.floor(remainingMs / 1000))
-        const minutes = Math.floor(totalSeconds / 60)
-        const seconds = totalSeconds % 60
-        statuses[relayChannel.channel] = {
-          text: `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`,
-          // Manual mode uses active styling by request.
-          tone: 'active',
-        }
+      if (!relayChannel.isStateKnown) {
+        statuses[relayChannel.channel] = { text: 'Unknown', tone: 'unknown' }
         return
       }
 
-      if (!relayChannel.isStateKnown) {
-        statuses[relayChannel.channel] = { text: 'Unknown', tone: 'unknown' }
-      } else if (relayChannel.isActive) {
+      if (relayChannel.isActive && relayChannel.lastStateChangeAt) {
+        const parsed = Date.parse(relayChannel.lastStateChangeAt)
+        if (!Number.isNaN(parsed)) {
+          const elapsedMs = Math.max(0, nowMs - parsed)
+          const elapsedSeconds = Math.floor(elapsedMs / 1000)
+          const hours = Math.floor(elapsedSeconds / 3600)
+          const minutes = Math.floor((elapsedSeconds % 3600) / 60)
+          const seconds = elapsedSeconds % 60
+          const text =
+            hours > 0
+              ? `${hours}h ${String(minutes).padStart(2, '0')}m`
+              : `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+          statuses[relayChannel.channel] = { text, tone: 'active' }
+          return
+        }
+      }
+
+      if (relayChannel.isActive) {
         statuses[relayChannel.channel] = { text: 'ON', tone: 'active' }
       } else {
         statuses[relayChannel.channel] = { text: 'IDLE', tone: 'idle' }
@@ -165,7 +178,7 @@ export default function DeviceManager() {
     })
 
     return statuses
-  }, [manualTimersByChannel, nowMs, relayChannels])
+  }, [nowMs, relayChannels])
 
   const hasPendingChanges = useMemo(() => {
     if (editing === null) {
@@ -290,62 +303,6 @@ export default function DeviceManager() {
     return () => document.removeEventListener('pointerdown', onPointerDown)
   }, [editing, hasPendingChanges, isClearingEdit])
 
-  useEffect(() => {
-    const intervalId = window.setInterval(() => {
-      const currentTime = Date.now()
-      Object.entries(manualTimersByChannel).forEach(([channelString, endAt]) => {
-        const channel = Number(channelString)
-        if (currentTime < endAt || timerActionInFlight.current.has(channel)) {
-          return
-        }
-
-        const channelInfo = persistedChannelMap.get(channel)
-        if (!channelInfo?.device_name || !channelInfo.location || !channelInfo.cluster) {
-          setManualTimersByChannel((previous) => {
-            const next = { ...previous }
-            delete next[channel]
-            return next
-          })
-          return
-        }
-
-        timerActionInFlight.current.add(channel)
-        const location = channelInfo.location
-        const cluster = normalizeDeviceControlCluster(location, channelInfo.cluster)
-        const deviceName = channelInfo.device_name
-        void (async () => {
-          try {
-            await apiClient.controlDevice(
-              location,
-              cluster,
-              deviceName,
-              0,
-              'Manual countdown elapsed'
-            )
-            await apiClient.setDeviceMode(
-              location,
-              cluster,
-              deviceName,
-              'auto'
-            )
-            await refreshRelayState()
-          } catch (error) {
-            logger.error(`Failed to auto-complete manual timer for channel ${channel}`, error)
-          } finally {
-            timerActionInFlight.current.delete(channel)
-            setManualTimersByChannel((previous) => {
-              const next = { ...previous }
-              delete next[channel]
-              return next
-            })
-          }
-        })()
-      })
-    }, 1000)
-
-    return () => window.clearInterval(intervalId)
-  }, [manualTimersByChannel, persistedChannelMap])
-
   function startEdit(channel: number) {
     if (editing === channel) {
       return
@@ -394,37 +351,30 @@ export default function DeviceManager() {
     try {
       if (action === 'auto') {
         await apiClient.setDeviceMode(location, cluster, deviceName, 'auto')
-        setManualTimersByChannel((previous) => {
-          const next = { ...previous }
-          delete next[channel]
-          return next
-        })
         toast.success(`Channel ${channel} set to auto`)
       } else if (action === 'off') {
         await apiClient.setDeviceMode(location, cluster, deviceName, 'manual')
         await apiClient.controlDevice(location, cluster, deviceName, 0, 'Manual off from relay menu')
-        setManualTimersByChannel((previous) => {
-          const next = { ...previous }
-          delete next[channel]
-          return next
-        })
         toast.success(`Channel ${channel} turned off`)
       } else {
-        const durationMs =
+        const durationSeconds =
           action === 'timer-5m'
-            ? 5 * 60 * 1000
+            ? 300
             : action === 'timer-10m'
-            ? 10 * 60 * 1000
+            ? 600
             : action === 'timer-30m'
-            ? 30 * 60 * 1000
-            : 60 * 60 * 1000
+            ? 1800
+            : 3600
 
         await apiClient.setDeviceMode(location, cluster, deviceName, 'manual')
-        await apiClient.controlDevice(location, cluster, deviceName, 1, 'Manual timed activation')
-        setManualTimersByChannel((previous) => ({
-          ...previous,
-          [channel]: Date.now() + durationMs,
-        }))
+        await apiClient.controlDevice(
+          location,
+          cluster,
+          deviceName,
+          1,
+          'Manual timed activation',
+          durationSeconds
+        )
         toast.success(`Channel ${channel} manual activation started`)
       }
 
@@ -554,237 +504,268 @@ export default function DeviceManager() {
 
   return (
     <div className="space-y-6 p-2">
-      <DfrBoardsPanel />
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <h2 className="text-2xl font-bold text-text-input">Devices and Relay Mapping</h2>
-          <p className="mt-1 text-sm text-text-muted">
-            Master assignment view for MCP23017 relay channels, pins, and device mapping.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          {hasPendingChanges && (
-            <button
-              type="button"
-              onClick={saveEdit}
-              disabled={saving}
-              className="rounded-sm bg-btn-primary-light px-3 py-1 text-xs font-semibold text-text-default hover:bg-btn-primary-hover disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {saving ? 'Saving...' : 'Save Changes'}
-            </button>
-          )}
-          <div className={`rounded border px-3 py-1.5 text-xs font-semibold uppercase tracking-wide ${relayStatusClasses}`}>
-            Relay board: {relayStatusLabel}
-          </div>
-        </div>
-      </div>
-
-      {loadingError && (
-        <div className="rounded-md border border-status-danger-border/60 bg-status-danger-bg/20 px-4 py-2 text-sm text-status-danger-text">
-          {loadingError}
-        </div>
-      )}
-
-      <div className="grid grid-cols-1 gap-6 md:grid-cols-[65fr_35fr]">
-        <div ref={tablePanelRef} className="rounded-lg border border-border-subtle bg-surface-primary shadow-md md:col-span-1">
-          <div className="border-b border-border-subtle px-2 py-1">
-            <h3 className="text-lg font-semibold text-text-default">Channel Assignment Table</h3>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-border-default">
-              <thead className="bg-surface-secondary">
-                <tr>
-                  <th className="px-2 py-1 text-left text-xs font-medium uppercase tracking-wider text-text-muted">
-                    Channel
-                  </th>
-                  <th className="px-2 py-1 text-left text-xs font-medium uppercase tracking-wider text-text-muted">
-                    Device Type
-                  </th>
-                  <th className="px-2 py-1 text-left text-xs font-medium uppercase tracking-wider text-text-muted">
-                    Device Name
-                  </th>
-                  <th className="px-2 py-1 text-left text-xs font-medium uppercase tracking-wider text-text-muted">
-                    Location
-                  </th>
-                </tr>
-              </thead>
-
-              <tbody className="divide-y divide-border-subtle bg-surface-primary">
-                {relayChannels.map((relayChannel) => {
-                  const channelInfo = displayChannelMap.get(relayChannel.channel)
-                  const isEditing = editing === relayChannel.channel
-                  const isEmpty = !channelInfo?.device_name
-                  return (
-                    <tr
-                      key={relayChannel.channel}
-                      id={`channel-row-${relayChannel.channel}`}
-                      onClick={() => startEdit(relayChannel.channel)}
-                      className={[
-                        'cursor-pointer',
-                        isEditing ? 'bg-btn-primary-dim/20' : '',
-                        isEmpty ? 'bg-surface-secondary/50' : 'hover:bg-surface-secondary',
-                      ]
-                        .filter(Boolean)
-                        .join(' ')}
-                    >
-                      <td
-                        className="whitespace-nowrap px-2 py-1 text-sm font-medium text-text-input"
-                        onDoubleClick={(event) => {
-                          event.stopPropagation()
-                          clearChannelRow(relayChannel.channel)
-                        }}
-                        title="Double-click to clear this row"
-                      >
-                        <div>{relayChannel.channel}</div>
-                        <div className="text-xs text-text-muted">{getRelayPinLabel(relayChannel.channel)}</div>
-                      </td>
-
-                      <td className="whitespace-nowrap px-2 py-1 text-sm text-text-secondary">
-                        {isEditing ? (
-                          <select
-                            value={editForm.device_type}
-                            onClick={(event) => event.stopPropagation()}
-                            onChange={(event) =>
-                              setEditForm({
-                                ...editForm,
-                                device_type: event.target.value as DeviceTypeOption | '',
-                                light_name: '',
-                              })
-                            }
-                            className="w-full rounded-sm border border-border-emphasis bg-surface-primary px-2 py-1 text-text-input focus:outline-hidden focus:ring-2 focus:ring-btn-primary-light"
-                          >
-                            <option value="">Select type</option>
-                            {DEVICE_TYPES.map((deviceType) => (
-                              <option key={deviceType} value={deviceType}>
-                                {getReadableDeviceType(deviceType)}
-                              </option>
-                            ))}
-                          </select>
-                        ) : channelInfo?.device_type ? (
-                          <span className="inline-flex items-center rounded-full bg-btn-primary-dim/30 px-2.5 py-0.5 text-xs font-medium text-btn-primary-text">
-                            {getReadableDeviceType(channelInfo.device_type)}
-                          </span>
-                        ) : (
-                          <span className="text-text-subtle">-</span>
-                        )}
-                      </td>
-
-                      <td className="whitespace-nowrap px-2 py-1 text-sm text-text-secondary">
-                        {isEditing ? (
-                          editForm.device_type === 'light' ? (
-                            <select
-                              value={editForm.light_name}
-                              onClick={(event) => event.stopPropagation()}
-                              onChange={(event) => {
-                                const selectedLightName = event.target.value
-                                const selectedLight =
-                                  uniqueLightNames.find(
-                                    (light) =>
-                                      light.name === selectedLightName &&
-                                      light.location === editForm.location
-                                  ) ||
-                                  uniqueLightNames.find((light) => light.name === selectedLightName)
-
-                                setEditForm({
-                                  ...editForm,
-                                  light_name: selectedLightName,
-                                  device_name: selectedLight?.device_name || '',
-                                })
-                              }}
-                              className="w-full rounded-sm border border-border-emphasis bg-surface-primary px-2 py-1 text-text-input focus:outline-hidden focus:ring-2 focus:ring-btn-primary-light"
-                            >
-                              <option value="">Select light</option>
-                              {uniqueLightNames.map((light) => (
-                                <option
-                                  key={`${light.location}-${light.cluster}-${light.device_name}`}
-                                  value={light.name}
-                                >
-                                  {light.name}
-                                </option>
-                              ))}
-                            </select>
-                          ) : (
-                            <input
-                              type="text"
-                              value={editForm.device_name}
-                              onClick={(event) => event.stopPropagation()}
-                              onChange={(event) =>
-                                setEditForm({ ...editForm, device_name: event.target.value })
-                              }
-                              className="w-full rounded-sm border border-border-emphasis bg-surface-primary px-2 py-1 text-text-input focus:outline-hidden focus:ring-2 focus:ring-btn-primary-light"
-                              placeholder="Device name"
-                            />
-                          )
-                        ) : (
-                          (channelInfo ? getChannelDisplayName(channelInfo) : null) || (
-                            <span className="italic text-text-subtle">Empty</span>
-                          )
-                        )}
-                      </td>
-
-                      <td className="whitespace-nowrap px-2 py-1 text-sm text-text-secondary">
-                        {isEditing ? (
-                          <select
-                            value={editForm.location}
-                            onClick={(event) => event.stopPropagation()}
-                            onChange={(event) => {
-                              const nextLocation = event.target.value
-                              const firstCluster =
-                                nextLocation
-                                  ? ZONES.find((zone) => zone.location === nextLocation)?.cluster ||
-                                    DEFAULT_CLUSTER
-                                  : ''
-                              setEditForm({
-                                ...editForm,
-                                location: nextLocation,
-                                // Cluster remains internal for API compatibility.
-                                cluster: firstCluster,
-                              })
-                            }}
-                            className="w-full rounded-sm border border-border-emphasis bg-surface-primary px-2 py-1 text-xs text-text-input focus:outline-hidden focus:ring-2 focus:ring-btn-primary-light"
-                          >
-                            <option value="">No location</option>
-                            {locationOptions.map((zone) => (
-                              <option key={zone.location} value={zone.location}>
-                                {zone.location}
-                              </option>
-                            ))}
-                          </select>
-                        ) : channelInfo?.location ? (
-                          <span className="text-xs">{channelInfo.location}</span>
-                        ) : (
-                          <span className="text-text-subtle">No location</span>
-                        )}
-                      </td>
-
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <div
-          ref={matrixPanelRef}
-          className="min-w-[320px] rounded-lg border border-border-subtle bg-surface-primary p-2 shadow-md md:col-span-1 md:min-w-[360px]"
+      <div className="flex border-b border-border-subtle">
+        <button
+          type="button"
+          onClick={() => setActiveTab('devices')}
+          className={`px-4 py-2 text-sm font-medium ${
+            activeTab === 'devices'
+              ? 'border-b-2 border-btn-primary-light text-btn-primary-text'
+              : 'text-text-muted hover:text-text-secondary'
+          }`}
         >
-          <RelayChannelMatrix
-            channels={relayChannels}
-            nowMs={nowMs}
-            variant="panel"
-            editingChannel={editing}
-            onSelectChannel={openEditFromRelayBox}
-            statusByChannel={statusByChannel}
-            menuOpenChannel={menuOpenChannel}
-            onToggleMenu={(channel) =>
-              setMenuOpenChannel((previous) => (previous === channel ? null : channel))
-            }
-            onMenuAction={handleRelayMenuAction}
-          />
-        </div>
+          Devices & Relays
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab('settings')}
+          className={`px-4 py-2 text-sm font-medium ${
+            activeTab === 'settings'
+              ? 'border-b-2 border-btn-primary-light text-btn-primary-text'
+              : 'text-text-muted hover:text-text-secondary'
+          }`}
+        >
+          Settings
+        </button>
       </div>
+
+      {activeTab === 'settings' && <SystemSettingsPanel />}
+
+      {activeTab === 'devices' && (
+        <>
+          <DfrBoardsPanel />
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h2 className="text-2xl font-bold text-text-input">Devices and Relay Mapping</h2>
+              <p className="mt-1 text-sm text-text-muted">
+                Master assignment view for MCP23017 relay channels, pins, and device mapping.
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              {hasPendingChanges && (
+                <button
+                  type="button"
+                  onClick={saveEdit}
+                  disabled={saving}
+                  className="rounded-sm bg-btn-primary-light px-3 py-1 text-xs font-semibold text-text-default hover:bg-btn-primary-hover disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {saving ? 'Saving...' : 'Save Changes'}
+                </button>
+              )}
+              <div className={`rounded border px-3 py-1.5 text-xs font-semibold uppercase tracking-wide ${relayStatusClasses}`}>
+                Relay board: {relayStatusLabel}
+              </div>
+            </div>
+          </div>
+
+          {loadingError && (
+            <div className="rounded-md border border-status-danger-border/60 bg-status-danger-bg/20 px-4 py-2 text-sm text-status-danger-text">
+              {loadingError}
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-[65fr_35fr]">
+            <div ref={tablePanelRef} className="rounded-lg border border-border-subtle bg-surface-primary shadow-md md:col-span-1">
+              <div className="border-b border-border-subtle px-2 py-1">
+                <h3 className="text-lg font-semibold text-text-default">Channel Assignment Table</h3>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-border-default">
+                  <thead className="bg-surface-secondary">
+                    <tr>
+                      <th className="px-2 py-1 text-left text-xs font-medium uppercase tracking-wider text-text-muted">
+                        Channel
+                      </th>
+                      <th className="px-2 py-1 text-left text-xs font-medium uppercase tracking-wider text-text-muted">
+                        Device Type
+                      </th>
+                      <th className="px-2 py-1 text-left text-xs font-medium uppercase tracking-wider text-text-muted">
+                        Device Name
+                      </th>
+                      <th className="px-2 py-1 text-left text-xs font-medium uppercase tracking-wider text-text-muted">
+                        Location
+                      </th>
+                    </tr>
+                  </thead>
+
+                  <tbody className="divide-y divide-border-subtle bg-surface-primary">
+                    {relayChannels.map((relayChannel) => {
+                      const channelInfo = displayChannelMap.get(relayChannel.channel)
+                      const isEditing = editing === relayChannel.channel
+                      const isEmpty = !channelInfo?.device_name
+                      return (
+                        <tr
+                          key={relayChannel.channel}
+                          id={`channel-row-${relayChannel.channel}`}
+                          onClick={() => startEdit(relayChannel.channel)}
+                          className={[
+                            'cursor-pointer',
+                            isEditing ? 'bg-btn-primary-dim/20' : '',
+                            isEmpty ? 'bg-surface-secondary/50' : 'hover:bg-surface-secondary',
+                          ]
+                            .filter(Boolean)
+                            .join(' ')}
+                        >
+                          <td
+                            className="whitespace-nowrap px-2 py-1 text-sm font-medium text-text-input"
+                            onDoubleClick={(event) => {
+                              event.stopPropagation()
+                              clearChannelRow(relayChannel.channel)
+                            }}
+                            title="Double-click to clear this row"
+                          >
+                            <div>{relayChannel.channel}</div>
+                            <div className="text-xs text-text-muted">{getRelayPinLabel(relayChannel.channel)}</div>
+                          </td>
+
+                          <td className="whitespace-nowrap px-2 py-1 text-sm text-text-secondary">
+                            {isEditing ? (
+                              <select
+                                value={editForm.device_type}
+                                onClick={(event) => event.stopPropagation()}
+                                onChange={(event) =>
+                                  setEditForm({
+                                    ...editForm,
+                                    device_type: event.target.value as DeviceTypeOption | '',
+                                    light_name: '',
+                                  })
+                                }
+                                className="w-full rounded-sm border border-border-emphasis bg-surface-primary px-2 py-1 text-text-input focus:outline-hidden focus:ring-2 focus:ring-btn-primary-light"
+                              >
+                                <option value="">Select type</option>
+                                {DEVICE_TYPES.map((deviceType) => (
+                                  <option key={deviceType} value={deviceType}>
+                                    {getReadableDeviceType(deviceType)}
+                                  </option>
+                                ))}
+                              </select>
+                            ) : channelInfo?.device_type ? (
+                              <span className="inline-flex items-center rounded-full bg-btn-primary-dim/30 px-2.5 py-0.5 text-xs font-medium text-btn-primary-text">
+                                {getReadableDeviceType(channelInfo.device_type)}
+                              </span>
+                            ) : (
+                              <span className="text-text-subtle">-</span>
+                            )}
+                          </td>
+
+                          <td className="whitespace-nowrap px-2 py-1 text-sm text-text-secondary">
+                            {isEditing ? (
+                              editForm.device_type === 'light' ? (
+                                <select
+                                  value={editForm.light_name}
+                                  onClick={(event) => event.stopPropagation()}
+                                  onChange={(event) => {
+                                    const selectedLightName = event.target.value
+                                    const selectedLight =
+                                      uniqueLightNames.find(
+                                        (light) =>
+                                          light.name === selectedLightName &&
+                                          light.location === editForm.location
+                                      ) ||
+                                      uniqueLightNames.find((light) => light.name === selectedLightName)
+
+                                    setEditForm({
+                                      ...editForm,
+                                      light_name: selectedLightName,
+                                      device_name: selectedLight?.device_name || '',
+                                    })
+                                  }}
+                                  className="w-full rounded-sm border border-border-emphasis bg-surface-primary px-2 py-1 text-text-input focus:outline-hidden focus:ring-2 focus:ring-btn-primary-light"
+                                >
+                                  <option value="">Select light</option>
+                                  {uniqueLightNames.map((light) => (
+                                    <option
+                                      key={`${light.location}-${light.cluster}-${light.device_name}`}
+                                      value={light.name}
+                                    >
+                                      {light.name}
+                                    </option>
+                                  ))}
+                                </select>
+                              ) : (
+                                <input
+                                  type="text"
+                                  value={editForm.device_name}
+                                  onClick={(event) => event.stopPropagation()}
+                                  onChange={(event) =>
+                                    setEditForm({ ...editForm, device_name: event.target.value })
+                                  }
+                                  className="w-full rounded-sm border border-border-emphasis bg-surface-primary px-2 py-1 text-text-input focus:outline-hidden focus:ring-2 focus:ring-btn-primary-light"
+                                  placeholder="Device name"
+                                />
+                              )
+                            ) : (
+                              (channelInfo ? getChannelDisplayName(channelInfo) : null) || (
+                                <span className="italic text-text-subtle">Empty</span>
+                              )
+                            )}
+                          </td>
+
+                          <td className="whitespace-nowrap px-2 py-1 text-sm text-text-secondary">
+                            {isEditing ? (
+                              <select
+                                value={editForm.location}
+                                onClick={(event) => event.stopPropagation()}
+                                onChange={(event) => {
+                                  const nextLocation = event.target.value
+                                  const firstCluster =
+                                    nextLocation
+                                      ? ZONES.find((zone) => zone.location === nextLocation)?.cluster ||
+                                        DEFAULT_CLUSTER
+                                      : ''
+                                  setEditForm({
+                                    ...editForm,
+                                    location: nextLocation,
+                                    // Cluster remains internal for API compatibility.
+                                    cluster: firstCluster,
+                                  })
+                                }}
+                                className="w-full rounded-sm border border-border-emphasis bg-surface-primary px-2 py-1 text-xs text-text-input focus:outline-hidden focus:ring-2 focus:ring-btn-primary-light"
+                              >
+                                <option value="">No location</option>
+                                {locationOptions.map((zone) => (
+                                  <option key={zone.location} value={zone.location}>
+                                    {zone.location}
+                                  </option>
+                                ))}
+                              </select>
+                            ) : channelInfo?.location ? (
+                              <span className="text-xs">{channelInfo.location}</span>
+                            ) : (
+                              <span className="text-text-subtle">No location</span>
+                            )}
+                          </td>
+
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div
+              ref={matrixPanelRef}
+              className="min-w-[320px] rounded-lg border border-border-subtle bg-surface-primary p-2 shadow-md md:col-span-1 md:min-w-[360px]"
+            >
+              <RelayChannelMatrix
+                channels={relayChannels}
+                nowMs={nowMs}
+                variant="panel"
+                editingChannel={editing}
+                onSelectChannel={openEditFromRelayBox}
+                statusByChannel={statusByChannel}
+                menuOpenChannel={menuOpenChannel}
+                onToggleMenu={(channel) =>
+                  setMenuOpenChannel((previous) => (previous === channel ? null : channel))
+                }
+                onMenuAction={handleRelayMenuAction}
+              />
+            </div>
+          </div>
+        </>
+      )}
     </div>
   )
 }

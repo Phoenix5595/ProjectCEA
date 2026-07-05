@@ -21,30 +21,33 @@ logger = get_logger(__name__)
 router = APIRouter()
 
 
-# Rate limiting storage (in-memory, per device_type)
+# Rate limiting storage (in-memory, per location:cluster:device_type)
 _rate_limit_cache: dict[str, datetime] = {}
 _rate_limit_window = 5  # seconds
 
 
-def check_rate_limit(device_type: str) -> bool:
+def check_rate_limit(location: str, cluster: str, device_type: str) -> bool:
     """Check if PID parameter update is allowed (rate limiting).
 
     Args:
+        location: Room/location name
+        cluster: Cluster name
         device_type: Device type to check
 
     Returns:
         True if update is allowed, False if rate limited
     """
+    key = f"{location}:{cluster}:{device_type}"
     now = datetime.now()
-    last_update = _rate_limit_cache.get(device_type)
+    last_update = _rate_limit_cache.get(key)
 
     if last_update is None:
-        _rate_limit_cache[device_type] = now
+        _rate_limit_cache[key] = now
         return True
 
     time_since_last = (now - last_update).total_seconds()
     if time_since_last >= _rate_limit_window:
-        _rate_limit_cache[device_type] = now
+        _rate_limit_cache[key] = now
         return True
 
     return False
@@ -64,31 +67,26 @@ def get_config() -> ConfigLoader:
     return container.get_config()
 
 
-@router.get("/api/pid/parameters")
-async def get_all_pid_parameters(
-    database: DatabaseManager = Depends(get_database),
-) -> list[dict[str, Any]]:
-    """Get all PID parameters for all device types.
+# ============================================================================
+# Internal handlers (shared between new path-param routes and legacy routes)
+# ============================================================================
 
-    Returns:
-        List of dicts with kp, ki, kd, updated_at, updated_by, source
-    """
+
+async def _get_all_pid_parameters(
+    database: DatabaseManager,
+) -> list[dict[str, Any]]:
+    """Get all PID parameters for all device types."""
     return await database.pid_repo.get_all_pid_parameters()
 
 
-@router.get("/api/pid/parameters/{device_type}")
-async def get_pid_parameters(
-    device_type: str, database: DatabaseManager = Depends(get_database)
-) -> dict[str, Any] | None:
-    """Get PID parameters for a specific device type.
-
-    Args:
-        device_type: Device type (e.g., 'heater', 'co2')
-
-    Returns:
-        Dict with kp, ki, kd, updated_at, updated_by, source
-    """
-    params = await database.pid_repo.get_pid_parameters(device_type)
+async def _get_pid_parameters(
+    location: str,
+    cluster: str,
+    device_type: str,
+    database: DatabaseManager,
+) -> dict[str, Any]:
+    """Get PID parameters for a specific device type."""
+    params = await database.pid_repo.get_pid_parameters(location, cluster, device_type)
     if params is None:
         raise HTTPException(
             status_code=404, detail=f"PID parameters not found for device_type: {device_type}"
@@ -96,31 +94,24 @@ async def get_pid_parameters(
     return params
 
 
-@router.post("/api/pid/parameters/{device_type}")
-async def update_pid_parameters(
+async def _update_pid_parameters(
+    location: str,
+    cluster: str,
     device_type: str,
     update: PIDParameterUpdate,
-    database: DatabaseManager = Depends(get_database),
-    config: ConfigLoader = Depends(get_config),
+    database: DatabaseManager,
+    config: ConfigLoader,
 ) -> dict[str, Any] | None:
-    """Update PID parameters for a device type.
-
-    Args:
-        device_type: Device type (e.g., 'heater', 'co2')
-        update: PID parameter update request
-
-    Returns:
-        Updated PID parameters
-    """
+    """Update PID parameters for a device type."""
     # Rate limiting check
-    if not check_rate_limit(device_type):
+    if not check_rate_limit(location, cluster, device_type):
         raise HTTPException(
             status_code=429,
             detail=f"Rate limit exceeded. Maximum 1 update per {_rate_limit_window} seconds per device_type.",
         )
 
     # Get existing parameters to merge with update
-    existing = await database.pid_repo.get_pid_parameters(device_type)
+    existing = await database.pid_repo.get_pid_parameters(location, cluster, device_type)
 
     # Determine which parameters to update
     kp = update.kp if update.kp is not None else (existing["kp"] if existing else None)
@@ -156,6 +147,8 @@ async def update_pid_parameters(
 
     # Update in database
     success = await database.pid_repo.set_pid_parameters(
+        location,
+        cluster,
         device_type,
         final_kp,
         final_ki,
@@ -168,44 +161,35 @@ async def update_pid_parameters(
         raise HTTPException(status_code=500, detail="Failed to update PID parameters")
 
     # Return updated parameters
-    updated = await database.pid_repo.get_pid_parameters(device_type)
+    updated = await database.pid_repo.get_pid_parameters(location, cluster, device_type)
     return updated or {}
 
 
-@router.get("/api/pid/parameters/{device_type}/history")
-async def get_pid_parameter_history(
-    device_type: str, limit: int = 100, database: DatabaseManager = Depends(get_database)
+async def _get_pid_parameter_history(
+    location: str,
+    cluster: str,
+    device_type: str,
+    limit: int,
+    database: DatabaseManager,
 ) -> list[dict[str, Any]]:
-    """Get PID parameter change history for a device type.
-
-    Args:
-        device_type: Device type (e.g., 'heater', 'co2')
-        limit: Maximum number of history entries to return (default: 100)
-
-    Returns:
-        List of history entries with timestamp, kp, ki, kd, updated_by, source
-    """
+    """Get PID parameter change history for a device type."""
     if limit < 1 or limit > 1000:
         raise HTTPException(status_code=400, detail="Limit must be between 1 and 1000")
 
-    history = await database.pid_repo.get_pid_parameter_history(device_type, limit)
+    history = await database.pid_repo.get_pid_parameter_history(
+        location, cluster, device_type, limit
+    )
     return history
 
 
-@router.post("/api/pid/parameters/{device_type}/reset")
-async def reset_pid_parameters(
+async def _reset_pid_parameters(
+    location: str,
+    cluster: str,
     device_type: str,
-    database: DatabaseManager = Depends(get_database),
-    config: ConfigLoader = Depends(get_config),
+    database: DatabaseManager,
+    config: ConfigLoader,
 ) -> dict[str, Any] | None:
-    """Reset PID parameters to config defaults.
-
-    Args:
-        device_type: Device type (e.g., 'heater', 'co2')
-
-    Returns:
-        Reset PID parameters from config
-    """
+    """Reset PID parameters to config defaults."""
     # Get default parameters from config
     device_config = config.get_pid_params_for_device(device_type)
 
@@ -222,7 +206,7 @@ async def reset_pid_parameters(
 
     # Update in database with config values
     success = await database.pid_repo.set_pid_parameters(
-        device_type, kp, ki, kd, source="config_reset", updated_by="system"
+        location, cluster, device_type, kp, ki, kd, source="config_reset", updated_by="system"
     )
 
     if not success:
@@ -233,39 +217,29 @@ async def reset_pid_parameters(
     )
 
     # Return reset parameters
-    updated = await database.pid_repo.get_pid_parameters(device_type)
+    updated = await database.pid_repo.get_pid_parameters(location, cluster, device_type)
     return updated or {}
 
 
-# ============================================================================
-# PID Control Mode Endpoints
-# ============================================================================
-
-
-@router.get("/api/pid/mode/{device_type}")
-async def get_pid_mode(
-    device_type: str, database: DatabaseManager = Depends(get_database)
+async def _get_pid_mode(
+    location: str,
+    cluster: str,
+    device_type: str,
+    database: DatabaseManager,
 ) -> dict[str, Any]:
-    """Get PID control mode for a device type.
-
-    Args:
-        device_type: Device type (e.g., 'heater', 'co2', 'fan')
-
-    Returns:
-        Dict with mode, hysteresis settings, and autotune status
-    """
-    mode_info = await database.pid_repo.get_pid_control_mode(device_type)
+    """Get PID control mode for a device type."""
+    mode_info = await database.pid_repo.get_pid_control_mode(location, cluster, device_type)
     if mode_info is None:
         raise HTTPException(
             status_code=404, detail=f"PID mode not found for device_type: {device_type}"
         )
 
     # Get autotune state to check if active
-    autotune_state = await database.pid_repo.get_autotune_state(device_type)
+    autotune_state = await database.pid_repo.get_autotune_state(location, cluster, device_type)
     is_autotune_active = autotune_state.get("is_active", False) if autotune_state else False
 
     # Get updated_at from main PID parameters
-    params = await database.pid_repo.get_pid_parameters(device_type)
+    params = await database.pid_repo.get_pid_parameters(location, cluster, device_type)
     updated_at = params.get("updated_at") if params else None
 
     return {
@@ -278,22 +252,14 @@ async def get_pid_mode(
     }
 
 
-@router.post("/api/pid/mode/{device_type}")
-async def set_pid_mode(
-    device_type: str, update: PIDModeUpdate, database: DatabaseManager = Depends(get_database)
+async def _set_pid_mode(
+    location: str,
+    cluster: str,
+    device_type: str,
+    update: PIDModeUpdate,
+    database: DatabaseManager,
 ) -> dict[str, Any]:
-    """Set PID control mode for a device type.
-
-    When setting mode to 'auto_pid', auto-tuning will start.
-    When changing away from 'auto_pid', auto-tuning will stop.
-
-    Args:
-        device_type: Device type (e.g., 'heater', 'co2', 'fan')
-        update: Mode update request
-
-    Returns:
-        Updated mode info
-    """
+    """Set PID control mode for a device type."""
     # Validate mode
     valid_modes = ("auto_pid", "pid", "on_off")
     if update.mode not in valid_modes:
@@ -309,11 +275,13 @@ async def set_pid_mode(
             raise HTTPException(status_code=400, detail="hysteresis_low must be positive")
 
     # Get current mode to detect changes
-    current_mode_info = await database.pid_repo.get_pid_control_mode(device_type)
+    current_mode_info = await database.pid_repo.get_pid_control_mode(location, cluster, device_type)
     current_mode = current_mode_info["control_mode"] if current_mode_info else "pid"
 
     # Update mode in database
     success = await database.pid_repo.set_pid_control_mode(
+        location,
+        cluster,
         device_type,
         update.mode,
         hysteresis_high=update.hysteresis_high,
@@ -328,31 +296,31 @@ async def set_pid_mode(
     if update.mode == "auto_pid" and current_mode != "auto_pid":
         # Starting auto-tune
         await database.pid_repo.update_autotune_state(
-            device_type, state="running", progress=0.0, current_step="initializing"
+            location,
+            cluster,
+            device_type,
+            state="running",
+            progress=0.0,
+            current_step="initializing",
         )
         logger.info(f"Auto-tuning started for {device_type}")
     elif update.mode != "auto_pid" and current_mode == "auto_pid":
         # Stopping auto-tune
-        await database.pid_repo.update_autotune_state(device_type, state="idle")
+        await database.pid_repo.update_autotune_state(location, cluster, device_type, state="idle")
         logger.info(f"Auto-tuning stopped for {device_type}")
 
     # Return updated mode
-    return await get_pid_mode(device_type, database)
+    return await _get_pid_mode(location, cluster, device_type, database)
 
 
-@router.get("/api/pid/autotune/{device_type}/status")
-async def get_autotune_status(
-    device_type: str, database: DatabaseManager = Depends(get_database)
+async def _get_autotune_status(
+    location: str,
+    cluster: str,
+    device_type: str,
+    database: DatabaseManager,
 ) -> dict[str, Any]:
-    """Get auto-tune status for a device type.
-
-    Args:
-        device_type: Device type (e.g., 'heater', 'co2', 'fan')
-
-    Returns:
-        Auto-tune status including progress, calculated values, and suggestions
-    """
-    state = await database.pid_repo.get_autotune_state(device_type)
+    """Get auto-tune status for a device type."""
+    state = await database.pid_repo.get_autotune_state(location, cluster, device_type)
 
     if state is None:
         # Return default idle state
@@ -389,9 +357,199 @@ async def get_autotune_status(
     }
 
 
-@router.post("/api/pid/autotune/{device_type}/stop")
-async def stop_autotune(
-    device_type: str, database: DatabaseManager = Depends(get_database)
+async def _stop_autotune(
+    location: str,
+    cluster: str,
+    device_type: str,
+    database: DatabaseManager,
+) -> dict[str, Any]:
+    """Force stop auto-tuning for a device type."""
+    # Update autotune state
+    await database.pid_repo.update_autotune_state(location, cluster, device_type, state="idle")
+
+    # Change mode to 'pid' (manual)
+    await database.pid_repo.set_pid_control_mode(
+        location, cluster, device_type, "pid", updated_by="system"
+    )
+
+    logger.info(f"Auto-tuning force stopped for {device_type}, mode set to 'pid'")
+    return await _get_autotune_status(location, cluster, device_type, database)
+
+
+# ============================================================================
+# New routes with location/cluster as path parameters
+# ============================================================================
+
+
+@router.get("/api/pid/parameters")
+async def get_all_pid_parameters(
+    database: DatabaseManager = Depends(get_database),
+) -> list[dict[str, Any]]:
+    """Get all PID parameters for all device types.
+
+    Returns:
+        List of dicts with kp, ki, kd, updated_at, updated_by, source
+    """
+    return await _get_all_pid_parameters(database)
+
+
+@router.get("/api/pid/parameters/{location}/{cluster}/{device_type}")
+async def get_pid_parameters_v2(
+    location: str,
+    cluster: str,
+    device_type: str,
+    database: DatabaseManager = Depends(get_database),
+) -> dict[str, Any]:
+    """Get PID parameters for a specific device type.
+
+    Args:
+        location: Room/location name
+        cluster: Cluster name
+        device_type: Device type (e.g., 'heater', 'co2')
+
+    Returns:
+        Dict with kp, ki, kd, updated_at, updated_by, source
+    """
+    return await _get_pid_parameters(location, cluster, device_type, database)
+
+
+@router.post("/api/pid/parameters/{location}/{cluster}/{device_type}")
+async def update_pid_parameters_v2(
+    location: str,
+    cluster: str,
+    device_type: str,
+    update: PIDParameterUpdate,
+    database: DatabaseManager = Depends(get_database),
+    config: ConfigLoader = Depends(get_config),
+) -> dict[str, Any] | None:
+    """Update PID parameters for a device type.
+
+    Args:
+        location: Room/location name
+        cluster: Cluster name
+        device_type: Device type (e.g., 'heater', 'co2')
+        update: PID parameter update request
+
+    Returns:
+        Updated PID parameters
+    """
+    return await _update_pid_parameters(location, cluster, device_type, update, database, config)
+
+
+@router.get("/api/pid/parameters/{location}/{cluster}/{device_type}/history")
+async def get_pid_parameter_history_v2(
+    location: str,
+    cluster: str,
+    device_type: str,
+    limit: int = 100,
+    database: DatabaseManager = Depends(get_database),
+) -> list[dict[str, Any]]:
+    """Get PID parameter change history for a device type.
+
+    Args:
+        location: Room/location name
+        cluster: Cluster name
+        device_type: Device type (e.g., 'heater', 'co2')
+        limit: Maximum number of history entries to return (default: 100)
+
+    Returns:
+        List of history entries with timestamp, kp, ki, kd, updated_by, source
+    """
+    return await _get_pid_parameter_history(location, cluster, device_type, limit, database)
+
+
+@router.post("/api/pid/parameters/{location}/{cluster}/{device_type}/reset")
+async def reset_pid_parameters_v2(
+    location: str,
+    cluster: str,
+    device_type: str,
+    database: DatabaseManager = Depends(get_database),
+    config: ConfigLoader = Depends(get_config),
+) -> dict[str, Any] | None:
+    """Reset PID parameters to config defaults.
+
+    Args:
+        location: Room/location name
+        cluster: Cluster name
+        device_type: Device type (e.g., 'heater', 'co2')
+
+    Returns:
+        Reset PID parameters from config
+    """
+    return await _reset_pid_parameters(location, cluster, device_type, database, config)
+
+
+@router.get("/api/pid/mode/{location}/{cluster}/{device_type}")
+async def get_pid_mode_v2(
+    location: str,
+    cluster: str,
+    device_type: str,
+    database: DatabaseManager = Depends(get_database),
+) -> dict[str, Any]:
+    """Get PID control mode for a device type.
+
+    Args:
+        location: Room/location name
+        cluster: Cluster name
+        device_type: Device type (e.g., 'heater', 'co2', 'fan')
+
+    Returns:
+        Dict with mode, hysteresis settings, and autotune status
+    """
+    return await _get_pid_mode(location, cluster, device_type, database)
+
+
+@router.post("/api/pid/mode/{location}/{cluster}/{device_type}")
+async def set_pid_mode_v2(
+    location: str,
+    cluster: str,
+    device_type: str,
+    update: PIDModeUpdate,
+    database: DatabaseManager = Depends(get_database),
+) -> dict[str, Any]:
+    """Set PID control mode for a device type.
+
+    When setting mode to 'auto_pid', auto-tuning will start.
+    When changing away from 'auto_pid', auto-tuning will stop.
+
+    Args:
+        location: Room/location name
+        cluster: Cluster name
+        device_type: Device type (e.g., 'heater', 'co2', 'fan')
+        update: Mode update request
+
+    Returns:
+        Updated mode info
+    """
+    return await _set_pid_mode(location, cluster, device_type, update, database)
+
+
+@router.get("/api/pid/autotune/{location}/{cluster}/{device_type}/status")
+async def get_autotune_status_v2(
+    location: str,
+    cluster: str,
+    device_type: str,
+    database: DatabaseManager = Depends(get_database),
+) -> dict[str, Any]:
+    """Get auto-tune status for a device type.
+
+    Args:
+        location: Room/location name
+        cluster: Cluster name
+        device_type: Device type (e.g., 'heater', 'co2', 'fan')
+
+    Returns:
+        Auto-tune status including progress, calculated values, and suggestions
+    """
+    return await _get_autotune_status(location, cluster, device_type, database)
+
+
+@router.post("/api/pid/autotune/{location}/{cluster}/{device_type}/stop")
+async def stop_autotune_v2(
+    location: str,
+    cluster: str,
+    device_type: str,
+    database: DatabaseManager = Depends(get_database),
 ) -> dict[str, Any]:
     """Force stop auto-tuning for a device type.
 
@@ -399,16 +557,98 @@ async def stop_autotune(
     The mode will be changed to 'pid' (manual).
 
     Args:
+        location: Room/location name
+        cluster: Cluster name
         device_type: Device type (e.g., 'heater', 'co2', 'fan')
 
     Returns:
         Updated autotune status
     """
-    # Update autotune state
-    await database.pid_repo.update_autotune_state(device_type, state="idle")
+    return await _stop_autotune(location, cluster, device_type, database)
 
-    # Change mode to 'pid' (manual)
-    await database.pid_repo.set_pid_control_mode(device_type, "pid", updated_by="system")
 
-    logger.info(f"Auto-tuning force stopped for {device_type}, mode set to 'pid'")
-    return await get_autotune_status(device_type, database)
+# ============================================================================
+# Legacy backward-compatible routes (default to Flower Room / main)
+# ============================================================================
+# These are preserved so the frontend (and any other callers) do not break
+# mid-deploy.  They can be removed once all consumers have migrated to the
+# location/cluster path-param versions above.
+
+
+@router.get("/api/pid/parameters/{device_type}")
+async def get_pid_parameters_legacy(
+    device_type: str,
+    database: DatabaseManager = Depends(get_database),
+) -> dict[str, Any]:
+    """Legacy: Get PID parameters for a specific device type (defaults to Flower Room / main)."""
+    return await _get_pid_parameters("Flower Room", "main", device_type, database)
+
+
+@router.post("/api/pid/parameters/{device_type}")
+async def update_pid_parameters_legacy(
+    device_type: str,
+    update: PIDParameterUpdate,
+    database: DatabaseManager = Depends(get_database),
+    config: ConfigLoader = Depends(get_config),
+) -> dict[str, Any] | None:
+    """Legacy: Update PID parameters for a device type (defaults to Flower Room / main)."""
+    return await _update_pid_parameters(
+        "Flower Room", "main", device_type, update, database, config
+    )
+
+
+@router.get("/api/pid/parameters/{device_type}/history")
+async def get_pid_parameter_history_legacy(
+    device_type: str,
+    limit: int = 100,
+    database: DatabaseManager = Depends(get_database),
+) -> list[dict[str, Any]]:
+    """Legacy: Get PID parameter change history (defaults to Flower Room / main)."""
+    return await _get_pid_parameter_history("Flower Room", "main", device_type, limit, database)
+
+
+@router.post("/api/pid/parameters/{device_type}/reset")
+async def reset_pid_parameters_legacy(
+    device_type: str,
+    database: DatabaseManager = Depends(get_database),
+    config: ConfigLoader = Depends(get_config),
+) -> dict[str, Any] | None:
+    """Legacy: Reset PID parameters to config defaults (defaults to Flower Room / main)."""
+    return await _reset_pid_parameters("Flower Room", "main", device_type, database, config)
+
+
+@router.get("/api/pid/mode/{device_type}")
+async def get_pid_mode_legacy(
+    device_type: str,
+    database: DatabaseManager = Depends(get_database),
+) -> dict[str, Any]:
+    """Legacy: Get PID control mode (defaults to Flower Room / main)."""
+    return await _get_pid_mode("Flower Room", "main", device_type, database)
+
+
+@router.post("/api/pid/mode/{device_type}")
+async def set_pid_mode_legacy(
+    device_type: str,
+    update: PIDModeUpdate,
+    database: DatabaseManager = Depends(get_database),
+) -> dict[str, Any]:
+    """Legacy: Set PID control mode (defaults to Flower Room / main)."""
+    return await _set_pid_mode("Flower Room", "main", device_type, update, database)
+
+
+@router.get("/api/pid/autotune/{device_type}/status")
+async def get_autotune_status_legacy(
+    device_type: str,
+    database: DatabaseManager = Depends(get_database),
+) -> dict[str, Any]:
+    """Legacy: Get auto-tune status (defaults to Flower Room / main)."""
+    return await _get_autotune_status("Flower Room", "main", device_type, database)
+
+
+@router.post("/api/pid/autotune/{device_type}/stop")
+async def stop_autotune_legacy(
+    device_type: str,
+    database: DatabaseManager = Depends(get_database),
+) -> dict[str, Any]:
+    """Legacy: Force stop auto-tuning (defaults to Flower Room / main)."""
+    return await _stop_autotune("Flower Room", "main", device_type, database)
