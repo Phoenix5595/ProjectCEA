@@ -491,7 +491,7 @@ class BackgroundTasks:
 
                         db_schedules = await self.database.schedule_repo.get_schedules()
                         if self.control_engine.scheduler:
-                            merged = merge_schedules_with_config(
+                            merged = await merge_schedules_with_config(
                                 db_schedules, self.control_engine.config
                             )
                             self.control_engine.scheduler.update_schedules(merged)
@@ -510,7 +510,7 @@ class BackgroundTasks:
 
                         db_schedules = await self.database.schedule_repo.get_schedules()
                         if self.control_engine.scheduler:
-                            merged = merge_schedules_with_config(
+                            merged = await merge_schedules_with_config(
                                 db_schedules, self.control_engine.config
                             )
                             self.control_engine.scheduler.update_schedules(merged)

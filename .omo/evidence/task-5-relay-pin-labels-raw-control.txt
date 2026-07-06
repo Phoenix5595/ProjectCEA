@@ -1,0 +1,17 @@
+=== Verification: RelayChannelBox.tsx pin-label + raw-control update ===
+
+1. grep -n "CH {channel" RelayChannelBox.tsx
+   Result: (no output) — confirmed removed
+
+2. npx tsc --noEmit
+   Result: passed (no errors)
+
+3. npm run build
+   Result: passed (1529 modules transformed, 18.09s)
+
+Changes applied:
+- Line 66: canControl = true (removed device-assignment gate)
+- Line 85: tooltip now reads "R{relayNum} · {pinLabel} · ..." (dropped CH {channel.channel})
+- Line 92-96: 'Auto' button wrapped in {channel.isAssigned && (...)}
+- Line 125: display now reads "R{relayNum} · {channel.pinLabel}"
+- Line 141: title changed from 'Assign a device first' to 'Toggle relay channel'
