@@ -118,6 +118,27 @@ class ServiceContainer:
                 except Exception as e:
                     logger.warning(f"Startup force-off failed (continuing): {e}")
 
+            # 3b. Reconcile Redis relay state cache with actual hardware state.
+            # This must run AFTER all_off() and BEFORE background_tasks.start()
+            # to avoid a race with the control loop (hardware_batch.py).
+            if self.mcp23017 is not None and self.automation_redis is not None:
+                try:
+                    import json as _json
+
+                    from app.redis.schema import RELAY_CHANNELS, RELAY_TIMESTAMPS
+
+                    hw_states = self.mcp23017.get_all_channels()
+                    self.automation_redis.set(
+                        RELAY_CHANNELS, _json.dumps([bool(s) for s in hw_states])
+                    )
+                    self.automation_redis.set(RELAY_TIMESTAMPS, _json.dumps([None] * 16))
+                    logger.info(
+                        "Redis relay state reconciled with hardware: "
+                        f"{sum(hw_states)} ON / {len(hw_states) - sum(hw_states)} OFF"
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to reconcile relay Redis state: {e}")
+
             # 4. Initialize interlock manager
             devices = await self.config.get_devices()
             interlocks = self.config.get("interlocks", [])

@@ -145,6 +145,21 @@ class AutomationRedisClient:
             return None
         return self.redis_client.get(key)
 
+    def set(self, key: str, value: str | bytes) -> bool:
+        """Set a raw key in Redis. Returns False if Redis is disabled.
+
+        Args:
+            key: The Redis key to set.
+            value: The value to store.
+
+        Returns:
+            True if successful, False otherwise.
+        """
+        if not self.redis_enabled or self.redis_client is None:
+            return False
+        self.redis_client.set(key, value)
+        return True
+
     # ========================================================================
     # Alarms - delegate to ops.alarms
     # ========================================================================
