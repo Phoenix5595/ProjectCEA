@@ -511,6 +511,7 @@ async def get_all_channels(
                             "location": location,
                             "cluster": api_cluster,
                             "bound_relay_channel": channel,
+                            "device_id": device_info.get("device_id"),
                         }
                     )
 

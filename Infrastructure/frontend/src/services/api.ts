@@ -4,7 +4,7 @@ import type { SensorDataResponse } from '../types/sensor';
 import type { Device, ControlHistoryEntry } from '../types/device';
 import type { PIDParameters, PIDParameterUpdate, PIDModeInfo, PIDModeUpdate, AutotuneState } from '../types/pid';
 import type { Schedule, ScheduleCreate, ScheduleUpdate } from '../types/schedule';
-import type { LightStatus, LightTargetSetResponse } from '../types/light';
+import type { LightStatus, LightTargetSetResponse, LightDevice } from '../types/light';
 import type { RoomMode, FlowerSubmode, RoomModeWithParams, SetModeRequest, UpdateParametersRequest } from '../types/modes';
 import type {
   CalendarEventsResponse,
@@ -191,6 +191,66 @@ class ApiClient {
       dimming_channel: dimmingChannel,
     });
     return response.data;
+  }
+
+  async createLight(body: {
+    board_id: number;
+    dimming_channel: number;
+    room: string;
+    display_name: string;
+    per_room_index?: number;
+  }): Promise<LightDevice> {
+    const response = await this.automationClient.post('/api/lights', body);
+    return response.data;
+  }
+
+  async updateLight(
+    device_id: number,
+    body: {
+      display_name?: string;
+      room?: string;
+      per_room_index?: number;
+      relay_channel?: number | null;
+      safety_level?: number;
+    }
+  ): Promise<LightDevice> {
+    const response = await this.automationClient.put(`/api/lights/${device_id}`, body);
+    return response.data;
+  }
+
+  async deleteLight(device_id: number): Promise<{ success: boolean; warning?: string }> {
+    const response = await this.automationClient.delete(`/api/lights/${device_id}`);
+    return response.data;
+  }
+
+  async testLight(device_id: number): Promise<{ success: boolean }> {
+    const response = await this.automationClient.post(`/api/lights/${device_id}/test`);
+    return response.data;
+  }
+
+  async getLightsByRoom(room: string): Promise<LightDevice[]> {
+    const response = await this.automationClient.get('/api/devices/channels');
+    const lightNames: Array<{
+      name: string;
+      device_name: string;
+      location: string;
+      cluster: string;
+      bound_relay_channel?: number | null;
+      device_id?: number | null;
+    }> = response.data?.light_names ?? [];
+    return lightNames
+      .filter((light) => light.location === room)
+      .map((light) => ({
+        device_id: light.device_id ?? undefined,
+        device_name: light.device_name,
+        display_name: light.name,
+        location: light.location,
+        cluster: light.cluster,
+        state: 0,
+        mode: 'auto',
+        channel: -1,
+        bound_relay_channel: light.bound_relay_channel ?? null,
+      }));
   }
 
   async updateDeviceConfig(

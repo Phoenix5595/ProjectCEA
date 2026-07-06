@@ -25,6 +25,8 @@ export interface LightNameOption {
   device_name: string
   location: string
   cluster: string
+  bound_relay_channel?: number | null
+  device_id?: number | null
 }
 
 export interface RelayChannelsResponse {
