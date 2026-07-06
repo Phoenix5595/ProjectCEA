@@ -93,6 +93,9 @@ class ServiceContainer:
             # Get automation redis from database
             self.automation_redis = self.database._automation_redis
 
+            # Wire DB-backed device repository into ConfigLoader
+            self.config.set_device_repo(self.database.device_repo)
+
             # Load schedule state from DB to Redis (after Redis connection is established)
             try:
                 await self.database.load_schedule_state_to_redis()
@@ -116,7 +119,7 @@ class ServiceContainer:
                     logger.warning(f"Startup force-off failed (continuing): {e}")
 
             # 4. Initialize interlock manager
-            devices = self.config.get_devices()
+            devices = await self.config.get_devices()
             interlocks = self.config.get("interlocks", [])
             self.interlock_manager = InterlockManager(
                 device_config=devices, interlock_rules=interlocks
@@ -177,8 +180,10 @@ class ServiceContainer:
             # Initialize lights (safety levels and restore intensities)
             from app.initialization.lighting import restore_light_intensities, set_safety_levels
 
-            await set_safety_levels(self.config, self.dfr0971_manager)
-            await restore_light_intensities(self.database, self.config, self.dfr0971_manager)
+            await set_safety_levels(self.database.device_repo, self.dfr0971_manager)
+            await restore_light_intensities(
+                self.database, self.database.device_repo, self.dfr0971_manager
+            )
 
             # 10. Initialize background tasks (control loop max 5s, non-negotiable)
             update_interval = self.config.get_update_interval()

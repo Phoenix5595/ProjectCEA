@@ -81,20 +81,22 @@ def _build_container_with_mocks(
 
     # Build a minimal config mock
     config_mock = MagicMock(name="ConfigLoader")
-    config_mock.get_devices.return_value = {
-        "Flower Room": {
-            "main": {
-                "light_1": {
-                    "channel": 3,
-                    "device_type": "light",
-                    "dimming_enabled": True,
-                    "dimming_type": "dfr0971",
-                    "dimming_board_id": 2,
-                    "dimming_channel": 0,
+    config_mock.get_devices = AsyncMock(
+        return_value={
+            "Flower Room": {
+                "main": {
+                    "light_1": {
+                        "channel": 3,
+                        "device_type": "light",
+                        "dimming_enabled": True,
+                        "dimming_type": "dfr0971",
+                        "dimming_board_id": 2,
+                        "dimming_channel": 0,
+                    }
                 }
             }
         }
-    }
+    )
     config_mock.get.side_effect = lambda key, default=None: {
         "interlocks": [],
         "control": {"update_interval": 1, "last_good_hold_period": 30},
