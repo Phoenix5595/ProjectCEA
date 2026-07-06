@@ -235,7 +235,7 @@ async def get_status(
         pid_status = pid_controller_manager.get_pid_status()
 
     redis_client = getattr(database, "_automation_redis", None)
-    device_config = config.get_devices()
+    device_config = await config.get_devices()
     for location, clusters in device_config.items():
         devices[location] = {}
         for cluster, cluster_devices in clusters.items():

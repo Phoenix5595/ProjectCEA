@@ -138,11 +138,12 @@ export default function DeviceManager() {
         lastStateMap[key] = ts
       }
     })
-    return buildRelayChannelViewModels(
+    const vms = buildRelayChannelViewModels(
       displayChannels,
       relayState.channels,
       lastStateMap
     )
+    return vms.sort((a, b) => getRelayNumber(a.channel) - getRelayNumber(b.channel))
   }, [displayChannels, relayState])
 
   const statusByChannel = useMemo(() => {
@@ -219,6 +220,13 @@ export default function DeviceManager() {
     [lightNames]
   )
 
+  const roomFilteredLights = useMemo(() => {
+    if (editing === null || editForm.device_type !== 'light' || !editForm.location) {
+      return []
+    }
+    return uniqueLightNames.filter((light) => light.location === editForm.location)
+  }, [uniqueLightNames, editing, editForm.device_type, editForm.location])
+
   const locationOptions = useMemo(
     () =>
       ZONES.filter(
@@ -283,6 +291,45 @@ export default function DeviceManager() {
     document.addEventListener('click', onDocumentClick)
     return () => document.removeEventListener('click', onDocumentClick)
   }, [])
+
+  useEffect(() => {
+    if (editing === null || editForm.device_type !== 'light' || !editForm.location) {
+      return
+    }
+    let cancelled = false
+    void apiClient.getLightsByRoom(editForm.location).then((lights) => {
+      if (cancelled) return
+      setLightNames((prev) => {
+        const byNameRoom = new Map<string, LightNameOption>()
+        for (const l of prev) {
+          byNameRoom.set(`${l.name}\u0000${l.location}`, l)
+        }
+        for (const l of lights) {
+          const key = `${l.display_name ?? l.device_name}\u0000${l.location}`
+          const existing = byNameRoom.get(key)
+          if (existing) {
+            existing.bound_relay_channel = l.bound_relay_channel ?? null
+            existing.device_id = l.device_id ?? null
+          } else {
+            byNameRoom.set(key, {
+              name: l.display_name ?? l.device_name,
+              device_name: l.device_name,
+              location: l.location,
+              cluster: l.cluster,
+              bound_relay_channel: l.bound_relay_channel ?? null,
+              device_id: l.device_id ?? null,
+            })
+          }
+        }
+        return Array.from(byNameRoom.values())
+      })
+    }).catch((err) => {
+      logger.warn('Failed to fetch room lights for greyout', err)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [editing, editForm.device_type, editForm.location])
 
   useEffect(() => {
     const onPointerDown = (event: PointerEvent) => {
@@ -582,7 +629,7 @@ export default function DeviceManager() {
             </div>
           )}
 
-          <div className="grid grid-cols-1 gap-6 md:grid-cols-[65fr_35fr]">
+              <div className="grid grid-cols-1 gap-6 md:grid-cols-[55fr_45fr]">
             <div ref={tablePanelRef} className="rounded-lg border border-border-subtle bg-surface-primary shadow-md md:col-span-1">
               <div className="border-b border-border-subtle px-2 py-1">
                 <h3 className="text-lg font-semibold text-text-default">Channel Assignment Table</h3>
@@ -676,10 +723,8 @@ export default function DeviceManager() {
                                   onChange={(event) => {
                                     const selectedLightName = event.target.value
                                     const selectedLight =
-                                      uniqueLightNames.find(
-                                        (light) =>
-                                          light.name === selectedLightName &&
-                                          light.location === editForm.location
+                                      roomFilteredLights.find(
+                                        (light) => light.name === selectedLightName
                                       ) ||
                                       uniqueLightNames.find((light) => light.name === selectedLightName)
 
@@ -692,14 +737,21 @@ export default function DeviceManager() {
                                   className="w-full rounded-sm border border-border-emphasis bg-surface-primary px-2 py-1 text-text-input focus:outline-hidden focus:ring-2 focus:ring-btn-primary-light"
                                 >
                                   <option value="">Select light</option>
-                                  {uniqueLightNames.map((light) => (
-                                    <option
-                                      key={`${light.location}-${light.cluster}-${light.device_name}`}
-                                      value={light.name}
-                                    >
-                                      {light.name}
-                                    </option>
-                                  ))}
+                                  {roomFilteredLights.map((light) => {
+                                    const isBoundElsewhere =
+                                      light.bound_relay_channel != null &&
+                                      light.bound_relay_channel !== editing
+                                    return (
+                                      <option
+                                        key={`${light.location}-${light.cluster}-${light.device_name}`}
+                                        value={light.name}
+                                        disabled={isBoundElsewhere}
+                                      >
+                                        {light.name}
+                                        {isBoundElsewhere ? ` (R${getRelayNumber(light.bound_relay_channel!)})` : ''}
+                                      </option>
+                                    )
+                                  })}
                                 </select>
                               ) : (
                                 <input
@@ -763,10 +815,7 @@ export default function DeviceManager() {
               </div>
             </div>
 
-            <div
-              ref={matrixPanelRef}
-              className="min-w-[320px] rounded-lg border border-border-subtle bg-surface-primary p-2 shadow-md md:col-span-1 md:min-w-[360px]"
-            >
+            <div ref={matrixPanelRef}>
               <RelayChannelMatrix
                 channels={relayChannels}
                 nowMs={nowMs}

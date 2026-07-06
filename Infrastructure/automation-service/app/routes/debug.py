@@ -167,7 +167,7 @@ async def get_light_schedule_health(
 ):
     """Per-light schedule resolution and last Grafana DB sample age (effective_setpoints)."""
     try:
-        devices = config.get_devices()
+        devices = await config.get_devices()
         cluster_devices = devices.get(location, {}).get(cluster, {})
         now = datetime.now(tz=LOCAL_TZ)
         pool = db.pool
