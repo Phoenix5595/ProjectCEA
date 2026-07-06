@@ -72,7 +72,6 @@ export default function RelayChannelMatrix({
   onMenuAction,
 }: RelayChannelMatrixProps) {
   const variant: RelayMatrixVariant = variantProp ?? (compact ? 'compact' : 'panel')
-  const isPanel = variant === 'panel'
   const { leftColumn, rightColumn } = splitRelayByPhysicalLayout(channels)
 
   const boxProps: ChannelBoxRenderProps = {
@@ -87,66 +86,43 @@ export default function RelayChannelMatrix({
     onMenuAction,
   }
 
-  const gridCols = isPanel ? 'auto 1fr auto 1fr auto' : '1fr auto 1fr'
+  const gridCols = '1fr auto 1fr'
 
   return (
-    <div
-      className={`rounded-sm border border-border-emphasis bg-surface-secondary shadow-[inset_0_1px_0_var(--border-subtle)] ${isPanel ? 'p-2' : 'p-1'}`}
-    >
+    <div className="rounded-sm bg-surface-secondary p-0">
       <div
-        className="grid gap-x-1.5 gap-y-1 rounded-sm border border-border-subtle/80 p-1"
+        className="grid gap-x-1.5 gap-y-1 p-1"
         style={{
           ...GRID_BACKGROUND_STYLE,
           gridTemplateColumns: gridCols,
           gridTemplateRows: `repeat(${RELAY_MATRIX_ROWS}, auto)`,
         }}
       >
-        <div
-          className="flex items-center justify-center border-x border-border-emphasis/70 bg-surface-tertiary/30"
-          style={{
-            gridColumn: isPanel ? 3 : 2,
-            gridRow: '1 / -1',
-          }}
-        />
+      <div
+        className="flex items-center justify-center border-x border-border-emphasis/70 bg-surface-tertiary/30"
+        style={{
+          gridColumn: 2,
+          gridRow: '1 / -1',
+        }}
+      />
 
-        {Array.from({ length: RELAY_MATRIX_ROWS }, (_, rowIndex) => {
-          const channelLeft = leftColumn[rowIndex]
-          const channelRight = rightColumn[rowIndex]
-          const gridRow = rowIndex + 1
-          const leftCol = isPanel ? 2 : 1
-          const rightCol = isPanel ? 4 : 3
-          const leftRelayNum = rowIndex + 1
-          const rightRelayNum = 16 - rowIndex
+      {Array.from({ length: RELAY_MATRIX_ROWS }, (_, rowIndex) => {
+        const channelLeft = leftColumn[rowIndex]
+        const channelRight = rightColumn[rowIndex]
+        const gridRow = rowIndex + 1
 
-          return (
-            <div key={rowIndex} className="contents">
-              {isPanel && (
-                <div
-                  className="flex w-4 items-center justify-center font-mono text-[9px] text-text-subtle"
-                  style={{ gridColumn: 1, gridRow }}
-                >
-                  {leftRelayNum}
-                </div>
-              )}
-              <div className="min-w-0" style={{ gridColumn: leftCol, gridRow }}>
-                {channelLeft ? renderChannelBox(channelLeft, boxProps) : null}
-              </div>
-              {isPanel && (
-                <div
-                  className="flex w-4 items-center justify-center font-mono text-[9px] text-text-subtle"
-                  style={{ gridColumn: 5, gridRow }}
-                >
-                  {rightRelayNum}
-                </div>
-              )}
-              <div className="min-w-0" style={{ gridColumn: rightCol, gridRow }}>
-                {channelRight ? renderChannelBox(channelRight, boxProps) : null}
-              </div>
+        return (
+          <div key={rowIndex} className="contents">
+            <div className="min-w-0" style={{ gridColumn: 1, gridRow }}>
+              {channelLeft ? renderChannelBox(channelLeft, boxProps) : null}
             </div>
-          )
-        })}
+            <div className="min-w-0" style={{ gridColumn: 3, gridRow }}>
+              {channelRight ? renderChannelBox(channelRight, boxProps) : null}
+            </div>
+          </div>
+        )
+      })}
       </div>
-
     </div>
   )
 }
