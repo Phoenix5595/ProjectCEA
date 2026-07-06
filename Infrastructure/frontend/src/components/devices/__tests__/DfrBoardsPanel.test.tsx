@@ -113,12 +113,28 @@ describe('DfrBoardsPanel', () => {
       expect(screen.getByTestId('remove-confirm-0-0')).toBeInTheDocument()
     })
 
-    expect(screen.getByText(/This will also unbind relay/)).toBeInTheDocument()
+    expect(screen.getByText(/Remove light\? \(Its relay will also be unbound\.\)/)).toBeInTheDocument()
 
     await user.click(screen.getByTestId('remove-confirm-0-0'))
 
     await waitFor(() => {
       expect(apiClient.deleteLight).toHaveBeenCalledWith(10)
     })
+  }, 10000)
+
+  it('shows DFR board_id and channel label instead of relay identity', async () => {
+    render(<DfrBoardsPanel />)
+
+    await waitFor(() => {
+      expect(screen.getByTestId('dfr-slot-0-0')).toBeInTheDocument()
+    })
+
+    const slotLabel = screen.getByTestId('dfr-slot-0-0').querySelector('.text-xs.font-semibold')
+    expect(slotLabel).not.toBeNull()
+    const labelText = slotLabel?.textContent ?? ''
+    expect(labelText).toBe('DFR0 · CH0')
+    expect(labelText).not.toContain('R{')
+    expect(labelText).not.toContain('GPA')
+    expect(labelText).not.toContain('GPB')
   }, 10000)
 })

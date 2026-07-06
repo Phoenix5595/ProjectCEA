@@ -5,7 +5,6 @@ import { knownRooms } from '../../config/clusterTopology'
 import { apiClient } from '../../services/api'
 import type { LightDevice } from '../../types/light'
 import { extractErrorMessage } from '../../utils/errors'
-import { getRelayNumber, getRelayPinLabel } from './relayViewModel'
 import { logger } from '../../utils/logger'
 
 type DfrBoard = {
@@ -576,7 +575,7 @@ export default function DfrBoardsPanel() {
                 className="rounded-md border border-border-subtle bg-surface-secondary p-2 space-y-2"
               >
                 <div className="flex items-center justify-between">
-                  <div className="text-xs font-semibold text-text-default">R{getRelayNumber(ch)} · {getRelayPinLabel(ch)}</div>
+                  <div className="text-xs font-semibold text-text-default">DFR{board.board_id} · CH{ch}</div>
                   <div className="text-[11px] text-text-subtle">
                     {assignment ? `${assignment.location}` : 'Unassigned'}
                   </div>
@@ -734,7 +733,7 @@ export default function DfrBoardsPanel() {
                         </div>
                         {isConfirmingRemove && (
                           <div className="text-[11px] text-status-danger-text">
-                            This will also unbind relay R{getRelayNumber(ch)}. Remove light?
+                            Remove light? (Its relay will also be unbound.)
                           </div>
                         )}
                         <div className="text-[11px] text-text-subtle">
