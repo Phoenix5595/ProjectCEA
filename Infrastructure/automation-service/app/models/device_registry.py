@@ -80,3 +80,6 @@ class LightDeviceUpdate(BaseModel):
         default=None,
         description="Bind to relay channel (set to None to unbind)",
     )
+    safety_level: int | None = Field(
+        default=None, ge=0, le=100, description="Safety intensity level (0-100%)"
+    )

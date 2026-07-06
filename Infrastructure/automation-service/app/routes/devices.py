@@ -110,10 +110,11 @@ async def get_devices_for_location_cluster(
 ) -> dict[str, Any]:
     """Get devices for a specific location/cluster with configuration."""
     _validate_device_cluster_or_400(location, cluster)
-    ensure_configured_cluster(config.get_devices(), location, cluster)
+    device_configs = await config.get_devices()
+    ensure_configured_cluster(device_configs, location, cluster)
     devices = {}
     device_states = relay_manager.get_all_states()
-    device_configs = config.get_devices()
+    device_configs = await config.get_devices()
 
     # Get all devices from config for this location/cluster
     location_config = device_configs.get(location, {})
@@ -298,7 +299,7 @@ async def get_control_history(
             status_code=400,
             detail="Parameter 'limit' must be an integer between 1 and 100",
         )
-    ensure_configured_cluster(config.get_devices(), location, cluster)
+    ensure_configured_cluster(await config.get_devices(), location, cluster)
     try:
         return await database.control_action_repo.get_control_history_filtered(
             location, cluster, limit, channel, since, until
@@ -413,7 +414,7 @@ async def update_device_config(
         Updated device configuration
     """
     # Validate device exists
-    device_configs = config.get_devices()
+    device_configs = await config.get_devices()
     if location not in device_configs:
         raise HTTPException(status_code=404, detail=f"Location {location} not found")
     if cluster not in device_configs.get(location, {}):
@@ -457,7 +458,7 @@ async def update_device_config(
     config.reload()
 
     # Get fresh device configs after reload
-    device_configs = config.get_devices()
+    device_configs = await config.get_devices()
 
     # Return updated device info
     device_info = device_configs[location][cluster][device]
@@ -472,60 +473,55 @@ async def update_device_config(
 
 
 @router.get("/api/devices/channels")
-async def get_all_channels(config: ConfigLoader = Depends(get_config)) -> dict[str, Any]:
+async def get_all_channels(
+    database: DatabaseManager = Depends(get_database),
+) -> dict[str, Any]:
     """Get all 16 MCP channels (0-15) with their current device assignments.
 
-    Returns:
-        Dict with channel numbers as keys and device info as values
+    Reads from the DB-backed device registry.
     """
-    channels = {}
-    device_configs = config.get_devices()
-
-    # Initialize all 16 channels as empty
-    for channel in range(16):
-        channels[str(channel)] = {
-            "channel": channel,
+    channels: dict[str, dict[str, Any]] = {}
+    for ch in range(16):
+        channels[str(ch)] = {
+            "channel": ch,
             "device_name": None,
             "display_name": None,
             "device_type": None,
             "location": None,
             "cluster": None,
-            "light_name": None,  # If device_type is light, this is the display_name
+            "light_name": None,
         }
 
-    # Get all light names from config
-    light_names = []
-    for location, clusters in device_configs.items():
-        for cluster, devices in clusters.items():
-            for device_name, device_info in devices.items():
-                if device_info.get("device_type") == "light":
-                    display_name = device_info.get("display_name")
-                    if display_name:
-                        light_names.append(
-                            {
-                                "name": display_name,
-                                "device_name": device_name,
-                                "location": location,
-                                "cluster": _api_cluster_for_device_row(location, cluster),
-                            }
-                        )
+    hierarchy = await database.device_repo.get_all_as_hierarchy()
+    light_names: list[dict[str, Any]] = []
 
-    # Populate channels with existing devices
-    for location, clusters in device_configs.items():
+    for location, clusters in hierarchy.items():
         for cluster, devices in clusters.items():
+            api_cluster = _api_cluster_for_device_row(location, cluster)
             for device_name, device_info in devices.items():
                 channel = device_info.get("channel")
-                if channel is not None and 0 <= channel < 16:
-                    device_type = device_info.get("device_type")
-                    display_name = device_info.get("display_name")
+                device_type = device_info.get("device_type")
+                display_name = device_info.get("display_name")
 
+                if device_type == "light":
+                    light_names.append(
+                        {
+                            "name": display_name,
+                            "device_name": device_name,
+                            "location": location,
+                            "cluster": api_cluster,
+                            "bound_relay_channel": channel,
+                        }
+                    )
+
+                if channel is not None and 0 <= channel < 16:
                     channels[str(channel)] = {
                         "channel": channel,
                         "device_name": device_name,
                         "display_name": display_name,
                         "device_type": device_type,
                         "location": location,
-                        "cluster": _api_cluster_for_device_row(location, cluster),
+                        "cluster": api_cluster,
                         "light_name": display_name if device_type == "light" else None,
                     }
 
@@ -637,12 +633,36 @@ async def update_channel_device(
 
 @router.delete("/api/devices/channels/{channel}")
 async def clear_channel_device(
-    channel: int, config: ConfigLoader = Depends(get_config)
+    channel: int,
+    config: ConfigLoader = Depends(get_config),
+    database: DatabaseManager = Depends(get_database),
 ) -> dict[str, Any]:
-    """Clear a channel assignment by removing mapped device(s) on that channel."""
+    """Clear a channel assignment.
+
+    For lights: NULLs the relay channel in DB (root-cause #1 fix).
+    For non-lights: preserves existing YAML delete behavior.
+    """
     if channel < 0 or channel > 15:
         raise HTTPException(status_code=400, detail="Channel must be between 0 and 15")
 
+    # Root-cause #1 fix: NULL channel for lights in DB instead of deleting the row
+    nulled_lights: list[dict[str, str]] = []
+    hierarchy = await database.device_repo.get_all_as_hierarchy()
+    for location, clusters in hierarchy.items():
+        for cluster, devices in clusters.items():
+            for device_name, device_info in devices.items():
+                if (
+                    device_info.get("device_type") == "light"
+                    and device_info.get("channel") == channel
+                ):
+                    device_id = device_info.get("device_id")
+                    if device_id is not None:
+                        await database.device_repo.clear_relay_binding_only(device_id)
+                        nulled_lights.append(
+                            {"location": location, "cluster": cluster, "device_name": device_name}
+                        )
+
+    # Preserve existing YAML delete behavior for all device types
     full_config = config._config
     devices_root = full_config.get("devices", {})
     removed: list[dict[str, str]] = []
@@ -667,6 +687,7 @@ async def clear_channel_device(
     return {
         "channel": channel,
         "cleared": True,
+        "nulled_lights": nulled_lights,
         "removed_devices": removed,
         "success": True,
     }

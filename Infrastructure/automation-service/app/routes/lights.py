@@ -13,6 +13,9 @@ from app.config import ConfigLoader
 from app.control.schedule_merge import merge_schedules_with_config
 from app.control.scheduler import LOCAL_TZ
 from app.database import DatabaseManager
+from app.hardware.i2c_lock import acquire_i2c_bus_1
+from app.models.device_registry import LightDevice, LightDeviceCreate, LightDeviceUpdate
+from app.repositories.devices import DeviceRepository
 from app.schemas.lights import (
     DfrChannelAssignControl,
     IntensityControl,
@@ -155,6 +158,13 @@ def get_scheduler() -> Scheduler:
     raise RuntimeError("Dependency not injected")
 
 
+def get_device_repo() -> DeviceRepository:
+    """Dependency to get device repository."""
+    from app.main import container
+
+    return container.get_database().device_repo
+
+
 @router.get("/api/lights/boards")
 async def list_boards(dfr0971_manager=Depends(get_dfr0971_manager)) -> dict[str, Any]:
     """List all configured DFR0971 boards."""
@@ -162,8 +172,8 @@ async def list_boards(dfr0971_manager=Depends(get_dfr0971_manager)) -> dict[str,
     return {"boards": boards, "count": len(boards)}
 
 
-def _iter_all_dfr0971_lights(config: ConfigLoader) -> list[dict[str, Any]]:
-    devices = config.get_devices() or {}
+async def _iter_all_dfr0971_lights(config: ConfigLoader) -> list[dict[str, Any]]:
+    devices = await config.get_devices() or {}
     out: list[dict[str, Any]] = []
     for location, clusters in devices.items():
         if not isinstance(clusters, dict):
@@ -201,7 +211,7 @@ async def get_dfr_assignments(
 ) -> dict[str, Any]:
     """Return DFR0971 boards + per-board channel assignments + all dimmable DFR lights."""
     boards = dfr0971_manager.list_boards()
-    lights = _iter_all_dfr0971_lights(config)
+    lights = await _iter_all_dfr0971_lights(config)
 
     # board_id -> {0: assignment|null, 1: assignment|null}
     assignments: dict[str, dict[str, Any | None]] = {}
@@ -238,7 +248,7 @@ async def assign_dfr_channel(
     config: ConfigLoader = Depends(get_config),
 ) -> dict[str, Any]:
     """Assign (or clear) a DFR0971 (board_id, channel) mapping for a dimmable light device."""
-    device_configs = config.get_devices() or {}
+    device_configs = await config.get_devices() or {}
     device_info = (
         device_configs.get(control.location, {}).get(control.cluster, {}).get(control.device_name)
     )
@@ -279,7 +289,7 @@ async def assign_dfr_channel(
 
     # Global uniqueness: (board_id, dimming_channel) can only belong to one light.
     requested_pair = (int(control.board_id), int(control.dimming_channel))
-    for light in _iter_all_dfr0971_lights(config):
+    for light in await _iter_all_dfr0971_lights(config):
         if (
             light["location"] == control.location
             and light["cluster"] == control.cluster
@@ -342,7 +352,7 @@ async def set_intensity(
         raise HTTPException(status_code=400, detail="Intensity must be between 0 and 100")
 
     # Get device configuration
-    devices = config.get_devices()
+    devices = await config.get_devices()
     device_info = devices.get(location, {}).get(cluster, {}).get(device_name)
 
     if not device_info:
@@ -442,7 +452,7 @@ async def get_zone_lights_status(
     scheduler=Depends(get_scheduler),
 ) -> dict[str, Any]:
     """Return intensity + targets for all dimmable lights in one round-trip (ZoneConfig Light intensity)."""
-    devices = config.get_devices()
+    devices = await config.get_devices()
     location_config = devices.get(location, {}) or {}
     if location == "Flower Room" and cluster == "main":
         device_entries = iter_flower_main_merged_devices(location_config)
@@ -616,7 +626,7 @@ async def get_light_status(
 ) -> dict[str, Any]:
     """Get current light status (intensity, voltage, board info, target intensity)."""
     # Get device configuration
-    devices = config.get_devices()
+    devices = await config.get_devices()
     device_info = devices.get(location, {}).get(cluster, {}).get(device_name)
 
     if not device_info:
@@ -672,7 +682,7 @@ async def set_voltage(
         raise HTTPException(status_code=400, detail="Voltage must be between 0 and 10")
 
     # Get device configuration
-    devices = config.get_devices()
+    devices = await config.get_devices()
     device_info = devices.get(location, {}).get(cluster, {}).get(device_name)
 
     if not device_info:
@@ -730,7 +740,7 @@ async def set_target_intensity(
     if control.target_intensity < 0 or control.target_intensity > 100:
         raise HTTPException(status_code=400, detail="Target intensity must be between 0 and 100")
 
-    devices = config.get_devices()
+    devices = await config.get_devices()
     device_info = devices.get(location, {}).get(cluster, {}).get(device_name)
 
     if not device_info:
@@ -802,4 +812,225 @@ async def update_light_schedule(
         "device": device_name,
         "start_time": control.start_time,
         "end_time": control.end_time,
+    }
+
+
+@router.post("/api/lights")
+async def create_light(
+    body: LightDeviceCreate,
+    device_repo: DeviceRepository = Depends(get_device_repo),
+) -> LightDevice:
+    """Create a new light device on an empty DFR slot."""
+    # Conflict check: (board_id, dimming_channel) must be unoccupied
+    hierarchy = await device_repo.get_all_as_hierarchy()
+    for loc, clusters in hierarchy.items():
+        for clu, devices in clusters.items():
+            for dev_name, dev_info in devices.items():
+                if (
+                    dev_info.get("dimming_board_id") == body.board_id
+                    and dev_info.get("dimming_channel") == body.dimming_channel
+                ):
+                    raise HTTPException(
+                        status_code=409,
+                        detail=(
+                            f"DFR channel already occupied by {loc}/{clu}/{dev_name} "
+                            f"(board_id={body.board_id}, channel={body.dimming_channel})"
+                        ),
+                    )
+
+    per_room_index = body.per_room_index
+    if per_room_index is None:
+        room_lights = await device_repo.get_lights_by_room(body.room)
+        max_index = max((light.per_room_index for light in room_lights), default=0)
+        per_room_index = max_index + 1
+
+    light = await device_repo.create_light(
+        board_id=body.board_id,
+        dimming_channel=body.dimming_channel,
+        room=body.room,
+        display_name=body.display_name,
+        per_room_index=per_room_index,
+    )
+    return light
+
+
+@router.put("/api/lights/{device_id}")
+async def update_light(
+    device_id: int,
+    body: LightDeviceUpdate,
+    device_repo: DeviceRepository = Depends(get_device_repo),
+) -> LightDevice:
+    """Update an existing light device."""
+    existing = await device_repo.get_light_by_id(device_id)
+    if existing is None:
+        raise HTTPException(status_code=404, detail=f"Light {device_id} not found")
+
+    old_name = existing.device_name
+    old_location = existing.location
+    old_cluster = existing.cluster
+
+    update_fields: dict[str, Any] = {}
+    if body.display_name is not None:
+        update_fields["display_name"] = body.display_name
+    if body.room is not None:
+        update_fields["room"] = body.room
+    if body.per_room_index is not None:
+        update_fields["per_room_index"] = body.per_room_index
+    if body.relay_channel is not None:
+        update_fields["relay_channel"] = body.relay_channel
+    if body.safety_level is not None:
+        update_fields["safety_level"] = body.safety_level
+
+    updated = await device_repo.update_light(device_id, **update_fields)
+    if updated is None:
+        raise HTTPException(status_code=500, detail="Failed to update light")
+
+    # CASCADE if device_name changed
+    if updated.device_name != old_name:
+        await device_repo.cascade_device_name_change(
+            old_name=old_name,
+            new_name=updated.device_name,
+            location=old_location,
+            cluster=old_cluster,
+        )
+
+    return updated
+
+
+@router.delete("/api/lights/{device_id}")
+async def delete_light(
+    device_id: int,
+    device_repo: DeviceRepository = Depends(get_device_repo),
+) -> dict[str, Any]:
+    """Delete a light device. Warns if relay channel is still bound."""
+    existing = await device_repo.get_light_by_id(device_id)
+    if existing is None:
+        raise HTTPException(status_code=404, detail=f"Light {device_id} not found")
+
+    warning = None
+    if existing.relay_channel is not None:
+        warning = (
+            f"Light {existing.display_name} had relay channel {existing.relay_channel} bound; "
+            "relay channel is now free"
+        )
+
+    deleted = await device_repo.delete_light(device_id)
+    if not deleted:
+        raise HTTPException(status_code=500, detail="Failed to delete light")
+
+    result: dict[str, Any] = {"success": True, "device_id": device_id}
+    if warning:
+        result["warning"] = warning
+    return result
+
+
+@router.post("/api/lights/{device_id}/test")
+async def test_light(
+    device_id: int,
+    device_repo: DeviceRepository = Depends(get_device_repo),
+    dfr0971_manager=Depends(get_dfr0971_manager),
+    database: DatabaseManager = Depends(get_database),
+    relay_manager=Depends(get_relay_manager),
+) -> dict[str, Any]:
+    """Run a 5-second DFR intensity sweep on a light device.
+
+    Sequence: 100% -> 10% -> 100% over ~5 seconds.
+    Prior intensity and mode are restored even if an exception occurs.
+    """
+    light = await device_repo.get_light_by_id(device_id)
+    if light is None:
+        raise HTTPException(status_code=404, detail=f"Light {device_id} not found")
+
+    if light.board_id is None or light.dimming_channel is None:
+        raise HTTPException(status_code=400, detail="Light has no DFR configuration")
+
+    # Failsafe check
+    if database and database._automation_redis:
+        failsafe = database._automation_redis.read_failsafe(light.location, light.cluster)
+        if failsafe is not None:
+            raise HTTPException(
+                status_code=423,
+                detail=f"Room {light.location}/{light.cluster} is in failsafe mode",
+            )
+
+    i2c_lock = await acquire_i2c_bus_1()
+    if i2c_lock.locked():
+        raise HTTPException(status_code=409, detail="I2C bus 1 is busy")
+
+    prior_intensity: float | None = None
+    prior_relay_state: int | None = None
+    prior_mode: str | None = None
+
+    async with i2c_lock:
+        # Read prior intensity
+        prior_intensity = dfr0971_manager.get_intensity(light.board_id, light.dimming_channel)
+        if prior_intensity is None:
+            prior_intensity = 0.0
+
+        # Set to manual mode if relay is bound
+        if light.relay_channel is not None and relay_manager:
+            prior_relay_state = relay_manager.get_device_state(
+                light.location, light.cluster, light.device_name
+            )
+            prior_mode = relay_manager.get_device_mode(
+                light.location, light.cluster, light.device_name
+            )
+            relay_manager.set_device_state(light.location, light.cluster, light.device_name, 1)
+            if database:
+                await database.device_repo.set_device_state(
+                    light.location,
+                    light.cluster,
+                    light.device_name,
+                    light.relay_channel,
+                    True,
+                    "manual",
+                )
+
+        try:
+            # Sweep: 100% -> 10% -> 100% over ~5s
+            await asyncio.to_thread(
+                dfr0971_manager.set_intensity, light.board_id, light.dimming_channel, 100.0
+            )
+            await asyncio.sleep(1.5)
+
+            await asyncio.to_thread(
+                dfr0971_manager.set_intensity, light.board_id, light.dimming_channel, 10.0
+            )
+            await asyncio.sleep(1.5)
+
+            await asyncio.to_thread(
+                dfr0971_manager.set_intensity, light.board_id, light.dimming_channel, 100.0
+            )
+            await asyncio.sleep(1.5)
+        finally:
+            # Restore prior intensity
+            await asyncio.to_thread(
+                dfr0971_manager.set_intensity,
+                light.board_id,
+                light.dimming_channel,
+                prior_intensity,
+            )
+
+            # Restore prior relay state and mode
+            if light.relay_channel is not None and relay_manager:
+                restore_state = prior_relay_state if prior_relay_state is not None else 0
+                relay_manager.set_device_state(
+                    light.location, light.cluster, light.device_name, restore_state
+                )
+                if database and prior_mode is not None:
+                    await database.device_repo.set_device_state(
+                        light.location,
+                        light.cluster,
+                        light.device_name,
+                        light.relay_channel,
+                        bool(restore_state),
+                        prior_mode,
+                    )
+
+    return {
+        "success": True,
+        "device_id": device_id,
+        "device_name": light.device_name,
+        "prior_intensity": prior_intensity,
+        "message": "DFR test sweep completed (100% -> 10% -> 100%)",
     }

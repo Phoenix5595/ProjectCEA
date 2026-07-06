@@ -81,6 +81,7 @@ def setup_dependency_overrides(app: FastAPI, container) -> None:
     app.dependency_overrides[lights.get_relay_manager] = container.get_relay_manager
     app.dependency_overrides[lights.get_interlock_manager] = container.get_interlock_manager
     app.dependency_overrides[lights.get_scheduler] = container.get_scheduler
+    app.dependency_overrides[lights.get_device_repo] = lambda: container.get_database().device_repo
 
     # Override dependencies in devices module
     app.dependency_overrides[devices.get_database] = container.get_database

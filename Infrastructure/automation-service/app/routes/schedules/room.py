@@ -40,7 +40,7 @@ async def sync_all_room_schedules_from_mode_parameters(
     database: DatabaseManager = Depends(get_database),
     config: ConfigLoader = Depends(get_config),
 ) -> dict[str, Any]:
-    devices = config.get_devices()
+    devices = await config.get_devices()
     results: list[dict[str, Any]] = []
     for location, clusters in (devices or {}).items():
         if not isinstance(clusters, dict):
@@ -266,7 +266,7 @@ async def save_room_schedule(
             detail=f"day_start_time ({schedule.day_start_time}) must equal night_end_time ({schedule.night_end_time})",
         )
 
-    devices = config.get_devices()
+    devices = await config.get_devices()
     room_devices = devices.get(location, {}).get(cluster, {})
 
     if not room_devices:
