@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING, Any
 
-from app.models.device_registry import LightDevice
+from app.models.device_registry import Device, LightDevice
 
 from .base import BaseRepository, logger
 
@@ -28,6 +28,40 @@ def _room_prefix(room: str) -> str:
 def _generate_light_device_name(room: str, per_room_index: int) -> str:
     """Generate canonical device_name for a light."""
     return f"light_{_room_prefix(room)}_{per_room_index}"
+
+
+def _row_to_device(row: dict[str, Any]) -> Device:
+    """Convert a DB row dict to a Device Pydantic model (non-light)."""
+    return Device(
+        device_type=row["device_type"],
+        channel=row["channel"] if row["channel"] is not None else -1,
+        pid_enabled=row["pid_enabled"] if row["pid_enabled"] is not None else False,
+        interlock_with=row["interlock_with"] if row["interlock_with"] is not None else [],
+        pid_setpoints=row["pid_setpoints"] if row["pid_setpoints"] is not None else {},
+        display_name=row.get("display_name") or None,
+        device_name=row["device_name"],
+        location=row["location"],
+        cluster=row["cluster"] or "main",
+    )
+
+
+def _row_to_light_device(row: dict[str, Any]) -> LightDevice:
+    """Convert a DB row dict to a LightDevice Pydantic model."""
+    return LightDevice(
+        device_id=row.get("device_id"),
+        device_type=row["device_type"],
+        board_id=row["dimming_board_id"],
+        dimming_channel=row["dimming_channel"],
+        dimming_enabled=row["dimming_enabled"] if row["dimming_enabled"] is not None else True,
+        dimming_type=row["dimming_type"] if row["dimming_type"] is not None else "dfr0971",
+        safety_level=row["safety_level"] if row["safety_level"] is not None else 0,
+        per_room_index=row["per_room_index"],
+        relay_channel=row["channel"],
+        display_name=row["display_name"] or "",
+        device_name=row["device_name"],
+        location=row["location"],
+        cluster=row["cluster"],
+    )
 
 
 class DeviceRepository(BaseRepository):
@@ -550,21 +584,27 @@ class DeviceRepository(BaseRepository):
             except Exception as e:
                 logger.error(f"Failed to cascade device_name change in Redis: {e}")
 
+    @staticmethod
+    def by_location(devices: list[Device | LightDevice]) -> dict[str, list[Device | LightDevice]]:
+        """Group a flat list of devices by location."""
+        result: dict[str, list[Device | LightDevice]] = {}
+        for device in devices:
+            result.setdefault(device.location, []).append(device)
+        return result
 
-def _row_to_light_device(row: dict[str, Any]) -> LightDevice:
-    """Convert a DB row dict to a LightDevice Pydantic model."""
-    return LightDevice(
-        device_id=row.get("device_id"),
-        device_type=row["device_type"],
-        board_id=row["dimming_board_id"],
-        dimming_channel=row["dimming_channel"],
-        dimming_enabled=row["dimming_enabled"] if row["dimming_enabled"] is not None else True,
-        dimming_type=row["dimming_type"] if row["dimming_type"] is not None else "dfr0971",
-        safety_level=row["safety_level"] if row["safety_level"] is not None else 0,
-        per_room_index=row["per_room_index"],
-        relay_channel=row["channel"],
-        display_name=row["display_name"] or "",
-        device_name=row["device_name"],
-        location=row["location"],
-        cluster=row["cluster"],
-    )
+    @staticmethod
+    def to_hierarchy_dict(
+        devices: list[Device | LightDevice],
+    ) -> dict[str, dict[str, dict[str, dict[str, Any]]]]:
+        """Convert a flat list of typed devices back to the legacy nested dict shape.
+
+        This is a backward-compatibility helper for consumers that have not yet
+        been migrated to the typed list.
+        """
+        hierarchy: dict[str, dict[str, dict[str, dict[str, Any]]]] = {}
+        for device in devices:
+            loc = device.location
+            clu = device.cluster
+            name = device.device_name
+            hierarchy.setdefault(loc, {}).setdefault(clu, {})[name] = device.model_dump()
+        return hierarchy
