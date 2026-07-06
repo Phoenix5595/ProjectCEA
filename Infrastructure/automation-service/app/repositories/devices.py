@@ -273,6 +273,24 @@ class DeviceRepository(BaseRepository):
             logger.error(f"Failed to get unbound lights by room: {e}")
             return []
 
+    async def get_light_by_id(self, device_id: int) -> LightDevice | None:
+        """Get a light device by its primary key."""
+        try:
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    """SELECT device_id, location, cluster, device_name, display_name, device_type,
+                              channel, dimming_enabled, dimming_type, dimming_board_id,
+                              dimming_channel, safety_level, pid_enabled, interlock_with,
+                              pid_setpoints, per_room_index, created_at, updated_at
+                       FROM device_registry
+                       WHERE device_id = $1 AND device_type = 'light'""",
+                    device_id,
+                )
+                return _row_to_light_device(dict(row)) if row else None
+        except Exception as e:
+            logger.error(f"Failed to get light by id: {e}")
+            return None
+
     async def create_light(
         self,
         board_id: int,
@@ -483,6 +501,54 @@ class DeviceRepository(BaseRepository):
         except Exception as e:
             logger.error(f"Failed to rename and regenerate device name: {e}")
             return None
+
+    async def cascade_device_name_change(
+        self,
+        old_name: str,
+        new_name: str,
+        location: str,
+        cluster: str,
+        redis_client: Any | None = None,
+    ) -> None:
+        """Update all references to old_name in effective_setpoints and Redis.
+
+        Args:
+            old_name: Previous device_name (e.g. 'light_f_1').
+            new_name: New device_name (e.g. 'light_v_2').
+            location: Room location.
+            cluster: Cluster name.
+            redis_client: Optional Redis client for key rename operations.
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                async with conn.transaction():
+                    await conn.execute(
+                        """UPDATE effective_setpoints
+                           SET device_name = $1
+                           WHERE location = $2 AND cluster = $3 AND device_name = $4""",
+                        new_name,
+                        location,
+                        cluster,
+                        old_name,
+                    )
+        except Exception as e:
+            logger.error(f"Failed to cascade device_name change in DB: {e}")
+            raise
+
+        if redis_client is not None:
+            try:
+                old_pattern = f"effective_setpoint:{location}:{cluster}:light:{old_name}:*"
+                for key in redis_client.scan_iter(match=old_pattern):
+                    suffix = key.split(":")[-1]
+                    new_key = f"effective_setpoint:{location}:{cluster}:light:{new_name}:{suffix}"
+                    redis_client.rename(key, new_key)
+
+                old_light_key = f"light:{location}:{cluster}:{old_name}"
+                new_light_key = f"light:{location}:{cluster}:{new_name}"
+                if redis_client.exists(old_light_key):
+                    redis_client.rename(old_light_key, new_light_key)
+            except Exception as e:
+                logger.error(f"Failed to cascade device_name change in Redis: {e}")
 
 
 def _row_to_light_device(row: dict[str, Any]) -> LightDevice:

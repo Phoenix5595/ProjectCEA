@@ -53,10 +53,10 @@ def get_dfr0971_manager():
     return container.get_dfr0971_manager()
 
 
-def _iter_configured_light_devices(
+async def _iter_configured_light_devices(
     config: ConfigLoader, location: str, cluster: str
 ) -> list[tuple[str, str, dict]]:
-    devices = config.get_devices()
+    devices = await config.get_devices()
     location_config = devices.get(location, {}) or {}
     if location == "Flower Room" and cluster == "main":
         device_entries = iter_flower_main_merged_devices(location_config)
@@ -85,7 +85,7 @@ async def _force_lights_off_for_moon_authority_mode(
     dfr0971_manager,
     database: DatabaseManager,
 ) -> None:
-    for src_cluster, device_name, device_info in _iter_configured_light_devices(
+    for src_cluster, device_name, device_info in await _iter_configured_light_devices(
         config, location, cluster
     ):
         board_id = device_info.get("dimming_board_id")
@@ -144,7 +144,8 @@ async def get_active_mode(
     db: DatabaseManager = Depends(get_database),
     config: ConfigLoader = Depends(get_config),
 ):
-    ensure_configured_cluster(config.get_devices(), location, cluster)
+    devices = await config.get_devices()
+    ensure_configured_cluster(devices, location, cluster)
     active = await db.room_mode_repo.get_active_mode(location, cluster)
     if not active:
         if "flower" in location.lower():
@@ -164,7 +165,8 @@ async def get_room_mode_with_params(
     db: DatabaseManager = Depends(get_database),
     config: ConfigLoader = Depends(get_config),
 ):
-    ensure_configured_cluster(config.get_devices(), location, cluster)
+    devices = await config.get_devices()
+    ensure_configured_cluster(devices, location, cluster)
     active = await db.room_mode_repo.get_active_mode(location, cluster)
 
     if not active:
@@ -228,7 +230,8 @@ async def set_room_mode(
     relay_manager: RelayManager = Depends(get_relay_manager),
     dfr0971_manager=Depends(get_dfr0971_manager),
 ):
-    ensure_configured_cluster(config.get_devices(), location, cluster)
+    devices = await config.get_devices()
+    ensure_configured_cluster(devices, location, cluster)
     total_start = time.perf_counter()
 
     # Resolve IDs for the new transition service
@@ -300,7 +303,8 @@ async def update_room_parameters(
     db: DatabaseManager = Depends(get_database),
     config: ConfigLoader = Depends(get_config),
 ):
-    ensure_configured_cluster(config.get_devices(), location, cluster)
+    devices = await config.get_devices()
+    ensure_configured_cluster(devices, location, cluster)
     active = await db.room_mode_repo.get_active_mode(location, cluster)
     if not active:
         mode_name = "flower" if "flower" in location.lower() else "veg"
