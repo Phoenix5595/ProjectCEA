@@ -282,7 +282,7 @@ class ControlEngine:
         current_time = datetime.now(tz=LOCAL_TZ)
 
         # Get cached device hierarchy and sensor mapping (performance optimization)
-        devices = self._config_cache.get_device_hierarchy(self.config.get_devices)
+        devices = await self._config_cache.get_device_hierarchy(self.config.get_devices)
         sensor_mapping = self._config_cache.get_sensor_mapping(self.config.get_sensor_mapping)
 
         # Debug logging removed
@@ -584,7 +584,7 @@ class ControlEngine:
 
     async def _log_automation_state(self) -> None:
         """Log automation state for all devices using batch INSERT."""
-        devices = self.config.get_devices()
+        devices = await self.config.get_devices()
 
         current_time = datetime.now()
         records: list[dict[str, Any]] = []

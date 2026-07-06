@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -140,77 +139,86 @@ class AppConfig(BaseModel):
         dfr_channels_seen: set[tuple[int, int]] = set()
         all_channels_seen: set[int] = set()
 
-        for room_key, room_val in devices.items():
-            for props in iter_device_props({room_key: room_val}):
-                ch = props.get("channel")
-                if isinstance(ch, int):
-                    if ch < 0 or ch > 15:
-                        raise ValueError(f"hardware channel must be between 0 and 15 (got {ch})")
-                    if ch in all_channels_seen:
-                        duplicates = True
-                    all_channels_seen.add(ch)
-                    dt = props.get("device_type")
-                    if dt is not None:
-                        # Accepts both legacy YAML spellings AND canonical names.
-                        # Legacy names are rewritten in-memory to canonical by
-                        # ConfigLoader._canonicalize_device_types() BEFORE this
-                        # validator runs, so values reaching this point are
-                        # normally canonical. Legacy names remain in the
-                        # allow-list so any raw YAML-driven validator call
-                        # (fixtures, tests, direct AppConfig construction) keeps
-                        # working while the vocabulary migration is in flight.
-                        allowed = {
-                            # Canonical (used by control code: device_processor,
-                            # device_controller, pid_controller_manager, etc.)
-                            "heating",
-                            "cooling",
-                            "humidifier",
-                            "dehumidifier",
-                            "co2",
-                            "exhaust",
-                            "light",
-                            # Legacy/YAML aliases not yet canonicalized away.
-                            # 'heater' is now always rewritten to 'heating'
-                            # before reaching here, but kept for resilience.
-                            # 'fan' intentionally not aliased yet (ambiguous
-                            # semantics — see config.py alias comment).
-                            "fan",
-                            "heater",
-                            "vent",
-                            # Hardware-category names that occasionally appear
-                            # in fixtures / input-output entries.
-                            "relay",
-                            "sensor",
-                            "output",
-                            "input",
-                        }
-                        if str(dt) not in allowed:
-                            raise ValueError("invalid device_type")
-                    for board_key in ("dimming_board_id", "dimming_board_id_ref", "dimming_board"):
-                        if board_key in props:
-                            bid = props.get(board_key)
-                            if isinstance(bid, int) and board_ids and bid not in board_ids:
-                                raise ValueError("invalid dimming board reference")
-
-                    if (
-                        props.get("dimming_enabled") is True
-                        and str(props.get("dimming_type") or "") == "dfr0971"
-                    ):
-                        bid = props.get("dimming_board_id")
-                        ch = props.get("dimming_channel")
-                        if bid is None or ch is None:
-                            continue
-                        if not isinstance(ch, int) or ch not in (0, 1):
-                            raise ValueError("invalid dimming_channel for dfr0971 (must be 0 or 1)")
-                        if not isinstance(bid, int):
-                            raise ValueError("invalid dimming_board_id type (must be int)")
-                        key = (bid, ch)
-                        if key in dfr_channels_seen:
+        if isinstance(devices, dict):
+            for room_key, room_val in devices.items():
+                for props in iter_device_props({room_key: room_val}):
+                    ch = props.get("channel")
+                    if isinstance(ch, int):
+                        if ch < 0 or ch > 15:
                             raise ValueError(
-                                "duplicate DFR0971 dimming channels are not allowed "
-                                f"(board_id={bid} channel={ch})"
+                                f"hardware channel must be between 0 and 15 (got {ch})"
                             )
-                        dfr_channels_seen.add(key)
+                        if ch in all_channels_seen:
+                            duplicates = True
+                        all_channels_seen.add(ch)
+                        dt = props.get("device_type")
+                        if dt is not None:
+                            # Accepts both legacy YAML spellings AND canonical names.
+                            # Legacy names are rewritten in-memory to canonical by
+                            # ConfigLoader._canonicalize_device_types() BEFORE this
+                            # validator runs, so values reaching this point are
+                            # normally canonical. Legacy names remain in the
+                            # allow-list so any raw YAML-driven validator call
+                            # (fixtures, tests, direct AppConfig construction) keeps
+                            # working while the vocabulary migration is in flight.
+                            allowed = {
+                                # Canonical (used by control code: device_processor,
+                                # device_controller, pid_controller_manager, etc.)
+                                "heating",
+                                "cooling",
+                                "humidifier",
+                                "dehumidifier",
+                                "co2",
+                                "exhaust",
+                                "light",
+                                # Legacy/YAML aliases not yet canonicalized away.
+                                # 'heater' is now always rewritten to 'heating'
+                                # before reaching here, but kept for resilience.
+                                # 'fan' intentionally not aliased yet (ambiguous
+                                # semantics — see config.py alias comment).
+                                "fan",
+                                "heater",
+                                "vent",
+                                # Hardware-category names that occasionally appear
+                                # in fixtures / input-output entries.
+                                "relay",
+                                "sensor",
+                                "output",
+                                "input",
+                            }
+                            if str(dt) not in allowed:
+                                raise ValueError("invalid device_type")
+                        for board_key in (
+                            "dimming_board_id",
+                            "dimming_board_id_ref",
+                            "dimming_board",
+                        ):
+                            if board_key in props:
+                                bid = props.get(board_key)
+                                if isinstance(bid, int) and board_ids and bid not in board_ids:
+                                    raise ValueError("invalid dimming board reference")
+
+                        if (
+                            props.get("dimming_enabled") is True
+                            and str(props.get("dimming_type") or "") == "dfr0971"
+                        ):
+                            bid = props.get("dimming_board_id")
+                            ch = props.get("dimming_channel")
+                            if bid is None or ch is None:
+                                continue
+                            if not isinstance(ch, int) or ch not in (0, 1):
+                                raise ValueError(
+                                    "invalid dimming_channel for dfr0971 (must be 0 or 1)"
+                                )
+                            if not isinstance(bid, int):
+                                raise ValueError("invalid dimming_board_id type (must be int)")
+                            key = (bid, ch)
+                            if key in dfr_channels_seen:
+                                raise ValueError(
+                                    "duplicate DFR0971 dimming channels are not allowed "
+                                    f"(board_id={bid} channel={ch})"
+                                )
+                            dfr_channels_seen.add(key)
 
         if duplicates:
             raise ValueError("duplicate relay channels are not allowed")

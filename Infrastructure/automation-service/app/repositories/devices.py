@@ -201,7 +201,7 @@ class DeviceRepository(BaseRepository):
         try:
             async with self.pool.acquire() as conn:
                 rows = await conn.fetch(
-                    """SELECT location, cluster, device_name, display_name, device_type,
+                    """SELECT device_id, location, cluster, device_name, display_name, device_type,
                               channel, dimming_enabled, dimming_type, dimming_board_id,
                               dimming_channel, safety_level, pid_enabled, interlock_with,
                               pid_setpoints, per_room_index, created_at, updated_at
@@ -218,6 +218,22 @@ class DeviceRepository(BaseRepository):
         except Exception as e:
             logger.error(f"Failed to get device registry hierarchy: {e}")
             return {}
+
+    async def get_device_id(self, location: str, cluster: str, device_name: str) -> int | None:
+        """Get device_id by location/cluster/device_name."""
+        try:
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    """SELECT device_id FROM device_registry
+                       WHERE location = $1 AND cluster = $2 AND device_name = $3""",
+                    location,
+                    cluster,
+                    device_name,
+                )
+                return row["device_id"] if row else None
+        except Exception as e:
+            logger.error(f"Failed to get device_id: {e}")
+            return None
 
     async def get_lights_by_room(self, room: str) -> list[LightDevice]:
         """Get all light devices for a room."""
@@ -299,7 +315,16 @@ class DeviceRepository(BaseRepository):
 
     async def update_light(self, device_id: int, **fields: Any) -> LightDevice | None:
         """Update light fields. If room or per_room_index changes, regenerate device_name."""
-        allowed = {"display_name", "room", "per_room_index", "relay_channel", "safety_level"}
+        allowed = {
+            "display_name",
+            "room",
+            "per_room_index",
+            "relay_channel",
+            "safety_level",
+            "device_type",
+            "dimming_board_id",
+            "dimming_channel",
+        }
         invalid = set(fields.keys()) - allowed
         if invalid:
             raise ValueError(f"Invalid fields for update_light: {invalid}")
@@ -353,6 +378,21 @@ class DeviceRepository(BaseRepository):
                 if "safety_level" in fields:
                     set_parts.append(f"safety_level = ${arg_idx}")
                     args.append(fields["safety_level"])
+                    arg_idx += 1
+
+                if "device_type" in fields:
+                    set_parts.append(f"device_type = ${arg_idx}")
+                    args.append(fields["device_type"])
+                    arg_idx += 1
+
+                if "dimming_board_id" in fields:
+                    set_parts.append(f"dimming_board_id = ${arg_idx}")
+                    args.append(fields["dimming_board_id"])
+                    arg_idx += 1
+
+                if "dimming_channel" in fields:
+                    set_parts.append(f"dimming_channel = ${arg_idx}")
+                    args.append(fields["dimming_channel"])
                     arg_idx += 1
 
                 if not set_parts:

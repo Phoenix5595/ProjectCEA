@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from datetime import datetime, timedelta
+import inspect
 from typing import Any
 
 from shared.infra_logging import get_logger
@@ -20,20 +21,27 @@ class EngineConfigCache:
         self._cache_timestamp: datetime | None = None
         self._cache_ttl = timedelta(seconds=ttl_seconds)
 
-    def get_device_hierarchy(
+    async def get_device_hierarchy(
         self,
-        get_devices: Callable[[], dict[str, dict[str, dict[str, dict[str, Any]]]]],
+        get_devices: Callable[[], Any],
     ) -> dict[str, dict[str, dict[str, dict[str, Any]]]]:
-        """Return cached device tree or refresh if TTL expired."""
+        """Return cached device tree or refresh if TTL expired.
+
+        Supports both sync and async callables for ``get_devices``.
+        """
         now = datetime.now()
         if (
             self._device_hierarchy_cache is None
             or self._cache_timestamp is None
             or now - self._cache_timestamp > self._cache_ttl
         ):
-            self._device_hierarchy_cache = get_devices()
+            result = get_devices()
+            if inspect.isawaitable(result):
+                result = await result
+            self._device_hierarchy_cache = result
             self._cache_timestamp = now
             logger.debug("Refreshed device hierarchy cache")
+        assert self._device_hierarchy_cache is not None
         return self._device_hierarchy_cache
 
     def get_sensor_mapping(
