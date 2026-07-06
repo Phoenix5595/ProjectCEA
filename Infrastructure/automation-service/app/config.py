@@ -20,8 +20,10 @@ from typing import TYPE_CHECKING, Any
 
 import yaml
 
+from app.repositories.devices import DeviceRepository
+
 if TYPE_CHECKING:
-    from app.repositories.devices import DeviceRepository
+    pass
 
 logger = logging.getLogger(__name__)
 
@@ -388,7 +390,11 @@ class ConfigLoader:
         device_info = devices.get(location, {}).get(cluster, {}).get(device_name, {})
 
         # Check if pid_setpoints is explicitly configured
-        pid_setpoints = device_info.get("pid_setpoints")
+        pid_setpoints: dict[str, int] | None = None
+        if isinstance(device_info, dict):
+            pid_setpoints = device_info.get("pid_setpoints") or None
+            if not pid_setpoints:
+                pid_setpoints = None
 
         if pid_setpoints:
             # Validate that it's a dict with integer priorities
