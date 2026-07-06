@@ -1,0 +1,20 @@
+TASK-8 VERIFICATION: Relay Pin Labels — Raw Channel Number Sweep
+===============================================================
+Date: 2026-07-05
+
+1. Grep for user-facing raw channel patterns:
+   $ grep -rn "CH {" Infrastructure/frontend/src --include="*.tsx" --include="*.ts"
+   Result: 0 matches (after fix)
+
+2. Files checked:
+   - DfrBoardsPanel.tsx     : FIXED — line 205 "Channel {ch}" → "R{getRelayNumber(ch)} · {getRelayPinLabel(ch)}"
+   - SystemSettingsPanel.tsx: CLEAN — no channel display
+   - RelayChannelMatrix.tsx : CLEAN — already uses relay# (leftRelayNum/rightRelayNum)
+   - RelayChannelBox.tsx    : CLEAN — already uses relay# + pin label
+   - DeviceManager.tsx      : CLEAN — already uses relay# + pin label
+
+3. Build verification:
+   $ cd Infrastructure/frontend && npm run build
+   Result: PASS (tsc + vite build, 7.85s)
+
+4. No backend/API changes made.

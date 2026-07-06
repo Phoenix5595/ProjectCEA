@@ -254,7 +254,7 @@ class ModeTransitionService:
             control_engine = container.get_control_engine()
             cfg = container.get_config()
             db_schedules = await self.db.schedule_repo.get_schedules()
-            merged = merge_schedules_with_config(db_schedules, cfg)
+            merged = await merge_schedules_with_config(db_schedules, cfg)
             control_engine.scheduler.update_schedules(merged)
             logger.info(f"Synchronously refreshed scheduler for {location}/{cluster}")
         except Exception as e:

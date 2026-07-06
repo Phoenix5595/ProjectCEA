@@ -137,7 +137,7 @@ class ServiceContainer:
 
             # 6. Initialize scheduler with schedules from database (+ synthetic SUN rows from room_schedule)
             db_schedules = await self.database.schedule_repo.get_schedules()
-            control_schedules = merge_schedules_with_config(db_schedules, self.config)
+            control_schedules = await merge_schedules_with_config(db_schedules, self.config)
             self.scheduler = Scheduler(control_schedules)
             self.scheduler.set_climate_periods_repo(self.database.climate_periods_repo)
             synth_n = len(control_schedules) - len(db_schedules)

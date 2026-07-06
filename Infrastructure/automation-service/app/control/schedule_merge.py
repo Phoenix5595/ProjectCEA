@@ -21,7 +21,7 @@ from shared.infra_logging import get_logger
 logger = get_logger(__name__)
 
 
-def merge_schedules_with_config(
+async def merge_schedules_with_config(
     schedules: list[dict[str, Any]], config: Any
 ) -> list[dict[str, Any]]:
     """Expand DB schedules with synthetic SUN/MOON rows from ``room_schedule`` for DFR0971 lights.
@@ -32,7 +32,7 @@ def merge_schedules_with_config(
         merged = list(schedules)
         validate_dimmable_light_schedule_coverage(merged, None)
         return merged
-    devices = config.get_devices()
+    devices = await config.get_devices()
     merged = expand_light_schedules_for_control(schedules, devices)
     validate_dimmable_light_schedule_coverage(merged, devices)
     validate_light_config_against_schedules(merged, devices)

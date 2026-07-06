@@ -242,7 +242,7 @@ async def update_schedule(
 
     if scheduler:
         all_schedules = await database.schedule_repo.get_schedules()
-        scheduler.update_schedules(merge_schedules_with_config(all_schedules, config))
+        scheduler.update_schedules(await merge_schedules_with_config(all_schedules, config))
         logger.info(f"Scheduler refreshed after schedule {schedule_id} update")
 
     try:
