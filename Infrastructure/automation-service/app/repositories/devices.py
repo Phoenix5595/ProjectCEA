@@ -1,9 +1,15 @@
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
-from app.models.device_registry import Device, LightDevice
+from app.models.device_registry import (
+    _UI_TO_DB_DEVICE_TYPES,
+    Device,
+    DeviceCreate,
+    DeviceUpdate,
+    LightDevice,
+)
 
 from .base import BaseRepository, logger
 
@@ -30,14 +36,39 @@ def _generate_light_device_name(room: str, per_room_index: int) -> str:
     return f"light_{_room_prefix(room)}_{per_room_index}"
 
 
+def _generate_device_name(room: str, canonical_type: str, per_room_index: int) -> str:
+    """Generate canonical device_name for a non-light device."""
+    return f"{canonical_type}_{_room_prefix(room)}_{per_room_index}"
+
+
+def _row_to_typed_device(row: dict[str, Any]) -> LightDevice | Device:
+    """Convert a DB row dict to the correct typed Pydantic model."""
+    if row.get("device_type") == "light":
+        return _row_to_light_device(row)
+    return _row_to_device(row)
+
+
 def _row_to_device(row: dict[str, Any]) -> Device:
     """Convert a DB row dict to a Device Pydantic model (non-light)."""
+    interlock_raw = row.get("interlock_with")
+    if isinstance(interlock_raw, str):
+        interlock_with = json.loads(interlock_raw) if interlock_raw else []
+    else:
+        interlock_with = interlock_raw if interlock_raw is not None else []
+
+    setpoints_raw = row.get("pid_setpoints")
+    if isinstance(setpoints_raw, str):
+        pid_setpoints = json.loads(setpoints_raw) if setpoints_raw else {}
+    else:
+        pid_setpoints = setpoints_raw if setpoints_raw is not None else {}
+
     return Device(
+        device_id=row.get("device_id"),
         device_type=row["device_type"],
         channel=row["channel"] if row["channel"] is not None else -1,
         pid_enabled=row["pid_enabled"] if row["pid_enabled"] is not None else False,
-        interlock_with=row["interlock_with"] if row["interlock_with"] is not None else [],
-        pid_setpoints=row["pid_setpoints"] if row["pid_setpoints"] is not None else {},
+        interlock_with=interlock_with,
+        pid_setpoints=pid_setpoints,
         display_name=row.get("display_name") or None,
         device_name=row["device_name"],
         location=row["location"],
@@ -253,6 +284,23 @@ class DeviceRepository(BaseRepository):
             logger.error(f"Failed to get device registry hierarchy: {e}")
             return {}
 
+    async def get_all_devices_flat(self) -> list[Device | LightDevice]:
+        """Return all devices as a flat list of typed Pydantic models."""
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(
+                    """SELECT device_id, location, cluster, device_name, display_name, device_type,
+                              channel, dimming_enabled, dimming_type, dimming_board_id,
+                              dimming_channel, safety_level, pid_enabled, interlock_with,
+                              pid_setpoints, per_room_index, created_at, updated_at
+                       FROM device_registry
+                       ORDER BY location, cluster, device_name"""
+                )
+                return [_row_to_typed_device(dict(row)) for row in rows]
+        except Exception as e:
+            logger.error(f"Failed to get flat device list: {e}")
+            return []
+
     async def get_device_id(self, location: str, cluster: str, device_name: str) -> int | None:
         """Get device_id by location/cluster/device_name."""
         try:
@@ -267,6 +315,18 @@ class DeviceRepository(BaseRepository):
                 return row["device_id"] if row else None
         except Exception as e:
             logger.error(f"Failed to get device_id: {e}")
+            return None
+
+    async def get_device_type_by_id(self, device_id: int) -> str | None:
+        """Get device_type by device_id."""
+        try:
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    "SELECT device_type FROM device_registry WHERE device_id = $1", device_id
+                )
+                return row["device_type"] if row else None
+        except Exception as e:
+            logger.error(f"Failed to get device_type: {e}")
             return None
 
     async def get_lights_by_room(self, room: str) -> list[LightDevice]:
@@ -384,11 +444,13 @@ class DeviceRepository(BaseRepository):
         try:
             async with self.pool.acquire() as conn:
                 current = await conn.fetchrow(
-                    "SELECT location, per_room_index FROM device_registry WHERE device_id = $1",
+                    "SELECT location, per_room_index, device_type FROM device_registry WHERE device_id = $1",
                     device_id,
                 )
                 if current is None:
                     return None
+                if current["device_type"] != "light":
+                    raise ValueError("Use update_device() for non-light devices")
 
                 room = fields.get("room", current["location"])
                 per_room_index = fields.get("per_room_index", current["per_room_index"])
@@ -451,14 +513,14 @@ class DeviceRepository(BaseRepository):
                     row = await conn.fetchrow(
                         "SELECT * FROM device_registry WHERE device_id = $1", device_id
                     )
-                    return _row_to_light_device(dict(row)) if row else None
+                    return cast(LightDevice, _row_to_typed_device(dict(row))) if row else None
 
                 set_parts.append("updated_at = NOW()")
                 sql = f"UPDATE device_registry SET {', '.join(set_parts)} WHERE device_id = ${arg_idx} RETURNING *"
                 args.append(device_id)
 
                 row = await conn.fetchrow(sql, *args)
-                return _row_to_light_device(dict(row)) if row else None
+                return cast(LightDevice, _row_to_typed_device(dict(row))) if row else None
         except Exception as e:
             logger.error(f"Failed to update light: {e}")
             return None
@@ -473,6 +535,155 @@ class DeviceRepository(BaseRepository):
                 return result.startswith("DELETE") and "1" in result
         except Exception as e:
             logger.error(f"Failed to delete light: {e}")
+            return False
+
+    async def get_device_count_by_type_location(self, device_type: str, location: str) -> int:
+        """Count devices of a given canonical type in a room."""
+        try:
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    "SELECT COUNT(*) as cnt FROM device_registry WHERE device_type = $1 AND location = $2",
+                    device_type,
+                    location,
+                )
+                return row["cnt"] if row else 0
+        except Exception as e:
+            logger.error(f"Failed to get device count: {e}")
+            return 0
+
+    async def create_device(self, create: DeviceCreate) -> Device:
+        """Create a new non-light device. Auto-generates device_name."""
+        canonical_type = _UI_TO_DB_DEVICE_TYPES.get(create.device_type, create.device_type)
+        room = create.room
+
+        try:
+            async with self.pool.acquire() as conn:
+                async with conn.transaction():
+                    count_row = await conn.fetchrow(
+                        "SELECT COUNT(*) as cnt FROM device_registry WHERE location = $1 AND device_type = $2",
+                        room,
+                        canonical_type,
+                    )
+                    n = (count_row["cnt"] if count_row else 0) + 1
+                    device_name = _generate_device_name(room, canonical_type, n)
+
+                    row = await conn.fetchrow(
+                        """INSERT INTO device_registry
+                            (location, cluster, device_name, display_name, device_type,
+                             channel, pid_enabled, interlock_with, pid_setpoints,
+                             created_at, updated_at)
+                           VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9::jsonb, NOW(), NOW())
+                           RETURNING *""",
+                        room,
+                        "main",
+                        device_name,
+                        create.display_name,
+                        canonical_type,
+                        create.channel,
+                        create.pid_enabled,
+                        json.dumps(create.interlock_with),
+                        json.dumps(create.pid_setpoints),
+                    )
+                    return _row_to_device(dict(row))
+        except Exception as e:
+            logger.error(f"Failed to create device: {e}")
+            raise
+
+    async def update_device(self, device_id: int, update: DeviceUpdate) -> Device | None:
+        """Update non-light device fields. Does NOT update room."""
+        allowed = {
+            "channel",
+            "display_name",
+            "pid_enabled",
+            "interlock_with",
+            "pid_setpoints",
+        }
+        fields = update.model_dump(exclude_unset=True)
+        invalid = set(fields.keys()) - allowed
+        if invalid:
+            raise ValueError(f"Invalid fields for update_device: {invalid}")
+
+        try:
+            async with self.pool.acquire() as conn:
+                current = await conn.fetchrow(
+                    "SELECT device_type FROM device_registry WHERE device_id = $1", device_id
+                )
+                if current is None:
+                    return None
+                if current["device_type"] == "light":
+                    raise ValueError("Use update_light() for light devices")
+
+                if "channel" in fields:
+                    conflict = await conn.fetchrow(
+                        """SELECT device_id FROM device_registry
+                           WHERE channel = $1 AND device_id != $2
+                           LIMIT 1""",
+                        fields["channel"],
+                        device_id,
+                    )
+                    if conflict is not None:
+                        raise ValueError(
+                            f"Relay channel {fields['channel']} already in use by device_id {conflict['device_id']}"
+                        )
+
+                set_parts: list[str] = []
+                args: list[Any] = []
+                arg_idx = 1
+
+                if "channel" in fields:
+                    set_parts.append(f"channel = ${arg_idx}")
+                    args.append(fields["channel"])
+                    arg_idx += 1
+
+                if "display_name" in fields:
+                    set_parts.append(f"display_name = ${arg_idx}")
+                    args.append(fields["display_name"])
+                    arg_idx += 1
+
+                if "pid_enabled" in fields:
+                    set_parts.append(f"pid_enabled = ${arg_idx}")
+                    args.append(fields["pid_enabled"])
+                    arg_idx += 1
+
+                if "interlock_with" in fields:
+                    set_parts.append(f"interlock_with = ${arg_idx}::jsonb")
+                    args.append(json.dumps(fields["interlock_with"]))
+                    arg_idx += 1
+
+                if "pid_setpoints" in fields:
+                    set_parts.append(f"pid_setpoints = ${arg_idx}::jsonb")
+                    args.append(json.dumps(fields["pid_setpoints"]))
+                    arg_idx += 1
+
+                if not set_parts:
+                    row = await conn.fetchrow(
+                        "SELECT * FROM device_registry WHERE device_id = $1", device_id
+                    )
+                    return _row_to_device(dict(row)) if row else None
+
+                set_parts.append("updated_at = NOW()")
+                sql = f"UPDATE device_registry SET {', '.join(set_parts)} WHERE device_id = ${arg_idx} RETURNING *"
+                args.append(device_id)
+
+                row = await conn.fetchrow(sql, *args)
+                return _row_to_device(dict(row)) if row else None
+        except ValueError:
+            raise
+        except Exception as e:
+            logger.error(f"Failed to update device: {e}")
+            return None
+
+    async def delete_device(self, device_id: int) -> bool:
+        """Delete a non-light device."""
+        try:
+            async with self.pool.acquire() as conn:
+                result = await conn.execute(
+                    "DELETE FROM device_registry WHERE device_id = $1 AND device_type != 'light'",
+                    device_id,
+                )
+                return result.startswith("DELETE") and "1" in result
+        except Exception as e:
+            logger.error(f"Failed to delete device: {e}")
             return False
 
     async def clear_relay_binding_only(self, device_id: int) -> bool:

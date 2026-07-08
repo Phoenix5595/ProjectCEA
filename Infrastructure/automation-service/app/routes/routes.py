@@ -10,6 +10,7 @@ from app.routes import (
     climate_periods,
     debug,
     devices,
+    devices_crud,
     failsafe,
     hardware,
     lights,
@@ -40,6 +41,7 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(lights.router, tags=["lights"])
     app.include_router(climate_periods.router, tags=["climate-periods"])
     app.include_router(devices.router, tags=["devices"])
+    app.include_router(devices_crud.router, tags=["devices"])
     app.include_router(hardware.router, tags=["hardware"])
     app.include_router(status.router, tags=["status"])
     app.include_router(notes.router, tags=["notes"])
@@ -87,6 +89,13 @@ def setup_dependency_overrides(app: FastAPI, container) -> None:
     app.dependency_overrides[devices.get_database] = container.get_database
     app.dependency_overrides[devices.get_config] = container.get_config
     app.dependency_overrides[devices.get_relay_manager] = container.get_relay_manager
+
+    # Override dependencies in devices_crud module
+    app.dependency_overrides[devices_crud.get_device_repo] = (
+        lambda: container.get_database().device_repo
+    )
+    app.dependency_overrides[devices_crud.get_config] = container.get_config
+    app.dependency_overrides[devices_crud.get_database] = container.get_database
 
     # Override dependencies in hardware module
     app.dependency_overrides[hardware.get_relay_manager] = container.get_relay_manager

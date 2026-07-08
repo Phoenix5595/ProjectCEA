@@ -48,22 +48,17 @@ describe('DfrBoardsPanel', () => {
     vi.mocked(apiClient.getLightsByRoom).mockResolvedValue(mockRoomLights)
   })
 
-  it('pre-fills per_room_index as max+1 when Add light form opens', async () => {
-    const user = userEvent.setup()
+  it('does not render the Add light button (removed in favor of DeviceTable)', async () => {
     render(<DfrBoardsPanel />)
 
     await waitFor(() => {
-      expect(screen.getByTestId('add-btn-0-1')).toBeInTheDocument()
+      expect(screen.getByTestId('dfr-slot-0-1')).toBeInTheDocument()
     })
 
-    await user.click(screen.getByTestId('add-btn-0-1'))
-
-    await waitFor(() => {
-      expect(screen.getByTestId('add-index-0-1')).toBeInTheDocument()
-    })
-
-    const indexInput = screen.getByTestId('add-index-0-1') as HTMLInputElement
-    expect(indexInput.value).toBe('2')
+    expect(screen.queryByTestId('add-btn-0-1')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('add-form-0-1')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('add-submit-0-1')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('add-index-0-1')).not.toBeInTheDocument()
   })
 
   it('shows test progress and disables sibling actions while test is running', async () => {
@@ -88,7 +83,6 @@ describe('DfrBoardsPanel', () => {
     })
 
     expect(screen.getByTestId('test-btn-0-0')).toBeDisabled()
-    expect(screen.getByTestId('add-btn-0-1')).toBeDisabled()
 
     resolveTest({ success: true })
 

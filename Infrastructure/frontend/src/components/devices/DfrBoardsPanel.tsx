@@ -38,12 +38,6 @@ type DfrAssignmentsResponse = {
 
 const ROOM_OPTIONS = knownRooms()
 
-type AddLightDraft = {
-  room: string
-  display_name: string
-  per_room_index: number
-}
-
 type EditDraft = {
   display_name: string
   room: string
@@ -65,9 +59,7 @@ export default function DfrBoardsPanel() {
   const [loading, setLoading] = useState(true)
   const [workingKey, setWorkingKey] = useState<string | null>(null)
   const [renameDraftByLightKey, setRenameDraftByLightKey] = useState<Record<string, string>>({})
-  const [addDraftBySlot, setAddDraftBySlot] = useState<Record<string, AddLightDraft | null>>({})
   const [editDraftByLightKey, setEditDraftByLightKey] = useState<Record<string, EditDraft | null>>({})
-  const [indexErrorBySlot, setIndexErrorBySlot] = useState<Record<string, string | null>>({})
   const [testProgressKey, setTestProgressKey] = useState<string | null>(null)
   const [removeConfirmKey, setRemoveConfirmKey] = useState<string | null>(null)
   const [roomLightsCache, setRoomLightsCache] = useState<Record<string, LightDevice[]>>({})
@@ -248,99 +240,6 @@ export default function DfrBoardsPanel() {
     } catch (err) {
       logger.error('Failed to rename light', err)
       toast.error('Failed to rename light')
-    } finally {
-      setWorkingKey(null)
-    }
-  }
-
-  function openAddForm(boardId: number, channel: 0 | 1) {
-    const slotKey = `add:${boardId}:${channel}`
-    const defaultRoom = ROOM_OPTIONS[0] ?? 'Flower Room'
-    const nextIndex = maxIndexForRoom(defaultRoom) + 1
-    setAddDraftBySlot((prev) => ({
-      ...prev,
-      [slotKey]: { room: defaultRoom, display_name: '', per_room_index: nextIndex },
-    }))
-    setIndexErrorBySlot((prev) => ({ ...prev, [slotKey]: null }))
-    void fetchRoomLights(defaultRoom)
-  }
-
-  function closeAddForm(boardId: number, channel: 0 | 1) {
-    const slotKey = `add:${boardId}:${channel}`
-    setAddDraftBySlot((prev) => {
-      const next = { ...prev }
-      delete next[slotKey]
-      return next
-    })
-    setIndexErrorBySlot((prev) => {
-      const next = { ...prev }
-      delete next[slotKey]
-      return next
-    })
-  }
-
-  function updateAddDraft(boardId: number, channel: 0 | 1, patch: Partial<AddLightDraft>) {
-    const slotKey = `add:${boardId}:${channel}`
-    setAddDraftBySlot((prev) => {
-      const current = prev[slotKey]
-      if (!current) return prev
-      const updated = { ...current, ...patch }
-      if (patch.room && patch.room !== current.room) {
-        updated.per_room_index = maxIndexForRoom(patch.room) + 1
-        void fetchRoomLights(patch.room)
-      }
-      return { ...prev, [slotKey]: updated }
-    })
-    if (patch.per_room_index !== undefined || patch.room !== undefined) {
-      setIndexErrorBySlot((prev) => ({ ...prev, [slotKey]: null }))
-    }
-  }
-
-  function validateAddIndex(boardId: number, channel: 0 | 1) {
-    const slotKey = `add:${boardId}:${channel}`
-    const draft = addDraftBySlot[slotKey]
-    if (!draft) return
-    if (indexExistsInRoom(draft.room, draft.per_room_index)) {
-      setIndexErrorBySlot((prev) => ({
-        ...prev,
-        [slotKey]: `Index ${draft.per_room_index} already exists in ${draft.room}`,
-      }))
-    } else {
-      setIndexErrorBySlot((prev) => ({ ...prev, [slotKey]: null }))
-    }
-  }
-
-  async function submitAddLight(boardId: number, channel: 0 | 1) {
-    const slotKey = `add:${boardId}:${channel}`
-    const draft = addDraftBySlot[slotKey]
-    if (!draft) return
-    if (!draft.display_name.trim()) {
-      toast.error('Display name is required')
-      return
-    }
-    if (indexExistsInRoom(draft.room, draft.per_room_index)) {
-      toast.error(`Index ${draft.per_room_index} already exists in ${draft.room}`)
-      return
-    }
-    if (workingKey) {
-      toast.error('Another DFR action is in progress')
-      return
-    }
-    setWorkingKey(slotKey)
-    try {
-      await apiClient.createLight({
-        board_id: boardId,
-        dimming_channel: channel,
-        room: draft.room,
-        display_name: draft.display_name.trim(),
-        per_room_index: draft.per_room_index,
-      })
-      await refresh()
-      closeAddForm(boardId, channel)
-      toast.success('Light created')
-    } catch (err) {
-      logger.error('Failed to create light', err)
-      toast.error(extractErrorMessage(err, 'Failed to create light'))
     } finally {
       setWorkingKey(null)
     }
@@ -559,9 +458,6 @@ export default function DfrBoardsPanel() {
             const renameValue =
               renameDraftByLightKey[renameKey] ??
               (assignedLight?.display_name ?? assignment?.display_name ?? assignment?.device_name ?? '')
-            const slotKey = `add:${board.board_id}:${ch}`
-            const addDraft = addDraftBySlot[slotKey]
-            const indexError = indexErrorBySlot[slotKey]
             const editKey = assignment ? makeLightKey(assignment) : ''
             const editDraft = editDraftByLightKey[editKey]
             const testKey = `test:${board.board_id}:${ch}`
@@ -742,72 +638,7 @@ export default function DfrBoardsPanel() {
                       </>
                     )}
                   </div>
-                ) : addDraft ? (
-                  <div data-testid={`add-form-${board.board_id}-${ch}`} className="space-y-1">
-                    <div className="text-[11px] text-text-subtle">Room</div>
-                    <select
-                      value={addDraft.room}
-                      onChange={(e) => updateAddDraft(board.board_id, ch, { room: e.target.value })}
-                      disabled={!!workingKey}
-                      className="w-full rounded-sm border border-border-emphasis bg-surface-primary px-2 py-1 text-xs text-text-input focus:outline-hidden focus:ring-2 focus:ring-btn-primary-light disabled:opacity-50"
-                    >
-                      {ROOM_OPTIONS.map((room) => (
-                        <option key={room} value={room}>{room}</option>
-                      ))}
-                    </select>
-                    <div className="text-[11px] text-text-subtle">Display name</div>
-                    <input
-                      value={addDraft.display_name}
-                      onChange={(e) => updateAddDraft(board.board_id, ch, { display_name: e.target.value })}
-                      disabled={!!workingKey}
-                      className="w-full rounded-sm border border-border-emphasis bg-surface-primary px-2 py-1 text-xs text-text-input focus:outline-hidden focus:ring-2 focus:ring-btn-primary-light disabled:opacity-50"
-                      placeholder="Light name"
-                    />
-                    <div className="text-[11px] text-text-subtle">Per-room index</div>
-                    <input
-                      type="number"
-                      min={1}
-                      value={addDraft.per_room_index}
-                      data-testid={`add-index-${board.board_id}-${ch}`}
-                      onBlur={() => validateAddIndex(board.board_id, ch)}
-                      onChange={(e) => updateAddDraft(board.board_id, ch, { per_room_index: parseInt(e.target.value, 10) || 1 })}
-                      disabled={!!workingKey}
-                      className="w-full rounded-sm border border-border-emphasis bg-surface-primary px-2 py-1 text-xs text-text-input focus:outline-hidden focus:ring-2 focus:ring-btn-primary-light disabled:opacity-50"
-                    />
-                    {indexError && (
-                      <div className="text-[11px] text-status-danger-text">{indexError}</div>
-                    )}
-                    <div className="flex items-center gap-1">
-                      <button
-                        type="button"
-                        data-testid={`add-submit-${board.board_id}-${ch}`}
-                        onClick={() => void submitAddLight(board.board_id, ch)}
-                        disabled={!!workingKey}
-                        className="rounded-md bg-btn-primary px-2 py-1 text-xs font-medium text-btn-primary-text hover:bg-btn-primary-hover disabled:opacity-50"
-                      >
-                        Add
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => closeAddForm(board.board_id, ch)}
-                        disabled={!!workingKey}
-                        className="rounded-md border border-border-emphasis bg-surface-primary px-2 py-1 text-xs text-text-secondary hover:bg-surface-tertiary disabled:opacity-50"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <button
-                    type="button"
-                    data-testid={`add-btn-${board.board_id}-${ch}`}
-                    onClick={() => openAddForm(board.board_id, ch)}
-                    disabled={!!workingKey}
-                    className="w-full rounded-md border border-dashed border-border-emphasis bg-surface-primary px-2 py-1 text-xs text-text-secondary hover:bg-surface-tertiary disabled:opacity-50"
-                  >
-                    + Add light
-                  </button>
-                )}
+                ) : null}
               </div>
             )
           }

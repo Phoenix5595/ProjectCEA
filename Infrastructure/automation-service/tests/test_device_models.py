@@ -187,7 +187,7 @@ class TestDeviceBaseValidation:
             interlock_with=["exhaust"],
             pid_setpoints={"heating_setpoint": 1},
             display_name="Heater 1",
-            device_name="heater1",
+            device_name="heating_f_1",
             location="Flower Room",
             cluster="main",
         )
@@ -203,7 +203,7 @@ class TestDeviceBaseValidation:
             pid_enabled=False,
             interlock_with=[],
             pid_setpoints={},
-            device_name="fan1",
+            device_name="cooling_v_1",
             location="Veg Room",
             cluster="main",
         )
@@ -218,7 +218,7 @@ class TestDeviceBaseValidation:
                 pid_enabled=True,
                 interlock_with=[],
                 pid_setpoints={},
-                device_name="heater1",
+                device_name="heating_f_1",
                 location="Flower Room",
                 cluster="back",
             )

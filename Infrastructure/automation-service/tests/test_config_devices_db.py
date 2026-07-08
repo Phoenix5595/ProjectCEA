@@ -141,14 +141,15 @@ def test_write_full_config_excludes_devices(temp_config_file):
 
 @pytest.mark.asyncio
 async def test_update_device_config_updates_db(temp_config_file):
-    """update_device_config calls DeviceRepository.update_light when repo is set."""
+    """update_device_config calls DeviceRepository.update_device for non-light devices."""
     from app.config import ConfigLoader
 
     config = ConfigLoader(config_path=temp_config_file)
 
     mock_repo = MagicMock(name="DeviceRepository")
     mock_repo.get_device_id = AsyncMock(return_value=42)
-    mock_repo.update_light = AsyncMock(return_value={"id": 42, "display_name": "New Name"})
+    mock_repo.get_device_type_by_id = AsyncMock(return_value="heating")
+    mock_repo.update_device = AsyncMock(return_value={"id": 42, "display_name": "New Name"})
     config.set_device_repo(mock_repo)
 
     result = await config.update_device_config(
@@ -157,4 +158,28 @@ async def test_update_device_config_updates_db(temp_config_file):
 
     assert result is True
     mock_repo.get_device_id.assert_awaited_once_with("Test Room", "main", "heater1")
-    mock_repo.update_light.assert_awaited_once_with(42, display_name="New Name")
+    mock_repo.get_device_type_by_id.assert_awaited_once_with(42)
+    mock_repo.update_device.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_update_device_config_routes_light_to_update_light(temp_config_file):
+    """update_device_config calls DeviceRepository.update_light for light devices."""
+    from app.config import ConfigLoader
+
+    config = ConfigLoader(config_path=temp_config_file)
+
+    mock_repo = MagicMock(name="DeviceRepository")
+    mock_repo.get_device_id = AsyncMock(return_value=42)
+    mock_repo.get_device_type_by_id = AsyncMock(return_value="light")
+    mock_repo.update_light = AsyncMock(return_value={"id": 42, "display_name": "New Light Name"})
+    config.set_device_repo(mock_repo)
+
+    result = await config.update_device_config(
+        "Test Room", "main", "light_v_1", display_name="New Light Name"
+    )
+
+    assert result is True
+    mock_repo.get_device_id.assert_awaited_once_with("Test Room", "main", "light_v_1")
+    mock_repo.get_device_type_by_id.assert_awaited_once_with(42)
+    mock_repo.update_light.assert_awaited_once_with(42, display_name="New Light Name")
