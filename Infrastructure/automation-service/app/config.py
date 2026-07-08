@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING, Any
 
 import yaml
 
+from app.models.device_registry import DeviceUpdate
 from app.repositories.devices import DeviceRepository
 
 if TYPE_CHECKING:
@@ -436,6 +437,12 @@ class ConfigLoader:
         sorted_setpoints = sorted(pid_setpoints.items(), key=lambda x: x[1])
         return sorted_setpoints
 
+    def invalidate_device_cache(self) -> None:
+        """Invalidate the in-memory device hierarchy cache."""
+        self._device_cache._device_hierarchy_cache = None
+        self._device_cache._cache_timestamp = None
+        logger.debug("Invalidated device hierarchy cache")
+
     def reload(self) -> None:
         """Reload configuration from files (incremental reload)."""
         self._config.copy()
@@ -544,8 +551,8 @@ class ConfigLoader:
     ) -> bool:
         """Update device configuration (display_name, device_type) in DB.
 
-        Light devices are updated via DeviceRepository. Non-light devices fall
-        back to YAML with a deprecation warning.
+        Light devices are updated via DeviceRepository.update_light().
+        Non-light devices are updated via DeviceRepository.update_device().
 
         Args:
             location: Location name
@@ -571,16 +578,38 @@ class ConfigLoader:
                 logger.error(f"Device {device_name} not found in DB at {location}/{cluster}")
                 return False
 
-            fields: dict[str, Any] = {}
-            if display_name is not None:
-                fields["display_name"] = display_name
-            if device_type is not None:
-                fields["device_type"] = device_type
+            current_type = await self._device_repo.get_device_type_by_id(device_id)
+            if current_type is None:
+                logger.error(f"Could not determine device_type for {device_name}")
+                return False
 
-            if not fields:
-                return True
+            if current_type == "light":
+                fields: dict[str, Any] = {}
+                if display_name is not None:
+                    fields["display_name"] = display_name
+                if device_type is not None:
+                    fields["device_type"] = device_type
 
-            result = await self._device_repo.update_light(device_id, **fields)
+                if not fields:
+                    return True
+
+                result = await self._device_repo.update_light(device_id, **fields)
+            else:
+                update_fields: dict[str, Any] = {}
+                if display_name is not None:
+                    update_fields["display_name"] = display_name
+                if device_type is not None:
+                    logger.warning(
+                        "device_type update not supported for non-light devices via update_device_config"
+                    )
+
+                if not update_fields:
+                    return True
+
+                result = await self._device_repo.update_device(
+                    device_id, DeviceUpdate(**update_fields)
+                )
+
             if result is not None:
                 logger.info(f"Updated device config in DB: {location}/{cluster}/{device_name}")
                 return True

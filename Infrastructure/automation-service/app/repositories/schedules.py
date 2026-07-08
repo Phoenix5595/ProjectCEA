@@ -342,6 +342,31 @@ class ScheduleRepository(BaseRepository):
             logger.error(f"Failed to delete schedule: {e}")
             return False
 
+    async def delete_schedules_by_device_name(
+        self, location: str, cluster: str, device_name: str
+    ) -> int:
+        """Delete all schedules referencing a specific device_name in a location/cluster."""
+        try:
+            async with self.pool.acquire() as conn:
+                result = await conn.execute(
+                    "DELETE FROM schedules WHERE location = $1 AND cluster = $2 AND device_name = $3",
+                    location,
+                    cluster,
+                    device_name,
+                )
+                deleted = int(result.split()[-1]) if result else 0
+                if deleted:
+                    await self._publish_schedule_changed(
+                        location=location,
+                        cluster=cluster,
+                        action="deleted",
+                        extra={"device_name": device_name, "count": deleted},
+                    )
+                return deleted
+        except Exception as e:
+            logger.error(f"Failed to delete schedules for {device_name}: {e}")
+            return 0
+
     async def delete_schedules_bulk(
         self, schedule_ids: list[int], conn: Connection | None = None
     ) -> int:

@@ -1,7 +1,7 @@
 /** API client for backend communication. */
 import axios, { AxiosInstance } from 'axios';
 import type { SensorDataResponse } from '../types/sensor';
-import type { Device, ControlHistoryEntry } from '../types/device';
+import type { Device, DeviceRegistryEntry, ControlHistoryEntry } from '../types/device';
 import type { PIDParameters, PIDParameterUpdate, PIDModeInfo, PIDModeUpdate, AutotuneState } from '../types/pid';
 import type { Schedule, ScheduleCreate, ScheduleUpdate } from '../types/schedule';
 import type { LightStatus, LightTargetSetResponse, LightDevice } from '../types/light';
@@ -145,6 +145,27 @@ class ApiClient {
   // Devices (automation service)
   async getAllDevices(): Promise<Device[]> {
     const response = await this.automationClient.get('/api/devices');
+    return response.data;
+  }
+
+  // Device Registry CRUD (automation service) — unified /api/devices/registry
+  async getDeviceRegistry(): Promise<DeviceRegistryEntry[]> {
+    const response = await this.automationClient.get('/api/devices/registry');
+    return response.data;
+  }
+
+  async createDevice(body: Record<string, unknown>): Promise<DeviceRegistryEntry> {
+    const response = await this.automationClient.post('/api/devices/registry', body);
+    return response.data;
+  }
+
+  async updateDevice(device_id: number, body: Record<string, unknown>): Promise<DeviceRegistryEntry> {
+    const response = await this.automationClient.put(`/api/devices/registry/${device_id}`, body);
+    return response.data;
+  }
+
+  async deleteDevice(device_id: number): Promise<{ success: boolean }> {
+    const response = await this.automationClient.delete(`/api/devices/registry/${device_id}`);
     return response.data;
   }
 
