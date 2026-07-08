@@ -16,6 +16,20 @@
 
 ---
 
+## 🚨 CRITICAL SAFETY RULE — PRODUCTION DATA IS SACRED
+
+**Tests MUST NEVER connect to production databases. EVER.**
+
+- The production database is `cea_sensors`. Tests MUST use a separate `cea_sensors_test` database.
+- ANY test that `TRUNCATE`s, `DELETE`s, `DROP`s, or modifies data in `cea_sensors` will cause **crop damage** (lights off, climate control failure, data loss).
+- If a test needs to clean state, it MUST use `cea_sensors_test` (create it with `CREATE DATABASE cea_sensors_test WITH TEMPLATE cea_sensors;` if needed).
+- **Violation of this rule is a SEVERE FAILURE.** Production data integrity is non-negotiable.
+- Before running ANY test suite, verify the DB connection string points to a test database, NOT `cea_sensors`.
+
+**Why this matters:** On 2026-07-07, tests with `TRUNCATE TABLE device_registry` connected to `cea_sensors` wiped all devices. The control loop lost all lights → 30+ minutes of darkness → potential crop stress. This must NEVER happen again.
+
+---
+
 ## COMPREHENSIVE SYSTEM STRUCTURE
 
 ```
