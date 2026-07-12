@@ -285,7 +285,7 @@
       "plan_name": "production-safety",
       "status": "active",
       "started_at": "2026-07-12T12:44:41.062Z",
-      "updated_at": "2026-07-12T14:01:06.636Z",
+      "updated_at": "2026-07-12T14:09:51.502Z",
       "session_ids": [
         "opencode:ses_0e70fc228ffeBshhzGKaAPSeMu"
       ],
@@ -306,6 +306,17 @@
           "elapsed_ms": 2451925,
           "status": "completed",
           "updated_at": "2026-07-12T14:01:06.636Z"
+        },
+        "todo:6": {
+          "task_key": "todo:6",
+          "task_label": "6",
+          "task_title": "Load mode_parameters + light_target_intensity + light_programs into Scheduler at startup and on config changes",
+          "session_id": "opencode:ses_0a95d222dffez8z141G1pKDYhr",
+          "agent": "Sisyphus-Junior",
+          "category": "deep",
+          "updated_at": "2026-07-12T14:09:51.503Z",
+          "started_at": "2026-07-12T14:09:51.503Z",
+          "status": "running"
         }
       }
     }
@@ -329,12 +340,23 @@
       "elapsed_ms": 2451925,
       "status": "completed",
       "updated_at": "2026-07-12T14:01:06.636Z"
+    },
+    "todo:6": {
+      "task_key": "todo:6",
+      "task_label": "6",
+      "task_title": "Load mode_parameters + light_target_intensity + light_programs into Scheduler at startup and on config changes",
+      "session_id": "opencode:ses_0a95d222dffez8z141G1pKDYhr",
+      "agent": "Sisyphus-Junior",
+      "category": "deep",
+      "updated_at": "2026-07-12T14:09:51.503Z",
+      "started_at": "2026-07-12T14:09:51.503Z",
+      "status": "running"
     }
   },
   "active_plan": "/home/antoine/ProjectCEA/.omo/plans/production-safety.md",
   "plan_name": "production-safety",
   "status": "active",
-  "updated_at": "2026-07-12T14:01:06.636Z",
+  "updated_at": "2026-07-12T14:09:51.502Z",
   "started_at": "2026-07-12T12:44:41.062Z",
   "agent": "atlas"
 }
