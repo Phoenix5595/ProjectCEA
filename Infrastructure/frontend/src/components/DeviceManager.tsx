@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 
 import { normalizeDeviceControlCluster } from '../config/zones'
@@ -13,7 +13,6 @@ import {
   buildRelayChannelViewModels,
   getRelayNumber,
   getRelayPinLabel,
-  makeDeviceKey,
 } from './devices/relayViewModel'
 
 const DEFAULT_RELAY_STATE: RelayBoardStateResponse = {
@@ -21,10 +20,14 @@ const DEFAULT_RELAY_STATE: RelayBoardStateResponse = {
   timestamps: Array(16).fill(null),
   mcp_connected: false,
   simulation: false,
+  modes: Array(16).fill(null),
+  override_expires_at: Array(16).fill(null),
 }
 
 export default function DeviceManager() {
   const [activeTab, setActiveTab] = useState<'devices' | 'settings'>('devices')
+  const [refreshKey, setRefreshKey] = useState(0)
+  const handleSharedRefresh = useCallback(() => setRefreshKey((k) => k + 1), [])
   const [channels, setChannels] = useState<ChannelInfo[]>([])
   const [relayState, setRelayState] = useState<RelayBoardStateResponse>(DEFAULT_RELAY_STATE)
   const [loading, setLoading] = useState(true)
@@ -38,57 +41,15 @@ export default function DeviceManager() {
   )
 
   const relayChannels = useMemo(() => {
-    const lastStateMap: Record<string, string> = {}
-    channels.forEach((channelInfo) => {
-      const ts = relayState.timestamps[channelInfo.channel]
-      if (ts && channelInfo.location && channelInfo.cluster && channelInfo.device_name) {
-        const key = makeDeviceKey(channelInfo.location, channelInfo.cluster, channelInfo.device_name)
-        lastStateMap[key] = ts
-      }
-    })
     const vms = buildRelayChannelViewModels(
       channels,
       relayState.channels,
-      lastStateMap
+      relayState.timestamps,
+      relayState.modes,
+      relayState.override_expires_at
     )
     return vms.sort((a, b) => getRelayNumber(a.channel) - getRelayNumber(b.channel))
   }, [channels, relayState])
-
-  const statusByChannel = useMemo(() => {
-    const statuses: Record<number, { text: string; tone: 'unknown' | 'active' | 'idle' }> = {}
-
-    relayChannels.forEach((relayChannel) => {
-      if (!relayChannel.isStateKnown) {
-        statuses[relayChannel.channel] = { text: 'Unknown', tone: 'unknown' }
-        return
-      }
-
-      if (relayChannel.isActive && relayChannel.lastStateChangeAt) {
-        const parsed = Date.parse(relayChannel.lastStateChangeAt)
-        if (!Number.isNaN(parsed)) {
-          const elapsedMs = Math.max(0, nowMs - parsed)
-          const elapsedSeconds = Math.floor(elapsedMs / 1000)
-          const hours = Math.floor(elapsedSeconds / 3600)
-          const minutes = Math.floor((elapsedSeconds % 3600) / 60)
-          const seconds = elapsedSeconds % 60
-          const text =
-            hours > 0
-              ? `${hours}h ${String(minutes).padStart(2, '0')}m`
-              : `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
-          statuses[relayChannel.channel] = { text, tone: 'active' }
-          return
-        }
-      }
-
-      if (relayChannel.isActive) {
-        statuses[relayChannel.channel] = { text: 'ON', tone: 'active' }
-      } else {
-        statuses[relayChannel.channel] = { text: 'IDLE', tone: 'idle' }
-      }
-    })
-
-    return statuses
-  }, [nowMs, relayChannels])
 
   async function loadChannels(showLoader = true) {
     if (showLoader) {
@@ -264,7 +225,7 @@ export default function DeviceManager() {
 
       {activeTab === 'devices' && (
         <>
-          <DfrBoardsPanel />
+          <DfrBoardsPanel refreshKey={refreshKey} onRefresh={handleSharedRefresh} />
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
               <h2 className="text-2xl font-bold text-text-input">Devices and Relay Mapping</h2>
@@ -285,14 +246,13 @@ export default function DeviceManager() {
             </div>
           )}
 
-          <DeviceTable />
+          <DeviceTable refreshKey={refreshKey} onRefresh={handleSharedRefresh} />
 
           <div>
             <RelayChannelMatrix
               channels={relayChannels}
               nowMs={nowMs}
               variant="panel"
-              statusByChannel={statusByChannel}
               menuOpenChannel={menuOpenChannel}
               onToggleMenu={(channel) =>
                 setMenuOpenChannel((previous) => (previous === channel ? null : channel))

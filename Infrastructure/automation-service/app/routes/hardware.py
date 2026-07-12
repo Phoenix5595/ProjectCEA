@@ -21,6 +21,31 @@ router = APIRouter()
 logger = get_logger(__name__)
 
 
+async def _maybe_update_relay_timestamp(
+    automation_redis: AutomationRedisClient,
+    channel: int,
+    old_state: bool,
+    new_state: bool,
+) -> None:
+    """Update RELAY_TIMESTAMPS[channel] only when the state actually changed."""
+    if old_state == new_state:
+        return
+    if automation_redis.redis_client is None:
+        return
+    try:
+        raw_ts = automation_redis.get(RELAY_TIMESTAMPS)
+        timestamps: list[str | None] = json.loads(raw_ts) if raw_ts else [None] * 16
+        now_iso = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+        timestamps[channel] = now_iso
+        await asyncio.to_thread(
+            automation_redis.redis_client.set,
+            RELAY_TIMESTAMPS,
+            json.dumps(timestamps),
+        )
+    except Exception as e:
+        logger.warning(f"Failed to update RELAY_TIMESTAMPS for channel {channel}: {e}")
+
+
 def get_database() -> DatabaseManager:
     """Dependency to get database manager."""
     raise RuntimeError("Dependency not injected")
@@ -123,6 +148,18 @@ async def set_relay_channel_state(
             detail="channel must be 0-15",
         )
 
+    # Read current channel state before hardware write so we can detect
+    # actual state changes and update RELAY_TIMESTAMPS only when needed.
+    old_state = False
+    try:
+        raw_channels = automation_redis.get(RELAY_CHANNELS)
+        if raw_channels is not None:
+            parsed_channels = json.loads(raw_channels)
+            if isinstance(parsed_channels, list) and len(parsed_channels) == 16:
+                old_state = bool(parsed_channels[channel])
+    except (json.JSONDecodeError, ValueError, ConnectionError):
+        old_state = False
+
     override_key = relay_raw_override_key(channel)
 
     if body.state == 1:
@@ -134,6 +171,7 @@ async def set_relay_channel_state(
                     status_code=503,
                     detail=f"Failed to set channel {channel} to ON",
                 )
+            await _maybe_update_relay_timestamp(automation_redis, channel, old_state, True)
             if automation_redis.redis_client is not None:
                 await asyncio.to_thread(
                     automation_redis.redis_client.setex,
@@ -153,6 +191,7 @@ async def set_relay_channel_state(
                     status_code=503,
                     detail=f"Failed to set channel {channel} to ON",
                 )
+            await _maybe_update_relay_timestamp(automation_redis, channel, old_state, True)
     else:
         if automation_redis.redis_client is not None:
             await asyncio.to_thread(
@@ -165,6 +204,7 @@ async def set_relay_channel_state(
                 status_code=503,
                 detail=f"Failed to set channel {channel} to OFF",
             )
+        await _maybe_update_relay_timestamp(automation_redis, channel, old_state, False)
 
     return {
         "channel": channel,
@@ -222,8 +262,50 @@ async def relay_state(
         except Exception as e:
             logger.error(f"Failed to fetch last-changed timestamps: {e}", exc_info=True)
 
+    override_expires_at: list[str | None] = [None] * 16
+    try:
+        if automation_redis.redis_client is not None:
+            override_keys = [relay_raw_override_key(ch) for ch in range(16)]
+            raw_overrides = await asyncio.to_thread(
+                automation_redis.redis_client.mget, override_keys
+            )
+            now = datetime.now(UTC)
+            for i, raw in enumerate(raw_overrides or []):  # type: ignore[arg-type]
+                if raw is not None:
+                    try:
+                        data = json.loads(raw)
+                        expires_at_str = data.get("expires_at")
+                        if expires_at_str:
+                            expires_at = datetime.fromisoformat(expires_at_str)
+                            if expires_at > now:
+                                override_expires_at[i] = expires_at_str
+                    except (json.JSONDecodeError, ValueError):
+                        pass
+    except Exception as e:
+        logger.error(f"Failed to read relay override keys: {e}", exc_info=True)
+
+    modes: list[str | None] = ["off"] * 16
+    try:
+        device_states = await database.device_repo.get_all_device_states()
+        channel_to_mode: dict[int, str] = {}
+        for ds in device_states:
+            ch = ds.get("channel")
+            if isinstance(ch, int) and 0 <= ch <= 15 and ch not in channel_to_mode:
+                channel_to_mode[ch] = ds.get("mode", "auto")
+        for ch in range(16):
+            if override_expires_at[ch] is not None:
+                modes[ch] = "manual"
+            elif ch in channel_to_mode:
+                modes[ch] = channel_to_mode[ch]
+            else:
+                modes[ch] = "off"
+    except Exception as e:
+        logger.error(f"Failed to read device states for mode mapping: {e}", exc_info=True)
+
     return {
         "channels": channels,
         "timestamps": timestamps,
         "mcp_connected": mcp_connected,
+        "modes": modes,
+        "override_expires_at": override_expires_at,
     }

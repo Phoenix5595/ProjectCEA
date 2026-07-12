@@ -16,6 +16,8 @@ function makeVm(channel: number, deviceName: string | null): RelayChannelViewMod
     location: 'Flower Room',
     cluster: 'main',
     lastStateChangeAt: null,
+    mode: null,
+    overrideExpiresAt: null,
   }
 }
 
@@ -43,20 +45,20 @@ describe('RelayChannelMatrix panel variant', () => {
     render(<RelayChannelMatrix channels={vm16} variant="panel" nowMs={Date.now()} />)
 
     // Left column (relays 1-8 top→bottom)
-    // relay 1 = channel 15 = "Heater Flower"
-    expect(screen.getByText('R1 · CH 15')).toBeInTheDocument()
+    // relay 1 = GPB7 = "Heater Flower"
+    expect(screen.getByText('R1 · GPB7')).toBeInTheDocument()
     expect(screen.getByText('Heater Flower')).toBeInTheDocument()
 
-    // relay 2 = channel 0 = "exhaust_fan"
-    expect(screen.getByText('R2 · CH 0')).toBeInTheDocument()
+    // relay 2 = GPA0 = "exhaust_fan"
+    expect(screen.getByText('R2 · GPA0')).toBeInTheDocument()
     expect(screen.getByText('exhaust_fan')).toBeInTheDocument()
 
     // Right column (relays 16-9 top→bottom)
-    // relay 16 = channel 7
-    expect(screen.getByText('R16 · CH 7')).toBeInTheDocument()
+    // relay 16 = GPA7
+    expect(screen.getByText('R16 · GPA7')).toBeInTheDocument()
 
-    // relay 9 = channel 11
-    expect(screen.getByText('R9 · CH 11')).toBeInTheDocument()
+    // relay 9 = GPB3
+    expect(screen.getByText('R9 · GPB3')).toBeInTheDocument()
   })
 
   it('shows relay numbers in left and right gutters', () => {
@@ -78,10 +80,10 @@ describe('RelayChannelMatrix compact variant', () => {
   it('shows R{n} · GPA/GPB pin labels in compact mode', () => {
     render(<RelayChannelMatrix channels={vm16} variant="compact" nowMs={Date.now()} />)
 
-    // relay 1 = channel 15 = GPB7
+    // relay 1 = GPB7
     expect(screen.getByText('R1 · GPB7')).toBeInTheDocument()
 
-    // relay 16 = channel 7 = GPA7
+    // relay 16 = GPA7
     expect(screen.getByText('R16 · GPA7')).toBeInTheDocument()
   })
 })

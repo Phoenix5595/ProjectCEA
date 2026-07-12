@@ -13,7 +13,6 @@ interface RelayChannelMatrixProps {
   location?: string
   editingChannel?: number | null
   onSelectChannel?: (channel: number) => void
-  statusByChannel?: Record<number, { text: string; tone: 'unknown' | 'active' | 'idle' }>
   menuOpenChannel?: number | null
   onToggleMenu?: (channel: number) => void
   onMenuAction?: (channel: number, action: 'auto' | 'timer-5m' | 'timer-10m' | 'timer-30m' | 'timer-1h' | 'off') => void
@@ -25,7 +24,6 @@ interface ChannelBoxRenderProps {
   currentLocation: string | undefined
   editingChannel: number | null
   onSelectChannel?: (channel: number) => void
-  statusByChannel?: Record<number, { text: string; tone: 'unknown' | 'active' | 'idle' }>
   menuOpenChannel: number | null
   onToggleMenu?: (channel: number) => void
   onMenuAction?: (channel: number, action: 'auto' | 'timer-5m' | 'timer-10m' | 'timer-30m' | 'timer-1h' | 'off') => void
@@ -41,8 +39,6 @@ function renderChannelBox(channel: RelayChannelViewModel, props: ChannelBoxRende
       currentLocation={props.currentLocation}
       isEditing={props.editingChannel === channel.channel}
       onSelect={props.onSelectChannel}
-      statusText={props.statusByChannel?.[channel.channel]?.text}
-      statusTone={props.statusByChannel?.[channel.channel]?.tone}
       isMenuOpen={props.menuOpenChannel === channel.channel}
       onToggleMenu={props.onToggleMenu}
       onMenuAction={props.onMenuAction}
@@ -66,7 +62,6 @@ export default function RelayChannelMatrix({
   location,
   editingChannel = null,
   onSelectChannel,
-  statusByChannel,
   menuOpenChannel = null,
   onToggleMenu,
   onMenuAction,
@@ -80,7 +75,6 @@ export default function RelayChannelMatrix({
     currentLocation: location,
     editingChannel: editingChannel ?? null,
     onSelectChannel,
-    statusByChannel,
     menuOpenChannel: menuOpenChannel ?? null,
     onToggleMenu,
     onMenuAction,

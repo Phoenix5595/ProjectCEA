@@ -1,5 +1,5 @@
 import type { RelayChannelViewModel } from './relayViewModel'
-import { formatElapsedSince, getRelayNumber } from './relayViewModel'
+import { formatCountdown, formatElapsedSince, getRelayNumber } from './relayViewModel'
 
 interface RelayChannelBoxProps {
   channel: RelayChannelViewModel
@@ -8,34 +8,62 @@ interface RelayChannelBoxProps {
   currentLocation?: string | null
   isEditing?: boolean
   onSelect?: (channel: number) => void
-  statusText?: string
-  statusTone?: 'unknown' | 'active' | 'idle'
   isMenuOpen?: boolean
   onToggleMenu?: (channel: number) => void
   onMenuAction?: (channel: number, action: 'auto' | 'timer-5m' | 'timer-10m' | 'timer-30m' | 'timer-1h' | 'off') => void
 }
 
-function stateBadgeClasses(tone: 'unknown' | 'active' | 'idle'): string {
-  if (tone === 'unknown') {
-    return 'bg-status-warning-bg/40 text-status-warning-text border border-status-warning-border/70'
-  }
-
-  if (tone === 'active') {
-    return 'bg-status-success-bg/50 text-status-success-text border border-status-success-border/80'
-  }
-
-  return 'bg-surface-tertiary text-text-muted border border-border-emphasis'
+interface BadgeState {
+  text: string
+  outlineClass: string
+  ledClass: string
 }
 
-function RelayStatusLed({ tone }: { tone: 'unknown' | 'active' | 'idle' }) {
-  const ledClass =
-    tone === 'unknown'
-      ? 'bg-status-warning-vivid shadow-[0_0_4px_var(--status-warning-vivid)]'
-      : tone === 'active'
-        ? 'bg-status-success-vivid shadow-[0_0_5px_var(--status-success-vivid)]'
-        : 'bg-surface-quinary border border-border-emphasis'
+function resolveBadgeState(channel: RelayChannelViewModel, nowMs: number): BadgeState {
+  // 1. Override active — blue badge with countdown
+  if (channel.overrideExpiresAt) {
+    const countdown = formatCountdown(channel.overrideExpiresAt, nowMs)
+    if (countdown) {
+      return {
+        text: countdown,
+        outlineClass: 'border-status-info-border/80 bg-status-info-bg/50 text-status-info-text',
+        ledClass: 'bg-blue-500 shadow-[0_0_5px_var(--blue-400)]',
+      }
+    }
+    // Override expired — fall through to mode-based logic
+  }
 
-  return <span className={`h-2 w-2 shrink-0 rounded-full ${ledClass}`} aria-hidden />
+  // 2. Auto mode — green when active, red when inactive
+  if (channel.mode === 'auto' || channel.mode === 'scheduled') {
+    if (channel.isActive) {
+      return {
+        text: 'AUTO',
+        outlineClass: 'bg-status-success-bg/50 text-status-success-text border border-status-success-border/80',
+        ledClass: 'bg-status-success-vivid shadow-[0_0_5px_var(--status-success-vivid)]',
+      }
+    }
+    return {
+      text: 'AUTO',
+      outlineClass: 'bg-status-danger-bg/30 text-status-danger-text border-status-danger-border/60',
+      ledClass: 'bg-status-danger-vivid shadow-[0_0_4px_var(--status-danger-vivid)]',
+    }
+  }
+
+  // 3. Manual off / manual with no override — black badge
+  if (channel.mode === 'off' || channel.mode === 'manual') {
+    return {
+      text: 'OFF',
+      outlineClass: 'bg-black/40 text-text-muted border border-border-emphasis',
+      ledClass: 'bg-black',
+    }
+  }
+
+  // 4. Unknown (mode is null) — amber badge
+  return {
+    text: '?',
+    outlineClass: 'bg-status-warning-bg/40 text-status-warning-text border border-status-warning-border/70',
+    ledClass: 'bg-status-warning-vivid shadow-[0_0_4px_var(--status-warning-vivid)]',
+  }
 }
 
 export default function RelayChannelBox({
@@ -45,8 +73,6 @@ export default function RelayChannelBox({
   currentLocation = null,
   isEditing = false,
   onSelect,
-  statusText,
-  statusTone,
   isMenuOpen = false,
   onToggleMenu,
   onMenuAction,
@@ -60,9 +86,7 @@ export default function RelayChannelBox({
 
   const isAssignedToRoom = !currentLocation || channel.location === currentLocation
 
-  const resolvedTone: 'unknown' | 'active' | 'idle' =
-    statusTone || (!channel.isStateKnown ? 'unknown' : channel.isActive ? 'active' : 'idle')
-  const resolvedText = statusText || (!channel.isStateKnown ? 'Unknown' : channel.isActive ? 'ON' : 'IDLE')
+  const badge = resolveBadgeState(channel, nowMs)
   const canControl = true
 
   const interactiveClasses = onSelect
@@ -115,7 +139,7 @@ export default function RelayChannelBox({
   const content = (
     <div className="flex items-stretch gap-1.5" title={tooltipTitle}>
       <div className="flex shrink-0 items-center justify-center">
-        <RelayStatusLed tone={resolvedTone} />
+        <span className={`h-2 w-2 shrink-0 rounded-full ${badge.ledClass}`} aria-hidden />
       </div>
 
       <div className="min-w-0 flex-1">
@@ -137,10 +161,10 @@ export default function RelayChannelBox({
                 }
                 onToggleMenu?.(channel.channel)
               }}
-              className={`rounded-sm px-1 py-px text-[8px] font-semibold uppercase ${stateBadgeClasses(resolvedTone)} ${canControl ? 'cursor-pointer' : 'cursor-not-allowed opacity-70'}`}
+              className={`rounded-sm px-1 py-px text-[8px] font-semibold uppercase ${badge.outlineClass} ${canControl ? 'cursor-pointer' : 'cursor-not-allowed opacity-70'}`}
               title={canControl ? 'Click for control mode' : 'Toggle relay channel'}
             >
-              {resolvedText}
+              {badge.text}
             </button>
             {menu}
           </div>
