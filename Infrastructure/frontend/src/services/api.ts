@@ -533,6 +533,16 @@ class ApiClient {
     return response.data;
   }
 
+  async updateLightIntensity(
+    deviceId: number,
+    intensity: number
+  ): Promise<{ success: boolean; device_id: number; target_intensity: number }> {
+    const response = await this.automationClient.put(`/api/lights/${deviceId}/intensity`, {
+      target_intensity: intensity
+    });
+    return response.data;
+  }
+
   async getLightSchedule(location: string, cluster: string, deviceName: string): Promise<{ start_time: string; end_time: string; target_intensity: number }> {
     const response = await this.automationClient.get(`/api/lights/${location}/${cluster}/${deviceName}/schedule`);
     return response.data;

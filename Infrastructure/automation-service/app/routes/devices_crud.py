@@ -22,6 +22,7 @@ from app.models.device_registry import (
     LightDeviceUpdate,
 )
 from app.repositories.devices import DeviceRepository, _room_prefix
+from app.services.schedule_auto_create import create_default_intensity_for_light
 from shared.fastapi_helpers import is_production
 from shared.infra_logging import get_logger
 
@@ -64,6 +65,7 @@ async def list_registry_devices(
 async def create_registry_device(
     body: dict[str, Any],
     device_repo: DeviceRepository = Depends(get_device_repo),
+    database: DatabaseManager = Depends(get_database),
     config: ConfigLoader = Depends(get_config),
 ) -> Device | LightDevice:
     """Create a new device (light or non-light) in the registry."""
@@ -127,6 +129,13 @@ async def create_registry_device(
             display_name=light_create.display_name,
             per_room_index=per_room_index,
         )
+        if created.device_id is not None:
+            await create_default_intensity_for_light(
+                database=database,
+                device_id=created.device_id,
+                location=created.location,
+                cluster=created.cluster,
+            )
     else:
         # Non-light device
         canonical_type = _UI_TO_DB_DEVICE_TYPES.get(device_type, device_type)

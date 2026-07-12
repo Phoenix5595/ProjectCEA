@@ -319,6 +319,19 @@ async def update_room_parameters(
         current_params = ModeParameters().model_dump()
 
     updates = request.model_dump(exclude_none=True)
+
+    # Deprecation warnings for legacy light intensity fields
+    if "main_light_intensity" in updates:
+        logger.warning(
+            "DEPRECATED: main_light_intensity in update_room_parameters is deprecated. "
+            "Use PUT /api/lights/{device_id}/intensity or POST /api/lights/{loc}/{cluster}/{device}/target instead."
+        )
+    if "supplemental_light_intensity" in updates:
+        logger.warning(
+            "DEPRECATED: supplemental_light_intensity in update_room_parameters is deprecated. "
+            "Use PUT /api/lights/{device_id}/intensity or POST /api/lights/{loc}/{cluster}/{device}/target instead."
+        )
+
     merged_params = {**current_params, **updates}
 
     await db.room_mode_repo.save_mode_parameters(

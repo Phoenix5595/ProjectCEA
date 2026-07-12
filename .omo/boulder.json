@@ -285,7 +285,7 @@
       "plan_name": "production-safety",
       "status": "active",
       "started_at": "2026-07-12T12:44:41.062Z",
-      "updated_at": "2026-07-12T14:09:51.502Z",
+      "updated_at": "2026-07-12T14:24:48.001Z",
       "session_ids": [
         "opencode:ses_0e70fc228ffeBshhzGKaAPSeMu"
       ],
@@ -314,8 +314,21 @@
           "session_id": "opencode:ses_0a95d222dffez8z141G1pKDYhr",
           "agent": "Sisyphus-Junior",
           "category": "deep",
-          "updated_at": "2026-07-12T14:09:51.503Z",
+          "updated_at": "2026-07-12T14:12:32.844Z",
           "started_at": "2026-07-12T14:09:51.503Z",
+          "status": "completed",
+          "ended_at": "2026-07-12T14:12:32.844Z",
+          "elapsed_ms": 161341
+        },
+        "todo:7": {
+          "task_key": "todo:7",
+          "task_label": "7",
+          "task_title": "Auto-create light_target_intensity row when a light is created",
+          "session_id": "opencode:ses_0a950d2b7ffedVo5ZaPa07jXsq",
+          "agent": "Sisyphus-Junior",
+          "category": "quick",
+          "updated_at": "2026-07-12T14:24:48.002Z",
+          "started_at": "2026-07-12T14:24:48.002Z",
           "status": "running"
         }
       }
@@ -348,15 +361,28 @@
       "session_id": "opencode:ses_0a95d222dffez8z141G1pKDYhr",
       "agent": "Sisyphus-Junior",
       "category": "deep",
-      "updated_at": "2026-07-12T14:09:51.503Z",
+      "updated_at": "2026-07-12T14:12:32.844Z",
       "started_at": "2026-07-12T14:09:51.503Z",
+      "status": "completed",
+      "ended_at": "2026-07-12T14:12:32.844Z",
+      "elapsed_ms": 161341
+    },
+    "todo:7": {
+      "task_key": "todo:7",
+      "task_label": "7",
+      "task_title": "Auto-create light_target_intensity row when a light is created",
+      "session_id": "opencode:ses_0a950d2b7ffedVo5ZaPa07jXsq",
+      "agent": "Sisyphus-Junior",
+      "category": "quick",
+      "updated_at": "2026-07-12T14:24:48.002Z",
+      "started_at": "2026-07-12T14:24:48.002Z",
       "status": "running"
     }
   },
   "active_plan": "/home/antoine/ProjectCEA/.omo/plans/production-safety.md",
   "plan_name": "production-safety",
   "status": "active",
-  "updated_at": "2026-07-12T14:09:51.502Z",
+  "updated_at": "2026-07-12T14:24:48.001Z",
   "started_at": "2026-07-12T12:44:41.062Z",
   "agent": "atlas"
 }

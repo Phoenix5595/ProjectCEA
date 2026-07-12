@@ -32,6 +32,12 @@ class ScheduleTimeControl(BaseModel):
     end_time: str
 
 
+class LightIntensityUpdate(BaseModel):
+    """Request model for updating light target intensity by device_id."""
+
+    target_intensity: float
+
+
 class DfrChannelAssignControl(BaseModel):
     """Assign/unassign a DFR0971 board/channel to a dimmable light device."""
 
