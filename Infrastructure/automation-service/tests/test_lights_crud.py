@@ -10,7 +10,7 @@ import pytest
 import pytest_asyncio
 
 from app.models.device_registry import LightDevice
-from app.routes.lights import get_device_repo
+from app.routes.lights import get_device_repo, get_database
 from app.routes.lights import router as lights_router
 
 
@@ -19,9 +19,12 @@ async def client():
     app = FastAPI()
     app.include_router(lights_router)
     mock_repo = MagicMock()
+    mock_db = MagicMock()
     app.dependency_overrides[get_device_repo] = lambda: mock_repo
+    app.dependency_overrides[get_database] = lambda: mock_db
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         ac.mock_repo = mock_repo  # type: ignore[attr-defined]
+        ac.mock_db = mock_db  # type: ignore[attr-defined]
         yield ac
 
 

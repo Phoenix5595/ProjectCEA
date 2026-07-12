@@ -387,7 +387,7 @@ Your next move: approve, then `$start-work`. Full execution detail follows below
   QA scenarios: happy — new light gets 10% intensity for all modes immediately. failure — intensity repo fails → light still created, ERROR logged. Evidence `.omo/evidence/task-7-production-safety.txt`
   Commit: Y | feat(lights): auto-create light_target_intensity row when a light is created
 
-- [ ] 8. Simplify save_room_schedule + add intensity update endpoint
+- [x] 8. Simplify save_room_schedule + add intensity update endpoint
   What to do / Must NOT do:
   - **save_room_schedule() in room.py:** Remove per-device SUN/MOON row creation for lights (lines 404-450). Remove room_schedule row creation (lines 362-402). Keep DAY/NIGHT row creation for non-light devices (lines 452-490). Instead of creating schedule rows, update mode_parameters:
     ```python
