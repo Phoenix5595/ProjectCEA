@@ -39,6 +39,36 @@
 - Target intensity fallback: rows default to 10% via DB schema; callers use default if no row exists
 - Tests required: `tests/test_light_target_intensity_repo.py` and `tests/test_light_programs_repo.py`; must use `cea_sensors_test`
 
+## 2026-07-12 - T6 Complete: Simplify save_room_schedule + Rewrite POST /target + Add PUT /intensity
+- Files modified:
+  - `Infrastructure/automation-service/app/routes/schedules/room.py` — `save_room_schedule()` simplified
+  - `Infrastructure/automation-service/app/routes/lights.py` — POST `/target` rewritten, PUT `/intensity` added
+  - `Infrastructure/automation-service/app/routes/room_modes.py` — deprecation warnings added
+  - `Infrastructure/automation-service/app/schemas/lights.py` — `LightIntensityUpdate` schema added
+  - `Infrastructure/frontend/src/services/api.ts` — `updateLightIntensity()` method added
+- `save_room_schedule()` changes:
+  - No longer creates SUN/MOON rows for lights (T10 will delete existing ones)
+  - No longer creates/updates `room_schedule` row
+  - Still creates DAY/NIGHT rows for non-light devices
+  - Updates `mode_parameters` directly with `day_start_time`, `night_start_time`, `light_ramp_up_minutes`, `light_ramp_down_minutes`
+  - Publishes `MODE_CHANGED` event (was `SCHEDULE_CHANGED`)
+- `sync_room_schedule_from_mode_parameters()` automatically uses simplified `save_room_schedule()`
+- POST `/api/lights/{loc}/{cluster}/{device}/target` changes:
+  - Looks up `device_id` from `device_registry`
+  - Gets active mode (fallback `veg`), resolves `mode_id`
+  - Writes to `light_target_intensity` table via `light_target_intensity_repo.set_intensity()`
+  - Synchronous `scheduler.update_light_intensities()` cache refresh
+  - Publishes `SCHEDULE_CHANGED` event
+- PUT `/api/lights/{device_id}/intensity` (new):
+  - Device-id-based endpoint
+  - Same pattern as POST `/target`: lookup device, resolve mode, write to `light_target_intensity`, sync scheduler, publish event
+- `update_room_parameters()` deprecation:
+  - Logs warning when `main_light_intensity` or `supplemental_light_intensity` present in request
+  - Directs callers to new PUT/POST intensity endpoints
+- Frontend `api.ts`:
+  - `updateLightIntensity(deviceId: number, intensity: number)` calls PUT `/api/lights/{deviceId}/intensity`
+- Verification: ruff check passes, `tsc --noEmit` passes
+
 ## 2026-07-12 - T5 Complete: Scheduler Rewrite (is_in_photoperiod + get_schedule_intensity + light_programs)
 - File modified: `Infrastructure/automation-service/app/control/scheduler.py` (full rewrite, ~770 lines)
 - Test file: `Infrastructure/automation-service/tests/test_scheduler_rewrite.py` (24 tests, all pass)

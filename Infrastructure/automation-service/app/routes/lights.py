@@ -19,10 +19,12 @@ from app.repositories.devices import DeviceRepository
 from app.schemas.lights import (
     DfrChannelAssignControl,
     IntensityControl,
+    LightIntensityUpdate,
     ScheduleTimeControl,
     TargetIntensityControl,
     VoltageControl,
 )
+from app.services.schedule_auto_create import create_default_intensity_for_light
 from shared.infra_logging import get_logger
 from shared.room_light_authority import is_moon_authority_mode
 
@@ -35,6 +37,44 @@ if TYPE_CHECKING:
 router = APIRouter()
 
 logger = get_logger(__name__)
+
+
+async def _sync_scheduler_light_intensities(
+    database: DatabaseManager,
+    scheduler: Any | None,
+) -> None:
+    """Synchronously reload light intensities into the scheduler cache."""
+    if scheduler is None:
+        return
+    try:
+        intensities = await database.light_target_intensity_repo.get_all_intensities()
+        scheduler.update_light_intensities(intensities)
+        logger.info(f"Scheduler light intensities updated: {len(intensities)} entries")
+    except Exception as e:
+        logger.error(f"Failed to update scheduler light intensities: {e}", exc_info=True)
+
+
+async def _publish_schedule_changed(
+    location: str,
+    cluster: str,
+    data: dict[str, Any],
+) -> None:
+    """Publish a SCHEDULE_CHANGED event."""
+    try:
+        from app.events import ConfigChangeEvent, ConfigEventType, get_event_bus
+
+        event_bus = get_event_bus()
+        event = ConfigChangeEvent(
+            event_type=ConfigEventType.SCHEDULE_CHANGED,
+            location=location,
+            cluster=cluster,
+            config_type="schedules",
+            data=data,
+        )
+        await event_bus.publish(event)
+        logger.info(f"Published SCHEDULE_CHANGED event for {location}/{cluster}")
+    except Exception as e:
+        logger.warning(f"Failed to publish SCHEDULE_CHANGED event: {e}")
 
 
 def _schedule_row_active_for_device(
@@ -751,26 +791,126 @@ async def set_target_intensity(
     if device_info.get("device_type") != "light":
         raise HTTPException(status_code=400, detail=f"Device {device_name} is not a light")
 
-    rows_updated = await database.schedule_repo.update_light_schedule_target(
-        location, cluster, device_name, control.target_intensity
+    # Look up device_id from device_registry
+    device_id = await database.device_repo.get_device_id(location, cluster, device_name)
+    if device_id is None:
+        raise HTTPException(status_code=404, detail=f"Device {device_name} not found in registry")
+
+    # Get active mode (fallback veg)
+    active_mode = await database.room_mode_repo.get_active_mode(location, cluster)
+    mode_name = str(active_mode.get("mode_name", "veg")) if active_mode else "veg"
+
+    mode_info = await database.room_mode_repo.get_mode_by_name(mode_name)
+    if not mode_info:
+        raise HTTPException(status_code=404, detail=f"Mode '{mode_name}' not found")
+    mode_id = mode_info["id"]
+
+    # Write to light_target_intensity
+    ok = await database.light_target_intensity_repo.set_intensity(
+        device_id, mode_id, control.target_intensity
     )
+    if not ok:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to set light target intensity for {device_name}",
+        )
 
-    if rows_updated == 0:
-        raise HTTPException(status_code=404, detail=f"No active schedule found for {device_name}")
+    # Synchronous scheduler cache update
+    await _sync_scheduler_light_intensities(database, scheduler)
 
-    # Refresh scheduler with updated schedules
-    if scheduler:
-        all_schedules = await database.schedule_repo.get_schedules()
-        scheduler.update_schedules(await merge_schedules_with_config(all_schedules, config))
-        logger.info(f"Scheduler refreshed after {device_name} target intensity update")
+    # Publish SCHEDULE_CHANGED event
+    await _publish_schedule_changed(
+        location,
+        cluster,
+        {
+            "action": "light_target_intensity_updated",
+            "device_name": device_name,
+            "device_id": device_id,
+            "target_intensity": control.target_intensity,
+            "mode_name": mode_name,
+        },
+    )
 
     return {
         "success": True,
         "location": location,
         "cluster": cluster,
         "device": device_name,
+        "device_id": device_id,
         "target_intensity": control.target_intensity,
-        "rows_updated": rows_updated,
+        "mode_name": mode_name,
+    }
+
+
+@router.put("/api/lights/{device_id}/intensity")
+async def update_light_intensity(
+    device_id: int,
+    control: LightIntensityUpdate,
+    database=Depends(get_database),
+    scheduler=Depends(get_scheduler),
+) -> dict[str, Any]:
+    if control.target_intensity < 0 or control.target_intensity > 100:
+        raise HTTPException(status_code=400, detail="Target intensity must be between 0 and 100")
+
+    # Look up device from registry
+    device_type = await database.device_repo.get_device_type_by_id(device_id)
+    if device_type is None:
+        raise HTTPException(status_code=404, detail=f"Device {device_id} not found")
+    if device_type != "light":
+        raise HTTPException(status_code=400, detail=f"Device {device_id} is not a light")
+
+    # Get device location/cluster for event publishing
+    light = await database.device_repo.get_light_by_id(device_id)
+    if light is None:
+        raise HTTPException(status_code=404, detail=f"Light {device_id} not found")
+
+    location = light.location
+    cluster = light.cluster
+    device_name = light.device_name
+
+    # Get active mode (fallback veg)
+    active_mode = await database.room_mode_repo.get_active_mode(location, cluster)
+    mode_name = str(active_mode.get("mode_name", "veg")) if active_mode else "veg"
+
+    mode_info = await database.room_mode_repo.get_mode_by_name(mode_name)
+    if not mode_info:
+        raise HTTPException(status_code=404, detail=f"Mode '{mode_name}' not found")
+    mode_id = mode_info["id"]
+
+    # Write to light_target_intensity
+    ok = await database.light_target_intensity_repo.set_intensity(
+        device_id, mode_id, control.target_intensity
+    )
+    if not ok:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to set light target intensity for {device_name}",
+        )
+
+    # Synchronous scheduler cache update
+    await _sync_scheduler_light_intensities(database, scheduler)
+
+    # Publish SCHEDULE_CHANGED event
+    await _publish_schedule_changed(
+        location,
+        cluster,
+        {
+            "action": "light_target_intensity_updated",
+            "device_name": device_name,
+            "device_id": device_id,
+            "target_intensity": control.target_intensity,
+            "mode_name": mode_name,
+        },
+    )
+
+    return {
+        "success": True,
+        "device_id": device_id,
+        "device": device_name,
+        "location": location,
+        "cluster": cluster,
+        "target_intensity": control.target_intensity,
+        "mode_name": mode_name,
     }
 
 
@@ -819,6 +959,7 @@ async def update_light_schedule(
 async def create_light(
     body: LightDeviceCreate,
     device_repo: DeviceRepository = Depends(get_device_repo),
+    database: DatabaseManager = Depends(get_database),
 ) -> LightDevice:
     """Create a new light device on an empty DFR slot."""
     # Conflict check: (board_id, dimming_channel) must be unoccupied
@@ -851,6 +992,13 @@ async def create_light(
         display_name=body.display_name,
         per_room_index=per_room_index,
     )
+    if light.device_id is not None:
+        await create_default_intensity_for_light(
+            database=database,
+            device_id=light.device_id,
+            location=light.location,
+            cluster=light.cluster,
+        )
     return light
 
 

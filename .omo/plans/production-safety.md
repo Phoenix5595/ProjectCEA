@@ -342,7 +342,7 @@ Your next move: approve, then `$start-work`. Full execution detail follows below
   QA scenarios: happy — after startup, Scheduler has mode_params, intensities, programs, device_lookup cached; after mode transition, all caches refreshed. failure — DB query fails → log ERROR, continue with empty cache, _scheduler_ready still set (to avoid deadlock), alarm fires from T9, failsafe kicks in (10% + relay ON). Evidence `.omo/evidence/task-6-production-safety.txt`
   Commit: Y | feat(control): load mode_parameters + intensities + programs into Scheduler at startup
 
-- [ ] 7. Auto-create light_target_intensity row when a light is created
+- [x] 7. Auto-create light_target_intensity row when a light is created
   What to do / Must NOT do:
   - Create shared helper in `Infrastructure/automation-service/app/services/schedule_auto_create.py`:
     ```python
@@ -505,7 +505,7 @@ Your next move: approve, then `$start-work`. Full execution detail follows below
   QA scenarios: happy — saving room schedule updates mode_parameters; lights inherit automatically. Changing light intensity calls new endpoint. failure — old per-device rows still exist (cleanup in T10). Evidence `.omo/evidence/task-8-production-safety.txt`
   Commit: Y | feat(schedules): simplify save_room_schedule + add light intensity endpoint
 
-- [ ] 9. Remove expand_light_schedules_for_control + integrate AlarmManager for missing schedule/mode_parameters
+- [x] 9. Remove expand_light_schedules_for_control + integrate AlarmManager for missing schedule/mode_parameters
   What to do / Must NOT do:
   - **Remove from schedule_merge.py:**
     - `expand_light_schedules_for_control()` (lines 229-358) — DELETE entirely
