@@ -12,11 +12,9 @@ from app.schemas.schedules import RoomScheduleCreate
 from shared.infra_logging import get_logger
 
 from .base import (
-    get_automation_redis,
     get_config,
     get_database,
 )
-from .utils import _build_schedule_state
 
 if TYPE_CHECKING:
     from asyncpg import Connection
@@ -84,58 +82,48 @@ async def sync_all_room_schedules_from_mode_parameters(
 async def get_room_schedule(
     location: str, cluster: str, database: DatabaseManager = Depends(get_database)
 ) -> dict[str, Any]:
-    pool = await database._get_pool()
+    """Return photoperiod and ramp times from mode_parameters for the active mode."""
     try:
-        async with pool.acquire() as conn:
-            row = await conn.fetchrow(
-                """
-                SELECT start_time, end_time, ramp_up_duration, ramp_down_duration
-                FROM schedules
-                WHERE location = $1 AND cluster = $2 AND device_name = 'room_schedule'
-                ORDER BY created_at DESC
-                LIMIT 1
-            """,
-                location,
-                cluster,
-            )
+        active_mode = await database.room_mode_repo.get_active_mode(location, cluster)
+        if not active_mode:
+            return {
+                "day_start_time": "06:00",
+                "day_end_time": "20:00",
+                "night_start_time": "20:00",
+                "night_end_time": "06:00",
+                "ramp_up_duration": 30,
+                "ramp_down_duration": 15,
+            }
 
-            if row:
-
-                def format_time(time_val):
-                    if isinstance(time_val, str):
-                        return time_val
-                    if hasattr(time_val, "hour") and hasattr(time_val, "minute"):
-                        return f"{time_val.hour:02d}:{time_val.minute:02d}"
-                    return str(time_val)
-
-                day_start = format_time(row["start_time"])
-                day_end = format_time(row["end_time"])
-                night_start = day_end
-                night_end = day_start
-
-                return {
-                    "day_start_time": day_start,
-                    "day_end_time": day_end,
-                    "night_start_time": night_start,
-                    "night_end_time": night_end,
-                    "ramp_up_duration": row["ramp_up_duration"]
-                    if row["ramp_up_duration"] is not None
-                    else 30,
-                    "ramp_down_duration": row["ramp_down_duration"]
-                    if row["ramp_down_duration"] is not None
-                    else 15,
-                }
-    except Exception as e:
-        logger.warning(
-            f"Error retrieving room schedule from database: {e}. Falling back to inferring from schedules."
+        mode_name = active_mode.get("mode_name", "veg")
+        submode_name = active_mode.get("submode_name")
+        params = await database.room_mode_repo.get_mode_parameters(
+            location, cluster, mode_name, submode_name
         )
 
-    all_schedules = await database.schedule_repo.get_schedules(location, cluster)
-    schedules = [
-        s for s in all_schedules if s.get("device_name") not in ["room_schedule", "climate"]
-    ]
+        if not params:
+            return {
+                "day_start_time": "06:00",
+                "day_end_time": "20:00",
+                "night_start_time": "20:00",
+                "night_end_time": "06:00",
+                "ramp_up_duration": 30,
+                "ramp_down_duration": 15,
+            }
 
-    if not schedules:
+        day_start = _to_hhmm(params.get("day_start_time"))
+        night_start = _to_hhmm(params.get("night_start_time"))
+
+        return {
+            "day_start_time": day_start,
+            "day_end_time": night_start,
+            "night_start_time": night_start,
+            "night_end_time": day_start,
+            "ramp_up_duration": params.get("light_ramp_up_minutes", 30) or 30,
+            "ramp_down_duration": params.get("light_ramp_down_minutes", 15) or 15,
+        }
+    except Exception as e:
+        logger.warning(f"Error retrieving room schedule from mode_parameters: {e}")
         return {
             "day_start_time": "06:00",
             "day_end_time": "20:00",
@@ -144,85 +132,6 @@ async def get_room_schedule(
             "ramp_up_duration": 30,
             "ramp_down_duration": 15,
         }
-
-    day_schedule = None
-    night_schedule = None
-
-    for schedule in schedules:
-        target_intensity = schedule.get("target_intensity")
-        mode = (schedule.get("mode") or "").upper()
-
-        if mode in ("SUN", "DAY") or (target_intensity is not None and target_intensity > 0):
-            if day_schedule is None or mode in ("SUN", "DAY"):
-                day_schedule = schedule
-        elif mode in ("MOON", "NIGHT") or (target_intensity is not None and target_intensity == 0):
-            if night_schedule is None or mode in ("MOON", "NIGHT"):
-                night_schedule = schedule
-
-    def format_time_value(time_val, default: str) -> str:
-        if time_val is None:
-            return default
-        if isinstance(time_val, str):
-            return time_val
-        if hasattr(time_val, "hour") and hasattr(time_val, "minute"):
-            return f"{time_val.hour:02d}:{time_val.minute:02d}"
-        return str(time_val)
-
-    def parse_time_to_minutes(time_str: str) -> int:
-        try:
-            parts = time_str.split(":")
-            return int(parts[0]) * 60 + int(parts[1])
-        except (ValueError, IndexError, AttributeError) as e:
-            logger.warning(f"Invalid time format '{time_str}': {e}, returning 0")
-            return 0
-
-    if day_schedule:
-        day_start_raw = format_time_value(day_schedule.get("start_time"), "06:00")
-        day_end_raw = format_time_value(day_schedule.get("end_time"), "20:00")
-        parse_time_to_minutes(day_start_raw)
-        parse_time_to_minutes(day_end_raw)
-        day_start = day_start_raw
-        day_end = day_end_raw
-    else:
-        day_start = "06:00"
-        day_end = "20:00"
-
-    if night_schedule:
-        night_start_raw = format_time_value(night_schedule.get("start_time"), "20:00")
-        night_end_raw = format_time_value(night_schedule.get("end_time"), "06:00")
-        night_start = night_start_raw
-        night_end = night_end_raw
-    else:
-        if day_schedule:
-            night_start = day_end
-            night_end = day_start
-        else:
-            night_start = "20:00"
-            night_end = "06:00"
-
-    ramp_up = None
-    ramp_down = None
-
-    if day_schedule:
-        ramp_up = day_schedule.get("ramp_up_duration")
-        ramp_down = day_schedule.get("ramp_down_duration")
-
-    if ramp_up is None:
-        ramp_up = 30
-    if ramp_down is None:
-        if night_schedule:
-            ramp_down = night_schedule.get("ramp_down_duration", 15)
-        else:
-            ramp_down = 15
-
-    return {
-        "day_start_time": str(day_start),
-        "day_end_time": str(day_end),
-        "night_start_time": str(night_start),
-        "night_end_time": str(night_end),
-        "ramp_up_duration": ramp_up,
-        "ramp_down_duration": ramp_down,
-    }
 
 
 @router.post("/api/room-schedule/{location}/{cluster}")
@@ -453,15 +362,6 @@ async def save_room_schedule(
         )
     except Exception as e:
         logger.warning(f"Failed to broadcast room schedule update: {e}")
-
-    try:
-        redis_client = get_automation_redis()
-        if redis_client:
-            schedule_state = await _build_schedule_state(database, location, cluster)
-            redis_client.write_schedule_state(location, cluster, schedule_state)
-            logger.info(f"Wrote schedule state to Redis for {location}/{cluster}")
-    except Exception as e:
-        logger.warning(f"Failed to write schedule state to Redis: {e}")
 
     return {
         "success": True,

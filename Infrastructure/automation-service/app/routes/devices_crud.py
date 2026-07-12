@@ -346,11 +346,6 @@ async def delete_registry_device(
                 "relay channel is now free"
             )
 
-        # Cascade: delete schedules referencing this light
-        deleted_schedules = await database.schedule_repo.delete_schedules_by_device_name(
-            existing.location, existing.cluster, existing.device_name
-        )
-
         # Cascade: delete effective_setpoints referencing this light
         try:
             pool = await database._get_pool()
@@ -374,7 +369,6 @@ async def delete_registry_device(
         result: dict[str, Any] = {
             "success": True,
             "device_id": device_id,
-            "deleted_schedules": deleted_schedules,
         }
         if warning:
             result["warning"] = warning

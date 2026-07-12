@@ -25,7 +25,6 @@ from app.redis.lighting import LightingMixin  # noqa: E402, PLC0415
 from app.redis.modes import ModesMixin  # noqa: E402, PLC0415
 from app.redis.pid import PIDMixin  # noqa: E402, PLC0415
 from app.redis.ramps import RampsMixin  # noqa: E402, PLC0415
-from app.redis.schedules import SchedulesMixin  # noqa: E402, PLC0415
 from app.redis.sensors import SensorsMixin  # noqa: E402, PLC0415
 from app.redis.setpoints import SetpointsMixin  # noqa: E402, PLC0415
 from app.redis.streams import StreamsMixin  # noqa: E402, PLC0415
@@ -70,7 +69,6 @@ class RedisOperations:
         self.modes = ModesMixin()
         self.pid = PIDMixin()
         self.ramps = RampsMixin()
-        self.schedules = SchedulesMixin()
         self.sensors = SensorsMixin()
         self.setpoints = SetpointsMixin()
         self.streams = StreamsMixin()
@@ -84,7 +82,6 @@ class RedisOperations:
             self.modes,
             self.pid,
             self.ramps,
-            self.schedules,
             self.sensors,
             self.setpoints,
             self.streams,
@@ -392,20 +389,6 @@ class RedisOperations:
     def clear_persisted_ramp(self, location: str, cluster: str, setpoint_type: str) -> bool:
         """Clear a persisted ramp after completion."""
         return self.ramps.clear_persisted_ramp(location, cluster, setpoint_type)
-
-    # ========================================================================
-    # Schedules - delegate to SchedulesMixin
-    # ========================================================================
-
-    def write_schedule_state(
-        self, location: str, cluster: str, schedule_data: dict[str, Any]
-    ) -> bool:
-        """Write schedule state to Redis."""
-        return self.schedules.write_schedule_state(location, cluster, schedule_data)
-
-    def read_schedule_state(self, location: str, cluster: str) -> dict[str, Any] | None:
-        """Read schedule state from Redis."""
-        return self.schedules.read_schedule_state(location, cluster)
 
     # ========================================================================
     # Streams - delegate to StreamsMixin

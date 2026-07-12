@@ -207,12 +207,6 @@ def schedule_state_legacy(location: str, cluster: str) -> str:
     return f"cea:schedule:{location}:{cluster}:state"
 
 
-def schedule_state_infix(location: str, cluster: str) -> str:
-    """``cea:schedule:state:{location}:{cluster}`` — legacy infix form.
-    Same data, different callers. Future consolidation will pick one."""
-    return f"cea:schedule:state:{location}:{cluster}"
-
-
 def schedule_state_short(location: str, cluster: str) -> str:
     """``schedule:state:{location}:{cluster}`` — third competing form
     without the ``cea:`` prefix. Present in older automation code paths."""
@@ -297,7 +291,6 @@ __all__ = [
     "schedule_doc_room_schedule",
     "schedule_doc_room_light_schedule",
     "schedule_state_legacy",
-    "schedule_state_infix",
     "schedule_state_short",
     # automation / failsafe
     "automation_decision",

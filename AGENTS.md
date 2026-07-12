@@ -159,8 +159,10 @@ ProjectCEA/
 - **Device Repository**: Manages device states and hardware configurations
 - **PID Repository**: Stores and retrieves PID controller parameters and tuning data
 - **RoomMode Repository**: Controls room operational modes and transitions
-- **Schedule Repository**: Manages light schedules and photoperiod controls
-- **Schedule cache invalidation**: `schedule_repo.get_schedules()` uses StateManager keys `schedules:all`, `schedules:loc:{location}`, and `schedules:loc:{location}:cluster:{cluster}`. Any write that changes `schedules` rows (especially `update_light_schedule_target` for POST `/api/lights/.../target`) must invalidate **all** keys that unfiltered `get_schedules()` can hit; otherwise the in-process `Scheduler` reloads stale rows and light targets lag the DB.
+- **Schedule Repository**: Manages non-light DAY/NIGHT schedule rows (heaters, fans, dehumidifiers). Light scheduling is handled by `light_target_intensity_repo` and `light_programs_repo`.
+- **LightTargetIntensity Repository**: Per-light, per-mode intensity anchors (replaces deprecated `mode_parameters.main_light_intensity`)
+- **LightPrograms Repository**: Supplemental and override light programs with time-slot and cycle mode support
+- **Schedule cache invalidation**: `schedule_repo.get_schedules()` uses StateManager keys `schedules:all`, `schedules:loc:{location}`, and `schedules:loc:{location}:cluster:{cluster}`. Any write that changes `schedules` rows must invalidate **all** keys that unfiltered `get_schedules()` can hit; otherwise the in-process `Scheduler` reloads stale rows and light targets lag the DB.
 - **Sensor Repository**: Handles sensor data validation and storage
 - **Setpoint Repository**: Manages environmental setpoints and targets
 - **Config Repository**: System configuration and parameter storage
@@ -189,10 +191,39 @@ Infrastructure/automation-service/app/repositories/
 │   ├── models.py         # Schedule data models
 │   ├── repository.py     # Schedule repository implementation
 │   └── routes.py         # Schedule API routes
+├── light_target_intensity.py  # Per-light intensity repository
+├── light_programs.py          # Light programs repository
 ├── sensor.py             # Sensor repository
 ├── setpoint.py           # Setpoint repository
 └── config.py             # Config repository
 ```
+
+### Schedule Architecture (3-Concept Model)
+
+**Concept 1: Photoperiod (from `mode_parameters`)**
+- **Single source of truth**: `mode_parameters.day_start_time` and `mode_parameters.night_start_time` per room, per mode
+- **Overnight-capable**: `day_start_time` can be > `night_start_time` (e.g., veg mode day_start=16:00, night_start=10:00 → 18h overnight photoperiod 16:00→10:00 next day)
+- **Scheduler**: `is_in_photoperiod()` reads from cached mode_parameters, handles overnight wrap
+- **Failsafe**: Missing mode_parameters → returns True (lights ON at 10%, never darkness) + CRITICAL alarm
+
+**Concept 2: Per-Light Intensity (from `light_target_intensity`)**
+- **Table**: `(device_id, mode_id) → target_intensity` with CHECK (0-100)
+- **Mode-specific**: Different intensities for veg vs flower modes
+- **Default**: 10% hardcoded failsafe if no row exists (visible low light, not darkness) + WARNING alarm
+- **DEPRECATED**: `mode_parameters.main_light_intensity` / `supplemental_light_intensity` columns still exist but are no longer read by the Scheduler
+
+**Concept 3: Light Programs (from `light_programs`)**
+- **Types**: `supplemental` (adds light during dark period) and `override` (replaces intensity during sun period)
+- **Modes**: Time-slot (start_time + end_time, overnight wrap supported) or cycle mode (on/off pulses within window)
+- **Resolution**: Priority DESC, ties broken by created_at ASC
+- **Scope**: Device-level (device_id) or room-level (device_id IS NULL); mode-specific or all modes (mode_id IS NULL)
+
+**Removed in T10:**
+- Per-device SUN/MOON rows for lights in `schedules` table (deleted via migration 04fbbb9b5ba4)
+- `room_schedule` rows in `schedules` table (photoperiod now comes from mode_parameters directly)
+- `expand_light_schedules_for_control()` runtime synthesis function
+- `SchedulesMixin` dead Redis code (`schedule:state:*`, `cea:schedule:*:state`, `cea:schedule:state:*` keys)
+- `_cache_key_room_schedule()` obsolete StateManager cache key
 
 ### Cluster Topology Contract (Critical)
 

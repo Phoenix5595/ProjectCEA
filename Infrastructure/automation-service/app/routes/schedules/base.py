@@ -19,10 +19,7 @@ from app.schemas.schedules import ScheduleCreate, ScheduleUpdate
 # Local imports
 from shared.infra_logging import get_logger
 
-from .utils import (
-    _build_schedule_state,
-    _ensure_light_schedules_are_daily,
-)
+from .utils import _ensure_light_schedules_are_daily
 
 if TYPE_CHECKING:
     from app.control.scheduler import Scheduler
@@ -141,17 +138,6 @@ async def create_schedule(
     if not created:
         raise HTTPException(status_code=500, detail="Schedule created but not found")
 
-    try:
-        redis_client = get_automation_redis()
-        if redis_client:
-            schedule_state = await _build_schedule_state(
-                database, schedule.location, schedule.cluster
-            )
-            redis_client.write_schedule_state(schedule.location, schedule.cluster, schedule_state)
-            logger.info(f"Wrote schedule state to Redis for {schedule.location}/{schedule.cluster}")
-    except Exception as e:
-        logger.warning(f"Failed to write schedule state to Redis: {e}")
-
     return created
 
 
@@ -251,21 +237,6 @@ async def update_schedule(
         await broadcast_schedule_update(schedule_id, updated)
     except Exception as e:
         logger.warning(f"Failed to broadcast schedule update: {e}")
-
-    try:
-        redis_client = get_automation_redis()
-        if redis_client:
-            schedule_state = await _build_schedule_state(
-                database, existing["location"], existing["cluster"]
-            )
-            redis_client.write_schedule_state(
-                existing["location"], existing["cluster"], schedule_state
-            )
-            logger.info(
-                f"Wrote schedule state to Redis for {existing['location']}/{existing['cluster']}"
-            )
-    except Exception as e:
-        logger.warning(f"Failed to write schedule state to Redis: {e}")
 
     return updated
 

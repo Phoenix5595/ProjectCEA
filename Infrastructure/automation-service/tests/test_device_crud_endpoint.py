@@ -342,14 +342,8 @@ class TestDeleteRegistryDevice:
             light.device_id, MagicMock(), device_repo, mock_db, _MockConfig()
         )
         assert result["success"] is True
-        assert result["deleted_schedules"] == 1
-
-        # Verify schedule is gone
-        async with device_repo.pool.acquire() as conn:
-            row = await conn.fetchrow(
-                "SELECT 1 FROM schedules WHERE device_name = $1", light.device_name
-            )
-        assert row is None
+        # T10: schedule cascade removed for lights (SUN/MOON rows deleted, no new ones created)
+        assert "deleted_schedules" not in result
 
         # Verify effective_setpoints are gone
         async with device_repo.pool.acquire() as conn:

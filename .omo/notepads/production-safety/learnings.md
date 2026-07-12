@@ -127,3 +127,39 @@
 - Bonus: get_light_intensity_details returns correct dict ✓
 - Bonus: Steady state has no ramp_progress ✓
 - Bonus: Dark period returns zero effective/nominal ✓
+
+## 2026-07-12 - T10 Complete: Remove Old Code References + Documentation Cleanup
+
+### Files Modified
+- `Infrastructure/automation-service/alembic/versions/04fbbb9b5ba4_remove_obsolete_light_schedule_rows.py` — new migration
+- `Infrastructure/automation-service/app/routes/lights.py` — get_zone_lights_status reads from light_target_intensity
+- `Infrastructure/automation-service/app/routes/schedules/room.py` — get_room_schedule reads from mode_parameters
+- `Infrastructure/automation-service/app/routes/schedules/base.py` — removed write_schedule_state calls
+- `Infrastructure/automation-service/app/routes/schedules/utils.py` — _build_schedule_state uses mode_parameters + light_target_intensity
+- `Infrastructure/automation-service/app/routes/devices_crud.py` — removed schedule cascade for lights
+- `Infrastructure/automation-service/app/routes/redis_state.py` — removed Redis read/write, DB-only
+- `Infrastructure/automation-service/app/redis/redis_operations.py` — removed SchedulesMixin import + delegates
+- `Infrastructure/automation-service/app/redis/__init__.py` — removed write/read_schedule_state delegates
+- `Infrastructure/automation-service/app/repositories/schedules.py` — deprecated get_room_schedule, removed _cache_key_room_schedule
+- `Infrastructure/automation-service/app/services/schedule_state.py` — load_schedule_state_to_redis is now no-op
+- `Infrastructure/shared/redis_keys.py` — removed schedule_state_infix
+- `AGENTS.md` — added Schedule Architecture (3-Concept Model) section
+- `ARCHITECTURE.md` — updated control loop description + light schedule section
+- `ARCHITECTURE_SCHEMATIC.md` — updated control loop + added schedule tables
+- `tests/test_device_crud_endpoint.py` — updated test_delete_light_with_cascade
+
+### Key Changes
+1. **Migration 04fbbb9b5ba4**: Deletes per-device SUN/MOON rows for lights and room_schedule rows. Includes pre-flight check to abort if any light lacks a light_target_intensity row. Downgrade is no-op (deleted data cannot be restored).
+2. **get_zone_lights_status**: Now queries light_target_intensity joined with device_registry to build a device_name→intensity map, replacing the old schedules_list-based SUN/DAY row lookup.
+3. **get_room_schedule**: Simplified to read day_start_time/night_start_time directly from mode_parameters for the active mode.
+4. **Dead Redis code removed**: SchedulesMixin class deleted entirely. All write_schedule_state/read_schedule_state callers updated to no longer write dead keys.
+5. **delete_registry_device**: No longer cascade-deletes schedules for lights (there are none to delete). effective_setpoints cascade remains.
+
+### Verification
+- `ruff check .` — passes
+- `pytest tests/ -q` — 295 passed, 3 warnings (pre-existing)
+- `tsc --noEmit` — passes
+- `grep -rn "expand_light_schedules_for_control" Infrastructure/` — returns nothing
+- `grep -rn "SchedulesMixin" Infrastructure/automation-service/app/redis/` — returns nothing (file deleted)
+- `grep -rn "schedule_state_infix" Infrastructure/` — returns nothing
+- `grep -rn "_cache_key_room_schedule" Infrastructure/automation-service/app/repositories/schedules.py` — returns nothing
