@@ -238,7 +238,7 @@ Your next move: approve, then `$start-work`. Full execution detail follows below
   QA scenarios: happy — repos correctly read/write new tables. failure — non-existent device_id/mode_id raises FK error. Evidence `.omo/evidence/task-4-production-safety.txt`
   Commit: Y | feat(repos): add light_target_intensity + light_programs repositories
 
-- [ ] 5. Rewrite Scheduler: is_in_photoperiod + get_schedule_intensity + light_programs evaluation
+- [x] 5. Rewrite Scheduler: is_in_photoperiod + get_schedule_intensity + light_programs evaluation
   What to do / Must NOT do:
   - **Add cached data to Scheduler.__init__():**
     - `self._mode_params: dict[tuple[str, str], dict]` — {(location, cluster): {mode_id, day_start, night_start, ramp_up, ramp_down}} — **must include mode_id** so `get_schedule_intensity()` can look up `self._light_intensities[(device_id, mode_id)]` without changing its signature.
@@ -300,7 +300,7 @@ Your next move: approve, then `$start-work`. Full execution detail follows below
   QA scenarios: happy — light_v_1 gets 30% from light_target_intensity during sun; light at 0% during dark; override program replaces intensity. failure — no mode_params → is_in_photoperiod returns True, get_schedule_intensity returns 10.0 + relay ON + CRITICAL alarm (NOT darkness). Evidence `.omo/evidence/task-5-production-safety.txt`
   Commit: Y | feat(scheduler): rewrite is_in_photoperiod + get_schedule_intensity for new architecture
 
-- [ ] 6. Load mode_parameters + light_target_intensity + light_programs into Scheduler at startup and on config changes
+- [x] 6. Load mode_parameters + light_target_intensity + light_programs into Scheduler at startup and on config changes
   What to do / Must NOT do:
   - **Startup gate:** Add an `asyncio.Event` (`self._scheduler_ready`) in the Scheduler or background_tasks. The control loop MUST `await self._scheduler_ready.wait()` before its first tick. Set the event after all four `update_*()` calls complete. This prevents the control loop from running with empty caches (which would cause the failsafe path or stale data).
   - In `background_tasks.py` startup (after database + config initialized, before first control loop tick):

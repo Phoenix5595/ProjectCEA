@@ -6,6 +6,7 @@ import asyncio
 from datetime import UTC, datetime
 import json
 import time
+from typing import Any
 
 from app.alarm_manager import AlarmManager
 from app.calendar.sync_worker import CalendarSyncWorker
@@ -66,6 +67,8 @@ class BackgroundTasks:
         self._degraded_active = False
         self._last_control_error_time: float = 0.0
         self._consecutive_control_errors: int = 0
+        self._scheduler_ready = asyncio.Event()
+        self._scheduler_loaded_once = False
 
     async def start(self) -> None:
         """Start background control loop and tasks."""
@@ -82,6 +85,16 @@ class BackgroundTasks:
         self._batch_flush_task = asyncio.create_task(self._batch_flush_loop())
         self._config_event_task = asyncio.create_task(self._config_event_consumer_loop())
         self._calendar_sync_task = asyncio.create_task(self._calendar_sync_loop())
+
+        # Load all scheduler data BEFORE first control loop tick
+        try:
+            await self._load_scheduler_data()
+            self._scheduler_ready.set()
+            logger.info("Scheduler data loaded and startup gate opened")
+        except Exception as e:
+            logger.error(f"Failed to load scheduler data at startup: {e}", exc_info=True)
+            # Gate remains unset; control loop will block until data is loaded
+
         try:
             scheduler = CalendarModeScheduler(self.database)
             await scheduler.run_catchup()
@@ -127,6 +140,83 @@ class BackgroundTasks:
         self.update_interval = max(1, min(CONTROL_LOOP_INTERVAL_MAX, int(interval)))
         logger.info(f"Control loop interval updated to {self.update_interval}s")
 
+    async def _load_scheduler_data(self) -> None:
+        """Load all 4 data sources into the Scheduler (atomic reference swaps).
+
+        Called at startup and by event handlers.  Builds:
+        - mode_parameters   : filtered to active mode per room/cluster
+        - light_intensities : all rows from light_target_intensity
+        - light_programs    : all rows from light_programs
+        - device_lookup     : flattened from config.get_devices()
+        """
+        scheduler = self.control_engine.scheduler
+        if scheduler is None:
+            logger.warning("No scheduler attached to control engine, skipping data load")
+            return
+
+        # 1. mode_parameters — filtered to active mode per room/cluster
+        mode_params: dict[tuple[str, str], dict[str, Any]] = {}
+        try:
+            devices = await self.control_engine.config.get_devices()
+            for location, clusters in devices.items():
+                for cluster in clusters:
+                    active_mode = await self.database.room_mode_repo.get_active_mode(
+                        location, cluster
+                    )
+                    if active_mode is None:
+                        continue
+                    mode_name = active_mode.get("mode_name")
+                    submode_name = active_mode.get("submode_name")
+                    if not mode_name:
+                        continue
+                    params = await self.database.room_mode_repo.get_mode_parameters(
+                        location, cluster, mode_name, submode_name
+                    )
+                    if params:
+                        mode_params[(location, cluster)] = {
+                            "mode_id": params.get("mode_id"),
+                            "day_start": params.get("day_start_time", "06:00"),
+                            "night_start": params.get("night_start_time", "18:00"),
+                            "ramp_up": params.get("light_ramp_up_minutes", 0),
+                            "ramp_down": params.get("light_ramp_down_minutes", 0),
+                        }
+            scheduler.update_mode_parameters(mode_params)
+        except Exception as e:
+            logger.error(f"Failed to load mode_parameters into scheduler: {e}", exc_info=True)
+
+        # 2. light_intensities — all rows
+        try:
+            intensities = await self.database.light_target_intensity_repo.get_all_intensities()
+            scheduler.update_light_intensities(intensities)
+        except Exception as e:
+            logger.error(f"Failed to load light_intensities into scheduler: {e}", exc_info=True)
+
+        # 3. light_programs — all rows
+        try:
+            programs = await self.database.light_programs_repo.get_all_programs()
+            scheduler.update_light_programs(programs)
+        except Exception as e:
+            logger.error(f"Failed to load light_programs into scheduler: {e}", exc_info=True)
+
+        # 4. device_lookup — flatten config.get_devices() hierarchy
+        try:
+            devices = await self.control_engine.config.get_devices()
+            device_lookup: dict[tuple[str, str, str], dict[str, Any]] = {}
+            for location, clusters in devices.items():
+                for cluster, devs in clusters.items():
+                    for device_name, info in devs.items():
+                        device_lookup[(location, cluster, device_name)] = dict(info)
+            scheduler.update_device_lookup(device_lookup)
+        except Exception as e:
+            logger.error(f"Failed to load device_lookup into scheduler: {e}", exc_info=True)
+
+        self._scheduler_loaded_once = True
+        logger.info(
+            "Scheduler data load complete: "
+            f"mode_params={len(mode_params)}, intensities={len(intensities)}, "
+            f"programs={len(programs)}, devices={len(device_lookup)}"
+        )
+
     async def _control_loop(self) -> None:
         """Main control loop - refactored as a worker pattern with fixed-rate scheduling."""
         retry_delay = 1.0
@@ -134,6 +224,10 @@ class BackgroundTasks:
 
         while self._running:
             try:
+                # Startup gate: wait for scheduler data load before first tick
+                if not self._scheduler_ready.is_set():
+                    await self._scheduler_ready.wait()
+
                 # Check database connection
                 if not self.database._db_connected:
                     # Try to reconnect
@@ -501,13 +595,14 @@ class BackgroundTasks:
                             )
 
                     if event.event_type == ConfigEventType.SCHEDULE_CHANGED:
-                        # Same handling as RAMP_TIMES_CHANGED - refresh schedules
+                        # Refresh schedules AND light-specific caches (NOT mode_params)
                         if not self.database._db_connected:
                             logger.warning(
                                 "Database not connected, cannot refresh schedules for event"
                             )
                             continue
 
+                        # 1. Refresh non-light schedules via merge_schedules_with_config
                         db_schedules = await self.database.schedule_repo.get_schedules()
                         if self.control_engine.scheduler:
                             merged = await merge_schedules_with_config(
@@ -519,12 +614,106 @@ class BackgroundTasks:
                                 + f"{len(merged)} schedules after SCHEDULE_CHANGED event"
                             )
 
+                        # 2. Reload light intensities + programs + device lookup
+                        scheduler = self.control_engine.scheduler
+                        if scheduler:
+                            try:
+                                intensities = await self.database.light_target_intensity_repo.get_all_intensities()
+                                scheduler.update_light_intensities(intensities)
+                            except Exception as e:
+                                logger.error(
+                                    f"Failed to reload light intensities on SCHEDULE_CHANGED: {e}"
+                                )
+                            try:
+                                programs = (
+                                    await self.database.light_programs_repo.get_all_programs()
+                                )
+                                scheduler.update_light_programs(programs)
+                            except Exception as e:
+                                logger.error(
+                                    f"Failed to reload light programs on SCHEDULE_CHANGED: {e}"
+                                )
+                            try:
+                                devices = await self.control_engine.config.get_devices()
+                                device_lookup: dict[tuple[str, str, str], dict[str, Any]] = {}
+                                for location, clusters in devices.items():
+                                    for cluster, devs in clusters.items():
+                                        for device_name, info in devs.items():
+                                            device_lookup[(location, cluster, device_name)] = dict(
+                                                info
+                                            )
+                                scheduler.update_device_lookup(device_lookup)
+                            except Exception as e:
+                                logger.error(
+                                    f"Failed to reload device lookup on SCHEDULE_CHANGED: {e}"
+                                )
+
                         # Invalidate schedule cache in StateManager
                         state = getattr(self.control_engine, "_state", None)
                         if state:
                             await state.delete(f"schedule:{event.location}:{event.cluster}")
 
                     if event.event_type == ConfigEventType.MODE_CHANGED:
+                        # Reload mode_parameters + intensities + programs (device_lookup unchanged)
+                        scheduler = self.control_engine.scheduler
+                        if scheduler and self.database._db_connected:
+                            # 1. mode_parameters for the affected room
+                            try:
+                                active_mode = await self.database.room_mode_repo.get_active_mode(
+                                    event.location, event.cluster
+                                )
+                                if active_mode:
+                                    mode_name = active_mode.get("mode_name")
+                                    submode_name = active_mode.get("submode_name")
+                                    if mode_name:
+                                        params = (
+                                            await self.database.room_mode_repo.get_mode_parameters(
+                                                event.location,
+                                                event.cluster,
+                                                mode_name,
+                                                submode_name,
+                                            )
+                                        )
+                                        if params:
+                                            # Merge into existing mode_params (atomic swap of full dict)
+                                            current_params = dict(scheduler._mode_params)
+                                            current_params[(event.location, event.cluster)] = {
+                                                "mode_id": params.get("mode_id"),
+                                                "day_start": params.get("day_start_time", "06:00"),
+                                                "night_start": params.get(
+                                                    "night_start_time", "18:00"
+                                                ),
+                                                "ramp_up": params.get("light_ramp_up_minutes", 0),
+                                                "ramp_down": params.get(
+                                                    "light_ramp_down_minutes", 0
+                                                ),
+                                            }
+                                            scheduler.update_mode_parameters(current_params)
+                            except Exception as e:
+                                logger.error(
+                                    f"Failed to reload mode_parameters on MODE_CHANGED: {e}"
+                                )
+
+                            # 2. light intensities
+                            try:
+                                intensities = await self.database.light_target_intensity_repo.get_all_intensities()
+                                scheduler.update_light_intensities(intensities)
+                            except Exception as e:
+                                logger.error(
+                                    f"Failed to reload light intensities on MODE_CHANGED: {e}"
+                                )
+
+                            # 3. light programs
+                            try:
+                                programs = (
+                                    await self.database.light_programs_repo.get_all_programs()
+                                )
+                                scheduler.update_light_programs(programs)
+                            except Exception as e:
+                                logger.error(
+                                    f"Failed to reload light programs on MODE_CHANGED: {e}"
+                                )
+
                         # Invalidate mode cache in StateManager
                         state = getattr(self.control_engine, "_state", None)
                         if state:
