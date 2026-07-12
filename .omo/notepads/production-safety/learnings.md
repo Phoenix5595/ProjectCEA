@@ -31,3 +31,10 @@
 - Production endpoints 8000/8001/8003: GET read-only only
 - File modified: AGENTS.md (project root)
 - Verification: grep confirms "Subagent QA Safety" and "PERMANENTLY BANNED" present
+
+## 2026-07-12 - T4 Starting: Repository Layer for light_target_intensity and light_programs
+- New repositories: `app/repositories/light_target_intensity.py` and `app/repositories/light_programs.py`
+- Added `get_mode_by_name(name: str) -> dict | None` to `RoomModeRepository`; replaces duplicated list-filter patterns
+- Both repos registered lazily in `DatabaseManager.__init__` and exposed as properties
+- Target intensity fallback: rows default to 10% via DB schema; callers use default if no row exists
+- Tests required: `tests/test_light_target_intensity_repo.py` and `tests/test_light_programs_repo.py`; must use `cea_sensors_test`

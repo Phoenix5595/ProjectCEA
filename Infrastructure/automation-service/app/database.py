@@ -19,6 +19,8 @@ from .repositories.climate_periods import ClimatePeriodRepository
 from .repositories.config import ConfigRepository
 from .repositories.control_actions import ControlActionRepository
 from .repositories.devices import DeviceRepository
+from .repositories.light_programs import LightProgramsRepository
+from .repositories.light_target_intensity import LightTargetIntensityRepository
 from .repositories.pid import PIDRepository
 from .repositories.room_modes import RoomModeRepository
 from .repositories.schedules import ScheduleRepository
@@ -58,6 +60,8 @@ class DatabaseManager:
         self._config_repo: ConfigRepository | None = None
         self._climate_periods_repo: ClimatePeriodRepository | None = None
         self._calendar_repo: CalendarRepository | None = None
+        self._light_target_intensity_repo: LightTargetIntensityRepository | None = None
+        self._light_programs_repo: LightProgramsRepository | None = None
 
     async def initialize(self) -> bool:
         """Initialize database connection and run migrations.
@@ -91,6 +95,8 @@ class DatabaseManager:
             self._config_repo = ConfigRepository(self._pool)
             self._climate_periods_repo = ClimatePeriodRepository(self._pool)
             self._calendar_repo = CalendarRepository(self._pool)
+            self._light_target_intensity_repo = LightTargetIntensityRepository(self._pool)
+            self._light_programs_repo = LightProgramsRepository(self._pool)
 
             return True
         except Exception as e:
@@ -215,6 +221,18 @@ class DatabaseManager:
         if not self._calendar_repo:
             raise RuntimeError("CalendarRepository not initialized")
         return self._calendar_repo
+
+    @property
+    def light_target_intensity_repo(self) -> LightTargetIntensityRepository:
+        if not self._light_target_intensity_repo:
+            raise RuntimeError("LightTargetIntensityRepository not initialized")
+        return self._light_target_intensity_repo
+
+    @property
+    def light_programs_repo(self) -> LightProgramsRepository:
+        if not self._light_programs_repo:
+            raise RuntimeError("LightProgramsRepository not initialized")
+        return self._light_programs_repo
 
     @property
     def automation_redis(self) -> AutomationRedisClient | None:
