@@ -182,8 +182,7 @@ async def get_room_mode_with_params(
 
     # If mode_id is still None, look it up from mode_name
     if mode_id is None:
-        modes = await db.room_mode_repo.get_room_modes()
-        mode_info = next((m for m in modes if m["name"] == mode_name), None)
+        mode_info = await db.room_mode_repo.get_mode_by_name(mode_name)
         mode_id = mode_info["id"] if mode_info else None
 
     # If submode_id is still None but we have a submode_name, look it up
@@ -235,8 +234,7 @@ async def set_room_mode(
     total_start = time.perf_counter()
 
     # Resolve IDs for the new transition service
-    modes = await db.room_mode_repo.get_room_modes()
-    mode_info = next((m for m in modes if m["name"] == request.mode_name), None)
+    mode_info = await db.room_mode_repo.get_mode_by_name(request.mode_name)
     if not mode_info:
         raise HTTPException(status_code=400, detail=f"Mode '{request.mode_name}' not found")
     mode_id = mode_info["id"]

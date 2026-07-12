@@ -79,6 +79,23 @@ class RoomModeRepository(BaseRepository):
             logger.error(f"Failed to get room mode by name '{name}': {e}")
             return None
 
+    async def get_mode_by_name(self, name: str) -> dict[str, Any] | None:
+        """Get a single room mode by exact name.
+
+        Query: SELECT * FROM room_modes WHERE name = $1 LIMIT 1
+        """
+        try:
+            async with self.pool.acquire() as conn_raw:
+                conn: Connection = cast("Connection", conn_raw)
+                row = await conn.fetchrow(
+                    "SELECT * FROM room_modes WHERE name = $1 LIMIT 1",
+                    name,
+                )
+                return dict(row) if row else None
+        except Exception as e:
+            logger.error(f"Failed to get mode by name '{name}': {e}")
+            return None
+
     async def get_flower_submodes(self) -> list[dict[str, Any]]:
         """Get flower submodes."""
         try:

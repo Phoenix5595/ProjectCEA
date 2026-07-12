@@ -205,7 +205,7 @@ Your next move: approve, then `$start-work`. Full execution detail follows below
   QA scenarios: happy — AGENTS.md has the rule. failure — rule missing. Evidence `.omo/evidence/task-3-production-safety.txt`
   Commit: Y | docs(agents): ban F3 from production HTTP, define static-checks-only QA protocol
 
-- [ ] 4. Create repositories for light_target_intensity + light_programs CRUD
+- [x] 4. Create repositories for light_target_intensity + light_programs CRUD
   What to do / Must NOT do:
   - **Add `get_mode_by_name(name: str) -> dict | None` to `RoomModeRepository`** (`repositories/room_modes.py`): The existing code in `room_modes.py:184-187` and `room_modes.py:238-242` duplicates a list-filter pattern: `modes = await db.room_mode_repo.get_room_modes(); mode_info = next((m for m in modes if m["name"] == mode_name), None)`. Replace with a clean repository method: `SELECT * FROM room_modes WHERE name = $1 LIMIT 1`. Update the 2 existing call sites to use the new method. This is needed by T7 and T8 which both need mode-by-name lookup for the "veg" fallback.
   - Create `Infrastructure/automation-service/app/repositories/light_target_intensity.py`:
