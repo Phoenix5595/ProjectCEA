@@ -285,7 +285,7 @@
       "plan_name": "production-safety",
       "status": "active",
       "started_at": "2026-07-12T12:44:41.062Z",
-      "updated_at": "2026-07-12T14:24:48.001Z",
+      "updated_at": "2026-07-12T14:31:09.659Z",
       "session_ids": [
         "opencode:ses_0e70fc228ffeBshhzGKaAPSeMu"
       ],
@@ -327,8 +327,21 @@
           "session_id": "opencode:ses_0a950d2b7ffedVo5ZaPa07jXsq",
           "agent": "Sisyphus-Junior",
           "category": "quick",
-          "updated_at": "2026-07-12T14:24:48.002Z",
+          "updated_at": "2026-07-12T14:27:14.151Z",
           "started_at": "2026-07-12T14:24:48.002Z",
+          "status": "completed",
+          "ended_at": "2026-07-12T14:27:14.151Z",
+          "elapsed_ms": 146149
+        },
+        "todo:10": {
+          "task_key": "todo:10",
+          "task_label": "10",
+          "task_title": "Remove old code references + documentation cleanup (AGENTS.md, ARCHITECTURE.md, SCHEMATIC, old tests)",
+          "session_id": "opencode:ses_0a945e71cffefeGE1uLZk3keJg",
+          "agent": "Sisyphus-Junior",
+          "category": "unspecified-high",
+          "updated_at": "2026-07-12T14:31:09.659Z",
+          "started_at": "2026-07-12T14:31:09.659Z",
           "status": "running"
         }
       }
@@ -374,15 +387,28 @@
       "session_id": "opencode:ses_0a950d2b7ffedVo5ZaPa07jXsq",
       "agent": "Sisyphus-Junior",
       "category": "quick",
-      "updated_at": "2026-07-12T14:24:48.002Z",
+      "updated_at": "2026-07-12T14:27:14.151Z",
       "started_at": "2026-07-12T14:24:48.002Z",
+      "status": "completed",
+      "ended_at": "2026-07-12T14:27:14.151Z",
+      "elapsed_ms": 146149
+    },
+    "todo:10": {
+      "task_key": "todo:10",
+      "task_label": "10",
+      "task_title": "Remove old code references + documentation cleanup (AGENTS.md, ARCHITECTURE.md, SCHEMATIC, old tests)",
+      "session_id": "opencode:ses_0a945e71cffefeGE1uLZk3keJg",
+      "agent": "Sisyphus-Junior",
+      "category": "unspecified-high",
+      "updated_at": "2026-07-12T14:31:09.659Z",
+      "started_at": "2026-07-12T14:31:09.659Z",
       "status": "running"
     }
   },
   "active_plan": "/home/antoine/ProjectCEA/.omo/plans/production-safety.md",
   "plan_name": "production-safety",
   "status": "active",
-  "updated_at": "2026-07-12T14:24:48.001Z",
+  "updated_at": "2026-07-12T14:31:09.659Z",
   "started_at": "2026-07-12T12:44:41.062Z",
   "agent": "atlas"
 }

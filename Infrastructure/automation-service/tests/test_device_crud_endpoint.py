@@ -8,6 +8,8 @@ behaviour on light deletion.
 from __future__ import annotations
 
 import asyncpg
+from unittest.mock import MagicMock
+
 from fastapi import HTTPException
 import pytest
 import pytest_asyncio
@@ -33,11 +35,13 @@ class _MockConfig:
 
 
 class _MockDatabase:
-    """Minimal stand-in for DatabaseManager exposing pool and schedule_repo."""
+    """Minimal stand-in for DatabaseManager exposing required repos."""
 
     def __init__(self, pool: asyncpg.Pool, schedule_repo: ScheduleRepository) -> None:
         self._pool = pool
         self.schedule_repo = schedule_repo
+        self.light_target_intensity_repo = MagicMock()
+        self.room_mode_repo = MagicMock()
 
     async def _get_pool(self) -> asyncpg.Pool:
         return self._pool
@@ -123,7 +127,7 @@ class TestCreateRegistryDevice:
             "room": "Flower Room",
             "display_name": "Test Light",
         }
-        result = await create_registry_device(body, device_repo, _MockConfig())
+        result = await create_registry_device(body, device_repo, mock_db, _MockConfig())
         assert isinstance(result, LightDevice)
         assert result.device_type == "light"
         assert result.location == "Flower Room"
@@ -133,7 +137,7 @@ class TestCreateRegistryDevice:
     async def test_create_light_missing_device_type(self, device_repo, clean_registry):
         body = {"board_id": 0, "dimming_channel": 0, "room": "Flower Room", "display_name": "X"}
         with pytest.raises(HTTPException) as exc_info:
-            await create_registry_device(body, device_repo, _MockConfig())
+            await create_registry_device(body, device_repo, mock_db, _MockConfig())
         assert exc_info.value.status_code == 400
         assert "device_type is required" in exc_info.value.detail
 
@@ -154,7 +158,7 @@ class TestCreateRegistryDevice:
             "display_name": "Conflict",
         }
         with pytest.raises(HTTPException) as exc_info:
-            await create_registry_device(body, device_repo, _MockConfig())
+            await create_registry_device(body, device_repo, mock_db, _MockConfig())
         assert exc_info.value.status_code == 409
 
     @pytest.mark.asyncio
@@ -165,7 +169,7 @@ class TestCreateRegistryDevice:
             "display_name": "Heater 1",
             "channel": 0,
         }
-        result = await create_registry_device(body, device_repo, _MockConfig())
+        result = await create_registry_device(body, device_repo, mock_db, _MockConfig())
         assert isinstance(result, Device)
         assert result.device_type == "heating"
         assert result.channel == 0
@@ -182,7 +186,7 @@ class TestCreateRegistryDevice:
             "channel": 0,
         }
         with pytest.raises(HTTPException) as exc_info:
-            await create_registry_device(body, device_repo, _MockConfig())
+            await create_registry_device(body, device_repo, mock_db, _MockConfig())
         assert exc_info.value.status_code == 409
 
     @pytest.mark.asyncio
@@ -194,7 +198,7 @@ class TestCreateRegistryDevice:
             "channel": 0,
         }
         with pytest.raises(HTTPException) as exc_info:
-            await create_registry_device(body, device_repo, _MockConfig())
+            await create_registry_device(body, device_repo, mock_db, _MockConfig())
         assert exc_info.value.status_code == 400
 
     @pytest.mark.asyncio
@@ -213,7 +217,7 @@ class TestCreateRegistryDevice:
             "room": "Flower Room",
             "display_name": "L2",
         }
-        result = await create_registry_device(body, device_repo, _MockConfig())
+        result = await create_registry_device(body, device_repo, mock_db, _MockConfig())
         assert isinstance(result, LightDevice)
         assert result.per_room_index == 2
 
@@ -294,7 +298,9 @@ class TestDeleteRegistryDevice:
         device = await device_repo.create_device(
             DeviceCreate(device_type="heating", room="Flower Room", display_name="H", channel=0)
         )
-        result = await delete_registry_device(device.device_id, device_repo, mock_db, _MockConfig())
+        result = await delete_registry_device(
+            device.device_id, MagicMock(), device_repo, mock_db, _MockConfig()
+        )
         assert result["success"] is True
         assert result["device_id"] == device.device_id
 
@@ -332,7 +338,9 @@ class TestDeleteRegistryDevice:
                 80.0,
             )
 
-        result = await delete_registry_device(light.device_id, device_repo, mock_db, _MockConfig())
+        result = await delete_registry_device(
+            light.device_id, MagicMock(), device_repo, mock_db, _MockConfig()
+        )
         assert result["success"] is True
         assert result["deleted_schedules"] == 1
 
@@ -353,7 +361,7 @@ class TestDeleteRegistryDevice:
     @pytest.mark.asyncio
     async def test_delete_not_found(self, device_repo, clean_registry, mock_db):
         with pytest.raises(HTTPException) as exc_info:
-            await delete_registry_device(99999, device_repo, mock_db, _MockConfig())
+            await delete_registry_device(99999, MagicMock(), device_repo, mock_db, _MockConfig())
         assert exc_info.value.status_code == 404
 
     @pytest.mark.asyncio
@@ -368,7 +376,9 @@ class TestDeleteRegistryDevice:
             per_room_index=1,
         )
         await device_repo.bind_relay(light.device_id, 5)
-        result = await delete_registry_device(light.device_id, device_repo, mock_db, _MockConfig())
+        result = await delete_registry_device(
+            light.device_id, MagicMock(), device_repo, mock_db, _MockConfig()
+        )
         assert result["success"] is True
         assert "warning" in result
         assert "relay channel 5" in result["warning"]
