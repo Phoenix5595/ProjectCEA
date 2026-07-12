@@ -518,9 +518,30 @@ async def get_zone_lights_status(
             # Zone status is best-effort; a mode lookup miss should not hide light rows.
             moon_authority_mode = False
 
-    schedules_list: list[dict[str, Any]] = []
+    # Build device_name -> target_intensity map from light_target_intensity for active mode
+    light_targets: dict[str, float] = {}
     if database:
-        schedules_list = await database.schedule_repo.get_schedules(location, cluster)
+        try:
+            active_mode = await database.room_mode_repo.get_active_mode(location, cluster)
+            if active_mode:
+                mode_id = active_mode.get("mode_id")
+                if mode_id is not None:
+                    pool = await database._get_pool()
+                    async with pool.acquire() as conn:
+                        rows = await conn.fetch(
+                            """SELECT dr.device_name, lti.target_intensity
+                               FROM light_target_intensity lti
+                               JOIN device_registry dr ON dr.device_id = lti.device_id
+                               WHERE dr.location = $1 AND dr.cluster = $2 AND lti.mode_id = $3""",
+                            location,
+                            cluster,
+                            mode_id,
+                        )
+                        light_targets = {
+                            r["device_name"]: float(r["target_intensity"]) for r in rows
+                        }
+        except Exception as e:
+            logger.error(f"Failed to load light targets for {location}/{cluster}: {e}")
 
     lights_out: list[dict[str, Any]] = []
     seen_device_names: set[str] = set()
@@ -601,39 +622,15 @@ async def get_zone_lights_status(
             scheduler_nominal_intensity = 0.0
             scheduler_is_in_photoperiod = False
 
+        # Derive active schedule mode from photoperiod state (replaces schedules_list lookup)
         active_schedule_mode: str | None = None
-        for s in schedules_list:
-            if not _schedule_row_active_for_device(s, device_name, now, scheduler):
-                continue
-            active_schedule_mode = str(s.get("mode") or "").upper() or None
-            break
+        if scheduler_is_in_photoperiod is not None:
+            active_schedule_mode = "SUN" if scheduler_is_in_photoperiod else "MOON"
         if moon_authority_mode:
             active_schedule_mode = "MOON"
 
-        # Prefer SUN/DAY target from the row that is active at ``now`` (matches Scheduler semantics).
-        sun_day_target: float | None = None
-        for s in schedules_list:
-            if not _schedule_row_active_for_device(s, device_name, now, scheduler):
-                continue
-            mode = str(s.get("mode") or "").upper()
-            if mode in ("SUN", "DAY") and s.get("target_intensity") is not None:
-                sun_day_target = float(s["target_intensity"])
-                break
-
-        # Moon / outside sun window: active row is MOON/NIGHT, so the loop above yields None even though
-        # POST /target updates enabled SUN/DAY rows. Surface stored sun target for ZoneConfig sliders.
-        if sun_day_target is None:
-            for s in schedules_list:
-                if s.get("device_name") != device_name:
-                    continue
-                if s.get("enabled") is False:
-                    continue
-                mode = str(s.get("mode") or "").upper()
-                if mode in ("SUN", "DAY") and s.get("target_intensity") is not None:
-                    sun_day_target = float(s["target_intensity"])
-                    break
-
-        day_target_intensity = sun_day_target
+        # Day target from light_target_intensity (replaces SUN/DAY schedule row lookup)
+        day_target_intensity = light_targets.get(device_name)
         if day_target_intensity is None and payload.get("target_intensity") is not None:
             day_target_intensity = float(payload["target_intensity"])
 
@@ -642,7 +639,6 @@ async def get_zone_lights_status(
                 **payload,
                 "display_name": device_info.get("display_name"),
                 "day_target_intensity": day_target_intensity,
-                # Same as day_target_intensity: SUN/DAY row target in DB (what ZoneConfig POST /target updates).
                 "schedule_sun_target_intensity": day_target_intensity,
                 "scheduler_effective_intensity": scheduler_effective_intensity,
                 "scheduler_nominal_intensity": scheduler_nominal_intensity,

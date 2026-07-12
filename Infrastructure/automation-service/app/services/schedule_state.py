@@ -93,50 +93,13 @@ async def load_schedule_state_to_redis(
     schedule_repo: ScheduleRepository,
     climate_periods_repo: ClimatePeriodRepository,
 ) -> None:
-    """Load all schedule state from database to Redis following canonical schema.
+    """DEPRECATED: Schedule state Redis keys are dead code (T10 cleanup).
 
-    Queries all room schedules, climate schedules, and climate periods from DB,
-    groups by location/cluster, and writes to Redis state.
-    Called on service startup to populate Redis with current schedule configuration.
+    Previously loaded schedule state from DB to Redis. The SchedulesMixin
+    that consumed these keys has been removed. This function is kept as a
+    no-op to avoid breaking startup callers; it logs once and returns.
     """
-    if not redis_client or not getattr(redis_client, "redis_enabled", False):
-        logger.warning("Redis not enabled, skipping schedule state load")
-        return
-
-    try:
-        async with pool.acquire() as conn:
-            # Get all unique location/cluster pairs from schedules and climate_periods
-            rows = await conn.fetch("""
-                SELECT DISTINCT location, cluster
-                FROM schedules
-                UNION
-                SELECT DISTINCT location, cluster
-                FROM climate_periods
-            """)
-
-            locations_loaded = []
-
-            for row in rows:
-                location = row["location"]
-                cluster = row["cluster"]
-
-                try:
-                    schedule_state = await build_schedule_state(
-                        schedule_repo, climate_periods_repo, location, cluster
-                    )
-
-                    # Write to Redis
-                    redis_client.write_schedule_state(location, cluster, schedule_state)
-                    locations_loaded.append(f"{location}/{cluster}")
-                    logger.info(f"Loaded schedule state to Redis for {location}/{cluster}")
-                except Exception as e:
-                    logger.warning(f"Failed to load schedule state for {location}/{cluster}: {e}")
-
-            if locations_loaded:
-                logger.info(
-                    f"Loaded schedule state to Redis for {len(locations_loaded)} locations: {', '.join(locations_loaded)}"
-                )
-            else:
-                logger.info("No schedule state to load (no locations found in database)")
-    except Exception as e:
-        logger.error(f"Error loading schedule state to Redis: {e}", exc_info=True)
+    logger.info(
+        "load_schedule_state_to_redis is deprecated and does nothing "
+        "(SchedulesMixin removed in T10)"
+    )

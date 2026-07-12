@@ -1,6 +1,6 @@
 # ProjectCEA – Architecture Schematic (Plan-Agent Style)
 
-**Last updated (deployed):** 2026-03-26 — Climate periods migration: light/climate decoupled, scheduler uses climate_periods table (named periods with ramp_minutes).
+**Last updated (deployed):** 2026-07-12 — Schedule architecture redesign: photoperiod from mode_parameters, per-light intensity from light_target_intensity, light_programs for supplemental/override; removed runtime synthesis and dead Redis schedule-state code.
 
 > This file is the plan-style schematic: diagram-first, structured sections. Keep in sync with `ARCHITECTURE.md`. When deploying relevant changes, update both and copy previous versions to **`archive/`** (project root) with dated filenames.
 
@@ -122,11 +122,27 @@ sequenceDiagram
 
 1. Read `sensor:*` from Redis.
 2. Load config (zones, setpoints) from DB.
-3. Scheduler: light mode (DAY/NIGHT sun/moon) + climate periods (named periods with ramp_minutes); effective setpoints resolved from climate_periods.
+3. **Scheduler** (startup-gated by `asyncio.Event`):
+   - Photoperiod: `mode_parameters.day_start_time/night_start_time` → `is_in_photoperiod()`
+   - Intensity: `light_target_intensity` table (mode-specific, per-device)
+   - Programs: `light_programs` table (supplemental/override, priority-based)
+   - Climate: `climate_periods` (named periods with ramp_minutes)
 4. PID + VPD cascade; safety interlocks.
 5. Device commands → MCP/DFR; state → Redis `automation:*` and DB.
 
 **Tick:** 1–5 s (configurable; max 5 s non-negotiable).
+
+**Schedule-related tables:**
+
+| Table | Purpose | Key Columns |
+|-------|---------|-------------|
+| `mode_parameters` | Photoperiod + ramp durations (room-level, per-mode) | `day_start_time`, `night_start_time`, `light_ramp_up_minutes`, `light_ramp_down_minutes` |
+| `light_target_intensity` | Per-light intensity (mode-specific) | `device_id`, `mode_id`, `target_intensity` (default 10%) |
+| `light_programs` | Supplemental/override programs | `program_type`, `start_time`, `end_time`, `cycle_enabled`, `priority` |
+| `schedules` | Non-light DAY/NIGHT rows only | `device_name`, `mode` (DAY/NIGHT), `start_time`, `end_time` |
+| `climate_periods` | Climate setpoints (independent of light) | `period_name`, `start_time`, `end_time`, `ramp_minutes`, setpoints |
+
+**Removed (T10):** `room_schedule` rows, per-device SUN/MOON rows for lights, `expand_light_schedules_for_control()` runtime synthesis, `SchedulesMixin` dead Redis code.
 
 ---
 

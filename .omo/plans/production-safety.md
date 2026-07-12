@@ -562,7 +562,7 @@ Your next move: approve, then `$start-work`. Full execution detail follows below
   QA scenarios: happy — validation detects missing config and raises alarms. failure — AlarmManager None → doesn't crash. Evidence `.omo/evidence/task-9-production-safety.txt`
   Commit: Y | fix(control): remove runtime synthesis, integrate AlarmManager for missing schedule detection
 
-- [ ] 10. Remove old code references + documentation cleanup (AGENTS.md, ARCHITECTURE.md, SCHEMATIC, old tests)
+- [x] 10. Remove old code references + documentation cleanup (AGENTS.md, ARCHITECTURE.md, SCHEMATIC, old tests)
   What to do / Must NOT do:
   - **Remove old per-device SUN/MOON rows for lights from the schedules table:**
     ```sql
@@ -663,7 +663,7 @@ Your next move: approve, then `$start-work`. Full execution detail follows below
   QA scenarios: happy — all old references removed, documentation updated, no broken imports, dead Redis code gone, stale keys purged. failure — grep finds stale references, tests fail on missing imports. Evidence `.omo/evidence/task-10-production-safety.txt`
   Commit: Y | refactor: remove old schedule references, clean up documentation and tests
 
-- [ ] 11. Final: deploy all changes + verify schedule architecture, DELETE guard, alarms, frontend, dfr-panel-cleanup
+- [x] 11. Final: deploy all changes + verify schedule architecture, DELETE guard, alarms, frontend, dfr-panel-cleanup
   What to do / Must NOT do:
   - Run `./deploy.sh` from project root.
   - After deploy, verify:

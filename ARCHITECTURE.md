@@ -1,6 +1,6 @@
 # ProjectCEA – System Architecture
 
-**Last updated (deployed):** 2026-03-26 — Climate periods migration: light/climate decoupled, old 4-period setpoint model removed, ClimatePeriodsTable/Timeline in frontend.
+**Last updated (deployed):** 2026-07-12 — Schedule architecture redesign: photoperiod from mode_parameters, per-light intensity from light_target_intensity, light_programs for supplemental/override; removed runtime synthesis, per-device SUN/MOON rows, room_schedule rows, and dead SchedulesMixin Redis code.
 
 **Plan-style schematic:** **`ARCHITECTURE_SCHEMATIC.md`** (Mermaid + tables). Update both when the architecture changes and a deploy is done.
 
@@ -225,7 +225,7 @@ WS   /ws/{location}                             # WebSocket live updates
 **Control Loop Architecture**:
 1. **Sensor Data Acquisition**: Redis `sensor:*` key retrieval (<1ms latency)
 2. **Configuration Loading**: Database snapshot of zones, devices, setpoints
-3. **Scheduler Processing**: Time-based mode determination and setpoint calculation (`merge_schedules_with_config` adds synthetic **SUN** from `room_schedule` and synthetic **MOON** as the photoperiod complement when missing, so `get_light_intensity_details` always resolves)
+3. **Scheduler Processing**: Time-based mode determination and setpoint calculation. Photoperiod comes from `mode_parameters` (room-level, single source of truth). Per-light intensity comes from `light_target_intensity` table (mode-specific). Light programs (`light_programs` table) provide supplemental/override schedules. No runtime synthesis — all data is pre-loaded into Scheduler caches at startup.
 4. **Control Algorithm Execution**: PID controllers + VPD cascade logic
 5. **Safety Interlock Evaluation**: Equipment protection and failure detection
 6. **Device Command Generation**: Relay and PWM output calculations
@@ -392,26 +392,43 @@ Where:
 - **Derivative Kick Elimination**: Setpoint change filtering
 - **Low-Pass Filtering**: Reduces derivative noise sensitivity
 
-### Light Schedule and Ramp Management
+### Light Schedule Architecture (3-Concept Model)
 
-**Photoperiod Control**:
-- **Sun Period**: Lights ON with configurable intensity ramping
-- **Moon Period**: Lights OFF (0% intensity)
-- **Climate Periods**: Named periods (from `climate_periods` table) with configurable ramp_minutes; drives temperature, humidity, CO2 setpoints independently of light schedule
+**Concept 1: Photoperiod (from `mode_parameters`)**
+- **Source**: `mode_parameters.day_start_time` and `mode_parameters.night_start_time` (per room, per mode)
+- **Overnight-capable**: `day_start_time` can be > `night_start_time` (e.g., veg mode day_start=16:00, night_start=10:00 → 18h overnight photoperiod from 16:00 to 10:00 next day)
+- **Scheduler**: `is_in_photoperiod()` reads from cached mode_parameters and handles overnight wrap
+- **Failsafe**: Missing mode_parameters → returns True (lights ON at 10%, never darkness) + CRITICAL alarm
+
+**Concept 2: Per-Light Intensity (from `light_target_intensity`)**
+- **Source**: `light_target_intensity` table — `(device_id, mode_id) → target_intensity`
+- **Mode-specific**: Different intensities for veg vs flower modes
+- **Default**: 10% hardcoded failsafe if no row exists (visible low light, not darkness) + WARNING alarm
+- **Deprecated**: `mode_parameters.main_light_intensity` / `supplemental_light_intensity` columns still exist but are no longer read by the Scheduler
+
+**Concept 3: Light Programs (from `light_programs`)**
+- **Purpose**: Supplemental (adds light during dark) and override (replaces intensity during sun) programs
+- **Modes**: Time-slot mode (start_time + end_time, overnight wrap supported) or cycle mode (on/off pulses within window)
+- **Resolution**: Priority-based (highest wins, ties broken by created_at ASC)
+- **Scope**: Device-level or room-level; mode-specific or all modes
 
 **Ramp Calculation Algorithm**:
 ```
 intensity = min(100, (elapsed_time / ramp_duration) × 100)
 Where:
 - elapsed_time = time_since_schedule_start
-- ramp_duration = configurable (0-240 minutes)
-- Intensity never undefined: either computed or 0%
+- ramp_duration = mode_parameters.light_ramp_up_minutes / light_ramp_down_minutes
+- Intensity never undefined: 10% default if config missing, 0% during dark
 ```
 
 **Time-Based State Recovery**:
 - **Service Restart**: Ramps resume based on elapsed time, not stored intensity
-- **Schedule Persistence**: Sun/moon periods stored in database
-- **Device Independence**: Each light device maintains separate ramp state
+- **Startup Gate**: `asyncio.Event` prevents control loop from ticking until all Scheduler caches are loaded
+- **Device Independence**: Each light device maintains separate ramp state; program ramps use separate state keys from photoperiod ramps
+
+**Non-Light Device Schedules**:
+- **DAY/NIGHT rows** in `schedules` table control ON/OFF enable for heaters, fans, dehumidifiers
+- **Climate periods** (`climate_periods` table) drive temperature, humidity, CO2 setpoints independently of light schedule
 
 ## Safety Systems & Interlocks
 

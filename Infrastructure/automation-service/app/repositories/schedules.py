@@ -38,10 +38,6 @@ class ScheduleRepository(BaseRepository):
     def _cache_key_room_light(location: str, cluster: str) -> str:
         return f"schedules:loc:{location}:cluster:{cluster}:room_light_schedule"
 
-    @staticmethod
-    def _cache_key_room_schedule(location: str, cluster: str) -> str:
-        return f"schedules:loc:{location}:cluster:{cluster}:room_schedule"
-
     async def _publish_schedule_changed(
         self,
         location: str | None,
@@ -476,38 +472,11 @@ class ScheduleRepository(BaseRepository):
             return 0
 
     async def get_room_schedule(self, location: str, cluster: str) -> dict[str, Any] | None:
-        """Get room schedule (day/night times) for a location/cluster."""
-        state = get_state_manager()
-        cache_key = self._cache_key_room_schedule(location, cluster)
-        try:
-            cached = await state.get(cache_key)
-            if cached is not None:
-                return cast(dict[str, Any], cached)
-            async with self.pool.acquire() as conn:
-                row = await conn.fetchrow(
-                    """
-                    SELECT start_time, end_time, ramp_up_duration, ramp_down_duration
-                    FROM schedules
-                    WHERE location = $1 AND cluster = $2 AND device_name = 'room_schedule'
-                    ORDER BY created_at DESC
-                    LIMIT 1
-                    """,
-                    location,
-                    cluster,
-                )
-                if row:
-                    data = {
-                        "day_start_time": str(row["start_time"]),
-                        "day_end_time": str(row["end_time"]),
-                        "night_start_time": str(row["end_time"]),  # Inferred
-                        "night_end_time": str(row["start_time"]),  # Inferred
-                        "ramp_up_duration": row["ramp_up_duration"] or 30,
-                        "ramp_down_duration": row["ramp_down_duration"] or 15,
-                    }
-                    await state.set(cache_key, data)
-                    return data
-        except Exception as e:
-            logger.error(f"Failed to get room schedule: {e}")
+        """Get room schedule (day/night times) for a location/cluster.
+
+        DEPRECATED: room_schedule rows are deleted in T10. This method now
+        returns None so callers fall back to mode_parameters.
+        """
         return None
 
     async def update_light_schedule_ramp_times(
@@ -544,7 +513,6 @@ class ScheduleRepository(BaseRepository):
                         # Clear location-specific keys
                         await s.delete(self._cache_key_schedules(location, cluster))
                         await s.delete(self._cache_key_room_light(location, cluster))
-                        await s.delete(self._cache_key_room_schedule(location, cluster))
                         # Clear global schedules cache - critical for consistency
                         await s.delete(self._cache_key_schedules(None, None))
                     except Exception as e:

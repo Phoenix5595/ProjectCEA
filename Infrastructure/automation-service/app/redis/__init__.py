@@ -455,20 +455,6 @@ class AutomationRedisClient:
         return self.ops.clear_persisted_ramp(location, cluster, setpoint_type)
 
     # ========================================================================
-    # Schedules - delegate to ops.schedules
-    # ========================================================================
-
-    def write_schedule_state(
-        self, location: str, cluster: str, schedule_data: dict[str, Any]
-    ) -> bool:
-        """Write schedule state to Redis."""
-        return self.ops.write_schedule_state(location, cluster, schedule_data)
-
-    def read_schedule_state(self, location: str, cluster: str) -> dict[str, Any] | None:
-        """Read schedule state from Redis."""
-        return self.ops.read_schedule_state(location, cluster)
-
-    # ========================================================================
     # Streams - delegate to ops.streams
     # ========================================================================
 
