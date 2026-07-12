@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from app.config import ConfigLoader
 from app.database import DatabaseManager
@@ -22,6 +22,7 @@ from app.models.device_registry import (
     LightDeviceUpdate,
 )
 from app.repositories.devices import DeviceRepository, _room_prefix
+from shared.fastapi_helpers import is_production
 from shared.infra_logging import get_logger
 
 logger = get_logger(__name__)
@@ -207,6 +208,10 @@ async def update_registry_device(
             update_fields["relay_channel"] = light_update.relay_channel
         if light_update.safety_level is not None:
             update_fields["safety_level"] = light_update.safety_level
+        if "board_id" in light_fields:
+            update_fields["dimming_board_id"] = light_fields["board_id"]
+        if "dimming_channel" in light_fields:
+            update_fields["dimming_channel"] = light_fields["dimming_channel"]
 
         # Relay channel conflict check for lights on update
         if "relay_channel" in update_fields and update_fields["relay_channel"] is not None:
@@ -223,6 +228,27 @@ async def update_registry_device(
                                 detail=(
                                     f"Relay channel {update_fields['relay_channel']} already occupied by "
                                     f"{loc}/{clu}/{dev_name}"
+                                ),
+                            )
+
+        # DFR channel conflict check for lights on update
+        if "dimming_board_id" in update_fields and update_fields["dimming_board_id"] is not None:
+            hierarchy = await device_repo.get_all_as_hierarchy()
+            for loc, clusters in hierarchy.items():
+                for clu, devices in clusters.items():
+                    for dev_name, dev_info in devices.items():
+                        if (
+                            dev_info.get("dimming_board_id") == update_fields["dimming_board_id"]
+                            and dev_info.get("dimming_channel")
+                            == update_fields.get("dimming_channel")
+                            and dev_info.get("device_id") != device_id
+                        ):
+                            raise HTTPException(
+                                status_code=409,
+                                detail=(
+                                    f"DFR channel already occupied by {loc}/{clu}/{dev_name} "
+                                    f"(board_id={update_fields['dimming_board_id']}, "
+                                    f"channel={update_fields.get('dimming_channel')})"
                                 ),
                             )
 
@@ -280,6 +306,7 @@ async def update_registry_device(
 @router.delete("/api/devices/registry/{device_id}")
 async def delete_registry_device(
     device_id: int,
+    request: Request,
     device_repo: DeviceRepository = Depends(get_device_repo),
     database: DatabaseManager = Depends(get_database),
     config: ConfigLoader = Depends(get_config),
@@ -288,6 +315,12 @@ async def delete_registry_device(
 
     For lights: cascades schedule and effective_setpoint cleanup.
     """
+    if is_production() and request.headers.get("X-Confirm-Destructive") != "true":
+        raise HTTPException(
+            status_code=403,
+            detail="Destructive operation on device_registry requires X-Confirm-Destructive: true header in production.",
+        )
+
     current_type = await device_repo.get_device_type_by_id(device_id)
     if current_type is None:
         raise HTTPException(status_code=404, detail=f"Device {device_id} not found")

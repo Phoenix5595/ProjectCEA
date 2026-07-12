@@ -1,5 +1,5 @@
 import { useParams } from 'react-router-dom'
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { apiClient } from '../services/api'
 import { extractErrorMessage } from '../utils/errors'
 import { logger } from '../utils/logger'
@@ -13,7 +13,7 @@ import VerticalPIDBlock from '../components/VerticalPIDBlock'
 import VerticalNotesBlock from '../components/VerticalNotesBlock'
 import ManualLightControl from '../components/ManualLightControl'
 import RelayChannelMatrix from '../components/devices/RelayChannelMatrix'
-import { buildRelayChannelViewModels, makeDeviceKey } from '../components/devices/relayViewModel'
+import { buildRelayChannelViewModels } from '../components/devices/relayViewModel'
 import type { RelayChannelViewModel } from '../components/devices/relayViewModel'
 import type { ChannelInfo } from '../types/relay'
 import type { ClimatePeriod } from '../types/climatePeriod'
@@ -140,19 +140,18 @@ export default function ZoneConfig({
 
   // Build view models when channel data or relay state changes
   useEffect(() => {
-    const lastStateMap: Record<string, string> = {}
-    channelInfoList.forEach((info) => {
-      const ts = relayTimestamps[info.channel]
-      if (ts && info.location && info.cluster && info.device_name) {
-        const key = makeDeviceKey(info.location, info.cluster, info.device_name)
-        lastStateMap[key] = ts
-      }
-    })
-    setRelayChannels(buildRelayChannelViewModels(channelInfoList, relayState, lastStateMap))
+    setRelayChannels(
+      buildRelayChannelViewModels(
+        channelInfoList,
+        relayState,
+        relayTimestamps,
+        Array(16).fill(null),
+        Array(16).fill(null)
+      )
+    )
   }, [channelInfoList, relayState, relayTimestamps])
 
   // Relay menu state — consumed by RelayChannelMatrix
-  // @ts-ignore
   const [menuOpenChannel, setMenuOpenChannel] = useState<number | null>(null)
 
   const handleRelayMenuAction = useCallback(async (channel: number, action: 'auto' | 'timer-5m' | 'timer-10m' | 'timer-30m' | 'timer-1h' | 'off') => {
@@ -180,28 +179,6 @@ export default function ZoneConfig({
     } catch (err) {
       logger.error(`Relay action failed for channel ${channel}:`, err)
     }
-  }, [relayChannels])
-
-  // @ts-ignore
-  const statusByChannel = useMemo(() => {
-    const map: Record<number, { text: string; tone: 'unknown' | 'active' | 'idle' }> = {}
-    const now = Date.now()
-    for (const ch of relayChannels) {
-      const ts = ch.lastStateChangeAt
-      if (ts && ch.isActive) {
-        const elapsedMs = now - new Date(ts).getTime()
-        if (elapsedMs >= 0 && elapsedMs < 60 * 60 * 1000) {
-          const remaining = Math.ceil((60 * 60 * 1000 - elapsedMs) / 1000)
-          const minutes = Math.floor(remaining / 60)
-          const seconds = remaining % 60
-          map[ch.channel] = {
-            text: `${minutes}:${String(seconds).padStart(2, '0')}`,
-            tone: 'active',
-          }
-        }
-      }
-    }
-    return map
   }, [relayChannels])
 
   const loadClimatePeriodsForMode = useCallback(
@@ -464,7 +441,6 @@ export default function ZoneConfig({
                   nowMs={nowMs}
                   variant="compact"
                   location={location}
-                  statusByChannel={statusByChannel}
                   menuOpenChannel={menuOpenChannel}
                   onToggleMenu={(ch: number) => setMenuOpenChannel(prev => prev === ch ? null : ch)}
                   onMenuAction={handleRelayMenuAction}

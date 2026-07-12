@@ -303,6 +303,30 @@ Frontend rule:
 | **Config validation required** | Service startup fails on invalid config | Prevent runtime errors |
 | **Never touch working systems** | Unless explicitly requested | Production stability |
 
+### Subagent QA Safety (Critical — Permanent Ban)
+
+**F3 (Real Manual QA) is PERMANENTLY BANNED from making HTTP requests to production endpoints.**
+
+On 2026-07-07, an F3 QA subagent issued `DELETE` requests to the production automation API (port 8001), wiping the `device_registry` table in `cea_sensors`. The control loop lost all devices, lights went dark for 36+ hours, and crops were put under severe stress. This must NEVER happen again.
+
+**Replacement for F3 — Static Checks and Local Verification Only:**
+
+| Check | Command | Database |
+|-------|---------|----------|
+| **Backend lint** | `cd Infrastructure/automation-service && ruff check .` | N/A |
+| **Backend tests** | `cd Infrastructure/automation-service && pytest tests/ -q` | `cea_sensors_test` ONLY |
+| **Frontend type check** | `cd Infrastructure/frontend && npx tsc --noEmit` | N/A |
+| **Frontend build** | `cd Infrastructure/frontend && npm run build` | N/A |
+| **Frontend tests** | `cd Infrastructure/frontend && npx vitest run` | N/A |
+| **Plan verification** | `grep` checks against the plan file for acceptance-criteria coverage | N/A |
+
+**Production HTTP Rules for ALL Subagents:**
+
+- **NO subagent may call DELETE, POST, or PUT against production endpoints.**
+- **GET is allowed for read-only verification only.** Production endpoints at ports 8000, 8001, and 8003 may be queried with `GET` to confirm responses, headers, or payload shape. No state change.
+- **One exception:** A subagent MAY send `curl -X DELETE` with a non-existent device ID (for example, `999`) to verify the `X-Confirm-Destructive` guard returns HTTP 403. No subagent may DELETE a real device ID. This is a guard-verification probe, not a destructive test.
+- **Violation of this rule is a SEVERE FAILURE.** Production system integrity is non-negotiable.
+
 ---
 
 ## DEVELOPMENT WORKFLOW & BEST PRACTICES

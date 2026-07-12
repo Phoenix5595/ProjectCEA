@@ -1,0 +1,220 @@
+=== Task 6: Final Verification — Relay State Badge + Timer ===
+Date: 2026-07-08
+Release: 20260708-161412-30687ce
+
+---
+
+## Step 1: Backend Verification
+
+### Ruff Check
+Command:
+  cd /home/antoine/ProjectCEA/Infrastructure/automation-service
+  ruff check app/routes/hardware.py app/routes/devices.py app/routes/routes.py
+
+Output:
+  All checks passed!
+
+### Pytest (3 test files, 9 tests total)
+Command:
+  pytest tests/test_relay_timestamp_update.py tests/test_device_timestamp_update.py tests/test_relay_state_extended.py -v
+
+Output:
+  ============================= test session starts ==============================
+  platform linux -- Python 3.11.2, pytest-9.0.2, pluggy-1.6.0 -- /usr/bin/python3
+  cachedir: .pytest_cache
+  rootdir: /home/antoine/ProjectCEA/Infrastructure/automation-service
+  configfile: pytest.ini
+  plugins: cov-7.0.0, mock-3.15.1, asyncio-1.3.0, anyio-3.7.1
+  asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+  collecting ... collected 9 items
+
+  tests/test_relay_timestamp_update.py::TestRelayTimestampUpdate::test_timestamp_updated_on_false_to_true PASSED [ 11%]
+  tests/test_relay_timestamp_update.py::TestRelayTimestampUpdate::test_timestamp_not_updated_on_unchanged_true PASSED [ 22%]
+  tests/test_relay_timestamp_update.py::TestRelayTimestampUpdate::test_timestamp_updated_on_true_to_false PASSED [ 33%]
+  tests/test_device_timestamp_update.py::TestDeviceTimestampUpdate::test_timestamp_updated_on_state_change PASSED [ 44%]
+  tests/test_device_timestamp_update.py::TestDeviceTimestampUpdate::test_timestamp_not_updated_on_no_op PASSED [ 55%]
+  tests/test_device_timestamp_update.py::TestDeviceTimestampUpdate::test_timestamp_skipped_when_channel_is_none PASSED [ 66%]
+  tests/test_relay_state_extended.py::TestRelayStateExtended::test_active_override_and_db_mode PASSED [ 77%]
+  tests/test_relay_state_extended.py::TestRelayStateExtended::test_expired_override_falls_through PASSED [ 88%]
+  tests/test_relay_state_extended.py::TestRelayStateExtended::test_no_overrides_no_devices_all_off PASSED [100%]
+
+  =============================== warnings summary ===============================
+  app/schemas/calendar.py:66
+    /home/antoine/ProjectCEA/Infrastructure/automation-service/app/schemas/calendar.py:66: PydanticDeprecatedSince20: Pydantic V1 style `@validator` validators are deprecated. You should migrate to Pydantic V2 style `@field_validator` validators, see the migration guide for more details. Deprecated in Pydantic V2.0 to be removed in V3.0. See https://errors.pydantic.dev/2.5/migration/
+      @validator("caldav_base_url")
+
+  -- Docs: https://docs.pytest.org/en/stable/how-to/warnings.html
+  ========================= 9 passed, 1 warning in 4.14s =========================
+
+Result: PASS (9/9 tests passed)
+
+---
+
+## Step 2: Frontend Verification
+
+### TypeScript Check
+Command:
+  cd /home/antoine/ProjectCEA/Infrastructure/frontend
+  npx tsc --noEmit
+
+Output:
+  (no output — 0 errors)
+
+Result: PASS
+
+### Production Build
+Command:
+  npm run build
+
+Output:
+  > cea-frontend@1.0.0 build
+  > tsc && vite build
+
+  vite v5.4.21 building for production...
+  transforming...
+  ✓ 1530 modules transformed.
+  rendering chunks...
+  computing gzip size...
+  dist/index.html                                     0.69 kB │ gzip:  0.36 kB
+  dist/assets/useCalendarEvents-3MQXPqBX.css          8.13 kB │ gzip:  1.67 kB
+  dist/assets/index-BnC_Axe8.css                     76.25 kB │ gzip: 14.55 kB
+  ... (all chunks built successfully)
+  ✓ built in 7.76s
+
+Result: PASS
+
+---
+
+## Step 3: Deploy
+
+Command:
+  cd /home/antoine/ProjectCEA
+  ./deploy.sh
+
+Output:
+  === Deploying release: 20260708-161412-30687ce ===
+  {"event": "deploy_start", "release_id": "20260708-161412-30687ce", ...}
+  [0/7] Running Ruff (lint + format) on Infrastructure...
+  All checks passed!
+  216 files left unchanged
+  [1/7] Copying code...
+  [2/7] Building Python venvs...
+    - backend
+    - automation-service
+    - can-processor-service
+    - soil-sensor-service
+    - onewire-worker-service
+    - weather-service
+  [3/7] Building frontend...
+    (frontend build succeeded — see Step 2)
+  [4/7] Ensuring data directories...
+  [4b/7] Ensuring sudoers rule for cea user...
+  /home/antoine/ProjectCEA/Infrastructure/automation-service/install/sudoers-cea-restart: parsed OK
+  Installed /etc/sudoers.d/sudoers-cea-restart
+  [5/7] Switching symlink...
+  [6/7] Restarting services...
+  [7/7] Health checks...
+  {"event": "health_ok", "release_id": "20260708-161412-30687ce", "service": "backend", "http_code": "200", "ts": "2026-07-08T20:17:44Z"}
+  {"event": "health_ok", "release_id": "20260708-161412-30687ce", "service": "automation", "http_code": "200", "ts": "2026-07-08T20:17:44Z"}
+  {"event": "health_ok", "release_id": "20260708-161412-30687ce", "service": "onewire", "http_code": "200", "ts": "2026-07-08T20:17:44Z"}
+  {"event": "deploy_success", "release_id": "20260708-161412-30687ce", ...}
+
+Result: PASS (all health checks 200, no rollback)
+
+---
+
+## Step 4: Post-Deploy Curl Verification
+
+### 4.1 Verify new API fields exist
+Command:
+  curl -s -H "X-API-Key: $CEA_API_KEY" http://mothernode:8080/api/hardware/relays/state | python3 -c "..."
+
+Output:
+  OK: modes and override_expires_at present
+
+Result: PASS
+
+### 4.2 Toggle test channel ON with timer, verify timestamp updated
+Command:
+  curl -X POST -H "X-API-Key: $CEA_API_KEY" -H "Content-Type: application/json" http://mothernode:8080/api/hardware/relays/channel/{test_channel}/state -d '{"state":1,"duration_seconds":300}'
+
+Output:
+  {"channel":15,"state":1,"ok":true}
+
+Command:
+  redis-cli GET cea:relay:timestamps | python3 -c "..."
+
+Output:
+  test channel timestamp: 2026-07-08T20:18:18.903851Z
+  OK
+
+Result: PASS
+
+### 4.3 Verify override + mode returned
+Command:
+  curl -s -H "X-API-Key: $CEA_API_KEY" http://mothernode:8080/api/hardware/relays/state | python3 -c "..."
+
+Output:
+  override_expires_at[{test_channel}]: 2026-07-08T20:23:18.901933+00:00
+  modes[{test_channel}]: manual
+  OK
+
+Result: PASS
+
+### 4.4 Turn OFF test channel, verify override cleared
+Command:
+  curl -X POST -H "X-API-Key: $CEA_API_KEY" -H "Content-Type: application/json" http://mothernode:8080/api/hardware/relays/channel/{test_channel}/state -d '{"state":0}'
+
+Output:
+  {"channel":15,"state":0,"ok":true}
+
+Command:
+  curl -s -H "X-API-Key: $CEA_API_KEY" http://mothernode:8080/api/hardware/relays/state | python3 -c "..."
+
+Output:
+  override_expires_at[{test_channel}] after OFF: None
+  modes[{test_channel}] after OFF: off
+  OK
+
+Result: PASS
+
+### 4.5 Verify device control updates timestamp (exhaust_f_1 in Flower Room)
+Command:
+  curl -s -H "X-API-Key: $CEA_API_KEY" http://mothernode:8080/api/devices/Flower%20Room/main | python3 -c "..."
+
+Output:
+  1  (exhaust_f_1 is on channel 1)
+
+Command:
+  curl -X POST -H "X-API-Key: $CEA_API_KEY" -H "Content-Type: application/json" http://mothernode:8080/api/devices/Flower%20Room/main/exhaust_f_1/control -d '{"state":1}'
+
+Output:
+  {"location":"Flower Room","cluster":"main","device":"exhaust_f_1","state":1,"mode":"manual","success":true}
+
+Command:
+  redis-cli GET cea:relay:timestamps | python3 -c "..."
+
+Output:
+  exhaust_f_1 channel 1 timestamp: 2026-07-08T20:18:46.210215Z
+  OK
+
+Result: PASS
+
+---
+
+## Summary
+
+| Check | Result |
+|-------|--------|
+| Backend ruff check | PASS |
+| Backend tests (9/9) | PASS |
+| Frontend tsc --noEmit | PASS (0 errors) |
+| Frontend npm run build | PASS |
+| Deploy via deploy.sh | PASS (health checks 200) |
+| Post-deploy API fields | PASS |
+| Post-deploy timestamp ON | PASS |
+| Post-deploy override/mode | PASS |
+| Post-deploy OFF clear | PASS |
+| Post-deploy device control | PASS |
+
+All verification steps completed successfully. Release 20260708-161412-30687ce is live.

@@ -48,13 +48,13 @@ function makeLightKey(light: { location: string; cluster: string; device_name: s
   return `${light.location}\u0000${light.cluster}\u0000${light.device_name}`
 }
 
-function parseLightKey(key: string): { location: string; cluster: string; device_name: string } | null {
-  const parts = key.split('\u0000')
-  if (parts.length !== 3) return null
-  return { location: parts[0], cluster: parts[1], device_name: parts[2] }
-}
-
-export default function DfrBoardsPanel() {
+export default function DfrBoardsPanel({
+  refreshKey = 0,
+  onRefresh,
+}: {
+  refreshKey?: number
+  onRefresh?: () => void
+}) {
   const [data, setData] = useState<DfrAssignmentsResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [workingKey, setWorkingKey] = useState<string | null>(null)
@@ -111,7 +111,7 @@ export default function DfrBoardsPanel() {
 
   useEffect(() => {
     void refresh()
-  }, [refresh])
+  }, [refresh, refreshKey])
 
   const lightsByKey = useMemo(() => {
     const m = new Map<string, DfrLight>()
@@ -119,19 +119,6 @@ export default function DfrBoardsPanel() {
       m.set(makeLightKey(l), l)
     }
     return m
-  }, [data?.lights])
-
-  const lightOptions = useMemo(() => {
-    const lights = [...(data?.lights ?? [])]
-    lights.sort((a, b) => {
-      const la = `${a.location} ${a.display_name || a.device_name}`
-      const lb = `${b.location} ${b.display_name || b.device_name}`
-      return la.localeCompare(lb)
-    })
-    return lights.map((l) => ({
-      key: makeLightKey(l),
-      label: `${l.display_name || l.device_name} — ${l.location}`,
-    }))
   }, [data?.lights])
 
   const fetchRoomLights = useCallback(async (room: string): Promise<LightDevice[]> => {
@@ -175,50 +162,6 @@ export default function DfrBoardsPanel() {
     return fromCache
   }, [data?.lights, roomLightsCache])
 
-  async function applyAssignment(
-    boardId: number,
-    channel: 0 | 1,
-    nextLightKey: string | null
-  ) {
-    const channelKey: '0' | '1' = channel === 0 ? '0' : '1'
-    const assignment = data?.assignments?.[String(boardId)]?.[channelKey] ?? null
-    const currentKey = assignment ? makeLightKey(assignment) : null
-    const opKey = `board:${boardId}:ch:${channel}`
-
-    if (workingKey) {
-      toast.error('Another DFR action is in progress')
-      return
-    }
-
-    setWorkingKey(opKey)
-    try {
-      if (currentKey && currentKey !== nextLightKey) {
-        const current = parseLightKey(currentKey)
-        if (current) {
-          await apiClient.assignDfrChannel(current.location, current.cluster, current.device_name, null, null)
-        }
-      }
-
-      if (nextLightKey) {
-        const next = parseLightKey(nextLightKey)
-        if (!next) {
-          toast.error('Invalid light selection')
-          return
-        }
-        await apiClient.assignDfrChannel(next.location, next.cluster, next.device_name, boardId, channel)
-      }
-
-      await refresh()
-      toast.success('DFR assignment updated')
-    } catch (err) {
-      logger.error('Failed to update DFR assignment', err)
-      toast.error(extractErrorMessage(err, 'Failed to update DFR assignment'))
-      await refresh()
-    } finally {
-      setWorkingKey(null)
-    }
-  }
-
   async function saveRename(lightKey: string) {
     const light = lightsByKey.get(lightKey)
     if (!light) return
@@ -236,6 +179,7 @@ export default function DfrBoardsPanel() {
     try {
       await apiClient.updateDeviceConfig(light.location, light.cluster, light.device_name, draft)
       await refresh()
+      onRefresh?.()
       toast.success('Light name updated')
     } catch (err) {
       logger.error('Failed to rename light', err)
@@ -327,6 +271,7 @@ export default function DfrBoardsPanel() {
       }
       await apiClient.updateLight(deviceId, body)
       await refresh()
+      onRefresh?.()
       closeEditForm(lightKey)
       toast.success('Light updated')
     } catch (err) {
@@ -405,6 +350,7 @@ export default function DfrBoardsPanel() {
     try {
       const result = await apiClient.deleteLight(deviceId)
       await refresh()
+      onRefresh?.()
       setRemoveConfirmKey(null)
       if (result.warning) {
         toast.success(`Light removed — ${result.warning}`)
@@ -452,7 +398,6 @@ export default function DfrBoardsPanel() {
           const a1 = data?.assignments?.[boardKey]?.['1'] ?? null
 
           const renderChannel = (ch: 0 | 1, assignment: DfrAssignment | null) => {
-            const selected = assignment ? makeLightKey(assignment) : ''
             const assignedLight = assignment ? lightsByKey.get(makeLightKey(assignment)) : null
             const renameKey = assignment ? makeLightKey(assignment) : ''
             const renameValue =
@@ -471,25 +416,15 @@ export default function DfrBoardsPanel() {
                 className="rounded-md border border-border-subtle bg-surface-secondary p-2 space-y-2"
               >
                 <div className="flex items-center justify-between">
-                  <div className="text-xs font-semibold text-text-default">DFR{board.board_id} · CH{ch}</div>
-                  <div className="text-[11px] text-text-subtle">
-                    {assignment ? `${assignment.location}` : 'Unassigned'}
-                  </div>
+                  <div className="text-xs font-semibold text-text-default">CH{ch}</div>
+                  {assignment ? (
+                    <span className="inline-flex items-center rounded-full bg-btn-primary-dim/30 px-2 py-0.5 text-xs font-medium text-btn-primary-text">
+                      {assignment.location}
+                    </span>
+                  ) : (
+                    <span className="text-xs text-text-subtle">—</span>
+                  )}
                 </div>
-
-                <select
-                  value={selected}
-                  onChange={(e) => void applyAssignment(board.board_id, ch, e.target.value || null)}
-                  disabled={!!workingKey}
-                  className="w-full rounded-sm border border-border-emphasis bg-surface-primary px-2 py-1 text-xs text-text-input focus:outline-hidden focus:ring-2 focus:ring-btn-primary-light disabled:opacity-50"
-                >
-                  <option value="">Unassigned</option>
-                  {lightOptions.map((opt) => (
-                    <option key={opt.key} value={opt.key}>
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
 
                 {assignment ? (
                   <div className="space-y-1">
@@ -650,8 +585,8 @@ export default function DfrBoardsPanel() {
             >
               <div className="flex items-start justify-between gap-2">
                 <div>
-                  <div className="text-sm font-semibold text-text-default">
-                    DFR {board.board_id}
+                  <div className="text-text-muted uppercase font-bold tracking-wider text-[14px]">
+                    DFR{board.board_id}
                   </div>
                   <div className="text-xs text-text-subtle font-mono">
                     {board.i2c_address}

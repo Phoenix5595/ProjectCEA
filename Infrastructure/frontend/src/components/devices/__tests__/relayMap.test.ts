@@ -75,6 +75,8 @@ describe('splitRelayByPhysicalLayout', () => {
     location: null,
     cluster: null,
     lastStateChangeAt: null,
+    mode: null,
+    overrideExpiresAt: null,
   }))
 
   const { leftColumn, rightColumn } = splitRelayByPhysicalLayout(mockChannels)

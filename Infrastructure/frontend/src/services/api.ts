@@ -13,7 +13,7 @@ import type {
   FlowerGrowPlanRequest,
   ModeScheduleResponse,
 } from '../types/calendar';
-import type { ChannelInfo, LightNameOption } from '../types/relay';
+import type { ChannelInfo, LightNameOption, RelayBoardStateResponse } from '../types/relay';
 import type {
   SystemConfigResponse,
   ConfigUpdateRequest,
@@ -165,7 +165,9 @@ class ApiClient {
   }
 
   async deleteDevice(device_id: number): Promise<{ success: boolean }> {
-    const response = await this.automationClient.delete(`/api/devices/registry/${device_id}`);
+    const response = await this.automationClient.delete(`/api/devices/registry/${device_id}`, {
+      headers: { 'X-Confirm-Destructive': 'true' }
+    });
     return response.data;
   }
 
@@ -240,7 +242,9 @@ class ApiClient {
   }
 
   async deleteLight(device_id: number): Promise<{ success: boolean; warning?: string }> {
-    const response = await this.automationClient.delete(`/api/lights/${device_id}`);
+    const response = await this.automationClient.delete(`/api/lights/${device_id}`, {
+      headers: { 'X-Confirm-Destructive': 'true' }
+    });
     return response.data;
   }
 
@@ -317,7 +321,7 @@ class ApiClient {
     return response.data;
   }
 
-  async getRelayBoardState(): Promise<{ channels: boolean[]; timestamps: (string | null)[]; mcp_connected: boolean; simulation: boolean }> {
+  async getRelayBoardState(): Promise<RelayBoardStateResponse> {
     const response = await this.automationClient.get('/api/hardware/relays/state');
     return response.data;
   }

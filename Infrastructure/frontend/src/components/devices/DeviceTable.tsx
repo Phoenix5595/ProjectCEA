@@ -40,7 +40,13 @@ function relayChannelOf(device: DeviceRegistryEntry): number | null {
   return device.relay_channel ?? null
 }
 
-export default function DeviceTable() {
+export default function DeviceTable({
+  refreshKey = 0,
+  onRefresh,
+}: {
+  refreshKey?: number
+  onRefresh?: () => void
+}) {
   const [devices, setDevices] = useState<DeviceRegistryEntry[]>([])
   const [loading, setLoading] = useState(true)
   const [editingId, setEditingId] = useState<number | null>(null)
@@ -65,7 +71,7 @@ export default function DeviceTable() {
 
   useEffect(() => {
     void refresh()
-  }, [refresh])
+  }, [refresh, refreshKey])
 
   function startEdit(device: DeviceRegistryEntry) {
     if (editingId !== null) {
@@ -140,6 +146,7 @@ export default function DeviceTable() {
     try {
       await apiClient.createDevice(body)
       await refresh()
+      onRefresh?.()
       cancelAdd()
       toast.success('Device created')
     } catch (err) {
@@ -181,6 +188,7 @@ export default function DeviceTable() {
     try {
       await apiClient.updateDevice(device.device_id, body)
       await refresh()
+      onRefresh?.()
       cancelEdit()
       toast.success('Device updated')
     } catch (err) {
@@ -196,6 +204,7 @@ export default function DeviceTable() {
     try {
       await apiClient.deleteDevice(device.device_id)
       await refresh()
+      onRefresh?.()
       setDeleteConfirmId(null)
       toast.success('Device deleted')
     } catch (err) {

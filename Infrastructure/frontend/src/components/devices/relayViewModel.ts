@@ -73,6 +73,8 @@ export interface RelayChannelViewModel {
   location: string | null
   cluster: string | null
   lastStateChangeAt: string | null
+  mode: string | null
+  overrideExpiresAt: string | null
 }
 
 export function makeDeviceKey(location: string, cluster: string, deviceName: string): string {
@@ -175,7 +177,9 @@ export function buildLastStateChangeMap(
 export function buildRelayChannelViewModels(
   channels: ChannelInfo[],
   relayStates: boolean[] | null,
-  lastStateChangeByDevice: Record<string, string>
+  timestamps: (string | null)[],
+  modes: (string | null)[],
+  overrideExpiresAt: (string | null)[]
 ): RelayChannelViewModel[] {
   const byChannel = new Map<number, ChannelInfo>(
     channels.map((channelInfo) => [channelInfo.channel, channelInfo])
@@ -183,11 +187,6 @@ export function buildRelayChannelViewModels(
 
   return RELAY_CHANNELS.map((channelNumber) => {
     const channelInfo = byChannel.get(channelNumber)
-    const deviceKey =
-      channelInfo?.location && channelInfo.cluster && channelInfo.device_name
-        ? makeDeviceKey(channelInfo.location, channelInfo.cluster, channelInfo.device_name)
-        : null
-    const lastStateChangeAt = deviceKey ? lastStateChangeByDevice[deviceKey] || null : null
 
     return {
       channel: channelNumber,
@@ -202,7 +201,9 @@ export function buildRelayChannelViewModels(
       displayType: channelInfo ? getChannelDisplayType(channelInfo) : null,
       location: channelInfo?.location || null,
       cluster: channelInfo?.cluster || null,
-      lastStateChangeAt,
+      lastStateChangeAt: timestamps[channelNumber] ?? null,
+      mode: modes[channelNumber] ?? null,
+      overrideExpiresAt: overrideExpiresAt[channelNumber] ?? null,
     }
   })
 }
@@ -240,6 +241,21 @@ export function formatElapsedSince(
     return `${minutes}m ${seconds}s`
   }
 
+  return `${seconds}s`
+}
+
+export function formatCountdown(expiresAt: string | null, nowMs: number): string {
+  if (!expiresAt) return ''
+  const expires = Date.parse(expiresAt)
+  if (Number.isNaN(expires)) return ''
+  const remainingMs = expires - nowMs
+  if (remainingMs <= 0) return ''
+  const totalSeconds = Math.floor(remainingMs / 1000)
+  const hours = Math.floor(totalSeconds / 3600)
+  const minutes = Math.floor((totalSeconds % 3600) / 60)
+  const seconds = totalSeconds % 60
+  if (hours > 0) return `${hours}h ${minutes}m`
+  if (minutes > 0) return `${minutes}m ${seconds}s`
   return `${seconds}s`
 }
 

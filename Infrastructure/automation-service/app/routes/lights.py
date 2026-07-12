@@ -880,6 +880,10 @@ async def update_light(
         update_fields["relay_channel"] = body.relay_channel
     if body.safety_level is not None:
         update_fields["safety_level"] = body.safety_level
+    if "board_id" in body.model_fields_set:
+        update_fields["dimming_board_id"] = body.board_id
+    if "dimming_channel" in body.model_fields_set:
+        update_fields["dimming_channel"] = body.dimming_channel
 
     updated = await device_repo.update_light(device_id, **update_fields)
     if updated is None:

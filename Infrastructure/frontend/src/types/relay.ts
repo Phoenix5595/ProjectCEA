@@ -39,5 +39,7 @@ export interface RelayBoardStateResponse {
   timestamps: (string | null)[]
   mcp_connected: boolean
   simulation: boolean
+  modes: (string | null)[]
+  override_expires_at: (string | null)[]
 }
 

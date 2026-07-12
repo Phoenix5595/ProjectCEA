@@ -52,8 +52,12 @@ class LightDevice(BaseModel):
 
     device_id: int | None = Field(default=None, description="Primary key from device_registry")
     device_type: Literal["light"] = "light"
-    board_id: int = Field(ge=0, description="DFR0971 board identifier (0, 1, 2)")
-    dimming_channel: int = Field(ge=0, le=1, description="DFR0971 channel on the board (0 or 1)")
+    board_id: int | None = Field(
+        default=None, ge=0, description="DFR0971 board identifier (0, 1, 2)"
+    )
+    dimming_channel: int | None = Field(
+        default=None, ge=0, le=1, description="DFR0971 channel on the board (0 or 1)"
+    )
     dimming_enabled: bool = True
     dimming_type: Literal["dfr0971"] = "dfr0971"
     safety_level: int = 0
@@ -96,6 +100,15 @@ class LightDeviceUpdate(BaseModel):
     )
     safety_level: int | None = Field(
         default=None, ge=0, le=100, description="Safety intensity level (0-100%)"
+    )
+    board_id: int | None = Field(
+        default=None, ge=0, description="DFR0971 board identifier (set to None to unbind)"
+    )
+    dimming_channel: int | None = Field(
+        default=None,
+        ge=0,
+        le=1,
+        description="DFR0971 channel on the board (0 or 1, set to None to unbind)",
     )
 
 

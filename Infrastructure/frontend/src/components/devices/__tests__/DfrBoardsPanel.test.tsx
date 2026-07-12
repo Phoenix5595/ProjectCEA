@@ -116,7 +116,7 @@ describe('DfrBoardsPanel', () => {
     })
   }, 10000)
 
-  it('shows DFR board_id and channel label instead of relay identity', async () => {
+  it('shows CH channel label and DFR board header instead of relay identity', async () => {
     render(<DfrBoardsPanel />)
 
     await waitFor(() => {
@@ -126,9 +126,13 @@ describe('DfrBoardsPanel', () => {
     const slotLabel = screen.getByTestId('dfr-slot-0-0').querySelector('.text-xs.font-semibold')
     expect(slotLabel).not.toBeNull()
     const labelText = slotLabel?.textContent ?? ''
-    expect(labelText).toBe('DFR0 · CH0')
+    expect(labelText).toBe('CH0')
+    expect(labelText).not.toContain('DFR0')
     expect(labelText).not.toContain('R{')
     expect(labelText).not.toContain('GPA')
     expect(labelText).not.toContain('GPB')
+
+    const boardHeader = screen.getByText('DFR0')
+    expect(boardHeader).toBeInTheDocument()
   }, 10000)
 })

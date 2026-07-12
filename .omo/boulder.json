@@ -1,57 +1,340 @@
 {
   "schema_version": 2,
-  "active_work_id": "dfr-relay-channel-fixes",
+  "active_work_id": "production-safety-92d90761",
   "works": {
-    "dfr-relay-channel-fixes": {
-      "work_id": "dfr-relay-channel-fixes",
-      "active_plan": "/home/antoine/ProjectCEA/.omo/plans/dfr-relay-channel-fixes.md",
-      "plan_name": "dfr-relay-channel-fixes",
+    "centralized-device-table": {
+      "work_id": "centralized-device-table",
+      "active_plan": "/home/antoine/ProjectCEA/.omo/plans/centralized-device-table.md",
+      "plan_name": "centralized-device-table",
       "session_ids": [
         "opencode:ses_0cbe3681bffeR8qTg5sss0JokD"
       ],
-      "status": "active",
+      "status": "completed",
       "worktree_path": null,
       "session_origins": {},
       "task_sessions": {
         "todo:1": {
           "task_key": "todo:1",
           "task_label": "1",
-          "task_title": "Frontend: relabel DFR slots with DFR identity + fix remove-light warning + update existing test",
-          "session_id": "opencode:ses_0c63e01aaffea7xJqaXTFAkluS",
+          "task_title": "Seed device_registry table from old YAML config (fixes lights being off)",
+          "session_id": "opencode:ses_0c12343caffebPZ8Alodi1Q9jt",
+          "agent": "Sisyphus-Junior",
+          "category": "unspecified-high",
+          "updated_at": "2026-07-07T23:17:34.350Z",
+          "started_at": "2026-07-07T23:17:16.969Z",
+          "status": "completed",
+          "ended_at": "2026-07-07T23:17:34.350Z",
+          "elapsed_ms": 17381
+        },
+        "todo:2": {
+          "task_key": "todo:2",
+          "task_label": "2",
+          "task_title": "Backend: DeviceCreate model + DeviceRepository CRUD methods + typed row dispatcher + config fix",
+          "session_id": "opencode:ses_0c11e1654ffeCMh3PV1Ytlx7bs",
+          "agent": "Sisyphus-Junior",
+          "category": "deep",
+          "updated_at": "2026-07-07T23:28:43.043Z",
+          "started_at": "2026-07-07T23:28:08.066Z",
+          "status": "completed",
+          "ended_at": "2026-07-07T23:28:43.043Z",
+          "elapsed_ms": 34977
+        },
+        "todo:3": {
+          "task_key": "todo:3",
+          "task_label": "3",
+          "task_title": "Backend: POST/PUT/DELETE /api/devices/registry unified device endpoint",
+          "session_id": "opencode:ses_0c1161d96ffe7Yl0MhBcDo7eRi",
+          "agent": "Sisyphus-Junior",
+          "category": "deep",
+          "updated_at": "2026-07-07T23:36:53.848Z",
+          "started_at": "2026-07-07T23:36:28.814Z",
+          "status": "completed",
+          "ended_at": "2026-07-07T23:36:53.848Z",
+          "elapsed_ms": 25034
+        },
+        "todo:4": {
+          "task_key": "todo:4",
+          "task_label": "4",
+          "task_title": "Frontend: DeviceTable component + apiClient methods + DeviceRegistryEntry type",
+          "session_id": "opencode:ses_0c10e8e85ffe6xpZWo8ZmjG5Qb",
           "agent": "Sisyphus-Junior",
           "category": "visual-engineering",
-          "updated_at": "2026-07-06T23:39:19.377Z",
-          "started_at": "2026-07-06T23:32:04.763Z",
+          "updated_at": "2026-07-07T23:45:04.890Z",
+          "started_at": "2026-07-07T23:44:34.645Z",
           "status": "completed",
-          "ended_at": "2026-07-06T23:39:19.377Z",
-          "elapsed_ms": 434614
+          "ended_at": "2026-07-07T23:45:04.890Z",
+          "elapsed_ms": 30245
+        },
+        "todo:5": {
+          "task_key": "todo:5",
+          "task_label": "5",
+          "task_title": "Frontend: Remove DFR panel Add light button and form state",
+          "session_id": "opencode:ses_0c10e8192ffeJOM2KVZOwTCAhM",
+          "agent": "Sisyphus-Junior",
+          "category": "visual-engineering",
+          "status": "completed"
+        },
+        "todo:6": {
+          "task_key": "todo:6",
+          "task_label": "6",
+          "task_title": "Integration: wire DeviceTable into DeviceManager, replace relay channel table",
+          "session_id": "opencode:ses_0c107095affeW7HrxtRz3C0Zgb",
+          "agent": "Sisyphus-Junior",
+          "category": "visual-engineering",
+          "updated_at": "2026-07-07T23:54:15.071Z",
+          "started_at": "2026-07-07T23:53:30.075Z",
+          "status": "completed",
+          "ended_at": "2026-07-07T23:54:15.071Z",
+          "elapsed_ms": 44996
+        },
+        "final-wave:f1": {
+          "task_key": "final-wave:f1",
+          "task_label": "F1",
+          "task_title": "Plan compliance audit",
+          "session_id": "opencode:ses_0c0fccbddffeiO88JDFBExisjZ",
+          "agent": "Sisyphus-Junior",
+          "category": "unspecified-low",
+          "updated_at": "2026-07-08T00:09:28.025Z",
+          "started_at": "2026-07-08T00:00:40.096Z",
+          "status": "completed",
+          "ended_at": "2026-07-08T00:09:28.025Z",
+          "elapsed_ms": 527929
+        },
+        "final-wave:f2": {
+          "task_key": "final-wave:f2",
+          "task_label": "F2",
+          "task_title": "Code quality review",
+          "session_id": "opencode:ses_0c0d5e530ffeRiCirVCYqghqCY",
+          "agent": "Sisyphus-Junior",
+          "category": "unspecified-low",
+          "updated_at": "2026-07-08T00:40:50.548Z",
+          "started_at": "2026-07-08T00:40:50.548Z",
+          "status": "completed"
+        },
+        "final-wave:f3": {
+          "task_key": "final-wave:f3",
+          "task_label": "F3",
+          "task_title": "Real manual QA",
+          "status": "completed"
+        },
+        "final-wave:f4": {
+          "task_key": "final-wave:f4",
+          "task_label": "F4",
+          "task_title": "Scope fidelity verification",
+          "status": "completed"
         }
       },
-      "updated_at": "2026-07-06T23:39:19.377Z"
+      "updated_at": "2026-07-08T10:48:49.183Z",
+      "ended_at": "2026-07-08T10:48:49.183Z"
+    },
+    "relay-state-badge-timer-28f54c24": {
+      "work_id": "relay-state-badge-timer-28f54c24",
+      "active_plan": "/home/antoine/ProjectCEA/.omo/plans/relay-state-badge-timer.md",
+      "plan_name": "relay-state-badge-timer",
+      "status": "completed",
+      "started_at": "2026-07-08T10:48:50.935Z",
+      "updated_at": "2026-07-08T20:24:06.630Z",
+      "session_ids": [
+        "opencode:ses_0e70fc228ffeBshhzGKaAPSeMu"
+      ],
+      "session_origins": {
+        "opencode:ses_0e70fc228ffeBshhzGKaAPSeMu": "direct"
+      },
+      "agent": "atlas",
+      "task_sessions": {
+        "todo:1": {
+          "task_key": "todo:1",
+          "task_label": "1",
+          "task_title": "Fix RELAY_TIMESTAMPS update in raw channel control route (`hardware.py`)",
+          "session_id": "opencode:ses_0be982544ffeBriSPLaHCBXMoP",
+          "agent": "Sisyphus-Junior",
+          "started_at": "2026-07-08T11:07:23.912Z",
+          "status": "completed",
+          "updated_at": "2026-07-08T13:01:27.970Z",
+          "ended_at": "2026-07-08T13:01:27.969Z",
+          "elapsed_ms": 6844057
+        },
+        "todo:2": {
+          "task_key": "todo:2",
+          "task_label": "2",
+          "task_title": "Extend relay state API response with `modes[]` and `override_expires_at[]` (`hardware.py`)",
+          "session_id": "opencode:ses_0be2b6d72ffemmGyw2tIxsJuhU",
+          "agent": "Sisyphus-Junior",
+          "category": "deep",
+          "updated_at": "2026-07-08T13:11:58.592Z",
+          "started_at": "2026-07-08T13:11:17.401Z",
+          "status": "completed",
+          "ended_at": "2026-07-08T13:11:58.591Z",
+          "elapsed_ms": 41190
+        },
+        "todo:4": {
+          "task_key": "todo:4",
+          "task_label": "4",
+          "task_title": "Update frontend types + view model + fix timestamp mapping",
+          "session_id": "opencode:ses_0be2401caffeG64iL4i43WBeYq",
+          "agent": "Sisyphus-Junior",
+          "category": "visual-engineering",
+          "updated_at": "2026-07-08T13:23:10.201Z",
+          "started_at": "2026-07-08T13:20:47.641Z",
+          "status": "completed",
+          "ended_at": "2026-07-08T13:23:10.201Z",
+          "elapsed_ms": 142560
+        },
+        "todo:5": {
+          "task_key": "todo:5",
+          "task_label": "5",
+          "task_title": "Rewrite RelayChannelBox badge + LED logic + update ZoneConfig + RelayChannelMatrix",
+          "session_id": "opencode:ses_0be1984ceffec0MrAS0pyVrOra",
+          "agent": "Sisyphus-Junior",
+          "category": "visual-engineering",
+          "updated_at": "2026-07-08T20:11:07.168Z",
+          "started_at": "2026-07-08T13:32:13.947Z",
+          "status": "completed",
+          "ended_at": "2026-07-08T20:11:07.168Z",
+          "elapsed_ms": 23933221
+        },
+        "todo:6": {
+          "task_key": "todo:6",
+          "task_label": "6",
+          "task_title": "Final: build + type-check + backend tests + deploy + post-deploy verification",
+          "session_id": "opencode:ses_0bca4a2b8ffeHQUQfRIzADoRx3",
+          "agent": "Sisyphus-Junior",
+          "started_at": "2026-07-08T20:13:18.243Z",
+          "status": "completed",
+          "updated_at": "2026-07-08T20:20:23.009Z",
+          "ended_at": "2026-07-08T20:20:23.009Z",
+          "elapsed_ms": 424766
+        },
+        "final-wave:f1": {
+          "task_key": "final-wave:f1",
+          "task_label": "F1",
+          "task_title": "Plan compliance audit",
+          "session_id": "opencode:ses_0bc9c1df8ffeyfUuTQ5BWUhG3e",
+          "agent": "Sisyphus-Junior",
+          "category": "unspecified-low",
+          "updated_at": "2026-07-08T20:23:48.572Z",
+          "started_at": "2026-07-08T20:22:21.644Z",
+          "status": "completed",
+          "ended_at": "2026-07-08T20:23:48.572Z",
+          "elapsed_ms": 86928
+        }
+      },
+      "ended_at": "2026-07-08T20:24:06.630Z",
+      "elapsed_ms": 34515695
+    },
+    "dfr-panel-cleanup-ab3f1ccc": {
+      "work_id": "dfr-panel-cleanup-ab3f1ccc",
+      "active_plan": "/home/antoine/ProjectCEA/.omo/plans/dfr-panel-cleanup.md",
+      "plan_name": "dfr-panel-cleanup",
+      "status": "completed",
+      "started_at": "2026-07-08T22:11:59.001Z",
+      "updated_at": "2026-07-08T22:59:10.646Z",
+      "session_ids": [
+        "opencode:ses_0e70fc228ffeBshhzGKaAPSeMu"
+      ],
+      "session_origins": {
+        "opencode:ses_0e70fc228ffeBshhzGKaAPSeMu": "direct"
+      },
+      "agent": "atlas",
+      "task_sessions": {
+        "todo:1": {
+          "task_key": "todo:1",
+          "task_label": "1",
+          "task_title": "Fix `LightDeviceUpdate` model + `update_registry_device()` + `lights.py` update_light to persist DFR board/channel on update",
+          "session_id": "opencode:ses_0bc35b690ffeTWfSSbS2jnlOE4",
+          "agent": "Sisyphus-Junior",
+          "category": "deep",
+          "updated_at": "2026-07-08T22:18:14.921Z",
+          "started_at": "2026-07-08T22:16:30.952Z",
+          "status": "completed",
+          "ended_at": "2026-07-08T22:18:14.921Z",
+          "elapsed_ms": 103969
+        },
+        "todo:3": {
+          "task_key": "todo:3",
+          "task_label": "3",
+          "task_title": "Wire shared refresh callback from DeviceManager to DeviceTable + DfrBoardsPanel",
+          "session_id": "opencode:ses_0bc304f5effeVKE6uDCI5jOSTx",
+          "agent": "Sisyphus-Junior",
+          "category": "visual-engineering",
+          "updated_at": "2026-07-08T22:21:21.911Z",
+          "started_at": "2026-07-08T22:20:36.414Z",
+          "status": "completed",
+          "ended_at": "2026-07-08T22:21:21.911Z",
+          "elapsed_ms": 45497
+        },
+        "final-wave:f1": {
+          "task_key": "final-wave:f1",
+          "task_label": "F1",
+          "task_title": "Plan compliance audit",
+          "session_id": "opencode:ses_0bc2c7feaffeI4sONIZj347YFs",
+          "agent": "Sisyphus-Junior",
+          "category": "unspecified-low",
+          "updated_at": "2026-07-08T22:59:10.646Z",
+          "started_at": "2026-07-08T22:23:50.169Z",
+          "status": "completed",
+          "ended_at": "2026-07-08T22:59:10.646Z"
+        }
+      },
+      "ended_at": "2026-07-08T22:59:10.646Z",
+      "elapsed_ms": 2831645
+    },
+    "production-safety-92d90761": {
+      "work_id": "production-safety-92d90761",
+      "active_plan": "/home/antoine/ProjectCEA/.omo/plans/production-safety.md",
+      "plan_name": "production-safety",
+      "status": "active",
+      "started_at": "2026-07-12T12:44:41.062Z",
+      "updated_at": "2026-07-12T13:24:19.446Z",
+      "session_ids": [
+        "opencode:ses_0e70fc228ffeBshhzGKaAPSeMu"
+      ],
+      "session_origins": {
+        "opencode:ses_0e70fc228ffeBshhzGKaAPSeMu": "direct"
+      },
+      "agent": "atlas",
+      "task_sessions": {
+        "todo:1": {
+          "task_key": "todo:1",
+          "task_label": "1",
+          "task_title": "Alembic migration: create light_target_intensity + light_programs tables + migrate existing light intensities",
+          "session_id": "opencode:ses_0a9a1a4cfffeRPR4a3a9ML51dF",
+          "agent": "Sisyphus-Junior",
+          "category": "unspecified-high",
+          "updated_at": "2026-07-12T13:24:19.446Z",
+          "started_at": "2026-07-12T13:20:14.711Z",
+          "status": "completed",
+          "ended_at": "2026-07-12T13:24:19.446Z",
+          "elapsed_ms": 244735
+        }
+      }
     }
   },
   "session_ids": [
-    "opencode:ses_0cbe3681bffeR8qTg5sss0JokD"
+    "opencode:ses_0e70fc228ffeBshhzGKaAPSeMu"
   ],
-  "session_origins": {},
+  "session_origins": {
+    "opencode:ses_0e70fc228ffeBshhzGKaAPSeMu": "direct"
+  },
   "task_sessions": {
     "todo:1": {
       "task_key": "todo:1",
       "task_label": "1",
-      "task_title": "Frontend: relabel DFR slots with DFR identity + fix remove-light warning + update existing test",
-      "session_id": "opencode:ses_0c63e01aaffea7xJqaXTFAkluS",
+      "task_title": "Alembic migration: create light_target_intensity + light_programs tables + migrate existing light intensities",
+      "session_id": "opencode:ses_0a9a1a4cfffeRPR4a3a9ML51dF",
       "agent": "Sisyphus-Junior",
-      "category": "visual-engineering",
-      "updated_at": "2026-07-06T23:39:19.377Z",
-      "started_at": "2026-07-06T23:32:04.763Z",
+      "category": "unspecified-high",
+      "updated_at": "2026-07-12T13:24:19.446Z",
+      "started_at": "2026-07-12T13:20:14.711Z",
       "status": "completed",
-      "ended_at": "2026-07-06T23:39:19.377Z",
-      "elapsed_ms": 434614
+      "ended_at": "2026-07-12T13:24:19.446Z",
+      "elapsed_ms": 244735
     }
   },
-  "active_plan": "/home/antoine/ProjectCEA/.omo/plans/dfr-relay-channel-fixes.md",
-  "plan_name": "dfr-relay-channel-fixes",
+  "active_plan": "/home/antoine/ProjectCEA/.omo/plans/production-safety.md",
+  "plan_name": "production-safety",
   "status": "active",
-  "updated_at": "2026-07-06T23:39:19.377Z",
-  "worktree_path": null
+  "updated_at": "2026-07-12T13:24:19.446Z",
+  "started_at": "2026-07-12T12:44:41.062Z",
+  "agent": "atlas"
 }
