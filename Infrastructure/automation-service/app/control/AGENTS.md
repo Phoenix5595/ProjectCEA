@@ -13,7 +13,7 @@ control/
 ├── device_processor.py    # Device state management
 ├── relay_manager.py       # MCP23017 relay control
 ├── pid_controller.py      # PID implementation
-└── tests/
+└── vpd_controller.py      # VPD calculation
 ```
 
 ## DEEP DIVE DOCS
@@ -49,6 +49,31 @@ control/
 
 Light intensity comes from the scheduler (sun/moon schedules). Environmental setpoints come from the active **climate period** (`climate_periods`), not from a fixed four-mode `get_climate_mode` API (removed).
 
+## SCHEDULER CACHES
+
+The `Scheduler` loads these caches atomically on startup. The `_ready` flag blocks the control loop until all caches are populated. All updates do atomic reference swaps (no partial state visible to the control loop).
+
+| Cache | Method | Source |
+|-------|--------|--------|
+| Mode parameters | `update_mode_parameters()` | `mode_parameters` table |
+| Light intensities | `update_light_intensities([{device_id, mode_id}: target_intensity])` | `light_target_intensity` table |
+| Light programs | `update_light_programs()` | `light_programs` table |
+| Device lookup | `update_device_lookup()` | `device_registry` table |
+
+## LIGHT INTENSITY RESOLUTION
+
+`get_schedule_intensity()` evaluates in order:
+
+1. **Light programs** — highest priority active program wins (priority DESC, created_at ASC tie-break).
+2. **Photoperiod + light_target_intensity cache** — if in sun period, look up `(device_id, mode_id)` in the intensity cache.
+3. **0.0** — if not in photoperiod (moon / dark period).
+
+Fallback: `MINIMUM_LIGHT_INTENSITY = 10.0` when no `light_target_intensity` row exists for the device/mode. Hardcoded safety default, not darkness.
+
+## LIGHT RAMP STATE
+
+Keyed by `(location, cluster, device_name)`. Intensity is computed from elapsed time since sun start or end (`time_since_start / ramp_up_duration`). On restart, the ramp resumes by recalculating from elapsed time. No stored intensity value is needed.
+
 ## SAFETY LAYERS
 
 1. **Safety Supervisor**: Hard limits, sensor failure detection
@@ -65,7 +90,4 @@ Light intensity comes from the scheduler (sun/moon schedules). Environmental set
 | Module-level state | Use instance vars or Redis |
 | Read Redis Streams in loop | Streams = history, state keys = control |
 
-## TODO (from code comments)
-
-- `control_engine.py:481`: Integrate with scheduler for DAY/NIGHT mode
-- `device_processor.py:67`: Implement failsafe logic
+*Last updated: 2026-07-12*

@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "active_work_id": "production-safety-92d90761",
+  "active_work_id": "architecture-refactor-cf912494",
   "works": {
     "centralized-device-table": {
       "work_id": "centralized-device-table",
@@ -283,9 +283,9 @@
       "work_id": "production-safety-92d90761",
       "active_plan": "/home/antoine/ProjectCEA/.omo/plans/production-safety.md",
       "plan_name": "production-safety",
-      "status": "active",
+      "status": "completed",
       "started_at": "2026-07-12T12:44:41.062Z",
-      "updated_at": "2026-07-12T15:41:42.167Z",
+      "updated_at": "2026-07-12T16:06:20.343Z",
       "session_ids": [
         "opencode:ses_0e70fc228ffeBshhzGKaAPSeMu"
       ],
@@ -345,6 +345,288 @@
           "updated_at": "2026-07-12T15:41:42.167Z",
           "ended_at": "2026-07-12T15:41:42.167Z",
           "elapsed_ms": 4232508
+        },
+        "final-wave:f1": {
+          "task_key": "final-wave:f1",
+          "task_label": "F1",
+          "task_title": "Plan compliance audit",
+          "session_id": "opencode:ses_0a8ffc8dfffewaXqj4N5E4C9SH",
+          "agent": "Sisyphus-Junior",
+          "category": "unspecified-high",
+          "updated_at": "2026-07-12T15:45:14.424Z",
+          "started_at": "2026-07-12T15:44:25.451Z",
+          "status": "completed",
+          "ended_at": "2026-07-12T15:45:14.424Z",
+          "elapsed_ms": 48973
+        }
+      },
+      "ended_at": "2026-07-12T16:06:20.343Z",
+      "elapsed_ms": 12099281
+    },
+    "post-safety-fixup-ae98d3e5": {
+      "work_id": "post-safety-fixup-ae98d3e5",
+      "active_plan": "/home/antoine/ProjectCEA/.omo/plans/post-safety-fixup.md",
+      "plan_name": "post-safety-fixup",
+      "status": "completed",
+      "started_at": "2026-07-12T16:11:00.462Z",
+      "updated_at": "2026-07-12T17:25:37.296Z",
+      "session_ids": [
+        "opencode:ses_0e70fc228ffeBshhzGKaAPSeMu"
+      ],
+      "session_origins": {
+        "opencode:ses_0e70fc228ffeBshhzGKaAPSeMu": "direct"
+      },
+      "agent": "atlas",
+      "task_sessions": {
+        "todo:1": {
+          "task_key": "todo:1",
+          "task_label": "1",
+          "task_title": "Backup production DB, run 3 pending alembic migrations, purge stale Redis keys, restart automation-service",
+          "session_id": "opencode:ses_0a8bd2560ffe16elbmkzcUitqI",
+          "agent": "Sisyphus-Junior",
+          "category": "deep",
+          "updated_at": "2026-07-12T17:22:59.125Z",
+          "started_at": "2026-07-12T17:15:51.572Z",
+          "status": "completed",
+          "ended_at": "2026-07-12T17:22:59.119Z",
+          "elapsed_ms": 427547
+        },
+        "todo:2": {
+          "task_key": "todo:2",
+          "task_label": "2",
+          "task_title": "End-to-end verification: control pages load, devices visible, light targets correct",
+          "agent": "atlas",
+          "category": "verification",
+          "status": "completed",
+          "started_at": "2026-07-12T17:24:00.000Z",
+          "ended_at": "2026-07-12T17:30:00.000Z",
+          "elapsed_ms": 360000
+        }
+      },
+      "ended_at": "2026-07-12T17:25:37.296Z",
+      "elapsed_ms": 4476834
+    },
+    "device-registry-fix-5ade50b7": {
+      "work_id": "device-registry-fix-5ade50b7",
+      "active_plan": "/home/antoine/ProjectCEA/.omo/plans/device-registry-fix.md",
+      "plan_name": "device-registry-fix",
+      "status": "completed",
+      "started_at": "2026-07-12T17:55:13.871Z",
+      "updated_at": "2026-07-12T19:31:56.897Z",
+      "session_ids": [
+        "opencode:ses_0e70fc228ffeBshhzGKaAPSeMu"
+      ],
+      "session_origins": {
+        "opencode:ses_0e70fc228ffeBshhzGKaAPSeMu": "direct"
+      },
+      "agent": "atlas",
+      "task_sessions": {
+        "todo:1": {
+          "task_key": "todo:1",
+          "task_label": "1",
+          "task_title": "Alembic migration 010: canonicalize non-light device_name + move human-readable to display_name",
+          "session_id": "opencode:ses_0a884546dffenYnpK2Ywml8y0Z",
+          "agent": "Sisyphus-Junior",
+          "category": "unspecified-high",
+          "updated_at": "2026-07-12T18:09:22.356Z",
+          "started_at": "2026-07-12T18:03:30.532Z",
+          "status": "completed",
+          "ended_at": "2026-07-12T18:09:22.356Z",
+          "elapsed_ms": 351824
+        },
+        "todo:3": {
+          "task_key": "todo:3",
+          "task_label": "3",
+          "task_title": "Deploy Wave 1 + run migration 010 + verify DeviceTable populates",
+          "session_id": "opencode:ses_0a86d68b7ffeZI8uFO7HUx2sc5",
+          "agent": "Sisyphus-Junior",
+          "category": "unspecified-high",
+          "started_at": "2026-07-12T18:23:28.602Z",
+          "status": "completed",
+          "updated_at": "2026-07-12T18:41:43.040Z",
+          "ended_at": "2026-07-12T18:41:43.039Z",
+          "elapsed_ms": 1094437
+        },
+        "todo:4": {
+          "task_key": "todo:4",
+          "task_label": "4",
+          "task_title": "Remove dead POST /api/devices/channels/{channel} + DELETE /api/devices/channels/{channel} endpoints",
+          "session_id": "opencode:ses_0a85cd600ffeOLdI6hJXsMxTg5",
+          "agent": "Sisyphus-Junior",
+          "category": "unspecified-high",
+          "updated_at": "2026-07-12T18:53:12.657Z",
+          "started_at": "2026-07-12T18:51:24.243Z",
+          "status": "completed",
+          "ended_at": "2026-07-12T18:53:12.657Z",
+          "elapsed_ms": 108414
+        },
+        "todo:7": {
+          "task_key": "todo:7",
+          "task_label": "7",
+          "task_title": "Deploy Wave 2 + verify all endpoints still work + no YAML writing",
+          "session_id": "opencode:ses_0a85170d0ffeLH7bHfEUR4bXd9",
+          "agent": "Sisyphus-Junior",
+          "category": "unspecified-high",
+          "updated_at": "2026-07-12T19:22:15.636Z",
+          "started_at": "2026-07-12T19:19:54.947Z",
+          "status": "completed",
+          "ended_at": "2026-07-12T19:22:15.636Z",
+          "elapsed_ms": 140689
+        },
+        "final-wave:f1": {
+          "task_key": "final-wave:f1",
+          "task_label": "F1",
+          "task_title": "Plan compliance audit",
+          "session_id": "opencode:ses_0a8378039ffeujKfSgouwWXkKl",
+          "agent": "Sisyphus-Junior",
+          "category": "unspecified-high",
+          "updated_at": "2026-07-12T19:31:56.897Z",
+          "started_at": "2026-07-12T19:29:38.135Z",
+          "status": "completed",
+          "ended_at": "2026-07-12T19:31:56.897Z",
+          "elapsed_ms": 138762
+        }
+      },
+      "ended_at": "2026-07-12T19:35:24.056727+00:00",
+      "elapsed_ms": 1834126
+    },
+    "control-page-overhaul-c547484a": {
+      "work_id": "control-page-overhaul-c547484a",
+      "active_plan": "/home/antoine/ProjectCEA/.omo/plans/control-page-overhaul.md",
+      "plan_name": "control-page-overhaul",
+      "status": "completed",
+      "started_at": "2026-07-12T20:54:07.380Z",
+      "updated_at": "2026-07-12T22:08:23.059Z",
+      "session_ids": [
+        "opencode:ses_0e70fc228ffeBshhzGKaAPSeMu"
+      ],
+      "session_origins": {
+        "opencode:ses_0e70fc228ffeBshhzGKaAPSeMu": "direct"
+      },
+      "agent": "atlas",
+      "task_sessions": {
+        "todo:1": {
+          "task_key": "todo:1",
+          "task_label": "1",
+          "task_title": "Create light_target_intensity + light_programs tables via direct SQL + seed data + delete migration tests",
+          "session_id": "opencode:ses_0a7e13040ffeastFyavM1Gq9qx",
+          "agent": "Sisyphus-Junior",
+          "category": "unspecified-high",
+          "updated_at": "2026-07-12T21:49:49.656Z",
+          "started_at": "2026-07-12T21:06:39.825Z",
+          "status": "completed",
+          "ended_at": "2026-07-12T21:49:49.656Z",
+          "elapsed_ms": 2589831
+        },
+        "final-wave:f1": {
+          "task_key": "final-wave:f1",
+          "task_label": "F1",
+          "task_title": "Plan compliance audit",
+          "session_id": "opencode:ses_0a7a5602dffeSlVZsDm5yuo2gR",
+          "agent": "Sisyphus-Junior",
+          "category": "unspecified-low",
+          "updated_at": "2026-07-12T22:07:06.829Z",
+          "started_at": "2026-07-12T22:05:26.790Z",
+          "status": "completed",
+          "ended_at": "2026-07-12T22:07:06.829Z",
+          "elapsed_ms": 100039
+        }
+      },
+      "ended_at": "2026-07-12T22:08:23.059Z",
+      "elapsed_ms": 4455679
+    },
+    "architecture-refactor-cf912494": {
+      "work_id": "architecture-refactor-cf912494",
+      "active_plan": "/home/antoine/ProjectCEA/.omo/plans/architecture-refactor.md",
+      "plan_name": "architecture-refactor",
+      "status": "active",
+      "started_at": "2026-07-12T23:10:36.590Z",
+      "updated_at": "2026-07-13T10:25:50.866Z",
+      "session_ids": [
+        "opencode:ses_0e70fc228ffeBshhzGKaAPSeMu"
+      ],
+      "session_origins": {
+        "opencode:ses_0e70fc228ffeBshhzGKaAPSeMu": "direct"
+      },
+      "agent": "atlas",
+      "task_sessions": {
+        "todo:1": {
+          "task_key": "todo:1",
+          "task_label": "1",
+          "task_title": "Remove legacy/superseded code (18 categories)",
+          "session_id": "opencode:ses_0a7647354ffeEU1tV3YXAhmUpL",
+          "agent": "Sisyphus-Junior",
+          "category": "deep",
+          "updated_at": "2026-07-12T23:40:54.865Z",
+          "started_at": "2026-07-12T23:21:00.551Z",
+          "status": "completed",
+          "ended_at": "2026-07-12T23:40:54.865Z",
+          "elapsed_ms": 1194314
+        },
+        "todo:2": {
+          "task_key": "todo:2",
+          "task_label": "2",
+          "task_title": "Deduplicate: relay steal + hierarchy traversal + Redis keys + room prefix + YAML loading",
+          "session_id": "opencode:ses_0a72eb9e8ffeEFHLcTRBeYDEV1",
+          "agent": "Sisyphus-Junior",
+          "category": "quick",
+          "started_at": "2026-07-12T23:54:41.933Z",
+          "status": "completed",
+          "updated_at": "2026-07-13T00:25:07.468Z",
+          "ended_at": "2026-07-13T00:25:07.468Z",
+          "elapsed_ms": 1825535
+        },
+        "todo:3": {
+          "task_key": "todo:3",
+          "task_label": "3",
+          "task_title": "Split oversized files (>500 LOC) into focused modules",
+          "session_id": "opencode:ses_0a72289b9ffehWdQ10Q7fMJdEe",
+          "agent": "Sisyphus-Junior",
+          "category": "deep",
+          "updated_at": "2026-07-13T01:19:03.193Z",
+          "started_at": "2026-07-13T00:51:43.850Z",
+          "status": "completed",
+          "ended_at": "2026-07-13T01:19:03.193Z",
+          "elapsed_ms": 1639343
+        },
+        "todo:4": {
+          "task_key": "todo:4",
+          "task_label": "4",
+          "task_title": "Standardize BaseRepository + fix CalendarRepository",
+          "session_id": "opencode:ses_0a6f0b996ffeHZaAlT9NUah5dP",
+          "agent": "Sisyphus-Junior",
+          "category": "deep",
+          "updated_at": "2026-07-13T01:41:40.721Z",
+          "started_at": "2026-07-13T01:33:05.161Z",
+          "status": "completed",
+          "ended_at": "2026-07-13T01:41:40.721Z",
+          "elapsed_ms": 515560
+        },
+        "todo:5": {
+          "task_key": "todo:5",
+          "task_label": "5",
+          "task_title": "Consolidate route handlers + document all routes",
+          "session_id": "opencode:ses_0a6da5266ffe1oE0iCyZr5Y1f0",
+          "agent": "Sisyphus-Junior",
+          "category": "writing",
+          "updated_at": "2026-07-13T02:02:50.970Z",
+          "started_at": "2026-07-13T01:55:12.002Z",
+          "status": "completed",
+          "ended_at": "2026-07-13T02:02:50.969Z",
+          "elapsed_ms": 458967
+        },
+        "final-wave:f1": {
+          "task_key": "final-wave:f1",
+          "task_label": "F1",
+          "task_title": "Plan compliance audit",
+          "session_id": "opencode:ses_0a6c6a871ffefjT8dAB6JiO5vu",
+          "agent": "Sisyphus-Junior",
+          "category": "unspecified-low",
+          "updated_at": "2026-07-13T10:25:50.866Z",
+          "started_at": "2026-07-13T02:24:28.936Z",
+          "status": "completed",
+          "ended_at": "2026-07-13T10:25:50.866Z",
+          "elapsed_ms": 28881930
         }
       }
     }
@@ -359,60 +641,86 @@
     "todo:1": {
       "task_key": "todo:1",
       "task_label": "1",
-      "task_title": "Add cached data structures for mode_parameters, light_intensities, light_programs, device_lookup",
-      "session_id": "opencode:ses_0a967aa41ffeq1GnwSusMsy1A3",
-      "agent": "Sisyphus-Junior",
-      "category": "ultrabrain",
-      "started_at": "2026-07-12T13:20:14.711Z",
-      "ended_at": "2026-07-12T14:01:06.636Z",
-      "elapsed_ms": 2451925,
-      "status": "completed",
-      "updated_at": "2026-07-12T14:01:06.636Z"
-    },
-    "todo:6": {
-      "task_key": "todo:6",
-      "task_label": "6",
-      "task_title": "Load mode_parameters + light_target_intensity + light_programs into Scheduler at startup and on config changes",
-      "session_id": "opencode:ses_0a95d222dffez8z141G1pKDYhr",
+      "task_title": "Remove legacy/superseded code (18 categories)",
+      "session_id": "opencode:ses_0a7647354ffeEU1tV3YXAhmUpL",
       "agent": "Sisyphus-Junior",
       "category": "deep",
-      "updated_at": "2026-07-12T14:12:32.844Z",
-      "started_at": "2026-07-12T14:09:51.503Z",
+      "updated_at": "2026-07-12T23:40:54.865Z",
+      "started_at": "2026-07-12T23:21:00.551Z",
       "status": "completed",
-      "ended_at": "2026-07-12T14:12:32.844Z",
-      "elapsed_ms": 161341
+      "ended_at": "2026-07-12T23:40:54.865Z",
+      "elapsed_ms": 1194314
     },
-    "todo:7": {
-      "task_key": "todo:7",
-      "task_label": "7",
-      "task_title": "Auto-create light_target_intensity row when a light is created",
-      "session_id": "opencode:ses_0a950d2b7ffedVo5ZaPa07jXsq",
+    "todo:2": {
+      "task_key": "todo:2",
+      "task_label": "2",
+      "task_title": "Deduplicate: relay steal + hierarchy traversal + Redis keys + room prefix + YAML loading",
+      "session_id": "opencode:ses_0a72eb9e8ffeEFHLcTRBeYDEV1",
       "agent": "Sisyphus-Junior",
       "category": "quick",
-      "updated_at": "2026-07-12T14:27:14.151Z",
-      "started_at": "2026-07-12T14:24:48.002Z",
+      "started_at": "2026-07-12T23:54:41.933Z",
       "status": "completed",
-      "ended_at": "2026-07-12T14:27:14.151Z",
-      "elapsed_ms": 146149
+      "updated_at": "2026-07-13T00:25:07.468Z",
+      "ended_at": "2026-07-13T00:25:07.468Z",
+      "elapsed_ms": 1825535
     },
-    "todo:10": {
-      "task_key": "todo:10",
-      "task_label": "10",
-      "task_title": "Remove old code references + documentation cleanup (AGENTS.md, ARCHITECTURE.md, SCHEMATIC, old tests)",
-      "session_id": "opencode:ses_0a9341176ffe7Zp6r3gQhyP4k3",
+    "todo:3": {
+      "task_key": "todo:3",
+      "task_label": "3",
+      "task_title": "Split oversized files (>500 LOC) into focused modules",
+      "session_id": "opencode:ses_0a72289b9ffehWdQ10Q7fMJdEe",
       "agent": "Sisyphus-Junior",
       "category": "deep",
-      "started_at": "2026-07-12T14:31:09.659Z",
+      "updated_at": "2026-07-13T01:19:03.193Z",
+      "started_at": "2026-07-13T00:51:43.850Z",
       "status": "completed",
-      "updated_at": "2026-07-12T15:41:42.167Z",
-      "ended_at": "2026-07-12T15:41:42.167Z",
-      "elapsed_ms": 4232508
+      "ended_at": "2026-07-13T01:19:03.193Z",
+      "elapsed_ms": 1639343
+    },
+    "todo:4": {
+      "task_key": "todo:4",
+      "task_label": "4",
+      "task_title": "Standardize BaseRepository + fix CalendarRepository",
+      "session_id": "opencode:ses_0a6f0b996ffeHZaAlT9NUah5dP",
+      "agent": "Sisyphus-Junior",
+      "category": "deep",
+      "updated_at": "2026-07-13T01:41:40.721Z",
+      "started_at": "2026-07-13T01:33:05.161Z",
+      "status": "completed",
+      "ended_at": "2026-07-13T01:41:40.721Z",
+      "elapsed_ms": 515560
+    },
+    "todo:5": {
+      "task_key": "todo:5",
+      "task_label": "5",
+      "task_title": "Consolidate route handlers + document all routes",
+      "session_id": "opencode:ses_0a6da5266ffe1oE0iCyZr5Y1f0",
+      "agent": "Sisyphus-Junior",
+      "category": "writing",
+      "updated_at": "2026-07-13T02:02:50.970Z",
+      "started_at": "2026-07-13T01:55:12.002Z",
+      "status": "completed",
+      "ended_at": "2026-07-13T02:02:50.969Z",
+      "elapsed_ms": 458967
+    },
+    "final-wave:f1": {
+      "task_key": "final-wave:f1",
+      "task_label": "F1",
+      "task_title": "Plan compliance audit",
+      "session_id": "opencode:ses_0a6c6a871ffefjT8dAB6JiO5vu",
+      "agent": "Sisyphus-Junior",
+      "category": "unspecified-low",
+      "updated_at": "2026-07-13T10:25:50.866Z",
+      "started_at": "2026-07-13T02:24:28.936Z",
+      "status": "completed",
+      "ended_at": "2026-07-13T10:25:50.866Z",
+      "elapsed_ms": 28881930
     }
   },
-  "active_plan": "/home/antoine/ProjectCEA/.omo/plans/production-safety.md",
-  "plan_name": "production-safety",
+  "active_plan": "/home/antoine/ProjectCEA/.omo/plans/architecture-refactor.md",
+  "plan_name": "architecture-refactor",
   "status": "active",
-  "updated_at": "2026-07-12T15:41:42.167Z",
-  "started_at": "2026-07-12T12:44:41.062Z",
+  "updated_at": "2026-07-13T10:25:50.866Z",
+  "started_at": "2026-07-12T23:10:36.590Z",
   "agent": "atlas"
 }

@@ -36,6 +36,7 @@ class Device(BaseModel):
     display_name: str | None = None
     device_name: str = Field(
         pattern=r"^[a-z][a-z0-9]*_[fvlo]_\d+$",
+        min_length=1,
         description="Canonical name: <type>_<room_prefix>_<index>",
     )
     location: str

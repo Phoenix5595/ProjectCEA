@@ -83,6 +83,10 @@ export default function DeviceManager() {
   }
 
   useEffect(() => {
+    void loadChannels(false)
+  }, [refreshKey])
+
+  useEffect(() => {
     const intervalId = window.setInterval(() => setNowMs(Date.now()), 1000)
     return () => window.clearInterval(intervalId)
   }, [])

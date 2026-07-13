@@ -21,8 +21,9 @@ from app.models.device_registry import (
     LightDeviceCreate,
     LightDeviceUpdate,
 )
-from app.repositories.devices import DeviceRepository, _room_prefix
+from app.repositories.devices import DeviceRepository, _find_displaced_device
 from app.services.schedule_auto_create import create_default_intensity_for_light
+from shared.cluster_topology import _room_prefix
 from shared.fastapi_helpers import is_production
 from shared.infra_logging import get_logger
 
@@ -91,21 +92,18 @@ async def create_registry_device(
                 status_code=400, detail="board_id and dimming_channel are required for lights"
             )
 
-        hierarchy = await device_repo.get_all_as_hierarchy()
-        for loc, clusters in hierarchy.items():
-            for clu, devices in clusters.items():
-                for dev_name, dev_info in devices.items():
-                    if (
-                        dev_info.get("dimming_board_id") == board_id
-                        and dev_info.get("dimming_channel") == dimming_channel
-                    ):
-                        raise HTTPException(
-                            status_code=409,
-                            detail=(
-                                f"DFR channel already occupied by {loc}/{clu}/{dev_name} "
-                                f"(board_id={board_id}, channel={dimming_channel})"
-                            ),
-                        )
+        async for loc, clu, dev_name, dev_info in device_repo.iter_all_devices_flat():
+            if (
+                dev_info.get("dimming_board_id") == board_id
+                and dev_info.get("dimming_channel") == dimming_channel
+            ):
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        f"DFR channel already occupied by {loc}/{clu}/{dev_name} "
+                        f"(board_id={board_id}, channel={dimming_channel})"
+                    ),
+                )
 
         # Build LightDeviceCreate without the device_type field
         light_body = {k: v for k, v in body.items() if k != "device_type"}
@@ -152,18 +150,14 @@ async def create_registry_device(
         # Relay channel conflict check (global)
         channel = body.get("channel")
         if channel is not None:
-            hierarchy = await device_repo.get_all_as_hierarchy()
-            for loc, clusters in hierarchy.items():
-                for clu, devices in clusters.items():
-                    for dev_name, dev_info in devices.items():
-                        if dev_info.get("channel") == channel:
-                            raise HTTPException(
-                                status_code=409,
-                                detail=(
-                                    f"Relay channel {channel} already occupied by "
-                                    f"{loc}/{clu}/{dev_name}"
-                                ),
-                            )
+            async for loc, clu, dev_name, dev_info in device_repo.iter_all_devices_flat():
+                if dev_info.get("channel") == channel:
+                    raise HTTPException(
+                        status_code=409,
+                        detail=(
+                            f"Relay channel {channel} already occupied by {loc}/{clu}/{dev_name}"
+                        ),
+                    )
 
         try:
             device_create = DeviceCreate(**body)
@@ -182,7 +176,7 @@ async def update_registry_device(
     body: dict[str, Any],
     device_repo: DeviceRepository = Depends(get_device_repo),
     config: ConfigLoader = Depends(get_config),
-) -> Device | LightDevice:
+) -> Any:
     """Update an existing device (light or non-light)."""
     current_type = await device_repo.get_device_type_by_id(device_id)
     if current_type is None:
@@ -223,43 +217,33 @@ async def update_registry_device(
             update_fields["dimming_channel"] = light_fields["dimming_channel"]
 
         # Relay channel conflict check for lights on update
+        displaced_id: int | None = None
         if "relay_channel" in update_fields and update_fields["relay_channel"] is not None:
-            hierarchy = await device_repo.get_all_as_hierarchy()
-            for loc, clusters in hierarchy.items():
-                for clu, devices in clusters.items():
-                    for dev_name, dev_info in devices.items():
-                        if (
-                            dev_info.get("channel") == update_fields["relay_channel"]
-                            and dev_info.get("device_id") != device_id
-                        ):
-                            raise HTTPException(
-                                status_code=409,
-                                detail=(
-                                    f"Relay channel {update_fields['relay_channel']} already occupied by "
-                                    f"{loc}/{clu}/{dev_name}"
-                                ),
-                            )
+            displaced_id = await _find_displaced_device(
+                device_repo, update_fields["relay_channel"], exclude_device_id=device_id
+            )
+            if displaced_id is not None:
+                await device_repo.clear_relay_binding_only(displaced_id)
+                logger.info(
+                    f"Relay steal: light {device_id} took channel {update_fields['relay_channel']} from device {displaced_id}"
+                )
 
         # DFR channel conflict check for lights on update
         if "dimming_board_id" in update_fields and update_fields["dimming_board_id"] is not None:
-            hierarchy = await device_repo.get_all_as_hierarchy()
-            for loc, clusters in hierarchy.items():
-                for clu, devices in clusters.items():
-                    for dev_name, dev_info in devices.items():
-                        if (
-                            dev_info.get("dimming_board_id") == update_fields["dimming_board_id"]
-                            and dev_info.get("dimming_channel")
-                            == update_fields.get("dimming_channel")
-                            and dev_info.get("device_id") != device_id
-                        ):
-                            raise HTTPException(
-                                status_code=409,
-                                detail=(
-                                    f"DFR channel already occupied by {loc}/{clu}/{dev_name} "
-                                    f"(board_id={update_fields['dimming_board_id']}, "
-                                    f"channel={update_fields.get('dimming_channel')})"
-                                ),
-                            )
+            async for loc, clu, dev_name, dev_info in device_repo.iter_all_devices_flat():
+                if (
+                    dev_info.get("dimming_board_id") == update_fields["dimming_board_id"]
+                    and dev_info.get("dimming_channel") == update_fields.get("dimming_channel")
+                    and dev_info.get("device_id") != device_id
+                ):
+                    raise HTTPException(
+                        status_code=409,
+                        detail=(
+                            f"DFR channel already occupied by {loc}/{clu}/{dev_name} "
+                            f"(board_id={update_fields['dimming_board_id']}, "
+                            f"channel={update_fields.get('dimming_channel')})"
+                        ),
+                    )
 
         updated = await device_repo.update_light(device_id, **update_fields)
         if updated is None:
@@ -275,7 +259,9 @@ async def update_registry_device(
             )
 
         config.invalidate_device_cache()
-        return updated
+        response = updated.model_dump()
+        response["displaced_device_id"] = displaced_id
+        return response
     else:
         # Non-light device
         device_fields = {k: v for k, v in body.items() if k in DeviceUpdate.model_fields}
@@ -287,29 +273,25 @@ async def update_registry_device(
             ) from exc
 
         # Relay channel conflict check for non-lights on update
+        displaced_id: int | None = None
         if device_update.channel is not None:
-            hierarchy = await device_repo.get_all_as_hierarchy()
-            for loc, clusters in hierarchy.items():
-                for clu, devices in clusters.items():
-                    for dev_name, dev_info in devices.items():
-                        if (
-                            dev_info.get("channel") == device_update.channel
-                            and dev_info.get("device_id") != device_id
-                        ):
-                            raise HTTPException(
-                                status_code=409,
-                                detail=(
-                                    f"Relay channel {device_update.channel} already occupied by "
-                                    f"{loc}/{clu}/{dev_name}"
-                                ),
-                            )
+            displaced_id = await _find_displaced_device(
+                device_repo, device_update.channel, exclude_device_id=device_id
+            )
+            if displaced_id is not None:
+                await device_repo.clear_relay_binding_only(displaced_id)
+                logger.info(
+                    f"Relay steal: device {device_id} took channel {device_update.channel} from device {displaced_id}"
+                )
 
         updated = await device_repo.update_device(device_id, device_update)
         if updated is None:
             raise HTTPException(status_code=404, detail=f"Device {device_id} not found")
 
         config.invalidate_device_cache()
-        return updated
+        response = updated.model_dump()
+        response["displaced_device_id"] = displaced_id
+        return response
 
 
 @router.delete("/api/devices/registry/{device_id}")

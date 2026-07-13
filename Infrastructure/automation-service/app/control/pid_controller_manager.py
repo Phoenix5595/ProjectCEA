@@ -6,7 +6,8 @@ from collections.abc import Mapping
 from datetime import datetime
 from typing import Any
 
-from app.state import PIDParams, StateManager, get_state_manager
+from app.state import StateManager, get_state_manager
+from app.state.pid import PIDParams
 from shared.infra_logging import LoggingContext, get_logger
 
 logger = get_logger(__name__)

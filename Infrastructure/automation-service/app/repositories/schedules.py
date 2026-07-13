@@ -3,6 +3,14 @@ from __future__ import annotations
 from datetime import time as dt_time
 from typing import TYPE_CHECKING, Any, cast
 
+from app.redis.schema import (
+    schedule_cache_key,
+    schedule_cache_key_all,
+    schedule_cache_key_light,
+    schedule_cache_key_location,
+    schedule_cache_key_room_light,
+)
+
 from .base import BaseRepository, logger
 
 if TYPE_CHECKING:
@@ -25,18 +33,18 @@ class ScheduleRepository(BaseRepository):
     @staticmethod
     def _cache_key_schedules(location: str | None, cluster: str | None) -> str:
         if location and cluster:
-            return f"schedules:loc:{location}:cluster:{cluster}"
+            return schedule_cache_key(location, cluster)
         if location:
-            return f"schedules:loc:{location}"
-        return "schedules:all"
+            return schedule_cache_key_location(location)
+        return schedule_cache_key_all()
 
     @staticmethod
     def _cache_key_light(location: str, cluster: str, device_name: str) -> str:
-        return f"schedules:loc:{location}:cluster:{cluster}:light:{device_name}"
+        return schedule_cache_key_light(location, cluster, device_name)
 
     @staticmethod
     def _cache_key_room_light(location: str, cluster: str) -> str:
-        return f"schedules:loc:{location}:cluster:{cluster}:room_light_schedule"
+        return schedule_cache_key_room_light(location, cluster)
 
     async def _publish_schedule_changed(
         self,

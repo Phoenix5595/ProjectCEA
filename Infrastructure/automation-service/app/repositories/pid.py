@@ -3,6 +3,10 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING, Any
 
+from app.redis.schema import (
+    pid_autotune_key_with_location,
+    pid_parameters_key,
+)
 from app.state import StateManager, get_state_manager  # type: ignore
 
 from .base import BaseRepository, logger
@@ -156,7 +160,7 @@ class PIDRepository(BaseRepository):
                     try:
                         state = get_state_manager()
                         if state is not None:
-                            await state.delete(f"pid:parameters:{location}:{cluster}:{device_type}")
+                            await state.delete(pid_parameters_key(location, cluster, device_type))
                             await state.delete("pid:parameters:all")
                     except Exception as e:
                         logger.debug(f"PID cache invalidation failed for {device_type}: {e}")
@@ -309,7 +313,7 @@ class PIDRepository(BaseRepository):
                 try:
                     state = get_state_manager()
                     if state is not None:
-                        await state.delete(f"pid:parameters:{location}:{cluster}:{device_type}")
+                        await state.delete(pid_parameters_key(location, cluster, device_type))
                         await state.delete("pid:parameters:all")
                 except Exception as e:
                     logger.debug(
@@ -446,7 +450,9 @@ class PIDRepository(BaseRepository):
                 try:
                     st = get_state_manager()
                     if st is not None:
-                        await st.delete(f"pid:autotune:{location}:{cluster}:{device_type}")
+                        await st.delete(
+                            pid_autotune_key_with_location(location, cluster, device_type)
+                        )
                 except Exception as e:
                     logger.debug(f"Autotune cache invalidation failed for {device_type}: {e}")
                 return True
@@ -555,7 +561,7 @@ class PIDRepository(BaseRepository):
                 try:
                     state = get_state_manager()
                     if state is not None:
-                        await state.delete(f"pid:parameters:{location}:{cluster}:{device_type}")
+                        await state.delete(pid_parameters_key(location, cluster, device_type))
                         await state.delete("pid:parameters:all")
                 except Exception as e:
                     logger.debug(

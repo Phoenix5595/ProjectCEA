@@ -149,6 +149,102 @@ def relay_raw_override_key(channel: int) -> str:
     return f"cea:relay:manual_override:{channel}"
 
 
+def light_state_key(location: str, cluster: str, device_name: str) -> str:
+    return f"cea:light:{location}:{cluster}:{device_name}"
+
+
+def automation_state_key(location: str, cluster: str, device_name: str) -> str:
+    return f"cea:automation:{location}:{cluster}:{device_name}"
+
+
+def schedule_cache_key(location: str, cluster: str) -> str:
+    return f"schedules:loc:{location}:cluster:{cluster}"
+
+
+def effective_setpoint_light_key(location: str, cluster: str, device_name: str) -> str:
+    return f"effective_setpoint:{location}:{cluster}:{device_name}:light"
+
+
+def pid_key_with_location(location: str, cluster: str, device_type: str) -> str:
+    return f"cea:pid:{location}:{cluster}:{device_type}"
+
+
+def legacy_light_state_key(location: str, cluster: str, device_name: str) -> str:
+    return f"light:{location}:{cluster}:{device_name}"
+
+
+def legacy_automation_state_key(location: str, cluster: str, device_name: str) -> str:
+    return f"automation:{location}:{cluster}:{device_name}"
+
+
+def legacy_setpoint_field_key(location: str, cluster: str, field: str) -> str:
+    return f"setpoint:{location}:{cluster}:{field}"
+
+
+def legacy_effective_setpoint_prefix(location: str, cluster: str) -> str:
+    return f"effective_setpoint:{location}:{cluster}"
+
+
+def legacy_alarm_key(location: str, cluster: str, alarm_name: str) -> str:
+    return f"alarm:{location}:{cluster}:{alarm_name}"
+
+
+def legacy_alarm_prefix(location: str, cluster: str) -> str:
+    return f"alarm:{location}:{cluster}:"
+
+
+def legacy_alarm_pattern(location: str, cluster: str) -> str:
+    return f"alarm:{location}:{cluster}:*"
+
+
+def alarm_pattern(location: str, cluster: str) -> str:
+    return f"cea:alarm:{location}:{cluster}:*"
+
+
+def legacy_ramp_key(location: str, cluster: str, setpoint_type: str) -> str:
+    return f"ramp:{location}:{cluster}:{setpoint_type}"
+
+
+def legacy_ramp_persist_key(location: str, cluster: str, setpoint_type: str) -> str:
+    return f"ramp_persist:{location}:{cluster}:{setpoint_type}"
+
+
+def legacy_mode_key(location: str, cluster: str) -> str:
+    return f"mode:{location}:{cluster}"
+
+
+def legacy_failsafe_key(location: str, cluster: str) -> str:
+    return f"failsafe:{location}:{cluster}"
+
+
+def pid_parameters_key(location: str, cluster: str, device_type: str) -> str:
+    return f"pid:parameters:{location}:{cluster}:{device_type}"
+
+
+def pid_autotune_key(device_type: str) -> str:
+    return f"pid:autotune:{device_type}"
+
+
+def pid_autotune_key_with_location(location: str, cluster: str, device_type: str) -> str:
+    return f"pid:autotune:{location}:{cluster}:{device_type}"
+
+
+def schedule_cache_key_all() -> str:
+    return "schedules:all"
+
+
+def schedule_cache_key_location(location: str) -> str:
+    return f"schedules:loc:{location}"
+
+
+def schedule_cache_key_light(location: str, cluster: str, device_name: str) -> str:
+    return f"schedules:loc:{location}:cluster:{cluster}:light:{device_name}"
+
+
+def schedule_cache_key_room_light(location: str, cluster: str) -> str:
+    return f"schedules:loc:{location}:cluster:{cluster}:room_light_schedule"
+
+
 # Backward-compatibility helpers for gradual key migration
 def get_with_backward_compat(
     redis_client: redis_lib.Redis,
@@ -212,6 +308,30 @@ __all__ = [
     "pid_key",
     "heartbeat_key",
     "relay_raw_override_key",
+    "light_state_key",
+    "automation_state_key",
+    "schedule_cache_key",
+    "effective_setpoint_light_key",
+    "pid_key_with_location",
+    "legacy_light_state_key",
+    "legacy_automation_state_key",
+    "legacy_setpoint_field_key",
+    "legacy_effective_setpoint_prefix",
+    "legacy_alarm_key",
+    "legacy_alarm_prefix",
+    "legacy_alarm_pattern",
+    "alarm_pattern",
+    "legacy_ramp_key",
+    "legacy_ramp_persist_key",
+    "legacy_mode_key",
+    "legacy_failsafe_key",
+    "pid_parameters_key",
+    "pid_autotune_key",
+    "pid_autotune_key_with_location",
+    "schedule_cache_key_all",
+    "schedule_cache_key_location",
+    "schedule_cache_key_light",
+    "schedule_cache_key_room_light",
     "get_with_backward_compat",
     "set_with_backward_compat",
 ]

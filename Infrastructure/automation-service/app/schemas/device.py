@@ -33,13 +33,3 @@ class DeviceConfigUpdate(BaseModel):
 
     display_name: str | None = None
     device_type: str | None = None
-
-
-class ChannelDeviceUpdate(BaseModel):
-    """Request model for updating MCP channel device assignment."""
-
-    device_name: str
-    device_type: str
-    location: str
-    cluster: str
-    light_name: str | None = None  # If device_type is "light", specify which light

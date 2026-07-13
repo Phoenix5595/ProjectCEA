@@ -2,7 +2,7 @@
 
 ## Dashboard Location
 - **Repo**: `/home/antoine/ProjectCEA/Infrastructure/frontend/grafana/dashboards/`
-- **Deployed**: `/var/lib/grafana/dashboards/`
+- **Deployed**: `/var/lib/grafana/dashboards/` on `projectcea_grafana` container (`iskraprojectcea:3001`)
 - **Provisioning**: `/etc/grafana/provisioning/dashboards/`
 
 ## Deployment Process (What Works)
@@ -31,9 +31,7 @@ sudo cp /home/antoine/ProjectCEA/Infrastructure/frontend/grafana/dashboards/flow
 
 ### 3. Force Grafana to reload (if changes don't appear)
 ```bash
-sudo systemctl stop grafana-server
-sudo sqlite3 /var/lib/grafana/grafana.db "DELETE FROM dashboard WHERE title LIKE '%Flower%';"
-sudo systemctl start grafana-server
+docker restart projectcea_grafana
 ```
 
 ## Common Fixes
@@ -43,7 +41,7 @@ sudo systemctl start grafana-server
 **Fix**: Set CEA Sensors as default datasource
 ```bash
 sudo sqlite3 /var/lib/grafana/grafana.db "UPDATE data_source SET is_default = 1 WHERE uid = 'bf6vebq5ipybke';"
-sudo systemctl restart grafana-server
+docker restart projectcea_grafana
 ```
 
 ### Fix: Modify fillOpacity for specific series

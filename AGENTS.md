@@ -1,7 +1,5 @@
 # ProjectCEA - Comprehensive Agent Guidelines
 
-**Generated:** 2026-02-08 | **Branch:** main
-
 ## ⚠️ CRITICAL URLS - READ THIS FIRST
 
 | Service | URL | Notes |
@@ -10,115 +8,42 @@
 | **Grafana** | `http://iskraprojectcea:3001` | `projectcea_grafana` container (Phase 5c, 2026-04-19). NOT `localhost:3000` (Pi Grafana decommissioned) and NOT `iskradocker:3000` (pre-5b). |
 | **Backend API** | `http://mothernode:8080` | Sensor data (proxied through Caddy `:8080` → `:8000`) |
 | **Automation API** | `http://mothernode:8080` | Control & config (proxied through Caddy `:8080` → `:8001`) |
-| **Weather** | `http://mothernode:8080` | Weather service (proxied through Caddy `:8080` → `:8003`)
-
-**Grafana is on iskradocker, NOT localhost!**
+| **Weather** | `http://mothernode:8080` | Weather service (proxied through Caddy `:8080` → `:8003`) |
 
 ---
 
 ## 🚨 CRITICAL SAFETY RULE — PRODUCTION DATA IS SACRED
 
-**Tests MUST NEVER connect to production databases. EVER.**
+**NEVER modify production data unless explicitly requested.**
 
-- The production database is `cea_sensors`. Tests MUST use a separate `cea_sensors_test` database.
-- ANY test that `TRUNCATE`s, `DELETE`s, `DROP`s, or modifies data in `cea_sensors` will cause **crop damage** (lights off, climate control failure, data loss).
-- If a test needs to clean state, it MUST use `cea_sensors_test` (create it with `CREATE DATABASE cea_sensors_test WITH TEMPLATE cea_sensors;` if needed).
-- **Violation of this rule is a SEVERE FAILURE.** Production data integrity is non-negotiable.
-- Before running ANY test suite, verify the DB connection string points to a test database, NOT `cea_sensors`.
+- The production database is `cea_sensors`. ANY `TRUNCATE`, `DELETE`, `DROP`, or write operation on `cea_sensors` causes **crop damage** (lights off, climate control failure, data loss).
+- **Violation is a SEVERE FAILURE.** Production data integrity is non-negotiable.
 
 **Why this matters:** On 2026-07-07, tests with `TRUNCATE TABLE device_registry` connected to `cea_sensors` wiped all devices. The control loop lost all lights → 30+ minutes of darkness → potential crop stress. This must NEVER happen again.
 
 ---
 
-## COMPREHENSIVE SYSTEM STRUCTURE
-
-```
-ProjectCEA/
-├── 📁 Infrastructure/           # All production services (see Infrastructure/AGENTS.md)
-│   ├── 🚀 automation-service/   # Control loop + frontend (8001)
-│   ├── 📊 backend/              # Sensor API + WebSocket (8000)
-│   ├── 📡 can-processor-service/# CAN ingestion
-│   ├── 🌱 soil-sensor-service/  # RS485 Modbus ingestion
-│   ├── 🌤️ weather-service/      # External API ingestion
-│   ├── 🎨 frontend/             # React SPA + Grafana
-│   ├── 🗄️ database/             # TimescaleDB schema
-│   ├── 📋 shared/               # Common libraries
-│   └── 🔧 scripts/             # Maintenance scripts
-├── 🔌 Sensor_Nodes/             # ESP32 firmware (see Sensor_Nodes/AGENTS.md)
-├── 🧠 .sisyphus/                # AI context and planning
-├── 📊 ARCHITECTURE.md            # Canonical system documentation
-└── 🤖 AGENTS.md                 # This file - AI assistant guidelines
-```
-
----
-
 ## CRITICAL SYSTEM ARCHITECTURE
 
-### Data Flow Architecture (Non-Negotiable Pattern)
-
 ```
-🌡️  Sensors (CAN/Modbus/HTTP)
-    ↓ (250kbps CAN / RS485 / API)
-📡 Ingestion Services (can-processor, soil-sensor, weather)
-    ↓ (instant Redis + batched DB)
-💾 Redis (live state) + TimescaleDB (historical)
-    ↓ (<1ms Redis reads)
-🎛️  Control Loop (automation-service, 1-5s tick)
-    ↓ (I2C commands)
-⚡ Actuators (MCP23017 relays + DFR0971 dimming)
-    ↓ (state updates)
-💾 Redis + TimescaleDB (state persistence)
-    ↓ (WebSocket + REST APIs)
-🖥️  Frontend (React SPA) + Grafana Analytics
+Sensors → Ingestion → Redis + TimescaleDB → Control Loop → Actuators → Frontend/Grafana
 ```
 
-### Performance Requirements (Hard SLAs)
-
-| Metric | Requirement | Measurement Point |
-|--------|-------------|-------------------|
-| **Control Loop Latency** | ≤5 seconds max | Sensor read → Actuator response |
-| **Target Control Latency** | 1-2 seconds | Normal operation |
-| **Sensor Update Rate** | 1Hz (1-second) | All sensor types |
-| **Redis Operations** | <1ms | GET/SET operations |
-| **Database Batch Delay** | ≤100ms | 50-message threshold |
-| **WebSocket Updates** | ≤1 second | Data change → UI update |
-| **API Response (95th)** | <200ms | REST endpoint responses |
-| **System Uptime** | 99.9% | Monthly availability |
-| **Recovery Time** | <30 seconds | Automated rollback |
+| Metric | Requirement |
+|--------|-------------|
+| Control loop latency | ≤5s (target 1-2s) |
+| Sensor update rate | 1Hz |
+| Redis operations | <1ms |
+| DB batch delay | ≤100ms |
 
 ---
 
 ## WHERE TO LOOK - COMPREHENSIVE GUIDE
 
-### Primary Documentation (Read First)
+### API Route Inventory
 
-| Priority | Document | Purpose | Location |
-|----------|----------|---------|----------|
-| **🔴 CRITICAL** | **`ARCHITECTURE.md`** | **Complete system narrative + ASCII schematic** | Project root |
-| **🔴 CRITICAL** | **`ARCHITECTURE_SCHEMATIC.md`** | **Mermaid diagrams + structured tables** | Project root |
-| **🟡 HIGH** | **This `AGENTS.md`** | **AI assistant instructions + context** | Project root |
-### Service-Specific Documentation
-
-| Service Area | Location | Focus |
-|---------------|----------|-------|
-| **🎛️ Control Logic** | `Infrastructure/automation-service/app/control/` | PID, scheduling, device control |
-| **📊 Sensor API** | `Infrastructure/backend/app/routes/` | Data retrieval + WebSocket |
-| **📡 CAN Processing** | `Infrastructure/can-processor-service/app/` | Message decoding + distribution |
-| **🗄️ Database Schema** | `Infrastructure/database/` | TimescaleDB structure + queries |
-| **🎨 Frontend UI** | `Infrastructure/frontend/src/` | React components + state management |
-| **📈 Grafana Dashboards** | `Infrastructure/frontend/grafana/dashboards/` | Analytics + visualization |
-| **🔧 ESP32 Firmware** | `Sensor_Nodes/ESP32/fullV6/` | Sensor node implementation |
-| **⚙️ Deployment** | `deploy.sh`, `rollback-deploy.sh` | Production deploy + symlink rollback + NDJSON `/var/lib/projectcea/deploy.log` |
-
-### Configuration & Validation
-
-| Component | Location | Validation Method |
-|------------|----------|-------------------|
-| **Hardware Config** | `automation_config.yaml` | Pydantic schema validation |
-| **Service Config** | Individual `app/config.py` | Environment validation |
-| **Database Schema** | `Infrastructure/database/cea_schema.sql` | TimescaleDB validation |
-| **Frontend Build** | `Infrastructure/frontend/package.json` | npm/yarn validation |
-| **Systemd Services** | `*.service` files | systemd syntax checking |
+- Backend (8000): `GET /api/sensors/{room}/{cluster}`, `GET /api/health`
+- Automation (8001): `GET /api/devices/{room}/{cluster}`, `PATCH /api/devices/{device_id}`, `GET /api/schedules`, `GET /api/light-target-intensities`, `GET /api/light-programs`, `GET /api/setpoints`, `GET /api/mode-parameters`
 
 ---
 
@@ -126,195 +51,137 @@ ProjectCEA/
 
 ### Real-Time Constraints (Critical)
 
-| Rule | Reason | Violation Impact |
-|------|--------|-----------------|
-| **1/sec sampling minimum** | AI training requires full resolution data | Model accuracy degradation |
-| **100ms max DB batch delay** | Live Redis instant, DB can buffer | Control loop starvation |
-| **1-5s control tick max** | Deterministic environmental control | Crop stress, yield loss |
-| **<1ms Redis operations** | Control loop performance requirement | Actuator latency |
+| Rule | Reason |
+|------|--------|
+| **1/sec sampling minimum** | AI training requires full resolution data |
+| **100ms max DB batch delay** | Live Redis instant, DB can buffer |
+| **1-5s control tick max** | Deterministic environmental control |
+| **<1ms Redis operations** | Control loop performance requirement |
 
 ### Control Algorithm Requirements (Critical)
 
-| Rule | Implementation | Reason |
-|------|----------------|--------|
-| **VPD is master controller** | VPD → humidity setpoint cascade | Physiological plant response |
-| **Humidity is slave to VPD** | Tracks VPD-derived targets | Prevents over/under-humidification |
-| **Safety interlocks mandatory** | Heating failure → exhaust inhibition | Crop protection |
-| **No hardcoded setpoints** | Database-driven configuration | Flexibility, traceability |
+| Rule | Implementation |
+|------|----------------|
+| **VPD is master controller** | VPD → humidity setpoint cascade |
+| **Humidity is slave to VPD** | Tracks VPD-derived targets |
+| **Safety interlocks mandatory** | Heating failure → exhaust inhibition |
+| **No hardcoded setpoints** | Database-driven configuration |
 
 ### Data Management Rules (Critical)
 
-| Rule | Implementation | Reason |
-|------|----------------|--------|
-| **Query DB with time filters** | Always include time range | Prevent full table scans |
-| **Use aggregates for long ranges** | <1h: raw, 1-3h: 1min, 3-24h: 5min, >24h: hourly | Query performance |
-| **Never hourly aggregates for <7d** | Hides critical dynamics | Analysis accuracy |
-| **Full TDD required** | All new code needs tests | System reliability |
+| Rule | Implementation |
+|------|----------------|
+| **Query DB with time filters** | Always include time range |
+| **Use aggregates for long ranges** | <1h: raw, 1-3h: 1min, 3-24h: 5min, >24h: hourly |
+| **Never hourly aggregates for <7d** | Hides critical dynamics |
 
 ### Repository Pattern Architecture (Critical)
 
-**Database Access Layer**:
-- **Repository Pattern**: All data operations go through specialized repository classes
-- **ControlAction Repository**: Handles control action logging and retrieval
-- **Device Repository**: Manages device states and hardware configurations
-- **PID Repository**: Stores and retrieves PID controller parameters and tuning data
-- **RoomMode Repository**: Controls room operational modes and transitions
-- **Schedule Repository**: Manages non-light DAY/NIGHT schedule rows (heaters, fans, dehumidifiers). Light scheduling is handled by `light_target_intensity_repo` and `light_programs_repo`.
-- **LightTargetIntensity Repository**: Per-light, per-mode intensity anchors (replaces deprecated `mode_parameters.main_light_intensity`)
+- **ControlAction Repository**: Control action logging and retrieval
+- **Device Repository**: Device states and hardware configurations
+- **PID Repository**: PID controller parameters and tuning data
+- **RoomMode Repository**: Room operational modes and transitions
+- **Schedule Repository**: Non-light DAY/NIGHT schedule rows (heaters, fans, dehumidifiers). Light scheduling is handled by `light_target_intensity_repo` and `light_programs_repo`.
+- **LightTargetIntensity Repository**: Per-light, per-mode intensity anchors
 - **LightPrograms Repository**: Supplemental and override light programs with time-slot and cycle mode support
 - **Schedule cache invalidation**: `schedule_repo.get_schedules()` uses StateManager keys `schedules:all`, `schedules:loc:{location}`, and `schedules:loc:{location}:cluster:{cluster}`. Any write that changes `schedules` rows must invalidate **all** keys that unfiltered `get_schedules()` can hit; otherwise the in-process `Scheduler` reloads stale rows and light targets lag the DB.
-- **Sensor Repository**: Handles sensor data validation and storage
-- **Setpoint Repository**: Manages environmental setpoints and targets
+- **Sensor Repository**: Sensor data validation and storage
+- **Setpoint Repository**: Environmental setpoints and targets
 - **Config Repository**: System configuration and parameter storage
-
-**DatabaseManager Facade**:
-- **Pure Facade Pattern**: DatabaseManager now only provides connection management
-- **No Direct Data Operations**: All queries handled by dedicated repositories
-- **Connection Pool Management**: Centralized database connection handling
-- **Transaction Coordination**: Manages cross-repository transactions when needed
-
-**Type Checking Requirements**:
-- **pyright Strict Mode**: All services must pass strict type checking (0 errors)
-- **Type Coverage**: 100% type annotation coverage required for new code
-- **Interface Compliance**: Repository interfaces must be fully typed
-- **Runtime Type Safety**: Pydantic models for all data structures
-
-**File Organization**:
-```
-Infrastructure/automation-service/app/repositories/
-├── control_action.py      # ControlAction repository
-├── device.py             # Device repository  
-├── pid.py                # PID repository
-├── room_mode.py          # RoomMode repository
-├── schedule/             # Schedule repository (new directory)
-│   ├── __init__.py
-│   ├── models.py         # Schedule data models
-│   ├── repository.py     # Schedule repository implementation
-│   └── routes.py         # Schedule API routes
-├── light_target_intensity.py  # Per-light intensity repository
-├── light_programs.py          # Light programs repository
-├── sensor.py             # Sensor repository
-├── setpoint.py           # Setpoint repository
-└── config.py             # Config repository
-```
 
 ### Schedule Architecture (3-Concept Model)
 
-**Concept 1: Photoperiod (from `mode_parameters`)**
-- **Single source of truth**: `mode_parameters.day_start_time` and `mode_parameters.night_start_time` per room, per mode
-- **Overnight-capable**: `day_start_time` can be > `night_start_time` (e.g., veg mode day_start=16:00, night_start=10:00 → 18h overnight photoperiod 16:00→10:00 next day)
-- **Scheduler**: `is_in_photoperiod()` reads from cached mode_parameters, handles overnight wrap
-- **Failsafe**: Missing mode_parameters → returns True (lights ON at 10%, never darkness) + CRITICAL alarm
+**Concept 1: Photoperiod** — `mode_parameters.day_start_time` and `night_start_time` per room, per mode. Overnight-capable. Missing mode_parameters → returns True (lights ON at 10%) + CRITICAL alarm.
 
-**Concept 2: Per-Light Intensity (from `light_target_intensity`)**
-- **Table**: `(device_id, mode_id) → target_intensity` with CHECK (0-100)
-- **Mode-specific**: Different intensities for veg vs flower modes
-- **Default**: 10% hardcoded failsafe if no row exists (visible low light, not darkness) + WARNING alarm
-- **DEPRECATED**: `mode_parameters.main_light_intensity` / `supplemental_light_intensity` columns still exist but are no longer read by the Scheduler
+**Concept 2: Per-Light Intensity** — `(device_id, mode_id) → target_intensity` with CHECK (0-100). Mode-specific. 10% hardcoded failsafe if no row exists + WARNING alarm.
 
-**Concept 3: Light Programs (from `light_programs`)**
-- **Types**: `supplemental` (adds light during dark period) and `override` (replaces intensity during sun period)
-- **Modes**: Time-slot (start_time + end_time, overnight wrap supported) or cycle mode (on/off pulses within window)
-- **Resolution**: Priority DESC, ties broken by created_at ASC
-- **Scope**: Device-level (device_id) or room-level (device_id IS NULL); mode-specific or all modes (mode_id IS NULL)
+**Concept 3: Light Programs** — `supplemental` (adds light in dark) or `override` (replaces intensity in sun). Time-slot or cycle mode. Priority DESC, ties broken by created_at ASC. Device-level or room-level.
 
-**Removed in T10:**
-- Per-device SUN/MOON rows for lights in `schedules` table (deleted via migration 04fbbb9b5ba4)
-- `room_schedule` rows in `schedules` table (photoperiod now comes from mode_parameters directly)
-- `expand_light_schedules_for_control()` runtime synthesis function
-- `SchedulesMixin` dead Redis code (`schedule:state:*`, `cea:schedule:*:state`, `cea:schedule:state:*` keys)
-- `_cache_key_room_schedule()` obsolete StateManager cache key
+### Device Registry
+
+| Field | Description |
+|-------|-------------|
+| **device_id** | Primary key |
+| **location** | Room name |
+| **cluster** | Device cluster (`main`) |
+| **device_name** | Canonical identifier |
+| **display_name** | Human-readable label |
+| **device_type** | `light`, `fan`, `heater`, etc. |
+| **channel** | Relay channel (0-15) |
+| **dimming_enabled** | Boolean |
+| **dimming_type** | `dfrobot` or null |
+| **dimming_board_id** | I2C address |
+| **dimming_channel** | Dimmer channel |
+| **safety_level** | `critical`, `standard`, etc. |
+| **pid_enabled** | Boolean |
+| **interlock_with** | Device name or null |
+| **pid_setpoints** | JSON |
+| **per_room_index** | Integer |
+
+- 13 devices total: 6 Flower Room + 7 Veg Room, seeded from `automation_config.yaml` `devices:` section
+
+### Light Target Intensity
+
+| Attribute | Value |
+|-----------|-------|
+| **Schema** | `(device_id, mode_id) → target_intensity (REAL, 0-100, default 10.0)` |
+| **Creation** | Direct SQL (NOT alembic) |
+| **Current state** | EMPTY — operator sets values via frontend slider |
+| **Fallback** | `MINIMUM_LIGHT_INTENSITY = 10.0` when table empty |
+
+### Light Programs
+
+| Attribute | Value |
+|-----------|-------|
+| **Schema** | `device_id, location, cluster, mode_id, name, program_type, start_time, end_time, cycle_enabled, cycle_on_seconds, cycle_off_seconds, target_intensity, ramp_up_minutes, ramp_down_minutes, priority, enabled` |
+| **Types** | `supplemental` (adds light in dark) or `override` (replaces intensity in sun) |
+| **Creation** | Direct SQL (NOT alembic) |
+| **Current state** | EMPTY |
+
+### Relay Steal Logic
+
+When updating a device's relay channel, if already in use, the system **steals** it (NULLs the displaced device's channel via `clear_relay_binding_only()`). Response includes `displaced_device_id`.
+
+### Display Name
+
+`getChannelDisplayName()` in `relayViewModel.ts` returns `display_name` for **ALL** device types (not just lights). Falls back to `device_name` (canonical) when `display_name` is null.
+
+### Scheduler Caches
+
+The `Scheduler` class maintains 4 in-memory caches updated atomically: `update_mode_parameters()`, `update_light_intensities()`, `update_light_programs()`, `update_device_lookup()`. The `_ready` flag blocks ticks until populated.
 
 ### Cluster Topology Contract (Critical)
 
-The codebase distinguishes **device clusters** from **sensor sub-clusters**.
-This distinction is non-negotiable; mixing them is the most common
-source of "endpoint returns nothing" / 404 bugs.
+The codebase distinguishes **device clusters** from **sensor sub-clusters**. Mixing them is the most common source of "endpoint returns nothing" bugs.
 
-The two namespaces are kept **strictly separate** by design:
-
-- `main` is a **device-cluster name only**. It is never registered as
-  a sensor sub-cluster.
-- `front` and `back` are **sensor sub-cluster names only**. They never
-  appear on the device plane; the device plane rejects them with a
-  400.
-
-Hierarchy:
+- `main` = device cluster only. Never a sensor sub-cluster.
+- `front`/`back` = sensor sub-clusters only. Never on the device plane.
 
 ```
 Room
- └── main                 (device cluster — actuators/relays/dimmer)
-      ├── front           (Flower Room sensor sub-cluster)
-      └── back            (Flower Room sensor sub-cluster)
+ └── main                 (device cluster)
+      ├── front           (Flower Room sensors)
+      └── back            (Flower Room sensors)
 ```
-
-| Concept              | Purpose                                  | Identifier(s)         |
-|----------------------|------------------------------------------|-----------------------|
-| **Device cluster**   | Room-wide actuator / relay / dimmer set  | always `main`         |
-| **Sensor sub-cluster** | Physically separated sensor groupings  | `front`, `back` (Flower Room only) |
 
 Per-room mapping (canonical, **single source of truth**):
 
-| Room          | Device cluster | Sensor sub-clusters | Sensor URL slug(s) |
-|---------------|----------------|---------------------|--------------------|
-| `Flower Room` | `main`         | `front` ‡, `back`   | `front` ‡, `back`  |
-| `Veg Room`    | `main`         | *(none)*            | `main` †           |
-| `Lab`         | `main`         | *(none)*            | `main` †           |
-| `Outside`     | `main`         | *(none)*            | `main` †           |
+| Room          | Device cluster | Sensor URL slug(s) |
+|---------------|----------------|--------------------|
+| `Flower Room` | `main`         | `front` ‡, `back`  |
+| `Veg Room`    | `main`         | `main` †           |
+| `Lab`         | `main`         | `main` †           |
+| `Outside`     | `main`         | `main` †           |
 
-‡ Flower Room **wiring status (2026-04)**: only `back` is physically
-connected and producing telemetry; `front` is defined in the topology
-because the dual-bench layout is the planned wiring, but the front
-sensor harness is not in service yet. `GET /api/sensors/Flower Room/front`
-correctly returns **HTTP 200 with an empty payload** (the contract
-accepts the URL slug; there is just no data behind it). The frontend
-emits a `[flower-cluster-warning] Configured Flower cluster 'front' has
-no live sensor stream` log entry for the same reason — this is the
-expected runtime signal of the unwired state, not a bug. When the
-front sensors come online, no code change is required.
+‡ Flower Room `back` is wired and producing telemetry; `front` is planned but not in service yet. `GET /api/sensors/Flower Room/front` returns HTTP 200 with empty payload — expected, not a bug.
 
-† For unsplit rooms (no physical sub-grouping), the
-`/api/sensors/{room}/{cluster}` URL slot reuses the device-cluster
-name (`main`) as a *room-wide sentinel* meaning "this room has no
-sensor sub-clusters". This is a transport-layer detail of the URL
-shape — `main` is **not** registered as a sensor sub-cluster in the
-topology data (`sensor_subclusters_for("Veg Room")` returns the empty
-tuple, by design, so the namespace separation stays visible in code).
+† Unsplit rooms reuse `main` as a sensor URL sentinel meaning "no sub-clusters". `main` is **not** registered as a sensor sub-cluster in topology data.
 
-Implementation rule:
+**Sources of truth:** `Infrastructure/shared/cluster_topology.py` (Python) and `Infrastructure/frontend/src/config/clusterTopology.ts` (frontend). Keep them in sync.
 
-- **Source of truth (Python services):** `Infrastructure/shared/cluster_topology.py`
-- **Source of truth (frontend):** `Infrastructure/frontend/src/config/clusterTopology.ts`
-- These two files **must stay in sync** — the TS file is a hand-mirror
-  of the Python module. CI doesn't enforce this yet; treat any change
-  to one as a change to both, and update this section.
+**API contract:** `GET /api/devices/{room}/{cluster}` → device cluster only (passing `front`/`back` → 400). `GET /api/sensors/{room}/{cluster}` → sensor URL slugs only (Flower accepts `front`/`back`; unsplit rooms accept `main` only). Wrong cluster → 400 with hint.
 
-API contract (enforced as of Phase 5e):
-
-- `GET /api/devices/{room}/{cluster}` accepts the room's **device** cluster only.
-  Passing a sensor sub-cluster (`front`, `back`) returns **400**, not 404.
-- `GET /api/sensors/{room}/{cluster}` accepts the room's sensor URL
-  slug(s) only:
-  - Split rooms (Flower) accept `front` / `back`. Passing the device
-    cluster (`Flower Room/main`) returns **400** with a hint pointing
-    at the correct sub-cluster.
-  - Unsplit rooms (Veg / Lab / Outside) accept the device-cluster
-    sentinel (`main`). Passing `front` / `back` returns **400** with
-    a hint that the room has no sensor sub-clusters.
-- These 400s replaced the previous "silently return empty dict"
-  behavior, which masked frontend wiring bugs.
-
-Frontend rule:
-
-- The dashboard polls **device** endpoints over `ZONES` (one entry per
-  room, all `cluster: "main"`).
-- The dashboard polls **sensor** endpoints over `getSensorPollZones()`,
-  which iterates `sensorUrlClustersFor(room)` — Flower fans out into
-  `front` + `back`; unsplit rooms emit a single entry with `main`.
-- `getDashboardPollZones()` is the union (device clusters + Flower
-  sub-clusters) used **only** for sensor-plane polling and bulk Redis
-  fan-out, never for the device plane. Iterating sensor sub-clusters
-  against the *device* endpoint is a bug.
+**Frontend rule:** Device polling uses `ZONES` (all `cluster: "main"`). Sensor polling uses `getSensorPollZones()` (Flower → `front`+`back`; unsplit → `main`). Never iterate sensor sub-clusters against the device endpoint.
 
 ### Hardware Rules (Critical)
 
@@ -336,20 +203,17 @@ Frontend rule:
 
 ### Subagent QA Safety (Critical — Permanent Ban)
 
-**F3 (Real Manual QA) is PERMANENTLY BANNED from making HTTP requests to production endpoints.**
-
-On 2026-07-07, an F3 QA subagent issued `DELETE` requests to the production automation API (port 8001), wiping the `device_registry` table in `cea_sensors`. The control loop lost all devices, lights went dark for 36+ hours, and crops were put under severe stress. This must NEVER happen again.
+**F3 (Real Manual QA) is PERMANENTLY BANNED from making HTTP requests to production endpoints.** On 2026-07-07, an F3 QA subagent issued `DELETE` requests to the production automation API (port 8001), wiping the `device_registry` table. The control loop lost all devices, lights went dark for 36+ hours, and crops were put under severe stress. This must NEVER happen again.
 
 **Replacement for F3 — Static Checks and Local Verification Only:**
 
-| Check | Command | Database |
-|-------|---------|----------|
-| **Backend lint** | `cd Infrastructure/automation-service && ruff check .` | N/A |
-| **Backend tests** | `cd Infrastructure/automation-service && pytest tests/ -q` | `cea_sensors_test` ONLY |
-| **Frontend type check** | `cd Infrastructure/frontend && npx tsc --noEmit` | N/A |
-| **Frontend build** | `cd Infrastructure/frontend && npm run build` | N/A |
-| **Frontend tests** | `cd Infrastructure/frontend && npx vitest run` | N/A |
-| **Plan verification** | `grep` checks against the plan file for acceptance-criteria coverage | N/A |
+| Check | Command |
+|-------|---------|
+| **Backend lint** | `cd Infrastructure/automation-service && ruff check .` |
+| **Frontend type check** | `cd Infrastructure/frontend && npx tsc --noEmit` |
+| **Frontend build** | `cd Infrastructure/frontend && npm run build` |
+
+**Testing:** No automated test suite currently exists. All tests were removed. Verify changes via `ruff check .` (backend) and `npx tsc --noEmit && npm run build` (frontend).
 
 **Production HTTP Rules for ALL Subagents:**
 
@@ -360,70 +224,25 @@ On 2026-07-07, an F3 QA subagent issued `DELETE` requests to the production auto
 
 ---
 
-## DEVELOPMENT WORKFLOW & BEST PRACTICES
-
-### Code Development Standards
-
-**Python Services**:
-- **Type Hints**: Full type annotation using Python 3.9+ syntax
-- **Type Checking**: pyright strict mode enforced for all services (achieved 0 LSP errors)
-- **Repository Pattern**: All data access uses dedicated repository classes (ControlAction, Device, PID, RoomMode, Schedule, Sensor, Setpoint, Config)
-- **Database Architecture**: DatabaseManager is now a pure facade, repositories handle data operations
-- **Async/Await**: All I/O operations must be asynchronous
-- **Error Handling**: Structured exception handling with specific error types
-- **Logging**: Structured JSON logging with correlation IDs
-- **Testing**: pytest with >80% coverage requirement
-
-**React Frontend**:
-- **TypeScript**: Strict mode with no implicit any
-- **Component Structure**: Functional components with hooks
-- **State Management**: React Query for server state, useState for local state
-- **Styling**: Tailwind CSS with component-scoped classes
-- **Testing**: Jest + React Testing Library
-
----
-
-## COMMAND REFERENCE & QUICK START
-
-### Essential Commands
+## COMMAND REFERENCE
 
 ```bash
-# System Operations
-./deploy.sh                    # Deploy new version; auto-reverts symlink on health fail; NDJSON deploy log
-./rollback-deploy.sh           # Point current at previous release + restart services
-./restart_all_services.sh       # Restart all services in correct order
-
-# Service Management
-systemctl status automation-service  # Check control service status
-systemctl restart cea-backend       # Restart sensor API service
-journalctl -u can-processor -f       # Monitor CAN processor logs
-
-# Database Operations
-psql -U cea -d projectcea             # Connect to TimescaleDB
-redis-cli                             # Connect to Redis for debugging
-./Infrastructure/automation-service/config_cli.py setpoint get "Flower Room" main
-
-# Hardware Testing
-i2cdetect -y 0                        # Scan I2C bus 0 (relays)
-i2cdetect -y 1                        # Scan I2C bus 1 (dimming)
-candump can0                          # Monitor CAN bus traffic
+./deploy.sh                    # Deploy with auto-rollback on health fail
+./rollback-deploy.sh           # Point current at previous release
+systemctl status automation-service
+journalctl -u can-processor -f
+psql -U cea -d projectcea
+redis-cli
+i2cdetect -y 0                 # Scan I2C bus 0 (relays)
+i2cdetect -y 1                 # Scan I2C bus 1 (dimming)
 ```
 
 ---
 
 ## CONCLUSION
 
-This comprehensive documentation serves as the definitive reference for ProjectCEA system architecture, operation, maintenance, and evolution. The system represents a sophisticated implementation of modern IoT principles applied to precision agriculture, with enterprise-grade reliability, performance, and scalability.
-
-**Key Success Factors**:
-- **Rigorous adherence to non-negotiable system rules**
-- **Comprehensive monitoring and observability**
-- **Systematic approach to troubleshooting and maintenance**
-- **Continuous improvement through data-driven optimization**
-- **Preparedness for emergency situations and rapid recovery**
-
-For specific implementation details, refer to the individual service documentation and code comments. Always prioritize system stability and crop safety when making operational decisions.
+Prioritize system stability and crop safety. Refer to service-specific docs for implementation details.
 
 ---
 
-*Last updated: 2026-02-08 - Updated documentation to reflect repository pattern refactoring, pyright type checking enforcement, and archived completed plans.*
+*Last updated: 2026-07-12*

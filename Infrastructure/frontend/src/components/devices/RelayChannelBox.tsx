@@ -161,7 +161,7 @@ export default function RelayChannelBox({
                 }
                 onToggleMenu?.(channel.channel)
               }}
-              className={`rounded-sm px-1 py-px text-[8px] font-semibold uppercase ${badge.outlineClass} ${canControl ? 'cursor-pointer' : 'cursor-not-allowed opacity-70'}`}
+              className={`rounded-sm px-2 py-1 text-[20px] font-semibold uppercase ${badge.outlineClass} ${canControl ? 'cursor-pointer' : 'cursor-not-allowed opacity-70'}`}
               title={canControl ? 'Click for control mode' : 'Toggle relay channel'}
             >
               {badge.text}

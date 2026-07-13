@@ -115,11 +115,14 @@ export function getChannelDisplayName(channel: ChannelInfo): string | null {
   if (!channel.device_name) {
     return null
   }
-
+  // Prefer display_name (human-readable) for all devices, not just lights
+  if (channel.display_name) {
+    return channel.display_name
+  }
+  // Lights: fall back to light_name then device_name
   if (channel.device_type === 'light') {
     return channel.light_name || channel.device_name
   }
-
   return channel.device_name
 }
 

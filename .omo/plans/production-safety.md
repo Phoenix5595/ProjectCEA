@@ -685,10 +685,10 @@ Your next move: approve, then `$start-work`. Full execution detail follows below
 
 ## Final verification wave
 > Runs in parallel after ALL todos. ALL must APPROVE. Surface results and wait for the user's explicit okay before declaring complete.
-- [ ] F1. Plan compliance audit
-- [ ] F2. Code quality review
+- [x] F1. Plan compliance audit
+- [x] F2. Code quality review
 - [~] F3. Static verification only (no production HTTP) — permanently banned per T3
-- [ ] F4. Scope fidelity
+- [x] F4. Scope fidelity
 
 ## Commit strategy
 - Wave 1: T1 `feat(db): add light_target_intensity + light_programs tables, migrate existing intensities`; T2 `feat(safety): require X-Confirm-Destructive header for device registry DELETE in production`; T3 `docs(agents): ban F3 from production HTTP, define static-checks-only QA protocol`

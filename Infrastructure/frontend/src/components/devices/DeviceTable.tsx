@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 
 import { ZONES } from '../../config/zones'
@@ -55,6 +55,15 @@ export default function DeviceTable({
   const [addForm, setAddForm] = useState<DeviceForm>(EMPTY_FORM)
   const [working, setWorking] = useState(false)
   const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null)
+  const [displacedDeviceId, setDisplacedDeviceId] = useState<number | null>(null)
+  const [sortConfig, setSortConfig] = useState<{
+    key: string | null
+    direction: 'asc' | 'desc' | null
+  }>({ key: null, direction: null })
+
+  useEffect(() => {
+    setSortConfig({ key: null, direction: null })
+  }, [refreshKey])
 
   const refresh = useCallback(async () => {
     setLoading(true)
@@ -72,6 +81,90 @@ export default function DeviceTable({
   useEffect(() => {
     void refresh()
   }, [refresh, refreshKey])
+
+  const sortedDevices = useMemo(() => {
+    if (sortConfig.key === null || sortConfig.direction === null) {
+      return devices
+    }
+
+    const sorted = [...devices]
+    const dir = sortConfig.direction === 'asc' ? 1 : -1
+
+    sorted.sort((a, b) => {
+      switch (sortConfig.key) {
+        case 'name': {
+          const av = (a.display_name ?? a.device_name).toLowerCase()
+          const bv = (b.display_name ?? b.device_name).toLowerCase()
+          return av < bv ? -dir : av > bv ? dir : 0
+        }
+        case 'type': {
+          const av = a.device_type.toLowerCase()
+          const bv = b.device_type.toLowerCase()
+          return av < bv ? -dir : av > bv ? dir : 0
+        }
+        case 'room': {
+          const av = a.location.toLowerCase()
+          const bv = b.location.toLowerCase()
+          return av < bv ? -dir : av > bv ? dir : 0
+        }
+        case 'relayCh': {
+          const av = relayChannelOf(a)
+          const bv = relayChannelOf(b)
+          if (av == null && bv == null) return 0
+          if (av == null) return 1
+          if (bv == null) return -1
+          return (av - bv) * dir
+        }
+        case 'dfrBoard': {
+          const aLight = isLight(a)
+          const bLight = isLight(b)
+          if (!aLight && !bLight) return 0
+          if (!aLight) return 1
+          if (!bLight) return -1
+          const av = a.board_id ?? null
+          const bv = b.board_id ?? null
+          if (av == null && bv == null) return 0
+          if (av == null) return 1
+          if (bv == null) return -1
+          return (av - bv) * dir
+        }
+        case 'dfrChannel': {
+          const aLight = isLight(a)
+          const bLight = isLight(b)
+          if (!aLight && !bLight) return 0
+          if (!aLight) return 1
+          if (!bLight) return -1
+          const av = a.dimming_channel ?? null
+          const bv = b.dimming_channel ?? null
+          if (av == null && bv == null) return 0
+          if (av == null) return 1
+          if (bv == null) return -1
+          return (av - bv) * dir
+        }
+        default:
+          return 0
+      }
+    })
+
+    return sorted
+  }, [devices, sortConfig])
+
+  function toggleSort(key: string) {
+    setSortConfig((prev) => {
+      if (prev.key !== key) {
+        return { key, direction: 'asc' }
+      }
+      if (prev.direction === 'asc') {
+        return { key, direction: 'desc' }
+      }
+      return { key: null, direction: null }
+    })
+  }
+
+  function sortIndicator(key: string): string {
+    if (sortConfig.key !== key || sortConfig.direction === null) return ''
+    return sortConfig.direction === 'asc' ? ' ▲' : ' ▼'
+  }
 
   function startEdit(device: DeviceRegistryEntry) {
     if (editingId !== null) {
@@ -186,7 +279,12 @@ export default function DeviceTable({
 
     setWorking(true)
     try {
-      await apiClient.updateDevice(device.device_id, body)
+      const result = await apiClient.updateDevice(device.device_id, body)
+      if (result.displaced_device_id != null) {
+        setDisplacedDeviceId(result.displaced_device_id)
+      } else {
+        setDisplacedDeviceId(null)
+      }
       await refresh()
       onRefresh?.()
       cancelEdit()
@@ -246,23 +344,41 @@ export default function DeviceTable({
         <table className="min-w-full divide-y divide-border-default">
           <thead className="bg-surface-secondary">
             <tr>
-              <th className="px-2 py-1 text-left text-xs font-medium uppercase tracking-wider text-text-muted">
-                Device Name
+              <th
+                onClick={() => toggleSort('name')}
+                className="cursor-pointer px-2 py-1 text-left text-xs font-medium uppercase tracking-wider text-text-muted hover:bg-surface-tertiary"
+              >
+                Device Name{sortIndicator('name')}
               </th>
-              <th className="px-2 py-1 text-left text-xs font-medium uppercase tracking-wider text-text-muted">
-                Type
+              <th
+                onClick={() => toggleSort('type')}
+                className="cursor-pointer px-2 py-1 text-left text-xs font-medium uppercase tracking-wider text-text-muted hover:bg-surface-tertiary"
+              >
+                Type{sortIndicator('type')}
               </th>
-              <th className="px-2 py-1 text-left text-xs font-medium uppercase tracking-wider text-text-muted">
-                Room
+              <th
+                onClick={() => toggleSort('room')}
+                className="cursor-pointer px-2 py-1 text-left text-xs font-medium uppercase tracking-wider text-text-muted hover:bg-surface-tertiary"
+              >
+                Room{sortIndicator('room')}
               </th>
-              <th className="px-2 py-1 text-left text-xs font-medium uppercase tracking-wider text-text-muted">
-                Relay Ch
+              <th
+                onClick={() => toggleSort('relayCh')}
+                className="cursor-pointer px-2 py-1 text-left text-xs font-medium uppercase tracking-wider text-text-muted hover:bg-surface-tertiary"
+              >
+                Relay Ch{sortIndicator('relayCh')}
               </th>
-              <th className="px-2 py-1 text-left text-xs font-medium uppercase tracking-wider text-text-muted">
-                DFR Board
+              <th
+                onClick={() => toggleSort('dfrBoard')}
+                className="cursor-pointer px-2 py-1 text-left text-xs font-medium uppercase tracking-wider text-text-muted hover:bg-surface-tertiary"
+              >
+                DFR Board{sortIndicator('dfrBoard')}
               </th>
-              <th className="px-2 py-1 text-left text-xs font-medium uppercase tracking-wider text-text-muted">
-                DFR Channel
+              <th
+                onClick={() => toggleSort('dfrChannel')}
+                className="cursor-pointer px-2 py-1 text-left text-xs font-medium uppercase tracking-wider text-text-muted hover:bg-surface-tertiary"
+              >
+                DFR Channel{sortIndicator('dfrChannel')}
               </th>
               <th className="px-2 py-1 text-left text-xs font-medium uppercase tracking-wider text-text-muted">
                 Actions
@@ -270,7 +386,7 @@ export default function DeviceTable({
             </tr>
           </thead>
           <tbody className="divide-y divide-border-subtle bg-surface-primary">
-            {devices.map((device) => {
+            {sortedDevices.map((device) => {
               const isEditing = editingId === device.device_id
               const isConfirmingDelete = deleteConfirmId === device.device_id
               const light = isLight(device)
@@ -369,7 +485,7 @@ export default function DeviceTable({
                 <tr
                   key={device.device_id}
                   data-testid={`device-row-${device.device_id}`}
-                  className="hover:bg-surface-secondary cursor-pointer"
+                  className={`hover:bg-surface-secondary cursor-pointer ${device.device_id === displacedDeviceId ? 'ring-2 ring-status-danger' : ''}`}
                   onClick={() => startEdit(device)}
                 >
                   <td className="whitespace-nowrap px-2 py-1 text-sm text-text-input">

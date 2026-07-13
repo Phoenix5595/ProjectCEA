@@ -181,21 +181,6 @@ class ControlEngine:
         if len(stats_list) > self._max_stats_history:
             stats_list.pop(0)
 
-    def get_performance_stats(self) -> dict[str, dict[str, float]]:
-        """Get performance statistics summary."""
-        stats = {}
-        for key, values in self._performance_stats.items():
-            if values:
-                stats[key] = {
-                    "avg": sum(values) / len(values),
-                    "min": min(values),
-                    "max": max(values),
-                    "count": len(values),
-                }
-            else:
-                stats[key] = {"avg": 0.0, "min": 0.0, "max": 0.0, "count": 0}
-        return stats
-
     async def _is_moon_authority_room_mode(self, location: str, cluster: str) -> bool:
         """Return true when active room mode forces 24h MOON for scheduled lights (drying, sleep)."""
         active_mode = await self.database.room_mode_repo.get_active_mode(location, cluster)

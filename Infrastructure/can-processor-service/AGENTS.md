@@ -5,36 +5,20 @@
 
 ## CAN-PROCESSOR ARCHITECTURE
 
-### Data Flow (Current)
+### Data Flow
 
 1. CAN message received from ESP32 nodes
 2. Decoded by processor
-3. Written to Redis live state (INSTANT)
-4. Written to Redis stream (INSTANT)
-5. Written to TimescaleDB (INSTANT currently)
-
-### Data Flow (Target with 100ms Batching)
-
-1. CAN message received from ESP32 nodes
-2. Decoded by processor
-3. Written to Redis live state (INSTANT - non-negotiable)
-4. Written to Redis stream (INSTANT - for automation-service)
-5. Queued for TimescaleDB batch write
+3. Written to Redis live state (`sensor:{name}`, 10s TTL) — instant
+4. Written to Redis stream — instant (for automation-service)
+5. Queued for TimescaleDB `measurement` table batch write
 6. Batch flushed every 100ms OR 50 messages (whichever first)
 
-CONSTRAINT: 100ms maximum delay for database writes
-This is acceptable because:
-- Dashboard live values come from Redis (instant)
-- Control loop reads from Redis stream (instant)
-- Only historical graphs have 100ms delay (imperceptible)
+Constraint: 100ms max DB delay. Dashboard live values come from Redis (instant); only historical graphs have the 100ms delay (imperceptible).
 
 ### Why Async Batching
 
-Current risk: If database is slow (vacuum, checkpoint), CAN buffer can overflow
-Solution: Async queue absorbs slowdowns, prevents message loss
-
-Queue capacity: 10,000 messages
-At 100 msgs/sec: Can survive 100 seconds of DB unavailability
+If the database is slow (vacuum, checkpoint), the CAN buffer can overflow. The async queue absorbs slowdowns and prevents message loss. Queue capacity: 10,000 messages. At 100 msgs/sec, that survives 100 seconds of DB unavailability.
 
 ### Node Configuration
 
@@ -43,50 +27,16 @@ Current nodes:
 - Node 2: Flower Room / front (`_f` suffix)
 - Node 3: Veg Room / main (`_v` suffix)
 
-The service emits canonical topology names (`back`, `front`, `main`) and
-derives sensor-name suffixes through `shared.cluster_topology`; do not revive
-the legacy firmware-era `clusterA` / `clusterB` labels in Redis or Postgres.
+The service emits canonical topology names (`back`, `front`, `main`) and derives sensor-name suffixes through `shared.cluster_topology`; do not revive the legacy firmware-era `clusterA` / `clusterB` labels in Redis or Postgres.
 
-Future nodes:
-- Node 4: Flower Room Secondary cluster
-- Node 5: Lab
-- Node 6: Water Management
+### Output Destinations
 
----
-
-*Last updated: 2026-01-13 - Async batching and future nodes*
-
+| Destination | Key / Table | Latency | Purpose |
+|-------------|-------------|---------|---------|
+| Redis state | `sensor:{name}` | Instant | Live values for frontend (10s TTL) |
+| Redis stream | `sensor:raw` | Instant | Recent history buffer for automation-service |
+| TimescaleDB | `measurement` | ≤100ms | Historical data, Grafana queries |
 
 ---
 
-## FUTURE: MQTT INTEGRATION REMINDER
-
-**TRIGGER**: When adding new nodes (Lab, Water Management, additional clusters)
-
-When the time comes, consider MQTT for:
-
-### Why MQTT
-- Decoupled publish/subscribe model
-- New devices just publish to topics, no code changes elsewhere
-- Multiple subscribers can listen to same data
-- Works over WiFi/Ethernet (no CAN wiring needed for distant nodes)
-
-### Proposed Topic Structure
-
-
-### Migration Path
-1. Keep CAN bus for existing Flower/Veg clusters (working well)
-2. Add Mosquitto MQTT broker on Pi or home server
-3. New nodes (Lab, Water) use ESP32 with WiFi + MQTT
-4. can-processor publishes to MQTT as bridge
-5. Automation-service subscribes to MQTT instead of Redis Stream
-6. Gradual migration, not big bang
-
-### Hardware Options for New Nodes
-- ESP32-S3 with Ethernet (more reliable than WiFi)
-- ESP32-C6 with WiFi 6 (lower power)
-- Same sensor cluster design (PT100, SCD30, BME280, VL53x)
-
----
-
-*MQTT reminder added 2026-01-13 - evaluate when expanding beyond current 2 rooms*
+*Last updated: 2026-07-12*

@@ -8,7 +8,10 @@ from typing import TYPE_CHECKING, Any
 
 from app.redis.schema import (
     alarm_key,
+    alarm_pattern,
     get_with_backward_compat,
+    legacy_alarm_key,
+    legacy_alarm_pattern,
     set_with_backward_compat,
 )
 from shared.infra_logging import get_logger
@@ -36,7 +39,7 @@ class AlarmsMixin:
 
             existing_data = get_with_backward_compat(
                 self.redis_client,
-                f"alarm:{location}:{cluster}:{alarm_name}",
+                legacy_alarm_key(location, cluster, alarm_name),
                 alarm_key,
                 location,
                 cluster,
@@ -58,7 +61,7 @@ class AlarmsMixin:
 
             set_with_backward_compat(
                 self.redis_client,
-                f"alarm:{location}:{cluster}:{alarm_name}",
+                legacy_alarm_key(location, cluster, alarm_name),
                 alarm_key,
                 json.dumps(alarm_data),
                 None,  # ttl
@@ -86,7 +89,7 @@ class AlarmsMixin:
         try:
             alarm_data = get_with_backward_compat(
                 self.redis_client,
-                f"alarm:{location}:{cluster}:{alarm_name}",
+                legacy_alarm_key(location, cluster, alarm_name),
                 alarm_key,
                 location,
                 cluster,
@@ -98,7 +101,7 @@ class AlarmsMixin:
                 alarm["acknowledged"] = True
                 set_with_backward_compat(
                     self.redis_client,
-                    f"alarm:{location}:{cluster}:{alarm_name}",
+                    legacy_alarm_key(location, cluster, alarm_name),
                     alarm_key,
                     json.dumps(alarm),
                     None,  # ttl
@@ -119,8 +122,8 @@ class AlarmsMixin:
 
         try:
             # Scan for both old and new key patterns
-            old_pattern = f"alarm:{location}:{cluster}:*"
-            new_pattern = f"cea:alarm:{location}:{cluster}:*"
+            old_pattern = legacy_alarm_pattern(location, cluster)
+            new_pattern = alarm_pattern(location, cluster)
             alarms = {}
 
             for key in self.redis_client.scan_iter(match=old_pattern):
@@ -157,7 +160,7 @@ class AlarmsMixin:
         try:
             alarm_data = get_with_backward_compat(
                 self.redis_client,
-                f"alarm:{location}:{cluster}:{alarm_name}",
+                legacy_alarm_key(location, cluster, alarm_name),
                 alarm_key,
                 location,
                 cluster,
@@ -169,7 +172,7 @@ class AlarmsMixin:
                 alarm["active"] = False
                 set_with_backward_compat(
                     self.redis_client,
-                    f"alarm:{location}:{cluster}:{alarm_name}",
+                    legacy_alarm_key(location, cluster, alarm_name),
                     alarm_key,
                     json.dumps(alarm),
                     None,  # ttl

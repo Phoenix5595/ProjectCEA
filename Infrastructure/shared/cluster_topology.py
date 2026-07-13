@@ -78,6 +78,23 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Final
 
+# ---------------------------------------------------------------------------
+# Room prefix registry (used for canonical device_name generation)
+# ---------------------------------------------------------------------------
+_ROOM_PREFIXES: dict[str, str] = {
+    "Flower Room": "f",
+    "Veg Room": "v",
+    "Lab": "l",
+    "Outside": "o",
+}
+
+
+def _room_prefix(room: str) -> str:
+    """Return the one-letter prefix for a room name."""
+    if room not in _ROOM_PREFIXES:
+        raise ValueError(f"Unknown room: {room!r}")
+    return _ROOM_PREFIXES[room]
+
 
 @dataclass(frozen=True)
 class _RoomTopology:
@@ -347,6 +364,8 @@ def _sensor_hint(
 __all__ = [
     "ClusterMismatchError",
     "UnknownRoomError",
+    "_ROOM_PREFIXES",
+    "_room_prefix",
     "assert_device_cluster",
     "assert_sensor_cluster",
     "device_cluster_for",

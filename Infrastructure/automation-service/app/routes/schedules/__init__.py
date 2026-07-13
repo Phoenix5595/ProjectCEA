@@ -1,10 +1,8 @@
-"""Schedules route package - aggregates base, room, and climate schedule endpoints."""
+"""Schedules route package - aggregates base and room schedule endpoints."""
 
 from fastapi import APIRouter
 
 from app.schemas.schedules import (
-    ClimateScheduleCreate,
-    ClimateScheduleSetpoint,
     RoomScheduleCreate,
     ScheduleCreate,
     ScheduleUpdate,
@@ -17,7 +15,6 @@ from .base import (
     get_scheduler,
 )
 from .base import router as base_router
-from .climate import router as climate_router
 from .room import router as room_router
 from .utils import (
     _build_schedule_state,
@@ -27,7 +24,6 @@ from .utils import (
 router = APIRouter(tags=["schedules"])
 router.include_router(base_router)
 router.include_router(room_router)
-router.include_router(climate_router)
 
 __all__ = [
     "router",
@@ -40,6 +36,4 @@ __all__ = [
     "ScheduleCreate",
     "ScheduleUpdate",
     "RoomScheduleCreate",
-    "ClimateScheduleSetpoint",
-    "ClimateScheduleCreate",
 ]

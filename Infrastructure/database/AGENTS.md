@@ -23,7 +23,7 @@ PostgreSQL + TimescaleDB. Normalized metadata (room/rack/device/sensor) + compre
   - measurement_daily (continuous aggregate: avg/min/max)
     |
     v
-[Grafana on Raspberry Pi] <-- ONLY consumer of PostgreSQL for visualization
+[Grafana @ iskraprojectcea:3001] <-- ONLY consumer of PostgreSQL for visualization
 ```
 
 ## DATA FLOW BY CONSUMER
@@ -55,7 +55,11 @@ database/
 | `measurement_5min` | Continuous Aggregate | 5-minute rollups with avg/min/max |
 | `measurement_hourly` | Continuous Aggregate | Hourly rollups with avg/min/max |
 | `measurement_daily` | Continuous Aggregate | Daily rollups with avg/min/max |
-| `room_light_schedule` | Config | Light on/off times per room |
+| `device_registry` | Config | Core device configuration (13 devices, relays + dimmers) |
+| `mode_parameters` | Config | Photoperiod source of truth (day_start_time, night_start_time) |
+| `room_modes` | Config | Mode definitions (Veg, Flower, Stretch, Bulk, Ripen, Drying, Sleep) |
+| `light_target_intensity` | Config | Per-light, per-mode target intensity (0-100) |
+| `light_programs` | Config | Supplemental and override light programs |
 
 ## CONTINUOUS AGGREGATES (CRITICAL)
 
@@ -69,6 +73,28 @@ Each aggregate stores **avg + min + max** to preserve swing visibility:
 | `measurement_daily` | 1 day | avg_value, min_value, max_value | Monthly+ trends |
 
 **WHY min/max**: Humidity can swing 40% in 5 minutes. Averages alone hide these critical events. Min/max envelope ensures extremes are always visible.
+
+## CONFIG TABLES
+
+### `device_registry`
+
+13 devices (6 Flower, 7 Veg). Columns: `device_id` (SERIAL PK), `location`, `cluster` (always `main`), `device_name` (canonical), `display_name`, `device_type`, `channel` (relay 0-15), `dimming_enabled`, `dimming_type`, `dimming_board_id`, `dimming_channel`, `safety_level`, `pid_enabled`, `interlock_with` (JSONB), `pid_setpoints` (JSONB), `per_room_index`, `created_at`, `updated_at`. Unique: `(location, cluster, device_name)`.
+
+### `mode_parameters`
+
+Photoperiod source of truth per room per mode. `day_start_time` / `night_start_time` define sun/moon boundaries (overnight wrap supported). `light_ramp_up_minutes` / `light_ramp_down_minutes` for ramps. `main_light_intensity` and `supplemental_light_intensity` are **DEPRECATED** — use `light_target_intensity`.
+
+### `room_modes`
+
+Mode definitions: Veg(1), Flower(2), Stretch(3), Bulk(4), Ripen(5), Drying(6), Sleep(7).
+
+### `light_target_intensity`
+
+Per-light, per-mode target intensity. `(device_id, mode_id) → target_intensity` (REAL, 0-100, default 10.0). PK `(device_id, mode_id)`. CHECK `target_intensity >= 0 AND <= 100`. Created via direct SQL (not alembic). Currently empty — operator sets via frontend slider.
+
+### `light_programs`
+
+Supplemental and override light programs. Columns: `id` (IDENTITY PK), `device_id` (NULL = room-wide), `location`, `cluster`, `mode_id` (NULL = all modes), `name`, `program_type` (`supplemental`|`override`), `start_time`/`end_time` (overnight wrap supported), `cycle_enabled`, `cycle_on_seconds`/`cycle_off_seconds`, `target_intensity`, `ramp_up_minutes`/`ramp_down_minutes`, `day_of_week` (NULL = all), `enabled`, `priority` (higher wins, ties by `created_at`), `created_at`, `updated_at`. CHECK: `program_type IN ('supplemental', 'override')`. Created via direct SQL. Currently empty.
 
 ---
 
@@ -103,34 +129,10 @@ Each aggregate stores **avg + min + max** to preserve swing visibility:
 
 ---
 
-## GRAFANA PERFORMANCE (Pi-Safe)
+## GRAFANA
 
-### Panel Configuration
-
-| Setting | Value | Rationale |
-|---------|-------|-----------|
-| maxDataPoints | 1000 | Pi browser can handle ~1000 points smoothly |
-| interval (realtime) | 1s | Full resolution for <1h |
-| interval (24h) | 1m | Uses 1-min aggregate |
-| Refresh rate (realtime) | 5s | Live updates |
-| Refresh rate (24h) | 30s | Reduce load on longer ranges |
-
-### Performance Targets
-
-| Metric | Target |
-|--------|--------|
-| Query latency (DB) | < 50ms |
-| Points per panel | ≤ 5,000 |
-| Payload size | ≤ 200KB |
-| End-to-end render | < 100ms |
-
-### Query Function
-
-Use `get_sensor_data_optimized(sensors[], from, to)` for ALL time-series queries.
-
-**Returns**: ts, sensor_name, value, min_val, max_val
-
-Automatically selects optimal aggregate based on time range.
+Grafana runs in container `projectcea_grafana` on `iskraprojectcea:3001`.
+It is the **only** consumer of PostgreSQL data. All queries use `get_sensor_data_optimized(sensors[], from, to)`, which returns `ts, sensor_name, value, min_val, max_val` and automatically selects the optimal aggregate based on time range.
 
 ---
 
@@ -154,51 +156,8 @@ Automatically selects optimal aggregate based on time range.
 | Use hourly aggregate for <7d | Loses swing visibility | Use 1min or 5min |
 | Query Redis from Grafana | Complexity, no fallback | PostgreSQL only |
 | Remove min/max from rollups | Hides 40% humidity swings | Keep envelope data |
-| Set maxDataPoints > 2000 | Crashes Pi browser | Keep at 1000 |
+| Set maxDataPoints > 2000 | Browser performance degradation | Keep at 1000 |
 | Refresh 24h panel at 1s | Wasted load | Use 30s refresh |
-
----
-
-## DOCUMENTATION UPDATE POLICY
-
-**When user provides feature/function precision:**
-1. Update relevant AGENTS.md immediately
-2. Update USER_PREFERENCES.md if it affects preferences
-3. Include specific values, thresholds, and rationale
-4. Mark as NON-NEGOTIABLE if critical
-
----
-
-## DATA RETENTION POLICY (AI-OPTIMIZED)
-
-> Conservative retention for AI/ML training. 512GB SSD available.
-
-### Retention Rules
-
-| Table | Full Resolution | Downsampled | Notes |
-|-------|-----------------|-------------|-------|
-|  | 1 year | Indefinite (hourly) | Primary AI training data |
-|  | 1 year | Indefinite (hourly) | Control decisions |
-|  | 90 days | Indefinite (hourly) | Device behavior |
-|  | 30 days | None | Raw debug data |
-
-### AI Training Data Export
-
-Future capability: Export aligned datasets for ML training
-
-
-
-### Future: Database Migration
-
-When migrating off Pi to dedicated server:
-1. Export full dataset using 
-2. Consider column-store (TimescaleDB compression already helps)
-3. Add read replicas for AI workloads
-
----
-
-*Last updated: 2026-01-13 - AI-optimized retention policy*
-
 
 ---
 
@@ -217,11 +176,7 @@ Conservative retention for AI/ML training. 512GB SSD available.
 
 ### Why Conservative Retention
 
-- AI model training requires historical patterns
-- Seasonal variations need year+ of data
-- Machine efficiency degradation analysis
-- Spike prediction needs examples of past spikes
-- 512GB SSD can hold years of data with compression
+AI training needs historical patterns, seasonal variation, and spike examples. 512GB SSD holds years with compression.
 
 ### Compression Strategy
 
@@ -232,29 +187,12 @@ TimescaleDB compression enabled on all hypertables:
 
 Expected compression ratio: 10-20x for time-series data
 
-### Future: Database Migration
-
-When migrating off Pi to dedicated server:
-1. Export full dataset using pg_dump
-2. Consider dedicated TimescaleDB cloud or self-hosted
-3. Add read replicas for AI training workloads
-4. Keep Pi as edge device, sync to central DB
-
 ---
 
 ## MULTI-CLUSTER SCHEMA NOTES
 
-### Current Schema Supports Multi-Cluster
-
-The measurement table already has location and cluster columns.
-All queries MUST filter by both for future compatibility.
-
-### Indexes for Multi-Cluster Queries
-
-Ensure composite indexes exist:
-- (location, cluster, time) for time-range queries
-- (location, cluster, sensor_type) for sensor lookups
+The measurement table already has `location` and `cluster` columns. All queries MUST filter by both. Composite indexes: `(location, cluster, time)` for time-range queries, `(location, cluster, sensor_type)` for sensor lookups.
 
 ---
 
-*Last updated: 2026-01-13 - AI retention policy and multi-cluster notes*
+*Last updated: 2026-07-12*

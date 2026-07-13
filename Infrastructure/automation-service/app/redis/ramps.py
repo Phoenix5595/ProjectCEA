@@ -8,6 +8,8 @@ from typing import TYPE_CHECKING, Any, cast
 
 from app.redis.schema import (
     get_with_backward_compat,
+    legacy_ramp_key,
+    legacy_ramp_persist_key,
     ramp_key,
     ramp_persist_key,
     set_with_backward_compat,
@@ -100,7 +102,7 @@ class RampsMixin:
         try:
             ramp_data = get_with_backward_compat(
                 self.redis_client,
-                f"ramp:{location}:{cluster}:{setpoint_type}",
+                legacy_ramp_key(location, cluster, setpoint_type),
                 ramp_key,
                 location,
                 cluster,
@@ -129,7 +131,7 @@ class RampsMixin:
         if not self.redis_enabled or not self.redis_client:
             return False
         try:
-            old_key = f"ramp:{location}:{cluster}:{setpoint_type}"
+            old_key = legacy_ramp_key(location, cluster, setpoint_type)
             new_key = ramp_key(location, cluster, setpoint_type)
             self.redis_client.delete(old_key, new_key)
             logger.info(f"Cleared ramp state for {setpoint_type} ({location}/{cluster})")
@@ -231,7 +233,7 @@ class RampsMixin:
         if not self.redis_enabled or not self.redis_client:
             return False
         try:
-            old_key = f"ramp_persist:{location}:{cluster}:{setpoint_type}"
+            old_key = legacy_ramp_persist_key(location, cluster, setpoint_type)
             new_key = ramp_persist_key(location, cluster, setpoint_type)
             self.redis_client.delete(old_key, new_key)
             return True

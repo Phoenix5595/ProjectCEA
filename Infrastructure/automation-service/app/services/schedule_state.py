@@ -93,13 +93,12 @@ async def load_schedule_state_to_redis(
     schedule_repo: ScheduleRepository,
     climate_periods_repo: ClimatePeriodRepository,
 ) -> None:
-    """DEPRECATED: Schedule state Redis keys are dead code (T10 cleanup).
+    """DEPRECATED: Schedule state Redis keys are dead code.
 
-    Previously loaded schedule state from DB to Redis. The SchedulesMixin
-    that consumed these keys has been removed. This function is kept as a
-    no-op to avoid breaking startup callers; it logs once and returns.
+    Previously loaded schedule state from DB to Redis. SchedulesMixin
+    was removed; this function is kept as a no-op to avoid breaking
+    startup callers; it logs once and returns.
     """
     logger.info(
-        "load_schedule_state_to_redis is deprecated and does nothing "
-        "(SchedulesMixin removed in T10)"
+        "load_schedule_state_to_redis is deprecated and does nothing (SchedulesMixin removed)"
     )
