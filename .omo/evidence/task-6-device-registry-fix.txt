@@ -1,0 +1,44 @@
+Task: T6 — Remove YAML fallback in config.get_devices()
+Date: 2026-07-12
+
+## Changes
+
+### app/config.py
+- Removed `_yaml_has_devices` field (line 211) and initialization (line 244)
+- Removed `_bootstrap_checked` field (line 212) and initialization
+- `get_devices()` (lines 290-308):
+  - Replaced YAML fallback with: log ERROR and return `{}` when `_device_repo is None`
+  - Removed bootstrap check block (lines 299-306)
+
+### automation_config.yaml
+- Deleted entire `devices:` block (lines 18-113)
+- Preserved `hardware:`, `control:`, `sensors:` blocks
+
+### tests/test_config_no_yaml_fallback.py (new file)
+- `test_get_devices_returns_empty_when_no_repo` — when `_device_repo is None`, `get_devices()` returns `{}` and logs error
+- `test_get_devices_no_bootstrap_check` — asserts `_bootstrap_checked` and `_yaml_has_devices` fields are gone
+
+### tests/test_config_devices_db.py
+- Removed obsolete tests:
+  - `test_get_devices_falls_back_to_yaml_when_no_repo`
+  - `test_get_devices_empty_db_with_yaml_logs_error`
+
+## Verification
+
+```bash
+cd Infrastructure/automation-service
+ruff check app/config.py
+# All checks passed!
+
+pytest tests/test_config_no_yaml_fallback.py -q
+# 2 passed in 1.08s
+
+pytest tests/test_config_devices_db.py -q
+# 4 passed in 0.71s
+```
+
+## Notes
+- `write_full_config()` method preserved — still used by system_config.py:201
+- `automation_config.yaml` preserved — still contains hardware, control, sensors config
+- `schedules_path` and `rules_path` preserved in config.py
+- `get_devices()` return type unchanged — still `dict[str, Any]`

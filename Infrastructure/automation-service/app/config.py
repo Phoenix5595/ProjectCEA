@@ -28,6 +28,19 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+
+def _load_yaml_file(path: Path) -> dict[str, Any]:
+    """Load a YAML file and return its contents as a dict.
+
+    Returns an empty dict if the file does not exist or is empty.
+    """
+    try:
+        with open(path) as f:
+            return yaml.safe_load(f) or {}
+    except FileNotFoundError:
+        return {}
+
+
 # Canonical ``device_type`` vocabulary used by the control code
 # (``device_processor``, ``device_controller``, ``pid_controller_manager``,
 # ``vpd_cascade_controller``). Every other code path should eventually use
@@ -208,8 +221,6 @@ class ConfigLoader:
         from app.control.engine_config_cache import EngineConfigCache
 
         self._device_cache = EngineConfigCache(ttl_seconds=30.0)
-        self._yaml_has_devices = False
-        self._bootstrap_checked = False
         self.load()
 
     def set_device_repo(self, device_repo: DeviceRepository) -> None:
@@ -219,8 +230,7 @@ class ConfigLoader:
     def load(self) -> None:
         """Load configuration from YAML files."""
         # Load main config
-        with open(self.config_path) as f:
-            self._config = yaml.safe_load(f) or {}
+        self._config = _load_yaml_file(self.config_path)
         if _merge_flower_room_devices_into_main(self._config):
             try:
                 with open(self.config_path, "w") as f:
@@ -241,24 +251,21 @@ class ConfigLoader:
         # M1: _canonicalize_device_types is kept for backward compatibility but
         # no longer called on every load (migration 009 already canonicalized
         # devices in the DB).  YAML on disk stays as-is.
-        self._yaml_has_devices = bool(self._config.get("devices"))
         self._validate_config()
 
         # Load schedules if exists
-        if self.schedules_path.exists():
-            with open(self.schedules_path) as f:
-                schedules_data = yaml.safe_load(f) or {}
-                self._schedules = schedules_data.get("schedules", [])
+        schedules_data = _load_yaml_file(self.schedules_path)
+        if schedules_data:
+            self._schedules = schedules_data.get("schedules", [])
         else:
             # Check if schedules are in main config
             if "schedules" in self._config:
                 self._schedules = self._config["schedules"]
 
         # Load rules if exists
-        if self.rules_path.exists():
-            with open(self.rules_path) as f:
-                rules_data = yaml.safe_load(f) or {}
-                self._rules = rules_data.get("rules", [])
+        rules_data = _load_yaml_file(self.rules_path)
+        if rules_data:
+            self._rules = rules_data.get("rules", [])
         else:
             # Check if rules are in main config
             if "rules" in self._config:
@@ -288,22 +295,10 @@ class ConfigLoader:
         return self._config.get("hardware", {})
 
     async def get_devices(self) -> dict[str, Any]:
-        """Get device configuration from DB (cached with 30s TTL).
-
-        Falls back to YAML devices block when no DeviceRepository is set
-        (early initialization before database is ready).
-        """
+        """Get device configuration from DB (cached with 30s TTL)."""
         if self._device_repo is None:
-            return self._config.get("devices", {})
-
-        if not self._bootstrap_checked:
-            self._bootstrap_checked = True
-            db_devices = await self._device_repo.get_all_as_hierarchy()
-            if not db_devices and self._yaml_has_devices:
-                logger.error(
-                    "device_registry is empty but automation_config.yaml has devices. "
-                    "Run: cd Infrastructure/automation-service && alembic upgrade head"
-                )
+            logger.error("get_devices() called before DeviceRepository is set")
+            return {}
 
         return await self._device_cache.get_device_hierarchy(self._device_repo.get_all_as_hierarchy)
 
@@ -565,12 +560,8 @@ class ConfigLoader:
             True if successful, False otherwise
         """
         if self._device_repo is None:
-            logger.warning(
-                "DeviceRepository not set, falling back to YAML for update_device_config"
-            )
-            return self._update_device_config_yaml(
-                location, cluster, device_name, display_name, device_type
-            )
+            logger.warning("DeviceRepository not set, cannot update device config")
+            return False
 
         try:
             device_id = await self._device_repo.get_device_id(location, cluster, device_name)
@@ -618,41 +609,6 @@ class ConfigLoader:
             logger.error(f"Error updating device config: {e}")
             return False
 
-    def _update_device_config_yaml(
-        self,
-        location: str,
-        cluster: str,
-        device_name: str,
-        display_name: str | None = None,
-        device_type: str | None = None,
-    ) -> bool:
-        """Legacy YAML fallback for update_device_config (deprecated)."""
-        with self._config_lock:
-            try:
-                if "devices" not in self._config:
-                    self._config["devices"] = {}
-                if location not in self._config["devices"]:
-                    self._config["devices"][location] = {}
-                if cluster not in self._config["devices"][location]:
-                    self._config["devices"][location][cluster] = {}
-                if device_name not in self._config["devices"][location][cluster]:
-                    raise ValueError(f"Device {device_name} not found in {location}/{cluster}")
-
-                device_config = self._config["devices"][location][cluster][device_name]
-                if display_name is not None:
-                    device_config["display_name"] = display_name
-                if device_type is not None:
-                    device_config["device_type"] = device_type
-
-                self.write_full_config(self._config)
-                logger.info(
-                    f"Updated device config (YAML fallback): {location}/{cluster}/{device_name}"
-                )
-                return True
-            except Exception as e:
-                logger.error(f"Error updating device config (YAML fallback): {e}")
-                return False
-
     async def update_light_dimming_assignment(
         self,
         location: str,
@@ -667,12 +623,8 @@ class ConfigLoader:
         This only updates configuration fields; hardware commands are handled by the control loop.
         """
         if self._device_repo is None:
-            logger.warning(
-                "DeviceRepository not set, falling back to YAML for update_light_dimming_assignment"
-            )
-            return self._update_light_dimming_assignment_yaml(
-                location, cluster, device_name, board_id=board_id, dimming_channel=dimming_channel
-            )
+            logger.warning("DeviceRepository not set, cannot update light dimming assignment")
+            return False
 
         try:
             device_id = await self._device_repo.get_device_id(location, cluster, device_name)
@@ -703,49 +655,3 @@ class ConfigLoader:
         except Exception as e:
             logger.error(f"Error updating light dimming assignment: {e}")
             return False
-
-    def _update_light_dimming_assignment_yaml(
-        self,
-        location: str,
-        cluster: str,
-        device_name: str,
-        *,
-        board_id: int | None,
-        dimming_channel: int | None,
-    ) -> bool:
-        """Legacy YAML fallback for update_light_dimming_assignment (deprecated)."""
-        with self._config_lock:
-            try:
-                devices_root = self._config.get("devices", {})
-                if location not in devices_root or cluster not in devices_root.get(location, {}):
-                    raise ValueError(f"Unknown location/cluster: {location}/{cluster}")
-                devs = devices_root[location][cluster]
-                if device_name not in devs:
-                    raise ValueError(f"Device {device_name} not found in {location}/{cluster}")
-
-                device_config = devs[device_name]
-                if not isinstance(device_config, dict):
-                    raise ValueError(
-                        f"Invalid device config shape for {location}/{cluster}/{device_name}"
-                    )
-
-                if board_id is None or dimming_channel is None:
-                    device_config.pop("dimming_board_id", None)
-                    device_config.pop("dimming_channel", None)
-                else:
-                    device_config["dimming_board_id"] = int(board_id)
-                    device_config["dimming_channel"] = int(dimming_channel)
-
-                self.write_full_config(self._config)
-                logger.info(
-                    "Updated light dimming assignment (YAML fallback): %s/%s/%s board_id=%s channel=%s",
-                    location,
-                    cluster,
-                    device_name,
-                    board_id,
-                    dimming_channel,
-                )
-                return True
-            except Exception as e:
-                logger.error(f"Error updating light dimming assignment (YAML fallback): {e}")
-                return False

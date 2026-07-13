@@ -1,0 +1,29 @@
+
+---
+Evidence: Wave 1 - light_target_intensity & light_programs tables created
+Date: 2026-07-12
+---
+
+1. Tables created in cea_sensors via direct SQL (NOT alembic):
+   - light_target_intensity: 15 rows seeded from mode_parameters.main_light_intensity
+   - light_programs: 0 rows (empty, ready for future use)
+
+2. Permission fix:
+   - Granted SELECT/INSERT/UPDATE/DELETE on both tables to cea_user
+   - Granted USAGE/SELECT on light_programs_id_seq to cea_user
+
+3. Verification - Veg Room zone-status:
+   light_v_1: target=100.0 effective=100.0
+   light_v_2: target=100.0 effective=100.0
+   light_v_3: target=100.0 effective=100.0
+   (matches mode_parameters.main_light_intensity = 100, NOT hardcoded 10.0)
+
+4. Verification - Flower Room zone-status:
+   light_f_1: target=100.0 effective=0.0
+   light_f_2: target=100.0 effective=0.0
+   light_f_3: target=100.0 effective=0.0
+   (target=100.0 correct; effective=0.0 expected during moon period)
+
+5. No DB permission errors in logs after restart.
+
+6. File deleted: Infrastructure/automation-service/tests/test_alembic_008.py

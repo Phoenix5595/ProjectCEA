@@ -43,8 +43,8 @@ class ModeParameters(BaseModel):
     night_start_time: str = "11:00"
     light_ramp_up_minutes: int = 15
     light_ramp_down_minutes: int = 15
-    main_light_intensity: int = 100
-    supplemental_light_intensity: int = 0
+    main_light_intensity: int = 100  # DEPRECATED: use light_target_intensity table
+    supplemental_light_intensity: int = 0  # DEPRECATED: use light_target_intensity table
 
 
 class RoomModeWithParams(BaseModel):
@@ -75,5 +75,5 @@ class UpdateParametersRequest(BaseModel):
     night_start_time: str | None = None
     light_ramp_up_minutes: int | None = None
     light_ramp_down_minutes: int | None = None
-    main_light_intensity: int | None = None
-    supplemental_light_intensity: int | None = None
+    main_light_intensity: int | None = None  # DEPRECATED: use light_target_intensity table
+    supplemental_light_intensity: int | None = None  # DEPRECATED: use light_target_intensity table

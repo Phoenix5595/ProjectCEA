@@ -13,6 +13,7 @@ from typing import Any
 
 from app.alarm_manager import AlarmManager
 from app.database import DatabaseManager
+from app.repositories.devices import iter_devices_flat
 from shared.infra_logging import get_logger
 
 logger = get_logger(__name__)
@@ -196,45 +197,41 @@ async def validate_dimmable_light_schedule_coverage(
 
     checked_rooms: set[tuple[str, str]] = set()
 
-    for loc, clusters in devices.items():
-        for clus, devs in clusters.items():
-            for device_name, info in devs.items():
-                if str(device_name).startswith("light"):
-                    if info.get("dimming_enabled") and info.get("dimming_type") == "dfr0971":
-                        await _check_light_target_intensity(
-                            loc, clus, device_name, alarm_manager, database
-                        )
-                        room_key = (loc, clus)
-                        if room_key not in checked_rooms:
-                            await _check_mode_parameters(loc, clus, alarm_manager, database)
-                            checked_rooms.add(room_key)
-                else:
-                    sun_ok = moon_ok = False
-                    for s in schedules:
-                        if s.get("location") != loc or s.get("cluster") != clus:
-                            continue
-                        if s.get("device_name") != device_name:
-                            continue
-                        if not s.get("enabled", True):
-                            continue
-                        if not parseable_times(s):
-                            continue
-                        mode = str(s.get("mode", "")).upper()
-                        if mode in ("SUN", "DAY"):
-                            sun_ok = True
-                        if mode in ("MOON", "NIGHT"):
-                            moon_ok = True
-                    if not sun_ok or not moon_ok:
-                        logger.error(
-                            "Device schedule coverage incomplete: location=%s cluster=%s "
-                            "device=%s sun_or_day_row=%s moon_or_night_row=%s "
-                            "(need enabled SUN/DAY and MOON/NIGHT rows with start_time and end_time)",
-                            loc,
-                            clus,
-                            device_name,
-                            sun_ok,
-                            moon_ok,
-                        )
+    for loc, clus, device_name, info in iter_devices_flat(devices):
+        if str(device_name).startswith("light"):
+            if info.get("dimming_enabled") and info.get("dimming_type") == "dfr0971":
+                await _check_light_target_intensity(loc, clus, device_name, alarm_manager, database)
+                room_key = (loc, clus)
+                if room_key not in checked_rooms:
+                    await _check_mode_parameters(loc, clus, alarm_manager, database)
+                    checked_rooms.add(room_key)
+        else:
+            sun_ok = moon_ok = False
+            for s in schedules:
+                if s.get("location") != loc or s.get("cluster") != clus:
+                    continue
+                if s.get("device_name") != device_name:
+                    continue
+                if not s.get("enabled", True):
+                    continue
+                if not parseable_times(s):
+                    continue
+                mode = str(s.get("mode", "")).upper()
+                if mode in ("SUN", "DAY"):
+                    sun_ok = True
+                if mode in ("MOON", "NIGHT"):
+                    moon_ok = True
+            if not sun_ok or not moon_ok:
+                logger.error(
+                    "Device schedule coverage incomplete: location=%s cluster=%s "
+                    "device=%s sun_or_day_row=%s moon_or_night_row=%s "
+                    "(need enabled SUN/DAY and MOON/NIGHT rows with start_time and end_time)",
+                    loc,
+                    clus,
+                    device_name,
+                    sun_ok,
+                    moon_ok,
+                )
 
 
 async def validate_light_config_against_schedules(
@@ -252,62 +249,60 @@ async def validate_light_config_against_schedules(
 
     checked_rooms: set[tuple[str, str]] = set()
 
-    for loc, clusters in devices.items():
-        for clus, devs in clusters.items():
-            for device_name, info in devs.items():
-                if str(device_name).startswith("light"):
-                    if info.get("dimming_enabled") and info.get("dimming_type") == "dfr0971":
-                        room_key = (loc, clus)
-                        if room_key not in checked_rooms:
-                            await _check_mode_parameters(loc, clus, alarm_manager, database)
-                            checked_rooms.add(room_key)
+    for loc, clus, device_name, info in iter_devices_flat(devices):
+        if str(device_name).startswith("light"):
+            if info.get("dimming_enabled") and info.get("dimming_type") == "dfr0971":
+                room_key = (loc, clus)
+                if room_key not in checked_rooms:
+                    await _check_mode_parameters(loc, clus, alarm_manager, database)
+                    checked_rooms.add(room_key)
 
-                        row_count = sum(
-                            1
-                            for s in schedules
-                            if s.get("location") == loc
-                            and s.get("cluster") == clus
-                            and s.get("device_name") == device_name
-                        )
-                        if row_count == 0:
-                            logger.warning(
-                                "Light %s in config has no schedule rows in DB: location=%s "
-                                "cluster=%s — this is OK if light uses mode_parameters + "
-                                "light_target_intensity exclusively.",
-                                device_name,
-                                loc,
-                                clus,
-                            )
-                        if _daily_schedule_has_gaps(schedules, loc, clus, device_name):
-                            logger.warning(
-                                "Light daily schedule may not cover 24h: location=%s cluster=%s "
-                                "device=%s — review SUN/MOON windows (day_of_week=null rows only).",
-                                loc,
-                                clus,
-                                device_name,
-                            )
-                else:
-                    row_count = sum(
-                        1
-                        for s in schedules
-                        if s.get("location") == loc
-                        and s.get("cluster") == clus
-                        and s.get("device_name") == device_name
+                row_count = sum(
+                    1
+                    for s in schedules
+                    if s.get("location") == loc
+                    and s.get("cluster") == clus
+                    and s.get("device_name") == device_name
+                )
+                if row_count == 0:
+                    logger.warning(
+                        "Light %s in config has no schedule rows in DB: location=%s "
+                        "cluster=%s — this is OK if light uses mode_parameters + "
+                        "light_target_intensity exclusively.",
+                        device_name,
+                        loc,
+                        clus,
                     )
-                    if row_count == 0:
-                        logger.error(
-                            "Device in config has no schedule rows in DB: location=%s "
-                            "cluster=%s device=%s — check ZoneConfig device_name matches "
-                            "schedules.device_name.",
-                            loc,
-                            clus,
-                            device_name,
-                        )
-                    if _daily_schedule_has_gaps(schedules, loc, clus, device_name):
-                        logger.warning(
-                            "Device daily schedule may not cover 24h: location=%s cluster=%s "
-                            "device=%s — review SUN/MOON windows (day_of_week=null rows only).",
-                            loc,
-                            clus,
-                            device_name,
-                        )
+                if _daily_schedule_has_gaps(schedules, loc, clus, device_name):
+                    logger.warning(
+                        "Light daily schedule may not cover 24h: location=%s cluster=%s "
+                        "device=%s — review SUN/MOON windows (day_of_week=null rows only).",
+                        loc,
+                        clus,
+                        device_name,
+                    )
+        else:
+            row_count = sum(
+                1
+                for s in schedules
+                if s.get("location") == loc
+                and s.get("cluster") == clus
+                and s.get("device_name") == device_name
+            )
+            if row_count == 0:
+                logger.error(
+                    "Device in config has no schedule rows in DB: location=%s "
+                    "cluster=%s device=%s — check ZoneConfig device_name matches "
+                    "schedules.device_name.",
+                    loc,
+                    clus,
+                    device_name,
+                )
+            if _daily_schedule_has_gaps(schedules, loc, clus, device_name):
+                logger.warning(
+                    "Device daily schedule may not cover 24h: location=%s cluster=%s "
+                    "device=%s — review SUN/MOON windows (day_of_week=null rows only).",
+                    loc,
+                    clus,
+                    device_name,
+                )

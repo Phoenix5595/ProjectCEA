@@ -1,0 +1,38 @@
+## Task 2: getChannelDisplayName display_name fix
+
+### Date: 2026-07-12
+
+### File modified
+- `Infrastructure/frontend/src/components/devices/relayViewModel.ts`
+
+### Change
+`getChannelDisplayName()` (lines 114-127) now returns `display_name` for ALL
+device types when available, not just lights. Fallback chain:
+  1. `display_name` (human-readable, all device types) — NEW
+  2. For lights only: `light_name` then `device_name`
+  3. For non-lights: `device_name`
+
+Previous behavior: `display_name` was never consulted; lights used
+`light_name || device_name`, non-lights used `device_name` directly.
+
+### Verification
+
+#### tsc --noEmit
+Command: `cd Infrastructure/frontend && npx tsc --noEmit`
+Result: PASS (0 errors, no output)
+
+#### vitest run
+Command: `cd Infrastructure/frontend && npx vitest run`
+Result: 81 passed, 1 failed (pre-existing, unrelated)
+
+The single failure is `relayMatrix.test.tsx > "shows relay numbers in left and right gutters"`:
+- Test expects standalone gutter numbers "1".."8" via `screen.getAllByText(String(i))`
+- Current `RelayChannelBox` renders numbers as "R1", "R16" inside combined spans
+- Confirmed PRE-EXISTING: `git stash` (reverting my change) → same test still fails
+- This test does not exercise `getChannelDisplayName` and is unrelated to this task
+
+### Constraints honored
+- `assignedDeviceName` in `buildRelayChannelViewModels` (line ~199) NOT changed — still uses `channel.device_name` (canonical) for API calls
+- `getChannelDisplayType` NOT changed
+- `getReadableDeviceType` NOT changed
+- No other files modified

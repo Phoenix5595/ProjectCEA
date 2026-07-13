@@ -3,9 +3,9 @@
 > **State since Phase 5c (2026-04-19):** production Grafana runs as the
 > `projectcea_grafana` container on `iskraprojectcea` (host port 3001,
 > see `Infrastructure/iskra_stack/docker-compose.yml`). The Pi-local
-> `grafana-server` is `inactive`/`disabled` and no longer proxied by
-> Caddy. For new setups use the iskra docker stack — the "Install on
-> Raspberry Pi" section below is retained only as historical reference.
+> `grafana-server` is **PERMANENTLY decommissioned** and MUST NEVER be
+> re-enabled. Do NOT run `systemctl enable grafana-server`,
+> `systemctl start grafana-server`, or `apt install grafana`.
 >
 > Canonical URLs:
 > - **Grafana UI:** `http://iskraprojectcea:3001`
@@ -20,44 +20,17 @@ Complete guide for setting up and using Grafana to visualize sensor data from th
 
 ## Table of Contents
 
-1. [Installation](#installation)
-2. [Configuration](#configuration)
-3. [Database Schema](#database-schema)
-4. [Query Examples](#query-examples)
-5. [Importing Dashboards](#importing-dashboards)
-6. [Troubleshooting](#troubleshooting)
+1. [Configuration](#configuration)
+2. [Database Schema](#database-schema)
+3. [Query Examples](#query-examples)
+4. [Importing Dashboards](#importing-dashboards)
+5. [Troubleshooting](#troubleshooting)
 
 ---
 
-## Installation
-
-### On Raspberry Pi
-
-```bash
-# Add Grafana repository
-sudo apt-get install -y software-properties-common
-sudo add-apt-repository "deb https://packages.grafana.com/oss/deb stable main"
-wget -q -O - https://packages.grafana.com/gpg.key | sudo apt-key add -
-
-# Install Grafana
-sudo apt-get update
-sudo apt-get install grafana
-
-# Enable and start Grafana
-sudo systemctl enable grafana-server
-sudo systemctl start grafana-server
-```
-
-### Verify Installation
-
-```bash
-# Check status
-sudo systemctl status grafana-server
-
-# Access Grafana
-# Default URL: http://localhost:3000
-# Default credentials: admin / admin (change on first login)
-```
+> **PERMANENT BAN**: The Pi/mothernode-local `grafana-server` is DECOMMISSIONED and MUST NEVER be re-enabled.
+> All Grafana traffic goes through the `projectcea_grafana` Docker container on `iskraprojectcea:3001`.
+> Do NOT run `systemctl enable grafana-server`, `systemctl start grafana-server`, or `apt install grafana`.
 
 ---
 
@@ -65,7 +38,7 @@ sudo systemctl status grafana-server
 
 ### Step 1: Add PostgreSQL Data Source
 
-1. Open Grafana (usually at `http://localhost:3000`)
+1. Open Grafana (usually at `http://iskraprojectcea:3001`)
 2. Login with admin/admin (change password on first login)
 3. Go to **Configuration** → **Data Sources** → **Add data source**
 4. Select **PostgreSQL**
@@ -505,7 +478,7 @@ Ensure PostgreSQL is configured for time-series workloads. See `Infrastructure/d
 
 ### Method 1: Via Grafana UI (Recommended)
 
-1. Open Grafana in your browser (usually `http://localhost:3000`)
+1. Open Grafana in your browser (usually `http://iskraprojectcea:3001`)
 2. Click **Dashboards** → **Import** (or click the **+** icon → **Import**)
 3. Click **Upload JSON file**
 4. Navigate to: `Infrastructure/frontend/grafana/dashboards/cea_sensors_example.json`

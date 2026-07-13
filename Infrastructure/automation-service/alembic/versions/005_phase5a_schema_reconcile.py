@@ -49,9 +49,8 @@ Create Date: 2026-04-18
 from alembic import op
 
 revision = "005_phase5a_reconcile"
-# 004_drop_legacy_setpoint_columns is parked under alembic/staged/ until
-# the code paths that still read those columns are migrated. Point at
-# 003 so `alembic upgrade head` stays safe.
+# 004_drop_legacy_setpoint_columns was deleted as part of dead-code removal.
+# Point at 003 so `alembic upgrade head` stays safe.
 down_revision = "003_climate_single_row"
 branch_labels = None
 depends_on = None

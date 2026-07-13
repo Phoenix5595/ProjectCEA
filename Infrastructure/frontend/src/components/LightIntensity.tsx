@@ -35,75 +35,12 @@ const LightIntensity = forwardRef<{ savePendingChanges: () => Promise<void> }, L
     savePendingChanges,
   }))
 
-  const fetchLightsAndStatusLegacy = useCallback(async () => {
-    if (!location || !cluster) return
-
-    const allLights = await apiClient.getLightsForZone(location, cluster)
-    const lightDevices = allLights.filter(
-      (l) =>
-        l.dimming_enabled &&
-        l.dimming_board_id !== null &&
-        l.dimming_board_id !== undefined &&
-        l.dimming_channel !== null &&
-        l.dimming_channel !== undefined
-    )
-    setLights(lightDevices)
-
-    const schedules = await apiClient.getSchedules(location, cluster)
-
-    const statusPromises = lightDevices.map(async (light: LightDevice) => {
-      try {
-        const status = await apiClient.getLightStatus(location!, cluster!, light.device_name)
-
-        const sunSchedule = schedules.find(
-          (s: { device_name?: string; mode?: string; enabled?: boolean; target_intensity?: number | null }) =>
-            s.device_name === light.device_name &&
-            (s.mode === 'SUN' || s.mode === 'DAY') &&
-            s.enabled &&
-            s.target_intensity !== null &&
-            s.target_intensity !== undefined
-        )
-        const dayTargetIntensity = sunSchedule?.target_intensity ?? null
-
-        return { deviceName: light.device_name, status, dayTargetIntensity }
-      } catch (err) {
-        logger.error(`Error getting light status for ${light.device_name}:`, err)
-        return { deviceName: light.device_name, status: null, dayTargetIntensity: null }
-      }
-    })
-
-    const results = await Promise.all(statusPromises)
-    const statusMap: Record<string, LightIntensityRowStatus> = {}
-    results.forEach(({ deviceName, status, dayTargetIntensity }) => {
-      if (status) {
-        const sunTarget =
-          dayTargetIntensity ?? status.schedule_sun_target_intensity ?? status.day_target_intensity ?? null
-        statusMap[deviceName] = {
-          intensity: status.intensity,
-          target_intensity: status.target_intensity ?? null,
-          day_target_intensity: sunTarget,
-          schedule_sun_target_intensity: sunTarget,
-        }
-      }
-    })
-    setStatuses(statusMap)
-  }, [location, cluster])
-
   const fetchLightsAndStatus = useCallback(async () => {
     if (!location || !cluster) return
 
     try {
       const data = await apiClient.getZoneLightsStatus(location, cluster)
       const rows = data.lights ?? []
-
-      if (rows.length === 0) {
-        try {
-          await fetchLightsAndStatusLegacy()
-        } catch (legacyErr) {
-          logger.error('Legacy light load failed after empty zone-status:', legacyErr)
-        }
-        return
-      }
 
       const lightDevices: LightDevice[] = rows.map((row) => ({
         device_name: row.device,
@@ -130,16 +67,11 @@ const LightIntensity = forwardRef<{ savePendingChanges: () => Promise<void> }, L
       }
       setStatuses(statusMap)
     } catch (err) {
-      logger.warn('Zone light status batch failed, falling back to per-device requests:', err)
-      try {
-        await fetchLightsAndStatusLegacy()
-      } catch (fallbackErr) {
-        logger.error('Failed to load lights:', fallbackErr)
-      }
+      logger.error('Failed to load zone light status:', err)
     } finally {
       setLoading(false)
     }
-  }, [location, cluster, fetchLightsAndStatusLegacy])
+  }, [location, cluster])
 
   useEffect(() => {
     fetchLightsAndStatus()

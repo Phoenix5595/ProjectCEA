@@ -118,64 +118,6 @@ class SetpointRepository(BaseRepository):
             logger.error(f"Failed to get effective setpoints: {e}")
         return None
 
-    async def log_effective_setpoint(
-        self,
-        location: str,
-        cluster: str,
-        mode: str | None,
-        heating_setpoint: float | None = None,
-        cooling_setpoint: float | None = None,
-        humidity: float | None = None,
-        co2: float | None = None,
-        vpd: float | None = None,
-        timestamp: datetime | None = None,
-    ) -> bool:
-        """Log effective setpoint to setpoint_history (for ramp tracking).
-
-        .. deprecated:: Use log_effective_setpoints (plural) instead.
-
-        This is called during ramps to log the effective setpoint at each change.
-
-        Args:
-            location: Location name
-            cluster: Cluster name
-            mode: Mode (period name from climate_periods) or None
-            heating_setpoint: Effective heating setpoint
-            cooling_setpoint: Effective cooling setpoint
-            humidity: Effective humidity setpoint
-            co2: Effective CO2 setpoint
-            vpd: Effective VPD setpoint
-            timestamp: Timestamp (default: NOW())
-
-        Returns:
-            True if successful, False otherwise
-        """
-        try:
-            async with self.pool.acquire() as conn:
-                db_mode = mode if mode else None
-                ts = timestamp or datetime.now()
-
-                await conn.execute(
-                    """
-                    INSERT INTO setpoint_history (timestamp, location, cluster, mode, heating_setpoint, cooling_setpoint, humidity, co2, vpd)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-                """,
-                    ts,
-                    location,
-                    cluster,
-                    db_mode,
-                    heating_setpoint,
-                    cooling_setpoint,
-                    humidity,
-                    co2,
-                    vpd,
-                )
-
-                return True
-        except Exception as e:
-            logger.error(f"Failed to log effective setpoint: {e}")
-            return False
-
     async def log_effective_setpoints(
         self,
         location: str,

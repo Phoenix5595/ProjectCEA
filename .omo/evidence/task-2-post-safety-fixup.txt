@@ -1,0 +1,31 @@
+# Task 2 Evidence — post-safety-fixup
+# Generated: 2026-07-12
+
+## End-to-end Verification
+
+### Control-page endpoints
+- /api/devices/Flower Room/main: 200, returns 6 devices
+- /api/devices/Veg Room/main: 200, returns 7 devices
+- /api/lights/Flower Room/main/zone-status: 3 lights (light_f_1, light_f_2, light_f_3)
+- /api/room-schedule/Flower Room/main: returns day_start_time=17:00, night_start_time=11:00
+
+### Scheduler startup
+- DFR0971 channels initialized to 0V at startup (6 channels across 3 boards)
+- No "no mode_params" failsafe warnings
+- Hardware batch executing successfully
+
+### Hardware batch (last 5 minutes)
+- All batches: "3 ok, 0 failed" (was "0 ok, 3 failed" before migration)
+- Response times: 160-250ms
+
+### Errors in logs (5 minutes)
+- 1 error: Pydantic validation error for device_name 'exhaust_fan'
+  - Pattern mismatch: '^[a-z][a-z0-9]*_[fvlo]_\d+$' vs 'exhaust_fan'
+  - This is a PRE-EXISTING bug in Device model, not caused by migrations
+  - Causes /api/devices/registry to return []
+  - Does NOT affect control pages (they use /api/devices/{loc}/{cluster})
+
+### Conclusion
+- Control pages should now load correctly
+- "Unknown location/cluster" error is fixed
+- Scheduler operating normally in MOON period (daytime, lights off)

@@ -1,14 +1,6 @@
 from __future__ import annotations
 
-from enum import Enum
-
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
-
-
-class DeviceType(str, Enum):
-    RELAY = "relay"
-    DIMMING = "dimming"
-    SENSOR = "sensor"
 
 
 class DFR0971Board(BaseModel):
@@ -26,22 +18,6 @@ class DFR0971Board(BaseModel):
 
 class HardwareConfig(BaseModel):
     boards: list[DFR0971Board] = Field(default_factory=list)
-
-
-class DeviceConfig(BaseModel):
-    # DEPRECATED: Use LightDevice or Device from app.models.device_registry
-    # for new code.  This model is kept for YAML-bootstrap backward
-    # compatibility during the migration to DB-backed device registry.
-    device_type: DeviceType
-    channel: int
-    dimming_board: str | None = None
-
-    @field_validator("channel")
-    @classmethod
-    def channel_range(cls, v: int) -> int:
-        if not (0 <= v <= 15):
-            raise ValueError("channel must be between 0 and 15 inclusive")
-        return v
 
 
 class AutomationConfig(BaseModel):
@@ -70,7 +46,6 @@ class AppConfig(BaseModel):
         devices = values.get("devices")
         hardware = values.get("hardware", {}) or {}
         control = values.get("control") or {}
-        allow_legacy_flower_main = bool(control.get("allow_legacy_flower_main", False))
 
         # Validate I2C bus numbers (Raspberry Pi typically has bus 0 and 1)
         for key in ("i2c_bus", "mcp_i2c_bus", "dfr0971_i2c_bus"):
@@ -115,7 +90,7 @@ class AppConfig(BaseModel):
 
         if isinstance(devices, dict):
             flower_devices = devices.get("Flower Room")
-            if isinstance(flower_devices, dict) and not allow_legacy_flower_main:
+            if isinstance(flower_devices, dict):
                 # Canonical: all Flower equipment under `main`. `front`/`back` exist only under
                 # `sensors:` for dual sensor clusters (not device namespaces).
                 has_main = "main" in flower_devices
@@ -224,7 +199,7 @@ class AppConfig(BaseModel):
             raise ValueError("duplicate relay channels are not allowed")
 
         sensors = values.get("sensors")
-        if isinstance(sensors, dict) and not allow_legacy_flower_main:
+        if isinstance(sensors, dict):
             flower_sensors = sensors.get("Flower Room")
             if isinstance(flower_sensors, dict):
                 missing_fb = [
@@ -246,7 +221,7 @@ class AppConfig(BaseModel):
                         )
 
         default_setpoints = control.get("default_setpoints")
-        if isinstance(default_setpoints, dict) and not allow_legacy_flower_main:
+        if isinstance(default_setpoints, dict):
             flower_setpoints = default_setpoints.get("Flower Room")
             flower_devices = devices.get("Flower Room") if isinstance(devices, dict) else None
             if isinstance(flower_setpoints, dict) and isinstance(flower_devices, dict):

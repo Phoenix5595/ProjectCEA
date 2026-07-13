@@ -88,9 +88,14 @@ export default function ClimatePeriodTimeline({
   const [dragTarget, setDragTarget] = useState<'start' | 'end' | 'body' | null>(null)
   const [dragOffsetMinutes, setDragOffsetMinutes] = useState(0)
   const [showRampPopover, setShowRampPopover] = useState(false)
+  const [showContextMenu, setShowContextMenu] = useState(false)
+  const [contextMenuPosition, setContextMenuPosition] = useState({ x: 0, y: 0 })
+  const [popoverMode, setPopoverMode] = useState<'ramp' | 'night-start' | 'night-end'>('ramp')
   const [popoverPosition, setPopoverPosition] = useState({ x: 0, y: 0 })
   const [rampUpInput, setRampUpInput] = useState(rampUpDuration ?? 0)
   const [rampDownInput, setRampDownInput] = useState(rampDownDuration ?? 0)
+  const [nightStartInput, setNightStartInput] = useState(lightDayEnd)
+  const [nightEndInput, setNightEndInput] = useState(lightDayStart)
 
   const snapTo5 = (minutes: number): number => Math.round(minutes / 5) * 5
   const clampMinutes = (m: number): number => Math.max(0, Math.min(1435, m))
@@ -186,15 +191,24 @@ export default function ClimatePeriodTimeline({
   }, [dragTarget, dragOffsetMinutes, dayStartMin, dayEndMin, lockedPhotoperiodHours, onDayStartChange, onDayEndChange])
 
   useEffect(() => {
-    if (!showRampPopover) return
+    if (!showRampPopover && !showContextMenu) return
     const handleClickOutside = (e: MouseEvent) => {
       const popover = document.querySelector('[data-testid="timeline-ramp-popover"]')
-      if (popover && !popover.contains(e.target as Node)) {
-        setShowRampPopover(false)
+      const contextMenu = document.querySelector('[data-testid="timeline-context-menu"]')
+      if (
+        (popover && popover.contains(e.target as Node)) ||
+        (contextMenu && contextMenu.contains(e.target as Node))
+      ) {
+        return
       }
+      setShowRampPopover(false)
+      setShowContextMenu(false)
     }
     const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setShowRampPopover(false)
+      if (e.key === 'Escape') {
+        setShowRampPopover(false)
+        setShowContextMenu(false)
+      }
     }
     const timer = setTimeout(() => {
       document.addEventListener('mousedown', handleClickOutside)
@@ -205,7 +219,7 @@ export default function ClimatePeriodTimeline({
       document.removeEventListener('mousedown', handleClickOutside)
       document.removeEventListener('keydown', handleEscape)
     }
-  }, [showRampPopover])
+  }, [showRampPopover, showContextMenu])
 
   const sunColor = 'rgba(234, 179, 8, 0.45)'
   const moonColor = 'rgba(168, 85, 247, 0.35)'
@@ -310,32 +324,47 @@ export default function ClimatePeriodTimeline({
                   onMouseDown={handleBodyMouseDown}
                   onContextMenu={(e) => {
                     e.preventDefault()
-                    setRampUpInput(rampUpDuration ?? 0)
-                    setRampDownInput(rampDownDuration ?? 0)
-                    setPopoverPosition({ x: e.clientX + 8, y: e.clientY + 8 })
-                    setShowRampPopover(true)
+                    setNightStartInput(lightDayEnd)
+                    setNightEndInput(lightDayStart)
+                    setContextMenuPosition({ x: e.clientX + 8, y: e.clientY + 8 })
+                    setShowContextMenu(true)
                   }}
                 >
                   <div
-                    className="absolute left-0 top-0 h-full w-5 cursor-ew-resize z-10 opacity-60 hover:opacity-100 transition-opacity"
+                    className="absolute left-0 top-0 h-full w-8 cursor-ew-resize z-10 opacity-100 transition-opacity"
                     style={{
                       borderLeft: '2px solid #06b6d4',
                       backgroundColor: 'rgba(6, 182, 212, 0.1)',
                       cursor: 'ew-resize',
                     }}
                     data-testid="timeline-handle-night-start"
+                    title="Drag to adjust photoperiod boundary"
                     onMouseDown={handleEdgeMouseDown('end')}
                   />
                   <div
-                    className="absolute right-0 top-0 h-full w-5 cursor-ew-resize z-10 opacity-60 hover:opacity-100 transition-opacity"
+                    className="absolute right-0 top-0 h-full w-8 cursor-ew-resize z-10 opacity-100 transition-opacity"
                     style={{
                       borderRight: '2px solid #06b6d4',
                       backgroundColor: 'rgba(6, 182, 212, 0.1)',
                       cursor: 'ew-resize',
                     }}
                     data-testid="timeline-handle-night-end"
+                    title="Drag to adjust photoperiod boundary"
                     onMouseDown={handleEdgeMouseDown('start')}
                   />
+                </div>
+              ))}
+
+              {sunSegments.map((segment, index) => (
+                <div
+                  key={`sun-${index}-${segment.startMin}-${segment.endMin}`}
+                  className="absolute h-full"
+                  style={{
+                    left: `${getPosition(segment.startMin)}%`,
+                    width: `${getPosition(segment.endMin - segment.startMin)}%`,
+                    backgroundColor: sunColor,
+                  }}
+                >
                   {rampUpDuration != null && rampUpDuration > 0 && (
                     <div
                       data-testid="timeline-ramp-up-gradient"
@@ -357,18 +386,6 @@ export default function ClimatePeriodTimeline({
                     />
                   )}
                 </div>
-              ))}
-
-              {sunSegments.map((segment, index) => (
-                <div
-                  key={`sun-${index}-${segment.startMin}-${segment.endMin}`}
-                  className="absolute h-full"
-                  style={{
-                    left: `${getPosition(segment.startMin)}%`,
-                    width: `${getPosition(segment.endMin - segment.startMin)}%`,
-                    backgroundColor: sunColor,
-                  }}
-                />
               ))}
             </div>
 
@@ -451,46 +468,159 @@ export default function ClimatePeriodTimeline({
           </div>
         </div>
       </div>
+      {showContextMenu && (
+        <div
+          data-testid="timeline-context-menu"
+          className="fixed z-50 bg-surface-primary border border-border-default rounded-lg shadow-lg py-1 min-w-[180px]"
+          style={{ left: contextMenuPosition.x, top: contextMenuPosition.y }}
+        >
+          <button
+            className="w-full text-left px-3 py-1.5 text-xs text-text-input hover:bg-surface-secondary"
+            onClick={() => {
+              setPopoverMode('night-start')
+              setPopoverPosition(contextMenuPosition)
+              setShowContextMenu(false)
+              setShowRampPopover(true)
+            }}
+          >
+            Edit night start time
+          </button>
+          <button
+            className="w-full text-left px-3 py-1.5 text-xs text-text-input hover:bg-surface-secondary"
+            onClick={() => {
+              setPopoverMode('night-end')
+              setPopoverPosition(contextMenuPosition)
+              setShowContextMenu(false)
+              setShowRampPopover(true)
+            }}
+          >
+            Edit night end time
+          </button>
+          <button
+            className="w-full text-left px-3 py-1.5 text-xs text-text-input hover:bg-surface-secondary"
+            onClick={() => {
+              setPopoverMode('ramp')
+              setRampUpInput(rampUpDuration ?? 0)
+              setRampDownInput(rampDownDuration ?? 0)
+              setPopoverPosition(contextMenuPosition)
+              setShowContextMenu(false)
+              setShowRampPopover(true)
+            }}
+          >
+            Edit ramp times
+          </button>
+        </div>
+      )}
       {showRampPopover && (
         <div
           data-testid="timeline-ramp-popover"
           className="fixed z-50 bg-surface-primary border border-border-default rounded-lg shadow-lg p-3 flex flex-col gap-2 min-w-[180px]"
           style={{ left: popoverPosition.x, top: popoverPosition.y }}
         >
-          <div className="flex flex-col gap-1">
-            <label className="text-[12px] text-text-muted">Ramp up (min)</label>
-            <input
-              aria-label="Ramp up (min)"
-              type="number"
-              min={0}
-              max={180}
-              value={rampUpInput}
-              onChange={(e) => setRampUpInput(parseInt(e.target.value) || 0)}
-              className="w-full h-6 px-1 text-center bg-surface-secondary border border-border-default rounded text-[14px] text-text-input [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-            />
-          </div>
-          <div className="flex flex-col gap-1">
-            <label className="text-[12px] text-text-muted">Ramp down (min)</label>
-            <input
-              aria-label="Ramp down (min)"
-              type="number"
-              min={0}
-              max={180}
-              value={rampDownInput}
-              onChange={(e) => setRampDownInput(parseInt(e.target.value) || 0)}
-              className="w-full h-6 px-1 text-center bg-surface-secondary border border-border-default rounded text-[14px] text-text-input [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-            />
-          </div>
-          <button
-            onClick={() => {
-              onRampUpChange?.(rampUpInput)
-              onRampDownChange?.(rampDownInput)
-              setShowRampPopover(false)
-            }}
-            className="mt-1 px-3 py-1 bg-btn-primary text-white rounded text-xs font-medium hover:opacity-90"
-          >
-            Done
-          </button>
+          {popoverMode === 'ramp' && (
+            <>
+              <div className="flex flex-col gap-1">
+                <label className="text-[12px] text-text-muted">Ramp up (min)</label>
+                <input
+                  aria-label="Ramp up (min)"
+                  type="number"
+                  min={0}
+                  max={180}
+                  value={rampUpInput}
+                  onChange={(e) => setRampUpInput(parseInt(e.target.value) || 0)}
+                  className="w-full h-6 px-1 text-center bg-surface-secondary border border-border-default rounded text-[14px] text-text-input [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-[12px] text-text-muted">Ramp down (min)</label>
+                <input
+                  aria-label="Ramp down (min)"
+                  type="number"
+                  min={0}
+                  max={180}
+                  value={rampDownInput}
+                  onChange={(e) => setRampDownInput(parseInt(e.target.value) || 0)}
+                  className="w-full h-6 px-1 text-center bg-surface-secondary border border-border-default rounded text-[14px] text-text-input [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                />
+              </div>
+              <button
+                onClick={() => {
+                  onRampUpChange?.(rampUpInput)
+                  onRampDownChange?.(rampDownInput)
+                  setShowRampPopover(false)
+                }}
+                className="mt-1 px-3 py-1 bg-btn-primary text-white rounded text-xs font-medium hover:opacity-90"
+              >
+                Done
+              </button>
+            </>
+          )}
+          {popoverMode === 'night-start' && (
+            <>
+              <div className="flex flex-col gap-1">
+                <label className="text-[12px] text-text-muted">Night start time (HH:MM)</label>
+                <input
+                  aria-label="Night start time"
+                  type="text"
+                  value={nightStartInput}
+                  onChange={(e) => setNightStartInput(e.target.value)}
+                  placeholder="HH:MM"
+                  className="w-full h-6 px-1 text-center bg-surface-secondary border border-border-default rounded text-[14px] text-text-input"
+                />
+              </div>
+              <button
+                onClick={() => {
+                  const mins = timeToMinutes(nightStartInput)
+                  const snapped = clampMinutes(snapTo5(mins))
+                  const time = minutesToTime(snapped)
+                  if (lockedPhotoperiodHours != null) {
+                    const dur = lockedPhotoperiodHours * 60
+                    onDayEndChange?.(time)
+                    onDayStartChange?.(minutesToTime((snapped + dur) % 1440))
+                  } else {
+                    onDayEndChange?.(time)
+                  }
+                  setShowRampPopover(false)
+                }}
+                className="mt-1 px-3 py-1 bg-btn-primary text-white rounded text-xs font-medium hover:opacity-90"
+              >
+                Done
+              </button>
+            </>
+          )}
+          {popoverMode === 'night-end' && (
+            <>
+              <div className="flex flex-col gap-1">
+                <label className="text-[12px] text-text-muted">Night end time (HH:MM)</label>
+                <input
+                  aria-label="Night end time"
+                  type="text"
+                  value={nightEndInput}
+                  onChange={(e) => setNightEndInput(e.target.value)}
+                  placeholder="HH:MM"
+                  className="w-full h-6 px-1 text-center bg-surface-secondary border border-border-default rounded text-[14px] text-text-input"
+                />
+              </div>
+              <button
+                onClick={() => {
+                  const mins = timeToMinutes(nightEndInput)
+                  const snapped = clampMinutes(snapTo5(mins))
+                  const time = minutesToTime(snapped)
+                  if (lockedPhotoperiodHours != null) {
+                    const dur = lockedPhotoperiodHours * 60
+                    onDayStartChange?.(time)
+                    onDayEndChange?.(minutesToTime((snapped - dur + 1440) % 1440))
+                  } else {
+                    onDayStartChange?.(time)
+                  }
+                  setShowRampPopover(false)
+                }}
+                className="mt-1 px-3 py-1 bg-btn-primary text-white rounded text-xs font-medium hover:opacity-90"
+              >
+                Done
+              </button>
+            </>
+          )}
         </div>
       )}
     </div>

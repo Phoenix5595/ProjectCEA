@@ -167,7 +167,7 @@ Current state (Phase 5c complete, 2026-04-19):
   datasource/database/auth errors do not email as if a connected sensor cluster
   stopped reporting. Datasource health should be monitored separately by the
   operations dashboard/alerts.
-- Pi `grafana-server` is `inactive`/`disabled` (no longer auto-starting; package + `/var/lib/grafana` retained as an escape hatch, delete later).
+- Pi `grafana-server` is **PERMANENTLY decommissioned**. Must NEVER be re-enabled. Package may be purged.
 - The legacy `iskradocker` CEA datasource + bind-mount were removed earlier in Phase 5c; backup tarball at `/var/lib/projectcea/backups/iskradocker-cea-grafana-pre-refactor.tgz`.
 
 ## Backups
@@ -194,7 +194,7 @@ Services that participate in deploy + rollback today:
 | soil-sensor-service | `soil-sensor-service.service` | 8002 | Modbus → Redis + DB |
 | weather-service | `weather-service.service` | 8004 | External API → Redis + DB |
 | onewire-worker | `onewire-worker.service` | n/a | 1-wire temperatures → Redis (no HTTP) |
-| grafana-server | _decommissioned_ | _n/a_ | Pi Grafana — `inactive`/`disabled` since Phase 5c (2026-04-19). Production Grafana now runs as `projectcea_grafana` on `iskraprojectcea:3001` (Docker container; see `Infrastructure/iskra_stack/docker-compose.yml`). |
+| grafana-server | _decommissioned_ | _n/a_ | Pi Grafana — **PERMANENTLY decommissioned — DO NOT re-enable** since Phase 5c (2026-04-19). Production Grafana now runs as `projectcea_grafana` on `iskraprojectcea:3001` (Docker container; see `Infrastructure/iskra_stack/docker-compose.yml`). |
 
 ## Security posture (Phase 3 complete)
 

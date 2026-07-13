@@ -156,7 +156,7 @@ class ServiceContainer:
             )
             logger.info("Relay manager initialized")
 
-            # 6. Initialize scheduler with schedules from database (+ synthetic SUN rows from room_schedule)
+            # 6. Initialize scheduler with schedules from database merged with config (synthetic SUN rows from merge_schedules_with_config)
             db_schedules = await self.database.schedule_repo.get_schedules()
             control_schedules = await merge_schedules_with_config(db_schedules, self.config)
             self.scheduler = Scheduler(control_schedules)

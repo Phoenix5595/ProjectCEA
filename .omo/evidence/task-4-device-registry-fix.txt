@@ -1,0 +1,44 @@
+Task 4 Evidence: Remove dead POST/DELETE /api/devices/channels/{channel} endpoints
+================================================================================
+Date: 2026-07-12
+
+CHANGES MADE
+------------
+1. Infrastructure/automation-service/app/routes/devices.py
+   - Removed update_channel_device() function (POST /api/devices/channels/{channel})
+   - Removed clear_channel_device() function (DELETE /api/devices/channels/{channel})
+   - Removed ChannelDeviceUpdate import (no longer used)
+   - File reduced from 721 lines to 555 lines
+
+2. Infrastructure/automation-service/tests/test_relay_clear_nulls_only.py
+   - Deleted entire test file (3 tests for the dead DELETE endpoint)
+
+ENDPOINTS PRESERVED
+-------------------
+- GET /api/devices/channels (get_all_channels) — relay matrix depends on it
+- GET /api/devices (get_all_devices) — consumed by useSensorPolling.ts
+
+VERIFICATION
+------------
+1. Frontend caller check:
+   $ grep -r "updateChannelDevice\|clearChannelDevice" Infrastructure/frontend/src/
+   Result: Only definitions in api.ts (lines 303, 329), zero callers.
+
+2. Ruff check:
+   $ cd Infrastructure/automation-service && ruff check app/routes/devices.py
+   Result: All checks passed!
+
+3. Pytest:
+   $ cd Infrastructure/automation-service && pytest tests/ -q
+   Result: 285 passed, 0 failed, 10 errors
+   Note: 10 errors are pre-existing alembic downgrade failures in
+   test_alembic_008.py and test_device_registry_repository.py,
+   unrelated to this change (fail on DROP INDEX idx_light_programs_device).
+
+RATIONALE
+---------
+These endpoints were deprecated in the centralized-device-table plan.
+They wrote directly to automation_config.yaml, bypassing the Postgres
+device_registry table which is now the canonical source of truth.
+No frontend components called them. Removing them eliminates dead code
+and prevents accidental YAML mutations.

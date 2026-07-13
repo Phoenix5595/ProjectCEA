@@ -19,7 +19,6 @@ from app.routes import (
     pid,
     redis_state,
     room_modes,
-    rules,
     schedules,
     status,
     system_config,
@@ -48,7 +47,6 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(alarms.router, tags=["alarms"])
     app.include_router(pid.router, tags=["pid"])
     app.include_router(mode.router, tags=["mode"])
-    app.include_router(rules.router, tags=["rules"])
     app.include_router(failsafe.router, tags=["failsafe"])
     app.include_router(websocket.router, tags=["websocket"])
     app.include_router(room_modes.router, tags=["room-modes"])
@@ -110,9 +108,6 @@ def setup_dependency_overrides(app: FastAPI, container) -> None:
     app.dependency_overrides[status.get_pid_controller_manager] = (
         container.get_pid_controller_manager
     )
-
-    # Override dependencies in rules module
-    app.dependency_overrides[rules.get_database] = container.get_database
 
     # Override dependencies in pid module
     app.dependency_overrides[pid.get_database] = container.get_database

@@ -3,7 +3,7 @@
 > **State since Phase 5c (2026-04-19):** production Grafana is
 > `projectcea_grafana` (a container on `iskraprojectcea`, host port 3001).
 > The Gmail SMTP relay + `Tony` contact point + the Dry Bulb / Wet Bulb /
-> RH Back alert rules were migrated from the Pi `grafana-server` to the
+> RH Back alert rules were migrated from the permanently decommissioned Pi `grafana-server` to the
 > iskra container on 2026-04-19. Original exports are preserved under
 > `Infrastructure/frontend/grafana/pi-decommission-backup-*/` (gitignored).
 >
@@ -95,12 +95,12 @@ Grafana provides built-in alerting capabilities that can:
 
 4. **Restart Grafana:**
    ```bash
-   sudo systemctl restart grafana-server
+   sudo docker restart projectcea_grafana
    ```
 
 5. **Verify it's working:**
    ```bash
-   sudo systemctl status grafana-server
+   sudo docker ps | grep projectcea_grafana
    ```
 
 6. **When creating contact points in Grafana UI:**
@@ -424,7 +424,7 @@ Based on the previous alarm system configuration:
 1. **Test notification channel**: Go to **Alerting** → **Notification channels** → Click **Test**
 2. **Check SMTP settings**: Verify SMTP host, port, credentials
 3. **Check webhook URL**: For push notifications, verify webhook URL is correct
-4. **Check Grafana logs**: `sudo journalctl -u grafana-server -f`
+4. **Check Grafana logs**: `sudo docker logs -f projectcea_grafana`
 
 ### Too many alerts
 
