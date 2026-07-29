@@ -116,9 +116,7 @@ class DeviceProcessor:
             is_sun: True if current time is inside room sun window (lights on); False = moon (lights off).
             previous_climate_mode: Previous climate mode for this location/cluster (for PID integrator reset).
         """
-        mcp23017 = getattr(getattr(self.device_controller, "relay_manager", None), "mcp23017", None)
-        redis_client: Any = getattr(self.database, "_automation_redis", None)
-        batch_executor = HardwareBatchExecutor(mcp23017=mcp23017, redis_client=redis_client)
+        batch_executor = HardwareBatchExecutor()
 
         # Resolve failsafe state once per (location, cluster) per tick. Reading the
         # same Redis key per-device would multiply round-trips for no benefit —

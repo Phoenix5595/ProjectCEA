@@ -1,12 +1,15 @@
 """Relay manager backed by the installed immutable runtime device snapshot."""
 
+import asyncio
 from contextvars import ContextVar, Token
 from typing import Any
 
 from app.automation.interlock_manager import InterlockManager
+from app.control.relay_board_state_manager import RelayBoardStateManager
 from app.control.runtime_device_registry import RuntimeDeviceRegistry
 from app.control.runtime_device_snapshot import DeviceKey, RuntimeDeviceSnapshot
 from app.hardware.mcp23017 import MCP23017Driver
+from app.repositories.control_actions import ControlActionRepository
 from shared.infra_logging import get_logger
 
 logger = get_logger(__name__)
@@ -20,6 +23,8 @@ class RelayManager:
         mcp23017: MCP23017Driver,
         runtime_device_registry: RuntimeDeviceRegistry,
         interlock_manager: InterlockManager,
+        relay_board_state_manager: RelayBoardStateManager | None = None,
+        control_action_repository: ControlActionRepository | None = None,
     ):
         """Initialize relay manager.
 
@@ -31,6 +36,8 @@ class RelayManager:
         self.mcp23017 = mcp23017
         self._runtime_device_registry = runtime_device_registry
         self.interlock_manager = interlock_manager
+        self._relay_board_state_manager = relay_board_state_manager
+        self._control_action_repository = control_action_repository
         self._active_snapshot: ContextVar[RuntimeDeviceSnapshot | None] = ContextVar(
             "active_runtime_device_snapshot", default=None
         )
@@ -105,7 +112,7 @@ class RelayManager:
         info = self._snapshot().device_info.get(key)
         return dict(info) if info is not None else None
 
-    def set_device_state(
+    async def set_device_state(
         self,
         location: str,
         cluster: str,
@@ -149,18 +156,19 @@ class RelayManager:
                 return (False, reason or "Interlock blocked")
 
         # Set hardware channel
-        success = self.mcp23017.set_channel(channel, state == 1)
+        success = await asyncio.to_thread(self.mcp23017.set_channel, channel, state == 1)
 
         if success:
-            _old_state = self._current_states.get(key, 0)
             self._current_states[key] = state
             self._current_modes[key] = mode
+            if self._relay_board_state_manager is not None:
+                await self._relay_board_state_manager.on_write_done()
             logger.debug(
                 f"Device {location}/{cluster}/{device_name} (channel {channel}) set to {'ON' if state == 1 else 'OFF'}"
             )
             return (True, None)
-        else:
-            return (False, "Hardware error")
+        await self._record_hardware_failure(key, channel, state, mode)
+        return (False, "Hardware error")
 
     def get_device_state(self, location: str, cluster: str, device_name: str) -> int | None:
         """Get current device state.
@@ -208,16 +216,41 @@ class RelayManager:
         Returns:
             True if successful, False otherwise.
         """
-        success = self.mcp23017.set_channel(channel, state == 1)
+        success = await asyncio.to_thread(self.mcp23017.set_channel, channel, state == 1)
         if success:
             # Update internal state if this channel is mapped to a device
             device_key = self._snapshot().by_channel.get(channel)
             if device_key:
                 self._current_states[device_key] = state
+            if self._relay_board_state_manager is not None:
+                await self._relay_board_state_manager.on_write_done()
             logger.info(f"Channel {channel} set to {'ON' if state == 1 else 'OFF'}")
+        else:
+            device_key = self._snapshot().by_channel.get(channel)
+            if device_key is not None:
+                await self._record_hardware_failure(device_key, channel, state, "manual")
         return success
 
-    def restore_states(self, states: dict[tuple[str, str, str], dict[str, Any]]):
+    async def set_all_channels(self, states: tuple[bool, ...]) -> bool:
+        """Set all MCP outputs and sample the board once after a successful write."""
+        if len(states) != 16:
+            return False
+        success = await asyncio.to_thread(self.mcp23017.set_all_channels, list(states))
+        if success and self._relay_board_state_manager is not None:
+            await self._relay_board_state_manager.on_write_done()
+        return success
+
+    async def _record_hardware_failure(
+        self, key: tuple[str, str, str], channel: int, requested_state: int, mode: str
+    ) -> None:
+        if self._control_action_repository is None:
+            return
+        prior_state = self._current_states.get(key, 0)
+        await self._control_action_repository.record_failed_control_action(
+            key[0], key[1], key[2], channel, prior_state, mode, requested_state
+        )
+
+    async def restore_states(self, states: dict[tuple[str, str, str], dict[str, Any]]):
         """Restore device states from database.
 
         Args:
@@ -229,7 +262,7 @@ class RelayManager:
             mode = info.get("mode", "auto")
 
             # Set state without interlock check (restoring from database)
-            success, reason = self.set_device_state(
+            success, reason = await self.set_device_state(
                 location, cluster, device_name, state, mode, check_interlock=False
             )
             if not success:
