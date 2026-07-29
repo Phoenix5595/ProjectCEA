@@ -83,7 +83,6 @@ class DimmableLightMixin:
                     f"({location}/{cluster}) at {intensity_percent}%"
                 )
                 return
-            self._last_light_command[light_key] = intensity_percent
             relay_ok = True
             dimmer_ok = False
 
@@ -92,20 +91,21 @@ class DimmableLightMixin:
             if relay_channel is not None and self.relay_manager:
                 if intensity > 0:
                     # Turn relay ON first, then set dimmer (power before signal)
-                    relay_ok, relay_reason = self.relay_manager.set_device_state(
+                    relay_ok, relay_reason = await self.relay_manager.set_device_state(
                         location, cluster, device_name, 1
                     )
                     if not relay_ok:
                         logger.warning(
                             f"Relay ON failed for {device_name} ({location}/{cluster}): {relay_reason}"
                         )
-                    dimmer_ok = await asyncio.to_thread(
-                        self.dfr0971_manager.set_intensity,
-                        board_id,
-                        dimming_channel,
-                        intensity_percent,
-                    )
-                    if not dimmer_ok:
+                    if relay_ok:
+                        dimmer_ok = await asyncio.to_thread(
+                            self.dfr0971_manager.set_intensity,
+                            board_id,
+                            dimming_channel,
+                            intensity_percent,
+                        )
+                    if relay_ok and not dimmer_ok:
                         logger.warning(
                             f"Dimmer set failed for {device_name} ({location}/{cluster}) "
                             f"board={board_id} ch={dimming_channel}"
@@ -122,13 +122,14 @@ class DimmableLightMixin:
                         logger.warning(
                             f"Dimmer set to 0 failed for {device_name} ({location}/{cluster})"
                         )
-                    relay_ok, relay_reason = self.relay_manager.set_device_state(
-                        location, cluster, device_name, 0
-                    )
-                    if not relay_ok:
-                        logger.warning(
-                            f"Relay OFF failed for {device_name} ({location}/{cluster}): {relay_reason}"
+                    if dimmer_ok:
+                        relay_ok, relay_reason = await self.relay_manager.set_device_state(
+                            location, cluster, device_name, 0
                         )
+                        if not relay_ok:
+                            logger.warning(
+                                f"Relay OFF failed for {device_name} ({location}/{cluster}): {relay_reason}"
+                            )
                 logger.debug(
                     f"Relay channel {relay_channel} set to {'ON' if intensity > 0 else 'OFF'} for {device_name}"
                 )
@@ -149,6 +150,7 @@ class DimmableLightMixin:
             # Keep last known good hardware level for hold-last behavior on failures.
             hw_ok = relay_ok and dimmer_ok
             if hw_ok:
+                self._last_light_command[light_key] = intensity_percent
                 self._last_applied_light[light_key] = intensity_percent
                 self.write_light_telemetry(
                     location,
