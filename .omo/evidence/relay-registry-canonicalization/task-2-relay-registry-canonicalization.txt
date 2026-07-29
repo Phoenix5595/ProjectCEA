@@ -1,0 +1,45 @@
+Todo 2 relay-registry canonicalization evidence
+Date: 2026-07-29
+
+Baseline characterization (before route extraction)
+  cwd: Infrastructure/automation-service
+  command: PYTHONPATH=.:.. pytest -q app/tests/pure/test_devices_crud_characterization.py
+  result: PASS — 1 passed
+  pinned behavior: non-light create delegated to the route repository and refreshed the runtime snapshot.
+
+Failing-first service proof (before implementation)
+  cwd: Infrastructure/automation-service
+  command: PYTHONPATH=.:.. pytest -q app/tests/pure/test_registry_service.py
+  result: expected RED — ModuleNotFoundError: app.services.device_registry_service
+
+Focused service verification
+  cwd: Infrastructure/automation-service
+  command: pytest -q app/tests/pure/test_registry_service.py
+  result: PASS — 7 passed
+  coverage: create/update/delete/unbind; unconfirmed and confirmed relay steal;
+  DFR conflict; relay/DFR safe-output failure and commands; commit failure retaining
+  the old snapshot; delayed post-commit publication preserving snapshot order.
+
+Transaction/call-path source assertions
+  command: grep RuntimeDeviceRegistry for asyncio.Lock, mutate,
+           pg_advisory_xact_lock, pending _build_snapshot(connection), and _install
+  result: PASS — mutation lock surrounds transaction/advisory lock/pending snapshot/commit/swap.
+  command: grep registry.py and registry_lights.py for FOR UPDATE,
+           assign_relay_steal, clear_relay_binding, assert_dfr_free
+  result: PASS — existing rows and assignment contenders lock before mutation.
+  command: grep devices_crud.py for clear_relay_binding_only, _get_pool(, .pool, .execute(
+  result: PASS — no route-level direct pool access or composed write remains.
+  command: grep control_engine.py for get_all_as_hierarchy, device_repo.get_, config.get_devices
+  result: PASS — no per-tick registry query; control tick captures its installed snapshot.
+
+Backend gates
+  cwd: Infrastructure/automation-service
+  command: ruff check . && ruff format --check . && python3 -m compileall -q app
+  result: PASS
+  command: git diff --check
+  result: PASS
+
+Notes
+  pytest.ini supplies the established local import roots (automation-service and
+  Infrastructure) so the required bare pytest command is reproducible without a
+  production environment, database, Redis, or hardware connection.
