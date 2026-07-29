@@ -73,8 +73,7 @@ MIGRATION_MAP: dict[str, str] = {
 
 
 # 4) Global non-patterned keys (no location/cluster dimension)
-RELAY_CHANNELS = "cea:relay:channels"
-RELAY_TIMESTAMPS = "cea:relay:timestamps"
+RELAY_BOARD_SNAPSHOT = "cea:relay:board_snapshot"
 
 
 # 5) Helper helpers to build keys consistently
@@ -293,8 +292,7 @@ __all__ = [
     "OLD_KEY_PATTERNS",
     "NEW_KEY_PATTERNS",
     "MIGRATION_MAP",
-    "RELAY_CHANNELS",
-    "RELAY_TIMESTAMPS",
+    "RELAY_BOARD_SNAPSHOT",
     "build_key",
     "sensor_key",
     "mode_key",
