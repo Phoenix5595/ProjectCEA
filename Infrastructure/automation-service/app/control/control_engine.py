@@ -20,6 +20,8 @@ from app.control.light_effective_setpoint_logging import log_light_effective_int
 from app.control.performance_monitor import get_performance_monitor
 from app.control.pid_controller_manager import PIDControllerManager
 from app.control.relay_manager import RelayManager
+from app.control.runtime_device_registry import RuntimeDeviceRegistry
+from app.control.runtime_device_snapshot import RuntimeDeviceSnapshot
 from app.control.scheduler import LOCAL_TZ, Scheduler
 from app.control.sensor_data_manager import SensorDataManager
 from app.control.sensor_reader import SensorReader
@@ -51,6 +53,7 @@ class ControlEngine:
         config: ConfigLoader,
         scheduler: Scheduler,
         rules_engine: RulesEngine,
+        runtime_device_registry: RuntimeDeviceRegistry,
         alarm_manager: AlarmManager | None = None,
         dfr0971_manager: Any | None = None,  # DFR0971Manager (avoid circular import)
     ):
@@ -72,6 +75,7 @@ class ControlEngine:
         self.rules_engine = rules_engine
         self.alarm_manager = alarm_manager
         self.dfr0971_manager = dfr0971_manager
+        self.runtime_device_registry = runtime_device_registry
 
         # Initialize extracted components
         self.sensor_data_manager = SensorDataManager(database)
@@ -246,6 +250,17 @@ class ControlEngine:
 
     async def run_control_loop(self) -> None:
         """Run one iteration of the control loop with performance profiling."""
+        snapshot = self.runtime_device_registry.snapshot
+        snapshot_token = self.relay_manager.bind_snapshot(snapshot)
+        scheduler_snapshot_token = self.scheduler.bind_snapshot(snapshot)
+        try:
+            await self._run_control_loop_with_snapshot(snapshot)
+        finally:
+            self.scheduler.release_snapshot(scheduler_snapshot_token)
+            self.relay_manager.release_snapshot(snapshot_token)
+
+    async def _run_control_loop_with_snapshot(self, snapshot: RuntimeDeviceSnapshot) -> None:
+        """Run one tick against the snapshot reference captured at entry."""
         if not self._ramps_restored:
             await self._restore_ramps_on_startup()
             self._ramps_restored = True
@@ -266,8 +281,8 @@ class ControlEngine:
 
         current_time = datetime.now(tz=LOCAL_TZ)
 
-        # Get cached device hierarchy and sensor mapping (performance optimization)
-        devices = await self._config_cache.get_device_hierarchy(self.config.get_devices)
+        # This hierarchy is fixed for the entire tick; no registry DB read occurs here.
+        devices = snapshot.hierarchy
         sensor_mapping = self._config_cache.get_sensor_mapping(self.config.get_sensor_mapping)
 
         # Debug logging removed
@@ -397,7 +412,7 @@ class ControlEngine:
             self._pending_db_writes.clear()
 
         # Log automation state for all devices
-        await self._log_automation_state()
+        await self._log_automation_state(snapshot)
 
         # Record performance statistics
         if self._profiling_enabled and loop_start_time:
@@ -567,9 +582,9 @@ class ControlEngine:
 
     # _log_light_intensities logic moved inline to run_control_loop
 
-    async def _log_automation_state(self) -> None:
+    async def _log_automation_state(self, snapshot: RuntimeDeviceSnapshot) -> None:
         """Log automation state for all devices using batch INSERT."""
-        devices = await self.config.get_devices()
+        devices = snapshot.hierarchy
 
         current_time = datetime.now()
         records: list[dict[str, Any]] = []

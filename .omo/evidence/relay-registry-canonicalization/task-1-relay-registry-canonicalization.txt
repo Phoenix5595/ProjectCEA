@@ -1,0 +1,81 @@
+Todo 1 — relay-registry canonicalization foundation ledger
+BASE_SHA: 2f21a835f5683aa4652972892dc8c77451da252c
+date: 2026-07-29
+cwd: /home/antoine/ProjectCEA
+
+Scope inventory
+- `git diff BASE_SHA..HEAD`: empty; HEAD is the recorded baseline.
+- Dirty tracked files and untracked files were compared with BASE_SHA using
+  `git status --short`, `git diff --name-status BASE_SHA`, and
+  `git ls-files --others --exclude-standard`.
+- `.omo` drafts/plans/notepads/run-continuation state and `.opencode/package.json`
+  are orchestration/configuration artifacts, not Todo 1 product changes. They are
+  excluded from this commit. This ledger is the sole Todo 1 `.omo` artifact staged.
+
+Retained foundations
+- `app/models/device_registry.py`
+  - `Device.channel`, `DeviceCreate.channel`, and `LightDevice.relay_channel` are nullable.
+  - `LightDeviceCreate.relay_channel` accepts an explicit optional binding.
+  - `normalize_device_type()` maps both `fan` and `extraction fan` to `exhaust`.
+  - update models preserve explicitly supplied null relay bindings through
+    `model_fields_set`.
+- `app/repositories/devices/_helpers.py::_row_to_device()` preserves SQL NULL
+  relay channels rather than substituting `-1`.
+- `app/repositories/devices/registry_lights.py::LightRegistryMixin.create_light()`
+  accepts and writes an optional `relay_channel`.
+- `app/routes/devices_crud.py`, `app/config.py`, `app/routes/lights/light_target.py`,
+  and `app/services/mode_transition_service.py` preserve the retained nullable
+  DTO/converter flow and refresh the installed runtime snapshot after a committed
+  registry/light/mode change.
+- `frontend/src/hooks/useWebSocket.ts`, `frontend/src/services/api/devices.ts`, and
+  `frontend/src/types/device.ts` represent an unknown relay channel as `null`.
+- `app/hardware/i2c_lock.py` and `app/hardware/mcp23017.py::sample_all_channels()`
+  retain two locked GPIO reads, one for GPIOA and one for GPIOB, and produce the
+  complete logical 16-channel state without public freshness metadata.
+- `app/control/runtime_device_snapshot.py::RuntimeDeviceSnapshot` and
+  `app/control/runtime_device_registry.py::RuntimeDeviceRegistry` retain the
+  immutable, atomically replaced in-process registry projection. `container.py`,
+  `control_engine.py`, `relay_manager.py`, `scheduler/__init__.py`,
+  `automation/interlock_manager.py`, and background snapshot loading retain the
+  single-snapshot consumer wiring.
+
+Removed superseded work
+- Deleted `app/schema/__init__.py`, `app/schema/commissioning.py`, and
+  `app/schema/device_registry.py`: direct commissioning schema validation,
+  commissioning sessions/rooms, generation-zero bootstrap, and reset-only
+  constraints are gone.
+- Restored `app/database.py` to its pre-change Alembic startup path:
+  `run_alembic_migrations()`, `create_room_modes_tables()`, and
+  `create_calendar_tables()`; it imports no direct commissioning bootstrap.
+- Deleted `app/control/relay_snapshot_publisher.py` and the unconsumed
+  `RELAY_BOARD_SNAPSHOT` key. Removed all public relay snapshot
+  `quality`, `source`, `mcp_connected`, `error`, and `schema_version` fields.
+- Removed `RuntimeDeviceRegistry.output_fence_open`, all output-fence guards,
+  `RuntimeDeviceRegistry.refresh_if_due()`, the background periodic recovery task,
+  and its recovery loop.
+
+Zero-reference proof
+- `grep` over `Infrastructure/automation-service/app/**/*.py` for
+  `bootstrap_commissioning_schema|commissioning_sessions|commissioning_rooms|`
+  `output_fence_open|refresh_if_due|runtime_snapshot_recovery|RelaySnapshotPublisher|`
+  `RelayBoardSnapshot|MCP23017Sample|RELAY_BOARD_SNAPSHOT` returned no matches.
+- `glob Infrastructure/automation-service/app/schema/*` returned no files.
+
+Migration immutability
+- `git diff BASE_SHA -- Infrastructure/automation-service/alembic/versions` returned
+  no output. Historical migration bytes are identical to BASE_SHA.
+
+Verification
+- PASS: `cd Infrastructure/automation-service && ruff check .`
+- PASS: `cd Infrastructure/automation-service && ruff format --check .`
+- PASS: `cd Infrastructure/automation-service && python3 -m compileall -q app`
+- PASS: `cd Infrastructure/frontend && npx tsc --noEmit`
+- PASS: `git diff --check`
+- PASS: LSP reports no TypeScript errors in the three touched frontend files and no
+  MCP/runtime-registry errors. The inherited `StateSyncMixin` host-attribute
+  diagnostics remain; they are unrelated to TypeScript and do not affect the
+  passing required backend gates.
+
+Safety receipt
+- No Alembic command, migration, seed, database/Redis/I2C command, network request,
+  reset script, or production endpoint was invoked.

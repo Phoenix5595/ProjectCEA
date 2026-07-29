@@ -24,7 +24,7 @@ from app.models.device_registry import DeviceUpdate
 from app.repositories.devices import DeviceRepository
 
 if TYPE_CHECKING:
-    pass
+    from app.control.runtime_device_registry import RuntimeDeviceRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -218,6 +218,7 @@ class ConfigLoader:
         self._rules: list[dict[str, Any]] = []
         self._config_lock = threading.Lock()
         self._device_repo: DeviceRepository | None = None
+        self._runtime_device_registry: RuntimeDeviceRegistry | None = None
         from app.control.engine_config_cache import EngineConfigCache
 
         self._device_cache = EngineConfigCache(ttl_seconds=30.0)
@@ -226,6 +227,10 @@ class ConfigLoader:
     def set_device_repo(self, device_repo: DeviceRepository) -> None:
         """Set the DeviceRepository for DB-backed device queries."""
         self._device_repo = device_repo
+
+    def set_runtime_device_registry(self, registry: RuntimeDeviceRegistry) -> None:
+        """Use the installed immutable runtime snapshot for device reads."""
+        self._runtime_device_registry = registry
 
     def load(self) -> None:
         """Load configuration from YAML files."""
@@ -295,7 +300,9 @@ class ConfigLoader:
         return self._config.get("hardware", {})
 
     async def get_devices(self) -> dict[str, Any]:
-        """Get device configuration from DB (cached with 30s TTL)."""
+        """Get device configuration from the installed runtime snapshot."""
+        if self._runtime_device_registry is not None:
+            return dict(self._runtime_device_registry.snapshot.hierarchy)
         if self._device_repo is None:
             logger.error("get_devices() called before DeviceRepository is set")
             return {}
@@ -437,6 +444,13 @@ class ConfigLoader:
         self._device_cache._device_hierarchy_cache = None
         self._device_cache._cache_timestamp = None
         logger.debug("Invalidated device hierarchy cache")
+
+    async def refresh_runtime_device_snapshot(self) -> int:
+        """Install one complete snapshot after a committed device-registry mutation."""
+        if self._runtime_device_registry is None:
+            raise RuntimeError("Runtime device registry is not configured")
+        snapshot = await self._runtime_device_registry.reload_after_commit()
+        return snapshot.version
 
     def reload(self) -> None:
         """Reload configuration from files (incremental reload)."""

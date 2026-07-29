@@ -6,20 +6,20 @@ Provides POST/PUT/DELETE/GET /api/devices/registry for all device types
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Annotated, Any, assert_never
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Body, Depends, HTTPException, Request
 
 from app.config import ConfigLoader
 from app.database import DatabaseManager
 from app.models.device_registry import (
-    _UI_TO_DB_DEVICE_TYPES,
     Device,
     DeviceCreate,
     DeviceUpdate,
     LightDevice,
     LightDeviceCreate,
     LightDeviceUpdate,
+    RegistryDeviceCreate,
 )
 from app.repositories.devices import DeviceRepository, _find_displaced_device
 from app.services.schedule_auto_create import create_default_intensity_for_light
@@ -64,109 +64,78 @@ async def list_registry_devices(
 
 @router.post("/api/devices/registry")
 async def create_registry_device(
-    body: dict[str, Any],
+    body: Annotated[RegistryDeviceCreate, Body(discriminator="device_type")],
     device_repo: DeviceRepository = Depends(get_device_repo),
     database: DatabaseManager = Depends(get_database),
     config: ConfigLoader = Depends(get_config),
 ) -> Device | LightDevice:
     """Create a new device (light or non-light) in the registry."""
-    device_type = body.get("device_type")
-    if device_type is None:
-        raise HTTPException(status_code=400, detail="device_type is required")
+    match body:
+        case LightDeviceCreate() as light_create:
+            # Validate room before creating the model so we can catch ValueError
+            try:
+                _room_prefix(light_create.room)
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    if device_type == "light":
-        # Validate room before creating the model so we can catch ValueError
-        room = body.get("room")
-        if room is None:
-            raise HTTPException(status_code=400, detail="room is required")
-        try:
-            _room_prefix(room)
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-        # DFR channel conflict check (409, matching lights.py pattern)
-        board_id = body.get("board_id")
-        dimming_channel = body.get("dimming_channel")
-        if board_id is None or dimming_channel is None:
-            raise HTTPException(
-                status_code=400, detail="board_id and dimming_channel are required for lights"
-            )
-
-        async for loc, clu, dev_name, dev_info in device_repo.iter_all_devices_flat():
-            if (
-                dev_info.get("dimming_board_id") == board_id
-                and dev_info.get("dimming_channel") == dimming_channel
-            ):
-                raise HTTPException(
-                    status_code=409,
-                    detail=(
-                        f"DFR channel already occupied by {loc}/{clu}/{dev_name} "
-                        f"(board_id={board_id}, channel={dimming_channel})"
-                    ),
-                )
-
-        # Build LightDeviceCreate without the device_type field
-        light_body = {k: v for k, v in body.items() if k != "device_type"}
-        try:
-            light_create = LightDeviceCreate(**light_body)
-        except Exception as exc:
-            raise HTTPException(
-                status_code=400, detail=f"Invalid light device data: {exc}"
-            ) from exc
-
-        per_room_index = light_create.per_room_index
-        if per_room_index is None:
-            room_lights = await device_repo.get_lights_by_room(light_create.room)
-            max_index = max((light.per_room_index for light in room_lights), default=0)
-            per_room_index = max_index + 1
-
-        created = await device_repo.create_light(
-            board_id=light_create.board_id,
-            dimming_channel=light_create.dimming_channel,
-            room=light_create.room,
-            display_name=light_create.display_name,
-            per_room_index=per_room_index,
-        )
-        if created.device_id is not None:
-            await create_default_intensity_for_light(
-                database=database,
-                device_id=created.device_id,
-                location=created.location,
-                cluster=created.cluster,
-            )
-    else:
-        # Non-light device
-        canonical_type = _UI_TO_DB_DEVICE_TYPES.get(device_type, device_type)
-        body["device_type"] = canonical_type
-
-        room = body.get("room")
-        if room is None:
-            raise HTTPException(status_code=400, detail="room is required")
-        try:
-            _room_prefix(room)
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-        # Relay channel conflict check (global)
-        channel = body.get("channel")
-        if channel is not None:
+            # DFR channel conflict check (409, matching lights.py pattern)
             async for loc, clu, dev_name, dev_info in device_repo.iter_all_devices_flat():
-                if dev_info.get("channel") == channel:
+                if (
+                    dev_info.get("dimming_board_id") == light_create.board_id
+                    and dev_info.get("dimming_channel") == light_create.dimming_channel
+                ):
                     raise HTTPException(
                         status_code=409,
                         detail=(
-                            f"Relay channel {channel} already occupied by {loc}/{clu}/{dev_name}"
+                            f"DFR channel already occupied by {loc}/{clu}/{dev_name} "
+                            f"(board_id={light_create.board_id}, channel={light_create.dimming_channel})"
                         ),
                     )
 
-        try:
-            device_create = DeviceCreate(**body)
-        except Exception as exc:
-            raise HTTPException(status_code=400, detail=f"Invalid device data: {exc}") from exc
+            per_room_index = light_create.per_room_index
+            if per_room_index is None:
+                room_lights = await device_repo.get_lights_by_room(light_create.room)
+                max_index = max((light.per_room_index for light in room_lights), default=0)
+                per_room_index = max_index + 1
 
-        created = await device_repo.create_device(device_create)
+            created = await device_repo.create_light(
+                board_id=light_create.board_id,
+                dimming_channel=light_create.dimming_channel,
+                room=light_create.room,
+                display_name=light_create.display_name,
+                per_room_index=per_room_index,
+                relay_channel=light_create.relay_channel,
+            )
+            if created.device_id is not None:
+                await create_default_intensity_for_light(
+                    database=database,
+                    device_id=created.device_id,
+                    location=created.location,
+                    cluster=created.cluster,
+                )
+        case DeviceCreate() as device_create:
+            # Non-light device
+            try:
+                _room_prefix(device_create.room)
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    config.invalidate_device_cache()
+            # Relay channel conflict check (global)
+            if device_create.channel is not None:
+                async for loc, clu, dev_name, dev_info in device_repo.iter_all_devices_flat():
+                    if dev_info.get("channel") == device_create.channel:
+                        raise HTTPException(
+                            status_code=409,
+                            detail=(
+                                f"Relay channel {device_create.channel} already occupied by {loc}/{clu}/{dev_name}"
+                            ),
+                        )
+
+            created = await device_repo.create_device(device_create)
+        case unreachable:
+            assert_never(unreachable)
+
+    await config.refresh_runtime_device_snapshot()
     return created
 
 
@@ -191,30 +160,29 @@ async def update_registry_device(
         old_location = existing.location
         old_cluster = existing.cluster
 
-        # Filter to LightDeviceUpdate fields only
-        light_fields = {k: v for k, v in body.items() if k in LightDeviceUpdate.model_fields}
         try:
-            light_update = LightDeviceUpdate(**light_fields)
+            light_update = LightDeviceUpdate(**body)
         except Exception as exc:
             raise HTTPException(
                 status_code=400, detail=f"Invalid light update data: {exc}"
             ) from exc
 
         update_fields: dict[str, Any] = {}
-        if light_update.display_name is not None:
+        provided_fields = light_update.model_fields_set
+        if "display_name" in provided_fields:
             update_fields["display_name"] = light_update.display_name
-        if light_update.room is not None:
+        if "room" in provided_fields:
             update_fields["room"] = light_update.room
-        if light_update.per_room_index is not None:
+        if "per_room_index" in provided_fields:
             update_fields["per_room_index"] = light_update.per_room_index
-        if light_update.relay_channel is not None:
+        if "relay_channel" in provided_fields:
             update_fields["relay_channel"] = light_update.relay_channel
-        if light_update.safety_level is not None:
+        if "safety_level" in provided_fields:
             update_fields["safety_level"] = light_update.safety_level
-        if "board_id" in light_fields:
-            update_fields["dimming_board_id"] = light_fields["board_id"]
-        if "dimming_channel" in light_fields:
-            update_fields["dimming_channel"] = light_fields["dimming_channel"]
+        if "board_id" in provided_fields:
+            update_fields["dimming_board_id"] = light_update.board_id
+        if "dimming_channel" in provided_fields:
+            update_fields["dimming_channel"] = light_update.dimming_channel
 
         # Relay channel conflict check for lights on update
         displaced_id: int | None = None
@@ -258,15 +226,14 @@ async def update_registry_device(
                 cluster=old_cluster,
             )
 
-        config.invalidate_device_cache()
+        await config.refresh_runtime_device_snapshot()
         response = updated.model_dump()
         response["displaced_device_id"] = displaced_id
         return response
     else:
         # Non-light device
-        device_fields = {k: v for k, v in body.items() if k in DeviceUpdate.model_fields}
         try:
-            device_update = DeviceUpdate(**device_fields)
+            device_update = DeviceUpdate(**body)
         except Exception as exc:
             raise HTTPException(
                 status_code=400, detail=f"Invalid device update data: {exc}"
@@ -288,7 +255,7 @@ async def update_registry_device(
         if updated is None:
             raise HTTPException(status_code=404, detail=f"Device {device_id} not found")
 
-        config.invalidate_device_cache()
+        await config.refresh_runtime_device_snapshot()
         response = updated.model_dump()
         response["displaced_device_id"] = displaced_id
         return response
@@ -354,12 +321,12 @@ async def delete_registry_device(
         }
         if warning:
             result["warning"] = warning
-        config.invalidate_device_cache()
+        await config.refresh_runtime_device_snapshot()
         return result
     else:
         deleted = await device_repo.delete_device(device_id)
         if not deleted:
             raise HTTPException(status_code=404, detail=f"Device {device_id} not found")
 
-        config.invalidate_device_cache()
+        await config.refresh_runtime_device_snapshot()
         return {"success": True, "device_id": device_id}

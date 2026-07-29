@@ -11,6 +11,7 @@ from app.background_tasks import BackgroundTasks
 from app.config import ConfigLoader
 from app.control.control_engine import ControlEngine
 from app.control.relay_manager import RelayManager
+from app.control.runtime_device_registry import RuntimeDeviceRegistry
 from app.control.schedule_merge import merge_schedules_with_config
 from app.control.scheduler import Scheduler
 from app.database import DatabaseManager
@@ -45,6 +46,7 @@ class ServiceContainer:
         # Control components
         self.interlock_manager: InterlockManager | None = None
         self.relay_manager: RelayManager | None = None
+        self.runtime_device_registry: RuntimeDeviceRegistry | None = None
         self.scheduler: Scheduler | None = None
         self.rules_engine: RulesEngine | None = None
         self.alarm_manager: AlarmManager | None = None
@@ -95,6 +97,9 @@ class ServiceContainer:
 
             # Wire DB-backed device repository into ConfigLoader
             self.config.set_device_repo(self.database.device_repo)
+            self.runtime_device_registry = RuntimeDeviceRegistry(self.database)
+            await self.runtime_device_registry.load_startup()
+            self.config.set_runtime_device_registry(self.runtime_device_registry)
 
             # Load schedule state from DB to Redis (after Redis connection is established)
             try:
@@ -140,10 +145,9 @@ class ServiceContainer:
                     logger.warning(f"Failed to reconcile relay Redis state: {e}")
 
             # 4. Initialize interlock manager
-            devices = await self.config.get_devices()
             interlocks = self.config.get("interlocks", [])
             self.interlock_manager = InterlockManager(
-                device_config=devices, interlock_rules=interlocks
+                runtime_device_registry=self.runtime_device_registry, interlock_rules=interlocks
             )
             logger.info("Interlock manager initialized")
 
@@ -151,7 +155,7 @@ class ServiceContainer:
             assert self.mcp23017 is not None, "MCP23017 driver must be initialized"
             self.relay_manager = RelayManager(
                 mcp23017=self.mcp23017,
-                device_config=devices,
+                runtime_device_registry=self.runtime_device_registry,
                 interlock_manager=self.interlock_manager,
             )
             logger.info("Relay manager initialized")
@@ -161,6 +165,7 @@ class ServiceContainer:
             control_schedules = await merge_schedules_with_config(db_schedules, self.config)
             self.scheduler = Scheduler(control_schedules)
             self.scheduler.set_climate_periods_repo(self.database.climate_periods_repo)
+            self.runtime_device_registry.subscribe(self.scheduler.install_snapshot)
             synth_n = len(control_schedules) - len(db_schedules)
             logger.info(
                 f"Scheduler initialized with {len(control_schedules)} schedules "
@@ -189,6 +194,7 @@ class ServiceContainer:
                 rules_engine=self.rules_engine,
                 alarm_manager=self.alarm_manager,
                 dfr0971_manager=self.dfr0971_manager,
+                runtime_device_registry=self.runtime_device_registry,
             )
             logger.info("Control engine initialized")
 

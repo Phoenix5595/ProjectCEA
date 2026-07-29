@@ -6,6 +6,8 @@ from typing import Any
 
 from shared.infra_logging import get_logger
 
+from .i2c_lock import get_i2c_bus_0_lock
+
 """
 MCP23017 I2C Relay Driver
 Controls MCP23017 16-channel I/O expander for relay control
@@ -54,6 +56,7 @@ class MCP23017Driver:
         self.active_low = active_low
         self.bus: Any = None
         self._channel_states = [False] * 16  # Track state of all 16 channels
+        self._i2c_lock = get_i2c_bus_0_lock()
         self._probe_ok: bool | None = None  # Cache probe result
 
         import smbus2
@@ -76,15 +79,16 @@ class MCP23017Driver:
             logger.warning("MCP23017 hardware initialization skipped: bus is None")
             return
 
-        # Direction registers: both ports set to OUTPUT (0x00).
-        self.bus.write_byte_data(self.i2c_address, MCP23017_IODIRA, 0x00)
-        self.bus.write_byte_data(self.i2c_address, MCP23017_IODIRB, 0x00)
-        # All-OFF safe value: 0xFF for active-LOW, 0x00 for active-HIGH.
-        safe_off = 0xFF if self.active_low else 0x00
         try:
-            self.bus.write_byte_data(self.i2c_address, MCP23017_GPIOA, safe_off)
-            self.bus.write_byte_data(self.i2c_address, MCP23017_GPIOB, safe_off)
-        except Exception as e:
+            with self._i2c_lock:
+                # Direction registers: both ports set to OUTPUT (0x00).
+                self.bus.write_byte_data(self.i2c_address, MCP23017_IODIRA, 0x00)
+                self.bus.write_byte_data(self.i2c_address, MCP23017_IODIRB, 0x00)
+                # All-OFF safe value: 0xFF for active-LOW, 0x00 for active-HIGH.
+                safe_off = 0xFF if self.active_low else 0x00
+                self.bus.write_byte_data(self.i2c_address, MCP23017_GPIOA, safe_off)
+                self.bus.write_byte_data(self.i2c_address, MCP23017_GPIOB, safe_off)
+        except OSError as e:
             logger.error(f"Error initializing MCP23017 hardware: {e}")
             raise
 
@@ -99,10 +103,11 @@ class MCP23017Driver:
         if self.bus is None:
             return False
         try:
-            self.bus.read_byte_data(self.i2c_address, MCP23017_IODIRA)
+            with self._i2c_lock:
+                self.bus.read_byte_data(self.i2c_address, MCP23017_IODIRA)
             self._probe_ok = True
             return True
-        except Exception as e:
+        except OSError as e:
             logger.debug(f"MCP23017 probe failed: {e}")
             self._probe_ok = False
             return False
@@ -169,18 +174,19 @@ class MCP23017Driver:
                 port = MCP23017_GPIOB
                 bit = channel - 8
 
-            current_state = self.bus.read_byte_data(self.i2c_address, port)
+            with self._i2c_lock:
+                current_state = self.bus.read_byte_data(self.i2c_address, port)
 
-            # XOR inversion: with active_low=True, state=True -> physical LOW
-            # (bit cleared), state=False -> physical HIGH (bit set). With
-            # active_low=False, the logical state passes through unchanged.
-            physical_bit = bool(state) ^ self.active_low
-            if physical_bit:
-                new_state = current_state | (1 << bit)
-            else:
-                new_state = current_state & ~(1 << bit)
+                # XOR inversion: with active_low=True, state=True -> physical LOW
+                # (bit cleared), state=False -> physical HIGH (bit set). With
+                # active_low=False, the logical state passes through unchanged.
+                physical_bit = bool(state) ^ self.active_low
+                if physical_bit:
+                    new_state = current_state | (1 << bit)
+                else:
+                    new_state = current_state & ~(1 << bit)
 
-            self.bus.write_byte_data(self.i2c_address, port, new_state)
+                self.bus.write_byte_data(self.i2c_address, port, new_state)
             self._channel_states[channel] = state
 
             logger.debug(f"Channel {channel} set to {'ON' if state else 'OFF'}")
@@ -223,7 +229,8 @@ class MCP23017Driver:
                 port = MCP23017_GPIOB
                 bit = channel - 8
 
-            port_state = self.bus.read_byte_data(self.i2c_address, port)
+            with self._i2c_lock:
+                port_state = self.bus.read_byte_data(self.i2c_address, port)
 
             physical_bit = bool(port_state & (1 << bit))
             # XOR inversion: physical_bit ^ active_low flips the meaning
@@ -237,14 +244,42 @@ class MCP23017Driver:
             logger.error(f"Error reading channel {channel}: {e}")
             return None
 
-    def get_all_channels(self) -> list:
+    def sample_all_channels(self) -> tuple[bool, ...] | None:
+        """Read both GPIO registers once and return their logical channel states."""
+        if self.bus is None:
+            return None
+
+        try:
+            with self._i2c_lock:
+                gpio_a = self.bus.read_byte_data(self.i2c_address, MCP23017_GPIOA)
+                gpio_b = self.bus.read_byte_data(self.i2c_address, MCP23017_GPIOB)
+
+            active_low_mask = 0xFF * self.active_low
+            logical_gpio_a, logical_gpio_b = (
+                gpio_a ^ active_low_mask,
+                gpio_b ^ active_low_mask,
+            )
+            channels = tuple(
+                bool(port_state & (1 << bit))
+                for port_state in (logical_gpio_a, logical_gpio_b)
+                for bit in range(8)
+            )
+            self._channel_states = list(channels)
+            self._probe_ok = True
+            return channels
+        except OSError as error:
+            logger.warning("MCP23017 board sample failed: %s", error)
+            self._probe_ok = False
+            return None
+
+    def get_all_channels(self) -> list[bool]:
         """
         Get state of all 16 channels
 
         Returns:
             List of 16 boolean values (True=ON, False=OFF)
         """
-        states = []
+        states: list[bool] = []
         for channel in range(16):
             state = self.get_channel(channel)
             if state is None:
@@ -252,7 +287,7 @@ class MCP23017Driver:
             states.append(state)
         return states
 
-    def set_all_channels(self, states: list) -> bool:
+    def set_all_channels(self, states: list[bool]) -> bool:
         """
         Set all channels at once
 
@@ -281,7 +316,8 @@ class MCP23017Driver:
         """Close I2C connection and cleanup"""
         if self.bus:
             try:
-                self.bus.close()
+                with self._i2c_lock:
+                    self.bus.close()
                 logger.info("MCP23017 I2C connection closed")
             except Exception as e:
                 logger.error(f"Error closing I2C connection: {e}")
