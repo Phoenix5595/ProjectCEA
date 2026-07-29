@@ -9,6 +9,23 @@ if TYPE_CHECKING:
     from asyncpg import Pool
 
 
+MAXIMUM_TARGET_INTENSITY = 100.0
+
+
+def validate_program_target_intensity(program_type: str, target_intensity: float) -> float:
+    """Validate a program target according to its photoperiod policy."""
+    if program_type == "override":
+        minimum_target_intensity = 0.0
+    elif program_type == "supplemental":
+        minimum_target_intensity = 10.0
+    else:
+        raise ValueError("Light program type must be 'supplemental' or 'override'")
+    if minimum_target_intensity <= target_intensity <= MAXIMUM_TARGET_INTENSITY:
+        return target_intensity
+    error_message = f"{program_type.capitalize()} program target intensity must be between {minimum_target_intensity:.1f} and {MAXIMUM_TARGET_INTENSITY:.1f}"
+    raise ValueError(error_message)
+
+
 class LightProgramsRepository(BaseRepository):
     """Repository for programmable light schedules (supplemental/override programs)."""
 
@@ -81,6 +98,7 @@ class LightProgramsRepository(BaseRepository):
         priority: int = 0,
     ) -> dict[str, Any]:
         """Create a new light program and return the created row."""
+        target_intensity = validate_program_target_intensity(program_type, target_intensity)
         try:
             async with self.pool.acquire() as conn:
                 row = await conn.fetchrow(
@@ -140,6 +158,13 @@ class LightProgramsRepository(BaseRepository):
                 current = await conn.fetchrow("SELECT * FROM light_programs WHERE id = $1", id)
                 if not current:
                     return None
+                effective_program_type = program_type or current["program_type"]
+                effective_target_intensity = target_intensity
+                if effective_target_intensity is None:
+                    effective_target_intensity = float(current["target_intensity"])
+                effective_target_intensity = validate_program_target_intensity(
+                    effective_program_type, effective_target_intensity
+                )
 
                 row = await conn.fetchrow(
                     """UPDATE light_programs SET
@@ -179,6 +204,8 @@ class LightProgramsRepository(BaseRepository):
                     id,
                 )
                 return dict(row) if row else None
+        except ValueError:
+            raise
         except Exception as e:
             logger.error(f"Failed to update light program {id}: {e}")
             return None

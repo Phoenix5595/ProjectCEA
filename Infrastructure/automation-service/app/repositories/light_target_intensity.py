@@ -8,6 +8,17 @@ if TYPE_CHECKING:
     from asyncpg import Pool
 
 
+MINIMUM_NORMAL_TARGET_INTENSITY = 10.0
+MAXIMUM_TARGET_INTENSITY = 100.0
+
+
+def validate_normal_target_intensity(target_intensity: float) -> float:
+    """Validate a normal photoperiod target intensity."""
+    if MINIMUM_NORMAL_TARGET_INTENSITY <= target_intensity <= MAXIMUM_TARGET_INTENSITY:
+        return target_intensity
+    raise ValueError("Normal light target intensity must be between 10.0 and 100.0")
+
+
 class LightTargetIntensityRepository(BaseRepository):
     """Repository for per-(device, mode) light target intensity anchors."""
 
