@@ -10,40 +10,16 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.control.relay_board_state_manager import RelayBoardStateManager
 from app.control.relay_manager import RelayManager
 from app.database import DatabaseManager
-from app.redis.schema import RELAY_CHANNELS, RELAY_TIMESTAMPS, relay_raw_override_key
+from app.redis.schema import relay_raw_override_key
 from app.redis_client import AutomationRedisClient
 from shared.infra_logging import get_logger
 
 router = APIRouter()
 
 logger = get_logger(__name__)
-
-
-async def _maybe_update_relay_timestamp(
-    automation_redis: AutomationRedisClient,
-    channel: int,
-    old_state: bool,
-    new_state: bool,
-) -> None:
-    """Update RELAY_TIMESTAMPS[channel] only when the state actually changed."""
-    if old_state == new_state:
-        return
-    if automation_redis.redis_client is None:
-        return
-    try:
-        raw_ts = automation_redis.get(RELAY_TIMESTAMPS)
-        timestamps: list[str | None] = json.loads(raw_ts) if raw_ts else [None] * 16
-        now_iso = datetime.now(UTC).isoformat().replace("+00:00", "Z")
-        timestamps[channel] = now_iso
-        await asyncio.to_thread(
-            automation_redis.redis_client.set,
-            RELAY_TIMESTAMPS,
-            json.dumps(timestamps),
-        )
-    except Exception as e:
-        logger.warning(f"Failed to update RELAY_TIMESTAMPS for channel {channel}: {e}")
 
 
 def get_database() -> DatabaseManager:
@@ -53,6 +29,11 @@ def get_database() -> DatabaseManager:
 
 def get_relay_manager() -> RelayManager:
     """Dependency to get relay manager."""
+    raise RuntimeError("Dependency not injected")
+
+
+def get_relay_board_state_manager() -> RelayBoardStateManager:
+    """Dependency to get the in-process relay board snapshot owner."""
     raise RuntimeError("Dependency not injected")
 
 
@@ -75,6 +56,7 @@ class RelayTestRequest(BaseModel):
 async def relay_test(
     body: RelayTestRequest,
     relay_manager: RelayManager = Depends(get_relay_manager),
+    relay_board_state_manager: RelayBoardStateManager = Depends(get_relay_board_state_manager),
 ) -> dict[str, Any]:
     """Run relay channel test: toggle each channel, read back, report pass/fail.
 
@@ -102,16 +84,20 @@ async def relay_test(
 
     for ch in channels_to_test:
         # Set ON, wait, read back
-        mcp.set_channel(ch, True)
+        if not await relay_manager.set_channel_state(ch, 1):
+            results.append({"channel": ch, "ok": False})
+            continue
         await asyncio.sleep(duration_s)
-        read_on = mcp.get_channel(ch)
-        ok_on = read_on is True
+        on_snapshot = relay_board_state_manager.get_snapshot()
+        ok_on = on_snapshot.channels is not None and on_snapshot.channels[ch] is True
 
         # Set OFF, short wait, read back
-        mcp.set_channel(ch, False)
+        if not await relay_manager.set_channel_state(ch, 0):
+            results.append({"channel": ch, "ok": False})
+            continue
         await asyncio.sleep(0.05)
-        read_off = mcp.get_channel(ch)
-        ok_off = read_off is False
+        off_snapshot = relay_board_state_manager.get_snapshot()
+        ok_off = off_snapshot.channels is not None and off_snapshot.channels[ch] is False
 
         results.append({"channel": ch, "ok": ok_on and ok_off})
 
@@ -148,18 +134,6 @@ async def set_relay_channel_state(
             detail="channel must be 0-15",
         )
 
-    # Read current channel state before hardware write so we can detect
-    # actual state changes and update RELAY_TIMESTAMPS only when needed.
-    old_state = False
-    try:
-        raw_channels = automation_redis.get(RELAY_CHANNELS)
-        if raw_channels is not None:
-            parsed_channels = json.loads(raw_channels)
-            if isinstance(parsed_channels, list) and len(parsed_channels) == 16:
-                old_state = bool(parsed_channels[channel])
-    except (json.JSONDecodeError, ValueError, ConnectionError):
-        old_state = False
-
     override_key = relay_raw_override_key(channel)
 
     if body.state == 1:
@@ -171,7 +145,6 @@ async def set_relay_channel_state(
                     status_code=503,
                     detail=f"Failed to set channel {channel} to ON",
                 )
-            await _maybe_update_relay_timestamp(automation_redis, channel, old_state, True)
             if automation_redis.redis_client is not None:
                 await asyncio.to_thread(
                     automation_redis.redis_client.setex,
@@ -191,7 +164,6 @@ async def set_relay_channel_state(
                     status_code=503,
                     detail=f"Failed to set channel {channel} to ON",
                 )
-            await _maybe_update_relay_timestamp(automation_redis, channel, old_state, True)
     else:
         if automation_redis.redis_client is not None:
             await asyncio.to_thread(
@@ -204,7 +176,6 @@ async def set_relay_channel_state(
                 status_code=503,
                 detail=f"Failed to set channel {channel} to OFF",
             )
-        await _maybe_update_relay_timestamp(automation_redis, channel, old_state, False)
 
     return {
         "channel": channel,
@@ -215,53 +186,10 @@ async def set_relay_channel_state(
 
 @router.get("/api/hardware/relays/state")
 async def relay_state(
-    relay_manager: RelayManager = Depends(get_relay_manager),
+    relay_board_state_manager: RelayBoardStateManager = Depends(get_relay_board_state_manager),
     automation_redis: AutomationRedisClient = Depends(get_automation_redis),
     database: DatabaseManager = Depends(get_database),
 ) -> dict[str, Any]:
-    mcp = relay_manager.mcp23017
-    mcp_connected = mcp.is_connected()
-
-    # Try Redis cache first
-    channels: list[bool] | None = None
-    try:
-        raw = automation_redis.get(RELAY_CHANNELS)
-        if raw is not None:
-            parsed = json.loads(raw)
-            if isinstance(parsed, list) and len(parsed) == 16:
-                channels = [bool(s) for s in parsed]
-    except (json.JSONDecodeError, ValueError, ConnectionError) as e:
-        logger.error(f"Failed to parse relay channels from Redis cache: {e}", exc_info=True)
-        channels = None
-
-    # Fall back to hardware read on cache miss
-    if channels is None:
-        states = mcp.get_all_channels()
-        channels = [bool(s) for s in states]
-
-    # Read per-channel timestamps from Redis (event-driven, <1ms).
-    # Updated by hardware_batch only when a channel actually changes state.
-    timestamps: list[str | None] = [None] * 16
-    try:
-        raw_ts = automation_redis.get(RELAY_TIMESTAMPS)
-        if raw_ts is not None:
-            parsed_ts = json.loads(raw_ts)
-            if isinstance(parsed_ts, list) and len(parsed_ts) == 16:
-                timestamps = [str(t) if t is not None else None for t in parsed_ts]
-    except (json.JSONDecodeError, ValueError, ConnectionError) as e:
-        logger.error(f"Failed to parse relay timestamps from Redis cache: {e}", exc_info=True)
-
-    # Fallback to TimescaleDB only if Redis miss (cold start / stale)
-    if all(t is None for t in timestamps):
-        try:
-            rows = await database.control_action_repo.get_last_changed_per_channel()
-            for row in rows:
-                ch = row["channel"]
-                if 0 <= ch <= 15:
-                    timestamps[ch] = row["last_changed"]
-        except Exception as e:
-            logger.error(f"Failed to fetch last-changed timestamps: {e}", exc_info=True)
-
     override_expires_at: list[str | None] = [None] * 16
     try:
         if automation_redis.redis_client is not None:
@@ -302,10 +230,18 @@ async def relay_state(
     except Exception as e:
         logger.error(f"Failed to read device states for mode mapping: {e}", exc_info=True)
 
+    snapshot = relay_board_state_manager.get_snapshot()
     return {
-        "channels": channels,
-        "timestamps": timestamps,
-        "mcp_connected": mcp_connected,
-        "modes": modes,
-        "override_expires_at": override_expires_at,
+        "channels": list(snapshot.channels) if snapshot.channels is not None else None,
+        "sampled_at": _timestamp(snapshot.sampled_at),
+        "changed_at": [_timestamp(value) for value in snapshot.changed_at],
+        "control_metadata": {
+            "modes": modes,
+            "override_expires_at": override_expires_at,
+        },
     }
+
+
+def _timestamp(value: datetime | None) -> str | None:
+    """Serialize an observed timestamp in the API's ISO-8601 UTC format."""
+    return value.astimezone(UTC).isoformat().replace("+00:00", "Z") if value else None
