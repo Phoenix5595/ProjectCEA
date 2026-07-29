@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import asyncio
 from datetime import UTC, datetime, timedelta
-import json
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -13,8 +11,6 @@ from app.cluster_config import ensure_configured_cluster, iter_flower_main_merge
 from app.config import ConfigLoader
 from app.control.relay_manager import RelayManager
 from app.database import DatabaseManager
-from app.redis.schema import RELAY_TIMESTAMPS
-from app.redis_client import AutomationRedisClient
 from app.schemas.device import (
     DeviceConfigUpdate,
     DeviceControlRequest,
@@ -68,11 +64,6 @@ def get_relay_manager() -> RelayManager:
 
 def get_database() -> DatabaseManager:
     """Dependency to get database manager."""
-    raise RuntimeError("Dependency not injected")
-
-
-def get_automation_redis() -> AutomationRedisClient:
-    """Dependency to get AutomationRedisClient."""
     raise RuntimeError("Dependency not injected")
 
 
@@ -201,7 +192,6 @@ async def control_device(
     request: DeviceControlRequest,
     relay_manager: RelayManager = Depends(get_relay_manager),
     database: DatabaseManager = Depends(get_database),
-    automation_redis: AutomationRedisClient = Depends(get_automation_redis),
 ) -> dict[str, Any]:
     """Manually control a device (turn ON/OFF)."""
     if request.state not in [0, 1]:
@@ -214,34 +204,16 @@ async def control_device(
         raise HTTPException(status_code=404, detail="Device not found")
 
     # Set device state
-    success, reason = relay_manager.set_device_state(
-        location, cluster, device, bool(request.state), "manual"
-    )
-
-    # Update database
-    await database.device_repo.set_device_state(
-        location, cluster, device, channel, bool(request.state), "manual"
+    success, reason = await relay_manager.set_device_state(
+        location, cluster, device, request.state, "manual"
     )
 
     if not success:
-        raise HTTPException(status_code=400, detail=reason or "Failed to set device state")
+        raise HTTPException(status_code=503, detail=reason or "Failed to set device state")
 
-    # Update RELAY_TIMESTAMPS in Redis when the state actually changed
-    old_state = bool(current_state)
-    new_state = bool(request.state)
-    if old_state != new_state and automation_redis.redis_client is not None:
-        try:
-            raw_ts = automation_redis.get(RELAY_TIMESTAMPS)
-            timestamps: list[str | None] = json.loads(raw_ts) if raw_ts else [None] * 16
-            now_iso = datetime.now(UTC).isoformat().replace("+00:00", "Z")
-            timestamps[channel] = now_iso
-            await asyncio.to_thread(
-                automation_redis.redis_client.set,
-                RELAY_TIMESTAMPS,
-                json.dumps(timestamps),
-            )
-        except Exception as e:
-            logger.warning(f"Failed to update RELAY_TIMESTAMPS for channel {channel}: {e}")
+    await database.device_repo.set_device_state(
+        location, cluster, device, channel, bool(request.state), "manual"
+    )
 
     manual_expires_at: datetime | None = None
     if request.duration_seconds is not None and request.state == 1:
