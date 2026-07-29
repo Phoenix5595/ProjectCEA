@@ -18,6 +18,7 @@ from app.database import DatabaseManager
 from app.hardware.dfr0971 import DFR0971Manager
 from app.hardware.mcp23017 import MCP23017Driver
 from app.redis_client import AutomationRedisClient
+from app.services.device_registry_service import DeviceRegistryService
 from shared.infra_logging import get_logger
 
 logger = get_logger(__name__)
@@ -47,6 +48,7 @@ class ServiceContainer:
         self.interlock_manager: InterlockManager | None = None
         self.relay_manager: RelayManager | None = None
         self.runtime_device_registry: RuntimeDeviceRegistry | None = None
+        self.device_registry_service: DeviceRegistryService | None = None
         self.scheduler: Scheduler | None = None
         self.rules_engine: RulesEngine | None = None
         self.alarm_manager: AlarmManager | None = None
@@ -159,6 +161,13 @@ class ServiceContainer:
                 interlock_manager=self.interlock_manager,
             )
             logger.info("Relay manager initialized")
+            self.device_registry_service = DeviceRegistryService(
+                device_repo=self.database.device_repo,
+                runtime_device_registry=self.runtime_device_registry,
+                relay_manager=self.relay_manager,
+                dfr0971_manager=self.dfr0971_manager,
+            )
+            logger.info("Device registry service initialized")
 
             # 6. Initialize scheduler with schedules from database merged with config (synthetic SUN rows from merge_schedules_with_config)
             db_schedules = await self.database.schedule_repo.get_schedules()
@@ -366,6 +375,12 @@ class ServiceContainer:
         if not self.relay_manager:
             raise RuntimeError("Relay manager not initialized")
         return self.relay_manager
+
+    def get_device_registry_service(self) -> DeviceRegistryService:
+        """Get the canonical device registry mutation service."""
+        if not self.device_registry_service:
+            raise RuntimeError("Device registry service not initialized")
+        return self.device_registry_service
 
     def get_dfr0971_manager(self) -> DFR0971Manager | None:
         """Get DFR0971 manager instance."""
