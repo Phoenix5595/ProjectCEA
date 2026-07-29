@@ -10,6 +10,7 @@ from app.automation.rules_engine import RulesEngine
 from app.background_tasks import BackgroundTasks
 from app.config import ConfigLoader
 from app.control.control_engine import ControlEngine
+from app.control.relay_board_state_manager import RelayBoardStateManager
 from app.control.relay_manager import RelayManager
 from app.control.runtime_device_registry import RuntimeDeviceRegistry
 from app.control.schedule_merge import merge_schedules_with_config
@@ -47,6 +48,7 @@ class ServiceContainer:
         # Control components
         self.interlock_manager: InterlockManager | None = None
         self.relay_manager: RelayManager | None = None
+        self.relay_board_state_manager: RelayBoardStateManager | None = None
         self.runtime_device_registry: RuntimeDeviceRegistry | None = None
         self.device_registry_service: DeviceRegistryService | None = None
         self.scheduler: Scheduler | None = None
@@ -125,26 +127,13 @@ class ServiceContainer:
                 except Exception as e:
                     logger.warning(f"Startup force-off failed (continuing): {e}")
 
-            # 3b. Reconcile Redis relay state cache with actual hardware state.
-            # This must run AFTER all_off() and BEFORE background_tasks.start()
-            # to avoid a race with the control loop (hardware_batch.py).
-            if self.mcp23017 is not None and self.automation_redis is not None:
-                try:
-                    import json as _json
-
-                    from app.redis.schema import RELAY_CHANNELS, RELAY_TIMESTAMPS
-
-                    hw_states = self.mcp23017.get_all_channels()
-                    self.automation_redis.set(
-                        RELAY_CHANNELS, _json.dumps([bool(s) for s in hw_states])
-                    )
-                    self.automation_redis.set(RELAY_TIMESTAMPS, _json.dumps([None] * 16))
-                    logger.info(
-                        "Redis relay state reconciled with hardware: "
-                        f"{sum(hw_states)} ON / {len(hw_states) - sum(hw_states)} OFF"
-                    )
-                except Exception as e:
-                    logger.warning(f"Failed to reconcile relay Redis state: {e}")
+            # 3b. Restore the previous relay board snapshot, then reconcile it
+            # with one live GPIOA/GPIOB sample before control work begins.
+            if self.mcp23017 is not None:
+                self.relay_board_state_manager = RelayBoardStateManager(
+                    self.mcp23017, self.automation_redis
+                )
+                await self.relay_board_state_manager.on_startup_restore()
 
             # 4. Initialize interlock manager
             interlocks = self.config.get("interlocks", [])
@@ -159,6 +148,8 @@ class ServiceContainer:
                 mcp23017=self.mcp23017,
                 runtime_device_registry=self.runtime_device_registry,
                 interlock_manager=self.interlock_manager,
+                relay_board_state_manager=self.relay_board_state_manager,
+                control_action_repository=self.database.control_action_repo,
             )
             logger.info("Relay manager initialized")
             self.device_registry_service = DeviceRegistryService(
@@ -204,6 +195,7 @@ class ServiceContainer:
                 alarm_manager=self.alarm_manager,
                 dfr0971_manager=self.dfr0971_manager,
                 runtime_device_registry=self.runtime_device_registry,
+                relay_board_state_manager=self.relay_board_state_manager,
             )
             logger.info("Control engine initialized")
 
@@ -375,6 +367,12 @@ class ServiceContainer:
         if not self.relay_manager:
             raise RuntimeError("Relay manager not initialized")
         return self.relay_manager
+
+    def get_relay_board_state_manager(self) -> RelayBoardStateManager:
+        """Get the owner of the observed MCP relay board snapshot."""
+        if not self.relay_board_state_manager:
+            raise RuntimeError("Relay board state manager not initialized")
+        return self.relay_board_state_manager
 
     def get_device_registry_service(self) -> DeviceRegistryService:
         """Get the canonical device registry mutation service."""
