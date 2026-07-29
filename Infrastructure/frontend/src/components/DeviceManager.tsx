@@ -182,7 +182,7 @@ export default function DeviceManager() {
 
       {activeTab === 'devices' && (
         <>
-          <DfrBoardsPanel refreshKey={refreshKey} onRefresh={handleSharedRefresh} />
+          <DfrBoardsPanel />
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
               <h2 className="text-2xl font-bold text-text-input">Devices and Relay Mapping</h2>
