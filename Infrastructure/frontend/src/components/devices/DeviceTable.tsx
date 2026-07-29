@@ -3,6 +3,7 @@ import { toast } from 'sonner'
 
 import { ZONES } from '../../config/zones'
 import { apiClient } from '../../services/api'
+import { useDeviceRegistry } from '../../hooks/useDeviceRegistry'
 import { DEVICE_TYPES } from '../../types/relay'
 import type { DeviceRegistryEntry } from '../../types/device'
 import { extractErrorMessage } from '../../utils/errors'
@@ -47,6 +48,7 @@ export default function DeviceTable({
   refreshKey?: number
   onRefresh?: () => void
 }) {
+  const { registry: devicesFromHook, loading: hookLoading, refresh: hookRefresh } = useDeviceRegistry()
   const [devices, setDevices] = useState<DeviceRegistryEntry[]>([])
   const [loading, setLoading] = useState(true)
   const [editingId, setEditingId] = useState<number | null>(null)
@@ -65,18 +67,15 @@ export default function DeviceTable({
     setSortConfig({ key: null, direction: null })
   }, [refreshKey])
 
+  useEffect(() => {
+    setDevices(devicesFromHook)
+    setLoading(hookLoading)
+  }, [devicesFromHook, hookLoading])
+
   const refresh = useCallback(async () => {
-    setLoading(true)
-    try {
-      const data = await apiClient.getDeviceRegistry()
-      setDevices(data)
-    } catch (err) {
-      logger.error('Failed to load device registry', err)
-      toast.error('Failed to load device registry')
-    } finally {
-      setLoading(false)
-    }
-  }, [])
+    await hookRefresh()
+    onRefresh?.()
+  }, [hookRefresh, onRefresh])
 
   useEffect(() => {
     void refresh()
@@ -227,12 +226,11 @@ export default function DeviceTable({
     if (f.device_type === 'light') {
       body.board_id = parseInt(f.board_id, 10)
       body.dimming_channel = parseInt(f.dimming_channel, 10)
-    } else {
-      if (f.channel === '') {
-        toast.error('Relay channel is required')
-        return
+      if (f.channel !== '') {
+        body.relay_channel = parseInt(f.channel, 10)
       }
-      body.channel = parseInt(f.channel, 10)
+    } else {
+      body.channel = f.channel === '' ? null : parseInt(f.channel, 10)
     }
 
     setWorking(true)
@@ -264,6 +262,8 @@ export default function DeviceTable({
     if (isLight(device)) {
       if (f.channel !== '') {
         body.relay_channel = parseInt(f.channel, 10)
+      } else {
+        body.relay_channel = null
       }
       if (f.board_id !== '') {
         body.board_id = parseInt(f.board_id, 10)
@@ -274,6 +274,8 @@ export default function DeviceTable({
     } else {
       if (f.channel !== '') {
         body.channel = parseInt(f.channel, 10)
+      } else {
+        body.channel = null
       }
     }
 
@@ -282,11 +284,13 @@ export default function DeviceTable({
       const result = await apiClient.updateDevice(device.device_id, body)
       if (result.displaced_device_id != null) {
         setDisplacedDeviceId(result.displaced_device_id)
+        const displaced = devices.find((d) => d.device_id === result.displaced_device_id)
+        const displacedLabel = displaced?.display_name ?? displaced?.device_name ?? `#${result.displaced_device_id}`
+        toast.warning(`Relay channel stolen from ${displacedLabel}`)
       } else {
         setDisplacedDeviceId(null)
       }
       await refresh()
-      onRefresh?.()
       cancelEdit()
       toast.success('Device updated')
     } catch (err) {
@@ -418,7 +422,7 @@ export default function DeviceTable({
                         disabled={working}
                         className="rounded-sm border border-border-emphasis bg-surface-primary px-2 py-1 text-xs text-text-input focus:outline-hidden focus:ring-2 focus:ring-btn-primary-light disabled:opacity-50"
                       >
-                        <option value="">—</option>
+                        <option value="">No relay</option>
                         {RELAY_CHANNELS.map((c) => (
                           <option key={c} value={c}>R{c + 1}</option>
                         ))}
@@ -598,7 +602,7 @@ export default function DeviceTable({
                     disabled={working}
                     className="rounded-sm border border-border-emphasis bg-surface-primary px-2 py-1 text-xs text-text-input focus:outline-hidden focus:ring-2 focus:ring-btn-primary-light disabled:opacity-50"
                   >
-                    <option value="">—</option>
+                    <option value="">No relay</option>
                     {RELAY_CHANNELS.map((c) => (
                       <option key={c} value={c}>R{c + 1}</option>
                     ))}

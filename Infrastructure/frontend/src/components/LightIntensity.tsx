@@ -30,6 +30,7 @@ const LightIntensity = forwardRef<{ savePendingChanges: () => Promise<void> }, L
   const [lights, setLights] = useState<LightDevice[]>([])
   const [statuses, setStatuses] = useState<Record<string, LightIntensityRowStatus>>({})
   const [pendingTargets, setPendingTargets] = useState<Record<string, number>>({})
+  const [validationErrors, setValidationErrors] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(true)
   useImperativeHandle(ref, () => ({
     savePendingChanges,
@@ -82,6 +83,32 @@ const LightIntensity = forwardRef<{ savePendingChanges: () => Promise<void> }, L
 
   function handleTargetChange(deviceName: string, value: number) {
     const clampedValue = Math.max(0, Math.min(100, value))
+
+    if (value < 10) {
+      setValidationErrors((prev) => ({
+        ...prev,
+        [deviceName]: 'Minimum target is 10%',
+      }))
+      setTimeout(() => {
+        setPendingTargets((prev) => ({
+          ...prev,
+          [deviceName]: 10,
+        }))
+        setValidationErrors((prev) => {
+          const next = { ...prev }
+          delete next[deviceName]
+          return next
+        })
+      }, 2000)
+      return
+    }
+
+    setValidationErrors((prev) => {
+      const next = { ...prev }
+      delete next[deviceName]
+      return next
+    })
+
     setPendingTargets((prev) => ({
       ...prev,
       [deviceName]: clampedValue,
@@ -243,7 +270,7 @@ const LightIntensity = forwardRef<{ savePendingChanges: () => Promise<void> }, L
                 <div className="flex flex-col items-center gap-1 shrink-0 ml-3">
                   <input
                     type="number"
-                    min={0}
+                    min={10}
                     max={100}
                     value={displayTarget}
                     onChange={(e) => {
@@ -252,9 +279,20 @@ const LightIntensity = forwardRef<{ savePendingChanges: () => Promise<void> }, L
                         handleTargetChange(light.device_name!, value)
                       }
                     }}
-                    className="w-14 h-6 px-1 text-center bg-surface-secondary border border-border-default rounded-sm text-[14px] text-text-input font-mono"
+                    className={`w-14 h-6 px-1 text-center bg-surface-secondary border rounded-sm text-[14px] text-text-input font-mono ${
+                      validationErrors[light.device_name!]
+                        ? 'border-status-danger'
+                        : 'border-border-default'
+                    }`}
                   />
-                  <span className="text-[10px] text-text-subtle font-bold tracking-wide">% SET</span>
+                  {validationErrors[light.device_name!] && (
+                    <div className="text-[10px] text-status-danger font-bold">
+                      {validationErrors[light.device_name!]}
+                    </div>
+                  )}
+                  {!validationErrors[light.device_name!] && (
+                    <span className="text-[10px] text-text-subtle font-bold tracking-wide">% SET</span>
+                  )}
                 </div>
               </div>
             )

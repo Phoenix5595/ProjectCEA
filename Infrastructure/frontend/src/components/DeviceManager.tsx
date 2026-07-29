@@ -3,7 +3,7 @@ import { toast } from 'sonner'
 
 import { normalizeDeviceControlCluster } from '../config/zones'
 import { apiClient } from '../services/api'
-import type { ChannelInfo, RelayBoardStateResponse } from '../types/relay'
+import { useDeviceRegistry } from '../hooks/useDeviceRegistry'
 import { logger } from '../utils/logger'
 import DeviceTable from './devices/DeviceTable'
 import DfrBoardsPanel from './devices/DfrBoardsPanel'
@@ -14,6 +14,7 @@ import {
   getRelayNumber,
   getRelayPinLabel,
 } from './devices/relayViewModel'
+import type { RelayBoardStateResponse } from '../types/relay'
 
 const DEFAULT_RELAY_STATE: RelayBoardStateResponse = {
   channels: Array(16).fill(false),
@@ -28,12 +29,12 @@ export default function DeviceManager() {
   const [activeTab, setActiveTab] = useState<'devices' | 'settings'>('devices')
   const [refreshKey, setRefreshKey] = useState(0)
   const handleSharedRefresh = useCallback(() => setRefreshKey((k) => k + 1), [])
-  const [channels, setChannels] = useState<ChannelInfo[]>([])
-  const [relayState, setRelayState] = useState<RelayBoardStateResponse>(DEFAULT_RELAY_STATE)
-  const [loading, setLoading] = useState(true)
-  const [loadingError, setLoadingError] = useState<string | null>(null)
-  const [nowMs, setNowMs] = useState(Date.now())
+  const { channels, relayState: hookRelayState, mcpConnected: hookMcpConnected } = useDeviceRegistry()
   const [menuOpenChannel, setMenuOpenChannel] = useState<number | null>(null)
+  const [nowMs, setNowMs] = useState(Date.now())
+
+  const relayState = hookRelayState ?? DEFAULT_RELAY_STATE
+  const mcpConnected = hookMcpConnected
 
   const persistedChannelMap = useMemo(
     () => new Map(channels.map((channelInfo) => [channelInfo.channel, channelInfo])),
@@ -51,56 +52,16 @@ export default function DeviceManager() {
     return vms.sort((a, b) => getRelayNumber(a.channel) - getRelayNumber(b.channel))
   }, [channels, relayState])
 
-  async function loadChannels(showLoader = true) {
-    if (showLoader) {
-      setLoading(true)
-    }
-
-    setLoadingError(null)
-
-    try {
-      const response = await apiClient.getChannels()
-      const sortedChannels = Object.values(response.channels).sort((a, b) => a.channel - b.channel)
-      setChannels(sortedChannels)
-    } catch (error) {
-      logger.error('Error loading channels:', error)
-      setLoadingError('Unable to load relay channel assignments.')
-    } finally {
-      if (showLoader) {
-        setLoading(false)
-      }
-    }
-  }
-
   async function refreshRelayState() {
     try {
-      const response = await apiClient.getRelayBoardState()
-      setRelayState(response)
+      await apiClient.getRelayBoardState()
     } catch (error) {
       logger.warn('Unable to refresh relay board state', error)
-      setRelayState(DEFAULT_RELAY_STATE)
     }
   }
-
-  useEffect(() => {
-    void loadChannels(false)
-  }, [refreshKey])
 
   useEffect(() => {
     const intervalId = window.setInterval(() => setNowMs(Date.now()), 1000)
-    return () => window.clearInterval(intervalId)
-  }, [])
-
-  useEffect(() => {
-    void loadChannels()
-  }, [])
-
-  useEffect(() => {
-    void refreshRelayState()
-    const intervalId = window.setInterval(() => {
-      void refreshRelayState()
-    }, 5000)
-
     return () => window.clearInterval(intervalId)
   }, [])
 
@@ -178,25 +139,17 @@ export default function DeviceManager() {
     }
   }
 
-  const relayStatusLabel = relayState.mcp_connected
+  const relayStatusLabel = mcpConnected
     ? relayState.simulation
       ? 'Simulation'
       : 'Connected'
     : 'Unavailable'
 
-  const relayStatusClasses = relayState.mcp_connected
+  const relayStatusClasses = mcpConnected
     ? relayState.simulation
       ? 'bg-status-warning-bg/40 text-status-warning-text border-status-warning-border/60'
       : 'bg-status-success-bg/40 text-status-success-text border-status-success-border/70'
     : 'bg-status-danger-bg/40 text-status-danger-text border-status-danger-border/60'
-
-  if (loading) {
-    return (
-      <div className="p-6">
-        <p className="text-text-secondary">Loading channels...</p>
-      </div>
-    )
-  }
 
   return (
     <div className="space-y-6 p-2">
@@ -243,12 +196,6 @@ export default function DeviceManager() {
               </div>
             </div>
           </div>
-
-          {loadingError && (
-            <div className="rounded-md border border-status-danger-border/60 bg-status-danger-bg/20 px-4 py-2 text-sm text-status-danger-text">
-              {loadingError}
-            </div>
-          )}
 
           <DeviceTable refreshKey={refreshKey} onRefresh={handleSharedRefresh} />
 

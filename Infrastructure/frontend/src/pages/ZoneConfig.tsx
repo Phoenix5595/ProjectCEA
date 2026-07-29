@@ -15,7 +15,7 @@ import ManualLightControl from '../components/ManualLightControl'
 import RelayChannelMatrix from '../components/devices/RelayChannelMatrix'
 import { buildRelayChannelViewModels } from '../components/devices/relayViewModel'
 import type { RelayChannelViewModel } from '../components/devices/relayViewModel'
-import type { ChannelInfo } from '../types/relay'
+import { useDeviceRegistry } from '../hooks/useDeviceRegistry'
 import type { ClimatePeriod } from '../types/climatePeriod'
 
 export type ZoneConfigSection = 'control' | 'automation';
@@ -89,67 +89,28 @@ export default function ZoneConfig({
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
 
-  // Relay matrix state
+  const { channels: sharedChannels, relayState: sharedRelayState, mcpConnected } = useDeviceRegistry()
+
   const [relayChannels, setRelayChannels] = useState<RelayChannelViewModel[]>([]) // eslint-disable-line @typescript-eslint/no-unused-vars
-  const [relayState, setRelayState] = useState<boolean[] | null>(null)
-  const [relayTimestamps, setRelayTimestamps] = useState<(string | null)[]>(Array(16).fill(null))
   const [nowMs, setNowMs] = useState(Date.now())
-  // @ts-ignore
-  const [mcpConnected, setMcpConnected] = useState<boolean>(true)
-  const [channelInfoList, setChannelInfoList] = useState<ChannelInfo[]>([])
 
-  const fetchRelayData = useCallback(async () => {
-    try {
-      const stateRes = await apiClient.getRelayBoardState()
-      setRelayState(stateRes.channels)
-      setRelayTimestamps(stateRes.timestamps ?? Array(16).fill(null))
-      setMcpConnected(stateRes.mcp_connected)
-    } catch (err) {
-      logger.error('Failed to fetch relay board state:', err)
-      setRelayState(null)
-      setMcpConnected(false)
-    }
-  }, [])
-
-  const loadChannels = useCallback(async () => {
-    try {
-      const res = await apiClient.getChannels()
-      setChannelInfoList(Object.values(res.channels))
-    } catch (err) {
-      logger.error('Failed to fetch channel assignments:', err)
-    }
-  }, [])
-
-  // Load channel assignments once on mount
-  useEffect(() => {
-    loadChannels()
-  }, [loadChannels])
-
-  // Poll relay state every 5 seconds
-  useEffect(() => {
-    fetchRelayData()
-    const interval = setInterval(fetchRelayData, 5000)
-    return () => clearInterval(interval)
-  }, [fetchRelayData])
-
-  // Tick nowMs every second for elapsed time display
   useEffect(() => {
     const interval = setInterval(() => setNowMs(Date.now()), 1000)
     return () => clearInterval(interval)
   }, [])
 
-  // Build view models when channel data or relay state changes
   useEffect(() => {
+    if (!sharedRelayState) return
     setRelayChannels(
       buildRelayChannelViewModels(
-        channelInfoList,
-        relayState,
-        relayTimestamps,
-        Array(16).fill(null),
-        Array(16).fill(null)
+        sharedChannels,
+        sharedRelayState.channels,
+        sharedRelayState.timestamps,
+        sharedRelayState.modes,
+        sharedRelayState.override_expires_at
       )
     )
-  }, [channelInfoList, relayState, relayTimestamps])
+  }, [sharedChannels, sharedRelayState])
 
   // Relay menu state — consumed by RelayChannelMatrix
   const [menuOpenChannel, setMenuOpenChannel] = useState<number | null>(null)

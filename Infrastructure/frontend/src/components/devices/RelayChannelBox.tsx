@@ -7,6 +7,7 @@ interface RelayChannelBoxProps {
   variant?: 'panel' | 'compact'
   currentLocation?: string | null
   isEditing?: boolean
+  disabled?: boolean
   onSelect?: (channel: number) => void
   isMenuOpen?: boolean
   onToggleMenu?: (channel: number) => void
@@ -72,6 +73,7 @@ export default function RelayChannelBox({
   variant = 'panel',
   currentLocation = null,
   isEditing = false,
+  disabled = false,
   onSelect,
   isMenuOpen = false,
   onToggleMenu,
@@ -85,11 +87,12 @@ export default function RelayChannelBox({
   const typeLabel = channel.displayType || '-'
 
   const isAssignedToRoom = !currentLocation || channel.location === currentLocation
+  const isDisabled = disabled || !isAssignedToRoom
 
   const badge = resolveBadgeState(channel, nowMs)
-  const canControl = true
+  const canControl = !isDisabled
 
-  const interactiveClasses = onSelect
+  const interactiveClasses = onSelect && !isDisabled
     ? 'cursor-pointer hover:border-btn-primary-hover hover:bg-surface-primary/40'
     : ''
 
@@ -97,9 +100,9 @@ export default function RelayChannelBox({
     'group/relay relative w-full rounded-sm border text-left transition-all overflow-visible',
     isAssignedToRoom
       ? 'bg-surface-primary/80 border-border-emphasis'
-      : 'bg-surface-tertiary/40 border-border-subtle opacity-50',
+      : 'bg-surface-tertiary/40 border-border-subtle opacity-50 grayscale',
     isCompact ? 'min-h-[52px] p-1' : 'min-h-[60px] p-1.5',
-    isAssignedToRoom ? interactiveClasses : '',
+    isAssignedToRoom && !isDisabled ? interactiveClasses : '',
     isEditing ? 'ring-2 ring-btn-primary-light' : '',
     isMenuOpen ? 'z-30' : 'z-0',
   ]
@@ -184,7 +187,12 @@ export default function RelayChannelBox({
   }
 
   return (
-    <button type="button" className={baseClasses} onClick={() => onSelect(channel.channel)}>
+    <button
+      type="button"
+      className={baseClasses}
+      disabled={isDisabled}
+      onClick={() => onSelect(channel.channel)}
+    >
       {content}
     </button>
   )
