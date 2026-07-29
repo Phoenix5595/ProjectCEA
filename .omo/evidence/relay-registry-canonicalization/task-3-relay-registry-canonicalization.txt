@@ -1,0 +1,33 @@
+Todo 3 — relay registry canonicalization
+Date: 2026-07-29
+Workspace: /home/antoine/ProjectCEA
+
+Baseline characterization (before implementation)
+Command: cd Infrastructure/automation-service && pytest -q app/tests/pure/test_relay_snapshot.py::test_relay_manager_characterization_keeps_prior_state_when_mcp_write_fails
+Result: PASS — 1 passed in 0.05s
+
+Failing-first board snapshot contract (before implementation)
+Command: cd Infrastructure/automation-service && pytest -q app/tests/pure/test_relay_snapshot.py
+Result: EXPECTED RED — 1 passed, 2 failed; both failures were ModuleNotFoundError for app.control.relay_board_state_manager.
+
+Focused post-implementation verification
+Command: cd Infrastructure/automation-service && pytest -q app/tests/pure/test_relay_snapshot.py
+Result: PASS — 9 passed in 2.16s (one pre-existing Pydantic V1 validator deprecation warning from app/schemas/calendar.py).
+Assertions cover: two-register GPIO source shape; null-before-first-sample; initial/transition-only Redis persistence; unchanged timestamps; failure preservation; startup restoration; successful write sampling; unchanged-state hardware failure recording; no-op tick finally sampling; and public snapshot/control_metadata separation.
+
+Required gates
+Command: cd Infrastructure/automation-service && ruff check .
+Result: PASS — All checks passed.
+Command: cd Infrastructure/automation-service && ruff format --check .
+Result: PASS — 193 files already formatted.
+Command: cd Infrastructure/automation-service && python3 -m compileall -q app
+Result: PASS — exit 0.
+Command: GIT_MASTER=1 git diff --check
+Result: PASS — exit 0.
+
+Static migration check
+Command: grep RELAY_CHANNELS|RELAY_TIMESTAMPS|relay:channels|relay:timestamps in Infrastructure/automation-service/app
+Result: PASS — no matches.
+
+Safety
+No service was started. No hardware, database, Redis, network endpoint, or production data was contacted.
