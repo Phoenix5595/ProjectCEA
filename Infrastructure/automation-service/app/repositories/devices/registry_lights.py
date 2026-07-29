@@ -80,6 +80,7 @@ class LightRegistryMixin:
         room: str,
         display_name: str,
         per_room_index: int,
+        relay_channel: int | None = None,
     ) -> LightDevice:
         """Create a new light device. Auto-generates device_name as light_{prefix}_{index}."""
         device_name = _generate_light_device_name(room, per_room_index)
@@ -87,17 +88,18 @@ class LightRegistryMixin:
             async with self.pool.acquire() as conn:
                 row = await conn.fetchrow(
                     """INSERT INTO device_registry
-                        (location, cluster, device_name, display_name, device_type,
-                         dimming_enabled, dimming_type, dimming_board_id, dimming_channel,
-                         safety_level, pid_enabled, interlock_with, pid_setpoints,
-                         per_room_index, created_at, updated_at)
-                       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb, $13::jsonb, $14, NOW(), NOW())
+                            (location, cluster, device_name, display_name, device_type, channel,
+                             dimming_enabled, dimming_type, dimming_board_id, dimming_channel,
+                             safety_level, pid_enabled, interlock_with, pid_setpoints,
+                             per_room_index, created_at, updated_at)
+                       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::jsonb, $14::jsonb, $15, NOW(), NOW())
                        RETURNING *""",
                     room,
                     "main",
                     device_name,
                     display_name,
                     "light",
+                    relay_channel,
                     True,
                     "dfr0971",
                     board_id,

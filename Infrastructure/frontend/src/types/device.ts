@@ -6,14 +6,14 @@ export interface Device {
   device_name: string;
   state: number;  // 0 = OFF, 1 = ON
   mode: string;   // 'auto', 'manual', 'scheduled'
-  channel: number;
+  channel: number | null;
   load_percent?: number;
 }
 
 export interface DeviceState {
   state: number;
   mode: string;
-  channel: number;
+  channel: number | null;
   load_percent?: number;
 }
 
@@ -65,4 +65,3 @@ export interface ControlHistoryEntry {
   reason?: string | null;
   load_percent?: number | null;
 }
-

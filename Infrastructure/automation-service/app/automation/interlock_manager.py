@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import Any
 
+from app.control.runtime_device_registry import RuntimeDeviceRegistry
+from app.control.runtime_device_snapshot import RuntimeDeviceSnapshot
 from shared.infra_logging import get_logger
 
 logger = get_logger(__name__)
@@ -15,22 +17,21 @@ class InterlockManager:
 
     def __init__(
         self,
-        device_config: dict[str, Any],
+        runtime_device_registry: RuntimeDeviceRegistry,
         interlock_rules: list[dict[str, Any]],
         device_load_callback: Callable[[str, str, str], float | None] | None = None,
     ):
         """Initialize interlock manager.
 
         Args:
-            device_config: Device configuration from config
+            runtime_device_registry: Installed immutable device snapshot provider
             interlock_rules: Global interlock rules from config
             device_load_callback: Optional callback to get device load percentage (0-100)
                                   Signature: (location, cluster, device_name) -> Optional[float]
         """
-        self.device_config = device_config
+        self._runtime_device_registry = runtime_device_registry
         self.interlock_rules = interlock_rules
         self.device_load_callback = device_load_callback
-        self._build_interlock_map()
         logger.info("Initialized interlock manager with load-based interlock support")
         if len(self.interlock_rules) == 0:
             logger.warning(
@@ -39,28 +40,6 @@ class InterlockManager:
                 "This is intentional per user decision; corrected interlock deferred to future plan."
             )
 
-    def _build_interlock_map(self):
-        """Build interlock mapping from config."""
-        self._interlock_map: dict[tuple[str, str, str], set[str]] = {}
-
-        # Build from per-device interlock_with
-        for location, clusters in self.device_config.items():
-            for cluster, devices in clusters.items():
-                for device_name, device_info in devices.items():
-                    interlock_with = device_info.get("interlock_with", [])
-                    if interlock_with:
-                        key = (location, cluster, device_name)
-                        self._interlock_map[key] = set(interlock_with)
-
-        # Add global interlock rules
-        for rule in self.interlock_rules:
-            when_device = rule.get("when_device")
-            then_device = rule.get("then_device")
-            if when_device and then_device:
-                # Apply to all locations/clusters (simplified)
-                # In practice, might need location/cluster context
-                logger.debug(f"Global interlock: {when_device} -> {then_device}")
-
     def check_interlock(
         self,
         location: str,
@@ -68,6 +47,7 @@ class InterlockManager:
         device_name: str,
         device_states: dict[tuple[str, str, str], int],
         requested_load: float | None = None,
+        snapshot: RuntimeDeviceSnapshot | None = None,
     ) -> tuple[bool, str | None]:
         """Check if device can be turned on or set to requested load (not blocked by interlock).
 
@@ -82,9 +62,12 @@ class InterlockManager:
             Tuple of (can_turn_on, reason)
         """
         key = (location, cluster, device_name)
+        active_snapshot = snapshot or self._runtime_device_registry.snapshot
 
         # Check per-device interlocks
-        interlock_devices = self._interlock_map.get(key, set())
+        device_info: Mapping[str, Any] = active_snapshot.device_info.get(key, {})
+        configured_interlocks = device_info.get("interlock_with", [])
+        interlock_devices = configured_interlocks if isinstance(configured_interlocks, list) else []
         for interlock_device in interlock_devices:
             interlock_key = (location, cluster, interlock_device)
             interlock_state = device_states.get(interlock_key, 0)
@@ -99,11 +82,7 @@ class InterlockManager:
                 # If we have load information, check if it exceeds threshold
                 if interlock_load is not None:
                     # Get max allowed load from device config (default: 0% = full interlock)
-                    interlock_device_info = (
-                        self.device_config.get(location, {})
-                        .get(cluster, {})
-                        .get(interlock_device, {})
-                    )
+                    interlock_device_info = active_snapshot.device_info.get(interlock_key, {})
                     max_allowed_load = interlock_device_info.get("interlock_max_allowed_load", 0.0)
 
                     if interlock_load > max_allowed_load:

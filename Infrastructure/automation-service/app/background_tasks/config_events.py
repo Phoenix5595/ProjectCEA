@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any
 
 from app.control.schedule_merge import merge_schedules_with_config
 from shared.infra_logging import get_logger
@@ -76,39 +75,8 @@ class ConfigEventsMixin:
                                 + f"{len(merged)} schedules after SCHEDULE_CHANGED event"
                             )
 
-                        # 2. Reload light intensities + programs + device lookup
-                        scheduler = self.control_engine.scheduler
-                        if scheduler:
-                            try:
-                                intensities = await self.database.light_target_intensity_repo.get_all_intensities()
-                                scheduler.update_light_intensities(intensities)
-                            except Exception as e:
-                                logger.error(
-                                    f"Failed to reload light intensities on SCHEDULE_CHANGED: {e}"
-                                )
-                            try:
-                                programs = (
-                                    await self.database.light_programs_repo.get_all_programs()
-                                )
-                                scheduler.update_light_programs(programs)
-                            except Exception as e:
-                                logger.error(
-                                    f"Failed to reload light programs on SCHEDULE_CHANGED: {e}"
-                                )
-                            try:
-                                devices = await self.control_engine.config.get_devices()
-                                device_lookup: dict[tuple[str, str, str], dict[str, Any]] = {}
-                                for location, clusters in devices.items():
-                                    for cluster, devs in clusters.items():
-                                        for device_name, info in devs.items():
-                                            device_lookup[(location, cluster, device_name)] = dict(
-                                                info
-                                            )
-                                scheduler.update_device_lookup(device_lookup)
-                            except Exception as e:
-                                logger.error(
-                                    f"Failed to reload device lookup on SCHEDULE_CHANGED: {e}"
-                                )
+                        # Secondary schedule changes still install all projections as one version.
+                        await self._reload_runtime_snapshot()
 
                         # Invalidate schedule cache in StateManager
                         state = getattr(self.control_engine, "_state", None)
@@ -116,65 +84,7 @@ class ConfigEventsMixin:
                             await state.delete(f"schedule:{event.location}:{event.cluster}")
 
                     if event.event_type == ConfigEventType.MODE_CHANGED:
-                        # Reload mode_parameters + intensities + programs (device_lookup unchanged)
-                        scheduler = self.control_engine.scheduler
-                        if scheduler and self.database._db_connected:
-                            # 1. mode_parameters for the affected room
-                            try:
-                                active_mode = await self.database.room_mode_repo.get_active_mode(
-                                    event.location, event.cluster
-                                )
-                                if active_mode:
-                                    mode_name = active_mode.get("mode_name")
-                                    submode_name = active_mode.get("submode_name")
-                                    if mode_name:
-                                        params = (
-                                            await self.database.room_mode_repo.get_mode_parameters(
-                                                event.location,
-                                                event.cluster,
-                                                mode_name,
-                                                submode_name,
-                                            )
-                                        )
-                                        if params:
-                                            # Merge into existing mode_params (atomic swap of full dict)
-                                            current_params = dict(scheduler._mode_params)
-                                            current_params[(event.location, event.cluster)] = {
-                                                "mode_id": params.get("mode_id"),
-                                                "day_start": params.get("day_start_time", "06:00"),
-                                                "night_start": params.get(
-                                                    "night_start_time", "18:00"
-                                                ),
-                                                "ramp_up": params.get("light_ramp_up_minutes", 0),
-                                                "ramp_down": params.get(
-                                                    "light_ramp_down_minutes", 0
-                                                ),
-                                            }
-                                            scheduler.update_mode_parameters(current_params)
-                            except Exception as e:
-                                logger.error(
-                                    f"Failed to reload mode_parameters on MODE_CHANGED: {e}"
-                                )
-
-                            # 2. light intensities
-                            try:
-                                intensities = await self.database.light_target_intensity_repo.get_all_intensities()
-                                scheduler.update_light_intensities(intensities)
-                            except Exception as e:
-                                logger.error(
-                                    f"Failed to reload light intensities on MODE_CHANGED: {e}"
-                                )
-
-                            # 3. light programs
-                            try:
-                                programs = (
-                                    await self.database.light_programs_repo.get_all_programs()
-                                )
-                                scheduler.update_light_programs(programs)
-                            except Exception as e:
-                                logger.error(
-                                    f"Failed to reload light programs on MODE_CHANGED: {e}"
-                                )
+                        await self._reload_runtime_snapshot()
 
                         # Invalidate mode cache in StateManager
                         state = getattr(self.control_engine, "_state", None)
@@ -206,3 +116,10 @@ class ConfigEventsMixin:
         except asyncio.CancelledError:
             logger.info("Config event consumer stopped")
             raise
+
+    async def _reload_runtime_snapshot(self) -> None:
+        """Replace every control projection after a committed configuration event."""
+        registry = self.control_engine.runtime_device_registry
+        if registry is None:
+            raise RuntimeError("Runtime device registry is not configured")
+        await registry.reload_after_commit()

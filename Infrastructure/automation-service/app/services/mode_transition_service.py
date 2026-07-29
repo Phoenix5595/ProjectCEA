@@ -264,35 +264,16 @@ class ModeTransitionService:
             merged = await merge_schedules_with_config(db_schedules, cfg)
             scheduler.update_schedules(merged)
 
-            # 2. Refresh mode_parameters for active mode
-            mode_params = {}
-            active_mode = await self.db.room_mode_repo.get_active_mode(location, cluster)
-            if active_mode:
-                mode_name = active_mode.get("mode_name")
-                submode_name = active_mode.get("submode_name")
-                if mode_name:
-                    params = await self.db.room_mode_repo.get_mode_parameters(
-                        location, cluster, mode_name, submode_name
-                    )
-                    if params:
-                        mode_params[(location, cluster)] = {
-                            "mode_id": params.get("mode_id"),
-                            "day_start": params.get("day_start_time", "06:00"),
-                            "night_start": params.get("night_start_time", "18:00"),
-                            "ramp_up": params.get("light_ramp_up_minutes", 0),
-                            "ramp_down": params.get("light_ramp_down_minutes", 0),
-                        }
-            scheduler.update_mode_parameters(mode_params)
-
-            # 3. Refresh light intensities
-            intensities = await self.db.light_target_intensity_repo.get_all_intensities()
-            scheduler.update_light_intensities(intensities)
-
-            # 4. Refresh light programs
-            programs = await self.db.light_programs_repo.get_all_programs()
-            scheduler.update_light_programs(programs)
-
-            logger.info(f"Synchronously refreshed all scheduler caches for {location}/{cluster}")
+            registry = control_engine.runtime_device_registry
+            if registry is None:
+                raise RuntimeError("Runtime device registry is not configured")
+            snapshot = await registry.reload_after_commit()
+            logger.info(
+                "Synchronously installed runtime snapshot version=%s for %s/%s",
+                snapshot.version,
+                location,
+                cluster,
+            )
         except Exception as e:
             logger.error(f"Failed to trigger scheduler refresh: {e}")
 

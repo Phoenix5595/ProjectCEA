@@ -48,7 +48,7 @@ def _row_to_device(row: dict[str, Any]) -> Device:
     return Device(
         device_id=row.get("device_id"),
         device_type=row["device_type"],
-        channel=row["channel"] if row["channel"] is not None else -1,
+        channel=row["channel"],
         pid_enabled=row["pid_enabled"] if row["pid_enabled"] is not None else False,
         interlock_with=interlock_with,
         pid_setpoints=pid_setpoints,

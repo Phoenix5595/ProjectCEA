@@ -19,13 +19,17 @@ async def _sync_scheduler_light_intensities(
     database: DatabaseManager,
     scheduler: Any | None,
 ) -> None:
-    """Synchronously reload light intensities into the scheduler cache."""
-    if scheduler is None:
-        return
+    """Synchronously install the complete snapshot after a light-target commit."""
     try:
-        intensities = await database.light_target_intensity_repo.get_all_intensities()
-        scheduler.update_light_intensities(intensities)
-        logger.info(f"Scheduler light intensities updated: {len(intensities)} entries")
+        from app.main import container
+
+        registry = container.get_control_engine().runtime_device_registry
+        if registry is None:
+            raise RuntimeError("Runtime device registry is not configured")
+        snapshot = await registry.reload_after_commit()
+        logger.info(
+            "Installed runtime snapshot version=%s after light-target update", snapshot.version
+        )
     except Exception as e:
         logger.error(f"Failed to update scheduler light intensities: {e}", exc_info=True)
 

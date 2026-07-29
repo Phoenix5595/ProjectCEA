@@ -67,7 +67,7 @@ export function useWebSocket({ onDeviceUpdate, onSensorUpdate }: UseWebSocketOpt
           device_name: message.device,
           state: message.state,
           mode: message.mode,
-          channel: 0
+          channel: null
         });
       }
     });

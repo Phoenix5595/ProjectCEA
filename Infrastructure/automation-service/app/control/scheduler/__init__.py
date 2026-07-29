@@ -18,12 +18,15 @@ Architecture (production-safety rewrite):
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+from contextvars import ContextVar, Token
 from datetime import datetime, time
 from typing import Any
 from zoneinfo import ZoneInfo
 
 from shared.infra_logging import get_logger
 
+from ..runtime_device_snapshot import RuntimeDeviceSnapshot
 from .light_intensity import LightIntensityMixin
 from .light_programs import LightProgramsMixin
 from .photoperiod import PhotoperiodMixin
@@ -60,78 +63,87 @@ class Scheduler(
         self._climate_periods_repo = climate_periods_repo
         self._light_ramp_state: dict[tuple[Any, ...], dict[str, Any]] = {}
 
-        # --- In-memory caches (populated by update_*() methods) ---
+        # --- Installed projections (replaced only as one complete snapshot) ---
         # {(location, cluster): {mode_id, day_start, night_start, ramp_up, ramp_down}}
-        self._mode_params: dict[tuple[str, str], dict[str, Any]] = {}
+        self._installed_mode_params: Mapping[tuple[str, str], Mapping[str, Any]] = {}
         # {(device_id, mode_id): target_intensity}
-        self._light_intensities: dict[tuple[int, int], float] = {}
+        self._installed_light_intensities: Mapping[tuple[int, int], float] = {}
         # All enabled programs (raw list from repo)
-        self._light_programs: list[dict[str, Any]] = []
+        self._installed_light_programs: tuple[Mapping[str, Any], ...] = ()
         # Pre-indexed: {(location, cluster): [program dicts]}
-        self._light_programs_by_room: dict[tuple[str, str], list[dict[str, Any]]] = {}
+        self._installed_light_programs_by_room: Mapping[
+            tuple[str, str], tuple[Mapping[str, Any], ...]
+        ] = {}
         # {(location, cluster, device_name): {device_id, device_type, ...}}
-        self._device_lookup: dict[tuple[str, str, str], dict[str, Any]] = {}
-        # Set to True after first update_*() call; control loop checks before ticking
+        self._installed_device_lookup: Mapping[tuple[str, str, str], Mapping[str, Any]] = {}
+        self._active_snapshot: ContextVar[RuntimeDeviceSnapshot | None] = ContextVar(
+            "active_scheduler_snapshot", default=None
+        )
+        # Opened only by install_snapshot(), after every projection is coherent.
         self._ready: bool = False
 
         logger.info(f"Initialized scheduler with {len(schedules)} schedules")
 
     # ------------------------------------------------------------------
-    # Cache update methods (atomic reference swaps)
+    # Snapshot installation
     # ------------------------------------------------------------------
 
-    def update_mode_parameters(self, params: dict[tuple[str, str], dict[str, Any]]) -> None:
-        """Atomically swap the mode_parameters cache.
-
-        Args:
-            params: ``{(location, cluster): {mode_id, day_start, night_start,
-                ramp_up, ramp_down}}`` where day_start/night_start are ``time``
-                objects or ``"HH:MM"`` strings, ramp_up/ramp_down are int minutes.
-        """
-        new_dict = dict(params)
-        self._mode_params = new_dict
+    def install_snapshot(self, snapshot: RuntimeDeviceSnapshot) -> None:
+        """Install every scheduler projection from one immutable snapshot version."""
+        self._ready = False
+        self._installed_mode_params = snapshot.mode_parameters
+        self._installed_light_intensities = snapshot.light_intensities
+        self._installed_light_programs = snapshot.light_programs
+        self._installed_light_programs_by_room = snapshot.light_programs_by_room
+        self._installed_device_lookup = snapshot.device_info
         self._ready = True
-        logger.info(f"Updated mode_parameters cache: {len(new_dict)} rooms")
+        logger.info("Installed scheduler snapshot version=%s", snapshot.version)
 
-    def update_light_intensities(self, intensities: dict[tuple[int, int], float]) -> None:
-        """Atomically swap the light_target_intensity cache.
+    def bind_snapshot(self, snapshot: RuntimeDeviceSnapshot) -> Token[RuntimeDeviceSnapshot | None]:
+        """Bind the control tick's snapshot so scheduling cannot cross versions."""
+        return self._active_snapshot.set(snapshot)
 
-        Args:
-            intensities: ``{(device_id, mode_id): target_intensity}``
-        """
-        new_dict = dict(intensities)
-        self._light_intensities = new_dict
-        self._ready = True
-        logger.info(f"Updated light_intensities cache: {len(new_dict)} entries")
+    def release_snapshot(self, token: Token[RuntimeDeviceSnapshot | None]) -> None:
+        """Release the tick-local scheduler snapshot."""
+        self._active_snapshot.reset(token)
 
-    def update_light_programs(self, programs: list[dict[str, Any]]) -> None:
-        """Atomically swap the light_programs cache and pre-index by room.
+    @property
+    def _mode_params(self) -> Mapping[tuple[str, str], Mapping[str, Any]]:
+        """Expose the tick-local or latest complete photoperiod projection."""
+        snapshot = self._active_snapshot.get()
+        return snapshot.mode_parameters if snapshot is not None else self._installed_mode_params
 
-        Args:
-            programs: List of program dicts from ``LightProgramsRepository.get_all_programs()``.
-        """
-        new_list = list(programs)
-        new_index: dict[tuple[str, str], list[dict[str, Any]]] = {}
-        for prog in new_list:
-            key = (prog.get("location", ""), prog.get("cluster", ""))
-            new_index.setdefault(key, []).append(prog)
-        self._light_programs = new_list
-        self._light_programs_by_room = new_index
-        self._ready = True
-        logger.info(
-            f"Updated light_programs cache: {len(new_list)} programs across {len(new_index)} rooms"
+    @property
+    def _light_intensities(self) -> Mapping[tuple[int, int], float]:
+        """Expose the tick-local or latest complete intensity projection."""
+        snapshot = self._active_snapshot.get()
+        return (
+            snapshot.light_intensities
+            if snapshot is not None
+            else self._installed_light_intensities
         )
 
-    def update_device_lookup(self, devices: dict[tuple[str, str, str], dict[str, Any]]) -> None:
-        """Atomically swap the device lookup cache.
+    @property
+    def _light_programs(self) -> tuple[Mapping[str, Any], ...]:
+        """Expose the tick-local or latest complete light-program projection."""
+        snapshot = self._active_snapshot.get()
+        return snapshot.light_programs if snapshot is not None else self._installed_light_programs
 
-        Args:
-            devices: ``{(location, cluster, device_name): {device_id, device_type, ...}}``
-        """
-        new_dict = dict(devices)
-        self._device_lookup = new_dict
-        self._ready = True
-        logger.info(f"Updated device_lookup cache: {len(new_dict)} devices")
+    @property
+    def _light_programs_by_room(self) -> Mapping[tuple[str, str], tuple[Mapping[str, Any], ...]]:
+        """Expose the tick-local or latest complete room-program projection."""
+        snapshot = self._active_snapshot.get()
+        return (
+            snapshot.light_programs_by_room
+            if snapshot is not None
+            else self._installed_light_programs_by_room
+        )
+
+    @property
+    def _device_lookup(self) -> Mapping[tuple[str, str, str], Mapping[str, Any]]:
+        """Expose the tick-local or latest complete device lookup projection."""
+        snapshot = self._active_snapshot.get()
+        return snapshot.device_info if snapshot is not None else self._installed_device_lookup
 
     # ------------------------------------------------------------------
     # Climate period support (unchanged)

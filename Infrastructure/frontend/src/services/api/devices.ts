@@ -16,7 +16,7 @@ interface RawDevice {
   dimming_channel?: number | null;
   mode?: string;
   state?: number;
-  channel?: number;
+  channel?: number | null;
   manual_expires_at?: string | null;
 }
 

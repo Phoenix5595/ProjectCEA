@@ -8,17 +8,49 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 _UI_TO_DB_DEVICE_TYPES: dict[str, str] = {
     "heater": "heating",
     "dehumidifier": "dehumidifier",
     "extraction fan": "exhaust",
-    "fan": "cooling",
+    "fan": "exhaust",
     "humidifier": "humidifier",
     "co2 tank": "co2",
     "light": "light",
 }
+
+_UI_NON_LIGHT_DEVICE_TYPES = Literal[
+    "heater",
+    "heating",
+    "dehumidifier",
+    "fan",
+    "extraction fan",
+    "exhaust",
+    "humidifier",
+    "co2 tank",
+    "co2",
+    "cooling",
+]
+
+
+def normalize_device_type(device_type: str) -> str:
+    """Convert a UI actuator label to its physical canonical device type."""
+    normalized_type = device_type.strip().lower()
+    return _UI_TO_DB_DEVICE_TYPES.get(normalized_type, normalized_type)
+
+
+class _DisplayNameInput(BaseModel):
+    """Common validation for human-facing registry labels."""
+
+    @field_validator("display_name", check_fields=False)
+    @classmethod
+    def trim_display_name(cls, display_name: str) -> str:
+        """Reject blank labels while preserving a normalized human-facing name."""
+        trimmed_display_name = display_name.strip()
+        if not trimmed_display_name:
+            raise ValueError("display_name must not be blank")
+        return trimmed_display_name
 
 
 class Device(BaseModel):
@@ -29,7 +61,9 @@ class Device(BaseModel):
 
     device_id: int | None = Field(default=None, description="Primary key from device_registry")
     device_type: str
-    channel: int = Field(ge=0, le=15, description="MCP23017 relay channel (0-15)")
+    channel: int | None = Field(
+        default=None, ge=0, le=15, description="MCP23017 relay channel (0-15), if bound"
+    )
     pid_enabled: bool = False
     interlock_with: list[str] = []
     pid_setpoints: dict[str, int] = {}
@@ -53,17 +87,15 @@ class LightDevice(BaseModel):
 
     device_id: int | None = Field(default=None, description="Primary key from device_registry")
     device_type: Literal["light"] = "light"
-    board_id: int | None = Field(
-        default=None, ge=0, description="DFR0971 board identifier (0, 1, 2)"
-    )
-    dimming_channel: int | None = Field(
-        default=None, ge=0, le=1, description="DFR0971 channel on the board (0 or 1)"
-    )
+    board_id: int = Field(ge=0, le=2, description="DFR0971 board identifier (0, 1, 2)")
+    dimming_channel: int = Field(ge=0, le=1, description="DFR0971 channel on the board (0 or 1)")
     dimming_enabled: bool = True
     dimming_type: Literal["dfr0971"] = "dfr0971"
     safety_level: int = 0
     per_room_index: int = Field(ge=1, description="1-based index within the room")
-    relay_channel: int | None = Field(default=None, description="MCP23017 relay channel when bound")
+    relay_channel: int | None = Field(
+        default=None, ge=0, le=15, description="MCP23017 relay channel when bound"
+    )
     display_name: str
     device_name: str = Field(
         pattern=r"^light_[fvlo]_\d+$",
@@ -73,10 +105,13 @@ class LightDevice(BaseModel):
     cluster: Literal["main"] = "main"
 
 
-class LightDeviceCreate(BaseModel):
+class LightDeviceCreate(_DisplayNameInput):
     """Request body for creating a new light device on an empty DFR slot."""
 
-    board_id: int = Field(ge=0, description="DFR0971 board identifier")
+    model_config = ConfigDict(extra="forbid")
+
+    device_type: Literal["light"] = "light"
+    board_id: int = Field(ge=0, le=2, description="DFR0971 board identifier (0, 1, 2)")
     dimming_channel: int = Field(ge=0, le=1, description="DFR0971 channel (0 or 1)")
     room: str = Field(description="Room location (e.g. 'Flower Room')")
     display_name: str = Field(description="Human-readable name")
@@ -85,10 +120,15 @@ class LightDeviceCreate(BaseModel):
         ge=1,
         description="1-based index within the room; auto-suggested as max+1 when omitted",
     )
+    relay_channel: int | None = Field(
+        default=None, ge=0, le=15, description="MCP23017 relay channel when bound"
+    )
 
 
-class LightDeviceUpdate(BaseModel):
+class LightDeviceUpdate(_DisplayNameInput):
     """Request body for updating an existing light device."""
+
+    model_config = ConfigDict(extra="forbid")
 
     display_name: str | None = Field(default=None, description="New human-readable name")
     room: str | None = Field(default=None, description="New room location")
@@ -97,44 +137,100 @@ class LightDeviceUpdate(BaseModel):
     )
     relay_channel: int | None = Field(
         default=None,
+        ge=0,
+        le=15,
         description="Bind to relay channel (set to None to unbind)",
     )
     safety_level: int | None = Field(
         default=None, ge=0, le=100, description="Safety intensity level (0-100%)"
     )
     board_id: int | None = Field(
-        default=None, ge=0, description="DFR0971 board identifier (set to None to unbind)"
+        default=None, ge=0, le=2, description="DFR0971 board identifier (0, 1, 2)"
     )
     dimming_channel: int | None = Field(
         default=None,
         ge=0,
         le=1,
-        description="DFR0971 channel on the board (0 or 1, set to None to unbind)",
+        description="DFR0971 channel on the board (0 or 1)",
     )
 
+    @model_validator(mode="after")
+    def validate_update_contract(self) -> LightDeviceUpdate:
+        """Keep display and DFR identities valid when their fields are supplied."""
+        if "display_name" in self.model_fields_set and self.display_name is None:
+            raise ValueError("display_name cannot be null")
 
-class DeviceCreate(BaseModel):
+        updates_dfr_board = "board_id" in self.model_fields_set
+        updates_dfr_channel = "dimming_channel" in self.model_fields_set
+        if updates_dfr_board != updates_dfr_channel:
+            raise ValueError("board_id and dimming_channel must be updated together")
+        if updates_dfr_board and (self.board_id is None or self.dimming_channel is None):
+            raise ValueError("lights require a complete DFR board_id and dimming_channel pair")
+        return self
+
+
+class DeviceCreate(_DisplayNameInput):
     """Request body for creating a new non-light device."""
 
-    device_type: str = Field(description="UI device type (e.g. 'heater', 'fan')")
+    model_config = ConfigDict(extra="forbid")
+
+    device_type: _UI_NON_LIGHT_DEVICE_TYPES = Field(
+        description="UI device type describing the physical actuator"
+    )
     room: str = Field(description="Room location (e.g. 'Flower Room')")
     display_name: str = Field(description="Human-readable name")
-    channel: int = Field(ge=0, le=15, description="MCP23017 relay channel (0-15)")
+    channel: int | None = Field(
+        default=None, ge=0, le=15, description="MCP23017 relay channel (0-15), if bound"
+    )
     pid_enabled: bool = Field(default=False, description="Enable PID control")
     interlock_with: list[str] = Field(default=[], description="Devices to interlock with")
     pid_setpoints: dict[str, int] = Field(default={}, description="PID setpoint priorities")
 
+    @model_validator(mode="after")
+    def normalize_input_device_type(self) -> DeviceCreate:
+        """Parse UI aliases into the canonical physical actuator type."""
+        match normalize_device_type(self.device_type):
+            case "heating":
+                self.device_type = "heating"
+            case "dehumidifier":
+                self.device_type = "dehumidifier"
+            case "exhaust":
+                self.device_type = "exhaust"
+            case "humidifier":
+                self.device_type = "humidifier"
+            case "co2":
+                self.device_type = "co2"
+            case "cooling":
+                self.device_type = "cooling"
+            case unsupported_device_type:
+                raise ValueError(f"Unsupported device type: {unsupported_device_type}")
+        return self
 
-class DeviceUpdate(BaseModel):
+
+class DeviceUpdate(_DisplayNameInput):
     """Request body for updating an existing non-light device.
 
     Room is NOT updatable — device identity is tied to location.
     """
 
-    channel: int | None = Field(default=None, ge=0, le=15, description="New relay channel (0-15)")
+    model_config = ConfigDict(extra="forbid")
+
+    channel: int | None = Field(
+        default=None, ge=0, le=15, description="New relay channel (0-15, or null to unbind)"
+    )
     display_name: str | None = Field(default=None, description="New human-readable name")
     pid_enabled: bool | None = Field(default=None, description="Enable/disable PID control")
     interlock_with: list[str] | None = Field(default=None, description="Devices to interlock with")
     pid_setpoints: dict[str, int] | None = Field(
         default=None, description="PID setpoint priorities"
     )
+
+    @model_validator(mode="after")
+    def validate_update_contract(self) -> DeviceUpdate:
+        """Reject explicit label removal while allowing explicit relay unbinding."""
+        if "display_name" in self.model_fields_set and self.display_name is None:
+            raise ValueError("display_name cannot be null")
+        return self
+
+
+RegistryDeviceCreate = DeviceCreate | LightDeviceCreate
