@@ -17,6 +17,104 @@ from ..base import logger
 class LightRegistryMixin:
     """Mixin adding light device registry CRUD methods to DeviceRepository."""
 
+    async def assert_dfr_free(
+        self,
+        connection: Any,
+        board_id: int,
+        dimming_channel: int,
+        exclude_device_id: int | None = None,
+    ) -> dict[str, Any] | None:
+        """Lock and return the DFR owner, if another light holds the requested pair."""
+        row = await connection.fetchrow(
+            """SELECT * FROM device_registry WHERE device_type = 'light'
+               AND dimming_board_id = $1 AND dimming_channel = $2
+               AND ($3::integer IS NULL OR device_id != $3) FOR UPDATE""",
+            board_id,
+            dimming_channel,
+            exclude_device_id,
+        )
+        return dict(row) if row is not None else None
+
+    async def create_light_locked(
+        self,
+        connection: Any,
+        *,
+        board_id: int,
+        dimming_channel: int,
+        room: str,
+        display_name: str,
+        per_room_index: int,
+        relay_channel: int | None,
+    ) -> LightDevice:
+        """Create one light with an already-validated DFR pair in the caller transaction."""
+        device_name = _generate_light_device_name(room, per_room_index)
+        row = await connection.fetchrow(
+            """INSERT INTO device_registry
+                   (location, cluster, device_name, display_name, device_type, channel,
+                    dimming_enabled, dimming_type, dimming_board_id, dimming_channel,
+                    safety_level, pid_enabled, interlock_with, pid_setpoints,
+                    per_room_index, created_at, updated_at)
+               VALUES ($1, 'main', $2, $3, 'light', $4, TRUE, 'dfr0971', $5, $6,
+                       0, FALSE, '[]', '{}', $7, NOW(), NOW()) RETURNING *""",
+            room,
+            device_name,
+            display_name,
+            relay_channel,
+            board_id,
+            dimming_channel,
+            per_room_index,
+        )
+        return _row_to_light_device(dict(row))
+
+    async def update_light_locked(
+        self, connection: Any, device_id: int, fields: dict[str, Any]
+    ) -> LightDevice | None:
+        """Update a previously locked light without opening a nested transaction."""
+        current = await connection.fetchrow(
+            "SELECT * FROM device_registry WHERE device_id = $1 AND device_type = 'light'",
+            device_id,
+        )
+        if current is None:
+            return None
+        current_row = dict(current)
+        room = fields.get("room", current_row["location"])
+        per_room_index = fields.get("per_room_index", current_row["per_room_index"])
+        if room != current_row["location"] or per_room_index != current_row["per_room_index"]:
+            fields = {**fields, "device_name": _generate_light_device_name(room, per_room_index)}
+        column_map = {
+            "display_name": "display_name",
+            "room": "location",
+            "per_room_index": "per_room_index",
+            "relay_channel": "channel",
+            "safety_level": "safety_level",
+            "dimming_board_id": "dimming_board_id",
+            "dimming_channel": "dimming_channel",
+            "device_name": "device_name",
+        }
+        assignments = [
+            (column_map[field], value) for field, value in fields.items() if field in column_map
+        ]
+        if not assignments:
+            return _row_to_light_device(current_row)
+        set_parts = [
+            f"{column} = ${index}" for index, (column, _value) in enumerate(assignments, start=1)
+        ]
+        values = [value for _column, value in assignments]
+        row = await connection.fetchrow(
+            f"UPDATE device_registry SET {', '.join(set_parts)}, updated_at = NOW() "
+            f"WHERE device_id = ${len(values) + 1} RETURNING *",
+            *values,
+            device_id,
+        )
+        return _row_to_light_device(dict(row)) if row is not None else None
+
+    async def delete_light_locked(self, connection: Any, device_id: int) -> bool:
+        """Delete one locked light row from the registry."""
+        result = await connection.execute(
+            "DELETE FROM device_registry WHERE device_id = $1 AND device_type = 'light'", device_id
+        )
+        return result.endswith("1")
+
     async def get_lights_by_room(self, room: str) -> list[LightDevice]:
         """Get all light devices for a room."""
         try:
