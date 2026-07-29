@@ -1,0 +1,50 @@
+Task 8 — Local gates, deploy/reset hard stop preparation, and documentation updates
+Date: 2026-07-29
+Scope: local-only verification. No deployment, production service, production endpoint, production database, Redis, or I2C hardware was used.
+
+1. Automation service local gates
+Command:
+  cd Infrastructure/automation-service && ruff check . && ruff format --check . && python3 -m compileall -q app && pytest -q app/tests/pure
+Result:
+  All checks passed!
+  192 files already formatted
+  28 passed, 1 warning in 4.09s
+  Warning: existing Pydantic V1 @validator deprecation from app/schemas/calendar.py:66.
+
+2. Frontend local gates
+Command:
+  cd Infrastructure/frontend && npx tsc --noEmit && npm run build && npx vitest run src/components/devices/__tests__/targetValidation.test.ts src/components/devices/__tests__/relaySnapshot.test.ts
+Result:
+  TypeScript check exited 0 with no output.
+  vite v5.4.21 built 1,535 modules successfully in 11.00s.
+  Targeted Vitest run: 2 test files passed, 7 tests passed, duration 633ms.
+  Vite reported existing esbuild-option deprecation warnings; build exited 0.
+
+3. Cluster topology parity
+Command:
+  python3 Infrastructure/scripts/validate_cluster_topology.py
+Result:
+  Cluster topology parity check PASSED
+  Rooms compared: 4
+  Flower Room: dev='main', subs=('front', 'back'), url_slugs=('front', 'back')
+  Lab: dev='main', subs=(), url_slugs=('main',)
+  Outside: dev='main', subs=(), url_slugs=('main',)
+  Veg Room: dev='main', subs=(), url_slugs=('main',)
+
+4. Whitespace check
+Command:
+  git diff --check
+Result:
+  Exited 0 with no output.
+
+5. Guarded-reset script sandbox test
+Command:
+  bash Infrastructure/scripts/tests/test-reset-device-registry.sh
+Result:
+  Registry reset complete. Backup: /tmp/tmp.7W2raSkLSb/output/registry-reset-20260729T225203Z-2288601
+  reset-device-registry sandbox test passed
+
+Hard stop:
+  ./deploy.sh was not run.
+  Infrastructure/scripts/reset-device-registry.sh --confirm was not run.
+  Owner approval is required before either production operation.

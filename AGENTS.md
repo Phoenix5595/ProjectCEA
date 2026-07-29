@@ -99,6 +99,8 @@ Sensors → Ingestion → Redis + TimescaleDB → Control Loop → Actuators →
 
 ### Device Registry
 
+`device_registry` is the sole source for device identity, relay bindings, and DFR bindings. `RuntimeDeviceRegistry` builds and atomically installs one immutable `RuntimeDeviceSnapshot`; every control tick captures that reference once. `DeviceRegistryService` is the sole mutation path, and `RelayBoardStateManager` is the sole MCP23017 board sampler and owner of `cea:relay:board_snapshot`. There is no commissioning subsystem and no YAML device definition path.
+
 | Field | Description |
 |-------|-------------|
 | **device_id** | Primary key |
@@ -118,7 +120,8 @@ Sensors → Ingestion → Redis + TimescaleDB → Control Loop → Actuators →
 | **pid_setpoints** | JSON |
 | **per_room_index** | Integer |
 
-- 13 devices total: 6 Flower Room + 7 Veg Room, seeded from `automation_config.yaml` `devices:` section
+- The registry may be empty during the guarded operator reset/rebuild workflow. An empty registry installs a ready empty snapshot and must not emit relay-ON or nonzero DFR commands.
+- `automation_config.yaml` contains service and hardware configuration only; it must not define devices, relay channels, or DFR assignments.
 
 ### Light Target Intensity
 
@@ -148,7 +151,7 @@ Confirmed relay steals are performed atomically by `DeviceRegistryService`; the 
 
 ### Scheduler Caches
 
-The `Scheduler` class maintains 4 in-memory caches updated atomically: `update_mode_parameters()`, `update_light_intensities()`, `update_light_programs()`, `update_device_lookup()`. The `_ready` flag blocks ticks until populated.
+The `Scheduler` installs snapshot-derived mode, light intensity, light program, and device lookup caches as one `install_snapshot()` operation. The `_ready` flag blocks ticks until the complete immutable snapshot is installed.
 
 ### Cluster Topology Contract (Critical)
 
@@ -200,6 +203,7 @@ Per-room mapping (canonical, **single source of truth**):
 | **No bare excepts** | Proper exception handling | System reliability |
 | **Config validation required** | Service startup fails on invalid config | Prevent runtime errors |
 | **Never touch working systems** | Unless explicitly requested | Production stability |
+| **Registry reset is operator-only** | `Infrastructure/scripts/reset-device-registry.sh --confirm`, only after owner-approved deployment | Prevent destructive automated reset |
 
 ### Subagent QA Safety (Critical — Permanent Ban)
 
@@ -245,4 +249,4 @@ Prioritize system stability and crop safety. Refer to service-specific docs for 
 
 ---
 
-*Last updated: 2026-07-12*
+*Last updated: 2026-07-29 (registry canonicalization prepared; deployment pending owner approval)*

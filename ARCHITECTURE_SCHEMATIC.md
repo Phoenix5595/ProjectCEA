@@ -1,166 +1,104 @@
-# ProjectCEA – Architecture Schematic (Plan-Agent Style)
+# ProjectCEA – Architecture Schematic
 
-**Last updated (deployed):** 2026-07-12 — Schedule architecture redesign: photoperiod from mode_parameters, per-light intensity from light_target_intensity, light_programs for supplemental/override; removed runtime synthesis and dead Redis schedule-state code.
+**Last updated (deployed):** 2026-07-12
 
-> This file is the plan-style schematic: diagram-first, structured sections. Keep in sync with `ARCHITECTURE.md`. When deploying relevant changes, update both and copy previous versions to **`archive/`** (project root) with dated filenames.
-
----
-
-## TL;DR
-
-- **System**: Raspberry Pi 5, 6 Python services + React, 2 grow rooms.
-- **Data in**: CAN (ESP32), Modbus (soil), HTTP (weather) → Redis (live) + TimescaleDB (history).
-- **Control**: automation-service 1–5 s tick; backend 8000 (sensors), automation 8001 (control + frontend).
-- **Hardware**: MCP23017 relays (I2C 0), DFR0971 dimming (I2C 1). Deploy: `deploy.sh` / `rollback-deploy.sh`.
+**Prepared update:** 2026-07-29 — registry canonicalization is locally verified and deployment is pending explicit owner approval. The prior deployed schematic is retained as `archive/ARCHITECTURE_SCHEMATIC_2026-07-12.md`.
 
 ---
 
-## Diagram (Mermaid – Plan-Agent Style)
+## End-to-End Flow
 
 ```mermaid
-flowchart TB
-  subgraph HARDWARE["Hardware"]
-    ESP32["ESP32 nodes (CAN)\nFlower _b/_f, Veg _v"]
-    SOIL["Soil sensors\nRS485 Modbus"]
-    W1["1-Wire DS18B20\nGPIO 24 (lab/water)"]
-    EXT["External\n(weather HTTP)"]
-  end
-
-  subgraph INGEST["Ingestion Services"]
-    CAN["can-processor\n(no port)"]
-    SOIL_SVC["soil-sensor\n:8002"]
-    OW["onewire-worker\n:8004"]
-    WX["weather\n:8003"]
-  end
-
-  subgraph STORE["Data Stores"]
-    REDIS["Redis\nsensor:* (10s TTL)\nsensor:raw stream\nautomation:*"]
-    TSDB["TimescaleDB\nmeasurement\naggregates\neffective_setpoints"]
-  end
-
-  subgraph API["API & Control"]
-    BACK["cea-backend :8000\nsensor API, WebSocket"]
-    AUTO["automation-service :8001\ncontrol loop, setpoints\nPID, devices\nserves frontend"]
-  end
-
-  subgraph UI["User-Facing"]
-    FE["Frontend (React)\nDashboard (weather Quebec City top-right)\nZoneConfig"]
-    GRAF["Grafana\nPostgreSQL only"]
-  end
-
-  ESP32 -->|CAN| CAN
-  SOIL -->|Modbus| SOIL_SVC
-  W1 -->|sysfs| OW
-  EXT -->|HTTP| WX
-
-  CAN --> REDIS
-  CAN --> TSDB
-  SOIL_SVC --> REDIS
-  SOIL_SVC --> TSDB
-  OW --> REDIS
-  WX --> REDIS
-  WX --> TSDB
-
-  REDIS <-->|read/write| AUTO
-  TSDB <-->|read/write| AUTO
-  REDIS <-->|read| BACK
-  TSDB <-->|read| BACK
-
-  BACK --> FE
-  AUTO --> FE
-  TSDB --> GRAF
+flowchart LR
+  Sensors[CAN / Modbus / 1-Wire / Weather] --> Ingest[Ingestion services]
+  Ingest --> Redis[Redis live state]
+  Ingest --> Timescale[TimescaleDB history]
+  Redis --> Automation[automation-service]
+  Timescale --> Automation
+  Registry[(device_registry)] --> Runtime[RuntimeDeviceRegistry]
+  Runtime --> Snapshot[immutable RuntimeDeviceSnapshot]
+  Snapshot --> Automation
+  Automation --> MCP[MCP23017 relays\nI2C bus 0]
+  Automation --> DFR[DFR0971 dimming\nI2C bus 1]
+  Redis --> Backend[cea-backend :8000]
+  Timescale --> Backend
+  Backend --> Frontend[React frontend]
+  Automation --> Frontend
+  Timescale --> Grafana[Grafana]
 ```
 
 ---
 
-## Data Flow (Simplified)
+## Canonical Registry Flow
 
 ```mermaid
 sequenceDiagram
-  participant ESP32 as ESP32/CAN
-  participant CAN as can-processor
-  participant R as Redis
-  participant DB as TimescaleDB
-  participant AUTO as automation-service
-  participant FE as Frontend
+  participant DB as device_registry
+  participant RDR as RuntimeDeviceRegistry
+  participant Snap as RuntimeDeviceSnapshot
+  participant Tick as Control tick
+  participant Relay as RelayBoardStateManager
+  participant HW as MCP23017 / DFR0971
 
-  ESP32->>CAN: CAN frames
-  CAN->>R: sensor:*, sensor:raw (instant)
-  CAN->>DB: measurement (batched)
-  AUTO->>R: read sensor:*, effective_setpoint
-  AUTO->>R: write automation:*
-  AUTO->>DB: effective_setpoints, automation_state
-  FE->>AUTO: REST (setpoints, devices, schedules)
-  FE->>CAN/Backend: live data via Backend :8000
+  DB->>RDR: startup load or committed mutation
+  RDR->>RDR: build complete device + light projection
+  RDR->>Snap: freeze immutable snapshot
+  RDR->>Tick: atomically publish one reference
+  Tick->>Tick: capture snapshot once
+  Tick->>HW: apply only registry-backed assignments
+  Relay->>HW: sample GPIOA + GPIOB once
+  Relay->>Relay: persist cea:relay:board_snapshot
 ```
 
----
-
-## Components
-
-| Layer | Component | Role |
-|-------|-----------|------|
-| Hardware | ESP32 (CAN) | Flower Back/Front, Veg Main; 1 Hz sensors |
-| Hardware | Soil (RS485) | soil-sensor-service reads Modbus |
-| Hardware | 1-Wire DS18B20 | onewire-worker on GPIO 24 (lab temp, water temp) |
-| Hardware | MCP23017 | Relays only, I2C bus 0, 16 channels |
-| Hardware | DFR0971 | Dimming only, I2C bus 1, 6 channels |
-| Ingest | can-processor | CAN → Redis state + stream + TimescaleDB |
-| Ingest | soil-sensor-service | Modbus → Redis + TimescaleDB |
-| Ingest | onewire-worker | 1-Wire sysfs → Redis (lab_temp, water_temperature) |
-| Ingest | weather-service | External API → DB / Redis |
-| Store | Redis | sensor:*, sensor:raw, automation:*, effective_setpoint:* |
-| Store | TimescaleDB | measurement, aggregates, effective_setpoints, automation_state |
-| API | cea-backend :8000 | Sensor API, WebSocket; no static UI |
-| API | automation-service :8001 | Control loop, setpoints, devices, PID; serves frontend dist/ |
-| UI | Frontend | React; backend 8000 + automation 8001 |
-| UI | Grafana | Dashboards; PostgreSQL only |
+| Boundary | Contract |
+|---|---|
+| `device_registry` | Sole device, relay, and DFR source |
+| `DeviceRegistryService` | Sole registry mutation path; validates conflicts and safe output sequencing |
+| `RuntimeDeviceSnapshot` | Immutable and complete for one control tick |
+| `RelayBoardStateManager` | Sole MCP board sampler and snapshot owner |
+| `automation_config.yaml` | Service configuration only; no device definitions |
+| Commissioning subsystem | Removed; not part of startup or control |
 
 ---
 
-## Control Loop (automation-service)
+## Empty Registry Contract
 
-1. Read `sensor:*` from Redis.
-2. Load config (zones, setpoints) from DB.
-3. **Scheduler** (startup-gated by `asyncio.Event`):
-   - Photoperiod: `mode_parameters.day_start_time/night_start_time` → `is_in_photoperiod()`
-   - Intensity: `light_target_intensity` table (mode-specific, per-device)
-   - Programs: `light_programs` table (supplemental/override, priority-based)
-   - Climate: `climate_periods` (named periods with ramp_minutes)
-4. PID + VPD cascade; safety interlocks.
-5. Device commands → MCP/DFR; state → Redis `automation:*` and DB.
+```mermaid
+flowchart TD
+  Empty[device_registry has zero rows] --> Load[load_startup builds empty projection]
+  Load --> Ready[ready empty RuntimeDeviceSnapshot]
+  Ready --> API[API lifespan starts]
+  Ready --> Loop[control tick runs with zero devices]
+  Loop --> Safe[no relay-ON and no nonzero DFR command]
+```
 
-**Tick:** 1–5 s (configurable; max 5 s non-negotiable).
-
-**Schedule-related tables:**
-
-| Table | Purpose | Key Columns |
-|-------|---------|-------------|
-| `mode_parameters` | Photoperiod + ramp durations (room-level, per-mode) | `day_start_time`, `night_start_time`, `light_ramp_up_minutes`, `light_ramp_down_minutes` |
-| `light_target_intensity` | Per-light intensity (mode-specific) | `device_id`, `mode_id`, `target_intensity` (default 10%) |
-| `light_programs` | Supplemental/override programs | `program_type`, `start_time`, `end_time`, `cycle_enabled`, `priority` |
-| `schedules` | Non-light DAY/NIGHT rows only | `device_name`, `mode` (DAY/NIGHT), `start_time`, `end_time` |
-| `climate_periods` | Climate setpoints (independent of light) | `period_name`, `start_time`, `end_time`, `ramp_minutes`, setpoints |
-
-**Removed (T10):** `room_schedule` rows, per-device SUN/MOON rows for lights, `expand_light_schedules_for_control()` runtime synthesis, `SchedulesMixin` dead Redis code.
+The empty registry is a supported safe state for the operator-controlled reset/rebuild workflow. It is not a cue to recreate YAML devices or run an automatic commissioning process.
 
 ---
 
-## Deployment
+## Operator-Only Reset Boundary
 
-| Action | Command / Path |
-|--------|----------------|
-| Deploy | `./deploy.sh` |
-| Rollback | `./rollback-deploy.sh` (<30 s) |
-| Prod root | `/opt/projectcea/current` → `releases/<timestamp>-<git>` |
-| Dev root | `/home/antoine/ProjectCEA` |
+```mermaid
+flowchart LR
+  Gates[Local gates pass] --> Approval[Owner explicitly approves]
+  Approval --> Deploy[./deploy.sh]
+  Deploy --> Reset[reset-device-registry.sh --confirm]
+  Reset --> Rebuild[Operator rebuilds registry]
+```
 
-**Startup order:** postgresql, redis → can-setup → can-processor, soil-sensor, weather → cea-backend, automation-service.
+`Infrastructure/scripts/reset-device-registry.sh` is intentionally destructive, guarded by `--confirm`, and limited to registry-dependent reset tables. It is never invoked by tests, agents, or the control service. Deployment and reset remain separate owner actions.
 
 ---
 
-## Reference for Agents
+## Operational Constants
 
-- **Full narrative:** `ARCHITECTURE.md` (project root).
-- **This file:** Plan-style schematic (Mermaid + tables); update both when architecture changes and a deploy is done.
-- **Archive:** **`archive/`** at project root — dated copies (e.g. `ARCHITECTURE_SCHEMATIC_2026-01-30.md`).
+| Item | Value |
+|---|---|
+| Control tick | 1–5 seconds |
+| Sensor update | 1 Hz minimum |
+| Redis hot path | under 1 ms |
+| DB batch delay | at most 100 ms |
+| Relay hardware | MCP23017 only, bus 0 |
+| Dimming hardware | DFR0971 only, bus 1 |
+| Device cluster | `main` only |
+| Flower sensor URL slugs | `front`, `back` |
