@@ -18,6 +18,7 @@ from app.control.scheduler import Scheduler
 from app.database import DatabaseManager
 from app.hardware.dfr0971 import DFR0971Manager
 from app.hardware.mcp23017 import MCP23017Driver
+from app.hardware.safe_outputs import force_all_outputs_safe
 from app.redis_client import AutomationRedisClient
 from app.services.device_registry_service import DeviceRegistryService
 from shared.infra_logging import get_logger
@@ -332,6 +333,17 @@ class ServiceContainer:
                 logger.info("Background tasks stopped")
             except Exception as e:
                 logger.error(f"Error stopping background tasks: {e}")
+
+        if self.mcp23017 is not None:
+            try:
+                _ = force_all_outputs_safe(
+                    self.mcp23017,
+                    self.dfr0971_manager,
+                    "/run/projectcea",
+                )
+                logger.info("Shutdown force-off proof written to /run/projectcea")
+            except Exception as e:
+                logger.critical(f"Shutdown force-off proof failed: {e}")
 
         # Close database connection
         if self.database:
