@@ -9,9 +9,7 @@ from app.schemas.climate_periods import (
     PeriodsSaveRequest,
 )
 from app.schemas.device import (
-    DeviceConfigUpdate,
     DeviceControlRequest,
-    DeviceMappingUpdate,
     DeviceModeRequest,
 )
 from app.schemas.flags import FlagResponse, FlagUpdateRequest
@@ -49,8 +47,6 @@ __all__ = [
     # Device schemas
     "DeviceControlRequest",
     "DeviceModeRequest",
-    "DeviceMappingUpdate",
-    "DeviceConfigUpdate",
     # Light schemas
     "IntensityControl",
     "VoltageControl",

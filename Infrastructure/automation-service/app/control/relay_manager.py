@@ -112,6 +112,13 @@ class RelayManager:
         info = self._snapshot().device_info.get(key)
         return dict(info) if info is not None else None
 
+    def get_devices_for_location_cluster(
+        self, location: str, cluster: str
+    ) -> dict[str, dict[str, Any]]:
+        """Return the installed registry projection for one device cluster."""
+        devices = self._snapshot().hierarchy.get(location, {}).get(cluster, {})
+        return {device_name: dict(device_info) for device_name, device_info in devices.items()}
+
     async def set_device_state(
         self,
         location: str,

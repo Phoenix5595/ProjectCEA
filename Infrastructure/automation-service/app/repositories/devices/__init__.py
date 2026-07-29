@@ -10,18 +10,14 @@ from __future__ import annotations
 from typing import Any
 
 from app.repositories.devices._helpers import _row_to_typed_device
-from app.repositories.devices.hierarchy import (
-    HierarchyMixin,
-    _find_displaced_device,
-    iter_devices_flat,
-)
+from app.repositories.devices.hierarchy import iter_devices_flat
 from app.repositories.devices.registry import RegistryMixin
 from app.repositories.devices.registry_lights import LightRegistryMixin
 
 from ..base import BaseRepository, logger
 
 
-class DeviceRepository(BaseRepository, RegistryMixin, HierarchyMixin, LightRegistryMixin):
+class DeviceRepository(BaseRepository, RegistryMixin, LightRegistryMixin):
     """Repository for device state and mapping operations."""
 
     def __init__(self, pool: Any | None = None) -> None:
@@ -104,69 +100,6 @@ class DeviceRepository(BaseRepository, RegistryMixin, HierarchyMixin, LightRegis
             logger.error(f"Failed to get all device states: {e}")
             return []
 
-    async def get_device_mapping(
-        self, location: str, cluster: str, device_name: str
-    ) -> dict[str, Any] | None:
-        """Get device hardware mapping."""
-        try:
-            async with self.pool.acquire() as conn:
-                row = await conn.fetchrow(
-                    """SELECT location, cluster, device_name, channel, active_high, safe_state, mcp_board_id
-                       FROM device_mappings
-                       WHERE location = $1 AND cluster = $2 AND device_name = $3""",
-                    location,
-                    cluster,
-                    device_name,
-                )
-                if row:
-                    return dict(row)
-        except Exception as e:
-            logger.error(f"Failed to get device mapping: {e}")
-        return None
-
-    async def set_device_mapping(
-        self,
-        location: str,
-        cluster: str,
-        device_name: str,
-        channel: int,
-        active_high: bool = True,
-        safe_state: bool = False,
-        mcp_board_id: int = 0,
-    ) -> bool:
-        """Set device hardware mapping."""
-        try:
-            async with self.pool.acquire() as conn:
-                await conn.execute(
-                    """INSERT INTO device_mappings (location, cluster, device_name, channel, active_high, safe_state, mcp_board_id)
-                       VALUES ($1, $2, $3, $4, $5, $6, $7)
-                       ON CONFLICT (location, cluster, device_name)
-                       DO UPDATE SET channel = $4, active_high = $5, safe_state = $6, mcp_board_id = $7""",
-                    location,
-                    cluster,
-                    device_name,
-                    channel,
-                    active_high,
-                    safe_state,
-                    mcp_board_id,
-                )
-                return True
-        except Exception as e:
-            logger.error(f"Failed to set device mapping: {e}")
-            return False
-
-    async def get_all_device_mappings(self) -> list[dict[str, Any]]:
-        """Get all device mappings."""
-        try:
-            async with self.pool.acquire() as conn:
-                rows = await conn.fetch(
-                    "SELECT * FROM device_mappings ORDER BY location, cluster, device_name"
-                )
-                return [dict(row) for row in rows]
-        except Exception as e:
-            logger.error(f"Failed to get all device mappings: {e}")
-            return []
-
     async def get_latest_light_intensity(
         self, location: str, cluster: str, device_name: str
     ) -> float | None:
@@ -241,5 +174,4 @@ class DeviceRepository(BaseRepository, RegistryMixin, HierarchyMixin, LightRegis
 __all__ = [
     "DeviceRepository",
     "iter_devices_flat",
-    "_find_displaced_device",
 ]

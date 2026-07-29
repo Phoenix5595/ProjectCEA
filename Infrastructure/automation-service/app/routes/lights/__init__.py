@@ -61,9 +61,7 @@ def get_device_repo() -> DeviceRepository:
 
 
 from app.routes.lights import (  # noqa: E402
-    dfr_assignments,  # noqa: F401
     light_control,  # noqa: F401
-    light_crud,  # noqa: F401
     light_status,  # noqa: F401
     light_target,  # noqa: F401
     light_test,  # noqa: F401
