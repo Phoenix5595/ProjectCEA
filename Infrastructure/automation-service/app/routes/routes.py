@@ -85,16 +85,9 @@ def setup_dependency_overrides(app: FastAPI, container) -> None:
 
     # Override dependencies in devices module
     app.dependency_overrides[devices.get_database] = container.get_database
-    app.dependency_overrides[devices.get_config] = container.get_config
     app.dependency_overrides[devices.get_relay_manager] = container.get_relay_manager
 
     # Override dependencies in devices_crud module
-    app.dependency_overrides[devices_crud.get_device_repo] = (
-        lambda: container.get_database().device_repo
-    )
-    app.dependency_overrides[devices_crud.get_config] = container.get_config
-    app.dependency_overrides[devices_crud.get_database] = container.get_database
-
     # Override dependencies in hardware module
     app.dependency_overrides[hardware.get_relay_manager] = container.get_relay_manager
     app.dependency_overrides[hardware.get_relay_board_state_manager] = (
