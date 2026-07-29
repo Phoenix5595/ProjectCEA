@@ -1,10 +1,10 @@
-"""Atomic runtime device-registry loader."""
+"""Atomic runtime device-registry loader and serialized mutation boundary."""
 
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable
-from typing import TYPE_CHECKING, Any
+from collections.abc import Awaitable, Callable
+from typing import TYPE_CHECKING, Any, TypeVar
 
 from shared.infra_logging import get_logger
 
@@ -16,13 +16,18 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 SnapshotConsumer = Callable[[RuntimeDeviceSnapshot], None]
+MutationResult = TypeVar("MutationResult")
+Mutation = Callable[[Any], Awaitable[MutationResult]]
+_REGISTRY_MUTATION_ADVISORY_LOCK = 7_281_991
 
 
 class RuntimeDeviceRegistry:
-    """Loads complete device projections and atomically publishes one reference.
+    """Publishes one immutable snapshot and serializes assignment mutations.
 
-    Registry writes call :meth:`reload_after_commit` after their transaction
-    commits. Control ticks read the installed reference without querying the DB.
+    The process lock deliberately spans transaction begin, the PostgreSQL
+    transaction advisory lock, pending-snapshot construction, commit, and the
+    reference swap. Therefore a later committed write cannot publish before an
+    earlier write in this process.
     """
 
     def __init__(self, database: DatabaseManager) -> None:
@@ -30,7 +35,7 @@ class RuntimeDeviceRegistry:
         self._snapshot: RuntimeDeviceSnapshot | None = None
         self._consumers: list[SnapshotConsumer] = []
         self._next_version = 1
-        self._reload_lock = asyncio.Lock()
+        self._mutation_lock = asyncio.Lock()
 
     @property
     def snapshot(self) -> RuntimeDeviceSnapshot:
@@ -47,36 +52,61 @@ class RuntimeDeviceRegistry:
 
     async def load_startup(self) -> RuntimeDeviceSnapshot:
         """Load the initial complete projection."""
-        return await self._reload("startup")
+        async with self._mutation_lock:
+            snapshot = await self._build_snapshot()
+            return self._install(snapshot, "startup")
 
     async def reload_after_commit(self) -> RuntimeDeviceSnapshot:
-        """Install the complete projection that follows a committed registry mutation."""
-        return await self._reload("committed mutation")
+        """Reload externally committed registry-related projections safely."""
+        async with self._mutation_lock:
+            snapshot = await self._build_snapshot()
+            return self._install(snapshot, "external committed mutation")
 
-    async def _reload(self, reason: str) -> RuntimeDeviceSnapshot:
-        """Build every projection first, then replace exactly one snapshot reference."""
-        async with self._reload_lock:
-            try:
-                snapshot = await self._build_snapshot()
-            except Exception:
-                logger.exception("Runtime device snapshot reload failed during %s", reason)
-                raise
+    async def mutate(self, mutation: Mutation[MutationResult]) -> MutationResult:
+        """Run one registry mutation and publish its pending snapshot only after commit."""
+        async with self._mutation_lock:
+            pool = await self._database._get_pool()
+            async with pool.acquire() as connection:
+                async with connection.transaction():
+                    await connection.execute(
+                        "SELECT pg_advisory_xact_lock($1)", _REGISTRY_MUTATION_ADVISORY_LOCK
+                    )
+                    result = await mutation(connection)
+                    pending_snapshot = await self._build_snapshot(connection)
 
-            for consumer in self._consumers:
-                consumer(snapshot)
-            self._snapshot = snapshot
-            self._next_version += 1
-            logger.info(
-                "Installed runtime device snapshot version=%s (%s)", snapshot.version, reason
+            await self._after_commit_before_install(pending_snapshot)
+            self._install(pending_snapshot, "committed registry mutation")
+            return result
+
+    async def _after_commit_before_install(self, snapshot: RuntimeDeviceSnapshot) -> None:
+        """Test seam for proving the process lock covers commit-to-publication ordering."""
+        del snapshot
+
+    def _install(self, snapshot: RuntimeDeviceSnapshot, reason: str) -> RuntimeDeviceSnapshot:
+        """Synchronously replace the installed reference after a complete projection exists."""
+        for consumer in self._consumers:
+            consumer(snapshot)
+        self._snapshot = snapshot
+        self._next_version += 1
+        logger.info("Installed runtime device snapshot version=%s (%s)", snapshot.version, reason)
+        return snapshot
+
+    async def _build_snapshot(self, connection: Any | None = None) -> RuntimeDeviceSnapshot:
+        """Build every projection, optionally from the still-uncommitted connection."""
+        if connection is None:
+            hierarchy = await self._database.device_repo.get_all_as_hierarchy()
+            mode_parameters = await self._load_active_mode_parameters(hierarchy)
+            light_intensities = (
+                await self._database.light_target_intensity_repo.get_all_intensities()
             )
-            return snapshot
-
-    async def _build_snapshot(self) -> RuntimeDeviceSnapshot:
-        """Fetch all control projections without publishing a partial result."""
-        hierarchy = await self._database.device_repo.get_all_as_hierarchy()
-        mode_parameters = await self._load_active_mode_parameters(hierarchy)
-        light_intensities = await self._database.light_target_intensity_repo.get_all_intensities()
-        light_programs = await self._database.light_programs_repo.get_all_programs()
+            light_programs = await self._database.light_programs_repo.get_all_programs()
+        else:
+            hierarchy = await self._load_hierarchy_on_connection(connection)
+            mode_parameters = await self._load_active_mode_parameters_on_connection(
+                connection, hierarchy
+            )
+            light_intensities = await self._load_light_intensities_on_connection(connection)
+            light_programs = await self._load_light_programs_on_connection(connection)
         return RuntimeDeviceSnapshot.create(
             version=self._next_version,
             hierarchy=hierarchy,
@@ -84,6 +114,78 @@ class RuntimeDeviceRegistry:
             light_intensities=light_intensities,
             light_programs=light_programs,
         )
+
+    async def _load_hierarchy_on_connection(
+        self, connection: Any
+    ) -> dict[str, dict[str, dict[str, dict[str, Any]]]]:
+        """Load the registry hierarchy through the transaction connection."""
+        rows = await connection.fetch(
+            """SELECT device_id, location, cluster, device_name, display_name, device_type,
+                      channel, dimming_enabled, dimming_type, dimming_board_id,
+                      dimming_channel, safety_level, pid_enabled, interlock_with,
+                      pid_setpoints, per_room_index, created_at, updated_at
+               FROM device_registry ORDER BY location, cluster, device_name"""
+        )
+        hierarchy: dict[str, dict[str, dict[str, dict[str, Any]]]] = {}
+        for row in rows:
+            device = dict(row)
+            hierarchy.setdefault(device["location"], {}).setdefault(device["cluster"], {})[
+                device["device_name"]
+            ] = device
+        return hierarchy
+
+    async def _load_active_mode_parameters_on_connection(
+        self, connection: Any, hierarchy: dict[str, dict[str, dict[str, dict[str, Any]]]]
+    ) -> dict[tuple[str, str], dict[str, Any]]:
+        """Build active photoperiod projections through the mutation transaction."""
+        projection: dict[tuple[str, str], dict[str, Any]] = {}
+        for location, clusters in hierarchy.items():
+            for cluster in clusters:
+                active_mode = await connection.fetchrow(
+                    """SELECT arm.mode_id, arm.submode_id FROM room_active_mode arm
+                       WHERE arm.location = $1 AND arm.cluster = $2""",
+                    location,
+                    cluster,
+                )
+                if active_mode is None:
+                    continue
+                parameters = await connection.fetchrow(
+                    """SELECT mode_id, day_start_time, night_start_time,
+                              light_ramp_up_minutes, light_ramp_down_minutes
+                       FROM mode_parameters
+                       WHERE location = $1 AND cluster = $2 AND mode_id = $3
+                         AND COALESCE(submode_id, -1) = COALESCE($4, -1)""",
+                    location,
+                    cluster,
+                    active_mode["mode_id"],
+                    active_mode["submode_id"],
+                )
+                if parameters is None:
+                    continue
+                projection[(location, cluster)] = {
+                    "mode_id": parameters["mode_id"],
+                    "day_start": str(parameters["day_start_time"])[:5],
+                    "night_start": str(parameters["night_start_time"])[:5],
+                    "ramp_up": parameters["light_ramp_up_minutes"],
+                    "ramp_down": parameters["light_ramp_down_minutes"],
+                }
+        return projection
+
+    async def _load_light_intensities_on_connection(
+        self, connection: Any
+    ) -> dict[tuple[int, int], float]:
+        """Load intensity anchors through the mutation transaction."""
+        rows = await connection.fetch(
+            "SELECT device_id, mode_id, target_intensity FROM light_target_intensity"
+        )
+        return {(row["device_id"], row["mode_id"]): float(row["target_intensity"]) for row in rows}
+
+    async def _load_light_programs_on_connection(self, connection: Any) -> list[dict[str, Any]]:
+        """Load programs through the mutation transaction in repository ordering."""
+        rows = await connection.fetch(
+            "SELECT * FROM light_programs WHERE enabled = TRUE ORDER BY priority DESC, created_at ASC"
+        )
+        return [dict(row) for row in rows]
 
     async def _load_active_mode_parameters(
         self, hierarchy: dict[str, dict[str, dict[str, dict[str, Any]]]]

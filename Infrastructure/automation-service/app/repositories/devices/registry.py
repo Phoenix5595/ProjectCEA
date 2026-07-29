@@ -29,6 +29,123 @@ from ..base import logger
 class RegistryMixin:
     """Mixin adding device registry CRUD methods to DeviceRepository."""
 
+    async def get_device_for_update(self, connection: Any, device_id: int) -> dict[str, Any] | None:
+        """Lock and return one registry row for a serialized assignment mutation."""
+        row = await connection.fetchrow(
+            "SELECT * FROM device_registry WHERE device_id = $1 FOR UPDATE", device_id
+        )
+        return dict(row) if row is not None else None
+
+    async def find_relay_owner_for_update(
+        self, connection: Any, channel: int, exclude_device_id: int | None = None
+    ) -> dict[str, Any] | None:
+        """Lock the current relay owner so conflict decisions and steals are atomic."""
+        row = await connection.fetchrow(
+            """SELECT * FROM device_registry WHERE channel = $1
+               AND ($2::integer IS NULL OR device_id != $2)
+               FOR UPDATE""",
+            channel,
+            exclude_device_id,
+        )
+        return dict(row) if row is not None else None
+
+    async def clear_relay_binding(self, connection: Any, device_id: int) -> None:
+        """Clear exactly one locked registry relay binding without deleting its device."""
+        await connection.execute(
+            "UPDATE device_registry SET channel = NULL, updated_at = NOW() WHERE device_id = $1",
+            device_id,
+        )
+
+    async def assign_relay_steal(
+        self, connection: Any, device_id: int, channel: int, displaced_device_id: int
+    ) -> None:
+        """Atomically clear the locked displaced binding and assign its relay to the requester."""
+        await self.clear_relay_binding(connection, displaced_device_id)
+        await connection.execute(
+            "UPDATE device_registry SET channel = $1, updated_at = NOW() WHERE device_id = $2",
+            channel,
+            device_id,
+        )
+
+    async def create_device_locked(self, connection: Any, create: DeviceCreate) -> Device:
+        """Create a non-light device using the caller's serialized transaction."""
+        canonical_type = _UI_TO_DB_DEVICE_TYPES.get(create.device_type, create.device_type)
+        locked_rows = await connection.fetch(
+            """SELECT device_id FROM device_registry
+               WHERE location = $1 AND device_type = $2 FOR UPDATE""",
+            create.room,
+            canonical_type,
+        )
+        device_name = _generate_device_name(create.room, canonical_type, len(locked_rows) + 1)
+        row = await connection.fetchrow(
+            """INSERT INTO device_registry
+                   (location, cluster, device_name, display_name, device_type, channel,
+                    pid_enabled, interlock_with, pid_setpoints, created_at, updated_at)
+               VALUES ($1, 'main', $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, NOW(), NOW())
+               RETURNING *""",
+            create.room,
+            device_name,
+            create.display_name,
+            canonical_type,
+            create.channel,
+            create.pid_enabled,
+            json.dumps(create.interlock_with),
+            json.dumps(create.pid_setpoints),
+        )
+        return _row_to_device(dict(row))
+
+    async def update_device_locked(
+        self, connection: Any, device_id: int, update: DeviceUpdate
+    ) -> Device | None:
+        """Update a locked non-light row without opening a second transaction."""
+        fields = update.model_dump(exclude_unset=True)
+        assignments: list[tuple[str, Any]] = []
+        for column in ("channel", "display_name", "pid_enabled"):
+            if column in fields:
+                assignments.append((column, fields[column]))
+        for column in ("interlock_with", "pid_setpoints"):
+            if column in fields:
+                assignments.append((f"{column}::jsonb", json.dumps(fields[column])))
+        if not assignments:
+            row = await connection.fetchrow(
+                "SELECT * FROM device_registry WHERE device_id = $1", device_id
+            )
+            return _row_to_device(dict(row)) if row is not None else None
+        set_parts = [
+            f"{column.split('::')[0]} = ${index}{'::jsonb' if '::' in column else ''}"
+            for index, (column, _value) in enumerate(assignments, start=1)
+        ]
+        values = [value for _column, value in assignments]
+        row = await connection.fetchrow(
+            f"UPDATE device_registry SET {', '.join(set_parts)}, updated_at = NOW() "
+            f"WHERE device_id = ${len(values) + 1} RETURNING *",
+            *values,
+            device_id,
+        )
+        return _row_to_device(dict(row)) if row is not None else None
+
+    async def delete_device_locked(self, connection: Any, device_id: int) -> bool:
+        """Delete a previously locked non-light registry row."""
+        result = await connection.execute(
+            "DELETE FROM device_registry WHERE device_id = $1 AND device_type != 'light'", device_id
+        )
+        return result.endswith("1")
+
+    async def delete_current_state_locked(self, connection: Any, device: dict[str, Any]) -> None:
+        """Clean device state and effective light setpoints in the mutation transaction."""
+        await connection.execute(
+            """DELETE FROM device_states WHERE location = $1 AND cluster = $2 AND device_name = $3""",
+            device["location"],
+            device["cluster"],
+            device["device_name"],
+        )
+        await connection.execute(
+            """DELETE FROM effective_setpoints WHERE location = $1 AND cluster = $2 AND device_name = $3""",
+            device["location"],
+            device["cluster"],
+            device["device_name"],
+        )
+
     async def get_device_id(self, location: str, cluster: str, device_name: str) -> int | None:
         """Get device_id by location/cluster/device_name."""
         try:
