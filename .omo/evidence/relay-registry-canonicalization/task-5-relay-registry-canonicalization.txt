@@ -44,3 +44,58 @@ Unified frontend registry, relay views, DFR panel, light targets, and device man
 - The shared hook polls at 5s interval (matching existing relay state polling)
 - ZoneConfig still uses `relayChannels` local state derived from shared data (preserves existing menu action logic)
 - DfrBoardsPanel was NOT yet refactored to consume the shared hook directly (it still uses its own fetch) — this can be done in a follow-up
+
+---
+
+## Follow-up: DfrBoardsPanel Registry Migration (2026-07-29)
+
+**Status**: PASS
+
+### Changes
+
+#### DfrBoardsPanel refactor
+- `Infrastructure/frontend/src/components/devices/DfrBoardsPanel.tsx` — fully rewritten to consume `useDeviceRegistry` hook instead of legacy `apiClient.getDfrAssignments` and `apiClient.getLightsByRoom`
+- Board metadata (board_id → I2C address) now uses a frontend-side constant mapping: board 0 → 0x88, board 1 → 0x89, board 2 → 0x90
+- Board availability derived from registry entries: if any light has `board_id === N`, board N is marked "Available"; otherwise "Missing"
+- Slot assignments derived from registry entries where `device_type === 'light'` AND `board_id != null` AND `dimming_channel != null`
+- Rename operation now calls `apiClient.updateDevice(device_id, { display_name })` instead of legacy `apiClient.updateDeviceConfig`
+- Edit (room/per_room_index change) now calls `apiClient.updateDevice(device_id, { display_name, room?, per_room_index? })` instead of legacy `apiClient.updateLight`
+- Remove operation now calls `apiClient.deleteDevice(device_id)` instead of legacy `apiClient.deleteLight`
+- Test operation retains bounded `apiClient.testLight(device_id)` endpoint (not a mutation owner, just a read-only verification trigger)
+- Removed `roomLightsCache` state and all `getLightsByRoom` calls — registry provides all needed data
+- Component no longer accepts `refreshKey` / `onRefresh` props (it refreshes via the shared hook)
+
+#### Legacy API method removal
+- Removed from `Infrastructure/frontend/src/services/api/devices.ts`:
+  - `getDfrAssignments` (interface + implementation)
+  - `assignDfrChannel` (interface + implementation)
+  - `createLight` (interface + implementation)
+  - `updateLight` (interface + implementation)
+  - `deleteLight` (interface + implementation)
+  - `getLightsByRoom` (interface + implementation)
+  - `updateDeviceConfig` (interface + implementation)
+- Retained: `testLight` (bounded test endpoint, still used by DfrBoardsPanel)
+- Removed `LightDevice` type import from devices.ts (no longer used)
+- Verified zero remaining callers of removed methods via grep across `src/`
+
+#### DeviceManager prop cleanup
+- `Infrastructure/frontend/src/components/DeviceManager.tsx` — removed `refreshKey` and `onRefresh` props passed to DfrBoardsPanel (component no longer accepts them)
+
+### Gates (re-verified)
+
+- `cd Infrastructure/frontend && npx tsc --noEmit` — PASS (no output)
+- `cd Infrastructure/frontend && npm run build` — PASS (built in 10.59s)
+- `cd Infrastructure/frontend && npx vitest run src/components/devices/__tests__/targetValidation.test.ts src/components/devices/__tests__/relaySnapshot.test.ts` — 2 files passed, 7 tests passed
+- `cd Infrastructure/automation-service && ruff check .` — All checks passed!
+- `cd Infrastructure/automation-service && python3 -m compileall -q app` — PASS (no output)
+- `git diff --check` — PASS (no trailing whitespace)
+
+### Behavior verification
+
+- DfrBoardsPanel: no longer calls legacy endpoints; all data from `useDeviceRegistry`
+- Board metadata: frontend-side constant mapping (no backend endpoint needed)
+- Board availability: derived from registry entries (lights with board_id)
+- Slot assignments: derived from registry entries (lights with board_id + dimming_channel)
+- Rename/edit/remove: use canonical `updateDevice` / `deleteDevice` API
+- Test: retains bounded `testLight` endpoint (not a mutation owner)
+- Zero remaining callers of removed legacy methods (verified via grep)
