@@ -8,6 +8,7 @@ from fastapi import Depends, HTTPException
 
 from app.config import ConfigLoader
 from app.database import DatabaseManager
+from app.repositories.light_target_intensity import validate_normal_target_intensity
 from app.routes.lights import get_config, get_database, get_scheduler, router
 from app.schemas.lights import LightIntensityUpdate, TargetIntensityControl
 from shared.infra_logging import get_logger
@@ -67,8 +68,10 @@ async def set_target_intensity(
     database: DatabaseManager = Depends(get_database),
     scheduler: Any = Depends(get_scheduler),
 ) -> dict[str, Any]:
-    if control.target_intensity < 0 or control.target_intensity > 100:
-        raise HTTPException(status_code=400, detail="Target intensity must be between 0 and 100")
+    try:
+        target_intensity = validate_normal_target_intensity(control.target_intensity)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     devices = await config.get_devices()
     device_info = devices.get(location, {}).get(cluster, {}).get(device_name)
@@ -97,7 +100,7 @@ async def set_target_intensity(
 
     # Write to light_target_intensity
     ok = await database.light_target_intensity_repo.set_intensity(
-        device_id, mode_id, control.target_intensity
+        device_id, mode_id, target_intensity
     )
     if not ok:
         raise HTTPException(
@@ -116,7 +119,7 @@ async def set_target_intensity(
             "action": "light_target_intensity_updated",
             "device_name": device_name,
             "device_id": device_id,
-            "target_intensity": control.target_intensity,
+            "target_intensity": target_intensity,
             "mode_name": mode_name,
         },
     )
@@ -127,7 +130,7 @@ async def set_target_intensity(
         "cluster": cluster,
         "device": device_name,
         "device_id": device_id,
-        "target_intensity": control.target_intensity,
+        "target_intensity": target_intensity,
         "mode_name": mode_name,
     }
 
@@ -139,8 +142,10 @@ async def update_light_intensity(
     database: DatabaseManager = Depends(get_database),
     scheduler: Any = Depends(get_scheduler),
 ) -> dict[str, Any]:
-    if control.target_intensity < 0 or control.target_intensity > 100:
-        raise HTTPException(status_code=400, detail="Target intensity must be between 0 and 100")
+    try:
+        target_intensity = validate_normal_target_intensity(control.target_intensity)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     # Look up device from registry
     device_type = await database.device_repo.get_device_type_by_id(device_id)
@@ -169,7 +174,7 @@ async def update_light_intensity(
 
     # Write to light_target_intensity
     ok = await database.light_target_intensity_repo.set_intensity(
-        device_id, mode_id, control.target_intensity
+        device_id, mode_id, target_intensity
     )
     if not ok:
         raise HTTPException(
@@ -188,7 +193,7 @@ async def update_light_intensity(
             "action": "light_target_intensity_updated",
             "device_name": device_name,
             "device_id": device_id,
-            "target_intensity": control.target_intensity,
+            "target_intensity": target_intensity,
             "mode_name": mode_name,
         },
     )
@@ -199,6 +204,6 @@ async def update_light_intensity(
         "device": device_name,
         "location": location,
         "cluster": cluster,
-        "target_intensity": control.target_intensity,
+        "target_intensity": target_intensity,
         "mode_name": mode_name,
     }

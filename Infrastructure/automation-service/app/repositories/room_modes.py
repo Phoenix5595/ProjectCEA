@@ -65,6 +65,22 @@ class RoomModeRepository(BaseRepository):
             logger.error(f"Failed to get room modes: {e}")
             return []
 
+    async def get_mode_ids_for_room_cluster(self, location: str, cluster: str) -> list[int]:
+        """Get mode IDs with photoperiod parameters for one room and cluster."""
+        try:
+            async with self.pool.acquire() as conn_raw:
+                conn: Connection = cast("Connection", conn_raw)
+                rows = await conn.fetch(
+                    """SELECT DISTINCT mode_id FROM mode_parameters
+                       WHERE location = $1 AND cluster = $2 ORDER BY mode_id""",
+                    location,
+                    cluster,
+                )
+                return [row["mode_id"] for row in rows]
+        except Exception as e:
+            logger.error(f"Failed to get mode IDs for {location}/{cluster}: {e}")
+            return []
+
     async def get_room_mode_by_name(self, name: str) -> dict[str, Any] | None:
         """Get a single room mode by name (case-insensitive)."""
         try:
