@@ -19,6 +19,7 @@ from app.control.engine_config_cache import EngineConfigCache
 from app.control.light_effective_setpoint_logging import log_light_effective_intensities_for_cluster
 from app.control.performance_monitor import get_performance_monitor
 from app.control.pid_controller_manager import PIDControllerManager
+from app.control.relay_board_state_manager import RelayBoardStateManager
 from app.control.relay_manager import RelayManager
 from app.control.runtime_device_registry import RuntimeDeviceRegistry
 from app.control.runtime_device_snapshot import RuntimeDeviceSnapshot
@@ -54,6 +55,7 @@ class ControlEngine:
         scheduler: Scheduler,
         rules_engine: RulesEngine,
         runtime_device_registry: RuntimeDeviceRegistry,
+        relay_board_state_manager: RelayBoardStateManager | None = None,
         alarm_manager: AlarmManager | None = None,
         dfr0971_manager: Any | None = None,  # DFR0971Manager (avoid circular import)
     ):
@@ -76,6 +78,7 @@ class ControlEngine:
         self.alarm_manager = alarm_manager
         self.dfr0971_manager = dfr0971_manager
         self.runtime_device_registry = runtime_device_registry
+        self.relay_board_state_manager = relay_board_state_manager
 
         # Initialize extracted components
         self.sensor_data_manager = SensorDataManager(database)
@@ -256,6 +259,8 @@ class ControlEngine:
         try:
             await self._run_control_loop_with_snapshot(snapshot)
         finally:
+            if self.relay_board_state_manager is not None:
+                await self.relay_board_state_manager.sample()
             self.scheduler.release_snapshot(scheduler_snapshot_token)
             self.relay_manager.release_snapshot(snapshot_token)
 
@@ -508,7 +513,7 @@ class ControlEngine:
         current_state = self.relay_manager.get_device_state(location, cluster, device_name) or 0
 
         # Set device state
-        success, error_reason = self.relay_manager.set_device_state(
+        success, error_reason = await self.relay_manager.set_device_state(
             location, cluster, device_name, state, mode
         )
 
@@ -516,6 +521,7 @@ class ControlEngine:
             logger.warning(f"Failed to set device state: {error_reason}")
             if error_reason and "interlock" in error_reason.lower():
                 reason = "interlock"
+            return
 
         # Get channel for logging
         channel = self.relay_manager.get_channel(location, cluster, device_name) or 0
