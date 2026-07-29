@@ -40,15 +40,25 @@ export function useDeviceRegistry(): UseDeviceRegistryReturn {
   const fetchAll = useCallback(async () => {
     setError(null)
     try {
-      const [registryData, relayData, channelsData] = await Promise.all([
+      const [registryData, relayData] = await Promise.all([
         apiClient.getDeviceRegistry(),
         apiClient.getRelayBoardState(),
-        apiClient.getChannels(),
       ])
       setRegistry(registryData)
       setRelayState(relayData)
       setMcpConnected(relayData.mcp_connected)
-      setChannels(Object.values(channelsData.channels))
+      setChannels(Array.from({ length: 16 }, (_, channel) => {
+        const device = registryData.find((entry) => (entry.channel ?? entry.relay_channel) === channel)
+        return {
+          channel,
+          device_name: device?.device_name ?? null,
+          display_name: device?.display_name ?? null,
+          device_type: device?.device_type ?? null,
+          location: device?.location ?? null,
+          cluster: device?.cluster ?? null,
+          light_name: device?.device_type === 'light' ? device.display_name : null,
+        }
+      }))
     } catch (err) {
       logger.error('Failed to fetch device registry data:', err)
       setError('Failed to load device data')

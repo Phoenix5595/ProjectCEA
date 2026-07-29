@@ -17,19 +17,3 @@ class DeviceModeRequest(BaseModel):
     """Request model for setting device control mode."""
 
     mode: str  # 'manual', 'auto', 'scheduled'
-
-
-class DeviceMappingUpdate(BaseModel):
-    """Request model for updating device relay mapping."""
-
-    channel: int
-    active_high: bool = True
-    safe_state: int = 0
-    mcp_board_id: int | None = None
-
-
-class DeviceConfigUpdate(BaseModel):
-    """Request model for updating device configuration."""
-
-    display_name: str | None = None
-    device_type: str | None = None

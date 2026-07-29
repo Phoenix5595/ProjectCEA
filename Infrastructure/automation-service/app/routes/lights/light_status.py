@@ -7,7 +7,6 @@ from typing import Any
 
 from fastapi import Depends, HTTPException
 
-from app.cluster_config import iter_flower_main_merged_devices
 from app.config import ConfigLoader
 from app.control.schedule_merge import merge_schedules_with_config
 from app.control.scheduler import LOCAL_TZ
@@ -126,14 +125,8 @@ async def get_zone_lights_status(
 ) -> dict[str, Any]:
     """Return intensity + targets for all dimmable lights in one round-trip (ZoneConfig Light intensity)."""
     devices = await config.get_devices()
-    location_config = devices.get(location, {}) or {}
-    if location == "Flower Room" and cluster == "main":
-        device_entries = iter_flower_main_merged_devices(location_config)
-    else:
-        raw = location_config.get(cluster, {}) or {}
-        device_entries = [
-            (cluster, name, info) for name, info in raw.items() if isinstance(info, dict)
-        ]
+    raw = devices.get(location, {}).get(cluster, {}) or {}
+    device_entries = [(cluster, name, info) for name, info in raw.items() if isinstance(info, dict)]
     if not device_entries:
         return {"lights": []}
 
@@ -177,11 +170,7 @@ async def get_zone_lights_status(
             logger.error(f"Failed to load light targets for {location}/{cluster}: {e}")
 
     lights_out: list[dict[str, Any]] = []
-    seen_device_names: set[str] = set()
     for src_cluster, device_name, device_info in device_entries:
-        if device_name in seen_device_names:
-            continue
-        seen_device_names.add(device_name)
         if device_info.get("device_type") != "light":
             continue
         if not device_info.get("dimming_enabled", False):

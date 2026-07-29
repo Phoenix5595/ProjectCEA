@@ -140,7 +140,7 @@ Sensors → Ingestion → Redis + TimescaleDB → Control Loop → Actuators →
 
 ### Relay Steal Logic
 
-When updating a device's relay channel, if already in use, the system **steals** it (NULLs the displaced device's channel via `clear_relay_binding_only()`). Response includes `displaced_device_id`.
+Confirmed relay steals are performed atomically by `DeviceRegistryService`; the response includes `displaced_device_id`.
 
 ### Display Name
 

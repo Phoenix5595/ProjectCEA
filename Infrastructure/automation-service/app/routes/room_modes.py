@@ -5,7 +5,7 @@ import time
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from app.cluster_config import ensure_configured_cluster, iter_flower_main_merged_devices
+from app.cluster_config import ensure_configured_cluster
 from app.config import ConfigLoader
 from app.control.relay_manager import RelayManager
 from app.database import DatabaseManager
@@ -57,21 +57,11 @@ async def _iter_configured_light_devices(
     config: ConfigLoader, location: str, cluster: str
 ) -> list[tuple[str, str, dict]]:
     devices = await config.get_devices()
-    location_config = devices.get(location, {}) or {}
-    if location == "Flower Room" and cluster == "main":
-        device_entries = iter_flower_main_merged_devices(location_config)
-    else:
-        raw = location_config.get(cluster, {}) or {}
-        device_entries = [
-            (cluster, name, info) for name, info in raw.items() if isinstance(info, dict)
-        ]
+    raw = devices.get(location, {}).get(cluster, {}) or {}
+    device_entries = [(cluster, name, info) for name, info in raw.items() if isinstance(info, dict)]
 
     lights: list[tuple[str, str, dict]] = []
-    seen: set[str] = set()
     for src_cluster, device_name, device_info in device_entries:
-        if device_name in seen:
-            continue
-        seen.add(device_name)
         if device_info.get("device_type") == "light":
             lights.append((src_cluster, device_name, device_info))
     return lights

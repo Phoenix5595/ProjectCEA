@@ -46,14 +46,14 @@ automation-service/
 ### Hardware
 - **MCP23017** (relays) -> I2C bus 0, address 0x27. 16 ON/OFF channels (0-15).
 - **DFR0971** (dimming) -> I2C bus 1, addresses 0x88 / 0x89 / 0x90. 6 dimming channels total (3 boards x 2 channels).
-- Channel conflicts prevented by startup Pydantic validation.
-- **DFR assignment management**: `GET /api/lights/dfr/assignments` and `PUT /api/lights/dfr/assign`. Assignments are globally unique for `(board_id, channel)` and only mutate YAML plus `config.reload()`.
+- Relay and DFR conflicts are prevented by the transactional device registry service.
+- **DFR assignment management**: device registry CRUD is the only assignment mutation path; DFR pairs are globally unique.
 
 ### Config validation (startup)
 
 [`app/models/config_schema.py`](app/models/config_schema.py) validates `automation_config.yaml` at load. Invalid config causes startup failure with a clear error.
 
-**Rules:** I2C bus numbers 0-7; `control.update_interval` 1-5s; relay `channel` 0-15 and unique per room; `device_type` from allowed set; `dimming_board_id` must reference `hardware.dfr0971_boards`.
+**Rules:** I2C bus numbers 0-7; `control.update_interval` 1-5s; Flower sensor metadata defines `front` and `back`. Device assignments are validated by the registry service.
 
 **How to fix errors:** Read the log message. Edit `automation_config.yaml` to resolve. Restart: `sudo systemctl restart automation-service`.
 
@@ -94,9 +94,9 @@ All data operations go through dedicated repositories:
 | Router | Prefix | Purpose |
 |--------|--------|---------|
 | `schedules` | `/api/schedules`, `/api/room-schedule/...` | Time-based automation + room schedule sync |
-| `lights` | `/api/lights/...` | Light control, status, DFR assignments, targets |
+| `lights` | `/api/lights/...` | Light control, status, targets, bounded test |
 | `climate_periods` | `/api/climate-periods/...` | Climate period configuration |
-| `devices` | `/api/devices/...`, `/api/control/history` | Device state, manual control, mappings |
+| `devices` | `/api/devices/...`, `/api/control/history` | Device state, manual control, and history |
 | `devices_crud` | `/api/devices/registry/...` | Device registry CRUD |
 | `hardware` | `/api/hardware/relays/...` | Hardware relay test and state |
 | `status` | `/health`, `/ready`, `/api/status` | Health and status checks |
@@ -115,11 +115,9 @@ All data operations go through dedicated repositories:
 ### Wave 3 Splits
 
 - `lights` router was split from monolithic `routes/lights.py` into `routes/lights/` package:
-  - `dfr_assignments.py` — DFR0971 board/channel assignment endpoints
   - `light_status.py` — Light status and query endpoints
   - `light_control.py` — Direct hardware control (intensity, voltage)
   - `light_target.py` — DB-backed target intensity updates
-  - `light_crud.py` — Light CRUD (create, update, delete)
   - `light_test.py` — DFR test sweep endpoint
 
 ### Removed Routes (Dead Code)

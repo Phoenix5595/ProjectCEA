@@ -2,11 +2,9 @@
 
 This is NOT a subclass of ``shared.config.YamlConfigLoader`` — that is
 intentional. The shared loader provides mechanical YAML loading with
-search-path resolution; this loader adds Pydantic schema validation
-(``ConfigSchema``), device-type canonicalization (``heater → heating``,
-etc.), and Flower Room legacy config merging. Forcing it into the shared
-hierarchy would pollute other services. See ``shared/config.py:20-29``
-for the full rationale.
+search-path resolution; this loader adds Pydantic schema validation and
+separate schedule/rule loading. Device identity and assignments belong to the
+runtime registry snapshot, not this YAML file.
 """
 
 from __future__ import annotations
@@ -20,7 +18,6 @@ from typing import TYPE_CHECKING, Any
 
 import yaml
 
-from app.models.device_registry import DeviceUpdate
 from app.repositories.devices import DeviceRepository
 
 if TYPE_CHECKING:
@@ -39,153 +36,6 @@ def _load_yaml_file(path: Path) -> dict[str, Any]:
             return yaml.safe_load(f) or {}
     except FileNotFoundError:
         return {}
-
-
-# Canonical ``device_type`` vocabulary used by the control code
-# (``device_processor``, ``device_controller``, ``pid_controller_manager``,
-# ``vpd_cascade_controller``). Every other code path should eventually use
-# these names only.
-_CANONICAL_DEVICE_TYPES: frozenset[str] = frozenset(
-    {
-        "heating",
-        "cooling",
-        "humidifier",
-        "dehumidifier",
-        "co2",
-        "exhaust",
-        "light",
-    }
-)
-
-# Safe, unambiguous YAML aliases rewritten in-memory to their canonical form on
-# load. ONLY include mappings where every code path agrees on the semantics:
-# - ``heater`` → ``heating``: safety-limits path (config.py) currently checks
-#   ``"heater"``; PID / VPD / device_controller all check ``"heating"``.
-#   Aliasing ``heater → heating`` AND updating the safety-limits branch below
-#   to check ``"heating"`` converges both paths with zero behaviour change for
-#   the single canonical spelling.
-#
-# Explicitly NOT aliased:
-# - ``fan``: ambiguous. ``config.py`` maps it to a cooling PID setpoint,
-#   ``device_controller`` has no handler, and operator intent is unclear
-#   (exhaust? circulation? cooling fan?). Left as-is and surfaced by the
-#   startup validator below so the operator sees a WARNING next time a fan
-#   device is enabled. Decide intent, THEN alias.
-_DEVICE_TYPE_ALIASES: dict[str, str] = {
-    "heater": "heating",
-}
-
-
-def _canonicalize_device_types(config: dict[str, Any]) -> None:
-    """Rewrite YAML ``device_type`` aliases to canonical names in-place.
-
-    Walks ``devices.<room>.<cluster>.<device_name>.device_type`` and:
-    - replaces known aliases with their canonical form (INFO log once per
-      alias), and
-    - emits a WARNING for any ``device_type`` that is neither canonical nor a
-      known alias, so drift is visible at startup.
-
-    Does NOT touch YAML on disk. Operator-facing config stays whatever the
-    operator wrote; canonicalization is a runtime concern.
-    """
-    devices = config.get("devices")
-    if not isinstance(devices, dict):
-        return
-
-    aliases_applied: dict[str, int] = {}
-    unknown_types: dict[str, list[str]] = {}
-
-    for room_name, room in devices.items():
-        if not isinstance(room, dict):
-            continue
-        for cluster_name, cluster in room.items():
-            if not isinstance(cluster, dict):
-                continue
-            for device_name, dev_info in cluster.items():
-                if not isinstance(dev_info, dict):
-                    continue
-                raw = dev_info.get("device_type")
-                if not isinstance(raw, str):
-                    continue
-                if raw in _DEVICE_TYPE_ALIASES:
-                    canonical = _DEVICE_TYPE_ALIASES[raw]
-                    dev_info["device_type"] = canonical
-                    aliases_applied[raw] = aliases_applied.get(raw, 0) + 1
-                elif raw not in _CANONICAL_DEVICE_TYPES:
-                    unknown_types.setdefault(raw, []).append(
-                        f"{room_name}/{cluster_name}/{device_name}"
-                    )
-
-    for alias, count in aliases_applied.items():
-        logger.info(
-            "device_type alias '%s' -> '%s' applied to %d device(s) at YAML load",
-            alias,
-            _DEVICE_TYPE_ALIASES[alias],
-            count,
-        )
-    for unknown, paths in unknown_types.items():
-        preview = ", ".join(paths[:5])
-        extra = f" (+{len(paths) - 5} more)" if len(paths) > 5 else ""
-        logger.warning(
-            "device_type '%s' is not in the canonical set %s and has no known "
-            "alias. %d device(s) affected: %s%s. Control-code behaviour for "
-            "this type may be undefined; consider renaming to a canonical name.",
-            unknown,
-            sorted(_CANONICAL_DEVICE_TYPES),
-            len(paths),
-            preview,
-            extra,
-        )
-
-
-def _merge_flower_room_devices_into_main(config: dict[str, Any]) -> bool:
-    """Move Flower Room equipment from legacy ``front``/``back`` under ``devices:`` into ``main``.
-
-    The schema requires all Flower actuators under ``main`` only. Channel saves from the UI
-    sometimes still wrote ``front``/``back``; merging fixes validation and control APIs that
-    read ``Flower Room``/``main``.
-
-    Returns:
-        True if ``config`` was modified.
-    """
-    devices = config.get("devices")
-    if not isinstance(devices, dict):
-        return False
-    fr = devices.get("Flower Room")
-    if not isinstance(fr, dict):
-        return False
-
-    changed = False
-    main = fr.get("main")
-    if not isinstance(main, dict):
-        if main is not None:
-            logger.warning("Flower Room 'main' is not a dict; replacing with an empty dict")
-        main = {}
-        fr["main"] = main
-        changed = True
-
-    for legacy in ("front", "back"):
-        leg = fr.get(legacy)
-        if not isinstance(leg, dict) or len(leg) == 0:
-            continue
-        changed = True
-        for device_name, dev_info in leg.items():
-            if device_name in main:
-                logger.warning(
-                    "Flower Room: skipping merge of device %r from %r — already defined under main",
-                    device_name,
-                    legacy,
-                )
-                continue
-            main[device_name] = dev_info
-        del fr[legacy]
-
-    for legacy in ("front", "back"):
-        if legacy in fr and isinstance(fr[legacy], dict) and len(fr[legacy]) == 0:
-            del fr[legacy]
-            changed = True
-
-    return changed
 
 
 class ConfigLoader:
@@ -236,26 +86,6 @@ class ConfigLoader:
         """Load configuration from YAML files."""
         # Load main config
         self._config = _load_yaml_file(self.config_path)
-        if _merge_flower_room_devices_into_main(self._config):
-            try:
-                with open(self.config_path, "w") as f:
-                    yaml.dump(
-                        self._config,
-                        f,
-                        default_flow_style=False,
-                        sort_keys=False,
-                        allow_unicode=True,
-                    )
-                logger.info(
-                    "Merged Flower Room device entries from legacy clusters into main; saved %s",
-                    self.config_path,
-                )
-            except OSError as e:
-                logger.error("Failed to persist Flower Room device merge: %s", e)
-                raise
-        # M1: _canonicalize_device_types is kept for backward compatibility but
-        # no longer called on every load (migration 009 already canonicalized
-        # devices in the DB).  YAML on disk stays as-is.
         self._validate_config()
 
         # Load schedules if exists
@@ -416,11 +246,7 @@ class ConfigLoader:
                         pid_setpoints = None
                         break
 
-        # Use defaults if not configured. ``heater`` is aliased to ``heating``
-        # at YAML load by ``_canonicalize_device_types``. The ``fan`` branch is
-        # preserved as-is (not in the alias list — semantics ambiguous, see
-        # _DEVICE_TYPE_ALIASES comment) to avoid changing behaviour for any
-        # fan device until the operator confirms intent.
+        # Device types are already canonicalized at the registry write boundary.
         if not pid_setpoints:
             if device_type == "heating":
                 pid_setpoints = {"heating_setpoint": 1}
@@ -549,123 +375,3 @@ class ConfigLoader:
             except OSError:
                 pass
             raise
-
-    async def update_device_config(
-        self,
-        location: str,
-        cluster: str,
-        device_name: str,
-        display_name: str | None = None,
-        device_type: str | None = None,
-    ) -> bool:
-        """Update device configuration (display_name, device_type) in DB.
-
-        Light devices are updated via DeviceRepository.update_light().
-        Non-light devices are updated via DeviceRepository.update_device().
-
-        Args:
-            location: Location name
-            cluster: Cluster name
-            device_name: Device name
-            display_name: Optional display name to set
-            device_type: Optional device type to set
-
-        Returns:
-            True if successful, False otherwise
-        """
-        if self._device_repo is None:
-            logger.warning("DeviceRepository not set, cannot update device config")
-            return False
-
-        try:
-            device_id = await self._device_repo.get_device_id(location, cluster, device_name)
-            if device_id is None:
-                logger.error(f"Device {device_name} not found in DB at {location}/{cluster}")
-                return False
-
-            current_type = await self._device_repo.get_device_type_by_id(device_id)
-            if current_type is None:
-                logger.error(f"Could not determine device_type for {device_name}")
-                return False
-
-            if current_type == "light":
-                fields: dict[str, Any] = {}
-                if display_name is not None:
-                    fields["display_name"] = display_name
-                if device_type is not None:
-                    fields["device_type"] = device_type
-
-                if not fields:
-                    return True
-
-                result = await self._device_repo.update_light(device_id, **fields)
-            else:
-                update_fields: dict[str, Any] = {}
-                if display_name is not None:
-                    update_fields["display_name"] = display_name
-                if device_type is not None:
-                    logger.warning(
-                        "device_type update not supported for non-light devices via update_device_config"
-                    )
-
-                if not update_fields:
-                    return True
-
-                result = await self._device_repo.update_device(
-                    device_id, DeviceUpdate(**update_fields)
-                )
-
-            if result is not None:
-                logger.info(f"Updated device config in DB: {location}/{cluster}/{device_name}")
-                return True
-            return False
-        except Exception as e:
-            logger.error(f"Error updating device config: {e}")
-            return False
-
-    async def update_light_dimming_assignment(
-        self,
-        location: str,
-        cluster: str,
-        device_name: str,
-        *,
-        board_id: int | None,
-        dimming_channel: int | None,
-    ) -> bool:
-        """Update a light device's DFR0971 dimming mapping in DB.
-
-        This only updates configuration fields; hardware commands are handled by the control loop.
-        """
-        if self._device_repo is None:
-            logger.warning("DeviceRepository not set, cannot update light dimming assignment")
-            return False
-
-        try:
-            device_id = await self._device_repo.get_device_id(location, cluster, device_name)
-            if device_id is None:
-                logger.error(f"Device {device_name} not found in DB at {location}/{cluster}")
-                return False
-
-            fields: dict[str, Any] = {}
-            if board_id is None or dimming_channel is None:
-                fields["dimming_board_id"] = None
-                fields["dimming_channel"] = None
-            else:
-                fields["dimming_board_id"] = int(board_id)
-                fields["dimming_channel"] = int(dimming_channel)
-
-            result = await self._device_repo.update_light(device_id, **fields)
-            if result is not None:
-                logger.info(
-                    "Updated light dimming assignment in DB: %s/%s/%s board_id=%s channel=%s",
-                    location,
-                    cluster,
-                    device_name,
-                    board_id,
-                    dimming_channel,
-                )
-                return True
-            return False
-        except Exception as e:
-            logger.error(f"Error updating light dimming assignment: {e}")
-            return False

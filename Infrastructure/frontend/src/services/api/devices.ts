@@ -1,6 +1,6 @@
 /** Device-related API methods (automation service). */
 import type { Device, DeviceRegistryEntry, ControlHistoryEntry } from '../../types/device';
-import type { ChannelInfo, LightNameOption, RelayBoardStateResponse } from '../../types/relay';
+import type { RelayBoardStateResponse } from '../../types/relay';
 import type { ApiClientCore } from '../api';
 
 /** Opaque JSON object returned by backend endpoints that don't have a typed contract yet. */
@@ -29,7 +29,6 @@ export interface DeviceApi {
   getDevicesForLocationCluster(location: string, cluster: string): Promise<{ location: string; cluster: string; devices: Record<string, RawDevice> }>;
   getDevicesForLocationClusterWithDetails(location: string, cluster: string): Promise<Record<string, RawDevice>>;
   getLightsForZone(location: string, cluster: string): Promise<Array<{ device_name: string; display_name?: string; dimming_enabled?: boolean; dimming_board_id?: string | null; dimming_channel?: number | null }>>;
-  getChannels(): Promise<{ channels: Record<string, ChannelInfo>; light_names: LightNameOption[] }>;
   getRelayBoardState(): Promise<RelayBoardStateResponse>;
   testLight(device_id: number): Promise<{ success: boolean }>;
   controlDevice(location: string, cluster: string, device: string, state: number, reason?: string, durationSeconds?: number): Promise<JsonObject>;
@@ -93,11 +92,6 @@ export const deviceMethods = {
   },
 
   // Channels & relay state
-  async getChannels(this: ApiClientCore): Promise<{ channels: Record<string, ChannelInfo>; light_names: LightNameOption[] }> {
-    const response = await this.automationClient.get('/api/devices/channels');
-    return response.data;
-  },
-
   async getRelayBoardState(this: ApiClientCore): Promise<RelayBoardStateResponse> {
     const response = await this.automationClient.get('/api/hardware/relays/state');
     return response.data;
