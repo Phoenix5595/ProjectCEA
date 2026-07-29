@@ -109,7 +109,7 @@ Device cluster `main` is distinct from Flower Room sensor sub-clusters `front` a
 
 ## Local Verification
 
-The automation pure tests use only fakes for database, Redis, and I2C. The canonical empty-registry test exercises the actual service container lifespan and an empty control tick without connecting to production resources.
+The automation pure tests use only fakes for database, Redis, and I2C. The canonical empty-registry test `app/tests/pure/test_empty_registry_startup.py` exercises the actual service container lifespan and an empty control tick without connecting to production resources.
 
 Before approval for deployment, run:
 

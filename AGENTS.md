@@ -213,11 +213,13 @@ Per-room mapping (canonical, **single source of truth**):
 
 | Check | Command |
 |-------|---------|
-| **Backend lint** | `cd Infrastructure/automation-service && ruff check .` |
-| **Frontend type check** | `cd Infrastructure/frontend && npx tsc --noEmit` |
-| **Frontend build** | `cd Infrastructure/frontend && npm run build` |
+| **Backend lint, format, compile, and pure tests** | `cd Infrastructure/automation-service && ruff check . && ruff format --check . && python3 -m compileall -q app && pytest -q app/tests/pure` |
+| **Frontend type-check, build, and focused Vitest** | `cd Infrastructure/frontend && npx tsc --noEmit && npm run build && npx vitest run src/components/devices/__tests__/targetValidation.test.ts src/components/devices/__tests__/relaySnapshot.test.ts` |
+| **Cluster topology validation** | `python3 Infrastructure/scripts/validate_cluster_topology.py` |
+| **Git diff whitespace** | `git diff --check` |
+| **Sandboxed reset-script test** | `bash Infrastructure/scripts/tests/test-reset-device-registry.sh` |
 
-**Testing:** No automated test suite currently exists. All tests were removed. Verify changes via `ruff check .` (backend) and `npx tsc --noEmit && npm run build` (frontend).
+**Testing:** The project has focused pure Python tests and focused Vitest tests. Run the full backend and frontend command chains above before any commit or deploy.
 
 **Production HTTP Rules for ALL Subagents:**
 
@@ -239,6 +241,13 @@ psql -U cea -d projectcea
 redis-cli
 i2cdetect -y 0                 # Scan I2C bus 0 (relays)
 i2cdetect -y 1                 # Scan I2C bus 1 (dimming)
+
+# Local verification (run before commit or deploy)
+cd Infrastructure/automation-service && ruff check . && ruff format --check . && python3 -m compileall -q app && pytest -q app/tests/pure
+cd Infrastructure/frontend && npx tsc --noEmit && npm run build && npx vitest run src/components/devices/__tests__/targetValidation.test.ts src/components/devices/__tests__/relaySnapshot.test.ts
+python3 Infrastructure/scripts/validate_cluster_topology.py
+git diff --check
+bash Infrastructure/scripts/tests/test-reset-device-registry.sh
 ```
 
 ---
