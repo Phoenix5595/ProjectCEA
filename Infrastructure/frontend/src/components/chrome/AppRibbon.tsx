@@ -4,7 +4,7 @@ import type { ReactNode } from 'react';
 export const APP_RIBBON_HEIGHT_PX = 50;
 
 const RIBBON_BASE =
-  'shrink-0 w-full flex items-center gap-2 px-2 bg-surface-secondary border-border-default overflow-hidden';
+  'shrink-0 w-full flex items-center gap-1 px-2 bg-surface-secondary border-border-default overflow-hidden';
 
 export interface AppRibbonProps {
   position: 'top' | 'bottom';

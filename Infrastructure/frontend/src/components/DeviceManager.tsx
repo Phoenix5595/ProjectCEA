@@ -163,19 +163,22 @@ export default function DeviceManager() {
             </div>
           </div>
 
-          <DeviceTable refreshKey={refreshKey} onRefresh={handleSharedRefresh} />
-
-          <div>
-            <RelayChannelMatrix
-              channels={relayChannels}
-              nowMs={nowMs}
-              variant="panel"
-              menuOpenChannel={menuOpenChannel}
-              onToggleMenu={(channel) =>
-                setMenuOpenChannel((previous) => (previous === channel ? null : channel))
-              }
-              onMenuAction={handleRelayMenuAction}
-            />
+          <div className="flex flex-row items-start gap-2 overflow-x-auto min-w-0">
+            <div className="flex-1 min-w-0">
+              <DeviceTable refreshKey={refreshKey} onRefresh={handleSharedRefresh} />
+            </div>
+            <div className="shrink-0 min-w-0">
+              <RelayChannelMatrix
+                channels={relayChannels}
+                nowMs={nowMs}
+                variant="panel"
+                menuOpenChannel={menuOpenChannel}
+                onToggleMenu={(channel) =>
+                  setMenuOpenChannel((previous) => (previous === channel ? null : channel))
+                }
+                onMenuAction={handleRelayMenuAction}
+              />
+            </div>
           </div>
         </>
       )}

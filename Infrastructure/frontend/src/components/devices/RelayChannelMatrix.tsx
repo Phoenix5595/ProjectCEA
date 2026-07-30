@@ -54,6 +54,13 @@ const GRID_BACKGROUND_STYLE = {
   backgroundSize: '12px 12px',
 } as const
 
+/**
+ * Grid layout: 8 rows × 2 columns, matching the two physical MCP23017 banks
+ * (left bank R1-R8, right bank R9-R16). Horizontal spacing between the banks
+ * is 110% of the relay box width via a CSS custom property.
+ */
+const RELAY_GRID_COLUMNS = 'var(--relay-w) var(--relay-w)'
+
 export default function RelayChannelMatrix({
   channels,
   nowMs,
@@ -67,7 +74,7 @@ export default function RelayChannelMatrix({
   onMenuAction,
 }: RelayChannelMatrixProps) {
   const variant: RelayMatrixVariant = variantProp ?? (compact ? 'compact' : 'panel')
-  const { leftColumn, rightColumn } = splitRelayByPhysicalLayout(channels)
+  const { rows } = splitRelayByPhysicalLayout(channels)
 
   const boxProps: ChannelBoxRenderProps = {
     nowMs,
@@ -80,42 +87,38 @@ export default function RelayChannelMatrix({
     onMenuAction,
   }
 
-  const gridCols = '1fr auto 1fr'
+  const relayWidth = variant === 'panel' ? '198px' : '150px'
 
   return (
     <div className="rounded-sm bg-surface-secondary p-0">
       <div
-        className="grid gap-x-1.5 gap-y-1 p-1"
+        className="relative grid p-1 min-w-0 max-w-full overflow-auto"
         style={{
           ...GRID_BACKGROUND_STYLE,
-          gridTemplateColumns: gridCols,
-          gridTemplateRows: `repeat(${RELAY_MATRIX_ROWS}, auto)`,
+          ['--relay-w' as string]: relayWidth,
+          ['--relay-h' as string]: 'calc(var(--relay-w) * 11 / 20)',
+          gridTemplateColumns: RELAY_GRID_COLUMNS,
+          gridTemplateRows: `repeat(${RELAY_MATRIX_ROWS}, var(--relay-h))`,
+          columnGap: 'calc(var(--relay-w) * 0.45)',
+          rowGap: '4px',
         }}
       >
-      <div
-        className="flex items-center justify-center border-x border-border-emphasis/70 bg-surface-tertiary/30"
-        style={{
-          gridColumn: 2,
-          gridRow: '1 / -1',
-        }}
-      />
+        {rows.map((row, rowIndex) => {
+          const gridRow = rowIndex + 1
 
-      {Array.from({ length: RELAY_MATRIX_ROWS }, (_, rowIndex) => {
-        const channelLeft = leftColumn[rowIndex]
-        const channelRight = rightColumn[rowIndex]
-        const gridRow = rowIndex + 1
+          return (
+            <div key={rowIndex} className="contents">
+              <div className="min-w-0" style={{ gridColumn: 1, gridRow }}>
+                {renderChannelBox(row.leftChannel, boxProps)}
+              </div>
+              <div className="min-w-0" style={{ gridColumn: 2, gridRow }}>
+                {renderChannelBox(row.rightChannel, boxProps)}
+              </div>
+            </div>
+          )
+        })}
 
-        return (
-          <div key={rowIndex} className="contents">
-            <div className="min-w-0" style={{ gridColumn: 1, gridRow }}>
-              {channelLeft ? renderChannelBox(channelLeft, boxProps) : null}
-            </div>
-            <div className="min-w-0" style={{ gridColumn: 3, gridRow }}>
-              {channelRight ? renderChannelBox(channelRight, boxProps) : null}
-            </div>
-          </div>
-        )
-      })}
+
       </div>
     </div>
   )
