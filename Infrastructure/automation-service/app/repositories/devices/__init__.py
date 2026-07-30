@@ -9,12 +9,16 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.repositories.devices._helpers import _row_to_typed_device
-from app.repositories.devices.hierarchy import iter_devices_flat
-from app.repositories.devices.registry import RegistryMixin
-from app.repositories.devices.registry_lights import LightRegistryMixin
-
 from ..base import BaseRepository, logger
+from .hierarchy import iter_devices_flat
+from .projection import (
+    DeviceHierarchy,
+    RegistryDevice,
+    RegistryProjection,
+    project_registry_rows,
+)
+from .registry import RegistryMixin
+from .registry_lights import LightRegistryMixin
 
 
 class DeviceRepository(BaseRepository, RegistryMixin, LightRegistryMixin):
@@ -120,55 +124,48 @@ class DeviceRepository(BaseRepository, RegistryMixin, LightRegistryMixin):
             logger.error(f"Failed to get light intensity: {e}")
         return None
 
-    async def get_all_as_hierarchy(self) -> dict[str, dict[str, dict[str, dict[str, Any]]]]:
-        """Return nested dict: {location: {cluster: {device_name: {fields}}}}."""
-        try:
-            async with self.pool.acquire() as conn:
-                rows = await conn.fetch(
-                    """SELECT device_id, location, cluster, device_name, display_name, device_type,
-                              channel, dimming_enabled, dimming_type, dimming_board_id,
-                              dimming_channel, safety_level, pid_enabled, interlock_with,
-                              pid_setpoints, per_room_index, created_at, updated_at
-                       FROM device_registry
-                       ORDER BY location, cluster, device_name"""
-                )
-                hierarchy: dict[str, dict[str, dict[str, dict[str, Any]]]] = {}
-                for row in rows:
-                    loc = row["location"]
-                    clu = row["cluster"]
-                    name = row["device_name"]
-                    hierarchy.setdefault(loc, {}).setdefault(clu, {})[name] = dict(row)
-                return hierarchy
-        except Exception as e:
-            logger.error(f"Failed to get device registry hierarchy: {e}")
-            return {}
+    async def load_registry_rows(self, connection: Any | None = None) -> list[dict[str, Any]]:
+        """Load device-registry rows once without converting query failures into emptiness."""
+        query = """SELECT device_id, location, cluster, device_name, display_name, device_type,
+                           channel, dimming_enabled, dimming_type, dimming_board_id,
+                           dimming_channel, safety_level, pid_enabled, interlock_with,
+                           pid_setpoints, per_room_index, created_at, updated_at,
+                           (SELECT COUNT(*) FROM schedules s
+                            WHERE s.location = device_registry.location
+                              AND s.cluster = device_registry.cluster
+                              AND s.device_name = device_registry.device_name)
+                              AS inherited_schedule_count,
+                           COALESCE((SELECT jsonb_agg(s.name ORDER BY s.start_time, s.id)
+                                     FROM schedules s
+                                     WHERE s.location = device_registry.location
+                                       AND s.cluster = device_registry.cluster
+                                       AND s.device_name = device_registry.device_name), '[]'::jsonb)
+                              AS inherited_schedule_summary
+                    FROM device_registry
+                    ORDER BY location, cluster, device_name"""
+        if connection is not None:
+            rows = await connection.fetch(query)
+            return [dict(row) for row in rows]
 
-    async def get_all_devices_flat(self) -> list[Any]:
-        """Return all devices as a flat list of typed Pydantic models."""
-        devices: list[Any] = []
-        try:
-            async with self.pool.acquire() as conn:
-                rows = await conn.fetch(
-                    """SELECT device_id, location, cluster, device_name, display_name, device_type,
-                              channel, dimming_enabled, dimming_type, dimming_board_id,
-                              dimming_channel, safety_level, pid_enabled, interlock_with,
-                              pid_setpoints, per_room_index, created_at, updated_at
-                       FROM device_registry
-                       ORDER BY location, cluster, device_name"""
-                )
-        except Exception as e:
-            logger.error(f"Failed to acquire DB pool or fetch flat device list: {e}")
-            return []
+        pool = self.pool
+        if pool is None:
+            raise RuntimeError("Device repository pool is not initialized")
+        async with pool.acquire() as pool_connection:
+            rows = await pool_connection.fetch(query)
+        return [dict(row) for row in rows]
 
-        for row in rows:
-            try:
-                devices.append(_row_to_typed_device(dict(row)))
-            except Exception as e:
-                device_id = row.get("device_id")
-                logger.warning(f"Skipping bad device row (device_id={device_id}): {e}")
-                continue
+    async def get_registry_projection(self, connection: Any | None = None) -> RegistryProjection:
+        """Return the sole strict projection used by both API and runtime reads."""
+        rows = await self.load_registry_rows(connection)
+        return project_registry_rows(rows)
 
-        return devices
+    async def get_all_as_hierarchy(self) -> DeviceHierarchy:
+        """Return the legacy hierarchy derived only from accepted typed rows."""
+        return (await self.get_registry_projection()).hierarchy
+
+    async def get_all_devices_flat(self) -> list[RegistryDevice]:
+        """Return the typed API projection derived from the same accepted rows."""
+        return list((await self.get_registry_projection()).flat)
 
 
 __all__ = [

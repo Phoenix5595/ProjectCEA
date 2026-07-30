@@ -13,6 +13,7 @@ from app.alarm_manager import AlarmManager
 from app.automation.rules_engine import RulesEngine
 from app.config import ConfigLoader
 from app.control.climate_resolver import ClimatePeriodResolver
+from app.control.device_command_service import DeviceCommandService
 from app.control.device_controller import DeviceController
 from app.control.device_processor import DeviceProcessor
 from app.control.engine_config_cache import EngineConfigCache
@@ -58,6 +59,7 @@ class ControlEngine:
         relay_board_state_manager: RelayBoardStateManager | None = None,
         alarm_manager: AlarmManager | None = None,
         dfr0971_manager: Any | None = None,  # DFR0971Manager (avoid circular import)
+        device_command_service: DeviceCommandService | None = None,
     ):
         """Initialize control engine.
 
@@ -79,6 +81,7 @@ class ControlEngine:
         self.dfr0971_manager = dfr0971_manager
         self.runtime_device_registry = runtime_device_registry
         self.relay_board_state_manager = relay_board_state_manager
+        self.device_command_service = device_command_service
 
         # Initialize extracted components
         self.sensor_data_manager = SensorDataManager(database)
@@ -257,10 +260,15 @@ class ControlEngine:
         snapshot_token = self.relay_manager.bind_snapshot(snapshot)
         scheduler_snapshot_token = self.scheduler.bind_snapshot(snapshot)
         try:
+            await self.relay_manager.retry_unresolved()
             await self._run_control_loop_with_snapshot(snapshot)
         finally:
             if self.relay_board_state_manager is not None:
                 await self.relay_board_state_manager.sample()
+                if self.alarm_manager is not None:
+                    await self.relay_manager.evaluate_observation(
+                        self.alarm_manager, self.device_command_service
+                    )
             self.scheduler.release_snapshot(scheduler_snapshot_token)
             self.relay_manager.release_snapshot(snapshot_token)
 
@@ -438,26 +446,9 @@ class ControlEngine:
     # _process_vpd_control moved to device_controller
 
     async def _expire_manual_overrides(self) -> None:
-        """Sweep and expire manual overrides whose timer has passed.
-
-        Queries control_history for rows where manual_expires_at <= NOW(),
-        reverts each device to auto mode (state=0), logs the transition,
-        and clears the expiry flag so the row is not re-processed.
-        """
-        expired = await self.database.control_action_repo.get_expired_manual_overrides()
-        for row in expired:
-            await self._set_device_state(
-                row["location"],
-                row["cluster"],
-                row["device_name"],
-                0,
-                "auto",
-                "manual_timer_expired",
-                {},
-            )
-            await self.database.control_action_repo.clear_manual_expiry(
-                row["location"], row["cluster"], row["device_name"]
-            )
+        """Restore elapsed in-process timed commands without querying history."""
+        if self.device_command_service is not None:
+            await self.device_command_service.expire_commands()
 
     async def _expire_raw_channel_overrides(self) -> None:
         """Sweep and expire raw channel overrides whose timer has passed.
@@ -510,6 +501,13 @@ class ControlEngine:
             setpoint: Setpoint value for logging
             load_percent: Optional PID load (0-100) for log display
         """
+        if (
+            self.device_command_service is not None
+            and not self.device_command_service.accepts_automatic_control(
+                location, cluster, device_name
+            )
+        ):
+            return
         current_state = self.relay_manager.get_device_state(location, cluster, device_name) or 0
 
         # Set device state
@@ -533,11 +531,18 @@ class ControlEngine:
                 sensor_value = value
                 break
 
-        self._pending_db_writes.append(
-            self.database.device_repo.set_device_state(
-                location, cluster, device_name, channel, bool(state), mode
-            )
-        )
+        if self.device_command_service is not None:
+            match mode:
+                case "auto":
+                    self.device_command_service.record_automatic_mode(
+                        location, cluster, device_name, "auto"
+                    )
+                case "scheduled":
+                    self.device_command_service.record_automatic_mode(
+                        location, cluster, device_name, "scheduled"
+                    )
+                case _:
+                    pass
         self._pending_db_writes.append(
             self.database.control_action_repo.log_control_action(
                 location,

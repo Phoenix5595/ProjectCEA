@@ -50,6 +50,10 @@ export interface DeviceRegistryEntry {
   interlock_with?: string[];
   /** PID setpoint priorities — non-lights only. */
   pid_setpoints?: Record<string, number>;
+  /** Number of schedules preserved under the device's canonical name after deletion. */
+  inherited_schedule_count?: number;
+  /** Short human-readable summary of any preserved schedules (one entry per schedule). */
+  inherited_schedule_summary?: string[];
 }
 
 /** Control history entry (recent on/off log). */

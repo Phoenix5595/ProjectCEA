@@ -46,8 +46,15 @@ automation-service/
 ### Hardware
 - **MCP23017** (relays) -> I2C bus 0, address 0x27. 16 ON/OFF channels (0-15).
 - **DFR0971** (dimming) -> I2C bus 1, addresses 0x88 / 0x89 / 0x90. 6 dimming channels total (3 boards x 2 channels).
-- Relay and DFR conflicts are prevented by the transactional device registry service.
+- Relay conflicts are resolved by confirmed atomic steal: the backend commands and observes the old relay OFF before committing the assignment; the response includes `displaced_device_id`.
+- DFR conflicts are rejected (never stolen): the backend cannot prove physical zero-volt output before reassignment, so the slot owner is returned and the request fails.
 - **DFR assignment management**: device registry CRUD is the only assignment mutation path; DFR pairs are globally unique.
+
+### Control snapshot
+`ControlSnapshotService` is an on-demand in-process join of the strict registry snapshot, last MCP observation, assigned-device command state, DFR commanded/acknowledged intensity, and hardware availability. `GET /api/devices/control-snapshot` is the single read model for Device Table, DFR panel, main matrix, and room matrices. It exposes `physical_relay`, `channel`, and `pin_label` from the canonical `relay_topology` bijection and uses only `commanded_intensity` / acknowledgement terminology for DFR outputs.
+
+### Atomic assigned-device commands
+`DeviceCommandService` owns assigned-device command state. Supported commands are `AUTO`, `MANUAL_OFF`, and `TIMED_ON(duration_seconds)`. `TIMED_ON` captures the prior mode and restores it on expiry. Restart returns every assigned device to `AUTO` and cancels raw override timers by deleting the sixteen explicit raw-override Redis keys.
 
 ### Config validation (startup)
 
@@ -237,14 +244,20 @@ If heating is active AND temp is below setpoint by 2C+, system enters safe mode 
 
 ## RELAY STEAL
 
-`devices_crud.py` steals relay channels instead of returning 409. Uses `clear_relay_binding_only(displaced_id)` BEFORE `update_device()`. Response includes `displaced_device_id`.
+Relay channel conflicts return HTTP 409 with the current owner's details. A second request with `confirmed_relay_steal=true` triggers `DeviceRegistryService` to command and observe the old relay OFF, atomically move the channel, and return `displaced_device_id`. DFR conflicts also return 409 but are never stealable.
 
 ---
 
 ## TESTING
 
-No automated test suite. Verify via `ruff check .` and manual API testing.
+Pure/fake-backed tests live under `app/tests/pure/`. The mandatory fast gate is:
+
+```bash
+cd Infrastructure/automation-service && ruff check . && ruff format --check . && python3 -m compileall -q app && pytest -q app/tests/pure
+```
+
+A disposable integration harness (`scripts/run-registry-integration-tests.sh`) requires a local PostgreSQL toolchain (`initdb`/`pg_ctl`) and is not run automatically when those tools are absent. Production endpoints, I2C, and the production database must never be contacted by automated tests.
 
 ---
 
-*Last updated: 2026-07-12*
+*Last updated: 2026-07-30 (relay-registry-control-snapshot-recovery implementation complete; deployment pending owner approval)*

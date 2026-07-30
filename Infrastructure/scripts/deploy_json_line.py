@@ -6,12 +6,14 @@ from __future__ import annotations
 import datetime
 import json
 import sys
+from typing import cast
 
 
 def main() -> None:
-    data = json.load(sys.stdin)
-    if not isinstance(data, dict):
+    raw = cast(object, json.load(sys.stdin))
+    if not isinstance(raw, dict):
         raise SystemExit("deploy_json_line: JSON root must be an object")
+    data = cast(dict[str, object], raw)
     if "ts" not in data:
         data["ts"] = datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     print(json.dumps(data, ensure_ascii=False))

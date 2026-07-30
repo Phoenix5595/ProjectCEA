@@ -123,6 +123,36 @@ class ControlActionRepository(BaseRepository):
             logger.error("Failed to record failed control action: %s", error)
             return False
 
+    async def record_relay_recovery(
+        self,
+        location: str,
+        cluster: str,
+        device_name: str,
+        channel: int,
+        state: int,
+        mode: str,
+    ) -> bool:
+        """Persist a fresh MCP agreement after a relay mismatch without inventing a state change."""
+        try:
+            async with self.pool.acquire() as conn:
+                await conn.execute(
+                    """
+                    INSERT INTO control_history
+                    (timestamp, location, cluster, device_name, channel, old_state, new_state, mode, reason)
+                    VALUES (NOW(), $1, $2, $3, $4, $5, $5, $6, 'relay_observation_recovered')
+                    """,
+                    location,
+                    cluster,
+                    device_name,
+                    channel,
+                    state,
+                    mode,
+                )
+                return True
+        except Exception as error:
+            logger.error("Failed to record relay recovery: %s", error)
+            return False
+
     async def get_recent_control_history(
         self, location: str, cluster: str, limit: int = 10
     ) -> list[dict[str, Any]]:

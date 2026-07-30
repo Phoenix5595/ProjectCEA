@@ -66,19 +66,11 @@ class LightRegistryMixin:
         if current is None:
             return None
         current_row = dict(current)
-        room = fields.get("room", current_row["location"])
-        per_room_index = fields.get("per_room_index", current_row["per_room_index"])
-        if room != current_row["location"] or per_room_index != current_row["per_room_index"]:
-            fields = {**fields, "device_name": _generate_light_device_name(room, per_room_index)}
         column_map = {
             "display_name": "display_name",
-            "room": "location",
-            "per_room_index": "per_room_index",
             "relay_channel": "channel",
-            "safety_level": "safety_level",
             "dimming_board_id": "dimming_board_id",
             "dimming_channel": "dimming_channel",
-            "device_name": "device_name",
         }
         assignments = [
             (column_map[field], value) for field, value in fields.items() if field in column_map

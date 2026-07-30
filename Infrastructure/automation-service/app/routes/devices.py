@@ -2,13 +2,24 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends, HTTPException
 
+from app.control.control_snapshot_service import ControlSnapshotService
+from app.control.device_command_service import (
+    AutoCommand,
+    DeviceCommand,
+    DeviceCommandAuditError,
+    DeviceCommandHardwareError,
+    DeviceCommandNotAssignedError,
+    DeviceCommandService,
+    ManualOffCommand,
+    TimedOnCommand,
+)
 from app.control.relay_manager import RelayManager
 from app.database import DatabaseManager
+from app.schemas.control_snapshot import ControlSnapshotResponse
 from app.schemas.device import (
     DeviceControlRequest,
     DeviceModeRequest,
@@ -55,16 +66,35 @@ def get_database() -> DatabaseManager:
     raise RuntimeError("Dependency not injected")
 
 
+def get_device_command_service() -> DeviceCommandService:
+    """Dependency to get the assigned-device command authority."""
+    raise RuntimeError("Dependency not injected")
+
+
+def get_control_snapshot_service() -> ControlSnapshotService:
+    """Dependency to get the on-demand composite control read model."""
+    raise RuntimeError("Dependency not injected")
+
+
+@router.get("/api/devices/control-snapshot", response_model=ControlSnapshotResponse)
+async def get_control_snapshot(
+    control_snapshot_service: ControlSnapshotService = Depends(get_control_snapshot_service),
+) -> ControlSnapshotResponse:
+    """Return the complete typed control-state projection from its natural owners."""
+    return control_snapshot_service.get_snapshot()
+
+
 @router.get("/api/devices")
 async def get_all_devices(
     relay_manager: RelayManager = Depends(get_relay_manager),
+    device_command_service: DeviceCommandService = Depends(get_device_command_service),
 ) -> list[dict[str, Any]]:
     """Get all devices with current state."""
     devices = []
     device_states = relay_manager.get_all_states()
 
     for (location, cluster, device_name), state in device_states.items():
-        mode = relay_manager.get_device_mode(location, cluster, device_name) or "auto"
+        mode = device_command_service.get_command_state(location, cluster, device_name).mode
         channel = relay_manager.get_channel(location, cluster, device_name)
 
         devices.append(
@@ -86,6 +116,7 @@ async def get_devices_for_location_cluster(
     location: str,
     cluster: str,
     relay_manager: RelayManager = Depends(get_relay_manager),
+    device_command_service: DeviceCommandService = Depends(get_device_command_service),
 ) -> dict[str, Any]:
     """Get device state and identity from the installed registry snapshot."""
     _validate_device_cluster_or_400(location, cluster)
@@ -94,7 +125,7 @@ async def get_devices_for_location_cluster(
 
     for device_name, device_info in registry_devices.items():
         state = relay_manager.get_device_state(location, cluster, device_name) or 0
-        mode = relay_manager.get_device_mode(location, cluster, device_name) or "auto"
+        mode = device_command_service.get_command_state(location, cluster, device_name).mode
         channel = relay_manager.get_channel(location, cluster, device_name)
 
         devices[device_name] = {
@@ -118,29 +149,52 @@ async def get_device_details(
     cluster: str,
     device: str,
     relay_manager: RelayManager = Depends(get_relay_manager),
-    database: DatabaseManager = Depends(get_database),
+    device_command_service: DeviceCommandService = Depends(get_device_command_service),
 ) -> dict[str, Any]:
     """Get detailed device status."""
     state = relay_manager.get_device_state(location, cluster, device)
-    mode = relay_manager.get_device_mode(location, cluster, device) or "auto"
+    command_state = device_command_service.get_command_state(location, cluster, device)
     channel = relay_manager.get_channel(location, cluster, device)
     device_info = relay_manager.get_device_info(location, cluster, device)
 
-    if state is None:
+    if device_info is None:
         raise HTTPException(status_code=404, detail="Device not found")
-
-    # Get device state from database
-    db_state = await database.device_repo.get_device_state(location, cluster, device)
 
     return {
         "location": location,
         "cluster": cluster,
         "device_name": device,
         "state": state,
-        "mode": mode,
+        "mode": command_state.mode,
+        "command_expires_at": command_state.expires_at,
         "channel": channel,
         "device_info": device_info,
-        "database_state": db_state,
+    }
+
+
+@router.post("/api/devices/{location}/{cluster}/{device}/command")
+async def command_device(
+    location: str,
+    cluster: str,
+    device: str,
+    request: Annotated[DeviceCommand, Body(discriminator="action")],
+    device_command_service: DeviceCommandService = Depends(get_device_command_service),
+) -> dict[str, Any]:
+    """Apply exactly one discriminated command to an assigned relay identity."""
+    _validate_device_cluster_or_400(location, cluster)
+    try:
+        result = await device_command_service.execute(location, cluster, device, request)
+    except DeviceCommandNotAssignedError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except (DeviceCommandHardwareError, DeviceCommandAuditError) as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return {
+        "location": location,
+        "cluster": cluster,
+        "device": device,
+        "mode": result.mode,
+        "expires_at": result.expires_at,
+        "success": True,
     }
 
 
@@ -150,56 +204,24 @@ async def control_device(
     cluster: str,
     device: str,
     request: DeviceControlRequest,
-    relay_manager: RelayManager = Depends(get_relay_manager),
-    database: DatabaseManager = Depends(get_database),
+    device_command_service: DeviceCommandService = Depends(get_device_command_service),
 ) -> dict[str, Any]:
-    """Manually control a device (turn ON/OFF)."""
+    """Translate the legacy manual shape into one assigned-device command."""
     if request.state not in [0, 1]:
         raise HTTPException(status_code=400, detail="State must be 0 (OFF) or 1 (ON)")
-
-    current_state = relay_manager.get_device_state(location, cluster, device) or 0
-    channel = relay_manager.get_channel(location, cluster, device)
-
-    if channel is None:
-        raise HTTPException(status_code=404, detail="Device not found")
-
-    # Set device state
-    success, reason = await relay_manager.set_device_state(
-        location, cluster, device, request.state, "manual"
-    )
-
-    if not success:
-        raise HTTPException(status_code=503, detail=reason or "Failed to set device state")
-
-    await database.device_repo.set_device_state(
-        location, cluster, device, channel, bool(request.state), "manual"
-    )
-
-    manual_expires_at: datetime | None = None
-    if request.duration_seconds is not None and request.state == 1:
-        manual_expires_at = datetime.now(UTC) + timedelta(seconds=request.duration_seconds)
-
-    await database.control_action_repo.log_control_action(
-        location,
-        cluster,
-        device,
-        channel,
-        current_state,
-        request.state,
-        "manual",
-        request.reason or "Manual override",
-        load_percent=None,
-        manual_expires_at=manual_expires_at,
-    )
-
-    return {
-        "location": location,
-        "cluster": cluster,
-        "device": device,
-        "state": request.state,
-        "mode": "manual",
-        "success": True,
-    }
+    match request.state:
+        case 0:
+            command = ManualOffCommand(reason=request.reason or "Manual OFF")
+        case 1:
+            if request.duration_seconds is None:
+                raise HTTPException(status_code=400, detail="Manual ON requires duration_seconds")
+            command = TimedOnCommand(
+                duration_seconds=request.duration_seconds,
+                reason=request.reason or "Timed manual ON",
+            )
+        case unreachable:
+            raise AssertionError(f"Validated device state became invalid: {unreachable}")
+    return await command_device(location, cluster, device, command, device_command_service)
 
 
 @router.post("/api/devices/{location}/{cluster}/{device}/mode")
@@ -208,32 +230,19 @@ async def set_device_mode(
     cluster: str,
     device: str,
     request: DeviceModeRequest,
-    relay_manager: RelayManager = Depends(get_relay_manager),
-    database: DatabaseManager = Depends(get_database),
+    device_command_service: DeviceCommandService = Depends(get_device_command_service),
 ) -> dict[str, Any]:
-    """Set device control mode."""
-    if request.mode not in ["manual", "auto", "scheduled"]:
-        raise HTTPException(status_code=400, detail="Mode must be 'manual', 'auto', or 'scheduled'")
-
-    current_state = relay_manager.get_device_state(location, cluster, device)
-    channel = relay_manager.get_channel(location, cluster, device)
-
-    if channel is None:
-        raise HTTPException(status_code=404, detail="Device not found")
-
-    # Update mode in database
-    state = current_state or 0
-    await database.device_repo.set_device_state(
-        location, cluster, device, channel, bool(state), request.mode
-    )
-
-    return {
-        "location": location,
-        "cluster": cluster,
-        "device": device,
-        "mode": request.mode,
-        "success": True,
-    }
+    """Translate legacy mode writes into a single command-service operation."""
+    match request.mode:
+        case "manual":
+            command = ManualOffCommand(reason="Legacy manual mode")
+        case "auto" | "scheduled":
+            command = AutoCommand(reason="Legacy automatic mode")
+        case _:
+            raise HTTPException(
+                status_code=400, detail="Mode must be 'manual', 'auto', or 'scheduled'"
+            )
+    return await command_device(location, cluster, device, command, device_command_service)
 
 
 @router.get("/api/control/history")

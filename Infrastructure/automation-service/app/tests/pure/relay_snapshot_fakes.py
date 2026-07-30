@@ -64,6 +64,12 @@ class BoardState:
         self.write_samples += 1
         return True
 
+    def get_freshness(self):
+        return type("Freshness", (), {"status": "FRESH"})()
+
+    def get_snapshot(self):
+        return type("Snapshot", (), {"channels": None})()
+
 
 class ControlActions:
     def __init__(self) -> None:
@@ -95,6 +101,12 @@ class SnapshotBinding:
 
     def release_snapshot(self, token: object) -> None:
         self.released.append(token)
+
+    async def retry_unresolved(self) -> None:
+        return None
+
+    async def evaluate_observation(self, _alarm_manager, _device_command_service) -> None:
+        return None
 
 
 class TickBoardState:

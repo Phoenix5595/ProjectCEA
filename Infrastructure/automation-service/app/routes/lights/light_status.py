@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import datetime
 from typing import Any
 
@@ -58,7 +59,7 @@ def _read_light_status_payload(
     location: str,
     cluster: str,
     device_name: str,
-    device_info: dict[str, Any],
+    device_info: Mapping[str, Any],
     dfr0971_manager: DFR0971Manager,
     database: DatabaseManager | None,
     scheduler: Any | None,
@@ -126,7 +127,9 @@ async def get_zone_lights_status(
     """Return intensity + targets for all dimmable lights in one round-trip (ZoneConfig Light intensity)."""
     devices = await config.get_devices()
     raw = devices.get(location, {}).get(cluster, {}) or {}
-    device_entries = [(cluster, name, info) for name, info in raw.items() if isinstance(info, dict)]
+    device_entries = [
+        (cluster, name, info) for name, info in raw.items() if isinstance(info, Mapping)
+    ]
     if not device_entries:
         return {"lights": []}
 

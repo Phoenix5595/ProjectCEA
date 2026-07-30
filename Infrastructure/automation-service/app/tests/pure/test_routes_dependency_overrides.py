@@ -37,6 +37,12 @@ class _FakeContainer:
     def get_relay_manager(self) -> _FakeService:
         return _FakeService()
 
+    def get_device_command_service(self) -> _FakeService:
+        return _FakeService()
+
+    def get_control_snapshot_service(self) -> _FakeService:
+        return _FakeService()
+
     def get_interlock_manager(self) -> _FakeService:
         return _FakeService()
 

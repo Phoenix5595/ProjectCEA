@@ -15,6 +15,8 @@ def main() -> None:
                 "release_id": os.environ.get("RELEASE_ID", ""),
                 "release_path": os.environ.get("TARGET", ""),
                 "previous_release_path": os.environ.get("PREVIOUS_RELEASE") or None,
+                "candidate_release_id": os.environ.get("CANDIDATE_RELEASE_ID") or None,
+                "candidate_release_path": os.environ.get("CANDIDATE_RELEASE_PATH") or None,
                 "detail": os.environ.get("DLOG_DETAIL", ""),
                 "service": os.environ.get("DLOG_SERVICE", ""),
                 "http_code": os.environ.get("DLOG_HTTP", ""),

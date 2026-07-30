@@ -94,14 +94,18 @@ class RuntimeDeviceRegistry:
     async def _build_snapshot(self, connection: Any | None = None) -> RuntimeDeviceSnapshot:
         """Build every projection, optionally from the still-uncommitted connection."""
         if connection is None:
-            hierarchy = await self._database.device_repo.get_all_as_hierarchy()
+            registry_projection = await self._database.device_repo.get_registry_projection()
+            hierarchy = registry_projection.hierarchy
             mode_parameters = await self._load_active_mode_parameters(hierarchy)
             light_intensities = (
                 await self._database.light_target_intensity_repo.get_all_intensities()
             )
             light_programs = await self._database.light_programs_repo.get_all_programs()
         else:
-            hierarchy = await self._load_hierarchy_on_connection(connection)
+            registry_projection = await self._database.device_repo.get_registry_projection(
+                connection
+            )
+            hierarchy = registry_projection.hierarchy
             mode_parameters = await self._load_active_mode_parameters_on_connection(
                 connection, hierarchy
             )
@@ -114,25 +118,6 @@ class RuntimeDeviceRegistry:
             light_intensities=light_intensities,
             light_programs=light_programs,
         )
-
-    async def _load_hierarchy_on_connection(
-        self, connection: Any
-    ) -> dict[str, dict[str, dict[str, dict[str, Any]]]]:
-        """Load the registry hierarchy through the transaction connection."""
-        rows = await connection.fetch(
-            """SELECT device_id, location, cluster, device_name, display_name, device_type,
-                      channel, dimming_enabled, dimming_type, dimming_board_id,
-                      dimming_channel, safety_level, pid_enabled, interlock_with,
-                      pid_setpoints, per_room_index, created_at, updated_at
-               FROM device_registry ORDER BY location, cluster, device_name"""
-        )
-        hierarchy: dict[str, dict[str, dict[str, dict[str, Any]]]] = {}
-        for row in rows:
-            device = dict(row)
-            hierarchy.setdefault(device["location"], {}).setdefault(device["cluster"], {})[
-                device["device_name"]
-            ] = device
-        return hierarchy
 
     async def _load_active_mode_parameters_on_connection(
         self, connection: Any, hierarchy: dict[str, dict[str, dict[str, dict[str, Any]]]]

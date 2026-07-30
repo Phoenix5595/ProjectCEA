@@ -12,6 +12,7 @@ from app.models.device_registry import (
     LightDevice,
     LightDeviceCreate,
     RegistryDeviceCreate,
+    RegistryDeviceUpdate,
 )
 from app.services.device_registry_service import (
     DeviceMutation,
@@ -67,14 +68,16 @@ async def create_registry_device(
 @router.put("/api/devices/registry/{device_id}")
 async def update_registry_device(
     device_id: int,
-    body: dict[str, Any],
+    body: RegistryDeviceUpdate,
     confirmed_relay_steal: bool = False,
     service: DeviceRegistryService = Depends(get_device_registry_service),
 ) -> dict[str, Any]:
     """Update any registry device through the single mutation service."""
     try:
         mutation = await service.update_registry_device(
-            device_id, body, confirmed_relay_steal=confirmed_relay_steal
+            device_id,
+            body.model_dump(exclude_unset=True),
+            confirmed_relay_steal=confirmed_relay_steal,
         )
     except (RegistryConflictError, RegistryNotFoundError, SafeOutputError, ValueError) as error:
         raise _registry_http_error(error) from error
@@ -126,6 +129,16 @@ def _registry_http_error(
     """Translate domain outcomes into the API contract without mutation logic."""
     match error:
         case RegistryConflictError(assignment=assignment, owner=owner):
+            owner_detail = {
+                "owner_device_id": owner["device_id"],
+                "owner_device_name": owner["device_name"],
+                "owner_display_name": owner["display_name"],
+            }
+            if assignment != "relay":
+                return HTTPException(
+                    status_code=409,
+                    detail={"assignment": assignment, **owner_detail},
+                )
             return HTTPException(
                 status_code=409,
                 detail={

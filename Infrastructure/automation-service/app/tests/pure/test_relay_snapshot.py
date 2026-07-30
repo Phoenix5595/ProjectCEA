@@ -5,10 +5,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-
 from relay_snapshot_fakes import (
-    ApiDatabase,
-    ApiRedis,
     BoardState,
     ControlActions,
     Interlocks,
@@ -151,6 +148,8 @@ async def test_control_tick_samples_in_finally_for_a_noop_tick() -> None:
     control_engine.relay_manager = relay_manager
     control_engine.scheduler = scheduler
     control_engine.relay_board_state_manager = board_state
+    control_engine.alarm_manager = None
+    control_engine.device_command_service = None
 
     async def no_op(_snapshot: object) -> None:
         return None
@@ -182,17 +181,15 @@ async def test_raw_relay_write_samples_the_board_after_success() -> None:
 
 
 @pytest.mark.asyncio
-async def test_hardware_state_endpoint_returns_board_snapshot_and_separate_metadata() -> None:
+async def test_hardware_state_endpoint_returns_narrow_board_snapshot_projection() -> None:
     from app.control.relay_board_state_manager import RelayBoardStateManager
     from app.routes.hardware import relay_state
 
     board_state = RelayBoardStateManager(SamplingMcp([(False,) * 16]), Redis())
     assert await board_state.sample() is True
 
-    automation_redis: Any = ApiRedis()
-    database: Any = ApiDatabase()
-    response = await relay_state(board_state, automation_redis, database)
+    response = await relay_state(board_state)
 
-    assert set(response) == {"channels", "sampled_at", "changed_at", "control_metadata"}
+    assert set(response) == {"channels", "sampled_at", "changed_at", "freshness", "stale_since"}
     assert response["channels"] == [False] * 16
-    assert set(response["control_metadata"]) == {"modes", "override_expires_at"}
+    assert response["freshness"] == "FRESH"
