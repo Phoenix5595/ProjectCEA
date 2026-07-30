@@ -5,11 +5,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Protocol
 
 from pydantic import ValidationError
 
-from app.control.relay_manager import RelayManager
 from app.control.runtime_device_registry import RuntimeDeviceRegistry
 from app.hardware.dfr0971 import DFR0971Manager
 from app.models.device_registry import (
@@ -46,6 +45,12 @@ class SafeOutputError(Exception):
     output: str
 
 
+class RelaySafetyOutput(Protocol):
+    """Relay capability required to prove an OFF transition before registry reassignment."""
+
+    async def command_channel_off_and_observe(self, channel: int) -> bool: ...
+
+
 @dataclass(frozen=True, slots=True)
 class DeviceMutation:
     """The canonical mutation result returned to HTTP boundaries."""
@@ -61,7 +66,7 @@ class DeviceRegistryService:
         self,
         device_repo: DeviceRepository,
         runtime_device_registry: RuntimeDeviceRegistry,
-        relay_manager: RelayManager,
+        relay_manager: RelaySafetyOutput,
         dfr0971_manager: DFR0971Manager | None,
     ) -> None:
         self._device_repo = device_repo
@@ -182,14 +187,9 @@ class DeviceRegistryService:
         displaced = await self._steal_relay_if_confirmed(
             connection, create.relay_channel, None, confirmed_relay_steal
         )
-        per_room_index = create.per_room_index
-        if per_room_index is None:
-            rows = await connection.fetch(
-                """SELECT per_room_index FROM device_registry
-                   WHERE location = $1 AND device_type = 'light' FOR UPDATE""",
-                create.room,
-            )
-            per_room_index = max((row["per_room_index"] for row in rows), default=0) + 1
+        per_room_index = await self._device_repo.lowest_free_index_locked(
+            connection, create.room, "light"
+        )
         light = await self._device_repo.create_light_locked(
             connection,
             board_id=create.board_id,
@@ -283,15 +283,6 @@ class DeviceRegistryService:
         updated = await self._device_repo.update_light_locked(connection, device_id, fields)
         if updated is None:
             raise RegistryNotFoundError(device_id)
-        if updated.device_name != current["device_name"]:
-            await connection.execute(
-                """UPDATE effective_setpoints SET device_name = $1
-                   WHERE location = $2 AND cluster = $3 AND device_name = $4""",
-                updated.device_name,
-                current["location"],
-                current["cluster"],
-                current["device_name"],
-            )
         return DeviceMutation(device=updated, displaced_device_id=displaced)
 
     async def _delete_device(
@@ -301,6 +292,7 @@ class DeviceRegistryService:
         await self._safe_turn_off_relay(current.get("channel"))
         await self._safe_zero_dfr(current)
         await self._device_repo.delete_current_state_locked(connection, current)
+        await self._device_repo.delete_device_dependents_locked(connection, device_id)
         if expected_type == "light":
             deleted = await self._device_repo.delete_light_locked(connection, device_id)
         else:
@@ -411,7 +403,7 @@ class DeviceRegistryService:
     async def _safe_turn_off_relay(self, channel: Any) -> None:
         if not isinstance(channel, int):
             return
-        if not await self._relay_manager.set_channel_state(channel, 0):
+        if not await self._relay_manager.command_channel_off_and_observe(channel):
             raise SafeOutputError(f"relay channel {channel}")
 
     async def _safe_zero_dfr(self, device: dict[str, Any]) -> None:
@@ -422,4 +414,6 @@ class DeviceRegistryService:
         if self._dfr0971_manager is None or not self._dfr0971_manager.set_intensity(
             board_id, channel, 0.0
         ):
+            raise SafeOutputError(f"DFR {board_id}/{channel}")
+        if self._dfr0971_manager.get_intensity(board_id, channel) != 0.0:
             raise SafeOutputError(f"DFR {board_id}/{channel}")

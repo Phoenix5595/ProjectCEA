@@ -86,6 +86,12 @@ def setup_dependency_overrides(app: FastAPI, container) -> None:
     # Override dependencies in devices module
     app.dependency_overrides[devices.get_database] = container.get_database
     app.dependency_overrides[devices.get_relay_manager] = container.get_relay_manager
+    app.dependency_overrides[devices.get_device_command_service] = (
+        container.get_device_command_service
+    )
+    app.dependency_overrides[devices.get_control_snapshot_service] = (
+        container.get_control_snapshot_service
+    )
 
     # Override dependencies in devices_crud module
     # Override dependencies in hardware module
@@ -94,7 +100,9 @@ def setup_dependency_overrides(app: FastAPI, container) -> None:
         container.get_relay_board_state_manager
     )
     app.dependency_overrides[hardware.get_automation_redis] = container.get_automation_redis
-    app.dependency_overrides[hardware.get_database] = container.get_database
+    app.dependency_overrides[hardware.get_device_command_service] = (
+        container.get_device_command_service
+    )
 
     # Override dependencies in status module
     app.dependency_overrides[status.get_database] = container.get_database

@@ -55,6 +55,13 @@ class _Relay:
         self.commands.append((channel, state))
         return self.succeeds
 
+    def is_channel_observed_off(self, _channel: int) -> bool:
+        return self.succeeds
+
+    async def command_channel_off_and_observe(self, channel: int) -> bool:
+        await self.set_channel_state(channel, 0)
+        return self.is_channel_observed_off(channel)
+
 
 class _Dfr:
     def __init__(self, succeeds: bool = True) -> None:
@@ -64,6 +71,9 @@ class _Dfr:
     def set_intensity(self, board_id: int, channel: int, intensity: float) -> bool:
         self.commands.append((board_id, channel, intensity))
         return self.succeeds
+
+    def get_intensity(self, _board_id: int, _channel: int) -> float:
+        return 0.0 if self.succeeds else 10.0
 
 
 class _Repository:
@@ -223,6 +233,9 @@ class _Repository:
         return updated
 
     async def delete_current_state_locked(self, _connection, _device):
+        return None
+
+    async def delete_device_dependents_locked(self, _connection, _device_id: int):
         return None
 
     async def delete_device_locked(self, _connection, device_id: int):

@@ -45,6 +45,16 @@ def _row_to_device(row: dict[str, Any]) -> Device:
     else:
         pid_setpoints = setpoints_raw if setpoints_raw is not None else {}
 
+    schedule_summary_raw = row.get("inherited_schedule_summary")
+    if isinstance(schedule_summary_raw, str):
+        inherited_schedule_summary = (
+            json.loads(schedule_summary_raw) if schedule_summary_raw else []
+        )
+    else:
+        inherited_schedule_summary = (
+            schedule_summary_raw if schedule_summary_raw is not None else []
+        )
+
     return Device(
         device_id=row.get("device_id"),
         device_type=row["device_type"],
@@ -53,6 +63,8 @@ def _row_to_device(row: dict[str, Any]) -> Device:
         interlock_with=interlock_with,
         pid_setpoints=pid_setpoints,
         display_name=row.get("display_name") or None,
+        inherited_schedule_count=int(row.get("inherited_schedule_count") or 0),
+        inherited_schedule_summary=inherited_schedule_summary,
         device_name=row["device_name"],
         location=row["location"],
         cluster=row["cluster"] or "main",
@@ -61,6 +73,16 @@ def _row_to_device(row: dict[str, Any]) -> Device:
 
 def _row_to_light_device(row: dict[str, Any]) -> LightDevice:
     """Convert a DB row dict to a LightDevice Pydantic model."""
+    schedule_summary_raw = row.get("inherited_schedule_summary")
+    if isinstance(schedule_summary_raw, str):
+        inherited_schedule_summary = (
+            json.loads(schedule_summary_raw) if schedule_summary_raw else []
+        )
+    else:
+        inherited_schedule_summary = (
+            schedule_summary_raw if schedule_summary_raw is not None else []
+        )
+
     return LightDevice(
         device_id=row.get("device_id"),
         device_type=row["device_type"],
@@ -72,6 +94,8 @@ def _row_to_light_device(row: dict[str, Any]) -> LightDevice:
         per_room_index=row["per_room_index"],
         relay_channel=row["channel"],
         display_name=row["display_name"] or "",
+        inherited_schedule_count=int(row.get("inherited_schedule_count") or 0),
+        inherited_schedule_summary=inherited_schedule_summary,
         device_name=row["device_name"],
         location=row["location"],
         cluster=row["cluster"],

@@ -42,27 +42,39 @@ readonly OUTPUT_DIRECTORY="${RESET_OUTPUT_DIR:-/var/lib/projectcea/registry-rese
 readonly RUNTIME_DIRECTORY="${AUTOMATION_RUNTIME_DIR:-/run/projectcea}"
 readonly SAFE_PROOF="$RUNTIME_DIRECTORY/$SAFE_PROOF_NAME"
 readonly MINIMUM_FREE_KB="${RESET_MINIMUM_FREE_KB:-1048576}"
+readonly HEALTH_CHECK_URL="${RESET_HEALTH_URL:-http://127.0.0.1:8001/ready}"
+readonly HEALTH_CHECK_TIMEOUT_SECONDS="${RESET_HEALTH_TIMEOUT_SECONDS:-30}"
 
-for command in psql pg_dump sha256sum systemctl python3 df stat; do
+for command in psql pg_dump sha256sum systemctl python3 df stat redis-cli curl; do
   require_command "$command"
 done
 
 rollback_state_is_valid=false
+active_candidate=false
 if [[ -f "$DEPLOY_STATE" ]]; then
-  rollback_path="$(python3 - "$DEPLOY_STATE" <<'PY'
+deploy_state_reading="$(python3 - "$DEPLOY_STATE" <<'PY'
 import json
 import sys
 from pathlib import Path
 
 state = json.loads(Path(sys.argv[1]).read_text())
-value = state.get("rollback_to_path")
-print(value if isinstance(value, str) else "")
+print(
+    state.get("rollback_to_path", "") or "",
+    state.get("candidate_release_id", "") or "",
+    state.get("candidate_release_path", "") or "",
+    sep="\t",
+)
 PY
 )"
+IFS=$'\t' read -r rollback_path candidate_id candidate_path <<< "$deploy_state_reading"
+  if [[ -n "$candidate_id" || -n "$candidate_path" ]]; then
+    active_candidate=true
+  fi
   if [[ -n "$rollback_path" && -d "$rollback_path" ]]; then
     rollback_state_is_valid=true
   fi
 fi
+[[ "$active_candidate" == false ]] || fail "deploy_state.json has an active candidate; finalize or rollback before reset"
 [[ "$rollback_state_is_valid" == true || -x "$ROLLBACK_SCRIPT" ]] || \
   fail "no usable deploy_state.json rollback target or rollback-deploy.sh"
 
@@ -143,16 +155,18 @@ backup_table device_registry
 backup_table device_states
 backup_table device_mappings
 backup_table light_target_intensity
+backup_table light_programs
 "${PSQL[@]}" -c \
-  'COPY (SELECT * FROM public.light_programs WHERE device_id IS NOT NULL) TO STDOUT WITH (FORMAT binary)' \
-  > "$RUN_DIRECTORY/device-linked-light-programs.copy"
+  'COPY (SELECT * FROM public.effective_setpoints WHERE device_name IS NOT NULL) TO STDOUT WITH (FORMAT binary)' \
+  > "$RUN_DIRECTORY/device-linked-effective-setpoints.copy"
 
 sha256sum \
   "$RUN_DIRECTORY/device_registry.sql" \
   "$RUN_DIRECTORY/device_states.sql" \
   "$RUN_DIRECTORY/device_mappings.sql" \
   "$RUN_DIRECTORY/light_target_intensity.sql" \
-  "$RUN_DIRECTORY/device-linked-light-programs.copy" \
+  "$RUN_DIRECTORY/light_programs.sql" \
+  "$RUN_DIRECTORY/device-linked-effective-setpoints.copy" \
   > "$RUN_DIRECTORY/checksums.sha256"
 
 "${PSQL[@]}" -Atc "
@@ -161,20 +175,75 @@ UNION ALL SELECT 'room_modes', count(*) FROM public.room_modes
 UNION ALL SELECT 'mode_parameters', count(*) FROM public.mode_parameters
 UNION ALL SELECT 'climate_periods', count(*) FROM public.climate_periods
 UNION ALL SELECT 'setpoints', count(*) FROM public.setpoints
+UNION ALL SELECT 'pid_parameters', count(*) FROM public.pid_parameters
+UNION ALL SELECT 'sensor', count(*) FROM public.sensor
 UNION ALL SELECT 'measurement', count(*) FROM public.measurement
 UNION ALL SELECT 'control_history', count(*) FROM public.control_history;
 " > "$RUN_DIRECTORY/preserved-table-counts.tsv"
 
+# Capture device identities before deletion for exact Redis cleanup
+"${PSQL[@]}" -Atc "SELECT location, cluster, device_name FROM public.device_registry ORDER BY location, cluster, device_name;" \
+  > "$RUN_DIRECTORY/device-identities.tsv"
+
+# Clear device-linked tables in one transaction so cascade or explicit ordering
+# guarantees a consistent empty registry.
 printf '%s\n' \
   'BEGIN;' \
   'DELETE FROM public.device_states;' \
   'DELETE FROM public.device_mappings;' \
+  'DELETE FROM public.effective_setpoints WHERE device_name IN (SELECT device_name FROM public.device_registry WHERE device_name IS NOT NULL);' \
+  'DELETE FROM public.light_target_intensity WHERE device_id IN (SELECT device_id FROM public.device_registry);' \
+  'DELETE FROM public.light_programs;' \
   'DELETE FROM public.device_registry;' \
   'COMMIT;' \
   | "${PSQL[@]}"
 
 empty_registry_count="$("${PSQL[@]}" -Atc 'SELECT count(*) FROM public.device_registry;')"
 [[ "$empty_registry_count" == "0" ]] || fail "device_registry is not empty after reset transaction"
+
+# Delete only explicit Redis keys generated from the backed-up identities plus the
+# sixteen raw override channels. No wildcard discovery, no FLUSH, no SCAN.
+python3 - "$RUN_DIRECTORY/device-identities.tsv" <<'PY' > "$RUN_DIRECTORY/redis-keys-to-delete.txt"
+import sys
+from pathlib import Path
+
+for line in Path(sys.argv[1]).read_text().splitlines():
+    parts = line.split("|", 2)
+    if len(parts) != 3:
+        continue
+    location, cluster, device_name = parts
+    print(f"cea:light:{location}:{cluster}:{device_name}")
+    print(f"cea:automation:{location}:{cluster}:{device_name}")
+    print(f"cea:mode:{location}:{cluster}")
+    print(f"light:{location}:{cluster}:{device_name}")
+    print(f"automation:{location}:{cluster}:{device_name}")
+    print(f"mode:{location}:{cluster}")
+PY
+
+while IFS= read -r key; do
+  [[ -n "$key" ]] && redis-cli DEL "$key"
+done < "$RUN_DIRECTORY/redis-keys-to-delete.txt"
+
+for channel in {0..15}; do
+  redis-cli DEL "cea:relay:manual_override:$channel"
+done
+
+# Persist the verified all-OFF relay board snapshot from the safe-output proof.
+python3 - "$SAFE_PROOF" > "$RUN_DIRECTORY/relay-board-snapshot.json" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+proof = json.loads(Path(sys.argv[1]).read_text())
+created_at = proof["created_at"]
+snapshot = {
+    "channels": [False] * 16,
+    "sampled_at": created_at,
+    "changed_at": [created_at] * 16,
+}
+print(json.dumps(snapshot, separators=(",", ":")))
+PY
+redis-cli -x SET "cea:relay:board_snapshot" < "$RUN_DIRECTORY/relay-board-snapshot.json"
 
 cat > "$RUN_DIRECTORY/restore-device-registry.sh" <<'RESTORE'
 #!/usr/bin/env bash
@@ -207,7 +276,8 @@ registry_count="$("${PSQL[@]}" -Atc 'SELECT count(*) FROM public.device_registry
 "${PSQL[@]}" -f "$BACKUP_DIRECTORY/device_mappings.sql"
 "${PSQL[@]}" -f "$BACKUP_DIRECTORY/device_states.sql"
 "${PSQL[@]}" -f "$BACKUP_DIRECTORY/light_target_intensity.sql"
-"${PSQL[@]}" -c 'COPY public.light_programs FROM STDIN WITH (FORMAT binary)' < "$BACKUP_DIRECTORY/device-linked-light-programs.copy"
+"${PSQL[@]}" -f "$BACKUP_DIRECTORY/light_programs.sql"
+"${PSQL[@]}" -c 'COPY public.effective_setpoints FROM STDIN WITH (FORMAT binary)' < "$BACKUP_DIRECTORY/device-linked-effective-setpoints.copy"
 RESTORE
 chmod 0700 "$RUN_DIRECTORY/restore-device-registry.sh"
 
@@ -217,11 +287,67 @@ cat > "$RUN_DIRECTORY/RESTORE_INSTRUCTIONS.md" <<EOF
 Only restore after stopping automation-service and only while device_registry
 remains empty. The generated restore script refuses to run
 after new registry rows exist, verifies every backup checksum, and restores this
-order: registry, mappings, states, target intensities, then device-linked light
-programs. Room-level light programs were preserved and are never restored.
+order: registry, mappings, states, target intensities, light programs, then
+device-linked effective setpoints. Room-level schedules, modes, setpoints, PID
+configuration, sensor metadata, climate periods, and control history are
+preserved and are never restored.
 
 $RUN_DIRECTORY/restore-device-registry.sh $RUN_DIRECTORY
 EOF
 
+verify_service_ready() {
+  local wait_seconds="${1:-$HEALTH_CHECK_TIMEOUT_SECONDS}"
+  local deadline
+  deadline="$(($(date +%s) + wait_seconds))"
+  while [[ "$(date +%s)" -lt "$deadline" ]]; do
+    if [[ "$(systemctl is-active automation-service)" == "active" ]]; then
+      local response
+      if response="$(curl -sS --max-time 5 "$HEALTH_CHECK_URL" 2>/dev/null)"; then
+        if printf '%s' "$response" | python3 -c 'import json,sys; d=json.load(sys.stdin); sys.exit(0 if d.get("status")=="ready" else 1)'; then
+          local registry_count
+          registry_count="$("${PSQL[@]}" -Atc 'SELECT count(*) FROM public.device_registry;')"
+          [[ "$registry_count" == "0" ]] && return 0
+        fi
+      fi
+    fi
+    sleep 1
+  done
+  return 1
+}
+
 systemctl start automation-service
-printf 'Registry reset complete. Backup: %s\n' "$RUN_DIRECTORY"
+
+if ! verify_service_ready; then
+  printf 'registry reset failed: service did not reach empty-ready after start\n' >&2
+  empty_after_failure="$("${PSQL[@]}" -Atc 'SELECT count(*) FROM public.device_registry;')"
+  if [[ "$empty_after_failure" != "0" ]]; then
+    printf 'registry is no longer empty; automatic restore cannot proceed safely\n' >&2
+    exit 1
+  fi
+  printf 'registry is still empty; initiating automatic restore and rollback\n' >&2
+  bash "$RUN_DIRECTORY/restore-device-registry.sh" "$RUN_DIRECTORY" || {
+    printf 'automatic restore failed; manual intervention required: %s\n' "$RUN_DIRECTORY" >&2
+    exit 1
+  }
+  if [[ -x "$ROLLBACK_SCRIPT" ]]; then
+    "$ROLLBACK_SCRIPT" || {
+      printf 'automatic rollback failed; manual intervention required: %s\n' "$RUN_DIRECTORY" >&2
+      exit 1
+    }
+  else
+    printf 'rollback script not executable; cannot complete automatic recovery\n' >&2
+    exit 1
+  fi
+  systemctl start automation-service || {
+    printf 'service failed to start after automatic restore and rollback\n' >&2
+    exit 1
+  }
+  if verify_service_ready 60; then
+    printf 'automatic restore and rollback completed; service healthy\n' >&2
+  else
+    printf 'automatic restore and rollback completed but service is not healthy\n' >&2
+    exit 1
+  fi
+else
+  printf 'Registry reset complete. Backup: %s\n' "$RUN_DIRECTORY"
+fi

@@ -145,9 +145,9 @@ Sensors → Ingestion → Redis + TimescaleDB → Control Loop → Actuators →
 
 Confirmed relay steals are performed atomically by `DeviceRegistryService`; the response includes `displaced_device_id`.
 
-### Display Name
+### Control Snapshot
 
-`getChannelDisplayName()` in `relayViewModel.ts` returns `display_name` for **ALL** device types (not just lights). Falls back to `device_name` (canonical) when `display_name` is null.
+`GET /api/devices/control-snapshot` is the single read model for the Device Table, DFR panel, main matrix, and room matrices. It joins the strict registry snapshot, MCP relay observation, assigned-device command state, DFR commanded/acknowledged intensity, and inherited schedule summary. The frontend no longer derives relay labels from `channel + 1`; physical R1–R16 and pin labels come from the backend's canonical `relay_topology` bijection.
 
 ### Scheduler Caches
 
@@ -218,6 +218,7 @@ Per-room mapping (canonical, **single source of truth**):
 | **Cluster topology validation** | `python3 Infrastructure/scripts/validate_cluster_topology.py` |
 | **Git diff whitespace** | `git diff --check` |
 | **Sandboxed reset-script test** | `bash Infrastructure/scripts/tests/test-reset-device-registry.sh` |
+| **Sandboxed candidate-deploy test** | `bash Infrastructure/scripts/tests/test-deploy-candidate.sh` |
 
 **Testing:** The project has focused pure Python tests and focused Vitest tests. Run the full backend and frontend command chains above before any commit or deploy.
 
@@ -248,6 +249,7 @@ cd Infrastructure/frontend && npx tsc --noEmit && npm run build && npx vitest ru
 python3 Infrastructure/scripts/validate_cluster_topology.py
 git diff --check
 bash Infrastructure/scripts/tests/test-reset-device-registry.sh
+bash Infrastructure/scripts/tests/test-deploy-candidate.sh
 ```
 
 ---
@@ -258,4 +260,4 @@ Prioritize system stability and crop safety. Refer to service-specific docs for 
 
 ---
 
-*Last updated: 2026-07-29 (registry canonicalization prepared; deployment pending owner approval)*
+*Last updated: 2026-07-30 (relay-registry-control-snapshot-recovery implementation complete; deployment pending owner approval)*

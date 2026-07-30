@@ -1,5 +1,5 @@
 import { useParams } from 'react-router-dom'
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { apiClient } from '../services/api'
 import { extractErrorMessage } from '../utils/errors'
 import { logger } from '../utils/logger'
@@ -15,7 +15,7 @@ import ManualLightControl from '../components/ManualLightControl'
 import RelayChannelMatrix from '../components/devices/RelayChannelMatrix'
 import { buildRelayChannelViewModels } from '../components/devices/relayViewModel'
 import type { RelayChannelViewModel } from '../components/devices/relayViewModel'
-import { useDeviceRegistry } from '../hooks/useDeviceRegistry'
+import { useControlSnapshot } from '../hooks/useControlSnapshot'
 import type { ClimatePeriod } from '../types/climatePeriod'
 
 export type ZoneConfigSection = 'control' | 'automation';
@@ -89,9 +89,12 @@ export default function ZoneConfig({
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
 
-  const { channels: sharedChannels, relayState: sharedRelayState, mcpConnected } = useDeviceRegistry()
+  const { snapshot, mcpConnected } = useControlSnapshot()
 
-  const [relayChannels, setRelayChannels] = useState<RelayChannelViewModel[]>([]) // eslint-disable-line @typescript-eslint/no-unused-vars
+  const relayChannels: RelayChannelViewModel[] = useMemo(
+    () => buildRelayChannelViewModels(snapshot),
+    [snapshot],
+  )
   const [nowMs, setNowMs] = useState(Date.now())
 
   useEffect(() => {
@@ -99,43 +102,38 @@ export default function ZoneConfig({
     return () => clearInterval(interval)
   }, [])
 
-  useEffect(() => {
-    if (!sharedRelayState) return
-    setRelayChannels(
-      buildRelayChannelViewModels(
-        sharedChannels,
-        sharedRelayState.channels,
-        sharedRelayState.timestamps,
-        sharedRelayState.modes,
-        sharedRelayState.override_expires_at
-      )
-    )
-  }, [sharedChannels, sharedRelayState])
-
   // Relay menu state — consumed by RelayChannelMatrix
   const [menuOpenChannel, setMenuOpenChannel] = useState<number | null>(null)
 
   const handleRelayMenuAction = useCallback(async (channel: number, action: 'auto' | 'timer-5m' | 'timer-10m' | 'timer-30m' | 'timer-1h' | 'off') => {
-    const ch = relayChannels.find((c: { channel: number }) => c.channel === channel)
-    if (!ch?.assignedDeviceName || !ch.location) return
+    const vm = relayChannels.find((c) => c.channel === channel)
+    if (!vm) return
+    if (!vm.isAssigned || !vm.assignedDeviceName || !vm.location || !vm.cluster) {
+      return
+    }
 
-    const device = ch.assignedDeviceName
-    const location = ch.location
-    const cluster = ch.cluster || 'main' // Device cluster, not sensor sub-cluster
+    const device = vm.assignedDeviceName
+    const loc = vm.location
+    const cluster = vm.cluster
 
-    // Close dropdown
     setMenuOpenChannel(null)
 
     try {
       if (action === 'auto') {
-        await apiClient.setDeviceMode(location, cluster, device, 'auto')
+        await apiClient.commandDevice(loc, cluster, device, { action: 'AUTO', reason: 'Room menu AUTO' })
       } else if (action === 'off') {
-        await apiClient.setDeviceMode(location, cluster, device, 'manual')
-        await apiClient.controlDevice(location, cluster, device, 0, 'Manual override: OFF')
+        await apiClient.commandDevice(loc, cluster, device, { action: 'MANUAL_OFF', reason: 'Room menu OFF' })
       } else {
-        const minutes = action === 'timer-5m' ? 5 : action === 'timer-10m' ? 10 : action === 'timer-30m' ? 30 : 60
-        await apiClient.setDeviceMode(location, cluster, device, 'manual')
-        await apiClient.controlDevice(location, cluster, device, 1, `Manual override: ON ${minutes}m`, minutes * 60)
+        const durationSeconds =
+          action === 'timer-5m' ? 300
+          : action === 'timer-10m' ? 600
+          : action === 'timer-30m' ? 1800
+          : 3600
+        await apiClient.commandDevice(loc, cluster, device, {
+          action: 'TIMED_ON',
+          duration_seconds: durationSeconds,
+          reason: `Room menu ON ${durationSeconds / 60}m`,
+        })
       }
     } catch (err) {
       logger.error(`Relay action failed for channel ${channel}:`, err)

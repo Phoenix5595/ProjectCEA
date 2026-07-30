@@ -61,23 +61,24 @@ frontend/
 |-----------|------|---------|
 | ClimatePeriodTimeline | `components/ClimatePeriodTimeline.tsx` | 24h sun/moon + ramps. Draggable handles (w-8), right-click edit, ramps on sun band |
 | ClimatePeriodsTable | `components/ClimatePeriodsTable.tsx` | Climate period CRUD |
-| CircularTimePicker | `components/CircularTimePicker.tsx` | Radial time selection (657 lines) |
+| CircularTimePicker | `components/CircularTimePicker.tsx` | Radial time selection |
 | LightIntensity | `components/LightIntensity.tsx` | ZoneConfig dimmable light targets (CUR/TGT) |
-| DeviceTable | `components/devices/DeviceTable.tsx` | Device CRUD, relay steal red outline |
-| DeviceManager | `components/DeviceManager.tsx` | Tabbed container, refreshKey-driven real-time reload |
-| RelayChannelMatrix | `components/devices/RelayChannelMatrix.tsx` | 16-channel relay grid |
-| RelayChannelBox | `components/devices/RelayChannelBox.tsx` | Single relay channel box, badges text-[20px] |
-| DfrBoardsPanel | `components/devices/DfrBoardsPanel.tsx` | DFR0971 board/channel assignment |
+| DeviceTable | `components/devices/DeviceTable.tsx` | Canonical device CRUD; relay steal confirmation; DFR conflict display |
+| DeviceManager | `components/DeviceManager.tsx` | Tabbed container; subscribes to shared control snapshot store |
+| RelayChannelMatrix | `components/devices/RelayChannelMatrix.tsx` | 16-channel relay grid; main matrix allows unassigned raw timers; room matrices grey foreign/unassigned tiles |
+| RelayChannelBox | `components/devices/RelayChannelBox.tsx` | Single relay channel box; LED shows observed MCP state; button shows command/mode/sync/stale/alarm |
+| DfrBoardsPanel | `components/devices/DfrBoardsPanel.tsx` | DFR status/Test/Rename; assignment editing lives only in DeviceTable |
+| useControlSnapshot | `hooks/useControlSnapshot.ts` | Module-owned `useSyncExternalStore` with one 1s poller, one in-flight request, last-good retention, and `refreshNow()` after mutations |
 
 ## COMPONENT DETAILS
 
-- **DeviceTable**: Inline editing. Relay steal shows `ring-2 ring-status-danger` on displaced devices via `displaced_device_id`. Delete uses `X-Confirm-Destructive` header.
-- **DeviceManager**: Tabbed container (Devices/Settings). `refreshKey` increments on any device change, triggers `loadChannels(false)` for real-time relay matrix update.
-- **RelayChannelMatrix**: 16-channel grid. Uses `relayViewModel.ts` for display logic.
-- **relayViewModel.ts**: `getChannelDisplayName()` returns `display_name` for ALL devices. Falls back to `light_name` → `device_name`. `assignedDeviceName` uses canonical `device_name` for API calls.
-- **RelayChannelBox**: Badge text `text-[20px]`, padding `px-2 py-1`.
-- **ClimatePeriodTimeline**: Moon edge handles are `w-8`, `opacity-100`, `cursor-ew-resize`. Right-click moon band opens context menu for time editing. Ramp gradients (up/down) on SUN band edges (left=up, right=down).
-- **API service**: `api.ts` `updateDevice()` return type includes `displaced_device_id?: number | null`.
+- **DeviceTable**: Inline editing for display name, optional relay, and light DFR pair. Relay steal requires operator confirmation (`confirmed_relay_steal=true` after a 409 conflict). DFR conflicts are rejected and shown as owner details. Delete uses `X-Confirm-Destructive` header. Success calls `refreshNow()` on the shared store.
+- **DeviceManager**: Tabbed container that subscribes to the shared control snapshot store; all child views read the same snapshot.
+- **RelayChannelMatrix**: 16-channel grid. Main matrix permits timed raw ON for unassigned channels. Room matrices render all sixteen tiles but disable foreign and unassigned channels. All relay labels come from the backend composite snapshot (`physical_relay`, `pin_label`); no frontend `channel + 1` math.
+- **relayViewModel.ts**: Builds view models directly from `ControlSnapshotResponse.relays`. LED uses `observed_state`; the control button separately renders `AUTO`, `MANUAL OFF`, `TIMED_ON` countdown, `SYNCING`, `STALE`, or mismatch alarms.
+- **RelayChannelBox**: While the relay board is `STALE`, only OFF actions are enabled.
+- **DfrBoardsPanel**: Always renders DFR boards 0–2 with two channels each. Shows `commanded_intensity` (acknowledged cached command, not physical voltage) and `command_acknowledged`. Test and Rename only; create/assign/move/delete remain in DeviceTable.
+- **API service**: `services/api/devices.ts` defines the frontend-mirror command union (`AutoCommand | ManualOffCommand | TimedOnCommand`) and calls `POST /api/devices/{location}/{cluster}/{device}/command` for assigned-device control. `updateDevice()` exposes 409 conflict details for relay and DFR assignments.
 
 ## DEVELOPMENT
 
@@ -147,4 +148,4 @@ Monitoring embeds preserve Grafana time-range controls and `refresh=1s`. Optimiz
 | Query raw `measurement` table for >1h | Use aggregates |
 | Skip `maxDataPoints` setting | Set to 1500 |
 
-Last updated: 2026-07-12
+Last updated: 2026-07-30 (relay-registry-control-snapshot-recovery implementation complete; deployment pending owner approval)

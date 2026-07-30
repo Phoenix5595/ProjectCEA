@@ -5,6 +5,7 @@ from pathlib import Path
 
 from app.hardware.dfr0971 import DFR0971Driver, DFR0971Manager
 from app.hardware.mcp23017 import MCP23017Driver
+from app.control.runtime_device_snapshot import RuntimeDeviceSnapshot
 
 
 @dataclass
@@ -77,6 +78,53 @@ def test_force_all_outputs_safe_writes_complete_logical_proof(tmp_path: Path) ->
     assert len(proof.dfr_outputs) == 6
     assert all(output.command_succeeded and output.cached_zero for output in proof.dfr_outputs)
     assert (tmp_path / "automation-safe-output.json").stat().st_mode & 0o777 == 0o600
+
+
+def test_zero_unassigned_dfr_outputs_skips_assigned_snapshot_slot() -> None:
+    from app.hardware.safe_outputs import zero_unassigned_dfr_outputs
+
+    # Given: one strict-snapshot DFR assignment on a manager with all six slots
+    snapshot = RuntimeDeviceSnapshot.create(
+        version=1,
+        hierarchy={
+            "Veg Room": {
+                "main": {
+                    "light_v_1": {
+                        "device_id": 42,
+                        "device_type": "light",
+                        "dimming_enabled": True,
+                        "dimming_type": "dfr0971",
+                        "dimming_board_id": 9,
+                        "dimming_channel": 0,
+                    }
+                }
+            }
+        },
+        mode_parameters={},
+        light_intensities={},
+        light_programs=[],
+    )
+    dfr = _FakeDfrManager()
+
+    # When: startup clears only unassigned volatile DFR outputs
+    proofs = zero_unassigned_dfr_outputs(dfr, snapshot)
+
+    # Then: the assigned slot is untouched and every other configured slot is acknowledged at zero
+    assert {(proof.board_id, proof.channel) for proof in proofs} == {
+        (8, 0),
+        (8, 1),
+        (9, 1),
+        (10, 0),
+        (10, 1),
+    }
+    assert all(proof.command_succeeded and proof.cached_zero for proof in proofs)
+    assert dfr.commands == [
+        (8, 0, 0.0),
+        (8, 1, 0.0),
+        (9, 1, 0.0),
+        (10, 0, 0.0),
+        (10, 1, 0.0),
+    ]
 
 
 @dataclass

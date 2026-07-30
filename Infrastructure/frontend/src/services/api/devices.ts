@@ -2,6 +2,43 @@
 import type { Device, DeviceRegistryEntry, ControlHistoryEntry } from '../../types/device';
 import type { RelayBoardStateResponse } from '../../types/relay';
 import type { ApiClientCore } from '../api';
+import type { components } from '../../generated/api';
+
+/** Generated control snapshot response — the single typed read model for the control plane. */
+export type ControlSnapshotResponse = components['schemas']['ControlSnapshotResponse'];
+
+/** Generated typed contract for the registry list response. */
+export type RegistryDeviceResponse = components['schemas']['Device'] | components['schemas']['LightDevice'];
+
+/** Generated typed contract for registry create request bodies. */
+export type RegistryDeviceCreateBody = components['schemas']['DeviceCreate'] | components['schemas']['LightDeviceCreate'];
+
+/** Generated typed contract for registry update request bodies. */
+export type RegistryDeviceUpdateBody = components['schemas']['RegistryDeviceUpdate'];
+
+/** Relay 409 conflict detail shape returned by the backend. */
+export interface RelayConflictDetail {
+  assignment: 'relay';
+  displaced_device_id: number;
+  displaced_device_name: string;
+  displaced_display_name: string | null;
+}
+
+/** DFR 409 conflict detail shape returned by the backend (hard error, no steal). */
+export interface DfrConflictDetail {
+  assignment: 'DFR';
+  owner_device_id: number;
+  owner_device_name: string;
+  owner_display_name: string | null;
+}
+
+export type AssignmentConflictDetail = RelayConflictDetail | DfrConflictDetail;
+
+/** One of the three discriminated assigned-device commands accepted by `/command`. */
+export type DeviceCommandBody =
+  | { action: 'AUTO'; reason?: string }
+  | { action: 'MANUAL_OFF'; reason?: string }
+  | { action: 'TIMED_ON'; duration_seconds: number; reason?: string };
 
 /** Opaque JSON object returned by backend endpoints that don't have a typed contract yet. */
 type JsonObject = Record<string, unknown>;
@@ -21,23 +58,37 @@ interface RawDevice {
 
 /** Type contract for device-related API methods (for declaration merging with ApiClient). */
 export interface DeviceApi {
+  getControlSnapshot(): Promise<ControlSnapshotResponse>;
   getAllDevices(): Promise<Device[]>;
   getDeviceRegistry(): Promise<DeviceRegistryEntry[]>;
-  createDevice(body: Record<string, unknown>): Promise<DeviceRegistryEntry>;
-  updateDevice(device_id: number, body: Record<string, unknown>): Promise<DeviceRegistryEntry & { displaced_device_id?: number | null }>;
-  deleteDevice(device_id: number): Promise<{ success: boolean }>;
+  createDevice(
+    body: RegistryDeviceCreateBody,
+    confirmedRelaySteal?: boolean,
+  ): Promise<RegistryDeviceResponse & { displaced_device_id?: number | null }>;
+  updateDevice(
+    device_id: number,
+    body: RegistryDeviceUpdateBody,
+    confirmedRelaySteal?: boolean,
+  ): Promise<RegistryDeviceResponse & { displaced_device_id?: number | null }>;
+  deleteDevice(device_id: number): Promise<{ success: boolean; device_id: number; displaced_device_id?: number | null }>;
   getDevicesForLocationCluster(location: string, cluster: string): Promise<{ location: string; cluster: string; devices: Record<string, RawDevice> }>;
   getDevicesForLocationClusterWithDetails(location: string, cluster: string): Promise<Record<string, RawDevice>>;
   getLightsForZone(location: string, cluster: string): Promise<Array<{ device_name: string; display_name?: string; dimming_enabled?: boolean; dimming_board_id?: string | null; dimming_channel?: number | null }>>;
   getRelayBoardState(): Promise<RelayBoardStateResponse>;
   testLight(device_id: number): Promise<{ success: boolean }>;
   controlDevice(location: string, cluster: string, device: string, state: number, reason?: string, durationSeconds?: number): Promise<JsonObject>;
+  commandDevice(location: string, cluster: string, device: string, command: DeviceCommandBody): Promise<JsonObject>;
   controlChannel(channel: number, state: 0 | 1, durationSeconds?: number): Promise<JsonObject>;
   setDeviceMode(location: string, cluster: string, device: string, mode: 'manual' | 'auto' | 'scheduled'): Promise<JsonObject>;
   getControlHistory(location: string, cluster: string, limit?: number): Promise<ControlHistoryEntry[]>;
 }
 
 export const deviceMethods = {
+  async getControlSnapshot(this: ApiClientCore): Promise<ControlSnapshotResponse> {
+    const response = await this.automationClient.get('/api/devices/control-snapshot');
+    return response.data;
+  },
+
   // Device listing
   async getAllDevices(this: ApiClientCore): Promise<Device[]> {
     const response = await this.automationClient.get('/api/devices');
@@ -50,19 +101,35 @@ export const deviceMethods = {
     return response.data;
   },
 
-  async createDevice(this: ApiClientCore, body: Record<string, unknown>): Promise<DeviceRegistryEntry> {
-    const response = await this.automationClient.post('/api/devices/registry', body);
+  async createDevice(
+    this: ApiClientCore,
+    body: RegistryDeviceCreateBody,
+    confirmedRelaySteal = false,
+  ): Promise<RegistryDeviceResponse & { displaced_device_id?: number | null }> {
+    const response = await this.automationClient.post('/api/devices/registry', body, {
+      params: confirmedRelaySteal ? { confirmed_relay_steal: true } : undefined,
+    });
     return response.data;
   },
 
-  async updateDevice(this: ApiClientCore, device_id: number, body: Record<string, unknown>): Promise<DeviceRegistryEntry & { displaced_device_id?: number | null }> {
-    const response = await this.automationClient.put(`/api/devices/registry/${device_id}`, body);
+  async updateDevice(
+    this: ApiClientCore,
+    device_id: number,
+    body: RegistryDeviceUpdateBody,
+    confirmedRelaySteal = false,
+  ): Promise<RegistryDeviceResponse & { displaced_device_id?: number | null }> {
+    const response = await this.automationClient.put(`/api/devices/registry/${device_id}`, body, {
+      params: confirmedRelaySteal ? { confirmed_relay_steal: true } : undefined,
+    });
     return response.data;
   },
 
-  async deleteDevice(this: ApiClientCore, device_id: number): Promise<{ success: boolean }> {
+  async deleteDevice(
+    this: ApiClientCore,
+    device_id: number,
+  ): Promise<{ success: boolean; device_id: number; displaced_device_id?: number | null }> {
     const response = await this.automationClient.delete(`/api/devices/registry/${device_id}`, {
-      headers: { 'X-Confirm-Destructive': 'true' }
+      headers: { 'X-Confirm-Destructive': 'true' },
     });
     return response.data;
   },
@@ -103,6 +170,20 @@ export const deviceMethods = {
   },
 
   // Device control
+  async commandDevice(
+    this: ApiClientCore,
+    location: string,
+    cluster: string,
+    device: string,
+    command: DeviceCommandBody,
+  ): Promise<JsonObject> {
+    const response = await this.automationClient.post(
+      `/api/devices/${location}/${cluster}/${device}/command`,
+      command,
+    );
+    return response.data;
+  },
+
   async controlDevice(
     this: ApiClientCore,
     location: string,

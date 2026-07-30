@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 import json
-from typing import Protocol
+from typing import Literal, Protocol
 
 from app.redis.schema import RELAY_BOARD_SNAPSHOT
 from shared.infra_logging import get_logger
@@ -37,18 +38,39 @@ class RelayBoardSnapshot:
     changed_at: tuple[datetime | None, ...]
 
 
+@dataclass(frozen=True, slots=True)
+class RelayBoardFreshness:
+    """Freshness of the last MCP observation without replacing last-good GPIO values."""
+
+    status: Literal["FRESH", "STALE"]
+    stale_since: datetime | None
+
+
 class RelayBoardStateManager:
     """Samples MCP state and persists only initial or changed board snapshots."""
 
-    def __init__(self, mcp23017: RelayBoardSampler, redis: RelayBoardRedis | None = None) -> None:
+    def __init__(
+        self,
+        mcp23017: RelayBoardSampler,
+        redis: RelayBoardRedis | None = None,
+        now: Callable[[], datetime] = lambda: datetime.now(UTC),
+    ) -> None:
         self._mcp23017 = mcp23017
         self._redis = redis
+        self._now = now
         self._snapshot = RelayBoardSnapshot(None, None, (None,) * 16)
         self._last_persisted_channels: tuple[bool, ...] | None = None
+        self._stale_since: datetime | None = None
 
     def get_snapshot(self) -> RelayBoardSnapshot:
         """Return the latest successfully observed board state."""
         return self._snapshot
+
+    def get_freshness(self) -> RelayBoardFreshness:
+        """Expose whether a fresh MCP read has succeeded since the last failure."""
+        if self._stale_since is None:
+            return RelayBoardFreshness(status="FRESH", stale_since=None)
+        return RelayBoardFreshness(status="STALE", stale_since=self._stale_since)
 
     async def on_startup_restore(self) -> bool:
         """Restore persisted timestamps, then reconcile them with live GPIO state."""
@@ -63,18 +85,21 @@ class RelayBoardStateManager:
         """Observe GPIOA/GPIOB once each and retain the last valid state on failure."""
         channels = await asyncio.to_thread(self._mcp23017.sample_all_channels)
         if channels is None:
+            self._mark_stale()
             logger.warning("Relay board sample failed; retaining the last successful snapshot")
             return False
         if len(channels) != 16:
+            self._mark_stale()
             logger.warning(
                 "Relay board sample had %s channels; retaining last successful snapshot",
                 len(channels),
             )
             return False
 
-        sampled_at = datetime.now(UTC)
+        sampled_at = self._now()
         changed_at = self._changed_at_for_sample(channels, sampled_at)
         self._snapshot = RelayBoardSnapshot(channels, sampled_at, changed_at)
+        self._stale_since = None
 
         if (
             force_persist
@@ -84,6 +109,11 @@ class RelayBoardStateManager:
             self._persist_snapshot()
             self._last_persisted_channels = channels
         return True
+
+    def _mark_stale(self) -> None:
+        """Record the first failed read in a contiguous stale period."""
+        if self._stale_since is None:
+            self._stale_since = self._now()
 
     def _changed_at_for_sample(
         self, channels: tuple[bool, ...], sampled_at: datetime

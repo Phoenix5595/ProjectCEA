@@ -68,13 +68,23 @@ class Device(BaseModel):
     interlock_with: list[str] = []
     pid_setpoints: dict[str, int] = {}
     display_name: str | None = None
+    inherited_schedule_count: int = Field(default=0, ge=0)
+    inherited_schedule_summary: list[str] = Field(default_factory=list)
     device_name: str = Field(
-        pattern=r"^[a-z][a-z0-9]*_[fvlo]_\d+$",
         min_length=1,
-        description="Canonical name: <type>_<room_prefix>_<index>",
+        description="Canonical or legacy device name (canonical enforced at creation).",
     )
     location: str
     cluster: Literal["main"] = "main"
+
+    @field_validator("device_name")
+    @classmethod
+    def _device_name_not_blank(cls, device_name: str) -> str:
+        """Allow legacy names while rejecting blank values."""
+        stripped_device_name = device_name.strip()
+        if not stripped_device_name:
+            raise ValueError("device_name must not be blank")
+        return stripped_device_name
 
 
 class LightDevice(BaseModel):
@@ -97,12 +107,23 @@ class LightDevice(BaseModel):
         default=None, ge=0, le=15, description="MCP23017 relay channel when bound"
     )
     display_name: str
+    inherited_schedule_count: int = Field(default=0, ge=0)
+    inherited_schedule_summary: list[str] = Field(default_factory=list)
     device_name: str = Field(
-        pattern=r"^light_[fvlo]_\d+$",
-        description="Canonical name: light_<room_prefix>_<index>",
+        min_length=1,
+        description="Canonical or legacy light name (canonical enforced at creation).",
     )
     location: str
     cluster: Literal["main"] = "main"
+
+    @field_validator("device_name")
+    @classmethod
+    def _device_name_not_blank(cls, device_name: str) -> str:
+        """Allow legacy names while rejecting blank values."""
+        stripped_device_name = device_name.strip()
+        if not stripped_device_name:
+            raise ValueError("device_name must not be blank")
+        return stripped_device_name
 
 
 class LightDeviceCreate(_DisplayNameInput):
@@ -115,11 +136,6 @@ class LightDeviceCreate(_DisplayNameInput):
     dimming_channel: int = Field(ge=0, le=1, description="DFR0971 channel (0 or 1)")
     room: str = Field(description="Room location (e.g. 'Flower Room')")
     display_name: str = Field(description="Human-readable name")
-    per_room_index: int | None = Field(
-        default=None,
-        ge=1,
-        description="1-based index within the room; auto-suggested as max+1 when omitted",
-    )
     relay_channel: int | None = Field(
         default=None, ge=0, le=15, description="MCP23017 relay channel when bound"
     )
@@ -131,18 +147,11 @@ class LightDeviceUpdate(_DisplayNameInput):
     model_config = ConfigDict(extra="forbid")
 
     display_name: str | None = Field(default=None, description="New human-readable name")
-    room: str | None = Field(default=None, description="New room location")
-    per_room_index: int | None = Field(
-        default=None, ge=1, description="New 1-based index within the room"
-    )
     relay_channel: int | None = Field(
         default=None,
         ge=0,
         le=15,
         description="Bind to relay channel (set to None to unbind)",
-    )
-    safety_level: int | None = Field(
-        default=None, ge=0, le=100, description="Safety intensity level (0-100%)"
     )
     board_id: int | None = Field(
         default=None, ge=0, le=2, description="DFR0971 board identifier (0, 1, 2)"
@@ -228,6 +237,28 @@ class DeviceUpdate(_DisplayNameInput):
     @model_validator(mode="after")
     def validate_update_contract(self) -> DeviceUpdate:
         """Reject explicit label removal while allowing explicit relay unbinding."""
+        if "display_name" in self.model_fields_set and self.display_name is None:
+            raise ValueError("display_name cannot be null")
+        return self
+
+
+class RegistryDeviceUpdate(_DisplayNameInput):
+    """Validated update envelope parsed into a device-kind-specific DTO while locked."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    channel: int | None = Field(default=None, ge=0, le=15)
+    relay_channel: int | None = Field(default=None, ge=0, le=15)
+    display_name: str | None = None
+    pid_enabled: bool | None = None
+    interlock_with: list[str] | None = None
+    pid_setpoints: dict[str, int] | None = None
+    board_id: int | None = Field(default=None, ge=0, le=2)
+    dimming_channel: int | None = Field(default=None, ge=0, le=1)
+
+    @model_validator(mode="after")
+    def validate_display_name(self) -> RegistryDeviceUpdate:
+        """Reject explicit label removal before the locked kind-specific parse."""
         if "display_name" in self.model_fields_set and self.display_name is None:
             raise ValueError("display_name cannot be null")
         return self

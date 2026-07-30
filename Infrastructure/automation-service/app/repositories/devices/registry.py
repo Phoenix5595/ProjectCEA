@@ -1,15 +1,44 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from app.models.device_registry import _UI_TO_DB_DEVICE_TYPES, Device, DeviceCreate, DeviceUpdate
 from app.repositories.devices._helpers import _generate_device_name, _row_to_device
+from shared.cluster_topology import _room_prefix
 
 from ..base import logger
 
 
 class RegistryMixin:
+    @staticmethod
+    def _lowest_free_positive_index(device_names: list[str], prefix: str) -> int:
+        """Return the first reusable canonical suffix for one room/type."""
+        pattern = re.compile(rf"^{re.escape(prefix)}_(\d+)$")
+        occupied = {
+            int(match.group(1))
+            for device_name in device_names
+            if (match := pattern.fullmatch(device_name)) is not None and int(match.group(1)) > 0
+        }
+        index = 1
+        while index in occupied:
+            index += 1
+        return index
+
+    async def lowest_free_index_locked(
+        self, connection: Any, room: str, canonical_type: str
+    ) -> int:
+        """Lock a room/type identity set and return its first free generated index."""
+        rows = await connection.fetch(
+            """SELECT device_name FROM device_registry
+               WHERE location = $1 AND device_type = $2 FOR UPDATE""",
+            room,
+            canonical_type,
+        )
+        prefix = f"{canonical_type}_{_room_prefix(room)}"
+        return self._lowest_free_positive_index([str(row["device_name"]) for row in rows], prefix)
+
     async def get_device_for_update(self, connection: Any, device_id: int) -> dict[str, Any] | None:
         row = await connection.fetchrow(
             "SELECT * FROM device_registry WHERE device_id = $1 FOR UPDATE", device_id
@@ -46,13 +75,10 @@ class RegistryMixin:
 
     async def create_device_locked(self, connection: Any, create: DeviceCreate) -> Device:
         canonical_type = _UI_TO_DB_DEVICE_TYPES.get(create.device_type, create.device_type)
-        locked_rows = await connection.fetch(
-            """SELECT device_id FROM device_registry
-               WHERE location = $1 AND device_type = $2 FOR UPDATE""",
-            create.room,
-            canonical_type,
+        per_room_index = await self.lowest_free_index_locked(
+            connection, create.room, canonical_type
         )
-        device_name = _generate_device_name(create.room, canonical_type, len(locked_rows) + 1)
+        device_name = _generate_device_name(create.room, canonical_type, per_room_index)
         row = await connection.fetchrow(
             """INSERT INTO device_registry
                    (location, cluster, device_name, display_name, device_type, channel,
@@ -118,6 +144,13 @@ class RegistryMixin:
             device["cluster"],
             device["device_name"],
         )
+
+    async def delete_device_dependents_locked(self, connection: Any, device_id: int) -> None:
+        """Remove only current device-linked rows; schedules and history intentionally remain."""
+        await connection.execute(
+            "DELETE FROM light_target_intensity WHERE device_id = $1", device_id
+        )
+        await connection.execute("DELETE FROM light_programs WHERE device_id = $1", device_id)
 
     async def get_device_id(self, location: str, cluster: str, device_name: str) -> int | None:
         try:

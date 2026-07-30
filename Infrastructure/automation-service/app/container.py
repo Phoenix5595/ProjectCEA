@@ -10,6 +10,8 @@ from app.automation.rules_engine import RulesEngine
 from app.background_tasks import BackgroundTasks
 from app.config import ConfigLoader
 from app.control.control_engine import ControlEngine
+from app.control.control_snapshot_service import ControlSnapshotService
+from app.control.device_command_service import DeviceCommandService
 from app.control.relay_board_state_manager import RelayBoardStateManager
 from app.control.relay_manager import RelayManager
 from app.control.runtime_device_registry import RuntimeDeviceRegistry
@@ -18,7 +20,11 @@ from app.control.scheduler import Scheduler
 from app.database import DatabaseManager
 from app.hardware.dfr0971 import DFR0971Manager
 from app.hardware.mcp23017 import MCP23017Driver
-from app.hardware.safe_outputs import force_all_outputs_safe
+from app.hardware.safe_outputs import (
+    force_all_outputs_safe,
+    require_mcp_all_off,
+    zero_unassigned_dfr_outputs,
+)
 from app.redis_client import AutomationRedisClient
 from app.services.device_registry_service import DeviceRegistryService
 from shared.infra_logging import get_logger
@@ -56,6 +62,8 @@ class ServiceContainer:
         self.rules_engine: RulesEngine | None = None
         self.alarm_manager: AlarmManager | None = None
         self.control_engine: ControlEngine | None = None
+        self.device_command_service: DeviceCommandService | None = None
+        self.control_snapshot_service: ControlSnapshotService | None = None
 
         # Background tasks
         self.background_tasks: BackgroundTasks | None = None
@@ -115,20 +123,24 @@ class ServiceContainer:
             # 3. Initialize hardware
             await self._init_hardware()
 
-            # 3a. Startup fail-safe: force every MCP23017 relay OFF before any
-            # restore step runs. Guarantees a clean OFF state across unclean
-            # reboots regardless of what the OLAT latches retained.
+            # 3a. Startup fail-safe: command and verify every MCP23017 relay OFF before any
+            # restore step runs. Guarantees a clean OFF state across unclean reboots.
             if self.mcp23017 is not None:
-                try:
-                    self.mcp23017.all_off()
-                    logger.info(
-                        "Startup force-off: all MCP23017 relays set to OFF "
-                        f"(active_low={self.mcp23017.active_low})"
-                    )
-                except Exception as e:
-                    logger.warning(f"Startup force-off failed (continuing): {e}")
+                _ = require_mcp_all_off(self.mcp23017)
+                logger.info(
+                    "Startup force-off: all MCP23017 relays verified OFF "
+                    f"(active_low={self.mcp23017.active_low})"
+                )
 
-            # 3b. Restore the previous relay board snapshot, then reconcile it
+            # 3b. Clear every configured DFR output without a strict registry assignment.
+            # Assigned lights retain their existing startup restoration path below.
+            assert self.runtime_device_registry is not None
+            _ = zero_unassigned_dfr_outputs(
+                self.dfr0971_manager,
+                self.runtime_device_registry.snapshot,
+            )
+
+            # 3c. Restore the previous relay board snapshot, then reconcile it
             # with one live GPIOA/GPIOB sample before control work begins.
             if self.mcp23017 is not None:
                 self.relay_board_state_manager = RelayBoardStateManager(
@@ -153,6 +165,14 @@ class ServiceContainer:
                 control_action_repository=self.database.control_action_repo,
             )
             logger.info("Relay manager initialized")
+            self.device_command_service = DeviceCommandService(
+                runtime_device_registry=self.runtime_device_registry,
+                relay_manager=self.relay_manager,
+                control_action_repository=self.database.control_action_repo,
+                automation_redis=self.automation_redis,
+            )
+            await self.device_command_service.initialize_startup()
+            logger.info("Assigned-device command state initialized")
             self.device_registry_service = DeviceRegistryService(
                 device_repo=self.database.device_repo,
                 runtime_device_registry=self.runtime_device_registry,
@@ -183,8 +203,20 @@ class ServiceContainer:
 
             # 8. Initialize alarm manager
             assert self.automation_redis is not None, "AutomationRedisClient must be initialized"
+            assert self.relay_board_state_manager is not None, (
+                "Relay board state manager must initialize"
+            )
             self.alarm_manager = AlarmManager(self.automation_redis, self.database)
             logger.info("Alarm manager initialized")
+            self.control_snapshot_service = ControlSnapshotService(
+                runtime_device_registry=self.runtime_device_registry,
+                relay_board_state_manager=self.relay_board_state_manager,
+                relay_manager=self.relay_manager,
+                dfr0971_manager=self.dfr0971_manager,
+                alarm_manager=self.alarm_manager,
+                device_command_service=self.device_command_service,
+            )
+            logger.info("Control snapshot service initialized")
 
             # 9. Initialize control engine
             self.control_engine = ControlEngine(
@@ -197,6 +229,7 @@ class ServiceContainer:
                 dfr0971_manager=self.dfr0971_manager,
                 runtime_device_registry=self.runtime_device_registry,
                 relay_board_state_manager=self.relay_board_state_manager,
+                device_command_service=self.device_command_service,
             )
             logger.info("Control engine initialized")
 
@@ -379,6 +412,18 @@ class ServiceContainer:
         if not self.relay_manager:
             raise RuntimeError("Relay manager not initialized")
         return self.relay_manager
+
+    def get_device_command_service(self) -> DeviceCommandService:
+        """Get the assigned-device command authority."""
+        if not self.device_command_service:
+            raise RuntimeError("Device command service not initialized")
+        return self.device_command_service
+
+    def get_control_snapshot_service(self) -> ControlSnapshotService:
+        """Get the on-demand composite control read service."""
+        if not self.control_snapshot_service:
+            raise RuntimeError("Control snapshot service not initialized")
+        return self.control_snapshot_service
 
     def get_relay_board_state_manager(self) -> RelayBoardStateManager:
         """Get the owner of the observed MCP relay board snapshot."""

@@ -65,6 +65,10 @@ Sensors → CAN/Modbus → [can-processor/soil-sensor]
 > See `ProjectCEA/AGENTS.md` → "Cluster Topology Contract" for the
 > full table and validation rules.
 
+### Control Snapshot
+
+The automation service exposes `GET /api/devices/control-snapshot` as the single composite read model for device identity, MCP relay observations, assigned-device command state, and DFR commanded/acknowledged intensity. It does not own control and is rebuilt on demand from the same strict registry snapshot, relay observation, and command caches used by the control loop.
+
 ## EVENT BUS (Cross-Service)
 
 Config changes propagate across services via Redis Streams:

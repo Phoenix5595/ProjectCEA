@@ -10,21 +10,13 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.control.device_command_service import DeviceCommandService
 from app.control.relay_board_state_manager import RelayBoardStateManager
 from app.control.relay_manager import RelayManager
-from app.database import DatabaseManager
 from app.redis.schema import relay_raw_override_key
 from app.redis_client import AutomationRedisClient
-from shared.infra_logging import get_logger
 
 router = APIRouter()
-
-logger = get_logger(__name__)
-
-
-def get_database() -> DatabaseManager:
-    """Dependency to get database manager."""
-    raise RuntimeError("Dependency not injected")
 
 
 def get_relay_manager() -> RelayManager:
@@ -39,6 +31,11 @@ def get_relay_board_state_manager() -> RelayBoardStateManager:
 
 def get_automation_redis() -> AutomationRedisClient:
     """Dependency to get AutomationRedisClient."""
+    raise RuntimeError("Dependency not injected")
+
+
+def get_device_command_service() -> DeviceCommandService:
+    """Dependency to get the assigned-device command authority."""
     raise RuntimeError("Dependency not injected")
 
 
@@ -122,6 +119,7 @@ async def set_relay_channel_state(
     body: RelayChannelControlRequest,
     relay_manager: RelayManager = Depends(get_relay_manager),
     automation_redis: AutomationRedisClient = Depends(get_automation_redis),
+    device_command_service: DeviceCommandService = Depends(get_device_command_service),
 ) -> dict[str, Any]:
     """Set a single relay channel ON or OFF directly (raw control).
 
@@ -137,33 +135,27 @@ async def set_relay_channel_state(
     override_key = relay_raw_override_key(channel)
 
     if body.state == 1:
-        if body.duration_seconds is not None:
-            expires_at = datetime.now(UTC) + timedelta(seconds=body.duration_seconds)
-            success = await relay_manager.set_channel_state(channel, 1)
-            if not success:
-                raise HTTPException(
-                    status_code=503,
-                    detail=f"Failed to set channel {channel} to ON",
-                )
-            if automation_redis.redis_client is not None:
-                await asyncio.to_thread(
-                    automation_redis.redis_client.setex,
-                    override_key,
-                    body.duration_seconds + 86400,
-                    json.dumps({"expires_at": expires_at.isoformat(), "state": 1}),
-                )
-        else:
-            if automation_redis.redis_client is not None:
-                await asyncio.to_thread(
-                    automation_redis.redis_client.delete,
-                    override_key,
-                )
-            success = await relay_manager.set_channel_state(channel, 1)
-            if not success:
-                raise HTTPException(
-                    status_code=503,
-                    detail=f"Failed to set channel {channel} to ON",
-                )
+        if body.duration_seconds is None:
+            raise HTTPException(status_code=400, detail="Raw ON requires a duration_seconds value")
+        if device_command_service.is_assigned_channel(channel):
+            raise HTTPException(
+                status_code=409,
+                detail="Raw ON is forbidden for an assigned relay channel",
+            )
+        expires_at = datetime.now(UTC) + timedelta(seconds=body.duration_seconds)
+        success = await relay_manager.set_channel_state(channel, 1)
+        if not success:
+            raise HTTPException(
+                status_code=503,
+                detail=f"Failed to set channel {channel} to ON",
+            )
+        if automation_redis.redis_client is not None:
+            await asyncio.to_thread(
+                automation_redis.redis_client.setex,
+                override_key,
+                body.duration_seconds + 86400,
+                json.dumps({"expires_at": expires_at.isoformat(), "state": 1}),
+            )
     else:
         if automation_redis.redis_client is not None:
             await asyncio.to_thread(
@@ -187,58 +179,15 @@ async def set_relay_channel_state(
 @router.get("/api/hardware/relays/state")
 async def relay_state(
     relay_board_state_manager: RelayBoardStateManager = Depends(get_relay_board_state_manager),
-    automation_redis: AutomationRedisClient = Depends(get_automation_redis),
-    database: DatabaseManager = Depends(get_database),
 ) -> dict[str, Any]:
-    override_expires_at: list[str | None] = [None] * 16
-    try:
-        if automation_redis.redis_client is not None:
-            override_keys = [relay_raw_override_key(ch) for ch in range(16)]
-            raw_overrides = await asyncio.to_thread(
-                automation_redis.redis_client.mget, override_keys
-            )
-            now = datetime.now(UTC)
-            for i, raw in enumerate(raw_overrides or []):  # type: ignore[arg-type]
-                if raw is not None:
-                    try:
-                        data = json.loads(raw)
-                        expires_at_str = data.get("expires_at")
-                        if expires_at_str:
-                            expires_at = datetime.fromisoformat(expires_at_str)
-                            if expires_at > now:
-                                override_expires_at[i] = expires_at_str
-                    except (json.JSONDecodeError, ValueError):
-                        pass
-    except Exception as e:
-        logger.error(f"Failed to read relay override keys: {e}", exc_info=True)
-
-    modes: list[str | None] = ["off"] * 16
-    try:
-        device_states = await database.device_repo.get_all_device_states()
-        channel_to_mode: dict[int, str] = {}
-        for ds in device_states:
-            ch = ds.get("channel")
-            if isinstance(ch, int) and 0 <= ch <= 15 and ch not in channel_to_mode:
-                channel_to_mode[ch] = ds.get("mode", "auto")
-        for ch in range(16):
-            if override_expires_at[ch] is not None:
-                modes[ch] = "manual"
-            elif ch in channel_to_mode:
-                modes[ch] = channel_to_mode[ch]
-            else:
-                modes[ch] = "off"
-    except Exception as e:
-        logger.error(f"Failed to read device states for mode mapping: {e}", exc_info=True)
-
     snapshot = relay_board_state_manager.get_snapshot()
+    freshness = relay_board_state_manager.get_freshness()
     return {
         "channels": list(snapshot.channels) if snapshot.channels is not None else None,
         "sampled_at": _timestamp(snapshot.sampled_at),
         "changed_at": [_timestamp(value) for value in snapshot.changed_at],
-        "control_metadata": {
-            "modes": modes,
-            "override_expires_at": override_expires_at,
-        },
+        "freshness": freshness.status,
+        "stale_since": _timestamp(freshness.stale_since),
     }
 
 

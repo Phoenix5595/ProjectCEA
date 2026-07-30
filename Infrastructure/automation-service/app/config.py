@@ -9,6 +9,7 @@ runtime registry snapshot, not this YAML file.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 import logging
 import os
 from pathlib import Path
@@ -224,7 +225,7 @@ class ConfigLoader:
 
         # Check if pid_setpoints is explicitly configured
         pid_setpoints: dict[str, int] | None = None
-        if isinstance(device_info, dict):
+        if isinstance(device_info, Mapping):
             pid_setpoints = device_info.get("pid_setpoints") or None
             if not pid_setpoints:
                 pid_setpoints = None

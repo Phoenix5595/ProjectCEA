@@ -3,58 +3,30 @@ import { toast } from 'sonner'
 
 import { normalizeDeviceControlCluster } from '../config/zones'
 import { apiClient } from '../services/api'
-import { useDeviceRegistry } from '../hooks/useDeviceRegistry'
+import { useControlSnapshot } from '../hooks/useControlSnapshot'
 import { logger } from '../utils/logger'
 import DeviceTable from './devices/DeviceTable'
 import DfrBoardsPanel from './devices/DfrBoardsPanel'
 import RelayChannelMatrix from './devices/RelayChannelMatrix'
 import SystemSettingsPanel from './devices/SystemSettingsPanel'
-import {
-  buildRelayChannelViewModels,
-  getRelayNumber,
-  getRelayPinLabel,
-} from './devices/relayViewModel'
-import type { RelayBoardStateResponse } from '../types/relay'
-
-const DEFAULT_RELAY_STATE: RelayBoardStateResponse = {
-  channels: Array(16).fill(false),
-  timestamps: Array(16).fill(null),
-  mcp_connected: false,
-  simulation: false,
-  modes: Array(16).fill(null),
-  override_expires_at: Array(16).fill(null),
-}
+import { buildRelayChannelViewModels } from './devices/relayViewModel'
 
 export default function DeviceManager() {
   const [activeTab, setActiveTab] = useState<'devices' | 'settings'>('devices')
   const [refreshKey, setRefreshKey] = useState(0)
   const handleSharedRefresh = useCallback(() => setRefreshKey((k) => k + 1), [])
-  const { channels, relayState: hookRelayState, mcpConnected: hookMcpConnected } = useDeviceRegistry()
+  const { snapshot, mcpConnected, refreshNow } = useControlSnapshot()
   const [menuOpenChannel, setMenuOpenChannel] = useState<number | null>(null)
   const [nowMs, setNowMs] = useState(Date.now())
 
-  const relayState = hookRelayState ?? DEFAULT_RELAY_STATE
-  const mcpConnected = hookMcpConnected
-
-  const persistedChannelMap = useMemo(
-    () => new Map(channels.map((channelInfo) => [channelInfo.channel, channelInfo])),
-    [channels]
+  const relayChannels = useMemo(
+    () => buildRelayChannelViewModels(snapshot),
+    [snapshot],
   )
-
-  const relayChannels = useMemo(() => {
-    const vms = buildRelayChannelViewModels(
-      channels,
-      relayState.channels,
-      relayState.timestamps,
-      relayState.modes,
-      relayState.override_expires_at
-    )
-    return vms.sort((a, b) => getRelayNumber(a.channel) - getRelayNumber(b.channel))
-  }, [channels, relayState])
 
   async function refreshRelayState() {
     try {
-      await apiClient.getRelayBoardState()
+      await refreshNow()
     } catch (error) {
       logger.warn('Unable to refresh relay board state', error)
     }
@@ -75,23 +47,24 @@ export default function DeviceManager() {
     channel: number,
     action: 'auto' | 'timer-5m' | 'timer-10m' | 'timer-30m' | 'timer-1h' | 'off'
   ) {
-    const channelInfo = persistedChannelMap.get(channel)
-    const isAssigned = !!(channelInfo?.device_name && channelInfo.location && channelInfo.cluster)
+    const vm = relayChannels.find((c) => c.channel === channel)
+    if (!vm) return
+
+    const isAssigned = !!vm.isAssigned && !!vm.assignedDeviceName && !!vm.location && !!vm.cluster
 
     try {
       if (isAssigned) {
-        const location = channelInfo.location!
-        const deviceName = channelInfo.device_name!
-        const rawCluster = channelInfo.cluster!
+        const location = vm.location!
+        const deviceName = vm.assignedDeviceName!
+        const rawCluster = vm.cluster!
         const cluster = normalizeDeviceControlCluster(location, rawCluster)
 
         if (action === 'auto') {
-          await apiClient.setDeviceMode(location, cluster, deviceName, 'auto')
-          toast.success(`Channel ${channel} set to auto`)
+          await apiClient.commandDevice(location, cluster, deviceName, { action: 'AUTO', reason: 'Relay menu AUTO' })
+          toast.success(`R${vm.physicalRelay} set to auto`)
         } else if (action === 'off') {
-          await apiClient.setDeviceMode(location, cluster, deviceName, 'manual')
-          await apiClient.controlDevice(location, cluster, deviceName, 0, 'Manual off from relay menu')
-          toast.success(`Channel ${channel} turned off`)
+          await apiClient.commandDevice(location, cluster, deviceName, { action: 'MANUAL_OFF', reason: 'Relay menu OFF' })
+          toast.success(`R${vm.physicalRelay} turned off`)
         } else {
           const durationSeconds =
             action === 'timer-5m'
@@ -101,23 +74,20 @@ export default function DeviceManager() {
               : action === 'timer-30m'
               ? 1800
               : 3600
-
-          await apiClient.setDeviceMode(location, cluster, deviceName, 'manual')
-          await apiClient.controlDevice(
-            location,
-            cluster,
-            deviceName,
-            1,
-            'Manual timed activation',
-            durationSeconds
-          )
-          toast.success(`Channel ${channel} manual activation started`)
+          await apiClient.commandDevice(location, cluster, deviceName, {
+            action: 'TIMED_ON',
+            duration_seconds: durationSeconds,
+            reason: `Relay menu ON ${durationSeconds / 60}m`,
+          })
+          toast.success(`R${vm.physicalRelay} ON for ${durationSeconds / 60}m`)
         }
       } else {
         if (action === 'off') {
           await apiClient.controlChannel(channel, 0)
-          toast.success(`Relay R${getRelayNumber(channel)} (${getRelayPinLabel(channel)}) turned off`)
-        } else if (action !== 'auto') {
+          toast.success(`Relay R${vm.physicalRelay} (${vm.pinLabel || '?'}) turned off`)
+        } else if (action === 'auto') {
+          toast.error('Auto requires an assigned device')
+        } else {
           const durationSeconds =
             action === 'timer-5m'
               ? 300
@@ -127,7 +97,7 @@ export default function DeviceManager() {
               ? 1800
               : 3600
           await apiClient.controlChannel(channel, 1, durationSeconds)
-          toast.success(`Relay R${getRelayNumber(channel)} (${getRelayPinLabel(channel)}) ON for ${durationSeconds / 60}m`)
+          toast.success(`Relay R${vm.physicalRelay} (${vm.pinLabel || '?'}) ON for ${durationSeconds / 60}m`)
         }
       }
 
@@ -140,15 +110,11 @@ export default function DeviceManager() {
   }
 
   const relayStatusLabel = mcpConnected
-    ? relayState.simulation
-      ? 'Simulation'
-      : 'Connected'
+    ? 'Connected'
     : 'Unavailable'
 
   const relayStatusClasses = mcpConnected
-    ? relayState.simulation
-      ? 'bg-status-warning-bg/40 text-status-warning-text border-status-warning-border/60'
-      : 'bg-status-success-bg/40 text-status-success-text border-status-success-border/70'
+    ? 'bg-status-success-bg/40 text-status-success-text border-status-success-border/70'
     : 'bg-status-danger-bg/40 text-status-danger-text border-status-danger-border/60'
 
   return (
