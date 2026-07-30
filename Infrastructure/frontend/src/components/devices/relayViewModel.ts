@@ -132,25 +132,33 @@ function pickDisplayName(
 }
 
 /**
- * Split a 16-channel view-model array into two physical layout columns.
- * - leftColumn[0..7]  = physical relays 1..8 (top to bottom)
- * - rightColumn[0..7] = physical relays 16..9 (top to bottom)
+ * Split a 16-channel view-model array into the two physical MCP23017 banks.
+ * Left column = R1-R8, right column = R9-R16, rendered top-to-bottom.
  */
+export interface RelayMatrixRow {
+  leftChannel: RelayChannelViewModel
+  rightChannel: RelayChannelViewModel
+}
+
 export function splitRelayByPhysicalLayout(
   channels: RelayChannelViewModel[]
-): { leftColumn: RelayChannelViewModel[]; rightColumn: RelayChannelViewModel[] } {
+): { rows: RelayMatrixRow[] } {
   const byPhysical = new Map<number, RelayChannelViewModel>(
     channels.map((vm) => [vm.physicalRelay, vm])
   )
 
-  const leftColumn = [1, 2, 3, 4, 5, 6, 7, 8].map(
-    (relay) => byPhysical.get(relay) ?? emptyViewModel(RELAY_TO_CHANNEL[relay])
-  )
-  const rightColumn = [16, 15, 14, 13, 12, 11, 10, 9].map(
-    (relay) => byPhysical.get(relay) ?? emptyViewModel(RELAY_TO_CHANNEL[relay])
-  )
+  const get = (relay: number): RelayChannelViewModel =>
+    byPhysical.get(relay) ?? emptyViewModel(RELAY_TO_CHANNEL[relay])
 
-  return { leftColumn, rightColumn }
+  // Physical disposition: two banks of 8 relays, top-to-bottom.
+  // Left column = R1, R2, R3, R4, R5, R6, R7, R8.
+  // Right column = R16, R15, R14, R13, R12, R11, R10, R9.
+  const rows: RelayMatrixRow[] = Array.from({ length: RELAY_MATRIX_ROWS }, (_, index) => ({
+    leftChannel: get(index + 1),
+    rightChannel: get(RELAY_CHANNEL_COUNT - index),
+  }))
+
+  return { rows }
 }
 
 export function formatElapsedSince(

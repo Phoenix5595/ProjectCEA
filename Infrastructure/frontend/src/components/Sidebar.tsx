@@ -39,7 +39,7 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onToggle }) => {
       }}
     >
       {/* Logo / Header */}
-      <div className="flex items-center justify-center px-1 py-2 border-b border-border-default h-[50px]">
+      <div className="flex items-center justify-center px-1 py-1 border-b border-border-default h-[50px]">
         <Link to="/">
           <img src="/logo.png" alt="CEA" className="w-6 h-6" />
         </Link>
@@ -62,7 +62,7 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onToggle }) => {
               key={item.path}
               to={item.path}
               className={`
-                flex items-center gap-1 py-1 my-0.5 rounded-lg
+                flex items-center gap-0.5 py-1 my-0 rounded-lg
                 transition-all duration-200
                 ${collapsed ? 'justify-center px-0 mx-0' : 'px-1.5 mx-1'}
                 ${

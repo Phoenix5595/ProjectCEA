@@ -19,46 +19,51 @@ interface ButtonState {
   outlineClass: string
 }
 
-interface LedState {
-  ledClass: string
-  title: string
+function resolveObservedStateText(channel: RelayChannelViewModel): string {
+  if (!channel.isStateKnown) return 'UNKNOWN'
+  return channel.observedState ? 'ON' : 'OFF'
 }
 
-function resolveLedState(channel: RelayChannelViewModel): LedState {
-  if (!channel.isStateKnown) {
-    return {
-      ledClass: 'bg-neutral-500',
-      title: 'Unknown (no observation yet)',
-    }
+function resolveModeOutlineClass(channel: RelayChannelViewModel): string {
+  if (channel.stale) {
+    return 'border-status-warning-vivid bg-status-warning-bg/40'
   }
-  if (channel.observedState) {
-    return {
-      ledClass: 'bg-status-success-vivid shadow-[0_0_5px_var(--status-success-vivid)]',
-      title: 'ON (observed)',
-    }
+  if (channel.syncing) {
+    return 'border-status-info-vivid bg-status-info-bg/40'
   }
-  return {
-    ledClass: 'bg-neutral-700',
-    title: 'OFF (observed)',
+  if (channel.alarm) {
+    return 'border-status-danger-vivid bg-status-danger-bg/40'
   }
+  if (channel.commandMode === 'timed_on') {
+    return 'border-status-info-vivid bg-status-info-bg/40'
+  }
+  if (channel.commandMode === 'auto' || channel.commandMode === 'scheduled') {
+    return 'border-status-success-vivid bg-status-success-bg/40'
+  }
+  if (channel.commandMode === 'manual_off') {
+    return 'border-status-danger-vivid bg-status-danger-bg/40'
+  }
+  return 'border-border-emphasis bg-surface-tertiary/40'
 }
 
 function resolveButtonState(channel: RelayChannelViewModel, nowMs: number): ButtonState {
+  const observedText = resolveObservedStateText(channel)
+
   if (channel.stale) {
     return {
-      text: 'STALE',
+      text: observedText,
       outlineClass: 'bg-status-warning-bg/50 text-status-warning-text border border-status-warning-border/80',
     }
   }
   if (channel.syncing) {
     return {
-      text: 'SYNC',
+      text: observedText,
       outlineClass: 'bg-status-info-bg/50 text-status-info-text border border-status-info-border/80',
     }
   }
   if (channel.alarm) {
     return {
-      text: 'ALARM',
+      text: observedText,
       outlineClass: 'bg-status-danger-bg/50 text-status-danger-text border border-status-danger-border/80',
     }
   }
@@ -73,18 +78,18 @@ function resolveButtonState(channel: RelayChannelViewModel, nowMs: number): Butt
   }
   if (channel.commandMode === 'auto' || channel.commandMode === 'scheduled') {
     return {
-      text: 'AUTO',
+      text: observedText,
       outlineClass: 'bg-status-success-bg/50 text-status-success-text border border-status-success-border/80',
     }
   }
   if (channel.commandMode === 'manual_off') {
     return {
-      text: 'MANUAL OFF',
+      text: observedText,
       outlineClass: 'bg-black/40 text-text-muted border border-border-emphasis',
     }
   }
   return {
-    text: '?',
+    text: observedText,
     outlineClass: 'bg-status-warning-bg/40 text-status-warning-text border border-status-warning-border/70',
   }
 }
@@ -113,7 +118,7 @@ export default function RelayChannelBox({
   const isDisabled = disabled || isForeignTile || isUnassignedInRoomView
   const isStale = channel.stale
 
-  const led = resolveLedState(channel)
+  const modeOutlineClass = resolveModeOutlineClass(channel)
   const button = resolveButtonState(channel, nowMs)
 
   const interactiveClasses = onSelect && !isDisabled
@@ -121,11 +126,11 @@ export default function RelayChannelBox({
     : ''
 
   const baseClasses = [
-    'group/relay relative w-full rounded-sm border text-left transition-all overflow-visible',
+    'group/relay relative w-full aspect-[20/11] min-h-0 rounded-sm border-2 text-left transition-all overflow-visible',
     isForeignTile || isUnassignedInRoomView
       ? 'bg-surface-tertiary/40 border-border-subtle opacity-50 grayscale'
-      : 'bg-surface-primary/80 border-border-emphasis',
-    isCompact ? 'min-h-[52px] p-1' : 'min-h-[60px] p-1.5',
+      : `bg-surface-tertiary ${modeOutlineClass}`,
+    isCompact ? 'p-1' : 'p-1.5',
     !isDisabled ? interactiveClasses : '',
     isEditing ? 'ring-2 ring-btn-primary-light' : '',
     isMenuOpen ? 'z-30' : 'z-0',
@@ -135,7 +140,6 @@ export default function RelayChannelBox({
 
   const tooltipParts = [
     `R${relayNum}`,
-    channel.pinLabel || '—',
     deviceLabel,
     locationLabel,
     elapsedLabel,
@@ -185,43 +189,39 @@ export default function RelayChannelBox({
   ) : null
 
   const content = (
-    <div className="flex items-stretch gap-1.5" title={tooltipTitle}>
-      <div className="flex shrink-0 items-center justify-center">
-        <span className={`h-2 w-2 shrink-0 rounded-full ${led.ledClass}`} aria-hidden title={led.title} />
+    <div className="flex h-full gap-2" title={tooltipTitle}>
+      <div className="flex min-w-0 flex-1 flex-col justify-between py-0.5">
+        <div>
+          <span className="text-[12px] font-bold text-text-input">R{relayNum}</span>
+          <div className="mt-0.5 truncate text-[10px] font-medium text-text-default">{deviceLabel}</div>
+        </div>
+        <div>
+          <div className="truncate text-[9px] text-text-secondary">{typeLabel}</div>
+          <div className="truncate text-[9px] text-text-muted">{locationLabel}</div>
+        </div>
       </div>
 
-      <div className="min-w-0 flex-1">
-        <div className="flex items-start justify-between gap-1">
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-1">
-              <span className="text-[10px] font-semibold text-text-input">R{relayNum} · {channel.pinLabel || '—'}</span>
-            </div>
-            <div className="truncate text-[9px] text-text-muted">{locationLabel}</div>
-          </div>
-          <div className="relative shrink-0">
-            <button
-              type="button"
-              disabled={isDisabled}
-              onClick={(event) => {
-                event.stopPropagation()
-                if (isDisabled) {
-                  return
-                }
-                onToggleMenu?.(channel.channel)
-              }}
-              className={`rounded-sm px-2 py-1 text-[20px] font-semibold uppercase ${button.outlineClass} ${!isDisabled ? 'cursor-pointer' : 'cursor-not-allowed opacity-70'}`}
-              title={isDisabled ? 'Channel unavailable' : 'Click for control mode'}
-            >
-              {button.text}
-            </button>
-            {menu}
-          </div>
+      <div className={`flex h-full shrink-0 flex-col items-center justify-between gap-1 ${isCompact ? 'min-w-10' : 'min-w-[60px]'}`}>
+        <div className="relative flex aspect-square h-[55%] items-center justify-center">
+          <button
+            type="button"
+            disabled={isDisabled}
+            onClick={(event) => {
+              event.stopPropagation()
+              if (isDisabled) {
+                return
+              }
+              onToggleMenu?.(channel.channel)
+            }}
+            className={`flex h-full w-full items-center justify-center rounded-sm px-2 text-[14px] font-black uppercase leading-none ${button.outlineClass} ${!isDisabled ? 'cursor-pointer' : 'cursor-not-allowed opacity-70'}`}
+            title={isDisabled ? 'Channel unavailable' : 'Click for control mode'}
+          >
+            {button.text}
+          </button>
+          {menu}
         </div>
-
-        <div className="mt-0.5 truncate text-[9px] font-medium text-text-default">{deviceLabel}</div>
-        <div className="flex items-center justify-between gap-1 text-[8px] text-text-secondary">
-          <span className="truncate">{typeLabel}</span>
-          <span className="shrink-0 font-mono text-text-muted">{elapsedLabel}</span>
+        <div className="flex flex-1 w-full items-center justify-center rounded-sm bg-surface-primary/60 px-1">
+          <span className="shrink-0 font-mono text-[10px] font-semibold text-text-muted">{elapsedLabel}</span>
         </div>
       </div>
     </div>

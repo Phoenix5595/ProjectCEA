@@ -38,7 +38,6 @@ const Layout: React.FC = () => {
   // Determine sector from current path
   const sector = getSectorFromPath(location.pathname);
   const showTopRibbon = sector !== null;
-  const isDashboard = location.pathname === '/';
 
   // Close mobile drawer on route change
   useEffect(() => {
@@ -140,7 +139,7 @@ const Layout: React.FC = () => {
         )}
 
         {/* Page Content — dashboard is full-bleed so top/bottom ribbons align with sidebar chrome */}
-        <main className={isDashboard ? 'p-0' : 'p-4'}>
+        <main className="p-0">
           <Outlet />
         </main>
       </div>

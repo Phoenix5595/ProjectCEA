@@ -348,7 +348,7 @@ export default function ZoneConfig({
         {params && (
           <div className="flex-1 flex flex-col gap-1 min-h-0">
             {/* Climate Timeline - 270px fixed, full width */}
-            <div className="h-[300px] shrink-0 bg-surface-primary rounded-lg border border-border-subtle overflow-hidden p-2">
+            <div className="h-[300px] shrink-0 bg-surface-primary rounded-lg border border-border-subtle overflow-hidden p-0">
               {!isConstant ? (
                 <ClimatePeriodTimeline
                   periods={climatePeriods}
@@ -389,7 +389,7 @@ export default function ZoneConfig({
                   <ManualLightControl location={location} cluster={cluster} compact={true} />
                 )}
               </div>
-              <div className="w-[35%] h-full">
+              <div className="h-full shrink-0 min-w-0 overflow-hidden">
                 {!mcpConnected && (
                   <div className="mb-1 rounded-sm border border-status-error-border/80 bg-status-error-bg/30 px-2 py-1 text-[10px] font-semibold text-status-error-text">
                     MCP23017 disconnected
