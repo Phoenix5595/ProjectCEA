@@ -29,6 +29,7 @@
   --status-success: #4ade80;
   --status-danger: #f87171;
   --status-warning: #facc15;
+  --status-info: #3b82f6;
   --border-default: #374151;
   --border-emphasis: #4b5563;
   --border-subtle: #1f2937;
@@ -131,6 +132,13 @@
   --color-status-warning-bg: var(--status-warning-bg, #713f12);
   --color-status-warning-text: var(--status-warning-text, #fef08a);
   --color-status-warning-dim: var(--status-warning-dim, #a16207);
+
+  /* Status: info (blue) */
+  --color-status-info: var(--status-info);
+  --color-status-info-vivid: var(--status-info-vivid, #2563eb);
+  --color-status-info-bg: var(--status-info-bg, #1e3a8a);
+  --color-status-info-text: var(--status-info-text, #bfdbfe);
+  --color-status-info-border: var(--status-info-border, #1d4ed8);
 
   /* PID auto mode (purple) */
   --color-mode-auto: var(--mode-auto, #a855f7);
