@@ -48,46 +48,9 @@ function resolveModeOutlineClass(channel: RelayChannelViewModel): string {
 
 function resolveButtonState(channel: RelayChannelViewModel): ButtonState {
   const observedText = resolveObservedStateText(channel)
-
-  if (channel.stale) {
-    return {
-      text: observedText,
-      outlineClass: 'bg-status-warning-bg/50 text-status-warning-text border border-status-warning-border/80',
-    }
-  }
-  if (channel.syncing) {
-    return {
-      text: observedText,
-      outlineClass: 'bg-status-info-bg/50 text-status-info-text border border-status-info-border/80',
-    }
-  }
-  if (channel.alarm) {
-    return {
-      text: observedText,
-      outlineClass: 'bg-status-danger-bg/50 text-status-danger-text border border-status-danger-border/80',
-    }
-  }
-  if (channel.commandMode === 'auto' || channel.commandMode === 'scheduled') {
-    return {
-      text: observedText,
-      outlineClass: 'bg-status-info-bg/50 text-status-info-text border border-status-info-border/80',
-    }
-  }
-  if (channel.commandMode === 'timed_on') {
-    return {
-      text: observedText,
-      outlineClass: 'bg-status-success-bg/50 text-status-success-text border border-status-success-border/80',
-    }
-  }
-  if (channel.commandMode === 'manual_off') {
-    return {
-      text: observedText,
-      outlineClass: 'bg-status-danger-bg/50 text-status-danger-text border border-status-danger-border/80',
-    }
-  }
   return {
     text: observedText,
-    outlineClass: 'bg-status-danger-bg/50 text-status-danger-text border border-status-danger-border/80',
+    outlineClass: 'bg-surface-primary/80 text-text-input border border-border-emphasis',
   }
 }
 
