@@ -1,5 +1,5 @@
 import type { RelayChannelViewModel } from './relayViewModel'
-import { formatCountdown, formatElapsedSince } from './relayViewModel'
+import { formatElapsedSince } from './relayViewModel'
 
 interface RelayChannelBoxProps {
   channel: RelayChannelViewModel
@@ -34,19 +34,19 @@ function resolveModeOutlineClass(channel: RelayChannelViewModel): string {
   if (channel.alarm) {
     return 'border-status-danger-vivid bg-status-danger-bg/40'
   }
-  if (channel.commandMode === 'timed_on') {
+  if (channel.commandMode === 'auto' || channel.commandMode === 'scheduled') {
     return 'border-status-info-vivid bg-status-info-bg/40'
   }
-  if (channel.commandMode === 'auto' || channel.commandMode === 'scheduled') {
+  if (channel.commandMode === 'timed_on') {
     return 'border-status-success-vivid bg-status-success-bg/40'
   }
   if (channel.commandMode === 'manual_off') {
     return 'border-status-danger-vivid bg-status-danger-bg/40'
   }
-  return 'border-border-emphasis bg-surface-tertiary/40'
+  return 'border-status-danger-vivid bg-status-danger-bg/40'
 }
 
-function resolveButtonState(channel: RelayChannelViewModel, nowMs: number): ButtonState {
+function resolveButtonState(channel: RelayChannelViewModel): ButtonState {
   const observedText = resolveObservedStateText(channel)
 
   if (channel.stale) {
@@ -67,16 +67,13 @@ function resolveButtonState(channel: RelayChannelViewModel, nowMs: number): Butt
       outlineClass: 'bg-status-danger-bg/50 text-status-danger-text border border-status-danger-border/80',
     }
   }
-  if (channel.commandMode === 'timed_on' && channel.commandExpiresAt) {
-    const countdown = formatCountdown(channel.commandExpiresAt, nowMs)
-    if (countdown) {
-      return {
-        text: countdown,
-        outlineClass: 'border-status-info-border/80 bg-status-info-bg/50 text-status-info-text border',
-      }
+  if (channel.commandMode === 'auto' || channel.commandMode === 'scheduled') {
+    return {
+      text: observedText,
+      outlineClass: 'bg-status-info-bg/50 text-status-info-text border border-status-info-border/80',
     }
   }
-  if (channel.commandMode === 'auto' || channel.commandMode === 'scheduled') {
+  if (channel.commandMode === 'timed_on') {
     return {
       text: observedText,
       outlineClass: 'bg-status-success-bg/50 text-status-success-text border border-status-success-border/80',
@@ -85,12 +82,12 @@ function resolveButtonState(channel: RelayChannelViewModel, nowMs: number): Butt
   if (channel.commandMode === 'manual_off') {
     return {
       text: observedText,
-      outlineClass: 'bg-black/40 text-text-muted border border-border-emphasis',
+      outlineClass: 'bg-status-danger-bg/50 text-status-danger-text border border-status-danger-border/80',
     }
   }
   return {
     text: observedText,
-    outlineClass: 'bg-status-warning-bg/40 text-status-warning-text border border-status-warning-border/70',
+    outlineClass: 'bg-status-danger-bg/50 text-status-danger-text border border-status-danger-border/80',
   }
 }
 
@@ -119,7 +116,7 @@ export default function RelayChannelBox({
   const isStale = channel.stale
 
   const modeOutlineClass = resolveModeOutlineClass(channel)
-  const button = resolveButtonState(channel, nowMs)
+  const button = resolveButtonState(channel)
 
   const interactiveClasses = onSelect && !isDisabled
     ? 'cursor-pointer hover:border-btn-primary-hover hover:bg-surface-primary/40'
