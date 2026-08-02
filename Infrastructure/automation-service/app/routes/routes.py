@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 
+from app.repositories.monitoring_history import MonitoringHistoryRepository
+from app.repositories.monitoring_snapshot import MonitoringSnapshotRepository
 from app.routes import (
     alarms,
     calendar,
@@ -15,6 +17,7 @@ from app.routes import (
     hardware,
     lights,
     mode,
+    monitoring,
     notes,
     pid,
     redis_state,
@@ -54,6 +57,7 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(redis_state.router, tags=["redis-state"])
     app.include_router(debug.router, tags=["debug"])
     app.include_router(system_config.router, tags=["system-config"])
+    app.include_router(monitoring.router, tags=["monitoring"])
     # Health (with hardware.mcp) is served by status.router GET /health
 
     logger.info("All routes registered")
@@ -134,5 +138,25 @@ def setup_dependency_overrides(app: FastAPI, container) -> None:
 
     # Override dependencies in system_config module
     app.dependency_overrides[system_config.get_config] = container.get_config
+
+    # Override monitoring's repository and pure-projection seams.
+    app.dependency_overrides[monitoring.get_database] = container.get_database
+    app.dependency_overrides[monitoring.get_automation_redis] = container.get_automation_redis
+    app.dependency_overrides[monitoring.get_logger_health_provider] = (
+        container.get_photoperiod_history_logger
+    )
+    app.dependency_overrides[monitoring.get_snapshot_repository] = (
+        lambda: MonitoringSnapshotRepository(
+            db_manager=container.get_database(), redis=container.get_automation_redis()
+        )
+    )
+    app.dependency_overrides[monitoring.get_history_repository] = (
+        lambda: MonitoringHistoryRepository(
+            db_manager=container.get_database(),
+            health_provider=container.get_photoperiod_history_logger(),
+        )
+    )
+    app.dependency_overrides[monitoring.get_climate_projection] = monitoring.get_climate_projection
+    app.dependency_overrides[monitoring.get_light_projection] = monitoring.get_light_projection
 
     logger.info("Dependency overrides configured")

@@ -1037,6 +1037,66 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/monitoring/control/{location}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Control Monitoring Range
+         * @description Return one atomic historical range and per-source tail high-water marks.
+         */
+        get: operations["get_api_monitoring_control_{location}"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/monitoring/control/{location}/projection": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Control Projection
+         * @description Return only future climate, light, and photoperiod projections.
+         */
+        get: operations["get_api_monitoring_control_{location}_projection"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/monitoring/control/{location}/tail": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Control Monitoring Tail
+         * @description Return bounded tail pages, reconciling one range after a continuity signal.
+         */
+        get: operations["get_api_monitoring_control_{location}_tail"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/notes/{location}/{cluster}/{mode}": {
         parameters: {
             query?: never;
@@ -1708,6 +1768,16 @@ export interface components {
             submode_name?: string | null;
         };
         /**
+         * AggregationMetadata
+         * @description Source bucket information retained when a timeline series is aggregated.
+         */
+        AggregationMetadata: {
+            /** Interval Seconds */
+            interval_seconds: number;
+            /** Sample Count */
+            sample_count: number;
+        };
+        /**
          * AutoCommand
          * @description Release an assigned device back to automatic control.
          */
@@ -1776,6 +1846,58 @@ export interface components {
             title?: string | null;
         };
         /**
+         * ClimateTimelinePoint
+         * @description Recorded or projected effective/nominal climate setpoint values.
+         */
+        ClimateTimelinePoint: {
+            aggregation?: components["schemas"]["AggregationMetadata"] | null;
+            /** Device Name */
+            device_name?: string | null;
+            /** Metric */
+            metric: string;
+            /** Mode */
+            mode?: string | null;
+            /** Nominal Value */
+            nominal_value: number | null;
+            provenance: components["schemas"]["TimelineProvenance"];
+            /** Ramp Progress */
+            ramp_progress?: number | null;
+            /**
+             * Timestamp
+             * Format: date-time
+             */
+            timestamp: string;
+            /** Value */
+            value: number | null;
+        };
+        /**
+         * ClimateTimelineSeries
+         * @description Climate target timeline with step and linear ramp representations.
+         */
+        ClimateTimelineSeries: {
+            /**
+             * Linear
+             * @default []
+             */
+            linear: components["schemas"]["TimelineLinear"][];
+            /** Name */
+            name: string;
+            /** Points */
+            points: components["schemas"]["ClimateTimelinePoint"][];
+            projection?: components["schemas"]["ProjectionMetadata"] | null;
+            provenance: components["schemas"]["TimelineProvenance"];
+            /**
+             * Steps
+             * @default []
+             */
+            steps: components["schemas"]["TimelineStep"][];
+            /**
+             * Warnings
+             * @default []
+             */
+            warnings: components["schemas"]["MonitoringWarning"][];
+        };
+        /**
          * ConfigUpdateRequest
          * @description Request model for system config update.
          */
@@ -1783,6 +1905,44 @@ export interface components {
             hardware?: components["schemas"]["HardwareGroup"] | null;
             safety_limits?: components["schemas"]["SafetyLimitsGroup"] | null;
             tuning?: components["schemas"]["TuningGroup"] | null;
+        };
+        /**
+         * ControlMonitoringResponse
+         * @description Range or tail response containing immutable recorded and projected timelines.
+         */
+        ControlMonitoringResponse: {
+            /**
+             * Climate
+             * @default []
+             */
+            climate: components["schemas"]["ClimateTimelineSeries"][];
+            /** Cursors */
+            cursors: components["schemas"]["SourceCursor"][];
+            /**
+             * Devices
+             * @default []
+             */
+            devices: components["schemas"]["DeviceTimelineSeries"][];
+            /** Flush Health */
+            flush_health: components["schemas"]["FlushHealth"][];
+            /**
+             * Lights
+             * @default []
+             */
+            lights: components["schemas"]["LightTimelineSeries"][];
+            /**
+             * Photoperiod
+             * @default []
+             */
+            photoperiod: components["schemas"]["PhotoperiodTimelinePoint"][];
+            /**
+             * Pid
+             * @default []
+             */
+            pid: components["schemas"]["PidTimelineSeries"][];
+            range: components["schemas"]["MonitoringRange"];
+            /** Runtime Snapshot Version */
+            runtime_snapshot_version: number;
         };
         /**
          * ControlSnapshotResponse
@@ -1837,7 +1997,7 @@ export interface components {
             device_id?: number | null;
             /**
              * Device Name
-             * @description Canonical name: <type>_<room_prefix>_<index>
+             * @description Canonical or legacy device name (canonical enforced at creation).
              */
             device_name: string;
             /** Device Type */
@@ -1963,6 +2123,41 @@ export interface components {
             mode: string;
         };
         /**
+         * DeviceTimelinePoint
+         * @description Historical automation-state observation; future device state is never fabricated.
+         */
+        DeviceTimelinePoint: {
+            /** Control Reason */
+            control_reason: string;
+            /** Device Mode */
+            device_mode: string;
+            /** Device Name */
+            device_name: string;
+            /** Device State */
+            device_state: number;
+            provenance: components["schemas"]["TimelineProvenance"];
+            /**
+             * Timestamp
+             * Format: date-time
+             */
+            timestamp: string;
+        };
+        /**
+         * DeviceTimelineSeries
+         * @description Historical device automation states only.
+         */
+        DeviceTimelineSeries: {
+            /** Name */
+            name: string;
+            /** Points */
+            points: components["schemas"]["DeviceTimelinePoint"][];
+            /**
+             * Warnings
+             * @default []
+             */
+            warnings: components["schemas"]["MonitoringWarning"][];
+        };
+        /**
          * DfrBoardSnapshotResponse
          * @description One DFR board's public, address-free output slots.
          */
@@ -2082,6 +2277,20 @@ export interface components {
             /** Week Start */
             week_start?: number | null;
         };
+        /**
+         * FlushHealth
+         * @description Persisted-history flush status, including rows dropped before storage.
+         */
+        FlushHealth: {
+            /** Dropped Rows */
+            dropped_rows: number;
+            /** Healthy */
+            healthy: boolean;
+            /** Last Flushed At */
+            last_flushed_at?: string | null;
+            /** Source */
+            source: string;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -2162,7 +2371,7 @@ export interface components {
             device_id?: number | null;
             /**
              * Device Name
-             * @description Canonical name: light_<room_prefix>_<index>
+             * @description Canonical or legacy light name (canonical enforced at creation).
              */
             device_name: string;
             /**
@@ -2259,6 +2468,56 @@ export interface components {
             target_intensity: number;
         };
         /**
+         * LightTimelinePoint
+         * @description Recorded or projected per-device effective/nominal light intensity.
+         */
+        LightTimelinePoint: {
+            aggregation?: components["schemas"]["AggregationMetadata"] | null;
+            /** Device Name */
+            device_name: string;
+            /** Mode */
+            mode?: string | null;
+            /** Nominal Value */
+            nominal_value: number | null;
+            provenance: components["schemas"]["TimelineProvenance"];
+            /** Ramp Progress */
+            ramp_progress?: number | null;
+            /**
+             * Timestamp
+             * Format: date-time
+             */
+            timestamp: string;
+            /** Value */
+            value: number | null;
+        };
+        /**
+         * LightTimelineSeries
+         * @description Per-light target timeline with step and linear ramp representations.
+         */
+        LightTimelineSeries: {
+            /**
+             * Linear
+             * @default []
+             */
+            linear: components["schemas"]["TimelineLinear"][];
+            /** Name */
+            name: string;
+            /** Points */
+            points: components["schemas"]["LightTimelinePoint"][];
+            projection?: components["schemas"]["ProjectionMetadata"] | null;
+            provenance: components["schemas"]["TimelineProvenance"];
+            /**
+             * Steps
+             * @default []
+             */
+            steps: components["schemas"]["TimelineStep"][];
+            /**
+             * Warnings
+             * @default []
+             */
+            warnings: components["schemas"]["MonitoringWarning"][];
+        };
+        /**
          * ManualOffCommand
          * @description Hold an assigned device safely OFF until released.
          */
@@ -2320,11 +2579,43 @@ export interface components {
              */
             source: string;
         };
+        /**
+         * MonitoringRange
+         * @description Validated aware-UTC half-open monitoring interval ``[start, end)``.
+         */
+        MonitoringRange: {
+            /**
+             * End
+             * Format: date-time
+             */
+            end: string;
+            /**
+             * Start
+             * Format: date-time
+             */
+            start: string;
+        };
+        /**
+         * MonitoringWarning
+         * @description A non-fatal reason a control timeline is estimated or incomplete.
+         */
+        MonitoringWarning: {
+            /** Code */
+            code: string;
+            /** Detail */
+            detail: string;
+        };
         /** NotesBody */
         NotesBody: {
             /** Content */
             content: string;
         };
+        /**
+         * Origin
+         * @description How a timeline value entered the response.
+         * @enum {string}
+         */
+        Origin: "recorded" | "derived" | "projected";
         /**
          * PIDModeUpdate
          * @description Request model for PID control mode update.
@@ -2398,6 +2689,31 @@ export interface components {
             submode_id?: number | null;
         };
         /**
+         * Phase
+         * @description The resolved photoperiod phase for a room.
+         * @enum {string}
+         */
+        Phase: "SUN" | "MOON" | "UNKNOWN";
+        /**
+         * PhotoperiodTimelinePoint
+         * @description A historical or projected room photoperiod phase transition.
+         */
+        PhotoperiodTimelinePoint: {
+            /** Mode Id */
+            mode_id?: number | null;
+            phase: components["schemas"]["Phase"];
+            provenance: components["schemas"]["TimelineProvenance"];
+            /** Runtime Snapshot Version */
+            runtime_snapshot_version?: number | null;
+            /** Submode Id */
+            submode_id?: number | null;
+            /**
+             * Timestamp
+             * Format: date-time
+             */
+            timestamp: string;
+        };
+        /**
          * PidLimitsGroup
          * @description PID limits for all device types.
          */
@@ -2424,6 +2740,66 @@ export interface components {
             /** Kp Min */
             kp_min: number;
         };
+        /**
+         * PidTimelinePoint
+         * @description Historical PID output observation; null output stays null.
+         */
+        PidTimelinePoint: {
+            /** Device Name */
+            device_name: string;
+            /** Duty Cycle Percent */
+            duty_cycle_percent?: number | null;
+            /** Pid Output */
+            pid_output?: number | null;
+            provenance: components["schemas"]["TimelineProvenance"];
+            /**
+             * Timestamp
+             * Format: date-time
+             */
+            timestamp: string;
+        };
+        /**
+         * PidTimelineSeries
+         * @description Historical PID observations only.
+         */
+        PidTimelineSeries: {
+            /** Name */
+            name: string;
+            /** Points */
+            points: components["schemas"]["PidTimelinePoint"][];
+            /**
+             * Warnings
+             * @default []
+             */
+            warnings: components["schemas"]["MonitoringWarning"][];
+        };
+        /**
+         * ProjectionMetadata
+         * @description Stable provenance captured with every projected control series.
+         */
+        ProjectionMetadata: {
+            /** Anchor Fingerprint */
+            anchor_fingerprint: string;
+            /**
+             * Anchor Observed At
+             * Format: date-time
+             */
+            anchor_observed_at: string;
+            anchor_quality: components["schemas"]["Quality"];
+            /**
+             * Anchor Valid Until
+             * Format: date-time
+             */
+            anchor_valid_until: string;
+            /** Projection Revision */
+            projection_revision: string;
+        };
+        /**
+         * Quality
+         * @description Confidence in a timeline value independently of its origin.
+         * @enum {string}
+         */
+        Quality: "exact" | "estimated" | "unavailable";
         /**
          * RegistryDeviceUpdate
          * @description Validated update envelope parsed into a device-kind-specific DTO while locked.
@@ -2673,6 +3049,18 @@ export interface components {
             /** Submode Name */
             submode_name?: string | null;
         };
+        /**
+         * SourceCursor
+         * @description Opaque per-source tail cursor and bounded-page state.
+         */
+        SourceCursor: {
+            /** Cursor */
+            cursor?: string | null;
+            /** Has More */
+            has_more: boolean;
+            /** Source */
+            source: string;
+        };
         /** SyncConnectionCreate */
         SyncConnectionCreate: {
             /** Account Email */
@@ -2722,6 +3110,54 @@ export interface components {
              * @default Timed manual ON
              */
             reason: string;
+        };
+        /**
+         * TimelineLinear
+         * @description A linear target segment with explicit UTC endpoints.
+         */
+        TimelineLinear: {
+            /**
+             * End
+             * Format: date-time
+             */
+            end: string;
+            /** End Value */
+            end_value: number;
+            provenance: components["schemas"]["TimelineProvenance"];
+            /**
+             * Start
+             * Format: date-time
+             */
+            start: string;
+            /** Start Value */
+            start_value: number;
+        };
+        /**
+         * TimelineProvenance
+         * @description Orthogonal source, confidence, and aggregation facts for timeline values.
+         */
+        TimelineProvenance: {
+            /**
+             * Is Aggregated
+             * @default false
+             */
+            is_aggregated: boolean;
+            origin: components["schemas"]["Origin"];
+            quality: components["schemas"]["Quality"];
+        };
+        /**
+         * TimelineStep
+         * @description A value that holds from ``timestamp`` until the following point.
+         */
+        TimelineStep: {
+            provenance: components["schemas"]["TimelineProvenance"];
+            /**
+             * Timestamp
+             * Format: date-time
+             */
+            timestamp: string;
+            /** Value */
+            value: number | null;
         };
         /**
          * TuningGroup
@@ -4652,6 +5088,111 @@ export interface operations {
                 };
                 content: {
                     "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    "get_api_monitoring_control_{location}": {
+        parameters: {
+            query?: {
+                start?: string | null;
+                end?: string | null;
+            };
+            header?: never;
+            path: {
+                location: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlMonitoringResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    "get_api_monitoring_control_{location}_projection": {
+        parameters: {
+            query?: {
+                start?: string | null;
+                end?: string | null;
+            };
+            header?: never;
+            path: {
+                location: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlMonitoringResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    "get_api_monitoring_control_{location}_tail": {
+        parameters: {
+            query?: {
+                start?: string | null;
+                end?: string | null;
+                effective_setpoints_cursor?: string | null;
+                automation_state_cursor?: string | null;
+                photoperiod_history_cursor?: string | null;
+            };
+            header?: never;
+            path: {
+                location: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlMonitoringResponse"];
                 };
             };
             /** @description Validation Error */
