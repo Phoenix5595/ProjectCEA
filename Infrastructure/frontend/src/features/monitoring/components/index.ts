@@ -1,11 +1,14 @@
 /**
- * Public barrel for the monitoring time-range toolbar.
+ * Public barrel for the monitoring components.
  *
- * Exposes the toolbar component and its pure time helpers so downstream
- * consumers (Todo 26/27 room pages) import from one module.
+ * Exposes the time-range toolbar, the semantic table/stat primitives, and
+ * their pure helper modules so downstream consumers (Todo 26/27 room pages)
+ * import from one module.
  */
 export { TimeRangeToolbar } from './TimeRangeToolbar'
 export type { TimeRangeToolbarProps } from './TimeRangeToolbar'
+export { AbsoluteRangeForm } from './TimeRangeToolbar.inputs'
+export type { AbsoluteRangeFormProps, FallFoldState } from './TimeRangeToolbar.inputs'
 export {
   MAX_RANGE_MS,
   MIN_RANGE_MS,
@@ -27,3 +30,27 @@ export type {
   WallComponents,
   WallTimeResult,
 } from './timeRangeToolbar.time'
+export { SensorValueTable } from './SensorValueTable'
+export type { SensorValueTableProps } from './SensorValueTable'
+export { RoomAveragesTable } from './RoomAveragesTable'
+export type { RoomAveragesTableProps } from './RoomAveragesTable'
+export { StatisticsTable } from './StatisticsTable'
+export type { StatisticsTableProps } from './StatisticsTable'
+export { ChartDataTable } from './ChartDataTable'
+export type { ChartDataTableProps } from './ChartDataTable'
+export {
+  DEFAULT_STALE_AFTER_MS,
+  FAMILY_DECIMALS,
+  formatTimestamp,
+  formatValue,
+  isStale,
+} from './tables/tableFormat'
+export {
+  BASE_TO_FAMILY,
+  ROW_TO_BASE,
+  baseLabelForAverage,
+  familyForRow,
+  familyForStatRow,
+  sensorNameForRow,
+  sensorNameForStatRow,
+} from './tables/tableManifest'
