@@ -25,6 +25,7 @@ from monitoring_service.sensor_models import (
     compute_tier,
     resolve_room_metadata,
 )
+from monitoring_service.query_observation import request_observation
 from shared.cluster_topology import sensor_name_like_pattern
 
 _LIVE_MAX_AGE: Final[timedelta] = timedelta(
@@ -62,25 +63,26 @@ class SensorMonitoringRepository:
     ) -> tuple[Tier, tuple[SensorSeries, ...]]:
         metadata = resolve_room_metadata(room)
         tier = compute_tier(monitoring_range.duration)
-        if tier is not Tier.RAW:
-            await self._require_cagg_coverage(tier, monitoring_range)
-        result: list[SensorSeries] = []
-        for node in metadata.nodes:
-            pattern = sensor_name_like_pattern(room, node.value) or ""
-            if tier is Tier.RAW:
-                rows = await self._database.fetch(
-                    _RAW_SERIES_SQL, room, pattern, monitoring_range.start, monitoring_range.end
-                )
-            else:
-                rows = await self._database.fetch(
-                    _TIERED_STATEMENTS[tier.value],
-                    room,
-                    pattern,
-                    monitoring_range.start,
-                    monitoring_range.end,
-                )
-            result.extend(_series_from_rows(rows, node))
-        return tier, tuple(result)
+        async with request_observation(tier=tier.value):
+            if tier is not Tier.RAW:
+                await self._require_cagg_coverage(tier, monitoring_range)
+            result: list[SensorSeries] = []
+            for node in metadata.nodes:
+                pattern = sensor_name_like_pattern(room, node.value) or ""
+                if tier is Tier.RAW:
+                    rows = await self._database.fetch(
+                        _RAW_SERIES_SQL, room, pattern, monitoring_range.start, monitoring_range.end
+                    )
+                else:
+                    rows = await self._database.fetch(
+                        _TIERED_STATEMENTS[tier.value],
+                        room,
+                        pattern,
+                        monitoring_range.start,
+                        monitoring_range.end,
+                    )
+                result.extend(_series_from_rows(rows, node))
+            return tier, tuple(result)
 
     async def _require_cagg_coverage(self, tier: Tier, monitoring_range: MonitoringRange) -> None:
         relation, _ = _CAGGS[tier]
@@ -102,17 +104,19 @@ class SensorMonitoringRepository:
             if monitoring_range.duration > STATS_CAGG_MIN_DURATION
             else _STATISTICS_SQL
         )
-        result: list[SensorStatistics] = []
-        for node in metadata.nodes:
-            rows = await self._database.fetch(
-                statement,
-                room,
-                sensor_name_like_pattern(room, node.value) or "",
-                monitoring_range.start,
-                monitoring_range.end,
-            )
-            result.extend(_statistics_from_rows(rows, node))
-        return tuple(result)
+        tier = "5min" if statement == _STATISTICS_CAGG_SQL else "raw"
+        async with request_observation(tier=tier):
+            result: list[SensorStatistics] = []
+            for node in metadata.nodes:
+                rows = await self._database.fetch(
+                    statement,
+                    room,
+                    sensor_name_like_pattern(room, node.value) or "",
+                    monitoring_range.start,
+                    monitoring_range.end,
+                )
+                result.extend(_statistics_from_rows(rows, node))
+            return tuple(result)
 
     async def live(self, room: str, node: str) -> tuple[LiveSensorValue, ...]:
         metadata = resolve_room_metadata(room)

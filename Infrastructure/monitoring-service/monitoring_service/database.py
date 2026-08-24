@@ -12,6 +12,7 @@ import asyncpg
 from typing_extensions import override
 
 from monitoring_service.resources import DatabaseResourceSettings
+from monitoring_service.query_observation import QueryExecution, observe_acquire
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,9 +90,14 @@ class ReadOnlyDatabase:
         normalized_query = query.lstrip().upper()
         if not normalized_query.startswith(("SELECT", "EXPLAIN", "WITH")):
             raise ReadOnlyQueryError(query)
-        async with self._pool.acquire(timeout=self._acquire_timeout_seconds) as connection:
+        async with observe_acquire(
+            self._pool.acquire(timeout=self._acquire_timeout_seconds)
+        ) as connection:
             async with connection.transaction(isolation="repeatable_read", readonly=True):
-                return await connection.fetch(query, *args)
+                async with QueryExecution(query) as observation:
+                    rows = await connection.fetch(query, *args)
+                    observation.set_row_count(len(rows))
+                    return rows
 
     async def close(self) -> None:
         """Release the independently owned monitoring pool."""
