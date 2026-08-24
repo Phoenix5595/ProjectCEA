@@ -1,0 +1,386 @@
+/**
+ * Monitoring page layout and component styles.
+ *
+ * Theme-aware via CSS custom properties with inline fallbacks matching the
+ * `botanical` theme defaults, so the page renders correctly even if a theme
+ * omits a token. Loaded lazily from `FlowerMonitoring.tsx` (not a global
+ * entry) so it only ships when the native monitoring page is rendered.
+ */
+
+.mon-page {
+  width: 100%;
+  padding: 1rem;
+  box-sizing: border-box;
+  background: var(--surface-base, #10150e);
+  color: var(--text-default, #f1f5f0);
+}
+
+.mon-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+@media (min-width: 768px) {
+  .mon-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.mon-card {
+  min-width: 0;
+  overflow: hidden;
+  padding: 1rem;
+  background: var(--surface-secondary, #2f3d29);
+  border: 1px solid var(--border-default, #475b3e);
+  border-radius: 0.5rem;
+}
+
+.mon-card__title {
+  margin: 0 0 0.75rem;
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--text-default, #f1f5f0);
+}
+
+.mon-banner {
+  padding: 0.5rem 0.75rem;
+  margin-bottom: 1rem;
+  font-size: 0.8rem;
+  background: var(--surface-tertiary, #475b3e);
+  border: 1px solid var(--border-default, #475b3e);
+  border-radius: 0.375rem;
+}
+
+.mon-banner--error {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  border-left: 4px solid var(--mon-error-border, var(--mon-error, var(--status-danger, #bd4253)));
+  color: var(--mon-error-text, var(--mon-error, var(--status-danger, #bd4253)));
+}
+
+.mon-banner--error::before {
+  content: '';
+  display: block;
+  width: 0.625rem;
+  height: 0.625rem;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--mon-error-icon, var(--mon-error, var(--status-danger, #bd4253)));
+}
+
+.mon-banner--error .mon-status__error-text {
+  flex: 1 1 auto;
+}
+
+.mon-banner--warning {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  border-left: 4px solid var(--status-warning, #d78e98);
+  color: var(--mon-warning-text, var(--status-warning-text, #e4b4ba));
+}
+
+.mon-banner--warning::before {
+  content: '';
+  display: block;
+  width: 0.625rem;
+  height: 0.625rem;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--status-warning, #d78e98);
+}
+
+.mon-banner--warning .mon-status__error-text {
+  flex: 1 1 auto;
+}
+
+.mon-chart {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  box-sizing: border-box;
+  padding: 0.5rem;
+  background: var(--surface-primary, #181e15);
+  border: 1px solid var(--border-default, #475b3e);
+  border-radius: 0.5rem;
+}
+
+.mon-chart > div[role='img'] {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* Accessible chart description: visually hidden but announced via
+   aria-describedby, so screen readers get the chart's purpose. */
+.mon-chart__desc {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* Visible keyboard focus for every interactive monitoring control. */
+.mon-toolbar button:focus-visible,
+.mon-legend button:focus-visible,
+.mon-status button:focus-visible,
+.mon-status a:focus-visible,
+.mon-card button:focus-visible,
+.mon-card a:focus-visible {
+  outline: 2px solid var(--mon-focus-ring, #60a5fa);
+  outline-offset: 2px;
+}
+
+/* Respect reduced-motion: no transitions or animated state changes. */
+@media (prefers-reduced-motion: reduce) {
+  .mon-toolbar button,
+  .mon-legend button,
+  .mon-status button,
+  .mon-card button,
+  .mon-card a {
+    transition: none !important;
+    animation: none !important;
+  }
+}
+
+.mon-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  margin-bottom: 0;
+  background: var(--surface-secondary, #2f3d29);
+  border: 1px solid var(--border-default, #475b3e);
+  border-radius: 0.5rem;
+}
+
+.mon-toolbar__presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+}
+
+.mon-toolbar__preset,
+.mon-toolbar__now {
+  padding: 0.25rem 0.625rem;
+  font-size: 0.8rem;
+  border: 1px solid var(--border-default, #475b3e);
+  border-radius: 0.375rem;
+  background: var(--surface-tertiary, #475b3e);
+  color: var(--text-default, #f1f5f0);
+  cursor: pointer;
+}
+
+.mon-toolbar__preset[aria-pressed='true'] {
+  background: var(--accent, #b0d52a);
+  color: #000000;
+}
+
+.mon-toolbar__status {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+}
+
+.mon-toolbar__live {
+  font-weight: 600;
+}
+
+.mon-toolbar__tz {
+  color: var(--mon-text-secondary, #c8d6c2);
+}
+
+.mon-toolbar__absolute {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.mon-toolbar__error {
+  font-size: 0.8rem;
+  color: var(--mon-error-text, var(--mon-error, var(--status-danger, #bd4253)));
+}
+
+.mon-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0;
+}
+
+.mon-legend__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mon-legend__swatch,
+.mon-legend__reset {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.75rem;
+  border: 1px solid var(--border-default, #475b3e);
+  border-radius: 0.375rem;
+  background: var(--surface-tertiary, #475b3e);
+  color: var(--text-default, #f1f5f0);
+  cursor: pointer;
+}
+
+.mon-legend__color {
+  width: 0.75rem;
+  height: 0.75rem;
+  border-radius: 0.25rem;
+}
+
+.mon-status {
+  margin-bottom: 1rem;
+}
+
+.mon-status__summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+}
+
+.mon-status__badge {
+  padding: 0.125rem 0.5rem;
+  border-radius: 0.375rem;
+  font-weight: 600;
+  background: var(--surface-tertiary, #475b3e);
+  color: var(--text-default, #f1f5f0);
+}
+
+.mon-status__badge--error {
+  background: var(--status-danger-bg, #1a090c);
+  color: var(--status-danger-text, #f2d9dd);
+}
+
+.mon-status__badge--unavailable,
+.mon-status__badge--stale {
+  background: var(--status-warning-bg, #260d11);
+  color: var(--status-warning-text, #e4b4ba);
+}
+
+.mon-status__badge--loading,
+.mon-status__badge--reconciling {
+  background: var(--surface-tertiary, #475b3e);
+  color: var(--text-default, #f1f5f0);
+}
+
+.mon-status__meta {
+  color: var(--mon-text-secondary, #c8d6c2);
+}
+
+.mon-status__error-text {
+  flex: 1 1 auto;
+}
+
+.mon-status__dismiss {
+  border: none;
+  background: transparent;
+  color: inherit;
+  font-size: 1rem;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.mon-status__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.mon-status__actions button {
+  padding: 0.25rem 0.625rem;
+  font-size: 0.8rem;
+  border: 1px solid var(--border-default, #475b3e);
+  border-radius: 0.375rem;
+  background: var(--surface-tertiary, #475b3e);
+  color: var(--text-default, #f1f5f0);
+  cursor: pointer;
+}
+
+/* Grafana-style monitoring layout: sidebar tables left, dominant charts right */
+.mon-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1rem;
+}
+
+.mon-side {
+  display: grid;
+  gap: 1rem;
+  align-content: start;
+}
+
+.mon-main {
+  display: grid;
+  gap: 1rem;
+  min-width: 0;
+}
+
+@media (min-width: 1100px) {
+  .mon-layout {
+    grid-template-columns: 340px minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .mon-side {
+    position: sticky;
+    top: 1rem;
+  }
+}
+
+/* uPlot renders its own cursor legend under the canvas; the feature ships an
+   external semantic legend, so hide the internal one to avoid duplicated
+   labels (e.g. "dry_bulb_b" next to "dry_bulb_b min"/"max"). */
+.mon-chart .uplot .u-legend {
+  display: none;
+}
+
+/* Owner adjustment: sidebar cards use tight 4px padding. */
+.mon-side .mon-card {
+  padding: 4px;
+}
+
+/* Owner adjustment: main-area chart cards use tight 4px padding too. */
+.mon-main .mon-card {
+  padding: 4px;
+}
+
+/* Owner adjustments: tight card headers/legends. */
+.mon-card__title {
+  margin-bottom: 0;
+}
+
+.mon-chart .mon-legend {
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+/* Owner adjustment: zero padding on sidebar table cells/headers. */
+.mon-side .mon-card table td,
+.mon-side .mon-card table th {
+  padding: 0;
+}
+
+/* Owner adjustment: toolbar without padding. */
+.mon-toolbar {
+  padding: 0;
+}

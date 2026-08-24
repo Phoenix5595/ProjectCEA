@@ -14,6 +14,7 @@ import { createRef } from 'react'
 import type uPlot from 'uplot'
 import { ThemeProvider } from '../../../../contexts/ThemeContext'
 import type { AlignedData } from '../../data'
+import { seriesKey } from '../../data/alignSeries.types'
 import { UPlotChart, type UPlotChartHandle } from '../UPlotChart'
 
 const { MockUPlot, instances } = vi.hoisted(() => {
@@ -26,7 +27,14 @@ const { MockUPlot, instances } = vi.hoisted(() => {
     scales = { x: { min: 0, max: 100 } }
     setData = vi.fn()
     setSize = vi.fn()
-    setScale = vi.fn()
+    setScale = vi.fn((scaleKey: string, range: { min: number; max: number }) => {
+      if (scaleKey !== 'x') return
+      this.scales.x = range
+      const setScaleHooks = this.opts.hooks?.setScale
+      setScaleHooks?.forEach((hook) => {
+        if (hook !== undefined) hook(this as unknown as uPlot, scaleKey)
+      })
+    })
     setSeries = vi.fn()
     destroy = vi.fn()
     constructor(opts: uPlot.Options, data?: uPlot.AlignedData, target?: HTMLElement) {
@@ -57,17 +65,17 @@ function makeData(): AlignedData {
   return {
     x,
     series: [
-      { key: 'sensor:temp:mean', label: 'temp', kind: 'sensor', y: [20, 21, 22, 23], origin: 'recorded', quality: 'exact', isAggregated: false, unit: '°C', unitFamily: 'celsius' },
-      { key: 'sensor:temp:min', label: 'temp min', kind: 'sensor', y: [19, 20, 21, 22], origin: 'recorded', quality: 'exact', isAggregated: false, unit: '°C', unitFamily: 'celsius' },
-      { key: 'sensor:temp:max', label: 'temp max', kind: 'sensor', y: [21, 22, 23, 24], origin: 'recorded', quality: 'exact', isAggregated: false, unit: '°C', unitFamily: 'celsius' },
-      { key: 'sensor:rh:mean', label: 'rh', kind: 'sensor', y: [50, 51, 52, 53], origin: 'recorded', quality: 'exact', isAggregated: false, unit: '%', unitFamily: 'percent' },
-      { key: 'sensor:rh:min', label: 'rh min', kind: 'sensor', y: [49, 50, 51, 52], origin: 'recorded', quality: 'exact', isAggregated: false, unit: '%', unitFamily: 'percent' },
-      { key: 'sensor:rh:max', label: 'rh max', kind: 'sensor', y: [51, 52, 53, 54], origin: 'recorded', quality: 'exact', isAggregated: false, unit: '%', unitFamily: 'percent' },
-      { key: 'climate:heating:point', label: 'heating', kind: 'point', y: [20, 20, 21, 21], origin: 'projected', quality: 'estimated', isAggregated: false },
+      { key: seriesKey('sensor', 'temp', 'mean'), label: 'temp', kind: 'sensor', source: 'sensor', metric: 'temp', family: 'temperature', role: 'mean', y: [20, 21, 22, 23], origin: 'recorded', quality: 'exact', isAggregated: false, unit: '°C', unitFamily: 'celsius' },
+      { key: seriesKey('sensor', 'temp', 'min'), label: 'temp min', kind: 'sensor', source: 'sensor', metric: 'temp', family: 'temperature', role: 'min', y: [19, 20, 21, 22], origin: 'recorded', quality: 'exact', isAggregated: false, unit: '°C', unitFamily: 'celsius' },
+      { key: seriesKey('sensor', 'temp', 'max'), label: 'temp max', kind: 'sensor', source: 'sensor', metric: 'temp', family: 'temperature', role: 'max', y: [21, 22, 23, 24], origin: 'recorded', quality: 'exact', isAggregated: false, unit: '°C', unitFamily: 'celsius' },
+      { key: seriesKey('sensor', 'rh', 'mean'), label: 'rh', kind: 'sensor', source: 'sensor', metric: 'rh', family: 'rh', role: 'mean', y: [50, 51, 52, 53], origin: 'recorded', quality: 'exact', isAggregated: false, unit: '%', unitFamily: 'percent' },
+      { key: seriesKey('sensor', 'rh', 'min'), label: 'rh min', kind: 'sensor', source: 'sensor', metric: 'rh', family: 'rh', role: 'min', y: [49, 50, 51, 52], origin: 'recorded', quality: 'exact', isAggregated: false, unit: '%', unitFamily: 'percent' },
+      { key: seriesKey('sensor', 'rh', 'max'), label: 'rh max', kind: 'sensor', source: 'sensor', metric: 'rh', family: 'rh', role: 'max', y: [51, 52, 53, 54], origin: 'recorded', quality: 'exact', isAggregated: false, unit: '%', unitFamily: 'percent' },
+      { key: seriesKey('climate', 'heating', 'point'), label: 'heating', kind: 'point', source: 'climate', metric: 'heating', family: 'device', role: 'point', y: [20, 20, 21, 21], origin: 'projected', quality: 'estimated', isAggregated: false },
     ],
     bands: [
-      { key: 'sensor:temp:band', minKey: 'sensor:temp:min', maxKey: 'sensor:temp:max' },
-      { key: 'sensor:rh:band', minKey: 'sensor:rh:min', maxKey: 'sensor:rh:max' },
+      { key: seriesKey('sensor', 'temp', 'band'), minKey: seriesKey('sensor', 'temp', 'min'), maxKey: seriesKey('sensor', 'temp', 'max') },
+      { key: seriesKey('sensor', 'rh', 'band'), minKey: seriesKey('sensor', 'rh', 'min'), maxKey: seriesKey('sensor', 'rh', 'max') },
     ],
     photoperiod: [
       { start: 1000, end: 2500, phase: 'SUN' },
@@ -104,9 +112,9 @@ describe('monitoring chart interactions', () => {
 
     // Temperature renders on the left; other families on the right.
     const tempAxis = plot.opts.axes?.find((a) => a.scale === 'temperature')
-    expect(tempAxis?.side).toBe(1)
+    expect(tempAxis?.side).toBe(3)
     const rhAxis = plot.opts.axes?.find((a) => a.scale === 'rh')
-    expect(rhAxis?.side).toBe(3)
+    expect(rhAxis?.side).toBe(1)
 
     // Photoperiod + now-divider overlays are present as plugins.
     expect(plot.opts.plugins?.length).toBeGreaterThanOrEqual(3)
@@ -156,18 +164,60 @@ describe('monitoring chart interactions', () => {
     expect(rows?.length).toBe(3)
   })
 
-  it('reset zoom restores the original range via the imperative handle', () => {
+  it('pushes live updates without resetting a fixed user zoom', () => {
+    const onZoom = vi.fn()
     const data = makeData()
-    const ref = createRef<UPlotChartHandle>()
-    const range = { start: new Date(1000), end: new Date(4000) }
-    render(
+    const { rerender } = render(
       <ThemeProvider>
-        <UPlotChart data={data} range={range} ref={ref} />
+        <UPlotChart data={data} onZoom={onZoom} />
       </ThemeProvider>,
     )
     const plot = instances[0]
 
+    // The user drag-zooms to a fixed window.
+    plot.setScale('x', { min: 1500, max: 3500 })
+    plot.setScale('x', { min: 1500, max: 3500 })
+    expect(onZoom).toHaveBeenCalledTimes(1)
+
+    // A one-second live tick pushes new aligned data.
+    const next = makeData()
+    next.nowIndex = 3
+    rerender(
+      <ThemeProvider>
+        <UPlotChart data={next} onZoom={onZoom} />
+      </ThemeProvider>,
+    )
+
+    // setData must run with resetScale=false so the user zoom survives the tick.
+    expect(plot.setData).toHaveBeenCalled()
+    const lastCall = plot.setData.mock.calls.at(-1)
+    expect(lastCall?.[1]).toBe(false)
+  })
+
+  it('programmatic reset stays silent while a simulated user zoom emits once', () => {
+    const data = makeData()
+    const ref = createRef<UPlotChartHandle>()
+    const range = { start: new Date(1000), end: new Date(4000) }
+    const onZoom = vi.fn()
+    render(
+      <ThemeProvider>
+        <UPlotChart data={data} range={range} ref={ref} onZoom={onZoom} />
+      </ThemeProvider>,
+    )
+    const plot = instances[0]
+    const setScaleHook = plot.opts.hooks?.setScale?.[0]
+
+    // The first scale hook marks the initial programmatic uPlot scale as ready.
+    setScaleHook?.(plot as unknown as uPlot, 'x')
+
     ref.current?.resetZoom()
     expect(plot.setScale).toHaveBeenCalledWith('x', { min: 1000, max: 4000 })
+    expect(onZoom).not.toHaveBeenCalled()
+
+    // A user drag is represented by uPlot's scale hook after the plot has settled.
+    plot.scales.x = { min: 2000, max: 3000 }
+    setScaleHook?.(plot as unknown as uPlot, 'x')
+    expect(onZoom).toHaveBeenCalledTimes(1)
+    expect(onZoom).toHaveBeenCalledWith({ start: new Date(2000), end: new Date(3000) })
   })
 })

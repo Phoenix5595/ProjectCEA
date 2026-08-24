@@ -1,0 +1,324 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { MonitoringApi } from '../monitoringApi'
+import {
+  MonitoringAbortError,
+  MonitoringNetworkError,
+  MonitoringParseError,
+  MonitoringTimeoutError,
+} from '../errors'
+
+function jsonResponse(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'Content-Type': 'application/json' },
+  })
+}
+
+const sensorRangePayload = {
+  metadata: {
+    generated_at: '2026-08-02T12:00:00.000Z',
+    tier: 'raw',
+    range: { start: '2026-08-02T11:00:00.000Z', end: '2026-08-02T12:00:00.000Z' },
+    room: { room: 'Flower Room', nodes: ['front', 'back'] },
+  },
+  series: [
+    {
+      sensor: 'dry_bulb',
+      node: 'front',
+      unit_family: 'celsius',
+      unit: '°C',
+      points: [
+        {
+          timestamp: '2026-08-02T11:00:00.000Z',
+          average: 24.5,
+          minimum: 24.1,
+          maximum: 24.9,
+          sample_count: 60,
+        },
+      ],
+    },
+  ],
+  statistics: [
+    {
+      sensor: 'dry_bulb',
+      node: 'front',
+      minimum: 24.1,
+      maximum: 25.2,
+      average: 24.65,
+      stddev_samp: 0.21,
+      sample_count: 3600,
+    },
+  ],
+}
+
+const sensorLivePayload = [
+  { sensor: 'dry_bulb', value: 24.6, timestamp: '2026-08-02T12:00:00.000Z' },
+]
+
+const controlPayload = {
+  range: { start: '2026-08-02T11:00:00.000Z', end: '2026-08-02T12:00:00.000Z' },
+  runtime_snapshot_version: 7,
+  cursors: [
+    { source: 'effective_setpoints', cursor: '42', has_more: true },
+    { source: 'automation_state', cursor: '10', has_more: false },
+    { source: 'photoperiod_history', cursor: '3', has_more: false },
+  ],
+  flush_health: [
+    {
+      source: 'photoperiod_history',
+      dropped_rows: 0,
+      last_flushed_at: '2026-08-02T12:00:00.000Z',
+      healthy: true,
+    },
+  ],
+  climate: [
+    {
+      name: 'Heating Setpoint',
+      provenance: { origin: 'recorded', quality: 'exact', is_aggregated: false },
+      projection: null,
+      warnings: [],
+      points: [
+        {
+          timestamp: '2026-08-02T11:00:00.000Z',
+          value: 22,
+          nominal_value: 22,
+          metric: 'heating_setpoint',
+          provenance: { origin: 'recorded', quality: 'exact', is_aggregated: false },
+        },
+      ],
+      steps: [],
+      linear: [],
+    },
+  ],
+  lights: [],
+  devices: [],
+  pid: [],
+  photoperiod: [
+    {
+      timestamp: '2026-08-02T11:00:00.000Z',
+      phase: 'SUN',
+      provenance: { origin: 'recorded', quality: 'exact', is_aggregated: false },
+      runtime_snapshot_version: 7,
+    },
+  ],
+}
+
+const controlProjectionPayload = {
+  ...controlPayload,
+  climate: [
+    {
+      name: 'Heating Setpoint',
+      provenance: { origin: 'projected', quality: 'estimated', is_aggregated: false },
+      projection: {
+        projection_revision: 'rev-1',
+        anchor_fingerprint: 'fp-1',
+        anchor_observed_at: '2026-08-02T12:00:00.000Z',
+        anchor_quality: 'exact',
+        anchor_valid_until: '2026-08-02T13:00:00.000Z',
+      },
+      warnings: [],
+      points: [
+        {
+          timestamp: '2026-08-02T12:00:00.000Z',
+          value: 22,
+          nominal_value: 22,
+          metric: 'heating_setpoint',
+          provenance: { origin: 'projected', quality: 'estimated', is_aggregated: false },
+        },
+      ],
+      steps: [],
+      linear: [],
+    },
+  ],
+}
+
+describe('monitoring api boundary', () => {
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn())
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('parses sensor range, live, stats and control history, projection contracts', async () => {
+    const fetchMock = vi.mocked(fetch)
+    const api = new MonitoringApi()
+
+    fetchMock.mockResolvedValueOnce(jsonResponse(sensorRangePayload))
+    const range = await api.sensorRange('Flower Room')
+    expect(range.metadata.tier).toBe('raw')
+    expect(range.metadata.range.start).toBeInstanceOf(Date)
+    expect(range.series[0].points[0].timestamp).toBeInstanceOf(Date)
+    expect(range.statistics[0].stddev_samp).toBe(0.21)
+
+    fetchMock.mockResolvedValueOnce(jsonResponse(sensorLivePayload))
+    const live = await api.sensorLive('Flower Room', 'front')
+    expect(live[0].sensor).toBe('dry_bulb')
+    expect(live[0].timestamp).toBeInstanceOf(Date)
+
+    fetchMock.mockResolvedValueOnce(jsonResponse({ ...sensorRangePayload, series: [] }))
+    const stats = await api.sensorStats('Flower Room')
+    expect(stats.series).toHaveLength(0)
+    expect(stats.statistics[0].sample_count).toBe(3600)
+
+    fetchMock.mockResolvedValueOnce(jsonResponse(controlPayload))
+    const controlRange = await api.controlRange('Flower Room')
+    expect(controlRange.runtime_snapshot_version).toBe(7)
+    expect(controlRange.cursors[0].has_more).toBe(true)
+    expect(controlRange.climate[0].points[0].timestamp).toBeInstanceOf(Date)
+    expect(controlRange.photoperiod[0].phase).toBe('SUN')
+
+    fetchMock.mockResolvedValueOnce(jsonResponse(controlProjectionPayload))
+    const projection = await api.controlProjection('Flower Room')
+    expect(projection.climate[0].provenance.origin).toBe('projected')
+    expect(projection.climate[0].projection?.projection_revision).toBe('rev-1')
+    expect(projection.climate[0].projection?.anchor_observed_at).toBeInstanceOf(Date)
+
+  })
+
+  it('uses unchanged Caddy monitoring paths', async () => {
+    const fetchMock = vi.mocked(fetch)
+    const api = new MonitoringApi()
+
+    fetchMock.mockResolvedValueOnce(jsonResponse(sensorRangePayload))
+    await api.sensorRange('Flower Room')
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      expect.stringContaining('/api/sensors/monitoring/range/Flower%20Room'),
+      expect.any(Object),
+    )
+
+    fetchMock.mockResolvedValueOnce(jsonResponse(controlPayload))
+    await api.controlRange('Flower Room')
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      expect.stringContaining('/api/monitoring/control/Flower%20Room/history'),
+      expect.any(Object),
+    )
+
+    fetchMock.mockResolvedValueOnce(jsonResponse(controlProjectionPayload))
+    await api.controlProjection('Flower Room')
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      expect.stringContaining('/api/monitoring/control/Flower%20Room/projection'),
+      expect.any(Object),
+    )
+  })
+
+  it('adds an immutable fixture context only to test requests', async () => {
+    const fetchMock = vi.mocked(fetch)
+    const api = new MonitoringApi({
+      scenario: 'backend-down',
+      fixtureSession: 'test/session',
+    })
+
+    fetchMock.mockResolvedValueOnce(jsonResponse(sensorRangePayload))
+    await api.sensorRange('Flower Room')
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('scenario=backend-down&fixtureSession=test%2Fsession'),
+      expect.any(Object),
+    )
+  })
+
+  it('rejects malformed timestamp provenance cursor and sample count', async () => {
+    const fetchMock = vi.mocked(fetch)
+    const api = new MonitoringApi()
+
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        ...sensorRangePayload,
+        metadata: { ...sensorRangePayload.metadata, generated_at: '2026-08-02T12:00:00' },
+      }),
+    )
+    await expect(api.sensorRange('Flower Room')).rejects.toBeInstanceOf(MonitoringParseError)
+
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        ...controlPayload,
+        climate: [
+          {
+            ...controlPayload.climate[0],
+            provenance: { origin: 'fabricated', quality: 'exact', is_aggregated: false },
+          },
+        ],
+      }),
+    )
+    await expect(api.controlRange('Flower Room')).rejects.toBeInstanceOf(MonitoringParseError)
+
+
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        ...sensorRangePayload,
+        series: [
+          {
+            ...sensorRangePayload.series[0],
+            points: [
+              {
+                ...sensorRangePayload.series[0].points[0],
+                sample_count: -1,
+              },
+            ],
+          },
+        ],
+      }),
+    )
+    await expect(api.sensorRange('Flower Room')).rejects.toBeInstanceOf(MonitoringParseError)
+  })
+
+  it('attributes HTTP errors to the unified monitoring service', async () => {
+    const fetchMock = vi.mocked(fetch)
+    const api = new MonitoringApi()
+
+    fetchMock.mockResolvedValueOnce(jsonResponse({ detail: 'boom' }, 503))
+    await expect(api.sensorRange('Flower Room')).rejects.toMatchObject({
+      kind: 'http',
+      service: 'monitoring',
+      status: 503,
+    })
+
+    fetchMock.mockResolvedValueOnce(jsonResponse({ detail: 'boom' }, 500))
+    await expect(api.controlRange('Flower Room')).rejects.toMatchObject({
+      kind: 'http',
+      service: 'monitoring',
+      status: 500,
+    })
+  })
+
+  it('classifies timeout and network failures distinctly', async () => {
+    const fetchMock = vi.mocked(fetch)
+    const api = new MonitoringApi()
+
+    fetchMock.mockImplementation(
+      (_url: RequestInfo | URL, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () =>
+            reject(new DOMException('Aborted', 'AbortError')),
+          )
+        }),
+    )
+    await expect(api.sensorRange('Flower Room', undefined, undefined, { timeoutMs: 5 })).rejects.toBeInstanceOf(
+      MonitoringTimeoutError,
+    )
+
+    fetchMock.mockRejectedValueOnce(new TypeError('Failed to fetch'))
+    await expect(api.sensorRange('Flower Room')).rejects.toBeInstanceOf(MonitoringNetworkError)
+  })
+
+  it('respects an external AbortSignal', async () => {
+    const fetchMock = vi.mocked(fetch)
+    const api = new MonitoringApi()
+    const controller = new AbortController()
+
+    fetchMock.mockImplementation(
+      (_url: RequestInfo | URL, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () =>
+            reject(new DOMException('Aborted', 'AbortError')),
+          )
+        }),
+    )
+
+    const pending = api.sensorRange('Flower Room', undefined, undefined, { signal: controller.signal })
+    controller.abort()
+    await expect(pending).rejects.toBeInstanceOf(MonitoringAbortError)
+  })
+})

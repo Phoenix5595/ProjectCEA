@@ -10,7 +10,7 @@
 import { useState } from 'react'
 import { describe, expect, it, vi, type Mock } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { createMemoryRouter, RouterProvider } from 'react-router-dom'
+import { createMemoryRouter, MemoryRouter, RouterProvider } from 'react-router-dom'
 import type { MonitoringRange } from '../../state'
 import { TimeRangeToolbar } from '../TimeRangeToolbar'
 
@@ -182,6 +182,7 @@ describe('monitoring time-range toolbar', () => {
     // Missing input is rejected.
     fireEvent.change(screen.getByLabelText('Start'), { target: { value: '' } })
     fireEvent.change(screen.getByLabelText('End'), { target: { value: '' } })
+    expect(screen.getByRole('button', { name: 'Apply' })).toBeDisabled()
     fireEvent.click(screen.getByRole('button', { name: 'Apply' }))
     expect(h.onFixedRange).not.toHaveBeenCalled()
     expect(screen.getByRole('alert')).toHaveTextContent(/Enter both/)
@@ -191,5 +192,67 @@ describe('monitoring time-range toolbar', () => {
     const h = renderStateful(liveRange(3 * 3600_000), true, ['/'])
     fireEvent.click(screen.getByRole('button', { name: 'Now' }))
     expect(h.onLive).toHaveBeenCalledWith(3 * 3600_000)
+  })
+
+  it('applies valid Toronto wall-time inputs through the fixed-range callback', () => {
+    const h = renderStateful(liveRange(3 * 3600_000), true, ['/'])
+
+    fireEvent.change(screen.getByLabelText('Start'), { target: { value: '2026-07-15T10:00' } })
+    fireEvent.change(screen.getByLabelText('End'), { target: { value: '2026-07-15T12:00' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Apply' }))
+
+    expect(h.onFixedRange).toHaveBeenCalledWith(
+      new Date('2026-07-15T14:00:00.000Z'),
+      new Date('2026-07-15T16:00:00.000Z'),
+    )
+  })
+
+  it('highlights and applies the selected live preset', () => {
+    const h = renderStateful(liveRange(3 * 3600_000), true, ['/'])
+
+    fireEvent.click(screen.getByRole('button', { name: '12h' }))
+
+    expect(h.onLive).toHaveBeenCalledWith(12 * 3600_000)
+    expect(screen.getByRole('button', { name: '12h' })).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('reflects an externally forced fixed range in the absolute inputs', () => {
+    const onLive = vi.fn<(duration: number) => void>()
+    const onFixedRange = vi.fn<(start: Date, end: Date) => void>()
+    const onPause = vi.fn<() => void>()
+    const onResume = vi.fn<() => void>()
+    const onResetZoom = vi.fn<() => void>()
+    const start = new Date('2026-07-15T14:00:00.000Z')
+    const end = new Date('2026-07-15T16:00:00.000Z')
+    const { rerender } = render(
+      <MemoryRouter>
+        <TimeRangeToolbar
+          range={liveRange(3 * 3600_000)}
+          isLive
+          onLive={onLive}
+          onFixedRange={onFixedRange}
+          onPause={onPause}
+          onResume={onResume}
+          onResetZoom={onResetZoom}
+        />
+      </MemoryRouter>,
+    )
+
+    rerender(
+      <MemoryRouter>
+        <TimeRangeToolbar
+          range={fixedRange(start, end)}
+          isLive={false}
+          onLive={onLive}
+          onFixedRange={onFixedRange}
+          onPause={onPause}
+          onResume={onResume}
+          onResetZoom={onResetZoom}
+        />
+      </MemoryRouter>,
+    )
+
+    expect(screen.getByLabelText('Start')).toHaveValue('2026-07-15T10:00')
+    expect(screen.getByLabelText('End')).toHaveValue('2026-07-15T12:00')
   })
 })

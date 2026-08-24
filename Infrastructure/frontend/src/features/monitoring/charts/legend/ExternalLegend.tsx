@@ -34,7 +34,7 @@ const visuallyHidden: CSSProperties = {
 
 export function ExternalLegend({ entries, onToggle, onReset }: ExternalLegendProps) {
   return (
-    <div className="mon-legend">
+    <div className="mon-legend" role="group" aria-label="Chart series legend">
       <ul className="mon-legend__list">
         {entries.map((entry) => (
           <li key={entry.key}>
@@ -57,7 +57,7 @@ export function ExternalLegend({ entries, onToggle, onReset }: ExternalLegendPro
           </li>
         ))}
       </ul>
-      <button type="button" onClick={onReset} className="mon-legend__reset">
+      <button type="button" onClick={onReset} className="mon-legend__reset" aria-label="Reset all series">
         Reset
       </button>
       <table className="mon-legend__table" style={visuallyHidden}>

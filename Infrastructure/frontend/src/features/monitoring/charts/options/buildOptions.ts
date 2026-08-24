@@ -19,6 +19,7 @@ import { readToken } from './tokens'
 export interface ChartCallbacks {
   onSetScale: (self: uPlot, scaleKey: string) => void
   onSetSeries: (self: uPlot, seriesIdx: number | null, opts: uPlot.Series) => void
+  onDraw: () => void
 }
 
 /** Build the complete themed uPlot options for the aligned data. */
@@ -63,6 +64,7 @@ export function buildOptions(
     hooks: {
       setScale: [callbacks.onSetScale],
       setSeries: [callbacks.onSetSeries],
+      draw: [callbacks.onDraw],
     },
   }
 }

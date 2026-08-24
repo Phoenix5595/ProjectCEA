@@ -38,6 +38,9 @@ export { StatisticsTable } from './StatisticsTable'
 export type { StatisticsTableProps } from './StatisticsTable'
 export { ChartDataTable } from './ChartDataTable'
 export type { ChartDataTableProps } from './ChartDataTable'
+export { MonitoringStatus } from './MonitoringStatus'
+export type { MonitoringStatusProps } from './MonitoringStatus'
+export { MonitoringErrorBoundary } from './MonitoringErrorBoundary'
 export {
   DEFAULT_STALE_AFTER_MS,
   FAMILY_DECIMALS,

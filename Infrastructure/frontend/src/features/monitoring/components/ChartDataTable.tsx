@@ -18,7 +18,7 @@ export interface ChartDataTableProps {
 }
 
 const TH =
-  'px-1 py-1 text-left text-xs uppercase tracking-wider text-text-muted font-semibold border-b border-border-default bg-surface-secondary'
+  'px-1 py-1 text-left text-xs uppercase tracking-wider text-[color:var(--mon-text-secondary)] font-semibold border-b border-border-default bg-surface-secondary'
 const TD = 'px-1 py-1 border-b border-border-subtle'
 
 function slugify(value: string): string {
@@ -29,13 +29,7 @@ export function ChartDataTable({ title, data }: ChartDataTableProps) {
   const [open, setOpen] = useState(false)
   const tableId = `chart-data-${slugify(title)}`
 
-  // Envelope (min/max) series feed bands and are not data columns.
-  const envelopeKeys = new Set<string>()
-  for (const band of data.bands) {
-    envelopeKeys.add(band.minKey)
-    envelopeKeys.add(band.maxKey)
-  }
-  const visible = data.series.filter((s) => !envelopeKeys.has(s.key))
+  const visible = data.series.filter((s) => s.role !== 'min' && s.role !== 'max')
 
   return (
     <div>

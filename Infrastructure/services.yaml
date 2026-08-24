@@ -10,6 +10,8 @@
 #   4 = automation-service (the hardware-facing control loop on 8001; LAST
 #       intentionally — it depends on everything above, and is the most
 #       blast-radius sensitive, since it drives lights)
+#   5 = monitoring-service (read-only monitoring API on 8005; starts after
+#       publishers but never owns control or hardware)
 #
 # Fields:
 #   name         : human / friendly name (also used in log lines)
@@ -74,6 +76,13 @@ services:
     start_order: 4
     health_url: http://127.0.0.1:8001/health
     hardware_facing: true  # drives DFR0971 dimmers + MCP relays — lights live here
+
+  - name: monitoring-service
+    unit: monitoring-service.service
+    repo_unit: Infrastructure/monitoring-service.service
+    start_order: 5
+    health_url: http://127.0.0.1:8005/health
+    hardware_facing: false  # read-only TimescaleDB and Redis monitoring API
 
   - name: redis-aof-check
     unit: redis-aof-check.service
