@@ -72,7 +72,7 @@ const FIXTURE_ROUTES: FixtureRoute[] = [
   {
     re: /^\/api\/sensors\/monitoring\/live\/([^/]+)\/([^/]+)/,
     handler: (req, scenario) => {
-      const parts = (req.url ?? '').split('/').filter(Boolean)
+      const parts = (req.url ?? '').split('?')[0].split('/').filter(Boolean)
       return sensorLiveFixture(decodeURIComponent(parts[parts.length - 1] ?? ''), scenario)
     },
   },
@@ -98,7 +98,7 @@ const FIXTURE_ROUTES: FixtureRoute[] = [
     },
   },
   {
-    re: /^\/api\/monitoring\/control\/([^/]+)$/,
+    re: /^\/api\/monitoring\/control\/([^/]+)\/history$/,
     handler: (req, scenario) => {
       const { start, end } = parseRange(req.url ?? '')
       return controlRangeFixture(roomFrom(req.url ?? '', 3), start, end, scenario)
@@ -161,7 +161,7 @@ function monitoringPreviewPlugin(): Plugin {
         const counterKey = (name: string): string => `${name}:${fixtureSession}:${pathname}`
 
         if (scenario === 'backend-down' && isSensorPath(pathname)) {
-          const key = counterKey('backend-down')
+          const key = `backend-down:${fixtureSession}`
           const count = scenarioCounters.get(key) ?? 0
           scenarioCounters.set(key, count + 1)
           if (count < 3) {
@@ -172,7 +172,7 @@ function monitoringPreviewPlugin(): Plugin {
           }
         }
         if (scenario === 'automation-down' && isControlPath(pathname)) {
-          const key = counterKey('automation-down')
+          const key = `automation-down:${fixtureSession}`
           const count = scenarioCounters.get(key) ?? 0
           scenarioCounters.set(key, count + 1)
           if (count < 3) {
@@ -233,8 +233,13 @@ function monitoringPreviewPlugin(): Plugin {
             res.setHeader('Content-Type', 'application/json')
             const body = JSON.stringify(route.handler(req, scenario))
             if (scenario === 'delayed-control-recovery' && pathname.endsWith('/tail')) {
-              setTimeout(() => res.end(body), 1_200)
-              return
+              const key = counterKey('delayed-control-tail')
+              const count = scenarioCounters.get(key) ?? 0
+              scenarioCounters.set(key, count + 1)
+              if (count === 0) {
+                setTimeout(() => res.end(body), 1_200)
+                return
+              }
             }
             res.end(body)
             return
@@ -284,6 +289,10 @@ function monitoringPreviewPlugin(): Plugin {
 }
 
 export default defineConfig({
+  define: {
+    'import.meta.env.VITE_MONITORING_PERF_MARKS': JSON.stringify('1'),
+    'import.meta.env.VITE_MONITORING_PERF_INJECT_DELAY_MS': JSON.stringify('12'),
+  },
   plugins: [tailwindcss(), react(), monitoringPreviewPlugin()],
   resolve: {
     alias: {

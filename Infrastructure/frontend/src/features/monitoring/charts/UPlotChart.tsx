@@ -25,6 +25,12 @@ import uPlot from 'uplot'
 import 'uplot/dist/uPlot.min.css'
 import { useTheme } from '../../../contexts/ThemeContext'
 import type { AlignedData } from '../data'
+import {
+  measureMonitoringConversion,
+  measureMonitoringResize,
+  measureMonitoringSetData,
+  PERFORMANCE_MARKS_ENABLED,
+} from '../perfMarks'
 import { ExternalLegend, type LegendEntry } from './legend/ExternalLegend'
 import { isEnvelopeSeries, seriesColor } from './options/seriesOptions'
 import { buildOptions, toUPlotData } from './uPlotOptions'
@@ -186,7 +192,9 @@ export const UPlotChart = forwardRef<UPlotChartHandle, UPlotChartProps>(
             suppressProgrammaticXScaleRef.current = false
           },
         }),
-        toUPlotData(dataRef.current),
+        PERFORMANCE_MARKS_ENABLED
+          ? measureMonitoringConversion(() => toUPlotData(dataRef.current))
+          : toUPlotData(dataRef.current),
         container,
       )
       plotRef.current = plot
@@ -201,7 +209,11 @@ export const UPlotChart = forwardRef<UPlotChartHandle, UPlotChartProps>(
 
       const observer = new ResizeObserver(() => {
         const next = measure(container)
-        plot.setSize({ width: next.width, height: next.height })
+        if (PERFORMANCE_MARKS_ENABLED) {
+          measureMonitoringResize(() => plot.setSize({ width: next.width, height: next.height }))
+        } else {
+          plot.setSize({ width: next.width, height: next.height })
+        }
       })
       observer.observe(container)
       observerRef.current = observer
@@ -227,7 +239,12 @@ export const UPlotChart = forwardRef<UPlotChartHandle, UPlotChartProps>(
       const plot = plotRef.current
       if (plot === null) return
       suppressProgrammaticXScaleRef.current = true
-      plot.setData(toUPlotData(nextData), false)
+      if (PERFORMANCE_MARKS_ENABLED) {
+        const plotData = measureMonitoringConversion(() => toUPlotData(nextData))
+        measureMonitoringSetData(() => plot.setData(plotData, false))
+      } else {
+        plot.setData(toUPlotData(nextData), false)
+      }
       suppressProgrammaticXScaleRef.current = false
     }
 

@@ -150,7 +150,7 @@ export function sensorLiveFixture(
   node: string,
   scenario: string | null = null,
 ): unknown {
-  if (process.env.MONITORING_SCENARIO === 'flower-partial' && node === 'front') {
+  if ((process.env.MONITORING_SCENARIO === 'flower-partial' || scenario === 'flower-partial') && node === 'front') {
     return []
   }
   const suffix = node === 'front' ? 'f' : node === 'back' ? 'b' : 'v'
@@ -194,6 +194,7 @@ export function sensorStatsFixture(
 export {
   controlProjectionFixture,
   controlRangeFixture,
+  controlTailFixture,
 } from './fixtures.control'
 
 /** Grafana placeholder body for the fixture origin's `/grafana/*` paths. */

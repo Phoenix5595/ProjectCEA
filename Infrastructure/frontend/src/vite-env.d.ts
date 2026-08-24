@@ -10,9 +10,10 @@ interface ImportMetaEnv {
   readonly VITE_WEBSOCKET_URL?: string
   /** Build-time API key; sent as X-API-Key header + ?token=<key> on WS. */
   readonly VITE_CEA_API_KEY?: string
+  readonly VITE_MONITORING_PERF_MARKS?: string
+  readonly VITE_MONITORING_PERF_INJECT_DELAY_MS?: string
 }
 
 interface ImportMeta {
   readonly env: ImportMetaEnv
 }
-

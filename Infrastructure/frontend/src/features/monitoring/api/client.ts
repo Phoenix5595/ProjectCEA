@@ -7,6 +7,11 @@ import {
   MonitoringParseError,
   MonitoringTimeoutError,
 } from './errors'
+import {
+  finishMonitoringRequest,
+  PERFORMANCE_MARKS_ENABLED,
+  startMonitoringRequest,
+} from '../perfMarks'
 
 export interface MonitoringRequestContext {
   readonly scenario?: string
@@ -69,6 +74,7 @@ export class MonitoringClient {
     options.signal?.addEventListener('abort', onExternalAbort, { once: true })
 
     let response: Response
+    const requestStartedAt = PERFORMANCE_MARKS_ENABLED ? startMonitoringRequest() : undefined
     try {
       response = await fetch(url, {
         method: 'GET',
@@ -88,6 +94,7 @@ export class MonitoringClient {
         `network error reaching ${SERVICE_NAME}: ${String(error)}`,
       )
     } finally {
+      if (requestStartedAt !== undefined) finishMonitoringRequest(requestStartedAt)
       clearTimeout(timeoutId)
       options.signal?.removeEventListener('abort', onExternalAbort)
     }
