@@ -22,6 +22,7 @@ export function photoperiodPlugin(
       drawClear: (u) => {
         const { ctx, bbox } = u
         for (const interval of intervals) {
+          if (interval.phase === 'UNKNOWN') continue
           const x0 = u.valToPos(interval.start, 'x', true)
           const x1 = u.valToPos(interval.end, 'x', true)
           const fill = interval.phase === 'SUN' ? colors.sunBg : colors.moonBg

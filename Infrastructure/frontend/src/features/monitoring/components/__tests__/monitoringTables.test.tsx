@@ -10,6 +10,7 @@ import { describe, expect, it } from 'vitest'
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import type { LiveSensorValue, SensorStatistics } from '../../api'
 import type { AlignedData } from '../../data'
+import { seriesKey } from '../../data/alignSeries.types'
 import { flowerManifest } from '../../config/flowerManifest'
 import { vegManifest } from '../../config/vegManifest'
 import { ChartDataTable } from '../ChartDataTable'
@@ -33,6 +34,22 @@ function cellForRow(table: HTMLElement, label: string, col = 1): string {
 const NOW = new Date('2026-07-15T12:00:00Z')
 
 describe('monitoring table primitives', () => {
+  it('renders the averages title above the Sensor and Value columns', () => {
+    const averages = tablePanel(flowerManifest, 'Averages')
+    const { container } = render(
+      <RoomAveragesTable title="Averages" rows={averages.rows} front={[]} back={[]} />,
+    )
+    const table = within(container).getByRole('table', { name: 'Averages' })
+    const headerRows = within(table).getAllByRole('row').slice(0, 2)
+
+    expect(within(headerRows[0]).getByRole('columnheader')).toHaveTextContent('Averages')
+    expect(within(headerRows[0]).getByRole('columnheader')).toHaveAttribute('colspan', '2')
+    expect(within(headerRows[1]).getAllByRole('columnheader').map((header) => header.textContent)).toEqual([
+      'Sensor',
+      'Value',
+    ])
+  })
+
   it('matches Flower Veg statistics and accessible data tables', () => {
     // --- Veg sensor values: canonical ordering + unit-family formatting ---
     const veg = tablePanel(vegManifest, 'Sensor Values')
@@ -115,12 +132,12 @@ describe('monitoring table primitives', () => {
     const aligned: AlignedData = {
       x: [1750000000000, 1750000001000],
       series: [
-        { key: 'sensor:dry_bulb_f:mean', label: 'Dry Bulb (°C) - Front', kind: 'sensor', y: [23.2, 23.5], origin: 'recorded', quality: 'exact', isAggregated: false, unit: '°C', unitFamily: 'celsius' },
-        { key: 'sensor:dry_bulb_f:min', label: 'Dry Bulb (°C) - Front min', kind: 'sensor', y: [22.9, 23.1], origin: 'recorded', quality: 'exact', isAggregated: false, unit: '°C', unitFamily: 'celsius' },
-        { key: 'sensor:dry_bulb_f:max', label: 'Dry Bulb (°C) - Front max', kind: 'sensor', y: [23.6, 23.9], origin: 'recorded', quality: 'exact', isAggregated: false, unit: '°C', unitFamily: 'celsius' },
-        { key: 'climate:Heater - PID Output:point', label: 'Heater - PID Output', kind: 'point', y: [null, 42.0], origin: 'recorded', quality: 'exact', isAggregated: false, unit: '%', unitFamily: 'percent' },
+        { key: seriesKey('sensor', 'dry_bulb_f', 'mean'), label: 'Dry Bulb (°C) - Front', kind: 'sensor', source: 'sensor', metric: 'dry_bulb_f', family: 'temperature', role: 'mean', y: [23.2, 23.5], origin: 'recorded', quality: 'exact', isAggregated: false, unit: '°C', unitFamily: 'celsius' },
+        { key: seriesKey('sensor', 'dry_bulb_f', 'min'), label: 'Dry Bulb (°C) - Front min', kind: 'sensor', source: 'sensor', metric: 'dry_bulb_f', family: 'temperature', role: 'min', y: [22.9, 23.1], origin: 'recorded', quality: 'exact', isAggregated: false, unit: '°C', unitFamily: 'celsius' },
+        { key: seriesKey('sensor', 'dry_bulb_f', 'max'), label: 'Dry Bulb (°C) - Front max', kind: 'sensor', source: 'sensor', metric: 'dry_bulb_f', family: 'temperature', role: 'max', y: [23.6, 23.9], origin: 'recorded', quality: 'exact', isAggregated: false, unit: '°C', unitFamily: 'celsius' },
+        { key: seriesKey('climate', 'heater_pid_output', 'point'), label: 'Heater - PID Output', kind: 'point', source: 'climate', metric: 'heater_pid_output', family: 'device', role: 'point', y: [null, 42.0], origin: 'recorded', quality: 'exact', isAggregated: false, unit: '%', unitFamily: 'percent' },
       ],
-      bands: [{ key: 'sensor:dry_bulb_f:band', minKey: 'sensor:dry_bulb_f:min', maxKey: 'sensor:dry_bulb_f:max' }],
+      bands: [{ key: seriesKey('sensor', 'dry_bulb_f', 'band'), minKey: seriesKey('sensor', 'dry_bulb_f', 'min'), maxKey: seriesKey('sensor', 'dry_bulb_f', 'max') }],
       photoperiod: [],
       nowIndex: 0,
       aggregated: false,
@@ -161,7 +178,7 @@ describe('monitoring table primitives', () => {
     const aligned: AlignedData = {
       x: [1750000000000],
       series: [
-        { key: 'climate:Heater - PID Output:point', label: 'Heater - PID Output', kind: 'point', y: [null], origin: 'recorded', quality: 'exact', isAggregated: false, unit: '%', unitFamily: 'percent' },
+        { key: seriesKey('climate', 'heater_pid_output', 'point'), label: 'Heater - PID Output', kind: 'point', source: 'climate', metric: 'heater_pid_output', family: 'device', role: 'point', y: [null], origin: 'recorded', quality: 'exact', isAggregated: false, unit: '%', unitFamily: 'percent' },
       ],
       bands: [],
       photoperiod: [],

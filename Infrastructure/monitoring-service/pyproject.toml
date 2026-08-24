@@ -1,0 +1,10 @@
+[tool.basedpyright]
+include = ["monitoring_service", "tests"]
+extraPaths = [".."]
+reportImplicitRelativeImport = "none"
+reportUnknownMemberType = "none"
+reportUnusedFunction = "none"
+reportMissingTypeStubs = false
+
+[tool.ruff]
+line-length = 100

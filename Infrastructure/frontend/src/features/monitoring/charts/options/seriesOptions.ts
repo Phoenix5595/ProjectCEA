@@ -1,19 +1,10 @@
-/**
- * Maps aligned series to uPlot series options.
- *
- * Each series gets a family scale, a family-derived stroke color, and a line
- * style: sensor means are solid, control targets (point/step/linear) are
- * dotted, and projected segments use the projected color at lower opacity with
- * the target dash. Min/max envelope edges are hidden (they only feed bands).
- */
 import uPlot from 'uplot'
 import type { AlignedData, AlignedSeries } from '../../data'
 import { resolveFamily, type ChartFamily } from './family'
 import { readToken } from './tokens'
 
-/** True for the hidden min/max envelope edges that only feed bands. */
 export function isEnvelopeSeries(series: AlignedSeries): boolean {
-  return series.key.endsWith(':min') || series.key.endsWith(':max')
+  return series.role === 'min' || series.role === 'max'
 }
 
 /** The family token color for a chart family. */
@@ -38,7 +29,13 @@ export function familyColor(family: ChartFamily): string {
 
 /** The drawn color for a series (projected uses the projected token). */
 export function seriesColor(series: AlignedSeries): string {
-  if (series.origin === 'projected') return readToken('targetProjected')
+  // Manifest-declared color wins (per-series Grafana parity), then family token.
+  if (series.presentation?.color) return series.presentation.color
+  if (series.source === 'climate' || series.source === 'light') {
+    return series.origin === 'projected'
+      ? readToken('targetProjected')
+      : readToken('targetRecorded')
+  }
   return familyColor(resolveFamily(series))
 }
 
@@ -66,21 +63,24 @@ export function buildSeries(data: AlignedData): uPlot.Series[] {
     { label: 'Time' },
     ...data.series.map((s) => {
       const family = resolveFamily(s)
-      const projected = s.origin === 'projected'
-      const color = projected ? readToken('targetProjected') : familyColor(family)
+      const target = s.source === 'climate' || s.source === 'light'
+      const projected = target && s.origin === 'projected'
+      const color = seriesColor(s)
       const series: uPlot.Series = {
         label: s.label,
         scale: family,
-        spanGaps: false,
+        // Sensor samples land on a coarse shared grid far apart; without gap
+        // bridging each sample is an isolated single-point path (invisible).
+        spanGaps: s.source === 'sensor',
         points: { show: false },
         stroke: color,
-        width: 1.5,
+        width: s.presentation?.lineWidth ?? (target ? 2 : 1.5),
       }
       if (isEnvelopeSeries(s)) {
         series.show = false
       }
-      if (s.kind === 'point' || s.kind === 'step' || s.kind === 'linear') {
-        series.dash = parseDash(readToken('targetDash'))
+      if (target) {
+        series.dash = s.presentation?.dash ? [...s.presentation.dash] : parseDash(readToken('targetDash'))
       }
       if (projected) {
         const opacity = parseFloat(readToken('targetProjectedOpacity'))

@@ -14,6 +14,7 @@ import React from 'react'
 import type uPlot from 'uplot'
 import { ThemeProvider, useTheme } from '../../../../contexts/ThemeContext'
 import type { AlignedData } from '../../data'
+import { seriesKey } from '../../data/alignSeries.types'
 import { UPlotChart } from '../UPlotChart'
 
 const { MockUPlot, instances } = vi.hoisted(() => {
@@ -24,7 +25,13 @@ const { MockUPlot, instances } = vi.hoisted(() => {
     data: uPlot.AlignedData
     root: HTMLElement
     scales = { x: { min: 0, max: 100 } }
-    setData = vi.fn()
+    setData = vi.fn((_data: uPlot.AlignedData, redraw?: boolean) => {
+      if (redraw === false) return
+      const drawHooks = this.opts.hooks?.draw
+      drawHooks?.forEach((hook) => {
+        if (hook !== undefined) hook(this as unknown as uPlot)
+      })
+    })
     setSize = vi.fn()
     setScale = vi.fn()
     setSeries = vi.fn()
@@ -56,9 +63,13 @@ function makeData(x: number[], yRows: number[][]): AlignedData {
   return {
     x,
     series: yRows.map((y, i) => ({
-      key: `s${i}`,
+      key: seriesKey('sensor', `s${i}`, 'mean'),
       label: `Series ${i}`,
       kind: 'sensor',
+      source: 'sensor',
+      metric: `s${i}`,
+      family: 'temperature',
+      role: 'mean',
       y,
       origin: 'recorded',
       quality: 'exact',
@@ -126,7 +137,8 @@ describe('UPlotChart lifecycle', () => {
       </ThemeProvider>,
     )
     expect(instances).toHaveLength(1)
-    expect(first.setData).toHaveBeenCalledWith(toUPlot(data2), false)
+    // resetScale=false keeps a fixed user zoom alive across live ticks.
+    expect(first.setData).toHaveBeenLastCalledWith(toUPlot(data2), false)
 
     // Theme change must destroy the old instance and create a new one,
     // preserving data and the series visibility toggle.
@@ -166,5 +178,19 @@ describe('UPlotChart lifecycle', () => {
     for (const obs of observers) {
       expect(obs.disconnect).toHaveBeenCalled()
     }
+  })
+
+  it('keeps the first legend entry for duplicate series keys', () => {
+    const data = makeData([1000, 2000, 3000], [[20, 21, 22], [23, 24, 25]])
+    data.series[1] = { ...data.series[0], label: 'Duplicate series' }
+
+    render(
+      <ThemeProvider>
+        <UPlotChart data={data} />
+      </ThemeProvider>,
+    )
+
+    expect(screen.getAllByRole('button', { name: 'Series 0' })).toHaveLength(1)
+    expect(screen.queryByRole('button', { name: 'Duplicate series' })).toBeNull()
   })
 })

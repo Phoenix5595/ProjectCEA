@@ -12,6 +12,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import type { MonitoringRange } from '../state'
+import { MonitoringStatus } from './MonitoringStatus'
+export type { ToolbarMonitoring } from './TimeRangeToolbar.monitoring'
 import {
   PRESETS,
   offsetLabel,
@@ -22,6 +24,12 @@ import {
   validateRange,
   type FallFoldChoice,
 } from './timeRangeToolbar.time'
+import {
+  AbsoluteRangeForm,
+  fixedInputError,
+  formatWallInput,
+  type FallFoldState,
+} from './TimeRangeToolbar.inputs'
 
 export interface TimeRangeToolbarProps {
   range: MonitoringRange
@@ -33,13 +41,7 @@ export interface TimeRangeToolbarProps {
   onResetZoom: () => void
   now?: () => Date
   defaultDuration?: number
-}
-
-interface FallFoldState {
-  field: 'start' | 'end'
-  choice: FallFoldChoice | null
-  firstUtc: Date
-  secondUtc: Date
+  monitoring?: import('./TimeRangeToolbar.monitoring').ToolbarMonitoring
 }
 
 export function TimeRangeToolbar({
@@ -52,17 +54,23 @@ export function TimeRangeToolbar({
   onResetZoom,
   now,
   defaultDuration,
+  monitoring,
 }: TimeRangeToolbarProps) {
   const [searchParams, setSearchParams] = useSearchParams()
   const nowFn = now ?? (() => new Date())
   const live = range.kind === 'live'
+  const effectiveEnd = live ? nowFn() : range.end
+  const effectiveStart = live ? new Date(effectiveEnd.getTime() - range.duration) : range.start
+  const effectiveStartInput = formatWallInput(effectiveStart)
+  const effectiveEndInput = formatWallInput(effectiveEnd)
 
   const [selectedDuration, setSelectedDuration] = useState<number>(() =>
     range.kind === 'live' ? range.duration : (defaultDuration ?? PRESETS[1].duration),
   )
   const [paused, setPaused] = useState(false)
-  const [startInput, setStartInput] = useState('')
-  const [endInput, setEndInput] = useState('')
+  const [startInput, setStartInput] = useState(effectiveStartInput)
+  const [endInput, setEndInput] = useState(effectiveEndInput)
+  const [editingRange, setEditingRange] = useState(false)
   const [fallFold, setFallFold] = useState<FallFoldState | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -76,6 +84,18 @@ export function TimeRangeToolbar({
   useEffect(() => {
     if (range.kind === 'live') setSelectedDuration(range.duration)
   }, [range])
+
+  useEffect(() => {
+    setEditingRange(false)
+    setError(null)
+    setFallFold(null)
+  }, [range])
+
+  useEffect(() => {
+    if (editingRange) return
+    setStartInput(effectiveStartInput)
+    setEndInput(effectiveEndInput)
+  }, [editingRange, effectiveEndInput, effectiveStartInput])
 
   // Read the URL on mount and on external changes (browser back/forward).
   useEffect(() => {
@@ -172,6 +192,7 @@ export function TimeRangeToolbar({
     }
     setError(null)
     setFallFold(null)
+    setEditingRange(false)
     callbacksRef.current.onFixedRange(startRes.utc, endRes.utc)
   }
 
@@ -182,13 +203,17 @@ export function TimeRangeToolbar({
   }
 
   function clearInputs(): void {
-    setStartInput('')
-    setEndInput('')
+    setEditingRange(false)
     setError(null)
     setFallFold(null)
   }
 
   const errorId = 'mon-toolbar-error'
+  const inputError = fixedInputError(startInput, endInput)
+  const formError = error ?? inputError
+  const activeDuration = range.kind === 'live' ? range.duration : selectedDuration
+  const livePreset = PRESETS.find((preset) => preset.duration === activeDuration)
+  const statusLabel = isLive ? (paused ? 'PAUSED' : 'LIVE') : 'FIXED'
 
   return (
     <div className="mon-toolbar">
@@ -208,10 +233,23 @@ export function TimeRangeToolbar({
           Now
         </button>
       </div>
+      {monitoring && (
+        <MonitoringStatus
+          errors={monitoring.errors}
+          tailLoading={monitoring.tailLoading}
+          reconciling={monitoring.reconciling}
+          anchorQuality={monitoring.anchorQuality}
+          projectionRevision={monitoring.projectionRevision}
+          runtimeSnapshotVersion={monitoring.runtimeSnapshotVersion}
+          onRetry={monitoring.onRetry}
+          isLive={live && !paused}
+        />
+      )}
 
       <div className="mon-toolbar__status">
         <span className="mon-toolbar__live" role="status">
-          {isLive ? (paused ? 'PAUSED' : 'LIVE') : 'FIXED'}
+          <span>{statusLabel}</span>
+          {isLive && !paused && <> · {livePreset?.label ?? 'custom'}</>}
         </span>
         {live && (
           <button type="button" onClick={paused ? handleResume : handlePause}>
@@ -224,60 +262,29 @@ export function TimeRangeToolbar({
         <span className="mon-toolbar__tz">{tzLabel}</span>
       </div>
 
-      <div className="mon-toolbar__absolute">
-        <label>
-          Start
-          <input
-            type="datetime-local"
-            value={startInput}
-            onChange={(e) => {
-              setStartInput(e.target.value)
-              setError(null)
-              setFallFold(null)
-            }}
-            aria-invalid={error !== null}
-            aria-describedby={error !== null ? errorId : undefined}
-          />
-        </label>
-        <label>
-          End
-          <input
-            type="datetime-local"
-            value={endInput}
-            onChange={(e) => {
-              setEndInput(e.target.value)
-              setError(null)
-              setFallFold(null)
-            }}
-            aria-invalid={error !== null}
-            aria-describedby={error !== null ? errorId : undefined}
-          />
-        </label>
-        <button type="button" onClick={() => submitFixed()}>
-          Apply
-        </button>
-        <button type="button" onClick={clearInputs}>
-          Clear
-        </button>
-      </div>
-
-      {fallFold !== null && fallFold.choice === null && (
-        <div className="mon-toolbar__fold" role="group" aria-label="Choose which occurrence">
-          <span>This time occurs twice. Choose:</span>
-          <button type="button" onClick={() => chooseFallFold('first')}>
-            {offsetLabel(fallFold.firstUtc)}
-          </button>
-          <button type="button" onClick={() => chooseFallFold('second')}>
-            {offsetLabel(fallFold.secondUtc)}
-          </button>
-        </div>
-      )}
-
-      {error !== null && (
-        <p id={errorId} className="mon-toolbar__error" role="alert">
-          {error}
-        </p>
-      )}
+      <AbsoluteRangeForm
+        startInput={startInput}
+        endInput={endInput}
+        error={formError}
+        fallFold={fallFold}
+        errorId={errorId}
+        onStartChange={(value) => {
+          setStartInput(value)
+          setEditingRange(true)
+          setError(null)
+          setFallFold(null)
+        }}
+        onEndChange={(value) => {
+          setEndInput(value)
+          setEditingRange(true)
+          setError(null)
+          setFallFold(null)
+        }}
+        onApply={() => submitFixed()}
+        onClear={clearInputs}
+        onFallFoldChoice={chooseFallFold}
+        applyDisabled={inputError !== null}
+      />
     </div>
   )
 }

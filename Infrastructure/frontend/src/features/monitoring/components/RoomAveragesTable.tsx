@@ -22,7 +22,7 @@ export interface RoomAveragesTableProps {
 }
 
 const TH =
-  'px-1 py-1 text-left text-xs uppercase tracking-wider text-text-muted font-semibold border-b border-border-default bg-surface-secondary'
+  'px-1 py-1 text-left text-xs uppercase tracking-wider text-[color:var(--mon-text-secondary)] font-semibold border-b border-border-default bg-surface-secondary'
 const TD = 'px-1 py-1 border-b border-border-subtle'
 
 export function RoomAveragesTable({ title, rows, front, back }: RoomAveragesTableProps) {
@@ -39,6 +39,11 @@ export function RoomAveragesTable({ title, rows, front, back }: RoomAveragesTabl
       <table className="w-full text-xs" aria-label={title}>
         <caption className="sr-only">{title}</caption>
         <thead>
+          <tr>
+            <th scope="col" colSpan={2} className={TH}>
+              {title}
+            </th>
+          </tr>
           <tr>
             <th scope="col" className={TH}>
               Sensor

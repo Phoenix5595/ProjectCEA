@@ -35,6 +35,14 @@ export interface UPlotChartProps {
   onZoom?: (range: { start: Date; end: Date }) => void
   /** Original x range restored by `resetZoom`. */
   range?: { start: Date; end: Date }
+  /** Accessible name for the chart region (used as the canvas `aria-label`). */
+  title?: string
+  /** Longer accessible description of the chart (linked via `aria-describedby`). */
+  description?: string
+}
+
+function slugify(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
 }
 
 export interface UPlotChartHandle {
@@ -53,7 +61,7 @@ function measure(el: HTMLElement): { width: number; height: number } {
 }
 
 export const UPlotChart = forwardRef<UPlotChartHandle, UPlotChartProps>(
-  function UPlotChart({ data, className, onZoom, range }, ref) {
+  function UPlotChart({ data, className, onZoom, range, title, description }, ref) {
     const { theme } = useTheme()
 
     const containerRef = useRef<HTMLDivElement>(null)
@@ -61,6 +69,7 @@ export const UPlotChart = forwardRef<UPlotChartHandle, UPlotChartProps>(
     const observerRef = useRef<ResizeObserver | null>(null)
     const visibilityRef = useRef<Map<string, boolean>>(new Map())
     const xRangeRef = useRef<XRange | null>(null)
+    const suppressProgrammaticXScaleRef = useRef(false)
     const readyRef = useRef(false)
     const [hiddenKeys, setHiddenKeys] = useState<Set<string>>(new Set())
 
@@ -72,9 +81,14 @@ export const UPlotChart = forwardRef<UPlotChartHandle, UPlotChartProps>(
     rangeRef.current = range
 
     const legendEntries = useMemo<LegendEntry[]>(() => {
+      const seenKeys = new Set<string>()
       return data.series
         .map((s, i) => ({ s, index: i + 1 }))
-        .filter(({ s }) => !isEnvelopeSeries(s))
+        .filter(({ s }) => {
+          if (isEnvelopeSeries(s) || seenKeys.has(s.key)) return false
+          seenKeys.add(s.key)
+          return true
+        })
         .map(({ s, index }) => ({
           key: s.key,
           label: s.label,
@@ -115,15 +129,23 @@ export const UPlotChart = forwardRef<UPlotChartHandle, UPlotChartProps>(
           if (plot === null) return
           const r = rangeRef.current
           if (r !== undefined) {
+            suppressProgrammaticXScaleRef.current = true
             plot.setScale('x', { min: r.start.getTime(), max: r.end.getTime() })
+            suppressProgrammaticXScaleRef.current = false
           } else {
             const x = dataRef.current.x
-            if (x.length > 0) plot.setScale('x', { min: x[0], max: x[x.length - 1] })
+            if (x.length > 0) {
+              suppressProgrammaticXScaleRef.current = true
+              plot.setScale('x', { min: x[0], max: x[x.length - 1] })
+              suppressProgrammaticXScaleRef.current = false
+            }
           }
         },
       }),
       [],
     )
+
+    const seriesCount = data.series.length
 
     useEffect(() => {
       const container = containerRef.current
@@ -136,6 +158,10 @@ export const UPlotChart = forwardRef<UPlotChartHandle, UPlotChartProps>(
         buildOptions(dataRef.current, width, height, {
           onSetScale: (self, scaleKey) => {
             if (scaleKey !== 'x') return
+            if (suppressProgrammaticXScaleRef.current) {
+              suppressProgrammaticXScaleRef.current = false
+              return
+            }
             if (!readyRef.current) {
               readyRef.current = true
               return
@@ -155,6 +181,9 @@ export const UPlotChart = forwardRef<UPlotChartHandle, UPlotChartProps>(
               else next.add(key)
               return next
             })
+          },
+          onDraw: () => {
+            suppressProgrammaticXScaleRef.current = false
           },
         }),
         toUPlotData(dataRef.current),
@@ -190,11 +219,23 @@ export const UPlotChart = forwardRef<UPlotChartHandle, UPlotChartProps>(
         plot.destroy()
         plotRef.current = null
       }
-    }, [theme])
+      // uPlot fixes its series set at construction: rebuild when the count changes
+      // (e.g. first load transitions from empty store data to real series).
+    }, [theme, seriesCount])
+
+    const updateData = (nextData: AlignedData): void => {
+      const plot = plotRef.current
+      if (plot === null) return
+      suppressProgrammaticXScaleRef.current = true
+      plot.setData(toUPlotData(nextData), false)
+      suppressProgrammaticXScaleRef.current = false
+    }
 
     useEffect(() => {
-      plotRef.current?.setData(toUPlotData(data), false)
+      updateData(data)
     }, [data])
+
+    const descId = title !== undefined ? `mon-chart-desc-${slugify(title)}` : undefined
 
     return (
       <div className="mon-chart">
@@ -202,9 +243,15 @@ export const UPlotChart = forwardRef<UPlotChartHandle, UPlotChartProps>(
           ref={containerRef}
           className={className}
           role="img"
-          aria-label="Monitoring chart"
+          aria-label={title ?? 'Monitoring chart'}
+          aria-describedby={descId}
           style={{ width: '100%', height: '100%' }}
         />
+        {description !== undefined && descId !== undefined && (
+          <p id={descId} className="mon-chart__desc">
+            {description}
+          </p>
+        )}
         <ExternalLegend entries={legendEntries} onToggle={handleToggle} onReset={handleReset} />
       </div>
     )

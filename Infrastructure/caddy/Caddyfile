@@ -49,6 +49,30 @@
 	header @hashed_assets Cache-Control "public, max-age=31536000, immutable"
 	header ?Cache-Control "no-cache, must-revalidate"
 
+	# Browser access is limited to documented GET-only monitoring reads. The
+	# decoded path regex forbids slash and percent in each room/node segment.
+	@monitoring_sensor_read {
+		method GET
+		path_regexp monitoring_sensor_read ^/api/sensors/monitoring/(?:range|stats)/[^/%]+$|^/api/sensors/monitoring/live/[^/%]+/[^/%]+$
+	}
+	handle @monitoring_sensor_read {
+		request_header -X-API-Key
+		reverse_proxy 127.0.0.1:8005 {
+			header_up X-API-Key {env.CEA_API_KEY}
+		}
+	}
+
+	@monitoring_control_read {
+		method GET
+		path_regexp monitoring_control_read ^/api/monitoring/control/[^/%]+/(?:history|current|projection)$
+	}
+	handle @monitoring_control_read {
+		request_header -X-API-Key
+		reverse_proxy 127.0.0.1:8005 {
+			header_up X-API-Key {env.CEA_API_KEY}
+		}
+	}
+
 	# ------------------------------------------------------------------
 	# Backend (sensor data) - port 8000
 	# ------------------------------------------------------------------
