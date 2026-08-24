@@ -56,6 +56,16 @@ export class MonitoringApi {
     return this.client.get(path, ControlMonitoringResponse, options)
   }
 
+  controlTail(
+    location: string,
+    start?: string,
+    end?: string,
+    options?: MonitoringRequestOptions,
+  ): Promise<ControlMonitoringResponse> {
+    const path = `/api/monitoring/control/${encodeURIComponent(location)}/tail${buildQuery({ start, end })}`
+    return this.client.get(path, ControlMonitoringResponse, options)
+  }
+
   controlProjection(
     location: string,
     start?: string,

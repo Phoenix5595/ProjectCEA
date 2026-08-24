@@ -22,9 +22,11 @@ import {
 } from './alignSeries.builder'
 import { mergeControlSeries, mergeDeviceSeries, mergePidSeries } from './alignSeries.control'
 import { collectTimestamps, coarsenedGrid, DEFAULT_MAX_POINTS, indexOfNow, windowBounds } from './alignSeries.grid'
+import { injectMonitoringAlignmentDelay, PERFORMANCE_MARKS_ENABLED } from '../perfMarks'
 
 /** Align store-shaped monitoring data onto a shared uPlot x grid. */
 export function alignSeries(input: AlignInput): AlignedData {
+  if (PERFORMANCE_MARKS_ENABLED) injectMonitoringAlignmentDelay()
   const maxPoints = input.maxPoints ?? DEFAULT_MAX_POINTS
   const { start, end } = windowBounds(input.range, input.now)
   const now = input.now.getTime()

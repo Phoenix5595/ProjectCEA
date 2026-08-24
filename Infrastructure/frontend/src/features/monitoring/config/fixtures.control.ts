@@ -118,6 +118,20 @@ export function controlRangeFixture(
   return base
 }
 
+export function controlTailFixture(
+  room: string,
+  start: string,
+  end: string,
+  scenario: string | null = null,
+): unknown {
+  return controlRangeFixture(
+    room,
+    start,
+    end,
+    scenario === 'delayed-control-recovery' ? null : scenario,
+  )
+}
+
 /** Future-only climate, light, and photoperiod projections. */
 export function controlProjectionFixture(
   _room: string,

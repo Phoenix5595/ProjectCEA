@@ -87,8 +87,10 @@ export class MonitoringStore {
   }
 
   setFixedRange(start: Date, end: Date): void {
+    const nextRange: MonitoringRange = { kind: 'fixed', start, end }
+    if (sameRange(this.state.range, nextRange)) return
     this.rangeSequence += 1
-    this.setState({ range: { kind: 'fixed', start, end }, isLive: false })
+    this.setState({ range: nextRange, isLive: false })
     void this.loadRangeIfChanged()
   }
 

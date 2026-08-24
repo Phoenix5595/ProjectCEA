@@ -127,6 +127,7 @@ function makeApi(): Mocked<MonitoringApi> {
     sensorLive: vi.fn(),
     sensorStats: vi.fn(),
     controlRange: vi.fn(),
+    controlTail: vi.fn(),
     controlProjection: vi.fn(),
   } as unknown as Mocked<MonitoringApi>
 }
@@ -138,6 +139,7 @@ function healthyDefaults(api: Mocked<MonitoringApi>): void {
     { sensor: 'dry_bulb', value: 24.6, timestamp: new Date(T0) },
   ])
   api.controlRange.mockResolvedValue(controlResponse())
+  api.controlTail.mockResolvedValue(controlResponse())
   api.controlProjection.mockResolvedValue(projectionResponse())
 }
 
@@ -169,9 +171,9 @@ describe('monitoring store', () => {
     expect(api.sensorRange).toHaveBeenCalledTimes(1)
     expect(api.sensorStats).toHaveBeenCalledTimes(1)
     expect(api.controlProjection).toHaveBeenCalledTimes(1)
-    expect(api.controlRange.mock.calls.length).toBeGreaterThanOrEqual(60)
+    expect(api.controlTail.mock.calls.length).toBeGreaterThanOrEqual(60)
 
-    const [loc, startArg, endArg] = api.controlRange.mock.calls.at(-1)!
+    const [loc, startArg, endArg] = api.controlTail.mock.calls.at(-1)!
     expect(loc).toBe('Flower Room')
     const span = Date.parse(endArg as string) - Date.parse(startArg as string)
     expect(span).toBeLessThanOrEqual(122_000)
@@ -181,7 +183,7 @@ describe('monitoring store', () => {
   it('drains paged backlog one page per tick', async () => {
     const api = makeApi()
     healthyDefaults(api)
-    api.controlRange.mockReset()
+    api.controlTail.mockReset()
       .mockResolvedValueOnce(
         controlResponse({ cursors: [{ source: 'effective_setpoints', cursor: '42', has_more: true }] }),
       )
@@ -195,10 +197,10 @@ describe('monitoring store', () => {
     await vi.advanceTimersByTimeAsync(0)
 
     await vi.advanceTimersByTimeAsync(1000)
-    expect(api.controlRange).toHaveBeenCalled()
+    expect(api.controlTail).toHaveBeenCalled()
 
     await vi.advanceTimersByTimeAsync(1000)
-    expect(api.controlRange).toHaveBeenCalled()
+    expect(api.controlTail).toHaveBeenCalled()
     unsub()
   })
 
@@ -367,8 +369,8 @@ describe('monitoring store', () => {
 
     expect(api.sensorRange).toHaveBeenCalledTimes(1)
     expect(api.sensorStats).toHaveBeenCalledTimes(1)
-    expect(api.controlRange.mock.calls.length).toBeGreaterThan(1)
-    for (const [, startArg, endArg] of api.controlRange.mock.calls.slice(1)) {
+    expect(api.controlTail.mock.calls.length).toBeGreaterThan(0)
+    for (const [, startArg, endArg] of api.controlTail.mock.calls) {
       const span = Date.parse(endArg as string) - Date.parse(startArg as string)
       expect(span).toBeLessThanOrEqual(fullSpan)
     }

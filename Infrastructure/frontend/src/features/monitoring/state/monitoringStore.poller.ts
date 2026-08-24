@@ -112,7 +112,7 @@ export class MonitoringLivePoller {
       const now = this.hooks.now()
       const last = lastControlTimestamp(this.hooks.read().data)
       const start = last ? new Date(last.getTime() - 2000) : new Date(now.getTime() - CONTROL_WINDOW_MS)
-      const resp = await this.monitoringApi.controlRange(
+      const resp = await this.monitoringApi.controlTail(
         this.location,
         iso(start),
         iso(now),
