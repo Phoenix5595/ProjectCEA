@@ -30,6 +30,8 @@ from monitoring_service.control_models import (
 )
 from shared.monitoring_contracts import CurrentSnapshot, FutureProjection, Quality
 
+from monitoring_service.query_observation import request_observation
+
 
 class ControlHistoryDatabase(Protocol):
     """The parameterized read capability required for recorded history."""
@@ -56,16 +58,17 @@ class ControlHistoryRepository:
         self, location: str, history_range: ControlHistoryRange
     ) -> ControlHistoryEnvelope:
         """Return climate, light, device, PID, and photoperiod timelines for the window."""
-        setpoint_rows = await self._database.fetch(
-            _SETPOINTS_SQL, location, history_range.start, history_range.end
-        )
-        state_rows = await self._database.fetch(
-            _STATE_SQL, location, history_range.start, history_range.end
-        )
-        photoperiod_rows = await self._database.fetch(
-            _PHOTOPERIOD_SQL, location, history_range.start, history_range.end
-        )
-        return _build_envelope(history_range, setpoint_rows, state_rows, photoperiod_rows)
+        async with request_observation():
+            setpoint_rows = await self._database.fetch(
+                _SETPOINTS_SQL, location, history_range.start, history_range.end
+            )
+            state_rows = await self._database.fetch(
+                _STATE_SQL, location, history_range.start, history_range.end
+            )
+            photoperiod_rows = await self._database.fetch(
+                _PHOTOPERIOD_SQL, location, history_range.start, history_range.end
+            )
+            return _build_envelope(history_range, setpoint_rows, state_rows, photoperiod_rows)
 
 
 _RECORDED_PROVENANCE = {"origin": "recorded", "quality": Quality.EXACT, "is_aggregated": False}
