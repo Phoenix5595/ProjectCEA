@@ -235,6 +235,15 @@ describe('monitoring api boundary', () => {
       ),
       expect.any(Object),
     )
+
+    fetchMock.mockResolvedValueOnce(jsonResponse(controlPayload))
+    await api.controlTail('Flower Room', start, end)
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      expect.stringContaining(
+        '/api/monitoring/control/Flower%20Room/tail?start=2026-08-02T11%3A00%3A00.000Z&end=2026-08-02T12%3A00%3A00.000Z&max_points=1000',
+      ),
+      expect.any(Object),
+    )
   })
 
   it('parses legacy and additive point-budget response fields without changing unknown-key handling', async () => {

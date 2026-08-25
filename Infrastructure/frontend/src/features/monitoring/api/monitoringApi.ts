@@ -83,7 +83,11 @@ export class MonitoringApi {
     end?: string,
     options?: MonitoringRequestOptions,
   ): Promise<ControlMonitoringResponse> {
-    const path = `/api/monitoring/control/${encodeURIComponent(location)}/tail${buildQuery({ start, end })}`
+    const path = `/api/monitoring/control/${encodeURIComponent(location)}/tail${buildQuery({
+      start,
+      end,
+      max_points: CONTROL_HISTORY_MAX_POINTS.toString(),
+    })}`
     return this.client.get(path, ControlMonitoringResponse, options)
   }
 
