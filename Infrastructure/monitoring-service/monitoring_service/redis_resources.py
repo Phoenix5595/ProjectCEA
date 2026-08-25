@@ -7,8 +7,11 @@ from dataclasses import dataclass
 from typing import Protocol, final
 
 import redis.asyncio
+from redis.exceptions import ConnectionError as RedisConnectionError
+from redis.exceptions import TimeoutError as RedisTimeoutError
 
 from monitoring_service.resources import RedisResourceSettings
+from monitoring_service.sensor_models import MonitoringUnavailableError
 
 
 @dataclass(frozen=True, slots=True)
@@ -35,7 +38,7 @@ class RedisReadClient:
     """Read chart metadata without exposing Redis mutation operations."""
 
     def __init__(self, client: redis.asyncio.Redis | RedisReadTransport) -> None:
-        self._client = client
+        self._client: RedisReadTransport = client
 
     @classmethod
     def connect(cls, settings: RedisResourceSettings) -> RedisReadClient:
@@ -56,7 +59,7 @@ class RedisReadClient:
             f"cea:effective_setpoint:{location}:{cluster}:light:{device_name}:effective_intensity"
             for device_name in device_names
         ]
-        values = await self._client.mget(keys)
+        values = await self.mget(keys)
         return {
             device_name: LightEffectiveMetadata(effective_intensity=float(value))
             for device_name, value in zip(device_names, values, strict=True)
@@ -65,7 +68,10 @@ class RedisReadClient:
 
     async def mget(self, keys: list[str]) -> list[str | None]:
         """Read complete shared publication payloads without write capability."""
-        return await self._client.mget(keys)
+        try:
+            return await self._client.mget(keys)
+        except (RedisConnectionError, RedisTimeoutError) as exc:
+            raise MonitoringUnavailableError("monitoring Redis read is unavailable") from exc
 
     async def ping(self) -> bool:
         """Support the shared non-mutating readiness probe."""
@@ -76,15 +82,17 @@ class RedisReadClient:
 
     async def sensor_values(self, pattern: str) -> tuple[tuple[str, str | None, str | None], ...]:
         """Read current sensor values and publication timestamps through SCAN and MGET only."""
-        keys = [
-            key
-            async for key in self._client.scan_iter(match=pattern, count=500)
-            if not key.endswith("_ts")
-        ]
+        try:
+            keys: list[str] = []
+            async for key in self._client.scan_iter(match=pattern, count=500):
+                if not key.endswith("_ts"):
+                    keys.append(key)
+        except (RedisConnectionError, RedisTimeoutError) as exc:
+            raise MonitoringUnavailableError("monitoring Redis read is unavailable") from exc
         if not keys:
             return ()
-        values = await self._client.mget(keys)
-        timestamps = await self._client.mget([f"{key}_ts" for key in keys])
+        values = await self.mget(keys)
+        timestamps = await self.mget([f"{key}_ts" for key in keys])
         return tuple(zip(keys, values, timestamps, strict=True))
 
     def _readiness_client(self) -> redis.asyncio.Redis:

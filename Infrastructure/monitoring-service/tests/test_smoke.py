@@ -8,6 +8,7 @@ import pytest
 
 from monitoring_service.main import create_app
 from monitoring_service.readiness import DependencyCheck, StaticReadinessProbe
+from monitoring_service.sensor_models import LiveSensorValue, MonitoringUnavailableError
 
 
 @pytest.fixture
@@ -62,6 +63,33 @@ async def test_ready_reports_database_and_redis_independently() -> None:
             "redis": {"ok": False, "latency_ms": None, "detail": "client not initialized"},
         },
     }
+
+
+class UnavailableSensorReads:
+    async def live(self, room: str, node: str) -> tuple[LiveSensorValue, ...]:
+        del room, node
+        raise MonitoringUnavailableError("monitoring Redis read is unavailable")
+
+
+@pytest.mark.anyio
+async def test_live_route_returns_503_for_typed_redis_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given: live reads that surfaced an unavailable Redis dependency
+    monkeypatch.setattr("monitoring_service.main.sensor_reads", UnavailableSensorReads())
+    app = create_app(
+        StaticReadinessProbe(database=DependencyCheck(ok=True), redis=DependencyCheck(ok=True))
+    )
+
+    # When: a live sensor endpoint is requested
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        response = await client.get("/api/sensors/monitoring/live/Flower%20Room/back")
+
+    # Then: dependency failure is represented as service unavailability, never a 500
+    assert response.status_code == 503
+    assert response.json() == {"detail": "monitoring Redis read is unavailable"}
 
 
 def test_service_imports_no_automation_or_hardware_modules() -> None:
