@@ -13,6 +13,7 @@ from monitoring_service.control_models import (
     ControlPublicationResponse,
     CurrentPublicationResponse,
 )
+from monitoring_service.sensor_models import resolve_room_metadata
 
 
 class ControlReadService(Protocol):
@@ -43,6 +44,16 @@ def register_control_routes(app: FastAPI, reads: ControlReadService) -> None:
             raise HTTPException(
                 status_code=503, detail="control monitoring history is unavailable"
             ) from None
+
+    @app.get("/api/monitoring/control/{location}/tail", response_model=ControlHistoryEnvelope)
+    async def tail(
+        location: str,
+        start: Annotated[datetime | None, Query()] = None,
+        end: Annotated[datetime | None, Query()] = None,
+    ) -> ControlHistoryEnvelope:
+        """Return one bounded live-poller page through the history read path."""
+        _ = resolve_room_metadata(location)
+        return await history(location, start, end, max_points=None)
 
     @app.get(
         "/api/monitoring/control/{location}/current", response_model=CurrentPublicationResponse
