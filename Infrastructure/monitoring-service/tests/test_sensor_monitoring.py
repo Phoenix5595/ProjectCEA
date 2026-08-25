@@ -13,7 +13,9 @@ class QueryCapturingDatabase:
     def __init__(self) -> None:
         self.queries: list[str] = []
 
-    async def fetch(self, query: str, *_: str | int | float | datetime) -> list[asyncpg.Record]:
+    async def fetch(
+        self, query: str, *_: str | int | float | datetime | timedelta
+    ) -> list[asyncpg.Record]:
         self.queries.append(query)
         return []
 
@@ -71,7 +73,9 @@ async def test_live_drops_readings_older_than_staleness_cutoff() -> None:
             )
 
     class StubDatabase:
-        async def fetch(self, query: str, *_: str | int | float | datetime) -> list[asyncpg.Record]:
+        async def fetch(
+            self, query: str, *_: str | int | float | datetime | timedelta
+        ) -> list[asyncpg.Record]:
             del query
             return []
 

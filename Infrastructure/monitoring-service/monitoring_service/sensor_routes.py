@@ -27,7 +27,7 @@ router = APIRouter(tags=["sensor-monitoring"])
 
 class SensorReads(Protocol):
     async def series(
-        self, room: str, monitoring_range: MonitoringRange
+        self, room: str, monitoring_range: MonitoringRange, max_points: int | None = None
     ) -> tuple[Tier, tuple[SensorSeries, ...]]: ...
     async def statistics(
         self, room: str, monitoring_range: MonitoringRange
@@ -61,7 +61,7 @@ async def range_read(
     reads: SensorReads = Depends(get_sensor_reads),
 ) -> MonitoringResponse:
     monitoring_range = _range(start, end)
-    tier, series = await reads.series(location, monitoring_range)
+    tier, series = await reads.series(location, monitoring_range, max_points)
     return MonitoringResponse(
         metadata=MonitoringMetadata(
             generated_at=datetime.now(UTC),
@@ -70,7 +70,9 @@ async def range_read(
             room=resolve_room_metadata(location),
             requested_max_points=max_points,
             interval_seconds=derive_interval_seconds(
-                monitoring_range.duration, source_bucket_seconds(tier), max_points
+                monitoring_range.duration,
+                source_bucket_seconds(tier),
+                max_points,
             ),
         ),
         series=series,
@@ -96,7 +98,9 @@ async def statistics_read(
             room=resolve_room_metadata(location),
             requested_max_points=max_points,
             interval_seconds=derive_interval_seconds(
-                monitoring_range.duration, source_bucket_seconds(tier), max_points
+                monitoring_range.duration,
+                source_bucket_seconds(tier),
+                max_points,
             ),
         ),
         series=(),

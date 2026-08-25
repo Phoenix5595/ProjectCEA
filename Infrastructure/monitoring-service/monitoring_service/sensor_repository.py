@@ -8,6 +8,7 @@ from collections import defaultdict
 from collections.abc import Sequence
 from datetime import timedelta, UTC, datetime
 import os
+from math import ceil
 from typing import Final, Protocol
 
 import asyncpg
@@ -24,9 +25,20 @@ from monitoring_service.sensor_models import (
     Tier,
     UnitFamily,
     compute_tier,
+    resolve_interval_seconds,
     resolve_room_metadata,
+    source_bucket_seconds,
 )
 from monitoring_service.query_observation import request_observation
+from monitoring_service.sensor_sql import (
+    CAGGS as _CAGGS,
+    RAW_BUCKETED_SERIES_SQL,
+    RAW_SERIES_SQL as _RAW_SERIES_SQL,
+    STATISTICS_CAGG_SQL as _STATISTICS_CAGG_SQL,
+    STATISTICS_SQL as _STATISTICS_SQL,
+    TIERED_BUCKETED_STATEMENTS,
+    TIERED_STATEMENTS as _TIERED_STATEMENTS,
+)
 from shared.cluster_topology import sensor_name_like_pattern
 
 _LIVE_MAX_AGE: Final[timedelta] = timedelta(
@@ -34,15 +46,10 @@ _LIVE_MAX_AGE: Final[timedelta] = timedelta(
 )
 STATS_CAGG_MIN_DURATION: Final[timedelta] = timedelta(hours=48)
 
-_CAGGS: Final = {
-    Tier.ONE_MINUTE: ("monitoring_measurement_1min", "1 minute"),
-    Tier.FIVE_MINUTES: ("monitoring_measurement_5min", "5 minutes"),
-}
-
 
 class _SensorDatabase(Protocol):
     async def fetch(
-        self, query: str, *args: str | int | float | datetime
+        self, query: str, *args: str | int | float | datetime | timedelta
     ) -> list[asyncpg.Record]: ...
 
 
@@ -60,7 +67,7 @@ class SensorMonitoringRepository:
         self._redis = redis
 
     async def series(
-        self, room: str, monitoring_range: MonitoringRange
+        self, room: str, monitoring_range: MonitoringRange, max_points: int | None = None
     ) -> tuple[Tier, tuple[SensorSeries, ...]]:
         metadata = resolve_room_metadata(room)
         tier = compute_tier(monitoring_range.duration)
@@ -68,19 +75,48 @@ class SensorMonitoringRepository:
             if tier is not Tier.RAW:
                 await self._require_cagg_coverage(tier, monitoring_range)
             result: list[SensorSeries] = []
+            interval = (
+                None
+                if max_points is None
+                else timedelta(
+                    seconds=resolve_interval_seconds(
+                        ceil(monitoring_range.duration.total_seconds()),
+                        max_points,
+                        source_bucket_seconds(tier),
+                    )
+                )
+            )
             for node in metadata.nodes:
                 pattern = sensor_name_like_pattern(room, node.value) or ""
-                if tier is Tier.RAW:
+                if interval is None and tier is Tier.RAW:
                     rows = await self._database.fetch(
                         _RAW_SERIES_SQL, room, pattern, monitoring_range.start, monitoring_range.end
                     )
-                else:
+                elif interval is not None and tier is Tier.RAW:
+                    rows = await self._database.fetch(
+                        RAW_BUCKETED_SERIES_SQL,
+                        room,
+                        pattern,
+                        monitoring_range.start,
+                        monitoring_range.end,
+                        interval,
+                    )
+                elif interval is None:
                     rows = await self._database.fetch(
                         _TIERED_STATEMENTS[tier.value],
                         room,
                         pattern,
                         monitoring_range.start,
                         monitoring_range.end,
+                    )
+                else:
+                    rows = await self._database.fetch(
+                        TIERED_BUCKETED_STATEMENTS[tier.value],
+                        room,
+                        pattern,
+                        monitoring_range.start,
+                        monitoring_range.end,
+                        interval,
                     )
                 result.extend(_series_from_rows(rows, node))
             return tier, tuple(result)
@@ -231,48 +267,3 @@ def _watermark_sql(relation: str) -> str:
     if not re.fullmatch(r"[a-z_0-9]+", relation):
         raise MonitoringUnavailableError(f"unsupported CAGG relation: {relation}")
     return f'SELECT max(bucket) AS materialization_watermark FROM "{relation}"'
-
-
-_RAW_SERIES_SQL: Final = """
-SELECT time_bucket(INTERVAL '1 second', measurement.time) AS bucket,
-       sensor.name AS sensor, sensor.unit, sensor.data_type,
-       avg(measurement.value)::double precision AS average,
-       min(measurement.value)::double precision AS minimum,
-       max(measurement.value)::double precision AS maximum,
-       count(*)::bigint AS sample_count
-FROM measurement
-JOIN sensor ON sensor.sensor_id = measurement.sensor_id
-JOIN device ON device.device_id = sensor.device_id
-LEFT JOIN rack ON rack.rack_id = device.rack_id
-JOIN room ON room.room_id = rack.room_id
-WHERE room.name = $1 AND ($2 = '' OR sensor.name LIKE $2)
-  AND measurement.time >= $3 AND measurement.time < $4
-GROUP BY bucket, sensor.name, sensor.unit, sensor.data_type
-ORDER BY bucket, sensor.name
-"""
-_TIERED_SERIES_SQL: Final[str] = """
-SELECT c.bucket AS bucket, sensor.name AS sensor, sensor.unit, sensor.data_type,
-       (c.value_sum / c.sample_count)::double precision AS average,
-       c.min_value::double precision AS minimum,
-       c.max_value::double precision AS maximum,
-       c.sample_count
-FROM {relation} c
-JOIN sensor ON sensor.sensor_id = c.sensor_id
-JOIN device ON device.device_id = sensor.device_id
-LEFT JOIN rack ON rack.rack_id = device.rack_id
-JOIN room ON room.room_id = rack.room_id
-WHERE room.name = $1 AND ($2 = '' OR sensor.name LIKE $2)
-  AND c.bucket >= $3 AND c.bucket < $4
-  AND c.bucket + INTERVAL '{width}' <= (SELECT max(bucket) FROM {relation})
-ORDER BY c.bucket, sensor.name
-"""
-
-_TIERED_STATEMENTS: Final[dict[str, str]] = {
-    tier.value: _TIERED_SERIES_SQL.format(relation=relation, width=width)
-    for tier, (relation, width) in _CAGGS.items()
-}
-
-_STATISTICS_SQL: Final = """SELECT sensor.name AS sensor, min(measurement.value)::double precision AS minimum, max(measurement.value)::double precision AS maximum, avg(measurement.value)::double precision AS average, coalesce(stddev_samp(measurement.value),0)::double precision AS stddev_samp, count(*)::bigint AS sample_count FROM measurement JOIN sensor ON sensor.sensor_id=measurement.sensor_id JOIN device ON device.device_id=sensor.device_id LEFT JOIN rack ON rack.rack_id=device.rack_id JOIN room ON room.room_id=rack.room_id WHERE room.name=$1 AND ($2='' OR sensor.name LIKE $2) AND measurement.time >= $3::timestamptz AND measurement.time < $4::timestamptz GROUP BY sensor.name ORDER BY sensor.name"""
-
-# CAGG stddev is an approximation over per-bucket averages; min/max/count remain exact.
-_STATISTICS_CAGG_SQL: Final = """SELECT sensor.name AS sensor, min(c.min_value)::double precision AS minimum, max(c.max_value)::double precision AS maximum, (sum(c.value_sum) / sum(c.sample_count))::double precision AS average, coalesce(stddev_samp((c.value_sum / c.sample_count)::double precision),0)::double precision AS stddev_samp, sum(c.sample_count)::bigint AS sample_count FROM monitoring_measurement_5min c JOIN sensor ON sensor.sensor_id=c.sensor_id JOIN device ON device.device_id=sensor.device_id LEFT JOIN rack ON rack.rack_id=device.rack_id JOIN room ON room.room_id=rack.room_id WHERE room.name=$1 AND ($2='' OR sensor.name LIKE $2) AND c.bucket >= $3::timestamptz AND c.bucket < $4::timestamptz GROUP BY sensor.name ORDER BY sensor.name"""
