@@ -2,15 +2,26 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from contextlib import AbstractAsyncContextManager
-from datetime import datetime
+from datetime import datetime, timedelta
 from types import TracebackType
+from typing import final
 
 import asyncpg
 import pytest
+from redis.exceptions import ConnectionError as RedisConnectionError
+from redis.exceptions import TimeoutError as RedisTimeoutError
+from typing_extensions import override
 
-from monitoring_service.database import ReadOnlyDatabase, ReadOnlyQueryError
+from monitoring_service.config import Settings
+from monitoring_service.database import (
+    AcquiredConnection,
+    ConnectionLike,
+    ReadOnlyDatabase,
+    ReadOnlyQueryError,
+)
 from monitoring_service.redis_resources import LightEffectiveMetadata, RedisReadClient
 from monitoring_service.resources import DatabaseResourceSettings, RedisResourceSettings
+from monitoring_service.sensor_models import MonitoringUnavailableError
 
 
 @pytest.fixture
@@ -22,7 +33,13 @@ class FakeTransaction:
     async def __aenter__(self) -> None:
         return None
 
-    async def __aexit__(self, *_: object) -> None:
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None = None,
+        exc_val: BaseException | None = None,
+        exc_tb: TracebackType | None = None,
+    ) -> None:
+        del exc_type, exc_val, exc_tb
         return None
 
 
@@ -35,23 +52,25 @@ class FakeConnection:
         self.transactions.append((isolation, readonly))
         return FakeTransaction()
 
-    async def fetch(self, query: str, *_: str | int | float | datetime) -> list[asyncpg.Record]:
+    async def fetch(
+        self, query: str, *_: str | int | float | datetime | timedelta
+    ) -> list[asyncpg.Record]:
         self.queries.append(query)
         return []
 
 
 class FakeAcquireContext:
     def __init__(self, connection: FakeConnection) -> None:
-        self._connection: FakeConnection = connection
+        self._connection: ConnectionLike = connection
 
-    async def __aenter__(self) -> FakeConnection:
+    async def __aenter__(self) -> ConnectionLike:
         return self._connection
 
     async def __aexit__(
         self,
-        exc_type: type[BaseException] | None,
-        exc_value: BaseException | None,
-        traceback: TracebackType | None,
+        exc_type: type[BaseException] | None = None,
+        exc_val: BaseException | None = None,
+        exc_tb: TracebackType | None = None,
     ) -> None:
         return None
 
@@ -60,7 +79,7 @@ class FakePool:
     def __init__(self, connection: FakeConnection) -> None:
         self.connection: FakeConnection = connection
 
-    def acquire(self, *, timeout: float | None = None) -> FakeAcquireContext:
+    def acquire(self, *, timeout: float | None = None) -> AcquiredConnection:
         del timeout
         return FakeAcquireContext(self.connection)
 
@@ -87,6 +106,25 @@ class FakeRedis:
         keys: tuple[str, ...] = ()
         for key in keys:
             yield key
+
+
+@final
+class FailingRedis(FakeRedis):
+    _error: RedisConnectionError | RedisTimeoutError
+
+    def __init__(self, error: RedisConnectionError | RedisTimeoutError) -> None:
+        super().__init__()
+        self._error = error
+
+    @override
+    async def mget(self, keys: list[str]) -> list[str | None]:
+        del keys
+        raise self._error
+
+    @override
+    async def scan_iter(self, *, match: str, count: int) -> AsyncIterator[str]:
+        del match, count
+        yield "cea:sensor:Flower Room:back:dry_bulb_b"
 
 
 @pytest.mark.anyio
@@ -172,6 +210,30 @@ async def test_redis_exposes_light_effective_metadata_through_read_operations_on
     ]
     assert not hasattr(client, "set")
     assert not hasattr(client, "xadd")
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "error",
+    [RedisTimeoutError("timed out"), RedisConnectionError("connection lost")],
+)
+async def test_redis_read_operations_translate_transport_errors(
+    error: RedisConnectionError | RedisTimeoutError,
+) -> None:
+    # Given: a Redis transport whose read operations cannot reach Redis
+    client = RedisReadClient(FailingRedis(error))
+
+    # Then: every monitoring read boundary surfaces the typed 503 error
+    with pytest.raises(MonitoringUnavailableError):
+        _ = await client.mget(["cea:test"])
+    with pytest.raises(MonitoringUnavailableError):
+        _ = await client.read_light_effective_metadata("Flower Room", "main", ("light-a",))
+    with pytest.raises(MonitoringUnavailableError):
+        _ = await client.sensor_values("cea:sensor:*")
+
+
+def test_settings_defaults_redis_read_timeout_to_two_seconds() -> None:
+    assert Settings().redis_timeout_seconds == 2.0
 
 
 def test_redis_connect_configures_connect_and_read_timeouts(
