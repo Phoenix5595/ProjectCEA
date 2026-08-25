@@ -1,0 +1,93 @@
+Todo 15 — bounded read pipeline integration verification
+Date: 2026-08-24
+
+Verdict
+=======
+PASS with one minimal correction. T10-T13's bounded pool (max 1-8), sequential
+per-request sensor series/statistics reads, bucketed sensor SQL, control-history
+budgeting, and CAGG watermark cache were already integrated. Verification found
+one raw-500 leak: asyncpg.QueryCanceledError escaped ReadOnlyDatabase.fetch().
+It now becomes MonitoringUnavailableError (503), and the FastAPI application
+translates all MonitoringError subtypes to their declared stable status codes.
+No pool bound, deadline, route shape, or per-request parallelism changed.
+
+Acceptance-item results
+=======================
+1. Eight-client concurrency: FIXED/COVERED.
+   test_eight_concurrent_bounded_flower_range_reads_release_the_shared_pool
+   shares one ReadOnlyDatabase backed by LatentPool(max_size=8), with 20 ms
+   acquisition and 50 ms statement latency. asyncio.gather issues eight Flower
+   7-day, max_points=1000 HTTP range requests. The passing assertions prove:
+   - all eight responses are HTTP 200 (no 500);
+   - active_count returns to 0;
+   - maximum_active_count never exceeds 8;
+   - total completion is bounded below 1.5 seconds (no starvation deadlock);
+   - each request logs exactly three sequential SQL operations;
+   - each request has exactly one watermark query and no duplicate SQL text.
+
+2. Cancellation/timeout mapping: FIXED.
+   test_statement_cancellation_maps_to_monitoring_unavailable_instead_of_500
+   sends asyncpg.QueryCanceledError("statement timeout") through the fake pool,
+   ReadOnlyDatabase, repository, and HTTP range route; it receives HTTP 503.
+   ReadOnlyDatabase now maps asyncpg.QueryCanceledError and acquire TimeoutError
+   to MonitoringUnavailableError. The existing query-observation timeout test
+   was updated to lock the same typed mapping while retaining timeout observation.
+   create_app now maps MonitoringValidationError/MonitoringNotFoundError/
+   MonitoringUnavailableError via the MonitoringError hierarchy (400/404/503).
+
+   Route audit:
+   - sensor range and stats: DB fetches pass through ReadOnlyDatabase then the
+     MonitoringError handler; validation is also typed 400/404.
+   - sensor live: no asyncpg path exists; typed topology/node failures use the
+     same MonitoringError handler.
+   - control history: its sequential DB fetches pass through ReadOnlyDatabase;
+     the typed handler maps driver timeout/cancellation to 503, while the route
+     retains its existing ConnectionError/OSError/RuntimeError 503 boundary.
+   - control current: no asyncpg path exists; existing I/O boundary maps
+     ConnectionError/OSError/RuntimeError to 503.
+   - control projection: no dependency fetch occurs; range validation is its
+     existing HTTP 400 contract.
+
+3. Write-SQL static guard: ADDED.
+   test_monitoring_sql_constants_never_begin_with_a_write_verb scans SQL-named
+   constants and statement mappings in sensor_sql.py, control_history_queries.py,
+   sensor_repository.py, and control_repository.py. It rejects leading INSERT,
+   UPDATE, DELETE, DROP, TRUNCATE, ALTER, and CREATE verbs.
+
+4. Redundancy sweep: VERIFIED.
+   The eight-viewer test's per-request query log proves a 7-day range executes
+   one watermark fetch, one bucketed series query, and one statistics query;
+   statistics performs no second watermark lookup. Existing TTL-cache coverage
+   tests remain green, including fresh-entry reuse and expiry re-fetch behavior.
+
+5. Module-size audit: VERIFIED, no split required.
+   Pure LOC (nonblank, non-comment):
+   cagg_watermarks 38; config 76; control_history_queries 85; control_models 128;
+   control_repository 135; control_routes 70; control_timeline_budget 129;
+   control_timeline_build 223; database 86; __init__ 1; main 104;
+   query_observation 173; readiness 69; redis_resources 75; resources 15;
+   sensor_intervals 43; sensor_models 230; sensor_repository 193;
+   sensor_routes 99; sensor_rows 92; sensor_sql 154.
+   Maximum: sensor_models.py at 230, below the 250-LOC limit.
+
+Verification
+============
+- python3 -m pytest -q: 98 passed in 2.48s.
+- python3 -m pytest -q (second run): 98 passed in 2.43s.
+- ruff check monitoring_service tests: passed.
+- ruff format --check monitoring_service tests: 21 files already formatted.
+- python3 -m compileall -q monitoring_service: passed.
+- Focused new integration module: 3 passed in 1.30s.
+
+Paths touched
+=============
+- Infrastructure/monitoring-service/monitoring_service/database.py
+- Infrastructure/monitoring-service/monitoring_service/main.py
+- Infrastructure/monitoring-service/tests/test_read_pipeline_integration.py
+- Infrastructure/monitoring-service/tests/test_query_observation.py
+- .omo/evidence/monitoring-pipeline-radical-optimization/task-15-monitoring-pipeline-radical-optimization-backend-integration.txt
+- .omo/notepads/monitoring-pipeline-radical-optimization/learnings.md
+
+Git
+===
+Zero git commands were run.

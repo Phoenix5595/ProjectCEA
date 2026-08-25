@@ -10,6 +10,7 @@ import pytest
 
 from monitoring_service.database import ReadOnlyDatabase
 from monitoring_service.query_observation import request_observation
+from monitoring_service.sensor_models import MonitoringUnavailableError
 
 
 @pytest.fixture
@@ -126,7 +127,7 @@ async def test_query_observation_emits_safe_acquire_query_and_summary_events(
 
 
 @pytest.mark.anyio
-async def test_query_observation_preserves_acquire_timeout_exception(
+async def test_query_observation_maps_acquire_timeout_to_monitoring_unavailable(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     # Given: a pool whose acquisition times out with the established exception
@@ -134,7 +135,7 @@ async def test_query_observation_preserves_acquire_timeout_exception(
     database = ReadOnlyDatabase(TimedOutPool())
 
     # When: a read is attempted
-    with pytest.raises(TimeoutError, match="pool acquisition timed out"):
+    with pytest.raises(MonitoringUnavailableError, match="database read timed out"):
         _ = await database.fetch("SELECT 1")
 
     # Then: the original exception propagates and the timeout is safely observed
