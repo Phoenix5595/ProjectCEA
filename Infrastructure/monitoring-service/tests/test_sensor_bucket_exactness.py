@@ -13,6 +13,7 @@ from monitoring_service.sensor_sql import RAW_BUCKETED_SERIES_SQL, TIERED_BUCKET
 
 
 def _row(**values: int | float | str | datetime) -> asyncpg.Record:
+    values.setdefault("node", "main")
     row = MagicMock(spec=asyncpg.Record)
     row.__getitem__.side_effect = values.__getitem__
     return row
@@ -87,8 +88,8 @@ async def test_raw_bucket_returns_the_exact_unit_weighted_envelope() -> None:
     assert (point.minimum, point.maximum, point.sample_count) == (1.0, 100.0, 3)
     query, arguments = database.calls[0]
     assert query == RAW_BUCKETED_SERIES_SQL
-    assert arguments[4] == timedelta(seconds=10)
-    assert "time_bucket($5::interval, measurement.time, $3::timestamptz)" in query
+    assert arguments[7] == timedelta(seconds=10)
+    assert "time_bucket($8::interval, measurement.time, $6::timestamptz)" in query
 
 
 @pytest.mark.anyio
@@ -127,7 +128,7 @@ async def test_cagg_rebucket_uses_sum_weighted_mean_not_mean_of_means() -> None:
     assert (point.minimum, point.maximum, point.sample_count) == (1.0, 100.0, 11)
     query, arguments = database.calls[1]
     assert query == TIERED_BUCKETED_STATEMENTS["5min"]
-    assert arguments[4] == timedelta(seconds=900)
+    assert arguments[7] == timedelta(seconds=900)
     assert "sum(c.value_sum) / NULLIF(sum(c.sample_count), 0)" in query
     assert "avg(c.value_sum / c.sample_count)" not in query
 
@@ -190,5 +191,5 @@ def test_resolved_intervals_are_ladder_whitelisted_and_never_sql_interpolated() 
     # Then: resolution snaps to a whitelisted ladder value carried only as an interval parameter
     assert resolved in NICE_INTERVAL_SECONDS
     assert resolved == 900
-    assert "$5::interval" in RAW_BUCKETED_SERIES_SQL
+    assert "$8::interval" in RAW_BUCKETED_SERIES_SQL
     assert str(resolved) not in RAW_BUCKETED_SERIES_SQL

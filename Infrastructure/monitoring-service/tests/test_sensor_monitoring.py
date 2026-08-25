@@ -1,12 +1,25 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from typing import TypedDict
 
 import asyncpg
 import pytest
 
 from monitoring_service.sensor_models import Tier, compute_tier
 from monitoring_service.sensor_repository import SensorMonitoringRepository
+
+
+class SeriesRow(TypedDict):
+    node: str
+    sensor: str
+    unit: str
+    data_type: str
+    bucket: datetime
+    average: float
+    minimum: float
+    maximum: float
+    sample_count: int
 
 
 class QueryCapturingDatabase:
@@ -24,6 +37,117 @@ class UnusedRedis:
     async def sensor_values(self, pattern: str) -> tuple[tuple[str, str | None, str | None], ...]:
         del pattern
         return ()
+
+
+class SensorRowsByPatternDatabase:
+    def __init__(self, rows_by_pattern: dict[str, list[SeriesRow]]) -> None:
+        self.rows_by_pattern: dict[str, list[SeriesRow]] = rows_by_pattern
+        self.queries: list[tuple[str, tuple[str | int | float | datetime | timedelta, ...]]] = []
+
+    async def fetch(
+        self, query: str, *args: str | int | float | datetime | timedelta
+    ) -> list[SeriesRow]:
+        self.queries.append((query, args))
+        if len(args) >= 7:
+            return [
+                row
+                for pattern in (str(args[2]), str(args[4]))
+                for row in self.rows_by_pattern.get(pattern, [])
+            ]
+        if len(args) < 2:
+            return []
+        return self.rows_by_pattern.get(str(args[1]), [])
+
+
+def _range(hours: int = 1):
+    from monitoring_service.sensor_models import MonitoringRange
+
+    end = datetime(2026, 8, 24, 14, 0, tzinfo=UTC)
+    return MonitoringRange(start=end - timedelta(hours=hours), end=end)
+
+
+def _series_row(node: str, sensor: str, bucket: datetime) -> SeriesRow:
+    return {
+        "node": node,
+        "sensor": sensor,
+        "unit": "°C",
+        "data_type": "temperature",
+        "bucket": bucket,
+        "average": 24.5,
+        "minimum": 24.0,
+        "maximum": 25.0,
+        "sample_count": 2,
+    }
+
+
+@pytest.mark.anyio
+async def test_series_preserves_flower_no_budget_snapshot() -> None:
+    # Given: the legacy front/back rows returned by the per-pattern fake
+    bucket = datetime(2026, 8, 24, 13, 30, tzinfo=UTC)
+    database = SensorRowsByPatternDatabase(
+        {
+            "%_f": [_series_row("front", "dry_bulb_f", bucket)],
+            "%_b": [_series_row("back", "dry_bulb_b", bucket)],
+        }
+    )
+    repository = SensorMonitoringRepository(database, UnusedRedis())  # type: ignore[arg-type]
+
+    # When: Flower's unbudgeted raw range is read
+    tier, series = await repository.series("Flower Room", _range())
+
+    # Then: the established canonical node-attributed response is unchanged
+    assert tier is Tier.RAW
+    assert [item.model_dump(mode="json") for item in series] == [
+        {
+            "sensor": "dry_bulb_f",
+            "node": "front",
+            "unit_family": "celsius",
+            "unit": "°C",
+            "points": [
+                {
+                    "timestamp": "2026-08-24T13:30:00Z",
+                    "average": 24.5,
+                    "minimum": 24.0,
+                    "maximum": 25.0,
+                    "sample_count": 2,
+                }
+            ],
+            "point_count": 1,
+            "sample_count_total": 2,
+        },
+        {
+            "sensor": "dry_bulb_b",
+            "node": "back",
+            "unit_family": "celsius",
+            "unit": "°C",
+            "points": [
+                {
+                    "timestamp": "2026-08-24T13:30:00Z",
+                    "average": 24.5,
+                    "minimum": 24.0,
+                    "maximum": 25.0,
+                    "sample_count": 2,
+                }
+            ],
+            "point_count": 1,
+            "sample_count_total": 2,
+        },
+    ]
+
+
+@pytest.mark.anyio
+async def test_series_preserves_veg_no_budget_snapshot() -> None:
+    # Given: the legacy Veg main-sentinel rows returned by the per-pattern fake
+    bucket = datetime(2026, 8, 24, 13, 30, tzinfo=UTC)
+    database = SensorRowsByPatternDatabase({"%_v": [_series_row("main", "dry_bulb_v", bucket)]})
+    repository = SensorMonitoringRepository(database, UnusedRedis())  # type: ignore[arg-type]
+
+    # When: Veg's unbudgeted raw range is read
+    tier, series = await repository.series("Veg Room", _range())
+
+    # Then: the established main-only response is unchanged
+    assert tier is Tier.RAW
+    assert [(item.sensor, item.node.value) for item in series] == [("dry_bulb_v", "main")]
 
 
 def test_compute_tier_preserves_legacy_duration_boundaries() -> None:
@@ -47,11 +171,11 @@ def test_tiered_series_sql_reads_only_its_own_cagg() -> None:
     # Given: the SQL selected for each aggregated tier
     # When: the source relations are inspected
     # Then: each statement reads exactly its own CAGG (watermark-guarded)
-    from monitoring_service.sensor_repository import _TIERED_STATEMENTS
+    from monitoring_service.sensor_sql import TIERED_STATEMENTS
 
-    assert "_materialized" not in _TIERED_STATEMENTS["1min"]
-    assert "monitoring_measurement_1min" in _TIERED_STATEMENTS["1min"]
-    assert "monitoring_measurement_5min" in _TIERED_STATEMENTS["5min"]
+    assert "_materialized" not in TIERED_STATEMENTS["1min"]
+    assert "monitoring_measurement_1min" in TIERED_STATEMENTS["1min"]
+    assert "monitoring_measurement_5min" in TIERED_STATEMENTS["5min"]
 
 
 @pytest.fixture
@@ -130,4 +254,4 @@ async def test_statistics_uses_raw_measurements_when_duration_is_at_most_48_hour
 
     # Then: every sensor query retains the exact raw-measurement statement
     assert database.queries
-    assert all("FROM measurement " in query for query in database.queries)
+    assert all("FROM measurement" in query for query in database.queries)

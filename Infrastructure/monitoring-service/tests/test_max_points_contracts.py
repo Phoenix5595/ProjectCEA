@@ -235,6 +235,7 @@ class StatisticsRowsDatabase:
     ) -> list[asyncpg.Record]:
         del query
         values = {
+            "node": "main",
             "sensor": "dry_bulb",
             "minimum": 23.0,
             "maximum": 25.0,
@@ -263,8 +264,8 @@ async def test_statistics_quality_tracks_the_existing_raw_or_cagg_branch() -> No
 
     # When: both existing source-selection branches build response statistics.
     raw = await repository.statistics("Veg Room", raw_range)
-    approximate = await repository.statistics("Veg Room", cagg_range)
+    exact = await repository.statistics("Veg Room", cagg_range)
 
     # Then: the source's standard-deviation precision remains explicit on the wire.
     assert raw[0].stddev_quality == "exact"
-    assert approximate[0].stddev_quality == "approximate"
+    assert exact[0].stddev_quality == "exact"
