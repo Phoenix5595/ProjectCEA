@@ -126,11 +126,15 @@ class InterlockManager:
                             return (False, f"Global interlock: {when_device} is ON")
 
                     # Also check if requested load would violate interlock
-                    if requested_load is not None and requested_load > max_allowed_load:
-                        if when_load is not None and when_load > max_allowed_load:
-                            return (
-                                False,
-                                f"Global interlock: Cannot set {device_name} to {requested_load:.1f}% (max allowed: {max_allowed_load:.1f}%) when {when_device} is at {when_load:.1f}%",
-                            )
+                    if (
+                        requested_load is not None
+                        and requested_load > max_allowed_load
+                        and when_load is not None
+                        and when_load > max_allowed_load
+                    ):
+                        return (
+                            False,
+                            f"Global interlock: Cannot set {device_name} to {requested_load:.1f}% (max allowed: {max_allowed_load:.1f}%) when {when_device} is at {when_load:.1f}%",
+                        )
 
         return (True, None)

@@ -6,8 +6,8 @@ from datetime import datetime
 import json
 from typing import TYPE_CHECKING, Any
 
-from app.redis.schema import get_with_backward_compat, sensor_key, set_with_backward_compat
 from shared.infra_logging import get_logger
+from shared.redis_keys import sensor_last_good
 
 if TYPE_CHECKING:
     import redis
@@ -34,16 +34,8 @@ class SensorsMixin:
 
             ttl = 40  # Default hold period (30s) + buffer (10s)
 
-            set_with_backward_compat(
-                self.redis_client,
-                "sensor:{cluster}:{sensor_name}:last_good",  # old key pattern
-                sensor_key,  # new key builder with location="global"
-                json.dumps(last_good_data),
-                ttl,
-                "global",
-                cluster,
-                sensor_name,  # location, cluster, sensor_name
-            )
+            setex_key = sensor_last_good("global", cluster, sensor_name)
+            self.redis_client.setex(setex_key, ttl, json.dumps(last_good_data))
             return True
         except Exception as e:
             logger.debug(f"Error writing last good value: {e}")
@@ -54,14 +46,7 @@ class SensorsMixin:
             return None
 
         try:
-            result = get_with_backward_compat(
-                self.redis_client,
-                "sensor:{cluster}:{sensor_name}:last_good",  # old key pattern
-                sensor_key,  # new key builder with location="global"
-                "global",
-                cluster,
-                sensor_name,  # location, cluster, sensor_name
-            )
+            result = self.redis_client.get(sensor_last_good("global", cluster, sensor_name))
             if result:
                 return json.loads(str(result))
         except Exception as e:

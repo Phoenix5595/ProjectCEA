@@ -7,9 +7,12 @@
  */
 import type {
   ControlMonitoringResponse,
-  MonitoringResponse
+  MonitoringResponse,
+  ProjectionPublicationResponse,
+  PhotoperiodTimelinePoint,
 } from '../api'
-import { extractProjection, mergeControlHistory } from './monitoringStore.merge'
+import { mergeControlHistory } from './monitoringStore.merge'
+import { projectionTimeline } from './monitoringStore.projection'
 import type { StoreData } from './monitoringStore.types'
 
 /** Install the concurrent initial range/control/projection results. */
@@ -17,21 +20,22 @@ export function applyInitial(
   sensorRange: MonitoringResponse,
   sensorStats: MonitoringResponse,
   controlRange: ControlMonitoringResponse,
-  projection: ControlMonitoringResponse,
+  projection: ProjectionPublicationResponse,
 ): StoreData {
-  const proj = extractProjection(projection)
+  const proj = projectionTimeline(projection)
   return {
     series: sensorRange.series,
     statistics: sensorStats.statistics,
     live: [],
     controlHistory: controlRange,
-    projectionHistory: projection,
-    photoperiod: controlRange.photoperiod,
+    projectionHistory: proj.history,
+    photoperiod: mergePhotoperiod(controlRange.photoperiod, proj.history?.photoperiod ?? []),
     cursors: controlRange.cursors,
-    projectionRevision: proj?.projection_revision ?? null,
-    anchorFingerprint: proj?.anchor_fingerprint ?? null,
-    anchorQuality: proj?.anchor_quality ?? null,
-    anchorValidUntil: proj?.anchor_valid_until ?? null,
+    projectionRevision: proj.revision,
+    projectionVersion: proj.version,
+    anchorFingerprint: null,
+    anchorQuality: proj.quality,
+    anchorValidUntil: proj.validUntil,
     runtimeSnapshotVersion: controlRange.runtime_snapshot_version,
     flushHealth: controlRange.flush_health,
   }
@@ -46,21 +50,23 @@ export function applyInitialPartial(
   existing: StoreData,
   sensorRange: MonitoringResponse | null,
   controlRange: ControlMonitoringResponse | null,
-  projection: ControlMonitoringResponse | null,
+  projection: ProjectionPublicationResponse | null,
 ): StoreData {
-  const proj = projection ? extractProjection(projection) : null
+  const proj = projection ? projectionTimeline(projection) : null
+  const history = controlRange ?? existing.controlHistory
   return {
     series: sensorRange?.series ?? existing.series,
     statistics: sensorRange?.statistics ?? existing.statistics,
     live: existing.live,
-    controlHistory: controlRange ?? existing.controlHistory,
-    projectionHistory: projection ?? existing.projectionHistory,
-    photoperiod: controlRange?.photoperiod ?? existing.photoperiod,
+    controlHistory: history,
+    projectionHistory: proj ? proj.history : existing.projectionHistory,
+    photoperiod: mergePhotoperiod(history?.photoperiod ?? [], proj?.history?.photoperiod ?? existing.projectionHistory?.photoperiod ?? []),
     cursors: controlRange?.cursors ?? existing.cursors,
-    projectionRevision: proj?.projection_revision ?? existing.projectionRevision,
-    anchorFingerprint: proj?.anchor_fingerprint ?? existing.anchorFingerprint,
-    anchorQuality: proj?.anchor_quality ?? existing.anchorQuality,
-    anchorValidUntil: proj?.anchor_valid_until ?? existing.anchorValidUntil,
+    projectionRevision: proj ? proj.revision : existing.projectionRevision,
+    projectionVersion: proj ? proj.version : existing.projectionVersion,
+    anchorFingerprint: proj ? null : existing.anchorFingerprint,
+    anchorQuality: proj ? proj.quality : existing.anchorQuality,
+    anchorValidUntil: proj ? proj.validUntil : existing.anchorValidUntil,
     runtimeSnapshotVersion:
       controlRange?.runtime_snapshot_version ?? existing.runtimeSnapshotVersion,
     flushHealth: controlRange?.flush_health ?? existing.flushHealth,
@@ -74,7 +80,7 @@ export function applyControl(data: StoreData, resp: ControlMonitoringResponse): 
   return {
     ...data,
     controlHistory: merged,
-    photoperiod: merged.photoperiod,
+    photoperiod: mergePhotoperiod(merged.photoperiod, data.projectionHistory?.photoperiod ?? []),
     cursors: resp.cursors,
     runtimeSnapshotVersion: resp.runtime_snapshot_version,
     flushHealth: resp.flush_health,
@@ -86,7 +92,7 @@ export function applyControlFresh(data: StoreData, resp: ControlMonitoringRespon
   return {
     ...data,
     controlHistory: resp,
-    photoperiod: resp.photoperiod,
+    photoperiod: mergePhotoperiod(resp.photoperiod, data.projectionHistory?.photoperiod ?? []),
     cursors: resp.cursors,
     runtimeSnapshotVersion: resp.runtime_snapshot_version,
     flushHealth: resp.flush_health,
@@ -96,25 +102,36 @@ export function applyControlFresh(data: StoreData, resp: ControlMonitoringRespon
 /** Install a projection response only when its revision/fingerprint changed. */
 export function applyProjection(
   data: StoreData,
-  resp: ControlMonitoringResponse,
+  resp: ProjectionPublicationResponse,
 ): { data: StoreData; changed: boolean } {
-  const proj = extractProjection(resp)
-  if (proj === null) return { data, changed: false }
+  const proj = projectionTimeline(resp)
   const changed =
-    proj.projection_revision !== data.projectionRevision ||
-    proj.anchor_fingerprint !== data.anchorFingerprint
+    proj.revision !== data.projectionRevision ||
+    proj.version !== data.projectionVersion ||
+    proj.quality !== data.anchorQuality
   if (!changed) return { data, changed: false }
   return {
     data: {
       ...data,
-      projectionHistory: resp,
-      projectionRevision: proj.projection_revision,
-      anchorFingerprint: proj.anchor_fingerprint,
-      anchorQuality: proj.anchor_quality,
-      anchorValidUntil: proj.anchor_valid_until,
+      projectionHistory: proj.history,
+      photoperiod: mergePhotoperiod(data.controlHistory?.photoperiod ?? [], proj.history?.photoperiod ?? []),
+      projectionRevision: proj.revision,
+      projectionVersion: proj.version,
+      anchorFingerprint: null,
+      anchorQuality: proj.quality,
+      anchorValidUntil: proj.validUntil,
     },
     changed: true,
   }
+}
+
+function mergePhotoperiod(
+  recorded: PhotoperiodTimelinePoint[],
+  projected: PhotoperiodTimelinePoint[],
+): PhotoperiodTimelinePoint[] {
+  const byTimestamp = new Map(projected.map((point) => [point.timestamp.getTime(), point]))
+  for (const point of recorded) byTimestamp.set(point.timestamp.getTime(), point)
+  return [...byTimestamp.values()].sort((left, right) => left.timestamp.getTime() - right.timestamp.getTime())
 }
 
 /** True when wall-clock has passed the projection anchor validity deadline. */

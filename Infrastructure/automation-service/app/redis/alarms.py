@@ -6,14 +6,7 @@ from datetime import datetime
 import json
 from typing import TYPE_CHECKING, Any
 
-from app.redis.schema import (
-    alarm_key,
-    alarm_pattern,
-    get_with_backward_compat,
-    legacy_alarm_key,
-    legacy_alarm_pattern,
-    set_with_backward_compat,
-)
+from app.redis.schema import alarm_key, alarm_pattern
 from shared.infra_logging import get_logger
 
 if TYPE_CHECKING:
@@ -37,14 +30,7 @@ class AlarmsMixin:
         try:
             timestamp_ms = int(datetime.now().timestamp() * 1000)
 
-            existing_data = get_with_backward_compat(
-                self.redis_client,
-                legacy_alarm_key(location, cluster, alarm_name),
-                alarm_key,
-                location,
-                cluster,
-                alarm_name,
-            )
+            existing_data = self.redis_client.get(alarm_key(location, cluster, alarm_name))
             if existing_data:
                 existing = json.loads(str(existing_data))
                 since = existing.get("since", timestamp_ms)
@@ -59,16 +45,7 @@ class AlarmsMixin:
                 "acknowledged": False,
             }
 
-            set_with_backward_compat(
-                self.redis_client,
-                legacy_alarm_key(location, cluster, alarm_name),
-                alarm_key,
-                json.dumps(alarm_data),
-                None,  # ttl
-                location,
-                cluster,
-                alarm_name,
-            )
+            self.redis_client.set(alarm_key(location, cluster, alarm_name), json.dumps(alarm_data))
 
             if severity == "critical":
                 logger.error(f"CRITICAL ALARM: {location}/{cluster}/{alarm_name}: {message}")
@@ -87,28 +64,12 @@ class AlarmsMixin:
             return False
 
         try:
-            alarm_data = get_with_backward_compat(
-                self.redis_client,
-                legacy_alarm_key(location, cluster, alarm_name),
-                alarm_key,
-                location,
-                cluster,
-                alarm_name,
-            )
+            alarm_data = self.redis_client.get(alarm_key(location, cluster, alarm_name))
 
             if alarm_data:
                 alarm = json.loads(str(alarm_data))
                 alarm["acknowledged"] = True
-                set_with_backward_compat(
-                    self.redis_client,
-                    legacy_alarm_key(location, cluster, alarm_name),
-                    alarm_key,
-                    json.dumps(alarm),
-                    None,  # ttl
-                    location,
-                    cluster,
-                    alarm_name,
-                )
+                self.redis_client.set(alarm_key(location, cluster, alarm_name), json.dumps(alarm))
                 logger.info(f"Alarm acknowledged: {location}/{cluster}/{alarm_name}")
                 return True
             return False
@@ -121,23 +82,10 @@ class AlarmsMixin:
             return {}
 
         try:
-            # Scan for both old and new key patterns
-            old_pattern = legacy_alarm_pattern(location, cluster)
-            new_pattern = alarm_pattern(location, cluster)
+            # Scan the canonical key pattern
             alarms = {}
 
-            for key in self.redis_client.scan_iter(match=old_pattern):
-                alarm_data = self.redis_client.get(key)
-                if alarm_data:
-                    try:
-                        alarm = json.loads(str(alarm_data))
-                        if alarm.get("active", False):
-                            alarm_name = key.split(":")[-1]
-                            alarms[alarm_name] = alarm
-                    except (json.JSONDecodeError, IndexError):
-                        pass
-
-            for key in self.redis_client.scan_iter(match=new_pattern):
+            for key in self.redis_client.scan_iter(match=alarm_pattern(location, cluster)):
                 alarm_data = self.redis_client.get(key)
                 if alarm_data:
                     try:
@@ -158,28 +106,12 @@ class AlarmsMixin:
             return False
 
         try:
-            alarm_data = get_with_backward_compat(
-                self.redis_client,
-                legacy_alarm_key(location, cluster, alarm_name),
-                alarm_key,
-                location,
-                cluster,
-                alarm_name,
-            )
+            alarm_data = self.redis_client.get(alarm_key(location, cluster, alarm_name))
 
             if alarm_data:
                 alarm = json.loads(str(alarm_data))
                 alarm["active"] = False
-                set_with_backward_compat(
-                    self.redis_client,
-                    legacy_alarm_key(location, cluster, alarm_name),
-                    alarm_key,
-                    json.dumps(alarm),
-                    None,  # ttl
-                    location,
-                    cluster,
-                    alarm_name,
-                )
+                self.redis_client.set(alarm_key(location, cluster, alarm_name), json.dumps(alarm))
                 logger.info(f"Alarm cleared: {location}/{cluster}/{alarm_name}")
                 return True
             return False

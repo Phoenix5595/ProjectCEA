@@ -50,26 +50,25 @@ class AutoPersistMixin:
                             db_params = await self.database.pid_repo.get_pid_parameters(
                                 default_location, default_cluster, device_type
                             )
-                            if db_params:
+                            if db_params and (
                                 # Compare and update if different
-                                if (
-                                    redis_params.get("kp") != db_params["kp"]
-                                    or redis_params.get("ki") != db_params["ki"]
-                                    or redis_params.get("kd") != db_params["kd"]
-                                ):
-                                    await self.database.pid_repo.set_pid_parameters(
-                                        default_location,
-                                        default_cluster,
-                                        device_type,
-                                        redis_params["kp"],
-                                        redis_params["ki"],
-                                        redis_params["kd"],
-                                        source=redis_params.get("source", "api"),
-                                    )
-                                    synced_count += 1
-                                    logger.debug(
-                                        f"Synced PID parameters for {device_type} from Redis to DB"
-                                    )
+                                redis_params.get("kp") != db_params["kp"]
+                                or redis_params.get("ki") != db_params["ki"]
+                                or redis_params.get("kd") != db_params["kd"]
+                            ):
+                                await self.database.pid_repo.set_pid_parameters(
+                                    default_location,
+                                    default_cluster,
+                                    device_type,
+                                    redis_params["kp"],
+                                    redis_params["ki"],
+                                    redis_params["kd"],
+                                    source=redis_params.get("source", "api"),
+                                )
+                                synced_count += 1
+                                logger.debug(
+                                    f"Synced PID parameters for {device_type} from Redis to DB"
+                                )
                     except Exception as e:
                         logger.error(f"Error syncing PID parameters for {device_type}: {e}")
 

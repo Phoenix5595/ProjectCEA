@@ -12,6 +12,7 @@ from monitoring_service.control_models import (
     ControlHistoryEnvelope,
     ControlPublicationResponse,
     CurrentPublicationResponse,
+    ProjectionPublicationResponse,
 )
 from monitoring_service.sensor_models import resolve_room_metadata
 
@@ -70,23 +71,18 @@ def register_control_routes(app: FastAPI, reads: ControlReadService) -> None:
 
     @app.get(
         "/api/monitoring/control/{location}/projection",
-        response_model=ControlHistoryEnvelope,
+        response_model=ProjectionPublicationResponse,
     )
     async def projection(
         location: str,
-        start: datetime | None = None,
-        end: datetime | None = None,
-    ) -> ControlHistoryEnvelope:
-        """Return the projected-future envelope for the chart pipeline.
-
-        Projection timelines populate once automation's projection publication
-        ships; until then an empty valid envelope keeps clients contract-clean.
-        """
-        history_range = _history_range(start, end)
-        return ControlHistoryEnvelope(
-            range=history_range,
-            runtime_snapshot_version=0,
-        )
+    ) -> ProjectionPublicationResponse:
+        """Return only the fresh, version-matched canonical future publication."""
+        try:
+            return (await reads.publications(location)).projection
+        except (ConnectionError, OSError, RuntimeError):
+            raise HTTPException(
+                status_code=503, detail="control monitoring publication is unavailable"
+            ) from None
 
 
 def _history_range(start: datetime | None, end: datetime | None) -> ControlHistoryRange:

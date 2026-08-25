@@ -10,6 +10,7 @@ runtime registry snapshot, not this YAML file.
 from __future__ import annotations
 
 from collections.abc import Mapping
+import contextlib
 import logging
 import os
 from pathlib import Path
@@ -371,8 +372,6 @@ class ConfigLoader:
                 )
             os.replace(tmp_path, self.config_path)
         except OSError:
-            try:
+            with contextlib.suppress(OSError):
                 os.unlink(tmp_path)
-            except OSError:
-                pass
             raise

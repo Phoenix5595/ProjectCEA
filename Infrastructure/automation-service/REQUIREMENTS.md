@@ -1,78 +1,56 @@
 # Automation Service Requirements
 
-- **Validation surface**: runtime `/health` and `/ready`, `journalctl`, and
-  Grafana/operator observability. No retained pytest suite in this repository.
-- **Control loop structure**: `ControlEngine` orchestrates each tick; `DeviceProcessor` runs per-cluster device and PID steps. Refactors may split **phase helpers** (e.g. device hierarchy cache, light effective-setpoint logging throttles, performance stats) into dedicated modules **without** changing actuator ordering, interlocks, or tick cadence. Prefer explicit interfaces over growing `ControlEngine` methods.
-- **Flower cluster topology (canonical)**:
-  - **Devices / control**: Flower room uses **`main` only**. Device identity and assignments live in `device_registry`, not YAML.
-  - **Sensors / monitoring**: Keep **`front`** and **`back`** under `sensors:` for dual CAN/sensor streams; optional **`main`** supplies control-loop PVs (typically the same mapping as `back`).
-  - **DB / APIs** for schedules, climate periods, modes, and devices use **`Flower Room` + `main`** for the control plane.
-- **Cluster topology contract enforcement (Phase 5e)**: `/api/devices/{room}/{cluster}` rejects sensor sub-clusters with **400** + hint message via `shared.cluster_topology.assert_device_cluster`. The room → cluster registry lives in `Infrastructure/shared/cluster_topology.py`; do not re-encode it inside automation routes.
-- **Cluster authority**: Operational cluster topology is defined by automation config/routes. DB/ingestion-only discovery can be surfaced as warnings during migration, but control logic must not auto-adopt discovered clusters that are not configured.
-- Service runs under systemd (`automation-service.service`); restart after config/frontend builds: `sudo systemctl restart automation-service.service`.
-- **Climate setpoints**: Resolved from the **`climate_periods`** table (per location/cluster/mode/submode). Each row has `period_name`, `start_time`, `end_time`, `ramp_minutes`, and setpoints. The control loop uses `ClimatePeriodRepository.get_active_period()` — **not** a fixed PRE_DAY / DAY / PRE_NIGHT / NIGHT ladder. `ClimatePeriodResolver` / `SetpointManager` apply period-to-period ramps (`ramp_in_duration` bridge); this timeline is **independent** of photoperiod length.
-- **Constant climate modes**: Modes with `room_modes.is_constant = true` (including
-  drying) may use a single climate period row for constant setpoints. A single
-  period with `start_time == end_time` means 24-hour coverage and MUST resolve
-  as active at every wall-clock time. Prefer storing this as `00:00` → `00:00`;
-  do not use `00:00` → `23:59` because period intervals are `[start, end)` and
-  that leaves the last minute uncovered. UI may label equal start/end as
-  "All day" for clarity.
-- **Cluster safety behavior**: For configured Flower clusters, missing live data should degrade safely (warning/alarm path) but keep cluster identity intact; for non-configured clusters discovered in DB/Redis, expose warning state only (no implicit control path creation).
-- **Photoperiod (lights)**: Sun/moon window and **light** fade durations come from `mode_parameters` (`day_start_time`, `night_start_time`, `light_ramp_up_minutes`, `light_ramp_down_minutes`) and are written to `schedules` (`room_schedule` + per-device SUN/MOON). **`POST /api/room-schedule`** must use **`light_ramp_*`** for `ramp_up_duration` / `ramp_down_duration`, not legacy `ramp_up_minutes` / `ramp_down_minutes`.
-- **Mode vs submode (lights)**: `ModeTransitionService` must **not** call `sync_room_schedule_from_mode_parameters` when only the **flower submode** changes (`new_mode_id ==` previous `mode_id`). Submode switches update `room_active_mode` and climate paths as needed, but **DB light schedules and sun targets stay tied to the parent mode**, not per submode. Skip `_clear_light_ramp_state` for the same submode-only transition so in-progress ramps are not reset.
-- **Moon-authority room modes (drying, sleep)**: when `room_active_mode.mode_name`
-  is **`drying`** or **`sleep`** (canonical list: `shared.room_light_authority.MOON_AUTHORITY_MODE_NAMES`),
-  scheduled/automatic light authority MUST be treated as **MOON** regardless of
-  the room schedule or current clock time. The control loop must command
-  scheduled lights to 0%, write DFR0971 intensity telemetry as 0%, set light
-  relays OFF, and log light effective setpoints as MOON/0%. Mode changes into
-  either mode must also immediately set configured DFR0971 intensities to 0% and
-  relays OFF so frontend relay badges show moon/off without waiting for the
-  next control-loop tick. Manual light controls remain visible; do not remove
-  the manual controls from the UI.
-- **Legacy / metadata**: `schedules` / `climate_schedule` may still expose old fields; **effective** setpoints and climate ramps come from **`climate_periods`**.
-- Time parsing accepts `HH:MM` or `HH:MM:SS` strings.
-- Database tables in use include: `schedules`, `climate_periods`, `mode_parameters`, `setpoints` (legacy), `pid_parameters`, `config_versions`, `effective_setpoints`, `mode_transition_history`, **`calendar_event`**, **`calendar_mode_application`**, **`calendar_sync_connection`**, **`calendar_room_profile`**. Primary climate path: **`climate_periods`**.
-- **Calendar API** (`/api/calendar/*`): aggregated events, grow plans, crop batches, mode schedule preview. **`CalendarModeScheduler`** applies Flower Room mode/submode on active phase dates (`triggered_by=calendar_scheduler*`); catch-up on startup; idle → `veg` after harvest. **Nextcloud CalDAV** two-way sync (poll 5–15 min); soft-delete pushes remote DELETE before purge. **Irrigation threshold → calendar events**: deferred until a dedicated irrigation-threshold save API exists; when added, log `calendar_event` with `event_type=irrigation_threshold` (read-only on calendar, no sync).
-- **`mode_transition_history`** (see `Infrastructure/database/add_mode_transition_history.sql`): **`old_mode_id` / `old_submode_id` / `new_mode_id` / `new_submode_id` are INTEGER** (nullable where applicable); **`triggered_by`**, **`triggered_at`**, **`parameters_synced` JSONB** (includes `old_mode_name`, `old_submode_name`, `new_mode_name`, `new_submode_name`, `schedule_sync`). **`ModeTransitionService`** must bind **Python `int`/`None`** for id columns (asyncpg does not accept `str` for INTEGER). No `old_mode_name` columns or `transition_at`.
-- Keep UI/DB aligned for **climate periods** (`/api/climate-periods/{location}/{cluster}`) and light schedules. **`GET`** accepts optional **`mode_id`** and **`submode_id`**: when `mode_id` is set, the response is filtered with `submode_id IS NOT DISTINCT FROM` the query value (so NULL matches veg / unset submode). **`POST`** continues to replace only the matching `(mode_id, submode_id)` slice via `delete_periods`.
-- Light schedules are always daily (lights require `day_of_week = NULL`; per-day light schedules are invalid).
-- **Mode parameters: ramp pairs** — **`light_ramp_up_minutes` / `light_ramp_down_minutes`** map to light **`schedules.ramp_up_duration` / `ramp_down_duration`** (sun/moon intensity). Climate transition ramps are **`climate_periods.ramp_minutes`** per period, not `ramp_up_minutes` / `ramp_down_minutes` on `mode_parameters`. `sync-from-mode-parameters` and ZoneConfig room-schedule POST must use **`light_ramp_*`** for room/light schedule ramps only.
-- Light ramp-up recalculates mid-ramp on target changes and completes within the original `ramp_up_duration` (increase slope if needed); ramp-down always continues to 0% even if the target changes mid-ramp.
-- **Scheduler load**: Whenever schedules are loaded into `Scheduler` (service startup, `update_schedules` from API, or config events), use `merge_schedules_with_config(db_rows, config)` so `room_schedule` rows are expanded into per-light **SUN** rows for each DFR0971 light that lacks them, and **MOON** rows as the **complement** of that photoperiod when a light has no MOON/NIGHT row. Otherwise photoperiod can be correct while intensity stays 0%, or `get_light_intensity_details` returns `None` outside the sun window. After merge, **`validate_dimmable_light_schedule_coverage`** logs **ERROR** if any dimmable DFR0971 light is missing an enabled **SUN/DAY** or **MOON/NIGHT** row with parseable `start_time` / `end_time` (both are required for scheduler windows and Grafana `effective_setpoints` logging). **`validate_light_config_against_schedules`** logs **ERROR** when a config dimmable light has **no** DB schedule rows (name mismatch) and **WARNING** when daily (`day_of_week` null) SUN+MOON windows do not cover 24h.
-- **Scheduler time semantics**: `get_schedule_intensity` ramp math uses `datetime.combine` in the **same** naive/aware mode as `current_time` (naive local vs timezone-aware) so subtracting ramp boundaries never mixes offset-naive and offset-aware datetimes. **`is_in_photoperiod(location, cluster, time)`** defines sun vs moon for climate: per-light SUN/DAY rows take precedence over `room_schedule`; **`ClimatePeriodResolver.calculate_is_sun`** supports both the legacy `(light_schedule, current_time)` call and `(current_time, location, cluster)` delegating to the scheduler.
-- **StateManager / Redis**: Dict and list values written to Redis must use **JSON** (`json.dumps`), not `str()` — repr-style strings break `/api/schedules` and any code that expects a list of dicts from cache. Invalid legacy keys are dropped on read so Postgres repopulates cache.
-- **Batch hardware execution + Redis/UI**: When using `HardwareBatchExecutor` for DFR0971 updates, persist the *intended* final light intensity to Redis after the batch completes (write **0%** on failure). Otherwise `/api/lights/*/zone-status` will read stale Redis values and make the UI appear “stuck on” even when the hardware has turned off. **DFR0971-only** fixtures may omit relay `channel` in YAML; `DeviceController` must still run the dimmer path and log `control_history.channel` using `dimming_channel` when no relay is configured.
-- **Debug**: `GET /api/debug/light-schedule-health/{location}/{cluster}` returns per DFR0971 light schedule flags, whether `get_light_intensity_details` resolves at “now”, and optional age of the last `effective_setpoints` row with `effective_light_intensity`.
-- **Control loop time**: `ControlEngine.run_control_loop` uses the grow room's Quebec local timezone (**America/Toronto**) aware `now` (`Scheduler.LOCAL_TZ`) for device processing and light DB logging; `ClimatePeriodResolver.resolve_period` uses the same wall clock derived from that `current_time` for `climate_periods` lookups.
-- **DFR0971 assignments (Devices UI)**: device registry CRUD is the only assignment mutation path. `(dimming_board_id, dimming_channel)` is globally unique across lights; conflicts return HTTP **409** without a steal path.
+Normative behavior for the automation service. Hardware addresses, ports, and topology are owned by `ARCHITECTURE.md` and `Infrastructure/REQUIREMENTS.md`.
 
-- **Heating safety**: The automation loop does **not** run heating-failure monitoring (no emergency / warning / critical / low-temperature alerts from `DeviceProcessor`). PID and actuators behave as before; only the separate safety logger was removed.
+## Validation Surface
 
-- **MCP/relay verification**
-  - **Startup**: Optional MCP23017 I2C probe after init; configurable `require_mcp` (default false): if true, startup fails when probe fails; else fallback to simulation and log warning.
-  - **Health**: GET /health exposes `hardware.mcp.connected` and `hardware.mcp.simulation` so operators know real vs simulation.
-  - **Commissioning**: POST /api/hardware/relays/test (body: `channel` 0–15 or `all`: true, optional `duration_ms`) toggles channel(s), read-back verifies; response includes per-channel pass/fail and `mcp_connected`. GET /api/hardware/relays/state returns all 16 channel states.
+Local verification runs the automation pure tests against fakes for database, Redis, and I2C. Runtime validation uses `/health`, `/ready`, `journalctl`, and operator dashboards. The canonical gate is listed in `ARCHITECTURE.md`.
 
-- **Light authority and override contract**
-  - Authority order is strict: **Safety interlocks > Manual override > Schedule automation**.
-  - Manual light overrides are TTL-based and expire automatically according to operator-selected duration, then return to scheduled automation.
-  - Schedule target updates during ramp windows must recalculate from current intensity and still finish at the original ramp window end.
+## Control Loop
 
-- **Light failure behavior**
-  - On relay/dimmer write failure during SUN, preserve the last known hardware light state (hold-last) and emit an alert/log; do not force immediate OFF unless a safety interlock requires it.
-  - Relay/dimmer sequencing remains mandatory: intensity > 0 uses relay ON then dimmer set; intensity = 0 uses dimmer 0 then relay OFF.
+- The configured control tick is 1 s (`automation_config.yaml` `control.update_interval`). Startup validation accepts 1–5 s.
+- Each tick captures the current `RuntimeDeviceSnapshot` exactly once.
+- The empty registry is a valid state: startup installs a ready empty snapshot and emits no relay-ON or nonzero DFR command.
 
-- **Light telemetry**
-  - Effective light intensity telemetry is written every control loop for each managed dimmable light to keep Grafana aligned with runtime state.
-  - Light telemetry writes must flow through a unified writer path to avoid DB/Redis drift.
-  - **Redis**: `write_effective_setpoints` stores light fields only under **`effective_setpoint:{loc}:{cluster}:light:{device_name}:…`** (effective/nominal/ramp). **`stream:control`** light messages include **`device_name`**. Logging uses **`get_light_intensity_details(..., current_intensity)`** with the same Redis light intensity read as control where available; during **photoperiod**, if details are **missing** for a dimmable DFR0971 light, log **ERROR** (throttled, ~60s per device).
-- **API**: `POST /api/lights/{location}/{cluster}/{device}/target` returns **`rows_updated`** (count of SUN/DAY rows updated). **`GET .../zone-status`** must set **`day_target_intensity`** (and **`schedule_sun_target_intensity`**) from the **stored** enabled SUN/DAY row when the row active at ``now`` is MOON/NIGHT, so ZoneConfig light targets are not 0 outside the sun window and match what POST updates.
-- **Schedule cache invalidation**: `schedule_repo.get_schedules()` with no location/cluster uses cache key **`schedules:all`**. After **`update_light_schedule_target`** (POST target), invalidate **`schedules:all`** and **`schedules:loc:{location}`** in addition to the per-cluster key; otherwise `merge_schedules_with_config` reloads stale rows and the control loop keeps old intensities for several ticks.
+## Device Registry
 
-- **Deploy and rollback (production)**
-  - **`ProjectCEA/deploy.sh`**: copies `Infrastructure/` to `/opt/projectcea/releases/<release_id>`, switches `/opt/projectcea/current`, restarts services, runs HTTP health checks on backend (8000), automation (8001), onewire-worker (8004). If any check fails, **symlink reverts** to the previous release (when it still exists on disk), services restart again, script exits non-zero. **NDJSON log** (one JSON object per line, machine-readable for triage): `/var/lib/projectcea/deploy.log` (events include `deploy_start`, `health_ok` / `health_fail`, `rollback_auto_*`, `deploy_success` / `deploy_fail`).
-  - **`ProjectCEA/rollback-deploy.sh`**: points `current` at **`rollback_to_path`** from `/var/lib/projectcea/deploy_state.json` (written on last **successful** deploy) or at an explicit release id/path, then restarts the same services and re-checks health. Logs `rollback_manual_*` lines to the same NDJSON file.
-  - **Manifest**: On success, `deploy.sh` writes `/opt/projectcea/current/deploy_manifest.json` with `release_id`, `git_sha`, `deployed_at`, `health_ok`.
-  - **Helpers**: `Infrastructure/scripts/deploy_json_line.py` (adds `ts` UTC), `deploy_emit_event.py` (builds event payload from env).
+`device_registry` is the sole source of truth for device identity, relay bindings, and DFR bindings. No YAML device definitions or commissioning subsystem participate. `automation_config.yaml` must not define devices, relay channels, or DFR assignments.
+
+- Relay channel conflicts return HTTP 409. A confirmed steal commands and observes the old relay OFF before committing, and the response includes `displaced_device_id`.
+- DFR `(dimming_board_id, dimming_channel)` pairs are globally unique; conflicts return HTTP 409 without a steal path.
+
+## Climate
+
+- Climate setpoints come from `climate_periods` rows keyed by `(location, cluster, mode_id, submode_id)`. Each row has `period_name`, `start_time`, `end_time`, `ramp_minutes`, and target columns.
+- `ClimatePeriodResolver` and `SetpointManager` bridge period-to-period ramps via `ramp_in_duration`.
+- Constant modes with `room_modes.is_constant = true` may use a single period. A period with `start_time == end_time` means 24-hour coverage; prefer `00:00` → `00:00`.
+
+## Lights
+
+- Photoperiod boundaries come from `mode_parameters.day_start_time` and `night_start_time` per room per mode. Overnight windows are supported.
+- Per-light intensity anchors live in `light_target_intensity` keyed by `(device_id, mode_id)`. A missing row falls back to `MINIMUM_LIGHT_INTENSITY = 10.0`.
+- `light_programs` provide `supplemental` (adds light in dark) or `override` (replaces intensity in sun) programs. Priority is descending; ties break by `created_at` ascending.
+- Moon-authority modes (`drying`, `sleep`) force scheduled lights to 0%, DFR intensities to 0%, and light relays OFF on entry and every tick. Manual light controls remain available.
+- Authority order: safety interlocks > manual override > schedule automation.
+- Relay/dimmer sequencing: intensity > 0 uses relay ON then dimmer set; intensity = 0 uses dimmer 0 then relay OFF.
+
+## VPD Control
+
+VPD is the master controller; humidity tracks VPD-derived targets. PID is used for heating, cooling, and CO2 only. The global heating-failure↔exhaust interlock is not currently configured.
+
+## Scheduler and Cache
+
+The `Scheduler` installs snapshot-derived mode, light intensity, light program, and device lookup caches as one `install_snapshot()` operation. The `_ready` flag blocks ticks until the complete snapshot is installed.
+
+After any write that changes schedules, invalidate the cache keys that `schedule_repo.get_schedules()` can hit: `schedules:all`, `schedules:loc:{location}`, and `schedules:loc:{location}:cluster:{cluster}`.
+
+## Mode Transitions
+
+- `ModeTransitionService` must not call `sync_room_schedule_from_mode_parameters` on submode-only transitions. Light schedules stay tied to the parent mode.
+- Mode parameters use `light_ramp_up_minutes` / `light_ramp_down_minutes`, which map to `schedules.ramp_up_duration` / `ramp_down_duration` for light rows.
+
+## Time and State
+
+- Control logic uses the Quebec local timezone (`America/Toronto`) aware `now`.
+- Dict and list values written to Redis must be JSON-encoded.
+- Effective light intensity telemetry is written every tick to keep Redis and `effective_setpoints` aligned with runtime state.

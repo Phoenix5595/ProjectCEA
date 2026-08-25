@@ -51,10 +51,7 @@ async def set_safety_levels(
                 continue
 
             # Read safety_level from registry (0 means no limit = 100%)
-            if light.safety_level == 0:
-                safety_level = 100.0
-            else:
-                safety_level = float(light.safety_level)
+            safety_level = 100.0 if light.safety_level == 0 else float(light.safety_level)
 
             logger.info("Safety level for %s: %.1f%%", light.display_name, safety_level)
 

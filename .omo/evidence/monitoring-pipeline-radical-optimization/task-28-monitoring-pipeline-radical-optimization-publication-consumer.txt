@@ -1,0 +1,36 @@
+Task 28 — monitoring publication consumer
+Completed: 2026-08-25
+
+Outcome
+- `GET /api/monitoring/control/{location}/projection` now returns the canonical
+  `ProjectionPublicationResponse` directly from the monitoring service's read-only
+  paired-publication repository. Fresh, matching payloads are `estimated`; missing,
+  expired, malformed, or mismatched pairs are explicit `unavailable` responses.
+- The frontend parses that canonical response at its Zod boundary and translates only
+  climate, light, and photoperiod intervals to the existing chart envelope. No device
+  state or PID fact is fabricated.
+- Recorded points and steps take precedence over same-timestamp projections. Projection
+  values extend the chart only through their publication valid-until boundary. An
+  unavailable response clears projected state and preserves recorded control history.
+- Store status includes the canonical projection revision and configuration version.
+
+Coverage added
+- Route-level fresh array-timeline, expired-future, and version-mismatch assertions;
+  history remains independently readable when projections are unavailable.
+- Canonical response parsing, projected-only rendering, recorded-over-projected step
+  precedence/deduplication, and unavailable projection clearing coverage.
+
+Verification
+- monitoring-service: `python3 -m pytest -q` — 118 passed.
+- monitoring-service: `ruff check monitoring_service tests` — passed.
+- monitoring-service: `ruff format --check monitoring_service tests` — 21 files already formatted.
+- monitoring-service: `python3 -m compileall -q monitoring_service` — passed.
+- frontend: `npx vitest run src/features/monitoring` — 114 passed in 22 files.
+- frontend: `npx tsc --noEmit` — passed.
+- frontend: `npm run build` — passed.
+- LSP: frontend monitoring feature and changed backend route — no diagnostics.
+
+Known baseline note
+- A full monitoring-service LSP directory scan has 19 pre-existing diagnostics in
+  `main.py` and unrelated sensor/query-observation tests; none is in the changed route
+  or control-read test.

@@ -19,6 +19,8 @@ from app.control.performance_monitor import get_performance_monitor
 from app.control.relay_manager import RelayManager
 from app.database import DatabaseManager
 from app.middleware.profiling import get_performance_metrics
+from app.monitoring_publication.status import publication_health_payload
+from app.monitoring_publication.workers import MonitoringPublicationWorkers
 from shared.health import all_ok, check_postgres_pool, check_redis_sync_client
 from shared.infra_logging import get_logger
 
@@ -60,6 +62,11 @@ def get_config() -> ConfigLoader:
 
 def get_pid_controller_manager():
     """Dependency to get PID controller manager (for load_percent in status)."""
+    raise RuntimeError("Dependency not injected")
+
+
+def get_monitoring_publication_workers() -> MonitoringPublicationWorkers | None:
+    """Dependency for independently supervised monitoring publication workers."""
     raise RuntimeError("Dependency not injected")
 
 
@@ -224,6 +231,9 @@ async def get_status(
     relay_manager: RelayManager = Depends(get_relay_manager),
     config: ConfigLoader = Depends(get_config),
     pid_controller_manager=Depends(get_pid_controller_manager),
+    publication_workers: MonitoringPublicationWorkers | None = Depends(
+        get_monitoring_publication_workers
+    ),
     health: bool = Query(default=True, description="Include service health checks"),
 ) -> dict[str, Any]:
     """Get full system status."""
@@ -240,7 +250,7 @@ async def get_status(
         devices[location] = {}
         for cluster, cluster_devices in clusters.items():
             devices[location][cluster] = {}
-            for device_name in cluster_devices.keys():
+            for device_name in cluster_devices:
                 key = (location, cluster, device_name)
                 state = device_states.get(key, 0)
                 mode = relay_manager.get_device_mode(location, cluster, device_name) or "auto"
@@ -312,6 +322,9 @@ async def get_status(
         "timestamp": datetime.now().isoformat(),
         "performance": {"api": request_metrics, "control_loop": control_metrics},
         "service_health": service_health,
+        "monitoring_publication": (
+            None if publication_workers is None else publication_health_payload(publication_workers)
+        ),
     }
     if system is not None:
         result["system"] = system

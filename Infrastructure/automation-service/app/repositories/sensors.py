@@ -22,7 +22,14 @@ class SensorRepository(BaseRepository):
         """Get current sensor value, trying Redis first then database."""
         if self._redis_client and self._redis_client._connected:
             try:
-                value = self._redis_client._redis.get(f"sensor:{sensor_name}")
+                matching_keys = list(
+                    self._redis_client._redis.scan_iter(
+                        match=f"cea:sensor:*:*:{sensor_name}", count=100
+                    )
+                )
+                value = (
+                    None if not matching_keys else self._redis_client._redis.get(matching_keys[0])
+                )
                 if value is not None:
                     return float(value)
             except Exception as e:
@@ -48,11 +55,16 @@ class SensorRepository(BaseRepository):
 
         if self._redis_client and self._redis_client._connected:
             try:
-                keys = [f"sensor:{name}" for name in sensor_names]
-                values = self._redis_client._redis.mget(keys)
-                for sensor_name, value in zip(sensor_names, values, strict=False):
+                values_by_name: dict[str, float] = {}
+                for key in self._redis_client._redis.scan_iter(match="cea:sensor:*:*:*", count=500):
+                    if key.endswith(("_ts", "_last_good")):
+                        continue
+                    value = self._redis_client._redis.get(key)
                     if value is not None:
-                        result[sensor_name] = float(value)
+                        sensor_name = key.rsplit(":", 1)[-1]
+                        if sensor_name in result:
+                            values_by_name[sensor_name] = float(value)
+                result.update(values_by_name)
             except Exception as e:
                 logger.warning(f"Redis batch read failed: {e}")
 

@@ -6,6 +6,7 @@ from collections.abc import Mapping
 from datetime import datetime
 from typing import Any
 
+from app.redis.schema import pid_key
 from app.state import StateManager, get_state_manager
 from app.state.pid import PIDParams
 from shared.infra_logging import LoggingContext, get_logger
@@ -181,7 +182,7 @@ class PIDControllerManager:
             )
 
             # Clear cached PID params from StateManager to force reload
-            await self._state.delete(f"pid:parameters:{device_type}")
+            await self._state.delete(pid_key(device_type))
 
             # Restart autotuner for continuous tuning
             autotuner.start(setpoint)

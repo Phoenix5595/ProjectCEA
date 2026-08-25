@@ -1,0 +1,20 @@
+Task: T27 — asynchronous Redis publication stores and supervised worker composition
+Date: 2026-08-25
+
+Implemented
+- RedisCurrentPublicationWriter.write_future() uses monitoring_future_publication_key() and one Redis SET containing the complete compact JSON array. RedisError returns False.
+- Current handoffs validate MonitoringPublication before their bounded worker-thread write. ProjectionPublicationAction awaits the T25 snapshot builder, invokes the T25 pure projector, validates the timeline and composed MonitoringPublication, then performs a bounded worker-thread future SET.
+- Projection cache retains its last successful tuple on failed/timed-out writes and rebuilds on current-version or timeline-expiry triggers. The documented cadence is one second.
+- MonitoringPublicationWorkers owns independently restartable AnyIO current/projection actions per RoomPublication. CurrentPublicationObserver offers synchronously through the T26 seam. Per-room health reports success age, pending, replacement, and failed counters.
+- ServiceContainer injects the worker observer into ControlEngine, starts workers after background control dependencies, and stops them before database/client closure.
+
+Verification
+- Full automation pure suite: 152 passed in 7.38s; one pre-existing Pydantic V1 validator deprecation warning at app/schemas/calendar.py:66.
+- ruff check .: passed.
+- ruff format --check .: 191 files already formatted.
+- python3 -m compileall -q app: passed.
+- LSP diagnostics: app/monitoring_publication and app/redis/monitoring.py have no errors.
+
+Safety
+- No production endpoint, database, Redis, hardware, lifecycle, or Git command was used.
+- No publication payload is logged.

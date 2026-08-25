@@ -36,7 +36,9 @@ type BaseAlignInput = Omit<AlignInput, 'live'>
 export function alignSeriesBase(input: BaseAlignInput): BaseAlignment {
   if (PERFORMANCE_MARKS_ENABLED) injectMonitoringAlignmentDelay()
   const maxPoints = boundedMaxPoints(input.maxPoints)
-  const { start, end } = windowBounds(input.range, input.now)
+  const bounds = windowBounds(input.range, input.now)
+  const start = bounds.start
+  const end = Math.max(bounds.end, input.projectionHistory?.range.end.getTime() ?? bounds.end)
   const now = input.now.getTime()
 
   const timestamps = collectTimestamps(input, start, end, now)

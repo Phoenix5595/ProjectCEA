@@ -18,10 +18,11 @@ USAGE:
 from __future__ import annotations
 
 import asyncio
+from contextlib import suppress
 import time
 from typing import TYPE_CHECKING, Any, TypeVar
 
-from app.redis.schema import legacy_mode_key
+from app.redis.schema import mode_key
 from app.state._types import CacheEntry
 from app.state.alarms import AlarmMixin
 from app.state.pid import PIDMixin
@@ -70,12 +71,10 @@ class StateManager(SchemaValidationMixin, PIDMixin, RampMixin, AlarmMixin, Redis
         validate_keys: bool = False,
     ) -> None:
         """Initialize the state manager."""
-        # Initialize mixin (if present) to enable validation utilities
-        try:
+        # Initialize mixin (if present) to enable validation utilities.
+        # No-op if the MRO does not require extra args.
+        with suppress(TypeError):
             super().__init__()
-        except TypeError:
-            # No-op if the MRO does not require extra args
-            pass
 
         self._cache: dict[str, CacheEntry[Any]] = {}
         self._default_ttl = default_ttl
@@ -194,17 +193,17 @@ class StateManager(SchemaValidationMixin, PIDMixin, RampMixin, AlarmMixin, Redis
 
     async def get_mode(self, location: str, cluster: str) -> str | None:
         """Get mode for a specific location/cluster from cache."""
-        key = legacy_mode_key(location, cluster)
+        key = mode_key(location, cluster)
         return await self.get(key)
 
     async def set_mode(self, location: str, cluster: str, mode: str, source: str = "api") -> None:
         """Set mode for a specific location/cluster."""
-        key = legacy_mode_key(location, cluster)
+        key = mode_key(location, cluster)
         await self.set(key, mode, ttl=300)
 
     async def delete_mode(self, location: str, cluster: str) -> bool:
         """Delete mode for a specific location/cluster from cache and Redis."""
-        key = legacy_mode_key(location, cluster)
+        key = mode_key(location, cluster)
         return await self.delete(key)
 
     async def clear(self) -> int:

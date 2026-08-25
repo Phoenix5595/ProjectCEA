@@ -155,6 +155,7 @@ export class MonitoringStore {
         photoperiod: [],
         cursors: [],
         projectionRevision: null,
+        projectionVersion: null,
         anchorFingerprint: null,
         anchorQuality: null,
         anchorValidUntil: null,
@@ -231,7 +232,7 @@ export class MonitoringStore {
       this.monitoringApi.controlRange(this.location, iso(start), iso(end), this.rangeBudget.control, {
         signal: controller.signal,
       }),
-      this.monitoringApi.controlProjection(this.location, iso(start), iso(end), {
+      this.monitoringApi.controlProjection(this.location, {
         signal: controller.signal,
       }),
     ])

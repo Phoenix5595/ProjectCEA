@@ -1,0 +1,35 @@
+T25 — Build immutable 24-hour projection inputs and pure interval projections
+Date: 2026-08-25
+
+WHAT LANDED
+- `app/repositories/monitoring_snapshot_builder.py` provides injected, read-only async
+  repository protocols and builds one immutable `MonitoringSnapshot` for exactly
+  `[now, now + 24h)`. It reads active mode, Flower calendar data, climate periods,
+  light targets/programs/expected devices, scheduler/ramp predecessors, and immutable
+  source cursors; it writes neither database, Redis, nor hardware state.
+- `MonitoringSnapshot.config_version` carries the explicit configuration source version.
+  An absent or invalid version remains `None`, preventing a future cache replacement.
+- `app/services/future_projection.py` adapts the existing pure climate/light projectors
+  into ordered `FutureProjection` intervals with contract version 1, source config
+  version, and a seven-hex-digit runtime snapshot revision. Climate, light intensity,
+  and numeric SUN/MOON photoperiod (`light.photoperiod`: 1/0) are the only future
+  series; device and PID series are never emitted.
+- Missing mode, mode parameters, targets, or source quality produces unavailable
+  `None` facts. More than `MAX_PROJECTION_INTERVALS = 256` boundaries produces one
+  full-horizon unavailable interval instead of inventing or truncating schedule state.
+
+PURE COVERAGE
+- New fake-only async builder tests cover UTC-normalized half-open 24-hour construction,
+  source/version propagation, contract timeline validation, Toronto DST-spanning Veg
+  cycle/ramp inputs, missing mode/target, missing version refusal, and bounded fallback.
+- Existing pure climate/light suites retain Flower calendar transition, Toronto spring/fall
+  boundary, ramp, daily-cycle, and missing-authority regression coverage.
+
+VERIFICATION
+- Focused projection and existing climate/light tests: 23 passed.
+- Full approved automation gate: `ruff check .`, `ruff format --check .`,
+  `python3 -m compileall -q app`, and `pytest -q app/tests/pure` all passed:
+  144 passed in 7.24s. The only warning is the pre-existing Pydantic V1 `@validator`
+  deprecation in `app/schemas/calendar.py:66`.
+- Touched module pure-LOC: monitoring_snapshot_types 66; snapshot_builder 175;
+  future_projection 160; fake-only test module 228 (all at or below 250).

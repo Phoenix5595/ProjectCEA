@@ -55,7 +55,13 @@ class _FakeContainer:
     def get_pid_controller_manager(self) -> _FakeService:
         return _FakeService()
 
+    def get_monitoring_publication_workers(self) -> None:
+        return None
+
     def get_control_engine(self) -> _FakeService:
+        return _FakeService()
+
+    def get_photoperiod_history_logger(self) -> _FakeService:
         return _FakeService()
 
 

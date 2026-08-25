@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import TypedDict
 
-from .workers import MonitoringPublicationWorkers, PublicationWorkerHealth
+from .workers import MonitoringPublicationWorkers, PublicationWorkerHealth, RoomPublicationHealth
 
 
 class WorkerHealthPayload(TypedDict):
@@ -17,11 +17,20 @@ class WorkerHealthPayload(TypedDict):
     last_error_at: str | None
     failed_runs: int
     last_error: str | None
+    pending: bool
+    replaced_snapshots: int
+    failed_publications: int
 
 
 class PublicationHealthPayload(TypedDict):
     """JSON-compatible health split by publication authority."""
 
+    current: WorkerHealthPayload
+    projection: WorkerHealthPayload
+    rooms: dict[str, RoomHealthPayload]
+
+
+class RoomHealthPayload(TypedDict):
     current: WorkerHealthPayload
     projection: WorkerHealthPayload
 
@@ -34,6 +43,7 @@ def publication_health_payload(
     return {
         "current": _worker_payload(health.current),
         "projection": _worker_payload(health.projection),
+        "rooms": {room.location: _room_payload(room) for room in health.rooms},
     }
 
 
@@ -45,6 +55,16 @@ def _worker_payload(health: PublicationWorkerHealth) -> WorkerHealthPayload:
         "last_error_at": _timestamp(health.last_error_at),
         "failed_runs": health.failed_runs,
         "last_error": health.last_error,
+        "pending": health.pending,
+        "replaced_snapshots": health.replaced_snapshots,
+        "failed_publications": health.failed_publications,
+    }
+
+
+def _room_payload(health: RoomPublicationHealth) -> RoomHealthPayload:
+    return {
+        "current": _worker_payload(health.current),
+        "projection": _worker_payload(health.projection),
     }
 
 

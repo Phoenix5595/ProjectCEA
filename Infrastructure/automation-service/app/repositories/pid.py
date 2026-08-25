@@ -4,8 +4,9 @@ import json
 from typing import TYPE_CHECKING, Any
 
 from app.redis.schema import (
+    pid_all_parameters_key,
     pid_autotune_key_with_location,
-    pid_parameters_key,
+    pid_key_with_location,
 )
 from app.state import StateManager, get_state_manager  # type: ignore
 
@@ -160,8 +161,10 @@ class PIDRepository(BaseRepository):
                     try:
                         state = get_state_manager()
                         if state is not None:
-                            await state.delete(pid_parameters_key(location, cluster, device_type))
-                            await state.delete("pid:parameters:all")
+                            await state.delete(
+                                pid_key_with_location(location, cluster, device_type)
+                            )
+                            await state.delete(pid_all_parameters_key())
                     except Exception as e:
                         logger.debug(f"PID cache invalidation failed for {device_type}: {e}")
                 return True
@@ -197,7 +200,7 @@ class PIDRepository(BaseRepository):
         try:
             state = get_state_manager()
             if state is not None:
-                cached_all = await state.get("pid:parameters:all")
+                cached_all = await state.get(pid_all_parameters_key())
                 if cached_all is not None:
                     data = cached_all
                     if isinstance(data, (bytes, bytearray)):
@@ -233,7 +236,7 @@ class PIDRepository(BaseRepository):
         try:
             state = get_state_manager()
             if state is not None:
-                await state.set("pid:parameters:all", json.dumps(data), ttl=300)
+                await state.set(pid_all_parameters_key(), json.dumps(data), ttl=300)
         except Exception as e:
             logger.debug(f"PID get_all cache populate failed: {e}")
 
@@ -313,8 +316,8 @@ class PIDRepository(BaseRepository):
                 try:
                     state = get_state_manager()
                     if state is not None:
-                        await state.delete(pid_parameters_key(location, cluster, device_type))
-                        await state.delete("pid:parameters:all")
+                        await state.delete(pid_key_with_location(location, cluster, device_type))
+                        await state.delete(pid_all_parameters_key())
                 except Exception as e:
                     logger.debug(
                         f"PID control-mode cache invalidation failed for {device_type}: {e}"
@@ -561,8 +564,8 @@ class PIDRepository(BaseRepository):
                 try:
                     state = get_state_manager()
                     if state is not None:
-                        await state.delete(pid_parameters_key(location, cluster, device_type))
-                        await state.delete("pid:parameters:all")
+                        await state.delete(pid_key_with_location(location, cluster, device_type))
+                        await state.delete(pid_all_parameters_key())
                 except Exception as e:
                     logger.debug(
                         f"PID set-with-reason cache invalidation failed for {device_type}: {e}"

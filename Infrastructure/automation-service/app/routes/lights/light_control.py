@@ -97,13 +97,12 @@ async def set_intensity(
             )
 
     # Sync relay state with dimmer (same order as device_controller._control_dimmable_light)
-    if relay_manager:
-        if control.intensity > 0:
-            relay_success, relay_reason = await relay_manager.set_device_state(
-                location, cluster, device_name, 1, "manual"
-            )
-            if not relay_success:
-                raise HTTPException(status_code=503, detail=relay_reason or "Relay hardware error")
+    if relay_manager and control.intensity > 0:
+        relay_success, relay_reason = await relay_manager.set_device_state(
+            location, cluster, device_name, 1, "manual"
+        )
+        if not relay_success:
+            raise HTTPException(status_code=503, detail=relay_reason or "Relay hardware error")
 
     # Set intensity (dimmer) - dfr0971 driver does ~50-100ms of I2C bus sleeps,
     # so offload to a worker thread to keep the event loop responsive.

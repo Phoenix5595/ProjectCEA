@@ -6,14 +6,7 @@ from datetime import datetime, timedelta
 import json
 from typing import TYPE_CHECKING, Any, cast
 
-from app.redis.schema import (
-    get_with_backward_compat,
-    legacy_ramp_key,
-    legacy_ramp_persist_key,
-    ramp_key,
-    ramp_persist_key,
-    set_with_backward_compat,
-)
+from app.redis.schema import ramp_key, ramp_persist_key
 from shared.infra_logging import get_logger
 
 if TYPE_CHECKING:
@@ -64,16 +57,8 @@ class RampsMixin:
                     "target_setpoint": target_setpoint,
                 }
             )
-            set_with_backward_compat(
-                self.redis_client,
-                "ramp:{0}:{1}:{2}",
-                ramp_key,
-                ramp_data,
-                ramp_ttl,
-                location,
-                cluster,
-                setpoint_type,
-            )
+            setex_key = ramp_key(location, cluster, setpoint_type)
+            self.redis_client.setex(setex_key, ramp_ttl, ramp_data)
             logger.info(
                 f"Wrote ramp state for {setpoint_type} ({location}/{cluster}): "
                 f"current={current_effective_setpoint:.2f}, target={target_setpoint:.2f}, "
@@ -100,14 +85,7 @@ class RampsMixin:
         if not self.redis_enabled or not self.redis_client:
             return None
         try:
-            ramp_data = get_with_backward_compat(
-                self.redis_client,
-                legacy_ramp_key(location, cluster, setpoint_type),
-                ramp_key,
-                location,
-                cluster,
-                setpoint_type,
-            )
+            ramp_data = self.redis_client.get(ramp_key(location, cluster, setpoint_type))
             if ramp_data:
                 data_str = (
                     ramp_data.decode("utf-8") if isinstance(ramp_data, bytes) else str(ramp_data)
@@ -131,9 +109,7 @@ class RampsMixin:
         if not self.redis_enabled or not self.redis_client:
             return False
         try:
-            old_key = legacy_ramp_key(location, cluster, setpoint_type)
-            new_key = ramp_key(location, cluster, setpoint_type)
-            self.redis_client.delete(old_key, new_key)
+            self.redis_client.delete(ramp_key(location, cluster, setpoint_type))
             logger.info(f"Cleared ramp state for {setpoint_type} ({location}/{cluster})")
             return True
         except Exception as e:
@@ -162,16 +138,8 @@ class RampsMixin:
                     "start_time": start_time.isoformat(),
                 }
             )
-            set_with_backward_compat(
-                self.redis_client,
-                "ramp_persist:{0}:{1}:{2}",
-                ramp_persist_key,
-                data,
-                7200,
-                location,
-                cluster,
-                setpoint_type,
-            )
+            persist_key = ramp_persist_key(location, cluster, setpoint_type)
+            self.redis_client.setex(persist_key, 7200, data)
             logger.info(f"Persisted ramp {location}/{cluster}/{setpoint_type}")
             return True
         except Exception as e:
@@ -179,14 +147,11 @@ class RampsMixin:
             return False
 
     def get_persisted_ramps(self) -> list:
-        """Get all persisted ramps for restoration (scans both old and new key patterns)."""
+        """Get all persisted ramps for restoration."""
         if not self.redis_enabled or not self.redis_client:
             return []
         try:
-            # Scan both old and new key patterns
-            old_keys = cast(list, self.redis_client.keys("ramp_persist:*") or [])
-            new_keys = cast(list, self.redis_client.keys("cea:ramp_persist:*") or [])
-            all_keys = set(old_keys + new_keys)  # dedup
+            all_keys = set(cast(list, self.redis_client.keys("cea:ramp_persist:*") or []))
             ramps = []
             now = datetime.now()
             for key in all_keys:
@@ -194,11 +159,7 @@ class RampsMixin:
                     data = self.redis_client.get(key)  # type: ignore
                     if not data:
                         continue
-                    # Redis returns bytes, decode to string for json.loads
-                    if isinstance(data, bytes):
-                        data_str = data.decode("utf-8")
-                    else:
-                        data_str = str(data)
+                    data_str = data.decode("utf-8") if isinstance(data, bytes) else str(data)
                     ramp = json.loads(data_str)
                     start_time = datetime.fromisoformat(ramp["start_time"])
                     end_time = start_time + timedelta(minutes=ramp["duration_minutes"])
@@ -233,9 +194,7 @@ class RampsMixin:
         if not self.redis_enabled or not self.redis_client:
             return False
         try:
-            old_key = legacy_ramp_persist_key(location, cluster, setpoint_type)
-            new_key = ramp_persist_key(location, cluster, setpoint_type)
-            self.redis_client.delete(old_key, new_key)
+            self.redis_client.delete(ramp_persist_key(location, cluster, setpoint_type))
             return True
         except Exception as e:
             logger.warning(f"Failed to clear persisted ramp: {e}")

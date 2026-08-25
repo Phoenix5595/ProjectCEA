@@ -94,10 +94,7 @@ def _is_protected_path(path: str) -> bool:
     (``/health``, ``/ready``), and WebSocket upgrades (``/ws``,
     handled by :func:`check_websocket_auth`) — passes through.
     """
-    for p in _PROTECTED_PREFIXES:
-        if _path_matches_protected_prefix(path, p):
-            return True
-    return False
+    return any(_path_matches_protected_prefix(path, p) for p in _PROTECTED_PREFIXES)
 
 
 class APIKeyAuthMiddleware:

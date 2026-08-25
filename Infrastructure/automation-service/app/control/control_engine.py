@@ -6,6 +6,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Coroutine
 from datetime import UTC, datetime
+import inspect
 import json
 from typing import Any
 
@@ -13,6 +14,10 @@ from app.alarm_manager import AlarmManager
 from app.automation.rules_engine import RulesEngine
 from app.config import ConfigLoader
 from app.control.climate_resolver import ClimatePeriodResolver
+from app.control.current_publication_observer import (
+    ControlTickObserver,
+    build_current_snapshot,
+)
 from app.control.device_command_service import DeviceCommandService
 from app.control.device_controller import DeviceController
 from app.control.device_processor import DeviceProcessor
@@ -34,12 +39,21 @@ from app.control.vpd_cascade_controller import (
 )
 from app.database import DatabaseManager
 from app.redis.schema import relay_raw_override_key
+from app.schemas.monitoring_models import (
+    Phase,
+    PhotoperiodObservationSink,
+    RuntimeSnapshotVersion,
+)
+from app.services.photoperiod_history_logger import (
+    PhotoperiodObservation,
+)
 from app.state import StateManager, get_state_manager
 
 # Third-party imports
 # (none in this file)
 # Local imports
 from shared.infra_logging import get_logger
+from shared.monitoring_contracts import CurrentSnapshot, PhotoperiodPhase
 from shared.room_light_authority import is_moon_authority_mode
 
 logger = get_logger(__name__)
@@ -60,6 +74,8 @@ class ControlEngine:
         alarm_manager: AlarmManager | None = None,
         dfr0971_manager: Any | None = None,  # DFR0971Manager (avoid circular import)
         device_command_service: DeviceCommandService | None = None,
+        photoperiod_observation_sink: PhotoperiodObservationSink | None = None,
+        control_tick_observer: ControlTickObserver | None = None,
     ):
         """Initialize control engine.
 
@@ -82,6 +98,9 @@ class ControlEngine:
         self.runtime_device_registry = runtime_device_registry
         self.relay_board_state_manager = relay_board_state_manager
         self.device_command_service = device_command_service
+        self.photoperiod_observation_sink = photoperiod_observation_sink
+        self.control_tick_observer = control_tick_observer
+        self._current_observer_failures = 0
 
         # Initialize extracted components
         self.sensor_data_manager = SensorDataManager(database)
@@ -133,6 +152,7 @@ class ControlEngine:
 
         # Track automation context for logging
         self._automation_context: dict[tuple[str, str, str], dict[str, Any]] = {}
+        self._photoperiod_phases: dict[tuple[str, str], PhotoperiodPhase] = {}
 
         # Track current climate mode per location/cluster
         self._current_climate_mode: dict[tuple[str, str], str] = {}
@@ -191,10 +211,65 @@ class ControlEngine:
         if len(stats_list) > self._max_stats_history:
             stats_list.pop(0)
 
-    async def _is_moon_authority_room_mode(self, location: str, cluster: str) -> bool:
-        """Return true when active room mode forces 24h MOON for scheduled lights (drying, sleep)."""
-        active_mode = await self.database.room_mode_repo.get_active_mode(location, cluster)
-        return is_moon_authority_mode((active_mode or {}).get("mode_name"))
+    async def _get_active_room_mode(self, location: str, cluster: str) -> dict[str, Any] | None:
+        """Read one active-mode row for both authority and observation provenance."""
+        return await self.database.room_mode_repo.get_active_mode(location, cluster)
+
+    def _enqueue_final_photoperiod_phase(
+        self,
+        *,
+        location: str,
+        cluster: str,
+        active_mode: dict[str, Any] | None,
+        phase: Phase,
+        snapshot: RuntimeDeviceSnapshot,
+        observed_at: datetime,
+        force: bool,
+    ) -> None:
+        """Offer an exact phase to history without delaying the control decision."""
+        sink = self.photoperiod_observation_sink
+        if sink is None:
+            return
+        sink.enqueue_final_phase(
+            PhotoperiodObservation(
+                observed_at=observed_at.astimezone(UTC),
+                location=location,
+                cluster=cluster,
+                phase=phase,
+                mode_id=(active_mode or {}).get("mode_id"),
+                submode_id=(active_mode or {}).get("submode_id"),
+                runtime_snapshot_version=RuntimeSnapshotVersion(snapshot.version),
+            ),
+            force=force,
+        )
+
+    def _build_current_snapshot(self, snapshot: RuntimeDeviceSnapshot) -> CurrentSnapshot | None:
+        """Capture current facts from the completed tick without reading external state."""
+        return build_current_snapshot(
+            effective_setpoints=self._effective_setpoints,
+            automation_context=self._automation_context,
+            relay_states=self.relay_manager.get_all_states(),
+            photoperiod_phases=self._photoperiod_phases,
+            runtime_snapshot_version=snapshot.version,
+            observed_at=datetime.now(UTC),
+        )
+
+    def _offer_current_snapshot(self, snapshot: RuntimeDeviceSnapshot) -> None:
+        """Keep observer faults outside the control loop's success domain."""
+        observer = self.control_tick_observer
+        if observer is None:
+            return
+        try:
+            current = self._build_current_snapshot(snapshot)
+            if current is None:
+                return
+            offered = observer.offer(current)
+            if inspect.isawaitable(offered):
+                if inspect.iscoroutine(offered):
+                    offered.close()
+                raise TypeError("Control tick observers must offer synchronously")
+        except BaseException:
+            self._current_observer_failures += 1
 
     async def _restore_ramps_on_startup(self) -> None:
         """Restore active ramps from StateManager (Redis-backed) on startup."""
@@ -380,7 +455,10 @@ class ControlEngine:
                 # Calculate is_sun for light control
                 is_sun = self.climate_resolver.calculate_is_sun(current_time, location, cluster)
                 room_key = (location, cluster)
-                if await self._is_moon_authority_room_mode(location, cluster):
+                active_mode = await self._get_active_room_mode(location, cluster)
+                moon_authority_active = is_moon_authority_mode((active_mode or {}).get("mode_name"))
+                was_moon_authority_active = room_key in self._moon_authority_forced_moon
+                if moon_authority_active:
                     if room_key not in self._moon_authority_forced_moon:
                         logger.info(
                             "Moon-authority room mode active for %s/%s: forcing scheduled light authority to MOON",
@@ -389,8 +467,25 @@ class ControlEngine:
                         )
                     self._moon_authority_forced_moon.add(room_key)
                     is_sun = False
-                elif room_key in self._moon_authority_forced_moon:
+                elif was_moon_authority_active:
                     self._moon_authority_forced_moon.remove(room_key)
+
+                if self.control_tick_observer is not None:
+                    self._photoperiod_phases[room_key] = (
+                        PhotoperiodPhase.SUN if is_sun else PhotoperiodPhase.MOON
+                    )
+
+                if moon_authority_active or was_moon_authority_active:
+                    phase = Phase.MOON if not is_sun else Phase.SUN
+                    self._enqueue_final_photoperiod_phase(
+                        location=location,
+                        cluster=cluster,
+                        active_mode=active_mode,
+                        phase=phase,
+                        snapshot=snapshot,
+                        observed_at=current_time,
+                        force=moon_authority_active != was_moon_authority_active,
+                    )
 
                 # 6. Process devices (using extracted component)
                 await self.device_processor.process_devices(
@@ -426,6 +521,7 @@ class ControlEngine:
 
         # Log automation state for all devices
         await self._log_automation_state(snapshot)
+        self._offer_current_snapshot(snapshot)
 
         # Record performance statistics
         if self._profiling_enabled and loop_start_time:
@@ -602,7 +698,7 @@ class ControlEngine:
 
         for location, clusters in devices.items():
             for cluster, cluster_devices in clusters.items():
-                for device_name in cluster_devices.keys():
+                for device_name in cluster_devices:
                     key = (location, cluster, device_name)
                     context = self._automation_context.get(key, {})
 

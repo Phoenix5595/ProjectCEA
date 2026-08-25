@@ -25,12 +25,14 @@ class AppConfig(BaseModel):
                 raise ValueError(f"hardware.{key} must be between 0 and 7 (got {bus})")
 
         update_interval = control.get("update_interval")
-        if update_interval is not None and isinstance(update_interval, (int, float)):
-            if not 1 <= update_interval <= 5:
-                raise ValueError(
-                    "control.update_interval must be between 1 and 5 seconds "
-                    f"(got {update_interval})"
-                )
+        if (
+            update_interval is not None
+            and isinstance(update_interval, (int, float))
+            and not 1 <= update_interval <= 5
+        ):
+            raise ValueError(
+                f"control.update_interval must be between 1 and 5 seconds (got {update_interval})"
+            )
 
         sensors = values.get("sensors")
         if isinstance(sensors, dict):

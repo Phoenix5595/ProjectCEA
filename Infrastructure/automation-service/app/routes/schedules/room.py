@@ -197,98 +197,97 @@ async def save_room_schedule(
     submode_name = active_mode.get("submode_name") if active_mode else None
 
     try:
-        async with pool.acquire() as conn:
-            async with conn.transaction():
-                if schedule_ids_to_delete:
-                    room_schedule_ids = await conn.fetch(
-                        """
-                        SELECT id FROM schedules
-                        WHERE location = $1 AND cluster = $2 AND device_name = 'room_schedule'
-                    """,
-                        location,
-                        cluster,
-                    )
-                    room_schedule_id_set = {r["id"] for r in room_schedule_ids}
-                    filtered_ids = [
-                        sid for sid in schedule_ids_to_delete if sid not in room_schedule_id_set
-                    ]
-
-                    if filtered_ids:
-                        await database.schedule_repo.delete_schedules_bulk(
-                            filtered_ids, cast("Connection", conn)
-                        )
-                        logger.info(
-                            f"Deleted {len(filtered_ids)} existing schedules for {location}/{cluster}"
-                        )
-
-                for device_name, device_info in room_devices.items():
-                    device_type = device_info.get("device_type", "")
-                    display_name = device_info.get("display_name", device_name)
-
-                    # Only create DAY/NIGHT rows for non-light devices
-                    if device_type == "light":
-                        continue
-
-                    day_schedule_id = await database.schedule_repo.create_schedule(
-                        name=f"{display_name} - Day",
-                        location=location,
-                        cluster=cluster,
-                        device_name=device_name,
-                        start_time=schedule.day_start_time,
-                        end_time=schedule.day_end_time,
-                        day_of_week=None,
-                        enabled=True,
-                        mode="DAY",
-                        target_intensity=None,
-                        ramp_up_duration=None,
-                        ramp_down_duration=None,
-                        conn=cast(Any, conn),
-                    )
-                    if day_schedule_id:
-                        schedules_created += 1
-                    else:
-                        raise RuntimeError(f"Failed to create day schedule for {device_name}")
-
-                    night_schedule_id = await database.schedule_repo.create_schedule(
-                        name=f"{display_name} - Night",
-                        location=location,
-                        cluster=cluster,
-                        device_name=device_name,
-                        start_time=schedule.night_start_time,
-                        end_time=schedule.night_end_time,
-                        day_of_week=None,
-                        enabled=True,
-                        mode="NIGHT",
-                        target_intensity=None,
-                        ramp_up_duration=None,
-                        ramp_down_duration=None,
-                        conn=cast(Any, conn),
-                    )
-                    if night_schedule_id:
-                        schedules_created += 1
-                    else:
-                        raise RuntimeError(f"Failed to create night schedule for {device_name}")
-
-                # Update mode_parameters directly with photoperiod times and ramp durations
-                current_params = await database.room_mode_repo.get_mode_parameters(
-                    location, cluster, mode_name, submode_name
+        async with pool.acquire() as conn, conn.transaction():
+            if schedule_ids_to_delete:
+                room_schedule_ids = await conn.fetch(
+                    """
+                    SELECT id FROM schedules
+                    WHERE location = $1 AND cluster = $2 AND device_name = 'room_schedule'
+                """,
+                    location,
+                    cluster,
                 )
-                if not current_params:
-                    current_params = {}
-                merged_params = {
-                    **current_params,
-                    "day_start_time": schedule.day_start_time,
-                    "night_start_time": schedule.night_start_time,
-                    "light_ramp_up_minutes": schedule.ramp_up_duration or 30,
-                    "light_ramp_down_minutes": schedule.ramp_down_duration or 15,
-                }
-                await database.room_mode_repo.save_mode_parameters(
-                    location, cluster, mode_name, submode_name, merged_params
-                )
+                room_schedule_id_set = {r["id"] for r in room_schedule_ids}
+                filtered_ids = [
+                    sid for sid in schedule_ids_to_delete if sid not in room_schedule_id_set
+                ]
 
-                logger.info(
-                    f"Successfully created {schedules_created} non-light schedules for {location}/{cluster} in transaction"
+                if filtered_ids:
+                    await database.schedule_repo.delete_schedules_bulk(
+                        filtered_ids, cast("Connection", conn)
+                    )
+                    logger.info(
+                        f"Deleted {len(filtered_ids)} existing schedules for {location}/{cluster}"
+                    )
+
+            for device_name, device_info in room_devices.items():
+                device_type = device_info.get("device_type", "")
+                display_name = device_info.get("display_name", device_name)
+
+                # Only create DAY/NIGHT rows for non-light devices
+                if device_type == "light":
+                    continue
+
+                day_schedule_id = await database.schedule_repo.create_schedule(
+                    name=f"{display_name} - Day",
+                    location=location,
+                    cluster=cluster,
+                    device_name=device_name,
+                    start_time=schedule.day_start_time,
+                    end_time=schedule.day_end_time,
+                    day_of_week=None,
+                    enabled=True,
+                    mode="DAY",
+                    target_intensity=None,
+                    ramp_up_duration=None,
+                    ramp_down_duration=None,
+                    conn=cast(Any, conn),
                 )
+                if day_schedule_id:
+                    schedules_created += 1
+                else:
+                    raise RuntimeError(f"Failed to create day schedule for {device_name}")
+
+                night_schedule_id = await database.schedule_repo.create_schedule(
+                    name=f"{display_name} - Night",
+                    location=location,
+                    cluster=cluster,
+                    device_name=device_name,
+                    start_time=schedule.night_start_time,
+                    end_time=schedule.night_end_time,
+                    day_of_week=None,
+                    enabled=True,
+                    mode="NIGHT",
+                    target_intensity=None,
+                    ramp_up_duration=None,
+                    ramp_down_duration=None,
+                    conn=cast(Any, conn),
+                )
+                if night_schedule_id:
+                    schedules_created += 1
+                else:
+                    raise RuntimeError(f"Failed to create night schedule for {device_name}")
+
+            # Update mode_parameters directly with photoperiod times and ramp durations
+            current_params = await database.room_mode_repo.get_mode_parameters(
+                location, cluster, mode_name, submode_name
+            )
+            if not current_params:
+                current_params = {}
+            merged_params = {
+                **current_params,
+                "day_start_time": schedule.day_start_time,
+                "night_start_time": schedule.night_start_time,
+                "light_ramp_up_minutes": schedule.ramp_up_duration or 30,
+                "light_ramp_down_minutes": schedule.ramp_down_duration or 15,
+            }
+            await database.room_mode_repo.save_mode_parameters(
+                location, cluster, mode_name, submode_name, merged_params
+            )
+
+            logger.info(
+                f"Successfully created {schedules_created} non-light schedules for {location}/{cluster} in transaction"
+            )
     except Exception as e:
         logger.error(f"Error saving room schedule for {location}/{cluster}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Database transaction failed: {str(e)}") from e

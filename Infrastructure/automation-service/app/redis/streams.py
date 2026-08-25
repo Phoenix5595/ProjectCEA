@@ -6,7 +6,7 @@ from datetime import datetime
 import json
 from typing import TYPE_CHECKING
 
-from app.redis.schema import legacy_automation_state_key
+from app.redis.schema import automation_state_key
 from shared.infra_logging import get_logger
 from shared.redis_keys import SENSOR_RAW_MAXLEN, SENSOR_RAW_STREAM
 
@@ -88,7 +88,7 @@ class StreamsMixin:
 
         try:
             timestamp_ms = int(datetime.now().timestamp() * 1000)
-            state_key = legacy_automation_state_key(location, cluster, device_name)
+            state_key = automation_state_key(location, cluster, device_name)
 
             state_data = {
                 "state": device_state,

@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 import json
 from typing import Any, TypedDict
 
-from app.redis.schema import legacy_ramp_key, legacy_ramp_persist_key
+from app.redis.schema import ramp_key, ramp_persist_key
 from shared.infra_logging import get_logger
 
 logger = get_logger(__name__)
@@ -35,9 +35,9 @@ class RampMixin:
 
     # ------------------------------------------------------------------
     # Ramp state API (migrated from Redis ramps mixin)
-    # All ramp state keys use the same pattern as before:
-    #   Active ramp: ramp:{location}:{cluster}:{setpoint_type} with TTL 10
-    #   Persisted ramp: ramp_persist:{location}:{cluster}:{setpoint_type} with TTL 7200
+    # Canonical key patterns:
+    #   Active ramp: cea:ramp:{location}:{cluster}:{setpoint_type} with TTL 10
+    #   Persisted ramp: cea:ramp_persist:{location}:{cluster}:{setpoint_type} with TTL 7200
     # ------------------------------------------------------------------
     async def get_ramp_state(
         self, location: str, cluster: str, setpoint_type: str
@@ -53,7 +53,7 @@ class RampMixin:
             "target_setpoint": <float>,
         }
         """
-        key = legacy_ramp_key(location, cluster, setpoint_type)
+        key = ramp_key(location, cluster, setpoint_type)
         data = await self.get(key)
         if data is None:
             return None
@@ -78,7 +78,7 @@ class RampMixin:
         ramp_data is stored as JSON string in Redis to preserve structure.
         TTL is 10 seconds for active ramps.
         """
-        key = legacy_ramp_key(location, cluster, setpoint_type)
+        key = ramp_key(location, cluster, setpoint_type)
         try:
             ramp_json = json.dumps(ramp_data)
             await self.set(key, ramp_json, ttl=10)
@@ -88,7 +88,7 @@ class RampMixin:
 
     async def clear_ramp_state(self, location: str, cluster: str, setpoint_type: str) -> bool:
         """Clear active ramp state for a given location/cluster/setpoint_type."""
-        key = legacy_ramp_key(location, cluster, setpoint_type)
+        key = ramp_key(location, cluster, setpoint_type)
         return await self.delete(key)
 
     async def persist_ramp(
@@ -106,7 +106,7 @@ class RampMixin:
         if not self._redis_enabled or not self._redis_client:
             return False
         try:
-            key = legacy_ramp_persist_key(location, cluster, setpoint_type)
+            key = ramp_persist_key(location, cluster, setpoint_type)
             ramp_json = json.dumps(ramp_data)
             # 7200 seconds TTL for persisted ramps
             await asyncio.to_thread(self._redis_client.setex, key, 7200, ramp_json)  # type: ignore[arg-type]
@@ -121,12 +121,11 @@ class RampMixin:
         if not self._redis_enabled or not self._redis_client:
             return []
         try:
-            # Obtain all keys for persisted ramps
-            keys_raw = self._redis_client.keys("ramp_persist:")
+            keys_raw = self._redis_client.keys("cea:ramp_persist:*")
             keys = list(keys_raw) if keys_raw is not None else []  # ensure iterable
             ramps: list[dict[str, Any]] = []
             now = datetime.now()
-            for key in keys:
+            for key in set(keys):
                 try:
                     data = self._redis_client.get(key)  # type: ignore
                     if not data:
@@ -141,7 +140,7 @@ class RampMixin:
                         continue
                     # Extract location/cluster/setpoint_type from key
                     parts = key.decode() if isinstance(key, bytes) else key
-                    parts = parts.split(":")
+                    parts = parts.replace("cea:", "").split(":")  # strip cea: prefix
                     if len(parts) >= 4:
                         ramps.append(
                             {
@@ -166,8 +165,10 @@ class RampMixin:
         if not self._redis_enabled or not self._redis_client:
             return False
         try:
-            key = legacy_ramp_persist_key(location, cluster, setpoint_type)
-            await asyncio.to_thread(self._redis_client.delete, key) if self._redis_client else None
+            await asyncio.to_thread(
+                self._redis_client.delete,
+                ramp_persist_key(location, cluster, setpoint_type),
+            )
             return True
         except Exception as e:
             logger.warning(f"StateManager: Failed to clear persisted ramp: {e}")

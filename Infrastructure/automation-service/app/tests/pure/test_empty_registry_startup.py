@@ -104,8 +104,13 @@ class _FakeRoomModeRepository:
         return None
 
 
+class _FakePool:
+    pass
+
+
 class _FakeDatabaseManager:
     def __init__(self) -> None:
+        self._pool = None
         self._automation_redis = _FakeRedis()
         self.device_repo = _FakeDeviceRepository()
         self.light_target_intensity_repo = _FakeLightTargetIntensityRepository()
@@ -118,6 +123,7 @@ class _FakeDatabaseManager:
         self.closed = False
 
     async def initialize(self) -> None:
+        self._pool = _FakePool()
         self.initialized = True
 
     async def load_schedule_state_to_redis(self) -> None:

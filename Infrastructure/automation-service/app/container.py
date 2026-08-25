@@ -25,8 +25,13 @@ from app.hardware.safe_outputs import (
     require_mcp_all_off,
     zero_unassigned_dfr_outputs,
 )
+from app.monitoring_publication.workers import MonitoringPublicationWorkers
 from app.redis_client import AutomationRedisClient
 from app.services.device_registry_service import DeviceRegistryService
+from app.services.photoperiod_history_logger import (
+    DatabasePhotoperiodHistoryStore,
+    PhotoperiodHistoryLogger,
+)
 from shared.infra_logging import get_logger
 
 logger = get_logger(__name__)
@@ -39,7 +44,7 @@ class ServiceContainer:
     Components are initialized in dependency order during startup.
     """
 
-    def __init__(self):
+    def __init__(self, publication_workers: MonitoringPublicationWorkers | None = None):
         """Initialize container with None values."""
         # Configuration
         self.config: ConfigLoader | None = None
@@ -64,6 +69,10 @@ class ServiceContainer:
         self.control_engine: ControlEngine | None = None
         self.device_command_service: DeviceCommandService | None = None
         self.control_snapshot_service: ControlSnapshotService | None = None
+        self.photoperiod_history_logger: PhotoperiodHistoryLogger | None = None
+        self.monitoring_publication_workers: MonitoringPublicationWorkers | None = (
+            publication_workers
+        )
 
         # Background tasks
         self.background_tasks: BackgroundTasks | None = None
@@ -219,6 +228,12 @@ class ServiceContainer:
             logger.info("Control snapshot service initialized")
 
             # 9. Initialize control engine
+            assert self.database._pool is not None, (
+                "Database pool must be ready before history logging"
+            )
+            self.photoperiod_history_logger = PhotoperiodHistoryLogger(
+                DatabasePhotoperiodHistoryStore(self.database._pool)
+            )
             self.control_engine = ControlEngine(
                 relay_manager=self.relay_manager,
                 database=self.database,
@@ -230,6 +245,12 @@ class ServiceContainer:
                 runtime_device_registry=self.runtime_device_registry,
                 relay_board_state_manager=self.relay_board_state_manager,
                 device_command_service=self.device_command_service,
+                photoperiod_observation_sink=self.photoperiod_history_logger,
+                control_tick_observer=(
+                    None
+                    if self.monitoring_publication_workers is None
+                    else self.monitoring_publication_workers.current_observer
+                ),
             )
             logger.info("Control engine initialized")
 
@@ -257,9 +278,16 @@ class ServiceContainer:
             )
             logger.info("Background tasks initialized")
 
-            # Start background tasks
+            await self.photoperiod_history_logger.start()
+            logger.info("Photoperiod history logger started")
+
+            # Start background tasks only after the history sink is ready.
             await self.background_tasks.start()
             logger.info("Background tasks started")
+
+            if self.monitoring_publication_workers is not None:
+                await self.monitoring_publication_workers.start()
+                logger.info("Monitoring publication workers started")
 
             self._initialized = True
             logger.info("Service container initialization complete")
@@ -367,6 +395,20 @@ class ServiceContainer:
             except Exception as e:
                 logger.error(f"Error stopping background tasks: {e}")
 
+        if self.photoperiod_history_logger:
+            try:
+                await self.photoperiod_history_logger.stop()
+                logger.info("Photoperiod history logger stopped")
+            except Exception as e:
+                logger.error(f"Error stopping photoperiod history logger: {e}")
+
+        if self.monitoring_publication_workers is not None:
+            try:
+                await self.monitoring_publication_workers.stop()
+                logger.info("Monitoring publication workers stopped")
+            except Exception as e:
+                logger.error(f"Error stopping monitoring publication workers: {e}")
+
         if self.mcp23017 is not None:
             try:
                 _ = force_all_outputs_safe(
@@ -456,6 +498,16 @@ class ServiceContainer:
         if not self.control_engine:
             raise RuntimeError("Control engine not initialized")
         return self.control_engine
+
+    def get_photoperiod_history_logger(self) -> PhotoperiodHistoryLogger:
+        """Get the route-overridable photoperiod history sink and health provider."""
+        if not self.photoperiod_history_logger:
+            raise RuntimeError("Photoperiod history logger not initialized")
+        return self.photoperiod_history_logger
+
+    def get_monitoring_publication_workers(self) -> MonitoringPublicationWorkers | None:
+        """Get optional non-control monitoring publication workers."""
+        return self.monitoring_publication_workers
 
     def get_pid_controller_manager(self):
         """Get PID controller manager from control engine (for status API load_percent)."""

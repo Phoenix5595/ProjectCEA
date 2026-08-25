@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
+from contextlib import suppress
 from datetime import datetime
 import json
 from typing import TYPE_CHECKING, Any, cast
 
 from app.redis.schema import (
     effective_setpoint_light_field_key,
-    legacy_effective_setpoint_prefix,
-    legacy_setpoint_field_key,
+    effective_setpoint_prefix,
+    setpoint_key,
 )
 from shared.infra_logging import get_logger
 from shared.redis_keys import CONTROL_STREAM, CONTROL_STREAM_MAXLEN
@@ -34,12 +35,12 @@ class SetpointsMixin:
             return None
 
         try:
-            heat_key = legacy_setpoint_field_key(location, cluster, "heating_setpoint")
-            cool_key = legacy_setpoint_field_key(location, cluster, "cooling_setpoint")
-            temp_key = legacy_setpoint_field_key(location, cluster, "temperature")
-            hum_key = legacy_setpoint_field_key(location, cluster, "humidity")
-            co2_key = legacy_setpoint_field_key(location, cluster, "co2")
-            source_key = legacy_setpoint_field_key(location, cluster, "source")
+            heat_key = setpoint_key(location, cluster, "heating_setpoint")
+            cool_key = setpoint_key(location, cluster, "cooling_setpoint")
+            temp_key = setpoint_key(location, cluster, "temperature")
+            hum_key = setpoint_key(location, cluster, "humidity")
+            co2_key = setpoint_key(location, cluster, "co2")
+            source_key = setpoint_key(location, cluster, "source")
 
             keys = [heat_key, cool_key, temp_key, hum_key, co2_key, source_key]
             res = self.redis_client.mget(keys)
@@ -79,7 +80,7 @@ class SetpointsMixin:
         if not self.redis_enabled or not self.redis_client:
             return None
         try:
-            prefix = legacy_effective_setpoint_prefix(location, cluster)
+            prefix = effective_setpoint_prefix(location, cluster)
             keys = [
                 f"{prefix}:heating_setpoint",
                 f"{prefix}:cooling_setpoint",
@@ -90,26 +91,14 @@ class SetpointsMixin:
             values = cast(list[Any], res)
             heat, cool, co2_val, vpd_val = values[0], values[1], values[2], values[3]
             result: dict[str, float] = {}
-            if heat is not None:
-                try:
-                    result["heating_setpoint"] = float(heat)
-                except (ValueError, TypeError):
-                    pass
-            if cool is not None:
-                try:
-                    result["cooling_setpoint"] = float(cool)
-                except (ValueError, TypeError):
-                    pass
-            if co2_val is not None:
-                try:
-                    result["co2"] = float(co2_val)
-                except (ValueError, TypeError):
-                    pass
-            if vpd_val is not None:
-                try:
-                    result["vpd"] = float(vpd_val)
-                except (ValueError, TypeError):
-                    pass
+            for name, raw in (
+                ("heating_setpoint", heat),
+                ("cooling_setpoint", cool),
+                ("co2", co2_val),
+                ("vpd", vpd_val),
+            ):
+                with suppress(ValueError, TypeError):
+                    result[name] = float(raw)
             return result if result else None
         except Exception as e:
             logger.debug(f"Error reading effective setpoints from Redis: {e}")
@@ -136,30 +125,28 @@ class SetpointsMixin:
 
             if heating_setpoint is not None:
                 pipe.setex(
-                    legacy_setpoint_field_key(location, cluster, "heating_setpoint"),
+                    setpoint_key(location, cluster, "heating_setpoint"),
                     setpoint_ttl,
                     str(heating_setpoint),
                 )
             if cooling_setpoint is not None:
                 pipe.setex(
-                    legacy_setpoint_field_key(location, cluster, "cooling_setpoint"),
+                    setpoint_key(location, cluster, "cooling_setpoint"),
                     setpoint_ttl,
                     str(cooling_setpoint),
                 )
             if humidity is not None:
                 pipe.setex(
-                    legacy_setpoint_field_key(location, cluster, "humidity"),
+                    setpoint_key(location, cluster, "humidity"),
                     setpoint_ttl,
                     str(humidity),
                 )
             if co2 is not None:
-                pipe.setex(
-                    legacy_setpoint_field_key(location, cluster, "co2"), setpoint_ttl, str(co2)
-                )
+                pipe.setex(setpoint_key(location, cluster, "co2"), setpoint_ttl, str(co2))
 
             source_data = {"source": source, "timestamp": timestamp_ms}
             pipe.setex(
-                legacy_setpoint_field_key(location, cluster, "source"),
+                setpoint_key(location, cluster, "source"),
                 setpoint_ttl,
                 json.dumps(source_data),
             )
@@ -203,7 +190,7 @@ class SetpointsMixin:
             setpoint_ttl = 300
 
             pipe = self.redis_client.pipeline()
-            prefix = legacy_effective_setpoint_prefix(location, cluster)
+            prefix = effective_setpoint_prefix(location, cluster)
 
             if effective_heating_setpoint is not None:
                 pipe.setex(
@@ -404,7 +391,7 @@ class SetpointsMixin:
             return None
 
         try:
-            source_key = legacy_setpoint_field_key(location, cluster, "source")
+            source_key = setpoint_key(location, cluster, "source")
             source_data = self.redis_client.get(source_key)
             if source_data:
                 return json.loads(str(source_data))
@@ -419,9 +406,7 @@ class SetpointsMixin:
             return True
 
         try:
-            rate_limit_key = (
-                f"{legacy_setpoint_field_key(location, cluster, setpoint_type)}:last_write"
-            )
+            rate_limit_key = f"{setpoint_key(location, cluster, setpoint_type)}:last_write"
             last_write_str = self.redis_client.get(rate_limit_key)
 
             if last_write_str is None:

@@ -10,7 +10,7 @@ import json
 import time
 from typing import Any, TypedDict
 
-from app.redis.schema import pid_autotune_key, pid_parameters_key
+from app.redis.schema import pid_autotune_key, pid_key_with_location
 from shared.infra_logging import get_logger
 
 logger = get_logger(__name__)
@@ -44,7 +44,7 @@ class PIDMixin:
         Returns:
             Dict containing kp/ki/kd and metadata, or None if not found
         """
-        pid_key = pid_parameters_key(location, cluster, device_type)
+        pid_key = pid_key_with_location(location, cluster, device_type)
         data = await self.get(pid_key)
         if data is None:
             return None
@@ -89,7 +89,7 @@ class PIDMixin:
         Returns:
             True if written successfully, False otherwise
         """
-        pid_key = pid_parameters_key(location, cluster, device_type)
+        pid_key = pid_key_with_location(location, cluster, device_type)
         timestamp_ms = updated_at or int(time.time() * 1000)
         payload: dict[str, Any] = {
             "kp": kp,

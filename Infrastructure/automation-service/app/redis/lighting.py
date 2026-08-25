@@ -6,7 +6,7 @@ from datetime import datetime
 import json
 from typing import TYPE_CHECKING, Any
 
-from app.redis.schema import legacy_light_state_key
+from app.redis.schema import light_state_key
 from shared.infra_logging import get_logger
 
 if TYPE_CHECKING:
@@ -36,7 +36,7 @@ class LightingMixin:
 
         try:
             timestamp_ms = int(datetime.now().timestamp() * 1000)
-            light_key = legacy_light_state_key(location, cluster, device_name)
+            light_key = light_state_key(location, cluster, device_name)
 
             light_data = {
                 "intensity": intensity,
@@ -59,7 +59,7 @@ class LightingMixin:
             return None
 
         try:
-            light_key = legacy_light_state_key(location, cluster, device_name)
+            light_key = light_state_key(location, cluster, device_name)
             light_data = self.redis_client.get(light_key)
             if light_data:
                 return json.loads(str(light_data))

@@ -4,6 +4,7 @@ import type { Mocked } from 'vitest'
 import type {
   ControlMonitoringResponse,
   MonitoringResponse,
+  ProjectionPublicationResponse,
 } from '../../api'
 import { MonitoringApi, MonitoringHttpError } from '../../api'
 import { MonitoringStore } from '../monitoringStore'
@@ -93,28 +94,30 @@ function controlResponse(overrides: Partial<ControlMonitoringResponse> = {}): Co
   }
 }
 
-const PROJ_META = {
-  projection_revision: 'rev-1',
-  anchor_fingerprint: 'fp-1',
-  anchor_observed_at: new Date(T0),
-  anchor_quality: 'exact' as const,
-  anchor_valid_until: new Date('2099-01-01T00:00:00.000Z'),
-}
-
-function projectionResponse(meta: Partial<typeof PROJ_META> = {}): ControlMonitoringResponse {
-  return controlResponse({
-    climate: [
+function projectionResponse(
+  overrides: { revision?: string; validUntil?: Date; quality?: ProjectionPublicationResponse['quality'] } = {},
+): ProjectionPublicationResponse {
+  const validUntil = overrides.validUntil ?? new Date('2099-01-01T00:00:00.000Z')
+  return {
+    quality: overrides.quality ?? 'estimated',
+    value: overrides.quality === 'unavailable' ? [] : [
       {
-        name: 'Heating Setpoint',
-        provenance: { origin: 'projected' as const, quality: 'estimated' as const, is_aggregated: false },
-        projection: { ...PROJ_META, ...meta },
-        warnings: [],
-        points: [],
-        steps: [],
-        linear: [],
+        version: { contract_version: 1, config_version: 7, revision: overrides.revision ?? '8f8c3db' },
+        generated_at: new Date(T0),
+        valid_from: new Date(T0),
+        valid_until: validUntil,
+        series: [
+          {
+            series_id: { value: 'climate.heating_setpoint_target' },
+            value: 22,
+            quality: 'estimated',
+            valid_from: new Date(T0),
+            valid_until: validUntil,
+          },
+        ],
       },
     ],
-  })
+  }
 }
 
 function makeApi(): Mocked<MonitoringApi> {
@@ -240,10 +243,10 @@ describe('monitoring store', () => {
     api.controlProjection
       .mockReset()
       .mockResolvedValueOnce(
-        projectionResponse({ anchor_valid_until: new Date('2026-08-02T12:00:01.000Z') }),
+        projectionResponse({ validUntil: new Date('2026-08-02T12:00:01.000Z') }),
       )
       .mockResolvedValueOnce(
-        projectionResponse({ projection_revision: 'rev-2', anchor_fingerprint: 'fp-2' }),
+        projectionResponse({ revision: '8f8c3de' }),
       )
     const store = new MonitoringStore('Flower Room', api, {
       now: () => new Date(),
@@ -257,8 +260,8 @@ describe('monitoring store', () => {
 
     expect(api.controlProjection).toHaveBeenCalledTimes(2)
     expect(api.sensorRange).toHaveBeenCalledTimes(1)
-    expect(store.getSnapshot().data.projectionRevision).toBe('rev-2')
-    expect(store.getSnapshot().data.anchorFingerprint).toBe('fp-2')
+    expect(store.getSnapshot().data.projectionRevision).toBe('8f8c3de')
+    expect(store.getSnapshot().data.projectionVersion).toBe(7)
     unsub()
   })
 
@@ -267,18 +270,37 @@ describe('monitoring store', () => {
     healthyDefaults(api)
     api.controlProjection
       .mockReset()
-      .mockResolvedValue(projectionResponse({ anchor_valid_until: new Date('2026-08-02T11:59:00.000Z') }))
+      .mockResolvedValue(projectionResponse({ validUntil: new Date('2026-08-02T11:59:00.000Z') }))
     const store = new MonitoringStore('Flower Room', api, {
       now: () => new Date(),
     })
     const unsub = store.subscribe(() => {})
     await vi.advanceTimersByTimeAsync(0)
 
-    expect(store.getSnapshot().data.anchorQuality).toBe('exact')
+    expect(store.getSnapshot().data.anchorQuality).toBe('estimated')
 
     await vi.advanceTimersByTimeAsync(1000)
 
     expect(store.getSnapshot().data.anchorQuality).toBe('estimated')
+    unsub()
+  })
+
+  it('clears unavailable projections without touching recorded control facts', async () => {
+    const api = makeApi()
+    healthyDefaults(api)
+    api.controlRange.mockResolvedValue(controlResponse({
+      climate: [climateSeries([{ timestamp: new Date(T0), value: 22 }])],
+    }))
+    const store = new MonitoringStore('Flower Room', api, { now: () => new Date() })
+    const unsub = store.subscribe(() => {})
+    await vi.advanceTimersByTimeAsync(0)
+
+    api.controlProjection.mockResolvedValue(projectionResponse({ quality: 'unavailable' }))
+    store.retry()
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(store.getSnapshot().data.projectionHistory).toBeNull()
+    expect(store.getSnapshot().data.controlHistory?.climate[0]?.points[0]?.value).toBe(22)
     unsub()
   })
 
@@ -525,7 +547,7 @@ describe('monitoring store', () => {
     expect(signals[1]?.aborted).toBe(true)
     expect(signals[2]?.aborted).toBe(false)
     expect(api.controlRange.mock.calls[2]?.[4]?.signal).toBe(signals[2])
-    expect(api.controlProjection.mock.calls[2]?.[3]?.signal).toBe(signals[2])
+    expect(api.controlProjection.mock.calls[2]?.[1]?.signal).toBe(signals[2])
 
     resolveSensorRanges[0]?.(sensorRangeResponse(10))
     resolveSensorRanges[2]?.(sensorRangeResponse(30))

@@ -305,64 +305,63 @@ class CalendarRepository(BaseRepository):
             batch_start = min(p.start_date for p in phases)
             harvest_end = max(p.end_date for p in phases)
 
-            async with self.pool.acquire() as conn:
-                async with conn.transaction():
-                    room_row = await conn.fetchrow(
-                        "SELECT room_id FROM room WHERE name = 'Flower Room'"
+            async with self.pool.acquire() as conn, conn.transaction():
+                room_row = await conn.fetchrow(
+                    "SELECT room_id FROM room WHERE name = 'Flower Room'"
+                )
+                if not room_row:
+                    return None, "Flower Room not found in room table"
+                batch_row = await conn.fetchrow(
+                    """
+                    INSERT INTO crop_batch (crop_name, start_date, end_date, room_id)
+                    VALUES ($1, $2, $3, $4)
+                    RETURNING batch_id
+                    """,
+                    inp.crop_name,
+                    batch_start,
+                    harvest_end,
+                    room_row["room_id"],
+                )
+                batch_id = batch_row["batch_id"]
+                created_events: list[dict[str, Any]] = []
+                for phase in phases:
+                    meta = phase_to_metadata(
+                        phase, str(grow_plan_id), inp.environment, inp.crop_name
                     )
-                    if not room_row:
-                        return None, "Flower Room not found in room table"
-                    batch_row = await conn.fetchrow(
+                    ical_uid = f"cea-cal-{phase.location.lower().replace(' ', '-')}-{uuid.uuid4().hex[:12]}@siberianjungle.local"
+                    row = await conn.fetchrow(
                         """
-                        INSERT INTO crop_batch (crop_name, start_date, end_date, room_id)
-                        VALUES ($1, $2, $3, $4)
-                        RETURNING batch_id
-                        """,
-                        inp.crop_name,
-                        batch_start,
-                        harvest_end,
-                        room_row["room_id"],
-                    )
-                    batch_id = batch_row["batch_id"]
-                    created_events: list[dict[str, Any]] = []
-                    for phase in phases:
-                        meta = phase_to_metadata(
-                            phase, str(grow_plan_id), inp.environment, inp.crop_name
+                        INSERT INTO calendar_event (
+                            location, cluster, event_type, title, start_date, end_date,
+                            all_day, metadata, crop_batch_id, grow_plan_id, ical_uid,
+                            sync_status, created_by
+                        ) VALUES (
+                            $1, $2, $3, $4, $5, $6, true, $7::jsonb, $8, $9, $10,
+                            'pending_push', $11
                         )
-                        ical_uid = f"cea-cal-{phase.location.lower().replace(' ', '-')}-{uuid.uuid4().hex[:12]}@siberianjungle.local"
-                        row = await conn.fetchrow(
-                            """
-                            INSERT INTO calendar_event (
-                                location, cluster, event_type, title, start_date, end_date,
-                                all_day, metadata, crop_batch_id, grow_plan_id, ical_uid,
-                                sync_status, created_by
-                            ) VALUES (
-                                $1, $2, $3, $4, $5, $6, true, $7::jsonb, $8, $9, $10,
-                                'pending_push', $11
-                            )
-                            RETURNING *
-                            """,
-                            phase.location,
-                            phase.cluster,
-                            phase.event_type,
-                            phase.title,
-                            phase.start_date,
-                            phase.end_date,
-                            json.dumps(meta),
-                            batch_id,
-                            grow_plan_id,
-                            ical_uid,
-                            created_by,
-                        )
-                        created_events.append(dict(row))
-                    await conn.execute(
-                        """
-                        INSERT INTO grow_plan_idempotency (idempotency_key, grow_plan_id, expires_at)
-                        VALUES ($1, $2, NOW() + interval '24 hours')
+                        RETURNING *
                         """,
-                        idempotency_key,
+                        phase.location,
+                        phase.cluster,
+                        phase.event_type,
+                        phase.title,
+                        phase.start_date,
+                        phase.end_date,
+                        json.dumps(meta),
+                        batch_id,
                         grow_plan_id,
+                        ical_uid,
+                        created_by,
                     )
+                    created_events.append(dict(row))
+                await conn.execute(
+                    """
+                    INSERT INTO grow_plan_idempotency (idempotency_key, grow_plan_id, expires_at)
+                    VALUES ($1, $2, NOW() + interval '24 hours')
+                    """,
+                    idempotency_key,
+                    grow_plan_id,
+                )
             return {
                 "grow_plan_id": str(grow_plan_id),
                 "crop_batch_id": batch_id,
