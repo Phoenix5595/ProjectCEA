@@ -66,13 +66,12 @@ class RuntimeDeviceRegistry:
         """Run one registry mutation and publish its pending snapshot only after commit."""
         async with self._mutation_lock:
             pool = await self._database._get_pool()
-            async with pool.acquire() as connection:
-                async with connection.transaction():
-                    await connection.execute(
-                        "SELECT pg_advisory_xact_lock($1)", _REGISTRY_MUTATION_ADVISORY_LOCK
-                    )
-                    result = await mutation(connection)
-                    pending_snapshot = await self._build_snapshot(connection)
+            async with pool.acquire() as connection, connection.transaction():
+                await connection.execute(
+                    "SELECT pg_advisory_xact_lock($1)", _REGISTRY_MUTATION_ADVISORY_LOCK
+                )
+                result = await mutation(connection)
+                pending_snapshot = await self._build_snapshot(connection)
 
             await self._after_commit_before_install(pending_snapshot)
             self._install(pending_snapshot, "committed registry mutation")

@@ -13,8 +13,8 @@ import json
 from typing import Any, TypedDict
 
 from app.redis.schema import (
-    legacy_alarm_key,
-    legacy_alarm_prefix,
+    alarm_key,
+    alarm_prefix,
     legacy_failsafe_key,
 )
 from app.state._types import CacheEntry
@@ -56,7 +56,7 @@ class AlarmMixin:
         Returns a mapping of alarm_name -> alarm_data.
         """
         alarms: dict[str, dict[str, Any]] = {}
-        prefix = legacy_alarm_prefix(location, cluster)
+        prefix = alarm_prefix(location, cluster)
 
         # In-memory alarms
         async with self._lock:
@@ -94,12 +94,12 @@ class AlarmMixin:
         self, location: str, cluster: str, alarm_name: str, severity: str, message: str
     ) -> bool:
         """Write or update an alarm in-memory (no TTL) and persist to Redis."""
-        alarm_key = legacy_alarm_key(location, cluster, alarm_name)
+        key = alarm_key(location, cluster, alarm_name)
         timestamp_ms = int(datetime.now().timestamp() * 1000)
 
         try:
             async with self._lock:
-                existing = self._alarms_cache.get(alarm_key)
+                existing = self._alarms_cache.get(key)
                 since = (
                     existing.value.get("since")
                     if existing and isinstance(existing.value, dict)
@@ -112,12 +112,12 @@ class AlarmMixin:
                     "since": since,
                     "acknowledged": False,
                 }
-                self._alarms_cache[alarm_key] = CacheEntry(value=alarm, expires_at=float("inf"))
+                self._alarms_cache[key] = CacheEntry(value=alarm, expires_at=float("inf"))
 
-            # Persist to Redis without TTL (alarm persists until acknowledged/cleared)
+            # Persist to Redis without TTL (alarm persists until acknowledged/cleared).
             if self._redis_enabled and self._redis_client:
                 try:
-                    await asyncio.to_thread(self._redis_client.set, alarm_key, json.dumps(alarm))
+                    await asyncio.to_thread(self._redis_client.set, key, json.dumps(alarm))
                 except Exception as e:
                     logger.warning(f"StateManager: Failed to write alarm to Redis: {e}")
 
@@ -130,45 +130,43 @@ class AlarmMixin:
 
             return True
         except Exception as e:
-            logger.warning(f"StateManager: Failed to write alarm {alarm_key}: {e}")
+            logger.warning(f"StateManager: Failed to write alarm {key}: {e}")
             return False
 
     async def acknowledge_alarm(self, location: str, cluster: str, alarm_name: str) -> bool:
-        alarm_key = legacy_alarm_key(location, cluster, alarm_name)
+        key = alarm_key(location, cluster, alarm_name)
         try:
             updated = False
             # Update in-memory cache first
             async with self._lock:
-                if alarm_key in self._alarms_cache:
+                if key in self._alarms_cache:
                     alarm = (
-                        dict(self._alarms_cache[alarm_key].value)
-                        if isinstance(self._alarms_cache[alarm_key].value, dict)
+                        dict(self._alarms_cache[key].value)
+                        if isinstance(self._alarms_cache[key].value, dict)
                         else {}
                     )
                     alarm["acknowledged"] = True
-                    self._alarms_cache[alarm_key] = CacheEntry(value=alarm, expires_at=float("inf"))
+                    self._alarms_cache[key] = CacheEntry(value=alarm, expires_at=float("inf"))
                     updated = True
                     data = alarm
                 else:
                     data = None
 
             if updated and data is not None and self._redis_enabled and self._redis_client:
-                await asyncio.to_thread(self._redis_client.set, alarm_key, json.dumps(data))
+                await asyncio.to_thread(self._redis_client.set, key, json.dumps(data))
                 logger.info(f"Alarm acknowledged: {location}/{cluster}/{alarm_name}")
                 return True
 
             # Fallback: try Redis directly
             if self._redis_enabled and self._redis_client:
-                raw = await asyncio.to_thread(self._redis_client.get, alarm_key)
+                raw = await asyncio.to_thread(self._redis_client.get, key)
                 if raw:
                     alarm = json.loads(raw.decode() if isinstance(raw, (bytes, bytearray)) else raw)
                     alarm["acknowledged"] = True
-                    await asyncio.to_thread(self._redis_client.set, alarm_key, json.dumps(alarm))
+                    await asyncio.to_thread(self._redis_client.set, key, json.dumps(alarm))
                     # Update in-memory cache if present
                     async with self._lock:
-                        self._alarms_cache[alarm_key] = CacheEntry(
-                            value=alarm, expires_at=float("inf")
-                        )
+                        self._alarms_cache[key] = CacheEntry(value=alarm, expires_at=float("inf"))
                     logger.info(f"Alarm acknowledged (Redis): {location}/{cluster}/{alarm_name}")
                     return True
             return False
@@ -177,32 +175,32 @@ class AlarmMixin:
             return False
 
     async def clear_alarm(self, location: str, cluster: str, alarm_name: str) -> bool:
-        alarm_key = legacy_alarm_key(location, cluster, alarm_name)
+        key = alarm_key(location, cluster, alarm_name)
         try:
             cleared = False
             async with self._lock:
-                if alarm_key in self._alarms_cache:
+                if key in self._alarms_cache:
                     alarm = (
-                        dict(self._alarms_cache[alarm_key].value)
-                        if isinstance(self._alarms_cache[alarm_key].value, dict)
+                        dict(self._alarms_cache[key].value)
+                        if isinstance(self._alarms_cache[key].value, dict)
                         else {}
                     )
                     alarm["active"] = False
-                    self._alarms_cache[alarm_key] = CacheEntry(value=alarm, expires_at=float("inf"))
+                    self._alarms_cache[key] = CacheEntry(value=alarm, expires_at=float("inf"))
                     cleared = True
             if cleared:
                 if self._redis_enabled and self._redis_client:
-                    await asyncio.to_thread(self._redis_client.set, alarm_key, json.dumps(alarm))
+                    await asyncio.to_thread(self._redis_client.set, key, json.dumps(alarm))
                 logger.info(f"Alarm cleared: {location}/{cluster}/{alarm_name}")
                 return True
 
             # Fallback: try reading and clearing in Redis
             if self._redis_enabled and self._redis_client:
-                raw = await asyncio.to_thread(self._redis_client.get, alarm_key)
+                raw = await asyncio.to_thread(self._redis_client.get, key)
                 if raw:
                     alarm = json.loads(raw.decode() if isinstance(raw, (bytes, bytearray)) else raw)
                     alarm["active"] = False
-                    await asyncio.to_thread(self._redis_client.set, alarm_key, json.dumps(alarm))
+                    await asyncio.to_thread(self._redis_client.set, key, json.dumps(alarm))
                     logger.info(f"Alarm cleared (Redis): {location}/{cluster}/{alarm_name}")
                     return True
             return False

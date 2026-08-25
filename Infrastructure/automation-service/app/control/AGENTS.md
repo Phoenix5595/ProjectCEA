@@ -1,93 +1,50 @@
-# CONTROL LAYER
+# Control Layer
 
-## OVERVIEW
+Deterministic 1-second control loop for climate, lights, and hardware outputs.
 
-Deterministic 2-second control loop: Read sensors → Evaluate rules → Run PID → Command actuators. Safety supervisor overrides all.
-
-## STRUCTURE
+## Package layout
 
 ```
 control/
-├── control_engine.py      # Main loop orchestration (665 lines)
-├── scheduler.py           # Mode transitions, setpoint calculation (756 lines)
-├── device_processor.py    # Device state management
-├── relay_manager.py       # MCP23017 relay control
-├── pid_controller.py      # PID implementation
-└── vpd_controller.py      # VPD calculation
+├── control_engine.py              # Main loop orchestration
+├── scheduler/                     # Time-based projections
+│   ├── __init__.py                # Scheduler and install_snapshot()
+│   ├── photoperiod.py             # Sun/moon resolution
+│   ├── light_intensity.py         # (device_id, mode_id) anchors
+│   ├── light_programs.py          # Supplemental / override programs
+│   └── schedules.py               # Non-light DAY/NIGHT rows
+├── device_processor.py            # Per-device control dispatch
+├── device_controller/             # Device-type controllers
+│   ├── binary_device.py
+│   ├── dimmable_light.py
+│   ├── rules.py
+│   └── vpd.py
+├── relay_manager.py               # MCP23017 command projection
+├── relay_board_state_manager.py   # Observed board state sampling
+├── pid_controller.py              # PID implementation
+├── pid_controller_manager.py      # PID lifecycle
+├── vpd_controller.py              # VPD calculation
+├── vpd_cascade_controller.py      # VPD-driven actuator selection
+├── sensor_reader.py               # Redis state reads
+├── setpoint_manager.py            # Effective setpoint authority
+└── runtime_device_registry.py     # Immutable snapshot publisher
 ```
 
-## DEEP DIVE DOCS
+## One snapshot per tick
 
-| Topic | Document |
-|-------|----------|
-| Refactoring notes | `../../docs/control_engine_refactoring.md` |
+Every tick captures the current `RuntimeDeviceSnapshot` once. `Scheduler.bind_snapshot()` and `release_snapshot()` scope that snapshot to the tick via a context var, so no cross-version scheduling state leaks between ticks.
 
-## CONTROL LOOP (Every 2 seconds)
+## Scheduler.install_snapshot()
 
-```
-1. Read sensor values from Redis state keys
-2. Resolve active climate period from climate_periods (by time) and compute effective setpoints (ramps between periods)
-3. Load photoperiod bounds from room light schedule for is_sun / light intensity
-4. Run PID controllers (heating, cooling, CO2 only); VPD-only for humidifier/dehumidifier
-5. Apply safety constraints (failsafe supervisor)
-6. Write actuator commands
-```
+`Scheduler.install_snapshot(snapshot)` atomically installs all projections from one immutable snapshot: mode parameters, light intensities, light programs, and device lookup. The `_ready` flag blocks ticks until the complete snapshot is installed. Partial caches are never visible to the control loop.
 
-## KEY CLASSES
+## VPD, PID, and device authority
 
-| Class | File | Purpose |
-|-------|------|---------|
-| `ControlEngine` | `control_engine.py` | Main loop coordinator |
-| `Scheduler` | `scheduler.py` | Mode + setpoint calculation |
-| `PIDController` | `pid_controller.py` | Standard PID with anti-windup |
-| `PIDControllerManager` | `pid_controller_manager.py` | PID lifecycle, control-mode routing (heating, cooling, CO2) |
-| `VPDController` | `vpd_controller.py` | VPD calculation, target humidity from VPD |
-| `VPDCascadeController` | `vpd_cascade_controller.py` | VPD-driven actuator selection (vent/dehum/humidifier) |
-| `DeviceProcessor` | `device_processor.py` | Device loop, PID + VPD context |
-| `DeviceController` | `device_controller.py` | Device output (PID, VPD-only, rule-based) |
-| `RelayManager` | `relay_manager.py` | Hardware abstraction |
+- VPD is the master climate controller. Humidity and dehumidification derive from VPD error.
+- PID runs only for heating, cooling, and CO2.
+- Effective setpoints come from the active climate period (`climate_periods`) and the setpoint manager, not hardcoded values.
+- Light intensity resolves from `light_programs` first, then photoperiod plus `light_target_intensity`, then 0% outside sun. A missing intensity anchor falls back to `MINIMUM_LIGHT_INTENSITY = 10.0`.
 
-Light intensity comes from the scheduler (sun/moon schedules). Environmental setpoints come from the active **climate period** (`climate_periods`), not from a fixed four-mode `get_climate_mode` API (removed).
+## Blocking I/O and hardware bypass
 
-## SCHEDULER CACHES
-
-The `Scheduler` loads these caches atomically on startup. The `_ready` flag blocks the control loop until all caches are populated. All updates do atomic reference swaps (no partial state visible to the control loop).
-
-| Cache | Method | Source |
-|-------|--------|--------|
-| Mode parameters | `update_mode_parameters()` | `mode_parameters` table |
-| Light intensities | `update_light_intensities([{device_id, mode_id}: target_intensity])` | `light_target_intensity` table |
-| Light programs | `update_light_programs()` | `light_programs` table |
-| Device lookup | `update_device_lookup()` | `device_registry` table |
-
-## LIGHT INTENSITY RESOLUTION
-
-`get_schedule_intensity()` evaluates in order:
-
-1. **Light programs** — highest priority active program wins (priority DESC, created_at ASC tie-break).
-2. **Photoperiod + light_target_intensity cache** — if in sun period, look up `(device_id, mode_id)` in the intensity cache.
-3. **0.0** — if not in photoperiod (moon / dark period).
-
-Fallback: `MINIMUM_LIGHT_INTENSITY = 10.0` when no `light_target_intensity` row exists for the device/mode. Hardcoded safety default, not darkness.
-
-## LIGHT RAMP STATE
-
-Keyed by `(location, cluster, device_name)`. Intensity is computed from elapsed time since sun start or end (`time_since_start / ramp_up_duration`). On restart, the ramp resumes by recalculating from elapsed time. No stored intensity value is needed.
-
-## SAFETY LAYERS
-
-1. **Safety Supervisor**: Hard limits, sensor failure detection
-2. **Interlocks**: e.g., heater OFF when exhaust ON
-3. **Failsafe**: Last-known-good values, timeout detection
-
-## ANTI-PATTERNS (CRITICAL)
-
-| Never | Reason |
-|-------|--------|
-| Use `sleep()` or blocking calls | Kills deterministic timing |
-| Hardcode setpoints in code | Use database |
-| Direct hardware access | Bypasses interlocks + safety |
-| Module-level state | Use instance vars or Redis |
-| Read Redis Streams in loop | Streams = history, state keys = control |
-
-*Last updated: 2026-07-12*
+All hardware writes go through the relay manager and dimming drivers. Never use `sleep()`, blocking network calls, or direct I2C access inside the control loop. The loop delegates blocking work to `asyncio.to_thread` and relies on observed relay state for safety decisions.

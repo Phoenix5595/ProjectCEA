@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 
 from app.control.schedule_merge import merge_schedules_with_config
+from app.redis.schema import pid_key
 from shared.infra_logging import get_logger
 
 logger = get_logger(__name__)
@@ -97,7 +98,7 @@ class ConfigEventsMixin:
                         if state:
                             device_type = event.data.get("device_type") if event.data else None
                             if device_type:
-                                await state.delete(f"pid:parameters:{device_type}")
+                                await state.delete(pid_key(str(device_type)))
 
                     if event.event_type == ConfigEventType.SETPOINT_CHANGED:
                         # Invalidate climate period cache for this location/cluster

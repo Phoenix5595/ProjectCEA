@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 
 from app.alarm_manager import AlarmManager
 from app.control.control_engine import ControlEngine
@@ -136,9 +137,7 @@ class BackgroundTasks(
         for task in tasks:
             if task:
                 task.cancel()
-                try:
+                with contextlib.suppress(asyncio.CancelledError):
                     await task
-                except asyncio.CancelledError:
-                    pass
 
         logger.info("Background control loop and tasks stopped")

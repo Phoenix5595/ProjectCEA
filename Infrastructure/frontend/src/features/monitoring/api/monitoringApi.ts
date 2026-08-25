@@ -5,6 +5,7 @@ import {
   ControlMonitoringResponse,
   LiveSensorValue,
   MonitoringResponse,
+  ProjectionPublicationResponse,
 } from './contracts'
 
 /** Interim shared chart budget; T19 will tune panel-specific budgets. */
@@ -93,11 +94,9 @@ export class MonitoringApi {
 
   controlProjection(
     location: string,
-    start?: string,
-    end?: string,
     options?: MonitoringRequestOptions,
-  ): Promise<ControlMonitoringResponse> {
-    const path = `/api/monitoring/control/${encodeURIComponent(location)}/projection${buildQuery({ start, end })}`
-    return this.client.get(path, ControlMonitoringResponse, options)
+  ): Promise<ProjectionPublicationResponse> {
+    const path = `/api/monitoring/control/${encodeURIComponent(location)}/projection`
+    return this.client.get(path, ProjectionPublicationResponse, options)
   }
 }

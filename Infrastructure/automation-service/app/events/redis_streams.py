@@ -1,5 +1,7 @@
 import logging
 
+from shared.redis_keys import CONFIG_EVENTS_MAXLEN, CONFIG_EVENTS_STREAM
+
 try:
     # Redis asyncio client (redis-py >= 4.x)
     import redis.asyncio as aioredis  # type: ignore
@@ -18,7 +20,10 @@ class RedisStreamPublisher:
     """
 
     def __init__(
-        self, redis_url: str, stream: str = "cea:events:config", group: str = "cea:events:group"
+        self,
+        redis_url: str,
+        stream: str = CONFIG_EVENTS_STREAM,
+        group: str = "cea:events:group",
     ):
         self.redis_url = redis_url
         self.stream = stream
@@ -55,8 +60,13 @@ class RedisStreamPublisher:
             return
         try:
             mapping = {str(k): str(v) for k, v in event_data.items()}
-            # XADD <stream> * key value ...
-            await self._redis.xadd(self.stream, mapping)
+            # XADD <stream> * key value ... with bounded reconnect retention.
+            await self._redis.xadd(
+                self.stream,
+                mapping,
+                maxlen=CONFIG_EVENTS_MAXLEN,
+                approximate=True,
+            )
         except Exception as e:  # pragma: no cover
             # Do not raise to avoid blocking service startup; log and continue
             logger.warning("Failed to publish event to Redis stream '%s': %s", self.stream, e)

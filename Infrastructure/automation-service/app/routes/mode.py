@@ -145,12 +145,12 @@ async def get_all_modes(
     modes = {}
     try:
         assert automation_redis.redis_client is not None, "Redis client must be connected"
-        for key in automation_redis.redis_client.scan_iter(match="mode:*"):
-            # Parse key: mode:location:cluster
+        for key in automation_redis.redis_client.scan_iter(match="cea:mode:*"):
+            # Parse key: cea:mode:location:cluster
             parts = key.split(":")
-            if len(parts) >= 3:
-                location = parts[1]
-                cluster = parts[2]
+            if len(parts) >= 4:
+                location = parts[2]
+                cluster = parts[3]
                 mode = automation_redis.redis_client.get(key)
                 if mode:
                     modes[f"{location}:{cluster}"] = {

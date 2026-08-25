@@ -79,15 +79,20 @@ class SafetyLimitsGroup(BaseModel):
 
     @model_validator(mode="after")
     def check_ranges(self):
-        if self.min_temperature is not None and self.max_temperature is not None:
-            if self.min_temperature >= self.max_temperature:
-                raise ValueError("min_temperature must be < max_temperature")
-        if self.min_humidity is not None and self.max_humidity is not None:
-            if self.min_humidity >= self.max_humidity:
-                raise ValueError("min_humidity must be < max_humidity")
-        if self.min_co2 is not None and self.max_co2 is not None:
-            if self.min_co2 >= self.max_co2:
-                raise ValueError("min_co2 must be < max_co2")
+        if (
+            self.min_temperature is not None
+            and self.max_temperature is not None
+            and self.min_temperature >= self.max_temperature
+        ):
+            raise ValueError("min_temperature must be < max_temperature")
+        if (
+            self.min_humidity is not None
+            and self.max_humidity is not None
+            and self.min_humidity >= self.max_humidity
+        ):
+            raise ValueError("min_humidity must be < max_humidity")
+        if self.min_co2 is not None and self.max_co2 is not None and self.min_co2 >= self.max_co2:
+            raise ValueError("min_co2 must be < max_co2")
         return self
 
 

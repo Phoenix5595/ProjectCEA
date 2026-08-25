@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Final, Protocol
 
 import anyio
 
-from shared.monitoring_contracts import CurrentSnapshot
+from shared.monitoring_contracts import CurrentSnapshot, MonitoringPublication
+
+_DEFAULT_REDIS_TIMEOUT_SECONDS: Final = 1.0
 
 
 class CurrentPublicationWriter(Protocol):
@@ -30,10 +32,17 @@ class CurrentPublicationHealth:
 class CurrentPublicationPublisher:
     """Mutably retain one latest snapshot so control ticks never wait for Redis I/O."""
 
-    def __init__(self, location: str, writer: CurrentPublicationWriter) -> None:
+    def __init__(
+        self,
+        location: str,
+        writer: CurrentPublicationWriter,
+        redis_timeout_seconds: float = _DEFAULT_REDIS_TIMEOUT_SECONDS,
+    ) -> None:
         self._location: str = location
         self._writer: CurrentPublicationWriter = writer
+        self._redis_timeout_seconds: float = redis_timeout_seconds
         self._pending: CurrentSnapshot | None = None
+        self._latest: CurrentSnapshot | None = None
         self._replaced_snapshots: int = 0
         self._failed_publications: int = 0
 
@@ -46,11 +55,21 @@ class CurrentPublicationPublisher:
             failed_publications=self._failed_publications,
         )
 
-    def enqueue(self, snapshot: CurrentSnapshot) -> None:
+    @property
+    def latest(self) -> CurrentSnapshot | None:
+        """Return the latest observed snapshot for compatible future publication validation."""
+        return self._latest
+
+    def offer(self, snapshot: CurrentSnapshot) -> None:
         """Replace any stale handoff synchronously, without performing I/O."""
         if self._pending is not None:
             self._replaced_snapshots += 1
         self._pending = snapshot
+        self._latest = snapshot
+
+    def enqueue(self, snapshot: CurrentSnapshot) -> None:
+        """Retain the legacy handoff name for existing publication callers."""
+        self.offer(snapshot)
 
     async def flush_once(self) -> bool | None:
         """Write one handoff, reporting publication failure without affecting control."""
@@ -58,13 +77,19 @@ class CurrentPublicationPublisher:
         if snapshot is None:
             return None
         self._pending = None
+        _ = MonitoringPublication(current=snapshot, future=())
         try:
-            published = await anyio.to_thread.run_sync(
-                self._writer.write_current,
-                self._location,
-                snapshot,
-            )
+            with anyio.move_on_after(self._redis_timeout_seconds) as scope:
+                published = await anyio.to_thread.run_sync(
+                    self._writer.write_current,
+                    self._location,
+                    snapshot,
+                    cancellable=True,
+                )
         except (ConnectionError, OSError, TimeoutError):
+            self._failed_publications += 1
+            return False
+        if scope.cancel_called:
             self._failed_publications += 1
             return False
         if not published:

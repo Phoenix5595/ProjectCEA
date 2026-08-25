@@ -128,17 +128,14 @@ async def get_ramp_states(
         redis_client: Any = db.automation_redis
         if redis_client and redis_client.redis_enabled and redis_client.redis_client:
             # Pattern for climate ramps
-            pattern = f"ramp:{location}:{cluster}:*"
+            pattern = f"cea:ramp:{location}:{cluster}:*"
             # Cast to Any to avoid LSP confusion about sync/async redis-py stubs
             keys = cast(Any, redis_client.redis_client.keys(pattern))
             if keys:
                 for key in keys:
-                    if isinstance(key, bytes):
-                        key_str = key.decode()
-                    else:
-                        key_str = str(key)
+                    key_str = key.decode() if isinstance(key, bytes) else str(key)
 
-                    parts = key_str.split(":")
+                    parts = key_str.replace("cea:", "").split(":")
                     if len(parts) >= 4:
                         setpoint_type = parts[3]
                         state = redis_client.read_ramp_state(location, cluster, setpoint_type)

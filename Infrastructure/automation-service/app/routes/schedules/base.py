@@ -99,11 +99,10 @@ async def create_schedule(
             )
         schedule.mode = schedule.mode.upper()
 
-    if schedule.target_intensity is not None:
-        if schedule.target_intensity < 0 or schedule.target_intensity > 100:
-            raise HTTPException(
-                status_code=400, detail="target_intensity must be between 0 and 100"
-            )
+    if schedule.target_intensity is not None and (
+        schedule.target_intensity < 0 or schedule.target_intensity > 100
+    ):
+        raise HTTPException(status_code=400, detail="target_intensity must be between 0 and 100")
 
     if schedule.ramp_up_duration is not None and schedule.ramp_up_duration < 0:
         raise HTTPException(status_code=400, detail="ramp_up_duration must be >= 0")
@@ -159,11 +158,10 @@ async def update_schedule(
             )
         schedule.mode = schedule.mode.upper()
 
-    if schedule.target_intensity is not None:
-        if schedule.target_intensity < 0 or schedule.target_intensity > 100:
-            raise HTTPException(
-                status_code=400, detail="target_intensity must be between 0 and 100"
-            )
+    if schedule.target_intensity is not None and (
+        schedule.target_intensity < 0 or schedule.target_intensity > 100
+    ):
+        raise HTTPException(status_code=400, detail="target_intensity must be between 0 and 100")
 
     if schedule.ramp_up_duration is not None and schedule.ramp_up_duration < 0:
         raise HTTPException(status_code=400, detail="ramp_up_duration must be >= 0")

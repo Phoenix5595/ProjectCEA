@@ -10,6 +10,7 @@ import {
   MonitoringWarning,
   Phase,
   ProjectionMetadata,
+  Quality,
   SourceCursor,
   TimelineProvenance,
   utcDate,
@@ -135,6 +136,41 @@ export const PidTimelineSeries = z.object({
   warnings: z.array(MonitoringWarning),
 })
 export type PidTimelineSeries = z.infer<typeof PidTimelineSeries>
+
+/** Version echoed by the atomic current/future publication pair. */
+export const PublicationVersion = z.object({
+  contract_version: z.literal(1),
+  config_version: z.number().int().positive(),
+  revision: z.string().regex(/^[0-9a-f]{7,64}$/),
+})
+export type PublicationVersion = z.infer<typeof PublicationVersion>
+
+/** One estimated or unavailable value over a canonical future interval. */
+export const ProjectionSeriesPoint = z.object({
+  series_id: z.object({ value: z.string().min(1) }),
+  value: z.number().nullable(),
+  quality: Quality,
+  valid_from: utcDate,
+  valid_until: utcDate,
+})
+export type ProjectionSeriesPoint = z.infer<typeof ProjectionSeriesPoint>
+
+/** One validated interval from the automation-owned future publication. */
+export const FutureProjection = z.object({
+  version: PublicationVersion,
+  generated_at: utcDate,
+  valid_from: utcDate,
+  valid_until: utcDate,
+  series: z.array(ProjectionSeriesPoint),
+})
+export type FutureProjection = z.infer<typeof FutureProjection>
+
+/** Read-only route response for canonical future projections. */
+export const ProjectionPublicationResponse = z.object({
+  quality: Quality,
+  value: z.array(FutureProjection),
+})
+export type ProjectionPublicationResponse = z.infer<typeof ProjectionPublicationResponse>
 
 /** History envelope containing immutable recorded and projected timelines. */
 export const ControlMonitoringResponse = z.object({

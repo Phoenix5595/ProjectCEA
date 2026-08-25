@@ -66,9 +66,8 @@ class SyncConnectionTest(BaseModel):
     @validator("caldav_base_url")
     @classmethod
     def require_https(cls, v: str) -> str:
-        if v.startswith("http://"):
-            if os.getenv("CALDAV_ALLOW_HTTP_TEST", "").lower() != "true":
-                raise ValueError(
-                    "CALDAV connection test requires HTTPS. Set CALDAV_ALLOW_HTTP_TEST=true for dev only."
-                )
+        if v.startswith("http://") and os.getenv("CALDAV_ALLOW_HTTP_TEST", "").lower() != "true":
+            raise ValueError(
+                "CALDAV connection test requires HTTPS. Set CALDAV_ALLOW_HTTP_TEST=true for dev only."
+            )
         return v

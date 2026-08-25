@@ -61,8 +61,7 @@ export class MonitoringLivePoller {
     if (this.projectionInFlight || !this.hooks.isActive()) return
     this.projectionInFlight = true
     try {
-      const { start, end } = this.rangeBounds()
-      const resp = await this.monitoringApi.controlProjection(this.location, iso(start), iso(end))
+      const resp = await this.monitoringApi.controlProjection(this.location)
       if (!this.hooks.isActive() || this.hooks.isPaused()) return
       const { data, changed } = applyProjection(this.hooks.read().data, resp)
       if (changed) this.hooks.applyData(data)

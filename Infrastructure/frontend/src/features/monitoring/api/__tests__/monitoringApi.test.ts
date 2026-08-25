@@ -104,30 +104,22 @@ const controlPayload = {
 }
 
 const controlProjectionPayload = {
-  ...controlPayload,
-  climate: [
+  quality: 'estimated',
+  value: [
     {
-      name: 'Heating Setpoint',
-      provenance: { origin: 'projected', quality: 'estimated', is_aggregated: false },
-      projection: {
-        projection_revision: 'rev-1',
-        anchor_fingerprint: 'fp-1',
-        anchor_observed_at: '2026-08-02T12:00:00.000Z',
-        anchor_quality: 'exact',
-        anchor_valid_until: '2026-08-02T13:00:00.000Z',
-      },
-      warnings: [],
-      points: [
+      version: { contract_version: 1, config_version: 7, revision: '8f8c3db' },
+      generated_at: '2026-08-02T12:00:00.000Z',
+      valid_from: '2026-08-02T12:00:00.000Z',
+      valid_until: '2026-08-02T13:00:00.000Z',
+      series: [
         {
-          timestamp: '2026-08-02T12:00:00.000Z',
+          series_id: { value: 'climate.heating_setpoint_target' },
           value: 22,
-          nominal_value: 22,
-          metric: 'heating_setpoint',
-          provenance: { origin: 'projected', quality: 'estimated', is_aggregated: false },
+          quality: 'estimated',
+          valid_from: '2026-08-02T12:00:00.000Z',
+          valid_until: '2026-08-02T13:00:00.000Z',
         },
       ],
-      steps: [],
-      linear: [],
     },
   ],
 }
@@ -171,9 +163,9 @@ describe('monitoring api boundary', () => {
 
     fetchMock.mockResolvedValueOnce(jsonResponse(controlProjectionPayload))
     const projection = await api.controlProjection('Flower Room')
-    expect(projection.climate[0].provenance.origin).toBe('projected')
-    expect(projection.climate[0].projection?.projection_revision).toBe('rev-1')
-    expect(projection.climate[0].projection?.anchor_observed_at).toBeInstanceOf(Date)
+    expect(projection.quality).toBe('estimated')
+    expect(projection.value[0].version.revision).toBe('8f8c3db')
+    expect(projection.value[0].series[0].valid_from).toBeInstanceOf(Date)
 
   })
 

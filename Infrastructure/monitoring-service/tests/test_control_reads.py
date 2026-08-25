@@ -167,6 +167,9 @@ class FakeRedis:
 
 @final
 class FakeControlReads:
+    def __init__(self, publication_values: list[str | None] | None = None) -> None:
+        self._publication_values = publication_values or [_current(7), _future_timeline()]
+
     async def history(
         self, location: str, history_range: ControlHistoryRange, max_points: int | None = None
     ) -> ControlHistoryEnvelope:
@@ -175,7 +178,7 @@ class FakeControlReads:
 
     async def publications(self, location: str) -> ControlPublicationResponse:
         return await ControlPublicationRepository(
-            FakeRedis([_current(7), _future(7)]), clock=lambda: NOW
+            FakeRedis(self._publication_values), clock=lambda: NOW
         ).read(location)
 
 
@@ -185,6 +188,14 @@ def _current(version: int) -> str:
 
 def _future(version: int) -> str:
     return f"""{{"version":{{"contract_version":1,"config_version":{version},"revision":"8f8c3db"}},"generated_at":"2026-08-20T12:00:00Z","valid_from":"2026-08-20T12:05:00Z","valid_until":"2026-08-20T13:00:00Z","series":[]}}"""
+
+
+def _future_timeline() -> str:
+    first = _shared_future(NOW + timedelta(minutes=30), NOW).model_dump(mode="json")
+    second = _shared_future(NOW + timedelta(hours=1), NOW + timedelta(minutes=30)).model_dump(
+        mode="json"
+    )
+    return json.dumps([first, second])
 
 
 @pytest.mark.anyio
@@ -264,13 +275,13 @@ async def test_control_routes_expose_history_current_and_projection_without_tail
         current = await client.get("/api/monitoring/control/Veg%20Room/current")
         projection = await client.get("/api/monitoring/control/Veg%20Room/projection")
 
-    # Then: all reads are available without the legacy paged-tail API.
+    # Then: history stays independent while the projection route exposes the canonical timeline.
     assert history.status_code == 200
     assert current.json()["quality"] == "exact"
     projection_payload = projection.json()
-    assert projection_payload["range"]["start"] <= projection_payload["range"]["end"]
-    assert projection_payload["climate"] == []
-    assert projection_payload["pid"] == []
+    assert projection_payload["quality"] == "estimated"
+    assert len(projection_payload["value"]) == 2
+    assert projection_payload["value"][0]["series"][0]["value"] == 21.5
     assert all("cursor" not in route.path for route in app.routes if isinstance(route, APIRoute))
 
 
@@ -333,6 +344,35 @@ def _future_window_json(version: int, valid_from: str, valid_until: str) -> str:
     payload["valid_from"] = valid_from
     payload["valid_until"] = valid_until
     return json.dumps(payload)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("future", "expected_quality"),
+    [
+        (_future_window_json(7, "2026-08-20T10:00:00Z", "2026-08-20T11:00:00Z"), "unavailable"),
+        (_future(8), "unavailable"),
+    ],
+)
+async def test_projection_route_reports_unavailable_without_affecting_history(
+    future: str, expected_quality: str
+) -> None:
+    # Given: recorded history and a future publication that is expired or version-mismatched.
+    app = create_app(control_reads=FakeControlReads([_current(7), future]))
+
+    # When: the independent history and projection routes are read.
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        history = await client.get(
+            "/api/monitoring/control/Veg%20Room/history",
+            params={"start": "2026-08-20T11:00:00Z", "end": "2026-08-20T12:00:00Z"},
+        )
+        projection = await client.get("/api/monitoring/control/Veg%20Room/projection")
+
+    # Then: unavailable publication facts never clear or rewrite recorded history.
+    assert history.status_code == 200
+    assert projection.json() == {"quality": expected_quality, "value": []}
 
 
 @pytest.mark.anyio

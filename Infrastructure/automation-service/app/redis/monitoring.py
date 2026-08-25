@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import json
 from typing import Protocol
 
 import redis
 
-from shared.monitoring_contracts import CurrentSnapshot
-from shared.redis_keys import monitoring_current_publication_key
+from shared.monitoring_contracts import CurrentSnapshot, FutureProjection
+from shared.redis_keys import monitoring_current_publication_key, monitoring_future_publication_key
 
 
 class RedisSetter(Protocol):
@@ -30,6 +31,19 @@ class RedisCurrentPublicationWriter:
             return self._redis_client.set(
                 monitoring_current_publication_key(location),
                 snapshot.model_dump_json(),
+            )
+        except redis.RedisError:
+            return False
+
+    def write_future(self, location: str, projections: tuple[FutureProjection, ...]) -> bool:
+        """Atomically replace one room's complete ordered future timeline."""
+        try:
+            return self._redis_client.set(
+                monitoring_future_publication_key(location),
+                json.dumps(
+                    [projection.model_dump(mode="json") for projection in projections],
+                    separators=(",", ":"),
+                ),
             )
         except redis.RedisError:
             return False

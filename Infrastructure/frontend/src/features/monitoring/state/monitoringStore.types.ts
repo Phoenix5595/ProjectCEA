@@ -43,6 +43,7 @@ export interface StoreData {
   photoperiod: PhotoperiodTimelinePoint[]
   cursors: SourceCursor[]
   projectionRevision: string | null
+  projectionVersion: number | null
   anchorFingerprint: string | null
   anchorQuality: Quality | null
   anchorValidUntil: Date | null

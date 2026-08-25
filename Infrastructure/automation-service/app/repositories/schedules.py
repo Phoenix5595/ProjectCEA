@@ -284,10 +284,12 @@ class ScheduleRepository(BaseRepository):
 
                 for key, value in kwargs.items():
                     if value is not None and key not in ("expected_version",):
-                        if key == "start_time" and isinstance(value, str):
-                            parts = [int(p) for p in value.split(":")]
-                            value = dt_time(parts[0], parts[1])
-                        elif key == "end_time" and isinstance(value, str):
+                        if (
+                            key == "start_time"
+                            and isinstance(value, str)
+                            or key == "end_time"
+                            and isinstance(value, str)
+                        ):
                             parts = [int(p) for p in value.split(":")]
                             value = dt_time(parts[0], parts[1])
                         updates.append(f"{key} = ${param_idx}")
