@@ -105,7 +105,7 @@ JOIN node_patterns ON sensor.name LIKE node_patterns.pattern
 WHERE room.name = $1 AND node_patterns.pattern <> ''
   AND c.bucket >= $6 AND c.bucket < $7
    AND c.bucket <= $9::timestamptz
-GROUP BY node_patterns.node, bucket, sensor.name, sensor.unit, sensor.data_type
+GROUP BY node_patterns.node, time_bucket($8::interval, c.bucket, $6::timestamptz), sensor.name, sensor.unit, sensor.data_type
 ORDER BY node_patterns.node, bucket, sensor.name
 """
 )
