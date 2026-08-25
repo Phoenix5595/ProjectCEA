@@ -140,8 +140,8 @@ export type PidTimelineSeries = z.infer<typeof PidTimelineSeries>
 export const ControlMonitoringResponse = z.object({
   range: MonitoringRange,
   runtime_snapshot_version: z.number().int(),
-  requested_max_points: z.number().int().min(10).max(100_000).optional(),
-  interval_seconds: z.number().int().positive().optional(),
+  requested_max_points: z.number().int().min(10).max(100_000).nullable().optional(),
+  interval_seconds: z.number().int().positive().nullable().optional(),
   cursors: z.array(SourceCursor),
   flush_health: z.array(FlushHealth),
   climate: z.array(ClimateTimelineSeries),

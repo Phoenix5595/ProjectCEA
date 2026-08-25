@@ -275,6 +275,27 @@ describe('monitoring api boundary', () => {
     expect(control.interval_seconds).toBe(600)
   })
 
+  it('parses control history when backend budget metadata is null or absent', async () => {
+    const fetchMock = vi.mocked(fetch)
+    const api = new MonitoringApi()
+
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        ...controlPayload,
+        requested_max_points: null,
+        interval_seconds: null,
+      }),
+    )
+    const nullable = await api.controlRange('Flower Room')
+    expect(nullable.requested_max_points).toBeNull()
+    expect(nullable.interval_seconds).toBeNull()
+
+    fetchMock.mockResolvedValueOnce(jsonResponse(controlPayload))
+    const absent = await api.controlRange('Flower Room')
+    expect(absent.requested_max_points).toBeUndefined()
+    expect(absent.interval_seconds).toBeUndefined()
+  })
+
   it('adds an immutable fixture context only to test requests', async () => {
     const fetchMock = vi.mocked(fetch)
     const api = new MonitoringApi({
