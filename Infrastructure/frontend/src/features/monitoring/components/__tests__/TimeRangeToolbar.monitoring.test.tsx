@@ -23,6 +23,8 @@ describe('TimeRangeToolbar monitoring status', () => {
             anchorQuality: 'exact',
             projectionRevision: 'revision-1',
             runtimeSnapshotVersion: 1,
+            lastGoodRangeAt: null,
+            rangeErrorAt: null,
             onRetry,
           }}
         />

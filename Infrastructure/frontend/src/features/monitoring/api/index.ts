@@ -8,4 +8,8 @@ export * from './contracts'
 export * from './errors'
 export { MonitoringClient, buildQuery, monitoringRequestContextFromSearchParams } from './client'
 export type { MonitoringRequestContext, MonitoringRequestOptions } from './client'
-export { MonitoringApi } from './monitoringApi'
+export {
+  CONTROL_HISTORY_MAX_POINTS,
+  MonitoringApi,
+  SENSOR_RANGE_MAX_POINTS,
+} from './monitoringApi'

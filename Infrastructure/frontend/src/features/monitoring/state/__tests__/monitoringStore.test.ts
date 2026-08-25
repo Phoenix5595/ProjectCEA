@@ -10,7 +10,7 @@ import { MonitoringStore } from '../monitoringStore'
 
 const T0 = '2026-08-02T12:00:00.000Z'
 
-function sensorRangeResponse(): MonitoringResponse {
+function sensorRangeResponse(average = 24.5): MonitoringResponse {
   return {
     metadata: {
       generated_at: new Date(T0),
@@ -27,7 +27,7 @@ function sensorRangeResponse(): MonitoringResponse {
         points: [
           {
             timestamp: new Date('2026-08-02T11:00:00.000Z'),
-            average: 24.5,
+            average,
             minimum: 24.1,
             maximum: 24.9,
             sample_count: 60,
@@ -47,10 +47,6 @@ function sensorRangeResponse(): MonitoringResponse {
       },
     ],
   }
-}
-
-function sensorStatsResponse(): MonitoringResponse {
-  return { ...sensorRangeResponse(), series: [] }
 }
 
 function climateSeries(points: { timestamp: Date; value: number }[]) {
@@ -132,9 +128,8 @@ function makeApi(): Mocked<MonitoringApi> {
   } as unknown as Mocked<MonitoringApi>
 }
 
-function healthyDefaults(api: Mocked<MonitoringApi>): void {
+  function healthyDefaults(api: Mocked<MonitoringApi>): void {
   api.sensorRange.mockResolvedValue(sensorRangeResponse())
-  api.sensorStats.mockResolvedValue(sensorStatsResponse())
   api.sensorLive.mockResolvedValue([
     { sensor: 'dry_bulb', value: 24.6, timestamp: new Date(T0) },
   ])
@@ -164,12 +159,28 @@ describe('monitoring store', () => {
 
     expect(api.controlRange).toHaveBeenCalledTimes(1)
     expect(api.sensorRange).toHaveBeenCalledTimes(1)
+    expect(api.sensorRange).toHaveBeenLastCalledWith(
+      'Flower Room',
+      expect.any(String),
+      expect.any(String),
+      2000,
+      { signal: expect.any(AbortSignal) },
+    )
+    expect(api.controlRange).toHaveBeenLastCalledWith(
+      'Flower Room',
+      expect.any(String),
+      expect.any(String),
+      1000,
+      { signal: expect.any(AbortSignal) },
+    )
     expect(api.controlProjection).toHaveBeenCalledTimes(1)
+    expect(api.sensorStats).not.toHaveBeenCalled()
+    expect(api.sensorRange.mock.calls.length + api.controlRange.mock.calls.length + api.controlProjection.mock.calls.length).toBe(3)
 
     await vi.advanceTimersByTimeAsync(60000)
 
     expect(api.sensorRange).toHaveBeenCalledTimes(1)
-    expect(api.sensorStats).toHaveBeenCalledTimes(1)
+    expect(api.sensorStats).not.toHaveBeenCalled()
     expect(api.controlProjection).toHaveBeenCalledTimes(1)
     expect(api.controlTail.mock.calls.length).toBeGreaterThanOrEqual(60)
 
@@ -177,6 +188,25 @@ describe('monitoring store', () => {
     expect(loc).toBe('Flower Room')
     const span = Date.parse(endArg as string) - Date.parse(startArg as string)
     expect(span).toBeLessThanOrEqual(122_000)
+    unsub()
+  })
+
+  it('reloads the three range sources when retrying an unchanged range', async () => {
+    const api = makeApi()
+    healthyDefaults(api)
+    const store = new MonitoringStore('Flower Room', api, {
+      now: () => new Date(),
+    })
+    const unsub = store.subscribe(() => {})
+    await vi.advanceTimersByTimeAsync(0)
+
+    store.retry()
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(api.sensorRange).toHaveBeenCalledTimes(2)
+    expect(api.controlRange).toHaveBeenCalledTimes(2)
+    expect(api.controlProjection).toHaveBeenCalledTimes(2)
+    expect(api.sensorStats).not.toHaveBeenCalled()
     unsub()
   })
 
@@ -361,14 +391,14 @@ describe('monitoring store', () => {
     await vi.advanceTimersByTimeAsync(0)
 
     expect(api.sensorRange).toHaveBeenCalledTimes(1)
-    expect(api.sensorStats).toHaveBeenCalledTimes(1)
+    expect(api.sensorStats).not.toHaveBeenCalled()
     const rangeFixture = controlResponse().range
     const fullSpan = rangeFixture.end.getTime() - rangeFixture.start.getTime()
 
     await vi.advanceTimersByTimeAsync(60000)
 
     expect(api.sensorRange).toHaveBeenCalledTimes(1)
-    expect(api.sensorStats).toHaveBeenCalledTimes(1)
+    expect(api.sensorStats).not.toHaveBeenCalled()
     expect(api.controlTail.mock.calls.length).toBeGreaterThan(0)
     for (const [, startArg, endArg] of api.controlTail.mock.calls) {
       const span = Date.parse(endArg as string) - Date.parse(startArg as string)
@@ -377,7 +407,7 @@ describe('monitoring store', () => {
     unsub()
   })
 
-  it('refetches range and statistics when live duration changes', async () => {
+  it('refetches range statistics when live duration changes', async () => {
     const api = makeApi()
     healthyDefaults(api)
     const store = new MonitoringStore('Flower Room', api, {
@@ -392,7 +422,7 @@ describe('monitoring store', () => {
     await vi.advanceTimersByTimeAsync(0)
 
     expect(api.sensorRange).toHaveBeenCalledTimes(2)
-    expect(api.sensorStats).toHaveBeenCalledTimes(2)
+    expect(api.sensorStats).not.toHaveBeenCalled()
     expect(api.controlRange.mock.calls.length).toBeGreaterThanOrEqual(2)
     unsub()
   })
@@ -420,7 +450,27 @@ describe('monitoring store', () => {
     unsub()
   })
 
-  it('prevents overlapping range loads', async () => {
+  it('keeps stale statistics with range error metadata when sensor range fails', async () => {
+    const api = makeApi()
+    healthyDefaults(api)
+    const store = new MonitoringStore('Flower Room', api, { now: () => new Date() })
+    const unsub = store.subscribe(() => {})
+    await vi.advanceTimersByTimeAsync(0)
+
+    api.sensorRange.mockRejectedValueOnce(new MonitoringHttpError('monitoring', 503, 'sensor range failed'))
+    store.setLiveRange(1800_000)
+    await vi.advanceTimersByTimeAsync(0)
+
+    const snapshot = store.getSnapshot()
+    expect(snapshot.data.statistics).toHaveLength(1)
+    expect(snapshot.errors).toContain('sensor range failed')
+    expect(snapshot.lastGoodRangeAt).toEqual(new Date(T0))
+    expect(snapshot.rangeErrorAt).toEqual(new Date(T0))
+    expect(api.sensorStats).not.toHaveBeenCalled()
+    unsub()
+  })
+
+  it('replaces overlapping range loads', async () => {
     const api = makeApi()
     healthyDefaults(api)
     let finishRange: (() => void) | undefined
@@ -439,13 +489,154 @@ describe('monitoring store', () => {
 
     store.setLiveRange(1800_000)
     await vi.advanceTimersByTimeAsync(0)
-    expect(api.sensorRange).toHaveBeenCalledTimes(1)
+    expect(api.sensorRange).toHaveBeenCalledTimes(2)
 
     finishRange?.()
     await vi.advanceTimersByTimeAsync(0)
     store.setLiveRange(900_000)
     await vi.advanceTimersByTimeAsync(0)
-    expect(api.sensorRange).toHaveBeenCalledTimes(2)
+    expect(api.sensorRange).toHaveBeenCalledTimes(3)
+    unsub()
+  })
+
+  it('aborts superseded live and fixed range loads so only the latest response applies', async () => {
+    const api = makeApi()
+    healthyDefaults(api)
+    const signals: AbortSignal[] = []
+    const resolveSensorRanges: Array<(value: MonitoringResponse) => void> = []
+    api.sensorRange.mockImplementation(
+      (_location, _start, _end, _maxPoints, options) =>
+        new Promise<MonitoringResponse>((resolve) => {
+          if (options?.signal !== undefined) signals.push(options.signal)
+          resolveSensorRanges.push(resolve)
+        }),
+    )
+    const store = new MonitoringStore('Flower Room', api, { now: () => new Date() })
+    const unsub = store.subscribe(() => {})
+    await vi.advanceTimersByTimeAsync(0)
+
+    store.setFixedRange(new Date('2026-08-02T10:00:00.000Z'), new Date('2026-08-02T11:00:00.000Z'))
+    store.setFixedRange(new Date('2026-08-02T09:00:00.000Z'), new Date('2026-08-02T10:00:00.000Z'))
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(api.sensorRange).toHaveBeenCalledTimes(3)
+    expect(signals).toHaveLength(3)
+    expect(signals[0]?.aborted).toBe(true)
+    expect(signals[1]?.aborted).toBe(true)
+    expect(signals[2]?.aborted).toBe(false)
+    expect(api.controlRange.mock.calls[2]?.[4]?.signal).toBe(signals[2])
+    expect(api.controlProjection.mock.calls[2]?.[3]?.signal).toBe(signals[2])
+
+    resolveSensorRanges[0]?.(sensorRangeResponse(10))
+    resolveSensorRanges[2]?.(sensorRangeResponse(30))
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(store.getSnapshot().data.series[0]?.points[0]?.average).toBe(30)
+    expect(store.getSnapshot().errors).toEqual([])
+    unsub()
+  })
+
+  it('aborts an outstanding range load when the last subscriber unsubscribes', async () => {
+    const api = makeApi()
+    healthyDefaults(api)
+    let signal: AbortSignal | undefined
+    api.sensorRange.mockImplementation(
+      (_location, _start, _end, _maxPoints, options) =>
+        new Promise<MonitoringResponse>(() => {
+          signal = options?.signal
+        }),
+    )
+    const store = new MonitoringStore('Flower Room', api, { now: () => new Date() })
+    const unsub = store.subscribe(() => {})
+    await vi.advanceTimersByTimeAsync(0)
+
+    unsub()
+
+    expect(signal?.aborted).toBe(true)
+  })
+
+  it('aborts an outstanding range load when the chart budget changes', async () => {
+    const api = makeApi()
+    healthyDefaults(api)
+    const signals: AbortSignal[] = []
+    api.sensorRange.mockImplementation(
+      (_location, _start, _end, _maxPoints, options) =>
+        new Promise<MonitoringResponse>(() => {
+          if (options?.signal !== undefined) signals.push(options.signal)
+        }),
+    )
+    const store = new MonitoringStore('Flower Room', api, { now: () => new Date() })
+    const unsub = store.subscribe(() => {})
+    await vi.advanceTimersByTimeAsync(0)
+
+    store.setRangeBudget(3000)
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(signals[0]?.aborted).toBe(true)
+    expect(api.sensorRange.mock.calls[1]?.[3]).toBe(3000)
+    expect(api.controlRange.mock.calls[1]?.[3]).toBe(3000)
+    unsub()
+  })
+
+  it('keeps fixed range bounds unchanged when chart resolution changes', async () => {
+    const api = makeApi()
+    healthyDefaults(api)
+    const store = new MonitoringStore('Flower Room', api, { now: () => new Date() })
+    const unsub = store.subscribe(() => {})
+    await vi.advanceTimersByTimeAsync(0)
+    const start = new Date('2026-08-02T10:00:00.000Z')
+    const end = new Date('2026-08-02T11:00:00.000Z')
+
+    store.setFixedRange(start, end)
+    await vi.advanceTimersByTimeAsync(0)
+    store.setRangeBudget(3000)
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(api.sensorRange.mock.calls.at(-1)?.slice(1, 3)).toEqual([start.toISOString(), end.toISOString()])
+    expect(api.controlRange.mock.calls.at(-1)?.slice(1, 3)).toEqual([start.toISOString(), end.toISOString()])
+    unsub()
+  })
+
+  it('slides live range bounds when chart resolution changes', async () => {
+    const api = makeApi()
+    healthyDefaults(api)
+    const store = new MonitoringStore('Flower Room', api, { now: () => new Date() })
+    const unsub = store.subscribe(() => {})
+    await vi.advanceTimersByTimeAsync(0)
+    const firstEnd = api.sensorRange.mock.calls[0]?.[2]
+
+    await vi.advanceTimersByTimeAsync(5_000)
+    store.setRangeBudget(3000)
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(api.sensorRange.mock.calls.at(-1)?.[2]).not.toBe(firstEnd)
+    unsub()
+  })
+
+  it('keeps last-good data and clears no errors during expected supersession', async () => {
+    const api = makeApi()
+    healthyDefaults(api)
+    const signals: AbortSignal[] = []
+    api.sensorRange
+      .mockReset()
+      .mockResolvedValueOnce(sensorRangeResponse(20))
+      .mockImplementation(
+        (_location, _start, _end, _maxPoints, options) =>
+          new Promise<MonitoringResponse>(() => {
+            if (options?.signal !== undefined) signals.push(options.signal)
+          }),
+      )
+    const store = new MonitoringStore('Flower Room', api, { now: () => new Date() })
+    const unsub = store.subscribe(() => {})
+    await vi.advanceTimersByTimeAsync(0)
+
+    store.setLiveRange(1800_000)
+    store.setFixedRange(new Date('2026-08-02T10:00:00.000Z'), new Date('2026-08-02T11:00:00.000Z'))
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(signals[0]?.aborted).toBe(true)
+    expect(store.getSnapshot().data.series[0]?.points[0]?.average).toBe(20)
+    expect(store.getSnapshot().errors).toEqual([])
     unsub()
   })
 

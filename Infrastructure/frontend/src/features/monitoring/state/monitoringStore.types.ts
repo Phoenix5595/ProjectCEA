@@ -59,6 +59,8 @@ export interface StoreState {
   tailLoading: boolean
   reconciling: boolean
   errors: string[]
+  lastGoodRangeAt: Date | null
+  rangeErrorAt: Date | null
 }
 
 /** Construction options for `MonitoringStore`. */

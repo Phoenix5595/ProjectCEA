@@ -9,12 +9,13 @@
  * instances or ResizeObservers.
  */
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
-import React from 'react'
+import { act, render, screen, fireEvent } from '@testing-library/react'
+import React, { useEffect, useRef } from 'react'
 import type uPlot from 'uplot'
 import { ThemeProvider, useTheme } from '../../../../contexts/ThemeContext'
 import type { AlignedData } from '../../data'
 import { seriesKey } from '../../data/alignSeries.types'
+import { createMonitoringChartFeed } from '../MonitoringChartFeed'
 import { UPlotChart } from '../UPlotChart'
 
 const { MockUPlot, instances } = vi.hoisted(() => {
@@ -51,10 +52,12 @@ vi.mock('uplot', () => ({ default: MockUPlot }))
 
 class MockResizeObserver {
   static instances: MockResizeObserver[] = []
+  callback: ResizeObserverCallback
   observe = vi.fn()
   disconnect = vi.fn()
   unobserve = vi.fn()
-  constructor(_cb: ResizeObserverCallback) {
+  constructor(cb: ResizeObserverCallback) {
+    this.callback = cb
     MockResizeObserver.instances.push(this)
   }
 }
@@ -86,6 +89,8 @@ function toUPlot(data: AlignedData): uPlot.AlignedData {
   return [data.x, ...data.series.map((s) => s.y)]
 }
 
+const TEST_RANGE = { kind: 'live', duration: 3_600_000 } as const
+
 function Harness({
   data,
   onZoom,
@@ -94,9 +99,15 @@ function Harness({
   onZoom?: (range: { start: Date; end: Date }) => void
 }) {
   const { setTheme } = useTheme()
+  const feedRef = useRef<ReturnType<typeof createMonitoringChartFeed> | null>(null)
+  if (feedRef.current === null) feedRef.current = createMonitoringChartFeed(data, TEST_RANGE)
+  const feed = feedRef.current
+  useEffect(() => {
+    feed.publish(data, TEST_RANGE)
+  }, [data, feed])
   return (
     <>
-      <UPlotChart data={data} onZoom={onZoom} />
+      <UPlotChart feed={feed} onZoom={onZoom} />
       <button onClick={() => setTheme('control-room')}>switch</button>
     </>
   )
@@ -155,22 +166,18 @@ describe('UPlotChart lifecycle', () => {
 
     const { unmount } = render(
       <React.StrictMode>
-        <ThemeProvider>
-          <UPlotChart data={data} />
+          <ThemeProvider>
+            <Harness data={data} />
         </ThemeProvider>
       </React.StrictMode>,
     )
 
-    // StrictMode double-mounts: two plots created, the first already destroyed.
-    expect(instances).toHaveLength(2)
-    expect(instances[0].destroy).toHaveBeenCalled()
-    expect(instances[1].destroy).not.toHaveBeenCalled()
+    expect(instances).toHaveLength(1)
+    expect(instances[0].destroy).not.toHaveBeenCalled()
 
     unmount()
 
-    // After unmount every created plot is destroyed.
     expect(instances[0].destroy).toHaveBeenCalled()
-    expect(instances[1].destroy).toHaveBeenCalled()
 
     // Every ResizeObserver created is disconnected.
     const observers = MockResizeObserver.instances
@@ -186,11 +193,89 @@ describe('UPlotChart lifecycle', () => {
 
     render(
       <ThemeProvider>
-        <UPlotChart data={data} />
+        <Harness data={data} />
       </ThemeProvider>,
     )
 
     expect(screen.getAllByRole('button', { name: 'Series 0' })).toHaveLength(1)
     expect(screen.queryByRole('button', { name: 'Duplicate series' })).toBeNull()
+  })
+
+  it('draws 120 live feed revisions without rendering its parent or recreating uPlot', () => {
+    const feed = createMonitoringChartFeed(makeData([1000, 2000, 3000], [[20, 21, 22]]), TEST_RANGE)
+    let parentRenders = 0
+    function CountedParent() {
+      parentRenders += 1
+      return <UPlotChart feed={feed} />
+    }
+
+    const { unmount } = render(
+      <ThemeProvider>
+        <CountedParent />
+      </ThemeProvider>,
+    )
+    const plot = instances[0]
+    plot.setData.mockClear()
+
+    act(() => {
+      for (let tick = 0; tick < 120; tick += 1) {
+        feed.publish(makeData([1000, 2000, 3000], [[20, 21, tick]]), TEST_RANGE)
+      }
+    })
+
+    expect(parentRenders).toBe(1)
+    expect(instances).toHaveLength(1)
+    expect(plot.setData).toHaveBeenCalledTimes(120)
+    expect(plot.setData).toHaveBeenLastCalledWith(toUPlot(makeData([1000, 2000, 3000], [[20, 21, 119]])), false)
+
+    unmount()
+    plot.setData.mockClear()
+    act(() => feed.publish(makeData([1000, 2000, 3000], [[20, 21, 120]]), TEST_RANGE))
+    expect(plot.setData).not.toHaveBeenCalled()
+  })
+
+  it('recreates exactly once for series-count and range structural revisions', () => {
+    const data = makeData([1000, 2000, 3000], [[20, 21, 22]])
+    const feed = createMonitoringChartFeed(data, TEST_RANGE)
+    render(
+      <ThemeProvider>
+        <UPlotChart feed={feed} />
+      </ThemeProvider>,
+    )
+
+    act(() => feed.publish(makeData([1000, 2000, 3000], [[20, 21, 22], [30, 31, 32]]), TEST_RANGE))
+    expect(instances).toHaveLength(2)
+    expect(instances[0]?.destroy).toHaveBeenCalledTimes(1)
+
+    const fixedRange = { kind: 'fixed', start: new Date(1000), end: new Date(3000) } as const
+    act(() => feed.publish(makeData([1000, 2000, 3000], [[20, 21, 22], [30, 31, 32]]), fixedRange))
+    expect(instances).toHaveLength(3)
+    expect(instances[1]?.destroy).toHaveBeenCalledTimes(1)
+  })
+
+  it('coalesces a resize storm into one handling per animation frame', () => {
+    const data = makeData([1000, 2000, 3000], [[20, 21, 22]])
+    const animationFrames: Array<(timestamp: number) => void> = []
+    vi.stubGlobal('requestAnimationFrame', (callback: (timestamp: number) => void) => {
+      animationFrames.push(callback)
+      return animationFrames.length
+    })
+    vi.stubGlobal('cancelAnimationFrame', () => undefined)
+
+    render(
+      <ThemeProvider>
+        <Harness data={data} />
+      </ThemeProvider>,
+    )
+
+    const observer = MockResizeObserver.instances[0]
+    const plot = instances[0]
+    expect(observer).toBeDefined()
+    expect(plot).toBeDefined()
+    for (let index = 0; index < 10; index++) observer?.callback([], observer)
+
+    expect(plot?.setSize).not.toHaveBeenCalled()
+    animationFrames[0]?.(0)
+    expect(plot?.setSize).toHaveBeenCalledTimes(1)
   })
 })

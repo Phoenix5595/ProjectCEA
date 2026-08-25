@@ -14,6 +14,7 @@ import { seriesKey } from '../../data/alignSeries.types'
 import { flowerManifest } from '../../config/flowerManifest'
 import { vegManifest } from '../../config/vegManifest'
 import { ChartDataTable } from '../ChartDataTable'
+import { MonitoringFreshness } from '../MonitoringFreshness'
 import { RoomAveragesTable } from '../RoomAveragesTable'
 import { SensorValueTable } from '../SensorValueTable'
 import { StatisticsTable } from '../StatisticsTable'
@@ -34,6 +35,19 @@ function cellForRow(table: HTMLElement, label: string, col = 1): string {
 const NOW = new Date('2026-07-15T12:00:00Z')
 
 describe('monitoring table primitives', () => {
+  it('labels retained range data with its last-good and error timestamps', () => {
+    render(
+      <MonitoringFreshness
+        lastGoodAt={new Date(2026, 6, 15, 11, 59)}
+        errorAt={new Date(2026, 6, 15, 12)}
+      />,
+    )
+
+    expect(screen.getByRole('status')).toHaveTextContent('Data stale.')
+    expect(screen.getByRole('status')).toHaveTextContent('Last good monitoring range: 2026/07/15 11:59:00.')
+    expect(screen.getByRole('status')).toHaveTextContent('Latest range error: 2026/07/15 12:00:00.')
+  })
+
   it('renders the averages title above the Sensor and Value columns', () => {
     const averages = tablePanel(flowerManifest, 'Averages')
     const { container } = render(

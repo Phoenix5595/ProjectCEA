@@ -7,6 +7,12 @@ import {
   MonitoringResponse,
 } from './contracts'
 
+/** Interim shared chart budget; T19 will tune panel-specific budgets. */
+export const SENSOR_RANGE_MAX_POINTS = 2000
+
+/** Interim recorded-control-history budget; T19 will tune panel-specific budgets. */
+export const CONTROL_HISTORY_MAX_POINTS = 1000
+
 export class MonitoringApi {
   constructor(
     requestContext?: MonitoringRequestContext,
@@ -21,9 +27,14 @@ export class MonitoringApi {
     location: string,
     start?: string,
     end?: string,
+    maxPoints?: number,
     options?: MonitoringRequestOptions,
   ): Promise<MonitoringResponse> {
-    const path = `/api/sensors/monitoring/range/${encodeURIComponent(location)}${buildQuery({ start, end })}`
+    const path = `/api/sensors/monitoring/range/${encodeURIComponent(location)}${buildQuery({
+      start,
+      end,
+      max_points: maxPoints?.toString(),
+    })}`
     return this.client.get(path, MonitoringResponse, options)
   }
 
@@ -40,9 +51,14 @@ export class MonitoringApi {
     location: string,
     start?: string,
     end?: string,
+    maxPoints?: number,
     options?: MonitoringRequestOptions,
   ): Promise<MonitoringResponse> {
-    const path = `/api/sensors/monitoring/stats/${encodeURIComponent(location)}${buildQuery({ start, end })}`
+    const path = `/api/sensors/monitoring/stats/${encodeURIComponent(location)}${buildQuery({
+      start,
+      end,
+      max_points: maxPoints?.toString(),
+    })}`
     return this.client.get(path, MonitoringResponse, options)
   }
 
@@ -50,9 +66,14 @@ export class MonitoringApi {
     location: string,
     start?: string,
     end?: string,
+    maxPoints?: number,
     options?: MonitoringRequestOptions,
   ): Promise<ControlMonitoringResponse> {
-    const path = `/api/monitoring/control/${encodeURIComponent(location)}/history${buildQuery({ start, end })}`
+    const path = `/api/monitoring/control/${encodeURIComponent(location)}/history${buildQuery({
+      start,
+      end,
+      max_points: maxPoints?.toString(),
+    })}`
     return this.client.get(path, ControlMonitoringResponse, options)
   }
 

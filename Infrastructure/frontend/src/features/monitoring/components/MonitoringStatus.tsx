@@ -9,6 +9,7 @@
  */
 import { useState } from 'react'
 import type { Quality } from '../api'
+import { formatTimestamp } from './tables/tableFormat'
 
 export interface MonitoringStatusProps {
   errors: string[]
@@ -17,6 +18,8 @@ export interface MonitoringStatusProps {
   anchorQuality: Quality | null
   projectionRevision: string | null
   runtimeSnapshotVersion: number | null
+  lastGoodRangeAt: Date | null
+  rangeErrorAt: Date | null
   isLive: boolean
   onRetry?: () => void
   onPause?: () => void
@@ -57,6 +60,8 @@ export function MonitoringStatus({
   anchorQuality,
   projectionRevision,
   runtimeSnapshotVersion,
+  lastGoodRangeAt = null,
+  rangeErrorAt = null,
   isLive,
   onRetry,
   onPause,
@@ -83,6 +88,11 @@ export function MonitoringStatus({
           <span className="mon-status__meta">Runtime v{runtimeSnapshotVersion}</span>
         )}
         {isLive && <span className="mon-status__meta">Live</span>}
+        {rangeErrorAt !== null && (
+          <span className="mon-status__meta">
+            Range data stale since {formatTimestamp(rangeErrorAt)}; {lastGoodRangeAt === null ? 'no successful range' : `last good ${formatTimestamp(lastGoodRangeAt)}`}
+          </span>
+        )}
       </div>
 
       {visibleErrors.map((err) => (

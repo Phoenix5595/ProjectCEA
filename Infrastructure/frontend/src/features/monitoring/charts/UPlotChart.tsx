@@ -1,50 +1,34 @@
-/**
- * Direct imperative uPlot adapter for the monitoring feature.
- *
- * Owns one uPlot instance per mount: creates it on the container, resizes it
- * via ResizeObserver, pushes new aligned data with `setData` (never recreating
- * for data), and destroys/recreates only when the theme revision changes —
- * preserving data, x-range/zoom, and series visibility across the recreate.
- *
- * Renders an external semantic legend whose swatches toggle series visibility
- * through `plot.setSeries`, and exposes an imperative `resetZoom` handle that
- * restores the original x range.
- *
- * The uPlot CSS is imported here so monitoring styling stays lazy: it is only
- * loaded when this component is actually rendered.
- */
 import {
   forwardRef,
+  memo,
+  useCallback,
   useEffect,
   useImperativeHandle,
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
 } from 'react'
 import uPlot from 'uplot'
+
 import 'uplot/dist/uPlot.min.css'
 import { useTheme } from '../../../contexts/ThemeContext'
-import type { AlignedData } from '../data'
-import {
-  measureMonitoringConversion,
-  measureMonitoringResize,
-  measureMonitoringSetData,
-  PERFORMANCE_MARKS_ENABLED,
-} from '../perfMarks'
+import { measureMonitoringConversion, measureMonitoringResize, measureMonitoringSetData, PERFORMANCE_MARKS_ENABLED } from '../perfMarks'
+import { panelBudget, shouldReportBudget } from '../data/pointBudget'
+
+import type { MonitoringChartFeed } from './MonitoringChartFeed'
+import { measureChartContainer } from './chartSizing'
 import { ExternalLegend, type LegendEntry } from './legend/ExternalLegend'
 import { isEnvelopeSeries, seriesColor } from './options/seriesOptions'
 import { buildOptions, toUPlotData } from './uPlotOptions'
 
 export interface UPlotChartProps {
-  data: AlignedData
-  className?: string
-  onZoom?: (range: { start: Date; end: Date }) => void
-  /** Original x range restored by `resetZoom`. */
-  range?: { start: Date; end: Date }
-  /** Accessible name for the chart region (used as the canvas `aria-label`). */
-  title?: string
-  /** Longer accessible description of the chart (linked via `aria-describedby`). */
-  description?: string
+  readonly feed: MonitoringChartFeed
+  readonly className?: string
+  readonly onZoom?: (range: { start: Date; end: Date }) => void
+  readonly title?: string
+  readonly description?: string
+  readonly onRequestBudgetChange?: (maxPoints: number) => void
 }
 
 function slugify(value: string): string {
@@ -55,61 +39,64 @@ export interface UPlotChartHandle {
   resetZoom: () => void
 }
 
-interface XRange {
-  min: number
-  max: number
-}
-
-function measure(el: HTMLElement): { width: number; height: number } {
-  const width = el.clientWidth > 0 ? el.clientWidth : 600
-  const height = el.clientHeight > 0 ? el.clientHeight : 300
-  return { width, height }
-}
-
-export const UPlotChart = forwardRef<UPlotChartHandle, UPlotChartProps>(
-  function UPlotChart({ data, className, onZoom, range, title, description }, ref) {
+export const UPlotChart = memo(
+  forwardRef<UPlotChartHandle, UPlotChartProps>(function UPlotChart(
+    { feed, className, onZoom, title, description, onRequestBudgetChange },
+    ref,
+  ) {
     const { theme } = useTheme()
-
+    const subscribe = useCallback((listener: () => void) => feed.subscribe(listener), [feed])
+    const structural = useSyncExternalStore(subscribe, () => feed.getStructuralSnapshot())
+    const structuralRef = useRef(structural)
+    structuralRef.current = structural
     const containerRef = useRef<HTMLDivElement>(null)
     const plotRef = useRef<uPlot | null>(null)
-    const observerRef = useRef<ResizeObserver | null>(null)
     const visibilityRef = useRef<Map<string, boolean>>(new Map())
-    const xRangeRef = useRef<XRange | null>(null)
+    const xRangeRef = useRef<{ min: number; max: number } | null>(null)
     const suppressProgrammaticXScaleRef = useRef(false)
     const readyRef = useRef(false)
     const [hiddenKeys, setHiddenKeys] = useState<Set<string>>(new Set())
-
-    const dataRef = useRef(data)
-    dataRef.current = data
+    const reportedRequestBudgetRef = useRef<number | null>(null)
     const onZoomRef = useRef(onZoom)
     onZoomRef.current = onZoom
-    const rangeRef = useRef(range)
-    rangeRef.current = range
+    const onRequestBudgetChangeRef = useRef(onRequestBudgetChange)
+    onRequestBudgetChangeRef.current = onRequestBudgetChange
+
+    const reportRequestBudget = useCallback((width: number): void => {
+      const nextBudget = panelBudget(width)
+      if (!shouldReportBudget(reportedRequestBudgetRef.current, nextBudget)) return
+      reportedRequestBudgetRef.current = nextBudget
+      onRequestBudgetChangeRef.current?.(nextBudget)
+    }, [])
+
+    useEffect(() => {
+      feed.setTheme(theme)
+    }, [feed, theme])
 
     const legendEntries = useMemo<LegendEntry[]>(() => {
       const seenKeys = new Set<string>()
-      return data.series
-        .map((s, i) => ({ s, index: i + 1 }))
-        .filter(({ s }) => {
-          if (isEnvelopeSeries(s) || seenKeys.has(s.key)) return false
-          seenKeys.add(s.key)
+      return structural.series
+        .map((series, index) => ({ series, index: index + 1 }))
+        .filter(({ series }) => {
+          if (isEnvelopeSeries(series) || seenKeys.has(series.key)) return false
+          seenKeys.add(series.key)
           return true
         })
-        .map(({ s, index }) => ({
-          key: s.key,
-          label: s.label,
-          color: seriesColor(s),
-          projected: s.origin === 'projected',
+        .map(({ series, index }) => ({
+          key: series.key,
+          label: series.label,
+          color: seriesColor(series),
+          projected: series.origin === 'projected',
           index,
-          visible: !hiddenKeys.has(s.key),
+          visible: !hiddenKeys.has(series.key),
         }))
-    }, [data, hiddenKeys])
+    }, [hiddenKeys, structural.series])
 
     const handleToggle = (index: number, show: boolean): void => {
-      const key = dataRef.current.series[index - 1]?.key
+      const key = structuralRef.current.series[index - 1]?.key
       if (key !== undefined) {
-        setHiddenKeys((prev) => {
-          const next = new Set(prev)
+        setHiddenKeys((previous) => {
+          const next = new Set(previous)
           if (show) next.delete(key)
           else next.add(key)
           return next
@@ -122,46 +109,36 @@ export const UPlotChart = forwardRef<UPlotChartHandle, UPlotChartProps>(
       setHiddenKeys(new Set())
       const plot = plotRef.current
       if (plot === null) return
-      dataRef.current.series.forEach((_s, idx) => {
-        plot.setSeries(idx + 1, { show: true }, false)
+      structuralRef.current.series.forEach((_series, index) => {
+        plot.setSeries(index + 1, { show: true }, false)
       })
     }
 
-    useImperativeHandle(
-      ref,
-      () => ({
-        resetZoom: () => {
-          const plot = plotRef.current
-          if (plot === null) return
-          const r = rangeRef.current
-          if (r !== undefined) {
-            suppressProgrammaticXScaleRef.current = true
-            plot.setScale('x', { min: r.start.getTime(), max: r.end.getTime() })
-            suppressProgrammaticXScaleRef.current = false
-          } else {
-            const x = dataRef.current.x
-            if (x.length > 0) {
-              suppressProgrammaticXScaleRef.current = true
-              plot.setScale('x', { min: x[0], max: x[x.length - 1] })
-              suppressProgrammaticXScaleRef.current = false
-            }
-          }
-        },
-      }),
-      [],
-    )
-
-    const seriesCount = data.series.length
+    useImperativeHandle(ref, () => ({
+      resetZoom: () => {
+        const plot = plotRef.current
+        if (plot === null) return
+        const range = structuralRef.current.range
+        const bounds = range.kind === 'fixed'
+          ? { min: range.start.getTime(), max: range.end.getTime() }
+          : fullDataRange(feed)
+        if (bounds === null) return
+        suppressProgrammaticXScaleRef.current = true
+        plot.setScale('x', bounds)
+        suppressProgrammaticXScaleRef.current = false
+      },
+    }), [feed])
 
     useEffect(() => {
+      if (structural.theme !== theme) return
       const container = containerRef.current
       if (container === null) return
-
       readyRef.current = false
-      const { width, height } = measure(container)
-
+      const { width, height } = measureChartContainer(container)
+      reportRequestBudget(width)
+      const data = feed.getData()
       const plot = new uPlot(
-        buildOptions(dataRef.current, width, height, {
+        buildOptions(data, width, height, {
           onSetScale: (self, scaleKey) => {
             if (scaleKey !== 'x') return
             if (suppressProgrammaticXScaleRef.current) {
@@ -176,14 +153,14 @@ export const UPlotChart = forwardRef<UPlotChartHandle, UPlotChartProps>(
             if (min === undefined || max === undefined) return
             onZoomRef.current?.({ start: new Date(min), end: new Date(max) })
           },
-          onSetSeries: (_self, seriesIdx, opts) => {
-            if (seriesIdx === null || opts.show === undefined) return
-            const key = dataRef.current.series[seriesIdx - 1]?.key
+          onSetSeries: (_self, seriesIndex, options) => {
+            if (seriesIndex === null || options.show === undefined) return
+            const key = structuralRef.current.series[seriesIndex - 1]?.key
             if (key === undefined) return
-            visibilityRef.current.set(key, opts.show)
-            setHiddenKeys((prev) => {
-              const next = new Set(prev)
-              if (opts.show) next.delete(key)
+            visibilityRef.current.set(key, options.show)
+            setHiddenKeys((previous) => {
+              const next = new Set(previous)
+              if (options.show) next.delete(key)
               else next.add(key)
               return next
             })
@@ -192,85 +169,72 @@ export const UPlotChart = forwardRef<UPlotChartHandle, UPlotChartProps>(
             suppressProgrammaticXScaleRef.current = false
           },
         }),
-        PERFORMANCE_MARKS_ENABLED
-          ? measureMonitoringConversion(() => toUPlotData(dataRef.current))
-          : toUPlotData(dataRef.current),
+        PERFORMANCE_MARKS_ENABLED ? measureMonitoringConversion(() => toUPlotData(data)) : toUPlotData(data),
         container,
       )
       plotRef.current = plot
-
-      dataRef.current.series.forEach((s, idx) => {
-        const show = visibilityRef.current.get(s.key)
-        if (show !== undefined) plot.setSeries(idx + 1, { show }, false)
+      structural.series.forEach((series, index) => {
+        const show = visibilityRef.current.get(series.key)
+        if (show !== undefined) plot.setSeries(index + 1, { show }, false)
       })
+      if (xRangeRef.current !== null) plot.setScale('x', xRangeRef.current)
 
-      const range = xRangeRef.current
-      if (range !== null) plot.setScale('x', range)
-
+      let frame: number | null = null
       const observer = new ResizeObserver(() => {
-        const next = measure(container)
-        if (PERFORMANCE_MARKS_ENABLED) {
-          measureMonitoringResize(() => plot.setSize({ width: next.width, height: next.height }))
-        } else {
-          plot.setSize({ width: next.width, height: next.height })
-        }
+        if (frame !== null) return
+        frame = requestAnimationFrame(() => {
+          frame = null
+          const next = measureChartContainer(container)
+          reportRequestBudget(next.width)
+          if (PERFORMANCE_MARKS_ENABLED) {
+            measureMonitoringResize(() => plot.setSize({ width: next.width, height: next.height }))
+          } else {
+            plot.setSize({ width: next.width, height: next.height })
+          }
+        })
       })
       observer.observe(container)
-      observerRef.current = observer
 
       return () => {
-        const current = plotRef.current
-        if (current !== null) {
-          const sx = current.scales.x
-          if (sx.min !== undefined && sx.max !== undefined) {
-            xRangeRef.current = { min: sx.min, max: sx.max }
-          }
-        }
+        const scale = plot.scales.x
+        if (scale.min !== undefined && scale.max !== undefined) xRangeRef.current = { min: scale.min, max: scale.max }
+        if (frame !== null) cancelAnimationFrame(frame)
         observer.disconnect()
-        observerRef.current = null
         plot.destroy()
         plotRef.current = null
       }
-      // uPlot fixes its series set at construction: rebuild when the count changes
-      // (e.g. first load transitions from empty store data to real series).
-    }, [theme, seriesCount])
+    }, [feed, reportRequestBudget, structural, theme])
 
-    const updateData = (nextData: AlignedData): void => {
+    const updateData = useCallback((): void => {
+      if (feed.getStructuralSnapshot() !== structuralRef.current) return
       const plot = plotRef.current
       if (plot === null) return
       suppressProgrammaticXScaleRef.current = true
       if (PERFORMANCE_MARKS_ENABLED) {
-        const plotData = measureMonitoringConversion(() => toUPlotData(nextData))
-        measureMonitoringSetData(() => plot.setData(plotData, false))
+        const data = measureMonitoringConversion(() => toUPlotData(feed.getData()))
+        measureMonitoringSetData(() => plot.setData(data, false))
       } else {
-        plot.setData(toUPlotData(nextData), false)
+        plot.setData(toUPlotData(feed.getData()), false)
       }
       suppressProgrammaticXScaleRef.current = false
-    }
+    }, [feed])
 
-    useEffect(() => {
-      updateData(data)
-    }, [data])
+    useEffect(() => feed.subscribe(updateData), [feed, updateData])
 
-    const descId = title !== undefined ? `mon-chart-desc-${slugify(title)}` : undefined
-
+    const descId = title === undefined ? undefined : `mon-chart-desc-${slugify(title)}`
     return (
       <div className="mon-chart">
-        <div
-          ref={containerRef}
-          className={className}
-          role="img"
-          aria-label={title ?? 'Monitoring chart'}
-          aria-describedby={descId}
-          style={{ width: '100%', height: '100%' }}
-        />
-        {description !== undefined && descId !== undefined && (
-          <p id={descId} className="mon-chart__desc">
-            {description}
-          </p>
-        )}
+        <div ref={containerRef} className={className} role="img" aria-label={title ?? 'Monitoring chart'} aria-describedby={descId} style={{ width: '100%', height: '100%' }} />
+        {description !== undefined && descId !== undefined && <p id={descId} className="mon-chart__desc">{description}</p>}
         <ExternalLegend entries={legendEntries} onToggle={handleToggle} onReset={handleReset} />
       </div>
     )
-  },
+  }),
 )
+
+function fullDataRange(feed: MonitoringChartFeed): { min: number; max: number } | null {
+  const x = feed.getData().x
+  const start = x[0]
+  const end = x[x.length - 1]
+  return start === undefined || end === undefined ? null : { min: start, max: end }
+}
