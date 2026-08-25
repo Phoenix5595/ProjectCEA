@@ -15,8 +15,8 @@ Three design principles
    round-trips them unchanged.
 
 2. **One namespace per concept.**
-   - ``sensor:*``     — current sensor values (state, not history).
-   - ``cea:sensor:*`` — legacy fully-qualified form (see LEGACY NOTES).
+    - ``cea:sensor:*`` — current sensor values (state, not history).
+    - ``sensor:*``     — legacy compatibility form (see LEGACY NOTES).
    - ``schedules:*``  — schedule JSON docs by location/cluster.
    - ``cea:schedule:*`` — legacy + schedule state (see LEGACY NOTES).
    - ``automation:*`` — last-issued automation decision per device.
@@ -25,8 +25,9 @@ Three design principles
    - ``stream:control`` — XADD stream of effective setpoint decisions.
 
 3. **Retention is a property of the stream, not the writer.**
-   ``SENSOR_RAW_MAXLEN`` and ``CONTROL_STREAM_MAXLEN`` are the only numbers
-   that should appear as ``maxlen=`` arguments. Writers pass
+    ``SENSOR_RAW_MAXLEN``, ``CONTROL_STREAM_MAXLEN``, and
+    ``CONFIG_EVENTS_MAXLEN`` are the only numbers that should appear as
+    ``maxlen=`` arguments. Writers pass
    ``approximate=True`` so Redis can trim in buckets of ~100 entries, which
    is roughly free.
 
@@ -35,17 +36,12 @@ LEGACY NOTES (do not port to new code)
 Two parallel sensor schemes exist in production today:
 
 - short form    : ``sensor:{name}`` / ``sensor:{name}:ts``
-                  (current-value + write-timestamp, used by
-                  ``backend/app/redis_stream_reader.py`` and onewire worker)
+                  (legacy current-value + write-timestamp compatibility)
 - full form     : ``cea:sensor:{location}:{cluster}:{sensor_type}`` (+ ``_ts``)
-                  (keyed by the topology tuple, used by automation's setpoint
-                  reader)
+                  (the canonical topology-qualified contract)
 
-Both are populated by the stream consumer(s); the ``cea:sensor:`` form is
-the one that is actually joined against ``schedules:*``/``automation:*`` in
-control-loop decisions. A future dual-write → dual-read → retire pass will
-collapse the short form into the full form. Until then, BOTH forms are
-canonical for THEIR existing readers.
+The short form remains available only for the compatibility paths retained
+until Task 23. New readers and writers use the ``cea:sensor:`` contract.
 
 Three parallel schedule-state schemes exist too:
 ``cea:schedule:{location}:{cluster}:state``,
@@ -76,6 +72,12 @@ CONTROL_STREAM: Final[str] = "stream:control"
 Producer: automation-service/app/redis/setpoints.py.
 Consumer: (reserved for future ops/debug dashboards)."""
 
+CONFIG_EVENTS_STREAM: Final[str] = "cea:events:config"
+"""Cross-service configuration event stream.
+Producer: automation-service event bus. Consumer: backend config-event
+consumer. Events are notifications; durable configuration remains in the
+authoritative configuration store."""
+
 SENSOR_RAW_MAXLEN: Final[int] = 100_000
 """Retention for the sensor:raw stream. At the observed ~3 msg/s CAN rate
 this is ~9 hours of buffer — enough for any stream-reader to reconnect and
@@ -86,6 +88,12 @@ CONTROL_STREAM_MAXLEN: Final[int] = 100_000
 """Same retention envelope as SENSOR_RAW_MAXLEN for consistency.
 Control-loop ticks are ~0.3 Hz so this is weeks of buffer; trimming keeps
 memory bounded if a dashboard ever subscribes and falls behind."""
+
+CONFIG_EVENTS_MAXLEN: Final[int] = 10_000
+"""Bounded retention for ``cea:events:config``.
+The backend consumer group processes configuration-change notifications; the
+stream is not the source of truth for configuration, so a finite reconnect
+buffer prevents an unbounded operational queue."""
 
 # ---------------------------------------------------------------------------
 # Pubsub channels (PUBLISH / SUBSCRIBE)
@@ -105,10 +113,10 @@ SENSOR_UPDATE_SOIL_CHANNEL: Final[str] = "sensor:update:soil"
 
 
 def sensor_short(sensor_name: str) -> str:
-    """``sensor:{name}`` — single current value.
+    """``sensor:{name}`` — legacy single current value.
 
-    Used by the stream-reader path that stores raw per-sensor floats. Paired
-    with ``sensor_short_ts()`` for the write-timestamp companion key.
+    Retained only for Task-23 compatibility code. Paired with
+    ``sensor_short_ts()`` for the legacy write-timestamp companion key.
     """
     return f"sensor:{sensor_name}"
 
@@ -134,21 +142,12 @@ def sensor_full_ts(location: str, cluster: str, sensor_type: str) -> str:
     return f"cea:sensor:{location}:{cluster}:{sensor_type}_ts"
 
 
-def sensor_last_good(location: str, cluster: str, sensor_name: str, *, legacy: bool = False) -> str:
+def sensor_last_good(location: str, cluster: str, sensor_name: str) -> str:
     """Last-known-good cached value, used during short sensor outages so the
     control loop doesn't immediately enter failsafe.
 
-    Two forms exist:
-
-    - canonical : ``cea:sensor:{location}:{cluster}:{sensor_name}_last_good``
-    - legacy    : ``sensor:{cluster}:{sensor_name}:last_good`` (pre-phase-5e
-      form, still read by the older stream-reader path)
-
-    Default returns the canonical form; pass ``legacy=True`` when touching
-    the pre-phase-5e path.
+    Canonical form: ``cea:sensor:{location}:{cluster}:{sensor_name}_last_good``
     """
-    if legacy:
-        return f"sensor:{cluster}:{sensor_name}:last_good"
     return f"cea:sensor:{location}:{cluster}:{sensor_name}_last_good"
 
 
@@ -218,13 +217,6 @@ def schedule_state_short(location: str, cluster: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-def automation_decision(location: str, cluster: str, device_name: str) -> str:
-    """``automation:{location}:{cluster}:{device_name}`` — last-issued
-    automation decision for a device. Used by the backend to surface
-    "who/what last moved this" in the dashboard."""
-    return f"automation:{location}:{cluster}:{device_name}"
-
-
 def failsafe_active(location: str, cluster: str) -> str:
     """``failsafe:{location}:{cluster}`` — 1 / 0 flag; when set, the
     automation control loop is paused for that cluster and devices fall
@@ -236,16 +228,21 @@ def failsafe_active(location: str, cluster: str) -> str:
 # TTL policy
 # ---------------------------------------------------------------------------
 
-# These are the defaults writers should apply via EXPIRE (or SET ... EX).
-# A key without a TTL is implicitly "authoritative, durable across service
-# restart" — today only ``schedules:*`` + ``automation:*`` qualify.
+# Current sensor state has source-specific freshness semantics. Do not replace
+# these with a universal default: readers must observe the policy of the
+# source that produced the value.
 
-SENSOR_VALUE_TTL_SEC: Final[int] = 300
-"""5 min. Current-value sensor keys (``sensor:*``, ``cea:sensor:*``) must
-be refreshed at least every 5 min or they are treated as stale. At the
-expected ~3 Hz sensor cadence this is comfortably within reach; if Redis
-loses a key before the sensor writes again, the reader simply falls back
-to the last-good form (which has no TTL)."""
+CAN_SENSOR_CURRENT_TTL_SEC: Final[None] = None
+"""No TTL. CAN current values and timestamps persist until the next frame.
+This preserves the existing database-fallback avoidance policy."""
+
+SOIL_SENSOR_CURRENT_TTL_SEC: Final[int] = 10
+"""10 s. Soil sensor values and timestamps expire when polling freshness is
+lost, allowing consumers to detect unavailable Modbus data."""
+
+ONEWIRE_SENSOR_CURRENT_TTL_SEC: Final[int] = 10
+"""10 s. 1-Wire values and timestamps expire when probe polling freshness is
+lost, allowing consumers to detect unavailable hardware."""
 
 SENSOR_LAST_GOOD_TTL_SEC: Final[int] = 0
 """No TTL. Last-good values persist until explicitly overwritten so the
@@ -267,12 +264,24 @@ authoritative — if they disappear, the control loop will simply re-emit
 them on the next tick."""
 
 
+def monitoring_current_publication_key(location: str) -> str:
+    """Canonical current-fact publication key for one automation location."""
+    return f"cea:monitoring:current:{location}"
+
+
+def monitoring_future_publication_key(location: str) -> str:
+    """Canonical future-projection publication key for one automation location."""
+    return f"cea:monitoring:future:{location}"
+
+
 __all__ = [
     # streams
     "SENSOR_RAW_STREAM",
     "CONTROL_STREAM",
+    "CONFIG_EVENTS_STREAM",
     "SENSOR_RAW_MAXLEN",
     "CONTROL_STREAM_MAXLEN",
+    "CONFIG_EVENTS_MAXLEN",
     # pubsub
     "SENSOR_UPDATE_CHANNEL",
     "SENSOR_UPDATE_SOIL_CHANNEL",
@@ -293,12 +302,16 @@ __all__ = [
     "schedule_state_legacy",
     "schedule_state_short",
     # automation / failsafe
-    "automation_decision",
     "failsafe_active",
     # ttl constants
-    "SENSOR_VALUE_TTL_SEC",
+    "CAN_SENSOR_CURRENT_TTL_SEC",
+    "SOIL_SENSOR_CURRENT_TTL_SEC",
+    "ONEWIRE_SENSOR_CURRENT_TTL_SEC",
     "SENSOR_LAST_GOOD_TTL_SEC",
     "FAILSAFE_TTL_SEC",
     "SCHEDULE_DOC_TTL_SEC",
     "AUTOMATION_DECISION_TTL_SEC",
+    # monitoring publications
+    "monitoring_current_publication_key",
+    "monitoring_future_publication_key",
 ]

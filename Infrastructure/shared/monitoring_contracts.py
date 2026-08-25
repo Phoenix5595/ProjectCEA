@@ -240,4 +240,24 @@ class MonitoringPublication(MonitoringContract):
             raise MonitoringContractViolation(
                 "current snapshot and future projections must share one version"
             )
+        validate_projection_timeline(self.future)
         return self
+
+
+def validate_projection_timeline(
+    projections: tuple[FutureProjection, ...],
+) -> tuple[FutureProjection, ...]:
+    """Return projections validated as one ordered, non-overlapping, single-version timeline."""
+    previous: FutureProjection | None = None
+    for projection in projections:
+        if previous is not None:
+            if projection.version != previous.version:
+                raise MonitoringContractViolation(
+                    "projection timeline intervals must share one version"
+                )
+            if projection.valid_from < previous.valid_until:
+                raise MonitoringContractViolation(
+                    "projection timeline intervals must be ordered and non-overlapping"
+                )
+        previous = projection
+    return projections

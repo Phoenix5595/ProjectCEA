@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from datetime import UTC, datetime
 from typing import Protocol, final
@@ -23,7 +24,17 @@ from monitoring_service.control_models import (
     ProjectionPublicationResponse,
 )
 from monitoring_service.control_timeline_build import build_control_history_envelope
-from shared.monitoring_contracts import CurrentSnapshot, FutureProjection, Quality
+from shared.monitoring_contracts import (
+    CurrentSnapshot,
+    FutureProjection,
+    MonitoringContractViolation,
+    Quality,
+    validate_projection_timeline,
+)
+from shared.redis_keys import (
+    monitoring_current_publication_key,
+    monitoring_future_publication_key,
+)
 
 from monitoring_service.query_observation import request_observation
 from monitoring_service.sensor_models import derive_interval_seconds
@@ -111,7 +122,10 @@ class ControlPublicationRepository:
 
 
 def _publication_keys(location: str) -> list[str]:
-    return [f"cea:monitoring:current:{location}", f"cea:monitoring:future:{location}"]
+    return [
+        monitoring_current_publication_key(location),
+        monitoring_future_publication_key(location),
+    ]
 
 
 def _parse_current(payload: str | None) -> CurrentSnapshot | None:
@@ -124,11 +138,20 @@ def _parse_current(payload: str | None) -> CurrentSnapshot | None:
 
 
 def _parse_future(payload: str | None) -> tuple[FutureProjection, ...] | None:
+    """Normalize legacy single-object or versioned array payloads into a timeline."""
     if payload is None:
         return None
     try:
-        return (FutureProjection.model_validate_json(payload),)
-    except ValidationError:
+        decoded = json.loads(payload)
+    except ValueError:
+        return None
+    try:
+        items = decoded if isinstance(decoded, list) else [decoded]
+        projections = tuple(
+            FutureProjection.model_validate_json(json.dumps(item)) for item in items
+        )
+        return validate_projection_timeline(projections)
+    except (ValidationError, MonitoringContractViolation):
         return None
 
 
