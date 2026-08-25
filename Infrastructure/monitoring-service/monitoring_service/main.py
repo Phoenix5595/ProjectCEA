@@ -26,6 +26,7 @@ from monitoring_service.readiness import (
 )
 from monitoring_service.sensor_repository import SensorMonitoringRepository
 from monitoring_service.sensor_routes import router as sensor_router
+from monitoring_service.sensor_models import MonitoringError
 
 APP_TITLE: Final = "CEA Monitoring Service"
 APP_VERSION: Final = "0.1.0"
@@ -92,6 +93,10 @@ def create_app(
         probe = readiness_probe
         app = FastAPI(title=APP_TITLE, version=APP_VERSION)
         reads = RuntimeControlReads(RuntimeResources()) if control_reads is None else control_reads
+
+    @app.exception_handler(MonitoringError)
+    async def monitoring_error(_: Request, exc: MonitoringError) -> JSONResponse:
+        return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
 
     @app.exception_handler(RequestValidationError)
     async def max_points_validation(request: Request, exc: RequestValidationError) -> Response:
