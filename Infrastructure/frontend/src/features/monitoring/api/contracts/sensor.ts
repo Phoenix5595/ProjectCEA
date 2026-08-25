@@ -22,6 +22,8 @@ export const SensorSeries = z.object({
   unit_family: UnitFamily,
   unit: z.string().min(1),
   points: z.array(SeriesPoint),
+  point_count: z.number().int().nonnegative().optional(),
+  sample_count_total: z.number().int().nonnegative().optional(),
 })
 export type SensorSeries = z.infer<typeof SensorSeries>
 
@@ -34,6 +36,7 @@ export const SensorStatistics = z.object({
   average: z.number(),
   stddev_samp: z.number().nonnegative(),
   sample_count: z.number().int().nonnegative(),
+  stddev_quality: z.enum(['exact', 'approximate']).optional(),
 })
 export type SensorStatistics = z.infer<typeof SensorStatistics>
 
@@ -50,6 +53,8 @@ export const MonitoringMetadata = z.object({
   tier: Tier,
   range: MonitoringRange,
   room: RoomMetadata,
+  requested_max_points: z.number().int().min(10).max(100_000).optional(),
+  interval_seconds: z.number().int().positive().optional(),
 })
 export type MonitoringMetadata = z.infer<typeof MonitoringMetadata>
 
