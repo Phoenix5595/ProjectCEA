@@ -1,0 +1,60 @@
+Task 13 — Preserve CAGG completeness and exact/labelled statistics
+
+Implementation paths
+- Infrastructure/monitoring-service/monitoring_service/cagg_watermarks.py
+- Infrastructure/monitoring-service/monitoring_service/sensor_repository.py
+- Infrastructure/monitoring-service/monitoring_service/sensor_sql.py
+- Infrastructure/monitoring-service/tests/test_sensor_coverage.py
+- Infrastructure/monitoring-service/tests/test_max_points_contracts.py
+
+Coverage behavior
+- CaggWatermarkCache keeps an instance-local process-memory dict keyed exclusively by the
+  known CAGG relation names. Entries are immutable CaggWatermarkEntry values with
+  watermark and monotonic fetched_at fields; the documented TTL constant is 5.0 seconds.
+- A fresh cache entry avoids the watermark query. Expiry refreshes it and atomically replaces
+  the immutable entry. The repository is the service singleton in normal execution; tests may
+  inject an independent cache and monotonic clock without changing production behavior.
+- _require_cagg_coverage remains mandatory and returns watermark minus the source bucket width.
+  Tiered SQL binds that safe complete-tail upper bound ($8 without point bucketing, $9 with it),
+  with no correlated SELECT max(bucket) subquery. The incomplete watermark bucket is excluded.
+- Long-window CAGG statistics now calculate sample standard deviation from value_sum,
+  value_sum_squares, and sample_count. SQL returns 0 for sample_count below 2, preserving the
+  nonnegative legacy serialization contract. Formula assertions use 1e-9 relative tolerance.
+
+Focused regression tests
+- test_cagg_coverage_rejects_an_absent_watermark
+- test_long_window_statistics_use_exact_sufficient_statistics
+- test_long_window_statistics_serialize_the_exact_quality_label
+- test_cagg_watermark_cache_reuses_a_fresh_relation_entry
+- test_cagg_watermark_cache_refetches_after_expiry_and_advances_the_bound
+- test_cagg_watermark_cache_isolated_by_relation_name
+- test_cagg_series_rejects_insufficient_coverage_before_querying_series
+- test_tiered_series_binds_the_cached_complete_tail_bound
+- test_statistics_rows_preserve_zero_stddev_for_fewer_than_two_samples
+- test_statistics_quality_serializes_exact_and_approximate_sources
+
+Watermark-query proof
+- Fresh-cache test: two coverage reads => 1 fake watermark fetch.
+- Expiry/advance test: two coverage reads after monotonic time advances 5.1 seconds => 2 fake
+  watermark fetches and the returned complete-tail bound advances by one minute.
+- Relation-isolation test: one-minute, five-minute, then one-minute coverage reads => 2 fake
+  watermark fetches (one per relation).
+
+Stddev quality matrix
+- Raw measurement SQL: exact (native STDDEV_SAMP).
+- 5-minute CAGG with value_sum/value_sum_squares/sample_count: exact.
+- A source without sufficient statistics: the existing explicit approximate serialization path
+  remains available and is contract-tested; no deployed monitoring statistics source lacks the
+  required sufficient-stat columns.
+
+Verification (from Infrastructure/monitoring-service)
+1. python3 -m pytest -q => 95 passed in 2.26s
+2. ruff check monitoring_service tests => All checks passed!
+3. ruff format --check monitoring_service tests => 20 files already formatted
+4. python3 -m compileall -q monitoring_service => exit 0
+5. python3 -m pytest -q => 95 passed in 2.26s
+6. ruff check monitoring_service tests => All checks passed!
+7. ruff format --check monitoring_service tests => 20 files already formatted
+8. python3 -m compileall -q monitoring_service => exit 0
+
+No Git command was run.
