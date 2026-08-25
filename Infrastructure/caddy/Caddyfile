@@ -64,7 +64,7 @@
 
 	@monitoring_control_read {
 		method GET
-		path_regexp monitoring_control_read ^/api/monitoring/control/[^/%]+/(?:history|current|projection)$
+		path_regexp monitoring_control_read ^/api/monitoring/control/[^/%]+/(?:history|current|projection|tail)$
 	}
 	handle @monitoring_control_read {
 		request_header -X-API-Key
