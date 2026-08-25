@@ -50,10 +50,11 @@ def register_control_routes(app: FastAPI, reads: ControlReadService) -> None:
         location: str,
         start: Annotated[datetime | None, Query()] = None,
         end: Annotated[datetime | None, Query()] = None,
+        max_points: int | None = Query(default=None, ge=10, le=100_000),
     ) -> ControlHistoryEnvelope:
         """Return one bounded live-poller page through the history read path."""
         _ = resolve_room_metadata(location)
-        return await history(location, start, end, max_points=None)
+        return await history(location, start, end, max_points)
 
     @app.get(
         "/api/monitoring/control/{location}/current", response_model=CurrentPublicationResponse

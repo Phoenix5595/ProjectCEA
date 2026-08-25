@@ -118,6 +118,7 @@ def app():
         ("/api/sensors/monitoring/range/Veg%20Room", "metadata"),
         ("/api/sensors/monitoring/stats/Veg%20Room", "metadata"),
         ("/api/monitoring/control/Veg%20Room/history", None),
+        ("/api/monitoring/control/Veg%20Room/tail", None),
     ),
 )
 async def test_max_points_boundaries_return_400_or_echo_budget(
