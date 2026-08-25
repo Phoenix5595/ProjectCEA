@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from math import floor
 from enum import StrEnum
 from typing import ClassVar, Final, Self
 
@@ -21,31 +20,17 @@ from pydantic import (
 )
 
 from shared.cluster_topology import known_rooms, sensor_url_clusters_for
+from monitoring_service.sensor_intervals import (
+    NICE_INTERVAL_SECONDS as _NICE_INTERVAL_SECONDS,
+    derive_interval_seconds as _derive_interval_seconds,
+    resolve_interval_seconds as _resolve_interval_seconds,
+)
 
 MINIMUM_RANGE: Final = timedelta(seconds=1)
 MAXIMUM_RANGE: Final = timedelta(days=7)
 RAW_TIER_LIMIT: Final = timedelta(hours=1)
 ONE_MINUTE_TIER_LIMIT: Final = timedelta(hours=6)
-NICE_INTERVAL_SECONDS: Final[tuple[int, ...]] = (
-    1,
-    2,
-    5,
-    10,
-    15,
-    30,
-    60,
-    120,
-    300,
-    600,
-    900,
-    1800,
-    3600,
-    7200,
-    14400,
-    21600,
-    43200,
-    86400,
-)
+NICE_INTERVAL_SECONDS: Final[tuple[int, ...]] = _NICE_INTERVAL_SECONDS
 _MONITORING_ROOMS: Final = frozenset({"Flower Room", "Veg Room"})
 _DATETIME: Final = TypeAdapter(datetime)
 
@@ -171,20 +156,18 @@ def source_bucket_seconds(tier: Tier) -> int:
             return 300
 
 
-def derive_interval_seconds(
-    duration: timedelta, source_bucket: int, max_points: int | None
-) -> int | None:
-    """Derive a documented nice interval for metadata only; it does not alter reads.
+def resolve_interval_seconds(
+    duration_seconds: int, max_points: int, source_bucket_seconds: int
+) -> int:
+    """Expose the sensor repository's applied ladder-snapped bucket policy."""
+    return _resolve_interval_seconds(duration_seconds, max_points, source_bucket_seconds)
 
-    ``NICE_INTERVAL_SECONDS`` is the single shared ladder for later query
-    bucketing work. Contract-only callers retain legacy SQL and use this value
-    solely to state the requested point-resolution intent.
-    """
-    if max_points is None:
-        return None
-    source_buckets = max(1, floor(duration.total_seconds() / max_points / source_bucket))
-    target_seconds = source_buckets * source_bucket
-    return next(interval for interval in NICE_INTERVAL_SECONDS if interval >= target_seconds)
+
+def derive_interval_seconds(
+    duration: timedelta, source_bucket_seconds: int, max_points: int | None
+) -> int | None:
+    """Expose the optional budget's applied read interval for response metadata."""
+    return _derive_interval_seconds(duration, source_bucket_seconds, max_points)
 
 
 class MonitoringRange(FrozenMonitoringModel):

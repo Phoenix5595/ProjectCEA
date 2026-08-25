@@ -34,9 +34,9 @@ NOW = datetime(2026, 8, 24, 14, tzinfo=UTC)
 @final
 class FakeSensorReads:
     async def series(
-        self, room: str, monitoring_range: MonitoringRange
+        self, room: str, monitoring_range: MonitoringRange, max_points: int | None = None
     ) -> tuple[Tier, tuple[SensorSeries, ...]]:
-        del room, monitoring_range
+        del room, monitoring_range, max_points
         return (
             Tier.RAW,
             (
@@ -82,10 +82,17 @@ class FakeSensorReads:
 @final
 class FakeControlReads:
     async def history(
-        self, location: str, history_range: ControlHistoryRange
+        self, location: str, history_range: ControlHistoryRange, max_points: int | None = None
     ) -> ControlHistoryEnvelope:
         del location
-        return ControlHistoryEnvelope(range=history_range, runtime_snapshot_version=1)
+        return ControlHistoryEnvelope(
+            range=history_range,
+            runtime_snapshot_version=1,
+            requested_max_points=max_points,
+            interval_seconds=derive_interval_seconds(
+                history_range.end - history_range.start, 1, max_points
+            ),
+        )
 
     async def publications(self, location: str) -> ControlPublicationResponse:
         del location
@@ -176,8 +183,8 @@ def test_interval_derivation_snaps_to_the_nice_ladder() -> None:
     # When: its contract-only effective interval is derived.
     interval_seconds = derive_interval_seconds(monitoring_range.duration, 300, 1000)
 
-    # Then: the API echoes the documented 10-minute nice interval without changing SQL.
-    assert interval_seconds == 600
+    # Then: the API echoes the applied 15-minute nice interval for exact bucketing.
+    assert interval_seconds == 900
 
 
 def test_legacy_models_parse_and_compute_additive_counts() -> None:
@@ -223,7 +230,9 @@ def test_legacy_models_parse_and_compute_additive_counts() -> None:
 
 @final
 class StatisticsRowsDatabase:
-    async def fetch(self, query: str, *_: str | int | float | datetime) -> list[asyncpg.Record]:
+    async def fetch(
+        self, query: str, *_: str | int | float | datetime | timedelta
+    ) -> list[asyncpg.Record]:
         del query
         values = {
             "sensor": "dry_bulb",

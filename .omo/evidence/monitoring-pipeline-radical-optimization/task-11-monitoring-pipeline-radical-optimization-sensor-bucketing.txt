@@ -1,0 +1,50 @@
+Task 11 — Exact sensor envelope bucketing over existing read models
+Date: 2026-08-24
+
+Implementation
+- Added the single interval policy in monitoring_service.sensor_intervals and
+  re-exported resolve_interval_seconds from sensor_models. It applies
+  max(source_bucket, ceil(duration/max_points)) then snaps upward on the one
+  NICE_INTERVAL_SECONDS ladder. Example: 604800 seconds / 1000 points from a
+  300-second source resolves to 900 seconds.
+- The range route passes optional max_points into SensorMonitoringRepository.series
+  and reports the same applied interval in metadata. No budget remains None and
+  uses the original statements and four database arguments.
+- New budgeted raw SQL uses time_bucket($5::interval, measurement.time,
+  $3::timestamptz), avg/min/max/count, with the interval supplied as a Python
+  timedelta parameter. No user value is interpolated into SQL.
+- New budgeted CAGG SQL uses sum(value_sum) / NULLIF(sum(sample_count), 0),
+  min(min_value), max(max_value), and sum(sample_count), while retaining the
+  pre-existing complete-source-bucket guard exactly. It does not average CAGG
+  averages.
+- SQL constants moved to monitoring_service.sensor_sql; repository pure LOC is
+  240, sensor_models 230, sensor_sql 86, sensor_intervals 43.
+
+Characterization first
+- tests/test_sensor_bucketing.py captured exact no-budget repository output for
+  raw (1h), 1-minute (6h), and 5-minute (7d) source selection. The snapshots
+  include every serialized point and the additive point_count/sample_count_total
+  fields, preserve two Flower node queries with four arguments each, and pin the
+  existing CAGG watermark-call count. The same snapshot passes after refactoring.
+
+Exactness proof
+- Raw fixture [1, 9, 100] verifies average=110/3, min=1, max=100, count=3.
+- Synthetic CAGG samples (mean=1,count=10) and (mean=100,count=1) verify
+  average=110/11 rather than the incorrect mean-of-means 50.5, plus extrema and
+  count=11. The test asserts the sum-weighted SQL formula and forbids the
+  avg(c.value_sum / c.sample_count) expression.
+- Boundary-duration × {absent, 10, 100, 1000, 100000} tests prove ordered,
+  unique, in-range points and budget cardinality. The injection test confirms a
+  computed interval is ladder-whitelisted and the SQL contains only $5::interval.
+
+Verification
+- Focused relevant tests: 53 passed.
+- Full monitoring-service suite, final run 1: 76 passed in 2.15s.
+- Full monitoring-service suite, final run 2: 76 passed in 2.02s.
+- ruff format --check monitoring_service tests: passed (19 files already formatted).
+- python3 -m compileall -q monitoring_service: passed.
+- Scoped Ruff check for all Task 11 changed Python files: passed.
+- Full ruff check monitoring_service tests is blocked only by pre-existing,
+  out-of-scope control-side F401 in monitoring_service/control_repository.py:26
+  (unused ControlRecord import); it was not modified, per task boundary.
+- No git command was run.
