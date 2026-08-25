@@ -188,6 +188,17 @@ function monitoringPreviewPlugin(): Plugin {
           res.end(JSON.stringify({ detail: 'forced monitoring error (fixture)' }))
           return
         }
+        if (scenario === 'range-503-after-good' && /^\/api\/sensors\/monitoring\/range\//.test(pathname)) {
+          const key = counterKey('range-503-after-good')
+          const count = scenarioCounters.get(key) ?? 0
+          scenarioCounters.set(key, count + 1)
+          if (count === 2) {
+            res.statusCode = 503
+            res.setHeader('Content-Type', 'application/json')
+            res.end(JSON.stringify({ detail: 'range unavailable (fixture)' }))
+            return
+          }
+        }
         if (scenario === 'malformed-sensor' && /^\/api\/sensors\/monitoring\/range\//.test(pathname)) {
           const key = counterKey('malformed-sensor')
           const count = scenarioCounters.get(key) ?? 0
