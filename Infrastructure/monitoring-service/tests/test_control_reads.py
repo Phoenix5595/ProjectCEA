@@ -93,7 +93,7 @@ class FakeDatabase:
 
     async def fetch(
         self, query: str, *arguments: str | int | float | datetime
-    ) -> list[dict[str, str | float | datetime]]:
+    ) -> list[dict[str, str | float | int | datetime | None]]:
         self.queries.append(query)
         if "FROM effective_setpoints" in query:
             return [
@@ -160,9 +160,9 @@ class FakeRedis:
 @final
 class FakeControlReads:
     async def history(
-        self, location: str, history_range: ControlHistoryRange
+        self, location: str, history_range: ControlHistoryRange, max_points: int | None = None
     ) -> ControlHistoryEnvelope:
-        del location
+        del location, max_points
         return ControlHistoryEnvelope(range=history_range, runtime_snapshot_version=0)
 
     async def publications(self, location: str) -> ControlPublicationResponse:
