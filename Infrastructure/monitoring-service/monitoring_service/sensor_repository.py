@@ -19,6 +19,7 @@ from monitoring_service.sensor_models import (
     Node,
     SensorSeries,
     SensorStatistics,
+    StddevQuality,
     SeriesPoint,
     Tier,
     UnitFamily,
@@ -104,6 +105,9 @@ class SensorMonitoringRepository:
             if monitoring_range.duration > STATS_CAGG_MIN_DURATION
             else _STATISTICS_SQL
         )
+        stddev_quality = (
+            StddevQuality.APPROXIMATE if statement == _STATISTICS_CAGG_SQL else StddevQuality.EXACT
+        )
         tier = "5min" if statement == _STATISTICS_CAGG_SQL else "raw"
         async with request_observation(tier=tier):
             result: list[SensorStatistics] = []
@@ -115,7 +119,7 @@ class SensorMonitoringRepository:
                     monitoring_range.start,
                     monitoring_range.end,
                 )
-                result.extend(_statistics_from_rows(rows, node))
+                result.extend(_statistics_from_rows(rows, node, stddev_quality))
             return tuple(result)
 
     async def live(self, room: str, node: str) -> tuple[LiveSensorValue, ...]:
@@ -180,7 +184,7 @@ def _series_from_rows(rows: Sequence[asyncpg.Record], node: Node) -> tuple[Senso
 
 
 def _statistics_from_rows(
-    rows: Sequence[asyncpg.Record], node: Node
+    rows: Sequence[asyncpg.Record], node: Node, stddev_quality: StddevQuality
 ) -> tuple[SensorStatistics, ...]:
     return tuple(
         SensorStatistics(
@@ -191,6 +195,7 @@ def _statistics_from_rows(
             average=float(row["average"]),
             stddev_samp=float(row["stddev_samp"]),
             sample_count=int(row["sample_count"]),
+            stddev_quality=stddev_quality,
         )
         for row in rows
     )

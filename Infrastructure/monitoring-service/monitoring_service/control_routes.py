@@ -13,6 +13,7 @@ from monitoring_service.control_models import (
     ControlPublicationResponse,
     CurrentPublicationResponse,
 )
+from monitoring_service.sensor_models import derive_interval_seconds
 
 
 class ControlReadService(Protocol):
@@ -33,11 +34,20 @@ def register_control_routes(app: FastAPI, reads: ControlReadService) -> None:
         location: str,
         start: Annotated[datetime | None, Query()] = None,
         end: Annotated[datetime | None, Query()] = None,
+        max_points: int | None = Query(default=None, ge=10, le=100_000),
     ) -> ControlHistoryEnvelope:
         """Return recorded control facts from the read-only database."""
         try:
             history_range = _history_range(start, end)
-            return await reads.history(location, history_range)
+            envelope = await reads.history(location, history_range)
+            return envelope.model_copy(
+                update={
+                    "requested_max_points": max_points,
+                    "interval_seconds": derive_interval_seconds(
+                        history_range.end - history_range.start, 1, max_points
+                    ),
+                }
+            )
         except (ConnectionError, OSError, RuntimeError):
             raise HTTPException(
                 status_code=503, detail="control monitoring history is unavailable"

@@ -6,7 +6,11 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import ClassVar, Final, final
 
-from fastapi import FastAPI, Response
+from fastapi import FastAPI, Request, Response
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
+from fastapi.encoders import jsonable_encoder
 from fastapi import status as http_status
 from pydantic import BaseModel, ConfigDict
 
@@ -88,6 +92,16 @@ def create_app(
         probe = readiness_probe
         app = FastAPI(title=APP_TITLE, version=APP_VERSION)
         reads = RuntimeControlReads(RuntimeResources()) if control_reads is None else control_reads
+
+    @app.exception_handler(RequestValidationError)
+    async def max_points_validation(request: Request, exc: RequestValidationError) -> Response:
+        """Translate only point-budget query validation into the monitoring 400 contract."""
+        if any(error["loc"][-1] == "max_points" for error in exc.errors()):
+            return JSONResponse(
+                content=jsonable_encoder(exc.errors()),
+                status_code=http_status.HTTP_400_BAD_REQUEST,
+            )
+        return await request_validation_exception_handler(request, exc)
 
     @app.get("/health", response_model=HealthResponse)
     async def health() -> HealthResponse:

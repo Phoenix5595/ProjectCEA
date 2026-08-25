@@ -165,6 +165,8 @@ class ControlHistoryEnvelope(ControlReadModel):
 
     range: ControlHistoryRange
     runtime_snapshot_version: int
+    requested_max_points: int | None = None
+    interval_seconds: int | None = None
     cursors: tuple[str, ...] = ()
     flush_health: tuple[str, ...] = ()
     climate: tuple[ClimateTimelineSeriesOut, ...] = ()

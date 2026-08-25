@@ -203,6 +203,44 @@ describe('monitoring api boundary', () => {
     )
   })
 
+  it('parses legacy and additive point-budget response fields without changing unknown-key handling', async () => {
+    const fetchMock = vi.mocked(fetch)
+    const api = new MonitoringApi()
+
+    fetchMock.mockResolvedValueOnce(jsonResponse(sensorRangePayload))
+    const legacy = await api.sensorRange('Flower Room')
+    expect(legacy.metadata.requested_max_points).toBeUndefined()
+    expect(legacy.series[0].point_count).toBeUndefined()
+    expect(legacy.statistics[0].stddev_quality).toBeUndefined()
+
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        ...sensorRangePayload,
+        metadata: {
+          ...sensorRangePayload.metadata,
+          requested_max_points: 1000,
+          interval_seconds: 600,
+        },
+        series: [{ ...sensorRangePayload.series[0], point_count: 1, sample_count_total: 60 }],
+        statistics: [{ ...sensorRangePayload.statistics[0], stddev_quality: 'approximate' }],
+        ignored_by_existing_schema: true,
+      }),
+    )
+    const budgeted = await api.sensorRange('Flower Room')
+    expect(budgeted.metadata.requested_max_points).toBe(1000)
+    expect(budgeted.metadata.interval_seconds).toBe(600)
+    expect(budgeted.series[0].sample_count_total).toBe(60)
+    expect(budgeted.statistics[0].stddev_quality).toBe('approximate')
+    expect('ignored_by_existing_schema' in budgeted).toBe(false)
+
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ ...controlPayload, requested_max_points: 1000, interval_seconds: 600 }),
+    )
+    const control = await api.controlRange('Flower Room')
+    expect(control.requested_max_points).toBe(1000)
+    expect(control.interval_seconds).toBe(600)
+  })
+
   it('adds an immutable fixture context only to test requests', async () => {
     const fetchMock = vi.mocked(fetch)
     const api = new MonitoringApi({

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from math import floor
 from enum import StrEnum
 from typing import ClassVar, Final, Self
 
@@ -25,6 +26,26 @@ MINIMUM_RANGE: Final = timedelta(seconds=1)
 MAXIMUM_RANGE: Final = timedelta(days=7)
 RAW_TIER_LIMIT: Final = timedelta(hours=1)
 ONE_MINUTE_TIER_LIMIT: Final = timedelta(hours=6)
+NICE_INTERVAL_SECONDS: Final[tuple[int, ...]] = (
+    1,
+    2,
+    5,
+    10,
+    15,
+    30,
+    60,
+    120,
+    300,
+    600,
+    900,
+    1800,
+    3600,
+    7200,
+    14400,
+    21600,
+    43200,
+    86400,
+)
 _MONITORING_ROOMS: Final = frozenset({"Flower Room", "Veg Room"})
 _DATETIME: Final = TypeAdapter(datetime)
 
@@ -61,6 +82,13 @@ class Tier(StrEnum):
     RAW = "raw"
     ONE_MINUTE = "1min"
     FIVE_MINUTES = "5min"
+
+
+class StddevQuality(StrEnum):
+    """How precisely the selected statistics source can report sample deviation."""
+
+    EXACT = "exact"
+    APPROXIMATE = "approximate"
 
 
 class MonitoringError(Exception):
@@ -130,6 +158,33 @@ def compute_tier(duration: timedelta) -> Tier:
     if duration <= ONE_MINUTE_TIER_LIMIT:
         return Tier.ONE_MINUTE
     return Tier.FIVE_MINUTES
+
+
+def source_bucket_seconds(tier: Tier) -> int:
+    """Return the legacy source bucket width for a selected sensor tier."""
+    match tier:
+        case Tier.RAW:
+            return 1
+        case Tier.ONE_MINUTE:
+            return 60
+        case Tier.FIVE_MINUTES:
+            return 300
+
+
+def derive_interval_seconds(
+    duration: timedelta, source_bucket: int, max_points: int | None
+) -> int | None:
+    """Derive a documented nice interval for metadata only; it does not alter reads.
+
+    ``NICE_INTERVAL_SECONDS`` is the single shared ladder for later query
+    bucketing work. Contract-only callers retain legacy SQL and use this value
+    solely to state the requested point-resolution intent.
+    """
+    if max_points is None:
+        return None
+    source_buckets = max(1, floor(duration.total_seconds() / max_points / source_bucket))
+    target_seconds = source_buckets * source_bucket
+    return next(interval for interval in NICE_INTERVAL_SECONDS if interval >= target_seconds)
 
 
 class MonitoringRange(FrozenMonitoringModel):
@@ -206,6 +261,17 @@ class SensorSeries(FrozenMonitoringModel):
     unit_family: UnitFamily
     unit: str = Field(min_length=1)
     points: tuple[SeriesPoint, ...]
+    point_count: NonNegativeInt = 0
+    sample_count_total: NonNegativeInt = 0
+
+    @model_validator(mode="after")
+    def compute_counts(self) -> Self:
+        """Populate additive counts from the serialized points."""
+        object.__setattr__(self, "point_count", len(self.points))
+        object.__setattr__(
+            self, "sample_count_total", sum(point.sample_count for point in self.points)
+        )
+        return self
 
 
 class SensorStatistics(FrozenMonitoringModel):
@@ -218,6 +284,7 @@ class SensorStatistics(FrozenMonitoringModel):
     average: FiniteFloat
     stddev_samp: FiniteFloat = Field(ge=0)
     sample_count: NonNegativeInt
+    stddev_quality: StddevQuality = Field(default="exact")
 
 
 class MonitoringMetadata(FrozenMonitoringModel):
@@ -227,6 +294,8 @@ class MonitoringMetadata(FrozenMonitoringModel):
     tier: Tier
     range: MonitoringRange
     room: RoomMetadata
+    requested_max_points: int | None = None
+    interval_seconds: int | None = None
 
     @field_validator("generated_at")
     @classmethod
