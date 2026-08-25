@@ -1,0 +1,21 @@
+Task 18 — Cancel superseded range and resize requests
+Date: 2026-08-25
+
+Implementation
+- Each MonitoringStore range load owns an AbortController and passes its signal to sensorRange, controlRange, and controlProjection.
+- Range, chart-budget, retry, and final-unsubscribe supersession abort the current controller before starting/releasing work.
+- rangeSequence remains the independent stale-result guard, so a response that ignores abort cannot mutate state.
+- MonitoringAbortError is omitted from range error state; successful last-good data remains in state during an expected supersession. Timeout remains a typed MonitoringTimeoutError.
+- MonitoringClient now propagates an already-aborted external signal into the request controller while retaining its independent timeout.
+
+Focused verification
+- `npx vitest run src/features/monitoring/api/__tests__/monitoringApi.test.ts src/features/monitoring/state/__tests__/monitoringStore.test.ts`
+  PASS: 2 files, 29 tests.
+- Coverage includes network-layer signal observation, pre-aborted external signal classification, rapid live-to-fixed-to-fixed latest-wins cancellation, budget cancellation, unsubscribe cancellation, stale late-response rejection, last-good data retention with empty errors, and timeout classification.
+
+Required full gates rerun
+- `npx tsc --noEmit`: BLOCKED by concurrent T20 alignment files outside this task: missing `createPanelAlignment` export in `data/alignSeries.test.ts` and unused `series` variables in `data/panelAlignment.ts` lines 137 and 139.
+- `npm run build`: BLOCKED by the same TypeScript errors before Vite runs.
+- `npx vitest run src/features/monitoring`: BLOCKED by concurrent T20 alignment work: 101/103 tests pass; the two failures call missing `createPanelAlignment` from `data/alignSeries.test.ts`.
+
+No alignment/data/pointBudget/backend files were modified by Task 18.

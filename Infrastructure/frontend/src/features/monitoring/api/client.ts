@@ -71,7 +71,11 @@ export class MonitoringClient {
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
     const onExternalAbort = (): void => controller.abort()
-    options.signal?.addEventListener('abort', onExternalAbort, { once: true })
+    if (options.signal?.aborted) {
+      controller.abort()
+    } else {
+      options.signal?.addEventListener('abort', onExternalAbort, { once: true })
+    }
 
     let response: Response
     const requestStartedAt = PERFORMANCE_MARKS_ENABLED ? startMonitoringRequest() : undefined

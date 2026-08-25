@@ -10,11 +10,13 @@
  */
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
-import { createRef } from 'react'
+import { createRef, useEffect, useRef, type Ref } from 'react'
 import type uPlot from 'uplot'
 import { ThemeProvider } from '../../../../contexts/ThemeContext'
 import type { AlignedData } from '../../data'
 import { seriesKey } from '../../data/alignSeries.types'
+import type { MonitoringRange } from '../../state'
+import { createMonitoringChartFeed } from '../MonitoringChartFeed'
 import { UPlotChart, type UPlotChartHandle } from '../UPlotChart'
 
 const { MockUPlot, instances } = vi.hoisted(() => {
@@ -86,6 +88,28 @@ function makeData(): AlignedData {
   }
 }
 
+const TEST_RANGE = { kind: 'live', duration: 3_600_000 } as const
+
+function ChartHarness({
+  data,
+  onZoom,
+  chartRef,
+  range = TEST_RANGE,
+}: {
+  data: AlignedData
+  onZoom?: (range: { start: Date; end: Date }) => void
+  chartRef?: Ref<UPlotChartHandle>
+  range?: MonitoringRange
+}) {
+  const feedRef = useRef<ReturnType<typeof createMonitoringChartFeed> | null>(null)
+  if (feedRef.current === null) feedRef.current = createMonitoringChartFeed(data, range)
+  const feed = feedRef.current
+  useEffect(() => {
+    feed.publish(data, range)
+  }, [data, feed, range])
+  return <UPlotChart ref={chartRef} feed={feed} onZoom={onZoom} />
+}
+
 beforeEach(() => {
   instances.length = 0
   MockResizeObserver.instances.length = 0
@@ -102,7 +126,7 @@ describe('monitoring chart interactions', () => {
     const data = makeData()
     render(
       <ThemeProvider>
-        <UPlotChart data={data} onZoom={onZoom} />
+        <ChartHarness data={data} onZoom={onZoom} />
       </ThemeProvider>,
     )
     const plot = instances[0]
@@ -142,7 +166,7 @@ describe('monitoring chart interactions', () => {
     const data = makeData()
     render(
       <ThemeProvider>
-        <UPlotChart data={data} />
+        <ChartHarness data={data} />
       </ThemeProvider>,
     )
     const plot = instances[0]
@@ -169,7 +193,7 @@ describe('monitoring chart interactions', () => {
     const data = makeData()
     const { rerender } = render(
       <ThemeProvider>
-        <UPlotChart data={data} onZoom={onZoom} />
+        <ChartHarness data={data} onZoom={onZoom} />
       </ThemeProvider>,
     )
     const plot = instances[0]
@@ -184,7 +208,7 @@ describe('monitoring chart interactions', () => {
     next.nowIndex = 3
     rerender(
       <ThemeProvider>
-        <UPlotChart data={next} onZoom={onZoom} />
+        <ChartHarness data={next} onZoom={onZoom} />
       </ThemeProvider>,
     )
 
@@ -201,7 +225,7 @@ describe('monitoring chart interactions', () => {
     const onZoom = vi.fn()
     render(
       <ThemeProvider>
-        <UPlotChart data={data} range={range} ref={ref} onZoom={onZoom} />
+        <ChartHarness data={data} range={{ kind: 'fixed', ...range }} chartRef={ref} onZoom={onZoom} />
       </ThemeProvider>,
     )
     const plot = instances[0]

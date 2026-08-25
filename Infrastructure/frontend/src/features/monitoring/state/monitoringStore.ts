@@ -1,9 +1,14 @@
-import { MonitoringApi } from '../api'
+import {
+  CONTROL_HISTORY_MAX_POINTS,
+  MonitoringApi,
+  MonitoringAbortError,
+  SENSOR_RANGE_MAX_POINTS,
+} from '../api'
+import type { MonitoringRange, MonitoringStoreOptions, StoreState } from './monitoringStore.types'
 
 import { applyInitialPartial } from './monitoringStore.control'
 import { iso, sameRange } from './monitoringStore.merge'
 import { MonitoringLivePoller } from './monitoringStore.poller'
-import type { MonitoringRange, MonitoringStoreOptions, StoreState } from './monitoringStore.types'
 
 const DEFAULT_POLL_MS = 1000
 const DEFAULT_DURATION_MS = 3600_000
@@ -16,6 +21,17 @@ function errorMessage(err: unknown): string {
 interface RangeBounds {
   start: Date
   end: Date
+}
+
+interface RangeBudget {
+  readonly sensor: number
+  readonly control: number
+}
+
+function rangeResult<T>(result: PromiseSettledResult<T>, errors: string[]): T | null {
+  if (result.status === 'fulfilled') return result.value
+  if (!(result.reason instanceof MonitoringAbortError)) errors.push(errorMessage(result.reason))
+  return null
 }
 
 export class MonitoringStore {
@@ -31,6 +47,11 @@ export class MonitoringStore {
   private rangeSequence = 0
   private lastRangeIdentity?: MonitoringRange
   private rangeInFlight = false
+  private rangeController: AbortController | null = null
+  private rangeBudget: RangeBudget = {
+    sensor: SENSOR_RANGE_MAX_POINTS,
+    control: CONTROL_HISTORY_MAX_POINTS,
+  }
 
   constructor(
     private readonly location: string,
@@ -69,6 +90,7 @@ export class MonitoringStore {
         this.active = false
         this.stopTimer()
         this.rangeSequence += 1
+        this.abortRangeLoad()
       }
     }
   }
@@ -90,19 +112,33 @@ export class MonitoringStore {
     const nextRange: MonitoringRange = { kind: 'fixed', start, end }
     if (sameRange(this.state.range, nextRange)) return
     this.rangeSequence += 1
+    this.abortRangeLoad()
     this.setState({ range: nextRange, isLive: false })
     void this.loadRangeIfChanged()
   }
 
   setLiveRange(duration: number): void {
+    const nextRange: MonitoringRange = { kind: 'live', duration }
+    if (sameRange(this.state.range, nextRange)) return
     this.rangeSequence += 1
-    this.setState({ range: { kind: 'live', duration }, isLive: true })
+    this.abortRangeLoad()
+    this.setState({ range: nextRange, isLive: true })
     void this.loadRangeIfChanged()
+  }
+
+  /** Refresh range sources at the chart-derived resolution. */
+  setRangeBudget(maxPoints: number): void {
+    if (this.rangeBudget.sensor === maxPoints && this.rangeBudget.control === maxPoints) return
+    this.rangeSequence += 1
+    this.abortRangeLoad()
+    this.rangeBudget = { sensor: maxPoints, control: maxPoints }
+    void this.loadRangeIfChanged({ force: true })
   }
 
   /** Re-run the initial range load, preserving last-good data on failure. */
   retry(): void {
     this.rangeSequence += 1
+    this.abortRangeLoad()
     void this.loadRangeIfChanged({ force: true })
   }
 
@@ -129,6 +165,8 @@ export class MonitoringStore {
       tailLoading: false,
       reconciling: false,
       errors: [],
+      lastGoodRangeAt: null,
+      rangeErrorAt: null,
     }
   }
 
@@ -171,47 +209,52 @@ export class MonitoringStore {
     this.poller.tick()
   }
 
+  private abortRangeLoad(): void {
+    this.rangeController?.abort()
+    this.rangeController = null
+    this.rangeInFlight = false
+  }
+
   private async loadRangeIfChanged(options: { force?: boolean } = {}): Promise<void> {
     if (this.rangeInFlight) return
     if (!options.force && !this.rangeChanged()) return
     const sequence = ++this.rangeSequence
+    const controller = new AbortController()
+    this.rangeController = controller
     this.rangeInFlight = true
     this.setState({ loading: true })
     const { start, end } = this.rangeBounds(this.now())
     const settled = await Promise.allSettled([
-      this.monitoringApi.sensorRange(this.location, iso(start), iso(end)),
-      this.monitoringApi.sensorStats(this.location, iso(start), iso(end)),
-      this.monitoringApi.controlRange(this.location, iso(start), iso(end)),
-      this.monitoringApi.controlProjection(this.location, iso(start), iso(end)),
+      this.monitoringApi.sensorRange(this.location, iso(start), iso(end), this.rangeBudget.sensor, {
+        signal: controller.signal,
+      }),
+      this.monitoringApi.controlRange(this.location, iso(start), iso(end), this.rangeBudget.control, {
+        signal: controller.signal,
+      }),
+      this.monitoringApi.controlProjection(this.location, iso(start), iso(end), {
+        signal: controller.signal,
+      }),
     ])
-    this.rangeInFlight = false
-    if (!this.active) return
-    if (sequence !== this.rangeSequence) {
-      void this.loadRangeIfChanged()
-      return
+    if (this.rangeController === controller) {
+      this.rangeInFlight = false
+      this.rangeController = null
     }
+    if (!this.active) return
+    if (sequence !== this.rangeSequence) return
     const errors: string[] = []
-    const sensorRange =
-      settled[0].status === 'fulfilled'
-        ? settled[0].value
-        : (errors.push(errorMessage(settled[0].reason)), null)
-    const sensorStats =
-      settled[1].status === 'fulfilled'
-        ? settled[1].value
-        : (errors.push(errorMessage(settled[1].reason)), null)
-    const controlRange =
-      settled[2].status === 'fulfilled'
-        ? settled[2].value
-        : (errors.push(errorMessage(settled[2].reason)), null)
-    const projection =
-      settled[3].status === 'fulfilled'
-        ? settled[3].value
-        : (errors.push(errorMessage(settled[3].reason)), null)
+    const sensorRange = rangeResult(settled[0], errors)
+    const controlRange = rangeResult(settled[1], errors)
+    const projection = rangeResult(settled[2], errors)
     this.lastRangeIdentity = this.state.range
+    const completedAt = this.now()
+    const rangeFreshness = errors.length === 0
+      ? { lastGoodRangeAt: completedAt, rangeErrorAt: null }
+      : { rangeErrorAt: completedAt }
     this.setState({
       loading: false,
       errors,
-      data: applyInitialPartial(this.state.data, sensorRange, sensorStats, controlRange, projection),
+      data: applyInitialPartial(this.state.data, sensorRange, controlRange, projection),
+      ...rangeFreshness,
     })
   }
 }

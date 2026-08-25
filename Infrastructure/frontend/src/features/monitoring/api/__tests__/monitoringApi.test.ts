@@ -203,6 +203,40 @@ describe('monitoring api boundary', () => {
     )
   })
 
+  it('serializes optional point budgets for supported range routes', async () => {
+    const fetchMock = vi.mocked(fetch)
+    const api = new MonitoringApi()
+    const start = '2026-08-02T11:00:00.000Z'
+    const end = '2026-08-02T12:00:00.000Z'
+
+    fetchMock.mockResolvedValueOnce(jsonResponse(sensorRangePayload))
+    await api.sensorRange('Flower Room', start, end, 2000)
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      expect.stringContaining(
+        '/api/sensors/monitoring/range/Flower%20Room?start=2026-08-02T11%3A00%3A00.000Z&end=2026-08-02T12%3A00%3A00.000Z&max_points=2000',
+      ),
+      expect.any(Object),
+    )
+
+    fetchMock.mockResolvedValueOnce(jsonResponse({ ...sensorRangePayload, series: [] }))
+    await api.sensorStats('Flower Room', start, end, 2000)
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      expect.stringContaining(
+        '/api/sensors/monitoring/stats/Flower%20Room?start=2026-08-02T11%3A00%3A00.000Z&end=2026-08-02T12%3A00%3A00.000Z&max_points=2000',
+      ),
+      expect.any(Object),
+    )
+
+    fetchMock.mockResolvedValueOnce(jsonResponse(controlPayload))
+    await api.controlRange('Flower Room', start, end, 1000)
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      expect.stringContaining(
+        '/api/monitoring/control/Flower%20Room/history?start=2026-08-02T11%3A00%3A00.000Z&end=2026-08-02T12%3A00%3A00.000Z&max_points=1000',
+      ),
+      expect.any(Object),
+    )
+  })
+
   it('parses legacy and additive point-budget response fields without changing unknown-key handling', async () => {
     const fetchMock = vi.mocked(fetch)
     const api = new MonitoringApi()
@@ -333,7 +367,7 @@ describe('monitoring api boundary', () => {
           )
         }),
     )
-    await expect(api.sensorRange('Flower Room', undefined, undefined, { timeoutMs: 5 })).rejects.toBeInstanceOf(
+    await expect(api.sensorRange('Flower Room', undefined, undefined, undefined, { timeoutMs: 5 })).rejects.toBeInstanceOf(
       MonitoringTimeoutError,
     )
 
@@ -345,18 +379,43 @@ describe('monitoring api boundary', () => {
     const fetchMock = vi.mocked(fetch)
     const api = new MonitoringApi()
     const controller = new AbortController()
+    let networkSignal: AbortSignal | undefined
 
     fetchMock.mockImplementation(
       (_url: RequestInfo | URL, init?: RequestInit) =>
         new Promise<Response>((_resolve, reject) => {
+          networkSignal = init?.signal ?? undefined
           init?.signal?.addEventListener('abort', () =>
             reject(new DOMException('Aborted', 'AbortError')),
           )
         }),
     )
 
-    const pending = api.sensorRange('Flower Room', undefined, undefined, { signal: controller.signal })
+    const pending = api.sensorRange('Flower Room', undefined, undefined, undefined, { signal: controller.signal })
+    expect(networkSignal).toBeDefined()
     controller.abort()
+    expect(networkSignal?.aborted).toBe(true)
     await expect(pending).rejects.toBeInstanceOf(MonitoringAbortError)
+  })
+
+  it('classifies an already-aborted external signal before the request starts', async () => {
+    const fetchMock = vi.mocked(fetch)
+    const api = new MonitoringApi()
+    const controller = new AbortController()
+    controller.abort()
+
+    fetchMock.mockImplementation((_url: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.signal?.aborted) {
+        return Promise.reject(new DOMException('Aborted', 'AbortError'))
+      }
+      return Promise.resolve(jsonResponse(sensorRangePayload))
+    })
+
+    await expect(
+      api.sensorRange('Flower Room', undefined, undefined, undefined, {
+        signal: controller.signal,
+        timeoutMs: 1000,
+      }),
+    ).rejects.toBeInstanceOf(MonitoringAbortError)
   })
 })

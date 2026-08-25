@@ -1,6 +1,6 @@
 import { sensorUrlClustersFor } from '../../../config/clusterTopology'
 import { logger } from '../../../utils/logger'
-import { MonitoringApi } from '../api'
+import { CONTROL_HISTORY_MAX_POINTS, MonitoringApi } from '../api'
 
 import {
   applyControl,
@@ -146,7 +146,12 @@ export class MonitoringLivePoller {
     this.hooks.setFlags({ reconciling: true })
     try {
       const { start, end } = this.rangeBounds()
-      const resp = await this.monitoringApi.controlRange(this.location, iso(start), iso(end))
+      const resp = await this.monitoringApi.controlRange(
+        this.location,
+        iso(start),
+        iso(end),
+        CONTROL_HISTORY_MAX_POINTS,
+      )
       if (!this.hooks.isActive() || this.hooks.isPaused()) return
       this.hooks.applyData(applyControlFresh(this.hooks.read().data, resp))
     } catch (err) {

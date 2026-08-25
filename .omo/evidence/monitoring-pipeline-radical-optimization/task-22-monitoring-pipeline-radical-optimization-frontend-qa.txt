@@ -1,0 +1,27 @@
+Task 22 — monitoring frontend stale-state, accessibility, zoom, and fixture QA
+Date: 2026-08-25
+
+Implementation
+- Store range freshness explicitly as lastGoodRangeAt and rangeErrorAt.
+- Status and every chart/table card visibly announce retained data as stale with last-good and latest-error timestamps.
+- The deterministic range-503-after-good fixture proves retained data, stale presentation, and Retry recovery.
+- Restored the MonitoringChartFeed performance lifecycle around panel alignment; T21's chart-only feed continues to publish without page rerenders.
+
+Verification
+- TypeScript: npx tsc --noEmit — PASS.
+- Production frontend build: npm run build — PASS (1,606 transformed modules).
+- Monitoring Vitest: npx vitest run src/features/monitoring — PASS, 21 files / 109 tests.
+- Full fixture Playwright: npx playwright test --config=playwright.monitoring.config.ts — PASS, 39 tests.
+- Focused forced range failure: range-503-after-good retains last-good data, displays Data stale with timestamps, and Retry clears the alert — PASS.
+- Range semantics: Store tests prove a resolution refetch retains fixed start/end bounds and advances live bounds; chart tests prove user zoom survives live setData(..., false) and Reset Zoom is silent.
+- Existing browser coverage passed for legends, keyboard legend controls, Reset Zoom, accessible chart description, data-table disclosure ARIA, null gap rendering, provenance, approximate-standard-deviation contracts, pause/resume, network guard, and axe at 375/768/1280 px across all six themes.
+- Fixture origin guard: full browser suite passed; direct browser resource inspection found no 8000/8001/8003/8080/iskraprojectcea resource origin.
+
+Browser evidence
+- task-22-desktop-success.png — 1280 px fixture build; four chart images, no stale state after recovery.
+- task-22-desktop-success-a11y.md — desktop accessibility snapshot.
+- task-22-tablet-success.png — 768 px fixture build; Reset Zoom, Pause, and two chart legends present.
+- task-22-tablet-success-a11y.md — tablet accessibility snapshot.
+
+Observed non-blocking noise
+- Vite reports the pre-existing esbuild/oxc deprecation warning during Vitest.

@@ -241,6 +241,8 @@ export function TimeRangeToolbar({
           anchorQuality={monitoring.anchorQuality}
           projectionRevision={monitoring.projectionRevision}
           runtimeSnapshotVersion={monitoring.runtimeSnapshotVersion}
+          lastGoodRangeAt={monitoring.lastGoodRangeAt}
+          rangeErrorAt={monitoring.rangeErrorAt}
           onRetry={monitoring.onRetry}
           isLive={live && !paused}
         />

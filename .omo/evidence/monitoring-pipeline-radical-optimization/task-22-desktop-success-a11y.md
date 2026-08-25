@@ -1,0 +1,25 @@
+- generic [ref=f1e2]:
+  - region "Notifications alt+T"
+  - generic [ref=f1e4]:
+    - complementary [ref=f1e457]:
+      - link "CEA" [ref=f1e459] [cursor=pointer]:
+        - /url: /
+        - img "CEA" [ref=f1e460]
+      - navigation [ref=f1e461]:
+        - link "🔬 Laboratory" [ref=f1e463] [cursor=pointer]:
+          - /url: /laboratory
+        - link "🌱 Vegetation" [ref=f1e466] [cursor=pointer]:
+          - /url: /vegetation
+        - link "🌻 Flower" [ref=f1e469] [cursor=pointer]:
+          - /url: /flower
+        - link "⚙️ Devices" [ref=f1e472] [cursor=pointer]:
+          - /url: /devices
+      - generic [ref=f1e475]:
+        - paragraph [ref=f1e476]: v1.0.0
+        - button "Collapse sidebar" [ref=f1e477]
+    - generic [ref=f1e28]:
+      - generic [ref=f1e29]:
+        - heading "🌻 Flower Room" [level=1] [ref=f1e30]
+        - navigation [ref=f1e32]
+      - main [ref=f1e39]:
+        - generic [ref=f1e40]

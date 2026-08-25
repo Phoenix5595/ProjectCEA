@@ -6,6 +6,11 @@
  */
 import type { AlignInput } from './alignSeries.types'
 
+type TimestampInput = Pick<
+  AlignInput,
+  'series' | 'controlHistory' | 'projectionHistory' | 'photoperiod'
+>
+
 export const DEFAULT_MAX_POINTS = 5000
 
 /** Resolve the visible window from a fixed or live range relative to `now`. */
@@ -16,7 +21,7 @@ export function windowBounds(range: AlignInput['range'], now: Date): { start: nu
 
 /** Collect every candidate timestamp in the window, sorted and unique. */
 export function collectTimestamps(
-  input: AlignInput,
+  input: TimestampInput,
   start: number,
   end: number,
   now: number,

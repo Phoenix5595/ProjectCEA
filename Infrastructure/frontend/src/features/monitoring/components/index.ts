@@ -39,6 +39,7 @@ export type { StatisticsTableProps } from './StatisticsTable'
 export { ChartDataTable } from './ChartDataTable'
 export type { ChartDataTableProps } from './ChartDataTable'
 export { MonitoringStatus } from './MonitoringStatus'
+export { MonitoringFreshness } from './MonitoringFreshness'
 export type { MonitoringStatusProps } from './MonitoringStatus'
 export { MonitoringErrorBoundary } from './MonitoringErrorBoundary'
 export {

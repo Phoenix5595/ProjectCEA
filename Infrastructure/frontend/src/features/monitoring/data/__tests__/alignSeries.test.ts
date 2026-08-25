@@ -372,4 +372,5 @@ describe('alignSeries', () => {
     const keys = new Set(out.series.map((s) => s.key))
     expect(keys.size).toBe(out.series.length)
   })
+
 })

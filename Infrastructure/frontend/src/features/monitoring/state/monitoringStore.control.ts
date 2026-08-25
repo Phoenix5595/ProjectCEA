@@ -12,7 +12,7 @@ import type {
 import { extractProjection, mergeControlHistory } from './monitoringStore.merge'
 import type { StoreData } from './monitoringStore.types'
 
-/** Install the concurrent initial range/stats/control/projection results. */
+/** Install the concurrent initial range/control/projection results. */
 export function applyInitial(
   sensorRange: MonitoringResponse,
   sensorStats: MonitoringResponse,
@@ -45,14 +45,13 @@ export function applyInitial(
 export function applyInitialPartial(
   existing: StoreData,
   sensorRange: MonitoringResponse | null,
-  sensorStats: MonitoringResponse | null,
   controlRange: ControlMonitoringResponse | null,
   projection: ControlMonitoringResponse | null,
 ): StoreData {
   const proj = projection ? extractProjection(projection) : null
   return {
     series: sensorRange?.series ?? existing.series,
-    statistics: sensorStats?.statistics ?? existing.statistics,
+    statistics: sensorRange?.statistics ?? existing.statistics,
     live: existing.live,
     controlHistory: controlRange ?? existing.controlHistory,
     projectionHistory: projection ?? existing.projectionHistory,
@@ -149,4 +148,3 @@ export function lastControlTimestamp(data: StoreData): Date | null {
   scan(history.photoperiod)
   return last
 }
-

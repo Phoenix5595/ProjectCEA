@@ -1,7 +1,8 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
-import { render } from '@testing-library/react'
+import { act, render } from '@testing-library/react'
 import { ThemeProvider } from '../../../../contexts/ThemeContext'
 import type { AlignedData } from '../../data'
+import { createMonitoringChartFeed } from '../MonitoringChartFeed'
 import { UPlotChart } from '../UPlotChart'
 
 const { MockUPlot, instances } = vi.hoisted(() => {
@@ -50,14 +51,14 @@ describe('debug', () => {
   beforeEach(() => { instances.length = 0; vi.stubGlobal('ResizeObserver', RO) })
   afterEach(() => vi.unstubAllGlobals())
   it('counts setData calls across rerender', () => {
+    const range = { kind: 'live', duration: 3_600_000 } as const
+    const feed = createMonitoringChartFeed(makeData(), range)
     const { rerender } = render(
-      <ThemeProvider><UPlotChart data={makeData()} /></ThemeProvider>,
+      <ThemeProvider><UPlotChart feed={feed} /></ThemeProvider>,
     )
     expect(instances.length).toBe(1)
-    console.log('after mount setData calls:', instances[0].setData.mock.calls.length)
-    rerender(<ThemeProvider><UPlotChart data={makeData(3)} /></ThemeProvider>)
-    console.log('instances:', instances.length)
-    instances.forEach((p, i) => console.log(`instance ${i} setData calls:`, p.setData.mock.calls.length))
+    act(() => feed.publish(makeData(3), range))
+    rerender(<ThemeProvider><UPlotChart feed={feed} /></ThemeProvider>)
     expect(instances[0].setData.mock.calls.length).toBeGreaterThan(0)
   })
 })

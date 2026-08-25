@@ -7,6 +7,13 @@
  */
 export { UPlotChart } from './UPlotChart'
 export type { UPlotChartHandle, UPlotChartProps } from './UPlotChart'
+export { createMonitoringChartFeed, createMonitoringPanelChartFeed } from './MonitoringChartFeed'
+export type {
+  MonitoringChartFeed,
+  MonitoringChartStructuralSnapshot,
+  MonitoringPanelChartFeed,
+  MonitoringPanelChartFeedOptions,
+} from './MonitoringChartFeed'
 export { buildOptions, toUPlotData } from './uPlotOptions'
 export type { ChartCallbacks } from './uPlotOptions'
 export { ExternalLegend } from './legend/ExternalLegend'
