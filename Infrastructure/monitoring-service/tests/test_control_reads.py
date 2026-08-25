@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime, timedelta
 from typing import final
 
@@ -15,6 +16,7 @@ from monitoring_service.control_models import (
 from monitoring_service.control_repository import (
     ControlHistoryRepository,
     ControlPublicationRepository,
+    _publication_keys,
 )
 from monitoring_service.main import create_app
 from shared.monitoring_contracts import (
@@ -22,6 +24,7 @@ from shared.monitoring_contracts import (
     CurrentSeriesPoint,
     CurrentSnapshot,
     FutureProjection,
+    MonitoringContractViolation,
     PersistenceCursor,
     PersistenceState,
     ProjectionRevision,
@@ -29,6 +32,11 @@ from shared.monitoring_contracts import (
     PublicationVersion,
     Quality,
     SemanticSeriesId,
+    validate_projection_timeline,
+)
+from shared.redis_keys import (
+    monitoring_current_publication_key,
+    monitoring_future_publication_key,
 )
 
 NOW = datetime(2026, 8, 20, 12, tzinfo=UTC)
@@ -318,3 +326,82 @@ async def test_valid_pair_still_reads_exact_and_estimated() -> None:
     # Then: contract parity holds field-for-field across the publish/read seam.
     assert response.current.value == current
     assert response.projection.value == (future,)
+
+
+def _future_window_json(version: int, valid_from: str, valid_until: str) -> str:
+    payload = json.loads(_future(version))
+    payload["valid_from"] = valid_from
+    payload["valid_until"] = valid_until
+    return json.dumps(payload)
+
+
+@pytest.mark.anyio
+async def test_publication_parses_legacy_single_object_future() -> None:
+    repository = ControlPublicationRepository(
+        FakeRedis([_current(7), _future(7)]), clock=lambda: NOW
+    )
+    response = await repository.read("Veg Room")
+    assert response.projection.quality == "estimated"
+    assert response.projection.value is not None and len(response.projection.value) == 1
+
+
+@pytest.mark.anyio
+async def test_publication_parses_versioned_array_future_timeline() -> None:
+    timeline = json.dumps(
+        [
+            json.loads(_future(7)),
+            json.loads(_future_window_json(7, "2026-08-20T13:00:00Z", "2026-08-20T14:00:00Z")),
+        ]
+    )
+    repository = ControlPublicationRepository(FakeRedis([_current(7), timeline]), clock=lambda: NOW)
+    response = await repository.read("Veg Room")
+    assert response.projection.quality == "estimated"
+    assert response.projection.value is not None and len(response.projection.value) == 2
+
+
+@pytest.mark.anyio
+async def test_publication_rejects_overlapping_array_timeline_unavailable() -> None:
+    timeline = json.dumps(
+        [
+            json.loads(_future(7)),
+            json.loads(_future_window_json(7, "2026-08-20T12:30:00Z", "2026-08-20T14:00:00Z")),
+        ]
+    )
+    repository = ControlPublicationRepository(FakeRedis([_current(7), timeline]), clock=lambda: NOW)
+    response = await repository.read("Veg Room")
+    assert response.projection.quality == "unavailable"
+    assert response.projection.value == ()
+
+
+@pytest.mark.anyio
+async def test_publication_rejects_malformed_future_payload_unavailable() -> None:
+    repository = ControlPublicationRepository(
+        FakeRedis([_current(7), "{not-json"]), clock=lambda: NOW
+    )
+    response = await repository.read("Veg Room")
+    assert response.projection.quality == "unavailable"
+
+
+def test_publication_keys_match_shared_canonical_builders() -> None:
+    assert _publication_keys("Flower Room") == [
+        monitoring_current_publication_key("Flower Room"),
+        monitoring_future_publication_key("Flower Room"),
+    ]
+
+
+def test_projection_timeline_rejects_mixed_versions() -> None:
+    projections = (
+        FutureProjection.model_validate_json(_future(7)),
+        FutureProjection.model_validate_json(_future(8)),
+    )
+    with pytest.raises(MonitoringContractViolation):
+        validate_projection_timeline(projections)
+
+
+def test_projection_timeline_accepts_empty_and_ordered() -> None:
+    assert validate_projection_timeline(()) == ()
+    first = FutureProjection.model_validate_json(_future(7))
+    second = FutureProjection.model_validate_json(
+        _future_window_json(7, "2026-08-20T13:00:00Z", "2026-08-20T14:00:00Z")
+    )
+    assert validate_projection_timeline((first, second)) == (first, second)

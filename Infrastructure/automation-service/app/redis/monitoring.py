@@ -7,11 +7,7 @@ from typing import Protocol
 import redis
 
 from shared.monitoring_contracts import CurrentSnapshot
-
-
-def current_publication_key(location: str) -> str:
-    """Return the canonical current-fact key for one automation location."""
-    return f"cea:monitoring:current:{location}"
+from shared.redis_keys import monitoring_current_publication_key
 
 
 class RedisSetter(Protocol):
@@ -32,7 +28,7 @@ class RedisCurrentPublicationWriter:
         """Store the contract JSON without rewriting its event timestamps."""
         try:
             return self._redis_client.set(
-                current_publication_key(location),
+                monitoring_current_publication_key(location),
                 snapshot.model_dump_json(),
             )
         except redis.RedisError:
