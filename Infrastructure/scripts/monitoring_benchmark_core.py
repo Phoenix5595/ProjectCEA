@@ -3,18 +3,17 @@
 from __future__ import annotations
 
 import asyncio  # noqa: ANYIO_OK - the required CLI contract specifies asyncio.Semaphore.
-import json
-import socket
-import time
-import urllib.error
-import urllib.parse
-import urllib.request
 from collections import Counter
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
+import json
 from math import ceil
+import socket
+import time
 from typing import Final
-
+import urllib.error
+import urllib.parse
+import urllib.request
 
 TARGETS: Final[tuple[str, ...]] = ("range", "stats", "live", "history", "projection")
 WINDOW_HOURS: Final[dict[str, int]] = {"1h": 1, "3h": 3, "24h": 24, "7d": 168}
@@ -159,7 +158,7 @@ async def fetch(
         return Observation(
             error.code, error_class, len(body), (time.perf_counter() - started) * 1000
         )
-    except (socket.timeout, TimeoutError):
+    except TimeoutError:
         return Observation(None, "timeout", 0, (time.perf_counter() - started) * 1000)
     except urllib.error.URLError as error:
         error_class = (

@@ -4,14 +4,14 @@
 from __future__ import annotations
 
 import argparse
-import asyncio  # noqa: ANYIO_OK - the required CLI contract specifies asyncio.Semaphore.
-import ipaddress
-import json
-import re
-import sys
+import asyncio  # required CLI contract: asyncio.Semaphore
 from dataclasses import dataclass
 from datetime import UTC, datetime
+import ipaddress
+import json
 from pathlib import Path
+import re
+import sys
 from typing import Final
 from urllib.parse import urlsplit
 
@@ -19,7 +19,7 @@ PROJECT_ROOT = str(Path(__file__).resolve().parents[2])
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
-from Infrastructure.scripts.monitoring_benchmark_core import (
+from Infrastructure.scripts.monitoring_benchmark_core import (  # noqa: E402 - must follow sys.path shim
     TARGETS,
     WINDOW_HOURS,
     BenchmarkConfig,
