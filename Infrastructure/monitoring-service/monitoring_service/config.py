@@ -50,7 +50,7 @@ class Settings(BaseSettings):
     postgres_pool_size: int = Field(default=8, ge=1, le=8)
     postgres_acquire_timeout_seconds: float = Field(default=10, gt=0, le=60)
     postgres_statement_timeout_ms: int = Field(default=8_000, ge=1, le=60_000)
-    redis_timeout_seconds: float = Field(default=0.5, gt=0, le=60)
+    redis_timeout_seconds: float = Field(default=2.0, gt=0, le=60)
 
     @property
     def read_dependencies(self) -> ReadDependencySettings:

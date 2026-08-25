@@ -27,6 +27,7 @@ and Redis; `automation-service` remains the sole control and hardware authority.
 | `MONITORING_POSTGRES_POOL_SIZE` | Maximum read-pool size (default: `8`, range `1`–`8`) |
 | `MONITORING_POSTGRES_ACQUIRE_TIMEOUT_SECONDS` | Read-pool acquire timeout in seconds (default: `10`, range greater than `0` through `60`) |
 | `MONITORING_POSTGRES_STATEMENT_TIMEOUT_MS` | Postgres statement timeout in milliseconds (default: `8000`, range `1`–`60000`) |
+| `MONITORING_REDIS_TIMEOUT_SECONDS` | Redis connect and read timeout in seconds (default: `2`, range greater than `0` through `60`) |
 
 Run locally from this directory:
 
