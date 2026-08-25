@@ -46,6 +46,21 @@ test('backend-down shows error, keeps panels, and recovers on retry', async ({ p
   expect(violations).toEqual([])
 })
 
+test('range 503 retains last-good data, announces its age, and recovers on retry', async ({ page }, testInfo) => {
+  const violations = trackViolations(page)
+  await page.goto(fixtureUrl('/flower/monitoring?scenario=range-503-after-good', testInfo))
+  await expect(page.getByRole('table', { name: 'Back Cluster' }).getByText('24.6°C')).toBeVisible()
+
+  await page.getByRole('button', { name: 'Retry' }).click()
+  await expect(page.getByRole('alert').first()).toBeVisible()
+  await expect(page.getByRole('status', { name: '' }).filter({ hasText: 'Data stale.' }).first()).toContainText('Last good monitoring range:')
+  await expect(page.getByRole('table', { name: 'Back Cluster' }).getByText('24.6°C')).toBeVisible()
+
+  await page.getByRole('button', { name: 'Retry' }).click()
+  await expect(page.getByRole('alert')).toHaveCount(0)
+  expect(violations).toEqual([])
+})
+
 test('automation-down shows error, keeps panels, and recovers on retry', async ({ page }, testInfo) => {
   const violations = trackViolations(page)
   await page.goto(fixtureUrl('/flower/monitoring?scenario=automation-down', testInfo))
