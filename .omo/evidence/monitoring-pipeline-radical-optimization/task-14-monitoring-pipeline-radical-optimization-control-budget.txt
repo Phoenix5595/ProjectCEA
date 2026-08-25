@@ -1,0 +1,48 @@
+Task 14 — semantic point budgeting for control history
+
+Scope
+- Implemented only monitoring-service control-history reads and their tests.
+- No sensor-side files, database schema files, hardware/PID authority code, dependencies, or production resources were changed.
+- No git command was run.
+
+Behavior
+- `max_points` is passed from the history route through RuntimeControlReads into ControlHistoryRepository.
+- Unbudgeted reads retain the raw `effective_setpoints` plus 1-minute automation-state SQL and produce the characterization-pinned JSON envelope exactly.
+- Budgeted reads choose existing sources by duration: raw setpoints/1-minute state below two hours, 1-minute setpoints/state at two hours through under one day, and 5-minute setpoints/state at one day or longer.
+- CAGG queries use their `*_last` columns directly. CAGG setpoint series carry `is_aggregated=true` provenance.
+- Applied metadata is constructed by the repository from the selected source interval and `derive_interval_seconds`; the route does not overwrite it.
+- Climate/light held targets become predecessor-plus-transition `steps`; raw ramp runs become explicit `linear` endpoint segments. Device and PID rows keep observed transition rows only. Photoperiod removes only consecutive rows whose phase, mode IDs, and snapshot version are identical.
+- A null raw target reading becomes an unavailable null step under budgeting, so a hold is not bridged over the gap. No values are averaged.
+- The predecessor is counted inside the per-series budget. When more observed transitions exist than the requested capacity, retained rows are existing first/last transition facts; no extra sentinel is emitted and no categorical string is synthesized.
+
+Characterization
+- `test_history_without_budget_matches_characterized_legacy_envelope` asserts the full Pydantic JSON serialization from a fake database before and after the refactor.
+
+Tests
+- `test_budgeted_history_preserves_step_holds_ramp_endpoints_and_phase_transitions`
+- `test_budgeted_history_uses_aggregated_last_value_sources_for_long_windows`
+- `test_budgeted_history_keeps_unavailable_setpoint_gaps_unbridged`
+- `test_budget_counts_the_predecessor_within_the_semantic_series_limit`
+- Focused control suite: 18 passed.
+- Full monitoring-service suite run 1: 77 passed in 2.01s.
+- Full monitoring-service suite run 2: 77 passed in 1.91s.
+
+Quality gates
+- `ruff check monitoring_service tests`: passed.
+- `ruff format --check monitoring_service tests`: passed (19 files already formatted).
+- `python3 -m compileall -q monitoring_service`: passed.
+- Production control modules are 63–223 pure LOC; new focused test modules are 40–213 pure LOC.
+
+Touched paths
+- Infrastructure/monitoring-service/monitoring_service/control_history_queries.py
+- Infrastructure/monitoring-service/monitoring_service/control_repository.py
+- Infrastructure/monitoring-service/monitoring_service/control_routes.py
+- Infrastructure/monitoring-service/monitoring_service/control_timeline_build.py
+- Infrastructure/monitoring-service/monitoring_service/control_timeline_budget.py
+- Infrastructure/monitoring-service/tests/test_control_reads.py
+- Infrastructure/monitoring-service/tests/test_max_points_contracts.py
+- Infrastructure/monitoring-service/tests/test_control_budget.py
+- Infrastructure/monitoring-service/tests/test_control_budget_boundary.py
+- Infrastructure/monitoring-service/tests/test_control_legacy_characterization.py
+- .omo/evidence/monitoring-pipeline-radical-optimization/task-14-monitoring-pipeline-radical-optimization-control-budget.txt
+- .omo/notepads/monitoring-pipeline-radical-optimization/learnings.md
