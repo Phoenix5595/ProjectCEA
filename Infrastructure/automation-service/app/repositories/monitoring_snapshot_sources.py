@@ -33,15 +33,19 @@ _PUBLICATION_ROOMS: Final[tuple[tuple[str, str], ...]] = (
     ("Veg Room", "main"),
 )
 
-_SETPOINT_PREDECESSOR_COLUMNS = """
-    timestamp, location, cluster, device_name, mode,
-    effective_heating_setpoint, effective_cooling_setpoint, effective_humidity_setpoint,
-    effective_co2_setpoint, effective_vpd_setpoint, effective_light_intensity,
-    nominal_heating_setpoint, nominal_cooling_setpoint, nominal_humidity_setpoint,
-    nominal_co2_setpoint, nominal_vpd_setpoint, nominal_light_intensity,
-    ramp_progress_heating, ramp_progress_cooling, ramp_progress_humidity,
-    ramp_progress_co2, ramp_progress_vpd, ramp_progress_light
-"""
+_SETPOINT_PREDECESSOR_COLUMNS = (
+    "timestamp, location, cluster, device_name, mode, "
+    "effective_heating_setpoint, effective_cooling_setpoint, effective_humidity_setpoint, "
+    "effective_co2_setpoint, effective_vpd_setpoint, effective_light_intensity, "
+    "nominal_heating_setpoint, nominal_cooling_setpoint, nominal_humidity_setpoint, "
+    "nominal_co2_setpoint, nominal_vpd_setpoint, nominal_light_intensity, "
+    "ramp_progress_heating, ramp_progress_cooling, ramp_progress_humidity, "
+    "ramp_progress_co2, ramp_progress_vpd, ramp_progress_light"
+)
+
+
+def _qualified(columns: str, prefix: str) -> str:
+    return ", ".join(f"{prefix}.{name.strip()}" for name in columns.split(","))
 
 
 class ModeSnapshotSource:
@@ -162,12 +166,27 @@ class LightSnapshotSource:
     async def read_effective_setpoint_predecessors(
         self, location: str, cluster: str, start: datetime
     ) -> Sequence[Mapping[str, Any]]:
-        query = f"""
-            SELECT DISTINCT ON (device_name, mode) {_SETPOINT_PREDECESSOR_COLUMNS}
-            FROM effective_setpoints
-            WHERE location = $1 AND cluster = $2 AND timestamp < $3
-            ORDER BY device_name, mode, timestamp DESC
-        """
+        query = """
+            WITH recent AS (
+                SELECT DISTINCT device_name, mode
+                FROM effective_setpoints
+                WHERE location = $1 AND cluster = $2
+                  AND timestamp >= $3::timestamptz - INTERVAL '48 hours' AND timestamp < $3::timestamptz
+            )
+            SELECT DISTINCT ON (r.device_name, r.mode)
+                   {_COLUMNS}
+            FROM recent r
+            CROSS JOIN LATERAL (
+                SELECT *
+                FROM effective_setpoints e
+                WHERE e.location = $1 AND e.cluster = $2
+                  AND e.device_name = r.device_name AND e.mode = r.mode
+                  AND e.timestamp < $3::timestamptz
+                ORDER BY e.timestamp DESC
+                LIMIT 1
+            ) e
+            ORDER BY r.device_name, r.mode
+        """.replace("{_COLUMNS}", _qualified(_SETPOINT_PREDECESSOR_COLUMNS, "e"))
         async with self._pool.acquire() as connection:
             return await connection.fetch(query, location, cluster, start)
 
@@ -181,13 +200,28 @@ class AnchorSnapshotSource:
     async def read_ramp_anchors(
         self, location: str, cluster: str, start: datetime
     ) -> Sequence[Mapping[str, Any]]:
-        query = f"""
-            SELECT DISTINCT ON (device_name, mode) {_SETPOINT_PREDECESSOR_COLUMNS}
-            FROM effective_setpoints
-            WHERE location = $1 AND cluster = $2
-              AND timestamp < $3 AND effective_light_intensity IS NOT NULL
-            ORDER BY device_name, mode, timestamp DESC
-        """
+        query = """
+            WITH recent AS (
+                SELECT DISTINCT device_name, mode
+                FROM effective_setpoints
+                WHERE location = $1 AND cluster = $2
+                  AND timestamp >= $3::timestamptz - INTERVAL '48 hours' AND timestamp < $3::timestamptz
+                    AND effective_light_intensity IS NOT NULL
+            )
+            SELECT DISTINCT ON (r.device_name, r.mode)
+                   {_COLUMNS}
+            FROM recent r
+            CROSS JOIN LATERAL (
+                SELECT *
+                FROM effective_setpoints e
+                WHERE e.location = $1 AND e.cluster = $2
+                  AND e.device_name = r.device_name AND e.mode = r.mode
+                  AND e.timestamp < $3::timestamptz
+                ORDER BY e.timestamp DESC
+                LIMIT 1
+            ) e
+            ORDER BY r.device_name, r.mode
+        """.replace("{_COLUMNS}", _qualified(_SETPOINT_PREDECESSOR_COLUMNS, "e"))
         async with self._pool.acquire() as connection:
             return await connection.fetch(query, location, cluster, start)
 
@@ -195,12 +229,25 @@ class AnchorSnapshotSource:
         self, location: str, cluster: str, start: datetime
     ) -> Sequence[Mapping[str, Any]]:
         query = """
-            SELECT DISTINCT ON (device_name)
-                   timestamp, location, cluster, device_name, device_state, device_mode,
-                   pid_output, duty_cycle_percent, control_reason
-            FROM automation_state
-            WHERE location = $1 AND cluster = $2 AND timestamp < $3
-            ORDER BY device_name, timestamp DESC
+            WITH recent AS (
+                SELECT DISTINCT device_name
+                FROM automation_state
+                WHERE location = $1 AND cluster = $2
+                  AND timestamp >= $3::timestamptz - INTERVAL '48 hours' AND timestamp < $3::timestamptz
+            )
+            SELECT DISTINCT ON (r.device_name)
+                   a.timestamp, a.location, a.cluster, a.device_name, a.device_state,
+                   a.device_mode, a.pid_output, a.duty_cycle_percent, a.control_reason
+            FROM recent r
+            CROSS JOIN LATERAL (
+                SELECT *
+                FROM automation_state a
+                WHERE a.location = $1 AND a.cluster = $2
+                  AND a.device_name = r.device_name AND a.timestamp < $3::timestamptz
+                ORDER BY a.timestamp DESC
+                LIMIT 1
+            ) a
+            ORDER BY r.device_name
         """
         async with self._pool.acquire() as connection:
             return await connection.fetch(query, location, cluster, start)
@@ -211,7 +258,7 @@ class AnchorSnapshotSource:
         query = """
             SELECT observed_at, phase, mode_id, submode_id, runtime_snapshot_version
             FROM monitoring_room_photoperiod
-            WHERE location = $1 AND cluster = $2 AND observed_at < $3
+            WHERE location = $1 AND cluster = $2 AND observed_at < $3::timestamptz
             ORDER BY observed_at DESC
             LIMIT 1
         """
