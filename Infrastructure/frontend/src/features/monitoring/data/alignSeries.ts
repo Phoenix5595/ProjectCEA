@@ -38,7 +38,13 @@ export function alignSeriesBase(input: BaseAlignInput): BaseAlignment {
   const maxPoints = boundedMaxPoints(input.maxPoints)
   const bounds = windowBounds(input.range, input.now)
   const start = bounds.start
-  const end = Math.max(bounds.end, input.projectionHistory?.range.end.getTime() ?? bounds.end)
+  let end = bounds.end
+  const projectionEnd = input.projectionHistory?.range.end.getTime()
+  if (projectionEnd !== undefined && projectionEnd > end) {
+    // Future strip mirrors the selected window's duration so projections render
+    // alongside recorded data without flattening the recorded window.
+    end = Math.min(projectionEnd, end + (end - bounds.start))
+  }
   const now = input.now.getTime()
 
   const timestamps = collectTimestamps(input, start, end, now)
