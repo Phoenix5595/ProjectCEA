@@ -268,16 +268,16 @@ class AnchorSnapshotSource:
 
 
 class ConfigVersionSnapshotSource(VersionSnapshotRepository):
-    """Expose the latest configuration version cursor for projection publication."""
+    """Expose the runtime snapshot version as the configuration change cursor."""
 
-    def __init__(self, config_repo: Any) -> None:
-        self._config_repo = config_repo
+    def __init__(self, version_provider: Callable[[], int]) -> None:
+        self._version_provider = version_provider
 
     async def read_source_versions(
         self, location: str, cluster: str
     ) -> tuple[tuple[str, int | None], ...]:
         del location, cluster
-        return (("configuration", await self._config_repo.get_latest_config_version()),)
+        return (("configuration", self._version_provider()),)
 
 
 class _RegistryVersionBuilder:
@@ -324,7 +324,7 @@ def build_monitoring_publication_workers(
         climate=ClimatePeriodSnapshotSource(database.climate_periods_repo),
         lights=light_source,
         anchors=AnchorSnapshotSource(database._pool),
-        versions=ConfigVersionSnapshotSource(database.config_repo),
+        versions=ConfigVersionSnapshotSource(lambda: registry.snapshot.version),
     )
     snapshot_builder = _RegistryVersionBuilder(MonitoringSnapshotBuilder(repositories), registry)
 
