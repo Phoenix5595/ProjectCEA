@@ -21,7 +21,7 @@ import {
   presentationFromSpec,
 } from './alignSeries.builder'
 import { mergeControlSeries, mergeDeviceSeries, mergePidSeries } from './alignSeries.control'
-import { collectTimestamps, coarsenedGrid, DEFAULT_MAX_POINTS, indexOfNow, windowBounds } from './alignSeries.grid'
+import { collectTimestamps, coarsenedGrid, indexOfNow, windowBounds } from './alignSeries.grid'
 import { MAX_BUDGET } from './pointBudget'
 import { injectMonitoringAlignmentDelay, PERFORMANCE_MARKS_ENABLED } from '../perfMarks'
 
@@ -123,6 +123,8 @@ export function applyLiveTail(base: BaseAlignment, live: LiveSensorValue[], now:
   return { ...data, x, series, nowIndex: tailIndex }
 }
 
+export const LEGACY_SAFETY_CEILING = 20_000
+
 /** Preserve the legacy whole-input API while enforcing the client safety ceiling. */
 export function alignSeries(input: AlignInput): AlignedData {
   const base = alignSeriesBase({ ...input, series: withLive(input.series, input.live, input.now.getTime()) })
@@ -130,8 +132,10 @@ export function alignSeries(input: AlignInput): AlignedData {
 }
 
 function boundedMaxPoints(maxPoints: number | undefined): number {
-  const requested = maxPoints ?? DEFAULT_MAX_POINTS
-  return Math.min(MAX_BUDGET, Math.max(2, Math.floor(requested)))
+  // Unbudgeted (legacy-server) payloads are hard-capped at the safety ceiling;
+  // explicit budgets are honored up to MAX_BUDGET since the server pre-thins.
+  if (maxPoints === undefined) return LEGACY_SAFETY_CEILING
+  return Math.min(MAX_BUDGET, Math.max(2, Math.floor(maxPoints)))
 }
 
 /** Merge live values into their matching sensor series at `now`. */

@@ -16,7 +16,7 @@ from monitoring_service.sensor_models import (
     SensorSeries,
     SensorStatistics,
     Tier,
-    compute_tier,
+    resolve_tier,
     derive_interval_seconds,
     resolve_room_metadata,
     source_bucket_seconds,
@@ -89,7 +89,7 @@ async def statistics_read(
     reads: SensorReads = Depends(get_sensor_reads),
 ) -> MonitoringResponse:
     monitoring_range = _range(start, end)
-    tier = compute_tier(monitoring_range.duration)
+    tier = resolve_tier(monitoring_range.duration, max_points)
     return MonitoringResponse(
         metadata=MonitoringMetadata(
             generated_at=datetime.now(UTC),

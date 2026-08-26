@@ -58,3 +58,15 @@ class ConfigRepository(BaseRepository):
         except Exception as e:
             logger.error(f"Error logging config version: {e}")
             return None
+
+    async def get_latest_config_version(self) -> int | None:
+        """Return the newest configuration version cursor, or None when never logged."""
+        try:
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    "SELECT MAX(version_id) AS version_id FROM config_versions"
+                )
+        except Exception as e:
+            logger.error(f"Error reading latest config version: {e}")
+            return None
+        return row["version_id"] if row else None

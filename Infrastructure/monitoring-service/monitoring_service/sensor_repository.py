@@ -17,7 +17,7 @@ from monitoring_service.sensor_models import (
     SensorStatistics,
     StddevQuality,
     Tier,
-    compute_tier,
+    resolve_tier,
     resolve_interval_seconds,
     resolve_room_metadata,
     source_bucket_seconds,
@@ -74,7 +74,7 @@ class SensorMonitoringRepository:
         self, room: str, monitoring_range: MonitoringRange, max_points: int | None = None
     ) -> tuple[Tier, tuple[SensorSeries, ...]]:
         metadata = resolve_room_metadata(room)
-        tier = compute_tier(monitoring_range.duration)
+        tier = resolve_tier(monitoring_range.duration, max_points)
         node_mapping = node_mapping_args(room, metadata.nodes)
         async with request_observation(tier=tier.value):
             complete_bucket_upper_bound = (

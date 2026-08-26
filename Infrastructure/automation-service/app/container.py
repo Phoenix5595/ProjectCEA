@@ -27,6 +27,7 @@ from app.hardware.safe_outputs import (
 )
 from app.monitoring_publication.workers import MonitoringPublicationWorkers
 from app.redis_client import AutomationRedisClient
+from app.repositories.monitoring_snapshot_sources import build_monitoring_publication_workers
 from app.services.device_registry_service import DeviceRegistryService
 from app.services.photoperiod_history_logger import (
     DatabasePhotoperiodHistoryStore,
@@ -122,6 +123,12 @@ class ServiceContainer:
             self.runtime_device_registry = RuntimeDeviceRegistry(self.database)
             await self.runtime_device_registry.load_startup()
             self.config.set_runtime_device_registry(self.runtime_device_registry)
+
+            # Compose per-room monitoring publication workers (current + 24h projections)
+            self.monitoring_publication_workers = build_monitoring_publication_workers(
+                self.database, self.automation_redis, self.runtime_device_registry
+            )
+            logger.info("Monitoring publication workers composed")
 
             # Load schedule state from DB to Redis (after Redis connection is established)
             try:

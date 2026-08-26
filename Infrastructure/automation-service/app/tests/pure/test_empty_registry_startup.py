@@ -16,7 +16,7 @@ from app.repositories.devices.projection import RegistryProjection
 class _FakeRedis:
     def __init__(self) -> None:
         self.redis_enabled = False
-        self.redis_client = None
+        self.redis_client = self
         self.values: dict[str, str] = {}
 
     def get(self, key: str) -> str | None:
@@ -24,6 +24,18 @@ class _FakeRedis:
 
     def set(self, key: str, value: str) -> bool:
         self.values[key] = value
+        return True
+
+    def delete(self, *keys: str) -> int:
+        removed = 0
+        for key in keys:
+            if key in self.values:
+                del self.values[key]
+                removed += 1
+        return removed
+
+    def exists(self, key: str) -> int:
+        return 1 if key in self.values else 0
         return True
 
 
@@ -104,13 +116,44 @@ class _FakeRoomModeRepository:
         return None
 
 
+class _FakeConnection:
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_args: Any) -> None:
+        return None
+
+    async def fetch(self, *_args: Any, **_kwargs: Any) -> list[Any]:
+        return []
+
+    async def fetchrow(self, *_args: Any, **_kwargs: Any) -> dict[str, Any]:
+        return {"version_id": 1}
+
+
 class _FakePool:
-    pass
+    def acquire(self) -> _FakeConnection:
+        return _FakeConnection()
+
+
+class _FakeCalendarRepository:
+    async def list_events(self, *args: Any, **kwargs: Any) -> tuple[list[Any], None]:
+        return [], None
+
+
+class _FakeClimatePeriodsRepository:
+    async def get_periods(self, *args: Any, **kwargs: Any) -> list[Any]:
+        return []
+
+
+class _FakeConfigRepository:
+    async def get_latest_config_version(self) -> int | None:
+        return 1
 
 
 class _FakeDatabaseManager:
     def __init__(self) -> None:
         self._pool = None
+        self.pool = None
         self._automation_redis = _FakeRedis()
         self.device_repo = _FakeDeviceRepository()
         self.light_target_intensity_repo = _FakeLightTargetIntensityRepository()
@@ -118,12 +161,15 @@ class _FakeDatabaseManager:
         self.schedule_repo = _FakeScheduleRepository()
         self.control_action_repo = _FakeControlActionRepository()
         self.room_mode_repo = _FakeRoomModeRepository()
-        self.climate_periods_repo: Any = None
+        self.calendar_repo = _FakeCalendarRepository()
+        self.climate_periods_repo = _FakeClimatePeriodsRepository()
+        self.config_repo = _FakeConfigRepository()
         self.initialized = False
         self.closed = False
 
     async def initialize(self) -> None:
         self._pool = _FakePool()
+        self.pool = self._pool
         self.initialized = True
 
     async def load_schedule_state_to_redis(self) -> None:

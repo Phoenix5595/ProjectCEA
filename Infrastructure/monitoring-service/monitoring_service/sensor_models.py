@@ -145,6 +145,30 @@ def compute_tier(duration: timedelta) -> Tier:
     return Tier.FIVE_MINUTES
 
 
+def resolve_tier(duration: timedelta, max_points: int | None) -> Tier:
+    """Select the tier honoring the budget without ever losing legacy density.
+
+    Legacy requests without a budget keep the duration-only policy exactly.
+    Budgeted requests may upgrade granularity (e.g., 24 h served from the
+    1-minute model) but never fall coarser than the legacy choice.
+    """
+    _validate_duration(duration)
+    if max_points is None:
+        return compute_tier(duration)
+    seconds = duration.total_seconds()
+    minutes = seconds / 60
+    smallest_raw_interval = -(-seconds // max_points)
+    if duration <= timedelta(hours=6):
+        if smallest_raw_interval < 60:
+            return Tier.RAW
+        if minutes <= max_points:
+            return Tier.ONE_MINUTE
+        return Tier.RAW
+    if minutes <= max_points:
+        return Tier.ONE_MINUTE
+    return Tier.FIVE_MINUTES
+
+
 def source_bucket_seconds(tier: Tier) -> int:
     """Return the legacy source bucket width for a selected sensor tier."""
     match tier:
@@ -287,7 +311,7 @@ class MonitoringMetadata(FrozenMonitoringModel):
 
     @model_validator(mode="after")
     def validate_selected_tier(self) -> Self:
-        selected = compute_tier(self.range.duration)
+        selected = resolve_tier(self.range.duration, self.requested_max_points)
         if self.tier is not selected:
             raise MonitoringValidationError(
                 f"tier {self.tier} does not match range-selected tier {selected}"
