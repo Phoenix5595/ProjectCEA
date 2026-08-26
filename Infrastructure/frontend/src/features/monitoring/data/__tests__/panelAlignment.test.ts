@@ -139,14 +139,19 @@ describe('panel alignment', () => {
     const dense = Array.from({ length: 20_100 }, (_, index) => ({
       timestamp: new Date(START.getTime() + index * 1000), average: 24, minimum: 23, maximum: 25, sample_count: 1,
     }))
-    const capped = alignSeries(input({
+    const legacyCapped = alignSeries(input({
       series: [{ ...input().series[0], points: dense }],
       range: { kind: 'fixed', start: START, end: new Date(START.getTime() + 20_100 * 1000) },
-      maxPoints: 100_000,
+    }))
+    const budgeted = alignSeries(input({
+      series: [{ ...input().series[0], points: dense }],
+      range: { kind: 'fixed', start: START, end: new Date(START.getTime() + 20_100 * 1000) },
+      maxPoints: 25_000,
     }))
 
     expect(filtered.x).not.toContain(unrelated.getTime())
     expect(filtered.bands).toHaveLength(1)
-    expect(capped.x.length).toBeLessThanOrEqual(20_000)
+    expect(legacyCapped.x.length).toBeLessThanOrEqual(20_000)
+    expect(budgeted.x.length).toBeGreaterThan(20_000)
   })
 })

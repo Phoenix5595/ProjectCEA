@@ -2,10 +2,11 @@
  * Stable monitoring point budgets derived only from rendered width.
  *
  * One range request serves every panel, so the widest panel determines its
- * budget. The budget is two points per CSS pixel, bounded to 500–20,000.
+ * budget. The budget is four points per CSS pixel, bounded to 1,000–50,000,
+ * per the owner's fidelity-first directive (raw-capable 1 h windows).
  */
-export const MIN_BUDGET = 500
-export const MAX_BUDGET = 20_000
+export const MIN_BUDGET = 1_000
+export const MAX_BUDGET = 50_000
 
 interface PointRun {
   readonly start: number
@@ -16,7 +17,7 @@ export function panelBudget(widthPx: number): number {
   if (Number.isNaN(widthPx) || widthPx <= 0) return MIN_BUDGET
   if (!Number.isFinite(widthPx)) return MAX_BUDGET
 
-  return Math.min(MAX_BUDGET, Math.max(MIN_BUDGET, Math.ceil(widthPx * 2)))
+  return Math.min(MAX_BUDGET, Math.max(MIN_BUDGET, Math.ceil(widthPx * 4)))
 }
 
 export function shouldReportBudget(previous: number | null, next: number): boolean {

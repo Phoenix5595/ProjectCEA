@@ -4,11 +4,11 @@ import { decimateSeries, panelBudget, requestBudget, shouldReportBudget } from '
 
 describe('panelBudget', () => {
   it.each([
-    [0, 500],
-    [250, 500],
-    [1_000, 2_000],
-    [3_000, 6_000],
-    [20_000, 20_000],
+    [0, 1_000],
+    [250, 1_000],
+    [1_000, 4_000],
+    [3_000, 12_000],
+    [20_000, 50_000],
   ])('maps width %d to budget %d', (width, expected) => {
     expect(panelBudget(width)).toBe(expected)
   })
@@ -38,8 +38,8 @@ describe('shouldReportBudget', () => {
   })
 
   it('reports transitions across either clamp boundary', () => {
-    expect(shouldReportBudget(500, 502)).toBe(true)
-    expect(shouldReportBudget(19_998, 20_000)).toBe(true)
+    expect(shouldReportBudget(1_000, 1_002)).toBe(true)
+    expect(shouldReportBudget(49_998, 50_000)).toBe(true)
   })
 })
 
@@ -53,7 +53,7 @@ describe('requestBudget', () => {
     const aggregateBudget = requestBudget(widths)
 
     // Then: one shared range request serves the widest panel's needs
-    expect(emptyBudget).toBe(500)
+    expect(emptyBudget).toBe(1_000)
     expect(aggregateBudget).toBe(panelBudget(1_200))
   })
 })

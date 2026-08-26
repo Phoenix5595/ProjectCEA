@@ -94,6 +94,7 @@ describe('alignSeries', () => {
       live: [],
       range: fixedRange(),
       now: NOW,
+      maxPoints: 5_000,
     }
 
     const out = alignSeries(input)
