@@ -33,6 +33,13 @@ export interface FixedRange {
 
 export type MonitoringRange = LiveRange | FixedRange
 
+export interface FulfilledRange {
+  readonly range: MonitoringRange
+  readonly start: Date
+  readonly end: Date
+  readonly revision: number
+}
+
 /** Immutable accumulated monitoring data held by the store. */
 export interface StoreData {
   series: SensorSeries[]
@@ -54,6 +61,7 @@ export interface StoreData {
 /** The complete externally-visible store snapshot. */
 export interface StoreState {
   range: MonitoringRange
+  fulfilledRange: FulfilledRange | null
   isLive: boolean
   data: StoreData
   loading: boolean
