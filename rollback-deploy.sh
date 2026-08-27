@@ -24,6 +24,7 @@ STATE="${DEPLOY_STATE_JSON:-$DEPLOY_STATE_DIR/deploy_state.json}"
 JSON_LINE="$SOURCE/Infrastructure/scripts/deploy_json_line.py"
 EMIT="$SOURCE/Infrastructure/scripts/deploy_emit_event.py"
 STATE_HELPER="$SOURCE/Infrastructure/scripts/deploy_state.py"
+SERVICE_LIST="$SOURCE/Infrastructure/scripts/service_list.py"
 
 # Concurrency guard: shared with deploy.sh/finalize-deploy.sh.
 sudo mkdir -p "$(dirname "$DEPLOY_LOCK_FILE")" 2>/dev/null || true
@@ -53,17 +54,15 @@ log_rollback() {
 run_health_checks() {
   sleep 3
   local FAILED=""
-  local pair url name code
-  for pair in "http://127.0.0.1:8000/health|backend" "http://127.0.0.1:8001/health|automation" "http://127.0.0.1:8004/health|onewire"; do
-    url="${pair%%|*}"
-    name="${pair##*|}"
+  local url unit code
+  while IFS=$'\t' read -r unit url; do
     set +e
     code=$(curl -sS -m 30 -o /tmp/cea_rb_health.txt -w "%{http_code}" "$url" 2>/dev/null || echo "000")
     set -e
     if [[ "$code" != "200" ]]; then
-      FAILED="${FAILED:+$FAILED,}$name"
+      FAILED="${FAILED:+$FAILED,}$unit"
     fi
-  done
+  done < <(python3 "$SERVICE_LIST" --list-health)
   if [[ -n "$FAILED" ]]; then
     echo "$FAILED"
     return 1
@@ -121,11 +120,9 @@ sudo mkdir -p "$DEPLOY_STATE_DIR"
 sudo ln -sfn "$RB_TGT" "$CURRENT_SYMLINK"
 
 sudo systemctl daemon-reload
-sudo systemctl restart can-setup
-sleep 1
-sudo systemctl restart can-processor cea-backend onewire-worker
-sleep 2
-sudo systemctl restart automation-service soil-sensor-service weather-service
+while IFS= read -r unit; do
+  sudo systemctl restart "$unit"
+done < <(python3 "$SERVICE_LIST" --list-deploy-managed-units)
 
 if ! FAILED_SERVICES="$(run_health_checks)"; then
   log_rollback "rollback_manual_health_fail" "failed_services:$FAILED_SERVICES" "$RB_TGT" "$CURRENT"

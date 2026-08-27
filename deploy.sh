@@ -25,6 +25,7 @@ DEPLOY_SKIP_STAGING="${DEPLOY_SKIP_STAGING:-0}"
 JSON_LINE="$SOURCE/Infrastructure/scripts/deploy_json_line.py"
 EMIT="$SOURCE/Infrastructure/scripts/deploy_emit_event.py"
 STATE_HELPER="$SOURCE/Infrastructure/scripts/deploy_state.py"
+SERVICE_LIST="$SOURCE/Infrastructure/scripts/service_list.py"
 
 RELEASE_ID=$(date +%Y%m%d-%H%M%S)-$(git -C "$SOURCE" rev-parse --short HEAD 2>/dev/null || echo "nogit")
 TARGET="${TARGET:-$RELEASES/$RELEASE_ID}"
@@ -64,11 +65,9 @@ log_event() {
 
 restart_services() {
   sudo systemctl daemon-reload
-  sudo systemctl restart can-setup
-  sleep 1
-  sudo systemctl restart can-processor cea-backend onewire-worker
-  sleep 2
-  sudo systemctl restart automation-service soil-sensor-service weather-service
+  while IFS= read -r unit; do
+    sudo systemctl restart "$unit"
+  done < <(python3 "$SERVICE_LIST" --list-deploy-managed-units)
 }
 
 run_health_checks() {
@@ -80,34 +79,32 @@ run_health_checks() {
 
   sleep 2
   local rc=0
-  local pair url name code curl_rc attempt body
+  local url unit code curl_rc attempt body
   local bodydir="/tmp/cea_health_$$"
   mkdir -p "$bodydir"
   trap 'rm -rf "$bodydir" 2>/dev/null || true' RETURN
-  for pair in "http://127.0.0.1:8000/health|backend" "http://127.0.0.1:8001/health|automation" "http://127.0.0.1:8004/health|onewire"; do
-    url="${pair%%|*}"
-    name="${pair##*|}"
+  while IFS=$'\t' read -r unit url; do
     code="000"
     local max_attempts="${DEPLOY_HEALTH_ATTEMPTS:-90}"
     for attempt in $(seq 1 "$max_attempts"); do
-      : > "$bodydir/$name.body"
-      code=$(curl -sS -m 10 -o "$bodydir/$name.body" -w "%{http_code}" "$url" 2>/dev/null)
+      : > "$bodydir/$unit.body"
+      code=$(curl -sS -m 10 -o "$bodydir/$unit.body" -w "%{http_code}" "$url" 2>/dev/null)
       curl_rc=$?
       if [[ $curl_rc -ne 0 ]] || [[ -z "$code" ]]; then
         code="000"
       fi
       if [[ "$code" == "200" ]]; then
-        log_event "health_ok" "" "$name" "$code"
+        log_event "health_ok" "" "$unit" "$code"
         break
       fi
       sleep 1
     done
     if [[ "$code" != "200" ]]; then
-      body=$(head -c 400 "$bodydir/$name.body" 2>/dev/null | tr '\n' ' ' || true)
-      log_event "health_fail" "$body" "$name" "$code"
+      body=$(head -c 400 "$bodydir/$unit.body" 2>/dev/null | tr '\n' ' ' || true)
+      log_event "health_fail" "$body" "$unit" "$code"
       rc=1
     fi
-  done
+  done < <(python3 "$SERVICE_LIST" --list-health)
 
   if [[ $_had_e -eq 1 ]]; then set -e; fi
   return "$rc"
@@ -167,7 +164,7 @@ if [[ "$DEPLOY_SKIP_STAGING" != "1" ]]; then
   sudo chown -R root:root "$TARGET"
 
   echo "[2/7] Building Python venvs..."
-  for svc in backend automation-service can-processor-service soil-sensor-service onewire-worker-service weather-service; do
+  for svc in backend automation-service can-processor-service soil-sensor-service onewire-worker-service weather-service monitoring-service; do
     SVC_DIR="$TARGET/Infrastructure/$svc"
     if [[ -f "$SVC_DIR/requirements.txt" ]]; then
       echo "  - $svc"
@@ -227,13 +224,14 @@ if [[ "${DEPLOY_ISKRA:-0}" == "1" ]]; then
 fi
 
 MANIFEST_PATH="$CURRENT_SYMLINK/deploy_manifest.json"
+SERVICES_JSON="$(python3 "$SERVICE_LIST" --list-deploy-managed-units | python3 -c 'import json, sys; print(json.dumps([unit.removesuffix(".service") for unit in map(str.strip, sys.stdin) if unit]))')"
 echo "Writing deploy manifest to $MANIFEST_PATH..."
 sudo tee "$MANIFEST_PATH" >/dev/null <<EOF
 {
   "release_id": "$RELEASE_ID",
   "git_sha": "$(git -C "$SOURCE" rev-parse --short HEAD 2>/dev/null || echo "nogit")",
   "deployed_at": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
-  "services": ["can-processor","cea-backend","onewire-worker","automation-service","soil-sensor-service","weather-service"],
+  "services": $SERVICES_JSON,
   "health_ok": true
 }
 EOF
