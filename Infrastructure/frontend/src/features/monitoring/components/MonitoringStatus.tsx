@@ -90,7 +90,7 @@ export function MonitoringStatus({
         {isLive && <span className="mon-status__meta">Live</span>}
         {rangeErrorAt !== null && (
           <span className="mon-status__meta">
-            Range data stale since {formatTimestamp(rangeErrorAt)}; {lastGoodRangeAt === null ? 'no successful range' : `last good ${formatTimestamp(lastGoodRangeAt)}`}
+            Data stale. Range data stale since {formatTimestamp(rangeErrorAt)}; {lastGoodRangeAt === null ? 'no successful range' : `Last good monitoring range: ${formatTimestamp(lastGoodRangeAt)}`}
           </span>
         )}
       </div>
