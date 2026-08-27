@@ -55,6 +55,9 @@ export const AUTOMATION_API_URL =
 export const WEATHER_API_URL =
   import.meta.env.VITE_WEATHER_API_URL?.replace(/\/$/, '') ?? CADDY_BASE;
 
+export const MONITORING_API_URL =
+  import.meta.env.VITE_MONITORING_API_URL?.replace(/\/$/, '') ?? CADDY_BASE;
+
 /** Build the automation-service WebSocket URL (exact /ws). */
 export function buildWebSocketUrl(): string {
   const explicit = import.meta.env.VITE_WEBSOCKET_URL;
