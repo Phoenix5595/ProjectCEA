@@ -194,10 +194,24 @@ function normalizePidSeries(s: RawPidInput, metric: string): NormPidSeries {
 }
 
 function mergeControl(a: NormControlSeries, b: NormControlSeries): NormControlSeries {
+  const points = mergeByTime(a.points, b.points, (p) => p.origin === 'recorded')
+  const steps = mergeByTime(a.steps, b.steps, (p) => p.origin === 'recorded')
+  if (a.metric.endsWith('_setpoint')) {
+    return {
+      ...a,
+      points: [],
+      steps: mergeByTime(
+        steps,
+        points.map(({ t, value, origin, quality }) => ({ t, value, origin, quality })),
+        (p) => p.origin === 'recorded',
+      ),
+      linear: mergeLinear(a.linear, b.linear),
+    }
+  }
   return {
     ...a,
-    points: mergeByTime(a.points, b.points, (p) => p.origin === 'recorded'),
-    steps: mergeByTime(a.steps, b.steps, (p) => p.origin === 'recorded'),
+    points,
+    steps,
     linear: mergeLinear(a.linear, b.linear),
   }
 }
