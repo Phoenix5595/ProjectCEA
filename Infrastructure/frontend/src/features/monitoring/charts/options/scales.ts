@@ -8,10 +8,10 @@
  */
 import uPlot from 'uplot'
 import type { AlignedData } from '../../data'
-import { resolveFamily, type ChartFamily } from './family'
+import { resolveFamily, chartFamilyForUnit, type ChartFamily } from './family'
 import { familyColor } from './seriesOptions'
 
-/** Canonical visible bounds per family (see DESIGN.md section 2). */
+/** Hard visible bounds for families that always render inside a fixed window. */
 const RANGE_BOUNDS: Partial<
   Record<ChartFamily, { min?: number; max?: number; padEachSide?: number }>
 > = {
@@ -43,6 +43,49 @@ function boundedRange(
   }
 }
 
+function softBoundedRange(
+  softMin?: number,
+  softMax?: number,
+): (_self: uPlot, initMin: number | undefined, initMax: number | undefined) => [number, number] {
+  return (_self, initMin, initMax) => {
+    const hasMin = typeof initMin === 'number' && Number.isFinite(initMin)
+    const hasMax = typeof initMax === 'number' && Number.isFinite(initMax)
+    let lo = hasMin ? initMin : (softMin ?? (hasMax ? initMax - 1 : 0))
+    let hi = hasMax ? initMax : (softMax ?? lo + 1)
+    if (softMin !== undefined && lo > softMin) lo = softMin
+    if (softMax !== undefined && hi < softMax) hi = softMax
+    if (lo >= hi) hi = lo + 1
+    return [lo, hi]
+  }
+}
+
+interface SoftBounds {
+  softMin?: number
+  softMax?: number
+}
+
+function familySoftBounds(data: AlignedData): Map<ChartFamily, SoftBounds> {
+  const bounds = new Map<ChartFamily, SoftBounds>()
+  for (const s of data.series) {
+    const p = s.presentation
+    if (p === undefined || (p.softMin === undefined && p.softMax === undefined)) continue
+    const family = resolveFamily(s)
+    const existing = bounds.get(family)
+    const next: SoftBounds = {
+      softMin: p.softMin !== undefined ? Math.min(p.softMin, existing?.softMin ?? p.softMin) : existing?.softMin,
+      softMax: p.softMax !== undefined ? Math.max(p.softMax, existing?.softMax ?? p.softMax) : existing?.softMax,
+    }
+    bounds.set(family, next)
+  }
+  return bounds
+}
+
+function defaultFamily(data: AlignedData): ChartFamily | undefined {
+  const unit = data.scaleDefaults?.unit
+  if (unit === undefined) return undefined
+  return chartFamilyForUnit(unit)
+}
+
 export interface ChartScales {
   scales: uPlot.Scales
   axes: uPlot.Axis[]
@@ -70,12 +113,26 @@ export function buildScales(data: AlignedData): ChartScales {
     },
   ]
 
+  const seriesBounds = familySoftBounds(data)
+  const defaultFamilyForUnit = defaultFamily(data)
+
   for (const family of families) {
     // auto:true is required for uPlot to rescale user-defined value scales;
     // the bounded range function then clamps the proposed extent.
     const scale: uPlot.Scale = { auto: true }
-    const bounds = RANGE_BOUNDS[family]
-    if (bounds !== undefined) scale.range = boundedRange(bounds.min, bounds.max, bounds.padEachSide)
+    const soft = seriesBounds.get(family)
+    if (soft?.softMin !== undefined || soft?.softMax !== undefined) {
+      scale.range = softBoundedRange(soft.softMin, soft.softMax)
+    } else if (defaultFamilyForUnit === family) {
+      const d = data.scaleDefaults
+      if (d?.softMin !== undefined || d?.softMax !== undefined) {
+        scale.range = softBoundedRange(d.softMin, d.softMax)
+      }
+    }
+    if (scale.range === undefined) {
+      const bounds = RANGE_BOUNDS[family]
+      if (bounds !== undefined) scale.range = boundedRange(bounds.min, bounds.max, bounds.padEachSide)
+    }
     scales[family] = scale
 
     const isTemperature = family === 'temperature'
