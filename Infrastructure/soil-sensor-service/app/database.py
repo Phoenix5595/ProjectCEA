@@ -71,35 +71,32 @@ class DatabaseManager:
             Tuple of (room_id, rack_id)
         """
         pool = await self._get_pool()
-        async with pool.acquire() as conn:
-            async with conn.transaction():
-                # Get or create room
-                room_row = await conn.fetchrow(
-                    "SELECT room_id FROM room WHERE name = $1", room_name
+        async with pool.acquire() as conn, conn.transaction():
+            # Get or create room
+            room_row = await conn.fetchrow("SELECT room_id FROM room WHERE name = $1", room_name)
+            if room_row:
+                room_id = room_row["room_id"]
+            else:
+                room_id = await conn.fetchval(
+                    "INSERT INTO room (name) VALUES ($1) RETURNING room_id", room_name
                 )
-                if room_row:
-                    room_id = room_row["room_id"]
-                else:
-                    room_id = await conn.fetchval(
-                        "INSERT INTO room (name) VALUES ($1) RETURNING room_id", room_name
-                    )
-                    logger.info(f"Created room: {room_name}")
+                logger.info(f"Created room: {room_name}")
 
-                # Get or create rack (bed)
-                rack_row = await conn.fetchrow(
-                    "SELECT rack_id FROM rack WHERE room_id = $1 AND name = $2", room_id, bed_name
+            # Get or create rack (bed)
+            rack_row = await conn.fetchrow(
+                "SELECT rack_id FROM rack WHERE room_id = $1 AND name = $2", room_id, bed_name
+            )
+            if rack_row:
+                rack_id = rack_row["rack_id"]
+            else:
+                rack_id = await conn.fetchval(
+                    "INSERT INTO rack (room_id, name) VALUES ($1, $2) RETURNING rack_id",
+                    room_id,
+                    bed_name,
                 )
-                if rack_row:
-                    rack_id = rack_row["rack_id"]
-                else:
-                    rack_id = await conn.fetchval(
-                        "INSERT INTO rack (room_id, name) VALUES ($1, $2) RETURNING rack_id",
-                        room_id,
-                        bed_name,
-                    )
-                    logger.info(f"Created bed (rack): {bed_name}")
+                logger.info(f"Created bed (rack): {bed_name}")
 
-                return room_id, rack_id
+            return room_id, rack_id
 
     async def register_sensor_device(
         self, rack_id: int, sensor_name: str, modbus_id: int, bed_name: str
@@ -117,66 +114,63 @@ class DatabaseManager:
             Tuple of (device_id, dict mapping sensor_type to sensor_id)
         """
         pool = await self._get_pool()
-        async with pool.acquire() as conn:
-            async with conn.transaction():
-                # Check if device already exists
-                device_row = await conn.fetchrow(
-                    "SELECT device_id FROM device WHERE rack_id = $1 AND name = $2",
+        async with pool.acquire() as conn, conn.transaction():
+            # Check if device already exists
+            device_row = await conn.fetchrow(
+                "SELECT device_id FROM device WHERE rack_id = $1 AND name = $2",
+                rack_id,
+                f"Soil Sensor - {bed_name}",
+            )
+
+            if device_row:
+                device_id = device_row["device_id"]
+                logger.info(f"Device already exists: Soil Sensor - {bed_name} (ID: {device_id})")
+            else:
+                # Create device
+                device_id = await conn.fetchval(
+                    """INSERT INTO device (rack_id, name, type, serial_number)
+                           VALUES ($1, $2, $3, $4) RETURNING device_id""",
                     rack_id,
                     f"Soil Sensor - {bed_name}",
+                    "RS485 Soil Sensor",
+                    f"MODBUS-{modbus_id}",
+                )
+                logger.info(f"Created device: Soil Sensor - {bed_name} (ID: {device_id})")
+
+            # Register 4 sensors
+            sensor_types = [
+                ("temperature", "°C", "temperature"),
+                ("humidity", "%", "humidity"),
+                ("ec", "µS/cm", "electrical_conductivity"),
+                ("ph", "pH", "ph"),
+            ]
+
+            sensor_ids = {}
+            for sensor_type, unit, data_type in sensor_types:
+                sensor_full_name = f"{sensor_name}_{sensor_type}"
+
+                # Check if sensor already exists
+                sensor_row = await conn.fetchrow(
+                    "SELECT sensor_id FROM sensor WHERE device_id = $1 AND name = $2",
+                    device_id,
+                    sensor_full_name,
                 )
 
-                if device_row:
-                    device_id = device_row["device_id"]
-                    logger.info(
-                        f"Device already exists: Soil Sensor - {bed_name} (ID: {device_id})"
-                    )
+                if sensor_row:
+                    sensor_ids[sensor_type] = sensor_row["sensor_id"]
                 else:
-                    # Create device
-                    device_id = await conn.fetchval(
-                        """INSERT INTO device (rack_id, name, type, serial_number)
-                           VALUES ($1, $2, $3, $4) RETURNING device_id""",
-                        rack_id,
-                        f"Soil Sensor - {bed_name}",
-                        "RS485 Soil Sensor",
-                        f"MODBUS-{modbus_id}",
-                    )
-                    logger.info(f"Created device: Soil Sensor - {bed_name} (ID: {device_id})")
-
-                # Register 4 sensors
-                sensor_types = [
-                    ("temperature", "°C", "temperature"),
-                    ("humidity", "%", "humidity"),
-                    ("ec", "µS/cm", "electrical_conductivity"),
-                    ("ph", "pH", "ph"),
-                ]
-
-                sensor_ids = {}
-                for sensor_type, unit, data_type in sensor_types:
-                    sensor_full_name = f"{sensor_name}_{sensor_type}"
-
-                    # Check if sensor already exists
-                    sensor_row = await conn.fetchrow(
-                        "SELECT sensor_id FROM sensor WHERE device_id = $1 AND name = $2",
+                    sensor_id = await conn.fetchval(
+                        """INSERT INTO sensor (device_id, name, unit, data_type)
+                               VALUES ($1, $2, $3, $4) RETURNING sensor_id""",
                         device_id,
                         sensor_full_name,
+                        unit,
+                        data_type,
                     )
+                    sensor_ids[sensor_type] = sensor_id
+                    logger.info(f"Registered sensor: {sensor_full_name} (ID: {sensor_id})")
 
-                    if sensor_row:
-                        sensor_ids[sensor_type] = sensor_row["sensor_id"]
-                    else:
-                        sensor_id = await conn.fetchval(
-                            """INSERT INTO sensor (device_id, name, unit, data_type)
-                               VALUES ($1, $2, $3, $4) RETURNING sensor_id""",
-                            device_id,
-                            sensor_full_name,
-                            unit,
-                            data_type,
-                        )
-                        sensor_ids[sensor_type] = sensor_id
-                        logger.info(f"Registered sensor: {sensor_full_name} (ID: {sensor_id})")
-
-                return device_id, sensor_ids
+            return device_id, sensor_ids
 
     async def store_measurements(
         self,
