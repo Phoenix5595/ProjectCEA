@@ -34,6 +34,8 @@ export interface AlignInput {
   maxPoints?: number
   /** Canonical room-manifest series specs used to attach presentation metadata. */
   seriesSpecs?: SeriesSpec[]
+  /** Panel-level default soft bounds applied when no series explicitly declares one. */
+  scaleDefaults?: { unit?: UnitFamily; softMin?: number; softMax?: number }
 }
 
 /** How a series should be drawn by the uPlot adapter. */
@@ -125,8 +127,8 @@ export interface AlignedData {
   nowIndex: number
   /** True when the grid was rebucketed to stay within maxPoints. */
   aggregated: boolean
-  /** Panel-level soft bounds applied when no series explicitly declares one. */
-  scaleDefaults?: { softMin?: number; softMax?: number }
+  /** Panel-level default soft bounds applied when no series explicitly declares one. */
+  scaleDefaults?: { unit?: UnitFamily; softMin?: number; softMax?: number }
 }
 
 // ---------------------------------------------------------------------------

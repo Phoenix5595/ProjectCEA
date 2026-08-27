@@ -23,7 +23,6 @@ import {
 import { mergeControlSeries, mergeDeviceSeries, mergePidSeries } from './alignSeries.control'
 import { collectTimestamps, coarsenedGrid, indexOfNow, windowBounds } from './alignSeries.grid'
 import { MAX_BUDGET } from './pointBudget'
-import { injectMonitoringAlignmentDelay, PERFORMANCE_MARKS_ENABLED } from '../perfMarks'
 
 export interface BaseAlignment {
   readonly data: AlignedData
@@ -34,16 +33,14 @@ type BaseAlignInput = Omit<AlignInput, 'live'>
 
 /** Build the static historical grid and series for one panel. */
 export function alignSeriesBase(input: BaseAlignInput): BaseAlignment {
-  if (PERFORMANCE_MARKS_ENABLED) injectMonitoringAlignmentDelay()
   const maxPoints = boundedMaxPoints(input.maxPoints)
   const bounds = windowBounds(input.range, input.now)
   const start = bounds.start
   let end = bounds.end
   const projectionEnd = input.projectionHistory?.range.end.getTime()
   if (projectionEnd !== undefined && projectionEnd > end) {
-    // Future strip mirrors the selected window's duration so projections render
-    // alongside recorded data without flattening the recorded window.
-    end = Math.min(projectionEnd, end + (end - bounds.start))
+    const recordedDuration = end - bounds.start
+    end = Math.min(projectionEnd, end + recordedDuration / 9)
   }
   const now = input.now.getTime()
 
@@ -78,7 +75,7 @@ export function alignSeriesBase(input: BaseAlignInput): BaseAlignment {
     series.push(...buildPidSeries(ps, x, start, end, aggregated, presentation))
   }
 
-  return {
+    return {
     data: {
       x,
       series,
@@ -86,43 +83,50 @@ export function alignSeriesBase(input: BaseAlignInput): BaseAlignment {
       photoperiod: alignPhotoperiod(input.photoperiod, start, end),
       nowIndex: indexOfNow(x, now),
       aggregated,
+      scaleDefaults: input.scaleDefaults,
     },
     rangeKind: input.range.kind,
   }
 }
 
-/** Apply the current live values without sorting or rebuilding historical grids. */
+/** Apply the current live values without rebuilding historical grids. */
 export function applyLiveTail(base: BaseAlignment, live: LiveSensorValue[], now: Date): AlignedData {
   const { data } = base
   if (live.length === 0) return data
 
   const nowMs = now.getTime()
-  const lastIndex = data.x.length - 1
-  const last = data.x[lastIndex]
-  if (last === undefined) return data
+  if (data.x.length === 0) return data
 
   let tailIndex = data.x.indexOf(nowMs)
   let x = data.x
-  let appended = false
+  let inserted = false
+  let droppedOldest = false
 
   if (tailIndex < 0) {
-    if (base.rangeKind === 'fixed' || nowMs < last) return data
+    if (base.rangeKind === 'fixed') return data
+    const nextIndex = data.x.findIndex((timestamp) => timestamp > nowMs)
     if (data.x.length < MAX_BUDGET) {
-      tailIndex = data.x.length
-      x = [...data.x, nowMs]
-      appended = true
+      tailIndex = nextIndex < 0 ? data.x.length : nextIndex
+      x = [...data.x.slice(0, tailIndex), nowMs, ...data.x.slice(tailIndex)]
+      inserted = true
     } else {
-      tailIndex = lastIndex
-      x = data.x.slice()
-      x[tailIndex] = nowMs
+      const first = data.x[0]
+      if (first === undefined || nowMs < first) return data
+      const retained = data.x.slice(1)
+      const retainedNextIndex = retained.findIndex((timestamp) => timestamp > nowMs)
+      tailIndex = retainedNextIndex < 0 ? retained.length : retainedNextIndex
+      x = [...retained.slice(0, tailIndex), nowMs, ...retained.slice(tailIndex)]
+      inserted = true
+      droppedOldest = true
     }
   }
 
   const valuesBySensor = new Map(live.map((value) => [value.sensor, value.value]))
   const series = data.series.map((aligned) => {
-    const y = appended ? [...aligned.y, null] : aligned.y.slice()
+    const retained = droppedOldest ? aligned.y.slice(1) : aligned.y
+    const y = inserted ? [...retained.slice(0, tailIndex), null, ...retained.slice(tailIndex)] : retained.slice()
     const liveValue = aligned.source === 'sensor' ? valuesBySensor.get(aligned.metric) : undefined
-    if (liveValue !== undefined && (appended || y[tailIndex] === null)) y[tailIndex] = liveValue
+    if (liveValue !== undefined) y[tailIndex] = liveValue
     return { ...aligned, y }
   })
 

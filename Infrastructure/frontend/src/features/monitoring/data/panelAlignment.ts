@@ -2,7 +2,7 @@
  * Per-panel alignment cache. Historical inputs build one static grid; the live
  * adapter only touches the current tail slot and never re-sorts history.
  */
-import type { ControlMonitoringResponse } from '../api'
+import type { ControlMonitoringResponse, LiveSensorValue } from '../api'
 import type { TimeseriesPanelSpec } from '../config'
 import { familyForUnit } from './alignSeries.builder'
 import { metricFromName } from './alignSeries.control'
@@ -33,6 +33,11 @@ interface TailKey {
   readonly second: number
 }
 
+interface LiveSnapshot {
+  readonly timestamp: number
+  readonly values: LiveSensorValue[]
+}
+
 export interface PanelAlignment {
   readonly counts: PanelAlignmentCounts
   align(input: PanelAlignmentInput): AlignedData
@@ -43,6 +48,7 @@ class CachedPanelAlignment implements PanelAlignment {
   private base: ReturnType<typeof alignSeriesBase> | null = null
   private tailKey: TailKey | null = null
   private tailResult: AlignedData | null = null
+  private liveSnapshots: LiveSnapshot[] = []
   private baseAlignments = 0
   private liveTailUpdates = 0
 
@@ -53,10 +59,10 @@ class CachedPanelAlignment implements PanelAlignment {
   align(input: PanelAlignmentInput): AlignedData {
     const key = baseKeyFor(input)
     if (!sameBaseKey(this.baseKey, key)) {
+      if (!sameLiveSnapshotContext(this.baseKey, key)) this.liveSnapshots = []
       this.base = alignSeriesBase(filterPanelInput(input))
       this.baseKey = key
       this.tailKey = null
-      this.tailResult = null
       this.baseAlignments++
     }
 
@@ -65,7 +71,8 @@ class CachedPanelAlignment implements PanelAlignment {
 
     const base = this.base
     if (base === null) return alignSeriesBase(filterPanelInput(input)).data
-    this.tailResult = applyLiveTail(base, input.live, input.now)
+    this.liveSnapshots = recordLiveSnapshot(this.liveSnapshots, input)
+    this.tailResult = replayLiveSnapshots(base, this.liveSnapshots)
     this.tailKey = tailKey
     if (input.live.length > 0) this.liveTailUpdates++
     return this.tailResult
@@ -105,6 +112,35 @@ function sameTailKey(previous: TailKey | null, next: TailKey): boolean {
   return previous !== null && previous.live === next.live && previous.second === next.second
 }
 
+function sameLiveSnapshotContext(previous: BaseKey | null, next: BaseKey): boolean {
+  return previous !== null && previous.series === next.series && previous.range === next.range && previous.panel === next.panel
+}
+
+function recordLiveSnapshot(snapshots: LiveSnapshot[], input: PanelAlignmentInput): LiveSnapshot[] {
+  const now = input.now.getTime()
+  const values = input.live.filter((value) => input.series.some(
+    (series) => series.sensor === value.sensor && accepts(input.panel, 'sensor', familyForUnit(series.unit_family)),
+  ))
+  if (input.range.kind === 'fixed') return values.length === 0 ? [] : [{ timestamp: now, values }]
+  const start = now - input.range.duration
+  const retained = snapshots.filter((snapshot) => snapshot.timestamp >= start && snapshot.timestamp <= now)
+  if (values.length === 0) return retained
+  const snapshot = { timestamp: now, values }
+  const existing = retained.findIndex((candidate) => candidate.timestamp === now)
+  if (existing >= 0) return [...retained.slice(0, existing), snapshot, ...retained.slice(existing + 1)]
+  return [...retained, snapshot].sort((left, right) => left.timestamp - right.timestamp)
+}
+
+function replayLiveSnapshots(
+  base: ReturnType<typeof alignSeriesBase>,
+  snapshots: LiveSnapshot[],
+): AlignedData {
+  return snapshots.reduce(
+    (data, snapshot) => applyLiveTail({ data, rangeKind: base.rangeKind }, snapshot.values, new Date(snapshot.timestamp)),
+    base.data,
+  )
+}
+
 function filterPanelInput(input: PanelAlignmentInput): Omit<AlignInput, 'live'> {
   const { panel } = input
   return {
@@ -118,6 +154,7 @@ function filterPanelInput(input: PanelAlignmentInput): Omit<AlignInput, 'live'> 
     now: input.now,
     maxPoints: input.maxPoints,
     seriesSpecs: panel.series,
+    scaleDefaults: panel.defaults,
   }
 }
 
@@ -146,6 +183,7 @@ function controlFamilyFromName(
   if (kind === 'light') return 'light'
   const metric = metricFromName(name)
   if (metric.includes('setpoint')) {
+    if (metric.includes('co2')) return 'co2'
     if (metric.includes('vpd')) return 'vpd'
     if (metric.includes('humid')) return 'rh'
     return 'temperature'

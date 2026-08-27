@@ -58,6 +58,7 @@ export function controlFamily(cs: NormControlSeries): ChartFamily {
   if (cs.kind === 'light') return 'light'
   const m = cs.metric
   if (m.includes('setpoint')) {
+    if (m.includes('co2')) return 'co2'
     if (m.includes('vpd')) return 'vpd'
     if (m.includes('humid')) return 'rh'
     return 'temperature'

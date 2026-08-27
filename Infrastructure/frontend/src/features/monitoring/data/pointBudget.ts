@@ -2,10 +2,9 @@
  * Stable monitoring point budgets derived only from rendered width.
  *
  * One range request serves every panel, so the widest panel determines its
- * budget. The budget is four points per CSS pixel, bounded to 1,000–50,000,
- * per the owner's fidelity-first directive (raw-capable 1 h windows).
+ * budget. The budget is one point per CSS pixel, bounded to 10–50,000.
  */
-export const MIN_BUDGET = 1_000
+export const MIN_BUDGET = 10
 export const MAX_BUDGET = 50_000
 
 interface PointRun {
@@ -17,22 +16,18 @@ export function panelBudget(widthPx: number): number {
   if (Number.isNaN(widthPx) || widthPx <= 0) return MIN_BUDGET
   if (!Number.isFinite(widthPx)) return MAX_BUDGET
 
-  return Math.min(MAX_BUDGET, Math.max(MIN_BUDGET, Math.ceil(widthPx * 4)))
+  return Math.min(MAX_BUDGET, Math.max(MIN_BUDGET, Math.ceil(widthPx)))
 }
 
 export function shouldReportBudget(previous: number | null, next: number): boolean {
-  if (previous === null || previous === next) return previous === null
-  const crossedClampBoundary =
-    (previous === MIN_BUDGET) !== (next === MIN_BUDGET) ||
-    (previous === MAX_BUDGET) !== (next === MAX_BUDGET)
-  return crossedClampBoundary || Math.abs(next - previous) / previous >= 0.1
+  return previous !== next
 }
 
 export function requestBudget(panelWidths: readonly number[]): number {
-  return panelWidths.reduce(
-    (widestBudget, width) => Math.max(widestBudget, panelBudget(width)),
-    MIN_BUDGET,
-  )
+  return panelWidths.reduce((widestBudget, width) => {
+    if (!Number.isFinite(width) || width <= 0) return widestBudget
+    return Math.max(widestBudget, panelBudget(width))
+  }, MIN_BUDGET)
 }
 
 /**
