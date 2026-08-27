@@ -642,7 +642,7 @@ Transition Periods: Optional PRE_DAY/PRE_NIGHT for gradual setpoint changes  # L
 
 ---
 
-### 43. `ARCHITECTURE_SCHEMATIC.md`
+### 43. `ARCHITECTURE.md`
 **Lines:** 125  
 **Reason:** Architecture schematic. KEEP.
 
@@ -734,7 +734,7 @@ mode: Current mode (DAY/NIGHT/PRE_DAY/PRE_NIGHT) or None  # L398 — KEEP (docst
 | `grafana/SETPOINTS_IN_GRAFANA.md` | KEEP (doc) |
 | `styles/index.css` | KEEP |
 | `ARCHITECTURE.md` | KEEP (doc) |
-| `ARCHITECTURE_SCHEMATIC.md` | KEEP (doc) |
+| `ARCHITECTURE.md` | KEEP (doc) |
 | `app/repositories/schedules.py` | KEEP (comment) |
 | `app/repositories/setpoints.py` | KEEP (effective_setpoints methods + docstrings) |
 | `pyright_errors.json` / `pyright_errors_v2.json` | KEEP |
