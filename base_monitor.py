@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Base monitor class with shared functionality for terminal-based monitors."""
 
+from datetime import datetime
 import json
 import shutil
 import sys
-from datetime import datetime
 
 import redis
 
