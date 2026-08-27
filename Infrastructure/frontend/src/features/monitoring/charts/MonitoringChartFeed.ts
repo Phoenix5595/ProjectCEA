@@ -13,6 +13,7 @@ import {
 export interface MonitoringChartStructuralSnapshot {
   readonly revision: number
   readonly range: MonitoringRange
+  readonly viewportRevision: number
   readonly series: readonly AlignedSeries[]
   readonly seriesCount: number
   readonly theme: ThemeName | null
@@ -22,7 +23,7 @@ export interface MonitoringChartFeed {
   getData(): AlignedData
   getStructuralSnapshot(): MonitoringChartStructuralSnapshot
   subscribe(listener: () => void): () => void
-  publish(data: AlignedData, range: MonitoringRange): void
+  publish(data: AlignedData, range: MonitoringRange, viewportRevision?: number): void
   setTheme(theme: ThemeName): void
 }
 
@@ -49,7 +50,7 @@ class ChartFeed implements MonitoringChartFeed {
 
   constructor(data: AlignedData, range: MonitoringRange) {
     this.data = data
-    this.structural = structuralSnapshot(data, range, null, 0)
+    this.structural = structuralSnapshot(data, range, null, 0, 0)
   }
 
   getData(): AlignedData {
@@ -67,11 +68,23 @@ class ChartFeed implements MonitoringChartFeed {
     }
   }
 
-  publish(data: AlignedData, range: MonitoringRange): void {
+  publish(data: AlignedData, range: MonitoringRange, viewportRevision?: number): void {
     const previous = this.structural
+    if (viewportRevision !== undefined && viewportRevision < previous.viewportRevision) return
     this.data = data
-    if (previous.range !== range || !sameSeriesShape(previous.series, data.series)) {
-      this.structural = structuralSnapshot(data, range, previous.theme, previous.revision + 1)
+    const sameShape = sameSeriesShape(previous.series, data.series)
+    const sameRange = previous.range === range
+    const nextViewportRevision = viewportRevision ?? (sameRange
+      ? previous.viewportRevision
+      : previous.viewportRevision + 1)
+    if (!sameShape || !sameRange || nextViewportRevision !== previous.viewportRevision) {
+      this.structural = structuralSnapshot(
+        data,
+        range,
+        previous.theme,
+        sameShape ? previous.revision : previous.revision + 1,
+        nextViewportRevision,
+      )
     }
     this.emit()
   }
@@ -79,7 +92,7 @@ class ChartFeed implements MonitoringChartFeed {
   setTheme(theme: ThemeName): void {
     const previous = this.structural
     if (previous.theme === theme) return
-    this.structural = structuralSnapshot(this.data, previous.range, theme, previous.revision + 1)
+    this.structural = structuralSnapshot(this.data, previous.range, theme, previous.revision + 1, previous.viewportRevision)
     this.emit()
   }
 
@@ -105,13 +118,16 @@ class PanelChartFeed extends ChartFeed implements MonitoringPanelChartFeed {
 
   connect(source: MonitoringChartFeedSource, initialSnapshot: StoreState): () => void {
     const update = (snapshot: StoreState): void => {
+      const fulfilled = snapshot.fulfilledRange
+      if (fulfilled === null) return
       const input = this.inputFor(snapshot)
       const align = (): AlignedData => this.panel === undefined
         ? alignSeries(input)
         : this.alignment.align({ ...input, panel: this.panel })
       if (PERFORMANCE_MARKS_ENABLED) beginMonitoringPerfTick()
       const data = PERFORMANCE_MARKS_ENABLED ? measureMonitoringAlignment(align) : align()
-      this.publish(data, snapshot.range)
+      const fulfilledRevision = snapshot.fulfilledRange?.revision
+      this.publish(data, fulfilled?.range ?? snapshot.range, fulfilledRevision)
       if (PERFORMANCE_MARKS_ENABLED) finishMonitoringPerfTick(undefined)
     }
     update(source.getSnapshot?.() ?? initialSnapshot)
@@ -120,10 +136,19 @@ class PanelChartFeed extends ChartFeed implements MonitoringPanelChartFeed {
   }
 
   private inputFor(snapshot: StoreState): AlignInput {
+    const fulfilled = snapshot.fulfilledRange
+    if (fulfilled === null) {
+      return {
+        ...snapshot.data,
+        range: snapshot.range,
+        now: this.now(),
+        seriesSpecs: this.seriesSpecs,
+      }
+    }
     return {
       ...snapshot.data,
-      range: snapshot.range,
-      now: this.now(),
+      range: fulfilled.range,
+      now: fulfilled.end,
       seriesSpecs: this.seriesSpecs,
     }
   }
@@ -144,8 +169,9 @@ function structuralSnapshot(
   range: MonitoringRange,
   theme: ThemeName | null,
   revision: number,
+  viewportRevision: number,
 ): MonitoringChartStructuralSnapshot {
-  return { revision, range, series: data.series, seriesCount: data.series.length, theme }
+  return { revision, range, viewportRevision, series: data.series, seriesCount: data.series.length, theme }
 }
 
 function sameSeriesShape(previous: readonly AlignedSeries[], next: readonly AlignedSeries[]): boolean {
