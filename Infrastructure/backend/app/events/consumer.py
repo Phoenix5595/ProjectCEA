@@ -23,6 +23,8 @@ except Exception:  # pragma: no cover
     aioredis = None  # type: ignore[assignment]
     _has_redis = False
 
+import contextlib
+
 from shared.infra_logging import get_logger
 
 logger = get_logger(__name__)
@@ -122,10 +124,8 @@ class ConfigEventConsumer:
         self._running = False
         if self._task is not None:
             self._task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await self._task
-            except asyncio.CancelledError:
-                pass
             self._task = None
         if self._redis is not None:
             try:

@@ -17,6 +17,7 @@ follow-up — it buys throughput but doesn't affect correctness, so deferred.
 
 from __future__ import annotations
 
+import contextlib
 from datetime import datetime
 import json
 import os
@@ -166,18 +167,14 @@ class RedisStreamReader:
             ts_bytes = fields.get(b"ts")
             ts_ms = None
             if ts_bytes:
-                try:
+                with contextlib.suppress(ValueError, AttributeError):
                     ts_ms = int(ts_bytes.decode("utf-8"))
-                except (ValueError, AttributeError):
-                    pass
 
             type_bytes = fields.get(b"type")
             entry_type = None
             if type_bytes:
-                try:
+                with contextlib.suppress(AttributeError, UnicodeDecodeError):
                     entry_type = type_bytes.decode("utf-8")
-                except (AttributeError, UnicodeDecodeError):
-                    pass
 
             decoded_data = None
             decoded_bytes = fields.get(b"decoded")
@@ -191,10 +188,8 @@ class RedisStreamReader:
             raw_data = None
             data_bytes = fields.get(b"data")
             if data_bytes:
-                try:
+                with contextlib.suppress(AttributeError, UnicodeDecodeError):
                     raw_data = data_bytes.decode("utf-8")
-                except (AttributeError, UnicodeDecodeError):
-                    pass
 
             return {
                 "id": entry_id_str,

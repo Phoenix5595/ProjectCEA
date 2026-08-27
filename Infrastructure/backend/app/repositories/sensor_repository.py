@@ -120,10 +120,7 @@ class SensorRepository(BaseRepository):
         duration_seconds = (end_time - start_time).total_seconds()
         duration_hours = duration_seconds / 3600
 
-        if duration_seconds <= 65:
-            prefix = "🔵 BG_TASK"
-        else:
-            prefix = "🟢 API_CALL"
+        prefix = "🔵 BG_TASK" if duration_seconds <= 65 else "\U0001f7e2 API_CALL"
 
         logger.debug(
             f"{prefix}: Querying {location}/{cluster} from {start_time} to {end_time} (duration: {duration_hours:.2f} hours)"

@@ -54,7 +54,9 @@ async def get_sensor_value(sensor_name: str) -> float | None:
         return None
 
     try:
-        key = f"sensor:{sensor_name}"
+        key = await _canonical_sensor_key(client, sensor_name)
+        if key is None:
+            return None
         value = await client.get(key)
         if value is not None:
             return float(value)
@@ -81,7 +83,9 @@ async def get_sensor_timestamp(sensor_name: str) -> int | None:
         return None
 
     try:
-        key = f"sensor:{sensor_name}:ts"
+        key = await _canonical_sensor_key(client, sensor_name, timestamp=True)
+        if key is None:
+            return None
         value = await client.get(key)
         if value is not None:
             return int(value)
@@ -105,10 +109,10 @@ async def get_all_sensor_values() -> dict[str, float]:
         return {}
 
     try:
-        # Scan sensor keys without blocking Redis (avoid KEYS)
+        # Scan canonical sensor keys without blocking Redis (avoid KEYS).
         value_keys: list[str] = []
-        async for key in client.scan_iter(match="sensor:*", count=500):
-            if key.endswith(":ts"):
+        async for key in client.scan_iter(match="cea:sensor:*:*:*", count=500):
+            if key.endswith(("_ts", "_last_good")):
                 continue
             value_keys.append(key)
             # Safety cap to avoid huge batches
@@ -125,8 +129,7 @@ async def get_all_sensor_values() -> dict[str, float]:
         for key, value in zip(value_keys, values, strict=False):
             if value is not None:
                 try:
-                    # Remove 'sensor:' prefix
-                    sensor_name = key.replace("sensor:", "")
+                    sensor_name = key.rsplit(":", maxsplit=1)[-1]
                     result[sensor_name] = float(value)
                 except (ValueError, TypeError):
                     continue
@@ -154,14 +157,12 @@ async def get_all_sensor_timestamps(sensor_names: list[str]) -> dict[str, int]:
         return {}
 
     try:
-        # Build keys for all sensors
-        ts_keys = [f"sensor:{name}:ts" for name in sensor_names]
-
-        # Get all timestamps in one call
-        values = await client.mget(ts_keys)
-
         result = {}
-        for sensor_name, value in zip(sensor_names, values, strict=False):
+        for sensor_name in sensor_names:
+            key = await _canonical_sensor_key(client, sensor_name, timestamp=True)
+            if key is None:
+                continue
+            value = await client.get(key)
             if value is not None:
                 try:
                     result[sensor_name] = int(value)
@@ -172,6 +173,17 @@ async def get_all_sensor_timestamps(sensor_names: list[str]) -> dict[str, int]:
     except Exception as e:
         logger.warning(f"Error reading sensor timestamps in batch: {e}")
         return {}
+
+
+async def _canonical_sensor_key(
+    client: redis.Redis, sensor_name: str, *, timestamp: bool = False
+) -> str | None:
+    """Resolve a unique topology-qualified current value or timestamp key."""
+    suffix = "_ts" if timestamp else ""
+    pattern = f"cea:sensor:*:*:{sensor_name}{suffix}"
+    async for key in client.scan_iter(match=pattern, count=100):
+        return str(key)
+    return None
 
 
 async def close_redis_client():
