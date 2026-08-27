@@ -34,9 +34,10 @@ assert_not_exists() {
 }
 
 mkdir -p "$BIN_DIRECTORY" "$RELEASES" "$STATE_DIRECTORY"
-cp -R "$REPOSITORY_ROOT/Infrastructure" "$FIXTURE_SOURCE"
+mkdir -p "$FIXTURE_SOURCE"
+cp -R "$REPOSITORY_ROOT/Infrastructure" "$FIXTURE_SOURCE/Infrastructure"
 
-cat > "$FIXTURE_SOURCE/scripts/install-sudoers.sh" <<'INSTALL_SUDOERS'
+cat > "$FIXTURE_SOURCE/Infrastructure/scripts/install-sudoers.sh" <<'INSTALL_SUDOERS'
 #!/usr/bin/env bash
 exit 0
 INSTALL_SUDOERS
@@ -143,7 +144,7 @@ printf '{"status":"ready"}\n' > "$output"
 printf '200'
 CURL
 
-chmod 0700 "$BIN_DIRECTORY"/* "$FIXTURE_SOURCE/scripts/install-sudoers.sh"
+chmod 0700 "$BIN_DIRECTORY"/* "$FIXTURE_SOURCE/Infrastructure/scripts/install-sudoers.sh"
 
 deploy() {
   env \
@@ -157,7 +158,10 @@ deploy() {
     DEPLOY_CURRENT="$DEPLOY_ROOT/current" \
     DEPLOY_STATE_JSON="$STATE_DIRECTORY/deploy_state.json" \
     DEPLOY_HEALTH_ATTEMPTS=1 \
+    EVENT_LOG="$EVENT_LOG" \
+    NPM_LOG="$NPM_LOG" \
     EXPECTED_VERSION="${EXPECTED_VERSION:-}" \
+    TARGET="${TARGET:-}" \
     bash "$DEPLOY_SCRIPT" "$@"
 }
 
@@ -182,11 +186,12 @@ expect_invalid_arguments multiple-tiers patch minor
 
 run_no_argument_deploy() {
   EXPECTED_VERSION="1.0.0"
+  unset TARGET
   rm -f "$STATE_DIRECTORY/deploy_state.json" "$EVENT_LOG" "$NPM_LOG"
   rm -f "$DEPLOY_ROOT/current"
 
   deploy
-  assert_not_exists "$NPM_LOG"
+  ! grep -Fq 'release:' "$NPM_LOG" || fail 'no-argument deploy invoked a release script'
   assert_contains 'build 1.0.0' "$EVENT_LOG"
 }
 
@@ -194,12 +199,13 @@ run_tiered_deploy() {
   local tier="$1"
   local target="$RELEASES/$tier"
   EXPECTED_VERSION="9.9.9-$tier"
+  TARGET="$target"
   rm -f "$STATE_DIRECTORY/deploy_state.json" "$EVENT_LOG" "$NPM_LOG"
   rm -f "$DEPLOY_ROOT/current"
   rm -rf "$target"
 
   deploy "$tier"
-  assert_contains "$FIXTURE_SOURCE/frontend npm run release:$tier" "$NPM_LOG"
+  assert_contains "$FIXTURE_SOURCE/Infrastructure/frontend npm run release:$tier" "$NPM_LOG"
   assert_contains "rsync $EXPECTED_VERSION" "$EVENT_LOG"
   assert_contains "build $EXPECTED_VERSION" "$EVENT_LOG"
   assert_contains "$EXPECTED_VERSION" "$target/Infrastructure/frontend/package.json"

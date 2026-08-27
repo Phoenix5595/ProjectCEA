@@ -9,7 +9,24 @@
 
 set -euo pipefail
 
-SOURCE="/home/antoine/ProjectCEA"
+SOURCE="${SOURCE:-/home/antoine/ProjectCEA}"
+
+VERSION_TIER=""
+if [[ $# -gt 1 ]]; then
+  echo "Usage: $0 [major|minor|patch]" >&2
+  exit 2
+fi
+if [[ $# -eq 1 ]]; then
+  case "$1" in
+    major|minor|patch)
+      VERSION_TIER="$1"
+      ;;
+    *)
+      echo "Usage: $0 [major|minor|patch]" >&2
+      exit 2
+      ;;
+  esac
+fi
 
 # Overridable paths for sandbox testing and non-standard layouts.
 DEPLOY_ROOT="${DEPLOY_ROOT:-/opt/projectcea}"
@@ -158,6 +175,14 @@ if [[ "$DEPLOY_SKIP_STAGING" != "1" ]]; then
   ruff format "${RUFF_PATHS[@]}"
   cd - >/dev/null
 
+  if [[ -n "$VERSION_TIER" ]]; then
+    echo "[1/7] Bumping frontend $VERSION_TIER version..."
+    (
+      cd "$SOURCE/Infrastructure/frontend"
+      npm run "release:$VERSION_TIER"
+    )
+  fi
+
   echo "[1/7] Copying code..."
   sudo mkdir -p "$TARGET"
   sudo rsync -a --delete "$SOURCE/Infrastructure/" "$TARGET/Infrastructure/"
@@ -252,3 +277,7 @@ echo "Current release: $(readlink "$CURRENT_SYMLINK")"
 echo "Deploy log (NDJSON): $DEPLOY_LOG"
 echo "Finalize: $SOURCE/finalize-deploy.sh --confirm"
 echo "Manual rollback: $SOURCE/rollback-deploy.sh"
+if [[ -n "$VERSION_TIER" ]]; then
+  echo "Version bump intentionally changed: $SOURCE/Infrastructure/frontend/package.json and $SOURCE/Infrastructure/frontend/package-lock.json"
+  echo "Review and commit those files; this deploy does not auto-commit them."
+fi
