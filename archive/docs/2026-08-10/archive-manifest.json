@@ -1,0 +1,133 @@
+[
+  {
+    "original_path": ".debug-journal.md",
+    "archive_path": "archive/docs/2026-08-10/.debug-journal.md",
+    "status": "moved",
+    "sha256": "94b7b115ff0954fb278edfb6ef69d224f49300eb28832c5c1cd3de8e6e54423c",
+    "reason": "historical-only",
+    "canonical_replacement": null,
+    "historical_rationale": "Temporary debug journal for the monitoring performance timeout investigation; not a permanent runbook."
+  },
+  {
+    "original_path": "QA-dfr-relay-channel-fixes.md",
+    "archive_path": "archive/docs/2026-08-10/QA-dfr-relay-channel-fixes.md",
+    "status": "moved",
+    "sha256": "0f02af99ea5797cbed63d75eaf77d703dad5177ee1964dff73d883fc122bbbad",
+    "reason": "historical-only",
+    "canonical_replacement": null,
+    "historical_rationale": "One-off QA plan for the dfr-relay-channel-fixes deploy; superseded by the device registry and relay snapshot guidance."
+  },
+  {
+    "original_path": "Infrastructure/database-replica/README.md",
+    "archive_path": "archive/docs/2026-08-10/Infrastructure/database-replica/README.md",
+    "status": "moved",
+    "sha256": "05b24364c55bcf87591e4b4e078e929dfed91a21a4fb87bfc9fe20b5a014138f",
+    "reason": "superseded",
+    "canonical_replacement": "Infrastructure/iskra_stack/README.md",
+    "historical_rationale": null
+  },
+  {
+    "original_path": "Infrastructure/database/SETPOINTS_TABLE_EXPLANATION.md",
+    "archive_path": "archive/docs/2026-08-10/Infrastructure/database/SETPOINTS_TABLE_EXPLANATION.md",
+    "status": "moved",
+    "sha256": "e9494066d28d93af3cf8140e155aa666e33aadb1d171e03a29eeb5ad07e417b6",
+    "reason": "duplicate",
+    "canonical_replacement": "Infrastructure/database/REQUIREMENTS.md",
+    "historical_rationale": null
+  },
+  {
+    "original_path": "Infrastructure/database/SETPOINTS_RECOMMENDATION.md",
+    "archive_path": "archive/docs/2026-08-10/Infrastructure/database/SETPOINTS_RECOMMENDATION.md",
+    "status": "moved",
+    "sha256": "c7df363b5a06bc3fd1322eae468f8f09d79e7b0ac37732c45c28c4a8916d90b5",
+    "reason": "duplicate",
+    "canonical_replacement": "Infrastructure/database/REQUIREMENTS.md",
+    "historical_rationale": null
+  },
+  {
+    "original_path": "Sensor_Nodes/ESP32/fullV5/README.md",
+    "archive_path": "archive/docs/2026-08-10/Sensor_Nodes/ESP32/fullV5/README.md",
+    "status": "moved",
+    "sha256": "795f4fa63d723ed047f2781fe48a0c8a8ee7f2700fa6bcb4f43be73d16d0b84e",
+    "reason": "legacy",
+    "canonical_replacement": "Sensor_Nodes/ESP32/fullV6/README.md",
+    "historical_rationale": null
+  },
+  {
+    "original_path": "Sensor_Nodes/ESP32/fullV4/README.md",
+    "archive_path": "archive/docs/2026-08-10/Sensor_Nodes/ESP32/fullV4/README.md",
+    "status": "moved",
+    "sha256": "dd3afca36fc17cb08319e46c88fe2b18397fe1f2b6794d3d02b8791c307a5e49",
+    "reason": "legacy",
+    "canonical_replacement": "Sensor_Nodes/ESP32/fullV6/README.md",
+    "historical_rationale": null
+  },
+  {
+    "original_path": "ARCHITECTURE_SCHEMATIC.md",
+    "archive_path": null,
+    "status": "removed",
+    "sha256": "6a8788d24b8fa133e194b9d57769cb64c49d1fc7f3d30bb01066bf49143a81bb",
+    "reason": "removed per owner decision",
+    "canonical_replacement": null,
+    "historical_rationale": null
+  },
+  {
+    "original_path": "Infrastructure/frontend/grafana/README.md",
+    "archive_path": "archive/docs/2026-08-10/Infrastructure/frontend/grafana/README.md",
+    "status": "moved",
+    "sha256": "35523cf9d4491f21166eea85031b0ec26680bc481a87cce73238577e7a71cead",
+    "reason": "superseded",
+    "canonical_replacement": "Infrastructure/iskra_stack/README.md"
+  },
+  {
+    "original_path": "Infrastructure/frontend/grafana/REQUIREMENTS.md",
+    "archive_path": "archive/docs/2026-08-10/Infrastructure/frontend/grafana/REQUIREMENTS.md",
+    "status": "moved",
+    "sha256": "a651e7b0ee8b5ef9dc130d717d63f06eed5176cfa29efa7c9bb34792c97a5315",
+    "reason": "superseded",
+    "canonical_replacement": "Infrastructure/frontend/REQUIREMENTS.md"
+  },
+  {
+    "original_path": "Infrastructure/frontend/grafana/SETPOINTS_IN_GRAFANA.md",
+    "archive_path": "archive/docs/2026-08-10/Infrastructure/frontend/grafana/SETPOINTS_IN_GRAFANA.md",
+    "status": "moved",
+    "sha256": "c718a3f70ed8183828d0a067e0ae6e6e94860c75b69157d29fb008f25f331dc9",
+    "reason": "duplicate",
+    "canonical_replacement": "Infrastructure/database/REQUIREMENTS.md"
+  },
+  {
+    "original_path": "Infrastructure/frontend/grafana/alerting/README.md",
+    "archive_path": "archive/docs/2026-08-10/Infrastructure/frontend/grafana/alerting/README.md",
+    "status": "moved",
+    "sha256": "a0e3d827b8277ca2102b4a8e8bade71f8a92c86c1158473d5d072fc38951d2c8",
+    "reason": "superseded",
+    "canonical_replacement": "Infrastructure/iskra_stack/README.md"
+  },
+  {
+    "original_path": "Infrastructure/frontend/grafana/AGENTS.md",
+    "archive_path": "archive/docs/2026-08-10/Infrastructure/frontend/grafana/AGENTS.md",
+    "status": "moved",
+    "sha256": "0dc71613df73a31bb524e5c3ad57be3a07e4d6f45745828c13657ac995f532a4",
+    "reason": "superseded",
+    "canonical_replacement": "Infrastructure/iskra_stack/AGENTS.md"
+  },
+  {
+    "original_path": "Infrastructure/scripts/README-onewire.md",
+    "archive_path": null,
+    "status": "moved",
+    "sha256": null,
+    "reason": "superseded",
+    "canonical_replacement": "Infrastructure/onewire-worker-service/README.md",
+    "historical_rationale": "Rewritten and relocated by T7 via git mv; original path retired, content lives in the canonical onewire-worker-service README.",
+    "blocking_todo": null
+  },
+  {
+    "original_path": "RASPBERRY_PI_POWER_TRACKING.md",
+    "archive_path": null,
+    "status": "removed",
+    "sha256": null,
+    "reason": "removed per owner decision",
+    "canonical_replacement": null,
+    "historical_rationale": null
+  }
+]
