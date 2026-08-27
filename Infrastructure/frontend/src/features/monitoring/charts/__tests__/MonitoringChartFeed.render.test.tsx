@@ -34,7 +34,19 @@ const { MockUPlot, instances } = vi.hoisted(() => {
 })
 vi.mock('uplot', () => ({ default: MockUPlot }))
 
-class RO { observe = vi.fn(); disconnect = vi.fn(); unobserve = vi.fn(); constructor(_cb: any) {} }
+class RO {
+  callback: ResizeObserverCallback
+  observe = vi.fn((target: HTMLElement) => {
+    Object.defineProperty(target, 'clientWidth', { configurable: true, value: 800 })
+    Object.defineProperty(target, 'clientHeight', { configurable: true, value: 400 })
+    this.callback([], this)
+  })
+  disconnect = vi.fn()
+  unobserve = vi.fn()
+  constructor(callback: ResizeObserverCallback) {
+    this.callback = callback
+  }
+}
 
 function makeData(nowIndex = 2): AlignedData {
   return {

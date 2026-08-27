@@ -65,6 +65,40 @@ describe('buildScales', () => {
     expect(scales.co2?.range).toBeUndefined()
   })
 
+  it('honors softMin/softMax for temperature without clipping legitimate values', () => {
+    const data = makeData()
+    const temperature = data.series.find((series) => series.family === 'temperature')
+    if (temperature === undefined) throw new Error('Temperature series is required')
+
+    temperature.presentation = { softMin: 10, softMax: 35 }
+    const { scales } = buildScales(data)
+    const range = requiredRange(scales.temperature?.range)
+
+    // Within soft bounds: display exactly the configured window
+    expect(Reflect.apply(range, undefined, [undefined, 12, 22])).toEqual([10, 35])
+
+    // Data extends beyond soft bounds: expand to include real values, not clip
+    expect(Reflect.apply(range, undefined, [undefined, 9, 36])).toEqual([9, 36])
+
+    // Missing initMin falls back to softMin
+    expect(Reflect.apply(range, undefined, [undefined, undefined, 22])).toEqual([10, 35])
+
+    // Missing initMax falls back to softMax, while softMin still anchors the lower bound
+    expect(Reflect.apply(range, undefined, [undefined, 18, undefined])).toEqual([10, 35])
+
+    // All missing falls back to the configured soft bounds
+    expect(Reflect.apply(range, undefined, [undefined, undefined, undefined])).toEqual([10, 35])
+  })
+
+  it('honors panel default soft bounds for the matching family', () => {
+    const data = makeData()
+    data.scaleDefaults = { unit: 'celsius', softMin: 15 }
+    const { scales } = buildScales(data)
+    const range = requiredRange(scales.temperature?.range)
+
+    expect(Reflect.apply(range, undefined, [undefined, 21, 25])).toEqual([15, 25])
+  })
+
   it('draws actual VPD series with the required three-pixel width', () => {
     const data = makeData()
     const vpd = data.series.find((series) => series.family === 'vpd')
