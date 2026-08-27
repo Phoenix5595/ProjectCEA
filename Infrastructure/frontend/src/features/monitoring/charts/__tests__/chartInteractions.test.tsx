@@ -54,10 +54,16 @@ vi.mock('uplot', () => ({ default: MockUPlot }))
 
 class MockResizeObserver {
   static instances: MockResizeObserver[] = []
-  observe = vi.fn()
+  callback: ResizeObserverCallback
+  observe = vi.fn((target: HTMLElement) => {
+    Object.defineProperty(target, 'clientWidth', { configurable: true, value: 800 })
+    Object.defineProperty(target, 'clientHeight', { configurable: true, value: 400 })
+    this.callback([], this)
+  })
   disconnect = vi.fn()
   unobserve = vi.fn()
-  constructor(_cb: ResizeObserverCallback) {
+  constructor(callback: ResizeObserverCallback) {
+    this.callback = callback
     MockResizeObserver.instances.push(this)
   }
 }
@@ -216,6 +222,37 @@ describe('monitoring chart interactions', () => {
     expect(plot.setData).toHaveBeenCalled()
     const lastCall = plot.setData.mock.calls.at(-1)
     expect(lastCall?.[1]).toBe(false)
+  })
+
+  it('keeps the recorded endpoint stable through repeated cross-divider zoom feedback cycles', () => {
+    const data = makeData()
+    const emittedEnds: number[] = []
+    const onZoom = vi.fn((range: { start: Date; end: Date }) => {
+      emittedEnds.push(range.end.getTime())
+    })
+    const { rerender } = render(
+      <ThemeProvider>
+        <ChartHarness data={data} onZoom={onZoom} />
+      </ThemeProvider>,
+    )
+    const plot = instances[0]
+
+    // The initial uPlot scale marks the chart as ready.
+    plot.setScale('x', { min: 1500, max: 4000 })
+
+    // A cross-divider user selection must persist only the recorded portion.
+    plot.setScale('x', { min: 1500, max: 4000 })
+    expect(onZoom).toHaveBeenCalledWith({ start: new Date(1500), end: new Date(3000) })
+
+    // Re-aligning preserves the future strip in rendered data, then a second
+    // user zoom must not feed that strip back into the next fixed range.
+    rerender(
+      <ThemeProvider>
+        <ChartHarness data={makeData()} range={{ kind: 'fixed', start: new Date(1500), end: new Date(3000) }} onZoom={onZoom} />
+      </ThemeProvider>,
+    )
+    plot.setScale('x', { min: 1500, max: 4000 })
+    expect(emittedEnds).toEqual([3000, 3000])
   })
 
   it('programmatic reset stays silent while a simulated user zoom emits once', () => {
