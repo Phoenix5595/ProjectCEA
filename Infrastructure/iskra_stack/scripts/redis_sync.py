@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Sync latest sensor values from replica TimescaleDB to Redis.
 
-Reads from the latest_sensor_values view and writes sensor:* and sensor:*:ts
+Reads from the latest_sensor_values view and writes cea:sensor:* state keys
 keys so Grafana (and other consumers) can read current values from Redis
 instead of querying the DB constantly. Also builds pre-formatted hashes for
 Flower operator tables (Averages, Front cluster, Back cluster) consumed via
@@ -312,8 +312,8 @@ def run_forever() -> NoReturn:
                     value = row["value"]
                     ts = row["time"]
                     ts_ms = int(ts.timestamp() * 1000) if ts else 0
-                    key = f"sensor:{name}"
-                    ts_key = f"sensor:{name}:ts"
+                    key = f"cea:sensor:global:main:{name}"
+                    ts_key = f"cea:sensor:global:main:{name}_ts"
                     pipe.setex(key, REDIS_TTL_SEC, str(value))
                     pipe.setex(ts_key, REDIS_TTL_SEC, str(ts_ms))
                 logger.info("Synced %d sensors to Redis", len(rows))
