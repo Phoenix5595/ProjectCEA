@@ -5,6 +5,9 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "release:major": "npm version major --no-git-tag-version",
+    "release:minor": "npm version minor --no-git-tag-version",
+    "release:patch": "npm version patch --no-git-tag-version",
     "preview": "vite preview",
     "lint": "eslint src --ext .ts,.tsx",
     "lint:fix": "eslint src --ext .ts,.tsx --fix",
