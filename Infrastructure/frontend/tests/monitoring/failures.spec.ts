@@ -53,7 +53,7 @@ test('range 503 retains last-good data, announces its age, and recovers on retry
 
   await page.getByRole('button', { name: 'Retry' }).click()
   await expect(page.getByRole('alert').first()).toBeVisible()
-  await expect(page.getByRole('status', { name: '' }).filter({ hasText: 'Data stale.' }).first()).toContainText('Last good monitoring range:')
+  await expect(page.getByRole('status').filter({ hasText: 'Data stale.' }).first()).toContainText('Last good monitoring range:')
   await expect(page.getByRole('table', { name: 'Back Cluster' }).getByText('24.6°C')).toBeVisible()
 
   await page.getByRole('button', { name: 'Retry' }).click()

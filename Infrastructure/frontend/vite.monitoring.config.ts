@@ -58,6 +58,10 @@ function isControlPath(pathname: string): boolean {
   return pathname.startsWith('/api/monitoring/control/')
 }
 
+function isDelayedHistoryPath(pathname: string): boolean {
+  return /^\/api\/sensors\/monitoring\/range\//.test(pathname) || pathname.endsWith('/history')
+}
+
 const scenarioCounters = new Map<string, number>()
 const MISSING_FIXTURE_SESSION = 'missing-session'
 
@@ -192,7 +196,7 @@ function monitoringPreviewPlugin(): Plugin {
           const key = counterKey('range-503-after-good')
           const count = scenarioCounters.get(key) ?? 0
           scenarioCounters.set(key, count + 1)
-          if (count === 2) {
+          if (count === 2 || count === 3) {
             res.statusCode = 503
             res.setHeader('Content-Type', 'application/json')
             res.end(JSON.stringify({ detail: 'range unavailable (fixture)' }))
@@ -251,6 +255,13 @@ function monitoringPreviewPlugin(): Plugin {
                 setTimeout(() => res.end(body), 1_200)
                 return
               }
+            }
+            if (scenario === 'delayed-range' && isDelayedHistoryPath(pathname)) {
+              const key = counterKey('delayed-range')
+              const count = scenarioCounters.get(key) ?? 0
+              scenarioCounters.set(key, count + 1)
+              setTimeout(() => res.end(body), 500)
+              return
             }
             res.end(body)
             return
