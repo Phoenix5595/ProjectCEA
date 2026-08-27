@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import re
 from typing import Any
@@ -10,6 +11,7 @@ from fastapi import APIRouter
 
 from app.redis_client import get_redis_client
 from shared.infra_logging import get_logger
+from shared.redis_keys import sensor_full
 
 logger = get_logger(__name__)
 
@@ -26,7 +28,7 @@ def _parse_location_cluster(key: str) -> tuple[str | None, str | None, str | Non
 
 @router.post("/sensor-data")
 async def post_sensor_data(body: dict[str, Any]) -> dict[str, float]:
-    """Return current values for requested keys from Redis (sensor:*, effective_setpoint:*, light:*).
+    """Return current values for requested keys from Redis.
 
     Request body: { "keys": ["Veg Room_main_heating_setpoint", "Veg Room_main_light_1_intensity", ...] }
     Returns: { "Veg Room_main_heating_setpoint": 22.5, ... } (only keys that were found). Temperatures in Celsius.
@@ -48,20 +50,21 @@ async def post_sensor_data(body: dict[str, Any]) -> dict[str, float]:
     }
 
     try:
-        # 1) Try sensor:* for each key (and Lab aliases)
-        sensor_keys = []
+        # 1) Read canonical sensor state for each dashboard key (and Lab aliases).
+        sensor_pairs: list[tuple[str, str]] = []
         for k in keys:
             if k in LAB_SENSOR_ALIASES:
-                sensor_keys.append(f"sensor:{LAB_SENSOR_ALIASES[k]}")
-            else:
-                sensor_keys.append(f"sensor:{k}")
-        values = await client.mget(sensor_keys)
-        for key, val in zip(keys, values, strict=False):
+                sensor_pairs.append((k, sensor_full("Lab", "main", LAB_SENSOR_ALIASES[k])))
+                continue
+            location, cluster, sensor_name = _parse_location_cluster(k)
+            if location is not None and cluster is not None and sensor_name is not None:
+                sensor_pairs.append((k, sensor_full(location, cluster, sensor_name)))
+
+        values = await client.mget([redis_key for _, redis_key in sensor_pairs])
+        for (key, _), val in zip(sensor_pairs, values, strict=True):
             if val is not None:
-                try:
+                with contextlib.suppress(ValueError, TypeError):
                     result[key] = float(val)
-                except (ValueError, TypeError):
-                    pass
 
         remaining = [k for k in keys if k not in result]
 
@@ -72,42 +75,32 @@ async def post_sensor_data(body: dict[str, Any]) -> dict[str, float]:
             location, cluster, suffix = _parse_location_cluster(key)
             if not location or not cluster:
                 continue
-            prefix = f"effective_setpoint:{location}:{cluster}"
+            prefix = f"cea:effective_setpoint:{location}:{cluster}"
             if "heating_setpoint" in key or "dry_bulb_setpoint" in key:
                 raw = await client.get(f"{prefix}:heating_setpoint")
                 if raw is not None:
-                    try:
+                    with contextlib.suppress(ValueError, TypeError):
                         result[key] = float(raw)
-                    except (ValueError, TypeError):
-                        pass
             elif "cooling_setpoint" in key:
                 raw = await client.get(f"{prefix}:cooling_setpoint")
                 if raw is not None:
-                    try:
+                    with contextlib.suppress(ValueError, TypeError):
                         result[key] = float(raw)
-                    except (ValueError, TypeError):
-                        pass
             elif "relative_humidity_setpoint" in key:
                 raw = await client.get(f"{prefix}:humidity")
                 if raw is not None:
-                    try:
+                    with contextlib.suppress(ValueError, TypeError):
                         result[key] = float(raw)
-                    except (ValueError, TypeError):
-                        pass
             elif "co2_setpoint" in key:
                 raw = await client.get(f"{prefix}:co2")
                 if raw is not None:
-                    try:
+                    with contextlib.suppress(ValueError, TypeError):
                         result[key] = float(raw)
-                    except (ValueError, TypeError):
-                        pass
             elif "vpd_setpoint" in key:
                 raw = await client.get(f"{prefix}:vpd")
                 if raw is not None:
-                    try:
+                    with contextlib.suppress(ValueError, TypeError):
                         result[key] = float(raw)
-                    except (ValueError, TypeError):
-                        pass
 
         remaining = [k for k in keys if k not in result]
 
@@ -119,7 +112,7 @@ async def post_sensor_data(body: dict[str, Any]) -> dict[str, float]:
             if not location or not cluster or rest is None or not rest.startswith("light_"):
                 continue
             device = rest.replace("_intensity", "")
-            redis_key = f"light:{location}:{cluster}:{device}"
+            redis_key = f"cea:light:{location}:{cluster}:{device}"
             raw = await client.get(redis_key)
             if raw is not None:
                 try:

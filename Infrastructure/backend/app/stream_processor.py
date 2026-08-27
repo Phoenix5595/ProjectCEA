@@ -175,10 +175,7 @@ def process_stream_entries_to_sensor_data(
 
         # Get timestamp
         ts_ms = entry.get("timestamp_ms")
-        if ts_ms:
-            timestamp = datetime.fromtimestamp(ts_ms / 1000.0)
-        else:
-            timestamp = datetime.now()
+        timestamp = datetime.fromtimestamp(ts_ms / 1000.0) if ts_ms else datetime.now()
 
         # Add to sensor data
         for sensor_name, value, unit in sensors:

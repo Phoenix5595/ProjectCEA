@@ -257,10 +257,7 @@ async def get_live_sensor_data(
         value = await get_sensor_value(sensor_type)
         if value is not None:
             ts_ms = timestamps_ms.get(sensor_type)
-            if ts_ms:
-                timestamp = datetime.fromtimestamp(ts_ms / 1000.0)
-            else:
-                timestamp = datetime.now()
+            timestamp = datetime.fromtimestamp(ts_ms / 1000.0) if ts_ms else datetime.now()
 
             # Determine unit based on sensor type
             unit = (
@@ -325,10 +322,7 @@ async def get_all_live_sensor_data():
     for sensor_name, value in sensor_values.items():
         # Get timestamp
         ts_ms = timestamps_ms.get(sensor_name)
-        if ts_ms:
-            timestamp = datetime.fromtimestamp(ts_ms / 1000.0)
-        else:
-            timestamp = datetime.now()
+        timestamp = datetime.fromtimestamp(ts_ms / 1000.0) if ts_ms else datetime.now()
 
         # Determine unit
         unit = ""

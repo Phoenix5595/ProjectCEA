@@ -204,6 +204,7 @@ from app.middleware.exception_handler import APIError, api_error_handler  # noqa
 
 app.add_exception_handler(APIError, api_error_handler)
 
+
 # Add exception handler for HTTP exceptions (but not all exceptions to avoid catching too much)
 from fastapi import Request  # noqa: E402
 from fastapi.responses import JSONResponse  # noqa: E402
