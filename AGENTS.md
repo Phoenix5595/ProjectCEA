@@ -1,263 +1,69 @@
-# ProjectCEA - Comprehensive Agent Guidelines
-
-## ⚠️ CRITICAL URLS - READ THIS FIRST
-
-| Service | URL | Notes |
-|---------|-----|-------|
-| **Dashboard (Frontend)** | `http://mothernode:8080` | Main CEA dashboard (served via Caddy reverse proxy) |
-| **Grafana** | `http://iskraprojectcea:3001` | `projectcea_grafana` container (Phase 5c, 2026-04-19). NOT `localhost:3000` (Pi Grafana decommissioned) and NOT `iskradocker:3000` (pre-5b). |
-| **Backend API** | `http://mothernode:8080` | Sensor data (proxied through Caddy `:8080` → `:8000`) |
-| **Automation API** | `http://mothernode:8080` | Control & config (proxied through Caddy `:8080` → `:8001`) |
-| **Weather** | `http://mothernode:8080` | Weather service (proxied through Caddy `:8080` → `:8003`) |
-
----
-
-## 🚨 CRITICAL SAFETY RULE — PRODUCTION DATA IS SACRED
-
-**NEVER modify production data unless explicitly requested.**
-
-- The production database is `cea_sensors`. ANY `TRUNCATE`, `DELETE`, `DROP`, or write operation on `cea_sensors` causes **crop damage** (lights off, climate control failure, data loss).
-- **Violation is a SEVERE FAILURE.** Production data integrity is non-negotiable.
-
-**Why this matters:** On 2026-07-07, tests with `TRUNCATE TABLE device_registry` connected to `cea_sensors` wiped all devices. The control loop lost all lights → 30+ minutes of darkness → potential crop stress. This must NEVER happen again.
-
----
-
-## CRITICAL SYSTEM ARCHITECTURE
-
-```
-Sensors → Ingestion → Redis + TimescaleDB → Control Loop → Actuators → Frontend/Grafana
-```
-
-| Metric | Requirement |
-|--------|-------------|
-| Control loop latency | ≤5s (target 1-2s) |
-| Sensor update rate | 1Hz |
-| Redis operations | <1ms |
-| DB batch delay | ≤100ms |
-
----
-
-## WHERE TO LOOK - COMPREHENSIVE GUIDE
-
-### API Route Inventory
-
-- Backend (8000): `GET /api/sensors/{room}/{cluster}`, `GET /api/health`
-- Automation (8001): `GET /api/devices/{room}/{cluster}`, `PATCH /api/devices/{device_id}`, `GET /api/schedules`, `GET /api/light-target-intensities`, `GET /api/light-programs`, `GET /api/setpoints`, `GET /api/mode-parameters`
-
----
-
-## NON-NEGOTIABLE SYSTEM RULES
-
-### Real-Time Constraints (Critical)
-
-| Rule | Reason |
-|------|--------|
-| **1/sec sampling minimum** | AI training requires full resolution data |
-| **100ms max DB batch delay** | Live Redis instant, DB can buffer |
-| **1-5s control tick max** | Deterministic environmental control |
-| **<1ms Redis operations** | Control loop performance requirement |
-
-### Control Algorithm Requirements (Critical)
-
-| Rule | Implementation |
-|------|----------------|
-| **VPD is master controller** | VPD → humidity setpoint cascade |
-| **Humidity is slave to VPD** | Tracks VPD-derived targets |
-| **Safety interlocks mandatory** | Heating failure → exhaust inhibition |
-| **No hardcoded setpoints** | Database-driven configuration |
-
-### Data Management Rules (Critical)
-
-| Rule | Implementation |
-|------|----------------|
-| **Query DB with time filters** | Always include time range |
-| **Use aggregates for long ranges** | <1h: raw, 1-3h: 1min, 3-24h: 5min, >24h: hourly |
-| **Never hourly aggregates for <7d** | Hides critical dynamics |
-
-### Repository Pattern Architecture (Critical)
-
-- **ControlAction Repository**: Control action logging and retrieval
-- **Device Repository**: Device states and hardware configurations
-- **PID Repository**: PID controller parameters and tuning data
-- **RoomMode Repository**: Room operational modes and transitions
-- **Schedule Repository**: Non-light DAY/NIGHT schedule rows (heaters, fans, dehumidifiers). Light scheduling is handled by `light_target_intensity_repo` and `light_programs_repo`.
-- **LightTargetIntensity Repository**: Per-light, per-mode intensity anchors
-- **LightPrograms Repository**: Supplemental and override light programs with time-slot and cycle mode support
-- **Schedule cache invalidation**: `schedule_repo.get_schedules()` uses StateManager keys `schedules:all`, `schedules:loc:{location}`, and `schedules:loc:{location}:cluster:{cluster}`. Any write that changes `schedules` rows must invalidate **all** keys that unfiltered `get_schedules()` can hit; otherwise the in-process `Scheduler` reloads stale rows and light targets lag the DB.
-- **Sensor Repository**: Sensor data validation and storage
-- **Setpoint Repository**: Environmental setpoints and targets
-- **Config Repository**: System configuration and parameter storage
-
-### Schedule Architecture (3-Concept Model)
-
-**Concept 1: Photoperiod** — `mode_parameters.day_start_time` and `night_start_time` per room, per mode. Overnight-capable. Missing mode_parameters → returns True (lights ON at 10%) + CRITICAL alarm.
-
-**Concept 2: Per-Light Intensity** — `(device_id, mode_id) → target_intensity` with CHECK (0-100). Mode-specific. 10% hardcoded failsafe if no row exists + WARNING alarm.
-
-**Concept 3: Light Programs** — `supplemental` (adds light in dark) or `override` (replaces intensity in sun). Time-slot or cycle mode. Priority DESC, ties broken by created_at ASC. Device-level or room-level.
-
-### Device Registry
-
-`device_registry` is the sole source for device identity, relay bindings, and DFR bindings. `RuntimeDeviceRegistry` builds and atomically installs one immutable `RuntimeDeviceSnapshot`; every control tick captures that reference once. `DeviceRegistryService` is the sole mutation path, and `RelayBoardStateManager` is the sole MCP23017 board sampler and owner of `cea:relay:board_snapshot`. There is no commissioning subsystem and no YAML device definition path.
-
-| Field | Description |
-|-------|-------------|
-| **device_id** | Primary key |
-| **location** | Room name |
-| **cluster** | Device cluster (`main`) |
-| **device_name** | Canonical identifier |
-| **display_name** | Human-readable label |
-| **device_type** | `light`, `fan`, `heater`, etc. |
-| **channel** | Relay channel (0-15) |
-| **dimming_enabled** | Boolean |
-| **dimming_type** | `dfrobot` or null |
-| **dimming_board_id** | I2C address |
-| **dimming_channel** | Dimmer channel |
-| **safety_level** | `critical`, `standard`, etc. |
-| **pid_enabled** | Boolean |
-| **interlock_with** | Device name or null |
-| **pid_setpoints** | JSON |
-| **per_room_index** | Integer |
-
-- The registry may be empty during the guarded operator reset/rebuild workflow. An empty registry installs a ready empty snapshot and must not emit relay-ON or nonzero DFR commands.
-- `automation_config.yaml` contains service and hardware configuration only; it must not define devices, relay channels, or DFR assignments.
-
-### Light Target Intensity
-
-| Attribute | Value |
-|-----------|-------|
-| **Schema** | `(device_id, mode_id) → target_intensity (REAL, 0-100, default 10.0)` |
-| **Creation** | Direct SQL (NOT alembic) |
-| **Current state** | EMPTY — operator sets values via frontend slider |
-| **Fallback** | `MINIMUM_LIGHT_INTENSITY = 10.0` when table empty |
-
-### Light Programs
-
-| Attribute | Value |
-|-----------|-------|
-| **Schema** | `device_id, location, cluster, mode_id, name, program_type, start_time, end_time, cycle_enabled, cycle_on_seconds, cycle_off_seconds, target_intensity, ramp_up_minutes, ramp_down_minutes, priority, enabled` |
-| **Types** | `supplemental` (adds light in dark) or `override` (replaces intensity in sun) |
-| **Creation** | Direct SQL (NOT alembic) |
-| **Current state** | EMPTY |
-
-### Relay Steal Logic
-
-Confirmed relay steals are performed atomically by `DeviceRegistryService`; the response includes `displaced_device_id`.
-
-### Control Snapshot
-
-`GET /api/devices/control-snapshot` is the single read model for the Device Table, DFR panel, main matrix, and room matrices. It joins the strict registry snapshot, MCP relay observation, assigned-device command state, DFR commanded/acknowledged intensity, and inherited schedule summary. The frontend no longer derives relay labels from `channel + 1`; physical R1–R16 and pin labels come from the backend's canonical `relay_topology` bijection.
-
-### Scheduler Caches
-
-The `Scheduler` installs snapshot-derived mode, light intensity, light program, and device lookup caches as one `install_snapshot()` operation. The `_ready` flag blocks ticks until the complete immutable snapshot is installed.
-
-### Cluster Topology Contract (Critical)
-
-The codebase distinguishes **device clusters** from **sensor sub-clusters**. Mixing them is the most common source of "endpoint returns nothing" bugs.
-
-- `main` = device cluster only. Never a sensor sub-cluster.
-- `front`/`back` = sensor sub-clusters only. Never on the device plane.
-
-```
-Room
- └── main                 (device cluster)
-      ├── front           (Flower Room sensors)
-      └── back            (Flower Room sensors)
-```
-
-Per-room mapping (canonical, **single source of truth**):
-
-| Room          | Device cluster | Sensor URL slug(s) |
-|---------------|----------------|--------------------|
-| `Flower Room` | `main`         | `front` ‡, `back`  |
-| `Veg Room`    | `main`         | `main` †           |
-| `Lab`         | `main`         | `main` †           |
-| `Outside`     | `main`         | `main` †           |
-
-‡ Flower Room `back` is wired and producing telemetry; `front` is planned but not in service yet. `GET /api/sensors/Flower Room/front` returns HTTP 200 with empty payload — expected, not a bug.
-
-† Unsplit rooms reuse `main` as a sensor URL sentinel meaning "no sub-clusters". `main` is **not** registered as a sensor sub-cluster in topology data.
-
-**Sources of truth:** `Infrastructure/shared/cluster_topology.py` (Python) and `Infrastructure/frontend/src/config/clusterTopology.ts` (frontend). Keep them in sync.
-
-**API contract:** `GET /api/devices/{room}/{cluster}` → device cluster only (passing `front`/`back` → 400). `GET /api/sensors/{room}/{cluster}` → sensor URL slugs only (Flower accepts `front`/`back`; unsplit rooms accept `main` only). Wrong cluster → 400 with hint.
-
-**Frontend rule:** Device polling uses `ZONES` (all `cluster: "main"`). Sensor polling uses `getSensorPollZones()` (Flower → `front`+`back`; unsplit → `main`). Never iterate sensor sub-clusters against the device endpoint.
-
-### Hardware Rules (Critical)
-
-| Rule | Hardware Mapping | Reason |
-|------|------------------|--------|
-| **MCP23017 = relays only** | I2C bus 0, address 0x27, channels 0-15 | Digital on/off control |
-| **DFR0971 = dimming only** | I2C bus 1, addresses 0x88/0x89/0x90 | Analog 0-10V control |
-| **Never swap roles** | MCP for dimming or DFR for relays | Hardware capability limits |
-| **Bus separation mandatory** | Different I2C buses for relay/dimming | Prevent interference |
-
-### Operational Rules (Critical)
-
-| Rule | Implementation | Reason |
-|------|----------------|--------|
-| **Rollback <30s** | `./rollback-deploy.sh` (after a successful deploy, uses `deploy_state.json`) | Minimize crop stress |
-| **No bare excepts** | Proper exception handling | System reliability |
-| **Config validation required** | Service startup fails on invalid config | Prevent runtime errors |
-| **Never touch working systems** | Unless explicitly requested | Production stability |
-| **Registry reset is operator-only** | `Infrastructure/scripts/reset-device-registry.sh --confirm`, only after owner-approved deployment | Prevent destructive automated reset |
-
-### Subagent QA Safety (Critical — Permanent Ban)
-
-**F3 (Real Manual QA) is PERMANENTLY BANNED from making HTTP requests to production endpoints.** On 2026-07-07, an F3 QA subagent issued `DELETE` requests to the production automation API (port 8001), wiping the `device_registry` table. The control loop lost all devices, lights went dark for 36+ hours, and crops were put under severe stress. This must NEVER happen again.
-
-**Replacement for F3 — Static Checks and Local Verification Only:**
-
-| Check | Command |
-|-------|---------|
-| **Backend lint, format, compile, and pure tests** | `cd Infrastructure/automation-service && ruff check . && ruff format --check . && python3 -m compileall -q app && pytest -q app/tests/pure` |
-| **Frontend type-check, build, and focused Vitest** | `cd Infrastructure/frontend && npx tsc --noEmit && npm run build && npx vitest run src/components/devices/__tests__/targetValidation.test.ts src/components/devices/__tests__/relaySnapshot.test.ts` |
-| **Cluster topology validation** | `python3 Infrastructure/scripts/validate_cluster_topology.py` |
-| **Git diff whitespace** | `git diff --check` |
-| **Sandboxed reset-script test** | `bash Infrastructure/scripts/tests/test-reset-device-registry.sh` |
-| **Sandboxed candidate-deploy test** | `bash Infrastructure/scripts/tests/test-deploy-candidate.sh` |
-
-**Testing:** The project has focused pure Python tests and focused Vitest tests. Run the full backend and frontend command chains above before any commit or deploy.
-
-**Production HTTP Rules for ALL Subagents:**
-
-- **NO subagent may call DELETE, POST, or PUT against production endpoints.**
-- **GET is allowed for read-only verification only.** Production endpoints at ports 8000, 8001, and 8003 may be queried with `GET` to confirm responses, headers, or payload shape. No state change.
-- **One exception:** A subagent MAY send `curl -X DELETE` with a non-existent device ID (for example, `999`) to verify the `X-Confirm-Destructive` guard returns HTTP 403. No subagent may DELETE a real device ID. This is a guard-verification probe, not a destructive test.
-- **Violation of this rule is a SEVERE FAILURE.** Production system integrity is non-negotiable.
-
----
-
-## COMMAND REFERENCE
+# ProjectCEA - Agent Guidelines
+
+## Safety Rules
+
+- NEVER call POST, PUT, PATCH, or DELETE against a production endpoint, database, or Redis instance. No exception.
+- NEVER modify production data unless explicitly requested.
+- NEVER run TRUNCATE, DELETE, DROP, or other destructive SQL against `cea_sensors`.
+- NEVER restart, reset, deploy, or reconfigure production services or hardware unless the owner explicitly asks.
+
+The 2026-07-07 `TRUNCATE TABLE device_registry` incident showed that a single destructive call can take lights and climate offline. Violation is a severe failure.
+
+## Architecture Summary
+
+Sensors → CAN/Modbus/1-Wire/weather ingestion → Redis live state + TimescaleDB history → automation-service control loop → MCP23017 relays (I2C bus 0) + DFR0971 dimming (I2C bus 1) → React frontend + Grafana.
+
+Current source: [`ARCHITECTURE.md`](ARCHITECTURE.md). Deployment state may lag; the deployed snapshot is external at `/opt/projectcea/current/deploy_manifest.json`.
+
+## Authority Map
+
+| Topic | Canonical Source |
+|---|---|
+| Service inventory, ports | [`Infrastructure/services.yaml`](Infrastructure/services.yaml) |
+| Caddy reverse-proxy routing | [`Infrastructure/caddy/Caddyfile`](Infrastructure/caddy/Caddyfile) |
+| Cluster topology | [`Infrastructure/shared/cluster_topology.py`](Infrastructure/shared/cluster_topology.py) + [`Infrastructure/frontend/src/config/clusterTopology.ts`](Infrastructure/frontend/src/config/clusterTopology.ts) |
+| Redis keys / retention | [`Infrastructure/shared/redis_keys.py`](Infrastructure/shared/redis_keys.py) |
+| Hardware addresses | [`Infrastructure/automation-service/automation_config.yaml`](Infrastructure/automation-service/automation_config.yaml) |
+| Control cadence | `automation_config.yaml` `control.update_interval` (1 s, valid 1–5 s) |
+| Heating↔exhaust interlock | Removed / unconfigured per `automation_config.yaml` line 77 |
+| Aggregate ladders | Backend: `Infrastructure/backend/app/repositories/sensor_repository.py`; Grafana: `Infrastructure/database/grafana_performance_migration.sql` |
+
+## Where to Look
+
+| Component | Document |
+|---|---|
+| Root architecture | [`ARCHITECTURE.md`](ARCHITECTURE.md) |
+| Infrastructure overview | [`Infrastructure/AGENTS.md`](Infrastructure/AGENTS.md) |
+| Automation service | [`Infrastructure/automation-service/AGENTS.md`](Infrastructure/automation-service/AGENTS.md) |
+| Control subsystem | [`Infrastructure/automation-service/app/control/AGENTS.md`](Infrastructure/automation-service/app/control/AGENTS.md) |
+| Backend / sensor API | [`Infrastructure/backend/AGENTS.md`](Infrastructure/backend/AGENTS.md) |
+| CAN processor | [`Infrastructure/can-processor-service/AGENTS.md`](Infrastructure/can-processor-service/AGENTS.md) |
+| Database / schema | [`Infrastructure/database/AGENTS.md`](Infrastructure/database/AGENTS.md) |
+| Frontend | [`Infrastructure/frontend/AGENTS.md`](Infrastructure/frontend/AGENTS.md) |
+| Monitoring feature | Created by T6 |
+| Sensor nodes | [`Sensor_Nodes/AGENTS.md`](Sensor_Nodes/AGENTS.md) |
+| Iskra / Grafana | [`Infrastructure/iskra_stack/AGENTS.md`](Infrastructure/iskra_stack/AGENTS.md) |
+| Shared code | [`Infrastructure/shared/AGENTS.md`](Infrastructure/shared/AGENTS.md) |
+
+## Approved Local Commands
 
 ```bash
-./deploy.sh                    # Deploy with auto-rollback on health fail
-./rollback-deploy.sh           # Point current at previous release
-systemctl status automation-service
-journalctl -u can-processor -f
-psql -U cea -d projectcea
-redis-cli
-i2cdetect -y 0                 # Scan I2C bus 0 (relays)
-i2cdetect -y 1                 # Scan I2C bus 1 (dimming)
-
-# Local verification (run before commit or deploy)
-cd Infrastructure/automation-service && ruff check . && ruff format --check . && python3 -m compileall -q app && pytest -q app/tests/pure
-cd Infrastructure/frontend && npx tsc --noEmit && npm run build && npx vitest run src/components/devices/__tests__/targetValidation.test.ts src/components/devices/__tests__/relaySnapshot.test.ts
 python3 Infrastructure/scripts/validate_cluster_topology.py
 git diff --check
+cd Infrastructure/automation-service && ruff check . && ruff format --check . && python3 -m compileall -q app && pytest -q app/tests/pure
+cd Infrastructure/frontend && npx tsc --noEmit && npm run build && npx vitest run src/components/devices/__tests__/targetValidation.test.ts src/components/devices/__tests__/relaySnapshot.test.ts
 bash Infrastructure/scripts/tests/test-reset-device-registry.sh
 bash Infrastructure/scripts/tests/test-deploy-candidate.sh
 ```
 
+Do not extend these commands to contact production endpoints, databases, Redis, or hardware.
+
+## Working Tree Discipline
+
+- Do not stage, commit, reset, clean, stash, or overwrite files outside the task allowlist.
+- Documentation edits are limited to the paths listed in `.omo/evidence/agents-knowledge-base-refresh/T1/tracked-allowlist.txt`.
+- Local instruction changes in `.opencode/` and `.cursor/` are never staged.
+
 ---
 
-## CONCLUSION
-
-Prioritize system stability and crop safety. Refer to service-specific docs for implementation details.
-
----
-
-*Last updated: 2026-07-30 (relay-registry-control-snapshot-recovery implementation complete; deployment pending owner approval)*
+*Last updated: 2026-08-10*
