@@ -32,7 +32,7 @@ function publication(): ProjectionPublicationResponse {
 }
 
 describe('projectionTimeline', () => {
-  it('renders canonical future intervals without requiring recorded values', () => {
+  it('renders capped future intervals without requiring recorded values', () => {
     const history = projectionTimeline(publication()).history
     expect(history).not.toBeNull()
     if (history === null) return
@@ -48,8 +48,14 @@ describe('projectionTimeline', () => {
     })
 
     const point = data.series.find((series) => series.metric === 'heating_setpoint' && series.role === 'step')
-    expect(data.x).toContain(FUTURE.getTime())
     expect(point?.y[data.x.indexOf(NOW.getTime())]).toBe(22)
+
+    const last = data.x[data.x.length - 1]
+    const recordedWidth = NOW.getTime() - START.getTime()
+    const futureWidth = last - NOW.getTime()
+    expect(last).toBeLessThan(FUTURE.getTime())
+    expect(futureWidth).toBeGreaterThan(0)
+    expect(futureWidth).toBeLessThanOrEqual(recordedWidth / 9 + Number.EPSILON)
   })
 
   it('keeps unavailable publications out of chart timelines', () => {
