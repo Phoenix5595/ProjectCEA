@@ -118,10 +118,15 @@ export function TimeRangeToolbar({
     if (prevRangeRef.current === range) return
     prevRangeRef.current = range
     const serialized = serializeRange(range)
-    const current = searchParams.toString()
-    if (serialized === current) return
-    lastWrittenRef.current = serialized
-    setSearchParams(serialized, { replace: false })
+    const nextSearchParams = new URLSearchParams(searchParams)
+    nextSearchParams.delete('range')
+    nextSearchParams.delete('start')
+    nextSearchParams.delete('end')
+    new URLSearchParams(serialized).forEach((value, key) => nextSearchParams.set(key, value))
+    const nextSerialized = nextSearchParams.toString()
+    if (nextSerialized === searchParams.toString()) return
+    lastWrittenRef.current = nextSerialized
+    setSearchParams(nextSearchParams, { replace: false })
   }, [range, searchParams, setSearchParams])
 
   const tzTimestamp = live ? nowFn() : range.start
