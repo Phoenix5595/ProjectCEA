@@ -1,0 +1,31 @@
+[Unit]
+Description=CEA Monitoring Service
+After=redis-server.service postgresql.service network-online.target
+Requires=redis-server.service postgresql.service
+Wants=network-online.target
+OnFailure=service-error-handler@%n.service
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/opt/projectcea/current/Infrastructure/monitoring-service
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=PYTHONPATH=/opt/projectcea/current/Infrastructure
+Environment=MONITORING_REDIS_URL=redis://localhost:6379
+EnvironmentFile=-/opt/projectcea/shared/env/monitoring.env
+ExecStart=/opt/projectcea/current/Infrastructure/monitoring-service/.venv/bin/python -m uvicorn monitoring_service.main:app --host 127.0.0.1 --port 8005
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+NoNewPrivileges=yes
+LockPersonality=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+
+[Install]
+WantedBy=multi-user.target
