@@ -17,10 +17,9 @@ from shared.redis_client import (
 from shared.redis_keys import (
     SENSOR_RAW_MAXLEN,
     SENSOR_RAW_STREAM,
+    SOIL_SENSOR_CURRENT_TTL_SEC,
     sensor_full,
     sensor_full_ts,
-    sensor_short,
-    sensor_short_ts,
 )
 
 logger = get_logger(__name__)
@@ -46,7 +45,6 @@ class RedisClient:
         self._state_pool: redis.ConnectionPool | None = None
         self._stream_pool: redis.ConnectionPool | None = None
         self.redis_enabled = False
-        self.redis_ttl = 10  # consistent with CAN + onewire TTL
 
     async def connect(self) -> bool:
         """Connect both Redis pools (state + binary stream)."""
@@ -125,23 +123,15 @@ class RedisClient:
             await self.redis_client.publish("sensor:update", json.dumps(message))
             await self.redis_client.publish("sensor:update:soil", json.dumps(message))
 
-            # Store in state with TTL
-            # Dual-write during key migration:
-            # - short form (sensor:{name}) is used by some dashboard readers
-            # - full form (cea:sensor:{location}:{cluster}:{sensor_type}) is used by automation
-            #
+            # Store topology-qualified state with the soil-source freshness TTL.
             # Soil sensors are currently scoped to main.
             cluster = "main"
-            state_key = sensor_short(sensor_name)
-            ts_key = sensor_short_ts(sensor_name)
             full_key = sensor_full(location, cluster, sensor_name)
             full_ts_key = sensor_full_ts(location, cluster, sensor_name)
 
             pipe = self.redis_client.pipeline()
-            pipe.setex(state_key, self.redis_ttl, str(value))
-            pipe.setex(ts_key, self.redis_ttl, str(timestamp_ms))
-            pipe.setex(full_key, self.redis_ttl, str(value))
-            pipe.setex(full_ts_key, self.redis_ttl, str(timestamp_ms))
+            pipe.setex(full_key, SOIL_SENSOR_CURRENT_TTL_SEC, str(value))
+            pipe.setex(full_ts_key, SOIL_SENSOR_CURRENT_TTL_SEC, str(timestamp_ms))
             await pipe.execute()
 
             return True
