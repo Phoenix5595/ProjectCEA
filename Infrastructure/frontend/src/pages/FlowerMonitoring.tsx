@@ -8,48 +8,45 @@
  * "View data as table" alternative. A scoped error boundary and a status panel
  * surface per-source health without clearing last-good sibling data.
  */
-import { useEffect, useMemo, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import '../features/monitoring/styles/monitoring.css'
 import { monitoringRequestContextFromSearchParams } from '../features/monitoring/api'
 import { flowerManifest } from '../features/monitoring/config'
-import { alignSeries } from '../features/monitoring/data'
-import {
-  beginMonitoringPerfTick,
-  finishMonitoringPerfTick,
-  measureMonitoringAlignment,
-  PERFORMANCE_MARKS_ENABLED,
-} from '../features/monitoring/perfMarks'
-import { UPlotChart, type UPlotChartHandle } from '../features/monitoring/charts'
+import { UPlotChart, type MonitoringPanelChartFeed, type UPlotChartHandle } from '../features/monitoring/charts'
+import { createMonitoringPanelChartFeed } from '../features/monitoring/charts/MonitoringChartFeed'
 import {
   ChartDataTable,
   MonitoringErrorBoundary,
+  MonitoringFreshness,
   MonitoringStatus,
   RoomAveragesTable,
   SensorValueTable,
   StatisticsTable,
   TimeRangeToolbar,
 } from '../features/monitoring/components'
-import type { MonitoringRange } from '../features/monitoring/state'
-import { splitChartGroups } from '../features/monitoring/pages/chartGroups'
+import { timeseriesPanels } from '../features/monitoring/pages/chartGroups'
 import { splitLiveByNode, tablePanel } from '../features/monitoring/pages/tablePanels'
+import { createPanelAlignment } from '../features/monitoring/data'
 import {
   FLOWER_DEFAULT_DURATION_MS,
   useMonitoringStore,
 } from '../features/monitoring/pages/useMonitoringStore'
+import { useMonitoringRangeBudget } from '../features/monitoring/pages/useMonitoringRangeBudget'
 
 const ROOM = 'Flower Room'
 const FLOWER_SERIES_SPECS = flowerManifest.panels.flatMap((panel) =>
   panel.kind === 'timeseries' ? panel.series : [],
 )
 
-function windowBounds(range: MonitoringRange, now: Date): { start: Date; end: Date } {
-  if (range.kind === 'fixed') return { start: range.start, end: range.end }
-  return { start: new Date(now.getTime() - range.duration), end: now }
-}
-
 const CHART_HEIGHT = { height: 640 }
 const CLIMATE_CHART_HEIGHT = { height: 780 }
+const FLOWER_TIMESERIES_PANELS = timeseriesPanels(flowerManifest)
+
+interface FlowerChartFeeds {
+  readonly climate: MonitoringPanelChartFeed
+  readonly device: MonitoringPanelChartFeed
+}
 
 function FlowerMonitoringInner() {
   const [searchParams] = useSearchParams()
@@ -58,31 +55,40 @@ function FlowerMonitoringInner() {
     [searchParams],
   )
   const { snapshot, store } = useMonitoringStore(ROOM, requestContext)
+  const { reportBudget } = useMonitoringRangeBudget(store)
   const climateRef = useRef<UPlotChartHandle>(null)
   const deviceRef = useRef<UPlotChartHandle>(null)
+  const chartFeedsRef = useRef<FlowerChartFeeds | null>(null)
+  if (chartFeedsRef.current === null) {
+    chartFeedsRef.current = {
+      climate: createMonitoringPanelChartFeed({
+        alignment: createPanelAlignment(),
+        panel: FLOWER_TIMESERIES_PANELS[0],
+        seriesSpecs: FLOWER_SERIES_SPECS,
+      }),
+      device: createMonitoringPanelChartFeed({
+        alignment: createPanelAlignment(),
+        panel: FLOWER_TIMESERIES_PANELS[1],
+        seriesSpecs: FLOWER_SERIES_SPECS,
+      }),
+    }
+  }
+  const chartFeeds = chartFeedsRef.current
 
   useEffect(() => {
     store.setLiveRange(FLOWER_DEFAULT_DURATION_MS)
   }, [store])
 
-  const aligned = useMemo(() => {
-    const now = new Date()
-    if (PERFORMANCE_MARKS_ENABLED) {
-      beginMonitoringPerfTick()
-      return measureMonitoringAlignment(() =>
-        alignSeries({ ...snapshot.data, range: snapshot.range, now, seriesSpecs: FLOWER_SERIES_SPECS }),
-      )
+  useEffect(() => {
+    const unsubscribeClimate = chartFeeds.climate.connect(store, snapshot)
+    const unsubscribeDevice = chartFeeds.device.connect(store, snapshot)
+    return () => {
+      unsubscribeClimate()
+      unsubscribeDevice()
     }
-    return alignSeries({ ...snapshot.data, range: snapshot.range, now, seriesSpecs: FLOWER_SERIES_SPECS })
-  }, [snapshot.data, snapshot.range])
+  }, [chartFeeds, store])
 
-  if (PERFORMANCE_MARKS_ENABLED) {
-    useEffect(() => {
-      finishMonitoringPerfTick(aligned.x[aligned.x.length - 1])
-    }, [aligned])
-  }
-
-  const groups = useMemo(() => splitChartGroups(flowerManifest, aligned), [aligned])
+  const groups = { climate: chartFeeds.climate.getData(), device: chartFeeds.device.getData() }
 
   const averagesPanel = tablePanel(flowerManifest, 'flower-averages')
   const frontPanel = tablePanel(flowerManifest, 'flower-front')
@@ -90,13 +96,13 @@ function FlowerMonitoringInner() {
   const statsPanel = tablePanel(flowerManifest, 'flower-statistics')
   const { front, back } = splitLiveByNode(snapshot.data.live)
 
-  const now = new Date()
-  const bounds = windowBounds(snapshot.range, now)
-
-  const resetZoom = (): void => {
+  const resetZoom = useCallback((): void => {
     climateRef.current?.resetZoom()
     deviceRef.current?.resetZoom()
-  }
+  }, [])
+  const zoomToRange = useCallback((range: { start: Date; end: Date }): void => {
+    store.setFixedRange(range.start, range.end)
+  }, [store])
 
   const loading = snapshot.loading && snapshot.data.series.length === 0
 
@@ -120,6 +126,8 @@ function FlowerMonitoringInner() {
         anchorQuality={snapshot.data.anchorQuality}
         projectionRevision={snapshot.data.projectionRevision}
         runtimeSnapshotVersion={snapshot.data.runtimeSnapshotVersion}
+        lastGoodRangeAt={snapshot.lastGoodRangeAt}
+        rangeErrorAt={snapshot.rangeErrorAt}
         isLive={snapshot.isLive}
         onRetry={() => store.retry()}
         onPause={() => store.pause()}
@@ -134,6 +142,7 @@ function FlowerMonitoringInner() {
       <div className="mon-layout">
         <aside className="mon-side">
         <section className="mon-card" aria-label="Averages">
+          <MonitoringFreshness lastGoodAt={snapshot.lastGoodRangeAt} errorAt={snapshot.rangeErrorAt} />
           {averagesPanel && (
             <RoomAveragesTable
               title="Averages"
@@ -144,6 +153,7 @@ function FlowerMonitoringInner() {
           )}
         </section>
         <section className="mon-card" aria-label="Front Cluster">
+          <MonitoringFreshness lastGoodAt={snapshot.lastGoodRangeAt} errorAt={snapshot.rangeErrorAt} />
           {frontPanel && (
             <SensorValueTable
               title="Front Cluster"
@@ -154,6 +164,7 @@ function FlowerMonitoringInner() {
           )}
         </section>
         <section className="mon-card" aria-label="Back Cluster">
+          <MonitoringFreshness lastGoodAt={snapshot.lastGoodRangeAt} errorAt={snapshot.rangeErrorAt} />
           {backPanel && (
             <SensorValueTable
               title="Back Cluster"
@@ -168,15 +179,16 @@ function FlowerMonitoringInner() {
         <div className="mon-main">
       <section className="mon-card" aria-label="Flower climate conditions">
         <h2 className="mon-card__title">Flower climate conditions</h2>
+        <MonitoringFreshness lastGoodAt={snapshot.lastGoodRangeAt} errorAt={snapshot.rangeErrorAt} />
         {snapshot.data.series.length === 0 ? (
           <div style={CLIMATE_CHART_HEIGHT} />
         ) : (
           <div style={CLIMATE_CHART_HEIGHT}>
             <UPlotChart
               ref={climateRef}
-              data={groups.climate}
-              range={bounds}
-              onZoom={(r) => store.setFixedRange(r.start, r.end)}
+              feed={chartFeeds.climate}
+              onZoom={zoomToRange}
+              onRequestBudgetChange={(budget) => reportBudget('climate', budget)}
               title="Flower climate conditions"
               description="Temperature, relative humidity and VPD over the selected time range. Toggle series with the legend, change the range with the toolbar, and open the table below for the underlying data."
             />
@@ -187,15 +199,16 @@ function FlowerMonitoringInner() {
 
       <section className="mon-card" aria-label="Flower atmosphere & equipment">
         <h2 className="mon-card__title">Flower atmosphere &amp; equipment</h2>
+        <MonitoringFreshness lastGoodAt={snapshot.lastGoodRangeAt} errorAt={snapshot.rangeErrorAt} />
         {snapshot.data.series.length === 0 ? (
           <div style={CHART_HEIGHT} />
         ) : (
           <div style={CHART_HEIGHT}>
             <UPlotChart
               ref={deviceRef}
-              data={groups.device}
-              range={bounds}
-              onZoom={(r) => store.setFixedRange(r.start, r.end)}
+              feed={chartFeeds.device}
+              onZoom={zoomToRange}
+              onRequestBudgetChange={(budget) => reportBudget('device', budget)}
               title="Flower atmosphere & equipment"
               description="CO2 and pressure over the selected time range. Toggle series with the legend, change the range with the toolbar, and open the table below for the underlying data."
             />
@@ -205,6 +218,7 @@ function FlowerMonitoringInner() {
       </section>
 
       <section className="mon-card" aria-label="Statistics - All Available Sensors">
+        <MonitoringFreshness lastGoodAt={snapshot.lastGoodRangeAt} errorAt={snapshot.rangeErrorAt} />
         {statsPanel && (
           <StatisticsTable
             title="Statistics - All Available Sensors"
