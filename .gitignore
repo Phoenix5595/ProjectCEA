@@ -40,6 +40,17 @@ debug_*.py
 test_*.py
 *_test.py
 
+# Monitoring test gates are safe, scoped, and must remain tracked.
+!Infrastructure/backend/app/tests/monitoring/test_*.py
+!Infrastructure/automation-service/app/tests/pure/test_monitoring_tooling_smoke.py
+!Infrastructure/automation-service/app/tests/pure/test_monitoring_contracts.py
+!Infrastructure/automation-service/app/tests/pure/test_monitoring_snapshot.py
+!Infrastructure/automation-service/app/tests/pure/test_climate_projection.py
+!Infrastructure/automation-service/app/tests/pure/test_light_projection.py
+!Infrastructure/automation-service/app/tests/pure/test_monitoring_history.py
+!Infrastructure/automation-service/app/tests/pure/test_photoperiod_history_logger.py
+!Infrastructure/automation-service/app/tests/pure/test_monitoring_routes.py
+
 # Accidentally committed key files (legacy filenames in this repo)
 /ssh-keygen -t ed25519 -C "antoine.olivier.dion@gmail.com"
 /ssh-keygen -t ed25519 -C "antoine.olivier.dion@gmail.com".pub
