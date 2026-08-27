@@ -14,6 +14,8 @@
  * deployed Grafana contract.
  */
 
+import type { UnitFamily } from '../api'
+
 export type PanelKind = 'table' | 'timeseries'
 
 /** A single series on a timeseries panel. */
@@ -48,7 +50,7 @@ export interface TimeseriesPanelSpec {
   families: Array<'temperature' | 'rh' | 'vpd' | 'co2' | 'pressure' | 'device' | 'light'>
   /** Panel-level defaults (unit, soft bounds) applied to the whole panel. */
   defaults?: {
-    unit?: string
+    unit?: UnitFamily
     softMin?: number
     softMax?: number
   }
