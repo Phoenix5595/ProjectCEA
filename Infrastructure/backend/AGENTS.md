@@ -1,72 +1,42 @@
-# BACKEND SERVICE
+# Backend Service
 
-## OVERVIEW
+Sensor data API on port 8000. Serves live values from Redis, historical data from TimescaleDB, native monitoring envelopes, and real-time WebSocket streams.
 
-Sensor data API on port 8000. Serves historical data from TimescaleDB, live data from Redis. WebSocket for real-time updates.
+## Route groups
 
-## STRUCTURE
+| Prefix | File | Purpose |
+|---|---|---|
+| `/api/sensors/{location}/{cluster}` | `routes/sensors.py` | Historical sensor data |
+| `/api/sensors/{location}/{cluster}/live` | `routes/sensors.py` | Current Redis values |
+| `/api/live/all` | `routes/live.py` | All current sensor values |
+| `/api/config/locations` | `routes/config.py` | Available locations |
+| `/ws/{location}` | `websocket.py` | Real-time sensor stream |
+| `/api/sensors/monitoring/range/{location}` | `routes/sensor_monitoring.py` | Historical envelopes for Flower/Veg |
+| `/api/sensors/monitoring/live/{location}/{node}` | `routes/sensor_monitoring.py` | Current monitoring node values |
+| `/api/sensors/monitoring/stats/{location}` | `routes/sensor_monitoring.py` | Exact statistics without series |
 
-```
-backend/
-├── app/
-│   ├── main.py              # FastAPI entry + lifespan
-│   ├── database.py          # TimescaleDB queries
-│   ├── redis_client.py      # State key + stream reading
-│   ├── redis_stream_reader.py # Stream query helper
-│   ├── routes/
-│   │   ├── sensors.py       # Historical + live data
-│   │   ├── config.py        # Locations config
-│   │   └── live.py          # All live values
-│   └── websocket.py         # Real-time broadcast
-└── requirements.txt
-```
+## Topology validation
 
-## DEEP DIVE DOCS
+All `{location}` and `{cluster}` parameters are validated against `shared/cluster_topology.py`. The API rejects cross-type cluster lookups with HTTP 400 and an actionable hint: for example, `Flower Room/main` returns a hint pointing to `front`/`back`.
 
-| Topic | Document |
-|-------|----------|
-| Setup | `README.md` |
+## Consumer-specific aggregate ladder
 
-## API ENDPOINTS
+The backend historical endpoint uses its own ladder in `app/repositories/sensor_repository.py`:
 
-| Method | Path | Purpose |
-|--------|------|---------|
-| GET | `/health` | Health check |
-| GET | `/api/sensors/{location}/{cluster}` | Historical data |
-| GET | `/api/sensors/{location}/{cluster}/live` | Current values from Redis |
-| GET | `/api/live/all` | All current sensor values |
-| GET | `/api/config/locations` | Available locations |
-| WS | `/ws/{location}` | Real-time sensor stream |
+| Range | Tier |
+|---|---|
+| < 2 h | `measurement` raw |
+| >= 2 h | `measurement_1min` |
+| >= 24 h | `measurement_5min` |
+| >= 7 d | `measurement_hourly` |
+| >= 30 d | `measurement_daily` |
 
-### Cluster validation (Phase 5e)
+Grafana uses the separate `get_sensor_data_optimized` ladder in `Infrastructure/database/grafana_performance_migration.sql`. Do not conflate the two consumers.
 
-`/api/sensors/{location}/{cluster}` and `/live` validate `cluster` against the canonical topology in `shared/cluster_topology.py`:
+## Monitoring models
 
-- Sensor sub-cluster valid for room → query proceeds.
-- Device cluster on a room with named sub-clusters (e.g. `Flower Room/main`) → **400** with hint `"sensor data lives under ['front', 'back']"`.
-- Sensor sub-cluster on a room without one (e.g. `Veg Room/front`) → **400** with hint listing valid options.
-- Unknown room → **404**.
+`app/monitoring_models.py` defines strict Pydantic contracts: `MonitoringRange`, `SeriesPoint`, `SensorStatistics`, `MonitoringResponse`, and `compute_tier()`. The monitoring feature supports only `Flower Room` and `Veg Room`.
 
-This replaces the pre-Phase-5e silent-empty-dict behavior, which masked frontend wiring bugs (the dashboard was polling the device endpoint with sensor sub-cluster names).
+## Tests
 
-## QUERY STRATEGY
-
-| Time Range | Source | Why |
-|------------|--------|-----|
-| Live (now) | Redis state keys | Fastest |
-| ≤6 hours | Redis Stream first | Avoids DB |
-| >6 hours | TimescaleDB | Full history |
-| ≥12 hours | Hourly aggregates | Performance |
-| Multi-day | Daily aggregates | Performance |
-
-`get_all_sensors_for_location` selects the coarsest aggregate tier whose buckets still resolve the requested range via `_pick_aggregate_tier` (Phase 5d). Tiers: `raw` / `1min` / `5min` / `hourly` / `daily`. The previous `hourly`/`daily` code path referenced non-existent columns (`mh.time`, `md.time` instead of `bucket`) and would have crashed if exercised — now driven by `_AggregateTier`.
-
-## ANTI-PATTERNS
-
-| Never | Reason |
-|-------|--------|
-| Query DB first for recent data | Check Redis Stream first |
-| Modify Stream data | Read-only |
-| Implement device control | That's automation-service |
-| Use `MAX(time)` subqueries | Use `latest_sensor_values` view |
-| Skip Stream check for <6h | Required for performance |
+Focused backend tests live in `app/tests/monitoring/` and cover models, series, statistics, and routes. Run them with the local gate in `ARCHITECTURE.md`.
