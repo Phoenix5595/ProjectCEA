@@ -1,5 +1,0 @@
-- Fixed parameter mismatch in update_autotune_state call in pid.py route.
-- Verified that state is the required parameter and status was incorrect.
-- LSP diagnostics may sometimes show cached errors immediately after an edit; a subsequent read or diagnostic call confirms the fix.
-- Implemented toast notification using ToastContext (useToast hook) in VerticalPIDBlock.tsx.
-- Confirmed usage of showToast('Message', 'type') matching existing codebase patterns.

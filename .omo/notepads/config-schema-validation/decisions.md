@@ -1,5 +1,0 @@
-- Decision: Use Pydantic v2 validators for robust config validation.
-- Decision: Enforce 0-15 channel range and unique relay_channels.
-- Decision: Validate dimming board references start with 'DFR0971'.
-- Expanded DeviceType Enum in app/models/config_schema.py to include: heater, light, fan, dehumidifier, humidifier, co2, vent. This aligns with production device taxonomy and prevents invalid-device-type failures.
-- Verification step: use provided ConfigLoader-based check to ensure config loads correctly.
