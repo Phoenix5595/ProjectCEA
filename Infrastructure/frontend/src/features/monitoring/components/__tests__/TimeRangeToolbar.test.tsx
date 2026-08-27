@@ -143,6 +143,23 @@ describe('monitoring time-range toolbar', () => {
     )
   })
 
+  it('preserves non-range URL parameters when writing a selected range', async () => {
+    const h = renderStateful(
+      liveRange(3 * 3600_000),
+      true,
+      ['/?scenario=performance-delay&fixtureSession=toolbar-test'],
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: '6h' }))
+
+    await waitFor(() => {
+      const params = new URLSearchParams(h.router.state.location.search)
+      expect(params.get('range')).toBe('live-6h')
+      expect(params.get('scenario')).toBe('performance-delay')
+      expect(params.get('fixtureSession')).toBe('toolbar-test')
+    })
+  })
+
   it('rejects spring gap and requires explicit fall fold', () => {
     const h = renderStateful(liveRange(3 * 3600_000), true, ['/'])
 
