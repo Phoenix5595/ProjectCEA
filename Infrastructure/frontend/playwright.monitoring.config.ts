@@ -43,6 +43,11 @@ export default defineConfig({
       dependencies: ['chromium-functional'],
       workers: 1,
     },
+    {
+      name: 'firefox-lifecycle',
+      use: { ...devices['Desktop Firefox'] },
+      testMatch: '**/chart-lifecycle.spec.ts',
+    },
   ],
   webServer: {
     command: `npx vite build --config vite.monitoring.config.ts && npx vite preview --config vite.monitoring.config.ts --host 127.0.0.1 --port ${PORT} --strictPort`,
