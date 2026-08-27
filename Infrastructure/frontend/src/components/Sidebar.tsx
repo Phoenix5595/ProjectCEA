@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
+import packageJson from '../../package.json';
 
 interface SidebarProps {
   collapsed: boolean;
@@ -89,7 +90,7 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onToggle }) => {
       `}>
         {!collapsed && (
           <p className="text-xs text-text-muted">
-            v1.0.0
+            v{packageJson.version}
           </p>
         )}
         <button
