@@ -1,0 +1,7 @@
+# Install as root-owned mode 0644 at
+# /etc/systemd/system/caddy.service.d/10-projectcea-api-key.conf only after
+# owner authorization. This source template does not activate the drop-in.
+[Service]
+EnvironmentFile=/opt/projectcea/shared/env/api_key.env
+ExecStart=
+ExecStart=/usr/bin/caddy run --config /etc/caddy/Caddyfile --adapter caddyfile
