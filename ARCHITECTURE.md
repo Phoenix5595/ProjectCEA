@@ -1,117 +1,119 @@
-# ProjectCEA – System Architecture
+# ProjectCEA System Architecture
 
-**Last updated (deployed):** 2026-07-12
+Single current-checkout architecture document. Deployment state may lag behind this source; the deployed snapshot is external at `/opt/projectcea/current/deploy_manifest.json`.
 
-**Prepared update:** 2026-07-29 — relay registry canonicalization is locally verified and awaiting owner-approved deployment. The prior deployed narrative is retained as `archive/ARCHITECTURE_2026-07-12.md`.
+## End-to-End Flow
 
-**Plan-style schematic:** `ARCHITECTURE_SCHEMATIC.md`.
-
----
-
-## System at a Glance
-
-```text
-Sensors → ingestion services → Redis + TimescaleDB → automation-service
-       → immutable per-tick runtime snapshot → MCP23017 / DFR0971
-       → frontend and Grafana
+```mermaid
+flowchart LR
+  Sensors[CAN / Modbus / 1-Wire / Weather] --> Ingest[Ingestion services]
+  Ingest --> Redis[Redis live state]
+  Ingest --> Timescale[TimescaleDB history]
+  Redis --> Automation[automation-service]
+  Timescale --> Automation
+  Registry[(device_registry)] --> Runtime[RuntimeDeviceRegistry]
+  Runtime --> Snapshot[immutable RuntimeDeviceSnapshot]
+  Snapshot --> Automation
+  Automation --> MCP[MCP23017 relays I2C bus 0]
+  Automation --> DFR[DFR0971 dimming I2C bus 1]
+  Redis --> Backend[cea-backend :8000]
+  Timescale --> Backend
+  Backend --> Frontend[React frontend]
+  Automation --> Frontend
+  Timescale --> Grafana[Grafana iskraprojectcea:3001]
 ```
 
-| Constraint | Contract |
-|---|---|
-| Sensor sampling | 1 Hz minimum |
-| Redis hot-path operations | under 1 ms |
-| Database batch delay | at most 100 ms |
-| Control tick | 1–5 seconds |
-| Relay hardware | MCP23017 only, I2C bus 0 |
-| Dimming hardware | DFR0971 only, I2C bus 1 |
+## Service Inventory
 
-The backend on port 8000 serves sensor data. The automation service on port 8001 serves the control API and frontend build. Redis holds live state; TimescaleDB holds history and configuration.
+| Service | Unit | Port | Role |
+|---|---|---|---|
+| can-setup | can-setup.service | n/a | Bring up `can0` |
+| can-processor | can-processor.service | n/a | CAN bus → Redis stream + DB |
+| cea-backend | cea-backend.service | 8000 | Sensor API, WebSocket |
+| onewire-worker | onewire-worker.service | 8004 | 1-Wire temperatures → Redis |
+| soil-sensor-service | soil-sensor-service.service | 8002 | Modbus soil → Redis + DB |
+| weather-service | weather-service.service | 8003 | YUL METAR → Redis + DB |
+| automation-service | automation-service.service | 8001 | Control loop, device registry, SPA host |
+| redis-aof-check | redis-aof-check.service | n/a | Boot-time AOF check |
 
----
+Source: `Infrastructure/services.yaml`.
 
-## Canonical Device and Output Design
+## Timing Contracts
 
-### One source of assignment truth
+| Constraint | Value | Source |
+|---|---|---|
+| Sensor sampling | 1 Hz minimum | Ingestion design target |
+| Control tick | 1 s | `automation_config.yaml` `control.update_interval` |
+| Valid tick range | 1–5 s | `app/models/config_schema.py` validation |
+| Redis hot-path operations | under 1 ms | Control-loop requirement |
+| DB batch delay | at most 100 ms | `db_batch_writer.py` target |
 
-`device_registry` is the sole source for device identity, room/cluster placement, relay channel bindings, DFR board/channel bindings, and device capabilities. No YAML device definitions, duplicate assignment maps, or commissioning subsystem participate in runtime device control.
+## Hardware Boundaries
 
-`automation_config.yaml` remains limited to non-device service configuration such as hardware buses, control timing, sensor metadata, and safety configuration. It must not define devices, relay assignments, or DFR assignments.
+| Hardware | Bus | Address | Role | Source |
+|---|---|---|---|---|
+| MCP23017 | I2C bus 0 | 39 decimal (`0x27`) | 16 relay channels 0–15 | `automation_config.yaml` |
+| DFR0971 board 0 | I2C bus 1 | 88 decimal (`0x58`) | Dimming channels | `automation_config.yaml` |
+| DFR0971 board 1 | I2C bus 1 | 89 decimal (`0x59`) | Dimming channels | `automation_config.yaml` |
+| DFR0971 board 2 | I2C bus 1 | 90 decimal (`0x5A`) | Dimming channels | `automation_config.yaml` |
 
-### Startup and runtime projection
+MCP23017 is relay-only. DFR0971 is dimming-only. Their I2C buses are never swapped.
 
-1. `ServiceContainer` initializes the database and Redis boundaries.
-2. `RuntimeDeviceRegistry.load_startup()` reads registry and light projections before exposing a snapshot.
-3. `RuntimeDeviceSnapshot` freezes hierarchy, device indexes, mode parameters, light intensity anchors, and light programs into one immutable reference.
-4. Every control tick captures that reference once. It never reads the device registry while processing the tick.
-5. The empty registry is valid: startup installs a ready empty snapshot, the API and control loop start, and no relay-ON or nonzero DFR command is emitted.
+## Device Registry and Control Snapshot
 
-Registry mutations rebuild the complete pending projection in the same transaction, then publish it only after commit. A failed load or mutation retains the previous snapshot.
+`device_registry` is the sole source of truth for device identity, room/cluster placement, relay channel bindings, DFR board/channel bindings, and capabilities. No YAML device definitions, commissioning subsystem, or duplicate assignment map participates in runtime control.
 
-### Sole responsibility boundaries
+Startup installs one immutable `RuntimeDeviceSnapshot` per tick. The snapshot freezes hierarchy, device indexes, mode parameters, light intensity anchors, and light programs. An empty registry is a valid state: it installs a ready empty snapshot and emits no relay-ON or nonzero DFR command.
 
-| Component | Sole responsibility |
+| Component | Responsibility |
 |---|---|
 | `device_registry` | Persistent device, relay, and DFR assignments |
 | `RuntimeDeviceRegistry` | Build and atomically publish the current snapshot |
-| `RuntimeDeviceSnapshot` | Immutable control-tick device projection |
-| `DeviceRegistryService` | Only supported mutation path for registry assignments; validates uniqueness and performs safe output actions before mutation |
-| `RelayBoardStateManager` | Only owner and sampler of observed MCP23017 board state; persists `cea:relay:board_snapshot` |
-| `RelayManager` | Applies relay writes against the captured snapshot and samples after successful writes |
-| `Scheduler` | Installs snapshot-derived light and mode caches as one readiness operation |
+| `RuntimeDeviceSnapshot` | Immutable control-tick projection |
+| `DeviceRegistryService` | Sole supported mutation path; validates uniqueness and performs safe output sequencing |
+| `RelayBoardStateManager` | Sole owner and sampler of observed MCP23017 board state |
+| `Scheduler` | Installs snapshot-derived mode, light intensity, light program, and device lookup caches as one readiness operation |
 
-The `RelayBoardStateManager` samples GPIOA and GPIOB once under the bus lock. On a failed read it retains the last known good sample as stale; it does not invent an energized state.
-
----
+`GET /api/devices/control-snapshot` joins the strict registry snapshot, MCP relay observation, assigned-device command state, and DFR commanded/acknowledged intensity into one read model.
 
 ## Scheduling and Control
 
-The control loop uses the immutable snapshot plus live sensor values:
+Each tick:
 
 1. Read sensor state from Redis.
-2. Capture the current `RuntimeDeviceSnapshot`.
+2. Capture the current `RuntimeDeviceSnapshot` once.
 3. Resolve photoperiod from `mode_parameters` and light targets from `light_target_intensity`.
 4. Apply supplemental or override light programs from `light_programs`.
-5. Evaluate VPD-led climate logic and safety interlocks.
+5. Evaluate VPD-led climate logic.
 6. Send relay commands through MCP23017 and dimming commands through DFR0971.
 7. Persist live state to Redis and history to TimescaleDB.
 
-Photoperiod is room/mode-level and supports overnight windows. Each light’s intensity is keyed by `(device_id, mode_id)`. A missing intensity anchor falls back to a visible 10% failsafe; missing photoperiod configuration is a critical alarm condition.
+Photoperiod is room/mode-level and supports overnight windows. Each light intensity is keyed by `(device_id, mode_id)`. A missing intensity anchor falls back to 10%. A missing photoperiod configuration is a critical alarm condition.
 
----
+The global heating-failure↔exhaust interlock is not currently configured; it was removed per `automation_config.yaml` line 77.
 
-## Operations and Safety
+## Cluster Topology
 
-### Registry reset is operator-only
+Device cluster `main` is distinct from Flower Room sensor sub-clusters `front` and `back`.
 
-The guarded reset procedure is `Infrastructure/scripts/reset-device-registry.sh`. It is not a service feature and it creates no devices. It deletes only reset-scoped registry-dependent tables after explicit `--confirm`; it must never be run by automated tests or agents.
+| Room | Device cluster | Sensor URL slugs |
+|---|---|---|
+| Flower Room | `main` | `front`, `back` |
+| Veg Room | `main` | `main` (sentinel) |
+| Lab | `main` | `main` (sentinel) |
+| Outside | `main` | `main` (sentinel) |
 
-Required owner sequence after local gates are green:
+Sources of truth: `Infrastructure/shared/cluster_topology.py` (Python) and `Infrastructure/frontend/src/config/clusterTopology.ts` (frontend). The API rejects cross-type cluster lookups with HTTP 400 and an actionable hint.
 
-```bash
-./deploy.sh
-Infrastructure/scripts/reset-device-registry.sh --confirm
-```
+## Redis and TimescaleDB
 
-Deployment and destructive reset require explicit owner approval. Until then, no production DB, Redis, I2C hardware, or mutation endpoint is used.
+Redis holds live state and streams. `sensor:raw` is the main telemetry stream; `stream:control` carries effective-setpoint decisions. Both streams cap at 100,000 entries (`Infrastructure/shared/redis_keys.py`).
 
-### Hardware safety
-
-- Startup forces MCP23017 relays OFF before restoration or control work.
-- Shutdown invokes the safe-output helper to command relays OFF and configured DFR channels to 0%.
-- MCP23017 is relay-only; DFR0971 is dimming-only. Their I2C buses remain separate.
-- The control loop refuses to use partial device projections; invalid registry state fails loudly rather than applying guessed bindings.
-
-### Cluster topology
-
-Device cluster `main` is distinct from Flower Room sensor sub-clusters `front` and `back`. Device API requests use `main`; sensor API requests use the sensor URL slugs. `Infrastructure/shared/cluster_topology.py` and `Infrastructure/frontend/src/config/clusterTopology.ts` are the joint source of truth.
-
----
+TimescaleDB on the Pi primary holds history and configuration. It streams WAL to the Iskra standby (`iskraprojectcea`). Grafana on Iskra reads the local WAL replica; live current-value panels read Redis via `redis_sync`.
 
 ## Local Verification
 
-The automation pure tests use only fakes for database, Redis, and I2C. The canonical empty-registry test `app/tests/pure/test_empty_registry_startup.py` exercises the actual service container lifespan and an empty control tick without connecting to production resources.
-
-Before approval for deployment, run:
+The canonical local gates are:
 
 ```bash
 cd Infrastructure/automation-service && ruff check . && ruff format --check . && python3 -m compileall -q app && pytest -q app/tests/pure
@@ -119,4 +121,7 @@ cd Infrastructure/frontend && npx tsc --noEmit && npm run build && npx vitest ru
 python3 Infrastructure/scripts/validate_cluster_topology.py
 git diff --check
 bash Infrastructure/scripts/tests/test-reset-device-registry.sh
+bash Infrastructure/scripts/tests/test-deploy-candidate.sh
 ```
+
+Production validation is not prescribed as the only surface.
