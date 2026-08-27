@@ -20,11 +20,10 @@ from shared.db_credentials import load_postgres_password
 from shared.infra_logging import get_logger
 from shared.redis_client import close_sync, create_sync_client
 from shared.redis_keys import (
+    CAN_SENSOR_CURRENT_TTL_SEC,
     SENSOR_RAW_MAXLEN,
     sensor_full,
     sensor_full_ts,
-    sensor_short,
-    sensor_short_ts,
 )
 
 logger = get_logger(__name__)
@@ -53,7 +52,9 @@ class DataWriter:
         Args:
             db_config: TimescaleDB connection config
             redis_url: Redis connection URL
-            redis_ttl: TTL for Redis keys in seconds
+            redis_ttl: Retained for constructor compatibility; CAN current
+                state is intentionally persistent (see
+                CAN_SENSOR_CURRENT_TTL_SEC).
             stream_name: Redis Stream name (default: sensor:raw)
         """
         if db_config is None:
@@ -502,21 +503,20 @@ class DataWriter:
             pipe = self.redis_state_client.pipeline()
 
             for sensor_name, value, _unit in sensors:
-                # Set sensor value with NO TTL (persistent) - values should always be in Redis
-                # This prevents database fallback and reduces CPU usage
-                # Dual-write during key migration:
-                # - short form (sensor:{name}) is used by dashboard bulk reads
-                # - full form (cea:sensor:{location}:{cluster}:{sensor_type}) is used by automation
-                key = sensor_short(sensor_name)
-                pipe.set(key, str(value))  # No TTL - persistent key
-                pipe.set(sensor_full(location, cluster, sensor_name), str(value))  # No TTL
-
-                # Set timestamp (also persistent)
-                ts_key = sensor_short_ts(sensor_name)
-                pipe.set(ts_key, str(timestamp_ms))  # No TTL - persistent key
+                # CAN current values are intentionally persistent. This
+                # prevents database fallback and preserves existing behavior.
                 pipe.set(
-                    sensor_full_ts(location, cluster, sensor_name), str(timestamp_ms)
-                )  # No TTL
+                    sensor_full(location, cluster, sensor_name),
+                    str(value),
+                    ex=CAN_SENSOR_CURRENT_TTL_SEC,
+                )
+
+                # Timestamp follows the same persistent source policy.
+                pipe.set(
+                    sensor_full_ts(location, cluster, sensor_name),
+                    str(timestamp_ms),
+                    ex=CAN_SENSOR_CURRENT_TTL_SEC,
+                )
 
             # Execute all commands
             pipe.execute()
