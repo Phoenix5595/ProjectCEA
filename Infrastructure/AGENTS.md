@@ -1,123 +1,84 @@
-# CEA INFRASTRUCTURE
+# CEA Infrastructure
 
-## OVERVIEW
+## Active Service Map
 
-6 Python FastAPI microservices + React frontend. Unified data pattern: CAN/Modbus → Redis Stream + State → TimescaleDB.
+| Service | Port | Unit | Role |
+|---|---|---|---|
+| cea-backend | 8000 | cea-backend.service | Sensor API, WebSocket |
+| automation-service | 8001 | automation-service.service | Control loop, registry, SPA host |
+| soil-sensor-service | 8002 | soil-sensor-service.service | Modbus soil sensors |
+| weather-service | 8003 | weather-service.service | YUL weather data |
+| onewire-worker | 8004 | onewire-worker.service | 1-Wire temperatures |
+| monitoring-service | 8005 | monitoring-service.service | Read-only monitoring API |
 
-## STRUCTURE
+Source: [`services.yaml`](services.yaml).
 
-```
-Infrastructure/
-├── automation-service/    # Control logic, PID, schedules (8001)
-├── backend/               # Sensor data API (8000)
-├── frontend/              # React + Vite + Tailwind
-├── can-processor-service/ # CAN bus → Redis/DB
-├── soil-sensor-service/   # RS485 Modbus (8002)
-├── weather-service/       # YUL weather data (8003)
-├── database/              # TimescaleDB schema + docs
-├── docs/                  # Architecture documentation
-└── *.service              # systemd unit files
-```
-
-## DEEP DIVE DOCS
-
-| Topic | Document |
-|-------|----------|
-| Full setup guide | `README.md` |
-| TODO tracking | `TODO_TRACKING.md` |
-| Control refactor | `docs/control_engine_refactoring.md` |
-
-## DATA FLOW
+## Shared Cross-Service Flow
 
 ```
-Sensors → CAN/Modbus → [can-processor/soil-sensor] 
-    → Redis Stream (sensor:raw, MAXLEN 100K)
-    → Redis State Keys (sensor:*, TTL 10s)
-    → TimescaleDB (measurement hypertable)
-    → Backend API → WebSocket → Frontend
+Sensors → can-processor / soil-sensor / onewire / weather
+        → Redis `sensor:raw` (maxlen 100,000)
+        → TimescaleDB `measurement`
+        → backend / automation / Grafana
 ```
 
-## SHARED CODE
+Config changes flow from automation-service to backend to frontend via Redis Streams (`cea:events:config`) and WebSocket. Source: `automation-service/app/events/__init__.py`.
 
-| Component | Location | Used By |
-|-----------|----------|---------|
-| `shared/infra_logging.py` | `automation-service/shared/` | All Python services |
-| `shared/cluster_topology.py` | `Infrastructure/shared/` | Backend, automation; **canonical** room→cluster registry. See **Cluster Topology Contract** in `ProjectCEA/AGENTS.md`. |
-| Pydantic models | Each `app/models.py` | Routes, database |
-| Config loader | Each `app/config.py` | Service startup |
+Monitoring range validation is intentionally split: monitoring-service sensor/control reads validate ranges down to 1 second (`sensor_models.MINIMUM_RANGE = timedelta(seconds=1)`), while automation-service projection snapshot construction independently requires ranges of at least 5 minutes (`app/schemas/monitoring_models.py` `MINIMUM_RANGE`). These are separate validators serving different purposes; neither is being changed by the plan.
 
-> **Cluster topology** (strict separation):
->
-> - `main` is a **device-cluster name only** — never registered as a
->   sensor sub-cluster.
-> - `front` / `back` are **sensor sub-cluster names only** — Flower
->   Room is the only room that has any.
-> - Hierarchy: device `main` is the parent; sensor `front` / `back`
->   are children of Flower's `main`.
-> - For unsplit rooms (Veg / Lab / Outside) the
->   `/api/sensors/{room}/{cluster}` URL slot reuses `main` as a
->   *room-wide sentinel* — a transport detail, not a sensor sub-cluster
->   registration. `sensor_subclusters_for("Veg Room")` returns `()`.
->
-> Two source-of-truth files must stay in sync:
-> `Infrastructure/shared/cluster_topology.py` (Python) and
-> `Infrastructure/frontend/src/config/clusterTopology.ts` (frontend).
-> See `ProjectCEA/AGENTS.md` → "Cluster Topology Contract" for the
-> full table and validation rules.
+Deploys restart all managed services as full-service candidates; there is no component-scoped deploy. Rollback restores code/release state but does not revert database schema. This plan performs no schema migrations.
 
-### Control Snapshot
+## Shared Code Ownership
 
-The automation service exposes `GET /api/devices/control-snapshot` as the single composite read model for device identity, MCP relay observations, assigned-device command state, and DFR commanded/acknowledged intensity. It does not own control and is rebuilt on demand from the same strict registry snapshot, relay observation, and command caches used by the control loop.
+| Component | Location | Consumers |
+|---|---|---|
+| Cluster topology | [`shared/cluster_topology.py`](shared/cluster_topology.py) | Backend, automation, frontend mirror |
+| Relay topology | [`shared/relay_topology.py`](shared/relay_topology.py) | Automation control snapshot |
+| Redis keys / retention | [`shared/redis_keys.py`](shared/redis_keys.py) | All Python services |
+| DB batch helpers | [`shared/db_batch_writer.py`](shared/db_batch_writer.py) | CAN, soil, weather, automation |
+| Structured logging | [`shared/infra_logging.py`](shared/infra_logging.py) | All Python services |
+| CORS middleware | [`shared/middleware.py`](shared/middleware.py) | All FastAPI services |
 
-## EVENT BUS (Cross-Service)
+See [`shared/AGENTS.md`](shared/AGENTS.md) for boundary details.
 
-Config changes propagate across services via Redis Streams:
-
-```
-Automation Service → Redis Stream (cea:events:config) → Backend Service → WebSocket → Frontend
-```
-
-| Component | Location | Purpose |
-|-----------|----------|---------|
-| ConfigEventBus | `automation-service/app/events/__init__.py` | Dual-publish (memory + Redis) |
-| RedisStreamPublisher | `app/events/redis_streams.py` | Publish to Redis Streams |
-| RedisEventConsumer | `app/events/consumer.py` | Read from stream |
-
-## SERVICE DEPENDENCIES
+## Service Dependencies
 
 ```
 postgresql.service
 redis-server.service
     ↓
-can-setup.service (oneshot)
+can-setup.service
     ↓
 can-processor.service
+cea-backend.service
+    ↓
 soil-sensor-service.service
 weather-service.service
+onewire-worker.service
     ↓
-cea-backend.service
 automation-service.service
 ```
 
-## ANTI-PATTERNS (Infrastructure-specific)
+Source: [`services.yaml`](services.yaml) `start_order`.
 
-| Never | Reason |
-|-------|--------|
-| Skip Redis Stream writes | Recent data queries fail |
-| Invalidate only per-cluster schedule cache after a global `get_schedules()` consumer | `schedules:all` must be cleared when schedule rows change (e.g. light `target_intensity`); otherwise automation’s merged scheduler lags the DB |
-| Use different TTL per service | 10s standard, except schedule state (no TTL) |
-| Start services out of order | Dependencies will fail |
-| Edit `.service` without daemon-reload | Config won't apply |
+## Child Guidance
 
-## COMMANDS
+| Topic | Document |
+|---|---|
+| Automation service | [`automation-service/AGENTS.md`](automation-service/AGENTS.md) |
+| Backend | [`backend/AGENTS.md`](backend/AGENTS.md) |
+| CAN processor | [`can-processor-service/AGENTS.md`](can-processor-service/AGENTS.md) |
+| Database | [`database/AGENTS.md`](database/AGENTS.md) |
+| Frontend | [`frontend/AGENTS.md`](frontend/AGENTS.md) |
+| Shared code | [`shared/AGENTS.md`](shared/AGENTS.md) |
+| Iskra / Grafana | [`iskra_stack/AGENTS.md`](iskra_stack/AGENTS.md) |
 
-```bash
-# Install service files
-sudo cp *.service /etc/systemd/system/ && sudo systemctl daemon-reload
+## Anti-Patterns
 
-# Start all in order
-sudo systemctl start postgresql redis-server can-setup can-processor soil-sensor-service cea-backend automation-service
+- Never skip Redis Stream writes; recent-data queries fail.
+- Never invalidate only per-cluster schedule caches after a global `get_schedules()` consumer; clear `schedules:all` too.
+- Never edit `.service` files without `sudo systemctl daemon-reload`.
 
-# View all logs
-journalctl -u can-processor -u cea-backend -u automation-service -f
-```
+---
+
+*Last updated: 2026-08-10*
