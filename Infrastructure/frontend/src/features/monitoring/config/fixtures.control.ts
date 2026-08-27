@@ -142,24 +142,24 @@ export function controlProjectionFixture(
   const base = controlBase(start, end)
   const partial = process.env.MONITORING_SCENARIO === 'flower-partial'
   const missing = scenario === 'missing-projection'
+  if (partial || missing) return { quality: 'unavailable', value: [] }
+
   return {
-    ...base,
-    climate: base.climate.map((s) => ({
-      ...s,
-      provenance: provenance('projected', partial || missing ? 'unavailable' : 'estimated'),
-      projection: {
-        projection_revision: 'fixture-rev-1',
-        anchor_fingerprint: 'fixture-anchor-1',
-        anchor_observed_at: T0,
-        anchor_quality: partial || missing ? 'unavailable' : 'exact',
-        anchor_valid_until: '2099-01-01T00:00:00.000Z',
+    quality: 'estimated',
+    value: [
+      {
+        version: { contract_version: 1, config_version: 7, revision: 'f1c7a11' },
+        generated_at: T0,
+        valid_from: start,
+        valid_until: end,
+        series: base.climate.map((s) => ({
+          series_id: { value: `climate.${s.points[0]?.metric}_target` },
+          value: s.points[0]?.value ?? null,
+          quality: 'estimated',
+          valid_from: start,
+          valid_until: end,
+        })),
       },
-      points: partial || missing
-        ? []
-        : s.points.map((p) => ({
-            ...p,
-            provenance: provenance('projected', 'estimated'),
-          })),
-    })),
+    ],
   }
 }
