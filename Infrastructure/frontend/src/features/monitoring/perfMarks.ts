@@ -13,7 +13,7 @@ export interface MonitoringPerfTick {
   readonly visualAgeMs: number
 }
 
-export interface MonitoringPerfDebug {
+export interface MonitoringPerfDebug extends MonitoringChartDebug {
   readonly tickCount: number
   readonly lastTickAt: number | null
   readonly samples: readonly MonitoringPerfTick[]
@@ -21,6 +21,25 @@ export interface MonitoringPerfDebug {
   readonly lastResizeMs: number | null
   readonly resizeCount: number
 }
+
+export interface MonitoringChartSnapshot {
+  readonly title: string
+  readonly instanceId: number
+  readonly width: number
+  readonly height: number
+  readonly xScaleMin: number | null
+  readonly xScaleMax: number | null
+  readonly viewportRevision: number
+  readonly destroyCount: number
+  readonly resizeCount: number
+}
+
+export interface MonitoringChartDebug {
+  readonly charts: readonly MonitoringChartSnapshot[]
+}
+
+export type MonitoringChartRegistration = Omit<MonitoringChartSnapshot, 'instanceId'>
+export type MonitoringChartUpdate = Partial<Omit<MonitoringChartSnapshot, 'instanceId' | 'title'>>
 
 interface PendingTick {
   readonly id: number
@@ -39,6 +58,8 @@ interface PerfState {
   latestCompletedRequest: { readonly startedAt: number; readonly finishedAt: number } | null
   lastResizeMs: number | null
   resizeCount: number
+  nextChartInstanceId: number
+  readonly charts: Map<number, MonitoringChartSnapshot>
   readonly pending: Map<number, PendingTick>
   readonly samples: MonitoringPerfTick[]
 }
@@ -57,8 +78,10 @@ function perfState(): PerfState {
     latestCompletedRequest: null,
     lastResizeMs: null,
     resizeCount: 0,
+    nextChartInstanceId: 0,
     pending: new Map(),
     samples,
+    charts: new Map(),
   }
   const debug: MonitoringPerfDebug = {
     get tickCount() {
@@ -78,6 +101,9 @@ function perfState(): PerfState {
     },
     get resizeCount() {
       return next.resizeCount
+    },
+    get charts() {
+      return [...next.charts.values()]
     },
   }
   Object.defineProperty(window, '__monitoringPerf', {
@@ -126,7 +152,10 @@ export function beginMonitoringPerfTick(): number {
 }
 
 export function measureMonitoringAlignment<T>(callback: () => T): T {
-  const { result, measured } = duration('monitoring:align', callback)
+  const { result, measured } = duration('monitoring:align', () => {
+    injectMonitoringAlignmentDelay()
+    return callback()
+  })
   const pending = pendingTick()
   if (pending !== undefined) pending.alignMs += measured
   return result
@@ -150,6 +179,26 @@ export function measureMonitoringResize(callback: () => void): void {
   const current = perfState()
   current.lastResizeMs = measured
   current.resizeCount += 1
+}
+
+export function registerMonitoringChart(chart: MonitoringChartRegistration): number | null {
+  if (!PERFORMANCE_MARKS_ENABLED) return null
+  const current = perfState()
+  const instanceId = current.nextChartInstanceId + 1
+  current.nextChartInstanceId = instanceId
+  current.charts.set(instanceId, { ...chart, instanceId })
+  return instanceId
+}
+
+export function updateMonitoringChart(instanceId: number, update: MonitoringChartUpdate): void {
+  if (!PERFORMANCE_MARKS_ENABLED) return
+  const current = perfState().charts.get(instanceId)
+  if (current !== undefined) perfState().charts.set(instanceId, { ...current, ...update })
+}
+
+export function removeMonitoringChart(instanceId: number): void {
+  if (!PERFORMANCE_MARKS_ENABLED) return
+  perfState().charts.delete(instanceId)
 }
 
 export function finishMonitoringPerfTick(sourceTimestamp: number | undefined): void {

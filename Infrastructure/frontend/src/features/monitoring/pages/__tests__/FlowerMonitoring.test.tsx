@@ -7,22 +7,34 @@
  * iframe or Grafana URL appears anywhere in the page.
  */
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, within } from '@testing-library/react'
+import { act, render, screen, within } from '@testing-library/react'
+import { forwardRef } from 'react'
 import { MemoryRouter } from 'react-router-dom'
 import type uPlot from 'uplot'
 import { ThemeProvider } from '../../../../contexts/ThemeContext'
 import FlowerMonitoring from '../../../../pages/FlowerMonitoring'
 
-const { snapshot, store } = vi.hoisted(() => {
+const { budgetReporters, pageRenderCount, snapshot, store } = vi.hoisted(() => {
   const t = new Date('2026-08-02T12:00:00.000Z')
+  const budgetReporters: Array<(budget: number) => void> = []
+  const pageRenderCount = { current: 0 }
   const store = {
     setLiveRange: vi.fn(),
     setFixedRange: vi.fn(),
+    setRangeBudget: vi.fn(),
     pause: vi.fn(),
     resume: vi.fn(),
+    sensorRange: vi.fn(),
+    controlRange: vi.fn(),
   }
   const snapshot = {
     range: { kind: 'live', duration: 3 * 3600_000 },
+    fulfilledRange: {
+      range: { kind: 'live', duration: 3 * 3600_000 },
+      start: new Date('2026-08-02T09:00:00.000Z'),
+      end: t,
+      revision: 1,
+    },
     isLive: true,
     data: {
       series: [
@@ -78,13 +90,30 @@ const { snapshot, store } = vi.hoisted(() => {
     reconciling: false,
     errors: [],
   }
-  return { snapshot, store }
+  return { budgetReporters, pageRenderCount, snapshot, store }
 })
 
 vi.mock('../useMonitoringStore', () => ({
   FLOWER_DEFAULT_DURATION_MS: 3 * 3600_000,
-  useMonitoringStore: () => ({ snapshot, store }),
+  useMonitoringStore: () => {
+    pageRenderCount.current += 1
+    return { snapshot, store }
+  },
 }))
+
+vi.mock('../../charts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../charts')>()
+  return {
+    ...actual,
+    UPlotChart: forwardRef(function MockUPlotChart(
+      { onRequestBudgetChange }: { readonly onRequestBudgetChange?: (budget: number) => void },
+      _ref,
+    ) {
+      if (onRequestBudgetChange) budgetReporters.push(onRequestBudgetChange)
+      return <div />
+    }),
+  }
+})
 
 const { MockUPlot, instances } = vi.hoisted(() => {
   const instances: unknown[] = []
@@ -124,7 +153,12 @@ class MockResizeObserver {
 
 beforeEach(() => {
   instances.length = 0
+  budgetReporters.length = 0
+  pageRenderCount.current = 0
   MockResizeObserver.instances.length = 0
+  store.setRangeBudget.mockClear()
+  store.sensorRange.mockClear()
+  store.controlRange.mockClear()
   vi.stubGlobal('ResizeObserver', MockResizeObserver)
 })
 
@@ -172,6 +206,54 @@ describe('FlowerMonitoring page', () => {
     const backTable = screen.getByRole('table', { name: 'Back Cluster' })
     expect(within(backTable).getByText('Dry Bulb')).toBeTruthy()
     expect(within(backTable).getByText('25.1°C')).toBeTruthy()
+  })
+
+  it('reports the widest current chart budget from both chart keys', () => {
+    renderPage()
+
+    expect(budgetReporters).toHaveLength(2)
+    act(() => {
+      budgetReporters[0](800)
+      budgetReporters[1](1_200)
+    })
+
+    expect(store.setRangeBudget).toHaveBeenLastCalledWith(1_200)
+  })
+
+  it('recomputes the widest budget after the previously widest chart shrinks', () => {
+    renderPage()
+
+    act(() => {
+      budgetReporters[0](1_200)
+      budgetReporters[1](800)
+      budgetReporters[0](600)
+    })
+
+    expect(store.setRangeBudget).toHaveBeenLastCalledWith(800)
+  })
+
+  it('does not issue range requests when charts report budgets', () => {
+    renderPage()
+
+    act(() => {
+      budgetReporters[0](800)
+      budgetReporters[1](1_200)
+    })
+
+    expect(store.sensorRange).not.toHaveBeenCalled()
+    expect(store.controlRange).not.toHaveBeenCalled()
+  })
+
+  it('does not rerender the page when charts report budgets', () => {
+    renderPage()
+    const rendersBeforeBudgetReports = pageRenderCount.current
+
+    act(() => {
+      budgetReporters[0](800)
+      budgetReporters[1](1_200)
+    })
+
+    expect(pageRenderCount.current).toBe(rendersBeforeBudgetReports)
   })
 
   it('preserves chart space without mounting charts before sensor series load', () => {
