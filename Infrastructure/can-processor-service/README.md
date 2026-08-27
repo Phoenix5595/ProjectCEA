@@ -1,92 +1,70 @@
-# CAN Processor - Unified CAN Bus Service
+# CAN Processor Service
 
-Unified service that reads CAN bus messages, decodes them, processes sensor data, and writes to:
-- Redis Stream (`sensor:raw`) - recent history buffer (100,000 messages)
-- TimescaleDB (`measurement` table) - full historical data
-- Redis state keys (`sensor:*`) - live values for frontend (TTL: 10 seconds)
+Unified service that reads CAN frames from the `can0` socketcan interface, decodes them once, and writes sensor data to Redis, TimescaleDB, and Redis Streams.
 
-## Architecture
+## What it does
 
-This service replaces the previous two-service architecture (can-scanner + can-worker) with a single unified service that:
-- Reads directly from CAN bus (no intermediate Redis Stream reading)
-- Decodes messages once (no duplicate decoding)
-- Processes and validates data
-- Writes to all three destinations simultaneously
+- Reads directly from the CAN bus via `python-can`.
+- Decodes frames using `app/decoder.py`.
+- Extracts and calculates sensor values in `app/processor.py` (RH/VPD from dry/wet bulb temperatures).
+- Writes to:
+  - Redis state keys (`sensor:*`) for live values
+  - Redis Stream `sensor:raw` for recent history
+  - TimescaleDB `measurement` table for long-term history
 
-## Installation
+## Setup
 
-1. Install dependencies:
 ```bash
+cd Infrastructure/can-processor-service
+python3 -m venv venv
+source venv/bin/activate
 pip install -r requirements.txt
-```
-
-2. Configure environment variables (optional):
-```bash
-export REDIS_URL="redis://localhost:6379"
-export POSTGRES_HOST="localhost"
-export POSTGRES_DB="cea_sensors"
-export POSTGRES_USER="cea_user"
-export POSTGRES_PASSWORD="your_password"
-```
-
-## Usage
-
-Run the processor:
-```bash
-python3 -m app.main
-```
-
-Or run directly:
-```bash
-python3 app/main.py
 ```
 
 ## Configuration
 
-The processor reads configuration from environment variables:
+Environment variables:
 
-- `REDIS_URL`: Redis connection URL (default: `redis://localhost:6379`)
-- `POSTGRES_HOST`: TimescaleDB host (default: `localhost`)
-- `POSTGRES_DB`: Database name (default: `cea_sensors`)
-- `POSTGRES_USER`: Database user (default: `cea_user`)
-- `POSTGRES_PASSWORD`: Database password
+- `REDIS_URL` (default `redis://localhost:6379`)
+- `POSTGRES_HOST`, `POSTGRES_DB`, `POSTGRES_USER`
+- Postgres password is read from a systemd credential file or `POSTGRES_PASSWORD` (`shared/db_credentials.py`)
 
-## Service Setup
+The CAN interface is expected to be `can0` at 250 kbps. Bring it up with:
 
-See `can-processor.service` for systemd service configuration.
+```bash
+sudo ip link set can0 up type can bitrate 250000
+```
 
-## Data Flow
+## Running
+
+```bash
+python3 -m app.main
+```
+
+Production runs under `can-processor.service`.
+
+## Data flow
 
 ```
-ESP32 Nodes (CAN Sensor Apparatus)
-    ↓ (CAN Bus messages)
-CAN Processor
-    ├─→ Redis Stream (sensor:raw) - recent history
-    ├─→ TimescaleDB (measurement) - full history
-    └─→ Redis State Keys (sensor:*) - live values
-            ↓
-        Backend Service (reads from Redis state + Stream/DB)
-            ↓
-        Frontend (Grafana)
+ESP32 fullV6 nodes (CAN 250 kbps)
+    -> can0 -> CAN Processor
+        -> Redis state keys
+        -> Redis Stream (sensor:raw, maxlen 100,000)
+        -> TimescaleDB (batched every 50 messages or 100 ms)
 ```
+
+## Node mapping
+
+| Node ID | Location | Cluster |
+|---------|----------|---------|
+| 1 | Flower Room | back |
+| 2 | Flower Room | front |
+| 3 | Veg Room | main |
 
 ## Monitoring
 
-The processor logs:
-- Connection status
-- Processing statistics (every 100 messages)
-- Errors and warnings
-
-Check logs with:
 ```bash
 journalctl -u can-processor.service -f
 ```
 
-## Differences from Previous Architecture
-
-- **Single service** instead of two (scanner + worker)
-- **No duplicate decoding** (decodes once, not twice)
-- **Direct CAN bus reading** (no Redis Stream round-trip for processing)
-- **Unified stream** (`sensor:raw` instead of `can:raw`)
-- **No SQLite** (removed completely)
-
+The service logs statistics periodically and suppressed repeated Redis stream errors after the first few.
