@@ -1,1 +1,0 @@
-- LSP sometimes reports errors about attributes on Optional types even after a check, assigning to a local variable can help.

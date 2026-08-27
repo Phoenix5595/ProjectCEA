@@ -1,8 +1,0 @@
-
- RUN  v4.1.7 /home/antoine/ProjectCEA/Infrastructure/frontend
-
-
- Test Files  1 passed (1)
-      Tests  1 passed | 2 skipped (3)
-   Start at  16:46:30
-   Duration  12.35s (transform 1.25s, setup 1.56s, import 1.40s, tests 3.59s, environment 5.00s)

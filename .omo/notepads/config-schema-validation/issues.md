@@ -1,1 +1,0 @@
-- Placeholder for issues encountered during config-schema-validation task.
