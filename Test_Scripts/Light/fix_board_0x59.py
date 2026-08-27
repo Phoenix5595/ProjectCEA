@@ -4,9 +4,9 @@ Fix script for board 0x59 - forces re-initialization and tests output
 """
 
 import logging
+from pathlib import Path
 import sys
 import time
-from pathlib import Path
 
 # Add the automation service to the path
 sys.path.insert(

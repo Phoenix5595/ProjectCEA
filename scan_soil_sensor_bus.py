@@ -6,10 +6,10 @@ Supports both single scan mode and continuous monitoring mode.
 """
 
 import argparse
+from datetime import datetime
 import struct
 import sys
 import time
-from datetime import datetime
 
 import serial
 

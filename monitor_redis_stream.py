@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Redis Stream Monitor with incremental updates."""
 
-import sys
 from collections import defaultdict
 from datetime import datetime
+import sys
 
 from base_monitor import BLUE, CYAN, GREEN, NC, RED, YELLOW, BaseMonitor
 

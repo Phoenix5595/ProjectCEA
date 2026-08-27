@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """CAN Processor Monitor with incremental updates."""
 
+from datetime import datetime
 import os
 import subprocess
 import sys
-from datetime import datetime
 
 from base_monitor import CYAN, GREEN, MAGENTA, NC, RED, YELLOW, BaseMonitor
 
