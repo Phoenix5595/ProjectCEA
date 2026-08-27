@@ -23,6 +23,21 @@
   --mode-submode: #db2777; --border-input: #525252;
   --period-day: #b45309; --period-day-bg: #78350f; --period-preday: #78350f; --period-preday-bg: #451a03;
   --timeline-night: #3b82f6; --timeline-day: #eab308; --timeline-pre: #a855f7; --timeline-ramp: #713f12; --timeline-now: #ef4444;
+
+  /* Monitoring design tokens (see DESIGN.md) */
+  --mon-family-temperature: #f87171; --mon-family-rh: #60a5fa; --mon-family-vpd: #fbbf24;
+  --mon-family-co2: #a78bfa; --mon-family-pressure: #34d399; --mon-family-device: #94a3b8; --mon-family-light: #facc15;
+  --mon-node-front: #60a5fa; --mon-node-back: #fbbf24;
+  --mon-envelope-fill: rgba(96, 165, 250, 0.14); --mon-envelope-stroke: rgba(96, 165, 250, 0.45);
+  --mon-target-recorded: #fbbf24; --mon-target-projected: #fbbf24;
+  --mon-target-projected-opacity: 0.5; --mon-target-dash: 4 4;
+  --mon-sun-bg: rgba(251, 191, 36, 0.08); --mon-moon-bg: rgba(59, 130, 246, 0.08);
+  --mon-focus-ring: #60a5fa;
+  --mon-tooltip-bg: #1a1a1a; --mon-tooltip-border: #404040; --mon-tooltip-text: #fafafa;
+  --mon-stale: #a3a3a3; --mon-text-secondary: #a3a3a3; --mon-error: #f87171;
+  --mon-error-text: #fecaca; --mon-error-border: #f87171; --mon-error-icon: #f87171;
+  --mon-warning-text: #fef08a;
+  --mon-axis-left: #f87171; --mon-axis-right: #60a5fa;
 }
 
 /* Theme 2: Control Room Zero — Industrial HMI/SCADA */
@@ -50,6 +65,21 @@
   --mode-submode: #be185d; --border-input: #6b7280;
   --period-day: #b45309; --period-day-bg: #78350f; --period-preday: #78350f; --period-preday-bg: #451a03;
   --timeline-night: #3b82f6; --timeline-day: #f59e0b; --timeline-pre: #8b5cf6; --timeline-ramp: #713f12; --timeline-now: #ef4444;
+
+  /* Monitoring design tokens (see DESIGN.md) */
+  --mon-family-temperature: #f87171; --mon-family-rh: #67e8f9; --mon-family-vpd: #fbbf24;
+  --mon-family-co2: #a78bfa; --mon-family-pressure: #4ade80; --mon-family-device: #9ca3af; --mon-family-light: #facc15;
+  --mon-node-front: #67e8f9; --mon-node-back: #fbbf24;
+  --mon-envelope-fill: rgba(103, 232, 249, 0.14); --mon-envelope-stroke: rgba(103, 232, 249, 0.45);
+  --mon-target-recorded: #fbbf24; --mon-target-projected: #fbbf24;
+  --mon-target-projected-opacity: 0.5; --mon-target-dash: 4 4;
+  --mon-sun-bg: rgba(251, 191, 36, 0.08); --mon-moon-bg: rgba(59, 130, 246, 0.08);
+  --mon-focus-ring: #67e8f9;
+  --mon-tooltip-bg: #363a44; --mon-tooltip-border: #6b7280; --mon-tooltip-text: #e5e7eb;
+  --mon-stale: #d1d5db; --mon-text-secondary: #d1d5db; --mon-error: #ef4444;
+  --mon-error-text: #fee2e2; --mon-error-border: #ef4444; --mon-error-icon: #ef4444;
+  --mon-warning-text: #fef3c7;
+  --mon-axis-left: #f87171; --mon-axis-right: #67e8f9;
 }
 
 /* Theme 3: Verdant Growth — Nature-tech fusion */
@@ -77,6 +107,21 @@
   --mode-submode: #d53f8c; --border-input: #4d5c46;
   --period-day: #b45309; --period-day-bg: #78350f; --period-preday: #78350f; --period-preday-bg: #451a03;
   --timeline-night: #4299e1; --timeline-day: #86c232; --timeline-pre: #9f7aea; --timeline-ramp: #713f12; --timeline-now: #f56565;
+
+  /* Monitoring design tokens (see DESIGN.md) */
+  --mon-family-temperature: #f87171; --mon-family-rh: #67e8f9; --mon-family-vpd: #d4a574;
+  --mon-family-co2: #9f7aea; --mon-family-pressure: #86c232; --mon-family-device: #9fa89c; --mon-family-light: #facc15;
+  --mon-node-front: #67e8f9; --mon-node-back: #d4a574;
+  --mon-envelope-fill: rgba(103, 232, 249, 0.14); --mon-envelope-stroke: rgba(103, 232, 249, 0.45);
+  --mon-target-recorded: #d4a574; --mon-target-projected: #d4a574;
+  --mon-target-projected-opacity: 0.5; --mon-target-dash: 4 4;
+  --mon-sun-bg: rgba(212, 165, 116, 0.08); --mon-moon-bg: rgba(66, 153, 225, 0.08);
+  --mon-focus-ring: #67e8f9;
+  --mon-tooltip-bg: #242826; --mon-tooltip-border: #4d5c46; --mon-tooltip-text: #f5f3ed;
+  --mon-stale: #c8d0c4; --mon-text-secondary: #c8d0c4; --mon-error: #ef4444;
+  --mon-error-text: #fff5f5; --mon-error-border: #ef4444; --mon-error-icon: #ef4444;
+  --mon-warning-text: #fffaf0;
+  --mon-axis-left: #f87171; --mon-axis-right: #67e8f9;
 }
 
 /* Theme 4: Spectrum Analytics — Bold modern SaaS */
@@ -104,6 +149,21 @@
   --mode-submode: #e11d48; --border-input: #475569;
   --period-day: #ea580c; --period-day-bg: #9a3412; --period-preday: #9a3412; --period-preday-bg: #7c2d12;
   --timeline-night: #3b82f6; --timeline-day: #fbbf24; --timeline-pre: #8b5cf6; --timeline-ramp: #c2410c; --timeline-now: #f43f5e;
+
+  /* Monitoring design tokens (see DESIGN.md) */
+  --mon-family-temperature: #f87171; --mon-family-rh: #67e8f9; --mon-family-vpd: #fbbf24;
+  --mon-family-co2: #a78bfa; --mon-family-pressure: #34d399; --mon-family-device: #94a3b8; --mon-family-light: #facc15;
+  --mon-node-front: #67e8f9; --mon-node-back: #fbbf24;
+  --mon-envelope-fill: rgba(103, 232, 249, 0.14); --mon-envelope-stroke: rgba(103, 232, 249, 0.45);
+  --mon-target-recorded: #fbbf24; --mon-target-projected: #fbbf24;
+  --mon-target-projected-opacity: 0.5; --mon-target-dash: 4 4;
+  --mon-sun-bg: rgba(251, 191, 36, 0.08); --mon-moon-bg: rgba(99, 102, 241, 0.08);
+  --mon-focus-ring: #67e8f9;
+  --mon-tooltip-bg: #1a1a3e; --mon-tooltip-border: #475569; --mon-tooltip-text: #f8fafc;
+  --mon-stale: #cbd5e1; --mon-text-secondary: #cbd5e1; --mon-error: #ec4899;
+  --mon-error-text: #fce7f3; --mon-error-border: #ec4899; --mon-error-icon: #ec4899;
+  --mon-warning-text: #fef3c7;
+  --mon-axis-left: #f87171; --mon-axis-right: #67e8f9;
 }
 
 /* Theme 5: Obsidian Glass — Premium dark, NO blur effects */
@@ -131,6 +191,21 @@
   --mode-submode: #f472b6; --border-input: #3a3a4f;
   --period-day: #d97706; --period-day-bg: #92400e; --period-preday: #92400e; --period-preday-bg: #78350f;
   --timeline-night: #60a5fa; --timeline-day: #fbbf24; --timeline-pre: #c084fc; --timeline-ramp: #92400e; --timeline-now: #f87171;
+
+  /* Monitoring design tokens (see DESIGN.md) */
+  --mon-family-temperature: #f87171; --mon-family-rh: #60a5fa; --mon-family-vpd: #fbbf24;
+  --mon-family-co2: #c084fc; --mon-family-pressure: #4ade80; --mon-family-device: #a0a0b0; --mon-family-light: #facc15;
+  --mon-node-front: #60a5fa; --mon-node-back: #fbbf24;
+  --mon-envelope-fill: rgba(96, 165, 250, 0.14); --mon-envelope-stroke: rgba(96, 165, 250, 0.45);
+  --mon-target-recorded: #fbbf24; --mon-target-projected: #fbbf24;
+  --mon-target-projected-opacity: 0.5; --mon-target-dash: 4 4;
+  --mon-sun-bg: rgba(251, 191, 36, 0.08); --mon-moon-bg: rgba(96, 165, 250, 0.08);
+  --mon-focus-ring: #60a5fa;
+  --mon-tooltip-bg: #141419; --mon-tooltip-border: #3a3a4f; --mon-tooltip-text: #ffffff;
+  --mon-stale: #d0d0e0; --mon-text-secondary: #d0d0e0; --mon-error: #f87171;
+  --mon-error-text: #fee2e2; --mon-error-border: #f87171; --mon-error-icon: #f87171;
+  --mon-warning-text: #fef3c7;
+  --mon-axis-left: #f87171; --mon-axis-right: #60a5fa;
 }
 
 /* Theme 6: Botanical — User's custom palette (DEFAULT) */
@@ -194,4 +269,19 @@
   --mode-submode: #bd4253; --border-input: #5e7953;
   --period-day: #c0dd55; --period-day-bg: #6a8019; --period-preday: #6a8019; --period-preday-bg: #465511;
   --timeline-night: #009991; --timeline-day: #b0d52a; --timeline-pre: #adc1a4; --timeline-ramp: #6a8019; --timeline-now: #bd4253;
+
+  /* Monitoring design tokens (see DESIGN.md) */
+  --mon-family-temperature: #bd4253; --mon-family-rh: #00fff2; --mon-family-vpd: #c0dd55;
+  --mon-family-co2: #b18981; --mon-family-pressure: #769867; --mon-family-device: #c8d6c2; --mon-family-light: #c0dd55;
+  --mon-node-front: #00fff2; --mon-node-back: #c0dd55;
+  --mon-envelope-fill: rgba(0, 255, 242, 0.14); --mon-envelope-stroke: rgba(0, 255, 242, 0.45);
+  --mon-target-recorded: #c0dd55; --mon-target-projected: #c0dd55;
+  --mon-target-projected-opacity: 0.5; --mon-target-dash: 4 4;
+  --mon-sun-bg: rgba(192, 221, 85, 0.08); --mon-moon-bg: rgba(0, 153, 145, 0.08);
+  --mon-focus-ring: #00fff2;
+  --mon-tooltip-bg: #181e15; --mon-tooltip-border: #5e7953; --mon-tooltip-text: #f1f5f0;
+  --mon-stale: #c8d6c2; --mon-text-secondary: #c8d6c2; --mon-error: #bd4253;
+  --mon-error-text: #f2d9dd; --mon-error-border: #bd4253; --mon-error-icon: #bd4253;
+  --mon-warning-text: #e4b4ba;
+  --mon-axis-left: #bd4253; --mon-axis-right: #00fff2;
 }
