@@ -4,11 +4,16 @@ import { decimateSeries, panelBudget, requestBudget, shouldReportBudget } from '
 
 describe('panelBudget', () => {
   it.each([
-    [0, 1_000],
-    [250, 1_000],
-    [1_000, 4_000],
-    [3_000, 12_000],
-    [20_000, 50_000],
+    [375, 375],
+    [800, 800],
+    [1_280, 1_280],
+    [5, 10],
+    [100_000, 50_000],
+    [0, 10],
+    [-100, 10],
+    [Number.NaN, 10],
+    [Number.POSITIVE_INFINITY, 50_000],
+    [20_000, 20_000],
   ])('maps width %d to budget %d', (width, expected) => {
     expect(panelBudget(width)).toBe(expected)
   })
@@ -29,17 +34,18 @@ describe('panelBudget', () => {
 })
 
 describe('shouldReportBudget', () => {
-  it('suppresses changes below ten percent', () => {
-    expect(shouldReportBudget(2_000, 2_100)).toBe(false)
-  })
+  it('reports the first and every distinct integer budget', () => {
+    // Given: an initial report and adjacent integer budgets
+    const first = shouldReportBudget(null, 800)
+    const duplicate = shouldReportBudget(800, 800)
 
-  it('reports changes at or above ten percent', () => {
-    expect(shouldReportBudget(2_000, 2_220)).toBe(true)
-  })
+    // When: the rendered width advances one CSS pixel
+    const next = shouldReportBudget(800, 801)
 
-  it('reports transitions across either clamp boundary', () => {
-    expect(shouldReportBudget(1_000, 1_002)).toBe(true)
-    expect(shouldReportBudget(49_998, 50_000)).toBe(true)
+    // Then: only duplicate budgets are suppressed
+    expect(first).toBe(true)
+    expect(duplicate).toBe(false)
+    expect(next).toBe(true)
   })
 })
 
@@ -53,8 +59,19 @@ describe('requestBudget', () => {
     const aggregateBudget = requestBudget(widths)
 
     // Then: one shared range request serves the widest panel's needs
-    expect(emptyBudget).toBe(1_000)
-    expect(aggregateBudget).toBe(panelBudget(1_200))
+    expect(emptyBudget).toBe(10)
+    expect(aggregateBudget).toBe(1_200)
+  })
+
+  it('ignores non-positive and non-finite panel widths', () => {
+    // Given: no valid rendered panel widths
+    const widths = [Number.NaN, 0, -1]
+
+    // When: deriving a shared range-request budget
+    const budget = requestBudget(widths)
+
+    // Then: the API-compatible floor is retained
+    expect(budget).toBe(10)
   })
 })
 

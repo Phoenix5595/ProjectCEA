@@ -193,6 +193,41 @@ describe('alignSeries', () => {
     expect(step?.y[startIdx]).toBe(22)
   })
 
+  it('assigns co2_setpoint to the co2 family instead of temperature', () => {
+    const input: AlignInput = {
+      series: [],
+      controlHistory: controlResponse([
+        climateSeries(
+          [{ timestamp: START, value: 600 }],
+        ),
+      ], { climate: [{
+        name: 'CO2 Setpoint',
+        provenance: { origin: 'recorded', quality: 'exact', is_aggregated: false },
+        projection: null,
+        warnings: [],
+        points: [{
+          timestamp: START,
+          value: 600,
+          nominal_value: 600,
+          metric: 'co2_setpoint',
+          provenance: { origin: 'recorded', quality: 'exact', is_aggregated: false },
+        }],
+        steps: [],
+        linear: [],
+      }] }),
+      projectionHistory: null,
+      photoperiod: [],
+      live: [],
+      range: fixedRange(),
+      now: NOW,
+    }
+
+    const out = alignSeries(input)
+    const co2Point = out.series.find((s) => s.metric === 'co2_setpoint')
+    expect(co2Point).toBeDefined()
+    expect(co2Point?.family).toBe('co2')
+  })
+
   it('keeps semantics stable when labels change', () => {
     const input: AlignInput = {
       series: sensorSeries([
@@ -372,6 +407,54 @@ describe('alignSeries', () => {
     }
     const keys = new Set(out.series.map((s) => s.key))
     expect(keys.size).toBe(out.series.length)
+  })
+
+  it('caps a long projection so the future strip is at most 10% of the x-axis', () => {
+    const projectionEnd = new Date('2026-08-03T13:00:00.000Z')
+    const input: AlignInput = {
+      series: sensorSeries([
+        { timestamp: START, average: 24.5, minimum: 24.1, maximum: 24.9, sample_count: 60 },
+      ]),
+      controlHistory: null,
+      projectionHistory: controlResponse([], { range: { start: START, end: projectionEnd } }),
+      photoperiod: [],
+      live: [],
+      range: fixedRange(),
+      now: NOW,
+      maxPoints: 100,
+    }
+
+    const out = alignSeries(input)
+    const last = out.x[out.x.length - 1]
+    const futureWidth = last - END.getTime()
+    const recordedWidth = END.getTime() - START.getTime()
+
+    expect(out.aggregated).toBe(false)
+    expect(futureWidth).toBeGreaterThan(0)
+    expect(futureWidth / (recordedWidth + futureWidth)).toBeLessThanOrEqual(0.1 + Number.EPSILON)
+    expect(last).toBeLessThan(projectionEnd.getTime())
+  })
+
+  it('preserves a projection shorter than the 10% cap exactly', () => {
+    const projectionEnd = new Date(END.getTime() + 5 * 60 * 1000)
+    const input: AlignInput = {
+      series: sensorSeries([
+        { timestamp: START, average: 24.5, minimum: 24.1, maximum: 24.9, sample_count: 60 },
+      ]),
+      controlHistory: null,
+      projectionHistory: controlResponse([], { range: { start: START, end: projectionEnd } }),
+      photoperiod: [],
+      live: [],
+      range: fixedRange(),
+      now: NOW,
+      maxPoints: 100,
+    }
+
+    const out = alignSeries(input)
+    const last = out.x[out.x.length - 1]
+
+    expect(out.aggregated).toBe(false)
+    expect(last).toBe(projectionEnd.getTime())
   })
 
 })
