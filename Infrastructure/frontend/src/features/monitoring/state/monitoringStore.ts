@@ -126,13 +126,9 @@ export class MonitoringStore {
     void this.loadRangeIfChanged()
   }
 
-  /** Refresh range sources at the chart-derived resolution. */
   setRangeBudget(maxPoints: number): void {
     if (this.rangeBudget.sensor === maxPoints && this.rangeBudget.control === maxPoints) return
-    this.rangeSequence += 1
-    this.abortRangeLoad()
     this.rangeBudget = { sensor: maxPoints, control: maxPoints }
-    void this.loadRangeIfChanged({ force: true })
   }
 
   /** Re-run the initial range load, preserving last-good data on failure. */
@@ -145,6 +141,7 @@ export class MonitoringStore {
   private initialState(): StoreState {
     return {
       range: { kind: 'live', duration: DEFAULT_DURATION_MS },
+      fulfilledRange: null,
       isLive: true,
       data: {
         series: [],
@@ -220,16 +217,17 @@ export class MonitoringStore {
     if (this.rangeInFlight) return
     if (!options.force && !this.rangeChanged()) return
     const sequence = ++this.rangeSequence
+    const requestedRange = this.state.range
+    const { start: requestedStart, end: requestedEnd } = this.rangeBounds(this.now())
     const controller = new AbortController()
     this.rangeController = controller
     this.rangeInFlight = true
     this.setState({ loading: true })
-    const { start, end } = this.rangeBounds(this.now())
     const settled = await Promise.allSettled([
-      this.monitoringApi.sensorRange(this.location, iso(start), iso(end), this.rangeBudget.sensor, {
+      this.monitoringApi.sensorRange(this.location, iso(requestedStart), iso(requestedEnd), this.rangeBudget.sensor, {
         signal: controller.signal,
       }),
-      this.monitoringApi.controlRange(this.location, iso(start), iso(end), this.rangeBudget.control, {
+      this.monitoringApi.controlRange(this.location, iso(requestedStart), iso(requestedEnd), this.rangeBudget.control, {
         signal: controller.signal,
       }),
       this.monitoringApi.controlProjection(this.location, {
@@ -246,15 +244,29 @@ export class MonitoringStore {
     const sensorRange = rangeResult(settled[0], errors)
     const controlRange = rangeResult(settled[1], errors)
     const projection = rangeResult(settled[2], errors)
-    this.lastRangeIdentity = this.state.range
+    this.lastRangeIdentity = requestedRange
     const completedAt = this.now()
+    const hasHistory = sensorRange !== null || controlRange !== null
+    const previousLastGoodRangeAt = this.state.lastGoodRangeAt
     const rangeFreshness = errors.length === 0
       ? { lastGoodRangeAt: completedAt, rangeErrorAt: null }
-      : { rangeErrorAt: completedAt }
+      : { lastGoodRangeAt: previousLastGoodRangeAt, rangeErrorAt: completedAt }
     this.setState({
       loading: false,
       errors,
-      data: applyInitialPartial(this.state.data, sensorRange, controlRange, projection),
+      data: hasHistory
+        ? applyInitialPartial(this.state.data, sensorRange, controlRange, projection)
+        : this.state.data,
+      ...(hasHistory
+        ? {
+            fulfilledRange: {
+              range: requestedRange,
+              start: requestedStart,
+              end: requestedEnd,
+              revision: (this.state.fulfilledRange?.revision ?? 0) + 1,
+            },
+          }
+        : {}),
       ...rangeFreshness,
     })
   }
