@@ -1,55 +1,81 @@
-# Frontend Requirements (CEA)
+# Frontend Requirements
 
-- **Validation surface**: production runtime checks (`/health`, `journalctl`,
-  Grafana embed freshness, operator UI behavior). No retained frontend test
-  suite (`vitest`/`jest`) in this repository post-campaign.
-- **Data-fetching boundaries**: Weather (weather-service via backend) is fetched in **`Dashboard`** (header, ~15 min refresh). System stats use **`useSystemStatus`** → automation `/api/status`. **`useSensorPolling`** loads devices, bulk setpoints, per-zone live sensors, control history, and **light `display_name` maps** via **`GET /api/devices/{location}/{cluster}`** (one call per `ZONES` entry on load + every 120s) — do not add unused `getLatestWeather` / `getSystemStatus` calls there. **`ScheduleManager`**: subscribe to schedule WebSocket updates with stable effect deps (avoid re-subscribing on every `editingSchedule` change unless required). **`ManualLightControl`**: fetch **`getSchedules(location, cluster)` once** per action and compute per-light day target intensity from that array (no N× schedule requests per light).
-- **Flower cluster policy (canonical)**:
-  - **Control / actuators**: `ZONES` entry is **`Flower Room` + `main`**. ZoneConfig uses **`/flower/control`** (setpoints/lights) and **`/flower/automation`** (PID); same for **`/vegetation/control`** and **`/vegetation/automation`**. No `:cluster` in URLs. Legacy `/flower/control/front|back` redirects to `/flower/control`.
-  - **Devices page**:
-    - `DeviceManager` uses **`normalizeDeviceControlCluster`** from `config/zones.ts` so Flower relay saves and MCP channel assignments always target **`main`**, even if older API payloads still listed **`front`**/**`back`**.
-    - **DFR0971 section**: Shows all dimmable DFR0971 boards (3 square cards in a row) and their 2 channels. Assignments are global and enforced by the backend; rename uses **`display_name` only** (no device key renames).
-    - **Relay matrix (SCADA panel)** — `/devices` right column (`RelayChannelMatrix` + `RelayChannelBox`):
-      - Master UI for MCP23017 relay channels **0–15** (16 total, **2×8** SainSmart-style layout).
-      - Page layout: left **channel assignment table**; right **SCADA relay module panel**.
-      - Panel chrome (`variant="panel"`): module title **16-CH Relay Module**, subtitle **MCP23017 · SainSmart layout**; decorative top terminal strip (COM/NO/NC per bank); decorative bottom **Low-level Input** pin row (**1–16**); bank headers **Bank A (CH 0–7)** / **Bank B (CH 8–15)**.
-      - Interior **4-column grid**: row index gutter | bank A | center **COM bus** strip | bank B; drafting-grid background; 8 aligned rows.
-      - Each relay cell (horizontal SCADA cell): silkscreen **`K1`–`K16`** (`getRelaySilkscreenLabel`), **CH** + MCP pin (`GPA*`/`GPB*`), relay glyph + status **LED**, ON/OFF control menu, elapsed time since last state change (best effort), device name, display type (`light_name` for lights), and **location**. Overflow uses `truncate` + `title` tooltips.
-      - **Cluster** is internal only — not shown or editable on Devices.
-      - Table rows and relay cells are both edit entry points; views stay synchronized on save/cancel.
-      - Timer: from control history; show **Unknown** when no reliable timestamp (no fabricated values).
-      - **`variant="compact"`** (`RelayMatrixCompact`): same cells, no terminal strips — prepared for future dashboard use (not mounted on Dashboard yet).
-  - **Sensors / monitoring**: Dashboard dual cards and **`FLOWER_DASHBOARD_CLUSTERS`** remain **`front`** and **`back`** only (sensor streams, not device namespaces).
-- **Cluster topology source of truth (Phase 5e)**: `config/clusterTopology.ts` is the single registry of room → device cluster + sensor sub-clusters; `zones.ts` derives `ZONES`, `FLOWER_DASHBOARD_CLUSTERS`, `getDashboardPollZones`, and `getSensorPollZones` from it. Mirrors `Infrastructure/shared/cluster_topology.py`; both files must stay in sync. Polling rule: `ZONES` for `/api/devices/...`, `getSensorPollZones()` for `/api/sensors/...`, `getDashboardPollZones()` only for the bulk-Redis-key fan-out (which mixes per-room setpoints + per-sub-cluster live values). Mixing planes returns **400** from the backend (with a hint message), not 404 or empty payload.
-- **Cluster labels in UI**: Where a raw cluster id is shown (e.g. monitoring), use **`getClusterDisplayName`** so **`back`** is not shown lowercase next to navigation (reads like “navigate back”).
-- **Cluster authority policy**: Automation config/routes are authoritative for operational cluster topology. Frontend may run a temporary hybrid warning when DB/ingestion shows data for a cluster that is not fully configured, but this warning must never become control authority.
-- Use Node.js 18+ and npm; run `npm run build` for production.
-- **Corner radius (UI chrome)**: Global Tailwind radii in `src/styles/index.css` (`@theme` `--radius-*` ≈ 0–4px). Cards, buttons, inputs, and badges use sharp corners; tiny status/calendar marker dots stay circular.
-- **Where `dist/` is served from**: `automation-service` runs with `WorkingDirectory=/opt/projectcea/current/Infrastructure/automation-service` (systemd override). Static files are resolved next to that tree: `/opt/projectcea/current/Infrastructure/frontend/dist/`. Building only under `~/ProjectCEA/...` does **not** update the live UI until you run **`./deploy.sh`** from the **ProjectCEA repo root** (creates a release under `/opt/projectcea/releases/`, updates `current`, runs health checks, and restarts services). Do not document or use ad-hoc `dist/` copy shortcuts here.
-- **`./deploy.sh`** restarts services (including `automation-service`) after switching the release; that is how the live UI picks up a new `dist/`.
-- Timeline rendering (`ClimatePeriodTimeline`):
-  - 00:00 → 24:00 fixed axis; hour grid; **now** marker.
-  - **Climate setpoints** come from **`climate_periods`** (named periods, `ramp_minutes` per period). No fixed PRE_DAY / PRE_NIGHT / DAY / NIGHT ladder in the UI.
-  - **Sun/moon** overlays from photoperiod (`lightDayStart` / `lightDayEnd`): sun yellow, moon purple; split segments if the window crosses midnight; edge case same start/end = 24h moon.
-  - **Climate curves** (heating / cooling / VPD): sample per minute via `sampleMetricSeries` in `src/utils/climatePeriodTimeline.ts` — ramp from **previous** period’s values over each period’s `ramp_minutes`, then hold; polylines for heat/cool/VPD. Overlay uses live picker values while editing, persisted values after save.
-  - **Fixed Y-axes**: temperature **15 / 20 / 25 / 30 °C**; VPD **0.5 / 1.0 / 1.5 / 2.0 kPa**; full 24h horizontal extent including 24:00 edge.
-- Environment variables (`.env`): `VITE_BACKEND_API_URL`, `VITE_AUTOMATION_API_URL`, `VITE_WEBSOCKET_URL`.
-- Keep ZoneConfig **climate periods** (`ClimatePeriodsTable` + `saveClimatePeriods`) in sync with `climate_periods`; automation resolves effective setpoints via `ClimatePeriodResolver` (`ramp_in_duration` bridge).
-- **Flower submodes**: `climate_periods` rows are keyed by `(location, cluster, mode_id, submode_id)`. ZoneConfig must **`GET /api/climate-periods/{location}/{cluster}?mode_id=…&submode_id=…`** (via `getClimatePeriods` with those args) so the table shows only the **active** flower submode. Omitting the query params returns all rows for the room (duplicate Day/Night rows across Stretch/Bulk/Ripen).
-- **`ClimatePeriodsTable` column tinting**: Heat / Cool / VPD / CO₂ columns use **background-only** subtle tints (header cells, body cells, and rounded inputs): heat **red**, cool **blue**, VPD **green** (emerald), CO₂ **gray** (slate). Numeric and label text keep standard `text-text-default` / `text-text-muted`; no colored foreground for values.
-- ZoneConfig SAVE: (1) `PUT` mode parameters, (2) `POST` room-schedule for photoperiod + **light** ramps, (3) `POST` `/api/climate-periods/{location}/{cluster}` for period rows.
-- **Ramp field split (critical)**: Only **`light_ramp_up_minutes` / `light_ramp_down_minutes`** feed **`POST /api/room-schedule`** as `ramp_up_duration` / `ramp_down_duration`. Do **not** send `ramp_up_minutes` / `ramp_down_minutes` for that POST. Climate ramps are **`climate_periods.ramp_minutes`** per period.
-- **Automation dashboard**: Top and bottom chrome use shared **`AppRibbon`** (`src/components/chrome/AppRibbon.tsx`): **50px** height, `bg-surface-secondary`, `px-2`, matching the sidebar logo band. **Top** ribbon (dashboard + sector pages via `TopRibbon`): title left, nav or weather center, menu/actions right. Weather (Quebec City, CYQB) refreshes ~15 min in the dashboard top ribbon. **Mothernode** uses a **bottom** `AppRibbon` with compact CPU/memory/worst-service and a hamburger drawer for **System Resources** and **Service Health** from `/api/status` (**Hardware Info** / **Network** removed).
-- **Grow calendar**: Home `/` includes a compact shared month (`GrowCalendar` unified). Sector **Overview** routes (`/flower`, `/vegetation`, `/laboratory`) are the calendar home with full `GrowCalendar` filtered by room. See **`calendar-requirements.txt`**. Date math uses **`date-fns-tz`** / `America/Toronto`. **Add task** opens **Flower grow plan** wizard. Nextcloud CalDAV sync settings at `/settings/calendar` (M2).
-- **Sector navigation**: Overview tabs at `/flower`, `/vegetation`, `/laboratory` show the grow calendar. **Vegetation** and **Flower** room tabs: Overview, Monitoring, **Control**, **Automation**, (+ Flower Soil). **Devices** keeps a single primary tab at `/devices`.
-- **Room Control vs Automation** (`ZoneConfig` `section` prop):
-  - **Control** (`/vegetation/control`, `/flower/control`): climate **timeline**, **climate period setpoints** (`ClimatePeriodsTable`), **light schedule** (`CircularTimePicker` or `ManualLightControl` in constant mode), **light intensity** (`LightIntensity`), and **notes** (`VerticalNotesBlock`). Top-ribbon **mode** chips and **SAVE** apply here (mode parameters, room schedule, climate periods).
-  - **Automation** (`/vegetation/automation`, `/flower/automation`): **PID** tuning only (`VerticalPIDBlock` — device selector, ON/OFF / PID / AUTO, Kp/Ki/Kd, history). PID has its own in-panel save; no top-ribbon SAVE.
-- **Dev server / Tailscale**: `npm run dev` uses Vite **`server.host: "0.0.0.0"`** and **`port: 3001`**. **`server.allowedHosts`** must include **`.ts.net`** (Tailscale MagicDNS) and any explicit tailnet hostnames so the dev server does not block by Host header. Remote browsers need **`VITE_*`** URLs pointing at tailnet-reachable hosts, not `localhost` on the Pi.
-- **Dashboard Grafana expand**: Each zone row may expand to show a **short** strip of embedded **`GrafanaPanel`** `d-solo` iframes; panel IDs and dashboard UIDs live in **`src/config/grafanaDashboards.ts`** (tune without touching layout). Lab may use a placeholder UID until configured.
-- **Main overview row layout (dashboard redesign)**: **Vertical order** of zone rows (top → bottom): **Flower**, **Veg**, **Lab**. Each zone row is a **single horizontal line** of sections (left → right): effective setpoint block, light status, soil (flower only), recent events, expand control, etc. **Only** the **Flower room dual current-climate** slot stacks **vertically**: **Front** mini-card on **top**, **Back** mini-card on **bottom** (not overlaid). **All other** sections in that row stay **inline** on one line.
-- **Flower dual-cluster card behavior**: Both Front and Back cards always render the same 2×2 current-climate grid (Temp/RH/CO₂/VPD). If a cluster is missing or has no live values, keep the 2×2 placeholders and show the red unplugged warning marker with tooltip.
-- ZoneConfig **light intensity** UI is the `LightIntensity` component (`src/components/LightIntensity.tsx`); section label **Light intensity** (not the old generic "Lights" only). It loads via **`GET /api/lights/{location}/{cluster}/zone-status`** (one round-trip). Backend still lists dimmable lights when hardware read fails (defaults CUR to 0). If zone-status is empty or errors, the UI falls back to **`getLightsForZone` + `getSchedules` + per-device `getLightStatus`** (legacy path). The horizontal slider uses **0% at the right, 100% at the left** (low vs high intensity); the invisible range uses **`dir="rtl"`**, and sun-target / pending tick marks use **`left: (100 − value)%`** with horizontal centering so they align with the thumb and the green current-intensity fill.
-- **Light target semantics**: The editable sun target (slider / APPLY) must match the **DB SUN/DAY row** (`day_target_intensity` / `schedule_sun_target_intensity` from zone-status), not only the scheduler nominal from the active time window. **`POST .../target`** returns **`rows_updated`**; on partial failure, **keep pending** state for failed devices and show a **sonner** error (same behavior in **`useLightControl.saveAll`**).
-- **Light schedule (`CircularTimePicker`)**: **Wide** panel when the picker container is at least ~480px wide — clock left, Start/End/Ramps/Photoperiod in a **right column**. **Narrow** panel (under ~480px): controls **below** the dial in **two rows** (row 1: Start & End; row 2: Ramp ↑, Ramp ↓, Photoperiod). Tighter spacing (`p-1` / `gap-1` on ZoneConfig card and within the picker); **do not** shrink field font sizes from the original (`text-[16px]` time/ramp inputs, `text-[12px]` labels, `text-sm` photoperiod value). Tune `STACK_LAYOUT_MAX_WIDTH_PX` in `CircularTimePicker.tsx` if the switch happens too early (lower the number) or too late (raise it). Wide layout row uses **`items-stretch`** (not `items-center`) so the clock column gets the full row height and `flex-1` on the dial can resolve. **Dial pixel size** comes from the inner **`aspect-square`** box when its rect is **square** (max side / min side ≤ ~1.12); do **not** use `min(flex slot width, slot height)` while the slot is a wide short rectangle (that caused a tiny dial on first paint). `ResizeObserver` on slot + square, `requestAnimationFrame` ×2, and deferred timeouts (0/16/50/100/200/400ms) + a 500ms fallback.
+Contracts for the React frontend. Architecture, service ports, and hardware boundaries are owned by `ARCHITECTURE.md` and `Infrastructure/REQUIREMENTS.md`.
 
+## Stack and Entry Points
+
+- React 18 + TypeScript + Vite + Tailwind.
+- `npm run dev` serves on port 3001 with `server.host: "0.0.0.0"`. `server.allowedHosts` must include `.ts.net` for Tailscale MagicDNS.
+- `npm run build` produces `dist/`, served by `automation-service` after deploy.
+- Single source of truth for API URLs: `src/config/env.ts`. Defaults resolve to Caddy `:8080`; `VITE_BACKEND_API_URL`, `VITE_AUTOMATION_API_URL`, `VITE_WEATHER_API_URL`, and `VITE_WEBSOCKET_URL` are emergency escape hatches only.
+
+## Grafana Embedding
+
+The SPA embeds the production Grafana instance at `http://iskraprojectcea:3001`. `VITE_GRAFANA_BASE_URL` in `src/config/env.ts` defaults to that URL.
+
+Embed requirements on the Grafana side (configured in `Infrastructure/iskra_stack/docker-compose.yml`):
+
+- `GF_SECURITY_ALLOW_EMBEDDING=true`
+- `GF_AUTH_ANONYMOUS_ENABLED=true` with `GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer`
+- `GF_DASHBOARDS_MIN_REFRESH_INTERVAL=1s`
+- `GF_DATE_FORMATS_DEFAULT_TIMEZONE=America/Toronto`
+
+Dashboards and datasources are provisioned from the repo; the frontend relies on stable datasource UIDs (`bf6vebq5ipybke` for PostgreSQL, `bf9yw6nuqt81sa` for Redis). Do not change datasource UIDs without updating the embedding code.
+
+Sensor display names in Grafana follow frontend mappings; backend sensor keys remain unchanged.
+
+## Cluster Topology
+
+`src/config/clusterTopology.ts` mirrors `Infrastructure/shared/cluster_topology.py` and is the single registry of room → device cluster + sensor sub-clusters.
+
+- Poll `/api/devices/{room}/{cluster}` over `ZONES` (all `cluster: "main"`).
+- Poll `/api/sensors/{room}/{cluster}` over `getSensorPollZones()`.
+- Use `getDashboardPollZones()` only for the bulk-Redis-key fan-out, which mixes both planes.
+
+## Zone Configuration
+
+A ZoneConfig SAVE performs three operations in order:
+
+1. `PUT /api/room-modes/room/{location}/{cluster}/parameters`.
+2. `POST /api/room-schedule/{location}/{cluster}` with photoperiod times and `ramp_up_duration` / `ramp_down_duration` derived from `light_ramp_up_minutes` / `light_ramp_down_minutes`.
+3. `POST /api/climate-periods/{location}/{cluster}` with period rows.
+
+Climate periods are keyed by `(location, cluster, mode_id, submode_id)`. Fetch them with the active `mode_id` and `submode_id` so the table shows only the active flower submode.
+
+## Device Management
+
+- Device registry CRUD is the only assignment mutation path.
+- Flower Room devices always target `main`; `normalizeDeviceControlCluster` enforces this.
+- DFR assignments are globally unique; conflicts are rejected.
+- Relay steal requires operator confirmation after a 409 response.
+- Relay labels come from the backend control snapshot (`physical_relay`, `pin_label`); no frontend `channel + 1` math.
+
+## Lights
+
+- Light intensity targets come from the DB SUN/DAY row.
+- The editable sun target must match `day_target_intensity` / `schedule_sun_target_intensity` from zone-status, not only the scheduler nominal.
+- Manual light controls are shown only in constant modes (`drying`, `sleep`).
+- The light slider renders 0% at the right and 100% at the left.
+
+## Monitoring
+
+Native monitoring pages at `/flower/monitoring` and `/vegetation/monitoring` replace Grafana iframes. Visual and accessibility contracts live in `DESIGN.md`. Browser tests must not contact production endpoints; fixture origin and route guard assertions enforce this.
+
+## Validation
+
+Local verification gates are:
+
+```bash
+npx tsc --noEmit
+npm run build
+npx vitest run src/components/devices/__tests__/targetValidation.test.ts src/components/devices/__tests__/relaySnapshot.test.ts
+```
+
+Runtime validation uses UI behavior and health endpoints.
+
+## Anti-Patterns
+
+- Hardcode API URLs outside `src/config/env.ts`.
+- Mix device and sensor sub-clusters in polling.
+- Send `ramp_up_minutes` / `ramp_down_minutes` for the room-schedule POST.
+- Commit `.env` files.
