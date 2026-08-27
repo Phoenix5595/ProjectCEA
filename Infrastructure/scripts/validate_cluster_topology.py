@@ -52,10 +52,13 @@ def _parse_python_topology(filepath: Path) -> dict[str, dict]:
 
     for node in ast.walk(tree):
         # ``_TOPOLOGY`` is declared with an annotation, so it's an ``AnnAssign``.
-        if isinstance(node, ast.AnnAssign):
-            if isinstance(node.target, ast.Name) and node.target.id == "_TOPOLOGY":
-                if node.value is not None:
-                    return _extract_python_rooms(node.value)
+        if (
+            isinstance(node, ast.AnnAssign)
+            and isinstance(node.target, ast.Name)
+            and node.target.id == "_TOPOLOGY"
+            and node.value is not None
+        ):
+            return _extract_python_rooms(node.value)
         # Plain ``Assign`` for safety (e.g. test fixtures).
         if isinstance(node, ast.Assign):
             for target in node.targets:
@@ -83,9 +86,8 @@ def _extract_python_rooms(dict_node: ast.AST) -> dict[str, dict]:
         for kw in call.keywords:
             if kw.arg == "device_cluster":
                 device_cluster = _ast_str(kw.value)
-            elif kw.arg == "sensor_subclusters":
-                if isinstance(kw.value, ast.Tuple):
-                    sensor_subclusters = tuple(_ast_str(elt) for elt in kw.value.elts)
+            elif kw.arg == "sensor_subclusters" and isinstance(kw.value, ast.Tuple):
+                sensor_subclusters = tuple(_ast_str(elt) for elt in kw.value.elts)
                 # ast.Name (default empty tuple) → keep ()
 
         rooms[room_name] = {
