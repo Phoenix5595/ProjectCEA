@@ -6,7 +6,7 @@
 
 services:
   projectcea_database:
-    image: timescale/timescaledb:latest-pg15
+    image: timescale/timescaledb:2.28.3-pg15
     container_name: projectcea_database
     restart: unless-stopped
     environment:
