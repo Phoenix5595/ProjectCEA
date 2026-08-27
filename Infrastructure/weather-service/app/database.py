@@ -75,42 +75,39 @@ class DatabaseManager:
             Tuple of (room_id, device_id)
         """
         pool = await self._get_pool()
-        async with pool.acquire() as conn:
-            async with conn.transaction():
-                # Get or create room
-                room_row = await conn.fetchrow(
-                    "SELECT room_id FROM room WHERE name = $1", room_name
+        async with pool.acquire() as conn, conn.transaction():
+            # Get or create room
+            room_row = await conn.fetchrow("SELECT room_id FROM room WHERE name = $1", room_name)
+            if room_row:
+                room_id = room_row["room_id"]
+            else:
+                room_id = await conn.fetchval(
+                    "INSERT INTO room (name) VALUES ($1) RETURNING room_id", room_name
                 )
-                if room_row:
-                    room_id = room_row["room_id"]
-                else:
-                    room_id = await conn.fetchval(
-                        "INSERT INTO room (name) VALUES ($1) RETURNING room_id", room_name
-                    )
-                    logger.info(f"Created room: {room_name}")
+                logger.info(f"Created room: {room_name}")
 
-                # Get or create device (no rack needed for weather station)
-                device_row = await conn.fetchrow(
-                    """SELECT device_id FROM device
+            # Get or create device (no rack needed for weather station)
+            device_row = await conn.fetchrow(
+                """SELECT device_id FROM device
                        WHERE rack_id IS NULL AND name = $1""",
-                    device_name,
-                )
+                device_name,
+            )
 
-                if device_row:
-                    device_id = device_row["device_id"]
-                    logger.info(f"Device already exists: {device_name} (ID: {device_id})")
-                else:
-                    # Create device (rack_id is NULL for weather station)
-                    device_id = await conn.fetchval(
-                        """INSERT INTO device (rack_id, name, type)
+            if device_row:
+                device_id = device_row["device_id"]
+                logger.info(f"Device already exists: {device_name} (ID: {device_id})")
+            else:
+                # Create device (rack_id is NULL for weather station)
+                device_id = await conn.fetchval(
+                    """INSERT INTO device (rack_id, name, type)
                            VALUES ($1, $2, $3) RETURNING device_id""",
-                        None,  # No rack for weather station
-                        device_name,
-                        "Weather Station",
-                    )
-                    logger.info(f"Created device: {device_name} (ID: {device_id})")
+                    None,  # No rack for weather station
+                    device_name,
+                    "Weather Station",
+                )
+                logger.info(f"Created device: {device_name} (ID: {device_id})")
 
-                return room_id, device_id
+            return room_id, device_id
 
     async def register_weather_sensors(self, device_id: int) -> dict[str, int]:
         """
@@ -123,42 +120,41 @@ class DatabaseManager:
             Dict mapping sensor_name to sensor_id
         """
         pool = await self._get_pool()
-        async with pool.acquire() as conn:
-            async with conn.transaction():
-                # Define weather sensors
-                sensors = [
-                    ("outside_temp", "°C", "temperature"),
-                    ("outside_rh", "%", "humidity"),
-                    ("outside_pressure", "hPa", "pressure"),
-                    ("outside_wind_speed", "m/s", "wind_speed"),
-                    ("outside_wind_direction", "degrees", "wind_direction"),
-                    ("outside_precipitation", "mm", "precipitation"),
-                ]
+        async with pool.acquire() as conn, conn.transaction():
+            # Define weather sensors
+            sensors = [
+                ("outside_temp", "°C", "temperature"),
+                ("outside_rh", "%", "humidity"),
+                ("outside_pressure", "hPa", "pressure"),
+                ("outside_wind_speed", "m/s", "wind_speed"),
+                ("outside_wind_direction", "degrees", "wind_direction"),
+                ("outside_precipitation", "mm", "precipitation"),
+            ]
 
-                sensor_ids = {}
-                for sensor_name, unit, data_type in sensors:
-                    # Check if sensor already exists
-                    sensor_row = await conn.fetchrow(
-                        "SELECT sensor_id FROM sensor WHERE device_id = $1 AND name = $2",
+            sensor_ids = {}
+            for sensor_name, unit, data_type in sensors:
+                # Check if sensor already exists
+                sensor_row = await conn.fetchrow(
+                    "SELECT sensor_id FROM sensor WHERE device_id = $1 AND name = $2",
+                    device_id,
+                    sensor_name,
+                )
+
+                if sensor_row:
+                    sensor_ids[sensor_name] = sensor_row["sensor_id"]
+                else:
+                    sensor_id = await conn.fetchval(
+                        """INSERT INTO sensor (device_id, name, unit, data_type)
+                               VALUES ($1, $2, $3, $4) RETURNING sensor_id""",
                         device_id,
                         sensor_name,
+                        unit,
+                        data_type,
                     )
+                    sensor_ids[sensor_name] = sensor_id
+                    logger.info(f"Registered sensor: {sensor_name} (ID: {sensor_id})")
 
-                    if sensor_row:
-                        sensor_ids[sensor_name] = sensor_row["sensor_id"]
-                    else:
-                        sensor_id = await conn.fetchval(
-                            """INSERT INTO sensor (device_id, name, unit, data_type)
-                               VALUES ($1, $2, $3, $4) RETURNING sensor_id""",
-                            device_id,
-                            sensor_name,
-                            unit,
-                            data_type,
-                        )
-                        sensor_ids[sensor_name] = sensor_id
-                        logger.info(f"Registered sensor: {sensor_name} (ID: {sensor_id})")
-
-                return sensor_ids
+            return sensor_ids
 
     async def store_weather_measurements(
         self,
