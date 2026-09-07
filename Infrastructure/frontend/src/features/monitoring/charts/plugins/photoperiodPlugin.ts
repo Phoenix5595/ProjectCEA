@@ -14,14 +14,14 @@ export interface PhotoperiodColors {
 
 /** Build a uPlot plugin that draws photoperiod intervals behind the series. */
 export function photoperiodPlugin(
-  intervals: PhotoperiodInterval[],
+  getIntervals: () => readonly PhotoperiodInterval[],
   colors: PhotoperiodColors,
 ): uPlot.Plugin {
   return {
     hooks: {
       drawClear: (u) => {
         const { ctx, bbox } = u
-        for (const interval of intervals) {
+        for (const interval of getIntervals()) {
           if (interval.phase === 'UNKNOWN') continue
           const x0 = u.valToPos(interval.start, 'x', true)
           const x1 = u.valToPos(interval.end, 'x', true)

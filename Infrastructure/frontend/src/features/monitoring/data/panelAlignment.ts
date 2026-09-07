@@ -24,6 +24,7 @@ interface BaseKey {
   readonly projectionHistory: AlignInput['projectionHistory']
   readonly photoperiod: AlignInput['photoperiod']
   readonly range: AlignInput['range']
+  readonly now: number
   readonly maxPoints: AlignInput['maxPoints']
   readonly panel: TimeseriesPanelSpec
 }
@@ -90,6 +91,7 @@ function baseKeyFor(input: PanelAlignmentInput): BaseKey {
     projectionHistory: input.projectionHistory,
     photoperiod: input.photoperiod,
     range: input.range,
+    now: input.now.getTime(),
     maxPoints: input.maxPoints,
     panel: input.panel,
   }
@@ -103,6 +105,7 @@ function sameBaseKey(previous: BaseKey | null, next: BaseKey): boolean {
     previous.projectionHistory === next.projectionHistory &&
     previous.photoperiod === next.photoperiod &&
     previous.range === next.range &&
+    previous.now === next.now &&
     previous.maxPoints === next.maxPoints &&
     previous.panel === next.panel
   )
