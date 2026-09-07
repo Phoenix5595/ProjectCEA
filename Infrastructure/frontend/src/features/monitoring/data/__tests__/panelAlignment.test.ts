@@ -84,7 +84,7 @@ function input(overrides: Partial<AlignInput> = {}): AlignInput {
 }
 
 describe('panel alignment', () => {
-  it('uses the fulfilled live range end as the viewport end bound', () => {
+  it('uses the fulfilled live range now as the rolling viewport anchor', () => {
     // Given: a one-hour live range fulfilled at a captured instant.
     const fulfilledEnd = new Date('2026-08-02T15:00:00.000Z')
     const range: MonitoringRange = { kind: 'live', duration: 3_600_000 }
@@ -92,8 +92,11 @@ describe('panel alignment', () => {
     // When: its bounds are reconstructed for alignment.
     const bounds = windowBounds(range, fulfilledEnd)
 
-    // Then: the visible interval exactly matches the captured request interval.
-    expect(bounds).toEqual({ start: fulfilledEnd.getTime() - 3_600_000, end: fulfilledEnd.getTime() })
+    // Then: the visible interval includes the rolling 5% future projection window.
+    expect(bounds).toEqual({
+      start: fulfilledEnd.getTime() - 3_600_000,
+      end: fulfilledEnd.getTime() + 3_600_000 / 20,
+    })
   })
 
   it('inserts live sensor values before future projection timestamps', () => {
@@ -167,7 +170,7 @@ describe('panel alignment', () => {
     expect(panel).toEqual(legacy)
   })
 
-  it('uses one base alignment for 120 live ticks and bounded tail updates', () => {
+  it('rebuilds the rolling live frame for 120 ticks and bounds tail updates', () => {
     const source = input({ range: { kind: 'live', duration: 60 * 60 * 1000 } })
     const alignment = createPanelAlignment()
     let result = alignment.align({ ...source, panel: CLIMATE_PANEL })
@@ -182,7 +185,7 @@ describe('panel alignment', () => {
     }
 
     const mean = result.series.find((series) => series.metric === 'dry_bulb' && series.role === 'mean')
-    expect(alignment.counts).toEqual({ baseAlignments: 1, liveTailUpdates: 120 })
+    expect(alignment.counts).toEqual({ baseAlignments: 121, liveTailUpdates: 120 })
     expect(mean?.y[result.nowIndex]).toBe(36)
   })
 

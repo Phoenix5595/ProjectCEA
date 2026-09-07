@@ -451,12 +451,12 @@ describe('UPlotChart lifecycle', () => {
 
     act(() => feed.publish(makeData([1000, 2000, 3000, 4000], [[20, 21, 22, 23]]), TEST_RANGE, 0))
     expect(plot?.setData).toHaveBeenCalledTimes(1)
-    expect(plot?.setScale).not.toHaveBeenCalled()
+    expect(plot?.setScale).toHaveBeenCalledWith('x', { min: -3_596_000, max: 184_000 })
 
     act(() => feed.publish(makeData([1000, 2000, 3000, 5000], [[20, 21, 22, 24]]), TEST_RANGE, 1))
-    expect(plot?.setScale).toHaveBeenCalledOnce()
-    expect(plot?.setScale).toHaveBeenCalledWith('x', { min: 1000, max: 5000 })
-    expect(plot?.setData.mock.invocationCallOrder[1]).toBeLessThan(plot?.setScale.mock.invocationCallOrder[0] ?? Infinity)
+    expect(plot?.setScale).toHaveBeenCalledTimes(2)
+    expect(plot?.setScale).toHaveBeenLastCalledWith('x', { min: -3_595_000, max: 185_000 })
+    expect(plot?.setData.mock.invocationCallOrder[1]).toBeLessThan(plot?.setScale.mock.invocationCallOrder[1] ?? Infinity)
   })
 
   it('cancels a queued frame and disconnects its observer on unmount', () => {

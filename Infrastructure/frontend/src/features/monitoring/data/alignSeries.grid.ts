@@ -16,7 +16,10 @@ export const DEFAULT_MAX_POINTS = 5000
 /** Resolve the visible window from a fixed or live range relative to `now`. */
 export function windowBounds(range: AlignInput['range'], now: Date): { start: number; end: number } {
   if (range.kind === 'fixed') return { start: range.start.getTime(), end: range.end.getTime() }
-  return { start: now.getTime() - range.duration, end: now.getTime() }
+  return {
+    start: now.getTime() - range.duration,
+    end: now.getTime() + range.duration / 20,
+  }
 }
 
 /** Collect every candidate timestamp in the window, sorted and unique. */
