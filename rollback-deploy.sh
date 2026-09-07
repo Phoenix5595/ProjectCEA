@@ -52,22 +52,53 @@ log_rollback() {
 }
 
 run_health_checks() {
-  sleep 3
-  local FAILED=""
-  local url unit code
-  while IFS=$'\t' read -r unit url; do
-    set +e
-    code=$(curl -sS -m 30 -o /tmp/cea_rb_health.txt -w "%{http_code}" "$url" 2>/dev/null || echo "000")
-    set -e
-    if [[ "$code" != "200" ]]; then
-      FAILED="${FAILED:+$FAILED,}$unit"
-    fi
-  done < <(python3 "$SERVICE_LIST" --list-health)
-  if [[ -n "$FAILED" ]]; then
-    echo "$FAILED"
+  local timeout="${ROLLBACK_HEALTH_TIMEOUT_SECONDS:-15}"
+  if ! [[ "$timeout" =~ ^[1-9][0-9]*$ ]]; then
+    echo "[rollback] ROLLBACK_HEALTH_TIMEOUT_SECONDS must be a positive integer" >&2
     return 1
   fi
-  return 0
+
+  local deadline=$(( $(date +%s) + timeout ))
+  local now remaining code
+  local -a units=() urls=()
+  local -A healthy=()
+  local unit url
+
+  while IFS=$'\t' read -r unit url; do
+    units+=("$unit")
+    urls+=("$url")
+  done < <(python3 "$SERVICE_LIST" --list-health)
+
+  while true; do
+    for index in "${!units[@]}"; do
+      unit="${units[$index]}"
+      [[ -n "${healthy[$unit]:-}" ]] && continue
+
+      now=$(date +%s)
+      remaining=$(( deadline - now ))
+      [[ "$remaining" -gt 0 ]] || break 2
+
+      set +e
+      code=$(curl -sS -m "$remaining" -o /tmp/cea_rb_health.txt -w "%{http_code}" "${urls[$index]}" 2>/dev/null || echo "000")
+      set -e
+      [[ "$code" == "200" ]] && healthy["$unit"]=1
+    done
+
+    if [[ "${#healthy[@]}" -eq "${#units[@]}" ]]; then
+      return 0
+    fi
+
+    now=$(date +%s)
+    [[ "$now" -lt "$deadline" ]] || break
+    sleep 1
+  done
+
+  local failed=""
+  for unit in "${units[@]}"; do
+    [[ -n "${healthy[$unit]:-}" ]] || failed="${failed:+$failed,}$unit"
+  done
+  echo "$failed"
+  return 1
 }
 
 resolve_target() {
