@@ -83,6 +83,40 @@ function mergeSeriesByName<S extends { name: string; points: { timestamp: Date }
   return [...byName.values()]
 }
 
+function mergeTargetValues<T extends { timestamp: Date; value: number | null }>(
+  existing: T[],
+  incoming: T[],
+): T[] {
+  const byTimestamp = new Map<number, T>()
+  for (const value of [...existing, ...incoming]) {
+    const timestamp = value.timestamp.getTime()
+    const current = byTimestamp.get(timestamp)
+    if (!current || (Number.isFinite(value.value) && !Number.isFinite(current.value))) {
+      byTimestamp.set(timestamp, value)
+    }
+  }
+  return [...byTimestamp.values()].sort((left, right) => left.timestamp.getTime() - right.timestamp.getTime())
+}
+
+function mergeTargetSeriesByName<
+  S extends { name: string; points: { timestamp: Date; value: number | null }[]; steps: { timestamp: Date; value: number | null }[] },
+>(existing: S[], incoming: S[]): S[] {
+  const byName = new Map(existing.map((series) => [series.name, series]))
+  for (const series of incoming) {
+    const current = byName.get(series.name)
+    if (!current) {
+      byName.set(series.name, series)
+      continue
+    }
+    byName.set(series.name, {
+      ...current,
+      points: mergeTargetValues(current.points, series.points),
+      steps: mergeTargetValues(current.steps, series.steps),
+    })
+  }
+  return [...byName.values()]
+}
+
 /** Merge a tail page into accumulated control history, deduping by row id. */
 export function mergeControlHistory(
   existing: ControlMonitoringResponse,
@@ -90,8 +124,8 @@ export function mergeControlHistory(
 ): ControlMonitoringResponse {
   return {
     ...incoming,
-    climate: mergeSeriesByName(existing.climate, incoming.climate),
-    lights: mergeSeriesByName(existing.lights, incoming.lights),
+    climate: mergeTargetSeriesByName(existing.climate, incoming.climate),
+    lights: mergeTargetSeriesByName(existing.lights, incoming.lights),
     devices: mergeSeriesByName(existing.devices, incoming.devices),
     pid: mergeSeriesByName(existing.pid, incoming.pid),
     photoperiod: mergePoints(

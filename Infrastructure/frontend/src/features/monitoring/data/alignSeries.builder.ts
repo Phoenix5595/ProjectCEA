@@ -134,6 +134,56 @@ export function buildControlSeries(
   const source: SeriesSource = cs.kind
   const family = controlFamily(cs)
   const isAgg = aggregated || cs.seriesIsAggregated
+  if (cs.metric.endsWith('_setpoint')) {
+    const candidates: AlignedSeries[] = []
+    if (cs.steps.length > 0) {
+      candidates.push(mkSeries({
+        key: seriesKey(source, cs.metric, 'step'),
+        label: cs.name,
+        kind: 'step',
+        metric: cs.metric,
+        role: 'step',
+        family,
+        y: alignDeviceStates(cs.steps, x, start, end, aggregated),
+        origin: cs.seriesOrigin,
+        quality: cs.seriesQuality,
+        isAggregated: isAgg,
+        presentation,
+      }))
+    }
+    if (cs.linear.length > 0) {
+      candidates.push(mkSeries({
+        key: seriesKey(source, cs.metric, 'linear'),
+        label: cs.name,
+        kind: 'linear',
+        metric: cs.metric,
+        role: 'linear',
+        family,
+        y: alignLinear(cs.linear, x, start, end, aggregated),
+        origin: cs.seriesOrigin,
+        quality: cs.seriesQuality,
+        isAggregated: isAgg,
+        presentation,
+      }))
+    }
+    candidates.push(mkSeries({
+      key: seriesKey(source, cs.metric, 'point'),
+      label: cs.name,
+      kind: 'point',
+      metric: cs.metric,
+      role: 'point',
+      family,
+      y: alignControlPoints(cs, x, start, end, aggregated),
+      origin: cs.seriesOrigin,
+      quality: cs.seriesQuality,
+      isAggregated: isAgg,
+      presentation,
+    }))
+    const selected = candidates.find((candidate) => candidate.y.some(
+      (value) => value !== null && Number.isFinite(value),
+    ))
+    return selected === undefined ? [] : [selected]
+  }
   const out: AlignedSeries[] = [
     mkSeries({
       key: seriesKey(source, cs.metric, 'point'),

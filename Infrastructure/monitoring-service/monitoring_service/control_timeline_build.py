@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from datetime import datetime
+from math import isfinite
 
 import asyncpg
 
@@ -106,31 +107,47 @@ def _build_target_timelines(
 ]:
     climate: dict[str, list[ClimateTimelinePointOut]] = {}
     lights: dict[tuple[str, str], list[LightTimelinePointOut]] = {}
+
+    climate_rows: dict[str, dict[datetime, list[ControlRecord]]] = {}
     for row in rows:
-        for metric, effective_column, nominal_column, ramp_column in _CLIMATE_FIELDS:
-            effective = row[effective_column]
-            if effective is not None:
+        for metric, _, _, _ in _CLIMATE_FIELDS:
+            timestamp = _timestamp(row, "timestamp")
+            climate_rows.setdefault(metric, {}).setdefault(timestamp, []).append(row)
+
+    for metric, effective_column, nominal_column, ramp_column in _CLIMATE_FIELDS:
+        for timestamp, siblings in sorted(climate_rows[metric].items()):
+            selected_row: ControlRecord | None = None
+            effective: float | None = None
+            for row in siblings:
+                candidate = _finite_float(row[effective_column])
+                if candidate is not None:
+                    selected_row = row
+                    effective = candidate
+                    break
+            if selected_row is not None:
                 climate.setdefault(metric, []).append(
                     ClimateTimelinePointOut(
-                        timestamp=_timestamp(row, "timestamp"),
-                        value=_required_float(effective),
+                        timestamp=timestamp,
+                        value=effective,
                         provenance=provenance,
                         metric=metric,
-                        nominal_value=_optional_float(row[nominal_column]),
-                        ramp_progress=_optional_float(row[ramp_column]),
-                        mode=_optional_string(row["mode"]),
+                        nominal_value=_optional_float(selected_row[nominal_column]),
+                        ramp_progress=_optional_float(selected_row[ramp_column]),
+                        mode=_optional_string(selected_row["mode"]),
                     )
                 )
             elif preserve_gaps and metric in climate:
                 climate[metric].append(
                     ClimateTimelinePointOut(
-                        timestamp=_timestamp(row, "timestamp"),
+                        timestamp=timestamp,
                         value=None,
                         provenance=unavailable_provenance,
                         metric=metric,
-                        mode=_optional_string(row["mode"]),
+                        mode=_optional_string(siblings[0]["mode"]),
                     )
                 )
+
+    for row in rows:
         device_name = row["device_name"]
         effective_light = row["effective_light_intensity"]
         if device_name is not None:
@@ -236,6 +253,13 @@ def _required_float(value: ControlRecordValue) -> float:
 
 def _optional_float(value: ControlRecordValue) -> float | None:
     return _required_float(value) if value is not None else None
+
+
+def _finite_float(value: ControlRecordValue) -> float | None:
+    if value is None:
+        return None
+    numeric = _required_float(value)
+    return numeric if isfinite(numeric) else None
 
 
 def _optional_int(value: ControlRecordValue) -> int | None:

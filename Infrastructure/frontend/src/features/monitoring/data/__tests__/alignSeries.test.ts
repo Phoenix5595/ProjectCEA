@@ -193,6 +193,30 @@ describe('alignSeries', () => {
     expect(step?.y[startIdx]).toBe(22)
   })
 
+  it('emits one step series when a setpoint has both points and steps', () => {
+    const input: AlignInput = {
+      series: [],
+      controlHistory: controlResponse([
+        {
+          ...climateSeries([{ timestamp: START, value: 22 }]),
+          steps: [
+            { timestamp: START, value: 22, provenance: { origin: 'recorded', quality: 'exact', is_aggregated: false } },
+          ],
+        },
+      ]),
+      projectionHistory: null,
+      photoperiod: [],
+      live: [],
+      range: fixedRange(),
+      now: NOW,
+    }
+
+    const setpointSeries = alignSeries(input).series.filter((series) => series.metric === 'heating_setpoint')
+
+    expect(setpointSeries).toHaveLength(1)
+    expect(setpointSeries[0]?.role).toBe('step')
+  })
+
   it('assigns co2_setpoint to the co2 family instead of temperature', () => {
     const input: AlignInput = {
       series: [],
