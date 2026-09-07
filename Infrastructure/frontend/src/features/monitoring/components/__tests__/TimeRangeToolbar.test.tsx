@@ -1,7 +1,7 @@
 /**
  * Tests for the monitoring time-range toolbar.
  *
- * Covers the happy path (presets, live/pause/resume, Reset Zoom, absolute
+ * Covers the happy path (presets, live/pause/resume, absolute
  * fixed range, and URL state) and the DST failure path (spring-forward gap
  * rejection and fall-back fold requiring an explicit first-EDT / second-EST
  * choice). A stateful harness mimics the parent store so URL writes and reads
@@ -27,7 +27,6 @@ interface Spies {
   onFixedRange: Mock<(start: Date, end: Date) => void>
   onPause: Mock<() => void>
   onResume: Mock<() => void>
-  onResetZoom: Mock<() => void>
 }
 
 function StatefulToolbar({
@@ -57,7 +56,6 @@ function StatefulToolbar({
       }}
       onPause={spies.onPause}
       onResume={spies.onResume}
-      onResetZoom={spies.onResetZoom}
     />
   )
 }
@@ -72,7 +70,6 @@ function renderStateful(
     onFixedRange: vi.fn<(start: Date, end: Date) => void>(),
     onPause: vi.fn<() => void>(),
     onResume: vi.fn<() => void>(),
-    onResetZoom: vi.fn<() => void>(),
   }
   const router = createMemoryRouter(
     [
@@ -90,7 +87,7 @@ function renderStateful(
 }
 
 describe('monitoring time-range toolbar', () => {
-  it('preserves live fixed pause resume zoom and URL state', async () => {
+  it('preserves live fixed pause resume and URL state', async () => {
     const h = renderStateful(liveRange(3 * 3600_000), true, ['/'])
 
     // Live indicator shows LIVE.
@@ -110,10 +107,6 @@ describe('monitoring time-range toolbar', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Resume' }))
     expect(h.onResume).toHaveBeenCalled()
     expect(screen.getByRole('status')).toHaveTextContent('LIVE')
-
-    // Reset Zoom delegates to the chart handle.
-    fireEvent.click(screen.getByRole('button', { name: 'Reset Zoom' }))
-    expect(h.onResetZoom).toHaveBeenCalled()
 
     // Absolute Toronto wall-time entry converts to UTC and pushes the URL.
     fireEvent.change(screen.getByLabelText('Start'), { target: { value: '2026-07-15T10:00' } })
@@ -238,7 +231,6 @@ describe('monitoring time-range toolbar', () => {
     const onFixedRange = vi.fn<(start: Date, end: Date) => void>()
     const onPause = vi.fn<() => void>()
     const onResume = vi.fn<() => void>()
-    const onResetZoom = vi.fn<() => void>()
     const start = new Date('2026-07-15T14:00:00.000Z')
     const end = new Date('2026-07-15T16:00:00.000Z')
     const { rerender } = render(
@@ -250,7 +242,6 @@ describe('monitoring time-range toolbar', () => {
           onFixedRange={onFixedRange}
           onPause={onPause}
           onResume={onResume}
-          onResetZoom={onResetZoom}
         />
       </MemoryRouter>,
     )
@@ -264,7 +255,6 @@ describe('monitoring time-range toolbar', () => {
           onFixedRange={onFixedRange}
           onPause={onPause}
           onResume={onResume}
-          onResetZoom={onResetZoom}
         />
       </MemoryRouter>,
     )

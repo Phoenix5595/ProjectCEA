@@ -178,7 +178,6 @@ describe('VegetationMonitoring page', () => {
   it('renders toolbar, chart regions, and tables without any iframe or Grafana URL', () => {
     const { container } = renderPage()
 
-    expect(screen.getByRole('button', { name: 'Reset Zoom' })).toBeTruthy()
     expect(screen.getByText('LIVE')).toBeTruthy()
 
     expect(

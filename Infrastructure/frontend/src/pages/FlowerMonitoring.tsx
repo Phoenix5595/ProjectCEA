@@ -19,7 +19,6 @@ import {
   ChartDataTable,
   MonitoringErrorBoundary,
   MonitoringFreshness,
-  MonitoringStatus,
   RoomAveragesTable,
   SensorValueTable,
   StatisticsTable,
@@ -96,10 +95,6 @@ function FlowerMonitoringInner() {
   const statsPanel = tablePanel(flowerManifest, 'flower-statistics')
   const { front, back } = splitLiveByNode(snapshot.data.live)
 
-  const resetZoom = useCallback((): void => {
-    climateRef.current?.resetZoom()
-    deviceRef.current?.resetZoom()
-  }, [])
   const zoomToRange = useCallback((range: { start: Date; end: Date }): void => {
     store.setFixedRange(range.start, range.end)
   }, [store])
@@ -115,24 +110,20 @@ function FlowerMonitoringInner() {
         onFixedRange={(start, end) => store.setFixedRange(start, end)}
         onPause={() => store.pause()}
         onResume={() => store.resume()}
-        onResetZoom={resetZoom}
         defaultDuration={FLOWER_DEFAULT_DURATION_MS}
+        monitoring={{
+          errors: snapshot.errors,
+          tailLoading: snapshot.tailLoading,
+          reconciling: snapshot.reconciling,
+          anchorQuality: snapshot.data.anchorQuality,
+          projectionRevision: snapshot.data.projectionRevision,
+          runtimeSnapshotVersion: snapshot.data.runtimeSnapshotVersion,
+          lastGoodRangeAt: snapshot.lastGoodRangeAt,
+          rangeErrorAt: snapshot.rangeErrorAt,
+          onRetry: () => store.retry(),
+        }}
       />
 
-      <MonitoringStatus
-        errors={snapshot.errors}
-        tailLoading={snapshot.tailLoading}
-        reconciling={snapshot.reconciling}
-        anchorQuality={snapshot.data.anchorQuality}
-        projectionRevision={snapshot.data.projectionRevision}
-        runtimeSnapshotVersion={snapshot.data.runtimeSnapshotVersion}
-        lastGoodRangeAt={snapshot.lastGoodRangeAt}
-        rangeErrorAt={snapshot.rangeErrorAt}
-        isLive={snapshot.isLive}
-        onRetry={() => store.retry()}
-        onPause={() => store.pause()}
-        onResume={() => store.resume()}
-      />
       {loading && (
         <div role="status" className="mon-banner">
           Loading monitoring data…
@@ -140,12 +131,14 @@ function FlowerMonitoringInner() {
       )}
 
       <div className="mon-layout">
-        <aside className="mon-side">
+        <aside className="mon-side mon-side--compact">
         <section className="mon-card" aria-label="Averages">
           <MonitoringFreshness lastGoodAt={snapshot.lastGoodRangeAt} errorAt={snapshot.rangeErrorAt} />
           {averagesPanel && (
             <RoomAveragesTable
               title="Averages"
+              showTitle={false}
+              firstColumnLabel="Average"
               rows={averagesPanel.rows}
               front={front}
               back={back}
@@ -157,6 +150,8 @@ function FlowerMonitoringInner() {
           {frontPanel && (
             <SensorValueTable
               title="Front Cluster"
+              showTitle={false}
+              firstColumnLabel="Front"
               rows={frontPanel.rows}
               values={snapshot.data.live}
               nodeSuffix="f"
@@ -168,6 +163,8 @@ function FlowerMonitoringInner() {
           {backPanel && (
             <SensorValueTable
               title="Back Cluster"
+              showTitle={false}
+              firstColumnLabel="Back"
               rows={backPanel.rows}
               values={snapshot.data.live}
               nodeSuffix="b"
