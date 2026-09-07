@@ -1,6 +1,6 @@
 import { sensorUrlClustersFor } from '../../../config/clusterTopology'
 import { logger } from '../../../utils/logger'
-import { CONTROL_HISTORY_MAX_POINTS, MonitoringApi } from '../api'
+import { CONTROL_HISTORY_MAX_POINTS, MonitoringApi, SENSOR_RANGE_MAX_POINTS } from '../api'
 
 import {
   applyControl,
@@ -25,24 +25,30 @@ export interface PollerHooks {
 }
 
 const CONTROL_WINDOW_MS = 120_000
+const SENSOR_HISTORY_REFRESH_INTERVAL_MS = 60_000
 
 export class MonitoringLivePoller {
   private controlWindowInFlight = false
   private projectionInFlight = false
+  private sensorHistoryInFlight = false
   private readonly liveInFlight = new Set<string>()
   private lastReconcileAt = 0
+  private lastSensorHistoryRefreshAt: number
   private reconciling = false
 
   constructor(
     private readonly location: string,
     private readonly monitoringApi: MonitoringApi,
     private readonly hooks: PollerHooks,
-  ) {}
+  ) {
+    this.lastSensorHistoryRefreshAt = hooks.now().getTime()
+  }
 
   tick(): void {
     if (this.hooks.isPaused() || !this.hooks.isActive()) return
     this.checkProjection()
     void this.pollSensors()
+    void this.refreshSensorHistory()
     void this.pollControlWindow()
   }
 
@@ -93,6 +99,48 @@ export class MonitoringLivePoller {
         })
         .catch(() => {})
         .finally(() => this.liveInFlight.delete(node))
+    }
+  }
+
+  private async refreshSensorHistory(): Promise<void> {
+    const state = this.hooks.read()
+    if (
+      state.range.kind !== 'live' ||
+      this.sensorHistoryInFlight ||
+      this.hooks.now().getTime() - this.lastSensorHistoryRefreshAt < SENSOR_HISTORY_REFRESH_INTERVAL_MS
+    ) {
+      return
+    }
+    const requestedRange = state.range
+    const now = this.hooks.now()
+    const start = new Date(now.getTime() - requestedRange.duration)
+    this.sensorHistoryInFlight = true
+    this.lastSensorHistoryRefreshAt = now.getTime()
+    try {
+      const response = await this.monitoringApi.sensorRange(
+        this.location,
+        iso(start),
+        iso(now),
+        SENSOR_RANGE_MAX_POINTS,
+      )
+      const current = this.hooks.read()
+      if (
+        !this.hooks.isActive() ||
+        this.hooks.isPaused() ||
+        current.range.kind !== 'live' ||
+        current.range.duration !== requestedRange.duration
+      ) {
+        return
+      }
+      this.hooks.applyData({
+        ...current.data,
+        series: response.series,
+        statistics: response.statistics,
+      })
+    } catch (err) {
+      logger.warn('sensor history refresh failed', err)
+    } finally {
+      this.sensorHistoryInFlight = false
     }
   }
 

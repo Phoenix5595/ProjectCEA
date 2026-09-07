@@ -99,19 +99,19 @@ function normalizeControlSeries(
     name: s.name,
     metric,
     kind,
-    points: s.points.map((p) => ({
+    points: canonicalizeTargetValues(s.points.map((p) => ({
       t: p.timestamp.getTime(),
       value: p.value,
       origin: p.provenance.origin,
       quality: p.provenance.quality,
       isAggregated: p.provenance.is_aggregated,
-    })),
-    steps: s.steps.map((st) => ({
+    }))),
+    steps: canonicalizeTargetValues(s.steps.map((st) => ({
       t: st.timestamp.getTime(),
       value: st.value,
       origin: st.provenance.origin,
       quality: st.provenance.quality,
-    })),
+    }))),
     linear: s.linear.map((ln) => ({
       start: ln.start.getTime(),
       end: ln.end.getTime(),
@@ -197,13 +197,14 @@ function mergeControl(a: NormControlSeries, b: NormControlSeries): NormControlSe
   const points = mergeByTime(a.points, b.points, (p) => p.origin === 'recorded')
   const steps = mergeByTime(a.steps, b.steps, (p) => p.origin === 'recorded')
   if (a.metric.endsWith('_setpoint')) {
+    const targetPoints = mergeTargetByTime(a.points, b.points)
+    const targetSteps = mergeTargetByTime(a.steps, b.steps)
     return {
       ...a,
       points: [],
-      steps: mergeByTime(
-        steps,
-        points.map(({ t, value, origin, quality }) => ({ t, value, origin, quality })),
-        (p) => p.origin === 'recorded',
+      steps: mergeTargetByTime(
+        targetSteps,
+        targetPoints.map(({ t, value, origin, quality }) => ({ t, value, origin, quality })),
       ),
       linear: mergeLinear(a.linear, b.linear),
     }
@@ -240,6 +241,39 @@ function mergeByTime<T extends { t: number }>(a: T[], b: T[], prefer: (x: T) => 
     if (!cur || prefer(x)) map.set(x.t, x)
   }
   return [...map.values()].sort((p, q) => p.t - q.t)
+}
+
+function canonicalizeTargetValues<T extends { t: number; value: number | null }>(values: T[]): T[] {
+  const byTimestamp = new Map<number, T>()
+  for (const value of values) {
+    const current = byTimestamp.get(value.t)
+    if (!current || (Number.isFinite(value.value) && !Number.isFinite(current.value))) {
+      byTimestamp.set(value.t, value)
+    }
+  }
+  return [...byTimestamp.values()].sort((left, right) => left.t - right.t)
+}
+
+function mergeTargetByTime<T extends { t: number; value: number | null; origin: Origin }>(
+  a: T[],
+  b: T[],
+): T[] {
+  const byTimestamp = new Map<number, T>()
+  for (const value of [...a, ...b]) {
+    const current = byTimestamp.get(value.t)
+    if (!current) {
+      byTimestamp.set(value.t, value)
+      continue
+    }
+    if (current.origin !== value.origin) {
+      if (value.origin === 'recorded') byTimestamp.set(value.t, value)
+      continue
+    }
+    if (Number.isFinite(value.value) && !Number.isFinite(current.value)) {
+      byTimestamp.set(value.t, value)
+    }
+  }
+  return [...byTimestamp.values()].sort((left, right) => left.t - right.t)
 }
 
 function mergeLinear(a: NormLinear[], b: NormLinear[]): NormLinear[] {
