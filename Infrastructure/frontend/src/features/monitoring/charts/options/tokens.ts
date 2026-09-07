@@ -39,8 +39,8 @@ export type MonitoringTokenName = keyof typeof MONITORING_TOKEN_NAMES
 /** Deterministic fallbacks mirroring the default (botanical) theme. */
 const FALLBACK: Record<MonitoringTokenName, string> = {
   familyTemperature: '#bd4253',
-  familyRh: '#00fff2',
-  familyVpd: '#c0dd55',
+  familyRh: '#67e8f9',
+  familyVpd: '#fbbf24',
   familyCo2: '#b18981',
   familyPressure: '#769867',
   familyDevice: '#c8d6c2',

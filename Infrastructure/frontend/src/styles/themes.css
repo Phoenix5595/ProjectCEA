@@ -25,7 +25,7 @@
   --timeline-night: #3b82f6; --timeline-day: #eab308; --timeline-pre: #a855f7; --timeline-ramp: #713f12; --timeline-now: #ef4444;
 
   /* Monitoring design tokens (see DESIGN.md) */
-  --mon-family-temperature: #f87171; --mon-family-rh: #60a5fa; --mon-family-vpd: #fbbf24;
+  --mon-family-temperature: #f87171; --mon-family-rh: #67e8f9; --mon-family-vpd: #fbbf24;
   --mon-family-co2: #a78bfa; --mon-family-pressure: #34d399; --mon-family-device: #94a3b8; --mon-family-light: #facc15;
   --mon-node-front: #60a5fa; --mon-node-back: #fbbf24;
   --mon-envelope-fill: rgba(96, 165, 250, 0.14); --mon-envelope-stroke: rgba(96, 165, 250, 0.45);
@@ -109,7 +109,7 @@
   --timeline-night: #4299e1; --timeline-day: #86c232; --timeline-pre: #9f7aea; --timeline-ramp: #713f12; --timeline-now: #f56565;
 
   /* Monitoring design tokens (see DESIGN.md) */
-  --mon-family-temperature: #f87171; --mon-family-rh: #67e8f9; --mon-family-vpd: #d4a574;
+  --mon-family-temperature: #f87171; --mon-family-rh: #67e8f9; --mon-family-vpd: #fbbf24;
   --mon-family-co2: #9f7aea; --mon-family-pressure: #86c232; --mon-family-device: #9fa89c; --mon-family-light: #facc15;
   --mon-node-front: #67e8f9; --mon-node-back: #d4a574;
   --mon-envelope-fill: rgba(103, 232, 249, 0.14); --mon-envelope-stroke: rgba(103, 232, 249, 0.45);
@@ -193,7 +193,7 @@
   --timeline-night: #60a5fa; --timeline-day: #fbbf24; --timeline-pre: #c084fc; --timeline-ramp: #92400e; --timeline-now: #f87171;
 
   /* Monitoring design tokens (see DESIGN.md) */
-  --mon-family-temperature: #f87171; --mon-family-rh: #60a5fa; --mon-family-vpd: #fbbf24;
+  --mon-family-temperature: #f87171; --mon-family-rh: #67e8f9; --mon-family-vpd: #fbbf24;
   --mon-family-co2: #c084fc; --mon-family-pressure: #4ade80; --mon-family-device: #a0a0b0; --mon-family-light: #facc15;
   --mon-node-front: #60a5fa; --mon-node-back: #fbbf24;
   --mon-envelope-fill: rgba(96, 165, 250, 0.14); --mon-envelope-stroke: rgba(96, 165, 250, 0.45);
@@ -271,7 +271,7 @@
   --timeline-night: #009991; --timeline-day: #b0d52a; --timeline-pre: #adc1a4; --timeline-ramp: #6a8019; --timeline-now: #bd4253;
 
   /* Monitoring design tokens (see DESIGN.md) */
-  --mon-family-temperature: #bd4253; --mon-family-rh: #00fff2; --mon-family-vpd: #c0dd55;
+  --mon-family-temperature: #bd4253; --mon-family-rh: #67e8f9; --mon-family-vpd: #fbbf24;
   --mon-family-co2: #b18981; --mon-family-pressure: #769867; --mon-family-device: #c8d6c2; --mon-family-light: #c0dd55;
   --mon-node-front: #00fff2; --mon-node-back: #c0dd55;
   --mon-envelope-fill: rgba(0, 255, 242, 0.14); --mon-envelope-stroke: rgba(0, 255, 242, 0.45);

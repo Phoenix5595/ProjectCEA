@@ -23,11 +23,62 @@ interface TooltipSeries {
   origin: string
   quality: string
   kind: SeriesKind
+  source: AlignedSeries['source']
+  metric: string
+  role: AlignedSeries['role']
   presentation?: SeriesPresentation
+}
+
+interface TooltipRow {
+  series: TooltipSeries
+  value: number | null
 }
 
 function finiteValue(value: number | null | undefined): number | null {
   return value === null || value === undefined || !Number.isFinite(value) ? null : value
+}
+
+function isControlSetpoint(series: TooltipSeries): boolean {
+  return (series.source === 'climate' || series.source === 'light') &&
+    (series.role === 'point' || series.role === 'step' || series.role === 'linear')
+}
+
+function setpointPriority(series: TooltipSeries): number {
+  switch (series.role) {
+    case 'linear':
+      return 3
+    case 'step':
+      return 2
+    case 'point':
+      return 1
+    default:
+      return 0
+  }
+}
+
+function tooltipRows(
+  series: readonly TooltipSeries[],
+  u: uPlot,
+  xValues: ArrayLike<number>,
+  cursorTime: number,
+): TooltipRow[] {
+  const rows = new Map<string, TooltipRow>()
+  for (const candidate of series) {
+    if (u.series[candidate.index].show === false) continue
+    const value = valueAtCursor(candidate.kind, xValues, u.data[candidate.index] ?? [], cursorTime)
+    const key = isControlSetpoint(candidate)
+      ? `setpoint:${candidate.source}:${candidate.metric}`
+      : `series:${candidate.index}`
+    const existing = rows.get(key)
+    if (
+      existing === undefined ||
+      (value !== null && (existing.value === null || setpointPriority(candidate) > setpointPriority(existing.series))) ||
+      (value === null && existing.value === null && setpointPriority(candidate) > setpointPriority(existing.series))
+    ) {
+      rows.set(key, { series: candidate, value })
+    }
+  }
+  return [...rows.values()]
 }
 
 /** Resolves the appropriate series value at the exact cursor time. */
@@ -90,6 +141,9 @@ export function tooltipPlugin(
       origin: s.origin,
       quality: s.quality,
       kind: s.kind,
+      source: s.source,
+      metric: s.metric,
+      role: s.role,
       presentation: s.presentation,
     }))
     .filter((s) => !isEnvelopeSeries(series[s.index - 1]))
@@ -125,9 +179,7 @@ export function tooltipPlugin(
         }
         const cursorTime = u.posToVal(cursorLeft, 'x')
         el.textContent = ''
-        for (const s of meta) {
-          if (u.series[s.index].show === false) continue
-          const value = valueAtCursor(s.kind, xValues, u.data[s.index] ?? [], cursorTime)
+        for (const { series: s, value } of tooltipRows(meta, u, xValues, cursorTime)) {
           const row = document.createElement('div')
           const swatch = document.createElement('span')
           swatch.style.color = s.color
@@ -145,11 +197,17 @@ export function tooltipPlugin(
           return
         }
         el.style.display = 'block'
-        const inset = 12
+        const clearance = 32
         const maxLeft = Math.max(0, u.root.clientWidth - el.offsetWidth)
         const maxTop = Math.max(0, u.root.clientHeight - el.offsetHeight)
-        el.style.left = `${Math.min(maxLeft, Math.max(0, cursorLeft + inset))}px`
-        el.style.top = `${Math.min(maxTop, Math.max(0, cursorTop + inset))}px`
+        const preferredLeft = cursorLeft + clearance + el.offsetWidth <= u.root.clientWidth
+          ? cursorLeft + clearance
+          : cursorLeft - el.offsetWidth - clearance
+        const preferredTop = cursorTop + clearance + el.offsetHeight <= u.root.clientHeight
+          ? cursorTop + clearance
+          : cursorTop - el.offsetHeight - clearance
+        el.style.left = `${Math.min(maxLeft, Math.max(0, preferredLeft))}px`
+        el.style.top = `${Math.min(maxTop, Math.max(0, preferredTop))}px`
       },
       destroy: (u) => {
         if (el !== null && el.parentNode === u.root) u.root.removeChild(el)
