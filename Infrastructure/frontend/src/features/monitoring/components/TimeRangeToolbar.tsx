@@ -3,7 +3,7 @@
  *
  * A controlled component: the parent owns the store range and passes it in via
  * `range`/`isLive`, plus callbacks that map to `MonitoringStore.setLiveRange`,
- * `setFixedRange`, `pause`, `resume`, and the chart's `resetZoom`. The toolbar
+ * `setFixedRange`, `pause`, and `resume`. The toolbar
  * renders bounded presets, a live/paused indicator with Pause/Resume, absolute
  * Toronto wall-time inputs (with DST gap/fold handling), a Now action, Reset
  * Zoom, a timezone label, inline validation, and URL state via
@@ -12,7 +12,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import type { MonitoringRange } from '../state'
-import { MonitoringStatus } from './MonitoringStatus'
+import { MonitoringStatus, MonitoringStatusBadge } from './MonitoringStatus'
 export type { ToolbarMonitoring } from './TimeRangeToolbar.monitoring'
 import {
   PRESETS,
@@ -25,6 +25,7 @@ import {
   type FallFoldChoice,
 } from './timeRangeToolbar.time'
 import {
+  AbsoluteRangeFeedback,
   AbsoluteRangeForm,
   fixedInputError,
   formatWallInput,
@@ -38,7 +39,6 @@ export interface TimeRangeToolbarProps {
   onFixedRange: (start: Date, end: Date) => void
   onPause: () => void
   onResume: () => void
-  onResetZoom: () => void
   now?: () => Date
   defaultDuration?: number
   monitoring?: import('./TimeRangeToolbar.monitoring').ToolbarMonitoring
@@ -46,12 +46,8 @@ export interface TimeRangeToolbarProps {
 
 export function TimeRangeToolbar({
   range,
-  isLive,
   onLive,
   onFixedRange,
-  onPause,
-  onResume,
-  onResetZoom,
   now,
   defaultDuration,
   monitoring,
@@ -67,7 +63,6 @@ export function TimeRangeToolbar({
   const [selectedDuration, setSelectedDuration] = useState<number>(() =>
     range.kind === 'live' ? range.duration : (defaultDuration ?? PRESETS[1].duration),
   )
-  const [paused, setPaused] = useState(false)
   const [startInput, setStartInput] = useState(effectiveStartInput)
   const [endInput, setEndInput] = useState(effectiveEndInput)
   const [editingRange, setEditingRange] = useState(false)
@@ -138,16 +133,6 @@ export function TimeRangeToolbar({
     callbacksRef.current.onLive(duration)
   }
 
-  function handlePause(): void {
-    setPaused(true)
-    onPause()
-  }
-
-  function handleResume(): void {
-    setPaused(false)
-    onResume()
-  }
-
   function handleNow(): void {
     setError(null)
     callbacksRef.current.onLive(selectedDuration)
@@ -207,91 +192,64 @@ export function TimeRangeToolbar({
     submitFixed({ field: fallFold.field, choice })
   }
 
-  function clearInputs(): void {
-    setEditingRange(false)
-    setError(null)
-    setFallFold(null)
-  }
-
   const errorId = 'mon-toolbar-error'
   const inputError = fixedInputError(startInput, endInput)
   const formError = error ?? inputError
-  const activeDuration = range.kind === 'live' ? range.duration : selectedDuration
-  const livePreset = PRESETS.find((preset) => preset.duration === activeDuration)
-  const statusLabel = isLive ? (paused ? 'PAUSED' : 'LIVE') : 'FIXED'
-
   return (
     <div className="mon-toolbar">
-      <div className="mon-toolbar__presets" role="group" aria-label="Time range presets">
-        {PRESETS.map((p) => (
-          <button
-            key={p.label}
-            type="button"
-            className="mon-toolbar__preset"
-            aria-pressed={live && range.duration === p.duration}
-            onClick={() => applyPreset(p.duration)}
-          >
-            {p.label}
+      <div className="mon-toolbar__controls">
+        <div className="mon-toolbar__presets" role="group" aria-label="Time range presets">
+          {PRESETS.map((p) => (
+            <button
+              key={p.label}
+              type="button"
+              className="mon-toolbar__preset"
+              aria-pressed={live && range.duration === p.duration}
+              onClick={() => applyPreset(p.duration)}
+            >
+              {p.label}
+            </button>
+          ))}
+          <button type="button" className="mon-toolbar__now" onClick={handleNow}>
+            Now
           </button>
-        ))}
-        <button type="button" className="mon-toolbar__now" onClick={handleNow}>
-          Now
-        </button>
-      </div>
-      {monitoring && (
-        <MonitoringStatus
-          errors={monitoring.errors}
-          tailLoading={monitoring.tailLoading}
-          reconciling={monitoring.reconciling}
-          anchorQuality={monitoring.anchorQuality}
-          projectionRevision={monitoring.projectionRevision}
-          runtimeSnapshotVersion={monitoring.runtimeSnapshotVersion}
-          lastGoodRangeAt={monitoring.lastGoodRangeAt}
-          rangeErrorAt={monitoring.rangeErrorAt}
-          onRetry={monitoring.onRetry}
-          isLive={live && !paused}
+        </div>
+        <AbsoluteRangeForm
+          startInput={startInput}
+          endInput={endInput}
+          error={formError}
+          errorId={errorId}
+          onStartChange={(value) => {
+            setStartInput(value)
+            setEditingRange(true)
+            setError(null)
+            setFallFold(null)
+          }}
+          onEndChange={(value) => {
+            setEndInput(value)
+            setEditingRange(true)
+            setError(null)
+            setFallFold(null)
+          }}
+          onApply={() => submitFixed()}
+          applyDisabled={inputError !== null}
         />
-      )}
-
-      <div className="mon-toolbar__status">
-        <span className="mon-toolbar__live" role="status">
-          <span>{statusLabel}</span>
-          {isLive && !paused && <> · {livePreset?.label ?? 'custom'}</>}
-        </span>
-        {live && (
-          <button type="button" onClick={paused ? handleResume : handlePause}>
-            {paused ? 'Resume' : 'Pause'}
-          </button>
-        )}
-        <button type="button" onClick={onResetZoom}>
-          Reset Zoom
-        </button>
-        <span className="mon-toolbar__tz">{tzLabel}</span>
+        <div className="mon-toolbar__status">
+          {monitoring && <MonitoringStatusBadge {...monitoring} />}
+          <span className="mon-toolbar__tz">{tzLabel}</span>
+        </div>
       </div>
-
-      <AbsoluteRangeForm
-        startInput={startInput}
-        endInput={endInput}
+      <AbsoluteRangeFeedback
         error={formError}
         fallFold={fallFold}
         errorId={errorId}
-        onStartChange={(value) => {
-          setStartInput(value)
-          setEditingRange(true)
-          setError(null)
-          setFallFold(null)
-        }}
-        onEndChange={(value) => {
-          setEndInput(value)
-          setEditingRange(true)
-          setError(null)
-          setFallFold(null)
-        }}
-        onApply={() => submitFixed()}
-        onClear={clearInputs}
         onFallFoldChoice={chooseFallFold}
-        applyDisabled={inputError !== null}
       />
+      {monitoring && (
+        <MonitoringStatus
+          errors={monitoring.errors}
+        />
+      )}
     </div>
   )
 }

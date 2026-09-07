@@ -30,7 +30,6 @@ export const PRESETS: Preset[] = [
   { label: '12h', duration: 12 * 3600_000 },
   { label: '24h', duration: 24 * 3600_000 },
   { label: '7d', duration: 7 * 24 * 3600_000 },
-  { label: 'All', duration: 7 * 24 * 3600_000 },
 ]
 
 export interface WallComponents {
