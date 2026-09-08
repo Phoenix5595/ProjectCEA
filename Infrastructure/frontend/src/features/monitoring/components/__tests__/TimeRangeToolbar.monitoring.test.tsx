@@ -15,7 +15,6 @@ describe('TimeRangeToolbar monitoring status', () => {
           onFixedRange={vi.fn<(start: Date, end: Date) => void>()}
           onPause={vi.fn<() => void>()}
           onResume={vi.fn<() => void>()}
-          onResetZoom={vi.fn<() => void>()}
           monitoring={{
             errors: [],
             tailLoading: false,

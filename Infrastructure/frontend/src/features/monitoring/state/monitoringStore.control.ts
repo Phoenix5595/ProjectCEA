@@ -160,7 +160,10 @@ export function lastControlTimestamp(data: StoreData): Date | null {
       if (last === null || point.timestamp > last) last = point.timestamp
     }
   }
-  for (const series of [...history.climate, ...history.lights]) scan(series.points)
+  for (const series of [...history.climate, ...history.lights]) {
+    scan(series.points)
+    scan(series.steps)
+  }
   for (const series of [...history.devices, ...history.pid]) scan(series.points)
   scan(history.photoperiod)
   return last

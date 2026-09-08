@@ -2,7 +2,7 @@
  * Absolute-range form for the monitoring time-range toolbar.
  *
  * A presentational component: it renders the two Toronto wall-time inputs,
- * Apply/Clear actions, the fall-fold chooser, and inline validation. It also
+ * Apply action, the fall-fold chooser, and inline validation. It also
  * owns wall-time formatting and preflight validation used by the parent.
  */
 import { formatInTimeZone } from 'date-fns-tz'
@@ -44,60 +44,62 @@ export interface AbsoluteRangeFormProps {
   startInput: string
   endInput: string
   error: string | null
-  fallFold: FallFoldState | null
   errorId: string
   onStartChange: (value: string) => void
   onEndChange: (value: string) => void
   onApply: () => void
-  onClear: () => void
-  onFallFoldChoice: (choice: FallFoldChoice) => void
   applyDisabled: boolean
+}
+
+export interface AbsoluteRangeFeedbackProps {
+  error: string | null
+  fallFold: FallFoldState | null
+  errorId: string
+  onFallFoldChoice: (choice: FallFoldChoice) => void
 }
 
 export function AbsoluteRangeForm({
   startInput,
   endInput,
   error,
-  fallFold,
   errorId,
   onStartChange,
   onEndChange,
   onApply,
-  onClear,
-  onFallFoldChoice,
   applyDisabled,
 }: AbsoluteRangeFormProps) {
   return (
-    <>
-      <div className="mon-toolbar__absolute">
-        <label>
-          Start
-          <input
-            type="datetime-local"
-            value={startInput}
-            onChange={(e) => onStartChange(e.target.value)}
-            aria-invalid={error !== null}
-            aria-describedby={error !== null ? errorId : undefined}
-          />
-        </label>
-        <label>
-          End
-          <input
-            type="datetime-local"
-            value={endInput}
-            onChange={(e) => onEndChange(e.target.value)}
-            aria-invalid={error !== null}
-            aria-describedby={error !== null ? errorId : undefined}
-          />
-        </label>
-        <button type="button" onClick={onApply} disabled={applyDisabled}>
-          Apply
-        </button>
-        <button type="button" onClick={onClear}>
-          Clear
-        </button>
-      </div>
+    <div className="mon-toolbar__absolute">
+      <label>
+        Start
+        <input
+          type="datetime-local"
+          value={startInput}
+          onChange={(e) => onStartChange(e.target.value)}
+          aria-invalid={error !== null}
+          aria-describedby={error !== null ? errorId : undefined}
+        />
+      </label>
+      <label>
+        End
+        <input
+          type="datetime-local"
+          value={endInput}
+          onChange={(e) => onEndChange(e.target.value)}
+          aria-invalid={error !== null}
+          aria-describedby={error !== null ? errorId : undefined}
+        />
+      </label>
+      <button type="button" onClick={onApply} disabled={applyDisabled}>
+        Apply
+      </button>
+    </div>
+  )
+}
 
+export function AbsoluteRangeFeedback({ error, fallFold, errorId, onFallFoldChoice }: AbsoluteRangeFeedbackProps) {
+  return (
+    <div className="mon-toolbar__feedback">
       {fallFold !== null && fallFold.choice === null && (
         <div className="mon-toolbar__fold" role="group" aria-label="Choose which occurrence">
           <span>This time occurs twice. Choose:</span>
@@ -109,12 +111,11 @@ export function AbsoluteRangeForm({
           </button>
         </div>
       )}
-
       {error !== null && (
         <p id={errorId} className="mon-toolbar__error" role="alert">
           {error}
         </p>
       )}
-    </>
+    </div>
   )
 }

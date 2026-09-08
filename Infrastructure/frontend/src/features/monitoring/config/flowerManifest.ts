@@ -130,7 +130,7 @@ export const flowerManifest: MonitoringManifest = {
           name: 'heating_setpoint',
           displayName: 'Heating Setpoint',
           unit: 'celsius',
-          color: '#ff6fb0',
+          color: '#bd4253',
           lineStyle: 'dot',
           lineWidth: 2,
           lineInterpolation: 'stepBefore',

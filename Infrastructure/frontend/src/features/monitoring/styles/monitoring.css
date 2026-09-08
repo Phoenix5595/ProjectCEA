@@ -9,10 +9,16 @@
 
 .mon-page {
   width: 100%;
-  padding: 1rem;
+  padding: 8px;
   box-sizing: border-box;
   background: var(--surface-base, #10150e);
   color: var(--text-default, #f1f5f0);
+}
+
+@media (max-width: 767px) {
+  .mon-page {
+    padding: 4px;
+  }
 }
 
 .mon-grid {
@@ -150,27 +156,47 @@
 }
 
 .mon-toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 0.75rem;
-  margin-bottom: 0;
+  display: grid;
+  gap: 4px;
+  align-content: center;
+  min-height: 50px;
+  padding: 0 4px;
+  margin-bottom: 0.75rem;
   background: var(--surface-secondary, #2f3d29);
   border: 1px solid var(--border-default, #475b3e);
   border-radius: 0.5rem;
 }
 
+.mon-toolbar__feedback,
+.mon-status {
+  display: contents;
+}
+
+.mon-toolbar__controls {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+  width: 100%;
+  overflow-x: auto;
+}
+
 .mon-toolbar__presets {
   display: flex;
-  flex-wrap: wrap;
+  flex: 0 0 auto;
+  flex-wrap: nowrap;
   gap: 0.375rem;
 }
 
 .mon-toolbar__preset,
-.mon-toolbar__now {
-  padding: 0.25rem 0.625rem;
+.mon-toolbar__now,
+.mon-toolbar__status button,
+.mon-toolbar__absolute button {
+  height: 2rem;
+  padding: 0 0.625rem;
   font-size: 0.8rem;
+  line-height: 1;
   border: 1px solid var(--border-default, #475b3e);
   border-radius: 0.375rem;
   background: var(--surface-tertiary, #475b3e);
@@ -185,9 +211,23 @@
 
 .mon-toolbar__status {
   display: flex;
+  flex: 0 0 auto;
+  flex-wrap: nowrap;
   align-items: center;
   gap: 0.5rem;
+  height: 2rem;
+  box-sizing: border-box;
+  padding: 0 0.375rem;
+  margin-left: auto;
   font-size: 0.8rem;
+  line-height: 1;
+  background: var(--surface-tertiary, #475b3e);
+  border: 1px solid var(--border-default, #475b3e);
+  border-radius: 0.375rem;
+}
+
+.mon-toolbar__status button {
+  white-space: nowrap;
 }
 
 .mon-toolbar__live {
@@ -200,12 +240,31 @@
 
 .mon-toolbar__absolute {
   display: flex;
-  flex-wrap: wrap;
+  flex: 0 0 auto;
+  flex-wrap: nowrap;
   align-items: center;
   gap: 0.375rem;
 }
 
+.mon-toolbar__absolute label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  height: 2rem;
+  font-size: 0.8rem;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.mon-toolbar__absolute input {
+  height: 2rem;
+  box-sizing: border-box;
+  font-size: 0.8rem;
+  line-height: 1;
+}
+
 .mon-toolbar__error {
+  margin: 0;
   font-size: 0.8rem;
   color: var(--mon-error-text, var(--mon-error, var(--status-danger, #bd4253)));
 }
@@ -248,7 +307,7 @@
 }
 
 .mon-status {
-  margin-bottom: 1rem;
+  margin: 0;
 }
 
 .mon-status__summary {
@@ -329,6 +388,7 @@
   display: grid;
   gap: 1rem;
   align-content: start;
+  min-width: 0;
 }
 
 .mon-main {
@@ -339,7 +399,7 @@
 
 @media (min-width: 1100px) {
   .mon-layout {
-    grid-template-columns: 340px minmax(0, 1fr);
+    grid-template-columns: fit-content(30vw) minmax(0, 1fr);
     align-items: start;
   }
 
@@ -382,7 +442,23 @@
   padding: 0;
 }
 
-/* Owner adjustment: toolbar without padding. */
-.mon-toolbar {
-  padding: 0;
+/* Sidebar data tables: requested body-cell width and 1px top border.
+   The selector is scoped to .mon-side--compact so it tracks both collapsed
+   (ml-12) and expanded (ml-52) layouts instead of relying on brittle
+   intermediate layout classes. */
+.mon-side.mon-side--compact section.mon-card div.overflow-x-auto table.w-full.text-xs tbody tr td.px-1.py-1.border-b.border-border-subtle {
+  width: 105px;
+  min-width: 105px;
+  border-top: 1px solid var(--border-subtle, #2f3d29);
+}
+
+.mon-side.mon-side--compact .mon-card table th:first-child,
+.mon-side.mon-side--compact section.mon-card div.overflow-x-auto table.w-full.text-xs tbody tr td.px-1.py-1.border-b.border-border-subtle:first-child {
+  width: 110px;
+  min-width: 110px;
+}
+
+.mon-last-update {
+  display: inline-grid;
+  white-space: nowrap;
 }

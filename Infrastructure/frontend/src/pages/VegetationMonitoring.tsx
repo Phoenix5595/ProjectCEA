@@ -20,7 +20,6 @@ import {
   ChartDataTable,
   MonitoringErrorBoundary,
   MonitoringFreshness,
-  MonitoringStatus,
   SensorValueTable,
   StatisticsTable,
   TimeRangeToolbar,
@@ -93,10 +92,6 @@ function VegetationMonitoringInner() {
   const valuesPanel = tablePanel(vegManifest, 'veg-values')
   const statsPanel = tablePanel(vegManifest, 'veg-statistics')
 
-  const resetZoom = useCallback((): void => {
-    climateRef.current?.resetZoom()
-    deviceRef.current?.resetZoom()
-  }, [])
   const zoomToRange = useCallback((range: { start: Date; end: Date }): void => {
     store.setFixedRange(range.start, range.end)
   }, [store])
@@ -112,24 +107,20 @@ function VegetationMonitoringInner() {
         onFixedRange={(start, end) => store.setFixedRange(start, end)}
         onPause={() => store.pause()}
         onResume={() => store.resume()}
-        onResetZoom={resetZoom}
         defaultDuration={VEG_DEFAULT_DURATION_MS}
+        monitoring={{
+          errors: snapshot.errors,
+          tailLoading: snapshot.tailLoading,
+          reconciling: snapshot.reconciling,
+          anchorQuality: snapshot.data.anchorQuality,
+          projectionRevision: snapshot.data.projectionRevision,
+          runtimeSnapshotVersion: snapshot.data.runtimeSnapshotVersion,
+          lastGoodRangeAt: snapshot.lastGoodRangeAt,
+          rangeErrorAt: snapshot.rangeErrorAt,
+          onRetry: () => store.retry(),
+        }}
       />
 
-      <MonitoringStatus
-        errors={snapshot.errors}
-        tailLoading={snapshot.tailLoading}
-        reconciling={snapshot.reconciling}
-        anchorQuality={snapshot.data.anchorQuality}
-        projectionRevision={snapshot.data.projectionRevision}
-        runtimeSnapshotVersion={snapshot.data.runtimeSnapshotVersion}
-        lastGoodRangeAt={snapshot.lastGoodRangeAt}
-        rangeErrorAt={snapshot.rangeErrorAt}
-        isLive={snapshot.isLive}
-        onRetry={() => store.retry()}
-        onPause={() => store.pause()}
-        onResume={() => store.resume()}
-      />
       {loading && (
         <div role="status" className="mon-banner">
           Loading monitoring data…

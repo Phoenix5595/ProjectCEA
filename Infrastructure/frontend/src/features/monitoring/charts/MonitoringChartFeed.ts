@@ -160,7 +160,7 @@ class PanelChartFeed extends ChartFeed implements MonitoringPanelChartFeed {
     return {
       ...snapshot.data,
       range: fulfilled.range,
-      now: fulfilled.end,
+      now: fulfilled.range.kind === 'live' ? this.now() : fulfilled.end,
       seriesSpecs: this.seriesSpecs,
     }
   }

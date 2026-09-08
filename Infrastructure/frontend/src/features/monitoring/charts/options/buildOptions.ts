@@ -28,16 +28,18 @@ export function buildOptions(
   width: number,
   height: number,
   callbacks: ChartCallbacks,
+  getNowX?: () => number | null,
+  getPhotoperiod?: () => ReadonlyArray<AlignedData['photoperiod'][number]>,
 ): uPlot.Options {
   const { scales, axes } = buildScales(data)
   const series = buildSeries(data)
   const bands = buildBands(data)
 
-  const nowX =
+  const initialNowX =
     data.nowIndex >= 0 && data.nowIndex < data.x.length ? data.x[data.nowIndex] : null
 
   const plugins: uPlot.Plugin[] = [
-    photoperiodPlugin(data.photoperiod, {
+    photoperiodPlugin(getPhotoperiod ?? (() => data.photoperiod), {
       sunBg: readToken('sunBg'),
       moonBg: readToken('moonBg'),
     }),
@@ -47,9 +49,7 @@ export function buildOptions(
       text: readToken('tooltipText'),
     }),
   ]
-  if (nowX !== null) {
-    plugins.push(nowDividerPlugin(nowX, readToken('focusRing')))
-  }
+  plugins.push(nowDividerPlugin(getNowX ?? (() => initialNowX), readToken('focusRing')))
 
   return {
     width,
