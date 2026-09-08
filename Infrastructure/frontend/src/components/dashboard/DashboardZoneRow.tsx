@@ -2,10 +2,8 @@ import { memo } from 'react';
 import { Link } from 'react-router-dom';
 
 import type { Device } from '../../types/device';
-import type { ControlHistoryEntry } from '../../types/device';
 import { getFlowerDualClimateLayers, getLocationDisplayName } from '../../config/zones';
 import {
-  formatControlHistoryLine,
   getRoomLightState,
   getSensorDisplay,
   getSetpointColor,
@@ -19,7 +17,6 @@ export interface DashboardZoneRowProps {
   devices: Device[];
   sensorData: Record<string, number>;
   statusDevices?: Record<string, Record<string, { intensity?: number; load_percent?: number }>> | null;
-  controlHistory: ControlHistoryEntry[];
   icon: string;
 }
 
@@ -90,7 +87,6 @@ export const DashboardZoneRow = memo(function DashboardZoneRow({
   devices,
   sensorData,
   statusDevices,
-  controlHistory,
   icon,
 }: DashboardZoneRowProps) {
   const roomDevices = devices.filter((d) => d.location === location && d.cluster === cluster);
@@ -215,21 +211,6 @@ export const DashboardZoneRow = memo(function DashboardZoneRow({
             </div>
           </div>
         )}
-
-        <div className="flex-1 min-w-[10rem] bg-surface-secondary rounded-sm p-1.5">
-          <div className="text-[10px] text-text-muted mb-0.5">Recent on/off</div>
-          {controlHistory.length ? (
-            <div className="space-y-0.5 text-[9px] text-text-secondary font-mono tabular-nums max-h-[4rem] overflow-y-auto">
-              {controlHistory.slice(0, 6).map((entry, i) => (
-                <div key={i} className="truncate" title={entry.reason ?? undefined}>
-                  {formatControlHistoryLine(entry)}
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="text-[9px] text-text-subtle">No recent changes</div>
-          )}
-        </div>
       </div>
     </Link>
   );

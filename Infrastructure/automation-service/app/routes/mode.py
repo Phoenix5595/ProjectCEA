@@ -8,6 +8,16 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from app.database import DatabaseManager
+from app.events.mutation_context import (
+    MutationRequestContext,
+    PersistedMutation,
+    emit_persisted_mutation,
+)
+from app.events.mutation_coverage import emits_operational_mutation
+from app.events.mutation_dependencies import get_mutation_event_sink, get_mutation_request_context
+from app.events.mutation_diff import safe_allowlisted_diff
+from app.events.operational_models import EntityContext
+from app.events.operational_ports import OperationalEventSink
 from app.redis_client import AutomationRedisClient
 from app.state import get_state_manager
 from shared.infra_logging import get_logger
@@ -73,11 +83,14 @@ async def get_mode(
 
 
 @router.post("/api/mode/{location}/{cluster}")
+@emits_operational_mutation
 async def set_mode(
     location: str,
     cluster: str,
     update: ModeUpdate,
     automation_redis: AutomationRedisClient | None = Depends(get_automation_redis),
+    context: MutationRequestContext = Depends(get_mutation_request_context),
+    sink: OperationalEventSink = Depends(get_mutation_event_sink),
 ) -> dict[str, Any]:
     """Set mode for a location/cluster.
 
@@ -106,10 +119,13 @@ async def set_mode(
             status_code=403, detail="Cannot set mode to 'failsafe' directly. Use alarm system."
         )
 
-    # Write mode to Redis
+    prior_mode = automation_redis.read_mode(location, cluster)
     success = automation_redis.write_mode(location, cluster, update.mode, source=update.source)
 
-    # Also write to StateManager for in-process cache visibility
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to set mode")
+
+    # Also write to StateManager for in-process cache visibility.
     state = get_state_manager()
     try:
         await state.set_mode(location, cluster, update.mode, source=update.source)
@@ -117,8 +133,24 @@ async def set_mode(
         logger.error(f"Failed to cache mode for {location}/{cluster}: {e}", exc_info=True)
         # Non-fatal if state cache update fails
 
-    if not success:
-        raise HTTPException(status_code=500, detail="Failed to set mode")
+    emit_persisted_mutation(
+        sink,
+        PersistedMutation(
+            operation="update",
+            entity=EntityContext(
+                entity_type="room_mode",
+                entity_id=f"{location}:{cluster}",
+                location=location,
+                cluster=cluster,
+            ),
+            changes=safe_allowlisted_diff(
+                before={"mode": prior_mode},
+                after={"mode": update.mode},
+                allowed_fields=frozenset({"mode"}),
+            ),
+        ),
+        context,
+    )
 
     return {
         "location": location,

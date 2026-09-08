@@ -18,6 +18,7 @@ from app.control.current_publication_observer import (
     ControlTickObserver,
     build_current_snapshot,
 )
+from app.control.decision_event_policy import DecisionEventPolicy
 from app.control.device_command_service import DeviceCommandService
 from app.control.device_controller import DeviceController
 from app.control.device_processor import DeviceProcessor
@@ -38,6 +39,7 @@ from app.control.vpd_cascade_controller import (
     VPDCascadeController,
 )
 from app.database import DatabaseManager
+from app.events.operational_ports import OperationalEventSink
 from app.redis.schema import relay_raw_override_key
 from app.schemas.monitoring_models import (
     Phase,
@@ -76,6 +78,7 @@ class ControlEngine:
         device_command_service: DeviceCommandService | None = None,
         photoperiod_observation_sink: PhotoperiodObservationSink | None = None,
         control_tick_observer: ControlTickObserver | None = None,
+        event_sink: OperationalEventSink | None = None,
     ):
         """Initialize control engine.
 
@@ -104,13 +107,16 @@ class ControlEngine:
 
         # Initialize extracted components
         self.sensor_data_manager = SensorDataManager(database)
-        self.pid_controller_manager = PIDControllerManager(database)
+        self.pid_controller_manager = PIDControllerManager(
+            database, event_policy=DecisionEventPolicy(event_sink)
+        )
         control_cfg = config.get_control_config() if config is not None else {}
         self.device_controller = DeviceController(
             relay_manager,
             database,
             dfr0971_manager,
             binary_hysteresis=float(control_cfg.get("binary_hysteresis", 0.1)),
+            event_sink=event_sink,
         )
 
         # VPD Cascade Controller for intelligent actuator selection (create before DeviceProcessor)
@@ -139,6 +145,7 @@ class ControlEngine:
             database=database,
             redis_client=database._automation_redis,
             state_manager=self._state,
+            event_sink=event_sink,
         )
 
         # Initialize pipeline components

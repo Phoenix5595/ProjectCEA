@@ -5,6 +5,8 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
+from app.control.decision_event_policy import DecisionEventPolicy, DecisionObservation
+from app.events.operational_ports import OperationalEventSink
 from shared.infra_logging import get_logger
 
 logger = get_logger(__name__)
@@ -13,7 +15,12 @@ logger = get_logger(__name__)
 class RulesEngine:
     """Evaluates automation rules based on sensor conditions."""
 
-    def __init__(self, rules: list[dict[str, Any]], scheduler):
+    def __init__(
+        self,
+        rules: list[dict[str, Any]],
+        scheduler,
+        event_sink: OperationalEventSink | None = None,
+    ):
         """Initialize rules engine.
 
         Args:
@@ -22,6 +29,7 @@ class RulesEngine:
         """
         self.rules = rules
         self.scheduler = scheduler
+        self._event_policy = DecisionEventPolicy(event_sink)
         logger.info(f"Initialized rules engine with {len(rules)} rules")
 
     def evaluate(
@@ -111,6 +119,28 @@ class RulesEngine:
             # Sort by priority (higher priority first)
             matching_rules.sort(key=lambda x: x["priority"], reverse=True)
             best_rule = matching_rules[0]
+            rule = best_rule["rule"]
+            rule_id = rule.get("id")
+            schedule_id = rule.get("schedule_id")
+            rule_label = str(rule_id) if rule_id is not None else "unknown"
+            schedule_label = str(schedule_id) if schedule_id is not None else "none"
+            self._event_policy.emit_lifecycle(
+                DecisionObservation(
+                    location=location,
+                    cluster=cluster,
+                    device_name=str(best_rule["device"]),
+                    timestamp=current_time,
+                    controller="rule",
+                    sensor_value=sensor_value,
+                    effective_setpoint=condition_threshold,
+                    error=sensor_value - condition_threshold,
+                    output_percent=float(best_rule["state"]) * 100.0,
+                    control_mode="auto",
+                    reason_code="control.rule_matched",
+                    reason_text=f"Rule {rule_label} matched under schedule {schedule_label}",
+                ),
+                "control.rule_matched",
+            )
             return (best_rule["device"], best_rule["state"], best_rule["rule"].get("id"))
 
         return None

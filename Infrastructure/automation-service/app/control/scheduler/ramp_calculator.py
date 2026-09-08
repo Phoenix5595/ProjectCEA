@@ -143,7 +143,18 @@ class RampCalculatorMixin:
                     "ramp_start_timestamp": current_time,
                     "ramp_duration": ramp_up_duration - time_since_start,
                     "ramp_type": "up",
+                    "phase": "sunrise",
+                    "original_duration": ramp_up_duration,
+                    "midpoint_emitted": progress_from_time >= 0.5,
                 }
+                if time_since_start <= 0:
+                    self._emit_light_ramp_lifecycle(
+                        "ramp.started",
+                        ramp_key,
+                        self._light_ramp_state[ramp_key],
+                        current_time,
+                        "photoperiod",
+                    )
                 logger.info(
                     f"Resuming light ramp up for {device_name} ({location}/{cluster}): "
                     f"{expected_intensity:.1f}% -> {target_intensity:.1f}% (sun target) "
@@ -167,13 +178,21 @@ class RampCalculatorMixin:
             remaining_time = max(ramp_up_duration - time_since_start, 0.0)
 
             # Recalculate ramp to finish within remaining time if target changed or timing drifted
-            if (ramp_state.get("target_intensity") != target_intensity) or (
-                ramp_state.get("ramp_duration") != remaining_time
-            ):
+            target_replaced = ramp_state.get("target_intensity") != target_intensity
+            if target_replaced or (ramp_state.get("ramp_duration") != remaining_time):
+                if target_replaced:
+                    self._emit_light_ramp_lifecycle(
+                        "ramp.interrupted", ramp_key, ramp_state, current_time, "target_replaced"
+                    )
                 ramp_state["start_intensity"] = current_effective
                 ramp_state["target_intensity"] = target_intensity
                 ramp_state["ramp_start_timestamp"] = current_time
                 ramp_state["ramp_duration"] = remaining_time
+                if target_replaced:
+                    ramp_state["midpoint_emitted"] = time_since_start / ramp_up_duration >= 0.5
+                    self._emit_light_ramp_lifecycle(
+                        "ramp.started", ramp_key, ramp_state, current_time, "target_replaced"
+                    )
                 logger.info(
                     f"Recalculating ramp up for {device_name} ({location}/{cluster}): "
                     f"{current_effective:.1f}% -> {target_intensity:.1f}% over "
@@ -191,8 +210,19 @@ class RampCalculatorMixin:
             elapsed = (current_time - ramp_state["ramp_start_timestamp"]).total_seconds() / 60.0
             progress = min(max(elapsed / ramp_duration, 0.0), 1.0)
 
+            if time_since_start / ramp_up_duration >= 0.5 and not ramp_state.get(
+                "midpoint_emitted", False
+            ):
+                ramp_state["midpoint_emitted"] = True
+                self._emit_light_ramp_lifecycle(
+                    "ramp.midpoint_reached", ramp_key, ramp_state, current_time, "midpoint_crossed"
+                )
+
             if progress >= 1.0:
                 intensity = target_intensity
+                self._emit_light_ramp_lifecycle(
+                    "ramp.completed", ramp_key, ramp_state, current_time, "target_reached"
+                )
                 del self._light_ramp_state[ramp_key]
                 logger.info(
                     f"Light ramp up complete for {device_name} ({location}/{cluster}): "
@@ -208,16 +238,16 @@ class RampCalculatorMixin:
             return max(0.0, min(target_intensity, intensity))
 
         # --- RAMP DOWN ---
-        elif ramp_down_duration > 0 and time_until_end < ramp_down_duration:
+        elif ramp_down_duration > 0 and time_until_end <= ramp_down_duration:
             # Allow 0% at moon; 10% minimum during sun
             effective_minimum = min(
                 MINIMUM_LIGHT_INTENSITY,
                 target_intensity if target_intensity is not None else MINIMUM_LIGHT_INTENSITY,
             )
+            time_into_ramp_down = ramp_down_duration - time_until_end
 
             if ramp_key not in self._light_ramp_state:
                 # Calculate where we SHOULD be based on elapsed time (handles restarts)
-                time_into_ramp_down = ramp_down_duration - time_until_end
                 progress_from_time = min(max(time_into_ramp_down / ramp_down_duration, 0.0), 1.0)
                 expected_intensity = (
                     target_intensity + (effective_minimum - target_intensity) * progress_from_time
@@ -229,7 +259,18 @@ class RampCalculatorMixin:
                     "ramp_duration": time_until_end,
                     "ramp_type": "down",
                     "schedule_target_intensity": target_intensity,
+                    "phase": "sunset",
+                    "original_duration": ramp_down_duration,
+                    "midpoint_emitted": progress_from_time >= 0.5,
                 }
+                if time_into_ramp_down <= 0:
+                    self._emit_light_ramp_lifecycle(
+                        "ramp.started",
+                        ramp_key,
+                        self._light_ramp_state[ramp_key],
+                        current_time,
+                        "photoperiod",
+                    )
                 logger.info(
                     f"Resuming light ramp down for {device_name} ({location}/{cluster}): "
                     f"{expected_intensity:.1f}% -> {effective_minimum:.1f}% "
@@ -253,14 +294,22 @@ class RampCalculatorMixin:
             remaining_time = max(time_until_end, 0.0)
 
             # Recalculate ramp down to continue smoothly to effective minimum in remaining time
-            if (ramp_state.get("schedule_target_intensity") != target_intensity) or (
-                ramp_state.get("ramp_duration") != remaining_time
-            ):
+            target_replaced = ramp_state.get("schedule_target_intensity") != target_intensity
+            if target_replaced or (ramp_state.get("ramp_duration") != remaining_time):
+                if target_replaced:
+                    self._emit_light_ramp_lifecycle(
+                        "ramp.interrupted", ramp_key, ramp_state, current_time, "target_replaced"
+                    )
                 ramp_state["start_intensity"] = current_effective
                 ramp_state["target_intensity"] = effective_minimum
                 ramp_state["ramp_start_timestamp"] = current_time
                 ramp_state["ramp_duration"] = remaining_time
                 ramp_state["schedule_target_intensity"] = target_intensity
+                if target_replaced:
+                    ramp_state["midpoint_emitted"] = time_into_ramp_down / ramp_down_duration >= 0.5
+                    self._emit_light_ramp_lifecycle(
+                        "ramp.started", ramp_key, ramp_state, current_time, "target_replaced"
+                    )
                 logger.info(
                     f"Recalculating ramp down for {device_name} ({location}/{cluster}): "
                     f"{current_effective:.1f}% -> {ramp_state['target_intensity']:.1f}% "
@@ -272,6 +321,9 @@ class RampCalculatorMixin:
 
             if ramp_duration <= 0:
                 intensity = ramp_state["target_intensity"]
+                self._emit_light_ramp_lifecycle(
+                    "ramp.completed", ramp_key, ramp_state, current_time, "target_reached"
+                )
                 del self._light_ramp_state[ramp_key]
                 logger.info(
                     f"Light ramp down complete for {device_name} ({location}/{cluster}): "
@@ -282,8 +334,19 @@ class RampCalculatorMixin:
             elapsed = (current_time - ramp_state["ramp_start_timestamp"]).total_seconds() / 60.0
             progress = min(max(elapsed / ramp_duration, 0.0), 1.0)
 
+            if time_into_ramp_down / ramp_down_duration >= 0.5 and not ramp_state.get(
+                "midpoint_emitted", False
+            ):
+                ramp_state["midpoint_emitted"] = True
+                self._emit_light_ramp_lifecycle(
+                    "ramp.midpoint_reached", ramp_key, ramp_state, current_time, "midpoint_crossed"
+                )
+
             if progress >= 1.0:
                 intensity = ramp_state["target_intensity"]
+                self._emit_light_ramp_lifecycle(
+                    "ramp.completed", ramp_key, ramp_state, current_time, "target_reached"
+                )
                 del self._light_ramp_state[ramp_key]
                 logger.info(
                     f"Light ramp down complete for {device_name} ({location}/{cluster}): "
@@ -303,6 +366,13 @@ class RampCalculatorMixin:
         else:
             # Steady state - return target directly (not in ramp up or ramp down)
             if ramp_key in self._light_ramp_state:
+                self._emit_light_ramp_lifecycle(
+                    "ramp.completed",
+                    ramp_key,
+                    self._light_ramp_state[ramp_key],
+                    current_time,
+                    "target_reached",
+                )
                 del self._light_ramp_state[ramp_key]
             clamped_intensity = max(0.0, min(100.0, target_intensity))
             logger.debug(

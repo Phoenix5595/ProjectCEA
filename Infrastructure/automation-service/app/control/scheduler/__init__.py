@@ -20,8 +20,8 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from contextvars import ContextVar, Token
-from datetime import datetime, time
-from typing import Any
+from datetime import UTC, datetime, time
+from typing import TYPE_CHECKING, Any
 from zoneinfo import ZoneInfo
 
 from shared.infra_logging import get_logger
@@ -32,6 +32,9 @@ from .light_programs import LightProgramsMixin
 from .photoperiod import PhotoperiodMixin
 from .ramp_calculator import RampCalculatorMixin
 from .schedules import SchedulesMixin
+
+if TYPE_CHECKING:
+    from app.events.operational_ports import OperationalEventSink
 
 # Timezone constant for consistent scheduling
 LOCAL_TZ = ZoneInfo("America/Toronto")
@@ -51,7 +54,12 @@ class Scheduler(
 ):
     """Manages time-based device schedules."""
 
-    def __init__(self, schedules: list[dict[str, Any]], climate_periods_repo=None):
+    def __init__(
+        self,
+        schedules: list[dict[str, Any]],
+        climate_periods_repo=None,
+        event_sink: OperationalEventSink | None = None,
+    ):
         """Initialize scheduler.
 
         Args:
@@ -62,6 +70,8 @@ class Scheduler(
         self.schedules = schedules
         self._climate_periods_repo = climate_periods_repo
         self._light_ramp_state: dict[tuple[Any, ...], dict[str, Any]] = {}
+        self._event_sink = event_sink
+        self._light_target_failures: dict[tuple[str, str, str], str] = {}
 
         # --- Installed projections (replaced only as one complete snapshot) ---
         # {(location, cluster): {mode_id, day_start, night_start, ramp_up, ramp_down}}
@@ -83,6 +93,84 @@ class Scheduler(
         self._ready: bool = False
 
         logger.info(f"Initialized scheduler with {len(schedules)} schedules")
+
+    def _emit_light_ramp_lifecycle(
+        self,
+        event_type: str,
+        ramp_key: tuple[Any, ...],
+        ramp_state: dict[str, Any],
+        current_time: datetime,
+        reason_code: str,
+    ) -> None:
+        if self._event_sink is None:
+            return
+        from app.events.operational_models import (
+            EntityContext,
+            EventCategory,
+            EventSeverity,
+            EventSource,
+            OperationalEvent,
+            RampPayload,
+        )
+
+        location, cluster, device_name, *_ = ramp_key
+        timestamp = (
+            current_time.astimezone(UTC)
+            if current_time.tzinfo
+            else current_time.replace(tzinfo=UTC)
+        )
+        mode_id = self._mode_params.get((location, cluster), {}).get("mode_id")
+        program_id = ramp_key[3] if len(ramp_key) > 3 else None
+        causal_identity = f"mode:{mode_id}" if program_id is None else f"program:{program_id}"
+        self._event_sink.emit_nowait(
+            OperationalEvent(
+                occurred_at=timestamp,
+                source=EventSource.AUTOMATION,
+                category=EventCategory.RAMP,
+                severity=EventSeverity.INFO,
+                event_type=event_type,
+                entity=EntityContext(
+                    entity_type="light",
+                    entity_id=device_name,
+                    location=location,
+                    cluster=cluster,
+                ),
+                reason_code=reason_code,
+                reason_text=causal_identity,
+                payload=RampPayload(
+                    ramp_type="light",
+                    start_value=float(ramp_state["start_intensity"]),
+                    target_value=float(ramp_state["target_intensity"]),
+                    duration_seconds=round(float(ramp_state["original_duration"]) * 60),
+                    phase=str(ramp_state["phase"]),
+                ),
+            )
+        )
+
+    def _emit_light_ramp_failure(
+        self,
+        location: str,
+        cluster: str,
+        device_name: str,
+        current_time: datetime,
+        invalid_target: str,
+    ) -> None:
+        failure_key = (location, cluster, device_name)
+        if self._light_target_failures.get(failure_key) == invalid_target:
+            return
+        self._light_target_failures[failure_key] = invalid_target
+        self._emit_light_ramp_lifecycle(
+            "ramp.failed",
+            (location, cluster, device_name),
+            {
+                "start_intensity": 0.0,
+                "target_intensity": 0.0,
+                "original_duration": 0.0,
+                "phase": "photoperiod",
+            },
+            current_time,
+            "invalid_target",
+        )
 
     # ------------------------------------------------------------------
     # Snapshot installation

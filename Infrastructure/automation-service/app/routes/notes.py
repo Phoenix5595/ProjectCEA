@@ -5,10 +5,21 @@ from __future__ import annotations
 import os
 from pathlib import Path
 import re
+from typing import Annotated
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from app.events.mutation_context import (
+    MutationRequestContext,
+    PersistedMutation,
+    emit_persisted_mutation,
+)
+from app.events.mutation_coverage import emits_operational_mutation
+from app.events.mutation_dependencies import get_mutation_event_sink, get_mutation_request_context
+from app.events.mutation_diff import safe_allowlisted_diff
+from app.events.operational_models import EntityContext
+from app.events.operational_ports import OperationalEventSink
 from shared.infra_logging import get_logger
 
 logger = get_logger(__name__)
@@ -48,13 +59,41 @@ async def get_notes(location: str, cluster: str, mode: str) -> dict[str, str]:
 
 
 @router.put("/notes/{location}/{cluster}/{mode}")
-async def save_notes(location: str, cluster: str, mode: str, body: NotesBody) -> dict[str, str]:
+@emits_operational_mutation
+async def save_notes(
+    location: str,
+    cluster: str,
+    mode: str,
+    body: NotesBody,
+    context: Annotated[MutationRequestContext, Depends(get_mutation_request_context)],
+    sink: Annotated[OperationalEventSink, Depends(get_mutation_event_sink)],
+) -> dict[str, str]:
     """Save notes for a location/cluster/mode. Stored under NOTES_DATA_DIR (persists across deploys)."""
     path = _notes_path(location, cluster, mode)
     path.parent.mkdir(parents=True, exist_ok=True)
     try:
-        path.write_text(body.content or "", encoding="utf-8")
-        return {"content": body.content or ""}
+        previous_content = path.read_text(encoding="utf-8") if path.exists() else ""
+        content = body.content or ""
+        path.write_text(content, encoding="utf-8")
+        emit_persisted_mutation(
+            sink,
+            PersistedMutation(
+                operation="update",
+                entity=EntityContext(
+                    entity_type="note",
+                    entity_id=f"{location}/{cluster}/{mode}",
+                    location=location,
+                    cluster=cluster,
+                ),
+                changes=safe_allowlisted_diff(
+                    before={"notes": previous_content},
+                    after={"notes": content},
+                    allowed_fields=frozenset({"notes"}),
+                ),
+            ),
+            context=context,
+        )
+        return {"content": content}
     except OSError as e:
         logger.error(f"Failed to write notes {path}: {e}")
         raise HTTPException(status_code=500, detail="Failed to save notes") from e

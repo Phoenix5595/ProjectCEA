@@ -14,6 +14,8 @@ import { RibbonMenuButton } from '../components/chrome/ribbonMenuButton';
 import { DashboardZoneRow } from '../components/dashboard/DashboardZoneRow';
 import { MothernodeRibbon } from '../components/dashboard/MothernodeRibbon';
 import { DASHBOARD_ROW_ZONES } from '../config/zones';
+import { EventLog } from '../features/event-log/components/EventLog';
+import { useEventLog } from '../features/event-log/state/useEventLog';
 
 interface WeatherData {
   temperature: number;
@@ -37,13 +39,20 @@ export default function Dashboard() {
   const { theme, setTheme, themes } = useTheme();
 
   const { devices: wsDevices, sensorData: wsSensorData } = useWebSocket();
-  const { devices, sensorData, controlHistoryByRoom, loading } = useSensorPolling();
+  const { devices, sensorData, loading } = useSensorPolling();
   const { systemStats, statusDevices, degraded } = useSystemStatus();
+  const { entries: eventLogEntries } = useEventLog();
 
   const [weatherData, setWeatherData] = useState<WeatherData | null>(null);
   const [wizardOpen, setWizardOpen] = useState(false);
+  const [now, setNow] = useState(() => new Date());
   const { events: calendarEvents, loading: calendarLoading, refresh: refreshCalendar } =
     useCalendarEvents();
+
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 10000)
+    return () => clearInterval(timer)
+  }, [])
 
   // Merge WebSocket data with polled data (WS takes precedence if it has data)
   const mergedDevices = useMemo(
@@ -177,10 +186,12 @@ export default function Dashboard() {
                 devices={mergedDevices}
                 sensorData={mergedSensorData}
                 statusDevices={statusDevices}
-                controlHistory={controlHistoryByRoom[`${zone.location}_${zone.cluster}`] || []}
                 icon={ROOM_ICONS[zone.location] || '📦'}
               />
             ))}
+            <div className="bg-surface-primary rounded-lg border border-border-subtle p-3">
+              <EventLog entries={eventLogEntries} now={now} />
+            </div>
           </div>
         </div>
       </div>

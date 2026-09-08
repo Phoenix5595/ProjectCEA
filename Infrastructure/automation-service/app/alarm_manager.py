@@ -2,9 +2,19 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Any
 
 from app.database import DatabaseManager
+from app.events.operational_models import (
+    EntityContext,
+    EventCategory,
+    EventSeverity,
+    EventSource,
+    OperationalEvent,
+    SystemPayload,
+)
+from app.events.operational_ports import OperationalEventSink
 from app.redis_client import AutomationRedisClient
 from shared.infra_logging import get_logger
 
@@ -15,7 +25,10 @@ class AlarmManager:
     """Manages alarms and failsafe enforcement."""
 
     def __init__(
-        self, redis_client: AutomationRedisClient, database: DatabaseManager | None = None
+        self,
+        redis_client: AutomationRedisClient,
+        database: DatabaseManager | None = None,
+        event_sink: OperationalEventSink | None = None,
     ):
         """Initialize alarm manager.
 
@@ -25,7 +38,9 @@ class AlarmManager:
         """
         self.redis_client = redis_client
         self.database = database
+        self._event_sink = event_sink
         self._active_alarms: dict[str, dict[str, Any]] = {}  # Cache of active alarms
+        self._active_failsafes: set[tuple[str, str]] = set()
 
     def raise_alarm(
         self, location: str, cluster: str, alarm_name: str, severity: str, message: str
@@ -152,6 +167,10 @@ class AlarmManager:
 
         # Write failsafe details
         self.redis_client.write_failsafe(location, cluster, reason, triggered_by)
+        failsafe_key = (location, cluster)
+        if failsafe_key not in self._active_failsafes:
+            self._active_failsafes.add(failsafe_key)
+            self._emit_failsafe_event("system.failsafe_triggered", location, cluster, reason)
 
         logger.critical(
             f"FAILSAFE TRIGGERED: {location}/{cluster} - {reason} (triggered by: {triggered_by})"
@@ -180,9 +199,35 @@ class AlarmManager:
         if success:
             # Set mode back to auto
             self.redis_client.write_mode(location, cluster, "auto", source="system")
+            failsafe_key = (location, cluster)
+            if failsafe_key in self._active_failsafes:
+                self._active_failsafes.remove(failsafe_key)
+                self._emit_failsafe_event("system.failsafe_cleared", location, cluster, None)
             logger.info(f"Failsafe cleared for {location}/{cluster}")
 
         return success
+
+    def _emit_failsafe_event(
+        self, event_type: str, location: str, cluster: str, detail: str | None
+    ) -> None:
+        if self._event_sink is None:
+            return
+        self._event_sink.emit_nowait(
+            OperationalEvent(
+                occurred_at=datetime.now(UTC),
+                source=EventSource.SYSTEM,
+                category=EventCategory.SYSTEM,
+                severity=EventSeverity.CRITICAL,
+                event_type=event_type,
+                entity=EntityContext(
+                    entity_type="cluster",
+                    entity_id=f"{location}/{cluster}",
+                    location=location,
+                    cluster=cluster,
+                ),
+                payload=SystemPayload(component="alarm_manager", state=event_type, detail=detail),
+            )
+        )
 
     def update_alarm_cache(self) -> None:
         """Update internal alarm cache from Redis.

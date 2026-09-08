@@ -77,14 +77,26 @@ class ChartFeed implements MonitoringChartFeed {
     const nextViewportRevision = viewportRevision ?? (sameRange
       ? previous.viewportRevision
       : previous.viewportRevision + 1)
-    if (!sameShape || !sameRange || nextViewportRevision !== previous.viewportRevision) {
+    if (!sameShape) {
       this.structural = structuralSnapshot(
         data,
         range,
         previous.theme,
-        sameShape ? previous.revision : previous.revision + 1,
+        previous.revision + 1,
         nextViewportRevision,
       )
+    } else if (!sameRange || nextViewportRevision !== previous.viewportRevision) {
+      // Mutate in place to preserve object identity when only range/viewport changes
+      const mutable = this.structural as {
+        range: MonitoringRange
+        viewportRevision: number
+        series: readonly AlignedSeries[]
+        seriesCount: number
+      }
+      mutable.range = range
+      mutable.viewportRevision = nextViewportRevision
+      mutable.series = data.series
+      mutable.seriesCount = data.series.length
     }
     this.emit()
   }

@@ -2,7 +2,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { apiClient } from '../services/api';
 import type { Device } from '../types/device';
-import type { ControlHistoryEntry } from '../types/device';
 import {
   ZONES,
   FLOWER_DASHBOARD_CLUSTERS,
@@ -20,7 +19,6 @@ export interface UseSensorPollingOptions {
 export interface UseSensorPollingReturn {
   devices: Device[];
   sensorData: Record<string, number>;
-  controlHistoryByRoom: Record<string, ControlHistoryEntry[]>;
   /** `${location}_${cluster}_${device_name}` → config `display_name` for lights UI */
   lightDisplayNames: Record<string, string>;
   /** Temporary hybrid warning layer: DB/ingestion-observed clusters vs configured clusters. */
@@ -60,13 +58,12 @@ async function loadLightDisplayNamesMap(): Promise<Record<string, string>> {
 }
 
 /**
- * Hook for polling sensor data, devices, and control history.
- * Refreshes live sensors every 5 seconds and control history every 30 seconds.
+ * Hook for polling sensor data and device state for the dashboard.
+ * Refreshes live sensors every 5 seconds.
  */
 export function useSensorPolling({ interval = 5000 }: UseSensorPollingOptions = {}): UseSensorPollingReturn {
   const [devices, setDevices] = useState<Device[]>([]);
   const [sensorData, setSensorData] = useState<Record<string, number>>({});
-  const [controlHistoryByRoom, setControlHistoryByRoom] = useState<Record<string, ControlHistoryEntry[]>>({});
   const [lightDisplayNames, setLightDisplayNames] = useState<Record<string, string>>({});
   const [flowerClusterWarnings, setFlowerClusterWarnings] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
@@ -75,11 +72,10 @@ export function useSensorPolling({ interval = 5000 }: UseSensorPollingOptions = 
     const pollZones = getDashboardPollZones();
     const bulkKeys = buildDashboardBulkSensorKeys(pollZones);
     try {
-      const [devicesData, setpointData, nameMap, ...historyResults] = await Promise.all([
+      const [devicesData, setpointData, nameMap] = await Promise.all([
         apiClient.getAllDevices().catch(() => []),
         apiClient.getSensorDataBulk(bulkKeys).catch(() => ({})),
         loadLightDisplayNamesMap(),
-        ...ZONES.map((zone) => apiClient.getControlHistory(zone.location, zone.cluster, 10).catch(() => []))
       ]);
 
       if (devicesData) setDevices(devicesData);
@@ -87,14 +83,6 @@ export function useSensorPolling({ interval = 5000 }: UseSensorPollingOptions = 
       if (setpointData && Object.keys(setpointData).length > 0) {
         setSensorData(prev => ({ ...prev, ...setpointData }));
       }
-
-      // Build control history map
-      const historyMap: Record<string, ControlHistoryEntry[]> = {};
-      ZONES.forEach((zone, index) => {
-        const key = `${zone.location}_${zone.cluster}`;
-        historyMap[key] = historyResults[index] ?? [];
-      });
-      setControlHistoryByRoom(historyMap);
 
     } catch (error) {
       logger.error('Error loading initial sensor data:', error);
@@ -199,30 +187,9 @@ export function useSensorPolling({ interval = 5000 }: UseSensorPollingOptions = 
     return () => clearInterval(warningInterval);
   }, []);
 
-  // Control history polling (30 seconds)
-  useEffect(() => {
-    const refreshHistory = async () => {
-      const historyByRoom: Record<string, ControlHistoryEntry[]> = {};
-      await Promise.all(ZONES.map(async (zone) => {
-        try {
-          const list = await apiClient.getControlHistory(zone.location, zone.cluster, 10);
-          historyByRoom[`${zone.location}_${zone.cluster}`] = list ?? [];
-        } catch {
-          historyByRoom[`${zone.location}_${zone.cluster}`] = [];
-        }
-      }));
-      setControlHistoryByRoom(prev => ({ ...prev, ...historyByRoom }));
-    };
-
-    refreshHistory();
-    const historyInterval = setInterval(refreshHistory, 30000);
-    return () => clearInterval(historyInterval);
-  }, []);
-
   return {
     devices,
     sensorData,
-    controlHistoryByRoom,
     lightDisplayNames,
     flowerClusterWarnings,
     loading,

@@ -8,6 +8,16 @@ from typing import Any
 from fastapi import Depends, HTTPException
 
 from app.database import DatabaseManager
+from app.events.mutation_context import (
+    MutationRequestContext,
+    PersistedMutation,
+    emit_persisted_mutation,
+)
+from app.events.mutation_coverage import emits_operational_mutation
+from app.events.mutation_dependencies import get_mutation_event_sink, get_mutation_request_context
+from app.events.mutation_diff import safe_allowlisted_diff
+from app.events.operational_models import EntityContext
+from app.events.operational_ports import OperationalEventSink
 from app.hardware.dfr0971 import DFR0971Manager
 from app.hardware.i2c_lock import acquire_i2c_bus_1
 from app.repositories.devices import DeviceRepository
@@ -21,12 +31,15 @@ from app.routes.lights import (
 
 
 @router.post("/api/lights/{device_id}/test")
+@emits_operational_mutation
 async def test_light(
     device_id: int,
     device_repo: DeviceRepository = Depends(get_device_repo),
     dfr0971_manager: DFR0971Manager = Depends(get_dfr0971_manager),
     database: DatabaseManager = Depends(get_database),
     relay_manager: Any = Depends(get_relay_manager),
+    context: MutationRequestContext = Depends(get_mutation_request_context),
+    sink: OperationalEventSink = Depends(get_mutation_event_sink),
 ) -> dict[str, Any]:
     """Run a 5-second DFR intensity sweep on a light device.
 
@@ -126,6 +139,25 @@ async def test_light(
                         bool(restore_state),
                         prior_mode,
                     )
+
+    emit_persisted_mutation(
+        sink,
+        PersistedMutation(
+            operation="action",
+            entity=EntityContext(
+                entity_type="light",
+                entity_id=str(device_id),
+                location=light.location,
+                cluster=light.cluster,
+            ),
+            changes=safe_allowlisted_diff(
+                {"test_completed": False},
+                {"test_completed": True},
+                frozenset({"test_completed"}),
+            ),
+        ),
+        context,
+    )
 
     return {
         "success": True,
