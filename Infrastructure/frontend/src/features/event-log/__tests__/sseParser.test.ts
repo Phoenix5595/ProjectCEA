@@ -24,4 +24,17 @@ describe('SSE parser', () => {
     // Then: framing and UTF-8 are retained
     expect(frames).toEqual([{ id: '2-0', event: 'operational_event', data: '{"x":"🌱"}\n{"y":1}' }])
   })
+
+  it('flushes an unterminated final event frame', async () => {
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('id: 3-0\nevent: operational_event\ndata: {"x":1}'))
+        controller.close()
+      },
+    })
+
+    await expect(collect(parseSse(body))).resolves.toEqual([
+      { id: '3-0', event: 'operational_event', data: '{"x":1}' },
+    ])
+  })
 })
