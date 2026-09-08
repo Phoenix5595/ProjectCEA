@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 import pytest
+from redis.exceptions import ConnectionError as RedisConnectionError
 
 from app.events.operational_models import (
     EventCategory,
@@ -26,6 +27,13 @@ class RedisReaderFake:
     ) -> list[tuple[str, list[tuple[str, dict[str, bytes]]]]]:
         self.calls.append((streams, count, block))
         return [("cea:events:operational", self.entries)]
+
+
+class FailingRedisReaderFake:
+    async def xread(
+        self, streams: dict[str, str], *, count: int, block: int
+    ) -> list[tuple[str, list[tuple[str, dict[str, bytes]]]]]:
+        raise RedisConnectionError("offline")
 
 
 def event() -> OperationalEvent:
@@ -78,3 +86,22 @@ async def test_reader_skips_invalid_utf8_message_id_and_returns_later_valid_entr
     # Then: the invalid identifier is counted and cannot abort a later valid event.
     assert tuple(entry.id for entry in entries) == ("2-0",)
     assert reader.health().malformed_entries == 1
+
+
+@pytest.mark.asyncio
+async def test_reader_paces_redis_failures_before_returning_an_empty_batch() -> None:
+    # Given: a Redis reader that fails immediately and a deterministic wait seam.
+    delays: list[float] = []
+
+    async def record_delay(seconds: float) -> None:
+        delays.append(seconds)
+
+    reader = OperationalEventStreamReader(FailingRedisReaderFake(), sleep=record_delay)
+
+    # When: the SSE reader encounters the infrastructure failure.
+    entries = await reader.read(after_id="0-0")
+
+    # Then: the caller cannot spin immediate read failures.
+    assert entries == ()
+    assert delays == [1.0]
+    assert reader.health().read_failures == 1
