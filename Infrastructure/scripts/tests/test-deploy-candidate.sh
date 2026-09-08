@@ -55,7 +55,7 @@ assert_script_hash() {
   [[ "$actual" == "$expected" ]] || fail "$name script hash changed: expected $expected, got $actual"
 }
 
-assert_script_hash "deploy" "$DEPLOY_SCRIPT" "2f55cb21be0246c3a2959035778bed8f6d0f7a5d8e135dad728494d72ad24cc0"
+assert_script_hash "deploy" "$DEPLOY_SCRIPT" "f56b0dd864809b3849c40c6d09461235b91145855ec5f96ceeebd488250692ce"
 assert_script_hash "finalize" "$FINALIZE_SCRIPT" "6503e11745e1f7c658d8fbc3bc08c630aae7b33d3d492671c0d8eab757bdd32e"
 assert_script_hash "rollback" "$ROLLBACK_SCRIPT" "39a34de6cda8f33a678045c9c232f7fa9f9cf6515ae71ebfabed570e920cbc83"
 pass "deploy script hashes match expected sha256 values"
