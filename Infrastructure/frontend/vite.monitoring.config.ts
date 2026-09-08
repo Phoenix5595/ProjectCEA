@@ -28,6 +28,17 @@ import {
   sensorStatsFixture,
   wsFixtureMessage,
 } from './src/features/monitoring/config/fixtures'
+import {
+  eventHistoryFixture,
+  sseFrameForEntry,
+  sseHeartbeatFrame,
+  sseCursorFrame,
+  ALL_EVENTS,
+  FLOWER_EVENTS,
+  VEG_EVENTS,
+  LAB_EVENTS,
+  CJK_EVENT,
+} from './src/features/event-log/config/fixtures'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const DIST_DIR = path.resolve(HERE, 'dist')
@@ -111,6 +122,152 @@ const FIXTURE_ROUTES: FixtureRoute[] = [
   {
     re: /^\/grafana\//,
     handler: () => grafanaPlaceholder(),
+  },
+  {
+    re: /^\/api\/events\/history$/,
+    handler: (req, scenario) => eventHistoryFixture(scenario),
+  },
+  {
+    re: /^\/api\/calendar\/mode-schedule\//,
+    handler: () => ({ expected: { mode_name: 'flower', submode_name: null, title: 'Flowering' }, active: { mode_name: 'flower', submode_name: null } }),
+  },
+  {
+    re: /^\/api\/devices$/,
+    handler: () => [
+      { location: 'Flower Room', cluster: 'main', device_name: 'exhaust-fan', state: 1, mode: 'auto', channel: 1 },
+      { location: 'Flower Room', cluster: 'main', device_name: 'circulation-fan', state: 1, mode: 'auto', channel: 2 },
+      { location: 'Veg Room', cluster: 'main', device_name: 'circulation-fan', state: 1, mode: 'auto', channel: 3 },
+      { location: 'Lab', cluster: 'main', device_name: 'heater-1', state: 0, mode: 'auto', channel: 4 },
+    ],
+  },
+  {
+    re: /^\/api\/devices\/([^/]+)\/([^/]+)$/,
+    handler: (req) => {
+      const location = decodeURIComponent(roomFrom(req.url ?? '', 2))
+      const cluster = decodeURIComponent(roomFrom(req.url ?? '', 3))
+      return {
+        location,
+        cluster,
+        devices: {
+          'exhaust-fan': {
+            device_type: 'fan',
+            display_name: 'Exhaust Fan',
+            mode: 'auto',
+            state: 1,
+            channel: 1,
+          },
+          'circulation-fan': {
+            device_type: 'fan',
+            display_name: 'Circulation Fan',
+            mode: 'auto',
+            state: 1,
+            channel: 2,
+          },
+        },
+      }
+    },
+  },
+  {
+    re: /^\/api\/sensors\/([^/]+)\/([^/]+)\/live$/,
+    handler: (req) => {
+      const location = decodeURIComponent(roomFrom(req.url ?? '', 2))
+      const now = new Date().toISOString()
+      return {
+        temperature: {
+          data: [{ time: now, timestamp: now, value: 24.5 }],
+          unit: '°C',
+          sensor_name: 'temperature',
+        },
+        humidity: {
+          data: [{ time: now, timestamp: now, value: 65 }],
+          unit: '%',
+          sensor_name: 'humidity',
+        },
+        co2: {
+          data: [{ time: now, timestamp: now, value: 850 }],
+          unit: 'ppm',
+          sensor_name: 'co2',
+        },
+        vpd: {
+          data: [{ time: now, timestamp: now, value: 1.2 }],
+          unit: 'kPa',
+          sensor_name: 'vpd',
+        },
+      }
+    },
+  },
+  {
+    re: /^\/api\/sensors\/live\/all$/,
+    handler: () => [
+      { sensor: 'Flower Room_main_temperature', value: 24.5, time: new Date().toISOString(), unit: '°C' },
+      { sensor: 'Flower Room_main_humidity', value: 65, time: new Date().toISOString(), unit: '%' },
+      { sensor: 'Veg Room_main_temperature', value: 23.8, time: new Date().toISOString(), unit: '°C' },
+      { sensor: 'Veg Room_main_humidity', value: 68, time: new Date().toISOString(), unit: '%' },
+      { sensor: 'Lab_main_temperature', value: 22.1, time: new Date().toISOString(), unit: '°C' },
+      { sensor: 'Lab_main_humidity', value: 55, time: new Date().toISOString(), unit: '%' },
+    ],
+  },
+  {
+    re: /^\/api\/sensor-data$/,
+    handler: () => ({
+      'Flower Room_main_temperature': 24.5,
+      'Flower Room_main_humidity': 65,
+      'Veg Room_main_temperature': 23.8,
+      'Veg Room_main_humidity': 68,
+      'Lab_main_temperature': 22.1,
+      'Lab_main_humidity': 55,
+    }),
+  },
+  {
+    re: /^\/api\/status$/,
+    handler: (req) => {
+      const url = req.url ?? ''
+      const isHealth = url.includes('health=true')
+      if (isHealth) {
+        return {
+          service_health: [
+            { name: 'automation-service', status: 'healthy', latency_ms: 12 },
+            { name: 'cea-backend', status: 'healthy', latency_ms: 8 },
+            { name: 'can-processor', status: 'healthy', latency_ms: 5 },
+          ],
+        }
+      }
+      return {
+        system: {
+          cpu_usage: 15,
+          memory_usage: 42,
+          disk_usage: 28,
+          uptime: '86400',
+          load_avg: '0.5 0.3 0.2',
+          process_count: 42,
+          cpu_temp_c: 45,
+          throttle_status: 'normal',
+          services: [
+            { name: 'automation-service', status: 'running', latency_ms: 12 },
+            { name: 'cea-backend', status: 'running', latency_ms: 8 },
+            { name: 'can-processor', status: 'running', latency_ms: 5 },
+          ],
+        },
+      }
+    },
+  },
+  {
+    re: /^\/api\/devices\/control-snapshot$/,
+    handler: () => ({
+      generated_at: new Date().toISOString(),
+      sampled_at: new Date().toISOString(),
+      freshness: 'FRESH',
+      registry_version: 1,
+      stale_since: null,
+      dfr_boards: [],
+      relays: [
+        { board: 0, channel: 1, state: 1, device_name: 'exhaust-fan', location: 'Flower Room', cluster: 'main' },
+        { board: 0, channel: 2, state: 1, device_name: 'circulation-fan', location: 'Flower Room', cluster: 'main' },
+        { board: 0, channel: 3, state: 1, device_name: 'circulation-fan', location: 'Veg Room', cluster: 'main' },
+        { board: 0, channel: 4, state: 0, device_name: 'heater-1', location: 'Lab', cluster: 'main' },
+      ],
+      hardware_alarms: [],
+    }),
   },
 ]
 
@@ -241,6 +398,93 @@ function monitoringPreviewPlugin(): Plugin {
             )
             return
           }
+        }
+
+        // Event-log scenario handling
+        if (pathname === '/api/events/history') {
+          if (scenario === 'auth-401') {
+            res.statusCode = 401
+            res.setHeader('Content-Type', 'application/json')
+            res.end(JSON.stringify({ detail: 'unauthorized (fixture)' }))
+            return
+          }
+          if (scenario === 'error-500') {
+            res.statusCode = 500
+            res.setHeader('Content-Type', 'application/json')
+            res.end(JSON.stringify({ detail: 'internal error (fixture)' }))
+            return
+          }
+          if (scenario === 'cursor-trimmed-409') {
+            res.statusCode = 409
+            res.setHeader('Content-Type', 'application/json')
+            res.end(JSON.stringify({ earliest_cursor: `${Date.now() - 60000}-0`, latest_cursor: `${Date.now()}-999` }))
+            return
+          }
+        }
+
+        // SSE stream endpoint
+        if (pathname === '/api/events/stream') {
+          if (scenario === 'auth-401') {
+            res.statusCode = 401
+            res.setHeader('Content-Type', 'application/json')
+            res.end(JSON.stringify({ detail: 'unauthorized (fixture)' }))
+            return
+          }
+          if (scenario === 'disconnect') {
+            res.statusCode = 200
+            res.setHeader('Content-Type', 'text/event-stream')
+            res.setHeader('Cache-Control', 'no-cache')
+            res.setHeader('Connection', 'keep-alive')
+            res.end()
+            return
+          }
+          res.statusCode = 200
+          res.setHeader('Content-Type', 'text/event-stream')
+          res.setHeader('Cache-Control', 'no-cache')
+          res.setHeader('Connection', 'keep-alive')
+
+          // Send heartbeat first
+          res.write(sseHeartbeatFrame())
+
+          // Select events based on scenario
+          let eventsToSend = ALL_EVENTS
+          if (scenario === 'flower-only') eventsToSend = FLOWER_EVENTS
+          else if (scenario === 'veg-only') eventsToSend = VEG_EVENTS
+          else if (scenario === 'lab-only') eventsToSend = LAB_EVENTS
+          else if (scenario === 'cjk-payload') eventsToSend = [...FLOWER_EVENTS, CJK_EVENT]
+
+          if (scenario === 'burst') {
+            // Send 20 events rapidly
+            const burstEvents = []
+            for (let i = 0; i < 20; i++) {
+              const base = ALL_EVENTS[i % ALL_EVENTS.length]
+              burstEvents.push({
+                ...base,
+                redis_id: `${Date.now() + i}-${1000 + i}`,
+                event: { ...base.event, event_id: base.event.event_id + `-burst-${i}`, occurred_at: new Date(Date.now() + i * 100).toISOString() },
+              })
+            }
+            eventsToSend = burstEvents
+          }
+
+          // Send events with small delays to simulate streaming
+          let offset = 0
+          const sendNext = () => {
+            if (offset >= eventsToSend.length) {
+              // Send final cursor and keep alive briefly
+              res.write(sseCursorFrame(`${Date.now()}-9999`))
+              setTimeout(() => {
+                try { res.end() } catch { /* client may have disconnected */ }
+              }, 500)
+              return
+            }
+            const entry = eventsToSend[offset]
+            res.write(sseFrameForEntry(entry))
+            offset += 1
+            setTimeout(sendNext, scenario === 'burst' ? 10 : 50)
+          }
+          setTimeout(sendNext, 100)
+          return
         }
 
         for (const route of FIXTURE_ROUTES) {
