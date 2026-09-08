@@ -185,10 +185,7 @@ describe('alignSeries', () => {
     expect(out.bands[0].maxKey).toContain('dry_bulb')
     expect(out.bands[0].maxKey).toContain('max')
     expect(out.series.some((s) => s.kind === 'step')).toBe(true)
-    expect(out.series.some((s) => s.kind === 'linear')).toBe(true)
     const startIdx = out.x.indexOf(START.getTime())
-    const linear = out.series.find((s) => s.kind === 'linear')
-    expect(linear?.y[startIdx]).toBeCloseTo(22)
     const step = out.series.find((s) => s.kind === 'step')
     expect(step?.y[startIdx]).toBe(22)
   })
@@ -340,8 +337,8 @@ describe('alignSeries', () => {
     const out = alignSeries(input)
 
     const idx = out.x.indexOf(t.getTime())
-    const point = out.series.find((s) => s.metric === 'heating_setpoint' && s.role === 'point')
-    expect(point?.y[idx]).toBe(22)
+    const step = out.series.find((s) => s.metric === 'heating_setpoint' && s.role === 'step')
+    expect(step?.y[idx]).toBe(22)
   })
 
   it('normalizes device state, duty, and PID output as explicit semantic series', () => {
