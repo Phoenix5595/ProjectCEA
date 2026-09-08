@@ -1,7 +1,7 @@
 import { globalEventLogStore, type EventLogPaging } from './eventLogStore'
 import { parseSse } from '../api/sseParser'
 import { AUTOMATION_API_URL, CEA_API_KEY } from '../../../config/env'
-import { toEventLogEntry, type OperationalEvent, type OperationalEventHistory, type OperationalEventCursorReset } from './eventLogTypes'
+import { toEventLogEntry, type OperationalEvent, type OperationalEventHistory } from './eventLogTypes'
 
 const INITIAL_LIMIT = 200
 const STALE_TIMEOUT_MS = 45_000
@@ -150,9 +150,10 @@ async function connectToEventStream(): Promise<void> {
         headers: authHeaders('text/event-stream'),
       })
       if (response.status !== 409 || resetApplied) break
-      const reset: OperationalEventCursorReset = await response.json()
+      await response.json()
       resetApplied = true
-      state.lastCursor = reset.earliest_cursor
+      clearTimers()
+      state.lastCursor = null
       globalEventLogStore.reset()
       const replacementHistory = await loadHistory()
       state.lastCursor = replacementHistory.newestCursor
