@@ -37,22 +37,6 @@ export async function* parseSse(body: ReadableStream<Uint8Array>): AsyncGenerato
         index = buffer.indexOf('\n')
       }
     }
-    buffer += decoder.decode()
-    if (buffer.length > 0) {
-      const line = buffer.replace(/\r$/, '')
-      if (line.startsWith(':')) {
-        comment.push(line.slice(1).replace(/^ /, ''))
-      } else {
-        const colon = line.indexOf(':')
-        const field = colon < 0 ? line : line.slice(0, colon)
-        const value = (colon < 0 ? '' : line.slice(colon + 1)).replace(/^ /, '')
-        if (field === 'id') id = value
-        else if (field === 'event') event = value
-        else if (field === 'data') data.push(value)
-      }
-    }
-    if (id !== null || event !== 'message' || data.length > 0) yield { id, event, data: data.join('\n') }
-    else if (comment.length > 0) yield { id: null, event: 'comment', data: comment.join('\n') }
   } finally {
     reader.releaseLock()
   }
