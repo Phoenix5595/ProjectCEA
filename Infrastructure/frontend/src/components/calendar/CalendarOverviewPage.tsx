@@ -3,6 +3,8 @@ import { useEffect, useState } from 'react';
 import GrowCalendar from './GrowCalendar';
 import FlowerGrowWizard from './FlowerGrowWizard';
 import { useCalendarEvents } from '../../hooks/useCalendarEvents';
+import { useEventLog } from '../../features/event-log/state/useEventLog';
+import { EventLog } from '../../features/event-log/components/EventLog';
 import { apiClient } from '../../services/api';
 import type { ModeScheduleResponse } from '../../types/calendar';
 
@@ -16,6 +18,7 @@ export default function CalendarOverviewPage({
   cluster = 'main',
 }: CalendarOverviewPageProps) {
   const { events, loading, refresh } = useCalendarEvents(location);
+  const { entries } = useEventLog({ location, cluster });
   const [wizardOpen, setWizardOpen] = useState(false);
   const [modeSchedule, setModeSchedule] = useState<ModeScheduleResponse | null>(null);
 
@@ -55,6 +58,7 @@ export default function CalendarOverviewPage({
         showAddTask={location === 'Flower Room'}
         onAddTask={() => setWizardOpen(true)}
       />
+      <EventLog entries={entries} now={new Date()} />
       {location === 'Flower Room' && (
         <FlowerGrowWizard
           open={wizardOpen}
