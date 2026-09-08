@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 from collections import deque
-from collections.abc import Awaitable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Final, Protocol, TypeAlias
 
+import anyio
 from pydantic import ValidationError
 from redis.exceptions import RedisError
 
@@ -26,6 +27,7 @@ ROUTINE_QUEUE_CAPACITY: Final[int] = 1_792
 PRIORITY_QUEUE_CAPACITY: Final[int] = 256
 READ_BATCH_SIZE: Final[int] = 100
 READ_BLOCK_MILLISECONDS: Final[int] = 1_000
+READ_FAILURE_BACKOFF_SECONDS: Final[float] = 1.0
 EVENT_FIELD: Final[str] = "event"
 
 _PUBLISH_SCRIPT: Final[str] = """
@@ -183,8 +185,13 @@ class OperationalEventDispatcher(OperationalEventSink):
 class OperationalEventStreamReader:
     """Read the global operational stream without consumer-group state."""
 
-    def __init__(self, redis: OperationalRedis) -> None:
+    def __init__(
+        self,
+        redis: OperationalRedis,
+        sleep: Callable[[float], Awaitable[None]] = anyio.sleep,
+    ) -> None:
         self._redis = redis
+        self._sleep = sleep
         self._malformed_entries = 0
         self._read_failures = 0
 
@@ -198,6 +205,7 @@ class OperationalEventStreamReader:
             )
         except (RedisError, ConnectionError, OSError):
             self._read_failures += 1
+            await self._sleep(READ_FAILURE_BACKOFF_SECONDS)
             return ()
         return tuple(entry for stream in result for entry in self._entries(stream[1]))
 
