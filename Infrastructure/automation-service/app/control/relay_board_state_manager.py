@@ -8,7 +8,17 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 import json
 from typing import Literal, Protocol
+from uuid import UUID
 
+from app.events.operational_models import (
+    EntityContext,
+    EventCategory,
+    EventSeverity,
+    EventSource,
+    OperationalEvent,
+    RelayPayload,
+)
+from app.events.operational_ports import OperationalEventSink
 from app.redis.schema import RELAY_BOARD_SNAPSHOT
 from shared.infra_logging import get_logger
 
@@ -54,13 +64,20 @@ class RelayBoardStateManager:
         mcp23017: RelayBoardSampler,
         redis: RelayBoardRedis | None = None,
         now: Callable[[], datetime] = lambda: datetime.now(UTC),
+        event_sink: OperationalEventSink | None = None,
     ) -> None:
         self._mcp23017 = mcp23017
         self._redis = redis
         self._now = now
+        self._event_sink = event_sink
         self._snapshot = RelayBoardSnapshot(None, None, (None,) * 16)
         self._last_persisted_channels: tuple[bool, ...] | None = None
         self._stale_since: datetime | None = None
+        self._command_correlations: dict[int, tuple[bool, UUID]] = {}
+
+    def record_command_correlation(self, channel: int, state: bool, correlation_id: UUID) -> None:
+        """Suppress an observation event when it confirms the supplied command."""
+        self._command_correlations[channel] = (state, correlation_id)
 
     def get_snapshot(self) -> RelayBoardSnapshot:
         """Return the latest successfully observed board state."""
@@ -85,21 +102,32 @@ class RelayBoardStateManager:
         """Observe GPIOA/GPIOB once each and retain the last valid state on failure."""
         channels = await asyncio.to_thread(self._mcp23017.sample_all_channels)
         if channels is None:
+            was_fresh = self._stale_since is None
             self._mark_stale()
+            if was_fresh:
+                self._emit_observation_failure()
             logger.warning("Relay board sample failed; retaining the last successful snapshot")
             return False
         if len(channels) != 16:
+            was_fresh = self._stale_since is None
             self._mark_stale()
+            if was_fresh:
+                self._emit_observation_failure()
             logger.warning(
                 "Relay board sample had %s channels; retaining last successful snapshot",
                 len(channels),
             )
             return False
 
+        was_stale = self._stale_since is not None
         sampled_at = self._now()
         changed_at = self._changed_at_for_sample(channels, sampled_at)
+        previous_channels = self._snapshot.channels
         self._snapshot = RelayBoardSnapshot(channels, sampled_at, changed_at)
         self._stale_since = None
+        self._emit_observation_transitions(channels, previous_channels)
+        if was_stale:
+            self._emit_observation_recovery()
 
         if (
             force_persist
@@ -114,6 +142,55 @@ class RelayBoardStateManager:
         """Record the first failed read in a contiguous stale period."""
         if self._stale_since is None:
             self._stale_since = self._now()
+
+    def _emit_observation_transitions(
+        self, channels: tuple[bool, ...], previous_channels: tuple[bool, ...] | None
+    ) -> None:
+        if previous_channels is None:
+            for channel, state in enumerate(channels):
+                expected = self._command_correlations.get(channel)
+                if expected is not None and expected[0] == state:
+                    del self._command_correlations[channel]
+            return
+        for channel, state in enumerate(channels):
+            expected = self._command_correlations.get(channel)
+            if expected is not None and expected[0] == state:
+                del self._command_correlations[channel]
+                continue
+            if state != previous_channels[channel]:
+                self._emit_relay_event("relay.observed", channel, state)
+
+    def _emit_observation_failure(self) -> None:
+        self._emit_relay_event("relay.observation_failed", None, None, EventSeverity.WARNING)
+
+    def _emit_observation_recovery(self) -> None:
+        self._emit_relay_event("relay.observation_recovered", None, None)
+
+    def _emit_relay_event(
+        self,
+        event_type: str,
+        channel: int | None,
+        observed_state: bool | None,
+        severity: EventSeverity = EventSeverity.INFO,
+    ) -> None:
+        if self._event_sink is None:
+            return
+        entity = (
+            EntityContext(entity_type="relay_channel", entity_id=str(channel))
+            if channel is not None
+            else EntityContext(entity_type="relay_board", entity_id="mcp23017")
+        )
+        self._event_sink.emit_nowait(
+            OperationalEvent(
+                occurred_at=self._now(),
+                source=EventSource.AUTOMATION,
+                category=EventCategory.RELAY,
+                severity=severity,
+                event_type=event_type,
+                entity=entity,
+                payload=RelayPayload(observed_state=observed_state),
+            )
+        )
 
     def _changed_at_for_sample(
         self, channels: tuple[bool, ...], sampled_at: datetime
