@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 from app.alarm_manager import AlarmManager
@@ -18,6 +19,10 @@ from app.control.runtime_device_registry import RuntimeDeviceRegistry
 from app.control.schedule_merge import merge_schedules_with_config
 from app.control.scheduler import Scheduler
 from app.database import DatabaseManager
+from app.events.alarm_journal import AlarmJournal
+from app.events.mutation_dependencies import NoopOperationalEventSink
+from app.events.operational_ports import OperationalEventSink
+from app.events.operational_stream import OperationalEventDispatcher, OperationalEventStreamReader
 from app.hardware.dfr0971 import DFR0971Manager
 from app.hardware.mcp23017 import MCP23017Driver
 from app.hardware.safe_outputs import (
@@ -28,14 +33,53 @@ from app.hardware.safe_outputs import (
 from app.monitoring_publication.workers import MonitoringPublicationWorkers
 from app.redis_client import AutomationRedisClient
 from app.repositories.monitoring_snapshot_sources import build_monitoring_publication_workers
+from app.routes.operational_events import OperationalEventRouteReader
 from app.services.device_registry_service import DeviceRegistryService
 from app.services.photoperiod_history_logger import (
     DatabasePhotoperiodHistoryStore,
     PhotoperiodHistoryLogger,
 )
 from shared.infra_logging import get_logger
+from shared.redis_client import close_async, create_async_client
+from shared.redis_keys import OPERATIONAL_EVENTS_STREAM
 
 logger = get_logger(__name__)
+
+
+class _OperationalEventRouteReader:
+    def __init__(self, redis: Any) -> None:
+        self._redis = redis
+        self._stream_reader = OperationalEventStreamReader(redis)
+
+    async def cursor_bounds(self) -> tuple[str | None, str | None]:
+        oldest = await self._redis.xrange(OPERATIONAL_EVENTS_STREAM, "-", "+", count=1)
+        newest = await self._redis.xrevrange(OPERATIONAL_EVENTS_STREAM, "+", "-", count=1)
+        return (_id(oldest[0]) if oldest else None, _id(newest[0]) if newest else None)
+
+    async def cursor_exists(self, cursor: str) -> bool:
+        return bool(await self._redis.xrange(OPERATIONAL_EVENTS_STREAM, cursor, cursor, count=1))
+
+    async def history(self, *, before: str | None, after: str | None, scan_limit: int):
+        if before is not None:
+            entries = await self._redis.xrevrange(
+                OPERATIONAL_EVENTS_STREAM, f"({before}", "-", count=scan_limit
+            )
+        elif after is not None:
+            entries = await self._redis.xrange(
+                OPERATIONAL_EVENTS_STREAM, f"({after}", "+", count=scan_limit
+            )
+        else:
+            entries = await self._redis.xrevrange(
+                OPERATIONAL_EVENTS_STREAM, "+", "-", count=scan_limit
+            )
+        return self._stream_reader._entries(entries)
+
+    async def read(self, *, after_id: str):
+        return await self._stream_reader.read(after_id=after_id)
+
+
+def _id(entry: tuple[str | bytes, Any]) -> str:
+    return entry[0].decode() if isinstance(entry[0], bytes) else entry[0]
 
 
 class ServiceContainer:
@@ -53,6 +97,11 @@ class ServiceContainer:
         # Database and Redis
         self.database: DatabaseManager | None = None
         self.automation_redis: AutomationRedisClient | None = None
+        self.operational_event_sink: OperationalEventSink = NoopOperationalEventSink()
+        self.operational_event_dispatcher: OperationalEventDispatcher | None = None
+        self.operational_event_reader: OperationalEventRouteReader | None = None
+        self._operational_event_redis: Any = None
+        self._operational_event_pool: Any = None
 
         # Hardware
         self.mcp23017: MCP23017Driver | None = None
@@ -117,6 +166,7 @@ class ServiceContainer:
 
             # Get automation redis from database
             self.automation_redis = self.database._automation_redis
+            await self._compose_operational_events()
 
             # Wire DB-backed device repository into ConfigLoader
             self.config.set_device_repo(self.database.device_repo)
@@ -160,7 +210,7 @@ class ServiceContainer:
             # with one live GPIOA/GPIOB sample before control work begins.
             if self.mcp23017 is not None:
                 self.relay_board_state_manager = RelayBoardStateManager(
-                    self.mcp23017, self.automation_redis
+                    self.mcp23017, self.automation_redis, event_sink=self.operational_event_sink
                 )
                 await self.relay_board_state_manager.on_startup_restore()
 
@@ -179,6 +229,7 @@ class ServiceContainer:
                 interlock_manager=self.interlock_manager,
                 relay_board_state_manager=self.relay_board_state_manager,
                 control_action_repository=self.database.control_action_repo,
+                event_sink=self.operational_event_sink,
             )
             logger.info("Relay manager initialized")
             self.device_command_service = DeviceCommandService(
@@ -186,6 +237,7 @@ class ServiceContainer:
                 relay_manager=self.relay_manager,
                 control_action_repository=self.database.control_action_repo,
                 automation_redis=self.automation_redis,
+                event_sink=self.operational_event_sink,
             )
             await self.device_command_service.initialize_startup()
             logger.info("Assigned-device command state initialized")
@@ -200,7 +252,7 @@ class ServiceContainer:
             # 6. Initialize scheduler with schedules from database merged with config (synthetic SUN rows from merge_schedules_with_config)
             db_schedules = await self.database.schedule_repo.get_schedules()
             control_schedules = await merge_schedules_with_config(db_schedules, self.config)
-            self.scheduler = Scheduler(control_schedules)
+            self.scheduler = Scheduler(control_schedules, event_sink=self.operational_event_sink)
             self.scheduler.set_climate_periods_repo(self.database.climate_periods_repo)
             self.runtime_device_registry.subscribe(self.scheduler.install_snapshot)
             synth_n = len(control_schedules) - len(db_schedules)
@@ -214,7 +266,9 @@ class ServiceContainer:
             # 7. Initialize rules engine
             # get_rules is not yet implemented in DatabaseManager
             rules: list[dict[str, Any]] = []
-            self.rules_engine = RulesEngine(rules, self.scheduler)
+            self.rules_engine = RulesEngine(
+                rules, self.scheduler, event_sink=self.operational_event_sink
+            )
             logger.info("Rules engine initialized")
 
             # 8. Initialize alarm manager
@@ -222,7 +276,9 @@ class ServiceContainer:
             assert self.relay_board_state_manager is not None, (
                 "Relay board state manager must initialize"
             )
-            self.alarm_manager = AlarmManager(self.automation_redis, self.database)
+            self.alarm_manager = AlarmManager(
+                self.automation_redis, self.database, event_sink=self.operational_event_sink
+            )
             logger.info("Alarm manager initialized")
             self.control_snapshot_service = ControlSnapshotService(
                 runtime_device_registry=self.runtime_device_registry,
@@ -258,6 +314,7 @@ class ServiceContainer:
                     if self.monitoring_publication_workers is None
                     else self.monitoring_publication_workers.current_observer
                 ),
+                event_sink=self.operational_event_sink,
             )
             logger.info("Control engine initialized")
 
@@ -416,6 +473,17 @@ class ServiceContainer:
             except Exception as e:
                 logger.error(f"Error stopping monitoring publication workers: {e}")
 
+        if self.operational_event_dispatcher is not None:
+            try:
+                await asyncio.wait_for(self.operational_event_dispatcher.drain(), timeout=5)
+                logger.info("Operational event dispatcher drained and closed")
+            except (TimeoutError, ConnectionError, OSError) as error:
+                logger.error(f"Error closing operational event dispatcher: {error}")
+
+        await close_async(
+            self._operational_event_redis, self._operational_event_pool, name="operational-events"
+        )
+
         if self.mcp23017 is not None:
             try:
                 _ = force_all_outputs_safe(
@@ -524,6 +592,43 @@ class ServiceContainer:
     def get_automation_redis(self) -> AutomationRedisClient | None:
         """Get automation Redis client."""
         return self.automation_redis
+
+    def get_operational_event_sink(self) -> OperationalEventSink:
+        """Return the single non-blocking sink shared by all runtime producers."""
+        return self.operational_event_sink
+
+    def get_operational_event_reader(self) -> OperationalEventRouteReader:
+        """Return the route reader only when operational Redis is available."""
+        if self.operational_event_reader is None:
+            raise RuntimeError("operational event stream is unavailable")
+        return self.operational_event_reader
+
+    async def _compose_operational_events(self) -> None:
+        """Compose optional event infrastructure after database and Redis initialization."""
+        if self.automation_redis is None or not self.automation_redis.redis_enabled:
+            logger.warning("Operational events are disabled because Redis is unavailable")
+            return
+
+        try:
+            redis, pool = await create_async_client(
+                self.database.redis_url, decode_responses=False, name="operational-events"
+            )
+        except (ConnectionError, OSError):
+            logger.warning("Operational events are disabled because async Redis is unavailable")
+            return
+
+        journal = (
+            AlarmJournal(self.database.control_action_repo)
+            if self.database.pool is not None
+            else None
+        )
+        dispatcher = OperationalEventDispatcher(redis, secondary_sink=journal)
+        await dispatcher.start()
+        self.operational_event_sink = dispatcher
+        self.operational_event_dispatcher = dispatcher
+        self.operational_event_reader = _OperationalEventRouteReader(redis)
+        self._operational_event_redis = redis
+        self._operational_event_pool = pool
 
     def _write_restart_hash_sidecar(self) -> None:
         """Compute and write the restart-hash sidecar next to the config file."""

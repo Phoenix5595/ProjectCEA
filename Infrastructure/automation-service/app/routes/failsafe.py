@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from app.alarm_manager import AlarmManager
 from app.database import DatabaseManager
+from app.events.mutation_coverage import emits_operational_mutation
 from app.redis_client import AutomationRedisClient
 from shared.infra_logging import get_logger
 
@@ -95,6 +96,7 @@ async def get_all_failsafes(
 
 
 @router.post("/api/failsafe/{location}/{cluster}/clear")
+@emits_operational_mutation
 async def clear_failsafe(
     location: str, cluster: str, alarm_manager: AlarmManager | None = Depends(get_alarm_manager)
 ) -> dict[str, Any]:

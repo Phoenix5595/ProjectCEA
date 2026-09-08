@@ -2,10 +2,20 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException
 
+from app.events.mutation_context import (
+    MutationRequestContext,
+    PersistedMutation,
+    emit_persisted_mutation,
+)
+from app.events.mutation_coverage import emits_operational_mutation
+from app.events.mutation_dependencies import get_mutation_event_sink, get_mutation_request_context
+from app.events.mutation_diff import safe_allowlisted_diff
+from app.events.operational_models import EntityContext
+from app.events.operational_ports import OperationalEventSink
 from app.feature_flags import FeatureFlag, FeatureFlagManager
 from app.schemas.flags import FlagResponse, FlagUpdateRequest
 
@@ -53,9 +63,12 @@ async def get_flag(
 
 
 @router.put("/api/flags/{flag_name}", response_model=FlagResponse)
+@emits_operational_mutation
 async def update_flag(
     flag_name: str,
     request: FlagUpdateRequest,
+    context: Annotated[MutationRequestContext, Depends(get_mutation_request_context)],
+    sink: Annotated[OperationalEventSink, Depends(get_mutation_event_sink)],
     flag_manager: FeatureFlagManager = Depends(get_feature_flag_manager),
 ) -> FlagResponse:
     """Update a feature flag.
@@ -84,6 +97,20 @@ async def update_flag(
     updated_flag = flag_manager.get_flag_definition(flag_name)
     if updated_flag is None:
         raise HTTPException(status_code=500, detail="Failed to retrieve updated flag")
+
+    emit_persisted_mutation(
+        sink,
+        PersistedMutation(
+            operation="update",
+            entity=EntityContext(entity_type="feature_flag", entity_id=flag_name),
+            changes=safe_allowlisted_diff(
+                before={"enabled": previous_value},
+                after={"enabled": updated_flag.enabled},
+                allowed_fields=frozenset({"enabled"}),
+            ),
+        ),
+        context=context,
+    )
 
     return FlagResponse(
         name=updated_flag.name,

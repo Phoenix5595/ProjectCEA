@@ -12,6 +12,16 @@ from app.config import ConfigLoader
 from app.control.schedule_merge import merge_schedules_with_config
 from app.control.scheduler import LOCAL_TZ
 from app.database import DatabaseManager
+from app.events.mutation_context import (
+    MutationRequestContext,
+    PersistedMutation,
+    emit_persisted_mutation,
+)
+from app.events.mutation_coverage import emits_operational_mutation
+from app.events.mutation_dependencies import get_mutation_event_sink, get_mutation_request_context
+from app.events.mutation_diff import safe_allowlisted_diff
+from app.events.operational_models import EntityContext
+from app.events.operational_ports import OperationalEventSink
 from app.hardware.dfr0971 import DFR0971Manager
 from app.routes.lights import (
     get_config,
@@ -335,6 +345,7 @@ async def get_light_schedule(
 
 
 @router.put("/api/lights/{location}/{cluster}/{device_name}/schedule")
+@emits_operational_mutation
 async def update_light_schedule(
     location: str,
     cluster: str,
@@ -343,12 +354,34 @@ async def update_light_schedule(
     config: ConfigLoader = Depends(get_config),
     database: DatabaseManager = Depends(get_database),
     scheduler: Any = Depends(get_scheduler),
+    context: MutationRequestContext = Depends(get_mutation_request_context),
+    sink: OperationalEventSink = Depends(get_mutation_event_sink),
 ) -> dict[str, Any]:
+    previous = await database.schedule_repo.get_room_light_schedule(location, cluster, device_name)
     updated = await database.update_light_schedule_times(
         location, cluster, device_name, control.start_time, control.end_time
     )
     if not updated:
         raise HTTPException(status_code=404, detail=f"No schedule found for {device_name}")
+
+    emit_persisted_mutation(
+        sink,
+        PersistedMutation(
+            operation="update",
+            entity=EntityContext(
+                entity_type="light_schedule",
+                entity_id=str(previous["id"]),
+                location=location,
+                cluster=cluster,
+            ),
+            changes=safe_allowlisted_diff(
+                {"start_time": previous.get("start_time"), "end_time": previous.get("end_time")},
+                {"start_time": control.start_time, "end_time": control.end_time},
+                frozenset({"start_time", "end_time"}),
+            ),
+        ),
+        context,
+    )
 
     if scheduler:
         all_schedules = await database.schedule_repo.get_schedules()

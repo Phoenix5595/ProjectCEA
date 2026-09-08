@@ -9,6 +9,16 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from app.config import ConfigLoader
 from app.database import DatabaseManager
+from app.events.mutation_context import (
+    MutationRequestContext,
+    PersistedMutation,
+    emit_persisted_mutation,
+)
+from app.events.mutation_coverage import emits_operational_mutation
+from app.events.mutation_dependencies import get_mutation_event_sink, get_mutation_request_context
+from app.events.mutation_diff import safe_allowlisted_diff
+from app.events.operational_models import EntityContext
+from app.events.operational_ports import OperationalEventSink
 from app.schemas.pid import (
     PIDModeUpdate,
     PIDParameterUpdate,
@@ -101,6 +111,8 @@ async def _update_pid_parameters(
     update: PIDParameterUpdate,
     database: DatabaseManager,
     config: ConfigLoader,
+    context: MutationRequestContext,
+    sink: OperationalEventSink,
 ) -> dict[str, Any] | None:
     """Update PID parameters for a device type."""
     # Rate limiting check
@@ -160,6 +172,25 @@ async def _update_pid_parameters(
     if not success:
         raise HTTPException(status_code=500, detail="Failed to update PID parameters")
 
+    emit_persisted_mutation(
+        sink,
+        PersistedMutation(
+            operation="update",
+            entity=EntityContext(
+                entity_type="pid_parameters",
+                entity_id=f"{location}:{cluster}:{device_type}",
+                location=location,
+                cluster=cluster,
+            ),
+            changes=safe_allowlisted_diff(
+                before={key: existing.get(key) if existing else None for key in ("kp", "ki", "kd")},
+                after={"kp": final_kp, "ki": final_ki, "kd": final_kd},
+                allowed_fields=frozenset({"kp", "ki", "kd"}),
+            ),
+        ),
+        context,
+    )
+
     # Return updated parameters
     updated = await database.pid_repo.get_pid_parameters(location, cluster, device_type)
     return updated or {}
@@ -188,6 +219,8 @@ async def _reset_pid_parameters(
     device_type: str,
     database: DatabaseManager,
     config: ConfigLoader,
+    context: MutationRequestContext,
+    sink: OperationalEventSink,
 ) -> dict[str, Any] | None:
     """Reset PID parameters to config defaults."""
     # Get default parameters from config
@@ -204,6 +237,8 @@ async def _reset_pid_parameters(
         ki = 0.01
         kd = 0.0
 
+    previous = await database.pid_repo.get_pid_parameters(location, cluster, device_type)
+
     # Update in database with config values
     success = await database.pid_repo.set_pid_parameters(
         location, cluster, device_type, kp, ki, kd, source="config_reset", updated_by="system"
@@ -211,6 +246,25 @@ async def _reset_pid_parameters(
 
     if not success:
         raise HTTPException(status_code=500, detail="Failed to reset PID parameters")
+
+    emit_persisted_mutation(
+        sink,
+        PersistedMutation(
+            operation="update",
+            entity=EntityContext(
+                entity_type="pid_parameters",
+                entity_id=f"{location}:{cluster}:{device_type}",
+                location=location,
+                cluster=cluster,
+            ),
+            changes=safe_allowlisted_diff(
+                before={key: previous.get(key) if previous else None for key in ("kp", "ki", "kd")},
+                after={"kp": kp, "ki": ki, "kd": kd},
+                allowed_fields=frozenset({"kp", "ki", "kd"}),
+            ),
+        ),
+        context,
+    )
 
     logger.info(
         f"Reset PID parameters for {device_type} to config defaults: kp={kp}, ki={ki}, kd={kd}"
@@ -258,6 +312,8 @@ async def _set_pid_mode(
     device_type: str,
     update: PIDModeUpdate,
     database: DatabaseManager,
+    context: MutationRequestContext,
+    sink: OperationalEventSink,
 ) -> dict[str, Any]:
     """Set PID control mode for a device type."""
     # Validate mode
@@ -291,6 +347,39 @@ async def _set_pid_mode(
 
     if not success:
         raise HTTPException(status_code=500, detail="Failed to update PID mode")
+
+    emit_persisted_mutation(
+        sink,
+        PersistedMutation(
+            operation="update",
+            entity=EntityContext(
+                entity_type="pid_mode",
+                entity_id=f"{location}:{cluster}:{device_type}",
+                location=location,
+                cluster=cluster,
+            ),
+            changes=safe_allowlisted_diff(
+                before={
+                    "control_mode": current_mode_info["control_mode"]
+                    if current_mode_info
+                    else "pid",
+                    "hysteresis_high": current_mode_info.get("hysteresis_high")
+                    if current_mode_info
+                    else None,
+                    "hysteresis_low": current_mode_info.get("hysteresis_low")
+                    if current_mode_info
+                    else None,
+                },
+                after={
+                    "control_mode": update.mode,
+                    "hysteresis_high": update.hysteresis_high,
+                    "hysteresis_low": update.hysteresis_low,
+                },
+                allowed_fields=frozenset({"control_mode", "hysteresis_high", "hysteresis_low"}),
+            ),
+        ),
+        context,
+    )
 
     # Handle auto-tune state changes
     if update.mode == "auto_pid" and current_mode != "auto_pid":
@@ -362,14 +451,41 @@ async def _stop_autotune(
     cluster: str,
     device_type: str,
     database: DatabaseManager,
+    context: MutationRequestContext,
+    sink: OperationalEventSink,
 ) -> dict[str, Any]:
     """Force stop auto-tuning for a device type."""
+    previous_mode = await database.pid_repo.get_pid_control_mode(location, cluster, device_type)
+    previous_autotune = await database.pid_repo.get_autotune_state(location, cluster, device_type)
+
     # Update autotune state
     await database.pid_repo.update_autotune_state(location, cluster, device_type, state="idle")
 
     # Change mode to 'pid' (manual)
     await database.pid_repo.set_pid_control_mode(
         location, cluster, device_type, "pid", updated_by="system"
+    )
+
+    emit_persisted_mutation(
+        sink,
+        PersistedMutation(
+            operation="action",
+            entity=EntityContext(
+                entity_type="pid_autotune",
+                entity_id=f"{location}:{cluster}:{device_type}",
+                location=location,
+                cluster=cluster,
+            ),
+            changes=safe_allowlisted_diff(
+                before={
+                    "control_mode": previous_mode["control_mode"] if previous_mode else None,
+                    "autotune_state": previous_autotune.get("state") if previous_autotune else None,
+                },
+                after={"control_mode": "pid", "autotune_state": "idle"},
+                allowed_fields=frozenset({"control_mode", "autotune_state"}),
+            ),
+        ),
+        context,
     )
 
     logger.info(f"Auto-tuning force stopped for {device_type}, mode set to 'pid'")
@@ -414,6 +530,7 @@ async def get_pid_parameters_v2(
 
 
 @router.post("/api/pid/parameters/{location}/{cluster}/{device_type}")
+@emits_operational_mutation
 async def update_pid_parameters_v2(
     location: str,
     cluster: str,
@@ -421,6 +538,8 @@ async def update_pid_parameters_v2(
     update: PIDParameterUpdate,
     database: DatabaseManager = Depends(get_database),
     config: ConfigLoader = Depends(get_config),
+    context: MutationRequestContext = Depends(get_mutation_request_context),
+    sink: OperationalEventSink = Depends(get_mutation_event_sink),
 ) -> dict[str, Any] | None:
     """Update PID parameters for a device type.
 
@@ -433,7 +552,9 @@ async def update_pid_parameters_v2(
     Returns:
         Updated PID parameters
     """
-    return await _update_pid_parameters(location, cluster, device_type, update, database, config)
+    return await _update_pid_parameters(
+        location, cluster, device_type, update, database, config, context, sink
+    )
 
 
 @router.get("/api/pid/parameters/{location}/{cluster}/{device_type}/history")
@@ -459,12 +580,15 @@ async def get_pid_parameter_history_v2(
 
 
 @router.post("/api/pid/parameters/{location}/{cluster}/{device_type}/reset")
+@emits_operational_mutation
 async def reset_pid_parameters_v2(
     location: str,
     cluster: str,
     device_type: str,
     database: DatabaseManager = Depends(get_database),
     config: ConfigLoader = Depends(get_config),
+    context: MutationRequestContext = Depends(get_mutation_request_context),
+    sink: OperationalEventSink = Depends(get_mutation_event_sink),
 ) -> dict[str, Any] | None:
     """Reset PID parameters to config defaults.
 
@@ -476,7 +600,9 @@ async def reset_pid_parameters_v2(
     Returns:
         Reset PID parameters from config
     """
-    return await _reset_pid_parameters(location, cluster, device_type, database, config)
+    return await _reset_pid_parameters(
+        location, cluster, device_type, database, config, context, sink
+    )
 
 
 @router.get("/api/pid/mode/{location}/{cluster}/{device_type}")
@@ -500,12 +626,15 @@ async def get_pid_mode_v2(
 
 
 @router.post("/api/pid/mode/{location}/{cluster}/{device_type}")
+@emits_operational_mutation
 async def set_pid_mode_v2(
     location: str,
     cluster: str,
     device_type: str,
     update: PIDModeUpdate,
     database: DatabaseManager = Depends(get_database),
+    context: MutationRequestContext = Depends(get_mutation_request_context),
+    sink: OperationalEventSink = Depends(get_mutation_event_sink),
 ) -> dict[str, Any]:
     """Set PID control mode for a device type.
 
@@ -521,7 +650,7 @@ async def set_pid_mode_v2(
     Returns:
         Updated mode info
     """
-    return await _set_pid_mode(location, cluster, device_type, update, database)
+    return await _set_pid_mode(location, cluster, device_type, update, database, context, sink)
 
 
 @router.get("/api/pid/autotune/{location}/{cluster}/{device_type}/status")
@@ -545,11 +674,14 @@ async def get_autotune_status_v2(
 
 
 @router.post("/api/pid/autotune/{location}/{cluster}/{device_type}/stop")
+@emits_operational_mutation
 async def stop_autotune_v2(
     location: str,
     cluster: str,
     device_type: str,
     database: DatabaseManager = Depends(get_database),
+    context: MutationRequestContext = Depends(get_mutation_request_context),
+    sink: OperationalEventSink = Depends(get_mutation_event_sink),
 ) -> dict[str, Any]:
     """Force stop auto-tuning for a device type.
 
@@ -564,4 +696,4 @@ async def stop_autotune_v2(
     Returns:
         Updated autotune status
     """
-    return await _stop_autotune(location, cluster, device_type, database)
+    return await _stop_autotune(location, cluster, device_type, database, context, sink)
