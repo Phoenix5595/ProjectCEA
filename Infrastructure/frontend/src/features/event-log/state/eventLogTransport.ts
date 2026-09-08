@@ -120,12 +120,12 @@ let cursorResetInFlight: Promise<void> | null = null
 function resetHistoryAfterTrim(): Promise<void> {
   if (cursorResetInFlight !== null) return cursorResetInFlight
   cursorResetInFlight = (async () => {
+    state.abortController?.abort()
     clearTimers()
     state.lastCursor = null
     globalEventLogStore.reset()
     const history = await loadHistory()
     state.lastCursor = history.newestCursor
-    state.abortController?.abort()
     scheduleReconnect()
   })().finally(() => {
     cursorResetInFlight = null

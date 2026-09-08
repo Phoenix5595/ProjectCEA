@@ -121,4 +121,40 @@ describe('event log transport lifecycle', () => {
     expect(getLastCursor()).toBe('10-0')
     expect(globalEventLogStore.snapshot().paging.hasMore).toBe(false)
   })
+
+  it('aborts the active stream before replacing a trimmed older-history page', async () => {
+    // Given: a live stream and a retained older-page cursor that Redis trims
+    let activeStreamWasAborted = false
+    mockFetch
+      .mockImplementationOnce(() => historyResponse([historyItem('5-0', 'five'), historyItem('4-0', 'four')], true))
+      .mockImplementationOnce((_url: unknown, init: RequestInit) => Promise.resolve({
+        ok: true,
+        status: 200,
+        body: new ReadableStream({
+          start(controller) {
+            init.signal?.addEventListener('abort', () => {
+              activeStreamWasAborted = true
+              controller.close()
+            })
+          },
+        }),
+      }))
+      .mockImplementationOnce(() => Promise.resolve({
+        ok: false,
+        status: 409,
+        json: () => Promise.resolve({ earliest_cursor: '8-0', latest_cursor: '10-0' }),
+      }))
+      .mockImplementationOnce(() => {
+        expect(activeStreamWasAborted).toBe(true)
+        return historyResponse([historyItem('10-0', 'ten')])
+      })
+
+    // When: an owner requests history after its older cursor was trimmed
+    addConnectionRef()
+    await vi.waitFor(() => expect(mockFetch).toHaveBeenCalledTimes(2))
+    await loadOlder()
+
+    // Then: no stale reader can merge while replacement history is in flight
+    expect(globalEventLogStore.snapshot().entries.map((entry) => entry.redisId)).toEqual(['10-0'])
+  })
 })
