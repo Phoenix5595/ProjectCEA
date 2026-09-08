@@ -4,6 +4,7 @@ import {
   removeConnectionRef,
   resetTransportState,
   getActiveConnections,
+  getLastCursor,
   loadOlder,
   _setReconnectDelayForTesting,
 } from '../state/eventLogTransport'
@@ -235,6 +236,7 @@ describe('eventLogTransport reconnect behavior', () => {
       redisId: '1-0', eventId: 'stale', type: 'system.started', category: 'system', occurredAt: new Date(), payload: {},
     }])
     let staleStateWasCleared = false
+    let transportCursorWasCleared = false
     mockFetch
       .mockImplementationOnce(() => mockHistoryPage([historyItem('5-0', 'old-bootstrap')], false))
       .mockImplementationOnce(() => Promise.resolve({
@@ -244,6 +246,7 @@ describe('eventLogTransport reconnect behavior', () => {
       }))
       .mockImplementationOnce(() => {
         staleStateWasCleared = !globalEventLogStore.snapshot().entries.some((entry) => entry.eventId === 'stale')
+        transportCursorWasCleared = getLastCursor() === null
         return mockHistoryPage([historyItem('9-0', 'latest')], false)
       })
       .mockImplementationOnce(() => mockFailingStreamResponse())
@@ -254,6 +257,7 @@ describe('eventLogTransport reconnect behavior', () => {
 
     // Then: stale data is cleared before exactly one replacement bootstrap and tail
     expect(staleStateWasCleared).toBe(true)
+    expect(transportCursorWasCleared).toBe(true)
     expect(mockFetch.mock.calls[3]?.[0]).toContain('after=9-0')
     expect(globalEventLogStore.snapshot().entries.map((entry) => entry.eventId)).toEqual(['latest'])
   })
