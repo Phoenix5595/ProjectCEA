@@ -37,6 +37,10 @@ type HistoryFetchOptions = {
   limit?: number
 }
 
+class EventHistoryCursorResetError extends Error {
+  readonly name = 'EventHistoryCursorResetError'
+}
+
 function authHeaders(accept = 'application/json'): Record<string, string> {
   const headers: Record<string, string> = { Accept: accept }
   if (CEA_API_KEY) headers['X-API-Key'] = CEA_API_KEY
@@ -94,6 +98,7 @@ async function loadHistory(options: HistoryFetchOptions = {}): Promise<LoadHisto
     state.authPaused = true
     throw new Error(`Event history auth failed: ${response.status}`)
   }
+  if (response.status === 409) throw new EventHistoryCursorResetError()
   if (!response.ok) {
     throw new Error(`Event history failed: ${response.status}`)
   }
@@ -110,12 +115,36 @@ async function loadHistory(options: HistoryFetchOptions = {}): Promise<LoadHisto
   return result
 }
 
+let cursorResetInFlight: Promise<void> | null = null
+
+function resetHistoryAfterTrim(): Promise<void> {
+  if (cursorResetInFlight !== null) return cursorResetInFlight
+  cursorResetInFlight = (async () => {
+    clearTimers()
+    state.lastCursor = null
+    globalEventLogStore.reset()
+    const history = await loadHistory()
+    state.lastCursor = history.newestCursor
+    state.abortController?.abort()
+    scheduleReconnect()
+  })().finally(() => {
+    cursorResetInFlight = null
+  })
+  return cursorResetInFlight
+}
+
 async function loadOlder(): Promise<void> {
   const paging = globalEventLogStore.snapshot().paging
   if (paging.loadingOlder || !paging.hasMore || paging.oldestCursor === null) return
   globalEventLogStore.setPaging({ ...paging, loadingOlder: true })
   try {
     await loadHistory({ before: paging.oldestCursor })
+  } catch (error) {
+    if (error instanceof EventHistoryCursorResetError) {
+      await resetHistoryAfterTrim()
+      return
+    }
+    throw error
   } finally {
     const updatedPaging = globalEventLogStore.snapshot().paging
     globalEventLogStore.setPaging({ ...updatedPaging, loadingOlder: false })
@@ -234,6 +263,7 @@ function resetTransportState(): void {
   state.abortController?.abort()
   state.abortController = null
   reconnectDelayForTesting = null
+  cursorResetInFlight = null
 }
 
 function getLastCursor(): string | null {
