@@ -61,6 +61,13 @@ class LightIntensityMixin:
         # 2. Check photoperiod
         is_sun = self.is_in_photoperiod(location, cluster, current_time)
         if not is_sun:
+            ramp_key = (location, cluster, device_name)
+            ramp_state = self._light_ramp_state.get(ramp_key)
+            if ramp_state is not None and ramp_state.get("ramp_type") == "down":
+                self._emit_light_ramp_lifecycle(
+                    "ramp.completed", ramp_key, ramp_state, current_time, "target_reached"
+                )
+                del self._light_ramp_state[ramp_key]
             return 0.0
 
         # 3. Look up target intensity from cache
@@ -106,7 +113,12 @@ class LightIntensityMixin:
                 f"Failed to parse target_intensity {target_intensity}: {e}",
                 exc_info=True,
             )
+            self._emit_light_ramp_failure(
+                location, cluster, device_name, current_time, str(target_intensity)
+            )
             return MINIMUM_LIGHT_INTENSITY
+
+        self._light_target_failures.pop((location, cluster, device_name), None)
 
         # 4. Apply full ramp logic
         ramp_up_duration = params.get("ramp_up", 0) or 0

@@ -19,6 +19,7 @@ from app.control.device_command_service import (
 )
 from app.control.relay_manager import RelayManager
 from app.database import DatabaseManager
+from app.events.mutation_coverage import emits_operational_mutation
 from app.schemas.control_snapshot import ControlSnapshotResponse
 from app.schemas.device import (
     DeviceControlRequest,
@@ -173,6 +174,7 @@ async def get_device_details(
 
 
 @router.post("/api/devices/{location}/{cluster}/{device}/command")
+@emits_operational_mutation
 async def command_device(
     location: str,
     cluster: str,
@@ -199,6 +201,7 @@ async def command_device(
 
 
 @router.post("/api/devices/{location}/{cluster}/{device}/control")
+@emits_operational_mutation
 async def control_device(
     location: str,
     cluster: str,
@@ -225,6 +228,7 @@ async def control_device(
 
 
 @router.post("/api/devices/{location}/{cluster}/{device}/mode")
+@emits_operational_mutation
 async def set_device_mode(
     location: str,
     cluster: str,

@@ -6,11 +6,21 @@ from contextvars import ContextVar, Token
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from typing import Any
+from uuid import UUID, uuid4
 
 from app.automation.interlock_manager import InterlockManager
 from app.control.relay_board_state_manager import RelayBoardStateManager
 from app.control.runtime_device_registry import RuntimeDeviceRegistry
 from app.control.runtime_device_snapshot import DeviceKey, RuntimeDeviceSnapshot
+from app.events.operational_models import (
+    EntityContext,
+    EventCategory,
+    EventSeverity,
+    EventSource,
+    OperationalEvent,
+    RelayPayload,
+)
+from app.events.operational_ports import OperationalEventSink
 from app.hardware.mcp23017 import MCP23017Driver
 from app.repositories.control_actions import ControlActionRepository
 from shared.infra_logging import get_logger
@@ -36,6 +46,7 @@ class RelayControlState:
     mismatch_started_at: datetime | None = None
     last_command_succeeded: bool | None = None
     recovery_pending: bool = False
+    correlation_id: UUID | None = None
 
 
 class RelayManager:
@@ -49,7 +60,8 @@ class RelayManager:
         relay_board_state_manager: RelayBoardStateManager | None = None,
         control_action_repository: ControlActionRepository | None = None,
         now: Callable[[], datetime] = lambda: datetime.now(UTC),
-    ):
+        event_sink: OperationalEventSink | None = None,
+    ) -> None:
         """Initialize relay manager.
 
         Args:
@@ -63,6 +75,7 @@ class RelayManager:
         self._relay_board_state_manager = relay_board_state_manager
         self._control_action_repository = control_action_repository
         self._now = now
+        self._event_sink = event_sink
         self._active_snapshot: ContextVar[RuntimeDeviceSnapshot | None] = ContextVar(
             "active_runtime_device_snapshot", default=None
         )
@@ -75,6 +88,7 @@ class RelayManager:
         self._channel_control_states: dict[int, RelayControlState] = {}
         self._active_mismatch_alarms: set[tuple[str, str, str]] = set()
         self._stale_alarm_severity: dict[tuple[str, str], str] = {}
+        self._failed_command_states: dict[int, tuple[int, str]] = {}
         self._runtime_device_registry.subscribe(self.install_snapshot)
 
     def install_snapshot(self, snapshot: RuntimeDeviceSnapshot) -> None:
@@ -223,7 +237,9 @@ class RelayManager:
 
         if success:
             self._current_states[key] = state
-            self._record_desired_command(channel, state, mode, succeeded=True)
+            correlation_id = self._record_desired_command(channel, state, mode, succeeded=True)
+            self._emit_command_event(channel, state, mode, correlation_id)
+            self._record_board_correlation(channel, state, correlation_id)
             if self._relay_board_state_manager is not None:
                 await self._relay_board_state_manager.on_write_done()
             self._reconcile_observed_channels()
@@ -232,7 +248,10 @@ class RelayManager:
             )
             return (True, None)
         await self._record_hardware_failure(key, channel, state, mode)
-        self._record_failed_command(channel)
+        if self._record_failed_command(channel, state, mode):
+            self._emit_relay_event(
+                "relay.command_failed", channel, state, mode, None, EventSeverity.ERROR
+            )
         return (False, "Hardware error")
 
     def get_device_state(self, location: str, cluster: str, device_name: str) -> int | None:
@@ -281,7 +300,9 @@ class RelayManager:
             device_key = self._snapshot().by_channel.get(channel)
             if device_key:
                 self._current_states[device_key] = state
-            self._record_desired_command(channel, state, "manual", succeeded=True)
+            correlation_id = self._record_desired_command(channel, state, "manual", succeeded=True)
+            self._emit_command_event(channel, state, "manual", correlation_id)
+            self._record_board_correlation(channel, state, correlation_id)
             if self._relay_board_state_manager is not None:
                 await self._relay_board_state_manager.on_write_done()
             self._reconcile_observed_channels()
@@ -290,7 +311,10 @@ class RelayManager:
             device_key = self._snapshot().by_channel.get(channel)
             if device_key is not None:
                 await self._record_hardware_failure(device_key, channel, state, "manual")
-            self._record_failed_command(channel)
+            if self._record_failed_command(channel, state, "manual"):
+                self._emit_relay_event(
+                    "relay.command_failed", channel, state, "manual", None, EventSeverity.ERROR
+                )
         return success
 
     def is_channel_observed_off(self, channel: int) -> bool:
@@ -307,7 +331,9 @@ class RelayManager:
         success = await asyncio.to_thread(self.mcp23017.set_channel, channel, False)
         if not success or self._relay_board_state_manager is None:
             return False
-        self._record_desired_command(channel, 0, "safe", succeeded=True)
+        correlation_id = self._record_desired_command(channel, 0, "safe", succeeded=True)
+        self._emit_command_event(channel, 0, "safe", correlation_id)
+        self._record_board_correlation(channel, 0, correlation_id)
         if not await self._relay_board_state_manager.on_write_done():
             return False
         if not self.is_channel_observed_off(channel):
@@ -326,7 +352,11 @@ class RelayManager:
         success = await asyncio.to_thread(self.mcp23017.set_all_channels, list(states))
         if success:
             for channel, state in enumerate(states):
-                self._record_desired_command(channel, int(state), "safe", succeeded=True)
+                correlation_id = self._record_desired_command(
+                    channel, int(state), "safe", succeeded=True
+                )
+                self._emit_command_event(channel, int(state), "safe", correlation_id)
+                self._record_board_correlation(channel, int(state), correlation_id)
             if self._relay_board_state_manager is not None:
                 await self._relay_board_state_manager.on_write_done()
             self._reconcile_observed_channels()
@@ -368,6 +398,13 @@ class RelayManager:
                     location, cluster, device_name, state, device_command_service
                 )
                 await self._record_recovery(location, cluster, device_name, channel, state, mode)
+                self._emit_relay_event(
+                    "relay.mismatch_recovered",
+                    channel,
+                    state.desired_state,
+                    mode,
+                    state.correlation_id,
+                )
                 self._channel_control_states[channel] = replace(state, recovery_pending=False)
                 continue
             if (
@@ -389,9 +426,11 @@ class RelayManager:
 
     def _record_desired_command(
         self, channel: int, state: int, mode: str, *, succeeded: bool
-    ) -> None:
+    ) -> UUID | None:
         """Replace command metadata while preserving a mismatch start for unchanged disagreement."""
         previous = self._channel_control_states.get(channel)
+        state_changed = previous is None or previous.desired_state != state or previous.mode != mode
+        correlation_id = uuid4() if state_changed else None
         self._channel_control_states[channel] = RelayControlState(
             desired_state=state,
             mode=mode,
@@ -399,13 +438,75 @@ class RelayManager:
             prior_mode=previous.prior_mode if previous is not None else None,
             last_command_succeeded=succeeded,
             recovery_pending=previous.syncing if previous is not None else False,
+            correlation_id=correlation_id
+            or (previous.correlation_id if previous is not None else None),
+        )
+        self._failed_command_states.pop(channel, None)
+        return correlation_id
+
+    def _record_failed_command(self, channel: int, state: int, mode: str) -> bool:
+        """Expose failure outcome without fabricating a new desired physical command."""
+        failure = (state, mode)
+        if self._failed_command_states.get(channel) == failure:
+            return False
+        self._failed_command_states[channel] = failure
+        control_state = self._channel_control_states.get(channel)
+        if control_state is not None:
+            self._channel_control_states[channel] = replace(
+                control_state, last_command_succeeded=False
+            )
+        return True
+
+    def _record_board_correlation(
+        self, channel: int, state: int, correlation_id: UUID | None
+    ) -> None:
+        if correlation_id is None or self._relay_board_state_manager is None:
+            return
+        self._relay_board_state_manager.record_command_correlation(
+            channel, state == 1, correlation_id
         )
 
-    def _record_failed_command(self, channel: int) -> None:
-        """Expose failure outcome without fabricating a new desired physical command."""
-        state = self._channel_control_states.get(channel)
-        if state is not None:
-            self._channel_control_states[channel] = replace(state, last_command_succeeded=False)
+    def _emit_command_event(
+        self, channel: int, state: int, mode: str, correlation_id: UUID | None
+    ) -> None:
+        if correlation_id is None:
+            return
+        self._emit_relay_event("relay.commanded", channel, state, mode, correlation_id)
+
+    def _emit_relay_event(
+        self,
+        event_type: str,
+        channel: int,
+        state: int,
+        mode: str,
+        correlation_id: UUID | None,
+        severity: EventSeverity = EventSeverity.INFO,
+    ) -> None:
+        if self._event_sink is None:
+            return
+        device_key = self._snapshot().by_channel.get(channel)
+        entity = (
+            EntityContext(
+                entity_type="device",
+                entity_id="/".join(device_key),
+                location=device_key[0],
+                cluster=device_key[1],
+            )
+            if device_key is not None
+            else EntityContext(entity_type="relay_channel", entity_id=str(channel))
+        )
+        self._event_sink.emit_nowait(
+            OperationalEvent(
+                occurred_at=self._now(),
+                source=EventSource.AUTOMATION,
+                category=EventCategory.RELAY,
+                severity=severity,
+                event_type=event_type,
+                correlation_id=correlation_id,
+                entity=entity,
+                payload=RelayPayload(state=state == 1, command_mode=mode),
+            )
+        )
 
     def _reconcile_observed_channels(self) -> None:
         """Update syncing transitions from fresh MCP GPIO without mutating observed values."""
@@ -433,6 +534,14 @@ class RelayManager:
                 syncing=True,
                 mismatch_started_at=self._now(),
                 recovery_pending=False,
+            )
+            self._emit_relay_event(
+                "relay.mismatch_detected",
+                channel,
+                state.desired_state,
+                state.mode,
+                state.correlation_id,
+                EventSeverity.WARNING,
             )
 
     def _relay_observation_is_stale(self) -> bool:

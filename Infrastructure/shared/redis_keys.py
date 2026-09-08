@@ -21,8 +21,9 @@ Three design principles
    - ``cea:schedule:*`` — legacy + schedule state (see LEGACY NOTES).
    - ``automation:*`` — last-issued automation decision per device.
    - ``failsafe:*``   — per-cluster failsafe-active flag.
-   - ``sensor:raw``   — main XADD telemetry stream (CAN + soil + 1-wire).
-   - ``stream:control`` — XADD stream of effective setpoint decisions.
+    - ``sensor:raw``   — main XADD telemetry stream (CAN + soil + 1-wire).
+    - ``stream:control`` — XADD stream of effective setpoint decisions.
+    - ``cea:events:operational`` — bounded observability-only event timeline.
 
 3. **Retention is a property of the stream, not the writer.**
     ``SENSOR_RAW_MAXLEN``, ``CONTROL_STREAM_MAXLEN``, and
@@ -78,6 +79,9 @@ Producer: automation-service event bus. Consumer: backend config-event
 consumer. Events are notifications; durable configuration remains in the
 authoritative configuration store."""
 
+OPERATIONAL_EVENTS_STREAM: Final[str] = "cea:events:operational"
+"""Global observability-only stream of typed operational events."""
+
 SENSOR_RAW_MAXLEN: Final[int] = 100_000
 """Retention for the sensor:raw stream. At the observed ~3 msg/s CAN rate
 this is ~9 hours of buffer — enough for any stream-reader to reconnect and
@@ -94,6 +98,21 @@ CONFIG_EVENTS_MAXLEN: Final[int] = 10_000
 The backend consumer group processes configuration-change notifications; the
 stream is not the source of truth for configuration, so a finite reconnect
 buffer prevents an unbounded operational queue."""
+
+OPERATIONAL_EVENTS_RETENTION_MS: Final[int] = 86_400_000
+"""24-hour Redis stream age bound in milliseconds for operational events."""
+
+OPERATIONAL_EVENTS_MAXLEN: Final[int] = 50_000
+"""Exact maximum retained entry count for the operational event stream."""
+
+OPERATIONAL_EVENT_MAX_SERIALIZED_BYTES: Final[int] = 4_096
+"""Maximum UTF-8 byte length of one serialized operational event."""
+
+
+def operational_events_stream() -> str:
+    """Return the global operational-event stream key."""
+    return OPERATIONAL_EVENTS_STREAM
+
 
 # ---------------------------------------------------------------------------
 # Pubsub channels (PUBLISH / SUBSCRIBE)
@@ -279,9 +298,14 @@ __all__ = [
     "SENSOR_RAW_STREAM",
     "CONTROL_STREAM",
     "CONFIG_EVENTS_STREAM",
+    "OPERATIONAL_EVENTS_STREAM",
     "SENSOR_RAW_MAXLEN",
     "CONTROL_STREAM_MAXLEN",
     "CONFIG_EVENTS_MAXLEN",
+    "OPERATIONAL_EVENTS_RETENTION_MS",
+    "OPERATIONAL_EVENTS_MAXLEN",
+    "OPERATIONAL_EVENT_MAX_SERIALIZED_BYTES",
+    "operational_events_stream",
     # pubsub
     "SENSOR_UPDATE_CHANNEL",
     "SENSOR_UPDATE_SOIL_CHANNEL",

@@ -8,6 +8,16 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from app.config import ConfigLoader
 from app.database import DatabaseManager
+from app.events.mutation_context import (
+    MutationRequestContext,
+    PersistedMutation,
+    emit_persisted_mutation,
+)
+from app.events.mutation_coverage import emits_operational_mutation
+from app.events.mutation_dependencies import get_mutation_event_sink, get_mutation_request_context
+from app.events.mutation_diff import safe_allowlisted_diff
+from app.events.operational_models import EntityContext
+from app.events.operational_ports import OperationalEventSink
 from app.schemas.schedules import RoomScheduleCreate
 from shared.infra_logging import get_logger
 
@@ -34,9 +44,12 @@ def _to_hhmm(value: Any) -> str:
 
 
 @router.post("/api/room-schedule/sync-all-from-mode-parameters")
+@emits_operational_mutation
 async def sync_all_room_schedules_from_mode_parameters(
     database: DatabaseManager = Depends(get_database),
     config: ConfigLoader = Depends(get_config),
+    context: MutationRequestContext = Depends(get_mutation_request_context),
+    sink: OperationalEventSink = Depends(get_mutation_event_sink),
 ) -> dict[str, Any]:
     devices = await config.get_devices()
     results: list[dict[str, Any]] = []
@@ -46,7 +59,7 @@ async def sync_all_room_schedules_from_mode_parameters(
         for cluster in clusters:
             try:
                 out = await sync_room_schedule_from_mode_parameters(
-                    location, cluster, database, config
+                    location, cluster, database, config, context, sink
                 )
                 results.append(
                     {
@@ -135,12 +148,15 @@ async def get_room_schedule(
 
 
 @router.post("/api/room-schedule/{location}/{cluster}")
+@emits_operational_mutation
 async def save_room_schedule(
     location: str,
     cluster: str,
     schedule: RoomScheduleCreate,
     database: DatabaseManager = Depends(get_database),
     config: ConfigLoader = Depends(get_config),
+    context: MutationRequestContext = Depends(get_mutation_request_context),
+    sink: OperationalEventSink = Depends(get_mutation_event_sink),
 ) -> dict[str, Any]:
     try:
         from datetime import time as dt_time
@@ -195,6 +211,9 @@ async def save_room_schedule(
     active_mode = await database.room_mode_repo.get_active_mode(location, cluster)
     mode_name = str(active_mode.get("mode_name", "veg")) if active_mode else "veg"
     submode_name = active_mode.get("submode_name") if active_mode else None
+    prior_parameters = await database.room_mode_repo.get_mode_parameters(
+        location, cluster, mode_name, submode_name
+    )
 
     try:
         async with pool.acquire() as conn, conn.transaction():
@@ -269,11 +288,7 @@ async def save_room_schedule(
                     raise RuntimeError(f"Failed to create night schedule for {device_name}")
 
             # Update mode_parameters directly with photoperiod times and ramp durations
-            current_params = await database.room_mode_repo.get_mode_parameters(
-                location, cluster, mode_name, submode_name
-            )
-            if not current_params:
-                current_params = {}
+            current_params = prior_parameters or {}
             merged_params = {
                 **current_params,
                 "day_start_time": schedule.day_start_time,
@@ -344,6 +359,37 @@ async def save_room_schedule(
         },
     )
 
+    emit_persisted_mutation(
+        sink,
+        PersistedMutation(
+            operation="update",
+            entity=EntityContext(
+                entity_type="room_schedule",
+                entity_id=f"{location}:{cluster}",
+                location=location,
+                cluster=cluster,
+            ),
+            changes=safe_allowlisted_diff(
+                _room_schedule_values(prior_parameters),
+                {
+                    "day_start_time": schedule.day_start_time,
+                    "night_start_time": schedule.night_start_time,
+                    "light_ramp_up_minutes": schedule.ramp_up_duration or 30,
+                    "light_ramp_down_minutes": schedule.ramp_down_duration or 15,
+                },
+                frozenset(
+                    {
+                        "day_start_time",
+                        "night_start_time",
+                        "light_ramp_up_minutes",
+                        "light_ramp_down_minutes",
+                    }
+                ),
+            ),
+        ),
+        context,
+    )
+
     try:
         from app.routes.websocket import broadcast_room_schedule_update
 
@@ -372,11 +418,14 @@ async def save_room_schedule(
 
 
 @router.post("/api/room-schedule/{location}/{cluster}/sync-from-mode-parameters")
+@emits_operational_mutation
 async def sync_room_schedule_from_mode_parameters(
     location: str,
     cluster: str,
     database: DatabaseManager = Depends(get_database),
     config: ConfigLoader = Depends(get_config),
+    context: MutationRequestContext = Depends(get_mutation_request_context),
+    sink: OperationalEventSink = Depends(get_mutation_event_sink),
 ) -> dict[str, Any]:
     active = await database.room_mode_repo.get_active_mode(location, cluster)
     if not active:
@@ -404,4 +453,17 @@ async def sync_room_schedule_from_mode_parameters(
         ramp_up_duration=params.get("light_ramp_up_minutes"),
         ramp_down_duration=params.get("light_ramp_down_minutes"),
     )
-    return await save_room_schedule(location, cluster, schedule, database, config)
+    return await save_room_schedule(location, cluster, schedule, database, config, context, sink)
+
+
+def _room_schedule_values(parameters: dict[str, Any] | None) -> dict[str, str | int | None]:
+    if parameters is None:
+        return {}
+    day_start_time = parameters.get("day_start_time")
+    night_start_time = parameters.get("night_start_time")
+    return {
+        "day_start_time": _to_hhmm(day_start_time) if day_start_time is not None else None,
+        "night_start_time": _to_hhmm(night_start_time) if night_start_time is not None else None,
+        "light_ramp_up_minutes": parameters.get("light_ramp_up_minutes"),
+        "light_ramp_down_minutes": parameters.get("light_ramp_down_minutes"),
+    }

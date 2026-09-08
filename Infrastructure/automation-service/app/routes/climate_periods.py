@@ -2,14 +2,45 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.database import DatabaseManager
+from app.events.mutation_context import (
+    MutationRequestContext,
+    PersistedMutation,
+    emit_persisted_mutation,
+)
+from app.events.mutation_coverage import emits_operational_mutation
+from app.events.mutation_dependencies import get_mutation_event_sink, get_mutation_request_context
+from app.events.mutation_diff import safe_allowlisted_diff
+from app.events.operational_models import EntityContext
+from app.events.operational_ports import OperationalEventSink
 from app.schemas.climate_periods import PeriodsSaveRequest
 
 router = APIRouter(prefix="/api/climate-periods", tags=["climate-periods"])
+
+_PERIOD_EVENT_FIELDS = (
+    "period_name",
+    "start_time",
+    "end_time",
+    "ramp_minutes",
+    "heating_setpoint",
+    "cooling_setpoint",
+    "vpd_setpoint",
+    "co2_setpoint",
+)
+
+
+def _periods_digest(periods: list[dict[str, Any]]) -> str:
+    canonical_periods = [
+        {field: period.get(field) for field in _PERIOD_EVENT_FIELDS} for period in periods
+    ]
+    canonical = json.dumps(canonical_periods, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode()).hexdigest()
 
 
 def get_database() -> DatabaseManager:
@@ -47,11 +78,14 @@ async def get_climate_periods(
 
 
 @router.post("/{location}/{cluster}")
+@emits_operational_mutation
 async def save_climate_periods(
     location: str,
     cluster: str,
     request: PeriodsSaveRequest,
     database: DatabaseManager = Depends(get_database),
+    context: MutationRequestContext = Depends(get_mutation_request_context),
+    sink: OperationalEventSink = Depends(get_mutation_event_sink),
 ) -> dict[str, Any]:
     """Save climate periods for a location/cluster."""
     valid, errors = database.climate_periods_repo.validate_24h_coverage(
@@ -60,6 +94,13 @@ async def save_climate_periods(
 
     if not valid:
         raise HTTPException(status_code=400, detail={"errors": errors})
+
+    if request.mode_id is None:
+        previous = await database.climate_periods_repo.get_periods(location, cluster)
+    else:
+        previous = await database.climate_periods_repo.get_periods_for_room_mode(
+            location, cluster, request.mode_id, request.submode_id
+        )
 
     await database.climate_periods_repo.delete_periods(
         location, cluster, request.mode_id, request.submode_id
@@ -84,6 +125,29 @@ async def save_climate_periods(
         )
         if result:
             saved.append(result)
+        else:
+            raise HTTPException(status_code=500, detail="Failed to save climate period")
+
+    emit_persisted_mutation(
+        sink,
+        PersistedMutation(
+            operation="update",
+            entity=EntityContext(
+                entity_type="climate_periods",
+                entity_id=f"{location}:{cluster}:{request.mode_id}:{request.submode_id}",
+                location=location,
+                cluster=cluster,
+            ),
+            changes=safe_allowlisted_diff(
+                before={"periods_digest": _periods_digest(previous)},
+                after={
+                    "periods_digest": _periods_digest([p.model_dump() for p in request.periods])
+                },
+                allowed_fields=frozenset({"periods_digest"}),
+            ),
+        ),
+        context,
+    )
 
     return {"saved": len(saved), "periods": saved}
 
@@ -120,9 +184,34 @@ async def get_active_period(
 
 
 @router.delete("/{location}/{cluster}")
+@emits_operational_mutation
 async def delete_climate_periods(
-    location: str, cluster: str, database: DatabaseManager = Depends(get_database)
+    location: str,
+    cluster: str,
+    database: DatabaseManager = Depends(get_database),
+    context: MutationRequestContext = Depends(get_mutation_request_context),
+    sink: OperationalEventSink = Depends(get_mutation_event_sink),
 ) -> dict[str, Any]:
     """Delete all climate periods for a location/cluster."""
+    previous = await database.climate_periods_repo.get_periods(location, cluster)
     success = await database.climate_periods_repo.delete_periods(location, cluster)
+    if success:
+        emit_persisted_mutation(
+            sink,
+            PersistedMutation(
+                operation="delete",
+                entity=EntityContext(
+                    entity_type="climate_periods",
+                    entity_id=f"{location}:{cluster}",
+                    location=location,
+                    cluster=cluster,
+                ),
+                changes=safe_allowlisted_diff(
+                    before={"period_count": len(previous)},
+                    after={"period_count": 0},
+                    allowed_fields=frozenset({"period_count"}),
+                ),
+            ),
+            context,
+        )
     return {"deleted": success}

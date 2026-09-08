@@ -6,6 +6,8 @@ from collections.abc import Mapping
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
+from app.control.decision_event_policy import DecisionEventPolicy, DecisionObservation
+from app.events.operational_ports import OperationalEventSink
 from shared.infra_logging import LoggingContext, get_logger
 
 from .binary_device import BinaryDeviceMixin
@@ -38,6 +40,7 @@ class DeviceController(
         database_manager: DatabaseManager,
         dfr0971_manager: DFR0971Manager | None = None,
         binary_hysteresis: float = 0.1,
+        event_sink: OperationalEventSink | None = None,
     ) -> None:
         """Initialize device controller.
 
@@ -62,6 +65,7 @@ class DeviceController(
         # decide ON/OFF transitions under hysteresis. Missing key => uninitialized
         # (treated as OFF when applying the band).
         self._last_binary_state: dict[tuple[str, str, str], int] = {}
+        self._event_policy = DecisionEventPolicy(event_sink)
 
     async def process_device(
         self,
@@ -96,6 +100,23 @@ class DeviceController(
             if control_mode == "manual":
                 # Skip automated control for manual devices
                 logger.info(f"Skipping {device_name} ({location}/{cluster}) - manual mode")
+                self._event_policy.emit_lifecycle(
+                    DecisionObservation(
+                        location,
+                        cluster,
+                        device_name,
+                        current_time,
+                        "device",
+                        None,
+                        None,
+                        None,
+                        None,
+                        control_mode,
+                        "control.manual_mode",
+                        "Manual control mode selected",
+                    ),
+                    "control.mode_changed",
+                )
                 return
 
             # Calculate control output
@@ -109,6 +130,38 @@ class DeviceController(
                 setpoint,
                 context,
             )
+
+            if context.get("pid_output") is None:
+                device_type = device_info.get("device_type", "")
+                controller = "vpd" if device_type in ("humidifier", "dehumidifier") else "rule"
+                sensor_value = (
+                    context.get("current_vpd")
+                    if controller == "vpd"
+                    else self._get_sensor_value_for_device(device_type, sensor_values)
+                )
+                error = (
+                    setpoint - sensor_value
+                    if setpoint is not None and sensor_value is not None
+                    else None
+                )
+                active_rule_ids = context.get("active_rule_ids", ())
+                active_schedule_ids = context.get("active_schedule_ids", ())
+                self._event_policy.observe(
+                    DecisionObservation(
+                        location,
+                        cluster,
+                        device_name,
+                        current_time,
+                        controller,
+                        sensor_value,
+                        setpoint,
+                        error,
+                        control_output * 100.0 if control_output is not None else None,
+                        control_mode,
+                        f"control.{controller}_decision",
+                        f"{controller.upper()} decision; rules={active_rule_ids}; schedules={active_schedule_ids}",
+                    )
+                )
 
             if control_output is not None:
                 # Apply the control output

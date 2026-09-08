@@ -12,6 +12,16 @@ from app.config import ConfigLoader
 from app.control.relay_manager import RelayManager
 from app.database import DatabaseManager
 from app.events import ConfigChangeEvent, ConfigEventType, get_event_bus
+from app.events.mutation_context import (
+    MutationRequestContext,
+    PersistedMutation,
+    emit_persisted_mutation,
+)
+from app.events.mutation_coverage import emits_operational_mutation
+from app.events.mutation_dependencies import get_mutation_event_sink, get_mutation_request_context
+from app.events.mutation_diff import safe_allowlisted_diff
+from app.events.operational_models import EntityContext, JsonValue
+from app.events.operational_ports import OperationalEventSink
 from app.schemas.room_modes import (
     ActiveModeResponse,
     FlowerSubmode,
@@ -212,6 +222,7 @@ async def get_room_mode_with_params(
 
 
 @router.post("/room/{location}/{cluster}/mode", response_model=RoomModeWithParams)
+@emits_operational_mutation
 async def set_room_mode(
     location: str,
     cluster: str,
@@ -220,6 +231,8 @@ async def set_room_mode(
     config: ConfigLoader = Depends(get_config),
     relay_manager: RelayManager = Depends(get_relay_manager),
     dfr0971_manager=Depends(get_dfr0971_manager),
+    context: MutationRequestContext = Depends(get_mutation_request_context),
+    sink: OperationalEventSink = Depends(get_mutation_event_sink),
 ):
     ensure_configured_cluster({}, location, cluster)
     total_start = time.perf_counter()
@@ -259,6 +272,25 @@ async def set_room_mode(
             detail=result_data.get("message") or f"Failed to set mode '{request.mode_name}'",
         )
 
+    emit_persisted_mutation(
+        sink,
+        PersistedMutation(
+            operation="update",
+            entity=EntityContext(
+                entity_type="room_mode",
+                entity_id=f"{location}:{cluster}",
+                location=location,
+                cluster=cluster,
+            ),
+            changes=safe_allowlisted_diff(
+                _mode_event_values(result_data.get("old_mode")),
+                _mode_event_values(result_data.get("new_mode")),
+                frozenset({"mode_name", "submode_name"}),
+            ),
+        ),
+        context,
+    )
+
     logger.info(f"Mode switch: {location}/{cluster} -> {request.mode_name}/{request.submode_name}")
 
     if is_moon_authority_mode(request.mode_name.strip()):
@@ -285,12 +317,15 @@ async def set_room_mode(
 
 
 @router.put("/room/{location}/{cluster}/parameters", response_model=RoomModeWithParams)
+@emits_operational_mutation
 async def update_room_parameters(
     location: str,
     cluster: str,
     request: UpdateParametersRequest,
     db: DatabaseManager = Depends(get_database),
     config: ConfigLoader = Depends(get_config),
+    context: MutationRequestContext = Depends(get_mutation_request_context),
+    sink: OperationalEventSink = Depends(get_mutation_event_sink),
 ):
     ensure_configured_cluster({}, location, cluster)
     active = await db.room_mode_repo.get_active_mode(location, cluster)
@@ -324,8 +359,29 @@ async def update_room_parameters(
 
     merged_params = {**current_params, **updates}
 
-    await db.room_mode_repo.save_mode_parameters(
+    saved = await db.room_mode_repo.save_mode_parameters(
         location, cluster, mode_name, submode_name, merged_params
+    )
+    if not saved:
+        raise HTTPException(status_code=500, detail="Failed to save mode parameters")
+
+    emit_persisted_mutation(
+        sink,
+        PersistedMutation(
+            operation="update",
+            entity=EntityContext(
+                entity_type="room_mode_parameters",
+                entity_id=f"{location}:{cluster}:{mode_name}:{submode_name or 'default'}",
+                location=location,
+                cluster=cluster,
+            ),
+            changes=safe_allowlisted_diff(
+                current_params,
+                merged_params,
+                frozenset(updates),
+            ),
+        ),
+        context,
     )
 
     # Sync light ramp times to existing light schedules if they were updated
@@ -360,3 +416,14 @@ async def update_room_parameters(
 
     logger.info(f"Parameters updated: {location}/{cluster} mode={mode_name}")
     return await get_room_mode_with_params(location, cluster, db=db, config=config)
+
+
+def _mode_event_values(mode: object) -> dict[str, JsonValue]:
+    if not isinstance(mode, Mapping):
+        return {}
+    return {
+        "mode_name": mode.get("mode_name") if isinstance(mode.get("mode_name"), str) else None,
+        "submode_name": mode.get("submode_name")
+        if isinstance(mode.get("submode_name"), str)
+        else None,
+    }

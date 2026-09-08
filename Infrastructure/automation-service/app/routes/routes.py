@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 
+from app.events.mutation_dependencies import get_mutation_event_sink
 from app.routes import (
     alarms,
     calendar,
@@ -16,6 +17,7 @@ from app.routes import (
     lights,
     mode,
     notes,
+    operational_events,
     pid,
     redis_state,
     room_modes,
@@ -54,6 +56,7 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(redis_state.router, tags=["redis-state"])
     app.include_router(debug.router, tags=["debug"])
     app.include_router(system_config.router, tags=["system-config"])
+    app.include_router(operational_events.router, tags=["operational-events"])
     # Health (with hardware.mcp) is served by status.router GET /health
 
     logger.info("All routes registered")
@@ -134,6 +137,11 @@ def setup_dependency_overrides(app: FastAPI, container) -> None:
     app.dependency_overrides[debug.get_control_engine] = container.get_control_engine
 
     app.dependency_overrides[calendar.get_database] = container.get_database
+
+    app.dependency_overrides[get_mutation_event_sink] = container.get_operational_event_sink
+    app.dependency_overrides[operational_events.get_operational_event_reader] = (
+        container.get_operational_event_reader
+    )
 
     # Override dependencies in system_config module
     app.dependency_overrides[system_config.get_config] = container.get_config

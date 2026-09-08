@@ -5,6 +5,8 @@ from typing import TYPE_CHECKING, Any
 
 import asyncpg
 
+from app.events.operational_models import AlarmPayload, OperationalEvent
+
 from .base import BaseRepository, logger
 
 if TYPE_CHECKING:
@@ -153,6 +155,55 @@ class ControlActionRepository(BaseRepository):
             logger.error("Failed to record relay recovery: %s", error)
             return False
 
+    async def record_alarm_lifecycle(self, event: OperationalEvent) -> bool:
+        """Persist one alarm lifecycle row in the reserved control-history channel."""
+        match event.payload:
+            case AlarmPayload(alarm_code=alarm_name, state=lifecycle):
+                state_pair = {
+                    "open": (0, 1),
+                    "ack": (1, 1),
+                    "recover": (1, 0),
+                    "clear": (1, 0),
+                }.get(lifecycle)
+            case _:
+                return False
+        if state_pair is None:
+            return False
+
+        location = event.entity.location if event.entity is not None else "system"
+        cluster = event.entity.cluster if event.entity is not None else "system"
+        reason = self._alarm_reason(event)
+        try:
+            async with self.pool.acquire() as conn:
+                await conn.execute(
+                    """
+                    INSERT INTO control_history
+                    (timestamp, location, cluster, device_name, channel, old_state, new_state, mode, reason)
+                    VALUES (NOW(), $1, $2, $3, -1, $4, $5, $6, $7)
+                    """,
+                    location or "system",
+                    cluster or "system",
+                    f"alarm:{alarm_name}",
+                    state_pair[0],
+                    state_pair[1],
+                    f"alarm:{lifecycle}:{event.severity.value}",
+                    reason,
+                )
+                return True
+        except (asyncpg.PostgresError, OSError, TimeoutError) as error:
+            logger.warning("Failed to persist alarm lifecycle: %s", error)
+            return False
+
+    @staticmethod
+    def _alarm_reason(event: OperationalEvent) -> str:
+        """Build the bounded forensic reason retained by the existing schema."""
+        fragments = [f"correlation_id={event.correlation_id}"]
+        if event.reason_code is not None:
+            fragments.append(f"reason_code={event.reason_code}")
+        if event.reason_text is not None:
+            fragments.append(f"reason_text={event.reason_text}")
+        return ";".join(fragments)[:256]
+
     async def get_recent_control_history(
         self, location: str, cluster: str, limit: int = 10
     ) -> list[dict[str, Any]]:
@@ -163,7 +214,7 @@ class ControlActionRepository(BaseRepository):
                     """
                     SELECT timestamp, location, cluster, device_name, old_state, new_state, mode, reason, load_percent
                     FROM control_history
-                    WHERE location = $1 AND cluster = $2
+                    WHERE location = $1 AND cluster = $2 AND channel >= 0
                     ORDER BY timestamp DESC
                     LIMIT $3
                     """,
@@ -207,7 +258,7 @@ class ControlActionRepository(BaseRepository):
                 query = """
                     SELECT timestamp, location, cluster, device_name, old_state, new_state, mode, reason, load_percent, channel
                     FROM control_history
-                    WHERE location = $1 AND cluster = $2
+                    WHERE location = $1 AND cluster = $2 AND channel >= 0
                 """
                 params: list[Any] = [location, cluster]
                 param_idx = 3

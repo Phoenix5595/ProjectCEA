@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 # Standard library imports
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Final
 
 from asyncpg import Connection
 
@@ -13,6 +13,16 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from app.config import ConfigLoader
 from app.control.schedule_merge import merge_schedules_with_config
 from app.database import DatabaseManager
+from app.events.mutation_context import (
+    MutationRequestContext,
+    PersistedMutation,
+    emit_persisted_mutation,
+)
+from app.events.mutation_coverage import emits_operational_mutation
+from app.events.mutation_dependencies import get_mutation_event_sink, get_mutation_request_context
+from app.events.mutation_diff import safe_allowlisted_diff
+from app.events.operational_models import EntityContext, JsonValue
+from app.events.operational_ports import OperationalEventSink
 from app.redis_client import AutomationRedisClient
 from app.schemas.schedules import ScheduleCreate, ScheduleUpdate
 
@@ -25,6 +35,20 @@ if TYPE_CHECKING:
     from app.control.scheduler import Scheduler
 
 logger = get_logger(__name__)
+
+_SCHEDULE_MUTATION_FIELDS: Final[frozenset[str]] = frozenset(
+    {
+        "name",
+        "start_time",
+        "end_time",
+        "day_of_week",
+        "enabled",
+        "mode",
+        "target_intensity",
+        "ramp_up_duration",
+        "ramp_down_duration",
+    }
+)
 
 router = APIRouter()
 
@@ -86,8 +110,12 @@ async def get_schedules(
 
 
 @router.post("/api/schedules")
+@emits_operational_mutation
 async def create_schedule(
-    schedule: ScheduleCreate, database: DatabaseManager = Depends(get_database)
+    schedule: ScheduleCreate,
+    database: DatabaseManager = Depends(get_database),
+    context: MutationRequestContext = Depends(get_mutation_request_context),
+    sink: OperationalEventSink = Depends(get_mutation_event_sink),
 ) -> dict[str, Any]:
     """Create a new schedule."""
     if schedule.mode:
@@ -137,16 +165,31 @@ async def create_schedule(
     if not created:
         raise HTTPException(status_code=500, detail="Schedule created but not found")
 
+    emit_persisted_mutation(
+        sink,
+        PersistedMutation(
+            operation="create",
+            entity=_schedule_entity(created, schedule_id),
+            changes=safe_allowlisted_diff(
+                {}, _schedule_mutation_values(created), _SCHEDULE_MUTATION_FIELDS
+            ),
+        ),
+        context,
+    )
+
     return created
 
 
 @router.put("/api/schedules/{schedule_id}")
+@emits_operational_mutation
 async def update_schedule(
     schedule_id: int,
     schedule: ScheduleUpdate,
     database: DatabaseManager = Depends(get_database),
     scheduler=Depends(get_scheduler),
     config: ConfigLoader = Depends(get_config),
+    context: MutationRequestContext = Depends(get_mutation_request_context),
+    sink: OperationalEventSink = Depends(get_mutation_event_sink),
 ) -> dict[str, Any]:
     """Update a schedule."""
     if schedule.mode:
@@ -224,6 +267,20 @@ async def update_schedule(
     if not updated:
         raise HTTPException(status_code=500, detail="Schedule updated but not found")
 
+    emit_persisted_mutation(
+        sink,
+        PersistedMutation(
+            operation="update",
+            entity=_schedule_entity(updated, schedule_id),
+            changes=safe_allowlisted_diff(
+                _schedule_mutation_values(existing),
+                _schedule_mutation_values(updated),
+                _SCHEDULE_MUTATION_FIELDS,
+            ),
+        ),
+        context,
+    )
+
     if scheduler:
         all_schedules = await database.schedule_repo.get_schedules()
         scheduler.update_schedules(await merge_schedules_with_config(all_schedules, config))
@@ -240,13 +297,63 @@ async def update_schedule(
 
 
 @router.delete("/api/schedules/{schedule_id}")
+@emits_operational_mutation
 async def delete_schedule(
-    schedule_id: int, database: DatabaseManager = Depends(get_database)
+    schedule_id: int,
+    database: DatabaseManager = Depends(get_database),
+    context: MutationRequestContext = Depends(get_mutation_request_context),
+    sink: OperationalEventSink = Depends(get_mutation_event_sink),
 ) -> dict[str, Any]:
     """Delete a schedule."""
+    existing = next(
+        (
+            schedule
+            for schedule in await database.schedule_repo.get_schedules()
+            if schedule["id"] == schedule_id
+        ),
+        None,
+    )
     success = await database.schedule_repo.delete_schedule(schedule_id)
 
     if not success:
         raise HTTPException(status_code=404, detail="Schedule not found")
 
+    if existing is not None:
+        emit_persisted_mutation(
+            sink,
+            PersistedMutation(
+                operation="delete",
+                entity=_schedule_entity(existing, schedule_id),
+                changes=safe_allowlisted_diff(
+                    _schedule_mutation_values(existing), {}, _SCHEDULE_MUTATION_FIELDS
+                ),
+            ),
+            context,
+        )
+
     return {"id": schedule_id, "success": True}
+
+
+def _schedule_entity(schedule: dict[str, Any], schedule_id: int) -> EntityContext:
+    return EntityContext(
+        entity_type="schedule",
+        entity_id=str(schedule_id),
+        location=_string_value(schedule.get("location")),
+        cluster=_string_value(schedule.get("cluster")),
+    )
+
+
+def _schedule_mutation_values(schedule: dict[str, Any]) -> dict[str, JsonValue]:
+    return {field: _schedule_value(schedule.get(field)) for field in _SCHEDULE_MUTATION_FIELDS}
+
+
+def _schedule_value(value: Any) -> JsonValue:
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    if isinstance(value, list):
+        return ",".join(str(item) for item in value)
+    return str(value)
+
+
+def _string_value(value: Any) -> str | None:
+    return value if isinstance(value, str) else None

@@ -6,6 +6,7 @@ from collections.abc import Mapping
 from datetime import datetime
 from typing import Any
 
+from app.control.decision_event_policy import DecisionEventPolicy, DecisionObservation
 from app.redis.schema import pid_key
 from app.state import StateManager, get_state_manager
 from app.state.pid import PIDParams
@@ -17,7 +18,7 @@ logger = get_logger(__name__)
 class PIDControllerManager:
     """Manages PID controllers for device control."""
 
-    def __init__(self, database_manager):
+    def __init__(self, database_manager, event_policy: DecisionEventPolicy | None = None):
         """Initialize PID controller manager.
 
         Args:
@@ -28,6 +29,7 @@ class PIDControllerManager:
         self._autotuners: dict[str, Any] = {}  # Auto-tuner instances per device type
         # StateManager for fast in-memory PID param access (<1ms reads)
         self._state: StateManager = get_state_manager()
+        self._event_policy = event_policy or DecisionEventPolicy()
 
     async def get_pid_controller(
         self, location: str, cluster: str, device_name: str, device_type: str
@@ -358,6 +360,22 @@ class PIDControllerManager:
                 setpoint = self._get_setpoint_for_device(device_type, context)
                 sensor_value = self._get_sensor_value_for_device(device_type, sensor_values)
                 if setpoint is None or sensor_value is None:
+                    self._event_policy.observe(
+                        DecisionObservation(
+                            location,
+                            cluster,
+                            device_name,
+                            current_time,
+                            "on_off",
+                            sensor_value,
+                            setpoint,
+                            None,
+                            None,
+                            control_mode,
+                            "control.input_missing",
+                            "PID control input is unavailable",
+                        )
+                    )
                     return None
                 error = self._calculate_error(device_type, setpoint, sensor_value)
                 output = self._on_off_control(
@@ -367,6 +385,22 @@ class PIDControllerManager:
                     device_type,
                 )
                 logger.debug(f"ON/OFF {device_name}: error={error:.2f}, output={output}")
+                self._event_policy.observe(
+                    DecisionObservation(
+                        location,
+                        cluster,
+                        device_name,
+                        current_time,
+                        "on_off",
+                        sensor_value,
+                        setpoint,
+                        error,
+                        output * 100.0,
+                        control_mode,
+                        "control.on_off_decision",
+                        "ON/OFF hysteresis calculated control output",
+                    )
+                )
                 return output
 
             elif control_mode == "auto_pid":
@@ -374,10 +408,43 @@ class PIDControllerManager:
                 setpoint = self._get_setpoint_for_device(device_type, context)
                 sensor_value = self._get_sensor_value_for_device(device_type, sensor_values)
                 if setpoint is None or sensor_value is None:
+                    self._event_policy.observe(
+                        DecisionObservation(
+                            location,
+                            cluster,
+                            device_name,
+                            current_time,
+                            "auto_pid",
+                            sensor_value,
+                            setpoint,
+                            None,
+                            None,
+                            control_mode,
+                            "control.input_missing",
+                            "PID control input is unavailable",
+                        )
+                    )
                     return None
-                return await self._process_autotune_control(
+                output = await self._process_autotune_control(
                     device_type, setpoint, sensor_value, current_time
                 )
+                self._event_policy.observe(
+                    DecisionObservation(
+                        location,
+                        cluster,
+                        device_name,
+                        current_time,
+                        "auto_pid",
+                        sensor_value,
+                        setpoint,
+                        self._calculate_error(device_type, setpoint, sensor_value),
+                        output * 100.0,
+                        control_mode,
+                        "control.auto_pid_decision",
+                        "Auto-tuning PID calculated control output",
+                    )
+                )
+                return output
 
             # Standard PID control (control_mode == 'pid')
             controller = await self.get_pid_controller(location, cluster, device_name, device_type)
@@ -388,12 +455,44 @@ class PIDControllerManager:
             setpoint = self._get_setpoint_for_device(device_type, context)
             if setpoint is None:
                 logger.debug(f"No setpoint available for {device_name} ({device_type})")
+                self._event_policy.observe(
+                    DecisionObservation(
+                        location,
+                        cluster,
+                        device_name,
+                        current_time,
+                        "pid",
+                        None,
+                        None,
+                        None,
+                        None,
+                        control_mode,
+                        "control.input_missing",
+                        "PID setpoint is unavailable",
+                    )
+                )
                 return None
 
             # Get sensor value
             sensor_value = self._get_sensor_value_for_device(device_type, sensor_values)
             if sensor_value is None:
                 logger.debug(f"No sensor value available for {device_name} ({device_type})")
+                self._event_policy.observe(
+                    DecisionObservation(
+                        location,
+                        cluster,
+                        device_name,
+                        current_time,
+                        "pid",
+                        None,
+                        setpoint,
+                        None,
+                        None,
+                        control_mode,
+                        "control.input_missing",
+                        "PID sensor value is unavailable",
+                    )
+                )
                 return None
 
             # Check for mode changes (reset integrator if needed)
@@ -421,6 +520,22 @@ class PIDControllerManager:
                 logger.debug(
                     f"PID {device_name} ({device_type}): setpoint={setpoint}, "
                     f"sensor={sensor_value}, error={error:.3f}, output={output:.3f}"
+                )
+                self._event_policy.observe(
+                    DecisionObservation(
+                        location,
+                        cluster,
+                        device_name,
+                        current_time,
+                        "pid",
+                        sensor_value,
+                        setpoint,
+                        error,
+                        output * 100.0,
+                        current_mode or control_mode,
+                        "control.pid_decision",
+                        "PID calculated control output",
+                    )
                 )
 
                 return output
