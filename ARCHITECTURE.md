@@ -20,6 +20,8 @@ flowchart LR
   Timescale --> Backend
   Backend --> Frontend[React frontend]
   Automation --> Frontend
+  Automation --> Events[Operational event stream]
+  Events --> Frontend
   Timescale --> Grafana[Grafana iskraprojectcea:3001]
 ```
 
@@ -111,6 +113,24 @@ Redis holds live state and streams. `sensor:raw` is the main telemetry stream; `
 
 TimescaleDB on the Pi primary holds history and configuration. It streams WAL to the Iskra standby (`iskraprojectcea`). Grafana on Iskra reads the local WAL replica; live current-value panels read Redis via `redis_sync`.
 
+## Operational Event Log
+
+Automation also publishes a bounded, global `cea:events:operational` Redis stream. It records meaningful transitions, decisions, persisted mutations, alarms, and system events for human operators. The stream is **observability-only**: no consumer may drive control, hardware, or configuration writes from it.
+
+Source of truth for the contract, producers, and API is [`Infrastructure/automation-service/app/events/AGENTS.md`](Infrastructure/automation-service/app/events/AGENTS.md).
+
+| Concern | Detail |
+|---|---|
+| Stream key | `cea:events:operational` |
+| Retention | 24 hours or 50,000 entries, whichever is smaller |
+| Per-event size | 4,096 UTF-8 bytes |
+| Delivery | `GET /api/events/history` and `GET /api/events/stream` with header-authenticated SSE |
+| Cursor | Redis stream ID; reconnect replays strictly after the last processed ID |
+| Frontend | One shared global event-log store; dashboard shows all rooms, room overviews show one room |
+| Durability | Alarm/error lifecycle is also journaled to existing `control_history` for 30 days |
+
+The log coexists with existing authorities: `GET /api/devices/control-snapshot`, the config event stream, monitoring-service history, and `control_history` remain the canonical sources for their existing consumers.
+
 ## Local Verification
 
 The canonical local gates are:
@@ -122,6 +142,15 @@ python3 Infrastructure/scripts/validate_cluster_topology.py
 git diff --check
 bash Infrastructure/scripts/tests/test-reset-device-registry.sh
 bash Infrastructure/scripts/tests/test-deploy-candidate.sh
+```
+
+The event-log feature adds these additional approved gates:
+
+```bash
+cd Infrastructure/automation-service && pytest -q app/tests/pure
+cd Infrastructure/frontend && npx tsc --noEmit && npm run build && npx vitest run
+bash Infrastructure/database/tests/test-operational-history-retention.sh
+bash Infrastructure/database/tests/test-monitoring-read-models.sh --case reject-incompatible-and-destructive
 ```
 
 Production validation is not prescribed as the only surface.
