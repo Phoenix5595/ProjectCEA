@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any, cast
 
 from shared.infra_logging import LoggingContext, get_logger
 
 if TYPE_CHECKING:
     from app.database import DatabaseManager
+    from app.events.operational_ports import OperationalEventSink
     from app.redis import AutomationRedisClient
 
 logger = get_logger(__name__)
@@ -23,6 +24,8 @@ class RampState:
     target_value: float
     duration_minutes: float
     start_time: datetime
+    midpoint_emitted: bool
+    restored: bool
 
     def __init__(
         self,
@@ -31,12 +34,16 @@ class RampState:
         target_value: float,
         duration_minutes: float,
         start_time: datetime,
+        *,
+        restored: bool = False,
     ):
         self.setpoint_type = setpoint_type
         self.start_value = start_value
         self.target_value = target_value
         self.duration_minutes = duration_minutes
         self.start_time = start_time
+        self.midpoint_emitted = restored
+        self.restored = restored
 
     @property
     def end_time(self) -> datetime:
@@ -73,11 +80,62 @@ class RampManager:
 
     _redis: AutomationRedisClient | None
 
-    def __init__(self, redis_client: AutomationRedisClient | None = None) -> None:
+    def __init__(
+        self,
+        redis_client: AutomationRedisClient | None = None,
+        event_sink: OperationalEventSink | None = None,
+    ) -> None:
         """Initialize ramp manager."""
         # Key: (location, cluster, setpoint_type) - ensures room isolation
         self.active_ramps: dict[tuple[str, str, str], RampState] = {}
         self._redis = redis_client
+        self._event_sink = event_sink
+
+    def _emit_lifecycle(
+        self,
+        event_type: str,
+        ramp: RampState,
+        location: str,
+        cluster: str,
+        occurred_at: datetime,
+        reason_code: str,
+    ) -> None:
+        if self._event_sink is None:
+            return
+        from app.events.operational_models import (
+            EntityContext,
+            EventCategory,
+            EventSeverity,
+            EventSource,
+            OperationalEvent,
+            RampPayload,
+        )
+
+        timestamp = (
+            occurred_at.astimezone(UTC) if occurred_at.tzinfo else occurred_at.replace(tzinfo=UTC)
+        )
+        self._event_sink.emit_nowait(
+            OperationalEvent(
+                occurred_at=timestamp,
+                source=EventSource.AUTOMATION,
+                category=EventCategory.RAMP,
+                severity=EventSeverity.INFO,
+                event_type=event_type,
+                entity=EntityContext(
+                    entity_type="setpoint",
+                    entity_id=ramp.setpoint_type,
+                    location=location,
+                    cluster=cluster,
+                ),
+                reason_code=reason_code,
+                payload=RampPayload(
+                    ramp_type=f"setpoint:{ramp.setpoint_type}",
+                    start_value=ramp.start_value,
+                    target_value=ramp.target_value,
+                    duration_seconds=round(ramp.duration_minutes * 60),
+                ),
+            )
+        )
 
     def set_redis(self, redis_client: AutomationRedisClient) -> None:
         """Set Redis client for ramp persistence."""
@@ -142,6 +200,7 @@ class RampManager:
                         float(ramp_data["target_value"]),
                         duration,
                         start_time,
+                        restored=True,
                     )
 
                     elapsed = (now - start_time).total_seconds() / 60.0
@@ -182,6 +241,17 @@ class RampManager:
         threshold = self.SKIP_THRESHOLDS.get(setpoint_type, 0.1)
         delta = abs(target_value - start_value)
 
+        previous_ramp = self.active_ramps.get(ramp_key)
+        if previous_ramp is not None:
+            self._emit_lifecycle(
+                "ramp.interrupted",
+                previous_ramp,
+                location,
+                cluster,
+                current_time,
+                "target_replaced",
+            )
+
         if duration_minutes <= 0 or delta < threshold:
             # No ramp needed - but MUST cancel any existing ramp to prevent stale data
             if ramp_key in self.active_ramps:
@@ -190,6 +260,15 @@ class RampManager:
                     f"RAMP SKIPPED: {location}/{cluster} {setpoint_type} "
                     f"delta={delta:.3f} < threshold={threshold}, cleared stale ramp"
                 )
+            instant_ramp = RampState(
+                setpoint_type, start_value, target_value, duration_minutes, current_time
+            )
+            self._emit_lifecycle(
+                "ramp.started", instant_ramp, location, cluster, current_time, "instant_target"
+            )
+            self._emit_lifecycle(
+                "ramp.completed", instant_ramp, location, cluster, current_time, "instant_target"
+            )
             return
 
         ramp = RampState(setpoint_type, start_value, target_value, duration_minutes, current_time)
@@ -198,6 +277,9 @@ class RampManager:
         logger.info(
             f"RAMP START: {location}/{cluster} {setpoint_type} from {start_value} to {target_value} "
             f"over {duration_minutes} minutes"
+        )
+        self._emit_lifecycle(
+            "ramp.started", ramp, location, cluster, current_time, "period_transition"
         )
 
         if self._redis:
@@ -228,23 +310,50 @@ class RampManager:
             current_value = ramp.get_current_value(current_time)
             elapsed = (current_time - ramp.start_time).total_seconds() / 60.0
             progress = min(elapsed / ramp.duration_minutes, 1.0)
+            if progress >= 0.5 and not ramp.midpoint_emitted:
+                ramp.midpoint_emitted = True
+                self._emit_lifecycle(
+                    "ramp.midpoint_reached",
+                    ramp,
+                    location,
+                    cluster,
+                    current_time,
+                    "midpoint_crossed",
+                )
             return current_value, progress
         elif ramp and ramp.is_complete(current_time):
             del self.active_ramps[ramp_key]
             logger.info(
                 f"RAMP COMPLETE: {location}/{cluster} {setpoint_type} reached {nominal_value}"
             )
+            self._emit_lifecycle(
+                "ramp.completed", ramp, location, cluster, current_time, "target_reached"
+            )
             if self._redis:
                 self._clear_persisted_ramp(location, cluster, setpoint_type)
 
         return nominal_value, None
 
-    def cancel_ramp(self, location: str, cluster: str, setpoint_type: str) -> None:
+    def cancel_ramp(
+        self,
+        location: str,
+        cluster: str,
+        setpoint_type: str,
+        current_time: datetime | None = None,
+    ) -> None:
         """Cancel an active ramp for a specific room."""
         ramp_key = self._make_key(location, cluster, setpoint_type)
         if ramp_key in self.active_ramps:
-            del self.active_ramps[ramp_key]
+            ramp = self.active_ramps.pop(ramp_key)
             logger.info(f"RAMP CANCELLED: {location}/{cluster} {setpoint_type}")
+            self._emit_lifecycle(
+                "ramp.cancelled",
+                ramp,
+                location,
+                cluster,
+                current_time or datetime.now(tz=UTC),
+                "cancelled",
+            )
             if self._redis:
                 self._clear_persisted_ramp(location, cluster, setpoint_type)
 
@@ -333,10 +442,40 @@ class RampManager:
         for setpoint_type in setpoint_types:
             ramp_key = self._make_key(location, cluster, setpoint_type)
             if ramp_key in self.active_ramps:
-                del self.active_ramps[ramp_key]
+                ramp = self.active_ramps.pop(ramp_key)
+                self._emit_lifecycle(
+                    "ramp.interrupted",
+                    ramp,
+                    location,
+                    cluster,
+                    datetime.now(tz=UTC),
+                    "target_replaced",
+                )
                 cleared.append(setpoint_type)
         if cleared:
             logger.info(f"RAMPS CLEARED for {location}/{cluster}: {cleared}")
+
+    def restore_ramp(
+        self,
+        location: str,
+        cluster: str,
+        setpoint_type: str,
+        start_value: float,
+        target_value: float,
+        duration_minutes: float,
+        start_time: datetime,
+        current_time: datetime,
+    ) -> None:
+        ramp = RampState(
+            setpoint_type,
+            start_value,
+            target_value,
+            duration_minutes,
+            start_time,
+            restored=True,
+        )
+        if not ramp.is_complete(current_time):
+            self.active_ramps[self._make_key(location, cluster, setpoint_type)] = ramp
 
 
 class SetpointManager:
@@ -347,6 +486,7 @@ class SetpointManager:
         database: DatabaseManager | None = None,  # DatabaseManager for querying climate periods
         redis_client: AutomationRedisClient | None = None,
         state_manager=None,  # StateManager (optional)
+        event_sink: OperationalEventSink | None = None,
     ):
         """Initialize setpoint manager.
 
@@ -357,7 +497,7 @@ class SetpointManager:
         """
         self.database: DatabaseManager | None = database
         self._redis = redis_client
-        self.ramp_manager = RampManager(redis_client)
+        self.ramp_manager = RampManager(redis_client, event_sink)
         self._state = state_manager  # type: ignore
 
     async def compute_effective_setpoints(
@@ -651,7 +791,12 @@ class SetpointManager:
 
                 # Recreate ramp state
                 ramp_state = RampState(
-                    ramp_key[2], start_value, target_value, duration_minutes, start_time
+                    ramp_key[2],
+                    start_value,
+                    target_value,
+                    duration_minutes,
+                    start_time,
+                    restored=True,
                 )
 
                 # Only restore if not complete

@@ -13,6 +13,15 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.control.relay_manager import RelayManager
 from app.control.runtime_device_registry import RuntimeDeviceRegistry
 from app.control.runtime_device_snapshot import RuntimeDeviceSnapshot
+from app.events.operational_models import (
+    EntityContext,
+    EventCategory,
+    EventSeverity,
+    EventSource,
+    ManualOverridePayload,
+    OperationalEvent,
+)
+from app.events.operational_ports import OperationalEventSink
 from app.redis.schema import relay_raw_override_key
 from app.redis_client import AutomationRedisClient
 from app.repositories.control_actions import ControlActionRepository
@@ -97,12 +106,14 @@ class DeviceCommandService:
         control_action_repository: ControlActionRepository,
         automation_redis: AutomationRedisClient | None,
         now: Callable[[], datetime] = lambda: datetime.now(UTC),
+        event_sink: OperationalEventSink | None = None,
     ) -> None:
         self._runtime_device_registry = runtime_device_registry
         self._relay_manager = relay_manager
         self._control_action_repository = control_action_repository
         self._automation_redis = automation_redis
         self._now = now
+        self._event_sink = event_sink
         self._states: dict[tuple[str, str, str], DeviceCommandState] = {}
         self._state_identities: dict[tuple[str, str, str], int] = {}
         self._lock = anyio.Lock()
@@ -186,6 +197,7 @@ class DeviceCommandService:
                 restored_state = DeviceCommandState(mode=restored_mode)
                 self._states[key] = restored_state
                 self._relay_manager.record_command_state(key, restored_mode, None, None)
+                self._emit_manual_event("manual_override.expired", key, restored_state)
 
     def get_command_state(
         self, location: str, cluster: str, device_name: str
@@ -241,9 +253,12 @@ class DeviceCommandService:
         )
         if not audit_written:
             raise DeviceCommandAuditError("Could not audit AUTO command")
-        del previous
         self._states[key] = DeviceCommandState(mode="auto")
         self._relay_manager.record_command_state(key, "auto", None, None)
+        if previous.mode == "timed_on":
+            self._emit_manual_event("manual_override.cancelled", key, self._states[key])
+        elif previous.mode == "manual_off":
+            self._emit_manual_event("manual_override.released", key, self._states[key])
         return DeviceCommandResult(mode="auto", expires_at=None)
 
     async def _write_command(
@@ -284,4 +299,53 @@ class DeviceCommandService:
         self._relay_manager.record_command_state(
             key, next_state.mode, next_state.expires_at, next_state.prior_mode
         )
+        self._emit_manual_command_event(key, previous, next_state)
         return DeviceCommandResult(mode=next_state.mode, expires_at=next_state.expires_at)
+
+    def _emit_manual_command_event(
+        self,
+        key: tuple[str, str, str],
+        previous: DeviceCommandState,
+        next_state: DeviceCommandState,
+    ) -> None:
+        if previous.mode == "timed_on" and next_state.mode == "timed_on":
+            self._emit_manual_event("manual_override.extended", key, next_state)
+            return
+        if previous.mode in {"manual_off", "timed_on"}:
+            self._emit_manual_event("manual_override.replaced", key, next_state)
+            return
+        self._emit_manual_event("manual_override.started", key, next_state)
+
+    def _emit_manual_event(
+        self,
+        event_type: str,
+        key: tuple[str, str, str],
+        state: DeviceCommandState,
+    ) -> None:
+        if self._event_sink is None:
+            return
+        duration_seconds = (
+            max(0, int((state.expires_at - self._now()).total_seconds()))
+            if state.expires_at is not None
+            else None
+        )
+        self._event_sink.emit_nowait(
+            OperationalEvent(
+                occurred_at=self._now(),
+                source=EventSource.AUTOMATION,
+                category=EventCategory.MANUAL_OVERRIDE,
+                severity=EventSeverity.INFO,
+                event_type=event_type,
+                entity=EntityContext(
+                    entity_type="device",
+                    entity_id="/".join(key),
+                    location=key[0],
+                    cluster=key[1],
+                ),
+                payload=ManualOverridePayload(
+                    mode=state.mode,
+                    expires_at=state.expires_at,
+                    duration_seconds=duration_seconds,
+                ),
+            )
+        )

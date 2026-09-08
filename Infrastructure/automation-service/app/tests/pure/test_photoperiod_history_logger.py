@@ -44,6 +44,9 @@ class LifecycleComponent:
     async def close(self) -> None:
         self.calls.append(f"{self.name}-close")
 
+    async def drain(self) -> None:
+        self.calls.append(f"{self.name}-drain")
+
 
 def observation(minute: int = 0) -> PhotoperiodObservation:
     return PhotoperiodObservation(
@@ -125,7 +128,10 @@ async def test_lifecycle_flush_stops_logger_before_database_close() -> None:
     container.__dict__["background_tasks"] = LifecycleComponent("control", calls)
     container.__dict__["photoperiod_history_logger"] = LifecycleComponent("logger", calls)
     container.__dict__["monitoring_publication_workers"] = LifecycleComponent("publication", calls)
+    container.__dict__["operational_event_dispatcher"] = LifecycleComponent("events", calls)
     container.__dict__["database"] = LifecycleComponent("database", calls)
+    container.__dict__["_operational_event_redis"] = None
+    container.__dict__["_operational_event_pool"] = None
     container.mcp23017 = None
     container.dfr0971_manager = None
     container._initialized = True
@@ -134,7 +140,13 @@ async def test_lifecycle_flush_stops_logger_before_database_close() -> None:
     await container.shutdown()
 
     # Then: control and publication workers stop before the database closes.
-    assert calls == ["control-stop", "logger-stop", "publication-stop", "database-close"]
+    assert calls == [
+        "control-stop",
+        "logger-stop",
+        "publication-stop",
+        "events-drain",
+        "database-close",
+    ]
 
 
 @pytest.mark.asyncio

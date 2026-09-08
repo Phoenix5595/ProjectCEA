@@ -64,6 +64,9 @@ class BoardState:
         self.write_samples += 1
         return True
 
+    def record_command_correlation(self, _channel: int, _state: bool, _correlation_id) -> None:
+        return None
+
     def get_freshness(self):
         return type("Freshness", (), {"status": "FRESH"})()
 
