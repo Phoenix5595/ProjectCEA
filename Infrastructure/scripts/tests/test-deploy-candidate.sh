@@ -156,6 +156,7 @@ base_environment() {
   export DEPLOY_SKIP_STAGING=1
   export DEPLOY_HEALTH_ATTEMPTS=1
   export HEALTH_STATE_FILE
+  export HEALTH_DELAYED_CALLS_FILE
   export EVENT_LOG
 }
 
@@ -584,7 +585,7 @@ pass "scenario 14: unrelated dirty file stays outside identity artifacts"
 
 printf ']' >> "$EVIDENCE_STATES"
 
-EVIDENCE_DIR="/home/antoine/ProjectCEA/.omo/evidence/relay-registry-control-snapshot-recovery/task-11"
+EVIDENCE_DIR="$SANDBOX/evidence"
 mkdir -p "$EVIDENCE_DIR"
 cp "$EVIDENCE_STATES" "$EVIDENCE_DIR/deploy-state.json"
 
