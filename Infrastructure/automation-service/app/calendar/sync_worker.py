@@ -86,9 +86,9 @@ class CalendarSyncWorker:
                         row["id"], href, etag, target_url
                     )
                     pushed += 1
-            except Exception as e:
-                errors.append(f"event {row['id']}: {e}")
-                logger.error("Calendar sync event %s failed: %s", row["id"], e)
+            except Exception:
+                errors.append(f"event {row['id']}: remote sync failed")
+                logger.error("Calendar sync event %s failed", row["id"])
 
         await self._db.calendar_repo.update_sync_state(
             conn["id"],

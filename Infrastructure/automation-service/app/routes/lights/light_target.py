@@ -8,6 +8,16 @@ from fastapi import Depends, HTTPException
 
 from app.config import ConfigLoader
 from app.database import DatabaseManager
+from app.events.mutation_context import (
+    MutationRequestContext,
+    PersistedMutation,
+    emit_persisted_mutation,
+)
+from app.events.mutation_coverage import emits_operational_mutation
+from app.events.mutation_dependencies import get_mutation_event_sink, get_mutation_request_context
+from app.events.mutation_diff import safe_allowlisted_diff
+from app.events.operational_models import EntityContext
+from app.events.operational_ports import OperationalEventSink
 from app.repositories.light_target_intensity import validate_normal_target_intensity
 from app.routes.lights import get_config, get_database, get_scheduler, router
 from app.schemas.lights import LightIntensityUpdate, TargetIntensityControl
@@ -59,6 +69,7 @@ async def _publish_schedule_changed(
 
 
 @router.post("/api/lights/{location}/{cluster}/{device_name}/target")
+@emits_operational_mutation
 async def set_target_intensity(
     location: str,
     cluster: str,
@@ -67,6 +78,8 @@ async def set_target_intensity(
     config: ConfigLoader = Depends(get_config),
     database: DatabaseManager = Depends(get_database),
     scheduler: Any = Depends(get_scheduler),
+    context: MutationRequestContext = Depends(get_mutation_request_context),
+    sink: OperationalEventSink = Depends(get_mutation_event_sink),
 ) -> dict[str, Any]:
     try:
         target_intensity = validate_normal_target_intensity(control.target_intensity)
@@ -97,6 +110,7 @@ async def set_target_intensity(
     if not mode_info:
         raise HTTPException(status_code=404, detail=f"Mode '{mode_name}' not found")
     mode_id = mode_info["id"]
+    prior_target = await database.light_target_intensity_repo.get_intensity(device_id, mode_id)
 
     # Write to light_target_intensity
     ok = await database.light_target_intensity_repo.set_intensity(
@@ -107,6 +121,25 @@ async def set_target_intensity(
             status_code=500,
             detail=f"Failed to set light target intensity for {device_name}",
         )
+
+    emit_persisted_mutation(
+        sink,
+        PersistedMutation(
+            operation="update",
+            entity=EntityContext(
+                entity_type="light_target",
+                entity_id=f"{device_id}:{mode_id}",
+                location=location,
+                cluster=cluster,
+            ),
+            changes=safe_allowlisted_diff(
+                before={"target_intensity": prior_target},
+                after={"target_intensity": target_intensity},
+                allowed_fields=frozenset({"target_intensity"}),
+            ),
+        ),
+        context,
+    )
 
     # Synchronous scheduler cache update
     await _sync_scheduler_light_intensities(database, scheduler)
@@ -136,11 +169,14 @@ async def set_target_intensity(
 
 
 @router.put("/api/lights/{device_id}/intensity")
+@emits_operational_mutation
 async def update_light_intensity(
     device_id: int,
     control: LightIntensityUpdate,
     database: DatabaseManager = Depends(get_database),
     scheduler: Any = Depends(get_scheduler),
+    context: MutationRequestContext = Depends(get_mutation_request_context),
+    sink: OperationalEventSink = Depends(get_mutation_event_sink),
 ) -> dict[str, Any]:
     try:
         target_intensity = validate_normal_target_intensity(control.target_intensity)
@@ -171,6 +207,7 @@ async def update_light_intensity(
     if not mode_info:
         raise HTTPException(status_code=404, detail=f"Mode '{mode_name}' not found")
     mode_id = mode_info["id"]
+    prior_target = await database.light_target_intensity_repo.get_intensity(device_id, mode_id)
 
     # Write to light_target_intensity
     ok = await database.light_target_intensity_repo.set_intensity(
@@ -181,6 +218,25 @@ async def update_light_intensity(
             status_code=500,
             detail=f"Failed to set light target intensity for {device_name}",
         )
+
+    emit_persisted_mutation(
+        sink,
+        PersistedMutation(
+            operation="update",
+            entity=EntityContext(
+                entity_type="light_target",
+                entity_id=f"{device_id}:{mode_id}",
+                location=location,
+                cluster=cluster,
+            ),
+            changes=safe_allowlisted_diff(
+                before={"target_intensity": prior_target},
+                after={"target_intensity": target_intensity},
+                allowed_fields=frozenset({"target_intensity"}),
+            ),
+        ),
+        context,
+    )
 
     # Synchronous scheduler cache update
     await _sync_scheduler_light_intensities(database, scheduler)

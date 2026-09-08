@@ -13,6 +13,16 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.control.device_command_service import DeviceCommandService
 from app.control.relay_board_state_manager import RelayBoardStateManager
 from app.control.relay_manager import RelayManager
+from app.events.mutation_context import (
+    MutationRequestContext,
+    PersistedMutation,
+    emit_persisted_mutation,
+)
+from app.events.mutation_coverage import emits_operational_mutation
+from app.events.mutation_dependencies import get_mutation_event_sink, get_mutation_request_context
+from app.events.mutation_diff import safe_allowlisted_diff
+from app.events.operational_models import EntityContext
+from app.events.operational_ports import OperationalEventSink
 from app.redis.schema import relay_raw_override_key
 from app.redis_client import AutomationRedisClient
 
@@ -114,12 +124,15 @@ class RelayChannelControlRequest(BaseModel):
 
 
 @router.post("/api/hardware/relays/channel/{channel}/state")
+@emits_operational_mutation
 async def set_relay_channel_state(
     channel: int,
     body: RelayChannelControlRequest,
     relay_manager: RelayManager = Depends(get_relay_manager),
     automation_redis: AutomationRedisClient = Depends(get_automation_redis),
     device_command_service: DeviceCommandService = Depends(get_device_command_service),
+    context: MutationRequestContext = Depends(get_mutation_request_context),
+    sink: OperationalEventSink = Depends(get_mutation_event_sink),
 ) -> dict[str, Any]:
     """Set a single relay channel ON or OFF directly (raw control).
 
@@ -133,6 +146,13 @@ async def set_relay_channel_state(
         )
 
     override_key = relay_raw_override_key(channel)
+    redis_client = automation_redis.redis_client
+    previous_override = (
+        await asyncio.to_thread(redis_client.get, override_key)
+        if redis_client is not None
+        else None
+    )
+    before = _raw_override_values(previous_override)
 
     if body.state == 1:
         if body.duration_seconds is None:
@@ -149,17 +169,19 @@ async def set_relay_channel_state(
                 status_code=503,
                 detail=f"Failed to set channel {channel} to ON",
             )
-        if automation_redis.redis_client is not None:
+        if redis_client is not None:
+            persisted_override = {"expires_at": expires_at.isoformat(), "state": 1}
             await asyncio.to_thread(
-                automation_redis.redis_client.setex,
+                redis_client.setex,
                 override_key,
                 body.duration_seconds + 86400,
-                json.dumps({"expires_at": expires_at.isoformat(), "state": 1}),
+                json.dumps(persisted_override),
             )
     else:
-        if automation_redis.redis_client is not None:
+        persisted_override = {}
+        if redis_client is not None:
             await asyncio.to_thread(
-                automation_redis.redis_client.delete,
+                redis_client.delete,
                 override_key,
             )
         success = await relay_manager.set_channel_state(channel, 0)
@@ -168,6 +190,21 @@ async def set_relay_channel_state(
                 status_code=503,
                 detail=f"Failed to set channel {channel} to OFF",
             )
+
+    if redis_client is not None and before is not None:
+        emit_persisted_mutation(
+            sink,
+            PersistedMutation(
+                operation="update",
+                entity=EntityContext(entity_type="raw_relay_override", entity_id=str(channel)),
+                changes=safe_allowlisted_diff(
+                    before=before,
+                    after=persisted_override,
+                    allowed_fields=frozenset({"expires_at", "state"}),
+                ),
+            ),
+            context,
+        )
 
     return {
         "channel": channel,
@@ -194,3 +231,19 @@ async def relay_state(
 def _timestamp(value: datetime | None) -> str | None:
     """Serialize an observed timestamp in the API's ISO-8601 UTC format."""
     return value.astimezone(UTC).isoformat().replace("+00:00", "Z") if value else None
+
+
+def _raw_override_values(value: bytes | str | None) -> dict[str, str | int] | None:
+    if value is None:
+        return {}
+    try:
+        decoded = json.loads(value)
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    if not isinstance(decoded, dict):
+        return None
+    state = decoded.get("state")
+    expires_at = decoded.get("expires_at")
+    if type(state) is not int or state not in {0, 1} or not isinstance(expires_at, str):
+        return None
+    return {"expires_at": expires_at, "state": state}

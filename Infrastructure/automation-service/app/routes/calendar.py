@@ -6,6 +6,7 @@ from datetime import date
 import json
 import os
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -14,6 +15,17 @@ from app.calendar.credentials import encrypt_secret
 from app.calendar.flower_grow_plan import FlowerGrowPlanInput
 from app.calendar.sync_worker import CalendarSyncWorker
 from app.database import DatabaseManager
+from app.events.mutation_context import (
+    MutationOperation,
+    MutationRequestContext,
+    PersistedMutation,
+    emit_persisted_mutation,
+)
+from app.events.mutation_coverage import emits_operational_mutation
+from app.events.mutation_dependencies import get_mutation_event_sink, get_mutation_request_context
+from app.events.mutation_diff import safe_allowlisted_diff
+from app.events.operational_models import EntityContext, JsonValue
+from app.events.operational_ports import OperationalEventSink
 from app.schemas.calendar import (
     CalendarEventCreate,
     CalendarEventUpdate,
@@ -128,43 +140,79 @@ async def get_event(
 
 
 @router.post("/events")
+@emits_operational_mutation
 async def create_event(
     body: CalendarEventCreate,
     database: DatabaseManager = Depends(get_database),
+    context: MutationRequestContext = Depends(get_mutation_request_context),
+    sink: OperationalEventSink = Depends(get_mutation_event_sink),
 ) -> dict[str, Any]:
     data = body.model_dump()
     data["metadata"] = data.get("metadata") or {}
     row = await database.calendar_repo.create_event(data)
+    if not row:
+        raise HTTPException(status_code=500, detail="Failed to create calendar event")
+    _emit_calendar_mutation(sink, context, "create", row, {}, _calendar_event_values(row))
     return _serialize_event(row)
 
 
 @router.patch("/events/{event_id}")
+@emits_operational_mutation
 async def update_event(
     event_id: int,
     body: CalendarEventUpdate,
     database: DatabaseManager = Depends(get_database),
+    context: MutationRequestContext = Depends(get_mutation_request_context),
+    sink: OperationalEventSink = Depends(get_mutation_event_sink),
 ) -> dict[str, Any]:
+    previous = await database.calendar_repo.get_event(event_id)
     row = await database.calendar_repo.update_event(event_id, body.model_dump(exclude_unset=True))
     if not row:
         raise HTTPException(status_code=404, detail="Event not found")
+    if previous:
+        _emit_calendar_mutation(
+            sink,
+            context,
+            "update",
+            row,
+            _calendar_event_values(previous),
+            _calendar_event_values(row),
+        )
     return _serialize_event(row)
 
 
 @router.delete("/events/{event_id}")
+@emits_operational_mutation
 async def delete_event(
     event_id: int,
     database: DatabaseManager = Depends(get_database),
+    context: MutationRequestContext = Depends(get_mutation_request_context),
+    sink: OperationalEventSink = Depends(get_mutation_event_sink),
 ) -> dict[str, str]:
+    previous = await database.calendar_repo.get_event(event_id)
     ok = await database.calendar_repo.soft_delete_event(event_id)
     if not ok:
         raise HTTPException(status_code=404, detail="Event not found")
+    if previous:
+        _emit_calendar_mutation(
+            sink,
+            context,
+            "delete",
+            previous,
+            {"id": _calendar_event_values(previous)["id"]},
+            {},
+            frozenset({"id"}),
+        )
     return {"status": "deleted"}
 
 
 @router.post("/grow-plans/flower")
+@emits_operational_mutation
 async def create_flower_grow_plan(
     body: FlowerGrowPlanRequest,
     database: DatabaseManager = Depends(get_database),
+    context: MutationRequestContext = Depends(get_mutation_request_context),
+    sink: OperationalEventSink = Depends(get_mutation_event_sink),
 ) -> dict[str, Any]:
     inp = FlowerGrowPlanInput(
         crop_name=body.crop_name,
@@ -186,6 +234,26 @@ async def create_flower_grow_plan(
             raise HTTPException(status_code=409, detail=err)
         raise HTTPException(status_code=400, detail=err)
     assert result is not None
+    if "crop_batch_id" in result:
+        emit_persisted_mutation(
+            sink,
+            PersistedMutation(
+                operation="create",
+                entity=EntityContext(
+                    entity_type="calendar_grow_plan",
+                    entity_id=result["grow_plan_id"],
+                ),
+                changes=safe_allowlisted_diff(
+                    {},
+                    {
+                        "crop_batch_id": result["crop_batch_id"],
+                        "event_count": len(result["events"]),
+                    },
+                    frozenset({"crop_batch_id", "event_count"}),
+                ),
+            ),
+            context,
+        )
     return {
         "grow_plan_id": result["grow_plan_id"],
         "crop_batch_id": result["crop_batch_id"],
@@ -194,11 +262,26 @@ async def create_flower_grow_plan(
 
 
 @router.delete("/grow-plans/{grow_plan_id}")
+@emits_operational_mutation
 async def delete_grow_plan(
     grow_plan_id: uuid.UUID,
     database: DatabaseManager = Depends(get_database),
+    context: MutationRequestContext = Depends(get_mutation_request_context),
+    sink: OperationalEventSink = Depends(get_mutation_event_sink),
 ) -> dict[str, Any]:
     count = await database.calendar_repo.delete_grow_plan(grow_plan_id)
+    if count:
+        emit_persisted_mutation(
+            sink,
+            PersistedMutation(
+                operation="delete",
+                entity=EntityContext(entity_type="calendar_grow_plan", entity_id=str(grow_plan_id)),
+                changes=safe_allowlisted_diff(
+                    {"event_count": count}, {}, frozenset({"event_count"})
+                ),
+            ),
+            context,
+        )
     return {"deleted": count, "grow_plan_id": str(grow_plan_id)}
 
 
@@ -231,10 +314,14 @@ async def get_sync_connection(
 
 
 @router.post("/sync/connections")
+@emits_operational_mutation
 async def create_sync_connection(
     body: SyncConnectionCreate,
     database: DatabaseManager = Depends(get_database),
+    context: MutationRequestContext = Depends(get_mutation_request_context),
+    sink: OperationalEventSink = Depends(get_mutation_event_sink),
 ) -> dict[str, Any]:
+    previous = await database.calendar_repo.get_sync_connection()
     enc = encrypt_secret(body.app_password)
     row = await database.calendar_repo.upsert_sync_connection(
         {
@@ -245,14 +332,41 @@ async def create_sync_connection(
             "target_calendar_url": body.target_calendar_url,
         }
     )
+    if not row:
+        raise HTTPException(status_code=500, detail="Failed to save calendar sync connection")
+    _emit_calendar_mutation(
+        sink,
+        context,
+        "create" if previous is None else "update",
+        row,
+        _calendar_connection_values(previous),
+        _calendar_connection_values(row),
+        frozenset({"id", "display_name", "target_calendar_host"}),
+        "calendar_sync_connection",
+    )
     return row
 
 
 @router.delete("/sync/connections")
+@emits_operational_mutation
 async def remove_sync_connection(
     database: DatabaseManager = Depends(get_database),
+    context: MutationRequestContext = Depends(get_mutation_request_context),
+    sink: OperationalEventSink = Depends(get_mutation_event_sink),
 ) -> dict[str, str]:
-    await database.calendar_repo.delete_sync_connection()
+    previous = await database.calendar_repo.get_sync_connection()
+    deleted = await database.calendar_repo.delete_sync_connection()
+    if deleted and previous:
+        _emit_calendar_mutation(
+            sink,
+            context,
+            "delete",
+            previous,
+            _calendar_connection_values(previous),
+            {},
+            frozenset({"id", "display_name", "target_calendar_host"}),
+            "calendar_sync_connection",
+        )
     return {"status": "disconnected"}
 
 
@@ -269,16 +383,129 @@ async def test_sync_connection(
         logger.warning("CALDAV connection test using HTTP (dev override active)")
     worker = CalendarSyncWorker(database)
     try:
-        return await worker.test_connection(
+        calendars = await worker.test_connection(
             body.caldav_base_url.rstrip("/"), body.username, body.app_password
         )
+        return [
+            {"name": entry["name"], "url": _redact_url_credentials(entry["url"])}
+            for entry in calendars
+        ]
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
+        raise HTTPException(status_code=400, detail="CalDAV connection test failed") from e
 
 
 @router.post("/sync/run")
+@emits_operational_mutation
 async def run_sync(
     database: DatabaseManager = Depends(get_database),
+    context: MutationRequestContext = Depends(get_mutation_request_context),
+    sink: OperationalEventSink = Depends(get_mutation_event_sink),
 ) -> dict[str, Any]:
     worker = CalendarSyncWorker(database)
-    return await worker.run_sync()
+    result = await worker.run_sync()
+    _emit_calendar_sync_action(sink, context, result)
+    return result
+
+
+def _emit_calendar_mutation(
+    sink: OperationalEventSink,
+    context: MutationRequestContext,
+    operation: MutationOperation,
+    row: dict[str, Any],
+    before: dict[str, JsonValue],
+    after: dict[str, JsonValue],
+    allowed_fields: frozenset[str] | None = None,
+    entity_type: str = "calendar_event",
+) -> None:
+    emit_persisted_mutation(
+        sink,
+        PersistedMutation(
+            operation=operation,
+            entity=EntityContext(
+                entity_type=entity_type,
+                entity_id=str(row["id"]),
+                location=row.get("location"),
+                cluster=row.get("cluster"),
+            ),
+            changes=safe_allowlisted_diff(
+                before,
+                after,
+                allowed_fields
+                or frozenset(
+                    {
+                        "id",
+                        "location",
+                        "cluster",
+                        "event_type",
+                        "title",
+                        "start_date",
+                        "end_date",
+                        "all_day",
+                    }
+                ),
+            ),
+        ),
+        context,
+    )
+
+
+def _calendar_event_values(row: dict[str, Any]) -> dict[str, JsonValue]:
+    return {
+        "id": row.get("id"),
+        "location": row.get("location"),
+        "cluster": row.get("cluster"),
+        "event_type": row.get("event_type"),
+        "title": row.get("title"),
+        "start_date": _date_value(row.get("start_date")),
+        "end_date": _date_value(row.get("end_date")),
+        "all_day": row.get("all_day"),
+    }
+
+
+def _calendar_connection_values(row: dict[str, Any] | None) -> dict[str, JsonValue]:
+    if row is None:
+        return {}
+    target_calendar_url = row.get("target_calendar_url")
+    return {
+        "id": row.get("id"),
+        "display_name": row.get("display_name"),
+        "target_calendar_host": urlsplit(target_calendar_url).hostname
+        if isinstance(target_calendar_url, str)
+        else None,
+    }
+
+
+def _emit_calendar_sync_action(
+    sink: OperationalEventSink,
+    context: MutationRequestContext,
+    result: dict[str, Any],
+) -> None:
+    emit_persisted_mutation(
+        sink,
+        PersistedMutation(
+            operation="action",
+            entity=EntityContext(entity_type="calendar_sync", entity_id="active"),
+            changes=safe_allowlisted_diff(
+                {"pushed_events": 0, "deleted_events": 0},
+                {
+                    "pushed_events": result.get("pushed", 0),
+                    "deleted_events": result.get("deleted", 0),
+                },
+                frozenset({"pushed_events", "deleted_events"}),
+            ),
+        ),
+        context,
+    )
+
+
+def _redact_url_credentials(url: str) -> str:
+    parsed = urlsplit(url)
+    host = parsed.hostname or ""
+    netloc = f"{host}:{parsed.port}" if parsed.port else host
+    return urlunsplit((parsed.scheme, netloc, parsed.path, parsed.query, parsed.fragment))
+
+
+def _date_value(value: object) -> JsonValue:
+    return (
+        value.isoformat() if isinstance(value, date) else value if isinstance(value, str) else None
+    )

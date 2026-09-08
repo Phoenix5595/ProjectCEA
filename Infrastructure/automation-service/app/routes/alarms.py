@@ -2,12 +2,25 @@
 
 from __future__ import annotations
 
-from typing import Any
+from datetime import UTC, datetime
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.alarm_manager import AlarmManager
 from app.database import DatabaseManager
+from app.events.mutation_context import MutationRequestContext
+from app.events.mutation_coverage import emits_operational_mutation
+from app.events.mutation_dependencies import get_mutation_event_sink, get_mutation_request_context
+from app.events.operational_models import (
+    AlarmPayload,
+    EntityContext,
+    EventCategory,
+    EventSeverity,
+    EventSource,
+    OperationalEvent,
+)
+from app.events.operational_ports import OperationalEventSink
 
 router = APIRouter()
 
@@ -76,10 +89,13 @@ async def get_all_alarms(
 
 
 @router.post("/api/alarms/{location}/{cluster}/{alarm_name}/acknowledge")
+@emits_operational_mutation
 async def acknowledge_alarm(
     location: str,
     cluster: str,
     alarm_name: str,
+    context: Annotated[MutationRequestContext, Depends(get_mutation_request_context)],
+    sink: Annotated[OperationalEventSink, Depends(get_mutation_event_sink)],
     alarm_manager: AlarmManager | None = Depends(get_alarm_manager),
 ) -> dict[str, Any]:
     """Acknowledge an alarm.
@@ -99,6 +115,25 @@ async def acknowledge_alarm(
 
     if not success:
         raise HTTPException(status_code=404, detail="Alarm not found")
+
+    sink.emit_nowait(
+        OperationalEvent(
+            occurred_at=datetime.now(UTC),
+            source=EventSource.API,
+            category=EventCategory.ALARM,
+            severity=EventSeverity.INFO,
+            event_type="alarm.acknowledged",
+            correlation_id=context.correlation_id,
+            entity=EntityContext(
+                entity_type="alarm",
+                entity_id=alarm_name,
+                location=location,
+                cluster=cluster,
+            ),
+            actor=context.actor,
+            payload=AlarmPayload(alarm_code=alarm_name, state="acknowledged"),
+        )
+    )
 
     return {
         "location": location,

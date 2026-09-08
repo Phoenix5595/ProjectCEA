@@ -226,7 +226,7 @@ class CalendarRepository(BaseRepository):
                     """,
                     event_id,
                 )
-                return result.endswith("1")
+                return result != "UPDATE 0"
         except Exception as e:
             logger.error(f"Failed to soft delete event {event_id}: {e}")
             return False
@@ -517,12 +517,16 @@ class CalendarRepository(BaseRepository):
             logger.error(f"Failed to upsert sync connection: {e}")
             return {}
 
-    async def delete_sync_connection(self) -> None:
+    async def delete_sync_connection(self) -> bool:
         try:
             async with self.pool.acquire() as conn:
-                await conn.execute("UPDATE calendar_sync_connection SET enabled = false")
+                result = await conn.execute(
+                    "UPDATE calendar_sync_connection SET enabled = false WHERE enabled = true"
+                )
+                return result.endswith("1")
         except Exception as e:
             logger.error(f"Failed to delete sync connection: {e}")
+            return False
 
     async def update_sync_state(
         self,

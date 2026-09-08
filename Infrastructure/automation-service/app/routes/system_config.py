@@ -14,6 +14,16 @@ from starlette.status import HTTP_403_FORBIDDEN
 import yaml
 
 from app.config import ConfigLoader
+from app.events.mutation_context import (
+    MutationRequestContext,
+    PersistedMutation,
+    emit_persisted_mutation,
+)
+from app.events.mutation_coverage import emits_operational_mutation
+from app.events.mutation_dependencies import get_mutation_event_sink, get_mutation_request_context
+from app.events.mutation_diff import safe_allowlisted_diff
+from app.events.operational_models import EntityContext
+from app.events.operational_ports import OperationalEventSink
 from app.schemas.system_config import ConfigUpdateRequest
 from shared.infra_logging import get_logger
 
@@ -182,9 +192,12 @@ async def get_system_config(config: ConfigLoader = Depends(get_config)) -> dict[
 
 
 @router.put("/api/config")
+@emits_operational_mutation
 async def update_system_config(
     update: ConfigUpdateRequest,
     config: ConfigLoader = Depends(get_config),
+    context: MutationRequestContext = Depends(get_mutation_request_context),
+    sink: OperationalEventSink = Depends(get_mutation_event_sink),
 ) -> dict[str, Any]:
     """Acquire lock, read raw YAML, merge request, validate, write atomically, reload, return pending."""
     with config._config_lock:
@@ -198,9 +211,25 @@ async def update_system_config(
         except ValueError as e:
             raise HTTPException(status_code=422, detail=str(e)) from e
 
-        config.write_full_config(merged)
+        changes = safe_allowlisted_diff(
+            before={"restart_hash": _compute_restart_hash(raw)},
+            after={"restart_hash": _compute_restart_hash(merged)},
+            allowed_fields=frozenset({"restart_hash"}),
+        )
+        if changes:
+            config.write_full_config(merged)
 
-    config.reload()
+    if changes:
+        config.reload()
+        emit_persisted_mutation(
+            sink,
+            PersistedMutation(
+                operation="update",
+                entity=EntityContext(entity_type="system_config", entity_id="automation-service"),
+                changes=changes,
+            ),
+            context,
+        )
 
     current_hash = _compute_restart_hash(merged)
     pending_changes = _compute_pending_changes(config)
@@ -216,7 +245,12 @@ async def update_system_config(
 
 
 @router.post("/api/config/restart")
-async def restart_service(config: ConfigLoader = Depends(get_config)) -> dict[str, Any]:
+@emits_operational_mutation
+async def restart_service(
+    config: ConfigLoader = Depends(get_config),
+    context: MutationRequestContext = Depends(get_mutation_request_context),
+    sink: OperationalEventSink = Depends(get_mutation_event_sink),
+) -> dict[str, Any]:
     """Write restart-hash sidecar, schedule systemctl restart, return 202."""
     cmd = ["sudo", "-n", "systemctl", "restart", "automation-service.service"]
 
@@ -249,7 +283,21 @@ async def restart_service(config: ConfigLoader = Depends(get_config)) -> dict[st
         raw = yaml.safe_load(f) or {}
     current_hash = _compute_restart_hash(raw)
     subset = _extract_restart_subset(raw)
+    previous_sidecar = _read_sidecar(config)
     _write_sidecar(config, current_hash, subset)
+    emit_persisted_mutation(
+        sink,
+        PersistedMutation(
+            operation="action",
+            entity=EntityContext(entity_type="system_config", entity_id="automation-service"),
+            changes=safe_allowlisted_diff(
+                before={"restart_hash": previous_sidecar.get("hash") if previous_sidecar else None},
+                after={"restart_hash": current_hash},
+                allowed_fields=frozenset({"restart_hash"}),
+            ),
+        ),
+        context,
+    )
 
     asyncio.get_event_loop().call_later(
         1.0,
