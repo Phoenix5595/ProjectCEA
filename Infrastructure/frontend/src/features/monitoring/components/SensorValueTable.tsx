@@ -12,6 +12,7 @@ import type { LiveSensorValue } from '../api'
 import {
   DEFAULT_STALE_AFTER_MS,
   FAMILY_TO_UNIT,
+  formatLastUpdate,
   formatTimestamp,
   formatValue,
   isStale,
@@ -20,6 +21,8 @@ import { familyForRow, sensorNameForRow } from './tables/tableManifest'
 
 export interface SensorValueTableProps {
   title: string
+  showTitle?: boolean
+  firstColumnLabel?: string
   /** Canonical row labels in display order (may include "Last Update"). */
   rows: string[]
   /** Live values for this node. */
@@ -38,6 +41,8 @@ const TD = 'px-1 py-1 border-b border-border-subtle'
 
 export function SensorValueTable({
   title,
+  showTitle = true,
+  firstColumnLabel = 'Sensor',
   rows,
   values,
   nodeSuffix,
@@ -50,19 +55,23 @@ export function SensorValueTable({
     null,
   )
 
+  const lastUpdateDisplay = lastUpdate === null ? null : formatLastUpdate(lastUpdate)
+
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-xs" aria-label={title}>
         <caption className="sr-only">{title}</caption>
         <thead>
-          <tr>
-            <th scope="col" colSpan={2} className={TH}>
-              {title}
-            </th>
-          </tr>
+          {showTitle && (
+            <tr>
+              <th scope="col" colSpan={2} className={TH}>
+                {title}
+              </th>
+            </tr>
+          )}
           <tr>
             <th scope="col" className={TH}>
-              Sensor
+              {firstColumnLabel}
             </th>
             <th scope="col" className={TH}>
               Value
@@ -75,7 +84,16 @@ export function SensorValueTable({
               return (
                 <tr key={row}>
                   <td className={TD}>{row}</td>
-                  <td className={TD}>{lastUpdate ? formatTimestamp(lastUpdate) : '—'}</td>
+                  <td className={TD}>
+                    {lastUpdateDisplay === null ? (
+                      '—'
+                    ) : (
+                      <span className="mon-last-update">
+                        <span>{lastUpdateDisplay[0]}</span>
+                        <span>{lastUpdateDisplay[1]}</span>
+                      </span>
+                    )}
+                  </td>
                 </tr>
               )
             }

@@ -2,37 +2,23 @@
  * Monitoring status panel.
  *
  * A pure, prop-driven visualization of per-source health for the monitoring
- * pages. It renders a status summary (normal / loading / stale / error /
- * unavailable), a dismissible banner per distinct error, and optional
- * Retry / Pause / Resume actions. It never couples to store internals and never
- * fabricates control truth.
+ * pages. The toolbar renders the concise status badge while this component
+ * retains detailed, dismissible error alerts below it.
  */
 import { useState } from 'react'
 import type { Quality } from '../api'
-import { formatTimestamp } from './tables/tableFormat'
 
 export interface MonitoringStatusProps {
   errors: string[]
-  tailLoading: boolean
-  reconciling: boolean
-  anchorQuality: Quality | null
-  projectionRevision: string | null
-  runtimeSnapshotVersion: number | null
-  lastGoodRangeAt: Date | null
-  rangeErrorAt: Date | null
-  isLive: boolean
-  onRetry?: () => void
-  onPause?: () => void
-  onResume?: () => void
 }
 
 type StatusKind = 'normal' | 'loading' | 'stale' | 'error' | 'unavailable' | 'reconciling'
 
-interface StatusInput {
-  errors: string[]
-  tailLoading: boolean
-  reconciling: boolean
-  anchorQuality: Quality | null
+export interface MonitoringStatusBadgeProps {
+  readonly errors: string[]
+  readonly tailLoading: boolean
+  readonly reconciling: boolean
+  readonly anchorQuality: Quality | null
 }
 
 const STATUS_LABEL: Record<StatusKind, string> = {
@@ -44,7 +30,7 @@ const STATUS_LABEL: Record<StatusKind, string> = {
   reconciling: 'Reconciling',
 }
 
-function statusKind(props: StatusInput): StatusKind {
+function statusKind(props: MonitoringStatusBadgeProps): StatusKind {
   if (props.reconciling) return 'reconciling'
   if (props.errors.length > 0) return 'error'
   if (props.tailLoading) return 'loading'
@@ -55,21 +41,9 @@ function statusKind(props: StatusInput): StatusKind {
 
 export function MonitoringStatus({
   errors,
-  tailLoading,
-  reconciling,
-  anchorQuality,
-  projectionRevision,
-  runtimeSnapshotVersion,
-  lastGoodRangeAt = null,
-  rangeErrorAt = null,
-  isLive,
-  onRetry,
-  onPause,
-  onResume,
 }: MonitoringStatusProps) {
   const [dismissed, setDismissed] = useState<Set<string>>(new Set())
   const visibleErrors = errors.filter((err) => !dismissed.has(err))
-  const kind = statusKind({ errors, tailLoading, reconciling, anchorQuality })
 
   const dismiss = (err: string): void => {
     setDismissed((prev) => new Set(prev).add(err))
@@ -77,24 +51,6 @@ export function MonitoringStatus({
 
   return (
     <div className="mon-status">
-      <div className="mon-status__summary" role="status">
-        <span className={`mon-status__badge mon-status__badge--${kind}`}>
-          {STATUS_LABEL[kind]}
-        </span>
-        {projectionRevision !== null && (
-          <span className="mon-status__meta">Projection {projectionRevision}</span>
-        )}
-        {runtimeSnapshotVersion !== null && (
-          <span className="mon-status__meta">Runtime v{runtimeSnapshotVersion}</span>
-        )}
-        {isLive && <span className="mon-status__meta">Live</span>}
-        {rangeErrorAt !== null && (
-          <span className="mon-status__meta">
-            Data stale. Range data stale since {formatTimestamp(rangeErrorAt)}; {lastGoodRangeAt === null ? 'no successful range' : `Last good monitoring range: ${formatTimestamp(lastGoodRangeAt)}`}
-          </span>
-        )}
-      </div>
-
       {visibleErrors.map((err) => (
         <div key={err} role="alert" className="mon-banner mon-banner--error">
           <span className="mon-status__error-text">{err}</span>
@@ -108,26 +64,15 @@ export function MonitoringStatus({
           </button>
         </div>
       ))}
-
-      {(onRetry || onPause || onResume) && (
-        <div className="mon-status__actions">
-          {onRetry && (
-            <button type="button" onClick={onRetry}>
-              Retry
-            </button>
-          )}
-          {onPause && (
-            <button type="button" onClick={onPause}>
-              Pause
-            </button>
-          )}
-          {onResume && (
-            <button type="button" onClick={onResume}>
-              Resume
-            </button>
-          )}
-        </div>
-      )}
     </div>
+  )
+}
+
+export function MonitoringStatusBadge(props: MonitoringStatusBadgeProps) {
+  const kind = statusKind(props)
+  return (
+    <span className={`mon-status__badge mon-status__badge--${kind}`} role="status">
+      {STATUS_LABEL[kind]}
+    </span>
   )
 }

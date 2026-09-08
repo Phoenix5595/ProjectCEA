@@ -54,3 +54,11 @@ export function formatTimestamp(timestamp: Date): string {
     `${pad(timestamp.getHours())}:${pad(timestamp.getMinutes())}:${pad(timestamp.getSeconds())}`
   )
 }
+
+export function formatLastUpdate(timestamp: Date): readonly [string, string] {
+  const pad = (n: number): string => String(n).padStart(2, '0')
+  return [
+    `${pad(timestamp.getHours())}:${pad(timestamp.getMinutes())}:${pad(timestamp.getSeconds())}`,
+    `${pad(timestamp.getDate())}/${pad(timestamp.getMonth() + 1)}/${timestamp.getFullYear()}`,
+  ]
+}

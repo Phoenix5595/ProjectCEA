@@ -8,11 +8,13 @@
  * Update" row uses the most recent live timestamp across both clusters.
  */
 import type { LiveSensorValue } from '../api'
-import { FAMILY_TO_UNIT, formatTimestamp, formatValue } from './tables/tableFormat'
+import { FAMILY_TO_UNIT, formatLastUpdate, formatValue } from './tables/tableFormat'
 import { baseLabelForAverage, familyForRow, ROW_TO_BASE } from './tables/tableManifest'
 
 export interface RoomAveragesTableProps {
   title: string
+  showTitle?: boolean
+  firstColumnLabel?: string
   /** Canonical average row labels (e.g. "Dry Bulb Avg", ..., "Last Update"). */
   rows: string[]
   /** Live values from the Front cluster. */
@@ -25,7 +27,14 @@ const TH =
   'px-1 py-1 text-left text-xs uppercase tracking-wider text-[color:var(--mon-text-secondary)] font-semibold border-b border-border-default bg-surface-secondary'
 const TD = 'px-1 py-1 border-b border-border-subtle'
 
-export function RoomAveragesTable({ title, rows, front, back }: RoomAveragesTableProps) {
+export function RoomAveragesTable({
+  title,
+  showTitle = true,
+  firstColumnLabel = 'Sensor',
+  rows,
+  front,
+  back,
+}: RoomAveragesTableProps) {
   const frontBySensor = new Map(front.map((v) => [v.sensor, v]))
   const backBySensor = new Map(back.map((v) => [v.sensor, v]))
   const all = [...front, ...back]
@@ -33,20 +42,23 @@ export function RoomAveragesTable({ title, rows, front, back }: RoomAveragesTabl
     (acc, v) => (acc === null || v.timestamp > acc ? v.timestamp : acc),
     null,
   )
+  const lastUpdateDisplay = lastUpdate === null ? null : formatLastUpdate(lastUpdate)
 
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-xs" aria-label={title}>
         <caption className="sr-only">{title}</caption>
         <thead>
-          <tr>
-            <th scope="col" colSpan={2} className={TH}>
-              {title}
-            </th>
-          </tr>
+          {showTitle && (
+            <tr>
+              <th scope="col" colSpan={2} className={TH}>
+                {title}
+              </th>
+            </tr>
+          )}
           <tr>
             <th scope="col" className={TH}>
-              Sensor
+              {firstColumnLabel}
             </th>
             <th scope="col" className={TH}>
               Value
@@ -59,7 +71,16 @@ export function RoomAveragesTable({ title, rows, front, back }: RoomAveragesTabl
               return (
                 <tr key={row}>
                   <td className={TD}>{row}</td>
-                  <td className={TD}>{lastUpdate ? formatTimestamp(lastUpdate) : '—'}</td>
+                  <td className={TD}>
+                    {lastUpdateDisplay === null ? (
+                      '—'
+                    ) : (
+                      <span className="mon-last-update">
+                        <span>{lastUpdateDisplay[0]}</span>
+                        <span>{lastUpdateDisplay[1]}</span>
+                      </span>
+                    )}
+                  </td>
                 </tr>
               )
             }

@@ -38,9 +38,8 @@ export function alignSeriesBase(input: BaseAlignInput): BaseAlignment {
   const start = bounds.start
   let end = bounds.end
   const projectionEnd = input.projectionHistory?.range.end.getTime()
-  if (projectionEnd !== undefined && projectionEnd > end) {
-    const recordedDuration = end - bounds.start
-    end = Math.min(projectionEnd, end + recordedDuration / 9)
+  if (input.range.kind === 'fixed' && projectionEnd !== undefined && projectionEnd > end) {
+    end = Math.min(projectionEnd, end + (end - start) / 9)
   }
   const now = input.now.getTime()
 
@@ -124,7 +123,8 @@ export function applyLiveTail(base: BaseAlignment, live: LiveSensorValue[], now:
   const valuesBySensor = new Map(live.map((value) => [value.sensor, value.value]))
   const series = data.series.map((aligned) => {
     const retained = droppedOldest ? aligned.y.slice(1) : aligned.y
-    const y = inserted ? [...retained.slice(0, tailIndex), null, ...retained.slice(tailIndex)] : retained.slice()
+    const heldValue = aligned.kind === 'step' ? retained[tailIndex - 1] ?? null : null
+    const y = inserted ? [...retained.slice(0, tailIndex), heldValue, ...retained.slice(tailIndex)] : retained.slice()
     const liveValue = aligned.source === 'sensor' ? valuesBySensor.get(aligned.metric) : undefined
     if (liveValue !== undefined) y[tailIndex] = liveValue
     return { ...aligned, y }

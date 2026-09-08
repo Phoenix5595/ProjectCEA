@@ -18,6 +18,7 @@ readonly STATE_DIR="$SANDBOX/state"
 readonly STATE_FILE="$STATE_DIR/deploy_state.json"
 readonly EVENT_LOG="$SANDBOX/events.log"
 readonly HEALTH_STATE_FILE="$SANDBOX/health-state"
+readonly HEALTH_DELAYED_CALLS_FILE="$SANDBOX/health-delayed-calls"
 readonly DEPLOY_LOCK_FILE="$SANDBOX/deploy.lock"
 
 readonly REL_A="$RELEASES/rel-A"
@@ -57,7 +58,7 @@ assert_script_hash() {
 
 assert_script_hash "deploy" "$DEPLOY_SCRIPT" "f56b0dd864809b3849c40c6d09461235b91145855ec5f96ceeebd488250692ce"
 assert_script_hash "finalize" "$FINALIZE_SCRIPT" "6503e11745e1f7c658d8fbc3bc08c630aae7b33d3d492671c0d8eab757bdd32e"
-assert_script_hash "rollback" "$ROLLBACK_SCRIPT" "39a34de6cda8f33a678045c9c232f7fa9f9cf6515ae71ebfabed570e920cbc83"
+assert_script_hash "rollback" "$ROLLBACK_SCRIPT" "16203c049ebcc6d3da83222d4c65ca1f376a92c2123736a8cad24b6d7c6098de"
 pass "deploy script hashes match expected sha256 values"
 
 mkdir -p "$BIN_DIRECTORY" "$RELEASES" "$STATE_DIR"
@@ -106,18 +107,24 @@ cat > "$BIN_DIRECTORY/curl" <<'CURL'
 set -euo pipefail
 
 outfile=""
+url=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -o) outfile="$2"; shift 2 ;;
     -w|-m|-H|--data|--user) shift 2 ;;
     -s|-S|-sS|-Ss) shift ;;
     -*) shift ;;
-    *) shift ;;
+    *) url="$1"; shift ;;
   esac
 done
 
 state="$(cat "$HEALTH_STATE_FILE" 2>/dev/null || echo not_ready)"
-if [[ "$state" == "ready" ]]; then
+if [[ "${HEALTH_DELAYED_URL:-}" == "$url" ]] && \
+  [[ "$(wc -l < "$HEALTH_DELAYED_CALLS_FILE" 2>/dev/null || echo 0)" -lt "${HEALTH_DELAYED_FAILURES:-0}" ]]; then
+  printf 'attempt\n' >> "$HEALTH_DELAYED_CALLS_FILE"
+  body='{"status":"starting"}'
+  code="503"
+elif [[ "$state" == "ready" ]]; then
   body='{"status":"ready"}'
   code="200"
 else
@@ -176,8 +183,9 @@ current_target() {
 }
 
 clear_state() {
-  rm -f "$STATE_FILE" "$EVENT_LOG" "$HEALTH_STATE_FILE"
+  rm -f "$STATE_FILE" "$EVENT_LOG" "$HEALTH_STATE_FILE" "$HEALTH_DELAYED_CALLS_FILE"
   rm -f "$CURRENT"
+  unset HEALTH_DELAYED_URL HEALTH_DELAYED_FAILURES ROLLBACK_HEALTH_TIMEOUT_SECONDS
 }
 
 set_current() {
@@ -387,6 +395,39 @@ expect_success bash "$ROLLBACK_SCRIPT"
 [[ "$(cat "$EVENT_LOG")" == *"rejected"* ]] || { printf 'scenario 5: rejected event missing\n' >&2; exit 1; }
 append_state "candidate-rejected"
 pass "scenario 5: rollback rejects active candidate"
+
+# --- Scenario 5b: late automation health recovers within the bounded retry window ---
+clear_state
+set_current "$REL_B"
+write_state_json "rel-A" "$REL_A" "$REL_C" "rel-B" "$REL_B"
+printf 'ready\n' > "$HEALTH_STATE_FILE"
+export HEALTH_DELAYED_URL="http://127.0.0.1:8001/health"
+export HEALTH_DELAYED_FAILURES=2
+export ROLLBACK_HEALTH_TIMEOUT_SECONDS=5
+base_environment
+expect_success bash "$ROLLBACK_SCRIPT"
+[[ "$(wc -l < "$HEALTH_DELAYED_CALLS_FILE")" -eq 2 ]] || \
+  fail 'scenario 5b: automation health was not retried until recovery'
+[[ "$(state_field candidate_release_id)" == "" ]] || \
+  fail 'scenario 5b: candidate should clear only after all health checks succeed'
+pass "scenario 5b: late automation health recovers within the bounded retry window"
+
+# --- Scenario 5c: timeout preserves the active candidate state ---
+clear_state
+set_current "$REL_B"
+write_state_json "rel-A" "$REL_A" "$REL_C" "rel-B" "$REL_B"
+export ROLLBACK_HEALTH_TIMEOUT_SECONDS=2
+base_environment
+SECONDS=0
+expect_failure bash "$ROLLBACK_SCRIPT"
+[[ "$SECONDS" -le 3 ]] || fail 'scenario 5c: health timeout exceeded its shared bound'
+[[ "$(state_field candidate_release_id)" == "rel-B" ]] || \
+  fail 'scenario 5c: timeout cleared the active candidate'
+[[ "$(state_field candidate_release_path)" == "$REL_B" ]] || \
+  fail 'scenario 5c: timeout changed the active candidate path'
+[[ "$(cat "$EVENT_LOG")" == *"rollback_manual_health_fail"* ]] || \
+  fail 'scenario 5c: timeout health failure event missing'
+pass "scenario 5c: bounded timeout preserves active candidate state"
 
 # --- Scenario 6: missing release argument fails cleanly ---
 clear_state
