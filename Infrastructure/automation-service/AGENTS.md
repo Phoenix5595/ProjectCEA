@@ -29,9 +29,23 @@ The control loop runs every 1 s. VPD is the master climate controller; PID is us
 
 `GET /api/devices/control-snapshot` joins the registry snapshot, relay observation, assigned-device command state, and DFR commanded/acknowledged intensity into one read model.
 
+## Operational event log
+
+The service owns the typed operational-event contract, all semantic producers, and the authenticated replay API.
+
+- Envelope and payload families: [`app/events/operational_models.py`](app/events/operational_models.py)
+- Producer ports and dispatcher: [`app/events/operational_ports.py`](app/events/operational_ports.py), [`app/events/operational_stream.py`](app/events/operational_stream.py)
+- Alarm durability side-effect: [`app/events/alarm_journal.py`](app/events/alarm_journal.py)
+- History and SSE routes: [`app/routes/operational_events.py`](app/routes/operational_events.py)
+- Mutation coverage and safe diffs: [`app/events/mutation_context.py`](app/events/mutation_context.py), [`app/events/mutation_diff.py`](app/events/mutation_diff.py), [`app/events/mutation_coverage.py`](app/events/mutation_coverage.py)
+- Runtime wiring: [`app/container.py`](app/container.py), [`app/routes/routes.py`](app/routes/routes.py)
+- Runbook: [`app/events/AGENTS.md`](app/events/AGENTS.md)
+
+Producers call `emit_nowait()` at authoritative decision or commit edges. The dispatcher uses bounded queues so the 1-second control loop never awaits Redis. Alarm/error lifecycle rows are durably persisted after stream publication.
+
 ## Repositories and routes
 
-Repositories live in `app/repositories/` and own all DB access. Routes live in `app/routes/` and cover schedules, lights, climate periods, devices/registry, hardware, PID, room modes, alarms, and system config. See `Infrastructure/automation-service/REQUIREMENTS.md` for normative behavior and `ARCHITECTURE.md` for service boundaries.
+Repositories live in `app/repositories/` and own all DB access. Routes live in `app/routes/` and cover schedules, lights, climate periods, devices/registry, hardware, PID, room modes, alarms, system config, and the operational event endpoints. See `Infrastructure/automation-service/REQUIREMENTS.md` for normative behavior and `ARCHITECTURE.md` for service boundaries.
 
 ## Local verification
 
@@ -46,3 +60,4 @@ Production endpoints, I2C, and the production database must never be contacted b
 | Topic | Document |
 |---|---|
 | Control layer details | [`app/control/AGENTS.md`](app/control/AGENTS.md) |
+| Operational event runbook | [`app/events/AGENTS.md`](app/events/AGENTS.md) |
