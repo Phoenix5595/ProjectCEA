@@ -293,6 +293,10 @@ def monitoring_future_publication_key(location: str) -> str:
     return f"cea:monitoring:future:{location}"
 
 
+def monitoring_rich_trajectory_key(location: str) -> str:
+    return f"cea:monitoring:trajectory:{location}"
+
+
 __all__ = [
     # streams
     "SENSOR_RAW_STREAM",
@@ -338,4 +342,5 @@ __all__ = [
     # monitoring publications
     "monitoring_current_publication_key",
     "monitoring_future_publication_key",
+    "monitoring_rich_trajectory_key",
 ]
