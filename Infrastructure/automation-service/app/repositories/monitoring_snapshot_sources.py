@@ -7,8 +7,8 @@ latest-before-timestamp queries against the raw monitoring hypertables.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
-from datetime import datetime, timedelta
+from collections.abc import Awaitable, Callable, Mapping, Sequence
+from datetime import date, datetime, timedelta
 from typing import Any, Final
 
 from app.monitoring_publication.current import CurrentPublicationPublisher
@@ -16,8 +16,13 @@ from app.monitoring_publication.projection import (
     ProjectionPublicationAction,
     ProjectionPublicationDependencies,
 )
+from app.monitoring_publication.rich import project_saved_trajectory
 from app.monitoring_publication.workers import MonitoringPublicationWorkers
 from app.redis.monitoring import RedisCurrentPublicationWriter
+from app.repositories.climate_timeline_snapshot import (
+    ClimateScheduleConfiguration,
+    ClimateScheduleSnapshotBuilder,
+)
 from app.repositories.monitoring_snapshot_builder import (
     MonitoringSnapshotBuilder,
     MonitoringSnapshotRepositories,
@@ -106,6 +111,45 @@ class ClimatePeriodSnapshotSource:
         self, location: str, cluster: str
     ) -> Sequence[Mapping[str, Any]]:
         return await self._climate_periods.get_periods(location, cluster)
+
+
+class SavedTrajectorySnapshotSource:
+    def __init__(
+        self, room_modes: Any, climate_periods: Any, scheduler: CalendarModeScheduler, pool: Any
+    ) -> None:
+        self._room_modes = room_modes
+        self._climate_periods = climate_periods
+        self._scheduler = scheduler
+        self._pool = pool
+
+    async def read_active_mode(self, location: str, cluster: str) -> Mapping[str, object] | None:
+        return await self._room_modes.get_active_mode(location, cluster)
+
+    async def read_calendar_transition(
+        self, location: str, cluster: str, on_date: date
+    ) -> Mapping[str, object] | None:
+        return await self._scheduler.get_expected_mode(location, cluster, on_date)
+
+    async def read_schedule_configuration(
+        self, location: str, cluster: str, mode_id: int, submode_id: int | None
+    ) -> ClimateScheduleConfiguration | None:
+        periods = await self._climate_periods.get_periods_for_room_mode(
+            location, cluster, mode_id, submode_id
+        )
+        async with self._pool.acquire() as connection:
+            parameters = await connection.fetchrow(
+                "SELECT * FROM mode_parameters WHERE location = $1 AND cluster = $2 "
+                "AND mode_id = $3 AND submode_id IS NOT DISTINCT FROM $4",
+                location,
+                cluster,
+                mode_id,
+                submode_id,
+            )
+        return (
+            None
+            if parameters is None
+            else ClimateScheduleConfiguration.from_rows(dict(parameters), periods)
+        )
 
 
 class LightSnapshotSource:
@@ -268,16 +312,16 @@ class AnchorSnapshotSource:
 
 
 class ConfigVersionSnapshotSource(VersionSnapshotRepository):
-    """Expose the runtime snapshot version as the configuration change cursor."""
+    """Expose the persisted configuration version as the change cursor."""
 
-    def __init__(self, version_provider: Callable[[], int]) -> None:
+    def __init__(self, version_provider: Callable[[], Awaitable[int | None]]) -> None:
         self._version_provider = version_provider
 
     async def read_source_versions(
         self, location: str, cluster: str
     ) -> tuple[tuple[str, int | None], ...]:
         del location, cluster
-        return (("configuration", self._version_provider()),)
+        return (("configuration", await self._version_provider()),)
 
 
 class _RegistryVersionBuilder:
@@ -324,13 +368,25 @@ def build_monitoring_publication_workers(
         climate=ClimatePeriodSnapshotSource(database.climate_periods_repo),
         lights=light_source,
         anchors=AnchorSnapshotSource(database._pool),
-        versions=ConfigVersionSnapshotSource(lambda: registry.snapshot.version),
+        versions=ConfigVersionSnapshotSource(database.config_repo.get_latest_config_version),
     )
     snapshot_builder = _RegistryVersionBuilder(MonitoringSnapshotBuilder(repositories), registry)
+    rich_snapshot_builder = ClimateScheduleSnapshotBuilder(
+        SavedTrajectorySnapshotSource(
+            database.room_mode_repo,
+            database.climate_periods_repo,
+            CalendarModeScheduler(database),
+            database._pool,
+        )
+    )
 
     rooms: list[Any] = []
     for location, cluster in _PUBLICATION_ROOMS:
-        publisher = CurrentPublicationPublisher(location, writer)
+        publisher = CurrentPublicationPublisher(
+            location,
+            writer,
+            config_version=database.config_repo.get_latest_config_version,
+        )
         action = ProjectionPublicationAction(
             location,
             cluster,
@@ -339,6 +395,13 @@ def build_monitoring_publication_workers(
                 current_snapshot=_latest_of(publisher),
                 writer=writer,
                 projector=project_future_intervals,
+                rich_snapshot_builder=rich_snapshot_builder,
+                rich_projector=lambda snapshot, room=location: project_saved_trajectory(
+                    snapshot, room, f"{registry.snapshot.version:07x}"
+                ),
+                rich_writer=writer,
+                complete_writer=writer,
+                rich_config_revision=lambda: _config_revision(database),
             ),
         )
         rooms.append(
@@ -347,6 +410,11 @@ def build_monitoring_publication_workers(
             )
         )
     return MonitoringPublicationWorkers(rooms=tuple(rooms))
+
+
+async def _config_revision(database: Any) -> str:
+    version_id = await database.config_repo.get_latest_config_version()
+    return f"{version_id or 0:07x}"
 
 
 class RoomPublicationRecord:
