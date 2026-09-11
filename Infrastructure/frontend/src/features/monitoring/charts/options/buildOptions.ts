@@ -31,7 +31,7 @@ export function buildOptions(
   getNowX?: () => number | null,
   getPhotoperiod?: () => ReadonlyArray<AlignedData['photoperiod'][number]>,
 ): uPlot.Options {
-  const { scales, axes } = buildScales(data)
+  const { scales, axes } = buildScales(data, width)
   const series = buildSeries(data)
   const bands = buildBands(data)
 
