@@ -180,7 +180,7 @@ const LightIntensity = forwardRef<{ savePendingChanges: () => Promise<void> }, L
       </div>
 
       {lights.length === 0 ? (
-        <div className="text-text-subtle text-sm flex-1 flex items-center justify-center">No lights found</div>
+        <div className="text-text-subtle text-sm flex-1 flex items-center justify-center">No dimmable fixtures found</div>
       ) : (
         <div className="flex-1 overflow-hidden flex flex-col gap-2 min-h-0">
           {lights.map((light) => {
