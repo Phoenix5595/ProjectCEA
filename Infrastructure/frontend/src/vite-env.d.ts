@@ -12,6 +12,7 @@ interface ImportMetaEnv {
   readonly VITE_CEA_API_KEY?: string
   readonly VITE_MONITORING_PERF_MARKS?: string
   readonly VITE_MONITORING_PERF_INJECT_DELAY_MS?: string
+  readonly VITE_MONITORING_DEBUG?: string
 }
 
 interface ImportMeta {

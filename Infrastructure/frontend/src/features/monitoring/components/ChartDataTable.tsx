@@ -17,6 +17,11 @@ export interface ChartDataTableProps {
   data: AlignedData
 }
 
+function isChartDataTableEnabled(): boolean {
+  const debugFlag = import.meta.env.VITE_MONITORING_DEBUG
+  return import.meta.env.MODE !== 'production' || debugFlag === '1' || debugFlag === 'true'
+}
+
 const TH =
   'px-1 py-1 text-left text-xs uppercase tracking-wider text-[color:var(--mon-text-secondary)] font-semibold border-b border-border-default bg-surface-secondary'
 const TD = 'px-1 py-1 border-b border-border-subtle'
@@ -27,6 +32,8 @@ function slugify(value: string): string {
 
 export function ChartDataTable({ title, data }: ChartDataTableProps) {
   const [open, setOpen] = useState(false)
+  if (!isChartDataTableEnabled()) return null
+
   const tableId = `chart-data-${slugify(title)}`
 
   const visible = data.series.filter((s) => s.role !== 'min' && s.role !== 'max')
