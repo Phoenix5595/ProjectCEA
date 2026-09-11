@@ -15,7 +15,7 @@ describe('controlProjectionFixture', () => {
     expect(result.success).toBe(true)
     if (result.success) {
       expect(result.data.quality).toBe('estimated')
-      expect(result.data.value).toHaveLength(1)
+      expect(result.data.value).toHaveLength(2)
     }
   })
 

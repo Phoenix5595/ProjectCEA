@@ -15,6 +15,7 @@
  */
 
 const T0 = '2026-08-02T12:00:00.000Z'
+const LIVE_FIXTURE_EPOCH = Date.now() - 120_000
 
 /** Parse `start`/`end` query params from a request URL. */
 export function parseRange(url: string): { start: string; end: string } {
@@ -149,10 +150,12 @@ export function sensorRangeFixture(
 export function sensorLiveFixture(
   node: string,
   scenario: string | null = null,
+  sequence = 0,
 ): unknown {
   if ((process.env.MONITORING_SCENARIO === 'flower-partial' || scenario === 'flower-partial') && node === 'front') {
     return []
   }
+  if (scenario === 'live-update' && sequence >= 6 && sequence <= 7) return []
   const suffix = node === 'front' ? 'f' : node === 'back' ? 'b' : 'v'
   const base: Array<[string, number]> = [
     ['dry_bulb', 24.6],
@@ -163,10 +166,15 @@ export function sensorLiveFixture(
     ['pressure', 1013.2],
     ['water_level', 45.0],
   ]
-  const timestamp = scenario === 'stale-live' ? '2026-01-01T00:00:00.000Z' : T0
+  const timestamp = scenario === 'stale-live'
+    ? '2026-01-01T00:00:00.000Z'
+    : scenario === 'live-update'
+      ? new Date(LIVE_FIXTURE_EPOCH + sequence * 1000).toISOString()
+      : T0
+  const valueOffset = scenario === 'live-update' ? sequence / 10 : 0
   return base.map(([name, value]) => ({
     sensor: `${name}_${suffix}`,
-    value,
+    value: value + valueOffset,
     timestamp,
   }))
 }
