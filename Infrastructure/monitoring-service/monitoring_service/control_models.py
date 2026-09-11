@@ -14,6 +14,7 @@ from pydantic import (
 )
 
 from shared.monitoring_contracts import CurrentSnapshot, FutureProjection, Quality
+from monitoring_service.rich_trajectory_models import RichTrajectoryEnvelope
 
 
 class ControlReadModel(BaseModel):
@@ -52,6 +53,7 @@ class CurrentPublicationResponse(ControlReadModel):
 class ProjectionPublicationResponse(ControlReadModel):
     quality: Quality
     value: tuple[FutureProjection, ...] = ()
+    trajectory: RichTrajectoryEnvelope | None = None
 
 
 class ControlPublicationResponse(ControlReadModel):

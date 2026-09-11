@@ -72,6 +72,7 @@ def register_control_routes(app: FastAPI, reads: ControlReadService) -> None:
     @app.get(
         "/api/monitoring/control/{location}/projection",
         response_model=ProjectionPublicationResponse,
+        response_model_exclude_none=True,
     )
     async def projection(
         location: str,

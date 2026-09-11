@@ -23,6 +23,7 @@ from monitoring_service.control_models import (
     CurrentPublicationResponse,
     ProjectionPublicationResponse,
 )
+from monitoring_service.rich_trajectory_models import RichTrajectoryEnvelope
 from monitoring_service.control_timeline_build import build_control_history_envelope
 from shared.monitoring_contracts import (
     CurrentSnapshot,
@@ -34,6 +35,7 @@ from shared.monitoring_contracts import (
 from shared.redis_keys import (
     monitoring_current_publication_key,
     monitoring_future_publication_key,
+    monitoring_rich_trajectory_key,
 )
 
 from monitoring_service.query_observation import request_observation
@@ -103,9 +105,13 @@ class ControlPublicationRepository:
 
     async def read(self, location: str) -> ControlPublicationResponse:
         """Return publications only when both authorities parse, share one version, and are valid."""
-        current_payload, future_payload = await self._redis.mget(_publication_keys(location))
+        payloads = await self._redis.mget(_publication_keys(location))
+        current_payload = payloads[0] if len(payloads) > 0 else None
+        future_payload = payloads[1] if len(payloads) > 1 else None
+        rich_payload = payloads[2] if len(payloads) > 2 else None
         current = _parse_current(current_payload)
         future = _parse_future(future_payload)
+        trajectory = _parse_trajectory(rich_payload, current)
         if (
             current is None
             or future is None
@@ -117,7 +123,9 @@ class ControlPublicationRepository:
             return _unavailable_publication()
         return ControlPublicationResponse(
             current=CurrentPublicationResponse(quality=Quality.EXACT, value=current),
-            projection=ProjectionPublicationResponse(quality=Quality.ESTIMATED, value=future),
+            projection=ProjectionPublicationResponse(
+                quality=Quality.ESTIMATED, value=future, trajectory=trajectory
+            ),
         )
 
 
@@ -125,6 +133,7 @@ def _publication_keys(location: str) -> list[str]:
     return [
         monitoring_current_publication_key(location),
         monitoring_future_publication_key(location),
+        monitoring_rich_trajectory_key(location),
     ]
 
 
@@ -153,6 +162,24 @@ def _parse_future(payload: str | None) -> tuple[FutureProjection, ...] | None:
         return validate_projection_timeline(projections)
     except (ValidationError, MonitoringContractViolation):
         return None
+
+
+def _parse_trajectory(
+    payload: str | None, current: CurrentSnapshot | None
+) -> RichTrajectoryEnvelope | None:
+    if payload is None:
+        return None
+    try:
+        trajectory = RichTrajectoryEnvelope.model_validate_json(payload, strict=False)
+    except ValidationError:
+        return None
+    if trajectory.revision_scope != "saved" or current is None:
+        return None
+    return (
+        trajectory
+        if trajectory.base_config_revision == f"{current.version.config_version:07x}"
+        else None
+    )
 
 
 def _unavailable_publication() -> ControlPublicationResponse:
