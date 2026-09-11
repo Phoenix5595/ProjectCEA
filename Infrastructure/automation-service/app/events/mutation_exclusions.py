@@ -24,6 +24,7 @@ class NonPersistentEffect(StrEnum):
     TRANSIENT_HARDWARE_TEST = "transient_hardware_test"
     TRANSIENT_HARDWARE_COMMAND = "transient_hardware_command"
     TRANSIENT_REMOTE_CONNECTION_PROBE = "transient_remote_connection_probe"
+    READ_ONLY_DRAFT_PREVIEW = "read_only_draft_preview"
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,6 +38,12 @@ class MutationRouteExclusion:
 
 
 MUTATION_ROUTE_EXCLUSIONS: Final[tuple[MutationRouteExclusion, ...]] = (
+    MutationRouteExclusion(
+        method=MutationHttpMethod.POST,
+        path="/api/climate-timeline/{location}/{cluster}/preview",
+        rationale="Evaluates a supplied draft using read-only snapshot authority without persistence.",
+        effect=NonPersistentEffect.READ_ONLY_DRAFT_PREVIEW,
+    ),
     MutationRouteExclusion(
         method=MutationHttpMethod.POST,
         path="/api/calendar/sync/connections/test",
