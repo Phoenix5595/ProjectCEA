@@ -100,8 +100,8 @@ export default function ClimatePeriodsTable({
         </div>
       )}
 
-      <div>
-        <table className="w-full text-xs">
+      <div className="overflow-x-auto">
+        <table className="min-w-[780px] w-full text-xs">
           <thead>
             <tr className="border-b border-border-default">
               <th className="px-1 py-1 text-left text-xs uppercase tracking-wider text-text-muted font-semibold border-r border-border-default w-32 bg-surface-secondary">
