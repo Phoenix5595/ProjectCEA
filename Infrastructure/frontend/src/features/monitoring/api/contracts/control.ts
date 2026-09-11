@@ -15,6 +15,7 @@ import {
   TimelineProvenance,
   utcDate,
 } from './shared'
+import { RichTrajectoryEnvelope } from './rich'
 
 /** A scalar control value on the shared UTC monitoring grid. */
 export const TimelinePoint = z.object({
@@ -97,6 +98,8 @@ export type PhotoperiodTimelinePoint = z.infer<typeof PhotoperiodTimelinePoint>
 /** Shared projection completeness invariant for climate and light timelines. */
 export const ProjectableTimelineSeries = z.object({
   name: z.string().min(1),
+  metric: z.string().min(1).nullable().optional(),
+  trajectory_kind: z.enum(['scheduled', 'effective']).nullable().optional(),
   provenance: TimelineProvenance,
   projection: ProjectionMetadata.nullable().optional(),
   warnings: z.array(MonitoringWarning),
@@ -169,6 +172,7 @@ export type FutureProjection = z.infer<typeof FutureProjection>
 export const ProjectionPublicationResponse = z.object({
   quality: Quality,
   value: z.array(FutureProjection),
+  trajectory: RichTrajectoryEnvelope.nullable().optional(),
 })
 export type ProjectionPublicationResponse = z.infer<typeof ProjectionPublicationResponse>
 

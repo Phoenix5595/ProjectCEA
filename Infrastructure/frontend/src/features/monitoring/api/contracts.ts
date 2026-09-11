@@ -7,3 +7,4 @@
 export * from './contracts/shared'
 export * from './contracts/sensor'
 export * from './contracts/control'
+export * from './contracts/rich'
