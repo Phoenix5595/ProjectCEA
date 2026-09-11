@@ -107,7 +107,7 @@ export class MonitoringLivePoller {
     if (
       state.range.kind !== 'live' ||
       this.sensorHistoryInFlight ||
-      this.hooks.now().getTime() - this.lastSensorHistoryRefreshAt < SENSOR_HISTORY_REFRESH_INTERVAL_MS
+      this.hooks.now().getTime() - this.lastSensorHistoryRefreshAt <= SENSOR_HISTORY_REFRESH_INTERVAL_MS
     ) {
       return
     }
