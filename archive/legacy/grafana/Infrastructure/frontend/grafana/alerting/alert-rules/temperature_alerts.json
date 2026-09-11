@@ -1,0 +1,514 @@
+{
+  "dashboard": {
+    "title": "CEA Temperature Alerts",
+    "tags": ["cea", "temperature", "alerts"],
+    "timezone": "browser"
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Dry Bulb Temperature High - Back",
+      "type": "graph",
+      "targets": [
+        {
+          "refId": "A",
+          "rawSql": "SELECT time, value FROM measurement_with_metadata WHERE sensor_name = 'dry_bulb_b' AND time > $__timeFrom() AND time < $__timeTo() ORDER BY time DESC LIMIT 1",
+          "format": "time_series",
+          "datasource": "CEA Sensors"
+        }
+      ],
+      "alert": {
+        "name": "Dry Bulb Temperature High - Back",
+        "message": "Dry bulb temperature (back) exceeded maximum threshold of 35°C",
+        "conditions": [
+          {
+            "evaluator": {
+              "params": [35],
+              "type": "gt"
+            },
+            "operator": {
+              "type": "and"
+            },
+            "query": {
+              "params": ["A", "5m", "now"]
+            },
+            "reducer": {
+              "params": [],
+              "type": "last"
+            },
+            "type": "query"
+          }
+        ],
+        "executionErrorState": "alerting",
+        "for": "1m",
+        "frequency": "30s",
+        "handler": 1,
+        "noDataState": "no_data",
+        "notifications": []
+      }
+    },
+    {
+      "id": 2,
+      "title": "Dry Bulb Temperature Low - Back",
+      "type": "graph",
+      "targets": [
+        {
+          "refId": "A",
+          "rawSql": "SELECT time, value FROM measurement_with_metadata WHERE sensor_name = 'dry_bulb_b' AND time > $__timeFrom() AND time < $__timeTo() ORDER BY time DESC LIMIT 1",
+          "format": "time_series",
+          "datasource": "CEA Sensors"
+        }
+      ],
+      "alert": {
+        "name": "Dry Bulb Temperature Low - Back",
+        "message": "Dry bulb temperature (back) fell below minimum threshold of 10°C",
+        "conditions": [
+          {
+            "evaluator": {
+              "params": [10],
+              "type": "lt"
+            },
+            "operator": {
+              "type": "and"
+            },
+            "query": {
+              "params": ["A", "5m", "now"]
+            },
+            "reducer": {
+              "params": [],
+              "type": "last"
+            },
+            "type": "query"
+          }
+        ],
+        "executionErrorState": "alerting",
+        "for": "1m",
+        "frequency": "30s",
+        "handler": 1,
+        "noDataState": "no_data",
+        "notifications": []
+      }
+    },
+    {
+      "id": 3,
+      "title": "Dry Bulb Temperature High - Front",
+      "type": "graph",
+      "targets": [
+        {
+          "refId": "A",
+          "rawSql": "SELECT time, value FROM measurement_with_metadata WHERE sensor_name = 'dry_bulb_f' AND time > $__timeFrom() AND time < $__timeTo() ORDER BY time DESC LIMIT 1",
+          "format": "time_series",
+          "datasource": "CEA Sensors"
+        }
+      ],
+      "alert": {
+        "name": "Dry Bulb Temperature High - Front",
+        "message": "Dry bulb temperature (front) exceeded maximum threshold of 35°C",
+        "conditions": [
+          {
+            "evaluator": {
+              "params": [35],
+              "type": "gt"
+            },
+            "operator": {
+              "type": "and"
+            },
+            "query": {
+              "params": ["A", "5m", "now"]
+            },
+            "reducer": {
+              "params": [],
+              "type": "last"
+            },
+            "type": "query"
+          }
+        ],
+        "executionErrorState": "alerting",
+        "for": "1m",
+        "frequency": "30s",
+        "handler": 1,
+        "noDataState": "no_data",
+        "notifications": []
+      }
+    },
+    {
+      "id": 4,
+      "title": "Dry Bulb Temperature Low - Front",
+      "type": "graph",
+      "targets": [
+        {
+          "refId": "A",
+          "rawSql": "SELECT time, value FROM measurement_with_metadata WHERE sensor_name = 'dry_bulb_f' AND time > $__timeFrom() AND time < $__timeTo() ORDER BY time DESC LIMIT 1",
+          "format": "time_series",
+          "datasource": "CEA Sensors"
+        }
+      ],
+      "alert": {
+        "name": "Dry Bulb Temperature Low - Front",
+        "message": "Dry bulb temperature (front) fell below minimum threshold of 10°C",
+        "conditions": [
+          {
+            "evaluator": {
+              "params": [10],
+              "type": "lt"
+            },
+            "operator": {
+              "type": "and"
+            },
+            "query": {
+              "params": ["A", "5m", "now"]
+            },
+            "reducer": {
+              "params": [],
+              "type": "last"
+            },
+            "type": "query"
+          }
+        ],
+        "executionErrorState": "alerting",
+        "for": "1m",
+        "frequency": "30s",
+        "handler": 1,
+        "noDataState": "no_data",
+        "notifications": []
+      }
+    },
+    {
+      "id": 5,
+      "title": "Wet Bulb Temperature High - Back",
+      "type": "graph",
+      "targets": [
+        {
+          "refId": "A",
+          "rawSql": "SELECT time, value FROM measurement_with_metadata WHERE sensor_name = 'wet_bulb_b' AND time > $__timeFrom() AND time < $__timeTo() ORDER BY time DESC LIMIT 1",
+          "format": "time_series",
+          "datasource": "CEA Sensors"
+        }
+      ],
+      "alert": {
+        "name": "Wet Bulb Temperature High - Back",
+        "message": "Wet bulb temperature (back) exceeded maximum threshold of 25°C",
+        "conditions": [
+          {
+            "evaluator": {
+              "params": [25],
+              "type": "gt"
+            },
+            "operator": {
+              "type": "and"
+            },
+            "query": {
+              "params": ["A", "5m", "now"]
+            },
+            "reducer": {
+              "params": [],
+              "type": "last"
+            },
+            "type": "query"
+          }
+        ],
+        "executionErrorState": "alerting",
+        "for": "1m",
+        "frequency": "30s",
+        "handler": 1,
+        "noDataState": "no_data",
+        "notifications": []
+      }
+    },
+    {
+      "id": 6,
+      "title": "Wet Bulb Temperature Low - Back",
+      "type": "graph",
+      "targets": [
+        {
+          "refId": "A",
+          "rawSql": "SELECT time, value FROM measurement_with_metadata WHERE sensor_name = 'wet_bulb_b' AND time > $__timeFrom() AND time < $__timeTo() ORDER BY time DESC LIMIT 1",
+          "format": "time_series",
+          "datasource": "CEA Sensors"
+        }
+      ],
+      "alert": {
+        "name": "Wet Bulb Temperature Low - Back",
+        "message": "Wet bulb temperature (back) fell below minimum threshold of 10°C",
+        "conditions": [
+          {
+            "evaluator": {
+              "params": [10],
+              "type": "lt"
+            },
+            "operator": {
+              "type": "and"
+            },
+            "query": {
+              "params": ["A", "5m", "now"]
+            },
+            "reducer": {
+              "params": [],
+              "type": "last"
+            },
+            "type": "query"
+          }
+        ],
+        "executionErrorState": "alerting",
+        "for": "1m",
+        "frequency": "30s",
+        "handler": 1,
+        "noDataState": "no_data",
+        "notifications": []
+      }
+    },
+    {
+      "id": 7,
+      "title": "Wet Bulb Temperature High - Front",
+      "type": "graph",
+      "targets": [
+        {
+          "refId": "A",
+          "rawSql": "SELECT time, value FROM measurement_with_metadata WHERE sensor_name = 'wet_bulb_f' AND time > $__timeFrom() AND time < $__timeTo() ORDER BY time DESC LIMIT 1",
+          "format": "time_series",
+          "datasource": "CEA Sensors"
+        }
+      ],
+      "alert": {
+        "name": "Wet Bulb Temperature High - Front",
+        "message": "Wet bulb temperature (front) exceeded maximum threshold of 25°C",
+        "conditions": [
+          {
+            "evaluator": {
+              "params": [25],
+              "type": "gt"
+            },
+            "operator": {
+              "type": "and"
+            },
+            "query": {
+              "params": ["A", "5m", "now"]
+            },
+            "reducer": {
+              "params": [],
+              "type": "last"
+            },
+            "type": "query"
+          }
+        ],
+        "executionErrorState": "alerting",
+        "for": "1m",
+        "frequency": "30s",
+        "handler": 1,
+        "noDataState": "no_data",
+        "notifications": []
+      }
+    },
+    {
+      "id": 8,
+      "title": "Wet Bulb Temperature Low - Front",
+      "type": "graph",
+      "targets": [
+        {
+          "refId": "A",
+          "rawSql": "SELECT time, value FROM measurement_with_metadata WHERE sensor_name = 'wet_bulb_f' AND time > $__timeFrom() AND time < $__timeTo() ORDER BY time DESC LIMIT 1",
+          "format": "time_series",
+          "datasource": "CEA Sensors"
+        }
+      ],
+      "alert": {
+        "name": "Wet Bulb Temperature Low - Front",
+        "message": "Wet bulb temperature (front) fell below minimum threshold of 10°C",
+        "conditions": [
+          {
+            "evaluator": {
+              "params": [10],
+              "type": "lt"
+            },
+            "operator": {
+              "type": "and"
+            },
+            "query": {
+              "params": ["A", "5m", "now"]
+            },
+            "reducer": {
+              "params": [],
+              "type": "last"
+            },
+            "type": "query"
+          }
+        ],
+        "executionErrorState": "alerting",
+        "for": "1m",
+        "frequency": "30s",
+        "handler": 1,
+        "noDataState": "no_data",
+        "notifications": []
+      }
+    },
+    {
+      "id": 9,
+      "title": "Secondary Temperature High - Back",
+      "type": "graph",
+      "targets": [
+        {
+          "refId": "A",
+          "rawSql": "SELECT time, value FROM measurement_with_metadata WHERE sensor_name = 'secondary_temp_b' AND time > $__timeFrom() AND time < $__timeTo() ORDER BY time DESC LIMIT 1",
+          "format": "time_series",
+          "datasource": "CEA Sensors"
+        }
+      ],
+      "alert": {
+        "name": "Secondary Temperature High - Back",
+        "message": "Secondary temperature (back) exceeded maximum threshold of 35°C",
+        "conditions": [
+          {
+            "evaluator": {
+              "params": [35],
+              "type": "gt"
+            },
+            "operator": {
+              "type": "and"
+            },
+            "query": {
+              "params": ["A", "5m", "now"]
+            },
+            "reducer": {
+              "params": [],
+              "type": "last"
+            },
+            "type": "query"
+          }
+        ],
+        "executionErrorState": "alerting",
+        "for": "1m",
+        "frequency": "30s",
+        "handler": 1,
+        "noDataState": "no_data",
+        "notifications": []
+      }
+    },
+    {
+      "id": 10,
+      "title": "Secondary Temperature Low - Back",
+      "type": "graph",
+      "targets": [
+        {
+          "refId": "A",
+          "rawSql": "SELECT time, value FROM measurement_with_metadata WHERE sensor_name = 'secondary_temp_b' AND time > $__timeFrom() AND time < $__timeTo() ORDER BY time DESC LIMIT 1",
+          "format": "time_series",
+          "datasource": "CEA Sensors"
+        }
+      ],
+      "alert": {
+        "name": "Secondary Temperature Low - Back",
+        "message": "Secondary temperature (back) fell below minimum threshold of 10°C",
+        "conditions": [
+          {
+            "evaluator": {
+              "params": [10],
+              "type": "lt"
+            },
+            "operator": {
+              "type": "and"
+            },
+            "query": {
+              "params": ["A", "5m", "now"]
+            },
+            "reducer": {
+              "params": [],
+              "type": "last"
+            },
+            "type": "query"
+          }
+        ],
+        "executionErrorState": "alerting",
+        "for": "1m",
+        "frequency": "30s",
+        "handler": 1,
+        "noDataState": "no_data",
+        "notifications": []
+      }
+    },
+    {
+      "id": 11,
+      "title": "Secondary Temperature High - Front",
+      "type": "graph",
+      "targets": [
+        {
+          "refId": "A",
+          "rawSql": "SELECT time, value FROM measurement_with_metadata WHERE sensor_name = 'secondary_temp_f' AND time > $__timeFrom() AND time < $__timeTo() ORDER BY time DESC LIMIT 1",
+          "format": "time_series",
+          "datasource": "CEA Sensors"
+        }
+      ],
+      "alert": {
+        "name": "Secondary Temperature High - Front",
+        "message": "Secondary temperature (front) exceeded maximum threshold of 35°C",
+        "conditions": [
+          {
+            "evaluator": {
+              "params": [35],
+              "type": "gt"
+            },
+            "operator": {
+              "type": "and"
+            },
+            "query": {
+              "params": ["A", "5m", "now"]
+            },
+            "reducer": {
+              "params": [],
+              "type": "last"
+            },
+            "type": "query"
+          }
+        ],
+        "executionErrorState": "alerting",
+        "for": "1m",
+        "frequency": "30s",
+        "handler": 1,
+        "noDataState": "no_data",
+        "notifications": []
+      }
+    },
+    {
+      "id": 12,
+      "title": "Secondary Temperature Low - Front",
+      "type": "graph",
+      "targets": [
+        {
+          "refId": "A",
+          "rawSql": "SELECT time, value FROM measurement_with_metadata WHERE sensor_name = 'secondary_temp_f' AND time > $__timeFrom() AND time < $__timeTo() ORDER BY time DESC LIMIT 1",
+          "format": "time_series",
+          "datasource": "CEA Sensors"
+        }
+      ],
+      "alert": {
+        "name": "Secondary Temperature Low - Front",
+        "message": "Secondary temperature (front) fell below minimum threshold of 10°C",
+        "conditions": [
+          {
+            "evaluator": {
+              "params": [10],
+              "type": "lt"
+            },
+            "operator": {
+              "type": "and"
+            },
+            "query": {
+              "params": ["A", "5m", "now"]
+            },
+            "reducer": {
+              "params": [],
+              "type": "last"
+            },
+            "type": "query"
+          }
+        ],
+        "executionErrorState": "alerting",
+        "for": "1m",
+        "frequency": "30s",
+        "handler": 1,
+        "noDataState": "no_data",
+        "notifications": []
+      }
+    }
+  ]
+}
+

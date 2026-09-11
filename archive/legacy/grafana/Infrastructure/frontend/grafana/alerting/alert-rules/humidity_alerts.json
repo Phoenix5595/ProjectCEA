@@ -1,0 +1,262 @@
+{
+  "dashboard": {
+    "title": "CEA Humidity Alerts",
+    "tags": ["cea", "humidity", "alerts"],
+    "timezone": "browser"
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Secondary RH High - Back",
+      "type": "graph",
+      "targets": [
+        {
+          "refId": "A",
+          "rawSql": "SELECT time, value FROM measurement_with_metadata WHERE sensor_name = 'secondary_rh_b' AND time > $__timeFrom() AND time < $__timeTo() ORDER BY time DESC LIMIT 1",
+          "format": "time_series",
+          "datasource": "CEA Sensors"
+        }
+      ],
+      "alert": {
+        "name": "Secondary RH High - Back",
+        "message": "Secondary relative humidity (back) exceeded maximum threshold of 90%",
+        "conditions": [
+          {
+            "evaluator": {
+              "params": [90],
+              "type": "gt"
+            },
+            "operator": {
+              "type": "and"
+            },
+            "query": {
+              "params": ["A", "5m", "now"]
+            },
+            "reducer": {
+              "params": [],
+              "type": "last"
+            },
+            "type": "query"
+          }
+        ],
+        "executionErrorState": "alerting",
+        "for": "1m",
+        "frequency": "30s",
+        "handler": 1,
+        "noDataState": "no_data",
+        "notifications": []
+      }
+    },
+    {
+      "id": 2,
+      "title": "Secondary RH Low - Back",
+      "type": "graph",
+      "targets": [
+        {
+          "refId": "A",
+          "rawSql": "SELECT time, value FROM measurement_with_metadata WHERE sensor_name = 'secondary_rh_b' AND time > $__timeFrom() AND time < $__timeTo() ORDER BY time DESC LIMIT 1",
+          "format": "time_series",
+          "datasource": "CEA Sensors"
+        }
+      ],
+      "alert": {
+        "name": "Secondary RH Low - Back",
+        "message": "Secondary relative humidity (back) fell below minimum threshold of 10%",
+        "conditions": [
+          {
+            "evaluator": {
+              "params": [10],
+              "type": "lt"
+            },
+            "operator": {
+              "type": "and"
+            },
+            "query": {
+              "params": ["A", "5m", "now"]
+            },
+            "reducer": {
+              "params": [],
+              "type": "last"
+            },
+            "type": "query"
+          }
+        ],
+        "executionErrorState": "alerting",
+        "for": "1m",
+        "frequency": "30s",
+        "handler": 1,
+        "noDataState": "no_data",
+        "notifications": []
+      }
+    },
+    {
+      "id": 3,
+      "title": "Secondary RH High - Front",
+      "type": "graph",
+      "targets": [
+        {
+          "refId": "A",
+          "rawSql": "SELECT time, value FROM measurement_with_metadata WHERE sensor_name = 'secondary_rh_f' AND time > $__timeFrom() AND time < $__timeTo() ORDER BY time DESC LIMIT 1",
+          "format": "time_series",
+          "datasource": "CEA Sensors"
+        }
+      ],
+      "alert": {
+        "name": "Secondary RH High - Front",
+        "message": "Secondary relative humidity (front) exceeded maximum threshold of 90%",
+        "conditions": [
+          {
+            "evaluator": {
+              "params": [90],
+              "type": "gt"
+            },
+            "operator": {
+              "type": "and"
+            },
+            "query": {
+              "params": ["A", "5m", "now"]
+            },
+            "reducer": {
+              "params": [],
+              "type": "last"
+            },
+            "type": "query"
+          }
+        ],
+        "executionErrorState": "alerting",
+        "for": "1m",
+        "frequency": "30s",
+        "handler": 1,
+        "noDataState": "no_data",
+        "notifications": []
+      }
+    },
+    {
+      "id": 4,
+      "title": "Secondary RH Low - Front",
+      "type": "graph",
+      "targets": [
+        {
+          "refId": "A",
+          "rawSql": "SELECT time, value FROM measurement_with_metadata WHERE sensor_name = 'secondary_rh_f' AND time > $__timeFrom() AND time < $__timeTo() ORDER BY time DESC LIMIT 1",
+          "format": "time_series",
+          "datasource": "CEA Sensors"
+        }
+      ],
+      "alert": {
+        "name": "Secondary RH Low - Front",
+        "message": "Secondary relative humidity (front) fell below minimum threshold of 10%",
+        "conditions": [
+          {
+            "evaluator": {
+              "params": [10],
+              "type": "lt"
+            },
+            "operator": {
+              "type": "and"
+            },
+            "query": {
+              "params": ["A", "5m", "now"]
+            },
+            "reducer": {
+              "params": [],
+              "type": "last"
+            },
+            "type": "query"
+          }
+        ],
+        "executionErrorState": "alerting",
+        "for": "1m",
+        "frequency": "30s",
+        "handler": 1,
+        "noDataState": "no_data",
+        "notifications": []
+      }
+    },
+    {
+      "id": 5,
+      "title": "Lab RH High",
+      "type": "graph",
+      "targets": [
+        {
+          "refId": "A",
+          "rawSql": "SELECT time, value FROM measurement_with_metadata WHERE sensor_name = 'lab_rh' AND time > $__timeFrom() AND time < $__timeTo() ORDER BY time DESC LIMIT 1",
+          "format": "time_series",
+          "datasource": "CEA Sensors"
+        }
+      ],
+      "alert": {
+        "name": "Lab RH High",
+        "message": "Lab relative humidity exceeded maximum threshold of 90%",
+        "conditions": [
+          {
+            "evaluator": {
+              "params": [90],
+              "type": "gt"
+            },
+            "operator": {
+              "type": "and"
+            },
+            "query": {
+              "params": ["A", "5m", "now"]
+            },
+            "reducer": {
+              "params": [],
+              "type": "last"
+            },
+            "type": "query"
+          }
+        ],
+        "executionErrorState": "alerting",
+        "for": "1m",
+        "frequency": "30s",
+        "handler": 1,
+        "noDataState": "no_data",
+        "notifications": []
+      }
+    },
+    {
+      "id": 6,
+      "title": "Lab RH Low",
+      "type": "graph",
+      "targets": [
+        {
+          "refId": "A",
+          "rawSql": "SELECT time, value FROM measurement_with_metadata WHERE sensor_name = 'lab_rh' AND time > $__timeFrom() AND time < $__timeTo() ORDER BY time DESC LIMIT 1",
+          "format": "time_series",
+          "datasource": "CEA Sensors"
+        }
+      ],
+      "alert": {
+        "name": "Lab RH Low",
+        "message": "Lab relative humidity fell below minimum threshold of 10%",
+        "conditions": [
+          {
+            "evaluator": {
+              "params": [10],
+              "type": "lt"
+            },
+            "operator": {
+              "type": "and"
+            },
+            "query": {
+              "params": ["A", "5m", "now"]
+            },
+            "reducer": {
+              "params": [],
+              "type": "last"
+            },
+            "type": "query"
+          }
+        ],
+        "executionErrorState": "alerting",
+        "for": "1m",
+        "frequency": "30s",
+        "handler": 1,
+        "noDataState": "no_data",
+        "notifications": []
+      }
+    }
+  ]
+}
+

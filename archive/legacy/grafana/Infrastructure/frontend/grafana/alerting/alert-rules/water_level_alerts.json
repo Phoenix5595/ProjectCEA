@@ -1,0 +1,346 @@
+{
+  "dashboard": {
+    "title": "CEA Water Level Alerts",
+    "tags": ["cea", "water-level", "alerts"],
+    "timezone": "browser"
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Water Level High - Main",
+      "type": "graph",
+      "targets": [
+        {
+          "refId": "A",
+          "rawSql": "SELECT time, value FROM measurement_with_metadata WHERE sensor_name = 'water_level' AND time > $__timeFrom() AND time < $__timeTo() ORDER BY time DESC LIMIT 1",
+          "format": "time_series",
+          "datasource": "CEA Sensors"
+        }
+      ],
+      "alert": {
+        "name": "Water Level High - Main",
+        "message": "Water level (main) exceeded maximum threshold of 200mm - tank getting empty",
+        "conditions": [
+          {
+            "evaluator": {
+              "params": [200],
+              "type": "gt"
+            },
+            "operator": {
+              "type": "and"
+            },
+            "query": {
+              "params": ["A", "5m", "now"]
+            },
+            "reducer": {
+              "params": [],
+              "type": "last"
+            },
+            "type": "query"
+          }
+        ],
+        "executionErrorState": "alerting",
+        "for": "1m",
+        "frequency": "30s",
+        "handler": 1,
+        "noDataState": "no_data",
+        "notifications": []
+      }
+    },
+    {
+      "id": 2,
+      "title": "Water Level High - Front",
+      "type": "graph",
+      "targets": [
+        {
+          "refId": "A",
+          "rawSql": "SELECT time, value FROM measurement_with_metadata WHERE sensor_name = 'water_level_f' AND time > $__timeFrom() AND time < $__timeTo() ORDER BY time DESC LIMIT 1",
+          "format": "time_series",
+          "datasource": "CEA Sensors"
+        }
+      ],
+      "alert": {
+        "name": "Water Level High - Front",
+        "message": "Water level (front) exceeded maximum threshold of 200mm - tank getting empty",
+        "conditions": [
+          {
+            "evaluator": {
+              "params": [200],
+              "type": "gt"
+            },
+            "operator": {
+              "type": "and"
+            },
+            "query": {
+              "params": ["A", "5m", "now"]
+            },
+            "reducer": {
+              "params": [],
+              "type": "last"
+            },
+            "type": "query"
+          }
+        ],
+        "executionErrorState": "alerting",
+        "for": "1m",
+        "frequency": "30s",
+        "handler": 1,
+        "noDataState": "no_data",
+        "notifications": []
+      }
+    },
+    {
+      "id": 3,
+      "title": "Water Level High - Back",
+      "type": "graph",
+      "targets": [
+        {
+          "refId": "A",
+          "rawSql": "SELECT time, value FROM measurement_with_metadata WHERE sensor_name = 'water_level_b' AND time > $__timeFrom() AND time < $__timeTo() ORDER BY time DESC LIMIT 1",
+          "format": "time_series",
+          "datasource": "CEA Sensors"
+        }
+      ],
+      "alert": {
+        "name": "Water Level High - Back",
+        "message": "Water level (back) exceeded maximum threshold of 200mm - tank getting empty",
+        "conditions": [
+          {
+            "evaluator": {
+              "params": [200],
+              "type": "gt"
+            },
+            "operator": {
+              "type": "and"
+            },
+            "query": {
+              "params": ["A", "5m", "now"]
+            },
+            "reducer": {
+              "params": [],
+              "type": "last"
+            },
+            "type": "query"
+          }
+        ],
+        "executionErrorState": "alerting",
+        "for": "1m",
+        "frequency": "30s",
+        "handler": 1,
+        "noDataState": "no_data",
+        "notifications": []
+      }
+    },
+    {
+      "id": 4,
+      "title": "Water Level High - Veg",
+      "type": "graph",
+      "targets": [
+        {
+          "refId": "A",
+          "rawSql": "SELECT time, value FROM measurement_with_metadata WHERE sensor_name = 'water_level_v' AND time > $__timeFrom() AND time < $__timeTo() ORDER BY time DESC LIMIT 1",
+          "format": "time_series",
+          "datasource": "CEA Sensors"
+        }
+      ],
+      "alert": {
+        "name": "Water Level High - Veg",
+        "message": "Water level (veg) exceeded maximum threshold of 200mm - tank getting empty",
+        "conditions": [
+          {
+            "evaluator": {
+              "params": [200],
+              "type": "gt"
+            },
+            "operator": {
+              "type": "and"
+            },
+            "query": {
+              "params": ["A", "5m", "now"]
+            },
+            "reducer": {
+              "params": [],
+              "type": "last"
+            },
+            "type": "query"
+          }
+        ],
+        "executionErrorState": "alerting",
+        "for": "1m",
+        "frequency": "30s",
+        "handler": 1,
+        "noDataState": "no_data",
+        "notifications": []
+      }
+    },
+    {
+      "id": 5,
+      "title": "Water Level High - Main Tank",
+      "type": "graph",
+      "targets": [
+        {
+          "refId": "A",
+          "rawSql": "SELECT time, value FROM measurement_with_metadata WHERE sensor_name = 'water_level_main' AND time > $__timeFrom() AND time < $__timeTo() ORDER BY time DESC LIMIT 1",
+          "format": "time_series",
+          "datasource": "CEA Sensors"
+        }
+      ],
+      "alert": {
+        "name": "Water Level High - Main Tank",
+        "message": "Water level (main tank) exceeded maximum threshold of 200mm - tank getting empty",
+        "conditions": [
+          {
+            "evaluator": {
+              "params": [200],
+              "type": "gt"
+            },
+            "operator": {
+              "type": "and"
+            },
+            "query": {
+              "params": ["A", "5m", "now"]
+            },
+            "reducer": {
+              "params": [],
+              "type": "last"
+            },
+            "type": "query"
+          }
+        ],
+        "executionErrorState": "alerting",
+        "for": "1m",
+        "frequency": "30s",
+        "handler": 1,
+        "noDataState": "no_data",
+        "notifications": []
+      }
+    },
+    {
+      "id": 6,
+      "title": "Water Level High - Tank 1",
+      "type": "graph",
+      "targets": [
+        {
+          "refId": "A",
+          "rawSql": "SELECT time, value FROM measurement_with_metadata WHERE sensor_name = 'water_level_1' AND time > $__timeFrom() AND time < $__timeTo() ORDER BY time DESC LIMIT 1",
+          "format": "time_series",
+          "datasource": "CEA Sensors"
+        }
+      ],
+      "alert": {
+        "name": "Water Level High - Tank 1",
+        "message": "Water level (tank 1) exceeded maximum threshold of 200mm - tank getting empty",
+        "conditions": [
+          {
+            "evaluator": {
+              "params": [200],
+              "type": "gt"
+            },
+            "operator": {
+              "type": "and"
+            },
+            "query": {
+              "params": ["A", "5m", "now"]
+            },
+            "reducer": {
+              "params": [],
+              "type": "last"
+            },
+            "type": "query"
+          }
+        ],
+        "executionErrorState": "alerting",
+        "for": "1m",
+        "frequency": "30s",
+        "handler": 1,
+        "noDataState": "no_data",
+        "notifications": []
+      }
+    },
+    {
+      "id": 7,
+      "title": "Water Level High - Tank 2",
+      "type": "graph",
+      "targets": [
+        {
+          "refId": "A",
+          "rawSql": "SELECT time, value FROM measurement_with_metadata WHERE sensor_name = 'water_level_2' AND time > $__timeFrom() AND time < $__timeTo() ORDER BY time DESC LIMIT 1",
+          "format": "time_series",
+          "datasource": "CEA Sensors"
+        }
+      ],
+      "alert": {
+        "name": "Water Level High - Tank 2",
+        "message": "Water level (tank 2) exceeded maximum threshold of 200mm - tank getting empty",
+        "conditions": [
+          {
+            "evaluator": {
+              "params": [200],
+              "type": "gt"
+            },
+            "operator": {
+              "type": "and"
+            },
+            "query": {
+              "params": ["A", "5m", "now"]
+            },
+            "reducer": {
+              "params": [],
+              "type": "last"
+            },
+            "type": "query"
+          }
+        ],
+        "executionErrorState": "alerting",
+        "for": "1m",
+        "frequency": "30s",
+        "handler": 1,
+        "noDataState": "no_data",
+        "notifications": []
+      }
+    },
+    {
+      "id": 8,
+      "title": "Water Level High - Tank 3",
+      "type": "graph",
+      "targets": [
+        {
+          "refId": "A",
+          "rawSql": "SELECT time, value FROM measurement_with_metadata WHERE sensor_name = 'water_level_3' AND time > $__timeFrom() AND time < $__timeTo() ORDER BY time DESC LIMIT 1",
+          "format": "time_series",
+          "datasource": "CEA Sensors"
+        }
+      ],
+      "alert": {
+        "name": "Water Level High - Tank 3",
+        "message": "Water level (tank 3) exceeded maximum threshold of 200mm - tank getting empty",
+        "conditions": [
+          {
+            "evaluator": {
+              "params": [200],
+              "type": "gt"
+            },
+            "operator": {
+              "type": "and"
+            },
+            "query": {
+              "params": ["A", "5m", "now"]
+            },
+            "reducer": {
+              "params": [],
+              "type": "last"
+            },
+            "type": "query"
+          }
+        ],
+        "executionErrorState": "alerting",
+        "for": "1m",
+        "frequency": "30s",
+        "handler": 1,
+        "noDataState": "no_data",
+        "notifications": []
+      }
+    }
+  ]
+}
+
