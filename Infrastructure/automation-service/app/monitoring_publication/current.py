@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Final, Protocol
 
 import anyio
 
-from shared.monitoring_contracts import CurrentSnapshot, MonitoringPublication
+from shared.monitoring_contracts import ConfigVersion, CurrentSnapshot, MonitoringPublication
 
 _DEFAULT_REDIS_TIMEOUT_SECONDS: Final = 1.0
 
@@ -37,10 +38,12 @@ class CurrentPublicationPublisher:
         location: str,
         writer: CurrentPublicationWriter,
         redis_timeout_seconds: float = _DEFAULT_REDIS_TIMEOUT_SECONDS,
+        config_version: Callable[[], Awaitable[int | None]] | None = None,
     ) -> None:
         self._location: str = location
         self._writer: CurrentPublicationWriter = writer
         self._redis_timeout_seconds: float = redis_timeout_seconds
+        self._config_version: Callable[[], Awaitable[int | None]] | None = config_version
         self._pending: CurrentSnapshot | None = None
         self._latest: CurrentSnapshot | None = None
         self._replaced_snapshots: int = 0
@@ -77,6 +80,17 @@ class CurrentPublicationPublisher:
         if snapshot is None:
             return None
         self._pending = None
+        if self._config_version is not None:
+            version = await self._config_version()
+            if version is not None and version >= 1:
+                snapshot = snapshot.model_copy(
+                    update={
+                        "version": snapshot.version.model_copy(
+                            update={"config_version": ConfigVersion(version)}
+                        )
+                    }
+                )
+                self._latest = snapshot
         _ = MonitoringPublication(current=snapshot, future=())
         try:
             with anyio.move_on_after(self._redis_timeout_seconds) as scope:
