@@ -27,10 +27,12 @@ import { deviceMethods } from './api/devices';
 import { sensorMethods } from './api/sensors';
 import { scheduleMethods } from './api/schedules';
 import { pidMethods } from './api/pid';
+import { timelineMethods } from '../features/climate-timeline/api/timeline';
 import type { DeviceApi } from './api/devices';
 import type { SensorApi } from './api/sensors';
 import type { ScheduleApi } from './api/schedules';
 import type { PidApi } from './api/pid';
+import type { TimelineApi } from '../features/climate-timeline/api/timeline';
 
 type JsonObject = Record<string, unknown>;
 
@@ -352,8 +354,8 @@ class ApiClient implements ApiClientCore {
 }
 
 // Attach domain methods (devices, sensors, schedules, pid) to the prototype.
-Object.assign(ApiClient.prototype, deviceMethods, sensorMethods, scheduleMethods, pidMethods);
+Object.assign(ApiClient.prototype, deviceMethods, sensorMethods, scheduleMethods, pidMethods, timelineMethods);
 
-export type { DeviceApi, SensorApi, ScheduleApi, PidApi };
+export type { DeviceApi, SensorApi, ScheduleApi, PidApi, TimelineApi };
 
-export const apiClient = new ApiClient() as ApiClient & DeviceApi & SensorApi & ScheduleApi & PidApi;
+export const apiClient = new ApiClient() as ApiClient & DeviceApi & SensorApi & ScheduleApi & PidApi & TimelineApi;

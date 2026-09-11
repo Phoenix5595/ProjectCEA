@@ -4,10 +4,8 @@ import { apiClient } from '../services/api'
 import { extractErrorMessage } from '../utils/errors'
 import { logger } from '../utils/logger'
 import { getLocationDisplayName, getLocationBackendName, getClusterDisplayName } from '../config/zones'
-import type { RoomModeWithParams, ModeParameters } from '../types/modes'
+import type { RoomModeWithParams } from '../types/modes'
 import { useControlActions } from '../contexts/ControlActionsContext'
-import ClimatePeriodTimeline from '../components/ClimatePeriodTimeline'
-import ClimatePeriodsTable from '../components/ClimatePeriodsTable'
 import LightIntensity from '../components/LightIntensity'
 import VerticalPIDBlock from '../components/VerticalPIDBlock'
 import VerticalNotesBlock from '../components/VerticalNotesBlock'
@@ -17,6 +15,9 @@ import { buildRelayChannelViewModels } from '../components/devices/relayViewMode
 import type { RelayChannelViewModel } from '../components/devices/relayViewModel'
 import { useControlSnapshot } from '../hooks/useControlSnapshot'
 import type { ClimatePeriod } from '../types/climatePeriod'
+import ClimatePeriodsTable from '../components/ClimatePeriodsTable'
+import { TimelineEditor } from '../features/climate-timeline/components/TimelineEditor'
+import type { TimelineSavedBaseline } from '../features/climate-timeline/state/timelineDraft'
 
 export type ZoneConfigSection = 'control' | 'automation';
 
@@ -37,6 +38,13 @@ interface RawClimatePeriod {
   vpd_setpoint?: number | null
   co2_setpoint?: number | null
   details?: string | null
+}
+
+export function shouldPersistLegacyTimelineValues(
+  isConstant: boolean,
+  timelineBaseline: TimelineSavedBaseline | null,
+): boolean {
+  return isConstant || timelineBaseline === null
 }
 
 function mapPeriodsFromApi(periods: RawClimatePeriod[]): ClimatePeriod[] {
@@ -84,6 +92,7 @@ export default function ZoneConfig({
   
   const [roomMode, setRoomMode] = useState<RoomModeWithParams | null>(null)
   const [climatePeriods, setClimatePeriods] = useState<ClimatePeriod[]>([])
+  const [timelineBaseline, setTimelineBaseline] = useState<TimelineSavedBaseline | null>(null)
   const [loading, setLoading] = useState(section === 'control')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -168,20 +177,24 @@ export default function ZoneConfig({
       setRoomMode(mode)
 
       await loadClimatePeriodsForMode(mode)
+      const start = new Date()
+      const saved = await apiClient.getSaved({
+        location: location!,
+        cluster: cluster!,
+        window: {
+          start: start.toISOString(),
+          end: new Date(start.getTime() + 24 * 60 * 60 * 1000).toISOString(),
+          timezone: 'UTC',
+        },
+      })
+      setTimelineBaseline(saved)
+      setClimatePeriods(saved.periods.map((period) => ({ ...period })))
     } catch (err) {
       logger.error('Error loading room mode:', err)
       setError(extractErrorMessage(err, 'Failed to load'))
     } finally {
       setLoading(false)
     }
-  }
-
-  function handleParamChange(updates: Partial<ModeParameters>) {
-    if (!roomMode) return
-    setRoomMode({
-      ...roomMode,
-      parameters: { ...roomMode.parameters, ...updates }
-    })
   }
 
   /** Format time to HH:MM (mode_parameters may return HH:MM:SS from DB). */
@@ -217,32 +230,32 @@ export default function ZoneConfig({
       const updated = await apiClient.updateRoomParameters(location, cluster, roomMode.parameters)
       setRoomMode(updated)
 
-      const p = updated.parameters
-      const dayStart = toHHMM(p.day_start_time)
-      const nightStart = toHHMM(p.night_start_time)
-      // Light ramps: must match mode_parameters.light_ramp_* — not ramp_up_minutes
-      // (legacy climate transition fields), or room_schedule / Redis aggregate state show wrong values.
-      await apiClient.saveRoomSchedule(location, cluster, {
-        day_start_time: dayStart,
-        day_end_time: nightStart,
-        night_start_time: nightStart,
-        night_end_time: dayStart,
-        ramp_up_duration: p.light_ramp_up_minutes ?? null,
-        ramp_down_duration: p.light_ramp_down_minutes ?? null,
-      })
+      if (shouldPersistLegacyTimelineValues(roomMode.is_constant, timelineBaseline)) {
+        const p = updated.parameters
+        const dayStart = toHHMM(p.day_start_time)
+        const nightStart = toHHMM(p.night_start_time)
+        await apiClient.saveRoomSchedule(location, cluster, {
+          day_start_time: dayStart,
+          day_end_time: nightStart,
+          night_start_time: nightStart,
+          night_end_time: dayStart,
+          ramp_up_duration: p.light_ramp_up_minutes ?? null,
+          ramp_down_duration: p.light_ramp_down_minutes ?? null,
+        })
 
-      const periodsToSave =
-        roomMode.is_constant && climatePeriods.length === 0
-          ? [createConstantPeriod(roomMode.mode_name)]
-          : climatePeriods
+        const periodsToSave =
+          roomMode.is_constant && climatePeriods.length === 0
+            ? [createConstantPeriod(roomMode.mode_name)]
+            : climatePeriods
 
-      await apiClient.saveClimatePeriods(
-        location,
-        cluster,
-        periodsToSave as unknown as Record<string, unknown>[],
-        updated.mode_id ?? undefined,
-        updated.submode_id ?? undefined
-      )
+        await apiClient.saveClimatePeriods(
+          location,
+          cluster,
+          periodsToSave as unknown as Record<string, unknown>[],
+          updated.mode_id ?? undefined,
+          updated.submode_id ?? undefined
+        )
+      }
 
       await lightIntensityRef.current?.savePendingChanges()
 
@@ -265,7 +278,7 @@ export default function ZoneConfig({
     } finally {
       setSaving(false)
     }
-  }, [roomMode, location, cluster, climatePeriods])
+  }, [roomMode, location, cluster, climatePeriods, timelineBaseline])
 
   useEffect(() => {
     if (location && cluster && section === 'control') {
@@ -344,44 +357,36 @@ export default function ZoneConfig({
 
   return (
     <div className="min-h-screen bg-surface-base p-1">
-      <div className="max-w-[1920px] mx-auto h-[calc(100vh-1rem)] flex flex-col">
+      <div className="max-w-[1920px] mx-auto h-[calc(100vh-1rem)] min-w-0 flex flex-col">
         {params && (
           <div className="flex-1 flex flex-col gap-1 min-h-0">
-            {/* Climate Timeline - 270px fixed, full width */}
-            <div className="h-[300px] shrink-0 bg-surface-primary rounded-lg border border-border-subtle overflow-hidden p-0">
-              {!isConstant ? (
-                <ClimatePeriodTimeline
-                  periods={climatePeriods}
-                  lightDayStart={params?.day_start_time || '06:00'}
-                  lightDayEnd={params?.night_start_time || '18:00'}
-                  className="h-full"
-                  onDayStartChange={(time) => handleParamChange({ day_start_time: time })}
-                  onDayEndChange={(time) => handleParamChange({ night_start_time: time })}
-                  lockedPhotoperiodHours={lockedPhotoperiod}
-                  rampUpDuration={params.light_ramp_up_minutes}
-                  rampDownDuration={params.light_ramp_down_minutes}
-                  onRampUpChange={(d) => handleParamChange({ light_ramp_up_minutes: d ?? 0 })}
-                  onRampDownChange={(d) => handleParamChange({ light_ramp_down_minutes: d ?? 0 })}
-                />
-              ) : (
-                <div className="h-full flex items-center justify-center text-text-subtle text-sm">
-                  Constant mode - no timeline
+            {!isConstant && roomMode && (
+              timelineBaseline ? (
+                <div className="w-full min-w-0 shrink-0 overflow-auto">
+                  <TimelineEditor
+                    key={`${location}-${cluster}-${timelineBaseline.baseConfigRevision}-${roomMode.mode_id ?? 'unknown'}-${roomMode.submode_id ?? 'none'}`}
+                    saved={timelineBaseline}
+                    lockedPhotoperiodHours={lockedPhotoperiod}
+                  />
                 </div>
-              )}
-            </div>
+              ) : (
+                <div className="w-full min-w-0 shrink-0 overflow-auto rounded-lg border border-border-subtle bg-surface-primary p-1">
+                  <ClimatePeriodsTable periods={climatePeriods} onChange={setClimatePeriods} />
+                </div>
+              )
+            )}
+            {isConstant && (
+              <div className="h-[300px] shrink-0 overflow-hidden rounded-lg border border-border-subtle bg-surface-primary p-0">
+                <div className="flex h-full items-center justify-center text-sm text-text-subtle">Constant mode - no timeline</div>
+              </div>
+            )}
 
             {/* Climate Periods + Relay Matrix row - 450px */}
-            <div className="flex gap-1 h-[580px] shrink-0">
-              <div className="flex-1 flex flex-col gap-1 h-full overflow-hidden">
+            <div className="flex min-h-0 shrink-0 flex-col gap-1 md:h-[580px] md:flex-row">
+              <div className="flex min-h-[320px] min-w-0 flex-1 flex-col gap-1 overflow-hidden md:min-h-0">
                 {!isConstant ? (
                   <>
-                    <div className="bg-surface-primary rounded-lg border border-border-subtle p-1 flex-[56] overflow-auto">
-                      <ClimatePeriodsTable
-                        periods={climatePeriods}
-                        onChange={setClimatePeriods}
-                      />
-                    </div>
-                    <div className="flex-[44] overflow-auto">
+                    <div className="h-full overflow-auto">
                       <LightIntensity ref={lightIntensityRef} location={location} cluster={cluster} compact={true} />
                     </div>
                   </>
@@ -389,7 +394,7 @@ export default function ZoneConfig({
                   <ManualLightControl location={location} cluster={cluster} compact={true} />
                 )}
               </div>
-              <div className="h-full shrink-0 min-w-0 overflow-hidden">
+              <div className="w-full min-w-0 overflow-x-auto md:h-full md:w-auto md:shrink-0 md:overflow-hidden">
                 {!mcpConnected && (
                   <div className="mb-1 rounded-sm border border-status-error-border/80 bg-status-error-bg/30 px-2 py-1 text-[10px] font-semibold text-status-error-text">
                     MCP23017 disconnected
