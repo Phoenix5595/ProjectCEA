@@ -1,6 +1,4 @@
 import { expect, test } from '@playwright/test'
-import { readFileSync } from 'node:fs'
-import path from 'node:path'
 import { flowerManifest, vegManifest } from '../../src/features/monitoring/config'
 import type { MonitoringManifest } from '../../src/features/monitoring/config'
 import { describeViolation } from '../../src/features/monitoring/config/originGuard'
@@ -13,6 +11,13 @@ const NATIVE_PAGES: ReadonlyArray<{
   { path: '/flower/monitoring', manifest: flowerManifest },
   { path: '/vegetation/monitoring', manifest: vegManifest },
 ]
+
+const LEGACY_REDIRECTS = [
+  { path: '/laboratory/climate', destination: '/laboratory' },
+  { path: '/laboratory/water', destination: '/laboratory' },
+  { path: '/laboratory/infrastructure', destination: '/laboratory' },
+  { path: '/flower/soil', destination: '/flower' },
+] as const
 
 function trackViolations(page: import('@playwright/test').Page): string[] {
   const violations: string[] = []
@@ -49,17 +54,11 @@ for (const nativePage of NATIVE_PAGES) {
   })
 }
 
-test('keeps Soil and Laboratory monitoring on GrafanaPanel', () => {
-  const pages = [
-    'src/pages/FlowerSoil.tsx',
-    'src/pages/LaboratoryClimate.tsx',
-    'src/pages/LaboratoryWater.tsx',
-    'src/pages/LaboratoryInfrastructure.tsx',
-  ]
+for (const legacyRedirect of LEGACY_REDIRECTS) {
+  test(`redirects ${legacyRedirect.path} to ${legacyRedirect.destination}`, async ({ page }, testInfo) => {
+    await page.goto(fixtureUrl(legacyRedirect.path, testInfo))
+    await page.waitForURL((url) => url.pathname === legacyRedirect.destination)
 
-  for (const page of pages) {
-    const source = readFileSync(path.resolve(process.cwd(), page), 'utf8')
-    expect(source, page).toMatch(/import GrafanaPanel from ['"]\.\.\/components\/GrafanaPanel['"]/) 
-    expect(source, page).toContain('<GrafanaPanel')
-  }
-})
+    expect(new URL(page.url()).pathname).toBe(legacyRedirect.destination)
+  })
+}

@@ -26,12 +26,7 @@ interface Tab {
 }
 
 const sectorTabs: Record<Sector, Tab[]> = {
-  laboratory: [
-    { id: 'overview', label: 'Overview', path: '/laboratory' },
-    { id: 'climate', label: 'Climate', path: '/laboratory/climate' },
-    { id: 'water', label: 'Water', path: '/laboratory/water' },
-    { id: 'infrastructure', label: 'Infrastructure', path: '/laboratory/infrastructure' },
-  ],
+  laboratory: [{ id: 'overview', label: 'Overview', path: '/laboratory' }],
   vegetation: [
     { id: 'overview', label: 'Overview', path: '/vegetation' },
     { id: 'monitoring', label: 'Monitoring', path: '/vegetation/monitoring' },
@@ -43,7 +38,6 @@ const sectorTabs: Record<Sector, Tab[]> = {
     { id: 'monitoring', label: 'Monitoring', path: '/flower/monitoring' },
     { id: 'control', label: 'Control', path: '/flower/control' },
     { id: 'automation', label: 'Automation', path: '/flower/automation' },
-    { id: 'soil', label: 'Soil', path: '/flower/soil' },
   ],
   devices: [{ id: 'overview', label: 'Overview', path: '/devices' }],
 };
