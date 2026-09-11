@@ -37,7 +37,7 @@ function input(overrides: Partial<AlignInput> = {}): AlignInput {
 }
 
 describe('live alignment', () => {
-  it('rolls the 5% future horizon when only a sensor tail update advances now', () => {
+  it('rolls the future horizon when only a sensor tail update advances now', () => {
     // Given: a projection that extends beyond two live horizons.
     const nextNow = new Date(NOW.getTime() + 60_000)
     const source = input({ projectionHistory: controlWithSteps([], new Date(nextNow.getTime() + 10 * 60_000)) })
@@ -52,9 +52,9 @@ describe('live alignment', () => {
       live: [{ sensor: 'dry_bulb', value: 24.5, timestamp: nextNow }],
     })
 
-    // Then: every live frame has the same [now-duration, now+duration/20] horizon.
+    // Then: every live frame has the same [now-duration, now+duration/3] horizon.
     expect(result.x[0]).toBe(nextNow.getTime() - LIVE_RANGE.duration)
-    expect(result.x.at(-1)).toBe(nextNow.getTime() + LIVE_RANGE.duration / 20)
+    expect(result.x.at(-1)).toBe(nextNow.getTime() + LIVE_RANGE.duration / 3)
     expect(result.x[result.nowIndex]).toBe(nextNow.getTime())
   })
 
