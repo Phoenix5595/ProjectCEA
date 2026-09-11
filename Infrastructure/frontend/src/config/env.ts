@@ -22,8 +22,6 @@
  *   so shipping the key early is harmless until the gate flips.
  */
 
-import { logger } from '../utils/logger';
-
 function currentOrigin(port: number): string {
   if (typeof window === 'undefined') return `http://localhost:${port}`;
   const protocol = window.location.protocol === 'https:' ? 'https:' : 'http:';
@@ -75,41 +73,6 @@ export function buildWebSocketUrl(): string {
 /** Build-time API key. Never logged. */
 export const CEA_API_KEY: string =
   (import.meta.env.VITE_CEA_API_KEY as string | undefined) ?? '';
-
-/**
- * Grafana base URL used by `<GrafanaPanel>` to build the iframe `src`
- * for embedded dashboards (`/d/<uid>`) and panels (`/d-solo/<uid>`).
- *
- * Phase 5b moved Grafana off `iskradocker:3000` and onto
- * `iskraprojectcea:3001` — the same VM as the DB replica, fewer
- * network hops, and the iskradocker monitoring stack can shed its
- * CEA-specific bits in 5c.
- *
- * Phase 7.4: the env is required at *build time* (it ends up baked into
- * the static bundle). We warn loudly at bundle boot if it's missing so
- * an operator notices the silent fallback before iframes start 404-ing
- * against a wrong host. There is no Caddy `/grafana` reverse-proxy
- * entry (see Infrastructure/caddy/Caddyfile), so the iframe continues
- * to point at the Grafana host directly.
- */
-const GRAFANA_BASE_URL_DEFAULT = 'http://iskraprojectcea:3001';
-const GRAFANA_BASE_URL_ENV = import.meta.env.VITE_GRAFANA_BASE_URL as
-  | string
-  | undefined;
-
-if (!GRAFANA_BASE_URL_ENV && typeof window !== 'undefined') {
-  // Build-time var missing — bundle will still work against the default,
-  // but this is a deploy-config smell worth surfacing.
-  logger.warn(
-    '[config/env] VITE_GRAFANA_BASE_URL not set at build time; ' +
-      `falling back to ${GRAFANA_BASE_URL_DEFAULT}. Set it in the deploy env ` +
-      'to silence this warning (Phase 7.4).',
-  );
-}
-
-export const GRAFANA_BASE_URL: string = (
-  GRAFANA_BASE_URL_ENV ?? GRAFANA_BASE_URL_DEFAULT
-).replace(/\/$/, '');
 
 function appendToken(url: string): string {
   if (!CEA_API_KEY) return url;

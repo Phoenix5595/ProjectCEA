@@ -96,13 +96,6 @@
 	}
 
 	# ------------------------------------------------------------------
-	# Grafana (Phase 5c): the SPA embeds projectcea_grafana directly
-	# at http://iskraprojectcea:3001 (via VITE_GRAFANA_BASE_URL). The
-	# Pi-local grafana-server was decommissioned 2026-04-19; no local
-	# /grafana/* proxy is needed here anymore.
-	# ------------------------------------------------------------------
-
-	# ------------------------------------------------------------------
 	# Soil / onewire services - not consumed by the SPA today but exposed
 	# under explicit prefixes for future expansion & operator tooling.
 	# (Keeps the top-level path space clean for the automation SPA.)
