@@ -81,6 +81,38 @@ Required tokens are listed in `src/features/monitoring/designTokens.ts` (`REQUIR
 - Semantic HTML tables retain Grafana ordering, units, and Last Update rows. Tables double as the chart's accessible data alternative.
 - Cards wrap each chart region and table with existing surface/border tokens.
 
+### Climate timeline compact and expanded states
+
+- The compact Control timeline is read-only. It shows saved scheduled and runtime-effective trajectories, a UTC-window label with the selected display timezone, and explicit source configuration revision/freshness metadata. It has one Expand control; pointer drag and keyboard adjustment do nothing in this state.
+- Expanded Control keeps the compact plot, adds scheduled-only editing handles, Review, Apply, and Discard controls, and leaves the primary climate-period table immediately below as the complete keyboard and fine-tuning fallback. Effective trajectories are never draggable or editable.
+- Scheduled and effective trajectories use both line style and a text label. Saved and draft values use both line style and a visible Saved/Draft state label; color alone never communicates either distinction.
+- Climate panels are unit-aligned: temperature (`°C`), VPD (`kPa`), and CO2 (`ppm`) never share an unlabeled scale. Metric/unit labels remain visible in compact and expanded states.
+- The period band sits below trajectory curves. It renders faint period labels centered in their exact half-open period extents, truncates without overlap at narrow widths, exposes the full label through accessible text, and never intercepts an editing pointer event.
+- Scheduled transition labels distinguish calendar-scheduled values from runtime-effective values. An effective trajectory starts at its runtime observation time; stale or unavailable runtime state is shown as an explicit gap with its warning or assumption, never as a continued line.
+
+### Editing, conflicts, and stale state
+
+- Dragging or keyboard editing changes the shared draft only. It never persists, actuates, or changes monitoring. The primary table and expanded graph update the same draft immediately; collapse preserves that draft.
+- Every graphical adjustment has an equivalent keyboard path: focus a scheduled segment/handle, use arrow keys for the documented increment, and use the table for direct numeric/time entry. Focus returns to the affected handle or table field after review, validation, conflict, or discard.
+- Review identifies the base configuration revision and draft revision. Apply is enabled only from the reviewed, valid draft state. Discard restores the saved revision and removes the draft marker.
+- A stale configuration or revision conflict preserves the draft, marks it Conflict/Stale in text and with `--mon-stale`, and offers Reload saved values plus Review draft. It never silently overwrites, merges, clamps, or discards edits.
+- Unavailable segments visibly break the line. Assumptions and warnings appear in the timeline metadata and accessible table alternative, including an explicit "assumes override remains active" statement when applicable.
+
+### Operator handoff boundaries
+
+- The climate periods table is permanent and remains the primary fine-tuning interface. Operators can edit period names, times, targets, and ramps there without opening the graph. The expanded graph is supplementary.
+- Compact Control is a read-only view of saved scheduled and runtime-effective trajectories. Expand creates an unsaved draft overlay. Review validates that draft, and Apply is the only path that persists it. Discard removes the draft without changing saved authority.
+- Monitoring consumes the saved rich trajectory only. It never reads Control draft state, and it does not actuate devices. Historical monitoring remains authoritative where recorded data overlaps the saved projection.
+- The rich trajectory envelope is additive to legacy monitoring contracts. Consumers that need only scalar `value` and `quality` fields can continue using the legacy series; rich consumers must preserve `source`, `trajectory_kind`, revision scope, and explicit UTC/timezone window metadata. Draft envelopes must not be published as saved monitoring data.
+- The projection assumes an indefinite runtime override remains active until the finite requested window ends when no expiry is available. The assumption is surfaced as a warning and an unavailable runtime state creates a visible gap rather than an invented continuation.
+
+### Rollout order
+
+1. Deploy backend and automation read-only projection and preview support, then verify saved revision and unavailable-segment behavior.
+2. Deploy monitoring-service rich read compatibility, retaining legacy series as the fallback contract.
+3. Deploy the frontend Control and monitoring consumers, then verify the table, Review/Apply boundary, saved-only monitoring, and both daily and rolling windows.
+4. Enable operator use of Apply only after the preceding read paths are healthy. No rollout step changes hardware cadence or requires a production data migration.
+
 ## Spacing, Type, and Radius
 
 - Spacing uses the existing 4px-based scale from `src/styles/index.css`.
