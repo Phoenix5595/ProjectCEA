@@ -16,6 +16,7 @@ import tailwindcss from '@tailwindcss/vite'
 import path from 'node:path'
 import fs from 'node:fs'
 import crypto from 'node:crypto'
+import type { IncomingMessage } from 'node:http'
 import { fileURLToPath } from 'node:url'
 import {
   controlProjectionFixture,
@@ -49,7 +50,7 @@ const CSP =
 
 interface FixtureRoute {
   re: RegExp
-  handler: (req: { url?: string }, scenario: string | null) => unknown
+  handler: (req: { url?: string; method?: string; body?: string }, scenario: string | null) => unknown
 }
 
 function roomFrom(url: string, index: number): string {
@@ -59,6 +60,15 @@ function roomFrom(url: string, index: number): string {
 function scenarioFrom(url: string): string | null {
   const q = url.split('?')[1] ?? ''
   return new URLSearchParams(q).get('scenario')
+}
+
+function readRequestBody(req: IncomingMessage): Promise<string> {
+  return new Promise((resolve) => {
+    const chunks: Buffer[] = []
+    req.on('data', (chunk: Buffer | string) => chunks.push(Buffer.from(chunk)))
+    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')))
+    req.on('error', () => resolve(''))
+  })
 }
 
 function isSensorPath(pathname: string): boolean {
@@ -76,6 +86,124 @@ function isDelayedHistoryPath(pathname: string): boolean {
 const scenarioCounters = new Map<string, number>()
 const MISSING_FIXTURE_SESSION = 'missing-session'
 
+function nextLiveFixtureSequence(url: string, node: string): number {
+  const query = url.split('?')[1] ?? ''
+  const session = new URLSearchParams(query).get('fixtureSession') ?? MISSING_FIXTURE_SESSION
+  const pathname = url.split('?')[0] ?? url
+  const key = `live-update:${session}:${pathname}:${node}`
+  const sequence = scenarioCounters.get(key) ?? 0
+  scenarioCounters.set(key, sequence + 1)
+  return sequence
+}
+
+function timelinePeriods(): unknown[] {
+  return [
+    {
+      id: 17,
+      period_name: 'Day cycle',
+      start_time: '06:00:00',
+      end_time: '18:00:00',
+      ramp_minutes: 30,
+      heating_setpoint: 24,
+      cooling_setpoint: 28,
+      vpd_setpoint: 1.1,
+      co2_setpoint: 900,
+      details: 'Fixture schedule',
+    },
+    {
+      id: 18,
+      period_name: 'Night cycle',
+      start_time: '18:00:00',
+      end_time: '06:00:00',
+      ramp_minutes: 15,
+      heating_setpoint: 19,
+      cooling_setpoint: 24,
+      vpd_setpoint: 0.8,
+      co2_setpoint: 600,
+      details: 'Fixture schedule',
+    },
+  ]
+}
+
+function timelineEnvelope(room: string, scope: 'saved' | 'draft'): unknown {
+  return {
+    contract_version: 1,
+    room,
+    generated_at: '2026-08-02T12:00:00.000Z',
+    window: {
+      start: '2026-08-02T00:00:00.000Z',
+      end: '2026-08-03T00:00:00.000Z',
+      timezone: 'UTC',
+    },
+    revision_scope: scope,
+    base_config_revision: '0000009',
+    draft_revision: scope === 'saved' ? null : '1',
+    segments: [
+      {
+        shape: 'step',
+        value: 24,
+        start: '2026-08-02T06:00:00.000Z',
+        end: '2026-08-02T18:00:00.000Z',
+        metric: 'heating',
+        unit: 'C',
+        trajectory_kind: 'scheduled',
+        quality: 'exact',
+        source: {
+          mode: '1',
+          submode: null,
+          period: { period_id: '17', label: 'Day cycle' },
+          config_revision: '0000009',
+          draft_revision: scope === 'saved' ? null : '1',
+        },
+      },
+    ],
+    assumptions: ['Fixture trajectory is a saved schedule authority.'],
+    warnings: [],
+  }
+}
+
+function timelineFixture(req: { url?: string; method?: string; body?: string }): unknown {
+  const room = (req.url ?? '').includes('Veg%20Room') || (req.url ?? '').includes('Veg Room') ? 'Veg Room' : 'Flower Room'
+  const periods = timelinePeriods()
+  const photoperiod = {
+    day_start_time: '06:00:00',
+    night_start_time: '18:00:00',
+    ramp_up_minutes: 20,
+    ramp_down_minutes: 20,
+  }
+  if (req.method === 'POST' && (req.url ?? '').endsWith('/preview')) {
+    const request = JSON.parse(req.body ?? '{}') as {
+      request_id?: string
+      expected_config_revision?: string
+      draft_revision?: number
+    }
+    return {
+      request_id: request.request_id ?? 'fixture-request',
+      expected_config_revision: request.expected_config_revision ?? '0000009',
+      draft_revision: request.draft_revision ?? 1,
+      trajectory: timelineEnvelope(room, 'draft'),
+    }
+  }
+  if (req.method === 'POST' && (req.url ?? '').endsWith('/apply')) {
+    return {
+      request_id: 'fixture-request',
+      config_revision: '000000a',
+      mode_id: 1,
+      submode_id: null,
+      periods,
+      photoperiod,
+    }
+  }
+  return {
+    config_revision: '0000009',
+    mode_id: 1,
+    submode_id: null,
+    periods,
+    photoperiod,
+    trajectory: timelineEnvelope(room, 'saved'),
+  }
+}
+
 const FIXTURE_ROUTES: FixtureRoute[] = [
   {
     re: /^\/api\/sensors\/monitoring\/range\/([^/]+)/,
@@ -88,7 +216,9 @@ const FIXTURE_ROUTES: FixtureRoute[] = [
     re: /^\/api\/sensors\/monitoring\/live\/([^/]+)\/([^/]+)/,
     handler: (req, scenario) => {
       const parts = (req.url ?? '').split('?')[0].split('/').filter(Boolean)
-      return sensorLiveFixture(decodeURIComponent(parts[parts.length - 1] ?? ''), scenario)
+      const node = decodeURIComponent(parts[parts.length - 1] ?? '')
+      const sequence = scenario === 'live-update' ? nextLiveFixtureSequence(req.url ?? '', node) : 0
+      return sensorLiveFixture(node, scenario, sequence)
     },
   },
   {
@@ -101,7 +231,8 @@ const FIXTURE_ROUTES: FixtureRoute[] = [
   {
     re: /^\/api\/monitoring\/control\/([^/]+)\/projection$/,
     handler: (req, scenario) => {
-      const { start, end } = parseRange(req.url ?? '')
+      const start = new Date().toISOString()
+      const end = new Date(Date.now() + 60 * 60 * 1000).toISOString()
       return controlProjectionFixture(roomFrom(req.url ?? '', 3), start, end, scenario)
     },
   },
@@ -125,11 +256,38 @@ const FIXTURE_ROUTES: FixtureRoute[] = [
   },
   {
     re: /^\/api\/events\/history$/,
-    handler: (req, scenario) => eventHistoryFixture(scenario),
+    handler: (_req, scenario) => eventHistoryFixture(scenario),
   },
   {
     re: /^\/api\/calendar\/mode-schedule\//,
     handler: () => ({ expected: { mode_name: 'flower', submode_name: null, title: 'Flowering' }, active: { mode_name: 'flower', submode_name: null } }),
+  },
+  {
+    re: /^\/api\/room-modes\/room\/[^/]+\/[^/]+$/,
+    handler: (req) => ({
+      location: (req.url ?? '').includes('Veg%20Room') ? 'Veg Room' : 'Flower Room',
+      cluster: 'main',
+      mode_name: (req.url ?? '').includes('Veg%20Room') ? 'veg' : 'flower',
+      mode_id: 1,
+      submode_id: null,
+      is_constant: false,
+      parameters: {
+        day_start_time: '06:00',
+        night_start_time: '18:00',
+        light_ramp_up_minutes: 20,
+        light_ramp_down_minutes: 20,
+        main_light_intensity: 80,
+        supplemental_light_intensity: 10,
+      },
+    }),
+  },
+  {
+    re: /^\/api\/climate-periods\/[^/]+\/[^/]+$/,
+    handler: () => timelinePeriods(),
+  },
+  {
+    re: /^\/api\/climate-timeline\/[^/]+\/[^/]+(?:\/preview|\/apply)?$/,
+    handler: (req) => timelineFixture(req),
   },
   {
     re: /^\/api\/devices$/,
@@ -169,8 +327,7 @@ const FIXTURE_ROUTES: FixtureRoute[] = [
   },
   {
     re: /^\/api\/sensors\/([^/]+)\/([^/]+)\/live$/,
-    handler: (req) => {
-      const location = decodeURIComponent(roomFrom(req.url ?? '', 2))
+    handler: (_req) => {
       const now = new Date().toISOString()
       return {
         temperature: {
@@ -311,11 +468,14 @@ function monitoringPreviewPlugin(): Plugin {
         }
       }
 
-      server.middlewares.use((req, res, next) => {
+      server.middlewares.use(async (req, res, next) => {
         log(`REQUEST ${req.method} ${req.url}`)
         res.setHeader('Content-Security-Policy', CSP)
         const pathname = (req.url ?? '/').split('?')[0]
-        const scenario = scenarioFrom(req.url ?? '')
+        const requestBody = req.method === 'POST' && /^\/api\/climate-timeline\//.test(pathname)
+          ? await readRequestBody(req)
+          : undefined
+        const scenario = scenarioFrom(req.url ?? '') ?? scenarioFrom(req.headers.referer ?? '')
         const fixtureSession = new URLSearchParams((req.url ?? '').split('?')[1] ?? '').get(
           'fixtureSession',
         ) ?? MISSING_FIXTURE_SESSION
@@ -342,6 +502,12 @@ function monitoringPreviewPlugin(): Plugin {
             res.end(JSON.stringify({ detail: 'automation down (fixture)' }))
             return
           }
+        }
+        if (scenario === 'timeline-api-failure' && req.method === 'GET' && /^\/api\/climate-timeline\//.test(pathname)) {
+          res.statusCode = 503
+          res.setHeader('Content-Type', 'application/json')
+          res.end(JSON.stringify({ detail: 'saved timeline unavailable (fixture)' }))
+          return
         }
         if (scenario === 'force-error' && isSensorPath(pathname)) {
           res.statusCode = 503
@@ -455,7 +621,7 @@ function monitoringPreviewPlugin(): Plugin {
 
           if (scenario === 'burst') {
             // Send 20 events rapidly
-            const burstEvents = []
+            const burstEvents: typeof ALL_EVENTS = []
             for (let i = 0; i < 20; i++) {
               const base = ALL_EVENTS[i % ALL_EVENTS.length]
               burstEvents.push({
@@ -488,9 +654,9 @@ function monitoringPreviewPlugin(): Plugin {
         }
 
         for (const route of FIXTURE_ROUTES) {
-          if (route.re.test(pathname)) {
+      if (route.re.test(pathname)) {
             res.setHeader('Content-Type', 'application/json')
-            const body = JSON.stringify(route.handler(req, scenario))
+            const body = JSON.stringify(route.handler({ url: req.url, method: req.method, body: requestBody }, scenario))
             if (scenario === 'delayed-control-recovery' && pathname.endsWith('/tail')) {
               const key = counterKey('delayed-control-tail')
               const count = scenarioCounters.get(key) ?? 0

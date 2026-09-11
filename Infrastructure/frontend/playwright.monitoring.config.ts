@@ -57,6 +57,7 @@ export default defineConfig({
     env: {
       PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1',
       VITE_API_BASE_URL: BASE_URL,
+      VITE_MONITORING_PERF_MARKS: '1',
     },
   },
 })
