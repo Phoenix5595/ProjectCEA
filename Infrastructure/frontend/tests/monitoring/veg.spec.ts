@@ -36,6 +36,7 @@ for (const width of WIDTHS) {
       page.getByRole('heading', { name: 'Veg climate conditions' }),
     ).toBeVisible()
     await expect(page.getByRole('heading', { name: 'Veg atmosphere & equipment' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'View data as table' })).toHaveCount(0)
 
     await expect(page.getByRole('table', { name: 'Sensor Values' })).toBeVisible()
     await expect(

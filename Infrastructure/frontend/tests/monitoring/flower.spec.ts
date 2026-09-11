@@ -34,10 +34,12 @@ for (const width of WIDTHS) {
     await page.goto(fixtureUrl('/flower/monitoring', testInfo))
 
     await expect(page.getByRole('button', { name: 'Reset Zoom' })).toBeVisible()
+    await page.getByRole('button', { name: 'Reset Zoom' }).click()
     await expect(
       page.getByRole('heading', { name: 'Flower climate conditions' }),
     ).toBeVisible()
     await expect(page.getByRole('heading', { name: 'Flower atmosphere & equipment' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'View data as table' })).toHaveCount(0)
 
     await expect(page.getByRole('table', { name: 'Averages' })).toBeVisible()
     await expect(page.getByRole('table', { name: 'Front Cluster' })).toBeVisible()
