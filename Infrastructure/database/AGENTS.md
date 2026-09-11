@@ -7,7 +7,7 @@ PostgreSQL + TimescaleDB for normalized metadata, time-series measurements, cont
 | File | Responsibility |
 |---|---|
 | `cea_schema.sql` | Core tables: `room`, `rack`, `device`, `sensor`, `measurement` hypertable, `climate_periods`, `actuator_events` |
-| `grafana_performance_migration.sql` | Continuous aggregates, Grafana views, and `get_sensor_data_optimized` |
+| `grafana_performance_migration.sql` | Continuous aggregates and `get_sensor_data_optimized` |
 | `monitoring_read_models.sql` | Materialized-only aggregates and setpoint rollups for the native monitoring feature |
 | `timescaledb_config.sql` | Compression and retention policies |
 | `operational_history_retention.sql` | Operator-only retention policies for operational-event durability (raw control histories 7 days, aggregates and control_history 30 days) |
@@ -16,11 +16,11 @@ PostgreSQL + TimescaleDB for normalized metadata, time-series measurements, cont
 
 - Redis holds live state (`sensor:{name}`, 10 s TTL) and streams (`sensor:raw`, `stream:control`, `cea:events:operational`). `sensor:raw` and `stream:control` cap at 100,000 entries; `cea:events:operational` caps at 50,000 entries or 24 hours.
 - TimescaleDB holds historical `measurement` rows and continuous aggregates.
-- Grafana on Iskra queries Postgres for historical panels **and** Redis for current-value panels via `redis_sync`.
+- Iskra `redis_sync` copies `latest_sensor_values` from the replica into Redis.
 
-## Consumer-specific aggregate ladders
+## Aggregate ladders
 
-Grafana ladder (`get_sensor_data_optimized`):
+Optimized query ladder (`get_sensor_data_optimized`):
 
 | Span | Tier |
 |---|---|
