@@ -77,6 +77,7 @@ function controlBase(start: string, end: string): ControlFixture {
       climateSeries('heating', 'heating_setpoint', start, end, 22),
       climateSeries('cooling', 'cooling_setpoint', start, end, 27),
       climateSeries('vpd', 'vpd_setpoint', start, end, 1.2),
+      climateSeries('co2', 'co2_setpoint', start, end, 900),
     ],
     lights: [],
     devices: [],
@@ -144,22 +145,23 @@ export function controlProjectionFixture(
   const missing = scenario === 'missing-projection'
   if (partial || missing) return { quality: 'unavailable', value: [] }
 
+  const midpoint = new Date((new Date(start).getTime() + new Date(end).getTime()) / 2).toISOString()
+  const projectionInterval = (from: string, until: string, values: number[]) => ({
+    version: { contract_version: 1, config_version: 7, revision: 'f1c7a11' },
+    generated_at: T0,
+    valid_from: from,
+    valid_until: until,
+    series: base.climate.map((s, index) => ({
+      series_id: { value: `climate.${s.points[0]?.metric}_target` },
+      value: values[index] ?? null,
+      quality: 'estimated',
+      valid_from: from,
+      valid_until: until,
+    })),
+  })
+
   return {
     quality: 'estimated',
-    value: [
-      {
-        version: { contract_version: 1, config_version: 7, revision: 'f1c7a11' },
-        generated_at: T0,
-        valid_from: start,
-        valid_until: end,
-        series: base.climate.map((s) => ({
-          series_id: { value: `climate.${s.points[0]?.metric}_target` },
-          value: s.points[0]?.value ?? null,
-          quality: 'estimated',
-          valid_from: start,
-          valid_until: end,
-        })),
-      },
-    ],
+    value: [projectionInterval(start, midpoint, [22, 27, 1.2, 900]), projectionInterval(midpoint, end, [24, 26, 1.0, 850])],
   }
 }
