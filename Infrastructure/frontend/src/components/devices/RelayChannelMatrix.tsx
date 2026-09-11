@@ -87,7 +87,7 @@ export default function RelayChannelMatrix({
     onMenuAction,
   }
 
-  const relayWidth = variant === 'panel' ? '198px' : '150px'
+  const relayWidth = variant === 'panel' ? '198px' : '144px'
 
   return (
     <div className="rounded-sm bg-surface-secondary p-0">

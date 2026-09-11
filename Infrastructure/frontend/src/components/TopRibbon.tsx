@@ -92,10 +92,10 @@ const TopRibbon: React.FC<TopRibbonProps> = ({
   const displayRoomName = roomName || sectorDefaultNames[sector];
 
   return (
-    <AppRibbon position="top" sticky>
-      <h1 className="text-base font-bold text-text-default flex items-center gap-1 whitespace-nowrap shrink-0">
+    <AppRibbon position="top" sticky className="max-sm:pl-14 sm:pl-2">
+      <h1 className="flex max-w-7 shrink-0 items-center gap-1 overflow-hidden whitespace-nowrap text-base font-bold text-text-default sm:max-w-none">
         <span className="text-xl leading-none">{sectorEmojis[sector]}</span>
-        {displayRoomName}
+        <span className="hidden sm:inline">{displayRoomName}</span>
       </h1>
 
       <nav className="flex overflow-x-auto scrollbar-hide min-w-0 flex-1">
@@ -108,7 +108,7 @@ const TopRibbon: React.FC<TopRibbonProps> = ({
                 to={tab.path}
                 onClick={() => onTabChange(tab.id)}
                 className={`
-                  px-1.5 py-1 text-sm font-medium whitespace-nowrap
+                  px-1.5 py-1 text-sm font-medium whitespace-nowrap max-sm:px-0.5 max-sm:text-[10px]
                   transition-all duration-200 rounded-lg
                   ${
                     isActive
@@ -125,7 +125,7 @@ const TopRibbon: React.FC<TopRibbonProps> = ({
       </nav>
 
       {showActions && isControlPage && (
-        <div className="flex items-center gap-1 ml-auto shrink-0">
+        <div className="ml-auto flex max-w-[45vw] shrink-0 items-center gap-1 overflow-x-auto">
           {currentMode && onModeChange && (
             <>
               <div className="flex gap-1">
