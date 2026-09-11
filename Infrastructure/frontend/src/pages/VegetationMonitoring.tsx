@@ -106,7 +106,11 @@ function VegetationMonitoringInner() {
         onLive={(duration) => store.setLiveRange(duration)}
         onFixedRange={(start, end) => store.setFixedRange(start, end)}
         onPause={() => store.pause()}
-        onResume={() => store.resume()}
+         onResume={() => store.resume()}
+         onResetZoom={() => {
+           climateRef.current?.resetZoom()
+           deviceRef.current?.resetZoom()
+         }}
         defaultDuration={VEG_DEFAULT_DURATION_MS}
         monitoring={{
           errors: snapshot.errors,
