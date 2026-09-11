@@ -20,6 +20,7 @@ from app.events.mutation_diff import safe_allowlisted_diff
 from app.events.operational_models import EntityContext
 from app.events.operational_ports import OperationalEventSink
 from app.schemas.climate_periods import PeriodsSaveRequest
+from app.services.climate_timeline_apply import SavedTimelineConfigurationInvalidator
 
 router = APIRouter(prefix="/api/climate-periods", tags=["climate-periods"])
 
@@ -127,6 +128,16 @@ async def save_climate_periods(
             saved.append(result)
         else:
             raise HTTPException(status_code=500, detail="Failed to save climate period")
+
+    version_id = await database.config_repo.log_config_version(
+        config_type="climate_timeline",
+        location=location,
+        cluster=cluster,
+        changes={"periods_digest": _periods_digest([p.model_dump() for p in request.periods])},
+    )
+    if version_id is None:
+        raise HTTPException(status_code=500, detail="Failed to record climate period revision")
+    await SavedTimelineConfigurationInvalidator().invalidate(location, cluster, f"{version_id:07x}")
 
     emit_persisted_mutation(
         sink,

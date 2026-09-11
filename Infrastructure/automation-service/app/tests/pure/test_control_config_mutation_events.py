@@ -53,11 +53,19 @@ class _ClimatePeriodsRepository:
         return self.saved_period
 
 
+class _ConfigRepository:
+    async def log_config_version(self, **_kwargs: object) -> int:
+        return 1
+
+
 @pytest.mark.asyncio
 async def test_climate_replacement_with_equal_count_emits_content_change() -> None:
     # Given: one persisted period whose replacement changes only a setpoint.
     repository = _ClimatePeriodsRepository({"period_name": "day", "heating_setpoint": 21.0})
-    database = SimpleNamespace(climate_periods_repo=repository)
+    database = SimpleNamespace(
+        climate_periods_repo=repository,
+        config_repo=_ConfigRepository(),
+    )
     sink = _RecordingSink()
 
     # When: the replacement commits with the same number of rows.
