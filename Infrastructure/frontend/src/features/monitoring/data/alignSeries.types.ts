@@ -163,6 +163,7 @@ export interface NormControlSeries {
   name: string
   metric: string
   kind: 'climate' | 'light'
+  trajectoryKind: 'scheduled' | 'effective' | null
   points: NormPoint[]
   steps: NormStep[]
   linear: NormLinear[]

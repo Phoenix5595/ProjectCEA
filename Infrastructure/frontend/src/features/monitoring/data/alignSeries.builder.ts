@@ -108,8 +108,9 @@ export function buildSensorSeries(
   presentation?: SeriesPresentation,
 ): AlignedSeries[] {
   const base = { kind: 'sensor' as const, metric, family, isAggregated, node, unit, unitFamily }
+  const label = presentation?.label ?? (metric === 'vpd' ? 'VPD' : metric)
   return [
-    mkSeries({ ...base, key: seriesKey('sensor', metric, 'mean'), label: metric, role: 'mean', y: mean, origin: 'recorded', quality: 'exact', presentation }),
+    mkSeries({ ...base, key: seriesKey('sensor', metric, 'mean'), label, role: 'mean', y: mean, origin: 'recorded', quality: 'exact', presentation }),
     mkSeries({ ...base, key: seriesKey('sensor', metric, 'min'), label: `${metric} min`, role: 'min', y: min, origin: 'recorded', quality: 'exact' }),
     mkSeries({ ...base, key: seriesKey('sensor', metric, 'max'), label: `${metric} max`, role: 'max', y: max, origin: 'recorded', quality: 'exact' }),
   ]
@@ -179,10 +180,10 @@ export function buildControlSeries(
       isAggregated: isAgg,
       presentation,
     }))
-    const selected = candidates.find((candidate) => candidate.y.some(
+    const selected = candidates.filter((candidate) => candidate.y.some(
       (value) => value !== null && Number.isFinite(value),
     ))
-    return selected === undefined ? [] : [selected]
+    return cs.trajectoryKind === null ? selected.slice(0, 1) : selected
   }
   const out: AlignedSeries[] = [
     mkSeries({
