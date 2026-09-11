@@ -455,6 +455,25 @@ describe('monitoring store', () => {
     unsub()
   })
 
+  it('refreshes sensor history after, but not at, the interval boundary', async () => {
+    const api = makeApi()
+    healthyDefaults(api)
+    const store = new MonitoringStore('Flower Room', api, {
+      now: () => new Date(),
+    })
+    const unsub = store.subscribe(() => {})
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(api.sensorRange).toHaveBeenCalledTimes(1)
+
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(api.sensorRange).toHaveBeenCalledTimes(1)
+
+    await vi.advanceTimersByTimeAsync(1_000)
+    expect(api.sensorRange).toHaveBeenCalledTimes(2)
+    unsub()
+  })
+
   it('refetches range statistics when live duration changes', async () => {
     const api = makeApi()
     healthyDefaults(api)
