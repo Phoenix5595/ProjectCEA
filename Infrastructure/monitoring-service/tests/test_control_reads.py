@@ -37,6 +37,7 @@ from shared.monitoring_contracts import (
 from shared.redis_keys import (
     monitoring_current_publication_key,
     monitoring_future_publication_key,
+    monitoring_rich_trajectory_key,
 )
 
 NOW = datetime(2026, 8, 20, 12, tzinfo=UTC)
@@ -198,6 +199,45 @@ def _future_timeline() -> str:
     return json.dumps([first, second])
 
 
+def _rich_trajectory(revision: str) -> str:
+    return json.dumps(
+        {
+            "contract_version": 1,
+            "room": "Veg Room",
+            "generated_at": "2026-08-20T12:00:00Z",
+            "window": {
+                "start": "2026-08-20T12:00:00Z",
+                "end": "2026-08-20T13:00:00Z",
+                "timezone": "UTC",
+            },
+            "revision_scope": "saved",
+            "base_config_revision": revision,
+            "draft_revision": None,
+            "segments": [
+                {
+                    "start": "2026-08-20T12:00:00Z",
+                    "end": "2026-08-20T13:00:00Z",
+                    "metric": "heating",
+                    "unit": "C",
+                    "trajectory_kind": "scheduled",
+                    "quality": "exact",
+                    "source": {
+                        "mode": "Veg",
+                        "submode": None,
+                        "period": {"period_id": "1", "label": "Day"},
+                        "config_revision": revision,
+                        "draft_revision": None,
+                    },
+                    "shape": "step",
+                    "value": 21.0,
+                }
+            ],
+            "assumptions": [],
+            "warnings": [],
+        }
+    )
+
+
 @pytest.mark.anyio
 @pytest.mark.anyio
 async def test_history_builds_timelines_from_committed_read_models() -> None:
@@ -256,6 +296,7 @@ async def test_publication_marks_mismatched_current_and_future_versions_unavaila
     assert redis.keys == [
         "cea:monitoring:current:Veg Room",
         "cea:monitoring:future:Veg Room",
+        "cea:monitoring:trajectory:Veg Room",
     ]
 
 
@@ -337,6 +378,39 @@ async def test_valid_pair_still_reads_exact_and_estimated() -> None:
     # Then: contract parity holds field-for-field across the publish/read seam.
     assert response.current.value == current
     assert response.projection.value == (future,)
+
+
+@pytest.mark.anyio
+async def test_publication_rejects_rich_trajectory_from_another_config_revision() -> None:
+    # Given: current and future facts share revision seven but rich provenance is revision six.
+    repository = ControlPublicationRepository(
+        FakeRedis([_current(7), _future(7), _rich_trajectory("0000006")]),
+        clock=lambda: NOW,
+    )
+
+    # When: monitoring reads the complete publication tuple.
+    response = await repository.read("Veg Room")
+
+    # Then: stale rich provenance is rejected while legacy projection remains available.
+    assert response.projection.quality == "estimated"
+    assert response.projection.trajectory is None
+
+
+@pytest.mark.anyio
+async def test_publication_accepts_rich_trajectory_matching_config_revision() -> None:
+    # Given: current, future, and rich facts share the same configuration revision.
+    repository = ControlPublicationRepository(
+        FakeRedis([_current(7), _future(7), _rich_trajectory("0000007")]),
+        clock=lambda: NOW,
+    )
+
+    # When: monitoring reads the complete publication tuple.
+    response = await repository.read("Veg Room")
+
+    # Then: the matching rich trajectory remains available to legacy consumers.
+    assert response.projection.quality == "estimated"
+    assert response.projection.trajectory is not None
+    assert response.projection.trajectory.base_config_revision == "0000007"
 
 
 def _future_window_json(version: int, valid_from: str, valid_until: str) -> str:
@@ -426,6 +500,7 @@ def test_publication_keys_match_shared_canonical_builders() -> None:
     assert _publication_keys("Flower Room") == [
         monitoring_current_publication_key("Flower Room"),
         monitoring_future_publication_key("Flower Room"),
+        monitoring_rich_trajectory_key("Flower Room"),
     ]
 
 
