@@ -19,8 +19,20 @@ const RANGE_BOUNDS: Partial<
   }>
 > = {
   temperature: { padEachSide: 10 },
-  rh: { padEachSide: 0.5, physicalMin: 0, physicalMax: 100 },
-  vpd: { padEachSide: 0.5, physicalMin: 0 },
+  rh: { physicalMax: 100 },
+  pressure: { physicalMin: 1012, physicalMax: 1014 },
+  device: { physicalMin: 0, physicalMax: 100 },
+  light: { physicalMin: 0, physicalMax: 100 },
+}
+
+const AXIS_LABELS: Record<ChartFamily, string> = {
+  temperature: 'Temp °C',
+  rh: 'RH %',
+  vpd: 'VPD kPa',
+  co2: 'CO2 ppm',
+  pressure: 'hPa',
+  device: 'Output %',
+  light: 'Light %',
 }
 
 function paddedRange(
@@ -44,7 +56,9 @@ function paddedRange(
     const dataPadding = observedMin === observedMax
       ? Math.max(Math.abs(observedMin) * 0.05, 1)
       : (observedMax - observedMin) * 0.05
-    const padding = Math.max(dataPadding, minimumPadding ?? 0)
+    const padding = minimumWindow !== undefined || maximumWindow !== undefined
+      ? 0
+      : Math.max(dataPadding, minimumPadding ?? 0)
     let lo = observedMin - padding
     let hi = observedMax + padding
     if (minimumWindow !== undefined && lo > minimumWindow) lo = minimumWindow
@@ -60,6 +74,32 @@ export interface ChartScales {
   axes: uPlot.Axis[]
 }
 
+function familyUnit(family: ChartFamily): string {
+  switch (family) {
+    case 'temperature':
+      return 'celsius'
+    case 'rh':
+    case 'device':
+    case 'light':
+      return 'percent'
+    case 'vpd':
+      return 'kpa'
+    case 'co2':
+      return 'ppm'
+    case 'pressure':
+      return 'hpa'
+  }
+}
+
+function explicitBounds(data: AlignedData, family: ChartFamily): { minimum?: number; maximum?: number } {
+  const series = data.series.find((candidate) => candidate.family === family && candidate.presentation !== undefined)
+  const defaults = data.scaleDefaults?.unit === familyUnit(family) ? data.scaleDefaults : undefined
+  return {
+    minimum: series?.presentation?.softMin ?? defaults?.softMin,
+    maximum: series?.presentation?.softMax ?? defaults?.softMax,
+  }
+}
+
 function readTokenXStroke(): string {
   const value = getComputedStyle(document.documentElement)
     .getPropertyValue('--text-muted')
@@ -68,7 +108,7 @@ function readTokenXStroke(): string {
 }
 
 /** Build scales and axes for every family present in the data. */
-export function buildScales(data: AlignedData): ChartScales {
+export function buildScales(data: AlignedData, chartWidth = 1024): ChartScales {
   const families = new Set<ChartFamily>()
   for (const s of data.series) families.add(resolveFamily(s))
 
@@ -87,25 +127,30 @@ export function buildScales(data: AlignedData): ChartScales {
     // the bounded range function then clamps the proposed extent.
     const scale: uPlot.Scale = { auto: true }
     const bounds = RANGE_BOUNDS[family]
-    scale.range = paddedRange(
-      undefined,
-      undefined,
-      bounds?.padEachSide,
-      bounds?.physicalMin,
-      bounds?.physicalMax,
-    )
+    const explicit = explicitBounds(data, family)
+    if (bounds !== undefined || explicit.minimum !== undefined || explicit.maximum !== undefined) {
+      scale.range = paddedRange(
+        explicit.minimum ?? bounds?.physicalMin,
+        explicit.maximum ?? bounds?.physicalMax,
+        explicit.minimum !== undefined || explicit.maximum !== undefined ? 0 : bounds?.padEachSide,
+        bounds?.physicalMin,
+        bounds?.physicalMax,
+      )
+    }
     scales[family] = scale
 
     const isTemperature = family === 'temperature'
     axes.push({
       scale: family,
       side: isTemperature ? 3 : 1,
+      label: AXIS_LABELS[family],
       stroke: familyColor(family),
       grid: { stroke: 'rgba(128, 128, 128, 0.15)' },
       ticks: { stroke: familyColor(family), size: 4 },
-      gap: 2,
-      font: '10px system-ui, sans-serif',
-      size: 24,
+      gap: chartWidth < 600 ? 1 : 4,
+      font: chartWidth < 600 ? '9px system-ui, sans-serif' : '10px system-ui, sans-serif',
+      labelSize: chartWidth < 600 ? 18 : 24,
+      size: chartWidth < 600 ? 30 : 48,
     })
   }
 

@@ -10,13 +10,13 @@
  */
 import { describe, expect, it, vi, beforeEach, afterAll, afterEach } from 'vitest'
 import { act, render, screen, fireEvent } from '@testing-library/react'
-import React, { useEffect, useRef } from 'react'
+import React, { createRef, useEffect, useRef } from 'react'
 import type uPlot from 'uplot'
 import { ThemeProvider, useTheme } from '../../../../contexts/ThemeContext'
 import type { AlignedData } from '../../data'
 import { seriesKey } from '../../data/alignSeries.types'
 import { createMonitoringChartFeed } from '../MonitoringChartFeed'
-import { UPlotChart } from '../UPlotChart'
+import { UPlotChart, type UPlotChartHandle } from '../UPlotChart'
 
 const { MockUPlot, instances } = vi.hoisted(() => {
   const instances: MockUPlot[] = []
@@ -26,6 +26,25 @@ const { MockUPlot, instances } = vi.hoisted(() => {
     data: uPlot.AlignedData
     root: HTMLElement
     scales = { x: { min: 0, max: 100 } }
+    pendingScaleEvents: Array<{ key: string; min: number; max: number }> = []
+    flushScaleEvents(): void {
+      const hooks = this.opts.hooks?.setScale
+      while (this.pendingScaleEvents.length > 0) {
+        const event = this.pendingScaleEvents.shift()
+        if (event !== undefined) {
+          this.scales.x = { min: event.min, max: event.max }
+          hooks?.forEach((hook) => {
+            if (hook !== undefined) hook(this as unknown as uPlot, event.key)
+          })
+        }
+      }
+    }
+    private fireSetScaleHooks(scaleKey: string): void {
+      const hooks = this.opts.hooks?.setScale
+      hooks?.forEach((hook) => {
+        if (hook !== undefined) hook(this as unknown as uPlot, scaleKey)
+      })
+    }
     setData = vi.fn((_data: uPlot.AlignedData, redraw?: boolean) => {
       if (redraw === false) return
       const drawHooks = this.opts.hooks?.draw
@@ -33,8 +52,13 @@ const { MockUPlot, instances } = vi.hoisted(() => {
         if (hook !== undefined) hook(this as unknown as uPlot)
       })
     })
-    setSize = vi.fn()
-    setScale = vi.fn()
+    setSize = vi.fn(() => {
+      this.pendingScaleEvents.push({ key: 'x', min: this.scales.x.min, max: this.scales.x.max })
+    })
+    setScale = vi.fn((key: string, scale: { min: number; max: number }) => {
+      if (key === 'x') this.scales.x = scale
+      this.pendingScaleEvents.push({ key, min: scale.min, max: scale.max })
+    })
     setSeries = vi.fn()
     destroy = vi.fn()
     constructor(opts: uPlot.Options, data?: uPlot.AlignedData, target?: HTMLElement) {
@@ -43,6 +67,7 @@ const { MockUPlot, instances } = vi.hoisted(() => {
       this.root = document.createElement('div')
       if (target) target.appendChild(this.root)
       instances.push(this)
+      this.fireSetScaleHooks('x')
     }
   }
   return { MockUPlot, instances }
@@ -278,21 +303,18 @@ describe('UPlotChart lifecycle', () => {
 
   it('keeps a user zoom when a same live-range tick arrives', () => {
     const feed = createMonitoringChartFeed(makeData([1000, 2000, 3000], [[20, 21, 22]]), TEST_RANGE)
-    render(
-      <ThemeProvider>
-        <UPlotChart feed={feed} />
-      </ThemeProvider>,
-    )
+    render(<ThemeProvider><UPlotChart feed={feed} /></ThemeProvider>)
     const plot = instances[0]
 
-    // Simulate a user drag zoom via the setScale hook.
     const setScaleHook = plot.opts.hooks?.setScale?.[0]
     setScaleHook?.(plot as unknown as uPlot, 'x')
+    act(() => plot.flushScaleEvents())
 
     plot.setData.mockClear()
     plot.setScale.mockClear()
 
     act(() => feed.publish(makeData([1000, 2000, 3000, 4000], [[20, 21, 22, 23]]), TEST_RANGE))
+    act(() => plot.flushScaleEvents())
 
     expect(instances).toHaveLength(1)
     expect(plot.setData).toHaveBeenCalledTimes(1)
@@ -451,12 +473,101 @@ describe('UPlotChart lifecycle', () => {
 
     act(() => feed.publish(makeData([1000, 2000, 3000, 4000], [[20, 21, 22, 23]]), TEST_RANGE, 0))
     expect(plot?.setData).toHaveBeenCalledTimes(1)
-    expect(plot?.setScale).toHaveBeenCalledWith('x', { min: -3_596_000, max: 184_000 })
+    expect(plot?.setScale).toHaveBeenCalledWith('x', { min: -3_596_000, max: 1_204_000 })
 
     act(() => feed.publish(makeData([1000, 2000, 3000, 5000], [[20, 21, 22, 24]]), TEST_RANGE, 1))
     expect(plot?.setScale).toHaveBeenCalledTimes(2)
-    expect(plot?.setScale).toHaveBeenLastCalledWith('x', { min: -3_595_000, max: 185_000 })
+    expect(plot?.setScale).toHaveBeenLastCalledWith('x', { min: -3_595_000, max: 1_205_000 })
     expect(plot?.setData.mock.invocationCallOrder[1]).toBeLessThan(plot?.setScale.mock.invocationCallOrder[1] ?? Infinity)
+  })
+
+  it('consumes queued programmatic callbacks as programmatic and keeps following live ticks', () => {
+    const feed = createMonitoringChartFeed(makeData([1000, 2000, 3000], [[20, 21, 22]]), TEST_RANGE)
+    const onZoom = vi.fn()
+    render(<ThemeProvider><UPlotChart feed={feed} onZoom={onZoom} /></ThemeProvider>)
+    const plot = instances[0]
+    plot.setScale.mockClear()
+    onZoom.mockClear()
+
+    act(() => {
+      feed.publish(makeData([1001, 2001, 3001], [[20, 21, 23]]), TEST_RANGE)
+      feed.publish(makeData([1002, 2002, 3002], [[20, 21, 24]]), TEST_RANGE)
+      feed.publish(makeData([1003, 2003, 3003], [[20, 21, 25]]), TEST_RANGE)
+    })
+    expect(plot.pendingScaleEvents.length).toBeGreaterThanOrEqual(3)
+
+    act(() => plot.flushScaleEvents())
+
+    expect(onZoom).not.toHaveBeenCalled()
+
+    plot.setScale.mockClear()
+    act(() => feed.publish(makeData([1004, 2004, 3004], [[20, 21, 26]]), TEST_RANGE))
+    act(() => plot.flushScaleEvents())
+    expect(plot.setScale).toHaveBeenCalled()
+  })
+
+  it('stops following live ticks on a genuine user zoom and resumes only on reset', () => {
+    const feed = createMonitoringChartFeed(makeData([1000, 2000, 3000], [[20, 21, 22]]), TEST_RANGE)
+    const onZoom = vi.fn()
+    const { unmount } = render(<ThemeProvider><UPlotChart feed={feed} onZoom={onZoom} /></ThemeProvider>)
+    const plot = instances[0]
+    plot.setScale.mockClear()
+    onZoom.mockClear()
+
+    act(() => {
+      for (let tick = 1; tick <= 5; tick += 1) {
+        feed.publish(
+          makeData([1000 + tick, 2000 + tick, 3000 + tick], [[20, 21, 22 + tick]]),
+          TEST_RANGE,
+        )
+      }
+    })
+    act(() => plot.flushScaleEvents())
+
+    expect(onZoom).not.toHaveBeenCalled()
+
+    const setScaleHook = plot.opts.hooks?.setScale?.[0]
+    plot.scales.x = { min: 2500, max: 3500 }
+    setScaleHook?.(plot as unknown as uPlot, 'x')
+    expect(onZoom).toHaveBeenCalledOnce()
+    expect(onZoom).toHaveBeenCalledWith({ start: new Date(2500), end: new Date(3005) })
+
+    plot.setScale.mockClear()
+    act(() => feed.publish(makeData([1006, 2006, 3006], [[20, 21, 28]]), TEST_RANGE))
+    act(() => plot.flushScaleEvents())
+    expect(plot.setScale).not.toHaveBeenCalled()
+
+    unmount()
+  })
+
+  it('restores live-follow through a public reset before the next deferred live tick', () => {
+    const feed = createMonitoringChartFeed(makeData([1000, 2000, 3000], [[20, 21, 22]]), TEST_RANGE)
+    const onZoom = vi.fn()
+    const chartRef = createRef<UPlotChartHandle>()
+    render(<ThemeProvider><UPlotChart ref={chartRef} feed={feed} onZoom={onZoom} /></ThemeProvider>)
+    const plot = instances[0]
+    const setScaleHook = plot.opts.hooks?.setScale?.[0]
+
+    act(() => plot.flushScaleEvents())
+
+    plot.scales.x = { min: 1500, max: 2500 }
+    setScaleHook?.(plot as unknown as uPlot, 'x')
+    expect(onZoom).toHaveBeenCalledOnce()
+
+    chartRef.current?.resetZoom()
+    act(() => plot.flushScaleEvents())
+
+    act(() => feed.publish({ ...makeData([1000, 2000, 3000], [[20, 21, 22]]), nowIndex: -1 }, TEST_RANGE))
+    act(() => plot.flushScaleEvents())
+
+    act(() => feed.publish(makeData([1000, 2000, 3000, 4000], [[20, 21, 23]]), TEST_RANGE))
+    act(() => plot.flushScaleEvents())
+    expect(plot.setScale).toHaveBeenLastCalledWith('x', { min: -3_596_000, max: 1_204_000 })
+
+    plot.scales.x = { min: 2000, max: 3000 }
+    setScaleHook?.(plot as unknown as uPlot, 'x')
+    expect(onZoom).toHaveBeenCalledTimes(2)
+    expect(onZoom).toHaveBeenLastCalledWith({ start: new Date(2000), end: new Date(3000) })
   })
 
   it('cancels a queued frame and disconnects its observer on unmount', () => {

@@ -56,9 +56,21 @@ export const UPlotChart = memo(
     const lastAppliedViewportRevisionRef = useRef<number | null>(null)
     const chartDebugRef = useRef<number | null>(null)
     const chartResizeCountRef = useRef(0)
-    const suppressProgrammaticXScaleRef = useRef(false)
     const followLiveViewportRef = useRef(true)
     const readyRef = useRef(false)
+    const programmaticScaleTokenRef = useRef(0)
+    const pendingProgrammaticScaleTokensRef = useRef<Set<number>>(new Set())
+
+    const withProgrammaticScale = useCallback(<T, >(action: () => T): T => {
+      const token = programmaticScaleTokenRef.current + 1
+      programmaticScaleTokenRef.current = token
+      pendingProgrammaticScaleTokensRef.current.add(token)
+      return action()
+    }, [])
+
+    const isProgrammaticScale = useCallback((): boolean => {
+      return pendingProgrammaticScaleTokensRef.current.size > 0
+    }, [])
     const [hiddenKeys, setHiddenKeys] = useState<Set<string>>(new Set())
     const onZoomRef = useRef(onZoom)
     onZoomRef.current = onZoom
@@ -119,11 +131,9 @@ export const UPlotChart = memo(
           : fullDataRange(feed)
         if (bounds === null) return
         followLiveViewportRef.current = true
-        suppressProgrammaticXScaleRef.current = true
-        plot.setScale('x', bounds)
-        suppressProgrammaticXScaleRef.current = false
-           },
-    }), [feed])
+        withProgrammaticScale(() => plot.setScale('x', bounds))
+      },
+    }), [feed, withProgrammaticScale])
 
     useEffect(() => {
       if (structural.theme !== theme) return
@@ -137,74 +147,71 @@ export const UPlotChart = memo(
         if (clientWidth <= 0 || clientHeight <= 0) return
         const { width, height } = measureChartContainer(frameElement)
         reportRequestBudget(width)
-          const existingPlot = plotRef.current
-          if (existingPlot !== null) {
-            chartResizeCountRef.current += 1
-            suppressProgrammaticXScaleRef.current = true
-            try {
-              if (PERFORMANCE_MARKS_ENABLED) {
-                measureMonitoringResize(() => existingPlot.setSize({ width, height }))
-              } else {
-                existingPlot.setSize({ width, height })
-              }
-            } finally {
-              suppressProgrammaticXScaleRef.current = false
+        const existingPlot = plotRef.current
+        if (existingPlot !== null) {
+          chartResizeCountRef.current += 1
+          withProgrammaticScale(() => {
+            if (PERFORMANCE_MARKS_ENABLED) {
+              measureMonitoringResize(() => existingPlot.setSize({ width, height }))
+            } else {
+              existingPlot.setSize({ width, height })
             }
+          })
           const chartDebug = chartDebugRef.current
           if (chartDebug !== null) updateMonitoringChart(chartDebug, { width, height, resizeCount: chartResizeCountRef.current })
           return
         }
         const data = feed.getData()
-        suppressProgrammaticXScaleRef.current = true
-        let plot: uPlot
-        try {
-          plot = new uPlot(
-            buildOptions(data, width, height, {
-              onSetScale: (self, scaleKey) => {
-                if (scaleKey !== 'x') return
-                const chartDebug = chartDebugRef.current
-                const { min, max } = self.scales.x
-                if (chartDebug !== null) {
-                  updateMonitoringChart(chartDebug, { xScaleMin: min ?? null, xScaleMax: max ?? null })
-                }
-                if (suppressProgrammaticXScaleRef.current) return
-                followLiveViewportRef.current = false
-                if (!readyRef.current) {
-                  readyRef.current = true
-                  return
-                }
-                if (min === undefined || max === undefined) return
-                const data = feed.getData()
-                const recordedEnd = data.x[data.nowIndex]
-                const selectedEnd = recordedEnd !== undefined && min < recordedEnd && recordedEnd < max
-                  ? recordedEnd
-                  : max
-                onZoomRef.current?.({ start: new Date(min), end: new Date(selectedEnd) })
-              },
-              onSetSeries: (_self, seriesIndex, options) => {
-                if (seriesIndex === null || options.show === undefined) return
-                const key = structuralRef.current.series[seriesIndex - 1]?.key
-                if (key === undefined) return
-                visibilityRef.current.set(key, options.show)
-                setHiddenKeys((previous) => {
-                  const next = new Set(previous)
-                  if (options.show) next.delete(key)
-                  else next.add(key)
-                  return next
-                })
-              },
-            }, () => {
-              const current = feed.getData()
-              return current.nowIndex >= 0 && current.nowIndex < current.x.length
-                ? current.x[current.nowIndex]
-                : null
-            }, () => feed.getData().photoperiod),
-            PERFORMANCE_MARKS_ENABLED ? measureMonitoringConversion(() => toUPlotData(data)) : toUPlotData(data),
-            container,
-          )
-        } finally {
-          suppressProgrammaticXScaleRef.current = false
-        }
+        const plot = withProgrammaticScale(() => new uPlot(
+          buildOptions(data, width, height, {
+            onSetScale: (self, scaleKey) => {
+              if (scaleKey !== 'x') return
+              const chartDebug = chartDebugRef.current
+              const { min, max } = self.scales.x
+              if (chartDebug !== null) {
+                updateMonitoringChart(chartDebug, { xScaleMin: min ?? null, xScaleMax: max ?? null })
+              }
+              if (isProgrammaticScale()) {
+                const pending = pendingProgrammaticScaleTokensRef.current
+                const first = pending.values().next().value
+                if (first !== undefined) pending.delete(first)
+                if (!readyRef.current) readyRef.current = true
+                return
+              }
+              followLiveViewportRef.current = false
+              if (!readyRef.current) {
+                readyRef.current = true
+                return
+              }
+              if (min === undefined || max === undefined) return
+              const data = feed.getData()
+              const recordedEnd = data.x[data.nowIndex]
+              const selectedEnd = recordedEnd !== undefined && min < recordedEnd && recordedEnd < max
+                ? recordedEnd
+                : max
+              onZoomRef.current?.({ start: new Date(min), end: new Date(selectedEnd) })
+            },
+            onSetSeries: (_self, seriesIndex, options) => {
+              if (seriesIndex === null || options.show === undefined) return
+              const key = structuralRef.current.series[seriesIndex - 1]?.key
+              if (key === undefined) return
+              visibilityRef.current.set(key, options.show)
+              setHiddenKeys((previous) => {
+                const next = new Set(previous)
+                if (options.show) next.delete(key)
+                else next.add(key)
+                return next
+              })
+            },
+          }, () => {
+            const current = feed.getData()
+            return current.nowIndex >= 0 && current.nowIndex < current.x.length
+              ? current.x[current.nowIndex]
+              : null
+          }, () => feed.getData().photoperiod),
+          PERFORMANCE_MARKS_ENABLED ? measureMonitoringConversion(() => toUPlotData(data)) : toUPlotData(data),
+          container,
+        ))
         plotRef.current = plot
         structural.series.forEach((series, index) => {
           const show = visibilityRef.current.get(series.key)
@@ -245,33 +252,44 @@ export const UPlotChart = memo(
       if (plot === null) return
       const currentStructural = feed.getStructuralSnapshot()
       const data = feed.getData()
-      suppressProgrammaticXScaleRef.current = true
-      if (PERFORMANCE_MARKS_ENABLED) {
-        const converted = measureMonitoringConversion(() => toUPlotData(data))
-        measureMonitoringSetData(() => plot.setData(converted, false))
-      } else {
-        plot.setData(toUPlotData(data), false)
-      }
-      if (currentStructural.viewportRevision !== lastAppliedViewportRevisionRef.current) {
-        if (currentStructural.range.kind === 'fixed') {
-          const rangeBounds = fullDataRange(feed)
-          if (rangeBounds !== null) plot.setScale('x', rangeBounds)
+      const needsViewportScale =
+        currentStructural.viewportRevision !== lastAppliedViewportRevisionRef.current ||
+        (currentStructural.range.kind === 'live' && followLiveViewportRef.current)
+
+      if (needsViewportScale) {
+        if (PERFORMANCE_MARKS_ENABLED) {
+          const converted = measureMonitoringConversion(() => toUPlotData(data))
+          measureMonitoringSetData(() => plot.setData(converted, false))
+        } else {
+          plot.setData(toUPlotData(data), false)
         }
-        lastAppliedViewportRevisionRef.current = currentStructural.viewportRevision
-      }
-      if (currentStructural.range.kind === 'live' && followLiveViewportRef.current) {
-        const alignedNow = data.x[data.nowIndex]
-        if (alignedNow !== undefined) {
-          plot.setScale('x', {
-            min: alignedNow - currentStructural.range.duration,
-            max: alignedNow + currentStructural.range.duration / 20,
-          })
+        if (currentStructural.viewportRevision !== lastAppliedViewportRevisionRef.current) {
+          if (currentStructural.range.kind === 'fixed') {
+            const rangeBounds = fullDataRange(feed)
+            if (rangeBounds !== null) {
+              withProgrammaticScale(() => plot.setScale('x', rangeBounds))
+            }
+          }
+          lastAppliedViewportRevisionRef.current = currentStructural.viewportRevision
+        }
+        if (currentStructural.range.kind === 'live' && followLiveViewportRef.current) {
+          const alignedNow = data.x[data.nowIndex]
+          const duration = currentStructural.range.duration
+          if (alignedNow !== undefined) {
+            withProgrammaticScale(() => plot.setScale('x', { min: alignedNow - duration, max: alignedNow + duration / 3 }))
+          }
+        }
+      } else {
+        if (PERFORMANCE_MARKS_ENABLED) {
+          const converted = measureMonitoringConversion(() => toUPlotData(data))
+          measureMonitoringSetData(() => plot.setData(converted, false))
+        } else {
+          plot.setData(toUPlotData(data), false)
         }
       }
       const chartDebug = chartDebugRef.current
       if (chartDebug !== null) updateMonitoringChart(chartDebug, { viewportRevision: currentStructural.viewportRevision })
-      suppressProgrammaticXScaleRef.current = false
-    }, [feed])
+    }, [feed, withProgrammaticScale])
 
     useEffect(() => feed.subscribe(updateData), [feed, updateData])
 
