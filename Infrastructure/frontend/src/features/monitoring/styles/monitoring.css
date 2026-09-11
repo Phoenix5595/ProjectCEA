@@ -9,6 +9,7 @@
 
 .mon-page {
   width: 100%;
+  min-width: 0;
   padding: 8px;
   box-sizing: border-box;
   background: var(--surface-base, #10150e);
@@ -107,6 +108,7 @@
   display: flex;
   flex-direction: column;
   height: 100%;
+  min-width: 0;
   box-sizing: border-box;
   padding: 0.5rem;
   background: var(--surface-primary, #181e15);
@@ -161,7 +163,7 @@
   align-content: center;
   min-height: 50px;
   padding: 0 4px;
-  margin-bottom: 0.75rem;
+  margin-bottom: 0;
   background: var(--surface-secondary, #2f3d29);
   border: 1px solid var(--border-default, #475b3e);
   border-radius: 0.5rem;
@@ -267,6 +269,85 @@
   margin: 0;
   font-size: 0.8rem;
   color: var(--mon-error-text, var(--mon-error, var(--status-danger, #bd4253)));
+}
+
+@media (max-width: 767px) {
+  .mon-toolbar {
+    min-height: 0;
+    padding: 0.25rem;
+  }
+
+  .mon-toolbar__controls {
+    display: grid;
+    grid-template-columns: 1fr;
+    overflow: visible;
+  }
+
+  .mon-toolbar__presets {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: 0.25rem;
+    width: 100%;
+  }
+
+  .mon-toolbar__preset,
+  .mon-toolbar__now,
+  .mon-toolbar__status button,
+  .mon-toolbar__absolute button {
+    min-width: 0;
+    padding: 0 0.25rem;
+    font-size: 0.7rem;
+  }
+
+  .mon-toolbar__absolute {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    width: 100%;
+  }
+
+  .mon-toolbar__absolute label {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.125rem;
+    min-width: 0;
+    font-size: 0.7rem;
+    overflow: hidden;
+  }
+
+  .mon-toolbar__absolute input {
+    display: block;
+    min-width: 0;
+    width: 100%;
+    font-size: 0.7rem;
+  }
+
+  .mon-toolbar__absolute button {
+    justify-self: start;
+  }
+
+  .mon-toolbar__status {
+    width: 100%;
+    margin-left: 0;
+    justify-content: space-between;
+    font-size: 0.7rem;
+  }
+
+  .mon-legend {
+    gap: 0.25rem;
+    padding: 0.25rem 0;
+  }
+
+  .mon-legend__list {
+    gap: 0.25rem;
+  }
+
+  .mon-legend__swatch,
+  .mon-legend__reset {
+    gap: 0.25rem;
+    padding: 0.2rem 0.3rem;
+    font-size: 0.65rem;
+  }
 }
 
 .mon-legend {
