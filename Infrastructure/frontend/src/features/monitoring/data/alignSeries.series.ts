@@ -139,7 +139,7 @@ export function alignPid(
   aggregated: boolean,
 ): (number | null)[] {
   return alignControlPoints(
-    { points, metric: '', name: '', kind: 'climate', steps: [], linear: [], seriesOrigin: 'recorded', seriesQuality: 'exact', seriesIsAggregated: false },
+    { points, metric: '', name: '', kind: 'climate', trajectoryKind: null, steps: [], linear: [], seriesOrigin: 'recorded', seriesQuality: 'exact', seriesIsAggregated: false },
     x,
     start,
     end,

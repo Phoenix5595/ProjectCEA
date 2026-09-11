@@ -28,9 +28,10 @@ export function mergeControlSeries(
     if (!resp) return
     const list = kind === 'climate' ? resp.climate : resp.lights
     for (const s of list) {
-      const metric = metricFromName(s.name)
-      const norm = normalizeControlSeries(s as unknown as SharedTimeline, metric, kind)
-      const key = `${kind}:${metric}`
+      const metric = s.metric ?? metricFromName(s.name)
+      const norm = normalizeControlSeries(s, metric, kind)
+      const trajectoryKind = norm.trajectoryKind === 'scheduled' ? 'scheduled' : 'effective'
+      const key = `${kind}:${metric}:${trajectoryKind}`
       const cur = byKey.get(key)
       byKey.set(key, cur ? mergeControl(cur, norm) : norm)
     }
@@ -82,13 +83,7 @@ export function mergePidSeries(
   return [...byKey.values()]
 }
 
-interface SharedTimeline {
-  name: string
-  provenance: { origin: Origin; quality: Quality; is_aggregated: boolean }
-  points: { timestamp: Date; value: number | null; provenance: { origin: Origin; quality: Quality; is_aggregated: boolean } }[]
-  steps: { timestamp: Date; value: number | null; provenance: { origin: Origin; quality: Quality } }[]
-  linear: { start: Date; end: Date; start_value: number; end_value: number; provenance: { origin: Origin; quality: Quality } }[]
-}
+type SharedTimeline = ControlMonitoringResponse['climate'][number] | ControlMonitoringResponse['lights'][number]
 
 function normalizeControlSeries(
   s: SharedTimeline,
@@ -99,6 +94,7 @@ function normalizeControlSeries(
     name: s.name,
     metric,
     kind,
+    trajectoryKind: s.trajectory_kind ?? null,
     points: canonicalizeTargetValues(s.points.map((p) => ({
       t: p.timestamp.getTime(),
       value: p.value,
