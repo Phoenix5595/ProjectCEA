@@ -19,7 +19,7 @@ Source: [`services.yaml`](services.yaml).
 Sensors → can-processor / soil-sensor / onewire / weather
         → Redis `sensor:raw` (maxlen 100,000)
         → TimescaleDB `measurement`
-        → backend / automation / Grafana
+        → backend / automation / monitoring-service
 ```
 
 Config changes flow from automation-service to backend to frontend via Redis Streams (`cea:events:config`) and WebSocket. Source: `automation-service/app/events/__init__.py`.
@@ -71,7 +71,7 @@ Source: [`services.yaml`](services.yaml) `start_order`.
 | Database | [`database/AGENTS.md`](database/AGENTS.md) |
 | Frontend | [`frontend/AGENTS.md`](frontend/AGENTS.md) |
 | Shared code | [`shared/AGENTS.md`](shared/AGENTS.md) |
-| Iskra / Grafana | [`iskra_stack/AGENTS.md`](iskra_stack/AGENTS.md) |
+| Iskra replica stack | [`iskra_stack/AGENTS.md`](iskra_stack/AGENTS.md) |
 
 ## Anti-Patterns
 
