@@ -92,10 +92,10 @@ describe('panel alignment', () => {
     // When: its bounds are reconstructed for alignment.
     const bounds = windowBounds(range, fulfilledEnd)
 
-    // Then: the visible interval includes the rolling 5% future projection window.
+    // Then: the visible interval reserves a readable H/3 future projection window.
     expect(bounds).toEqual({
       start: fulfilledEnd.getTime() - 3_600_000,
-      end: fulfilledEnd.getTime() + 3_600_000 / 20,
+      end: fulfilledEnd.getTime() + 3_600_000 / 3,
     })
   })
 
