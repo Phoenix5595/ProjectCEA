@@ -80,9 +80,6 @@ sleep 1
 sudo systemctl stop can-setup.service 2>/dev/null
 sleep 1
 
-sudo systemctl stop grafana-server.service 2>/dev/null
-sleep 1
-
 echo "Step 3: Starting services (dependency order)..."
 echo ""
 
@@ -92,7 +89,6 @@ restart_service "can-processor.service" "CAN Processor"
 restart_service "soil-sensor-service.service" "Soil Sensor Service"
 restart_service "cea-backend.service" "CEA Backend"
 restart_service "automation-service.service" "Automation Service (serves frontend)"
-restart_service "grafana-server.service" "Grafana Server"
 
 echo "=========================================="
 echo "Service Status Summary"
@@ -100,7 +96,7 @@ echo "=========================================="
 echo ""
 
 # Check all services
-services=("redis-server" "postgresql" "can-setup" "can-processor" "soil-sensor-service" "cea-backend" "automation-service" "grafana-server")
+services=("redis-server" "postgresql" "can-setup" "can-processor" "soil-sensor-service" "cea-backend" "automation-service")
 
 for service in "${services[@]}"; do
     if systemctl is-active --quiet "$service.service"; then
@@ -120,5 +116,4 @@ echo "  sudo journalctl -u <service-name> -f"
 echo ""
 echo "To check specific service:"
 echo "  sudo systemctl status <service-name>"
-
 

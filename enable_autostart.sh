@@ -23,7 +23,6 @@ SERVICES=(
     "soil-sensor-service"
     "cea-backend"
     "automation-service"
-    "grafana-server"
 )
 
 # Track results
@@ -130,4 +129,3 @@ else
     echo "  2. Run: sudo systemctl daemon-reload"
     echo "  3. Run this script again"
 fi
-
