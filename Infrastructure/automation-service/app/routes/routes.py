@@ -9,6 +9,7 @@ from app.routes import (
     alarms,
     calendar,
     climate_periods,
+    climate_timeline,
     debug,
     devices,
     devices_crud,
@@ -41,6 +42,7 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(schedules.router, tags=["schedules"])
     app.include_router(lights.router, tags=["lights"])
     app.include_router(climate_periods.router, tags=["climate-periods"])
+    app.include_router(climate_timeline.router, tags=["climate-timeline"])
     app.include_router(devices.router, tags=["devices"])
     app.include_router(devices_crud.router, tags=["devices"])
     app.include_router(hardware.router, tags=["hardware"])
