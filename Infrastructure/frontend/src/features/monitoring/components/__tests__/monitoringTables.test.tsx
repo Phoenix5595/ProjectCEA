@@ -6,7 +6,7 @@
  * with provenance) and the failure path (missing paired averages and null PID
  * values are never fabricated).
  */
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import type { LiveSensorValue, SensorStatistics } from '../../api'
 import type { AlignedData } from '../../data'
@@ -33,8 +33,51 @@ function cellForRow(table: HTMLElement, label: string, col = 1): string {
 }
 
 const NOW = new Date('2026-07-15T12:00:00Z')
+const emptyAlignedData: AlignedData = {
+  x: [],
+  series: [],
+  bands: [],
+  photoperiod: [],
+  nowIndex: 0,
+  aggregated: false,
+}
+
+afterEach(() => {
+  vi.unstubAllEnvs()
+})
 
 describe('monitoring table primitives', () => {
+  it('hides the chart data disclosure in production builds by default', () => {
+    vi.stubEnv('MODE', 'production')
+    vi.stubEnv('VITE_MONITORING_DEBUG', '')
+
+    const { container } = render(<ChartDataTable title="Climate" data={emptyAlignedData} />)
+
+    expect(screen.queryByRole('button', { name: 'View data as table' })).toBeNull()
+    expect(container.querySelector('table')).toBeNull()
+  })
+
+  it('retains the accessible disclosure in development builds', () => {
+    vi.stubEnv('MODE', 'development')
+
+    const { container } = render(<ChartDataTable title="Climate" data={emptyAlignedData} />)
+
+    const toggle = screen.getByRole('button', { name: 'View data as table' })
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    fireEvent.click(toggle)
+    expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    expect(within(container).getByRole('table', { name: 'Climate data' })).toBeTruthy()
+  })
+
+  it('retains the disclosure for an explicitly enabled debug production build', () => {
+    vi.stubEnv('MODE', 'production')
+    vi.stubEnv('VITE_MONITORING_DEBUG', 'true')
+
+    render(<ChartDataTable title="Climate" data={emptyAlignedData} />)
+
+    expect(screen.getByRole('button', { name: 'View data as table' })).toBeTruthy()
+  })
+
   it('labels retained range data with its last-good and error timestamps', () => {
     render(
       <MonitoringFreshness
