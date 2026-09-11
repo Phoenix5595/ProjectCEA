@@ -18,7 +18,7 @@ export function windowBounds(range: AlignInput['range'], now: Date): { start: nu
   if (range.kind === 'fixed') return { start: range.start.getTime(), end: range.end.getTime() }
   return {
     start: now.getTime() - range.duration,
-    end: now.getTime() + range.duration / 20,
+    end: now.getTime() + range.duration / 3,
   }
 }
 

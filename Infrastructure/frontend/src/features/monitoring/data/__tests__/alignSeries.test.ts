@@ -430,7 +430,7 @@ describe('alignSeries', () => {
     expect(keys.size).toBe(out.series.length)
   })
 
-  it('caps a long projection so the future strip is at most 10% of the x-axis', () => {
+  it('keeps a fixed window fixed even when projection history extends beyond it', () => {
     const projectionEnd = new Date('2026-08-03T13:00:00.000Z')
     const input: AlignInput = {
       series: sensorSeries([
@@ -451,12 +451,12 @@ describe('alignSeries', () => {
     const recordedWidth = END.getTime() - START.getTime()
 
     expect(out.aggregated).toBe(false)
-    expect(futureWidth).toBeGreaterThan(0)
-    expect(futureWidth / (recordedWidth + futureWidth)).toBeLessThanOrEqual(0.1 + Number.EPSILON)
-    expect(last).toBeLessThan(projectionEnd.getTime())
+    expect(futureWidth).toBe(0)
+    expect(recordedWidth).toBeGreaterThan(0)
+    expect(last).toBe(END.getTime())
   })
 
-  it('preserves a projection shorter than the 10% cap exactly', () => {
+  it('keeps a fixed window fixed when projection history is nearby', () => {
     const projectionEnd = new Date(END.getTime() + 5 * 60 * 1000)
     const input: AlignInput = {
       series: sensorSeries([
@@ -475,7 +475,7 @@ describe('alignSeries', () => {
     const last = out.x[out.x.length - 1]
 
     expect(out.aggregated).toBe(false)
-    expect(last).toBe(projectionEnd.getTime())
+    expect(last).toBe(END.getTime())
   })
 
 })
