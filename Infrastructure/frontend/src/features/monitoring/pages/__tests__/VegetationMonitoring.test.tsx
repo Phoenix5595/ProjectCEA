@@ -162,6 +162,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllGlobals()
+  vi.unstubAllEnvs()
 })
 
 function renderPage() {
@@ -175,6 +176,16 @@ function renderPage() {
 }
 
 describe('VegetationMonitoring page', () => {
+  it('does not render chart data-table controls in production builds', () => {
+    vi.stubEnv('MODE', 'production')
+    vi.stubEnv('VITE_MONITORING_DEBUG', '')
+
+    renderPage()
+
+    expect(screen.queryByRole('button', { name: 'View data as table' })).toBeNull()
+    expect(screen.queryByRole('table', { name: /climate conditions data/i })).toBeNull()
+  })
+
   it('renders toolbar, chart regions, and tables without any iframe or Grafana URL', () => {
     const { container } = renderPage()
 
