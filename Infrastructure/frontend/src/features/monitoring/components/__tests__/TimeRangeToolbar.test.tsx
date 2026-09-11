@@ -27,6 +27,7 @@ interface Spies {
   onFixedRange: Mock<(start: Date, end: Date) => void>
   onPause: Mock<() => void>
   onResume: Mock<() => void>
+  onResetZoom: Mock<() => void>
 }
 
 function StatefulToolbar({
@@ -56,6 +57,7 @@ function StatefulToolbar({
       }}
       onPause={spies.onPause}
       onResume={spies.onResume}
+      onResetZoom={spies.onResetZoom}
     />
   )
 }
@@ -70,6 +72,7 @@ function renderStateful(
     onFixedRange: vi.fn<(start: Date, end: Date) => void>(),
     onPause: vi.fn<() => void>(),
     onResume: vi.fn<() => void>(),
+    onResetZoom: vi.fn<() => void>(),
   }
   const router = createMemoryRouter(
     [
@@ -202,6 +205,14 @@ describe('monitoring time-range toolbar', () => {
     const h = renderStateful(liveRange(3 * 3600_000), true, ['/'])
     fireEvent.click(screen.getByRole('button', { name: 'Now' }))
     expect(h.onLive).toHaveBeenCalledWith(3 * 3600_000)
+  })
+
+  it('exposes the chart reset zoom action', () => {
+    const h = renderStateful(liveRange(3 * 3600_000), true, ['/'])
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reset Zoom' }))
+
+    expect(h.onResetZoom).toHaveBeenCalledOnce()
   })
 
   it('applies valid Toronto wall-time inputs through the fixed-range callback', () => {

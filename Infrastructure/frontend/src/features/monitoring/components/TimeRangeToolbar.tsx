@@ -12,7 +12,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import type { MonitoringRange } from '../state'
-import { MonitoringStatus, MonitoringStatusBadge } from './MonitoringStatus'
+import { MonitoringToolbarStatus } from './MonitoringToolbarStatus'
 export type { ToolbarMonitoring } from './TimeRangeToolbar.monitoring'
 import {
   PRESETS,
@@ -39,6 +39,7 @@ export interface TimeRangeToolbarProps {
   onFixedRange: (start: Date, end: Date) => void
   onPause: () => void
   onResume: () => void
+  onResetZoom?: () => void
   now?: () => Date
   defaultDuration?: number
   monitoring?: import('./TimeRangeToolbar.monitoring').ToolbarMonitoring
@@ -48,6 +49,9 @@ export function TimeRangeToolbar({
   range,
   onLive,
   onFixedRange,
+  onPause,
+  onResume,
+  onResetZoom,
   now,
   defaultDuration,
   monitoring,
@@ -68,6 +72,7 @@ export function TimeRangeToolbar({
   const [editingRange, setEditingRange] = useState(false)
   const [fallFold, setFallFold] = useState<FallFoldState | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [paused, setPaused] = useState(false)
 
   const callbacksRef = useRef({ onLive, onFixedRange })
   callbacksRef.current = { onLive, onFixedRange }
@@ -84,6 +89,7 @@ export function TimeRangeToolbar({
     setEditingRange(false)
     setError(null)
     setFallFold(null)
+    setPaused(false)
   }, [range])
 
   useEffect(() => {
@@ -128,12 +134,14 @@ export function TimeRangeToolbar({
   const tzLabel = offsetLabel(tzTimestamp)
 
   function applyPreset(duration: number): void {
+    setPaused(false)
     setSelectedDuration(duration)
     setError(null)
     callbacksRef.current.onLive(duration)
   }
 
   function handleNow(): void {
+    setPaused(false)
     setError(null)
     callbacksRef.current.onLive(selectedDuration)
   }
@@ -182,6 +190,7 @@ export function TimeRangeToolbar({
     }
     setError(null)
     setFallFold(null)
+    setPaused(false)
     setEditingRange(false)
     callbacksRef.current.onFixedRange(startRes.utc, endRes.utc)
   }
@@ -235,8 +244,37 @@ export function TimeRangeToolbar({
           applyDisabled={inputError !== null}
         />
         <div className="mon-toolbar__status">
-          {monitoring && <MonitoringStatusBadge {...monitoring} />}
+          <span className={`mon-status__badge mon-status__badge--${live ? 'loading' : 'normal'}`} role="status">
+            {paused ? 'PAUSED' : live ? 'LIVE' : 'FIXED'}
+          </span>
+          {live && !paused && (
+            <button
+              type="button"
+              onClick={() => {
+                setPaused(true)
+                onPause()
+              }}
+            >
+              Pause
+            </button>
+          )}
+          {live && paused && (
+            <button
+              type="button"
+              onClick={() => {
+                setPaused(false)
+                onResume()
+              }}
+            >
+              Resume
+            </button>
+          )}
           <span className="mon-toolbar__tz">{tzLabel}</span>
+          {onResetZoom && (
+            <button type="button" onClick={onResetZoom}>
+              Reset Zoom
+            </button>
+          )}
         </div>
       </div>
       <AbsoluteRangeFeedback
@@ -246,8 +284,8 @@ export function TimeRangeToolbar({
         onFallFoldChoice={chooseFallFold}
       />
       {monitoring && (
-        <MonitoringStatus
-          errors={monitoring.errors}
+        <MonitoringToolbarStatus
+          monitoring={monitoring}
         />
       )}
     </div>
