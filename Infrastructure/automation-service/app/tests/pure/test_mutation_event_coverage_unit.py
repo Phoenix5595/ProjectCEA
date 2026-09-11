@@ -121,6 +121,7 @@ def test_accepts_reviewed_nonpersistent_exclusions_only_for_permitted_operation_
 
     # When: the declared exclusions are inspected as the coverage-checker input.
     accepted = {
+        "/api/climate-timeline/{location}/{cluster}/preview",
         "/api/timing/reset",
         "/api/flags/cache/clear",
         "/api/hardware/relays/test",
