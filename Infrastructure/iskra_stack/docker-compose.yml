@@ -2,17 +2,12 @@
 #
 # Services:
 #   - projectcea_database  : TimescaleDB streaming replica of mothernode's primary
-#   - projectcea_redis     : Local Redis (used by redis_sync + Grafana)
-#   - projectcea_redis_sync: Periodic snapshot from DB → Redis (so Grafana
-#                            can render the live state w/o the primary)
-#   - projectcea_grafana   : Visualization (Phase 5b — relocated from
-#                            iskradocker; this becomes the only Grafana
-#                            the SPA embeds in Phase 5c)
+#   - projectcea_redis     : Local Redis for replicated sensor state
+#   - projectcea_redis_sync: Periodic snapshot from DB → Redis
 #
 # Image pinning rationale: pulling :latest-* across a reboot can silently
-# upgrade the major version of TimescaleDB or Grafana, which would then
-# diverge from what the WAL stream / provisioned dashboards expect.
-# Both are pinned to known-good versions; bump explicitly when needed.
+# upgrade the TimescaleDB major version and break WAL compatibility.
+# The replica image is pinned to a known-good version; bump explicitly.
 
 services:
   projectcea_database:
@@ -28,9 +23,7 @@ services:
       REPLICATION_PASSWORD: ${REPLICATION_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB:-cea_sensors}
       REPLICATION_SLOT: ${REPLICATION_SLOT}
-      # Grafana runs 1s live dashboards with many concurrent panel queries.
-      # The default 50 was inherited from the replica base backup and is too
-      # low for this host; keep the replica explicitly above the primary.
+      # Keep the replica explicitly above the primary connection ceiling.
       POSTGRES_MAX_CONNECTIONS: ${POSTGRES_MAX_CONNECTIONS:-150}
       # Keep timestamptz display/casts aligned with Quebec local time and the Pi
       # primary. Storage/replication still preserve UTC instants.
@@ -87,75 +80,6 @@ services:
       projectcea_redis:
         condition: service_healthy
 
-  projectcea_grafana:
-    image: grafana/grafana:11.6.0
-    container_name: projectcea_grafana
-    restart: unless-stopped
-    networks:
-      - projectcea_network
-    environment:
-      # Server identity / access
-      - GF_SERVER_ROOT_URL=http://iskraprojectcea:3001
-      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD}
-      - GF_INSTALL_PLUGINS=grafana-clock-panel,redis-datasource
-      # SPA embed support (mirrors the iskradocker config we already
-      # ran for the hotfix; without these the dashboard iframe is
-      # blocked by X-Frame-Options and login redirects)
-      - GF_SECURITY_ALLOW_EMBEDDING=true
-      - GF_AUTH_ANONYMOUS_ENABLED=true
-      - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
-      - GF_AUTH_ANONYMOUS_ORG_NAME=Main Org.
-      - GF_DASHBOARDS_MIN_REFRESH_INTERVAL=1s
-      - GF_DATE_FORMATS_DEFAULT_TIMEZONE=America/Toronto
-      # Datasource secret — interpolated by Grafana's native $VAR
-      # support inside provisioning YAMLs (see template).
-      - POSTGRES_CEA_USER_PASSWORD=${POSTGRES_CEA_USER_PASSWORD}
-      # Read-only alerts against the Pi primary (replication slot / WAL). Same
-      # host as the streaming source; must be reachable from this container.
-      - PRIMARY_HOST=${PRIMARY_HOST}
-      - PRIMARY_PORT=${PRIMARY_PORT:-5432}
-      # SMTP — migrated from Pi grafana-server (Phase 5c follow-up,
-      # 2026-04-19). The unified-alerting contact points live in
-      # Grafana's SQLite DB (in the projectcea_grafana_data named
-      # volume) and route to antoine.olivier.dion@gmail.com via this
-      # SMTP relay. The app password is stored only in iskra's local
-      # .env (never committed); see .env.example for the var name.
-      # Reference exports of the original rules + contact point are
-      # kept in Infrastructure/frontend/grafana/pi-decommission-backup-*
-      # (gitignored) for re-import via the /api/v1/provisioning API.
-      - GF_SMTP_ENABLED=true
-      - GF_SMTP_HOST=smtp.gmail.com:587
-      - GF_SMTP_USER=antoine.olivier.dion@gmail.com
-      - GF_SMTP_PASSWORD=${GRAFANA_SMTP_PASSWORD}
-      - GF_SMTP_FROM_ADDRESS=antoine.olivier.dion@gmail.com
-      - GF_SMTP_FROM_NAME=Siberian Jungle Alert Transmission
-      - GF_SMTP_SKIP_VERIFY=false
-    volumes:
-      - projectcea_grafana_data:/var/lib/grafana
-      # Provisioning: mounted read-only so the source of truth lives
-      # in the repo, not inside the container's writable layer.
-      - ./provisioning/datasources/datasources.yaml.template:/etc/grafana/provisioning/datasources/cea-datasources.yaml:ro
-      - ./provisioning/alerting:/etc/grafana/provisioning/alerting:ro
-      - ./provisioning/dashboards/dashboards.yaml:/etc/grafana/provisioning/dashboards/cea-dashboards.yaml:ro
-      - ./dashboards:/var/lib/grafana/dashboards:ro
-    ports:
-      - "3001:3000"
-    depends_on:
-      projectcea_database:
-        condition: service_healthy
-      projectcea_redis:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "wget -q -O - http://localhost:3000/api/health | grep -q ok || exit 1"]
-      interval: 30s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
-
 networks:
   projectcea_network:
     name: projectcea_network
-
-volumes:
-  projectcea_grafana_data:
-    name: projectcea_grafana_data
