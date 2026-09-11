@@ -5,17 +5,13 @@ set -euo pipefail
 
 ISKRA_HOST="${ISKRA_HOST:-iskraprojectcea}"
 ISKRA_DIR="${ISKRA_DIR:-/home/antoine/ProjectCEA/Infrastructure/iskra_stack}"
-GRAFANA_URL="${GRAFANA_URL:-http://iskraprojectcea:3001}"
 ISKRA_REPLICA_QUERY_TIMEOUT_SEC="${ISKRA_REPLICA_QUERY_TIMEOUT_SEC:-15}"
 
 echo "[verify_iskra] checking remote compose stack on $ISKRA_HOST"
 ssh "$ISKRA_HOST" "cd '$ISKRA_DIR' && docker compose ps"
 
 echo "[verify_iskra] checking container health"
-ssh "$ISKRA_HOST" "docker inspect -f '{{.Name}} {{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' projectcea_database projectcea_redis projectcea_grafana"
-
-echo "[verify_iskra] checking Grafana API: $GRAFANA_URL/api/health"
-curl -fsS "$GRAFANA_URL/api/health" >/dev/null
+ssh "$ISKRA_HOST" "docker inspect -f '{{.Name}} {{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' projectcea_database projectcea_redis projectcea_redis_sync"
 
 echo "[verify_iskra] checking primary replication lag view"
 if command -v psql >/dev/null 2>&1; then
