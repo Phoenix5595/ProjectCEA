@@ -74,7 +74,7 @@ export function buildSeries(data: AlignedData): uPlot.Series[] {
         spanGaps: s.source === 'sensor',
         points: { show: false },
         stroke: color,
-        width: s.source === 'sensor' ? 1 : (s.presentation?.lineWidth ?? (target ? 2 : 1.5)),
+        width: s.presentation?.lineWidth ?? (s.source === 'sensor' ? 1 : (target ? 2 : 1.5)),
       }
       if (isEnvelopeSeries(s)) {
         series.show = false
