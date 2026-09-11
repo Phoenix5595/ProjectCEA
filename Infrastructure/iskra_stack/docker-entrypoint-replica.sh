@@ -11,8 +11,8 @@ PRIMARY_HOST="${PRIMARY_HOST:?PRIMARY_HOST required}"
 PRIMARY_PORT="${PRIMARY_PORT:-5432}"
 REPLICATION_USER="${REPLICATION_USER:-cea_repl}"
 REPLICATION_PASSWORD="${REPLICATION_PASSWORD:?REPLICATION_PASSWORD required}"
-# REPLICATION_SLOT is mandatory: a slot-less standby silently breaks Grafana
-# the moment WAL needed by the standby is recycled past wal_keep_size on the
+# REPLICATION_SLOT is mandatory: a slot-less standby breaks recovery when WAL
+# needed by the standby is recycled past wal_keep_size on the
 # primary. See Infrastructure/REQUIREMENTS.md "Replication durability".
 REPLICATION_SLOT="${REPLICATION_SLOT:?REPLICATION_SLOT required (must match a physical slot created on the primary, e.g. iskra_recovery)}"
 
@@ -59,7 +59,7 @@ if [ ! -f "$PGDATA/pg_hba.conf" ]; then
 local   all             all                                     trust
 host    all             all             127.0.0.1/32            scram-sha-256
 host    all             all             ::1/128                 scram-sha-256
-# Docker bridge network: Grafana + redis_sync connect via service names that
+# Docker bridge network: redis_sync connects via service names that
 # resolve to 172.x addresses inside the projectcea_network bridge.
 host    all             all             172.16.0.0/12           scram-sha-256
 host    replication     all             172.16.0.0/12           scram-sha-256
@@ -67,11 +67,11 @@ HBACONF
   chown postgres:postgres "$PGDATA/pg_hba.conf" 2>/dev/null || true
 fi
 
-# Start postgres server. Iskra is the Grafana read replica, so allow a higher
+# Start postgres server. Iskra is a read replica, so allow a higher
 # connection ceiling than the Pi primary while keeping the setting explicit in
 # compose. The replica must also use Quebec local time, matching the primary:
 # timestamptz storage remains UTC internally, but text formatting and ::time
-# casts used by dashboards/alert SQL follow the session timezone.
+# casts follow the session timezone.
 #
 # Hot-standby parameter rule (PostgreSQL 15): max_connections,
 # max_worker_processes, max_locks_per_transaction and max_prepared_transactions
@@ -82,16 +82,15 @@ fi
 # postgresql.conf left behind by an earlier pg_basebackup.
 #
 # Base backups from a Debian/Ubuntu primary often ship PGDATA postgresql.conf
-# with listen_addresses = localhost only. Grafana and redis_sync reach this
+# with listen_addresses = localhost only. redis_sync reaches this
 # container via the Docker bridge (projectcea_database:5432); without '*' the
 # host shows "connection refused" for cross-container TCP while pg_isready on
 # localhost still passes the healthcheck.
 #
-# Hot standby: heavy Grafana + redis_sync SELECTs can overlap WAL cleanup on
+# Hot standby: redis_sync SELECTs can overlap WAL cleanup on
 # the replica. Without feedback, PostgreSQL cancels queries with
-# "canceling statement due to conflict with recovery" — panels and Redis
-# mirror then lag arbitrarily (operators see "back cluster" or live values not
-# tracking new data). hot_standby_feedback=on tells the primary to defer
+# "canceling statement due to conflict with recovery" and delay the Redis
+# mirror. hot_standby_feedback=on tells the primary to defer
 # vacuum of rows still visible to the standby (watch mothernode autovacuum /
 # bloat; normally fine for this workload). Set POSTGRES_HOT_STANDBY_FEEDBACK=off
 # only if you intentionally prefer canceled queries over primary retention.
