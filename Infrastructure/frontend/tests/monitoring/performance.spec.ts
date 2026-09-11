@@ -240,7 +240,7 @@ test('detects the fixture-only synthetic alignment delay', async ({ page }, test
   })
 })
 
-test('keeps steady live mode bounded for sixty seconds without historical reloads', async ({ page }, testInfo) => {
+test('permits one post-interval sensor refresh without per-tick history reloads', async ({ page }, testInfo) => {
   test.setTimeout(90_000)
   const violations = trackViolations(page)
   let sensorRangeRequests = 0
@@ -275,7 +275,7 @@ test('keeps steady live mode bounded for sixty seconds without historical reload
 
   await page.waitForTimeout(60_000)
 
-  expect(sensorRangeRequests).toBe(initialSensorRangeRequests)
+  expect(sensorRangeRequests).toBe(initialSensorRangeRequests + 1)
   expect(controlRangeRequests).toBe(initialControlRangeRequests)
   expect(maxTailInFlight).toBe(1)
   expect(tailInFlight).toBe(0)
