@@ -43,21 +43,24 @@ describe('buildScales', () => {
     }
   })
 
-  it('labels each family axis with a unit and leaves more room on wide charts', () => {
-    const narrow = buildScales(makeData(), 375)
-    const wide = buildScales(makeData(), 1280)
+  it('preserves the historical family-axis spacing contract at every chart width', () => {
+    const narrow = buildScales(makeData())
+    const wide = buildScales(makeData())
 
-    expect(narrow.axes.find((axis) => axis.scale === 'temperature')?.label).toBe('Temp °C')
-    expect(narrow.axes.find((axis) => axis.scale === 'rh')?.label).toBe('RH %')
-    expect(narrow.axes.find((axis) => axis.scale === 'vpd')?.label).toBe('VPD kPa')
-    expect(narrow.axes.find((axis) => axis.scale === 'co2')?.label).toBe('CO2 ppm')
-    expect(narrow.axes.find((axis) => axis.scale === 'pressure')?.label).toBe('hPa')
-    expect(narrow.axes.find((axis) => axis.scale === 'device')?.label).toBe('Output %')
-    expect(narrow.axes.find((axis) => axis.scale === 'light')?.label).toBe('Light %')
-    const narrowSize = narrow.axes.find((axis) => axis.scale === 'rh')?.size
-    const wideSize = wide.axes.find((axis) => axis.scale === 'rh')?.size
-    if (typeof narrowSize !== 'number' || typeof wideSize !== 'number') throw new Error('Expected numeric RH axis sizes')
-    expect(wideSize).toBeGreaterThan(narrowSize)
+    for (const axes of [narrow.axes, wide.axes]) {
+      const familyAxes = axes.filter((axis) => axis.scale !== 'x')
+      expect(familyAxes).toHaveLength(7)
+      for (const axis of familyAxes) {
+        expect(axis.label).toBeUndefined()
+        expect(axis.gap).toBeUndefined()
+        expect(axis.font).toBeUndefined()
+        expect(axis.labelSize).toBeUndefined()
+        expect(axis.size).toBe(48)
+        expect(axis.ticks).toEqual({ stroke: axis.stroke })
+      }
+    }
+
+    expect(narrow.axes.slice(1)).toEqual(wide.axes.slice(1))
   })
 
   it('forces configured family bounds while leaving unconfigured scales automatic', () => {

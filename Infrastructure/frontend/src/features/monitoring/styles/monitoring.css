@@ -9,17 +9,10 @@
 
 .mon-page {
   width: 100%;
-  min-width: 0;
-  padding: 8px;
+  padding: 1rem;
   box-sizing: border-box;
   background: var(--surface-base, #10150e);
   color: var(--text-default, #f1f5f0);
-}
-
-@media (max-width: 767px) {
-  .mon-page {
-    padding: 4px;
-  }
 }
 
 .mon-grid {
@@ -108,7 +101,6 @@
   display: flex;
   flex-direction: column;
   height: 100%;
-  min-width: 0;
   box-sizing: border-box;
   padding: 0.5rem;
   background: var(--surface-primary, #181e15);
@@ -158,11 +150,11 @@
 }
 
 .mon-toolbar {
-  display: grid;
-  gap: 4px;
-  align-content: center;
-  min-height: 50px;
-  padding: 0 4px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0;
   margin-bottom: 0;
   background: var(--surface-secondary, #2f3d29);
   border: 1px solid var(--border-default, #475b3e);
@@ -175,19 +167,12 @@
 }
 
 .mon-toolbar__controls {
-  display: flex;
-  flex-wrap: nowrap;
-  align-items: center;
-  gap: 0.5rem;
-  min-width: 0;
-  width: 100%;
-  overflow-x: auto;
+  display: contents;
 }
 
 .mon-toolbar__presets {
   display: flex;
-  flex: 0 0 auto;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   gap: 0.375rem;
 }
 
@@ -195,10 +180,8 @@
 .mon-toolbar__now,
 .mon-toolbar__status button,
 .mon-toolbar__absolute button {
-  height: 2rem;
-  padding: 0 0.625rem;
+  padding: 0.25rem 0.625rem;
   font-size: 0.8rem;
-  line-height: 1;
   border: 1px solid var(--border-default, #475b3e);
   border-radius: 0.375rem;
   background: var(--surface-tertiary, #475b3e);
@@ -213,23 +196,9 @@
 
 .mon-toolbar__status {
   display: flex;
-  flex: 0 0 auto;
-  flex-wrap: nowrap;
   align-items: center;
   gap: 0.5rem;
-  height: 2rem;
-  box-sizing: border-box;
-  padding: 0 0.375rem;
-  margin-left: auto;
   font-size: 0.8rem;
-  line-height: 1;
-  background: var(--surface-tertiary, #475b3e);
-  border: 1px solid var(--border-default, #475b3e);
-  border-radius: 0.375rem;
-}
-
-.mon-toolbar__status button {
-  white-space: nowrap;
 }
 
 .mon-toolbar__live {
@@ -242,112 +211,14 @@
 
 .mon-toolbar__absolute {
   display: flex;
-  flex: 0 0 auto;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.375rem;
 }
 
-.mon-toolbar__absolute label {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
-  height: 2rem;
-  font-size: 0.8rem;
-  line-height: 1;
-  white-space: nowrap;
-}
-
-.mon-toolbar__absolute input {
-  height: 2rem;
-  box-sizing: border-box;
-  font-size: 0.8rem;
-  line-height: 1;
-}
-
 .mon-toolbar__error {
-  margin: 0;
   font-size: 0.8rem;
   color: var(--mon-error-text, var(--mon-error, var(--status-danger, #bd4253)));
-}
-
-@media (max-width: 767px) {
-  .mon-toolbar {
-    min-height: 0;
-    padding: 0.25rem;
-  }
-
-  .mon-toolbar__controls {
-    display: grid;
-    grid-template-columns: 1fr;
-    overflow: visible;
-  }
-
-  .mon-toolbar__presets {
-    display: grid;
-    grid-template-columns: repeat(7, minmax(0, 1fr));
-    gap: 0.25rem;
-    width: 100%;
-  }
-
-  .mon-toolbar__preset,
-  .mon-toolbar__now,
-  .mon-toolbar__status button,
-  .mon-toolbar__absolute button {
-    min-width: 0;
-    padding: 0 0.25rem;
-    font-size: 0.7rem;
-  }
-
-  .mon-toolbar__absolute {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    width: 100%;
-  }
-
-  .mon-toolbar__absolute label {
-    display: flex;
-    flex-direction: column;
-    align-items: stretch;
-    gap: 0.125rem;
-    min-width: 0;
-    font-size: 0.7rem;
-    overflow: hidden;
-  }
-
-  .mon-toolbar__absolute input {
-    display: block;
-    min-width: 0;
-    width: 100%;
-    font-size: 0.7rem;
-  }
-
-  .mon-toolbar__absolute button {
-    justify-self: start;
-  }
-
-  .mon-toolbar__status {
-    width: 100%;
-    margin-left: 0;
-    justify-content: space-between;
-    font-size: 0.7rem;
-  }
-
-  .mon-legend {
-    gap: 0.25rem;
-    padding: 0.25rem 0;
-  }
-
-  .mon-legend__list {
-    gap: 0.25rem;
-  }
-
-  .mon-legend__swatch,
-  .mon-legend__reset {
-    gap: 0.25rem;
-    padding: 0.2rem 0.3rem;
-    font-size: 0.65rem;
-  }
 }
 
 .mon-legend {
@@ -388,7 +259,7 @@
 }
 
 .mon-status {
-  margin: 0;
+  margin-bottom: 1rem;
 }
 
 .mon-status__summary {
@@ -469,7 +340,6 @@
   display: grid;
   gap: 1rem;
   align-content: start;
-  min-width: 0;
 }
 
 .mon-main {
@@ -521,19 +391,4 @@
 .mon-side .mon-card table td,
 .mon-side .mon-card table th {
   padding: 0;
-}
-
-.mon-side.mon-side--compact
-  section.mon-card
-  div.overflow-x-auto
-  table.w-full.text-xs
-  tbody
-  tr
-  td.px-1.py-1.border-b.border-border-subtle {
-  border-top: 1px solid var(--border-subtle, #2f3d29);
-}
-
-.mon-last-update {
-  display: inline-grid;
-  white-space: nowrap;
 }
