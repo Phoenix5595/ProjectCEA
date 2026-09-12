@@ -32,7 +32,14 @@ function cellForRow(table: HTMLElement, label: string, col = 1): string {
   return within(row).queryAllByRole('cell')[col]?.textContent ?? ''
 }
 
-const NOW = new Date('2026-07-15T12:00:00Z')
+function lastUpdateSpans(table: HTMLElement): HTMLElement[] {
+  const rows = within(table).getAllByRole('row')
+  const row = rows.find((r) => within(r).queryAllByRole('cell')[0]?.textContent === 'Last Update')
+  if (!row) throw new Error('Last Update row not found')
+  return Array.from(row.querySelectorAll<HTMLElement>('.mon-last-update > span'))
+}
+
+const NOW = new Date(2026, 6, 15, 12, 0, 0)
 const emptyAlignedData: AlignedData = {
   x: [],
   series: [],
@@ -107,6 +114,41 @@ describe('monitoring table primitives', () => {
     ])
   })
 
+  it('stacks SensorValueTable Last Update time and date in separate spans', () => {
+    const { container } = render(
+      <SensorValueTable
+        title="Sensor Values"
+        rows={['Last Update']}
+        values={[{ sensor: 'dry_bulb_v', value: 24.5, timestamp: NOW }]}
+        nodeSuffix="v"
+        now={NOW}
+      />,
+    )
+    const table = within(container).getByRole('table', { name: 'Sensor Values' })
+    const spans = lastUpdateSpans(table)
+
+    expect(spans).toHaveLength(2)
+    expect(spans.map((span) => span.textContent)).toEqual(['12:00:00', '15/07/2026'])
+    expect(spans.every((span) => span.classList.contains('block'))).toBe(true)
+  })
+
+  it('stacks RoomAveragesTable Last Update time and date in separate spans', () => {
+    const { container } = render(
+      <RoomAveragesTable
+        title="Averages"
+        rows={['Last Update']}
+        front={[{ sensor: 'dry_bulb_f', value: 22.0, timestamp: NOW }]}
+        back={[{ sensor: 'dry_bulb_b', value: 24.0, timestamp: NOW }]}
+      />,
+    )
+    const table = within(container).getByRole('table', { name: 'Averages' })
+    const spans = lastUpdateSpans(table)
+
+    expect(spans).toHaveLength(2)
+    expect(spans.map((span) => span.textContent)).toEqual(['12:00:00', '15/07/2026'])
+    expect(spans.every((span) => span.classList.contains('block'))).toBe(true)
+  })
+
   it('matches Flower Veg statistics and accessible data tables', () => {
     // --- Veg sensor values: canonical ordering + unit-family formatting ---
     const veg = tablePanel(vegManifest, 'Sensor Values')
@@ -130,7 +172,7 @@ describe('monitoring table primitives', () => {
     expect(cellForRow(vegTable, 'CO2')).toBe('812 ppm')
     expect(cellForRow(vegTable, 'Pressure')).toBe('1013.4 hPa')
     expect(cellForRow(vegTable, 'Water Level')).toBe('42.7 mm')
-    expect(cellForRow(vegTable, 'Last Update')).toMatch(/^\d{4}\/\d{2}\/\d{2} \d{2}:\d{2}:\d{2}$/)
+    expect(cellForRow(vegTable, 'Last Update')).toMatch(/^\d{2}:\d{2}:\d{2}\d{2}\/\d{2}\/\d{4}$/)
 
     // --- Flower averages: paired Front/Back ---
     const avg = tablePanel(flowerManifest, 'Averages')
@@ -229,7 +271,7 @@ describe('monitoring table primitives', () => {
     const avgTable = within(avgContainer).getByRole('table', { name: 'Averages' })
     expect(cellForRow(avgTable, 'Dry Bulb Avg')).toBe('—')
     expect(cellForRow(avgTable, 'RH Avg')).toBe('—')
-    expect(cellForRow(avgTable, 'Last Update')).toMatch(/^\d{4}\/\d{2}\/\d{2}/)
+    expect(cellForRow(avgTable, 'Last Update')).toMatch(/^\d{2}:\d{2}:\d{2}\d{2}\/\d{2}\/\d{4}$/)
 
     // --- Chart data table preserves null PID as an em dash ---
     const aligned: AlignedData = {
