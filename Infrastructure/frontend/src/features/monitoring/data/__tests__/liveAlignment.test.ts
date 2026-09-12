@@ -52,9 +52,9 @@ describe('live alignment', () => {
       live: [{ sensor: 'dry_bulb', value: 24.5, timestamp: nextNow }],
     })
 
-    // Then: every live frame has the same [now-duration, now+duration/3] horizon.
+    // Then: every live frame has the same [now-duration, now+duration/9] horizon.
     expect(result.x[0]).toBe(nextNow.getTime() - LIVE_RANGE.duration)
-    expect(result.x.at(-1)).toBe(nextNow.getTime() + LIVE_RANGE.duration / 3)
+    expect(result.x.at(-1)).toBe(nextNow.getTime() + LIVE_RANGE.duration / 9)
     expect(result.x[result.nowIndex]).toBe(nextNow.getTime())
   })
 
