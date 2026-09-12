@@ -20,6 +20,8 @@ readonly EVENT_LOG="$SANDBOX/events.log"
 readonly HEALTH_STATE_FILE="$SANDBOX/health-state"
 readonly HEALTH_DELAYED_CALLS_FILE="$SANDBOX/health-delayed-calls"
 readonly DEPLOY_LOCK_FILE="$SANDBOX/deploy.lock"
+readonly API_KEY_ENV_FILE="$SANDBOX/api_key.env"
+readonly FRONTEND_BUILD_PROOF="$SANDBOX/frontend-build-proof"
 
 readonly REL_A="$RELEASES/rel-A"
 readonly REL_B="$RELEASES/rel-B"
@@ -56,7 +58,7 @@ assert_script_hash() {
   [[ "$actual" == "$expected" ]] || fail "$name script hash changed: expected $expected, got $actual"
 }
 
-assert_script_hash "deploy" "$DEPLOY_SCRIPT" "f56b0dd864809b3849c40c6d09461235b91145855ec5f96ceeebd488250692ce"
+assert_script_hash "deploy" "$DEPLOY_SCRIPT" "459adee137cadfc1630c0a661267ab2db9ea318dd396680e60d7fd120eff1cd0"
 assert_script_hash "finalize" "$FINALIZE_SCRIPT" "6503e11745e1f7c658d8fbc3bc08c630aae7b33d3d492671c0d8eab757bdd32e"
 assert_script_hash "rollback" "$ROLLBACK_SCRIPT" "16203c049ebcc6d3da83222d4c65ca1f376a92c2123736a8cad24b6d7c6098de"
 pass "deploy script hashes match expected sha256 values"
@@ -78,8 +80,64 @@ touch -m -d "2026-01-01 00:05:00" "$RELEASES/rel-old-3"
 
 cat > "$BIN_DIRECTORY/sudo" <<'SUDO'
 #!/usr/bin/env bash
+case "${1:-}" in
+  chown)
+    exit 0
+    ;;
+  cp)
+    if [[ "${2:-}" == "/home/antoine/ProjectCEA/Infrastructure/automation-service/install/sudoers-cea-restart" ]]; then
+      exit 0
+    fi
+    ;;
+  chmod)
+    if [[ "${2:-}" == "0440" && "${3:-}" == "/etc/sudoers.d/sudoers-cea-restart" ]]; then
+      exit 0
+    fi
+    ;;
+esac
 exec "$@"
 SUDO
+
+cat > "$BIN_DIRECTORY/ruff" <<'RUFF'
+#!/usr/bin/env bash
+exit 0
+RUFF
+
+cat > "$BIN_DIRECTORY/rsync" <<'RSYNC'
+#!/usr/bin/env bash
+set -euo pipefail
+
+source_path="${@: -2:1}"
+destination_path="${@: -1}"
+mkdir -p "$destination_path/frontend"
+cp -a "$source_path/frontend/." "$destination_path/frontend/"
+RSYNC
+
+cat > "$BIN_DIRECTORY/npm" <<'NPM'
+#!/usr/bin/env bash
+set -euo pipefail
+
+case "${1:-}" in
+  ci)
+    exit 0
+    ;;
+  run)
+    if [[ "${2:-}" != "build" ]] || [[ "${VITE_CEA_API_KEY:-}" != "${DEPLOY_TEST_EXPECTED_API_KEY:-}" ]]; then
+      exit 1
+    fi
+    : > "$FRONTEND_BUILD_PROOF"
+    exit 0
+    ;;
+  *)
+    exit 1
+    ;;
+esac
+NPM
+
+cat > "$BIN_DIRECTORY/visudo" <<'VISUDO'
+#!/usr/bin/env bash
+exit 0
+VISUDO
 
 cat > "$BIN_DIRECTORY/systemctl" <<'SYSTEMCTL'
 #!/usr/bin/env bash
@@ -158,6 +216,33 @@ base_environment() {
   export HEALTH_STATE_FILE
   export HEALTH_DELAYED_CALLS_FILE
   export EVENT_LOG
+}
+
+run_frontend_build_key_sandbox() {
+  local build_key
+
+  build_key="$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
+  printf 'CEA_API_KEY=%s\n' "$build_key" > "$API_KEY_ENV_FILE"
+  chmod 0600 "$API_KEY_ENV_FILE"
+
+  clear_state
+  set_current "$REL_A"
+  write_state_json "rel-A" "$REL_A" ""
+  printf 'ready\n' > "$HEALTH_STATE_FILE"
+  base_environment
+  export API_KEY_ENV_FILE
+  export DEPLOY_SKIP_STAGING=0
+  export DEPLOY_TEST_EXPECTED_API_KEY="$build_key"
+  export FRONTEND_BUILD_PROOF
+  export TARGET="$REL_B"
+  expect_success bash "$DEPLOY_SCRIPT"
+  [[ -f "$FRONTEND_BUILD_PROOF" ]] || fail 'frontend build did not receive the API key'
+  [[ "$(current_target)" == "$REL_B" ]] || fail 'frontend build scenario did not activate its candidate'
+  if grep -RFq --exclude="$(basename "$API_KEY_ENV_FILE")" "$build_key" "$SANDBOX"; then
+    fail 'frontend build scenario recorded its API key'
+  fi
+  unset DEPLOY_TEST_EXPECTED_API_KEY
+  pass "frontend build receives the API key without recording it"
 }
 
 expect_failure() {
@@ -301,6 +386,8 @@ state["_note"] = sys.argv[2]
 print(json.dumps(state))
 PY
 }
+
+run_frontend_build_key_sandbox
 
 # --- Scenario 1: stale state reconciliation ---
 clear_state

@@ -38,6 +38,7 @@ CURRENT_SYMLINK="${DEPLOY_CURRENT:-$DEPLOY_ROOT/current}"
 STATE_JSON="${DEPLOY_STATE_JSON:-$DEPLOY_STATE_DIR/deploy_state.json}"
 MAX_RELEASES="${DEPLOY_MAX_RELEASES:-10}"
 DEPLOY_SKIP_STAGING="${DEPLOY_SKIP_STAGING:-0}"
+API_KEY_ENV_FILE="${API_KEY_ENV_FILE:-/opt/projectcea/shared/env/api_key.env}"
 
 JSON_LINE="$SOURCE/Infrastructure/scripts/deploy_json_line.py"
 EMIT="$SOURCE/Infrastructure/scripts/deploy_emit_event.py"
@@ -185,7 +186,7 @@ if [[ "$DEPLOY_SKIP_STAGING" != "1" ]]; then
 
   echo "[1/7] Copying code..."
   sudo mkdir -p "$TARGET"
-  sudo rsync -a --delete "$SOURCE/Infrastructure/" "$TARGET/Infrastructure/"
+  sudo rsync -a --delete --exclude '.env.production' "$SOURCE/Infrastructure/" "$TARGET/Infrastructure/"
   sudo chown -R root:root "$TARGET"
 
   echo "[2/7] Building Python venvs..."
@@ -205,7 +206,21 @@ if [[ "$DEPLOY_SKIP_STAGING" != "1" ]]; then
   cd "$TARGET/Infrastructure/frontend"
   sudo rm -rf dist/
   sudo env CI=true npm ci --silent --no-audit --no-fund
-  sudo env CI=true npm run build
+  if [[ ! -r "$API_KEY_ENV_FILE" ]]; then
+    echo "[deploy] API key environment file is not readable: $API_KEY_ENV_FILE" >&2
+    exit 1
+  fi
+  (
+    set -a
+    # shellcheck disable=SC1090
+    source "$API_KEY_ENV_FILE"
+    set +a
+    if [[ -z "${CEA_API_KEY:-}" ]]; then
+      echo "[deploy] CEA_API_KEY is empty in $API_KEY_ENV_FILE" >&2
+      exit 1
+    fi
+    sudo env CI=true "VITE_CEA_API_KEY=$CEA_API_KEY" npm run build
+  )
 
   echo "[4/7] Ensuring data directories..."
   NOTES_DIR="${NOTES_DATA_DIR:-/var/lib/projectcea/notes}"
