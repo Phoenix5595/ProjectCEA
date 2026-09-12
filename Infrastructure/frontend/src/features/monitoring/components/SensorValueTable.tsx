@@ -88,7 +88,10 @@ export function SensorValueTable({
                     {lastUpdateDisplay === null ? (
                       '—'
                     ) : (
-                      <span className="mon-last-update">{lastUpdateDisplay}</span>
+                      <span className="mon-last-update">
+                        <span className="block">{lastUpdateDisplay[0]}</span>
+                        <span className="block">{lastUpdateDisplay[1]}</span>
+                      </span>
                     )}
                   </td>
                 </tr>
