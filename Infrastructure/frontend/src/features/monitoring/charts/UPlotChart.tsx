@@ -276,7 +276,7 @@ export const UPlotChart = memo(
           const alignedNow = data.x[data.nowIndex]
           const duration = currentStructural.range.duration
           if (alignedNow !== undefined) {
-            withProgrammaticScale(() => plot.setScale('x', { min: alignedNow - duration, max: alignedNow + duration / 3 }))
+            withProgrammaticScale(() => plot.setScale('x', { min: alignedNow - duration, max: alignedNow + duration / 9 }))
           }
         }
       } else {

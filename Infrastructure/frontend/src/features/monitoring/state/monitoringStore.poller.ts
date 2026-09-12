@@ -137,6 +137,7 @@ export class MonitoringLivePoller {
         series: response.series,
         statistics: response.statistics,
       })
+      this.hooks.setFlags({ errors: [], lastGoodRangeAt: now, rangeErrorAt: null })
     } catch (err) {
       logger.warn('sensor history refresh failed', err)
     } finally {

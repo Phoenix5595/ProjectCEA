@@ -474,6 +474,25 @@ describe('monitoring store', () => {
     unsub()
   })
 
+  it('clears obsolete range failure metadata when the live history refresh succeeds', async () => {
+    const api = makeApi()
+    healthyDefaults(api)
+    api.controlRange.mockRejectedValueOnce(new MonitoringHttpError('monitoring', 503, 'control unavailable'))
+    const store = new MonitoringStore('Flower Room', api, { now: () => new Date() })
+    const unsub = store.subscribe(() => {})
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(store.getSnapshot().errors).toContain('control unavailable')
+    expect(store.getSnapshot().rangeErrorAt).toEqual(new Date(T0))
+
+    await vi.advanceTimersByTimeAsync(61_000)
+
+    expect(store.getSnapshot().errors).toEqual([])
+    expect(store.getSnapshot().rangeErrorAt).toBeNull()
+    expect(store.getSnapshot().lastGoodRangeAt).toEqual(new Date('2026-08-02T12:01:01.000Z'))
+    unsub()
+  })
+
   it('refetches range statistics when live duration changes', async () => {
     const api = makeApi()
     healthyDefaults(api)
