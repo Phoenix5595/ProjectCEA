@@ -84,19 +84,33 @@ function input(overrides: Partial<AlignInput> = {}): AlignInput {
 }
 
 describe('panel alignment', () => {
-  it('uses the fulfilled live range now as the rolling viewport anchor', () => {
+  it('allocates one tenth of the visible live window after its contained now boundary', () => {
     // Given: a one-hour live range fulfilled at a captured instant.
     const fulfilledEnd = new Date('2026-08-02T15:00:00.000Z')
-    const range: MonitoringRange = { kind: 'live', duration: 3_600_000 }
+    const historicalDuration = 3_600_000
+    const range: MonitoringRange = { kind: 'live', duration: historicalDuration }
 
     // When: its bounds are reconstructed for alignment.
     const bounds = windowBounds(range, fulfilledEnd)
 
-    // Then: the visible interval reserves a readable H/3 future projection window.
-    expect(bounds).toEqual({
-      start: fulfilledEnd.getTime() - 3_600_000,
-      end: fulfilledEnd.getTime() + 3_600_000 / 3,
-    })
+    // Then: H history and H/9 future make future exactly 10% of the displayed interval.
+    const historicalWidth = fulfilledEnd.getTime() - bounds.start
+    const futureWidth = bounds.end - fulfilledEnd.getTime()
+    const displayedWidth = bounds.end - bounds.start
+    expect(historicalWidth).toBe(historicalDuration)
+    expect(futureWidth).toBe(historicalDuration / 9)
+    expect(futureWidth * 10).toBe(displayedWidth)
+  })
+
+  it('leaves a fully historical fixed window unchanged at its now boundary', () => {
+    // Given: a fixed range that ends exactly at now.
+    const range: MonitoringRange = { kind: 'fixed', start: START, end: NOW }
+
+    // When: its bounds are reconstructed for alignment.
+    const bounds = windowBounds(range, NOW)
+
+    // Then: its inclusive chart boundary receives no future extension.
+    expect(bounds).toEqual({ start: START.getTime(), end: NOW.getTime() })
   })
 
   it('inserts live sensor values before future projection timestamps', () => {
