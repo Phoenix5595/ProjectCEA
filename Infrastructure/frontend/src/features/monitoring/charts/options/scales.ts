@@ -8,96 +8,87 @@
  */
 import uPlot from 'uplot'
 import type { AlignedData } from '../../data'
-import { resolveFamily, type ChartFamily } from './family'
+import { resolveFamily, chartFamilyForUnit, type ChartFamily } from './family'
 import { familyColor } from './seriesOptions'
 
+/** Hard visible bounds for families that always render inside a fixed window. */
 const RANGE_BOUNDS: Partial<
-  Record<ChartFamily, {
-    padEachSide?: number
-    physicalMin?: number
-    physicalMax?: number
-  }>
+  Record<ChartFamily, { min?: number; max?: number; padEachSide?: number }>
 > = {
   temperature: { padEachSide: 10 },
-  rh: { physicalMax: 100 },
-  pressure: { physicalMin: 1012, physicalMax: 1014 },
-  device: { physicalMin: 0, physicalMax: 100 },
-  light: { physicalMin: 0, physicalMax: 100 },
+  rh: { max: 100 },
+  device: { min: 0, max: 100 },
+  light: { min: 0, max: 100 },
+  pressure: { min: 1012, max: 1014 },
 }
 
-const AXIS_LABELS: Record<ChartFamily, string> = {
-  temperature: 'Temp °C',
-  rh: 'RH %',
-  vpd: 'VPD kPa',
-  co2: 'CO2 ppm',
-  pressure: 'hPa',
-  device: 'Output %',
-  light: 'Light %',
-}
-
-function paddedRange(
-  minimumWindow?: number,
-  maximumWindow?: number,
-  minimumPadding?: number,
-  physicalMinimum?: number,
-  physicalMaximum?: number,
+function boundedRange(
+  forcedMin?: number,
+  forcedMax?: number,
+  padEachSide?: number,
 ): (_self: uPlot, initMin: number | undefined, initMax: number | undefined) => [number, number] {
   return (_self, initMin, initMax) => {
-    const observed = [initMin, initMax].filter(
-      (value): value is number => typeof value === 'number' && Number.isFinite(value),
-    )
-    if (observed.length === 0) {
-      const lo = minimumWindow ?? physicalMinimum ?? 0
-      const hi = maximumWindow ?? physicalMaximum ?? lo + 1
-      return lo < hi ? [lo, hi] : [lo, lo + 1]
+    let lo =
+      typeof initMin === 'number' && Number.isFinite(initMin) ? initMin : (forcedMin ?? 0)
+    let hi =
+      typeof initMax === 'number' && Number.isFinite(initMax) ? initMax : (forcedMax ?? lo + 1)
+    if (padEachSide !== undefined && Number.isFinite(lo) && Number.isFinite(hi)) {
+      lo -= padEachSide
+      hi += padEachSide
     }
-    const observedMin = Math.min(...observed)
-    const observedMax = Math.max(...observed)
-    const dataPadding = observedMin === observedMax
-      ? Math.max(Math.abs(observedMin) * 0.05, 1)
-      : (observedMax - observedMin) * 0.05
-    const padding = minimumWindow !== undefined || maximumWindow !== undefined
-      ? 0
-      : Math.max(dataPadding, minimumPadding ?? 0)
-    let lo = observedMin - padding
-    let hi = observedMax + padding
-    if (minimumWindow !== undefined && lo > minimumWindow) lo = minimumWindow
-    if (maximumWindow !== undefined && hi < maximumWindow) hi = maximumWindow
-    if (physicalMinimum !== undefined && lo < physicalMinimum) lo = physicalMinimum
-    if (physicalMaximum !== undefined && hi > physicalMaximum) hi = physicalMaximum
+    if (forcedMin !== undefined && lo > forcedMin) lo = forcedMin
+    if (forcedMax !== undefined && hi < forcedMax) hi = forcedMax
+    if (lo >= hi) hi = lo + 1
     return [lo, hi]
   }
+}
+
+function softBoundedRange(
+  softMin?: number,
+  softMax?: number,
+): (_self: uPlot, initMin: number | undefined, initMax: number | undefined) => [number, number] {
+  return (_self, initMin, initMax) => {
+    const hasMin = typeof initMin === 'number' && Number.isFinite(initMin)
+    const hasMax = typeof initMax === 'number' && Number.isFinite(initMax)
+    let lo = hasMin ? initMin : (softMin ?? (hasMax ? initMax - 1 : 0))
+    let hi = hasMax ? initMax : (softMax ?? lo + 1)
+    if (softMin !== undefined && lo > softMin) lo = softMin
+    if (softMax !== undefined && hi < softMax) hi = softMax
+    if (lo >= hi) hi = lo + 1
+    return [lo, hi]
+  }
+}
+
+interface SoftBounds {
+  softMin?: number
+  softMax?: number
+}
+
+function familySoftBounds(data: AlignedData): Map<ChartFamily, SoftBounds> {
+  const bounds = new Map<ChartFamily, SoftBounds>()
+  for (const s of data.series) {
+    const p = s.presentation
+    if (p === undefined || (p.softMin === undefined && p.softMax === undefined)) continue
+    const family = resolveFamily(s)
+    const existing = bounds.get(family)
+    const next: SoftBounds = {
+      softMin: p.softMin !== undefined ? Math.min(p.softMin, existing?.softMin ?? p.softMin) : existing?.softMin,
+      softMax: p.softMax !== undefined ? Math.max(p.softMax, existing?.softMax ?? p.softMax) : existing?.softMax,
+    }
+    bounds.set(family, next)
+  }
+  return bounds
+}
+
+function defaultFamily(data: AlignedData): ChartFamily | undefined {
+  const unit = data.scaleDefaults?.unit
+  if (unit === undefined) return undefined
+  return chartFamilyForUnit(unit)
 }
 
 export interface ChartScales {
   scales: uPlot.Scales
   axes: uPlot.Axis[]
-}
-
-function familyUnit(family: ChartFamily): string {
-  switch (family) {
-    case 'temperature':
-      return 'celsius'
-    case 'rh':
-    case 'device':
-    case 'light':
-      return 'percent'
-    case 'vpd':
-      return 'kpa'
-    case 'co2':
-      return 'ppm'
-    case 'pressure':
-      return 'hpa'
-  }
-}
-
-function explicitBounds(data: AlignedData, family: ChartFamily): { minimum?: number; maximum?: number } {
-  const series = data.series.find((candidate) => candidate.family === family && candidate.presentation !== undefined)
-  const defaults = data.scaleDefaults?.unit === familyUnit(family) ? data.scaleDefaults : undefined
-  return {
-    minimum: series?.presentation?.softMin ?? defaults?.softMin,
-    maximum: series?.presentation?.softMax ?? defaults?.softMax,
-  }
 }
 
 function readTokenXStroke(): string {
@@ -108,7 +99,7 @@ function readTokenXStroke(): string {
 }
 
 /** Build scales and axes for every family present in the data. */
-export function buildScales(data: AlignedData, chartWidth = 1024): ChartScales {
+export function buildScales(data: AlignedData): ChartScales {
   const families = new Set<ChartFamily>()
   for (const s of data.series) families.add(resolveFamily(s))
 
@@ -122,20 +113,25 @@ export function buildScales(data: AlignedData, chartWidth = 1024): ChartScales {
     },
   ]
 
+  const seriesBounds = familySoftBounds(data)
+  const defaultFamilyForUnit = defaultFamily(data)
+
   for (const family of families) {
     // auto:true is required for uPlot to rescale user-defined value scales;
     // the bounded range function then clamps the proposed extent.
     const scale: uPlot.Scale = { auto: true }
-    const bounds = RANGE_BOUNDS[family]
-    const explicit = explicitBounds(data, family)
-    if (bounds !== undefined || explicit.minimum !== undefined || explicit.maximum !== undefined) {
-      scale.range = paddedRange(
-        explicit.minimum ?? bounds?.physicalMin,
-        explicit.maximum ?? bounds?.physicalMax,
-        explicit.minimum !== undefined || explicit.maximum !== undefined ? 0 : bounds?.padEachSide,
-        bounds?.physicalMin,
-        bounds?.physicalMax,
-      )
+    const soft = seriesBounds.get(family)
+    if (soft?.softMin !== undefined || soft?.softMax !== undefined) {
+      scale.range = softBoundedRange(soft.softMin, soft.softMax)
+    } else if (defaultFamilyForUnit === family) {
+      const d = data.scaleDefaults
+      if (d?.softMin !== undefined || d?.softMax !== undefined) {
+        scale.range = softBoundedRange(d.softMin, d.softMax)
+      }
+    }
+    if (scale.range === undefined) {
+      const bounds = RANGE_BOUNDS[family]
+      if (bounds !== undefined) scale.range = boundedRange(bounds.min, bounds.max, bounds.padEachSide)
     }
     scales[family] = scale
 
@@ -143,14 +139,10 @@ export function buildScales(data: AlignedData, chartWidth = 1024): ChartScales {
     axes.push({
       scale: family,
       side: isTemperature ? 3 : 1,
-      label: AXIS_LABELS[family],
       stroke: familyColor(family),
       grid: { stroke: 'rgba(128, 128, 128, 0.15)' },
-      ticks: { stroke: familyColor(family), size: 4 },
-      gap: chartWidth < 600 ? 1 : 4,
-      font: chartWidth < 600 ? '9px system-ui, sans-serif' : '10px system-ui, sans-serif',
-      labelSize: chartWidth < 600 ? 18 : 24,
-      size: chartWidth < 600 ? 30 : 48,
+      ticks: { stroke: familyColor(family) },
+      size: 48,
     })
   }
 
