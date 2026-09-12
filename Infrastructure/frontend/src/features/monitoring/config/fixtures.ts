@@ -111,6 +111,8 @@ function roomSensors(room: string): RoomSensor[] {
   return [
     { sensor: 'dry_bulb_f', node: 'front', unitFamily: 'celsius', unit: '°C', values: [24.5, 24.8] },
     { sensor: 'dry_bulb_b', node: 'back', unitFamily: 'celsius', unit: '°C', values: [25.1, 25.4] },
+    { sensor: 'wet_bulb_f', node: 'front', unitFamily: 'celsius', unit: '°C', values: [19.8, 20.1] },
+    { sensor: 'wet_bulb_b', node: 'back', unitFamily: 'celsius', unit: '°C', values: [20.3, 20.6] },
     { sensor: 'rh_f', node: 'front', unitFamily: 'percent', unit: '%', values: [62, 61] },
     { sensor: 'rh_b', node: 'back', unitFamily: 'percent', unit: '%', values: [58, 57] },
     { sensor: 'vpd_f', node: 'front', unitFamily: 'kpa', unit: ' kPa', values: [1.1, 1.2] },
