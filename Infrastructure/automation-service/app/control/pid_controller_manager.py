@@ -18,7 +18,7 @@ logger = get_logger(__name__)
 class PIDControllerManager:
     """Manages PID controllers for device control."""
 
-    def __init__(self, database_manager, event_policy: DecisionEventPolicy | None = None):
+    def __init__(self, database_manager, event_policy: DecisionEventPolicy):
         """Initialize PID controller manager.
 
         Args:
@@ -29,7 +29,7 @@ class PIDControllerManager:
         self._autotuners: dict[str, Any] = {}  # Auto-tuner instances per device type
         # StateManager for fast in-memory PID param access (<1ms reads)
         self._state: StateManager = get_state_manager()
-        self._event_policy = event_policy or DecisionEventPolicy()
+        self._event_policy = event_policy
 
     async def get_pid_controller(
         self, location: str, cluster: str, device_name: str, device_type: str
@@ -534,7 +534,8 @@ class PIDControllerManager:
                         output * 100.0,
                         current_mode or control_mode,
                         "control.pid_decision",
-                        "PID calculated control output",
+                        f"PID calculated control output; Kp={controller.kp:g}, "
+                        f"Ki={controller.ki:g}, Kd={controller.kd:g}",
                     )
                 )
 
