@@ -16,6 +16,7 @@ function entry(index: number): EventLogEntry {
     eventId: `event-${index}`,
     type: 'relay.state_changed',
     category: 'relay',
+    severity: 'info',
     occurredAt: new Date('2026-09-03T12:00:00.000Z'),
     payload: { room: index % 4 === 0 ? 'Flower Room' : 'Vegetation Room', cluster: 'main' },
   }
