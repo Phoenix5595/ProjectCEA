@@ -6,16 +6,16 @@
  * hiding one series never removes its sibling family scale. Explicit canonical
  * bounds are preserved; families without one auto-range.
  */
-import uPlot from 'uplot'
+import type uPlot from 'uplot'
 import type { AlignedData } from '../../data'
-import { resolveFamily, chartFamilyForUnit, type ChartFamily } from './family'
+import { type ChartFamily, chartFamilyForUnit, resolveFamily } from './family'
 import { familyColor } from './seriesOptions'
 
 /** Hard visible bounds for families that always render inside a fixed window. */
 const RANGE_BOUNDS: Partial<
-  Record<ChartFamily, { min?: number; max?: number; padEachSide?: number }>
+  Record<ChartFamily, { min?: number; max?: number }>
 > = {
-  temperature: { padEachSide: 10 },
+  temperature: {},
   rh: { max: 100 },
   device: { min: 0, max: 100 },
   light: { min: 0, max: 100 },
@@ -25,16 +25,18 @@ const RANGE_BOUNDS: Partial<
 function boundedRange(
   forcedMin?: number,
   forcedMax?: number,
-  padEachSide?: number,
 ): (_self: uPlot, initMin: number | undefined, initMax: number | undefined) => [number, number] {
   return (_self, initMin, initMax) => {
-    let lo =
-      typeof initMin === 'number' && Number.isFinite(initMin) ? initMin : (forcedMin ?? 0)
-    let hi =
-      typeof initMax === 'number' && Number.isFinite(initMax) ? initMax : (forcedMax ?? lo + 1)
-    if (padEachSide !== undefined && Number.isFinite(lo) && Number.isFinite(hi)) {
-      lo -= padEachSide
-      hi += padEachSide
+    const observedMin = typeof initMin === 'number' && Number.isFinite(initMin) ? initMin : undefined
+    const observedMax = typeof initMax === 'number' && Number.isFinite(initMax) ? initMax : undefined
+    let lo = observedMin ?? (forcedMin ?? 0)
+    let hi = observedMax ?? (forcedMax ?? lo + 1)
+    if (observedMin !== undefined && observedMax !== undefined) {
+      const padding = observedMin === observedMax
+        ? Math.max(Math.abs(observedMin) * 0.05, 1)
+        : (observedMax - observedMin) * 0.05
+      lo -= padding
+      hi += padding
     }
     if (forcedMin !== undefined && lo > forcedMin) lo = forcedMin
     if (forcedMax !== undefined && hi < forcedMax) hi = forcedMax
@@ -50,10 +52,20 @@ function softBoundedRange(
   return (_self, initMin, initMax) => {
     const hasMin = typeof initMin === 'number' && Number.isFinite(initMin)
     const hasMax = typeof initMax === 'number' && Number.isFinite(initMax)
-    let lo = hasMin ? initMin : (softMin ?? (hasMax ? initMax - 1 : 0))
-    let hi = hasMax ? initMax : (softMax ?? lo + 1)
+    const observedMin = hasMin ? initMin : undefined
+    const observedMax = hasMax ? initMax : undefined
+    let lo = observedMin ?? (softMin ?? (observedMax !== undefined ? observedMax - 1 : 0))
+    let hi = observedMax ?? (softMax ?? lo + 1)
     if (softMin !== undefined && lo > softMin) lo = softMin
     if (softMax !== undefined && hi < softMax) hi = softMax
+    if (observedMin !== undefined && observedMax !== undefined) {
+      const padding =
+        observedMin === observedMax
+          ? Math.max(Math.abs(observedMin) * 0.05, 1)
+          : (observedMax - observedMin) * 0.05
+      lo = Math.min(lo, observedMin - padding)
+      hi = Math.max(hi, observedMax + padding)
+    }
     if (lo >= hi) hi = lo + 1
     return [lo, hi]
   }
@@ -131,7 +143,7 @@ export function buildScales(data: AlignedData): ChartScales {
     }
     if (scale.range === undefined) {
       const bounds = RANGE_BOUNDS[family]
-      if (bounds !== undefined) scale.range = boundedRange(bounds.min, bounds.max, bounds.padEachSide)
+      scale.range = boundedRange(bounds?.min, bounds?.max)
     }
     scales[family] = scale
 
