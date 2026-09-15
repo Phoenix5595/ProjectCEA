@@ -128,7 +128,7 @@ class SavedTrajectorySnapshotSource:
     async def read_calendar_transition(
         self, location: str, cluster: str, on_date: date
     ) -> Mapping[str, object] | None:
-        return await self._scheduler.get_expected_mode(location, cluster, on_date)
+        return await self._scheduler.get_expected_transition(location, cluster, on_date)
 
     async def read_schedule_configuration(
         self, location: str, cluster: str, mode_id: int, submode_id: int | None

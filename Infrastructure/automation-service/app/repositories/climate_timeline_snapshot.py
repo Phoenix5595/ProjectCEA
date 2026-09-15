@@ -70,6 +70,7 @@ class ClimateScheduleSlice:
     start: datetime
     end: datetime
     schedule: ClimateSchedule | None
+    warning: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -159,6 +160,9 @@ class ClimateScheduleSnapshotBuilder:
     ) -> ClimateScheduleSlice:
         start, end = _local_day_window(local_day, window)
         transition = await self._source.read_calendar_transition(location, cluster, local_day)
+        reason = None if transition is None else transition.get("resolution_reason")
+        if isinstance(reason, str):
+            return await self._active_fallback_slice(location, cluster, start, end, active, reason)
         identity = _resolve_identity(active, transition)
         if identity is None:
             return ClimateScheduleSlice(start, end, None)
@@ -166,7 +170,35 @@ class ClimateScheduleSnapshotBuilder:
         configuration = await self._source.read_schedule_configuration(
             location, cluster, mode_id, submode_id
         )
-        return ClimateScheduleSlice(start, end, _schedule(configuration, mode_id, submode_id))
+        schedule = _schedule(configuration, mode_id, submode_id)
+        if schedule is not None or transition is None:
+            return ClimateScheduleSlice(start, end, schedule)
+        return await self._active_fallback_slice(
+            location, cluster, start, end, active, "destination_unconfigured"
+        )
+
+    async def _active_fallback_slice(
+        self,
+        location: str,
+        cluster: str,
+        start: datetime,
+        end: datetime,
+        active: Mapping[str, object] | None,
+        reason: str,
+    ) -> ClimateScheduleSlice:
+        identity = _resolve_identity(active, None)
+        if identity is None:
+            return ClimateScheduleSlice(start, end, None)
+        mode_id, submode_id = identity
+        configuration = await self._source.read_schedule_configuration(
+            location, cluster, mode_id, submode_id
+        )
+        return ClimateScheduleSlice(
+            start,
+            end,
+            _schedule(configuration, mode_id, submode_id),
+            f"calendar.transition_skipped:{reason}",
+        )
 
 
 def _intersecting_local_days(window: TimelineWindow) -> tuple[date, ...]:
@@ -187,7 +219,11 @@ def _resolve_identity(
     active: Mapping[str, object] | None, transition: Mapping[str, object] | None
 ) -> tuple[int, int | None] | None:
     identity = active
-    if transition is not None and transition.get("auto_mode_transition") is not False:
+    if (
+        transition is not None
+        and transition.get("auto_mode_transition") is not False
+        and transition.get("calendar_mode_transitions_enabled") is not False
+    ):
         identity = transition
     if identity is None:
         return None

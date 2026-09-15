@@ -100,7 +100,9 @@ class ClimateTimelinePreviewService:
             trajectory = await anyio.to_thread.run_sync(
                 self.saved_trajectory_reader.read_rich_trajectory, location
             )
-            if trajectory is not None and trajectory.base_config_revision != config_revision:
+            if trajectory is not None and not _matches_saved_identity(
+                trajectory, location, config_revision, window
+            ):
                 trajectory = None
         if trajectory is None:
             trajectory = project_saved_trajectory(snapshot, location, config_revision)
@@ -150,6 +152,23 @@ def _timeline_window(request: TimelinePreviewRequest) -> TimelineWindow:
             "invalid_preview_window", ("preview window end must be later than start",)
         )
     return TimelineWindow(start.astimezone(UTC), end.astimezone(UTC), request.window.timezone)
+
+
+def _matches_saved_identity(
+    trajectory: RichTrajectoryEnvelope,
+    room: str,
+    revision: str,
+    window: TimelineWindow,
+) -> bool:
+    return (
+        trajectory.room == room
+        and trajectory.base_config_revision == revision
+        and trajectory.revision_scope == "saved"
+        and trajectory.draft_revision is None
+        and trajectory.window.start == window.start
+        and trajectory.window.end == window.end
+        and trajectory.window.timezone == window.timezone
+    )
 
 
 def _time_text(value: Any) -> str:
