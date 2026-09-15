@@ -43,7 +43,7 @@ function previewEnvelope(draftRevision: number) {
     generated_at: '2026-01-01T00:00:00.000Z',
     window: {
       start: '2026-01-01T00:00:00.000Z',
-      end: '2026-01-01T01:00:00.000Z',
+      end: '2026-01-02T00:00:00.000Z',
       timezone: 'America/Toronto',
     },
     revision_scope: 'draft',
@@ -205,4 +205,80 @@ describe('useTimelineDraft', () => {
     // Then: the stale response cannot repopulate preview state.
     expect(result.current.preview).toEqual({ kind: 'idle' })
   })
+
+  it('does not Apply while the reviewed preview is loading or failed', async () => {
+    let resolvePreview: ((value: ReturnType<typeof previewEnvelope>) => void) | undefined
+    let applyCalls = 0
+    let shouldFail = false
+    const port: TimelinePublicationPort = {
+      preview: () => {
+        if (shouldFail) return Promise.reject(new Error('preview failed'))
+        return new Promise((resolve) => { resolvePreview = resolve })
+      },
+      apply: async () => {
+        applyCalls += 1
+        return savedBaseline()
+      },
+    }
+    const { result } = renderHook(() => useTimelineDraft({ saved: savedBaseline(), publicationPort: port }))
+    let review: Promise<void> | undefined
+    act(() => { review = result.current.review() })
+    await act(async () => result.current.apply())
+    expect(applyCalls).toBe(0)
+
+    await act(async () => { resolvePreview?.(previewEnvelope(0)) })
+    await review
+    expect(result.current.preview.kind).toBe('ready')
+    act(() => result.current.editPeriods(result.current.state.draft.periods.map((period) => ({ ...period, details: 'failed review' }))))
+    shouldFail = true
+    await act(async () => result.current.review())
+    await act(async () => result.current.apply())
+
+    expect(result.current.preview.kind).toBe('failed')
+    expect(applyCalls).toBe(0)
+    shouldFail = false
+    const wrongRevision = previewEnvelope(99)
+    const originalPreview = port.preview
+    port.preview = async () => wrongRevision
+    await act(async () => result.current.review())
+    await act(async () => result.current.apply())
+    expect(result.current.preview.kind).toBe('failed')
+    expect(applyCalls).toBe(0)
+    port.preview = originalPreview
+  })
+
+  it('uses one matching reviewed request for exactly one Apply and keeps its preview visible', async () => {
+    let previewRequestId = ''
+    let applyRequestId = ''
+    let resolveApply: ((value: TimelineSavedBaseline) => void) | undefined
+    let applyCalls = 0
+    const port: TimelinePublicationPort = {
+      preview: async (request) => {
+        previewRequestId = request.requestId
+        return previewEnvelope(request.draftRevision)
+      },
+      apply: (request) => {
+        applyCalls += 1
+        applyRequestId = request.requestId
+        return new Promise((resolve) => { resolveApply = resolve })
+      },
+    }
+    const { result } = renderHook(() => useTimelineDraft({ saved: savedBaseline(), publicationPort: port }))
+    act(() => result.current.editPeriods(result.current.state.draft.periods.map((period) => ({ ...period, heating_setpoint: 23 }))))
+    await act(async () => result.current.review())
+    let firstApply: Promise<void> | undefined
+    let secondApply: Promise<void> | undefined
+    act(() => { firstApply = result.current.apply() })
+    act(() => { secondApply = result.current.apply() })
+    expect(applyCalls).toBe(1)
+    expect(applyRequestId).toBe(previewRequestId)
+    await act(async () => { resolveApply?.(savedBaseline('config-2')) })
+    await firstApply
+    await secondApply
+
+    expect(result.current.preview.kind).toBe('ready')
+    expect(result.current.preview).toMatchObject({ source: 'preview', value: previewEnvelope(1) })
+    expect(result.current.state.status).toEqual({ kind: 'editing' })
+  })
+
 })
