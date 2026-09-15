@@ -12,6 +12,7 @@ import type {
   CalendarEventsResponse,
   CalendarEventDto,
   CalendarRoomProfile,
+  FlowerCalendarModeTransitionSetting,
   FlowerGrowPlanRequest,
   ModeScheduleResponse,
 } from '../types/calendar';
@@ -259,6 +260,18 @@ class ApiClient implements ApiClientCore {
   // Calendar (automation service)
   async getCalendarRooms(): Promise<CalendarRoomProfile[]> {
     const response = await this.automationClient.get('/api/calendar/rooms');
+    return response.data;
+  }
+
+  async getFlowerCalendarModeTransitions(): Promise<FlowerCalendarModeTransitionSetting> {
+    const response = await this.automationClient.get('/api/calendar/flower-mode-transitions');
+    return response.data;
+  }
+
+  async updateFlowerCalendarModeTransitions(
+    enabled: boolean
+  ): Promise<FlowerCalendarModeTransitionSetting> {
+    const response = await this.automationClient.put('/api/calendar/flower-mode-transitions', { enabled });
     return response.data;
   }
 

@@ -80,8 +80,12 @@ CREATE TABLE IF NOT EXISTS calendar_room_profile (
     nextcloud_calendar_url TEXT,
     caldav_sync_token TEXT,
     enabled BOOLEAN NOT NULL DEFAULT true,
+    calendar_mode_transitions_enabled BOOLEAN NOT NULL DEFAULT true,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE calendar_room_profile
+    ADD COLUMN IF NOT EXISTS calendar_mode_transitions_enabled BOOLEAN NOT NULL DEFAULT true;
 
 INSERT INTO calendar_room_profile (location, display_name, color_key, sort_order)
 VALUES

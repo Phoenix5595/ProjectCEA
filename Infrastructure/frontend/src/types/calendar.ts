@@ -22,6 +22,10 @@ export interface CalendarRoomProfile {
   sort_order: number;
 }
 
+export interface FlowerCalendarModeTransitionSetting {
+  enabled: boolean;
+}
+
 export interface CalendarEventsResponse {
   items: CalendarEventDto[];
   next_cursor?: string | null;

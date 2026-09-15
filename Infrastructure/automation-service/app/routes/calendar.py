@@ -29,6 +29,7 @@ from app.events.operational_ports import OperationalEventSink
 from app.schemas.calendar import (
     CalendarEventCreate,
     CalendarEventUpdate,
+    FlowerCalendarModeTransitionUpdate,
     FlowerGrowPlanRequest,
     SyncConnectionCreate,
     SyncConnectionTest,
@@ -93,6 +94,44 @@ def _mode_event_dto(row: dict[str, Any]) -> dict[str, Any]:
 @router.get("/rooms")
 async def list_rooms(database: DatabaseManager = Depends(get_database)) -> list[dict[str, Any]]:
     return await database.calendar_repo.list_room_profiles()
+
+
+@router.get("/flower-mode-transitions")
+async def get_flower_mode_transitions(
+    database: DatabaseManager = Depends(get_database),
+) -> dict[str, bool]:
+    return {"enabled": await database.calendar_repo.flower_calendar_mode_transitions_enabled()}
+
+
+@router.put("/flower-mode-transitions")
+@emits_operational_mutation
+async def update_flower_mode_transitions(
+    body: FlowerCalendarModeTransitionUpdate,
+    database: DatabaseManager = Depends(get_database),
+    context: MutationRequestContext = Depends(get_mutation_request_context),
+    sink: OperationalEventSink = Depends(get_mutation_event_sink),
+) -> dict[str, bool]:
+    previous = await database.calendar_repo.flower_calendar_mode_transitions_enabled()
+    row = await database.calendar_repo.set_flower_calendar_mode_transitions_enabled(body.enabled)
+    if row is None:
+        raise HTTPException(
+            status_code=500, detail="Failed to save Flower calendar mode transition setting"
+        )
+    enabled = row["calendar_mode_transitions_enabled"]
+    emit_persisted_mutation(
+        sink,
+        PersistedMutation(
+            operation="update",
+            entity=EntityContext(
+                entity_type="flower_calendar_mode_transition", entity_id="Flower Room"
+            ),
+            changes=safe_allowlisted_diff(
+                {"enabled": previous}, {"enabled": enabled}, frozenset({"enabled"})
+            ),
+        ),
+        context,
+    )
+    return {"enabled": enabled}
 
 
 @router.get("/events")

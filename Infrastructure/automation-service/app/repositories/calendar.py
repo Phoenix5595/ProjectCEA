@@ -39,6 +39,34 @@ class CalendarRepository(BaseRepository):
             logger.error(f"Failed to list room profiles: {e}")
             return []
 
+    async def flower_calendar_mode_transitions_enabled(self) -> bool:
+        try:
+            async with self.pool.acquire() as conn:
+                value = await conn.fetchval(
+                    "SELECT calendar_mode_transitions_enabled FROM calendar_room_profile "
+                    "WHERE location = 'Flower Room'"
+                )
+                return value is not False
+        except Exception as e:
+            logger.error(f"Failed to read Flower calendar mode transition setting: {e}")
+            return True
+
+    async def set_flower_calendar_mode_transitions_enabled(
+        self, enabled: bool
+    ) -> dict[str, Any] | None:
+        try:
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    "UPDATE calendar_room_profile SET calendar_mode_transitions_enabled = $1, "
+                    "updated_at = NOW() WHERE location = 'Flower Room' RETURNING location, "
+                    "calendar_mode_transitions_enabled",
+                    enabled,
+                )
+                return dict(row) if row else None
+        except Exception as e:
+            logger.error(f"Failed to update Flower calendar mode transition setting: {e}")
+            return None
+
     async def get_event(
         self, event_id: int, include_deleted: bool = False
     ) -> dict[str, Any] | None:
