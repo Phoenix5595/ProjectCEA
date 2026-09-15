@@ -6,33 +6,23 @@ import {
   applyControl,
   applyControlFresh,
   applyProjection,
-  flushHealthRecovered,
   lastControlTimestamp,
   projectionExpired,
 } from './monitoringStore.control'
 import { downgradeQuality, iso, mergeLive } from './monitoringStore.merge'
-import type { StoreData, StoreState } from './monitoringStore.types'
+import { controlTailStart, isSourceRetryEligible, pollingEligibility } from './monitoringStore.pollingPolicy'
+import type { LiveRequest, PollerHooks } from './monitoringStore.poller.types'
 
-const RECONCILE_MIN_INTERVAL_MS = 30_000
-
-export interface PollerHooks {
-  read: () => StoreState
-  applyData: (data: StoreData) => void
-  setFlags: (patch: Partial<StoreState>) => void
-  isActive: () => boolean
-  isPaused: () => boolean
-  now: () => Date
-}
-
-const CONTROL_WINDOW_MS = 120_000
-const SENSOR_HISTORY_REFRESH_INTERVAL_MS = 60_000
+export type { LiveRequest, PollerHooks } from './monitoringStore.poller.types'
 
 export class MonitoringLivePoller {
   private controlWindowInFlight = false
   private projectionInFlight = false
   private sensorHistoryInFlight = false
   private readonly liveInFlight = new Set<string>()
-  private lastReconcileAt = 0
+  private lastReconcileAt: Date | null = null
+  private lastProjectionAttemptAt: Date | null = null
+  private controlRecoveryNotBefore: Date | null = null
   private lastSensorHistoryRefreshAt: number
   private reconciling = false
 
@@ -46,34 +36,52 @@ export class MonitoringLivePoller {
 
   tick(): void {
     if (this.hooks.isPaused() || !this.hooks.isActive()) return
-    this.checkProjection()
     void this.pollSensors()
+    const eligibility = pollingEligibility(this.hooks.read().range)
+    if (!eligibility.projection && !eligibility.sensorHistory && !eligibility.controlTail) return
+    this.checkProjection()
     void this.refreshSensorHistory()
     void this.pollControlWindow()
   }
 
   private checkProjection(): void {
-    const data = this.hooks.read().data
-    if (!projectionExpired(data, this.hooks.now())) return
+    const state = this.hooks.read()
+    const data = state.data
+    const now = this.hooks.now()
+    const outcome = state.sourceOutcomes.projection
+    const failed = outcome?.status === 'failed'
+    if (!projectionExpired(data, now) && !failed) return
+    const lastAttemptAt = this.lastProjectionAttemptAt ?? (outcome?.status === 'failed' ? outcome.errorAt : null)
+    if (!isSourceRetryEligible('projection', now, lastAttemptAt)) return
+    const request = this.hooks.liveRequest()
+    if (request === null) return
     const current = data.anchorQuality ?? 'exact'
     const downgraded = downgradeQuality(current)
     if (downgraded !== data.anchorQuality) {
       this.hooks.applyData({ ...data, anchorQuality: downgraded })
     }
-    void this.reloadProjection()
+    void this.reloadProjection(request)
   }
 
-  private async reloadProjection(): Promise<void> {
+  private async reloadProjection(request: LiveRequest): Promise<void> {
     if (this.projectionInFlight || !this.hooks.isActive()) return
     this.projectionInFlight = true
     try {
       const resp = await this.monitoringApi.controlProjection(this.location)
-      if (!this.hooks.isActive() || this.hooks.isPaused()) return
+      if (!this.hooks.isLiveRequestCurrent(request)) return
       const { data, changed } = applyProjection(this.hooks.read().data, resp)
       if (changed) this.hooks.applyData(data)
+      this.hooks.applySourceSuccess('projection', this.hooks.now())
     } catch (err) {
+      if (!this.hooks.isLiveRequestCurrent(request)) return
+      this.hooks.applySourceFailure({
+        source: 'projection',
+        message: err instanceof Error ? err.message : String(err),
+        errorAt: this.hooks.now(),
+      })
       logger.warn('projection reload failed', err)
     } finally {
+      if (this.hooks.isLiveRequestCurrent(request)) this.lastProjectionAttemptAt = this.hooks.now()
       this.projectionInFlight = false
     }
   }
@@ -97,7 +105,9 @@ export class MonitoringLivePoller {
           const data = this.hooks.read().data
           this.hooks.applyData({ ...data, live: mergeLive(data.live, values) })
         })
-        .catch(() => {})
+        .catch((err: unknown) => {
+          if (this.hooks.isActive() && !this.hooks.isPaused()) logger.warn('live sensor poll failed', err)
+        })
         .finally(() => this.liveInFlight.delete(node))
     }
   }
@@ -107,11 +117,13 @@ export class MonitoringLivePoller {
     if (
       state.range.kind !== 'live' ||
       this.sensorHistoryInFlight ||
-      this.hooks.now().getTime() - this.lastSensorHistoryRefreshAt <= SENSOR_HISTORY_REFRESH_INTERVAL_MS
+      !isSourceRetryEligible('sensor-history', this.hooks.now(), new Date(this.lastSensorHistoryRefreshAt))
     ) {
       return
     }
     const requestedRange = state.range
+    const request = this.hooks.liveRequest()
+    if (request === null) return
     const now = this.hooks.now()
     const start = new Date(now.getTime() - requestedRange.duration)
     this.sensorHistoryInFlight = true
@@ -123,22 +135,21 @@ export class MonitoringLivePoller {
         iso(now),
         SENSOR_RANGE_MAX_POINTS,
       )
+      if (!this.hooks.isLiveRequestCurrent(request)) return
       const current = this.hooks.read()
-      if (
-        !this.hooks.isActive() ||
-        this.hooks.isPaused() ||
-        current.range.kind !== 'live' ||
-        current.range.duration !== requestedRange.duration
-      ) {
-        return
-      }
       this.hooks.applyData({
         ...current.data,
         series: response.series,
         statistics: response.statistics,
       })
-      this.hooks.setFlags({ errors: [], lastGoodRangeAt: now, rangeErrorAt: null })
+      this.hooks.applySourceSuccess('sensor-history', this.hooks.now())
     } catch (err) {
+      if (!this.hooks.isLiveRequestCurrent(request)) return
+      this.hooks.applySourceFailure({
+        source: 'sensor-history',
+        message: err instanceof Error ? err.message : String(err),
+        errorAt: this.hooks.now(),
+      })
       logger.warn('sensor history refresh failed', err)
     } finally {
       this.sensorHistoryInFlight = false
@@ -154,41 +165,58 @@ export class MonitoringLivePoller {
     ) {
       return
     }
+    const request = this.hooks.liveRequest()
+    if (request === null) return
     this.controlWindowInFlight = true
     this.hooks.setFlags({ tailLoading: true })
     try {
       const now = this.hooks.now()
       const last = lastControlTimestamp(this.hooks.read().data)
-      const start = last ? new Date(last.getTime() - 2000) : new Date(now.getTime() - CONTROL_WINDOW_MS)
+      const start = controlTailStart(now, last)
       const resp = await this.monitoringApi.controlTail(
         this.location,
         iso(start),
         iso(now),
       )
-      if (!this.hooks.isActive() || this.hooks.isPaused()) return
+      if (!this.hooks.isLiveRequestCurrent(request)) return
       const previous = this.hooks.read()
       if (previous.data.controlHistory) {
         this.hooks.applyData(applyControl(previous.data, resp))
       } else {
         this.hooks.applyData(applyControlFresh(previous.data, resp))
       }
-      if (flushHealthRecovered(previous.data, resp)) {
-        await this.reconcile()
+      if (previous.sourceOutcomes['control-history'].status === 'failed') {
+        if (previous.data.controlHistory === null && this.controlRecoveryNotBefore === null) {
+          this.controlRecoveryNotBefore = new Date(now.getTime() + 60_000)
+        }
+        await this.reconcile(request)
       }
     } catch (err) {
-      if (!this.hooks.isActive() || this.hooks.isPaused()) return
+      if (!this.hooks.isLiveRequestCurrent(request)) return
       logger.warn('control window failed, reconciling', err)
-      await this.reconcile()
+      this.hooks.applySourceFailure({
+        source: 'control-history',
+        message: err instanceof Error ? err.message : String(err),
+        errorAt: this.hooks.now(),
+      })
+      await this.reconcile(request)
     } finally {
       this.controlWindowInFlight = false
       this.hooks.setFlags({ tailLoading: false })
     }
   }
 
-  private async reconcile(): Promise<void> {
-    const nowMs = Date.now()
-    if (this.reconciling || nowMs - this.lastReconcileAt < RECONCILE_MIN_INTERVAL_MS) return
-    this.lastReconcileAt = nowMs
+  private async reconcile(request: LiveRequest): Promise<void> {
+    const now = this.hooks.now()
+    if (this.controlRecoveryNotBefore !== null && now < this.controlRecoveryNotBefore) return
+    const outcome = this.hooks.read().sourceOutcomes['control-history']
+    const lastAttemptAt = this.lastReconcileAt ?? (outcome?.status === 'failed' ? outcome.errorAt : null)
+    if (
+      !this.hooks.isLiveRequestCurrent(request) ||
+      this.reconciling ||
+      !isSourceRetryEligible('control-history', now, lastAttemptAt)
+    ) return
+    this.lastReconcileAt = now
     if (!this.hooks.isActive()) return
     this.reconciling = true
     this.hooks.setFlags({ reconciling: true })
@@ -200,9 +228,17 @@ export class MonitoringLivePoller {
         iso(end),
         CONTROL_HISTORY_MAX_POINTS,
       )
-      if (!this.hooks.isActive() || this.hooks.isPaused()) return
+      if (!this.hooks.isLiveRequestCurrent(request)) return
       this.hooks.applyData(applyControlFresh(this.hooks.read().data, resp))
+      this.hooks.applySourceSuccess('control-history', this.hooks.now())
+      this.controlRecoveryNotBefore = null
     } catch (err) {
+      if (!this.hooks.isLiveRequestCurrent(request)) return
+      this.hooks.applySourceFailure({
+        source: 'control-history',
+        message: err instanceof Error ? err.message : String(err),
+        errorAt: this.hooks.now(),
+      })
       logger.warn('reconciliation failed', err)
     } finally {
       this.reconciling = false
