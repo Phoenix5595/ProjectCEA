@@ -23,6 +23,7 @@ for (const width of WIDTHS) {
     await expect(page.getByText('READ ONLY')).toBeVisible()
     await expect(page.getByRole('heading', { name: 'Climate Periods' })).toBeVisible()
     await expect(page.getByTestId('control-timeline-handle-0-start')).toHaveCount(0)
+    await expect(page.getByTestId('calendar-transition-skipped-overlay')).toHaveCount(0)
 
     const firstStart = page.locator('input[placeholder="HH:MM"]').first()
     await expect(firstStart).toHaveValue('06:00')
@@ -40,9 +41,54 @@ for (const width of WIDTHS) {
       path: `.omo/evidence/projected-climate-timeline/browser/task-9/task-9-${width}.png`,
       fullPage: true,
     })
+    if (width === 1280) {
+      await page.screenshot({
+        path: '../../.omo/evidence/control-monitoring-correctness/T8/timeline.png',
+        fullPage: true,
+      })
+    }
 
     await page.getByRole('button', { name: 'Apply' }).click()
-    await expect(page.getByText('No review yet')).toBeVisible()
+    await expect(page.getByText('Reviewed draft 1')).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Apply' })).toBeDisabled()
+    expect(violations).toEqual([])
+  })
+}
+
+test('renders a skipped calendar transition over the saved reality in compact and expanded modes', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 1280, height: 900 })
+  await page.goto(fixtureUrl('/flower/control', testInfo, undefined, 'calendar-transition-skipped'))
+
+  const overlay = page.getByTestId('calendar-transition-skipped-overlay')
+  await expect(overlay).toBeVisible()
+  await expect(overlay).toHaveAttribute('aria-label', 'Calendar transition skipped: unknown_mode')
+  await expect(page.getByText('Day cycle')).toBeVisible()
+  await expect(page.getByText('Calendar transition skipped: unknown_mode')).toBeVisible()
+
+  await page.getByRole('button', { name: 'Expand editor' }).click()
+  await expect(page.getByText('EDITABLE')).toBeVisible()
+  await expect(overlay).toBeVisible()
+  await expect(page.getByTestId('control-timeline-handle-0-start')).toBeVisible()
+})
+
+for (const scenario of ['timeline-preview-failed', 'timeline-preview-stale', 'timeline-wrong-room'] as const) {
+  test(`rejects ${scenario} without an unsafe Apply call`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width: 1280, height: 900 })
+    const violations = trackViolations(page)
+    const applyRequests: string[] = []
+    page.on('request', (request) => {
+      if (new URL(request.url()).pathname.endsWith('/apply')) applyRequests.push(request.url())
+    })
+
+    await page.goto(fixtureUrl('/flower/control', testInfo, undefined, scenario))
+    await page.getByRole('button', { name: 'Expand editor' }).click()
+    await page.getByTestId('control-timeline-handle-0-start').focus()
+    await page.keyboard.press('ArrowRight')
+    await page.getByRole('button', { name: 'Review' }).click()
+
+    await expect(page.getByText('Review failed for draft 1')).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Apply' })).toBeDisabled()
+    expect(applyRequests).toEqual([])
     expect(violations).toEqual([])
   })
 }
@@ -81,4 +127,25 @@ test('keeps the primary climate periods table functional when the saved timeline
   await expect(firstStart).toHaveValue('06:15')
   await expect(page.getByRole('region', { name: 'Climate control timeline' })).toHaveCount(0)
   expect(violations).toEqual([])
+})
+
+test('surfaces timeline_unavailable while retaining the fallback periods UI', async ({ page }, testInfo) => {
+  const violations = trackViolations(page)
+
+  await page.goto(fixtureUrl('/flower/control', testInfo, undefined, 'timeline-unavailable-409'))
+
+  await expect(page.getByRole('table')).toBeVisible()
+  await expect(page.getByRole('region', { name: 'Climate control timeline' })).toHaveCount(0)
+  await expect(page.getByText('saved timeline unavailable (fixture)')).toBeVisible()
+  expect(violations).toEqual([])
+})
+
+test('uses the canonical mode instead of contradictory API is_constant flags', async ({ page }, testInfo) => {
+  await page.goto(fixtureUrl('/vegetation/control', testInfo, undefined, 'veg-constant-flag'))
+  await expect(page.getByRole('region', { name: 'Climate control timeline' })).toBeVisible()
+  await expect(page.getByText('READ ONLY')).toBeVisible()
+
+  await page.goto(fixtureUrl('/flower/control', testInfo, 'sleep', 'sleep-scheduled-flag'))
+  await expect(page.getByText('Constant mode - no timeline')).toBeVisible()
+  await expect(page.getByRole('region', { name: 'Climate control timeline' })).toHaveCount(0)
 })
