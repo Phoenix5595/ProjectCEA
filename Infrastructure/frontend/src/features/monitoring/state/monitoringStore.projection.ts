@@ -9,6 +9,7 @@ import type {
   RichTrajectoryEnvelope,
   TrajectorySegment,
 } from '../api'
+import { knownRooms } from '../../../config/clusterTopology'
 
 export interface ProjectionTimeline {
   readonly history: ControlMonitoringResponse | null
@@ -26,6 +27,10 @@ const CLIMATE_SERIES = new Map<string, { readonly name: string; readonly metric:
   ['climate.vpd_setpoint_target', { name: 'VPD Setpoint', metric: 'vpd_setpoint' }],
   ['climate.co2_setpoint_target', { name: 'CO2 Setpoint', metric: 'co2_setpoint' }],
 ])
+
+export class ProjectionAuthorityError extends Error {
+  constructor(detail: string) { super(`projection authority mismatch: ${detail}`); this.name = 'ProjectionAuthorityError' }
+}
 
 export function projectionTimeline(publication: ProjectionPublicationResponse): ProjectionTimeline {
   if (publication.trajectory?.revision_scope === 'saved') {
@@ -73,10 +78,16 @@ export function projectionTimeline(publication: ProjectionPublicationResponse): 
 }
 
 function richProjectionTimeline(trajectory: RichTrajectoryEnvelope): ProjectionTimeline {
+  validateRichTrajectory(trajectory)
   const climate = new Map<string, ClimateTimelineSeries>()
   const lights = new Map<string, LightTimelineSeries>()
+  const photoperiod: PhotoperiodTimelinePoint[] = []
   const warnings = trajectory.warnings.map(({ code, detail }) => ({ code, detail }))
-  for (const segment of trajectory.segments) {
+  for (const segment of deduplicateRichSegments(trajectory.segments)) {
+    if (segment.metric === 'light.photoperiod') {
+      appendRichPhotoperiod(segment, photoperiod)
+      continue
+    }
     const key = `${segment.metric}:${segment.trajectory_kind}`
     const name = `${displayMetric(segment.metric)} (${segment.trajectory_kind})`
     if (segment.metric.startsWith('light')) {
@@ -93,6 +104,7 @@ function richProjectionTimeline(trajectory: RichTrajectoryEnvelope): ProjectionT
   for (const series of [...climate.values(), ...lights.values()]) {
     series.steps.push({ timestamp: validUntil, value: null, provenance: { ...PROJECTED, quality: 'unavailable' } })
   }
+  if (photoperiod.length > 0) photoperiod.push({ timestamp: validUntil, phase: 'UNKNOWN', provenance: PROJECTED })
   return {
     history: {
       range: { start: trajectory.window.start, end: validUntil },
@@ -103,13 +115,53 @@ function richProjectionTimeline(trajectory: RichTrajectoryEnvelope): ProjectionT
       lights: [...lights.values()],
       devices: [],
       pid: [],
-      photoperiod: [],
+      photoperiod,
     },
     quality: 'estimated',
     revision: trajectory.base_config_revision,
     version: null,
     validUntil,
   }
+}
+
+function validateRichTrajectory(trajectory: RichTrajectoryEnvelope): void {
+  if (!knownRooms().includes(trajectory.room)) throw new ProjectionAuthorityError(`unknown room ${trajectory.room}`)
+  for (const segment of trajectory.segments) {
+    if (segment.source.config_revision !== trajectory.base_config_revision) throw new ProjectionAuthorityError('segment configuration revision differs from the envelope')
+    if (segment.source.draft_revision !== trajectory.draft_revision) throw new ProjectionAuthorityError('segment draft revision differs from the envelope')
+    if (segment.start < trajectory.window.start || segment.end > trajectory.window.end || segment.end <= segment.start) throw new ProjectionAuthorityError('segment interval lies outside the envelope window')
+  }
+}
+
+function deduplicateRichSegments(segments: RichTrajectoryEnvelope['segments']): RichTrajectoryEnvelope['segments'] {
+  const duplicateEffective = new Set<number>()
+  const metrics = new Set(segments.map((segment) => segment.metric))
+  for (const metric of metrics) {
+    const scheduled = segments.filter((segment) => segment.metric === metric && segment.trajectory_kind === 'scheduled')
+    const effective = segments.filter((segment) => segment.metric === metric && segment.trajectory_kind === 'effective')
+    if (scheduled.length === 0 || scheduled.length !== effective.length || !scheduled.every((segment, index) => sameTrajectorySegment(segment, effective[index]))) continue
+    segments.forEach((segment, index) => { if (segment.metric === metric && segment.trajectory_kind === 'effective') duplicateEffective.add(index) })
+  }
+  return segments.filter((_segment, index) => !duplicateEffective.has(index))
+}
+
+function sameTrajectorySegment(left: RichTrajectoryEnvelope['segments'][number], right: RichTrajectoryEnvelope['segments'][number] | undefined): boolean {
+  if (right === undefined || left.shape !== right.shape) return false
+  if (left.start.getTime() !== right.start.getTime() || left.end.getTime() !== right.end.getTime() || left.metric !== right.metric || left.unit !== right.unit || left.quality !== right.quality) return false
+  const leftSource = left.source
+  const rightSource = right.source
+  if (leftSource.mode !== rightSource.mode || leftSource.submode !== rightSource.submode || leftSource.config_revision !== rightSource.config_revision || leftSource.draft_revision !== rightSource.draft_revision || leftSource.period.period_id !== rightSource.period.period_id || leftSource.period.label !== rightSource.period.label) return false
+  if (left.shape === 'step' && right.shape === 'step') return left.value === right.value
+  if (left.shape === 'linear' && right.shape === 'linear') {
+    return left.start_value === right.start_value && left.end_value === right.end_value
+  }
+  return left.shape === 'unavailable' && right.shape === 'unavailable' && left.reason === right.reason
+}
+
+function appendRichPhotoperiod(segment: TrajectorySegment, photoperiod: PhotoperiodTimelinePoint[]): void {
+  if (segment.shape === 'linear') return
+  const phase = segment.shape === 'unavailable' ? 'UNKNOWN' : segment.value === 1 ? 'SUN' : 'MOON'
+  photoperiod.push({ timestamp: segment.start, phase, provenance: { ...PROJECTED, quality: segment.quality } })
 }
 
 function appendRichSegment(

@@ -6,7 +6,13 @@ from typing import Final
 
 from app.repositories.climate_timeline_snapshot import ClimateSchedule, ClimateScheduleSnapshot
 from app.repositories.monitoring_snapshot_types import FrozenRow
-from app.schemas.climate_timeline import PeriodIdentity, SegmentSource, UtcWindow
+from app.schemas.climate_timeline import (
+    PeriodIdentity,
+    RichTrajectoryEnvelope,
+    SegmentSource,
+    TimelineWarning,
+    UtcWindow,
+)
 from app.services.climate_trajectory import (
     ClimatePeriodTrajectory,
     MetricTarget,
@@ -22,7 +28,9 @@ _METRICS: Final = (
 )
 
 
-def project_saved_trajectory(snapshot: ClimateScheduleSnapshot, room: str, config_revision: str):
+def project_saved_trajectory(
+    snapshot: ClimateScheduleSnapshot, room: str, config_revision: str
+) -> RichTrajectoryEnvelope | None:
     periods = tuple(
         period
         for schedule_slice in snapshot.slices
@@ -33,7 +41,7 @@ def project_saved_trajectory(snapshot: ClimateScheduleSnapshot, room: str, confi
     )
     if not periods:
         return None
-    return project_trajectories(
+    trajectory = project_trajectories(
         TrajectoryRequest(
             window=UtcWindow(
                 start=snapshot.window.start,
@@ -44,6 +52,12 @@ def project_saved_trajectory(snapshot: ClimateScheduleSnapshot, room: str, confi
             room=room,
         )
     )
+    warnings = tuple(
+        TimelineWarning(code="calendar.transition_skipped", detail=schedule_slice.warning)
+        for schedule_slice in snapshot.slices
+        if schedule_slice.warning is not None
+    )
+    return trajectory.model_copy(update={"warnings": warnings})
 
 
 def _slice_periods(

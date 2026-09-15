@@ -17,6 +17,7 @@ import type {
 } from '../../api'
 import type { MonitoringRange } from '../../state'
 import { alignSeries } from '../alignSeries'
+import { mergeControlSeries } from '../alignSeries.control'
 import type { AlignInput } from '../alignSeries.types'
 
 const START = new Date('2026-08-02T11:00:00.000Z')
@@ -339,6 +340,31 @@ describe('alignSeries', () => {
     const idx = out.x.indexOf(t.getTime())
     const step = out.series.find((s) => s.metric === 'heating_setpoint' && s.role === 'step')
     expect(step?.y[idx]).toBe(22)
+  })
+
+  it('continues a recorded setpoint into the projected scheduled trajectory', () => {
+    const recorded = controlResponse([climateSeries([
+      { timestamp: START, value: 22 },
+      { timestamp: NOW, value: 23 },
+    ])])
+    const scheduled = {
+      ...climateSeries([]),
+      trajectory_kind: 'scheduled' as const,
+      linear: [{
+        start: NOW,
+        end: END,
+        start_value: 23,
+        end_value: 25,
+        provenance: { origin: 'projected' as const, quality: 'estimated' as const, is_aggregated: false },
+      }],
+    }
+
+    const merged = mergeControlSeries(recorded, controlResponse([scheduled]))
+
+    expect(merged).toHaveLength(1)
+    expect(merged[0]?.trajectoryKind).toBe('scheduled')
+    expect(merged[0]?.steps.map((step) => step.value)).toEqual([22, 23])
+    expect(merged[0]?.linear[0]?.startValue).toBe(23)
   })
 
   it('normalizes device state, duty, and PID output as explicit semantic series', () => {
