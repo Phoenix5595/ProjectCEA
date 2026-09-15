@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 
 import { apiClient } from '../services/api';
+import { extractErrorMessage } from '../utils/errors';
 
 export default function CalendarSettings() {
   const [connection, setConnection] = useState<Record<string, unknown> | null>(null);
@@ -11,10 +12,29 @@ export default function CalendarSettings() {
   const [targetCalendarUrl, setTargetCalendarUrl] = useState('');
   const [calendars, setCalendars] = useState<Array<{ name: string; url: string }>>([]);
   const [syncing, setSyncing] = useState(false);
+  const [flowerCalendarTransitionsEnabled, setFlowerCalendarTransitionsEnabled] = useState(true);
+  const [savingFlowerCalendarTransitions, setSavingFlowerCalendarTransitions] = useState(false);
 
   useEffect(() => {
     void apiClient.getCalendarSyncConnection().then(setConnection).catch(() => setConnection(null));
+    void apiClient
+      .getFlowerCalendarModeTransitions()
+      .then((setting) => setFlowerCalendarTransitionsEnabled(setting.enabled))
+      .catch((error) => toast.error(extractErrorMessage(error, 'Failed to load Flower calendar control')));
   }, []);
+
+  const handleFlowerCalendarTransitionChange = async (enabled: boolean) => {
+    setSavingFlowerCalendarTransitions(true);
+    try {
+      const setting = await apiClient.updateFlowerCalendarModeTransitions(enabled);
+      setFlowerCalendarTransitionsEnabled(setting.enabled);
+      toast.success(`Flower calendar mode transitions ${setting.enabled ? 'enabled' : 'disabled'}`);
+    } catch (error) {
+      toast.error(extractErrorMessage(error, 'Failed to save Flower calendar control'));
+    } finally {
+      setSavingFlowerCalendarTransitions(false);
+    }
+  };
 
   const handleTest = async () => {
     try {
@@ -60,6 +80,22 @@ export default function CalendarSettings() {
   return (
     <div className="p-6 max-w-xl">
       <h1 className="text-2xl font-bold text-text-default mb-4">Calendar sync (Nextcloud)</h1>
+      <div className="mb-4 flex items-center justify-between gap-3 text-sm text-text-default">
+        <div>
+          <p className="font-medium">Flower calendar mode transitions</p>
+          <p className="text-text-secondary">Let the Flower grow calendar change the active mode.</p>
+        </div>
+        <label className="flex items-center gap-2">
+          <span>{flowerCalendarTransitionsEnabled ? 'Enabled' : 'Disabled'}</span>
+          <input
+            aria-label="Flower calendar mode transitions"
+            type="checkbox"
+            checked={flowerCalendarTransitionsEnabled}
+            disabled={savingFlowerCalendarTransitions}
+            onChange={(event) => void handleFlowerCalendarTransitionChange(event.target.checked)}
+          />
+        </label>
+      </div>
       {connection && (
         <p className="text-sm text-text-secondary mb-4">
           Connected: {String(connection.display_name ?? connection.account_email ?? 'Nextcloud')}

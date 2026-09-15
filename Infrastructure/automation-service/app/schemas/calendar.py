@@ -49,6 +49,10 @@ class FlowerGrowPlanRequest(BaseModel):
     auto_mode_transition: bool = True
 
 
+class FlowerCalendarModeTransitionUpdate(BaseModel):
+    enabled: bool
+
+
 class SyncConnectionCreate(BaseModel):
     display_name: str | None = None
     account_email: str | None = None
