@@ -6,7 +6,6 @@ from datetime import datetime
 from typing import Any
 
 from app.control.decision_event_policy import DecisionEventPolicy, DecisionObservation
-from app.events.operational_ports import OperationalEventSink
 from shared.infra_logging import get_logger
 
 logger = get_logger(__name__)
@@ -19,7 +18,7 @@ class RulesEngine:
         self,
         rules: list[dict[str, Any]],
         scheduler,
-        event_sink: OperationalEventSink | None = None,
+        event_policy: DecisionEventPolicy,
     ):
         """Initialize rules engine.
 
@@ -29,7 +28,7 @@ class RulesEngine:
         """
         self.rules = rules
         self.scheduler = scheduler
-        self._event_policy = DecisionEventPolicy(event_sink)
+        self._event_policy = event_policy
         logger.info(f"Initialized rules engine with {len(rules)} rules")
 
     def evaluate(

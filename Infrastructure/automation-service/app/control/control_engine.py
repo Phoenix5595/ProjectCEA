@@ -72,6 +72,7 @@ class ControlEngine:
         scheduler: Scheduler,
         rules_engine: RulesEngine,
         runtime_device_registry: RuntimeDeviceRegistry,
+        event_policy: DecisionEventPolicy,
         relay_board_state_manager: RelayBoardStateManager | None = None,
         alarm_manager: AlarmManager | None = None,
         dfr0971_manager: Any | None = None,  # DFR0971Manager (avoid circular import)
@@ -103,20 +104,19 @@ class ControlEngine:
         self.device_command_service = device_command_service
         self.photoperiod_observation_sink = photoperiod_observation_sink
         self.control_tick_observer = control_tick_observer
+        self.decision_event_policy = event_policy
         self._current_observer_failures = 0
 
         # Initialize extracted components
         self.sensor_data_manager = SensorDataManager(database)
-        self.pid_controller_manager = PIDControllerManager(
-            database, event_policy=DecisionEventPolicy(event_sink)
-        )
+        self.pid_controller_manager = PIDControllerManager(database, event_policy=event_policy)
         control_cfg = config.get_control_config() if config is not None else {}
         self.device_controller = DeviceController(
-            relay_manager,
-            database,
-            dfr0971_manager,
+            relay_manager=relay_manager,
+            database_manager=database,
+            event_policy=event_policy,
+            dfr0971_manager=dfr0971_manager,
             binary_hysteresis=float(control_cfg.get("binary_hysteresis", 0.1)),
-            event_sink=event_sink,
         )
 
         # VPD Cascade Controller for intelligent actuator selection (create before DeviceProcessor)

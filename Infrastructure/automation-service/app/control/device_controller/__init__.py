@@ -7,7 +7,6 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 from app.control.decision_event_policy import DecisionEventPolicy, DecisionObservation
-from app.events.operational_ports import OperationalEventSink
 from shared.infra_logging import LoggingContext, get_logger
 
 from .binary_device import BinaryDeviceMixin
@@ -38,9 +37,9 @@ class DeviceController(
         self,
         relay_manager: RelayManager,
         database_manager: DatabaseManager,
+        event_policy: DecisionEventPolicy,
         dfr0971_manager: DFR0971Manager | None = None,
         binary_hysteresis: float = 0.1,
-        event_sink: OperationalEventSink | None = None,
     ) -> None:
         """Initialize device controller.
 
@@ -65,7 +64,8 @@ class DeviceController(
         # decide ON/OFF transitions under hysteresis. Missing key => uninitialized
         # (treated as OFF when applying the band).
         self._last_binary_state: dict[tuple[str, str, str], int] = {}
-        self._event_policy = DecisionEventPolicy(event_sink)
+        self._manual_mode_reported: set[tuple[str, str, str, int | None]] = set()
+        self._event_policy = event_policy
 
     async def process_device(
         self,
@@ -100,24 +100,33 @@ class DeviceController(
             if control_mode == "manual":
                 # Skip automated control for manual devices
                 logger.info(f"Skipping {device_name} ({location}/{cluster}) - manual mode")
-                self._event_policy.emit_lifecycle(
-                    DecisionObservation(
-                        location,
-                        cluster,
-                        device_name,
-                        current_time,
-                        "device",
-                        None,
-                        None,
-                        None,
-                        None,
-                        control_mode,
-                        "control.manual_mode",
-                        "Manual control mode selected",
-                    ),
-                    "control.mode_changed",
-                )
+                device_id = device_info.get("device_id")
+                identity = device_id if isinstance(device_id, int) else None
+                key = (location, cluster, device_name, identity)
+                if key not in self._manual_mode_reported:
+                    self._event_policy.emit_lifecycle(
+                        DecisionObservation(
+                            location,
+                            cluster,
+                            device_name,
+                            current_time,
+                            "device",
+                            None,
+                            None,
+                            None,
+                            None,
+                            control_mode,
+                            "control.manual_mode",
+                            "Manual control mode selected",
+                        ),
+                        "control.mode_changed",
+                    )
+                    self._manual_mode_reported.add(key)
                 return
+
+            device_id = device_info.get("device_id")
+            identity = device_id if isinstance(device_id, int) else None
+            self._manual_mode_reported.discard((location, cluster, device_name, identity))
 
             # Calculate control output
             control_output = await self._calculate_control_output(
