@@ -125,19 +125,29 @@ function timelinePeriods(): unknown[] {
   ]
 }
 
-function timelineEnvelope(room: string, scope: 'saved' | 'draft'): unknown {
+type TimelineEnvelopeOptions = {
+  readonly baseConfigRevision?: string
+  readonly draftRevision?: string | null
+  readonly window?: { readonly start: string; readonly end: string; readonly timezone: string }
+  readonly warnings?: readonly Record<string, string>[]
+}
+
+function timelineEnvelope(room: string, scope: 'saved' | 'draft', options: TimelineEnvelopeOptions = {}): unknown {
+  const baseConfigRevision = options.baseConfigRevision ?? '0000009'
+  const draftRevision = scope === 'saved' ? null : options.draftRevision ?? '1'
+  const window = options.window ?? {
+    start: '2026-08-02T00:00:00.000Z',
+    end: '2026-08-03T00:00:00.000Z',
+    timezone: 'UTC',
+  }
   return {
     contract_version: 1,
     room,
     generated_at: '2026-08-02T12:00:00.000Z',
-    window: {
-      start: '2026-08-02T00:00:00.000Z',
-      end: '2026-08-03T00:00:00.000Z',
-      timezone: 'UTC',
-    },
+    window,
     revision_scope: scope,
-    base_config_revision: '0000009',
-    draft_revision: scope === 'saved' ? null : '1',
+    base_config_revision: baseConfigRevision,
+    draft_revision: draftRevision,
     segments: [
       {
         shape: 'step',
@@ -152,17 +162,17 @@ function timelineEnvelope(room: string, scope: 'saved' | 'draft'): unknown {
           mode: '1',
           submode: null,
           period: { period_id: '17', label: 'Day cycle' },
-          config_revision: '0000009',
-          draft_revision: scope === 'saved' ? null : '1',
+           config_revision: baseConfigRevision,
+           draft_revision: draftRevision,
         },
       },
     ],
     assumptions: ['Fixture trajectory is a saved schedule authority.'],
-    warnings: [],
+    warnings: options.warnings ?? [],
   }
 }
 
-function timelineFixture(req: { url?: string; method?: string; body?: string }): unknown {
+function timelineFixture(req: { url?: string; method?: string; body?: string }, scenario: string | null): unknown {
   const room = (req.url ?? '').includes('Veg%20Room') || (req.url ?? '').includes('Veg Room') ? 'Veg Room' : 'Flower Room'
   const periods = timelinePeriods()
   const photoperiod = {
@@ -171,17 +181,39 @@ function timelineFixture(req: { url?: string; method?: string; body?: string }):
     ramp_up_minutes: 20,
     ramp_down_minutes: 20,
   }
+  const warnings = scenario === 'calendar-transition-skipped'
+    ? [{
+        code: 'calendar.transition_skipped',
+        detail: 'Calendar destination flower/bulk was skipped',
+        reason: 'unknown_mode',
+        start: '2026-08-02T06:00:00.000Z',
+        end: '2026-08-02T12:00:00.000Z',
+      }]
+    : []
   if (req.method === 'POST' && (req.url ?? '').endsWith('/preview')) {
     const request = JSON.parse(req.body ?? '{}') as {
       request_id?: string
       expected_config_revision?: string
       draft_revision?: number
+      window?: { start: string; end: string; timezone: string }
     }
+    const previewRevision = scenario === 'timeline-preview-stale'
+      ? 'stale-config-revision'
+      : request.expected_config_revision ?? '0000009'
+    const previewDraftRevision = scenario === 'timeline-preview-stale'
+      ? String((request.draft_revision ?? 1) + 1)
+      : String(request.draft_revision ?? 1)
+    const previewRoom = scenario === 'timeline-wrong-room' ? 'Veg Room' : room
     return {
       request_id: request.request_id ?? 'fixture-request',
       expected_config_revision: request.expected_config_revision ?? '0000009',
       draft_revision: request.draft_revision ?? 1,
-      trajectory: timelineEnvelope(room, 'draft'),
+      trajectory: timelineEnvelope(previewRoom, 'draft', {
+        baseConfigRevision: previewRevision,
+        draftRevision: previewDraftRevision,
+        warnings,
+        ...(request.window === undefined ? {} : { window: request.window }),
+      }),
     }
   }
   if (req.method === 'POST' && (req.url ?? '').endsWith('/apply')) {
@@ -200,7 +232,7 @@ function timelineFixture(req: { url?: string; method?: string; body?: string }):
     submode_id: null,
     periods,
     photoperiod,
-    trajectory: timelineEnvelope(room, 'saved'),
+    trajectory: timelineEnvelope(room, 'saved', { warnings }),
   }
 }
 
@@ -232,7 +264,8 @@ const FIXTURE_ROUTES: FixtureRoute[] = [
     re: /^\/api\/monitoring\/control\/([^/]+)\/projection$/,
     handler: (req, scenario) => {
       const start = new Date().toISOString()
-      const end = new Date(Date.now() + 60 * 60 * 1000).toISOString()
+      const duration = scenario === 'nullable-projection' ? 30 * 60 * 1000 : 60 * 60 * 1000
+      const end = new Date(Date.now() + duration).toISOString()
       return controlProjectionFixture(roomFrom(req.url ?? '', 3), start, end, scenario)
     },
   },
@@ -264,13 +297,15 @@ const FIXTURE_ROUTES: FixtureRoute[] = [
   },
   {
     re: /^\/api\/room-modes\/room\/[^/]+\/[^/]+$/,
-    handler: (req) => ({
+    handler: (req, scenario) => ({
       location: (req.url ?? '').includes('Veg%20Room') ? 'Veg Room' : 'Flower Room',
       cluster: 'main',
-      mode_name: (req.url ?? '').includes('Veg%20Room') ? 'veg' : 'flower',
+      mode_name: scenario === 'sleep-scheduled-flag'
+        ? 'sleep'
+        : (req.url ?? '').includes('Veg%20Room') ? 'veg' : 'flower',
       mode_id: 1,
       submode_id: null,
-      is_constant: false,
+      is_constant: scenario === 'veg-constant-flag',
       parameters: {
         day_start_time: '06:00',
         night_start_time: '18:00',
@@ -287,7 +322,7 @@ const FIXTURE_ROUTES: FixtureRoute[] = [
   },
   {
     re: /^\/api\/climate-timeline\/[^/]+\/[^/]+(?:\/preview|\/apply)?$/,
-    handler: (req) => timelineFixture(req),
+    handler: (req, scenario) => timelineFixture(req, scenario),
   },
   {
     re: /^\/api\/devices$/,
@@ -417,14 +452,29 @@ const FIXTURE_ROUTES: FixtureRoute[] = [
       registry_version: 1,
       stale_since: null,
       dfr_boards: [],
-      relays: [
-        { board: 0, channel: 1, state: 1, device_name: 'exhaust-fan', location: 'Flower Room', cluster: 'main' },
-        { board: 0, channel: 2, state: 1, device_name: 'circulation-fan', location: 'Flower Room', cluster: 'main' },
-        { board: 0, channel: 3, state: 1, device_name: 'circulation-fan', location: 'Veg Room', cluster: 'main' },
-        { board: 0, channel: 4, state: 0, device_name: 'heater-1', location: 'Lab', cluster: 'main' },
-      ],
+      relays: Array.from({ length: 16 }, (_, channel) => ({
+        alarm: null,
+        assignment: null,
+        changed_at: null,
+        channel,
+        command_expires_at: null,
+        command_mode: 'scheduled',
+        desired_state: null,
+        last_command_succeeded: null,
+        observed_state: false,
+        physical_relay: channel + 1,
+        pin_label: `GPA${channel}`,
+        prior_command_mode: null,
+        recovery_pending: false,
+        stale: false,
+        syncing: false,
+      })),
       hardware_alarms: [],
     }),
+  },
+  {
+    re: /^\/api\/devices\/registry$/,
+    handler: () => [],
   },
 ]
 
@@ -485,7 +535,7 @@ function monitoringPreviewPlugin(): Plugin {
           const key = `backend-down:${fixtureSession}`
           const count = scenarioCounters.get(key) ?? 0
           scenarioCounters.set(key, count + 1)
-          if (count < 3) {
+          if (count < 2) {
             res.statusCode = 503
             res.setHeader('Content-Type', 'application/json')
             res.end(JSON.stringify({ detail: 'backend down (fixture)' }))
@@ -509,17 +559,60 @@ function monitoringPreviewPlugin(): Plugin {
           res.end(JSON.stringify({ detail: 'saved timeline unavailable (fixture)' }))
           return
         }
+        if (scenario === 'timeline-unavailable-409' && req.method === 'GET' && /^\/api\/climate-timeline\//.test(pathname)) {
+          res.statusCode = 409
+          res.setHeader('Content-Type', 'application/json')
+          res.end(JSON.stringify({ detail: { code: 'timeline_unavailable', detail: 'saved timeline unavailable (fixture)' } }))
+          return
+        }
+        if (scenario === 'timeline-preview-failed' && req.method === 'POST' && pathname.endsWith('/preview')) {
+          res.statusCode = 503
+          res.setHeader('Content-Type', 'application/json')
+          res.end(JSON.stringify({ detail: 'preview unavailable (fixture)' }))
+          return
+        }
         if (scenario === 'force-error' && isSensorPath(pathname)) {
           res.statusCode = 503
           res.setHeader('Content-Type', 'application/json')
           res.end(JSON.stringify({ detail: 'forced monitoring error (fixture)' }))
           return
         }
+        if (scenario === 'control-history-transient' && pathname.endsWith('/history')) {
+          const key = counterKey('control-history-transient')
+          const count = scenarioCounters.get(key) ?? 0
+          scenarioCounters.set(key, count + 1)
+          if (count < 2) {
+            res.statusCode = 503
+            res.setHeader('Content-Type', 'application/json')
+            res.end(JSON.stringify({ detail: 'control history unavailable (fixture)' }))
+            return
+          }
+        }
+        if (scenario === 'control-history-persistent' && pathname.endsWith('/history')) {
+          res.statusCode = 503
+          res.setHeader('Content-Type', 'application/json')
+          res.end(JSON.stringify({ detail: 'control history persistently unavailable (fixture)' }))
+          return
+        }
+        if (scenario === 'fixed-range-retry' && pathname.endsWith('/history')) {
+          const { start } = parseRange(req.url ?? '')
+          if (start === '2026-08-02T16:00:00.000Z') {
+            const key = counterKey('fixed-range-retry')
+            const count = scenarioCounters.get(key) ?? 0
+            scenarioCounters.set(key, count + 1)
+            if (count === 0) {
+              res.statusCode = 503
+              res.setHeader('Content-Type', 'application/json')
+              res.end(JSON.stringify({ detail: 'fixed control history unavailable (fixture)' }))
+              return
+            }
+          }
+        }
         if (scenario === 'range-503-after-good' && /^\/api\/sensors\/monitoring\/range\//.test(pathname)) {
           const key = counterKey('range-503-after-good')
           const count = scenarioCounters.get(key) ?? 0
           scenarioCounters.set(key, count + 1)
-          if (count === 2 || count === 3) {
+          if (count === 1) {
             res.statusCode = 503
             res.setHeader('Content-Type', 'application/json')
             res.end(JSON.stringify({ detail: 'range unavailable (fixture)' }))

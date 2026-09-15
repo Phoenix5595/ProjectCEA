@@ -26,6 +26,69 @@ function trackViolations(page: import('@playwright/test').Page): string[] {
   return violations
 }
 
+async function temperatureScale(page: import('@playwright/test').Page): Promise<{
+  readonly observedMin: number
+  readonly observedMax: number
+  readonly scaleMin: number
+  readonly scaleMax: number
+} | null> {
+  return page.evaluate(() => {
+    const isObject = (value: unknown): value is object =>
+      typeof value === 'object' && value !== null
+    const get = (value: object, key: PropertyKey): unknown => Reflect.get(value, key)
+    const frame = document.querySelector('.mon-chart__frame')
+    if (frame === null) return null
+
+    const fiberKey = Object.keys(frame).find(key => key.startsWith('__reactFiber'))
+    let fiber: unknown = fiberKey === undefined ? null : get(frame, fiberKey)
+    while (isObject(fiber) && get(fiber, 'tag') !== 11) fiber = get(fiber, 'return')
+    if (!isObject(fiber)) return null
+
+    let plot: object | null = null
+    let hook: unknown = get(fiber, 'memoizedState')
+    while (isObject(hook)) {
+      const hookValue = get(hook, 'memoizedState')
+      if (isObject(hookValue)) {
+        const current = get(hookValue, 'current')
+        if (isObject(current) && isObject(get(current, 'scales'))) {
+          plot = current
+          break
+        }
+      }
+      hook = get(hook, 'next')
+    }
+    if (plot === null) return null
+
+    const scales = get(plot, 'scales')
+    const temperature = isObject(scales) ? get(scales, 'temperature') : null
+    const scaleMin = isObject(temperature) ? get(temperature, 'min') : null
+    const scaleMax = isObject(temperature) ? get(temperature, 'max') : null
+    const series = get(plot, 'series')
+    const data = get(plot, 'data')
+    if (!isObject(temperature) || typeof scaleMin !== 'number' || typeof scaleMax !== 'number')
+      return null
+    if (!Array.isArray(series) || !Array.isArray(data)) return null
+
+    const values: number[] = []
+    series.forEach((entry, index) => {
+      if (!isObject(entry) || index === 0 || get(entry, 'scale') !== 'temperature') return
+      const points = data[index]
+      if (!Array.isArray(points)) return
+      points.forEach(value => {
+        if (typeof value === 'number' && Number.isFinite(value)) values.push(value)
+      })
+    })
+    if (values.length === 0) return null
+
+    return {
+      observedMin: values.reduce((min, value) => Math.min(min, value), Infinity),
+      observedMax: values.reduce((max, value) => Math.max(max, value), -Infinity),
+      scaleMin,
+      scaleMax,
+    }
+  })
+}
+
 for (const width of WIDTHS) {
   test(`flower monitoring renders natively at ${width}px`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width, height: 800 })
@@ -51,6 +114,30 @@ for (const width of WIDTHS) {
     expect(violations).toEqual([])
   })
 }
+
+test('renders temperature headroom around extreme fixture values', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 1280, height: 800 })
+  const violations = trackViolations(page)
+
+  await page.goto(fixtureUrl('/flower/monitoring', testInfo, undefined, 'extreme-y'))
+  await expect(page.getByRole('heading', { name: 'Flower climate conditions' })).toBeVisible()
+  await expect
+    .poll(async () => {
+      const result = await temperatureScale(page)
+      return result !== null && result.observedMin < 10 && result.observedMax > 35
+    })
+    .toBe(true)
+
+  const result = await temperatureScale(page)
+  expect(result).not.toBeNull()
+  if (result === null) throw new Error('temperature uPlot scale was not mounted')
+
+  expect(result.observedMin).toBeLessThan(10)
+  expect(result.observedMax).toBeGreaterThan(35)
+  expect(result.scaleMin).toBeLessThan(result.observedMin)
+  expect(result.scaleMax).toBeGreaterThan(result.observedMax)
+  expect(violations).toEqual([])
+})
 
 test('keeps Back and history when Front/projection fail', async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 1280, height: 800 })

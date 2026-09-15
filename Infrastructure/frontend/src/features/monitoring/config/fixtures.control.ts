@@ -15,6 +15,7 @@ function provenance(origin: string, quality: string) {
 function climateSeries(name: string, metric: string, start: string, end: string, value: number) {
   return {
     name,
+    metric,
     provenance: provenance('recorded', 'exact'),
     projection: null,
     warnings: [],
@@ -146,7 +147,7 @@ export function controlProjectionFixture(
   if (partial || missing) return { quality: 'unavailable', value: [] }
 
   const midpoint = new Date((new Date(start).getTime() + new Date(end).getTime()) / 2).toISOString()
-  const projectionInterval = (from: string, until: string, values: number[]) => ({
+  const projectionInterval = (from: string, until: string, values: Array<number | null>) => ({
     version: { contract_version: 1, config_version: 7, revision: 'f1c7a11' },
     generated_at: T0,
     valid_from: from,
@@ -160,8 +161,15 @@ export function controlProjectionFixture(
     })),
   })
 
+  const secondIntervalValues = scenario === 'nullable-projection'
+    ? [24, null, 1.0, 850]
+    : [24, 26, 1.0, 850]
+
   return {
     quality: 'estimated',
-    value: [projectionInterval(start, midpoint, [22, 27, 1.2, 900]), projectionInterval(midpoint, end, [24, 26, 1.0, 850])],
+    value: [
+      projectionInterval(start, midpoint, [22, 27, 1.2, 900]),
+      projectionInterval(midpoint, end, secondIntervalValues),
+    ],
   }
 }

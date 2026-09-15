@@ -11,15 +11,31 @@ import { test, expect } from '@playwright/test'
 import { describeViolation } from '../../src/features/monitoring/config/originGuard'
 import { fixtureUrl } from './fixtureUrl'
 
-function trackViolations(page: import('@playwright/test').Page): string[] {
+interface RequestEvidence {
+  readonly requests: string[]
+  readonly violations: string[]
+  readonly consoleErrors: string[]
+}
+
+function trackRequests(page: import('@playwright/test').Page): RequestEvidence {
+  const requests: string[] = []
   const violations: string[] = []
+  const consoleErrors: string[] = []
   page.on('request', (req) => {
     const url = req.url()
+    requests.push(url)
     if (url.includes('/grafana/')) violations.push(`grafana: ${url}`)
     const violation = describeViolation(url)
     if (violation !== null) violations.push(`${violation}: ${url}`)
   })
-  return violations
+  page.on('console', (message) => {
+    if (message.type() === 'error') consoleErrors.push(message.text())
+  })
+  return { requests, violations, consoleErrors }
+}
+
+function trackViolations(page: import('@playwright/test').Page): string[] {
+  return trackRequests(page).violations
 }
 
 async function assertPanelsRender(page: import('@playwright/test').Page): Promise<void> {
@@ -35,40 +51,52 @@ async function assertPanelsRender(page: import('@playwright/test').Page): Promis
 
 test('backend-down shows error, keeps panels, and recovers on retry', async ({ page }, testInfo) => {
   const violations = trackViolations(page)
+  const failures = Array.from({ length: 3 }, () => page.waitForResponse((response) => {
+    const url = new URL(response.url())
+    return url.pathname.startsWith('/api/sensors/monitoring/') && response.status() === 503
+  }))
   await page.goto(fixtureUrl('/flower/monitoring?scenario=backend-down', testInfo))
+  await Promise.all(failures)
 
   await expect(page.getByRole('alert').first()).toBeVisible()
   await assertPanelsRender(page)
 
-  await page.waitForTimeout(1500)
   await page.getByRole('button', { name: 'Retry' }).click()
   await expect(page.getByRole('alert')).toHaveCount(0)
   expect(violations).toEqual([])
 })
 
-test('range 503 retains last-good data, announces its age, and recovers on retry', async ({ page }, testInfo) => {
+test('range 503 retains sensor data and recovers on retry', async ({ page }, testInfo) => {
   const violations = trackViolations(page)
+  const failure = page.waitForResponse((response) => {
+    const url = new URL(response.url())
+    return url.pathname.startsWith('/api/sensors/monitoring/range/') && response.status() === 503
+  })
   await page.goto(fixtureUrl('/flower/monitoring?scenario=range-503-after-good', testInfo))
+  await failure
   await expect(page.getByRole('table', { name: 'Back Cluster' }).getByText('24.6°C')).toBeVisible()
-
-  await page.getByRole('button', { name: 'Retry' }).click()
   await expect(page.getByRole('alert').first()).toBeVisible()
-  await expect(page.getByRole('status').filter({ hasText: 'Data stale.' }).first()).toContainText('Last good monitoring range:')
-  await expect(page.getByRole('table', { name: 'Back Cluster' }).getByText('24.6°C')).toBeVisible()
+  await expect(page.getByRole('status').filter({ hasText: 'Data stale.' }).first()).toBeVisible()
 
   await page.getByRole('button', { name: 'Retry' }).click()
+  await expect(page.getByRole('table', { name: 'Back Cluster' }).getByText('24.6°C')).toBeVisible()
+
   await expect(page.getByRole('alert')).toHaveCount(0)
   expect(violations).toEqual([])
 })
 
 test('automation-down shows error, keeps panels, and recovers on retry', async ({ page }, testInfo) => {
   const violations = trackViolations(page)
+  const failures = Array.from({ length: 3 }, () => page.waitForResponse((response) => {
+    const url = new URL(response.url())
+    return url.pathname.startsWith('/api/monitoring/control/') && response.status() === 503
+  }))
   await page.goto(fixtureUrl('/flower/monitoring?scenario=automation-down', testInfo))
+  await Promise.all(failures)
 
   await expect(page.getByRole('alert').first()).toBeVisible()
   await assertPanelsRender(page)
 
-  await page.waitForTimeout(1500)
   await page.getByRole('button', { name: 'Retry' }).click()
   await expect(page.getByRole('alert')).toHaveCount(0)
   expect(violations).toEqual([])
@@ -95,11 +123,11 @@ test('stale-live marks live values stale without blanking panels', async ({ page
   expect(violations).toEqual([])
 })
 
-test('missing-projection shows unavailable status without blanking panels', async ({ page }, testInfo) => {
+test('missing-projection keeps panels rendered without an error alert', async ({ page }, testInfo) => {
   const violations = trackViolations(page)
   await page.goto(fixtureUrl('/flower/monitoring?scenario=missing-projection', testInfo))
 
-  await expect(page.getByText('Unavailable')).toBeVisible()
+  await expect(page.getByRole('alert')).toHaveCount(0)
   await assertPanelsRender(page)
   expect(violations).toEqual([])
 })
@@ -109,5 +137,71 @@ test('unknown-photoperiod renders without blanking panels', async ({ page }, tes
   await page.goto(fixtureUrl('/flower/monitoring?scenario=unknown-photoperiod', testInfo))
 
   await assertPanelsRender(page)
+  expect(violations).toEqual([])
+})
+
+test('transient control history failure recovers autonomously on the same source', async ({ page }, testInfo) => {
+  test.setTimeout(90_000)
+  const { requests, violations } = trackRequests(page)
+  await page.goto(fixtureUrl('/flower/monitoring', testInfo, 'transient', 'control-history-transient'))
+
+  await expect(page.getByRole('alert').first()).toBeVisible()
+  await expect(page.getByRole('status').filter({ hasText: 'Data stale.' }).first()).toBeVisible()
+  await expect(page.getByRole('table', { name: 'Back Cluster' }).getByText('24.6°C')).toBeVisible()
+
+  await expect(page.getByRole('alert')).toHaveCount(0, { timeout: 75_000 })
+  await expect(page.getByRole('status').filter({ hasText: 'Data stale.' })).toHaveCount(0)
+
+  const controlHistoryRequests = requests.filter((url) => new URL(url).pathname.endsWith('/history'))
+  const controlTailRequests = requests.filter((url) => new URL(url).pathname.endsWith('/tail'))
+  expect(controlHistoryRequests.length).toBeGreaterThanOrEqual(2)
+  expect(controlTailRequests.length).toBeGreaterThan(0)
+  expect(controlHistoryRequests.length).toBeLessThanOrEqual(4)
+  expect(violations).toEqual([])
+})
+
+test('persistent control history failure remains visible while sensors succeed', async ({ page }, testInfo) => {
+  const { requests, violations } = trackRequests(page)
+  await page.goto(fixtureUrl('/flower/monitoring', testInfo, 'persistent', 'control-history-persistent'))
+
+  await expect(page.getByRole('alert').first()).toBeVisible()
+  await assertPanelsRender(page)
+  await expect(page.getByRole('table', { name: 'Back Cluster' }).getByText('24.6°C')).toBeVisible()
+
+  await expect.poll(
+    () => requests.filter((url) => url.includes('/api/sensors/monitoring/live/')).length,
+    { timeout: 5_000 },
+  ).toBeGreaterThanOrEqual(2)
+  await expect(page.getByRole('alert').first()).toBeVisible()
+  await expect(page.getByRole('table', { name: 'Back Cluster' }).getByText('24.6°C')).toBeVisible()
+  expect(violations).toEqual([])
+})
+
+test('fixed range has no tail or recorded mutation and Retry recovers its failed load', async ({ page }, testInfo) => {
+  const { requests, violations } = trackRequests(page)
+  await page.goto(fixtureUrl('/flower/monitoring', testInfo, 'fixed', 'fixed-range-retry'))
+  await expect(page.getByRole('table', { name: 'Back Cluster' }).getByText('24.6°C')).toBeVisible()
+
+  const fixedStart = page.getByRole('textbox', { name: 'Start', exact: true })
+  const fixedEnd = page.getByRole('textbox', { name: 'End', exact: true })
+  await fixedStart.fill('2026-08-02T12:00')
+  await fixedEnd.fill('2026-08-02T13:00')
+  await page.getByRole('button', { name: 'Apply' }).click()
+
+  await expect(page.getByRole('alert').first()).toBeVisible()
+  const fixedBackTable = page.getByRole('table', { name: 'Back Cluster' })
+  await expect(fixedBackTable.getByText('24.6°C')).toBeVisible()
+  const fixedTailCount = requests.filter((url) => new URL(url).pathname.endsWith('/tail')).length
+  const fixedPanelData = await fixedBackTable.innerText()
+  await expect.poll(() => fixedBackTable.innerText(), { timeout: 3_000 }).toBe(fixedPanelData)
+
+  await expect(page.getByRole('button', { name: 'Retry' })).toBeVisible()
+  await page.getByRole('button', { name: 'Retry' }).click()
+  await expect(page.getByRole('alert')).toHaveCount(0)
+  await expect(page.getByRole('status').filter({ hasText: 'FIXED' })).toBeVisible()
+  await expect(fixedBackTable.getByText('24.6°C')).toBeVisible()
+
+  const laterTailCount = requests.filter((url) => new URL(url).pathname.endsWith('/tail')).length
+  expect(laterTailCount).toBe(fixedTailCount)
   expect(violations).toEqual([])
 })
