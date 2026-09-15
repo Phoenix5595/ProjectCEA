@@ -141,9 +141,13 @@ export function sensorRangeFixture(
       range: { start, end },
       room: { room, nodes: roomNodes(room) },
     },
-    series: sensors.map((s) =>
-      sensorSeries(s.sensor, s.node, s.unitFamily, s.unit, start, end, fixtureValues(s.values, _scenario)),
-    ),
+    series: sensors.map((s) => {
+      const values =
+        _scenario === 'extreme-y' && s.sensor === 'dry_bulb_f'
+          ? [24.5, 9, 36, 24.8]
+          : fixtureValues(s.values, _scenario)
+      return sensorSeries(s.sensor, s.node, s.unitFamily, s.unit, start, end, values)
+    }),
     statistics: sensors.map((s) => statisticsFor(s.sensor, s.node, mean(s.values))),
   }
 }
