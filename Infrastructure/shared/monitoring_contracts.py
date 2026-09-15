@@ -86,7 +86,7 @@ class CurrentSeriesPoint(TimedMonitoringFact):
 
     @model_validator(mode="after")
     def validate_value_quality(self) -> Self:
-        match self.quality:  # noexcuse: # noqa: MATCH_OK
+        match self.quality:  # MATCH: exhaustive by design
             case Quality.EXACT | Quality.ESTIMATED:
                 if self.value is None:
                     raise MonitoringContractViolation("exact and estimated facts require a value")
@@ -112,7 +112,7 @@ class ProjectionSeriesPoint(MonitoringContract):
     def validate_projection_state(self) -> Self:
         if self.valid_until < self.valid_from:
             raise MonitoringContractViolation("valid_until must not precede valid_from")
-        match self.quality:  # noexcuse: # noqa: MATCH_OK
+        match self.quality:  # MATCH: exhaustive by design
             case Quality.ESTIMATED:
                 if self.value is None:
                     raise MonitoringContractViolation("estimated projections require a value")
@@ -134,15 +134,15 @@ class Photoperiod(TimedMonitoringFact):
 
     @model_validator(mode="after")
     def validate_phase_quality(self) -> Self:
-        match self.phase:  # noexcuse: # noqa: MATCH_OK
+        match self.phase:  # MATCH: exhaustive by design
             case PhotoperiodPhase.UNKNOWN:
-                match self.quality:  # noexcuse: # noqa: MATCH_OK
+                match self.quality:  # MATCH: exhaustive by design
                     case Quality.UNAVAILABLE:
                         return self
                     case Quality.EXACT | Quality.ESTIMATED:
                         raise MonitoringContractViolation("unknown photoperiod must be unavailable")
             case PhotoperiodPhase.SUN | PhotoperiodPhase.MOON:
-                match self.quality:  # noexcuse: # noqa: MATCH_OK
+                match self.quality:  # MATCH: exhaustive by design
                     case Quality.EXACT | Quality.ESTIMATED:
                         return self
                     case Quality.UNAVAILABLE:
@@ -164,7 +164,7 @@ class PersistenceCursor(MonitoringContract):
 
     @model_validator(mode="after")
     def validate_persistence_state(self) -> Self:
-        match self.state:  # noexcuse: # noqa: MATCH_OK
+        match self.state:  # MATCH: exhaustive by design
             case PersistenceState.PERSISTED:
                 if self.cursor is None or self.persisted_at is None or self.error is not None:
                     raise MonitoringContractViolation(
