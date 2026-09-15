@@ -23,6 +23,7 @@ const SEVERITY_OPTIONS: ReadonlyArray<{ value: SeverityLevel | 'all'; label: str
   { value: 'all', label: 'All' },
   { value: 'critical', label: 'Critical' },
   { value: 'warning', label: 'Warning' },
+  { value: 'error', label: 'Error' },
   { value: 'info', label: 'Info' },
 ]
 
@@ -61,7 +62,7 @@ export function EventFilters({ filters, onChange, rooms, categories, types }: Ev
 
   const toggle = useCallback(
     (key: 'rooms' | 'categories' | 'types', value: string) => {
-      const current = filters[key] as readonly string[]
+      const current = filters[key]
       const next = current.includes(value) ? current.filter((v) => v !== value) : [...current, value]
       onChange({ ...filters, [key]: next })
     },
