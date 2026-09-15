@@ -9,23 +9,58 @@ const makeEntry = (overrides: Partial<EventLogEntry> = {}): EventLogEntry => ({
   eventId: 'evt-1',
   type: 'relay.state_changed',
   category: 'relay',
+  severity: 'info',
   occurredAt: new Date('2026-09-02T12:00:00Z'),
   payload: { device_id: 'heater-1', state: 'on' },
   ...overrides,
 })
 
 describe('EventRow', () => {
-  it('renders the event label and severity text', () => {
-    render(<EventRow entry={makeEntry()} now={new Date('2026-09-02T12:00:05Z')} />)
+  it.each([
+    ['info', 'Info'],
+    ['warning', 'Warning'],
+    ['error', 'Error'],
+    ['critical', 'Critical'],
+  ] as const)('renders the %s badge from the envelope severity', (severity, label) => {
+    // Given: the same event type carries one authoritative envelope severity.
+    const entry = makeEntry({ severity })
+
+    // When: the event row is rendered.
+    render(<EventRow entry={entry} now={new Date('2026-09-02T12:00:05Z')} />)
+
+    // Then: the label and badge match the envelope, not the event type.
     expect(screen.getByText('Relay state changed')).toBeInTheDocument()
-    expect(screen.getByText('Info')).toBeInTheDocument()
+    expect(screen.getByText(label)).toBeInTheDocument()
   })
 
-  it('renders a severity badge with non-color visual treatment', () => {
-    render(<EventRow entry={makeEntry({ type: 'system.failsafe_raised' })} now={new Date('2026-09-02T12:00:05Z')} />)
-    const badge = screen.getByText('Critical')
+  it('uses danger tokens for an Error badge', () => {
+    // Given: a command failure is explicitly marked Error by its envelope.
+    const entry = makeEntry({ type: 'relay.command_failed', severity: 'error' })
+
+    // When: the event row is rendered.
+    render(<EventRow entry={entry} now={new Date('2026-09-02T12:00:05Z')} />)
+
+    // Then: Error remains distinct and uses the existing danger treatment.
+    const badge = screen.getByText('Error')
     expect(badge).toBeInTheDocument()
-    expect(badge.closest('span')).toHaveAttribute('aria-label')
+    expect(badge).toHaveClass('bg-status-danger-bg', 'text-status-danger-text', 'border-status-danger-border')
+    expect(badge).toHaveAttribute('aria-label', 'Severity: Error')
+  })
+
+  it.each([
+    ['custom.unknown_event', 'critical', 'Critical'],
+    ['system.failsafe_raised', 'info', 'Info'],
+    ['alarm.acknowledged', 'warning', 'Warning'],
+  ] as const)('does not infer %s severity from its type name', (type, severity, label) => {
+    // Given: an event type whose name suggests a different severity.
+    const entry = makeEntry({ type, severity })
+
+    // When: the event row is rendered.
+    render(<EventRow entry={entry} now={new Date('2026-09-02T12:00:05Z')} />)
+
+    // Then: the envelope severity is the only source for the visible badge.
+    expect(screen.getByText(label)).toBeInTheDocument()
+    expect(screen.getByText(type)).toBeInTheDocument()
   })
 
   it('shows relative time', () => {
