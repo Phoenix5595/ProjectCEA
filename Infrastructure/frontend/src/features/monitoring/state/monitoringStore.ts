@@ -1,37 +1,27 @@
 import {
   CONTROL_HISTORY_MAX_POINTS,
   MonitoringApi,
-  MonitoringAbortError,
   SENSOR_RANGE_MAX_POINTS,
 } from '../api'
 import type { MonitoringRange, MonitoringStoreOptions, StoreState } from './monitoringStore.types'
 
 import { applyInitialPartial } from './monitoringStore.control'
+import { createIdleSourceOutcomes, deriveActiveSourceErrors, deriveRangeFreshness } from './monitoringStore.health'
 import { iso, sameRange } from './monitoringStore.merge'
+import {
+  applySettledSource,
+  applySourceFailureToState,
+  applySourceSuccessToState,
+} from './monitoringStore.outcomes'
 import { MonitoringLivePoller } from './monitoringStore.poller'
+import { rangeBounds, rangeChanged } from './monitoringStore.range'
 
 const DEFAULT_POLL_MS = 1000
 const DEFAULT_DURATION_MS = 3600_000
 
-function errorMessage(err: unknown): string {
-  if (err instanceof Error) return err.message
-  return String(err)
-}
-
-interface RangeBounds {
-  start: Date
-  end: Date
-}
-
 interface RangeBudget {
   readonly sensor: number
   readonly control: number
-}
-
-function rangeResult<T>(result: PromiseSettledResult<T>, errors: string[]): T | null {
-  if (result.status === 'fulfilled') return result.value
-  if (!(result.reason instanceof MonitoringAbortError)) errors.push(errorMessage(result.reason))
-  return null
 }
 
 export class MonitoringStore {
@@ -68,6 +58,20 @@ export class MonitoringStore {
       isActive: () => this.active,
       isPaused: () => this.paused,
       now: () => this.now(),
+      liveRequest: () => this.state.range.kind === 'live'
+        ? { range: this.state.range, generation: this.rangeSequence }
+        : null,
+      isLiveRequestCurrent: (request) =>
+        this.active &&
+        !this.paused &&
+        this.rangeSequence === request.generation &&
+        sameRange(this.state.range, request.range),
+      applySourceSuccess: (source, lastGoodAt) => {
+        this.setState(applySourceSuccessToState(this.state, { source, lastGoodAt }))
+      },
+      applySourceFailure: (failure) => {
+        this.setState(applySourceFailureToState(this.state, failure))
+      },
     })
   }
 
@@ -159,6 +163,7 @@ export class MonitoringStore {
         runtimeSnapshotVersion: null,
         flushHealth: [],
       },
+      sourceOutcomes: createIdleSourceOutcomes(),
       loading: true,
       tailLoading: false,
       reconciling: false,
@@ -180,16 +185,6 @@ export class MonitoringStore {
       clearInterval(this.timerId)
       this.timerId = null
     }
-  }
-
-  private rangeBounds(now: Date): RangeBounds {
-    const r = this.state.range
-    if (r.kind === 'fixed') return { start: r.start, end: r.end }
-    return { start: new Date(now.getTime() - r.duration), end: now }
-  }
-
-  private rangeChanged(): boolean {
-    return this.lastRangeIdentity === undefined || !sameRange(this.state.range, this.lastRangeIdentity)
   }
 
   private setState(patch: Partial<StoreState>): void {
@@ -215,10 +210,10 @@ export class MonitoringStore {
 
   private async loadRangeIfChanged(options: { force?: boolean } = {}): Promise<void> {
     if (this.rangeInFlight) return
-    if (!options.force && !this.rangeChanged()) return
+    if (!options.force && !rangeChanged(this.state.range, this.lastRangeIdentity)) return
     const sequence = ++this.rangeSequence
     const requestedRange = this.state.range
-    const { start: requestedStart, end: requestedEnd } = this.rangeBounds(this.now())
+    const { start: requestedStart, end: requestedEnd } = rangeBounds(this.state.range, this.now())
     const controller = new AbortController()
     this.rangeController = controller
     this.rangeInFlight = true
@@ -240,21 +235,23 @@ export class MonitoringStore {
     }
     if (!this.active) return
     if (sequence !== this.rangeSequence) return
-    const errors: string[] = []
-    const sensorRange = rangeResult(settled[0], errors)
-    const controlRange = rangeResult(settled[1], errors)
-    const projection = rangeResult(settled[2], errors)
-    this.lastRangeIdentity = requestedRange
     const completedAt = this.now()
+    const sensorResult = applySettledSource(this.state, 'sensor-history', settled[0], completedAt)
+    const controlResult = applySettledSource(sensorResult.state, 'control-history', settled[1], completedAt)
+    const projectionResult = applySettledSource(controlResult.state, 'projection', settled[2], completedAt)
+    const sensorRange = sensorResult.value
+    const controlRange = controlResult.value
+    const projection = projectionResult.value
+    const outcomes = projectionResult.state.sourceOutcomes
+    const errors = deriveActiveSourceErrors(outcomes).map(({ message }) => message)
+    this.lastRangeIdentity = requestedRange
     const hasHistory = sensorRange !== null || controlRange !== null
-    const previousLastGoodRangeAt = this.state.lastGoodRangeAt
-    const rangeFreshness = errors.length === 0
-      ? { lastGoodRangeAt: completedAt, rangeErrorAt: null }
-      : { lastGoodRangeAt: previousLastGoodRangeAt, rangeErrorAt: completedAt }
+    const rangeFreshness = deriveRangeFreshness(outcomes)
     this.setState({
       loading: false,
       errors,
-      data: hasHistory
+      sourceOutcomes: outcomes,
+      data: hasHistory || projection !== null
         ? applyInitialPartial(this.state.data, sensorRange, controlRange, projection)
         : this.state.data,
       ...(hasHistory

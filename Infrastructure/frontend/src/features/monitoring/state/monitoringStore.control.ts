@@ -140,16 +140,6 @@ export function projectionExpired(data: StoreData, now: Date): boolean {
   return now.getTime() >= data.anchorValidUntil.getTime()
 }
 
-/** True when a previously-unhealthy flush source reports healthy again. */
-export function flushHealthRecovered(
-  prev: StoreData,
-  resp: ControlMonitoringResponse,
-): boolean {
-  const prevHealthy = new Map(prev.flushHealth.map((f) => [f.source, f.healthy]))
-  return resp.flush_health.some((f) => prevHealthy.get(f.source) === false && f.healthy === true)
-}
-
-
 /** Most recent recorded timestamp across all control envelope sections. */
 export function lastControlTimestamp(data: StoreData): Date | null {
   const history = data.controlHistory
