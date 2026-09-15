@@ -4,6 +4,7 @@ import type { ClimatePeriod } from '../../../types/climatePeriod'
 import type { ApiClientCore } from '../../../services/api'
 import {
   TimelineConflictError,
+  TimelineUnavailableError,
   TimelinePreviewIdentityError,
   type TimelineApplyRequest,
   type TimelinePreviewRequest,
@@ -59,6 +60,13 @@ const applyResponseSchema = z.object({
 
 type TimelineSavedResponse = z.infer<typeof savedResponseSchema>
 
+const timelineUnavailableResponseSchema = z.object({
+  detail: z.object({
+    code: z.literal('timeline_unavailable'),
+    detail: z.string().min(1),
+  }),
+})
+
 export interface TimelineApi extends TimelinePublicationPort {
   getSaved(room: TimelineSavedRequest): Promise<TimelineSavedBaseline>
 }
@@ -69,7 +77,10 @@ export type TimelineSavedRequest = {
   readonly window: TimelineWindow
 }
 
-function requestPayload(request: TimelinePreviewRequest | TimelineApplyRequest, includeWindow: boolean) {
+function requestPayload(
+  request: TimelinePreviewRequest | TimelineApplyRequest,
+  includeWindow: boolean
+) {
   const payload = {
     request_id: request.requestId,
     expected_config_revision: request.expectedConfigRevision,
@@ -113,7 +124,11 @@ function mapPeriod(raw: z.infer<typeof periodSchema>): ClimatePeriod {
   return typeof raw.id === 'number' ? { ...period, id: raw.id } : period
 }
 
-function mapSavedResponse(room: TimelineRoomForApi, response: TimelineSavedResponse, window?: TimelineWindow): TimelineSavedBaseline {
+function mapSavedResponse(
+  room: TimelineRoomForApi,
+  response: TimelineSavedResponse,
+  window?: TimelineWindow
+): TimelineSavedBaseline {
   return {
     room,
     baseConfigRevision: response.config_revision,
@@ -134,21 +149,34 @@ function mapSavedResponse(room: TimelineRoomForApi, response: TimelineSavedRespo
 type TimelineRoomForApi = { readonly location: string; readonly cluster: string }
 
 export const timelineMethods = {
-  async getSaved(this: ApiClientCore, request: TimelineSavedRequest): Promise<TimelineSavedBaseline> {
-    const response = await this.automationClient.get(
-      `/api/climate-timeline/${encodeURIComponent(request.location)}/${encodeURIComponent(request.cluster)}`,
-      { params: request.window },
-    )
-    return mapSavedResponse(
-      { location: request.location, cluster: request.cluster },
-      savedResponseSchema.parse(response.data),
-    )
+  async getSaved(
+    this: ApiClientCore,
+    request: TimelineSavedRequest
+  ): Promise<TimelineSavedBaseline> {
+    try {
+      const response = await this.automationClient.get(
+        `/api/climate-timeline/${encodeURIComponent(request.location)}/${encodeURIComponent(request.cluster)}`,
+        { params: request.window }
+      )
+      return mapSavedResponse(
+        { location: request.location, cluster: request.cluster },
+        savedResponseSchema.parse(response.data)
+      )
+    } catch (error) {
+      if (axios.isAxiosError(error) && error.response?.status === 409) {
+        const parsed = timelineUnavailableResponseSchema.safeParse(error.response.data)
+        if (parsed.success) {
+          throw new TimelineUnavailableError(parsed.data.detail.detail)
+        }
+      }
+      throw error
+    }
   },
 
   async preview(this: ApiClientCore, request: TimelinePreviewRequest) {
     const response = await this.automationClient.post(
       `/api/climate-timeline/${encodeURIComponent(request.room.location)}/${encodeURIComponent(request.room.cluster)}/preview`,
-       requestPayload(request, true),
+      requestPayload(request, true)
     )
     const parsed = previewResponseSchema.parse(response.data)
     if (
@@ -165,10 +193,10 @@ export const timelineMethods = {
     try {
       const response = await this.automationClient.post(
         `/api/climate-timeline/${encodeURIComponent(request.room.location)}/${encodeURIComponent(request.room.cluster)}/apply`,
-         requestPayload(request, false),
+        requestPayload(request, false)
       )
       const parsed = applyResponseSchema.parse(response.data)
-       return mapSavedResponse(request.room, parsed, request.window)
+      return mapSavedResponse(request.room, parsed, request.window)
     } catch (error) {
       if (axios.isAxiosError(error) && error.response?.status === 409) {
         throw new TimelineConflictError(request.requestId)

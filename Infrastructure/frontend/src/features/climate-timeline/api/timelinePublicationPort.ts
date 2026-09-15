@@ -33,6 +33,15 @@ export class TimelineConflictError extends Error {
   }
 }
 
+export class TimelineUnavailableError extends Error {
+  public readonly status = 409
+
+  public constructor(readonly detail: string) {
+    super(detail)
+    this.name = 'TimelineUnavailableError'
+  }
+}
+
 export class TimelinePreviewIdentityError extends Error {
   public constructor(readonly requestId: string) {
     super('The preview response does not match the requested draft identity.')

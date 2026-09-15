@@ -66,6 +66,16 @@ const TrajectorySegment = z
 const TimelineWarning = z.object({
   code: z.string().min(1),
   detail: z.string().min(1),
+  reason: z.string().min(1).optional(),
+  start: utcDate.optional(),
+  end: utcDate.optional(),
+}).superRefine((warning, context) => {
+  if ((warning.start === undefined) !== (warning.end === undefined)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: 'warning interval requires start and end' })
+  }
+  if (warning.start !== undefined && warning.end !== undefined && warning.end <= warning.start) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: 'warning end must be later than warning start' })
+  }
 })
 
 const EnvelopeBase = z.object({
@@ -110,3 +120,4 @@ export const RichTrajectoryEnvelope = z
 
 export type RichTrajectoryEnvelope = z.infer<typeof RichTrajectoryEnvelope>
 export type TrajectorySegment = z.infer<typeof TrajectorySegment>
+export type TimelineWarning = z.infer<typeof TimelineWarning>

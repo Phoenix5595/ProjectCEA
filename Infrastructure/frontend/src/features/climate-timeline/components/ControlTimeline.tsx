@@ -4,6 +4,7 @@ import type { TrajectorySegment } from '../api/contracts'
 import type { TimelinePhotoperiod } from '../state/timelineDraft'
 import type { TimelineDraftController, TimelinePreviewState } from '../state/useTimelineDraft'
 import { timeToMinutes, minutesToTime } from '../../../utils/timeMath'
+import { TimelineWarningOverlay, timelineWarningLabel } from './TimelineWarningOverlay'
 
 type TimelineMode = 'compact' | 'expanded'
 type DragTarget = { readonly index: number; readonly edge: 'start' | 'end' }
@@ -51,7 +52,7 @@ function previewMessage(preview: TimelinePreviewState): string {
   switch (preview.kind) {
     case 'idle': return 'No review yet'
     case 'loading': return `Reviewing draft ${preview.draftRevision}`
-    case 'ready': return `Reviewed draft ${preview.draftRevision}`
+    case 'ready': return preview.source === 'preview' ? `Reviewed draft ${preview.draftRevision}` : 'Saved trajectory refreshed'
     case 'failed': return `Review failed for draft ${preview.draftRevision}`
     default: return assertNever(preview)
   }
@@ -71,7 +72,11 @@ export function ControlTimeline({ mode, controller, onExpand, lockedPhotoperiodH
     () => [...changedPeriods(state.saved.periods, state.draft.periods), ...changedPhotoperiod(state.saved.photoperiod, state.draft.photoperiod)],
     [state.saved, state.draft],
   )
-  const segments = state.saved.trajectory?.segments ?? []
+  const trajectory = preview.kind === 'ready' ? preview.value : state.saved.trajectory
+  const segments = trajectory?.segments ?? []
+  const warnings = trajectory?.warnings ?? []
+  const skippedWarning = warnings.find((warning) => warning.code === 'calendar.transition_skipped')
+  const warningMessages = warnings.map(timelineWarningLabel)
 
   useEffect(() => {
     if (!dragTarget) return
@@ -168,13 +173,14 @@ export function ControlTimeline({ mode, controller, onExpand, lockedPhotoperiodH
 
       <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-auto p-2">
         <div className="flex flex-wrap items-center justify-between gap-1 text-[10px] text-text-muted">
-          <div className="flex items-center gap-1" role="group" aria-label="Timeline window">
+          <fieldset className="flex items-center gap-1">
+            <legend className="sr-only">Timeline window</legend>
             {(['rolling', 'daily'] as const).map((value) => (
               <button key={value} type="button" onClick={() => setWindowMode(value)} className={`border px-1.5 py-0.5 uppercase ${windowMode === value ? 'border-accent-data text-accent-data' : 'border-border-default text-text-subtle'}`}>
                 {value}
               </button>
             ))}
-          </div>
+          </fieldset>
           <span>{windowMode === 'rolling' ? 'Now + 24 elapsed hours' : 'Toronto calendar day'}</span>
         </div>
 
@@ -184,13 +190,14 @@ export function ControlTimeline({ mode, controller, onExpand, lockedPhotoperiodH
             {state.draft.periods.map((period, index) => {
               const position = periodWidth(period)
               return (
-                <div key={`${period.period_name}-${index}`} className="absolute top-2 h-8 border border-accent-setpoint bg-accent-setpoint/20" style={{ left: `${position.left}%`, width: `${position.width}%` }} title={`${period.period_name}: ${period.start_time}–${period.end_time}`}>
+                <div key={`${period.period_name}-${period.start_time}-${period.end_time}`} className="absolute top-2 h-8 border border-accent-setpoint bg-accent-setpoint/20" style={{ left: `${position.left}%`, width: `${position.width}%` }} title={`${period.period_name}: ${period.start_time}–${period.end_time}`}>
                   <span className="pointer-events-none block truncate px-1 text-[10px] font-bold text-accent-setpoint" title={period.period_name}>{period.period_name}</span>
                   {isExpanded && <>{renderHandle(index, 'start')}{renderHandle(index, 'end')}</>}
                 </div>
               )
             })}
-            <div className="absolute inset-y-0 left-1/2 border-l border-dashed border-timeline-now" aria-label="Current time" />
+            {skippedWarning !== undefined && trajectory !== undefined && <TimelineWarningOverlay warning={skippedWarning} window={trajectory.window} />}
+            <hr aria-label="Current time" className="absolute inset-y-0 left-1/2 border-l border-dashed border-timeline-now" />
           </div>
         </div>
 
@@ -223,7 +230,7 @@ export function ControlTimeline({ mode, controller, onExpand, lockedPhotoperiodH
 
         <div className="grid grid-cols-1 gap-1 text-[10px] md:grid-cols-2">
           <div className="border border-border-subtle p-1"><span className="font-bold text-text-muted">Runtime effective</span><p className="text-status-warning-text">{segments.length > 0 ? segments.filter((segment) => segment.trajectory_kind === 'effective').map(segmentLabel).join(' · ') || 'No effective segment in this window.' : 'Unavailable gap: runtime observation is not available.'}</p></div>
-          <div className="border border-border-subtle p-1"><span className="font-bold text-text-muted">Provenance and assumptions</span><p className="text-text-subtle">{state.saved.trajectory?.assumptions.join(' · ') || 'Saved schedule authority; no runtime assumptions reported.'}</p></div>
+          <div className="border border-border-subtle p-1"><span className="font-bold text-text-muted">Provenance and assumptions</span><p className="text-text-subtle">{[...warningMessages, ...(trajectory?.assumptions ?? [])].join(' · ') || 'Saved schedule authority; no runtime assumptions reported.'}</p></div>
         </div>
 
         {isExpanded && (
