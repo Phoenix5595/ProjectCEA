@@ -88,15 +88,17 @@ export default function RelayChannelMatrix({
   }
 
   const relayWidth = variant === 'panel' ? '198px' : '144px'
+  const relayHeight = variant === 'panel' ? 'calc(var(--relay-w) * 11 / 20)' : '52px'
 
   return (
     <div className="rounded-sm bg-surface-secondary p-0">
       <div
+        data-testid="relay-channel-matrix"
         className="relative grid p-1 min-w-0 max-w-full overflow-auto"
         style={{
           ...GRID_BACKGROUND_STYLE,
           ['--relay-w' as string]: relayWidth,
-          ['--relay-h' as string]: 'calc(var(--relay-w) * 11 / 20)',
+          ['--relay-h' as string]: relayHeight,
           gridTemplateColumns: RELAY_GRID_COLUMNS,
           gridTemplateRows: `repeat(${RELAY_MATRIX_ROWS}, var(--relay-h))`,
           columnGap: 'calc(var(--relay-w) * 0.45)',
