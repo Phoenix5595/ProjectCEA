@@ -1,7 +1,7 @@
 import { useState, useCallback, type KeyboardEvent } from 'react'
 import type { EventLogEntry } from '../state/eventLogStore'
 import { getEventDisplay } from '../presentation/eventRegistry'
-import { SEVERITY_LABELS } from '../presentation/severity'
+import { SEVERITY_LABELS, type SeverityLevel } from '../presentation/severity'
 import { formatRelativeTime, formatExactTime } from '../presentation/timeFormat'
 import { EventDetails } from './EventDetails'
 
@@ -10,21 +10,24 @@ interface EventRowProps {
   now: Date
 }
 
-const SEVERITY_VISUAL: Record<string, string> = {
+const SEVERITY_VISUAL: Record<SeverityLevel, string> = {
   critical: 'border-l-status-danger bg-status-danger-bg/20',
   warning: 'border-l-status-warning bg-status-warning-bg/20',
+  error: 'border-l-status-danger bg-status-danger-bg/20',
   info: 'border-l-border-emphasis bg-surface-secondary',
 }
 
-const SEVERITY_BADGE: Record<string, string> = {
+const SEVERITY_BADGE: Record<SeverityLevel, string> = {
   critical: 'bg-status-danger-bg text-status-danger-text border-status-danger-border',
   warning: 'bg-status-warning-bg text-status-warning-text border-status-warning-dim',
+  error: 'bg-status-danger-bg text-status-danger-text border-status-danger-border',
   info: 'bg-surface-tertiary text-text-default border-border-default',
 }
 
 export function EventRow({ entry, now }: EventRowProps) {
   const [expanded, setExpanded] = useState(false)
   const display = getEventDisplay(entry.type)
+  const severity = entry.severity
   const toggle = useCallback(() => setExpanded((prev) => !prev), [])
 
   const handleKeyDown = useCallback(
@@ -38,13 +41,13 @@ export function EventRow({ entry, now }: EventRowProps) {
   )
 
   return (
-    <li role="listitem" className={`border-l-2 ${SEVERITY_VISUAL[display.severity] ?? SEVERITY_VISUAL.info}`}>
+    <li role="listitem" className={`border-l-2 ${SEVERITY_VISUAL[severity]}`}>
       <div className="flex items-start gap-2 px-3 py-2">
         <span
-          className={`shrink-0 inline-flex items-center px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider border ${SEVERITY_BADGE[display.severity] ?? SEVERITY_BADGE.info}`}
-          aria-label={`Severity: ${SEVERITY_LABELS[display.severity]}`}
+          className={`shrink-0 inline-flex items-center px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider border ${SEVERITY_BADGE[severity]}`}
+          aria-label={`Severity: ${SEVERITY_LABELS[severity]}`}
         >
-          {SEVERITY_LABELS[display.severity]}
+          {SEVERITY_LABELS[severity]}
         </span>
         <div className="flex-1 min-w-0">
           <div className="flex items-baseline justify-between gap-2">
