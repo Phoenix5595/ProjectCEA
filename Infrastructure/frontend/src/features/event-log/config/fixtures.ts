@@ -119,10 +119,30 @@ const UNKNOWN_EVENT: OperationalEventItem = makeEvent(
   99,
   'custom.unknown_type_xyz',
   'Flower Room',
-  'info',
+  'critical',
   'system',
   { custom_field: 'test' },
 )
+
+const RELAY_COMMAND_FAILED_EVENT = makeEvent(
+  19,
+  'relay.command_failed',
+  'Flower Room',
+  'error',
+  'relay',
+  { device_id: 'exhaust-fan', error_code: 'command-rejected' },
+)
+
+const RETAINED_ALIAS_EVENT = makeEvent(
+  20,
+  'relay.state_changed',
+  'Flower Room',
+  'info',
+  'relay',
+  { device_id: 'exhaust-fan', state: 'on' },
+)
+
+const EVENT_LABEL_EVENTS: OperationalEventItem[] = [RELAY_COMMAND_FAILED_EVENT, RETAINED_ALIAS_EVENT, UNKNOWN_EVENT]
 
 const CJK_EVENT: OperationalEventItem = {
   redis_id: `${BASE_TIME + 100}-100`,
@@ -166,6 +186,9 @@ export function eventHistoryFixture(scenario: string | null): OperationalEventHi
   if (scenario === 'unknown-event') {
     return { items: [...FLOWER_EVENTS, UNKNOWN_EVENT], newest_cursor: UNKNOWN_EVENT.redis_id, oldest_cursor: FLOWER_EVENTS[0].redis_id, earliest_cursor: FLOWER_EVENTS[0].redis_id, has_more: false, scan: { scanned: FLOWER_EVENTS.length + 1, limit: 500 } }
   }
+  if (scenario === 'event-labels') {
+    return { items: EVENT_LABEL_EVENTS, newest_cursor: EVENT_LABEL_EVENTS.at(-1)!.redis_id, oldest_cursor: EVENT_LABEL_EVENTS[0].redis_id, earliest_cursor: EVENT_LABEL_EVENTS[0].redis_id, has_more: false, scan: { scanned: EVENT_LABEL_EVENTS.length, limit: 500 } }
+  }
   if (scenario === 'cjk-payload') {
     return { items: [...FLOWER_EVENTS, CJK_EVENT], newest_cursor: CJK_EVENT.redis_id, oldest_cursor: FLOWER_EVENTS[0].redis_id, earliest_cursor: FLOWER_EVENTS[0].redis_id, has_more: false, scan: { scanned: FLOWER_EVENTS.length + 1, limit: 500 } }
   }
@@ -194,4 +217,4 @@ export function sseCursorFrame(cursor: string): string {
   return `id: ${cursor}\ndata: \n\n`
 }
 
-export { ALL_EVENTS, FLOWER_EVENTS, VEG_EVENTS, LAB_EVENTS, UNKNOWN_EVENT, CJK_EVENT }
+export { ALL_EVENTS, FLOWER_EVENTS, VEG_EVENTS, LAB_EVENTS, UNKNOWN_EVENT, CJK_EVENT, EVENT_LABEL_EVENTS }

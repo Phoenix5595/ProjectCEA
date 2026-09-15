@@ -11,6 +11,9 @@
  */
 import { test, expect } from '@playwright/test'
 import AxeBuilder from '@axe-core/playwright'
+import type { AxeResults } from 'axe-core'
+import { mkdir, writeFile } from 'node:fs/promises'
+import path from 'node:path'
 import { describeViolation } from '../../src/features/monitoring/config/originGuard'
 import { fixtureUrl } from '../monitoring/fixtureUrl'
 
@@ -33,7 +36,7 @@ function trackViolations(page: import('@playwright/test').Page): string[] {
   return violations
 }
 
-function seriousCritical(results: { violations: { id: string; impact?: string | null; nodes: unknown[] }[] }) {
+function seriousCritical(results: AxeResults) {
   return results.violations.filter((v) => v.impact === 'serious' || v.impact === 'critical')
 }
 
@@ -97,6 +100,79 @@ test('severity badges have non-color text treatment', async ({ page }, testInfo)
     const ariaLabel = await badge.getAttribute('aria-label')
     expect(ariaLabel).toMatch(/Severity: (Critical|Warning|Info)/)
   }
+})
+
+test('event-label fixture exposes readable labels, exact severity, and keyboard details', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 1280, height: 900 })
+  const violations = trackViolations(page)
+  const requestUrls: string[] = []
+  page.on('request', (request) => requestUrls.push(request.url()))
+  const consoleErrors: string[] = []
+  page.on('console', (message) => {
+    if (message.type() === 'error') consoleErrors.push(message.text())
+  })
+  await page.route('**/api/events/stream**', (route) =>
+    route.fulfill({ status: 200, contentType: 'text/event-stream', body: 'event: heartbeat\ndata: \n\n' }),
+  )
+
+  await page.goto(fixtureUrl('/flower', testInfo, undefined, 'event-labels'))
+  await expect(page.getByRole('heading', { name: 'Event Log' })).toBeVisible({ timeout: 10_000 })
+
+  const eventList = page.locator('[aria-labelledby="event-log-heading"] [role="list"]')
+  const entries = eventList.locator('[role="listitem"]')
+  await expect(entries).toHaveCount(3, { timeout: 5_000 })
+
+  await expect(page.getByText('Relay command failed', { exact: true })).toBeVisible()
+  await expect(page.getByText('Relay state changed', { exact: true })).toBeVisible()
+  await expect(page.getByText('Custom unknown type xyz', { exact: true })).toBeVisible()
+  await expect(eventList.getByText('relay.command_failed', { exact: true })).toBeVisible()
+  await expect(eventList.getByText('relay.state_changed', { exact: true })).toBeVisible()
+  await expect(eventList.getByText('custom.unknown_type_xyz', { exact: true })).toBeVisible()
+  await expect(page.getByText('Unknown event type', { exact: true })).toHaveCount(0)
+
+  await expect(eventList.locator('[aria-label="Severity: Error"]')).toHaveCount(1)
+  await expect(eventList.locator('[aria-label="Severity: Critical"]')).toHaveCount(1)
+  await expect(eventList.locator('[aria-label="Severity: Info"]')).toHaveCount(1)
+
+  await page.getByRole('button', { name: 'Critical', exact: true }).click()
+  await expect(entries).toHaveCount(1)
+  await expect(entries.first()).toContainText('Custom unknown type xyz')
+  await expect(entries.first().locator('[aria-label="Severity: Critical"]')).toHaveCount(1)
+
+  await page.getByRole('button', { name: 'All', exact: true }).click()
+  await page.getByRole('button', { name: 'Error', exact: true }).click()
+  await expect(entries).toHaveCount(1)
+  await expect(entries.first()).toContainText('Relay command failed')
+  await expect(entries.first()).toContainText('relay.command_failed')
+  await expect(entries.first().locator('[aria-label="Severity: Error"]')).toHaveCount(1)
+  await expect(page.getByText('Relay state changed', { exact: true })).toHaveCount(0)
+  await expect(page.getByText('Custom unknown type xyz', { exact: true })).toHaveCount(0)
+
+  await page.getByRole('button', { name: 'All', exact: true }).click()
+  const failedEntry = entries.filter({ hasText: 'relay.command_failed' })
+  const toggle = failedEntry.getByRole('button', { name: 'Toggle details' })
+  await toggle.focus()
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false')
+  await page.keyboard.press('Enter')
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+  await expect(failedEntry.getByRole('region', { name: 'Event details' })).toContainText('exhaust-fan')
+  await page.keyboard.press('Space')
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false')
+
+  const evidenceDirectory = path.resolve(process.cwd(), '../../.omo/evidence/control-monitoring-correctness/T8')
+  await mkdir(evidenceDirectory, { recursive: true })
+  await page.screenshot({ path: path.join(evidenceDirectory, 'event-log.png'), fullPage: true })
+  await writeFile(
+    path.join(evidenceDirectory, 'network.json'),
+    JSON.stringify({
+      fixture_origin: 'http://127.0.0.1:4173',
+      requests: requestUrls,
+      violations,
+    }, null, 2),
+  )
+
+  expect(consoleErrors).toEqual([])
+  expect(violations).toEqual([])
 })
 
 test('event-log entries do not clip text at 375px', async ({ page }, testInfo) => {
@@ -188,7 +264,7 @@ test('event-log renders with CJK payload without glyph drop', async ({ page, con
   await expect(koreanText).toBeVisible()
 })
 
-test('unknown event type shows fallback label', async ({ page, context }, testInfo) => {
+test('unknown event type uses deterministic humanized label', async ({ page, context }, testInfo) => {
   await page.setViewportSize({ width: 1280, height: 900 })
 
   const unknownEvent = {
@@ -237,6 +313,7 @@ test('unknown event type shows fallback label', async ({ page, context }, testIn
   await page.goto(fixtureUrl('/flower', testInfo))
   await expect(page.getByRole('heading', { name: 'Event Log' })).toBeVisible({ timeout: 10_000 })
 
-  const unknownLabel = page.getByText('Unknown event type')
+  const unknownLabel = page.getByText('Custom unknown type xyz', { exact: true })
   await expect(unknownLabel).toBeVisible()
+  await expect(page.getByText('Unknown event type', { exact: true })).toHaveCount(0)
 })
