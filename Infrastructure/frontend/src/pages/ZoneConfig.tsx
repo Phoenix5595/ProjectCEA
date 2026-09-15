@@ -4,9 +4,10 @@ import { apiClient } from '../services/api'
 import { extractErrorMessage } from '../utils/errors'
 import { logger } from '../utils/logger'
 import { getLocationDisplayName, getLocationBackendName, getClusterDisplayName } from '../config/zones'
-import type { RoomModeWithParams } from '../types/modes'
+import type { RoomModeWithParams, ModeParameters } from '../types/modes'
 import { useControlActions } from '../contexts/ControlActionsContext'
 import LightIntensity from '../components/LightIntensity'
+import ClimatePeriodTimeline from '../components/ClimatePeriodTimeline'
 import VerticalPIDBlock from '../components/VerticalPIDBlock'
 import VerticalNotesBlock from '../components/VerticalNotesBlock'
 import ManualLightControl from '../components/ManualLightControl'
@@ -18,6 +19,7 @@ import type { ClimatePeriod } from '../types/climatePeriod'
 import ClimatePeriodsTable from '../components/ClimatePeriodsTable'
 import { TimelineEditor } from '../features/climate-timeline/components/TimelineEditor'
 import type { TimelineSavedBaseline } from '../features/climate-timeline/state/timelineDraft'
+import { isCanonicalConstantMode } from '../features/climate-timeline/domain/modeClassifier'
 
 export type ZoneConfigSection = 'control' | 'automation';
 
@@ -41,10 +43,10 @@ interface RawClimatePeriod {
 }
 
 export function shouldPersistLegacyTimelineValues(
-  isConstant: boolean,
+  modeName: string,
   timelineBaseline: TimelineSavedBaseline | null,
 ): boolean {
-  return isConstant || timelineBaseline === null
+  return isCanonicalConstantMode(modeName) || timelineBaseline === null
 }
 
 function mapPeriodsFromApi(periods: RawClimatePeriod[]): ClimatePeriod[] {
@@ -74,6 +76,14 @@ function createConstantPeriod(modeName: string): ClimatePeriod {
     co2_setpoint: null,
     details: '24h constant setpoints'
   }
+}
+
+function toHHMM(t: string | undefined): string {
+  if (!t) return '06:00'
+  const parts = t.trim().split(/[:\s]/)
+  const h = parts[0]?.padStart(2, '0') ?? '06'
+  const m = parts[1]?.padStart(2, '0') ?? '00'
+  return `${h}:${m}`
 }
 
 export default function ZoneConfig({
@@ -160,7 +170,7 @@ export default function ZoneConfig({
       )
       if (periods && periods.length > 0) {
         setClimatePeriods(mapPeriodsFromApi(periods as unknown as RawClimatePeriod[]))
-      } else if (mode.is_constant) {
+      } else if (isCanonicalConstantMode(mode.mode_name)) {
         setClimatePeriods([createConstantPeriod(mode.mode_name)])
       } else {
         setClimatePeriods([])
@@ -169,18 +179,14 @@ export default function ZoneConfig({
     [location, cluster]
   )
 
-  async function loadRoomMode() {
-    setLoading(true)
-    setError(null)
-    try {
-      const mode = await apiClient.getRoomModeWithParams(location!, cluster!)
-      setRoomMode(mode)
+  const loadSavedTimelineForMode = useCallback(async (mode: RoomModeWithParams) => {
+    if (isCanonicalConstantMode(mode.mode_name) || !location || !cluster) return
 
-      await loadClimatePeriodsForMode(mode)
+    try {
       const start = new Date()
       const saved = await apiClient.getSaved({
-        location: location!,
-        cluster: cluster!,
+        location,
+        cluster,
         window: {
           start: start.toISOString(),
           end: new Date(start.getTime() + 24 * 60 * 60 * 1000).toISOString(),
@@ -190,20 +196,36 @@ export default function ZoneConfig({
       setTimelineBaseline(saved)
       setClimatePeriods(saved.periods.map((period) => ({ ...period })))
     } catch (err) {
+      logger.error('Error loading saved timeline:', err)
+      setError(extractErrorMessage(err, 'Failed to load saved timeline'))
+    }
+  }, [location, cluster])
+
+  const loadRoomMode = useCallback(async () => {
+    if (!location || !cluster) return
+    setLoading(true)
+    setError(null)
+    setTimelineBaseline(null)
+    try {
+      const mode = await apiClient.getRoomModeWithParams(location, cluster)
+      setRoomMode(mode)
+
+      await loadClimatePeriodsForMode(mode)
+      await loadSavedTimelineForMode(mode)
+    } catch (err) {
       logger.error('Error loading room mode:', err)
       setError(extractErrorMessage(err, 'Failed to load'))
     } finally {
       setLoading(false)
     }
-  }
+  }, [location, cluster, loadClimatePeriodsForMode, loadSavedTimelineForMode])
 
-  /** Format time to HH:MM (mode_parameters may return HH:MM:SS from DB). */
-  function toHHMM(t: string | undefined): string {
-    if (!t) return '06:00'
-    const parts = t.trim().split(/[:\s]/)
-    const h = parts[0]?.padStart(2, '0') ?? '06'
-    const m = parts[1]?.padStart(2, '0') ?? '00'
-    return `${h}:${m}`
+  function handleParamChange(updates: Partial<ModeParameters>) {
+    if (!roomMode) return
+    setRoomMode({
+      ...roomMode,
+      parameters: { ...roomMode.parameters, ...updates }
+    })
   }
 
   const handleModeChange = useCallback(async (modeName: string, submodeName?: string) => {
@@ -212,14 +234,16 @@ export default function ZoneConfig({
     try {
       const newMode = await apiClient.setRoomMode(location, cluster, { mode_name: modeName, submode_name: submodeName })
       setRoomMode(newMode)
+      setTimelineBaseline(null)
       await loadClimatePeriodsForMode(newMode)
+      await loadSavedTimelineForMode(newMode)
       setSuccess('Mode changed')
       setTimeout(() => setSuccess(null), 2000)
     } catch (err) {
       logger.error('Error changing mode:', err)
       setError(extractErrorMessage(err, 'Failed to change mode'))
     }
-  }, [location, cluster, loadClimatePeriodsForMode])
+  }, [location, cluster, loadClimatePeriodsForMode, loadSavedTimelineForMode])
 
   const handleSave = useCallback(async () => {
     if (!roomMode || !location || !cluster) return
@@ -230,7 +254,7 @@ export default function ZoneConfig({
       const updated = await apiClient.updateRoomParameters(location, cluster, roomMode.parameters)
       setRoomMode(updated)
 
-      if (shouldPersistLegacyTimelineValues(roomMode.is_constant, timelineBaseline)) {
+      if (shouldPersistLegacyTimelineValues(roomMode.mode_name, timelineBaseline)) {
         const p = updated.parameters
         const dayStart = toHHMM(p.day_start_time)
         const nightStart = toHHMM(p.night_start_time)
@@ -244,7 +268,7 @@ export default function ZoneConfig({
         })
 
         const periodsToSave =
-          roomMode.is_constant && climatePeriods.length === 0
+          isCanonicalConstantMode(roomMode.mode_name) && climatePeriods.length === 0
             ? [createConstantPeriod(roomMode.mode_name)]
             : climatePeriods
 
@@ -282,9 +306,9 @@ export default function ZoneConfig({
 
   useEffect(() => {
     if (location && cluster && section === 'control') {
-      loadRoomMode();
+      void loadRoomMode()
     }
-  }, [location, cluster, section]);
+  }, [location, cluster, section, loadRoomMode]);
 
   useEffect(() => {
     if (section !== 'control') {
@@ -351,13 +375,13 @@ export default function ZoneConfig({
   }
 
   const params = roomMode?.parameters
-  const isConstant = roomMode?.is_constant || false
+  const isConstant = roomMode ? isCanonicalConstantMode(roomMode.mode_name) : false
   const currentModeName = roomMode?.mode_name || 'veg'
   const lockedPhotoperiod = currentModeName === 'flower' ? 12 : currentModeName === 'veg' ? 18 : null
 
   return (
     <div className="min-h-screen bg-surface-base p-1">
-      <div className="max-w-[1920px] mx-auto h-[calc(100vh-1rem)] min-w-0 flex flex-col">
+      <div className="max-w-[1920px] mx-auto h-[calc(100vh-1rem)] flex flex-col">
         {params && (
           <div className="flex-1 flex flex-col gap-1 min-h-0">
             {!isConstant && roomMode && (
@@ -370,8 +394,20 @@ export default function ZoneConfig({
                   />
                 </div>
               ) : (
-                <div className="w-full min-w-0 shrink-0 overflow-auto rounded-lg border border-border-subtle bg-surface-primary p-1">
-                  <ClimatePeriodsTable periods={climatePeriods} onChange={setClimatePeriods} />
+                <div className="h-[300px] shrink-0 overflow-hidden rounded-lg border border-border-subtle bg-surface-primary p-0">
+                  <ClimatePeriodTimeline
+                    periods={climatePeriods}
+                    lightDayStart={params.day_start_time || '06:00'}
+                    lightDayEnd={params.night_start_time || '18:00'}
+                    className="h-full"
+                    onDayStartChange={(time) => handleParamChange({ day_start_time: time })}
+                    onDayEndChange={(time) => handleParamChange({ night_start_time: time })}
+                    lockedPhotoperiodHours={lockedPhotoperiod}
+                    rampUpDuration={params.light_ramp_up_minutes}
+                    rampDownDuration={params.light_ramp_down_minutes}
+                    onRampUpChange={(d) => handleParamChange({ light_ramp_up_minutes: d ?? 0 })}
+                    onRampDownChange={(d) => handleParamChange({ light_ramp_down_minutes: d ?? 0 })}
+                  />
                 </div>
               )
             )}
@@ -384,12 +420,19 @@ export default function ZoneConfig({
             {/* Climate Periods + Relay Matrix row - 450px */}
             <div className="flex min-h-0 shrink-0 flex-col gap-1 md:h-[580px] md:flex-row">
               <div className="flex min-h-[320px] min-w-0 flex-1 flex-col gap-1 overflow-hidden md:min-h-0">
-                {!isConstant ? (
+                {!isConstant && timelineBaseline === null ? (
                   <>
-                    <div className="h-full overflow-auto">
+                    <div className="bg-surface-primary rounded-lg border border-border-subtle p-1 flex-[56] overflow-auto">
+                      <ClimatePeriodsTable periods={climatePeriods} onChange={setClimatePeriods} />
+                    </div>
+                    <div className="flex-[44] overflow-auto">
                       <LightIntensity ref={lightIntensityRef} location={location} cluster={cluster} compact={true} />
                     </div>
                   </>
+                ) : !isConstant ? (
+                  <div className="h-full overflow-auto">
+                    <LightIntensity ref={lightIntensityRef} location={location} cluster={cluster} compact={true} />
+                  </div>
                 ) : (
                   <ManualLightControl location={location} cluster={cluster} compact={true} />
                 )}
