@@ -11,13 +11,12 @@ describe('EventFilters', () => {
     expect(screen.getByRole('button', { name: 'All' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Critical' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Warning' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Error' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Info' })).toBeInTheDocument()
   })
 
   it('marks the active severity filter as pressed', () => {
-    render(
-      <EventFilters filters={{ ...defaultFilters, severity: 'critical' }} onChange={() => {}} rooms={[]} categories={[]} types={[]} />,
-    )
+    render(<EventFilters filters={{ ...defaultFilters, severity: 'critical' }} onChange={() => {}} rooms={[]} categories={[]} types={[]} />)
     expect(screen.getByRole('button', { name: 'Critical' })).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByRole('button', { name: 'All' })).toHaveAttribute('aria-pressed', 'false')
   })

@@ -1,6 +1,5 @@
 import { useState, useMemo, useCallback } from 'react'
 import type { EventLogEntry } from '../state/eventLogStore'
-import { classifySeverity } from '../presentation/severity'
 import { EventFilters, type FilterState } from './EventFilters'
 import { EventRow } from './EventRow'
 import { useEventLogPagination } from '../state/useEventLog'
@@ -31,7 +30,7 @@ export function EventLog({ entries, now }: EventLogProps) {
 
   const filtered = useMemo(() => {
     return entries.filter((entry) => {
-      if (filters.severity !== 'all' && classifySeverity(entry.type) !== filters.severity) return false
+      if (filters.severity !== 'all' && entry.severity !== filters.severity) return false
       if (filters.rooms.length > 0 && typeof entry.payload.room === 'string' && !filters.rooms.includes(entry.payload.room)) return false
       if (filters.categories.length > 0 && !filters.categories.includes(entry.category)) return false
       if (filters.types.length > 0 && !filters.types.includes(entry.type)) return false

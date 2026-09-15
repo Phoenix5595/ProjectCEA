@@ -9,11 +9,13 @@ const makeEntry = (
   type: string,
   category: string,
   payload: Record<string, unknown> = {},
+  severity: EventLogEntry['severity'] = 'info',
 ): EventLogEntry => ({
   redisId,
   eventId: `evt-${redisId}`,
   type,
   category,
+  severity,
   occurredAt: new Date('2026-09-02T12:00:00Z'),
   payload,
 })
@@ -40,13 +42,43 @@ describe('EventLog', () => {
   it('filters entries by severity', async () => {
     const user = userEvent.setup()
     const entries = [
-      makeEntry('1-0', 'system.failsafe_raised', 'system'),
+      makeEntry('1-0', 'system.failsafe_raised', 'system', {}, 'critical'),
       makeEntry('2-0', 'relay.state_changed', 'relay'),
     ]
     render(<EventLog entries={entries} now={new Date('2026-09-02T12:00:00Z')} />)
     await user.click(screen.getByRole('button', { name: 'Critical' }))
     expect(screen.getAllByRole('listitem')).toHaveLength(1)
     expect(screen.getByText('Failsafe raised')).toBeInTheDocument()
+  })
+
+  it.each(['Info', 'Warning', 'Error', 'Critical'] as const)('filters identical event types by envelope severity: %s', async (label) => {
+    const user = userEvent.setup()
+    const entries = (['info', 'warning', 'error', 'critical'] as const).map((entrySeverity, index) =>
+      makeEntry(`${index + 1}-0`, 'relay.command_failed', 'relay', {}, entrySeverity),
+    )
+    render(<EventLog entries={entries} now={new Date('2026-09-02T12:00:00Z')} />)
+
+    await user.click(screen.getByRole('button', { name: label }))
+
+    expect(screen.getAllByRole('listitem')).toHaveLength(1)
+    expect(screen.getByText('Relay command failed')).toBeInTheDocument()
+  })
+
+  it.each([
+    ['Info', 1],
+    ['Error', 0],
+  ] as const)('uses envelope severity for relay.command_failed: %s selects %s row(s)', async (label, count) => {
+    const user = userEvent.setup()
+    const entries = [makeEntry('1-0', 'relay.command_failed', 'relay', {}, 'info')]
+    render(<EventLog entries={entries} now={new Date('2026-09-02T12:00:00Z')} />)
+
+    await user.click(screen.getByRole('button', { name: label }))
+
+    if (count === 0) {
+      expect(screen.getByText('No events yet')).toBeInTheDocument()
+    } else {
+      expect(screen.getAllByRole('listitem')).toHaveLength(count)
+    }
   })
 
   it('filters entries by search text', async () => {
