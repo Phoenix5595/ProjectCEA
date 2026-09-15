@@ -12,6 +12,7 @@ from app.background_tasks import BackgroundTasks
 from app.config import ConfigLoader
 from app.control.control_engine import ControlEngine
 from app.control.control_snapshot_service import ControlSnapshotService
+from app.control.decision_event_policy import DecisionEventPolicy
 from app.control.device_command_service import DeviceCommandService
 from app.control.relay_board_state_manager import RelayBoardStateManager
 from app.control.relay_manager import RelayManager
@@ -115,6 +116,7 @@ class ServiceContainer:
         self.device_registry_service: DeviceRegistryService | None = None
         self.scheduler: Scheduler | None = None
         self.rules_engine: RulesEngine | None = None
+        self.decision_event_policy: DecisionEventPolicy | None = None
         self.alarm_manager: AlarmManager | None = None
         self.control_engine: ControlEngine | None = None
         self.device_command_service: DeviceCommandService | None = None
@@ -167,6 +169,8 @@ class ServiceContainer:
             # Get automation redis from database
             self.automation_redis = self.database._automation_redis
             await self._compose_operational_events()
+            decision_event_policy = DecisionEventPolicy(self.operational_event_sink)
+            self.decision_event_policy = decision_event_policy
 
             # Wire DB-backed device repository into ConfigLoader
             self.config.set_device_repo(self.database.device_repo)
@@ -267,7 +271,7 @@ class ServiceContainer:
             # get_rules is not yet implemented in DatabaseManager
             rules: list[dict[str, Any]] = []
             self.rules_engine = RulesEngine(
-                rules, self.scheduler, event_sink=self.operational_event_sink
+                rules, self.scheduler, event_policy=decision_event_policy
             )
             logger.info("Rules engine initialized")
 
@@ -315,6 +319,7 @@ class ServiceContainer:
                     else self.monitoring_publication_workers.current_observer
                 ),
                 event_sink=self.operational_event_sink,
+                event_policy=decision_event_policy,
             )
             logger.info("Control engine initialized")
 
@@ -339,6 +344,7 @@ class ServiceContainer:
                 database=self.database,
                 update_interval=update_interval,
                 alarm_manager=self.alarm_manager,
+                event_sink=self.operational_event_sink,
             )
             logger.info("Background tasks initialized")
 
