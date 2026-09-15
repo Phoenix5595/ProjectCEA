@@ -291,6 +291,98 @@ describe('monitoring store', () => {
     unsub()
   })
 
+  it('does not apply a stale live projection completion after selecting a fixed range', async () => {
+    const api = makeApi()
+    healthyDefaults(api)
+    const staleProjection = deferred<ProjectionPublicationResponse>()
+    api.controlProjection
+      .mockReset()
+      .mockResolvedValueOnce(projectionResponse({ validUntil: new Date(T0) }))
+      .mockImplementationOnce(() => staleProjection.promise)
+      .mockResolvedValue(projectionResponse({ revision: 'fixed-range' }))
+    const store = new MonitoringStore('Flower Room', api, { now: () => new Date() })
+    const unsub = store.subscribe(() => {})
+    await vi.advanceTimersByTimeAsync(0)
+
+    await vi.advanceTimersByTimeAsync(1000)
+    store.setFixedRange(new Date('2026-08-02T10:00:00.000Z'), new Date('2026-08-02T11:00:00.000Z'))
+    await vi.advanceTimersByTimeAsync(0)
+    staleProjection.resolve(projectionResponse({ revision: 'stale-live' }))
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(store.getSnapshot().data.projectionRevision).toBe('fixed-range')
+    unsub()
+  })
+
+  it('does not apply a stale live projection failure after selecting a fixed range', async () => {
+    const api = makeApi()
+    healthyDefaults(api)
+    const staleProjection = deferred<ProjectionPublicationResponse>()
+    api.controlProjection
+      .mockReset()
+      .mockResolvedValueOnce(projectionResponse({ validUntil: new Date(T0) }))
+      .mockImplementationOnce(() => staleProjection.promise)
+      .mockResolvedValue(projectionResponse({ revision: 'fixed-range' }))
+    const store = new MonitoringStore('Flower Room', api, { now: () => new Date() })
+    const unsub = store.subscribe(() => {})
+    await vi.advanceTimersByTimeAsync(0)
+
+    await vi.advanceTimersByTimeAsync(1000)
+    store.setFixedRange(new Date('2026-08-02T10:00:00.000Z'), new Date('2026-08-02T11:00:00.000Z'))
+    await vi.advanceTimersByTimeAsync(0)
+    staleProjection.reject(new MonitoringHttpError('monitoring', 503, 'stale projection failure'))
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(store.getSnapshot().errors).not.toContain('stale projection failure')
+    unsub()
+  })
+
+  it('does not apply a stale live control tail after selecting a fixed range', async () => {
+    const api = makeApi()
+    healthyDefaults(api)
+    const staleTail = deferred<ControlMonitoringResponse>()
+    const store = new MonitoringStore('Flower Room', api, { now: () => new Date() })
+    const unsub = store.subscribe(() => {})
+    await vi.advanceTimersByTimeAsync(0)
+    api.controlTail.mockImplementationOnce(() => staleTail.promise)
+
+    await vi.advanceTimersByTimeAsync(1000)
+    store.setFixedRange(new Date('2026-08-02T10:00:00.000Z'), new Date('2026-08-02T11:00:00.000Z'))
+    await vi.advanceTimersByTimeAsync(0)
+    staleTail.resolve(controlResponse({
+      climate: [climateSeries([{ timestamp: new Date(T0), value: 99 }])],
+    }))
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(store.getSnapshot().data.controlHistory?.climate[0]?.points).toEqual([])
+    unsub()
+  })
+
+  it('does not apply a stale live reconciliation after selecting a fixed range', async () => {
+    const api = makeApi()
+    healthyDefaults(api)
+    const staleReconciliation = deferred<ControlMonitoringResponse>()
+    api.controlRange.mockRejectedValueOnce(new MonitoringHttpError('monitoring', 503, 'range unavailable'))
+    const store = new MonitoringStore('Flower Room', api, { now: () => new Date() })
+    const unsub = store.subscribe(() => {})
+    await vi.advanceTimersByTimeAsync(0)
+    api.controlRange
+      .mockImplementationOnce(() => staleReconciliation.promise)
+      .mockResolvedValue(controlResponse())
+
+    await vi.advanceTimersByTimeAsync(61_000)
+    expect(api.controlRange).toHaveBeenCalledTimes(2)
+    store.setFixedRange(new Date('2026-08-02T10:00:00.000Z'), new Date('2026-08-02T11:00:00.000Z'))
+    await vi.advanceTimersByTimeAsync(0)
+    staleReconciliation.resolve(controlResponse({
+      climate: [climateSeries([{ timestamp: new Date(T0), value: 99 }])],
+    }))
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(store.getSnapshot().data.controlHistory?.climate[0]?.points).toEqual([])
+    unsub()
+  })
+
   it('downgrades anchor at expiry', async () => {
     const api = makeApi()
     healthyDefaults(api)
@@ -792,7 +884,7 @@ describe('monitoring store', () => {
     unsub()
   })
 
-  it('preserves the last fulfilled range and data when both history sources fail', async () => {
+  it('applies a fulfilled projection while retaining history fulfillment when both histories fail', async () => {
     const api = makeApi()
     healthyDefaults(api)
     const store = new MonitoringStore('Flower Room', api, { now: () => new Date() })
@@ -803,11 +895,13 @@ describe('monitoring store', () => {
 
     api.sensorRange.mockRejectedValueOnce(new MonitoringHttpError('monitoring', 503, 'sensor unavailable'))
     api.controlRange.mockRejectedValueOnce(new MonitoringHttpError('monitoring', 503, 'control unavailable'))
+    api.controlProjection.mockResolvedValueOnce(projectionResponse({ revision: 'projection-recovered' }))
     store.setLiveRange(1800_000)
     await vi.advanceTimersByTimeAsync(0)
 
     expect(store.getSnapshot().fulfilledRange).toBe(fulfilledRange)
     expect(store.getSnapshot().data.series[0]?.points[0]?.average).toBe(24.5)
+    expect(store.getSnapshot().data.projectionRevision).toBe('projection-recovered')
     expect(store.getSnapshot().errors).toEqual(['sensor unavailable', 'control unavailable'])
     unsub()
   })
