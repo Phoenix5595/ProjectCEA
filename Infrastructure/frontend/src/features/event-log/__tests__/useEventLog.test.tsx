@@ -8,6 +8,7 @@ const makeEntry = (redisId: string, type: string, room?: string, cluster?: strin
   eventId: `evt-${redisId}`,
   type,
   category: 'system',
+  severity: 'info',
   occurredAt: new Date('2026-09-02T12:00:00Z'),
   payload: {
     ...(room !== undefined && { room }),

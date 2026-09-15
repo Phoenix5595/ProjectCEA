@@ -6,6 +6,7 @@ const entry = (redisId: string, eventId: string): EventLogEntry => ({
   eventId,
   type: 'relay.state_changed',
   category: 'relay',
+  severity: 'info',
   occurredAt: new Date(),
   payload: {},
 })

@@ -20,6 +20,7 @@ describe('Event log single transport/store regression', () => {
         eventId: 'regression-evt-1',
         type: 'test.event',
         category: 'system',
+        severity: 'info',
         occurredAt: new Date('2026-09-02T12:00:00Z'),
         payload: { room: 'Test Room' },
       },

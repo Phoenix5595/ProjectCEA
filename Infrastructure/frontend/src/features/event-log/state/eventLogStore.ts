@@ -1,8 +1,11 @@
+import type { EventSeverity } from './eventLogTypes'
+
 export type EventLogEntry = Readonly<{
   redisId: string
   eventId: string
   type: string
   category: string
+  severity: EventSeverity
   occurredAt: Date
   payload: Record<string, unknown>
 }>

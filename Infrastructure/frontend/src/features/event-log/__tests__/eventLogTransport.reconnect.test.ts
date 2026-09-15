@@ -233,7 +233,7 @@ describe('eventLogTransport reconnect behavior', () => {
   it('clears stale entries then performs one latest bootstrap and one tail after a 409 reset', async () => {
     // Given: retained stale data and a stream cursor reset response
     globalEventLogStore.merge([{
-      redisId: '1-0', eventId: 'stale', type: 'system.started', category: 'system', occurredAt: new Date(), payload: {},
+      redisId: '1-0', eventId: 'stale', type: 'system.started', category: 'system', severity: 'info', occurredAt: new Date(), payload: {},
     }])
     let staleStateWasCleared = false
     let transportCursorWasCleared = false

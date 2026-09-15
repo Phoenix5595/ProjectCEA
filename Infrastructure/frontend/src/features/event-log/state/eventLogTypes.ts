@@ -1,5 +1,9 @@
 import type { EventLogEntry } from './eventLogStore';
 
+const EVENT_SEVERITIES = ['info', 'warning', 'error', 'critical'] as const;
+
+type EventSeverity = (typeof EVENT_SEVERITIES)[number];
+
 interface OperationalEventEntity {
   entity_type: string;
   entity_id: string;
@@ -13,7 +17,7 @@ interface OperationalEvent {
   occurred_at: string;
   source: string;
   category: string;
-  severity: string;
+  severity: EventSeverity;
   event_type: string;
   correlation_id: string | null;
   causation_id: string | null;
@@ -53,12 +57,14 @@ function toEventLogEntry(redisId: string, event: OperationalEvent): EventLogEntr
     eventId: event.event_id,
     type: event.event_type,
     category: event.category,
+    severity: event.severity,
     occurredAt: new Date(event.occurred_at),
     payload,
   };
 }
 
 export type {
+  EventSeverity,
   OperationalEvent,
   OperationalEventItem,
   OperationalEventHistory,
