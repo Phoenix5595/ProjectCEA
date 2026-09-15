@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
 
-import type { ProjectionPublicationResponse } from '../../api'
+import {
+  ControlMonitoringResponse,
+  ProjectionPublicationResponse,
+} from '../../api/contracts/control'
+import type { ProjectionPublicationResponse as ProjectionPublication } from '../../api'
+import { controlProjectionFixture, controlRangeFixture } from '../../config/fixtures.control'
 import { alignSeries } from '../../data/alignSeries'
 import { alignLinear } from '../../data/alignSeries.series'
 import { projectionTimeline } from '../monitoringStore.projection'
@@ -9,7 +14,7 @@ const START = new Date('2026-08-02T11:00:00.000Z')
 const NOW = new Date('2026-08-02T12:00:00.000Z')
 const FUTURE = new Date('2026-08-02T12:30:00.000Z')
 
-function publication(): ProjectionPublicationResponse {
+function publication(): ProjectionPublication {
   return {
     quality: 'estimated',
     value: [
@@ -95,6 +100,43 @@ describe('projectionTimeline', () => {
     const step = data.series.find((series) => series.metric === 'heating_setpoint' && series.role === 'step')
     expect(step?.y[data.x.indexOf(NOW.getTime())]).toBe(99)
     expect(data.series.filter((series) => series.metric === 'heating_setpoint' && series.role === 'step')).toHaveLength(1)
+  })
+
+  it('retains recorded and projected setpoints around a nullable projection sample', () => {
+    const recorded = ControlMonitoringResponse.parse(
+      controlRangeFixture('Flower Room', START.toISOString(), NOW.toISOString()),
+    )
+    const projectedPublication = ProjectionPublicationResponse.parse(
+      controlProjectionFixture(
+        'Flower Room',
+        NOW.toISOString(),
+        new Date('2026-08-02T13:00:00.000Z').toISOString(),
+        'nullable-projection',
+      ),
+    )
+    const projected = projectionTimeline(projectedPublication).history
+    expect(projected).not.toBeNull()
+    if (projected === null) return
+
+    const data = alignSeries({
+      series: [],
+      controlHistory: recorded,
+      projectionHistory: projected,
+      photoperiod: [],
+      live: [],
+      range: { kind: 'fixed', start: START, end: new Date('2026-08-02T13:00:00.000Z') },
+      now: NOW,
+    })
+    const heating = data.series.find((series) => series.metric === 'heating_setpoint' && series.role === 'step')
+    const cooling = data.series.find((series) => series.metric === 'cooling_setpoint' && series.role === 'step')
+    const recordedIndex = data.x.indexOf(START.getTime())
+    const overlapIndex = data.x.indexOf(NOW.getTime())
+    const projectedIndex = data.x.indexOf(FUTURE.getTime())
+
+    expect(heating?.y[recordedIndex]).toBe(22)
+    expect(heating?.y[overlapIndex]).toBe(22)
+    expect(heating?.y[projectedIndex]).toBe(24)
+    expect(cooling?.y[projectedIndex]).toBeNull()
   })
 
   it('preserves saved rich ramps, trajectory kinds, and unavailable gaps', () => {

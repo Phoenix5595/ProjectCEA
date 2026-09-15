@@ -242,6 +242,13 @@ class ProjectionPublicationAction:
             now,
         )
         if rich is not None:
+            if not _matches_rich_identity(
+                rich,
+                self._location,
+                TimelineWindow.rolling(now),
+                require_window=rich_revision is not None,
+            ):
+                return False
             rich = _bounded_rich_trajectory(rich)
             if rich_revision is not None:
                 rich = _with_config_revision(rich, rich_revision)
@@ -325,6 +332,28 @@ def _validate_projection(
         )
     if projection.valid_until <= request.observed_at:
         raise ProjectionPublicationError("projection factory returned an expired projection")
+
+
+def _matches_rich_identity(
+    trajectory: RichTrajectoryEnvelope,
+    room: str,
+    window: TimelineWindow,
+    *,
+    require_window: bool,
+) -> bool:
+    return (
+        trajectory.room == room
+        and trajectory.revision_scope == "saved"
+        and trajectory.draft_revision is None
+        and (
+            not require_window
+            or (
+                trajectory.window.start == window.start
+                and trajectory.window.end == window.end
+                and trajectory.window.timezone == window.timezone
+            )
+        )
+    )
 
 
 async def _rich_trajectory(

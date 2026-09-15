@@ -30,7 +30,7 @@ export function mergeControlSeries(
     for (const s of list) {
       const metric = s.metric ?? metricFromName(s.name)
       const norm = normalizeControlSeries(s, metric, kind)
-      const trajectoryKind = norm.trajectoryKind === 'scheduled' ? 'scheduled' : 'effective'
+      const trajectoryKind = norm.trajectoryKind === 'effective' ? 'effective' : 'scheduled'
       const key = `${kind}:${metric}:${trajectoryKind}`
       const cur = byKey.get(key)
       byKey.set(key, cur ? mergeControl(cur, norm) : norm)
@@ -197,6 +197,7 @@ function mergeControl(a: NormControlSeries, b: NormControlSeries): NormControlSe
     const targetSteps = mergeTargetByTime(a.steps, b.steps)
     return {
       ...a,
+      trajectoryKind: a.trajectoryKind ?? b.trajectoryKind,
       points: [],
       steps: mergeTargetByTime(
         targetSteps,
@@ -207,6 +208,7 @@ function mergeControl(a: NormControlSeries, b: NormControlSeries): NormControlSe
   }
   return {
     ...a,
+    trajectoryKind: a.trajectoryKind ?? b.trajectoryKind,
     points,
     steps,
     linear: mergeLinear(a.linear, b.linear),
