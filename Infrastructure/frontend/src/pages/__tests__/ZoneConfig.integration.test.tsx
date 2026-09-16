@@ -140,7 +140,7 @@ describe('ZoneConfig timeline classification integration', () => {
 
     // Then: the fallback table remains usable and the unavailable authority is exposed.
     expect(await screen.findByRole('table')).toBeInTheDocument()
-    expect(screen.getByTestId('legacy-climate-period-timeline')).toBeInTheDocument()
+    expect(screen.queryByTestId('legacy-climate-period-timeline')).not.toBeInTheDocument()
     await waitFor(() =>
       expect(mocks.setActions.mock.calls.at(-1)?.[0]).toMatchObject({
         saveError: 'saved schedule authority is unavailable',

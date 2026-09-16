@@ -4,10 +4,9 @@ import { apiClient } from '../services/api'
 import { extractErrorMessage } from '../utils/errors'
 import { logger } from '../utils/logger'
 import { getLocationDisplayName, getLocationBackendName, getClusterDisplayName } from '../config/zones'
-import type { RoomModeWithParams, ModeParameters } from '../types/modes'
+import type { RoomModeWithParams } from '../types/modes'
 import { useControlActions } from '../contexts/ControlActionsContext'
 import LightIntensity from '../components/LightIntensity'
-import ClimatePeriodTimeline from '../components/ClimatePeriodTimeline'
 import VerticalPIDBlock from '../components/VerticalPIDBlock'
 import VerticalNotesBlock from '../components/VerticalNotesBlock'
 import ManualLightControl from '../components/ManualLightControl'
@@ -220,14 +219,6 @@ export default function ZoneConfig({
     }
   }, [location, cluster, loadClimatePeriodsForMode, loadSavedTimelineForMode])
 
-  function handleParamChange(updates: Partial<ModeParameters>) {
-    if (!roomMode) return
-    setRoomMode({
-      ...roomMode,
-      parameters: { ...roomMode.parameters, ...updates }
-    })
-  }
-
   const handleModeChange = useCallback(async (modeName: string, submodeName?: string) => {
     if (!location || !cluster) return
     
@@ -381,7 +372,7 @@ export default function ZoneConfig({
 
   return (
     <div className="min-h-screen bg-surface-base p-1">
-      <div className="max-w-[1920px] mx-auto h-[calc(100vh-1rem)] flex flex-col">
+      <div className="max-w-[1920px] mx-auto h-[calc(100vh-1rem)] min-w-0 flex flex-col">
         {params && (
           <div className="flex-1 flex flex-col gap-1 min-h-0">
             {!isConstant && roomMode && (
@@ -394,20 +385,8 @@ export default function ZoneConfig({
                   />
                 </div>
               ) : (
-                <div className="h-[300px] shrink-0 overflow-hidden rounded-lg border border-border-subtle bg-surface-primary p-0">
-                  <ClimatePeriodTimeline
-                    periods={climatePeriods}
-                    lightDayStart={params.day_start_time || '06:00'}
-                    lightDayEnd={params.night_start_time || '18:00'}
-                    className="h-full"
-                    onDayStartChange={(time) => handleParamChange({ day_start_time: time })}
-                    onDayEndChange={(time) => handleParamChange({ night_start_time: time })}
-                    lockedPhotoperiodHours={lockedPhotoperiod}
-                    rampUpDuration={params.light_ramp_up_minutes}
-                    rampDownDuration={params.light_ramp_down_minutes}
-                    onRampUpChange={(d) => handleParamChange({ light_ramp_up_minutes: d ?? 0 })}
-                    onRampDownChange={(d) => handleParamChange({ light_ramp_down_minutes: d ?? 0 })}
-                  />
+                <div className="w-full min-w-0 shrink-0 overflow-auto rounded-lg border border-border-subtle bg-surface-primary p-1">
+                  <ClimatePeriodsTable periods={climatePeriods} onChange={setClimatePeriods} />
                 </div>
               )
             )}
@@ -420,16 +399,7 @@ export default function ZoneConfig({
             {/* Climate Periods + Relay Matrix row - 450px */}
             <div className="flex min-h-0 shrink-0 flex-col gap-1 md:h-[580px] md:flex-row">
               <div className="flex min-h-[320px] min-w-0 flex-1 flex-col gap-1 overflow-hidden md:min-h-0">
-                {!isConstant && timelineBaseline === null ? (
-                  <>
-                    <div className="bg-surface-primary rounded-lg border border-border-subtle p-1 flex-[56] overflow-auto">
-                      <ClimatePeriodsTable periods={climatePeriods} onChange={setClimatePeriods} />
-                    </div>
-                    <div className="flex-[44] overflow-auto">
-                      <LightIntensity ref={lightIntensityRef} location={location} cluster={cluster} compact={true} />
-                    </div>
-                  </>
-                ) : !isConstant ? (
+                {!isConstant ? (
                   <div className="h-full overflow-auto">
                     <LightIntensity ref={lightIntensityRef} location={location} cluster={cluster} compact={true} />
                   </div>
