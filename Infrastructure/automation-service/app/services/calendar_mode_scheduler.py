@@ -19,9 +19,10 @@ from app.events.operational_models import (
     SystemPayload,
 )
 from app.events.operational_ports import OperationalEventSink
-from app.repositories.calendar import CalendarRepository
 from app.services.mode_transition_service import ModeTransitionService
 from shared.infra_logging import get_logger
+
+from ..repositories.calendar import CalendarRepository
 
 logger = get_logger(__name__)
 LOCAL_TZ = ZoneInfo("America/Toronto")
