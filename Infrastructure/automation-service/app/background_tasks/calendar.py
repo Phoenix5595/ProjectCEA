@@ -22,7 +22,9 @@ class CalendarMixin:
         self._last_calendar_mode_tick = now
         try:
             if self._calendar_scheduler is None:
-                self._calendar_scheduler = CalendarModeScheduler(self.database)
+                self._calendar_scheduler = CalendarModeScheduler(
+                    self.database, self.operational_event_sink
+                )
             await self._calendar_scheduler.run_tick()
         except Exception as e:
             logger.warning("Calendar mode scheduler tick failed: %s", e)
