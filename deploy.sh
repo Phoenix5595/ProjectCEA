@@ -85,11 +85,34 @@ log_event() {
 run_package_command() {
   local command_name="$1"
   shift
-  local stdout_file stderr_file command_status log_status argument
+  local stdout_file="" stderr_file="" command_status log_status argument
+  local previous_exit_trap previous_hup_trap previous_int_trap previous_term_trap
+  local restore_traps exit_cleanup_trap
+  declare -g __projectcea_package_stdout_file=""
+  declare -g __projectcea_package_stderr_file=""
 
-  trap 'rm -f "$stdout_file" "$stderr_file"' RETURN
+  previous_exit_trap="$(trap -p EXIT)"
+  previous_hup_trap="$(trap -p HUP)"
+  previous_int_trap="$(trap -p INT)"
+  previous_term_trap="$(trap -p TERM)"
+  restore_traps='
+    if [[ -n "${previous_exit_trap:-}" ]]; then eval "$previous_exit_trap"; else trap - EXIT; fi
+    if [[ -n "${previous_hup_trap:-}" ]]; then eval "$previous_hup_trap"; else trap - HUP; fi
+    if [[ -n "${previous_int_trap:-}" ]]; then eval "$previous_int_trap"; else trap - INT; fi
+    if [[ -n "${previous_term_trap:-}" ]]; then eval "$previous_term_trap"; else trap - TERM; fi
+  '
+  exit_cleanup_trap='
+    if [[ -n "${__projectcea_package_stdout_file:-}" ]]; then rm -f -- "$__projectcea_package_stdout_file"; fi
+    if [[ -n "${__projectcea_package_stderr_file:-}" ]]; then rm -f -- "$__projectcea_package_stderr_file"; fi
+  '
+  trap "$exit_cleanup_trap" EXIT
+  trap 'exit 129' HUP
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
   stdout_file="$(mktemp)"
+  __projectcea_package_stdout_file="$stdout_file"
   stderr_file="$(mktemp)"
+  __projectcea_package_stderr_file="$stderr_file"
 
   if "$@" >"$stdout_file" 2>"$stderr_file"; then
     command_status=0
@@ -119,6 +142,8 @@ run_package_command() {
   set -e
 
   rm -f "$stdout_file" "$stderr_file"
+  unset __projectcea_package_stdout_file __projectcea_package_stderr_file
+  eval "$restore_traps"
   if [[ "$command_status" -ne 0 ]]; then
     return "$command_status"
   fi
