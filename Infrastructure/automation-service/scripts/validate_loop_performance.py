@@ -14,6 +14,7 @@ from app.automation.interlock_manager import InterlockManager
 from app.automation.rules_engine import RulesEngine
 from app.config import ConfigLoader
 from app.control.control_engine import ControlEngine
+from app.control.decision_event_policy import DecisionEventPolicy
 from app.control.performance_monitor import get_performance_monitor
 from app.control.relay_manager import RelayManager
 from app.control.scheduler import Scheduler
@@ -149,7 +150,8 @@ async def run_load_test():
     relay_manager.set_channel_state = AsyncMock(return_value=True)
 
     scheduler = Scheduler([], climate_periods_repo=db._climate_periods_repo)
-    rules_engine = RulesEngine([], scheduler)
+    event_policy = DecisionEventPolicy()
+    rules_engine = RulesEngine([], scheduler, event_policy=event_policy)
     alarm_manager = AlarmManager(redis_client, db)
 
     engine = ControlEngine(
@@ -159,6 +161,7 @@ async def run_load_test():
         scheduler=scheduler,
         rules_engine=rules_engine,
         alarm_manager=alarm_manager,
+        event_policy=event_policy,
     )
 
     monitor = get_performance_monitor()
