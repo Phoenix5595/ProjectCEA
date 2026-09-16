@@ -8,6 +8,7 @@ import contextlib
 from app.alarm_manager import AlarmManager
 from app.control.control_engine import ControlEngine
 from app.database import DatabaseManager
+from app.events.operational_ports import OperationalEventSink
 from app.services.calendar_mode_scheduler import CalendarModeScheduler
 from shared.infra_logging import get_logger
 
@@ -49,6 +50,7 @@ class BackgroundTasks(
         database: DatabaseManager,
         update_interval: int = 1,
         alarm_manager: AlarmManager | None = None,
+        event_sink: OperationalEventSink | None = None,
     ):
         """Initialize background tasks.
 
@@ -61,6 +63,7 @@ class BackgroundTasks(
         self.control_engine = control_engine
         self.database = database
         self.alarm_manager = alarm_manager
+        self.operational_event_sink = event_sink
         self.update_interval = max(1, min(CONTROL_LOOP_INTERVAL_MAX, int(update_interval)))
         self._running = False
         self._task: asyncio.Task | None = None
@@ -109,7 +112,7 @@ class BackgroundTasks(
             # Gate remains unset; control loop will block until data is loaded
 
         try:
-            scheduler = CalendarModeScheduler(self.database)
+            scheduler = CalendarModeScheduler(self.database, self.operational_event_sink)
             await scheduler.run_catchup()
         except Exception as e:
             logger.warning("Calendar mode catch-up failed: %s", e)
