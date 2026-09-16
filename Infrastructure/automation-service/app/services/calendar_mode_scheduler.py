@@ -19,6 +19,7 @@ from app.events.operational_models import (
     SystemPayload,
 )
 from app.events.operational_ports import OperationalEventSink
+from app.repositories.calendar import CalendarRepository
 from app.services.mode_transition_service import ModeTransitionService
 from shared.infra_logging import get_logger
 
@@ -168,7 +169,8 @@ class CalendarModeScheduler:
         event = await self._db.calendar_repo.get_active_flower_phase_event(on_date)
         if not event:
             return None
-        meta = self._db.calendar_repo.parse_metadata(event.get("metadata"))
+        calendar_repo: CalendarRepository = self._db.calendar_repo
+        meta = calendar_repo.parse_metadata(event.get("metadata"))
         if meta.get("auto_mode_transition") is False:
             return None
         mode_name, submode_name = meta.get("target_mode_name"), meta.get("target_submode_name")
