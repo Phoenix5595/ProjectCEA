@@ -1,29 +1,37 @@
 import { describe, expect, it } from 'vitest'
+import type { AlignedData } from '../../data'
+import { seriesKey } from '../../data/alignSeries.types'
+
+function makeTemperatureData(): AlignedData {
+  return {
+    x: [1e12, 1e12 + 60_000],
+    series: [
+      {
+        key: seriesKey('sensor', 'dry_bulb_b', 'mean'),
+        label: 'dry_bulb_b',
+        kind: 'sensor',
+        source: 'sensor',
+        metric: 'dry_bulb_b',
+        family: 'temperature',
+        role: 'mean',
+        y: [22, null],
+        origin: 'recorded',
+        quality: 'exact',
+        isAggregated: false,
+      },
+    ],
+    bands: [],
+    photoperiod: [],
+    nowIndex: 0,
+    aggregated: false,
+  }
+}
 
 describe('uPlot honors enforced range functions', () => {
   it('temperature scale applies 5% displayed-range margins', async () => {
     const { buildScales } = await import('../options/scales')
 
-    const aligned = {
-      x: [1e12, 1e12 + 60_000],
-      series: [
-        {
-          key: 'sensor:dry_bulb_b:mean',
-          label: 'dry_bulb_b',
-          role: 'mean' as const,
-          source: 'sensor' as const,
-          family: 'temperature' as const,
-          y: [22, null] as (number | null)[],
-          quality: 'exact' as const,
-          origin: 'recorded' as const,
-        },
-      ],
-      bands: [],
-      photoperiod: [],
-      nowIndex: 0,
-      aggregated: false,
-    }
-    const { scales, axes } = buildScales(aligned as never)
+    const { scales, axes } = buildScales(makeTemperatureData())
     expect(axes.find((a) => a.scale === 'temperature')?.side).toBe(3)
 
     expect(axes.find((axis) => axis.scale === 'temperature')?.side).toBe(3)

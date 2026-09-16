@@ -301,6 +301,20 @@ describe('UPlotChart lifecycle', () => {
     expect(instances[0]?.destroy).toHaveBeenCalledTimes(1)
   })
 
+  it('does not update the old chart with a changed series shape', () => {
+    const firstData = makeData([1000, 2000, 3000], [[20, 21, 22]])
+    const nextData = makeData([1000, 2000, 3000], [[20, 21, 22], [30, 31, 32]])
+    const feed = createMonitoringChartFeed(firstData, TEST_RANGE)
+    render(<ThemeProvider><UPlotChart feed={feed} /></ThemeProvider>)
+    const previousPlot = instances[0]
+    previousPlot?.setData.mockClear()
+
+    act(() => feed.publish(nextData, TEST_RANGE))
+
+    expect(previousPlot?.setData).not.toHaveBeenCalled()
+    expect(instances).toHaveLength(2)
+  })
+
   it('keeps a user zoom when a same live-range tick arrives', () => {
     const feed = createMonitoringChartFeed(makeData([1000, 2000, 3000], [[20, 21, 22]]), TEST_RANGE)
     render(<ThemeProvider><UPlotChart feed={feed} /></ThemeProvider>)

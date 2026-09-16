@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type { AlignedData } from '../../data'
 import { seriesKey } from '../../data/alignSeries.types'
 import { createPanelAlignment } from '../../data/panelAlignment'
+import { createIdleSourceOutcomes } from '../../state/monitoringStore.health'
 import type { MonitoringRange, StoreState } from '../../state'
 import {
   createMonitoringChartFeed,
@@ -66,6 +67,7 @@ function stateFor(range: MonitoringRange, fulfilledRange: StoreState['fulfilledR
       runtimeSnapshotVersion: null,
       flushHealth: [],
     },
+    sourceOutcomes: createIdleSourceOutcomes(),
     loading: false,
     tailLoading: false,
     reconciling: false,
