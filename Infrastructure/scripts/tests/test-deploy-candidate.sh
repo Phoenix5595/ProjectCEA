@@ -23,6 +23,7 @@ readonly HEALTH_DELAYED_CALLS_FILE="$SANDBOX/health-delayed-calls"
 readonly DEPLOY_LOCK_FILE="$SANDBOX/deploy.lock"
 readonly API_KEY_ENV_FILE="$SANDBOX/api_key.env"
 readonly FRONTEND_BUILD_PROOF="$SANDBOX/frontend-build-proof"
+readonly PACKAGE_WRAPPER_PROBE="$SANDBOX/run-package-command.sh"
 
 readonly REL_A="$RELEASES/rel-A"
 readonly REL_B="$RELEASES/rel-B"
@@ -59,7 +60,7 @@ assert_script_hash() {
   [[ "$actual" == "$expected" ]] || fail "$name script hash changed: expected $expected, got $actual"
 }
 
-assert_script_hash "deploy" "$DEPLOY_SCRIPT" "b1220f3c8d1dc08250a16ac933bd6bdd489c045601f5689de1f9e09128cda2c8"
+assert_script_hash "deploy" "$DEPLOY_SCRIPT" "8d10bb20f985df5145a103068ab83158599d499d2b1acf243817c3b4e5fb2709"
 assert_script_hash "finalize" "$FINALIZE_SCRIPT" "6503e11745e1f7c658d8fbc3bc08c630aae7b33d3d492671c0d8eab757bdd32e"
 assert_script_hash "rollback" "$ROLLBACK_SCRIPT" "16203c049ebcc6d3da83222d4c65ca1f376a92c2123736a8cad24b6d7c6098de"
 pass "deploy script hashes match expected sha256 values"
@@ -258,6 +259,124 @@ run_frontend_build_key_sandbox() {
   fi
   unset DEPLOY_TEST_EXPECTED_API_KEY
   pass "frontend build receives the API key without recording it"
+}
+
+extract_package_wrapper() {
+  python3 - "$DEPLOY_SCRIPT" "$PACKAGE_WRAPPER_PROBE" <<'PY'
+from pathlib import Path
+import sys
+
+source = Path(sys.argv[1]).read_text()
+start = source.index("run_package_command() {")
+end = source.index("\n}\n\nrestart_services", start) + 3
+Path(sys.argv[2]).write_text(source[start:end] + "\n")
+PY
+}
+
+count_probe_temp_files() {
+  python3 - "$1" <<'PY'
+from pathlib import Path
+import sys
+
+root = Path(sys.argv[1])
+print(sum(path.name.startswith("tmp.") for path in root.iterdir()))
+PY
+}
+
+run_package_term_cleanup_sandbox() {
+  local probe_root="$SANDBOX/package-term"
+  local status temp_count
+
+  mkdir -p "$probe_root/bin"
+  cat > "$probe_root/bin/sudo" <<'SUDO'
+#!/usr/bin/env bash
+exec "$@"
+SUDO
+  chmod 0700 "$probe_root/bin/sudo"
+  extract_package_wrapper
+  set +e
+  TMPDIR="$probe_root" DEPLOY_PACKAGE_LOG="$probe_root/package.log" \
+    PATH="$probe_root/bin:$ORIGINAL_PATH" \
+    timeout --signal=TERM --kill-after=1s 0.2s \
+    bash -c 'set -euo pipefail; source "$1"; run_package_command term-probe bash -c '\''while :; do :; done'\''' \
+    bash "$PACKAGE_WRAPPER_PROBE" >/dev/null 2>"$probe_root/stderr"
+  status=$?
+  set -e
+  temp_count="$(count_probe_temp_files "$probe_root")"
+  if [[ "$status" -ne 124 || "$temp_count" -ne 0 ]]; then
+    printf 'FAIL: TERM cleanup probe status=%d temp_files=%d (expected 124/0)\n' "$status" "$temp_count"
+    ADVERSARIAL_FAILURES=$((ADVERSARIAL_FAILURES + 1))
+  else
+    pass "TERM cleanup removes package temp files"
+  fi
+}
+
+run_package_partial_allocation_sandbox() {
+  local probe_root="$SANDBOX/package-partial"
+  local status temp_count
+
+  mkdir -p "$probe_root/bin"
+  cat > "$probe_root/bin/sudo" <<'SUDO'
+#!/usr/bin/env bash
+exec "$@"
+SUDO
+  cat > "$probe_root/bin/mktemp" <<'MKTEMP'
+#!/usr/bin/env bash
+count_file="$TMPDIR/mktemp-count"
+count=0
+if [[ -f "$count_file" ]]; then count="$(cat "$count_file")"; fi
+count=$((count + 1))
+printf '%s\n' "$count" > "$count_file"
+if [[ "$count" -eq 2 ]]; then
+  printf 'forced second mktemp failure\n' >&2
+  exit 42
+fi
+exec /usr/bin/mktemp "$@"
+MKTEMP
+  chmod 0700 "$probe_root/bin/sudo" "$probe_root/bin/mktemp"
+  extract_package_wrapper
+  set +e
+  TMPDIR="$probe_root" DEPLOY_PACKAGE_LOG="$probe_root/package.log" \
+    PATH="$probe_root/bin:$ORIGINAL_PATH" \
+    bash -c 'set -euo pipefail; source "$1"; run_package_command partial-probe true' \
+    bash "$PACKAGE_WRAPPER_PROBE" >/dev/null 2>"$probe_root/stderr"
+  status=$?
+  set -e
+  temp_count="$(count_probe_temp_files "$probe_root")"
+  if [[ "$status" -ne 42 || "$temp_count" -ne 0 ]]; then
+    printf 'FAIL: partial allocation cleanup probe status=%d temp_files=%d (expected 42/0)\n' "$status" "$temp_count"
+    ADVERSARIAL_FAILURES=$((ADVERSARIAL_FAILURES + 1))
+  else
+    pass "partial allocation cleanup removes first package temp file"
+  fi
+}
+
+run_package_trap_scope_sandbox() {
+  local probe_root="$SANDBOX/package-trap-scope"
+  local status return_count
+
+  mkdir -p "$probe_root/bin"
+  cat > "$probe_root/bin/sudo" <<'SUDO'
+#!/usr/bin/env bash
+exec "$@"
+SUDO
+  chmod 0700 "$probe_root/bin/sudo"
+  extract_package_wrapper
+  : > "$probe_root/return-trap-marker"
+  set +e
+  TMPDIR="$probe_root" DEPLOY_PACKAGE_LOG="$probe_root/package.log" RETURN_TRAP_MARKER="$probe_root/return-trap-marker" \
+    PATH="$probe_root/bin:$ORIGINAL_PATH" \
+    bash -c 'set -euo pipefail; set -T; source "$1"; trap '\''printf outer-return\\n >> "$RETURN_TRAP_MARKER"'\'' RETURN; run_package_command trap-probe true; printf after\\n >> "$RETURN_TRAP_MARKER"' \
+    bash "$PACKAGE_WRAPPER_PROBE"
+  status=$?
+  set -e
+  return_count="$(grep -c '^outer-return$' "$probe_root/return-trap-marker" || true)"
+  if [[ "$status" -ne 0 || "$return_count" -ne 1 ]]; then
+    printf 'FAIL: RETURN trap scope probe status=%d prior_trap_runs=%d (expected 0/1)\n' "$status" "$return_count"
+    ADVERSARIAL_FAILURES=$((ADVERSARIAL_FAILURES + 1))
+  else
+    pass "package cleanup restores the prior RETURN trap"
+  fi
 }
 
 run_package_default_path_sandbox() {
@@ -475,6 +594,14 @@ state["_note"] = sys.argv[2]
 print(json.dumps(state))
 PY
 }
+
+ADVERSARIAL_FAILURES=0
+run_package_term_cleanup_sandbox
+run_package_partial_allocation_sandbox
+run_package_trap_scope_sandbox
+if [[ "$ADVERSARIAL_FAILURES" -ne 0 ]]; then
+  fail "package cleanup adversarial probes failed: $ADVERSARIAL_FAILURES"
+fi
 
 run_frontend_build_key_sandbox
 run_package_default_path_sandbox
