@@ -33,6 +33,7 @@ DEPLOY_ROOT="${DEPLOY_ROOT:-/opt/projectcea}"
 DEPLOY_STATE_DIR="${DEPLOY_STATE_DIR:-/var/lib/projectcea}"
 DEPLOY_LOCK_FILE="${DEPLOY_LOCK_FILE:-/var/lock/projectcea-deploy.lock}"
 DEPLOY_LOG="${DEPLOY_LOG:-$DEPLOY_STATE_DIR/deploy.log}"
+DEPLOY_PACKAGE_LOG="${DEPLOY_PACKAGE_LOG:-$DEPLOY_STATE_DIR/deploy-packages.log}"
 RELEASES="${DEPLOY_RELEASES:-$DEPLOY_ROOT/releases}"
 CURRENT_SYMLINK="${DEPLOY_CURRENT:-$DEPLOY_ROOT/current}"
 STATE_JSON="${DEPLOY_STATE_JSON:-$DEPLOY_STATE_DIR/deploy_state.json}"
@@ -79,6 +80,49 @@ log_event() {
   line=$(python3 "$EMIT" | python3 "$JSON_LINE")
   echo "$line" | sudo tee -a "$DEPLOY_LOG" >/dev/null
   echo "$line"
+}
+
+run_package_command() {
+  local command_name="$1"
+  shift
+  local stdout_file stderr_file command_status log_status argument
+
+  trap 'rm -f "$stdout_file" "$stderr_file"' RETURN
+  stdout_file="$(mktemp)"
+  stderr_file="$(mktemp)"
+
+  if "$@" >"$stdout_file" 2>"$stderr_file"; then
+    command_status=0
+  else
+    command_status=$?
+  fi
+
+  set +e
+  {
+    printf '[package-command] command=%s argv=' "$command_name"
+    for argument in "$@"; do
+      case "$argument" in
+        VITE_CEA_API_KEY=*) printf '%q ' 'VITE_CEA_API_KEY=<redacted>' ;;
+        *) printf '%q ' "$argument" ;;
+      esac
+    done
+    printf '\n'
+    printf '[package-command] command=%s stdout_begin\n' "$command_name"
+    sed "s/^/[package-command] command=$command_name stdout=/" "$stdout_file"
+    printf '[package-command] command=%s stdout_end\n' "$command_name"
+    printf '[package-command] command=%s stderr_begin\n' "$command_name"
+    sed "s/^/[package-command] command=$command_name stderr=/" "$stderr_file"
+    printf '[package-command] command=%s stderr_end\n' "$command_name"
+    printf '[package-command] command=%s exit_status=%d\n' "$command_name" "$command_status"
+  } | sudo tee -a "$DEPLOY_PACKAGE_LOG"
+  log_status=${PIPESTATUS[1]}
+  set -e
+
+  rm -f "$stdout_file" "$stderr_file"
+  if [[ "$command_status" -ne 0 ]]; then
+    return "$command_status"
+  fi
+  return "$log_status"
 }
 
 restart_services() {
@@ -180,7 +224,7 @@ if [[ "$DEPLOY_SKIP_STAGING" != "1" ]]; then
     echo "[1/7] Bumping frontend $VERSION_TIER version..."
     (
       cd "$SOURCE/Infrastructure/frontend"
-      npm run "release:$VERSION_TIER"
+      run_package_command "npm-release-$VERSION_TIER" npm run "release:$VERSION_TIER"
     )
   fi
 
@@ -196,16 +240,16 @@ if [[ "$DEPLOY_SKIP_STAGING" != "1" ]]; then
       echo "  - $svc"
       sudo rm -rf "$SVC_DIR/.venv"
       sudo python3 -m venv "$SVC_DIR/.venv"
-      sudo "$SVC_DIR/.venv/bin/pip" install -q --upgrade pip
-      sudo "$SVC_DIR/.venv/bin/pip" install -q --upgrade "setuptools>=69" "packaging>=24.2"
-      sudo "$SVC_DIR/.venv/bin/pip" install -q -r "$SVC_DIR/requirements.txt"
+      run_package_command "$svc-pip-upgrade" sudo "$SVC_DIR/.venv/bin/pip" install -q --upgrade pip
+      run_package_command "$svc-build-tools" sudo "$SVC_DIR/.venv/bin/pip" install -q --upgrade "setuptools>=69" "packaging>=24.2"
+      run_package_command "$svc-requirements" sudo "$SVC_DIR/.venv/bin/pip" install -q -r "$SVC_DIR/requirements.txt"
     fi
   done
 
   echo "[3/7] Building frontend..."
   cd "$TARGET/Infrastructure/frontend"
   sudo rm -rf dist/
-  sudo env CI=true npm ci --silent --no-audit --no-fund
+  run_package_command "npm-ci" sudo env CI=true npm ci --silent --no-audit --no-fund
   if [[ ! -r "$API_KEY_ENV_FILE" ]]; then
     echo "[deploy] API key environment file is not readable: $API_KEY_ENV_FILE" >&2
     exit 1
@@ -219,7 +263,7 @@ if [[ "$DEPLOY_SKIP_STAGING" != "1" ]]; then
       echo "[deploy] CEA_API_KEY is empty in $API_KEY_ENV_FILE" >&2
       exit 1
     fi
-    sudo env CI=true "VITE_CEA_API_KEY=$CEA_API_KEY" npm run build
+    run_package_command "npm-build" sudo env CI=true "VITE_CEA_API_KEY=$CEA_API_KEY" npm run build
   )
 
   echo "[4/7] Ensuring data directories..."
