@@ -424,6 +424,10 @@ class CalendarRepository(BaseRepository):
             return json.loads(meta)
         return dict(meta)
 
+    @staticmethod
+    def parse_metadata(meta: Any) -> dict[str, Any]:
+        return CalendarRepository._parse_metadata(meta)
+
     async def get_active_flower_phase_event(self, on_date: date) -> dict[str, Any] | None:
         try:
             async with self.pool.acquire() as conn:

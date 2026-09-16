@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, date, datetime
-from typing import Any
+from typing import Any, NotRequired, TypedDict
 from zoneinfo import ZoneInfo
 
 from app.database import DatabaseManager
@@ -24,6 +24,19 @@ from shared.infra_logging import get_logger
 
 logger = get_logger(__name__)
 LOCAL_TZ = ZoneInfo("America/Toronto")
+
+
+class CalendarTransition(TypedDict):
+    event_id: int | None
+    event_type: str | None
+    title: str | None
+    auto_mode_transition: bool
+    calendar_mode_transitions_enabled: bool
+    target_mode_name: str | None
+    target_submode_name: str | None
+    target_mode_id: NotRequired[int]
+    target_submode_id: NotRequired[int | None]
+    resolution_reason: NotRequired[str]
 
 
 class CalendarModeScheduler:
@@ -146,23 +159,20 @@ class CalendarModeScheduler:
 
     async def get_expected_transition(
         self, location: str, cluster: str, on_date: date
-    ) -> dict[str, Any] | None:
-        """Resolve a calendar-controlled destination into its persisted mode identity."""
+    ) -> CalendarTransition | None:
         del cluster
         if location != "Flower Room":
             return None
-        repo = self._db.calendar_repo
-        if not await repo.flower_calendar_mode_transitions_enabled():
+        if not await self._db.calendar_repo.flower_calendar_mode_transitions_enabled():
             return None
-        event = await repo.get_active_flower_phase_event(on_date)
+        event = await self._db.calendar_repo.get_active_flower_phase_event(on_date)
         if not event:
             return None
-        meta = repo._parse_metadata(event.get("metadata"))
+        meta = self._db.calendar_repo.parse_metadata(event.get("metadata"))
         if meta.get("auto_mode_transition") is False:
             return None
-        mode_name = meta.get("target_mode_name")
-        submode_name = meta.get("target_submode_name")
-        transition = {
+        mode_name, submode_name = meta.get("target_mode_name"), meta.get("target_submode_name")
+        transition: CalendarTransition = {
             "event_id": event.get("id"),
             "event_type": event.get("event_type"),
             "title": event.get("title"),
