@@ -54,6 +54,7 @@ export const UPlotChart = memo(
     const plotRef = useRef<uPlot | null>(null)
     const visibilityRef = useRef<Map<string, boolean>>(new Map())
     const lastAppliedViewportRevisionRef = useRef<number | null>(null)
+    const lastAppliedStructuralRevisionRef = useRef<number | null>(null)
     const chartDebugRef = useRef<number | null>(null)
     const chartResizeCountRef = useRef(0)
     const followLiveViewportRef = useRef(true)
@@ -213,6 +214,7 @@ export const UPlotChart = memo(
           container,
         ))
         plotRef.current = plot
+        lastAppliedStructuralRevisionRef.current = structural.revision
         structural.series.forEach((series, index) => {
           const show = visibilityRef.current.get(series.key)
           if (show !== undefined) plot.setSeries(index + 1, { show }, false)
@@ -251,6 +253,7 @@ export const UPlotChart = memo(
       const plot = plotRef.current
       if (plot === null) return
       const currentStructural = feed.getStructuralSnapshot()
+      if (currentStructural.revision !== lastAppliedStructuralRevisionRef.current) return
       const data = feed.getData()
       const needsViewportScale =
         currentStructural.viewportRevision !== lastAppliedViewportRevisionRef.current ||
