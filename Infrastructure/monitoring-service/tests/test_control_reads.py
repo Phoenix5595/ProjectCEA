@@ -446,7 +446,46 @@ async def test_projection_route_reports_unavailable_without_affecting_history(
 
     # Then: unavailable publication facts never clear or rewrite recorded history.
     assert history.status_code == 200
-    assert projection.json() == {"quality": expected_quality, "value": []}
+    assert f'"quality":"{expected_quality}"'.encode() in projection.content
+    assert b'"value":[]' in projection.content
+    assert b'"trajectory":null' in projection.content
+
+
+@pytest.mark.anyio
+async def test_projection_route_serializes_unavailable_sample_value_as_null() -> None:
+    # Given: a valid unavailable projection sample with a required null value.
+    unavailable_future = FutureProjection(
+        version=PublicationVersion(
+            contract_version=1,
+            config_version=ConfigVersion(7),
+            revision=ProjectionRevision("8f8c3db"),
+        ),
+        generated_at=NOW,
+        valid_from=NOW,
+        valid_until=NOW + timedelta(minutes=30),
+        series=(
+            ProjectionSeriesPoint(
+                series_id=SemanticSeriesId(value="climate.heating_setpoint_target"),
+                value=None,
+                quality=Quality.UNAVAILABLE,
+                valid_from=NOW,
+                valid_until=NOW + timedelta(minutes=30),
+            ),
+        ),
+    )
+    app = create_app(
+        control_reads=FakeControlReads([_current(7), unavailable_future.model_dump_json()])
+    )
+
+    # When: the frontend reads the canonical projection endpoint.
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        response = await client.get("/api/monitoring/control/Veg%20Room/projection")
+
+    # Then: the wire contract preserves the required key as JSON null.
+    assert response.status_code == 200
+    assert response.content.count(b'"value":null') == 1
 
 
 @pytest.mark.anyio
