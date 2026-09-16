@@ -17,6 +17,7 @@ readonly CURRENT="$DEPLOY_ROOT/current"
 readonly STATE_DIR="$SANDBOX/state"
 readonly STATE_FILE="$STATE_DIR/deploy_state.json"
 readonly EVENT_LOG="$SANDBOX/events.log"
+readonly PACKAGE_LOG="$SANDBOX/packages.log"
 readonly HEALTH_STATE_FILE="$SANDBOX/health-state"
 readonly HEALTH_DELAYED_CALLS_FILE="$SANDBOX/health-delayed-calls"
 readonly DEPLOY_LOCK_FILE="$SANDBOX/deploy.lock"
@@ -58,7 +59,7 @@ assert_script_hash() {
   [[ "$actual" == "$expected" ]] || fail "$name script hash changed: expected $expected, got $actual"
 }
 
-assert_script_hash "deploy" "$DEPLOY_SCRIPT" "459adee137cadfc1630c0a661267ab2db9ea318dd396680e60d7fd120eff1cd0"
+assert_script_hash "deploy" "$DEPLOY_SCRIPT" "b1220f3c8d1dc08250a16ac933bd6bdd489c045601f5689de1f9e09128cda2c8"
 assert_script_hash "finalize" "$FINALIZE_SCRIPT" "6503e11745e1f7c658d8fbc3bc08c630aae7b33d3d492671c0d8eab757bdd32e"
 assert_script_hash "rollback" "$ROLLBACK_SCRIPT" "16203c049ebcc6d3da83222d4c65ca1f376a92c2123736a8cad24b6d7c6098de"
 pass "deploy script hashes match expected sha256 values"
@@ -119,12 +120,21 @@ set -euo pipefail
 
 case "${1:-}" in
   ci)
+    if [[ "${DEPLOY_TEST_NPM_CI_FAILURE:-0}" == "1" ]]; then
+      printf 'npm notice failed retry-package\n'
+      printf 'npm ERR retry GET https://registry.example.test/retry-package exhausted\n' >&2
+      exit 42
+    fi
+    printf 'npm notice fetched retry-package\n'
+    printf 'npm WARN retry GET https://registry.example.test/retry-package attempt 2\n' >&2
     exit 0
     ;;
   run)
     if [[ "${2:-}" != "build" ]] || [[ "${VITE_CEA_API_KEY:-}" != "${DEPLOY_TEST_EXPECTED_API_KEY:-}" ]]; then
       exit 1
     fi
+    printf 'npm notice built frontend\n'
+    printf 'npm WARN build metadata retry skipped\n' >&2
     : > "$FRONTEND_BUILD_PROOF"
     exit 0
     ;;
@@ -206,6 +216,7 @@ base_environment() {
   export DEPLOY_ROOT
   export DEPLOY_STATE_DIR="$STATE_DIR"
   export DEPLOY_LOG="$EVENT_LOG"
+  export DEPLOY_PACKAGE_LOG="$PACKAGE_LOG"
   export DEPLOY_LOCK_FILE
   export DEPLOY_RELEASES="$RELEASES"
   export DEPLOY_CURRENT="$CURRENT"
@@ -238,11 +249,88 @@ run_frontend_build_key_sandbox() {
   expect_success bash "$DEPLOY_SCRIPT"
   [[ -f "$FRONTEND_BUILD_PROOF" ]] || fail 'frontend build did not receive the API key'
   [[ "$(current_target)" == "$REL_B" ]] || fail 'frontend build scenario did not activate its candidate'
+  assert_npm_package_record npm-ci 'sudo env CI=true npm ci --silent --no-audit --no-fund ' 'npm notice fetched retry-package' \
+    'npm WARN retry GET https://registry.example.test/retry-package attempt 2' 0
+  assert_npm_package_record npm-build 'sudo env CI=true VITE_CEA_API_KEY=\<redacted\> npm run build ' 'npm notice built frontend' \
+    'npm WARN build metadata retry skipped' 0
   if grep -RFq --exclude="$(basename "$API_KEY_ENV_FILE")" "$build_key" "$SANDBOX"; then
     fail 'frontend build scenario recorded its API key'
   fi
   unset DEPLOY_TEST_EXPECTED_API_KEY
   pass "frontend build receives the API key without recording it"
+}
+
+run_package_default_path_sandbox() {
+  local build_key
+
+  build_key="$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
+  printf 'CEA_API_KEY=%s\n' "$build_key" > "$API_KEY_ENV_FILE"
+  chmod 0600 "$API_KEY_ENV_FILE"
+
+  clear_state
+  set_current "$REL_A"
+  write_state_json "rel-A" "$REL_A" ""
+  printf 'ready\n' > "$HEALTH_STATE_FILE"
+  base_environment
+  unset DEPLOY_PACKAGE_LOG
+  export API_KEY_ENV_FILE
+  export DEPLOY_SKIP_STAGING=0
+  export DEPLOY_TEST_EXPECTED_API_KEY="$build_key"
+  export FRONTEND_BUILD_PROOF
+  export TARGET="$REL_B"
+  expect_success bash "$DEPLOY_SCRIPT"
+  [[ -f "$FRONTEND_BUILD_PROOF" ]] || fail 'default package log scenario did not build the frontend'
+  [[ "$(current_target)" == "$REL_B" ]] || fail 'default package log scenario did not activate its candidate'
+  cp "$STATE_DIR/deploy-packages.log" "$PACKAGE_LOG"
+  assert_npm_package_record npm-ci 'sudo env CI=true npm ci --silent --no-audit --no-fund ' 'npm notice fetched retry-package' \
+    'npm WARN retry GET https://registry.example.test/retry-package attempt 2' 0
+  unset DEPLOY_TEST_EXPECTED_API_KEY
+  pass "default package log path records npm-ci output"
+}
+
+assert_npm_package_record() {
+  local command_name="$1"
+  local command_argv="$2"
+  local stdout_text="$3"
+  local stderr_text="$4"
+  local exit_status="$5"
+  local command_line stdout_begin_line stdout_line stdout_end_line stderr_begin_line stderr_line stderr_end_line exit_line
+
+  command_line=$(grep -Fn "[package-command] command=$command_name argv=$command_argv" "$PACKAGE_LOG" | cut -d: -f1 || true)
+  stdout_begin_line=$(grep -Fn "[package-command] command=$command_name stdout_begin" "$PACKAGE_LOG" | cut -d: -f1 || true)
+  stdout_line=$(grep -Fn "[package-command] command=$command_name stdout=$stdout_text" "$PACKAGE_LOG" | cut -d: -f1 || true)
+  stdout_end_line=$(grep -Fn "[package-command] command=$command_name stdout_end" "$PACKAGE_LOG" | cut -d: -f1 || true)
+  stderr_begin_line=$(grep -Fn "[package-command] command=$command_name stderr_begin" "$PACKAGE_LOG" | cut -d: -f1 || true)
+  stderr_line=$(grep -Fn "[package-command] command=$command_name stderr=$stderr_text" "$PACKAGE_LOG" | cut -d: -f1 || true)
+  stderr_end_line=$(grep -Fn "[package-command] command=$command_name stderr_end" "$PACKAGE_LOG" | cut -d: -f1 || true)
+  exit_line=$(grep -Fn "[package-command] command=$command_name exit_status=$exit_status" "$PACKAGE_LOG" | cut -d: -f1 || true)
+  [[ -n "$command_line" && -n "$stdout_begin_line" && -n "$stdout_line" && -n "$stdout_end_line" && \
+    -n "$stderr_begin_line" && -n "$stderr_line" && -n "$stderr_end_line" && -n "$exit_line" ]] || \
+    fail 'npm package record does not preserve both streams and exit status'
+  (( command_line < stdout_begin_line && stdout_begin_line < stdout_line && stdout_line < stdout_end_line && \
+    stdout_end_line < stderr_begin_line && stderr_begin_line < stderr_line && stderr_line < stderr_end_line && \
+    stderr_end_line < exit_line )) || fail 'npm package record is not deterministically ordered'
+}
+
+run_package_failure_sandbox() {
+  clear_state
+  set_current "$REL_A"
+  write_state_json "rel-A" "$REL_A" "$REL_C"
+  printf 'ready\n' > "$HEALTH_STATE_FILE"
+  base_environment
+  export DEPLOY_SKIP_STAGING=0
+  export DEPLOY_TEST_NPM_CI_FAILURE=1
+  export TARGET="$REL_B"
+  expect_failure bash "$DEPLOY_SCRIPT"
+  assert_npm_package_record npm-ci 'sudo env CI=true npm ci --silent --no-audit --no-fund ' 'npm notice failed retry-package' \
+    'npm ERR retry GET https://registry.example.test/retry-package exhausted' 42
+  [[ "$(current_target)" == "$REL_A" ]] || fail 'package failure changed the active release'
+  [[ "$(state_field last_good_release_id)" == "rel-A" ]] || fail 'package failure changed last-good state'
+  [[ "$(state_field rollback_to_path)" == "$REL_C" ]] || fail 'package failure changed rollback target'
+  [[ "$(state_field candidate_release_id)" == "" ]] || fail 'package failure recorded a candidate'
+  [[ "$(cat "$EVENT_LOG")" != *"systemctl restart"* ]] || fail 'package failure restarted services'
+  unset DEPLOY_TEST_NPM_CI_FAILURE
+  pass "package command failure records both streams and preserves deploy state"
 }
 
 expect_failure() {
@@ -269,7 +357,8 @@ current_target() {
 }
 
 clear_state() {
-  rm -f "$STATE_FILE" "$EVENT_LOG" "$HEALTH_STATE_FILE" "$HEALTH_DELAYED_CALLS_FILE"
+  rm -f "$STATE_FILE" "$EVENT_LOG" "$PACKAGE_LOG" "$HEALTH_STATE_FILE" "$HEALTH_DELAYED_CALLS_FILE"
+  rm -f "$STATE_DIR/deploy-packages.log"
   rm -f "$CURRENT"
   unset HEALTH_DELAYED_URL HEALTH_DELAYED_FAILURES ROLLBACK_HEALTH_TIMEOUT_SECONDS
 }
@@ -388,6 +477,8 @@ PY
 }
 
 run_frontend_build_key_sandbox
+run_package_default_path_sandbox
+run_package_failure_sandbox
 
 # --- Scenario 1: stale state reconciliation ---
 clear_state
