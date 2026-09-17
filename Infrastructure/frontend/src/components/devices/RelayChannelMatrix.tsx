@@ -88,7 +88,7 @@ export default function RelayChannelMatrix({
   }
 
   const relayWidth = variant === 'panel' ? '198px' : '144px'
-  const relayHeight = variant === 'panel' ? 'calc(var(--relay-w) * 11 / 20)' : '52px'
+  const relayHeight = 'calc(var(--relay-w) * 11 / 20)'
 
   return (
     <div className="rounded-sm bg-surface-secondary p-0">
