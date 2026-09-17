@@ -392,7 +392,7 @@ export default function ZoneConfig({
             )}
 
             {/* Climate Periods + Relay Matrix row (owner layout) */}
-            <div className="flex gap-1 h-[580px] shrink-0">
+            <div className="flex gap-1">
               <div className="flex-1 flex flex-col gap-1 h-full overflow-hidden">
                 {!isConstant ? (
                   <>
@@ -407,7 +407,7 @@ export default function ZoneConfig({
                   <ManualLightControl location={location} cluster={cluster} compact={true} />
                 )}
               </div>
-              <div className="h-full shrink-0 min-w-0 overflow-hidden">
+              <div className="shrink-0 min-w-0">
                 {!mcpConnected && (
                   <div className="mb-1 rounded-sm border border-status-error-border/80 bg-status-error-bg/30 px-2 py-1 text-[10px] font-semibold text-status-error-text">
                     MCP23017 disconnected
