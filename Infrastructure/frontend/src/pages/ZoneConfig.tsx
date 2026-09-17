@@ -178,8 +178,8 @@ export default function ZoneConfig({
     [location, cluster]
   )
 
-  const loadSavedTimelineForMode = useCallback(async (mode: RoomModeWithParams) => {
-    if (isCanonicalConstantMode(mode.mode_name) || !location || !cluster) return
+  const loadSavedTimelineForMode = useCallback(async () => {
+    if (!location || !cluster) return
 
     try {
       const start = new Date()
@@ -210,7 +210,7 @@ export default function ZoneConfig({
       setRoomMode(mode)
 
       await loadClimatePeriodsForMode(mode)
-      await loadSavedTimelineForMode(mode)
+      await loadSavedTimelineForMode()
     } catch (err) {
       logger.error('Error loading room mode:', err)
       setError(extractErrorMessage(err, 'Failed to load'))
@@ -227,7 +227,7 @@ export default function ZoneConfig({
       setRoomMode(newMode)
       setTimelineBaseline(null)
       await loadClimatePeriodsForMode(newMode)
-      await loadSavedTimelineForMode(newMode)
+      await loadSavedTimelineForMode()
       setSuccess('Mode changed')
       setTimeout(() => setSuccess(null), 2000)
     } catch (err) {
@@ -375,7 +375,7 @@ export default function ZoneConfig({
       <div className="max-w-[1920px] mx-auto h-[calc(100vh-1rem)] min-w-0 flex flex-col">
         {params && (
           <div className="flex-1 flex flex-col gap-1 min-h-0">
-            {!isConstant && roomMode && (
+            {roomMode && (
               timelineBaseline ? (
                 <div className="w-full min-w-0 shrink-0 overflow-auto">
                   <TimelineEditor
@@ -390,24 +390,19 @@ export default function ZoneConfig({
                 </div>
               )
             )}
-            {isConstant && (
-              <div className="h-[300px] shrink-0 overflow-hidden rounded-lg border border-border-subtle bg-surface-primary p-0">
-                <div className="flex h-full items-center justify-center text-sm text-text-subtle">Constant mode - no timeline</div>
-              </div>
-            )}
 
-            {/* Climate Periods + Relay Matrix row - 450px */}
-            <div className="flex min-h-0 shrink-0 flex-col gap-1 md:h-[580px] md:flex-row">
-              <div className="flex min-h-[320px] min-w-0 flex-1 flex-col gap-1 overflow-hidden md:min-h-0">
+            {/* Relay Matrix + Light slider row - matrix dictates the height */}
+            <div className="flex gap-1 h-[580px] shrink-0">
+              <div className="flex-1 flex flex-col gap-1 h-full overflow-hidden min-w-0">
                 {!isConstant ? (
-                  <div className="h-full overflow-auto">
+                  <div className="flex-1 overflow-auto">
                     <LightIntensity ref={lightIntensityRef} location={location} cluster={cluster} compact={true} />
                   </div>
                 ) : (
                   <ManualLightControl location={location} cluster={cluster} compact={true} />
                 )}
               </div>
-              <div className="w-full min-w-0 overflow-x-auto md:h-full md:w-auto md:shrink-0 md:overflow-hidden">
+              <div className="h-full shrink-0 min-w-0 overflow-hidden">
                 {!mcpConnected && (
                   <div className="mb-1 rounded-sm border border-status-error-border/80 bg-status-error-bg/30 px-2 py-1 text-[10px] font-semibold text-status-error-text">
                     MCP23017 disconnected

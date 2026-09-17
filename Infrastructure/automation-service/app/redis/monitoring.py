@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from typing import Protocol
 
+from pydantic import ValidationError
 import redis
 
 from app.schemas.climate_timeline import RichTrajectoryEnvelope
@@ -34,6 +35,12 @@ class RedisPipeline(Protocol):
     def set(self, key: str, value: str) -> RedisPipeline: ...
 
     def execute(self) -> list[bool]: ...
+
+
+class RedisGetter(Protocol):
+    """Narrow read-only Redis capability for advisory cache consumers."""
+
+    def get(self, key: str) -> str | bytes | None: ...
 
 
 class RedisCurrentPublicationWriter:
@@ -110,7 +117,7 @@ class RedisCurrentPublicationWriter:
 class RedisRichTrajectoryReader:
     """Read worker-published rich trajectories from a concrete Redis client."""
 
-    def __init__(self, redis_client: redis.Redis) -> None:
+    def __init__(self, redis_client: RedisGetter) -> None:
         self._redis_client = redis_client
 
     def read_rich_trajectory(self, location: str) -> RichTrajectoryEnvelope | None:
@@ -122,4 +129,11 @@ class RedisRichTrajectoryReader:
             return None
         if not isinstance(raw, (str, bytes, bytearray)):
             return None
-        return RichTrajectoryEnvelope.model_validate_json(raw)
+        # The rich trajectory is an advisory recompute cache, never an
+        # authority: a stale or foreign-shape payload must degrade to None so
+        # the saved-timeline service falls back to recomputation instead of
+        # surfacing a 422 that blocks the whole timeline page.
+        try:
+            return RichTrajectoryEnvelope.model_validate_json(raw)
+        except ValidationError:
+            return None

@@ -16,7 +16,7 @@ export function TimelineEditor({ saved, lockedPhotoperiodHours = null }: Timelin
 
   return (
     <div className="flex min-h-0 w-full min-w-0 flex-col gap-1">
-      <div className="min-h-[300px] shrink-0 overflow-visible rounded-lg border border-border-subtle bg-surface-primary p-0 md:h-[300px] md:overflow-hidden">
+      <div className="h-[300px] shrink-0 overflow-hidden rounded-lg border border-border-subtle bg-surface-primary p-0">
         <ControlTimeline mode={expanded ? 'expanded' : 'compact'} controller={controller} onExpand={() => setExpanded(true)} lockedPhotoperiodHours={lockedPhotoperiodHours} />
       </div>
       <div className="min-h-0 overflow-auto rounded-lg border border-border-subtle bg-surface-primary p-1">

@@ -221,4 +221,17 @@ describe('buildScales', () => {
     vpd.presentation = { lineWidth: 3 }
     expect(buildSeries(data).find((series) => series.label === 'vpd')?.width).toBe(3)
   })
+
+  it('keeps dot-style setpoint lanes visible', () => {
+    const data = makeData()
+    const vpd = data.series.find((series) => series.family === 'vpd')
+    if (vpd === undefined) throw new Error('VPD series is required')
+
+    vpd.presentation = { dash: [0, 5] }
+    vpd.source = 'climate'
+    const dotLane = buildSeries(data).find((series) => series.label === 'vpd')
+    if (dotLane === undefined) throw new Error('VPD series is required')
+    expect(dotLane.dash).toEqual([1, 5])
+    expect(dotLane.cap).toBe('round')
+  })
 })
