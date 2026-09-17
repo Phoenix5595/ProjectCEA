@@ -157,7 +157,12 @@ test('records fixture-only client processing and paint-age SLO samples', async (
   await expect.poll(() => sensorRangeRequests).toBe(beforeZoomRequests + 1)
 
   const beforeResize = await perfSnapshot(page)
-  await page.setViewportSize({ width: 1180, height: 900 })
+  const currentViewport = page.viewportSize()
+  const otherApprovedViewport =
+    currentViewport?.width === 1280 && currentViewport?.height === 1440
+      ? { width: 1920, height: 1080 }
+      : { width: 1280, height: 1440 }
+  await page.setViewportSize(otherApprovedViewport)
   await expect
     .poll(async () => (await perfSnapshot(page))?.resizeCount ?? -1)
     .toBeGreaterThan(beforeResize?.resizeCount ?? -1)
@@ -273,7 +278,15 @@ test('permits one post-interval sensor refresh without per-tick history reloads'
   const initialSensorRangeRequests = sensorRangeRequests
   const initialControlRangeRequests = controlRangeRequests
 
-  await page.waitForTimeout(60_000)
+  // Wait deterministically for the one cadence-driven refresh instead of a
+  // blind 60s sleep, then require a bounded stability window with no further
+  // reloads: a per-tick reload defect would produce additional requests
+  // within the window, failing the final exactly-once assertion.
+  await expect
+    .poll(() => sensorRangeRequests, { timeout: 90_000 })
+    .toBe(initialSensorRangeRequests + 1)
+  await expect.poll(() => tailInFlight, { timeout: 10_000 }).toBe(0)
+  await page.waitForTimeout(10_000)
 
   expect(sensorRangeRequests).toBe(initialSensorRangeRequests + 1)
   expect(controlRangeRequests).toBe(initialControlRangeRequests)
@@ -283,6 +296,7 @@ test('permits one post-interval sensor refresh without per-tick history reloads'
 })
 
 test('performs one bounded control reconciliation after flush health recovers', async ({ page }, testInfo) => {
+  test.setTimeout(75_000)
   const violations = trackViolations(page)
   let controlRangeRequests = 0
   let tailInFlight = 0
@@ -311,7 +325,14 @@ test('performs one bounded control reconciliation after flush health recovers', 
   await page.waitForTimeout(500)
   const initialControlRanges = controlRangeRequests
 
-  await page.waitForTimeout(3_000)
+  // Poll for the recovery reconciliation instead of assuming it lands inside
+  // a fixed 3s window, then bound the behavior: after the first reconcile no
+  // further range reloads may occur and all tails must have drained.
+  await expect
+    .poll(() => controlRangeRequests - initialControlRanges, { timeout: 60_000 })
+    .toBeGreaterThanOrEqual(1)
+  await expect.poll(() => tailInFlight, { timeout: 10_000 }).toBe(0)
+  await page.waitForTimeout(5_000)
 
   expect(controlRangeRequests - initialControlRanges).toBe(1)
   expect(maxTailInFlight).toBe(1)

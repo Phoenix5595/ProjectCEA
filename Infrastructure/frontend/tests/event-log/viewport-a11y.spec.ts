@@ -2,12 +2,12 @@
  * Event-log viewport and accessibility QA.
  *
  * Exercises the event-log UI on Dashboard and the three overview pages
- * (Flower, Vegetation, Laboratory) at 375/768/1280 px. Asserts:
+ * (Flower, Vegetation, Laboratory) at the two configured desktop viewports. Asserts:
  * - The event-log section renders with entries
  * - axe-core reports zero serious/critical violations
  * - No request leaves the exact fixture origin
  * - Severity badges are visible and non-color-dependent
- * - No text clipping at any viewport width
+ * - No text clipping at either configured viewport
  */
 import { test, expect } from '@playwright/test'
 import AxeBuilder from '@axe-core/playwright'
@@ -16,8 +16,6 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { describeViolation } from '../../src/features/monitoring/config/originGuard'
 import { fixtureUrl } from '../monitoring/fixtureUrl'
-
-const WIDTHS = [375, 768, 1280] as const
 
 const PAGES = [
   { path: '/', name: 'Dashboard', heading: 'Event Log' },
@@ -41,13 +39,11 @@ function seriousCritical(results: AxeResults) {
 }
 
 for (const pageDef of PAGES) {
-  for (const width of WIDTHS) {
-    test(`event-log renders on ${pageDef.name} at ${width}px with zero serious/critical axe violations`, async ({
-      page: p,
-    }, testInfo) => {
-      await p.setViewportSize({ width, height: 900 })
-      const violations = trackViolations(p)
-      await p.goto(fixtureUrl(pageDef.path, testInfo))
+  test(`event-log renders on ${pageDef.name} with zero serious/critical axe violations`, async ({
+    page: p,
+  }, testInfo) => {
+    const violations = trackViolations(p)
+    await p.goto(fixtureUrl(pageDef.path, testInfo))
 
       const eventLogSection = p.getByRole('region', { name: 'Event Log' })
       await expect(eventLogSection).toBeVisible({ timeout: 10_000 })
@@ -75,16 +71,14 @@ for (const pageDef of PAGES) {
       }
       expect(
         bad.map((v) => ({ id: v.id, impact: v.impact, nodes: v.nodes.length })),
-        `axe violations on ${pageDef.name} at ${width}px`,
+        `axe violations on ${pageDef.name}`,
       ).toEqual([])
 
-      expect(violations).toEqual([])
-    })
-  }
+    expect(violations).toEqual([])
+  })
 }
 
 test('severity badges have non-color text treatment', async ({ page }, testInfo) => {
-  await page.setViewportSize({ width: 1280, height: 900 })
   await page.goto(fixtureUrl('/flower', testInfo))
   await expect(page.getByRole('heading', { name: 'Event Log' })).toBeVisible({ timeout: 10_000 })
 
@@ -103,7 +97,6 @@ test('severity badges have non-color text treatment', async ({ page }, testInfo)
 })
 
 test('event-label fixture exposes readable labels, exact severity, and keyboard details', async ({ page }, testInfo) => {
-  await page.setViewportSize({ width: 1280, height: 900 })
   const violations = trackViolations(page)
   const requestUrls: string[] = []
   page.on('request', (request) => requestUrls.push(request.url()))
@@ -175,32 +168,7 @@ test('event-label fixture exposes readable labels, exact severity, and keyboard 
   expect(violations).toEqual([])
 })
 
-test('event-log entries do not clip text at 375px', async ({ page }, testInfo) => {
-  await page.setViewportSize({ width: 375, height: 900 })
-  await page.goto(fixtureUrl('/flower', testInfo))
-  await expect(page.getByRole('heading', { name: 'Event Log' })).toBeVisible({ timeout: 10_000 })
-
-  const entries = page.locator('[role="listitem"]')
-  const count = await entries.count()
-  expect(count).toBeGreaterThan(0)
-
-  for (let i = 0; i < Math.min(count, 3); i++) {
-    const entry = entries.nth(i)
-    const box = await entry.boundingBox()
-    expect(box).not.toBeNull()
-    if (box) {
-      expect(box.width).toBeLessThanOrEqual(375)
-      expect(box.height).toBeGreaterThan(0)
-    }
-    const text = await entry.textContent()
-    expect(text).toBeTruthy()
-    expect(text!.length).toBeGreaterThan(0)
-  }
-})
-
 test('event-log renders with CJK payload without glyph drop', async ({ page, context }, testInfo) => {
-  await page.setViewportSize({ width: 1280, height: 900 })
-
   const cjkEvent = {
     redis_id: `${Date.now()}-100`,
     event: {
@@ -265,8 +233,6 @@ test('event-log renders with CJK payload without glyph drop', async ({ page, con
 })
 
 test('unknown event type uses deterministic humanized label', async ({ page, context }, testInfo) => {
-  await page.setViewportSize({ width: 1280, height: 900 })
-
   const unknownEvent = {
     redis_id: `${Date.now()}-99`,
     event: {

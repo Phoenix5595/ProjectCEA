@@ -58,6 +58,10 @@ bash Infrastructure/scripts/tests/test-deploy-candidate.sh
 
 Do not extend these commands to contact production endpoints, databases, Redis, or hardware.
 
+## Browser QA viewport rule
+
+Every Playwright run uses exactly **1920x1080** and **1280x1440** (the right half of a 2560x1440 display). Nothing smaller is permitted. Mobile/small-screen QA is a planned future focused pass, per the owner decision on 2026-09-15.
+
 ## Working Tree Discipline
 
 - Do not stage, commit, reset, clean, stash, or overwrite files outside the task allowlist.

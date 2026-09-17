@@ -1,8 +1,7 @@
 import { expect, test } from '@playwright/test'
 import { fixtureUrl } from './fixtureUrl'
 
-test('renders every relay label inside the ZoneConfig matrix host at 1280x900', async ({ page }, testInfo) => {
-  await page.setViewportSize({ width: 1280, height: 900 })
+test('renders every relay label inside the ZoneConfig matrix host', async ({ page }, testInfo) => {
   await page.goto(fixtureUrl('/flower/control', testInfo))
 
   const matrix = page.getByTestId('relay-channel-matrix')

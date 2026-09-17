@@ -24,7 +24,6 @@ function trackViolations(page: import('@playwright/test').Page): string[] {
 }
 
 test('severity filter buttons update visible entries', async ({ page }, testInfo) => {
-  await page.setViewportSize({ width: 1280, height: 900 })
   const violations = trackViolations(page)
   await page.goto(fixtureUrl('/flower', testInfo))
   await expect(page.getByRole('heading', { name: 'Event Log' })).toBeVisible({ timeout: 10_000 })
@@ -66,7 +65,6 @@ test('severity filter buttons update visible entries', async ({ page }, testInfo
 })
 
 test('search filter narrows visible entries', async ({ page }, testInfo) => {
-  await page.setViewportSize({ width: 1280, height: 900 })
   await page.goto(fixtureUrl('/flower', testInfo))
   await expect(page.getByRole('heading', { name: 'Event Log' })).toBeVisible({ timeout: 10_000 })
 
@@ -97,7 +95,6 @@ test('search filter narrows visible entries', async ({ page }, testInfo) => {
 })
 
 test('expansion toggle reveals and hides event details', async ({ page }, testInfo) => {
-  await page.setViewportSize({ width: 1280, height: 900 })
   await page.goto(fixtureUrl('/flower', testInfo))
   await expect(page.getByRole('heading', { name: 'Event Log' })).toBeVisible({ timeout: 10_000 })
 
@@ -119,7 +116,6 @@ test('expansion toggle reveals and hides event details', async ({ page }, testIn
 })
 
 test('keyboard Enter and Space toggle expansion', async ({ page }, testInfo) => {
-  await page.setViewportSize({ width: 1280, height: 900 })
   await page.goto(fixtureUrl('/flower', testInfo))
   await expect(page.getByRole('heading', { name: 'Event Log' })).toBeVisible({ timeout: 10_000 })
 
@@ -138,7 +134,6 @@ test('keyboard Enter and Space toggle expansion', async ({ page }, testInfo) => 
 })
 
 test('event-log deduplicates entries with same redis_id', async ({ page }, testInfo) => {
-  await page.setViewportSize({ width: 1280, height: 900 })
   await page.goto(fixtureUrl('/flower', testInfo))
   await expect(page.getByRole('heading', { name: 'Event Log' })).toBeVisible({ timeout: 10_000 })
 
@@ -162,7 +157,6 @@ test('event-log deduplicates entries with same redis_id', async ({ page }, testI
 })
 
 test('event count display updates with filter', async ({ page }, testInfo) => {
-  await page.setViewportSize({ width: 1280, height: 900 })
   await page.goto(fixtureUrl('/flower', testInfo))
   await expect(page.getByRole('heading', { name: 'Event Log' })).toBeVisible({ timeout: 10_000 })
 

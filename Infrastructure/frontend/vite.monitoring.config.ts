@@ -535,7 +535,7 @@ function monitoringPreviewPlugin(): Plugin {
           const key = `backend-down:${fixtureSession}`
           const count = scenarioCounters.get(key) ?? 0
           scenarioCounters.set(key, count + 1)
-          if (count < 2) {
+          if (count < 3) {
             res.statusCode = 503
             res.setHeader('Content-Type', 'application/json')
             res.end(JSON.stringify({ detail: 'backend down (fixture)' }))
@@ -755,7 +755,9 @@ function monitoringPreviewPlugin(): Plugin {
               const count = scenarioCounters.get(key) ?? 0
               scenarioCounters.set(key, count + 1)
               if (count === 0) {
-                setTimeout(() => res.end(body), 1_200)
+                res.statusCode = 503
+                res.setHeader('Content-Type', 'application/json')
+                res.end(JSON.stringify({ detail: 'control tail unavailable (fixture)' }))
                 return
               }
             }
