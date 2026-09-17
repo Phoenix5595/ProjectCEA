@@ -385,19 +385,21 @@ export default function ZoneConfig({
                   />
                 </div>
               ) : (
-                <div className="w-full min-w-0 shrink-0 overflow-auto rounded-lg border border-border-subtle bg-surface-primary p-1">
-                  <ClimatePeriodsTable periods={climatePeriods} onChange={setClimatePeriods} />
+                <div className="w-full min-w-0 shrink-0 overflow-auto rounded-lg border border-status-warning-border bg-status-warning-bg/30 px-3 py-2 text-xs text-status-warning-text">
+                  Timeline unavailable — editing periods in the row below.
                 </div>
               )
             )}
 
-            {/* Relay Matrix + Light slider row - matrix dictates the height */}
-            <div className="flex gap-1 h-[580px] shrink-0">
-              <div className="flex-1 flex flex-col gap-1 h-full overflow-hidden min-w-0">
+            {/* Climate periods table + light sliders row; the relay matrix spans
+                both on the right and dictates the total row height. */}
+            <div className="flex gap-1">
+              <div className="flex-1 flex flex-col gap-1 min-w-0 overflow-hidden">
+                <div className="flex-1 overflow-auto">
+                  <ClimatePeriodsTable periods={climatePeriods} onChange={setClimatePeriods} />
+                </div>
                 {!isConstant ? (
-                  <div className="flex-1 overflow-auto">
-                    <LightIntensity ref={lightIntensityRef} location={location} cluster={cluster} compact={true} />
-                  </div>
+                  <LightIntensity ref={lightIntensityRef} location={location} cluster={cluster} compact={true} />
                 ) : (
                   <ManualLightControl location={location} cluster={cluster} compact={true} />
                 )}

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { act, renderHook } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import { ControlTimeline } from '../components/ControlTimeline'
@@ -177,15 +177,16 @@ describe('ControlTimeline', () => {
     expect(result.current.state.status).toEqual({ kind: 'editing' })
   })
 
-  it('keeps ClimatePeriodsTable visible beneath compact timeline', () => {
+  it('renders the compact timeline visual without embedding the periods table', () => {
     // Given: the product editor is mounted in its default compact state.
+    // The permanent ClimatePeriodsTable lives on the ZoneConfig row beneath it.
     render(<TimelineEditor saved={baseline()} />)
 
     // When: the operator inspects the control page.
-    const table = screen.getByRole('table')
+    const table = screen.queryByRole('table')
 
-    // Then: the permanent primary editor is immediately discoverable.
-    expect(within(table).getByText('Period')).toBeInTheDocument()
+    // Then: the timeline visual hosts no second table and the expand control is present.
+    expect(table).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: /expand editor/i })).toBeInTheDocument()
   })
 
