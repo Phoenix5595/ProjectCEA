@@ -22,6 +22,18 @@ const RANGE_BOUNDS: Partial<
   pressure: { min: 1012, max: 1014 },
 }
 
+
+/** uPlot's default tick pass stops at the largest clean value within
+ *  [scaleMin, scaleMax]; when the ±5% headroom is unlabeled the axis visually
+ *  stops at the data extreme. Snap the padded bounds outward to the next
+ *  1/2/10 step so the extreme always sits BETWEEN ticks. */
+function snapPaddedBounds(lo: number, hi: number): [number, number] {
+  const span = Math.max(hi - lo, 1e-9)
+  const magnitude = 10 ** Math.floor(Math.log10(span / 4))
+  const step = magnitude * (span / 4 / magnitude <= 1 ? 1 : span / 4 / magnitude <= 2 ? 2 : span / 4 / magnitude <= 5 ? 5 : 10)
+  return [Math.floor(lo / step) * step, Math.ceil(hi / step) * step]
+}
+
 function boundedRange(
   forcedMin?: number,
   forcedMax?: number,
@@ -41,6 +53,9 @@ function boundedRange(
     if (forcedMin !== undefined && lo > forcedMin) lo = forcedMin
     if (forcedMax !== undefined && hi < forcedMax) hi = forcedMax
     if (lo >= hi) hi = lo + 1
+    const [snappedLo, snappedHi] = snapPaddedBounds(lo, hi)
+    if (!(forcedMin !== undefined && snappedLo < forcedMin)) lo = snappedLo
+    if (!(forcedMax !== undefined && snappedHi > forcedMax)) hi = snappedHi
     return [lo, hi]
   }
 }
@@ -104,6 +119,7 @@ export interface ChartScales {
 }
 
 function readTokenXStroke(): string {
+  if (typeof document === 'undefined') return 'rgba(200, 214, 194, 0.9)'
   const value = getComputedStyle(document.documentElement)
     .getPropertyValue('--text-muted')
     .trim()

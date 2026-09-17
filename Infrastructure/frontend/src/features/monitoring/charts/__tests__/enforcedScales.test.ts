@@ -37,6 +37,6 @@ describe('uPlot honors enforced range functions', () => {
     expect(axes.find((axis) => axis.scale === 'temperature')?.side).toBe(3)
     const range = scales.temperature?.range
     if (typeof range !== 'function') throw new Error('Temperature range is required')
-    expect(Reflect.apply(range, undefined, [undefined, 22, 25])).toEqual([21.85, 25.15])
+    expect(Reflect.apply(range, undefined, [undefined, 22, 25])).toEqual([21, 26])
   })
 })
