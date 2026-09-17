@@ -5,7 +5,10 @@ const path = require('path')
 
 const BASE = 'http://127.0.0.1:4173'
 const OUT = path.resolve(__dirname, '../../../../.omo/evidence/grafana-replacement-veg-flower/29-visual-a11y')
-const WIDTHS = [375, 768, 1280]
+const VIEWPORTS = [
+  { width: 1920, height: 1080 },
+  { width: 1280, height: 1440 },
+]
 const PAGES = [
   { slug: 'flower', path: '/flower/monitoring' },
   { slug: 'veg', path: '/vegetation/monitoring' },
@@ -17,21 +20,21 @@ const PAGES = [
   const logs = { requests: [], console: [] }
 
   for (const pageDef of PAGES) {
-    for (const width of WIDTHS) {
-      const context = await browser.newContext({ viewport: { width, height: 900 } })
+    for (const viewport of VIEWPORTS) {
+      const context = await browser.newContext({ viewport })
       const page = await context.newPage()
       page.on('request', (req) => {
-        logs.requests.push({ page: pageDef.slug, width, url: req.url() })
+        logs.requests.push({ page: pageDef.slug, viewport, url: req.url() })
       })
       page.on('console', (msg) => {
         if (msg.type() === 'error' || msg.type() === 'warning') {
-          logs.console.push({ page: pageDef.slug, width, type: msg.type(), text: msg.text() })
+          logs.console.push({ page: pageDef.slug, viewport, type: msg.type(), text: msg.text() })
         }
       })
       await page.goto(`${BASE}${pageDef.path}`, { waitUntil: 'networkidle' })
       await page.waitForTimeout(1500)
       await page.screenshot({
-        path: path.join(OUT, `${pageDef.slug}-${width}.png`),
+        path: path.join(OUT, `${pageDef.slug}-${viewport.width}x${viewport.height}.png`),
         fullPage: true,
       })
       await context.close()

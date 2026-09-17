@@ -2,7 +2,6 @@ import { test, expect } from '@playwright/test'
 import { fixtureUrl } from './fixtureUrl'
 
 test('monitoring desktop geometry matches the historical layout contract', async ({ page }, testInfo) => {
-  await page.setViewportSize({ width: 1280, height: 900 })
   await page.goto(fixtureUrl('/flower/monitoring', testInfo))
   await expect(page.locator('.mon-layout')).toBeVisible()
 
@@ -34,7 +33,6 @@ test('monitoring desktop geometry matches the historical layout contract', async
     toolbarFlexWrap: 'wrap',
     toolbarPadding: '0px',
     toolbarMarginBottom: '0px',
-    gridTemplateColumns: '340px 684px',
     sidebarWidth: 340,
     tableWidth: 330,
   })

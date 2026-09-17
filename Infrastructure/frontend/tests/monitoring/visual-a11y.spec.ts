@@ -1,7 +1,7 @@
 /**
  * Monitoring accessibility and visual QA browser coverage.
  *
- * Runs axe-core against both native monitoring pages at 375/768/1280 px and
+ * Runs axe-core against both native monitoring pages at the two configured desktop viewports and
  * across all six themes, asserting zero serious/critical violations. Also
  * verifies the keyboard/control alternatives (legend toggle, reset zoom, table
  * disclosure), canvas labelling (aria-label + aria-describedby), table
@@ -13,8 +13,6 @@ import AxeBuilder from '@axe-core/playwright'
 import { describeViolation } from '../../src/features/monitoring/config/originGuard'
 import { MONITORING_THEMES } from '../../src/features/monitoring/designTokens'
 import { fixtureUrl } from './fixtureUrl'
-
-const WIDTHS = [375, 768, 1280]
 
 const PAGES = [
   {
@@ -49,11 +47,9 @@ function seriousCritical(results: {
 }
 
 for (const page of PAGES) {
-  for (const width of WIDTHS) {
-    test(`axe has no serious/critical violations on ${page.path} at ${width}px with forced error`, async ({
-      page: p,
-      }, testInfo) => {
-      await p.setViewportSize({ width, height: 900 })
+  test(`axe has no serious/critical violations on ${page.path} with forced error`, async ({
+    page: p,
+  }, testInfo) => {
       const violations = trackViolations(p)
       await p.goto(fixtureUrl(page.path, testInfo, 'error', 'force-error'))
       await expect(p.getByRole('heading', { name: page.climateHeading })).toBeVisible()
@@ -66,15 +62,13 @@ for (const page of PAGES) {
       const bad = seriousCritical(results)
       expect(
         bad.map((v) => ({ id: v.id, impact: v.impact, nodes: v.nodes.length })),
-        `axe violations on ${page.path} at ${width}px with forced error`,
+        `axe violations on ${page.path} with forced error`,
       ).toEqual([])
       expect(violations).toEqual([])
-    })
-  }
+  })
 }
 
 test('legend toggles and reset zoom are keyboard-operable', async ({ page }, testInfo) => {
-  await page.setViewportSize({ width: 1280, height: 900 })
   const violations = trackViolations(page)
   await page.goto(fixtureUrl('/flower/monitoring', testInfo))
   await expect(page.getByRole('heading', { name: 'Flower climate conditions' })).toBeVisible()
@@ -95,7 +89,6 @@ test('legend toggles and reset zoom are keyboard-operable', async ({ page }, tes
 })
 
 test('chart canvas has an accessible name and description', async ({ page }, testInfo) => {
-  await page.setViewportSize({ width: 1280, height: 900 })
   const violations = trackViolations(page)
   await page.goto(fixtureUrl('/flower/monitoring', testInfo))
   await expect(page.getByRole('heading', { name: 'Flower climate conditions' })).toBeVisible()
@@ -109,7 +102,6 @@ test('chart canvas has an accessible name and description', async ({ page }, tes
 })
 
 test('table alternative is discoverable via aria-expanded and aria-controls', async ({ page }, testInfo) => {
-  await page.setViewportSize({ width: 1280, height: 900 })
   const violations = trackViolations(page)
   await page.goto(fixtureUrl('/flower/monitoring', testInfo))
   await expect(page.getByRole('heading', { name: 'Flower atmosphere & equipment' })).toBeVisible()
@@ -126,7 +118,6 @@ test('table alternative is discoverable via aria-expanded and aria-controls', as
 
 test('reduced-motion disables transitions on interactive controls', async ({ page }, testInfo) => {
   await page.emulateMedia({ reducedMotion: 'reduce' })
-  await page.setViewportSize({ width: 1280, height: 900 })
   const violations = trackViolations(page)
   await page.goto(fixtureUrl('/flower/monitoring', testInfo))
   await expect(page.getByRole('heading', { name: 'Flower climate conditions' })).toBeVisible()
@@ -140,7 +131,6 @@ test('reduced-motion disables transitions on interactive controls', async ({ pag
 for (const theme of MONITORING_THEMES) {
   test(`axe has no serious/critical violations on flower in ${theme} theme with forced error`, async ({ page }, testInfo) => {
     await page.addInitScript((t) => localStorage.setItem('cea-theme', t), theme)
-    await page.setViewportSize({ width: 1280, height: 900 })
     const violations = trackViolations(page)
     await page.goto(fixtureUrl('/flower/monitoring', testInfo, 'error', 'force-error'))
     await expect(page.getByRole('heading', { name: 'Flower climate conditions' })).toBeVisible()

@@ -25,8 +25,12 @@ function trackViolations(page: import('@playwright/test').Page): string[] {
   return violations
 }
 
+type EventFixture = Readonly<{
+  readonly redis_id: string
+  readonly event: Record<string, unknown>
+}>
+
 test('empty scenario shows "No events yet" message', async ({ page }, testInfo) => {
-  await page.setViewportSize({ width: 1280, height: 900 })
   const violations = trackViolations(page)
 
   await page.route('**/api/events/history**', (route) => {
@@ -65,7 +69,6 @@ test('empty scenario shows "No events yet" message', async ({ page }, testInfo) 
 })
 
 test('error-500 scenario shows empty state after history failure', async ({ page, context }, testInfo) => {
-  await page.setViewportSize({ width: 1280, height: 900 })
   const violations = trackViolations(page)
 
   await context.route('**/api/events/history**', (route) => {
@@ -88,7 +91,6 @@ test('error-500 scenario shows empty state after history failure', async ({ page
 })
 
 test('auth-401 scenario shows empty state after auth pause', async ({ page, context }, testInfo) => {
-  await page.setViewportSize({ width: 1280, height: 900 })
   const violations = trackViolations(page)
 
   await context.route('**/api/events/history**', (route) => {
@@ -111,7 +113,6 @@ test('auth-401 scenario shows empty state after auth pause', async ({ page, cont
 })
 
 test('disconnect scenario shows empty state after stream closes immediately', async ({ page, context }, testInfo) => {
-  await page.setViewportSize({ width: 1280, height: 900 })
   const violations = trackViolations(page)
 
   await context.route('**/api/events/history**', (route) => {
@@ -149,7 +150,6 @@ test('disconnect scenario shows empty state after stream closes immediately', as
 })
 
 test('live stream appends events and scroll stays at bottom', async ({ page }, testInfo) => {
-  await page.setViewportSize({ width: 1280, height: 900 })
   const violations = trackViolations(page)
   await page.goto(fixtureUrl('/flower', testInfo))
   await expect(page.getByRole('heading', { name: 'Event Log' })).toBeVisible({ timeout: 10_000 })
@@ -171,7 +171,6 @@ test('live stream appends events and scroll stays at bottom', async ({ page }, t
 })
 
 test('room-filtered page shows only matching room events', async ({ page }, testInfo) => {
-  await page.setViewportSize({ width: 1280, height: 900 })
   const violations = trackViolations(page)
   await page.goto(fixtureUrl('/flower', testInfo))
   await expect(page.getByRole('heading', { name: 'Event Log' })).toBeVisible({ timeout: 10_000 })
@@ -186,10 +185,9 @@ test('room-filtered page shows only matching room events', async ({ page }, test
 })
 
 test('burst scenario renders many events without crash', async ({ page, context }, testInfo) => {
-  await page.setViewportSize({ width: 1280, height: 900 })
   const violations = trackViolations(page)
 
-  const burstEvents = []
+  const burstEvents: EventFixture[] = []
   for (let i = 0; i < 20; i++) {
     burstEvents.push({
       redis_id: `${Date.now() + i}-${1000 + i}`,

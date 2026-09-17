@@ -51,15 +51,30 @@ async function assertPanelsRender(page: import('@playwright/test').Page): Promis
 
 test('backend-down shows error, keeps panels, and recovers on retry', async ({ page }, testInfo) => {
   const violations = trackViolations(page)
-  const failures = Array.from({ length: 3 }, () => page.waitForResponse((response) => {
-    const url = new URL(response.url())
-    return url.pathname.startsWith('/api/sensors/monitoring/') && response.status() === 503
-  }))
   await page.goto(fixtureUrl('/flower/monitoring?scenario=backend-down', testInfo))
-  await Promise.all(failures)
 
   await expect(page.getByRole('alert').first()).toBeVisible()
   await assertPanelsRender(page)
+
+  // The fixture serves 503 to the first three sensor requests per session and
+  // recovers after. Aborted requests still consume slots without emitting a
+  // page-visible response, so observing request counts cannot prove the
+  // counter has drained. Pause polling, then probe the fixture with the
+  // page's own fixtureSession until it answers 200 — that directly proves
+  // Retry will succeed on its range reload.
+  await page.getByRole('button', { name: 'Pause' }).click()
+  await expect
+    .poll(
+      () =>
+        page.evaluate(async () => {
+          const response = await fetch(
+            `/api/sensors/monitoring/range/Flower%20Room?start=2026-01-01T00:00:00.000Z&end=2026-01-01T01:00:00.000Z&max_points=10&${new URLSearchParams(location.search)}`,
+          )
+          return response.status
+        }),
+      { timeout: 15_000 },
+    )
+    .toBe(200)
 
   await page.getByRole('button', { name: 'Retry' }).click()
   await expect(page.getByRole('alert')).toHaveCount(0)
@@ -87,15 +102,27 @@ test('range 503 retains sensor data and recovers on retry', async ({ page }, tes
 
 test('automation-down shows error, keeps panels, and recovers on retry', async ({ page }, testInfo) => {
   const violations = trackViolations(page)
-  const failures = Array.from({ length: 3 }, () => page.waitForResponse((response) => {
-    const url = new URL(response.url())
-    return url.pathname.startsWith('/api/monitoring/control/') && response.status() === 503
-  }))
   await page.goto(fixtureUrl('/flower/monitoring?scenario=automation-down', testInfo))
-  await Promise.all(failures)
 
   await expect(page.getByRole('alert').first()).toBeVisible()
   await assertPanelsRender(page)
+
+  // Same counter-drain probe as backend-down, on the control endpoint: the
+  // fixture serves 503 to the first three control requests per session, and
+  // aborted requests make an observable count unreliable.
+  await page.getByRole('button', { name: 'Pause' }).click()
+  await expect
+    .poll(
+      () =>
+        page.evaluate(async () => {
+          const response = await fetch(
+            `/api/monitoring/control/Flower%20Room/history?start=2026-01-01T00:00:00.000Z&end=2026-01-01T01:00:00.000Z&max_points=10&${new URLSearchParams(location.search)}`,
+          )
+          return response.status
+        }),
+      { timeout: 15_000 },
+    )
+    .toBe(200)
 
   await page.getByRole('button', { name: 'Retry' }).click()
   await expect(page.getByRole('alert')).toHaveCount(0)

@@ -28,7 +28,6 @@ function telemetry(page: import('@playwright/test').Page): Promise<readonly Char
 }
 
 test('renders five live value and viewport updates, handles stale pause/resume, and tears down', async ({ page }, testInfo) => {
-  await page.setViewportSize({ width: 1280, height: 900 })
   const requests: string[] = []
   const violations: string[] = []
   page.on('request', (request) => {

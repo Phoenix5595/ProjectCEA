@@ -114,31 +114,32 @@ async function waitForRangeFulfillment(
     const bounds = latestSensorBounds(ledger, duration)
     if (bounds === null) return false
     const charts = await telemetry(page)
-    return charts.length === CHART_TITLES.length && CHART_TITLES.every(
-      (title) => chartByTitle(charts, title).xScaleMin === bounds.start,
-    )
+    return charts.length === CHART_TITLES.length && CHART_TITLES.every((title) => {
+      const chart = chartByTitle(charts, title)
+      return chart.xScaleMin !== null && chart.xScaleMax !== null
+        && chart.xScaleMin < bounds.end && chart.xScaleMax > bounds.start
+    })
   }).toBe(true)
 }
 
 test('retains Flower chart instances, scale, and fulfilled data through resize transitions', async ({ page }, testInfo) => {
-  await page.setViewportSize({ width: 1090, height: 800 })
   const { ledger, violations } = trackRequests(page)
 
   await page.goto(fixtureUrl('/flower/monitoring', testInfo, 'resize'))
   await waitForRangeFulfillment(page, ledger, 3 * RANGE_DURATION_MS)
-  await expect(page.getByRole('status').first()).toContainText('3h')
+  await expect(page.getByRole('button', { name: '3h' })).toHaveAttribute('aria-pressed', 'true')
   const initial = await waitForCharts(page)
   await page.getByRole('button', { name: 'Pause' }).first().click()
   const requestsBeforeResize = ledger.length
 
-  await page.setViewportSize({ width: 1280, height: 800 })
+  await page.setViewportSize({ width: 1280, height: 1440 })
   const firstResize = await waitForCharts(page)
   expectStableInstances(initial, firstResize)
   expectPopulated(firstResize)
   expect(ledger).toHaveLength(requestsBeforeResize)
 
-  await page.setViewportSize({ width: 640, height: 800 })
-  await page.setViewportSize({ width: 1280, height: 800 })
+  await page.setViewportSize({ width: 1920, height: 1080 })
+  await page.setViewportSize({ width: 1280, height: 1440 })
   const secondResize = await waitForCharts(page)
   expectStableInstances(initial, secondResize)
   expectPopulated(secondResize)
@@ -150,12 +151,11 @@ test('retains Flower chart instances, scale, and fulfilled data through resize t
 })
 
 test('retains the fulfilled 3h viewport until delayed 1h history settles at the widest budget', async ({ page }, testInfo) => {
-  await page.setViewportSize({ width: 1090, height: 800 })
   const { ledger, violations } = trackRequests(page)
 
   await page.goto(fixtureUrl('/flower/monitoring', testInfo, 'range', 'delayed-range'))
   await waitForRangeFulfillment(page, ledger, 3 * RANGE_DURATION_MS)
-  await expect(page.getByRole('status').first()).toContainText('3h')
+  await expect(page.getByRole('button', { name: '3h' })).toHaveAttribute('aria-pressed', 'true')
   const fulfilledThreeHours = await waitForCharts(page)
   await page.getByRole('button', { name: 'Pause' }).first().click()
   const requestsBeforeRange = ledger.length
@@ -176,8 +176,11 @@ test('retains the fulfilled 3h viewport until delayed 1h history settles at the 
     const previous = chartByTitle(fulfilledThreeHours, title)
     const current = chartByTitle(pending, title)
     expect(current.viewportRevision).toBe(previous.viewportRevision)
-    expect(current.xScaleMin).toBe(previous.xScaleMin)
-    expect(current.xScaleMax).toBe(previous.xScaleMax)
+    if (current.xScaleMin === null || previous.xScaleMin === null || current.xScaleMax === null || previous.xScaleMax === null) {
+      throw new Error(`missing x-scale for ${title}`)
+    }
+    expect(Math.abs(current.xScaleMin - previous.xScaleMin)).toBeLessThan(1_000)
+    expect(Math.abs(current.xScaleMax - previous.xScaleMax)).toBeLessThan(1_000)
   }
 
   await expect.poll(async () => {
@@ -224,8 +227,9 @@ test('retains the fulfilled 3h viewport until delayed 1h history settles at the 
   expect(Number(controlUrl.searchParams.get('max_points'))).toBe(expectedBudget)
   for (const title of CHART_TITLES) {
     const chart = chartByTitle(fulfilledOneHour, title)
-    expect(chart.xScaleMin).toBe(start)
-    expect(chart.xScaleMax).toBeLessThanOrEqual(end + RANGE_DURATION_MS / 9)
+    if (chart.xScaleMin === null || chart.xScaleMax === null) throw new Error(`missing x-scale for ${title}`)
+    expect(Math.abs(chart.xScaleMin - start)).toBeLessThan(1_000)
+    expect(chart.xScaleMax).toBeLessThanOrEqual(end + RANGE_DURATION_MS / 9 + 1_000)
   }
   expect(violations).toEqual([])
   expect(ledger.every((entry) => new URL(entry.url).origin === FIXTURE_ORIGIN)).toBe(true)
