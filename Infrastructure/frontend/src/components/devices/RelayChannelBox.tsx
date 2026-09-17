@@ -90,7 +90,7 @@ export default function RelayChannelBox({
     isForeignTile || isUnassignedInRoomView
       ? 'bg-surface-tertiary/40 border-border-subtle opacity-50 grayscale'
       : `bg-surface-tertiary ${modeOutlineClass}`,
-    isCompact ? 'min-h-[52px] p-1' : 'aspect-[20/11] p-1.5',
+    isCompact ? 'aspect-[20/11] p-1' : 'aspect-[20/11] p-1.5',
     !isDisabled ? interactiveClasses : '',
     isEditing ? 'ring-2 ring-btn-primary-light' : '',
     isMenuOpen ? 'z-30' : 'z-0',
