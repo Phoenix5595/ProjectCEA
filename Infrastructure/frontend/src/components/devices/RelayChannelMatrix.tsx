@@ -87,7 +87,7 @@ export default function RelayChannelMatrix({
     onMenuAction,
   }
 
-  const relayWidth = variant === 'panel' ? '198px' : '144px'
+  const relayWidth = variant === 'panel' ? '198px' : '150px'
   const relayHeight = 'calc(var(--relay-w) * 11 / 20)'
 
   return (

@@ -86,11 +86,11 @@ export default function RelayChannelBox({
     : ''
 
   const baseClasses = [
-    'group/relay relative w-full min-h-0 rounded-sm border-2 text-left transition-all overflow-visible',
+    'group/relay relative w-full aspect-[20/11] min-h-0 rounded-sm border-2 text-left transition-all overflow-visible',
     isForeignTile || isUnassignedInRoomView
       ? 'bg-surface-tertiary/40 border-border-subtle opacity-50 grayscale'
       : `bg-surface-tertiary ${modeOutlineClass}`,
-    isCompact ? 'aspect-[20/11] p-1' : 'aspect-[20/11] p-1.5',
+    isCompact ? 'p-1' : 'aspect-[20/11] p-1.5',
     !isDisabled ? interactiveClasses : '',
     isEditing ? 'ring-2 ring-btn-primary-light' : '',
     isMenuOpen ? 'z-30' : 'z-0',
