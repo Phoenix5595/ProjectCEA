@@ -71,17 +71,17 @@ describe('buildScales', () => {
     const lightRange = requiredRange(scales.light?.range)
     const pressureRange = requiredRange(scales.pressure?.range)
 
-    expect(Reflect.apply(temperatureRange, undefined, [undefined, 21, 25])).toEqual([20.8, 25.2])
-    expect(Reflect.apply(temperatureRange, undefined, [undefined, 10, 50])).toEqual([8, 52])
-    expect(Reflect.apply(rhRange, undefined, [undefined, 40, 96])).toEqual([37.2, 100])
+    expect(Reflect.apply(temperatureRange, undefined, [undefined, 21, 25])).toEqual([20, 26])
+    expect(Reflect.apply(temperatureRange, undefined, [undefined, 10, 50])).toEqual([0, 60])
+    expect(Reflect.apply(rhRange, undefined, [undefined, 40, 96])).toEqual([20, 100])
     expect(Reflect.apply(deviceRange, undefined, [undefined, 15, 85])).toEqual([0, 100])
     expect(Reflect.apply(lightRange, undefined, [undefined, 25, 75])).toEqual([0, 100])
     expect(Reflect.apply(pressureRange, undefined, [undefined, 1013, 1013.5])).toEqual([
       1012,
       1014,
     ])
-    expect(Reflect.apply(requiredRange(scales.vpd?.range), undefined, [undefined, 21, 25])).toEqual([20.8, 25.2])
-    expect(Reflect.apply(requiredRange(scales.co2?.range), undefined, [undefined, 21, 25])).toEqual([20.8, 25.2])
+    expect(Reflect.apply(requiredRange(scales.vpd?.range), undefined, [undefined, 21, 25])).toEqual([20, 26])
+    expect(Reflect.apply(requiredRange(scales.co2?.range), undefined, [undefined, 21, 25])).toEqual([20, 26])
   })
 
   it('adds headroom and footroom for every populated family scale', () => {
@@ -101,12 +101,12 @@ describe('buildScales', () => {
       const [min, max] = Reflect.apply(range, undefined, [undefined, ...observedExtrema[family]])
 
       const expected = family === 'rh'
-        ? [37.2, 100]
+        ? [20, 100]
         : family === 'device' || family === 'light'
           ? [0, 100]
           : family === 'pressure'
             ? [1012, 1014]
-            : [20.8, 25.2]
+            : [20, 26]
       expect([min, max]).toEqual(expected)
     }
   })
@@ -123,7 +123,7 @@ describe('buildScales', () => {
     })
 
     const range = requiredRange(buildScales(data).scales.temperature?.range)
-    expect(Reflect.apply(range, undefined, [undefined, 20, 24])).toEqual([19.8, 24.2])
+    expect(Reflect.apply(range, undefined, [undefined, 20, 24])).toEqual([18, 26])
   })
 
   it('pads flat and single-point displayed ranges by at least one unit', () => {
@@ -131,7 +131,7 @@ describe('buildScales', () => {
     const flatRange = requiredRange(scales.vpd?.range)
     const singlePointRange = requiredRange(scales.co2?.range)
 
-    expect(Reflect.apply(flatRange, undefined, [undefined, 22, 22])).toEqual([20.9, 23.1])
+    expect(Reflect.apply(flatRange, undefined, [undefined, 22, 22])).toEqual([20, 24])
     expect(Reflect.apply(singlePointRange, undefined, [undefined, 0, 0])).toEqual([-1, 1])
   })
 

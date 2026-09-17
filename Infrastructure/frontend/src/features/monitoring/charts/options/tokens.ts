@@ -67,6 +67,7 @@ const FALLBACK: Record<MonitoringTokenName, string> = {
 
 /** Resolve a monitoring token, falling back when the theme is not applied. */
 export function readToken(name: MonitoringTokenName): string {
+  if (typeof document === 'undefined') return ''
   const value = getComputedStyle(document.documentElement)
     .getPropertyValue(MONITORING_TOKEN_NAMES[name])
     .trim()
