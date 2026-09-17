@@ -391,15 +391,18 @@ export default function ZoneConfig({
               )
             )}
 
-            {/* Climate periods table + light sliders row; the relay matrix spans
-                both on the right and dictates the total row height. */}
-            <div className="flex gap-1">
-              <div className="flex-1 flex flex-col gap-1 min-w-0 overflow-hidden">
-                <div className="flex-1 overflow-auto">
-                  <ClimatePeriodsTable periods={climatePeriods} onChange={setClimatePeriods} />
-                </div>
+            {/* Climate Periods + Relay Matrix row (owner layout) */}
+            <div className="flex gap-1 h-[580px] shrink-0">
+              <div className="flex-1 flex flex-col gap-1 h-full overflow-hidden">
                 {!isConstant ? (
-                  <LightIntensity ref={lightIntensityRef} location={location} cluster={cluster} compact={true} />
+                  <>
+                    <div className="bg-surface-primary rounded-lg border border-border-subtle p-1 flex-[56] overflow-auto">
+                      <ClimatePeriodsTable periods={climatePeriods} onChange={setClimatePeriods} />
+                    </div>
+                    <div className="flex-[44] overflow-auto">
+                      <LightIntensity ref={lightIntensityRef} location={location} cluster={cluster} compact={true} />
+                    </div>
+                  </>
                 ) : (
                   <ManualLightControl location={location} cluster={cluster} compact={true} />
                 )}
