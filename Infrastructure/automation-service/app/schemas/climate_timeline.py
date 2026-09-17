@@ -23,11 +23,19 @@ class ClimateTimelineModel(BaseModel):
     model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid", frozen=True, strict=True)
 
 
+def _aware_datetime(value: datetime | str) -> datetime:
+    """Accept the model's own JSON isoformat (with Z) beside datetime
+    instances so a validated envelope round-trips through Redis."""
+    if isinstance(value, datetime):
+        return value
+    return datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+
 class UtcWindow(ClimateTimelineModel):
     """One named timezone view over a UTC half-open interval ``[start, end)``."""
 
-    start: AwareDatetime
-    end: AwareDatetime
+    start: Annotated[AwareDatetime, BeforeValidator(_aware_datetime)]
+    end: Annotated[AwareDatetime, BeforeValidator(_aware_datetime)]
     timezone: str = Field(min_length=1)
 
     @field_validator("start", "end")
@@ -70,8 +78,8 @@ class SegmentSource(ClimateTimelineModel):
 class TrajectorySegmentBase(ClimateTimelineModel):
     """Fields shared by all scheduled/effective trajectory segment shapes."""
 
-    start: AwareDatetime
-    end: AwareDatetime
+    start: Annotated[AwareDatetime, BeforeValidator(_aware_datetime)]
+    end: Annotated[AwareDatetime, BeforeValidator(_aware_datetime)]
     metric: str = Field(min_length=1)
     unit: str = Field(min_length=1)
     trajectory_kind: Literal["scheduled", "effective"]

@@ -115,17 +115,19 @@ describe('ZoneConfig timeline classification integration', () => {
     expect(mocks.apiClient.getSaved).toHaveBeenCalledOnce()
   })
 
-  it('renders constant mode and skips saved timeline fetch for Sleep when is_constant=false', async () => {
-    // Given: the API reports Sleep with a contradictory scheduled flag.
+  it('renders the saved timeline editor for constant Sleep too', async () => {
+    // Given: the API reports Sleep with a contradictory scheduled flag and no periods.
     mocks.apiClient.getRoomModeWithParams.mockResolvedValue(mode('sleep', false))
     mocks.apiClient.getClimatePeriods.mockResolvedValue([])
 
     // When: the ZoneConfig control surface loads.
     render(<ZoneConfig location="Veg Room" cluster="main" />)
 
-    // Then: canonical Sleep behavior uses one constant period and no saved timeline.
-    expect(await screen.findByText('Constant mode - no timeline')).toBeInTheDocument()
-    expect(mocks.apiClient.getSaved).not.toHaveBeenCalled()
+    // Then: the saved timeline still loads and renders for the 24h constant mode.
+    expect(await screen.findByRole('region', { name: 'Climate control timeline' })).toBeInTheDocument()
+    expect(screen.getByText('READ ONLY')).toBeInTheDocument()
+    expect(mocks.apiClient.getSaved).toHaveBeenCalledOnce()
+    expect(screen.queryByText('Constant mode - no timeline')).not.toBeInTheDocument()
   })
 
   it('surfaces timeline_unavailable while retaining the fallback periods UI', async () => {

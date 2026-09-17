@@ -80,7 +80,15 @@ export function buildSeries(data: AlignedData): uPlot.Series[] {
         series.show = false
       }
       if (target) {
-        series.dash = s.presentation?.dash ? [...s.presentation.dash] : parseDash(readToken('targetDash'))
+        const dash = s.presentation?.dash ? [...s.presentation.dash] : parseDash(readToken('targetDash'))
+        if (dash[0] === 0) {
+          // uPlot draws a zero-length dash (dot style) as nothing; give dots a
+          // 1px dash with round caps so dot-style setpoint lanes stay visible.
+          series.dash = [1, dash[1] ?? 5]
+          series.cap = 'round'
+        } else {
+          series.dash = dash
+        }
       }
       if (projected) {
         const opacity = parseFloat(readToken('targetProjectedOpacity'))
