@@ -30,6 +30,12 @@ describe('extractSafeFields', () => {
     extractSafeFields(payload)
     expect(payload).toEqual(original)
   })
+
+  it('allowlists setpoint-change truth fields for expanded details', () => {
+    const payload = { controller: 'pid', previous_setpoint: 0.442, effective_setpoint: 0.438, device_id: 'light_v_3' }
+    const safe = extractSafeFields(payload)
+    expect(safe).toEqual({ previous_setpoint: 0.442, effective_setpoint: 0.438, device_id: 'light_v_3' })
+  })
 })
 
 describe('formatPayloadValue', () => {
