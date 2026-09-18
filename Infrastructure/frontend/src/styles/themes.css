@@ -35,6 +35,7 @@
   --mon-focus-ring: #60a5fa;
   --mon-tooltip-bg: #1a1a1a; --mon-tooltip-border: #404040; --mon-tooltip-text: #fafafa;
   --mon-stale: #a3a3a3; --mon-text-secondary: #a3a3a3; --mon-error: #f87171;
+  --tl-heating: #ea580c; --tl-cooling: #3b82f6; --tl-vpd: #22c55e; --tl-co2: #94a3b8; --tl-axis: #737373; --tl-grid: rgba(128, 128, 128, 0.15); --tl-now: #f87171;
   --mon-error-text: #fecaca; --mon-error-border: #f87171; --mon-error-icon: #f87171;
   --mon-warning-text: #fef08a;
   --mon-axis-left: #f87171; --mon-axis-right: #60a5fa;
@@ -87,6 +88,7 @@
   --mon-focus-ring: #67e8f9;
   --mon-tooltip-bg: #363a44; --mon-tooltip-border: #6b7280; --mon-tooltip-text: #e5e7eb;
   --mon-stale: #d1d5db; --mon-text-secondary: #d1d5db; --mon-error: #ef4444;
+  --tl-heating: #ea580c; --tl-cooling: #3b82f6; --tl-vpd: #22c55e; --tl-co2: #94a3b8; --tl-axis: #d1d5db; --tl-grid: rgba(128, 128, 128, 0.15); --tl-now: #ef4444;
   --mon-error-text: #fee2e2; --mon-error-border: #ef4444; --mon-error-icon: #ef4444;
   --mon-warning-text: #fef3c7;
   --mon-axis-left: #f87171; --mon-axis-right: #67e8f9;
@@ -138,6 +140,7 @@
   --mon-focus-ring: #67e8f9;
   --mon-tooltip-bg: #242826; --mon-tooltip-border: #4d5c46; --mon-tooltip-text: #f5f3ed;
   --mon-stale: #c8d0c4; --mon-text-secondary: #c8d0c4; --mon-error: #ef4444;
+  --tl-heating: #ea580c; --tl-cooling: #3b82f6; --tl-vpd: #22c55e; --tl-co2: #94a3b8; --tl-axis: #c8d0c4; --tl-grid: rgba(128, 128, 128, 0.15); --tl-now: #ef4444;
   --mon-error-text: #fff5f5; --mon-error-border: #ef4444; --mon-error-icon: #ef4444;
   --mon-warning-text: #fffaf0;
   --mon-axis-left: #f87171; --mon-axis-right: #67e8f9;
@@ -189,6 +192,7 @@
   --mon-focus-ring: #67e8f9;
   --mon-tooltip-bg: #1a1a3e; --mon-tooltip-border: #475569; --mon-tooltip-text: #f8fafc;
   --mon-stale: #cbd5e1; --mon-text-secondary: #cbd5e1; --mon-error: #ec4899;
+  --tl-heating: #ea580c; --tl-cooling: #3b82f6; --tl-vpd: #22c55e; --tl-co2: #94a3b8; --tl-axis: #cbd5e1; --tl-grid: rgba(128, 128, 128, 0.15); --tl-now: #ec4899;
   --mon-error-text: #fce7f3; --mon-error-border: #ec4899; --mon-error-icon: #ec4899;
   --mon-warning-text: #fef3c7;
   --mon-axis-left: #f87171; --mon-axis-right: #67e8f9;

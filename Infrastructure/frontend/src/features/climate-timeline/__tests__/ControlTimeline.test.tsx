@@ -180,7 +180,8 @@ describe('ControlTimeline', () => {
   it('renders the compact timeline visual without embedding the periods table', () => {
     // Given: the product editor is mounted in its default compact state.
     // The permanent ClimatePeriodsTable lives on the ZoneConfig row beneath it.
-    render(<TimelineEditor saved={baseline()} />)
+    const { result } = renderHook(() => useTimelineDraft({ saved: baseline(), publicationPort: port() }))
+    render(<TimelineEditor controller={result.current} />)
 
     // When: the operator inspects the control page.
     const table = screen.queryByRole('table')

@@ -17,7 +17,9 @@ import { useControlSnapshot } from '../hooks/useControlSnapshot'
 import type { ClimatePeriod } from '../types/climatePeriod'
 import ClimatePeriodsTable from '../components/ClimatePeriodsTable'
 import { TimelineEditor } from '../features/climate-timeline/components/TimelineEditor'
-import type { TimelineSavedBaseline } from '../features/climate-timeline/state/timelineDraft'
+import { useTimelineDraft, type TimelineDraftController } from '../features/climate-timeline/state/useTimelineDraft'
+import { isTimelineDraftDirty, type TimelineSavedBaseline } from '../features/climate-timeline/state/timelineDraft'
+import { createClimatePeriodsTableAdapter } from '../features/climate-timeline/adapters/climatePeriodsTableAdapter'
 import { isCanonicalConstantMode } from '../features/climate-timeline/domain/modeClassifier'
 
 export type ZoneConfigSection = 'control' | 'automation';
@@ -46,6 +48,34 @@ export function shouldPersistLegacyTimelineValues(
   timelineBaseline: TimelineSavedBaseline | null,
 ): boolean {
   return isCanonicalConstantMode(modeName) || timelineBaseline === null
+}
+
+const EMPTY_TIMELINE_BASELINE: TimelineSavedBaseline = {
+  room: { location: '', cluster: '' },
+  baseConfigRevision: '',
+  periods: [],
+  photoperiod: { dayStartTime: '00:00', nightStartTime: '00:00', rampUpMinutes: 0, rampDownMinutes: 0 },
+}
+
+function sameSavedIdentity(
+  saved: TimelineSavedBaseline,
+  baseline: TimelineSavedBaseline,
+): boolean {
+  return saved.baseConfigRevision === baseline.baseConfigRevision
+    && saved.room.location === baseline.room.location
+    && saved.room.cluster === baseline.room.cluster
+    && (saved.modeId ?? null) === (baseline.modeId ?? null)
+    && (saved.submodeId ?? null) === (baseline.submodeId ?? null)
+}
+
+function baselineIdentityKey(baseline: TimelineSavedBaseline): string {
+  return [
+    baseline.room.location,
+    baseline.room.cluster,
+    baseline.baseConfigRevision,
+    baseline.modeId ?? 'unknown',
+    baseline.submodeId ?? 'none',
+  ].join('|')
 }
 
 function mapPeriodsFromApi(periods: RawClimatePeriod[]): ClimatePeriod[] {
@@ -106,6 +136,30 @@ export default function ZoneConfig({
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
+
+  const timelineController = useTimelineDraft({ saved: EMPTY_TIMELINE_BASELINE, publicationPort: apiClient })
+  const timelineControllerRef = useRef<TimelineDraftController | null>(null)
+  timelineControllerRef.current = timelineController
+  const initializedBaselineRef = useRef<string | null>(null)
+  const baselineKey = timelineBaseline ? baselineIdentityKey(timelineBaseline) : null
+
+  useEffect(() => {
+    if (!timelineBaseline || baselineKey === null) return
+    const controller = timelineControllerRef.current
+    if (!controller) return
+    if (sameSavedIdentity(controller.state.saved, timelineBaseline)) {
+      initializedBaselineRef.current = baselineKey
+      return
+    }
+    if (initializedBaselineRef.current === baselineKey) return
+    initializedBaselineRef.current = baselineKey
+    controller.confirmRoomSwitch(timelineBaseline)
+  }, [baselineKey, timelineBaseline])
+
+  const timelineReady = timelineBaseline !== null
+    && timelineController.state.saved.baseConfigRevision !== ''
+    && timelineController.state.saved.room.location === (location ?? '')
+    && timelineController.state.saved.room.cluster === (cluster ?? 'main')
 
   const { snapshot, mcpConnected } = useControlSnapshot()
 
@@ -270,6 +324,21 @@ export default function ZoneConfig({
           updated.mode_id ?? undefined,
           updated.submode_id ?? undefined
         )
+      } else {
+        const controller = timelineControllerRef.current
+        if (!controller) throw new Error('Timeline editor is not ready')
+        if (isTimelineDraftDirty(controller.state)) {
+          await controller.review()
+          await new Promise((resolve) => setTimeout(resolve, 0))
+          await timelineControllerRef.current?.apply()
+          await new Promise((resolve) => setTimeout(resolve, 0))
+          const after = timelineControllerRef.current
+          if (!after || after.state.status.kind === 'conflict' || isTimelineDraftDirty(after.state)) {
+            setError('Climate timeline save conflict: your draft is preserved — review and apply again.')
+            return
+          }
+          setTimelineBaseline(after.state.saved)
+        }
       }
 
       await lightIntensityRef.current?.savePendingChanges()
@@ -376,15 +445,15 @@ export default function ZoneConfig({
         {params && (
           <div className="flex-1 flex flex-col gap-1 min-h-0">
             {roomMode && (
-              timelineBaseline ? (
+              timelineBaseline && timelineReady ? (
                 <div className="w-full min-w-0 shrink-0 overflow-auto">
                   <TimelineEditor
                     key={`${location}-${cluster}-${timelineBaseline.baseConfigRevision}-${roomMode.mode_id ?? 'unknown'}-${roomMode.submode_id ?? 'none'}`}
-                    saved={timelineBaseline}
+                    controller={timelineController}
                     lockedPhotoperiodHours={lockedPhotoperiod}
                   />
                 </div>
-              ) : (
+              ) : timelineBaseline ? null : (
                 <div className="w-full min-w-0 shrink-0 overflow-auto rounded-lg border border-status-warning-border bg-status-warning-bg/30 px-3 py-2 text-xs text-status-warning-text">
                   Timeline unavailable — editing periods in the row below.
                 </div>
@@ -397,7 +466,11 @@ export default function ZoneConfig({
                 {!isConstant ? (
                   <>
                     <div className="bg-surface-primary rounded-lg border border-border-subtle p-1 flex-[56] overflow-auto">
-                      <ClimatePeriodsTable periods={climatePeriods} onChange={setClimatePeriods} />
+                      {timelineBaseline && timelineReady ? (
+                        <ClimatePeriodsTable {...createClimatePeriodsTableAdapter(timelineController.state, timelineController.editPeriods)} />
+                      ) : (
+                        <ClimatePeriodsTable periods={climatePeriods} onChange={setClimatePeriods} />
+                      )}
                     </div>
                     <div className="flex-[44] overflow-auto">
                       <LightIntensity ref={lightIntensityRef} location={location} cluster={cluster} compact={true} />
