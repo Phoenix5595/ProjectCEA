@@ -98,6 +98,15 @@ Required tokens are listed in `src/features/monitoring/designTokens.ts` (`REQUIR
 - A stale configuration or revision conflict preserves the draft, marks it Conflict/Stale in text and with `--mon-stale`, and offers Reload saved values plus Review draft. It never silently overwrites, merges, clamps, or discards edits.
 - Unavailable segments visibly break the line. Assumptions and warnings appear in the timeline metadata and accessible table alternative, including an explicit "assumes override remains active" statement when applicable.
 
+### Timeline uPlot renderer and interactive editing
+
+- The Control timeline plot body renders on uPlot (1.6.32, separate light mount in `src/features/climate-timeline/charts/`; the monitoring `UPlotChart` wrapper is unchanged). Scheduled and effective setpoint trajectories for heating, cooling, VPD, and CO₂ are sampled from the same backend envelope monitoring consumes (projection parity test in the feature's `__tests__`), with full-height sun/moon shading behind the lines in the owner's original colors (`rgba(234,179,8,0.45)` sun, `rgba(168,85,247,0.35)` moon).
+- Temperature (heating/cooling) uses the left `°C` family axis; VPD (`kPa`) and CO₂ (`ppm`) use stacked right-side family scales with the product soft bounds (10–35, 0–5, 400–2000). Scheduled lines are solid; effective lines are dashed and distinguished by text labels, never color alone. Unavailable segments break the line and are never bridged.
+- Faint period names (alpha 0.25, mono font) are painted on the canvas below the curve zone over the photoperiod shading; they truncate without overlap, never intercept pointer events, and mirror the visible table which remains the accessible source.
+- In the expanded editor with the daily window, mouse-drag handles edit scheduled setpoint values (snap 0.1 °C/kPa, 10 ppm; product-range validation rejects out-of-range drags visibly instead of clamping) and period boundaries (5-minute snap clamped between neighbours). Every frame of a drag coalesces into at most one draft commit; nothing persists during a drag; the effective series and the rolling/now-based window are never draggable; the table retains full keyboard parity.
+- During a drag or the dirty-not-yet-previewed window, the chart paints the labelled local draft estimate ("Local draft estimate" tag) and marks the effective line stale ("Effective stale — preview pending"); a preview 250 ms after the last edit (single-flight, latest-result ownership) restores the backend envelope. Apply stays explicit; 409 conflicts keep the draft and mark it stale.
+
+
 ### Operator handoff boundaries
 
 - The climate periods table is permanent and remains the primary fine-tuning interface. Operators can edit period names, times, targets, and ramps there without opening the graph. The expanded graph is supplementary.

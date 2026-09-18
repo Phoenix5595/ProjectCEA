@@ -30,8 +30,9 @@ Native monitoring dashboards live at `/flower/monitoring` and `/vegetation/monit
 - Event log store: `src/features/event-log/state/eventLogStore.ts`. One global store merges history and live rows by Redis ID and event UUID, caps resident rows at 5,000, and supports cursor reset, reconnect, and auth pause.
 - Event log transport: `src/features/event-log/state/eventLogTransport.ts`. Loads the latest 200 rows, tails `/api/events/stream`, reconnects with backoff, and halts retries on 401/403.
 - Presentation registry: `src/features/event-log/presentation/eventRegistry.ts` maps known event types to labels and severity.
-- Dashboard integration: `src/pages/Dashboard.tsx` mounts the shared log with all-room filters. `DashboardZoneRow.tsx` does NOT mount the event log.
+ - Dashboard integration: `src/pages/Dashboard.tsx` mounts the shared log with all-room filters. `DashboardZoneRow.tsx` does NOT mount the event log.
 - Room overview integration: `CalendarOverviewPage.tsx` (and the wrappers for Flower, Vegetation, Laboratory) mount the same shared log with a fixed room filter.
+- Climate timeline feature: `src/features/climate-timeline/` owns the shared draft controller (`state/`), the table↔timeline adapter (`adapters/`), and the uPlot chart mount + plugins (`charts/`: pure envelope→series transforms, period labels, drag handles). ZoneConfig hoists the draft controller; header Save routes dirty drafts through review→apply. Series colors are `--tl-*` tokens; series transforms keep monitoring parity (`__tests__/monitoringParity.test.ts`); drag commits coalesce through rAF.
 
 ## Local Commands
 
