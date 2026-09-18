@@ -10,6 +10,11 @@ import {
   photoperiodIntervals,
 } from '../charts/envelopeSeries'
 import { timelineSeriesMeta } from '../charts/timelineOptions'
+import {
+  periodLabelSegments,
+  periodLabelsPlugin,
+  type PeriodLabelSegment,
+} from '../charts/periodLabelsPlugin'
 import { TimelineUPlot } from '../charts/TimelineUPlot'
 import { TimelineWarningOverlay, timelineWarningLabel } from './TimelineWarningOverlay'
 
@@ -96,14 +101,26 @@ export function ControlTimeline({ mode, controller, onExpand, onCollapse, locked
 
   const nowX = nowMs >= windowStartMs && nowMs <= windowEndMs ? nowMs : null
 
+  const labelSegments = useMemo(
+    () => periodLabelSegments(state.draft.periods, windowStartMs, windowEndMs),
+    [state.draft.periods, windowStartMs, windowEndMs],
+  )
+
   const dataRevision = useRef(0)
-  const revisionInputsRef = useRef<{ envelope: typeof envelope; bands: typeof bands; nowBucket: number }>({ envelope, bands, nowBucket: 0 })
+  const revisionInputsRef = useRef<{ envelope: typeof envelope; bands: typeof bands; nowBucket: number; labelSegments: typeof labelSegments }>({ envelope, bands, nowBucket: 0, labelSegments })
   const nowBucket = Math.floor(nowMs / 30_000)
   const revisionInputs = revisionInputsRef.current
-  if (revisionInputs.envelope !== envelope || revisionInputs.bands !== bands || revisionInputs.nowBucket !== nowBucket) {
-    revisionInputsRef.current = { envelope, bands, nowBucket }
+  if (revisionInputs.envelope !== envelope || revisionInputs.bands !== bands || revisionInputs.nowBucket !== nowBucket || revisionInputs.labelSegments !== labelSegments) {
+    revisionInputsRef.current = { envelope, bands, nowBucket, labelSegments }
     dataRevision.current += 1
   }
+
+  const labelSegmentsRef = useRef<readonly PeriodLabelSegment[]>(labelSegments)
+  labelSegmentsRef.current = labelSegments
+  const labelsPlugin = useMemo(
+    () => periodLabelsPlugin(() => labelSegmentsRef.current, { start: windowStartMs, end: windowEndMs }),
+    [windowStartMs, windowEndMs],
+  )
 
   useEffect(() => {
     if (!dragTarget) return
@@ -223,6 +240,7 @@ export function ControlTimeline({ mode, controller, onExpand, onCollapse, locked
               photoperiod={bands}
               nowX={nowX}
               revision={dataRevision.current}
+              plugins={[labelsPlugin]}
               ariaLabel={`Climate control timeline plot, ${chart.meta.map((entry) => entry.label).join(', ')}`}
             />
           ) : (
