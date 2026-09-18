@@ -236,13 +236,14 @@ export default function ZoneConfig({
     if (!location || !cluster) return
 
     try {
-      const start = new Date()
+      const now = new Date()
+      const dayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
       const saved = await apiClient.getSaved({
         location,
         cluster,
         window: {
-          start: start.toISOString(),
-          end: new Date(start.getTime() + 24 * 60 * 60 * 1000).toISOString(),
+          start: dayStart.toISOString(),
+          end: new Date(dayStart.getTime() + 24 * 60 * 60 * 1000).toISOString(),
           timezone: 'UTC',
         },
       })

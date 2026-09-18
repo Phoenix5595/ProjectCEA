@@ -51,6 +51,26 @@ export function envelopeSampleTimes(
   return times
 }
 
+const TWELVE_HOURS_MS = 12 * 3_600_000
+
+/**
+ * The x-domain the timeline always renders: exactly one 24-hour period,
+ * decoupled from the envelope's own (possibly much longer) window.
+ * `daily` is the current UTC calendar day; `rolling` is the 24h span centred
+ * on now.
+ */
+export function displayWindowFor(
+  windowMode: 'daily' | 'rolling',
+  nowMs: number,
+): { readonly start: number; readonly end: number } {
+  if (windowMode === 'rolling') {
+    return { start: nowMs - TWELVE_HOURS_MS, end: nowMs + TWELVE_HOURS_MS }
+  }
+  const now = new Date(nowMs)
+  const dayOrigin = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())
+  return { start: dayOrigin, end: dayOrigin + DAY_MS }
+}
+
 function metricOrder(metric: string): number {
   const index = (TIMELINE_METRIC_ORDER as readonly string[]).indexOf(metric)
   return index === -1 ? TIMELINE_METRIC_ORDER.length : index
