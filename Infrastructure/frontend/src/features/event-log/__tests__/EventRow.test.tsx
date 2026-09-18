@@ -28,7 +28,7 @@ describe('EventRow', () => {
     const entry = makeEntry({ severity })
 
     // When: the event row is rendered.
-    render(<EventRow entry={entry} now={new Date('2026-09-02T12:00:05Z')} />)
+    render(<EventRow entry={entry} now={new Date('2026-09-02T12:05:00Z')} />)
 
     // Then: the label and badge match the envelope, not the event type.
     expect(screen.getByText('Relay state changed')).toBeInTheDocument()
@@ -40,12 +40,14 @@ describe('EventRow', () => {
     const entry = makeEntry({ type: 'relay.command_failed', severity: 'error' })
 
     // When: the event row is rendered.
-    render(<EventRow entry={entry} now={new Date('2026-09-02T12:00:05Z')} />)
+    render(<EventRow entry={entry} now={new Date('2026-09-02T12:05:00Z')} />)
 
-    // Then: Error remains distinct and uses the existing danger treatment.
+    // Then: Error keeps the danger text/border but renders as an outline,
+    // distinct from critical's filled treatment.
     const badge = screen.getByText('Error')
     expect(badge).toBeInTheDocument()
-    expect(badge).toHaveClass('bg-status-danger-bg', 'text-status-danger-text', 'border-status-danger-border')
+    expect(badge).toHaveClass('bg-surface-secondary', 'text-status-danger-text', 'border-status-danger-border')
+    expect(badge).not.toHaveClass('bg-status-danger-bg')
     expect(badge).toHaveAttribute('aria-label', 'Severity: Error')
   })
 
@@ -58,7 +60,7 @@ describe('EventRow', () => {
     const entry = makeEntry({ type, severity })
 
     // When: the event row is rendered.
-    render(<EventRow entry={entry} now={new Date('2026-09-02T12:00:05Z')} />)
+    render(<EventRow entry={entry} now={new Date('2026-09-02T12:05:00Z')} />)
 
     // Then: the envelope severity is the only source for the visible badge.
     expect(screen.getByText(label)).toBeInTheDocument()
@@ -72,7 +74,7 @@ describe('EventRow', () => {
 
   it('toggles details expansion on click', async () => {
     const user = userEvent.setup()
-    render(<EventRow entry={makeEntry()} now={new Date('2026-09-02T12:00:05Z')} />)
+    render(<EventRow entry={makeEntry()} now={new Date('2026-09-02T12:05:00Z')} />)
     const toggle = screen.getByRole('button', { name: /toggle details/i })
     expect(toggle).toHaveAttribute('aria-expanded', 'false')
     await user.click(toggle)
@@ -82,7 +84,7 @@ describe('EventRow', () => {
 
   it('toggles details expansion on Enter key', async () => {
     const user = userEvent.setup()
-    render(<EventRow entry={makeEntry()} now={new Date('2026-09-02T12:00:05Z')} />)
+    render(<EventRow entry={makeEntry()} now={new Date('2026-09-02T12:05:00Z')} />)
     const toggle = screen.getByRole('button', { name: /toggle details/i })
     await user.keyboard('{Tab}')
     expect(document.activeElement).toBe(toggle)
@@ -91,7 +93,7 @@ describe('EventRow', () => {
   })
 
   it('has an accessible row role', () => {
-    render(<EventRow entry={makeEntry()} now={new Date('2026-09-02T12:00:05Z')} />)
+    render(<EventRow entry={makeEntry()} now={new Date('2026-09-02T12:05:00Z')} />)
     expect(screen.getByRole('listitem')).toBeInTheDocument()
   })
 
@@ -104,10 +106,10 @@ describe('EventRow', () => {
     })
 
     // When: the row is rendered.
-    render(<EventRow entry={entry} now={new Date('2026-09-02T12:00:05Z')} />)
+    const { container } = render(<EventRow entry={entry} now={new Date('2026-09-02T12:05:00Z')} />)
 
     // Then: the kind, tied device, zone, and state are visible without expanding.
-    expect(screen.getByText('Device light_v_3 · Veg Room/main · ON')).toBeInTheDocument()
+    expect(container.textContent).toContain('Device light_v_3 · Veg Room/main · ON')
   })
 
   it('names the relay channel when the device is unmapped', () => {
@@ -115,7 +117,7 @@ describe('EventRow', () => {
       type: 'relay.observed',
       entity: { entityType: 'relay_channel', entityId: '11' },
     })
-    render(<EventRow entry={entry} now={new Date('2026-09-02T12:00:05Z')} />)
+    render(<EventRow entry={entry} now={new Date('2026-09-02T12:05:00Z')} />)
     expect(screen.getByText('Relay channel 11')).toBeInTheDocument()
   })
 
@@ -130,12 +132,12 @@ describe('EventRow', () => {
     })
 
     // When: the row is rendered.
-    render(<EventRow entry={entry} now={new Date('2026-09-02T12:00:05Z')} />)
+    const { container } = render(<EventRow entry={entry} now={new Date('2026-09-02T12:05:00Z')} />)
 
     // Then: the controller, device type, missing-input kind, and reason are visible.
-    expect(
-      screen.getByText('Device light_f_1 · Flower Room/main · controller: pid · device type: heating · no temperature input'),
-    ).toBeInTheDocument()
+    expect(container.textContent).toContain(
+      'Device light_f_1 · Flower Room/main · controller: pid · device type: heating · no temperature input',
+    )
     expect(screen.getByText('PID sensor value is unavailable')).toBeInTheDocument()
   })
 
@@ -145,7 +147,90 @@ describe('EventRow', () => {
       category: 'system',
       entity: { entityType: 'soil_probe', entityId: 'soil_temp_front_1' },
     })
-    render(<EventRow entry={entry} now={new Date('2026-09-02T12:00:05Z')} />)
+    render(<EventRow entry={entry} now={new Date('2026-09-02T12:05:00Z')} />)
     expect(screen.getByText('soil probe soil_temp_front_1')).toBeInTheDocument()
+  })
+
+  it('renders a visible absolute time beside the relative chip', () => {
+    // Given: a row rendered with an injected deterministic formatter.
+    render(
+      <EventRow
+        entry={makeEntry()}
+        now={new Date('2026-09-02T12:05:00Z')}
+        formatAbsolute={(date) => `ABS:${date.getTime()}`}
+      />,
+    )
+
+    // Then: the absolute value is visible DOM text, not a hover-only title.
+    expect(screen.getByText(/ABS:\d+/)).toBeInTheDocument()
+    expect(screen.getByText('5m ago')).toBeInTheDocument()
+  })
+
+  it('shows from-to values for a light setpoint change in percent', () => {
+    const entry = makeEntry({
+      type: 'control.setpoint_changed',
+      category: 'control',
+      payload: {
+        controller: 'rule',
+        device_type: 'light',
+        previous_setpoint: 0.442,
+        effective_setpoint: 0.438,
+      },
+      entity: { entityType: 'device', entityId: 'light_v_3' },
+    })
+    const { container } = render(<EventRow entry={entry} now={new Date('2026-09-02T12:05:00Z')} />)
+    expect(container.textContent).toContain('44.2% → 43.8%')
+  })
+
+  it('shows from-to values for a heating setpoint change in degrees', () => {
+    const entry = makeEntry({
+      type: 'control.setpoint_changed',
+      category: 'control',
+      payload: {
+        controller: 'pid',
+        device_type: 'heating',
+        previous_setpoint: 22.0,
+        effective_setpoint: 22.6,
+      },
+      entity: { entityType: 'device', entityId: 'heater-1' },
+    })
+    const { container } = render(<EventRow entry={entry} now={new Date('2026-09-02T12:05:00Z')} />)
+    expect(container.textContent).toContain('22 °C → 22.6 °C')
+  })
+
+  it('renders no from-to text for legacy payloads without previous_setpoint', () => {
+    const entry = makeEntry({
+      type: 'control.setpoint_changed',
+      category: 'control',
+      payload: { controller: 'pid', device_type: 'light', effective_setpoint: 0.44 },
+    })
+    render(<EventRow entry={entry} now={new Date('2026-09-02T12:05:00Z')} />)
+    expect(screen.queryByText(/→/)).not.toBeInTheDocument()
+  })
+
+  it('renders relay-active state text in the green category shade', () => {
+    const entry = makeEntry({
+      type: 'relay.state_changed',
+      payload: { device_id: 'exhaust-fan', state: true },
+      entity: { entityType: 'device', entityId: 'exhaust-fan' },
+    })
+    render(<EventRow entry={entry} now={new Date('2026-09-02T12:05:00Z')} />)
+    const stateBadge = screen.getByText('ON')
+    expect(stateBadge).toHaveClass('text-[var(--event-relay)]', 'font-bold')
+  })
+
+  it('distinguishes error from critical severity visually', () => {
+    // Given: the same source event rendered under error, then critical.
+    const first = render(<EventRow entry={makeEntry({ severity: 'error' })} now={new Date('2026-09-02T12:05:00Z')} />)
+    const errorBadge = screen.getByText('Error')
+    const errorClasses = errorBadge.className
+    first.unmount()
+    render(<EventRow entry={makeEntry({ severity: 'critical' })} now={new Date('2026-09-02T12:05:00Z')} />)
+    const criticalBadge = screen.getByText('Critical')
+
+    // Then: the class tuples are distinct and critical is filled/bolder.
+    expect(criticalBadge.className).not.toBe(errorClasses)
+    expect(criticalBadge).toHaveClass('bg-status-danger-vivid', 'font-bold')
+    expect(errorClasses).toContain('bg-surface-secondary')
   })
 })

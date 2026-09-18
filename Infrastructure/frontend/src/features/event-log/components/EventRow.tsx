@@ -3,12 +3,14 @@ import type { EventLogEntry } from '../state/eventLogStore'
 import { getEventDisplay } from '../presentation/eventRegistry'
 import { SEVERITY_LABELS, type SeverityLevel } from '../presentation/severity'
 import { isRelayActiveEvent, relayActiveStateClass } from '../presentation/categoryTheme'
-import { formatRelativeTime, formatExactTime } from '../presentation/timeFormat'
+import { formatRelativeTime, formatExactTime, formatLocalTime } from '../presentation/timeFormat'
+import { formatSetpointFromTo } from '../presentation/setpointChange'
 import { EventDetails } from './EventDetails'
 
 interface EventRowProps {
   entry: EventLogEntry
   now: Date
+  formatAbsolute?: (date: Date, now: Date) => string
 }
 
 const SEVERITY_VISUAL: Record<SeverityLevel, string> = {
@@ -64,7 +66,7 @@ function missingInputLabel(type: string, deviceTypeValue: string | null): string
   return type === 'control.input_missing' ? `no ${inputName}` : `${inputName} back`
 }
 
-export function EventRow({ entry, now }: EventRowProps) {
+export function EventRow({ entry, now, formatAbsolute = formatLocalTime }: EventRowProps) {
   const [expanded, setExpanded] = useState(false)
   const display = getEventDisplay(entry.type)
   const severity = entry.severity
@@ -100,6 +102,8 @@ export function EventRow({ entry, now }: EventRowProps) {
   if (controllerValue !== null) sourceParts.push({ text: `controller: ${controllerValue}` })
   if (deviceTypeValue !== null) sourceParts.push({ text: `device type: ${deviceTypeValue}` })
   if (missing !== null) sourceParts.push({ text: missing })
+  const setpointChange = formatSetpointFromTo(entry.payload)
+  if (setpointChange !== null) sourceParts.push({ text: setpointChange, className: 'font-semibold' })
 
   const handleKeyDown = useCallback(
     (event: KeyboardEvent) => {
@@ -123,6 +127,7 @@ export function EventRow({ entry, now }: EventRowProps) {
         <div className="flex-1 min-w-0">
           <div className="flex items-baseline justify-between gap-2">
             <span className="text-sm text-text-default font-semibold truncate">{display.label}</span>
+          <div className="flex flex-col items-end">
             <time
               dateTime={entry.occurredAt.toISOString()}
               title={formatExactTime(entry.occurredAt)}
@@ -130,6 +135,14 @@ export function EventRow({ entry, now }: EventRowProps) {
             >
               {formatRelativeTime(entry.occurredAt, now)}
             </time>
+            <time
+              dateTime={entry.occurredAt.toISOString()}
+              aria-label={`Absolute time: ${formatAbsolute(entry.occurredAt, now)}`}
+              className="shrink-0 text-[10px] text-text-secondary tabular-nums"
+            >
+              {formatAbsolute(entry.occurredAt, now)}
+            </time>
+          </div>
           </div>
           <div className="text-[11px] text-text-default font-mono truncate">{entry.type}</div>
           {sourceParts.length > 0 && (

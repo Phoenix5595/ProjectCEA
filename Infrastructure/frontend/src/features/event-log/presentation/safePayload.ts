@@ -3,6 +3,7 @@ const SAFE_FIELD_KEYS = new Set([
   'mode', 'mode_id', 'channel', 'board', 'pin', 'intensity',
   'notes_changed', 'notes_length', 'old_mode', 'new_mode',
   'crop_batch_id', 'url_hostname', 'displaced_id',
+  'previous_setpoint', 'effective_setpoint',
 ])
 
 const REDACTED_KEYS = new Set([
