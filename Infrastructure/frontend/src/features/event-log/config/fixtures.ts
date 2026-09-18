@@ -170,6 +170,41 @@ const CJK_EVENT: OperationalEventItem = {
   },
 }
 
+const GROUPED_CONSOLE_EVENTS: OperationalEventItem[] = [
+  makeEvent(28, 'control.setpoint_changed', 'Flower Room', 'info', 'control', {
+    controller: 'rule',
+    device_type: 'light',
+    previous_setpoint: 0.446,
+    effective_setpoint: 0.444,
+  }),
+  makeEvent(29, 'control.setpoint_changed', 'Flower Room', 'info', 'control', {
+    controller: 'rule',
+    device_type: 'light',
+    previous_setpoint: 0.444,
+    effective_setpoint: 0.442,
+  }),
+  makeEvent(30, 'control.setpoint_changed', 'Flower Room', 'info', 'control', {
+    controller: 'rule',
+    device_type: 'light',
+    previous_setpoint: 0.442,
+    effective_setpoint: 0.438,
+  }),
+  makeEvent(31, 'ramp.started', 'Flower Room', 'info', 'ramp', {
+    ramp_type: 'light',
+    start_value: 17.5,
+    target_value: 10.0,
+    duration_seconds: 3600,
+    phase: 'sunset',
+  }),
+  makeEvent(32, 'relay.state_changed', 'Flower Room', 'info', 'relay', { device_id: 'exhaust-fan', state: true }),
+  makeEvent(33, 'relay.state_changed', 'Flower Room', 'info', 'relay', { device_id: 'circulation-fan', state: false }),
+  makeEvent(34, 'manual_override.started', 'Flower Room', 'info', 'manual_override', { mode: 'MANUAL_OFF', duration_seconds: 300 }),
+  makeEvent(35, 'config.updated', 'Flower Room', 'info', 'mutation', { setpoint: 25.5 }),
+  makeEvent(36, 'alarm.triggered', 'Flower Room', 'critical', 'alarm', { reason: 'temperature-high' }),
+  makeEvent(37, 'sensor.degraded', 'Flower Room', 'warning', 'system', { device_id: 'dry-bulb-front' }),
+  makeEvent(38, 'relay.command_failed', 'Flower Room', 'error', 'relay', { device_id: 'exhaust-fan', error_code: 'command-rejected' }),
+]
+
 export function eventHistoryFixture(scenario: string | null): OperationalEventHistory {
   if (scenario === 'empty') {
     return { items: [], newest_cursor: null, oldest_cursor: null, earliest_cursor: null, has_more: false, scan: { scanned: 0, limit: 500 } }
@@ -188,6 +223,9 @@ export function eventHistoryFixture(scenario: string | null): OperationalEventHi
   }
   if (scenario === 'event-labels') {
     return { items: EVENT_LABEL_EVENTS, newest_cursor: EVENT_LABEL_EVENTS.at(-1)!.redis_id, oldest_cursor: EVENT_LABEL_EVENTS[0].redis_id, earliest_cursor: EVENT_LABEL_EVENTS[0].redis_id, has_more: false, scan: { scanned: EVENT_LABEL_EVENTS.length, limit: 500 } }
+  }
+  if (scenario === 'grouped-console') {
+    return { items: GROUPED_CONSOLE_EVENTS, newest_cursor: GROUPED_CONSOLE_EVENTS[0].redis_id, oldest_cursor: GROUPED_CONSOLE_EVENTS.at(-1)!.redis_id, earliest_cursor: GROUPED_CONSOLE_EVENTS.at(-1)!.redis_id, has_more: false, scan: { scanned: GROUPED_CONSOLE_EVENTS.length, limit: 500 } }
   }
   if (scenario === 'cjk-payload') {
     return { items: [...FLOWER_EVENTS, CJK_EVENT], newest_cursor: CJK_EVENT.redis_id, oldest_cursor: FLOWER_EVENTS[0].redis_id, earliest_cursor: FLOWER_EVENTS[0].redis_id, has_more: false, scan: { scanned: FLOWER_EVENTS.length + 1, limit: 500 } }
@@ -217,4 +255,4 @@ export function sseCursorFrame(cursor: string): string {
   return `id: ${cursor}\ndata: \n\n`
 }
 
-export { ALL_EVENTS, FLOWER_EVENTS, VEG_EVENTS, LAB_EVENTS, UNKNOWN_EVENT, CJK_EVENT, EVENT_LABEL_EVENTS }
+export { ALL_EVENTS, FLOWER_EVENTS, VEG_EVENTS, LAB_EVENTS, UNKNOWN_EVENT, CJK_EVENT, EVENT_LABEL_EVENTS, GROUPED_CONSOLE_EVENTS }

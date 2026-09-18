@@ -118,19 +118,20 @@ def test_float_artifact_setpoint_does_not_emit_a_lifecycle_event() -> None:
     assert [event.event_type for event in sink.events] == []
 
 
-def test_setpoint_change_larger_than_tolerance_emits_a_lifecycle_event() -> None:
+def test_setpoint_change_above_meaningful_threshold_emits_a_lifecycle_event() -> None:
     # Given: a normal decision baseline.
     sink = RecordingSink()
     policy = DecisionEventPolicy(sink)
     started_at = datetime(2026, 9, 1, tzinfo=UTC)
     policy.observe(observation(started_at, 20.0, setpoint=22.0))
 
-    # When: the effective setpoint changes by more than the lifecycle tolerance.
-    policy.observe(observation(started_at + timedelta(seconds=1), 20.0, setpoint=22.00000001))
+    # When: the effective setpoint changes by more than the unknown-type
+    # fallback threshold (0.01 absolute).
+    policy.observe(observation(started_at + timedelta(seconds=1), 20.0, setpoint=22.02))
 
-    # Then: the raw changed setpoint emits exactly one lifecycle transition.
+    # Then: the changed setpoint emits exactly one lifecycle transition.
     assert [event.event_type for event in sink.events] == ["control.setpoint_changed"]
-    assert sink.events[0].payload.effective_setpoint == 22.00000001
+    assert sink.events[0].payload.effective_setpoint == 22.02
 
 
 def test_shared_policy_emits_one_transition_for_one_logical_controller() -> None:
