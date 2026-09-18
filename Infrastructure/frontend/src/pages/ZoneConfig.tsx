@@ -158,7 +158,8 @@ export default function ZoneConfig({
 
   const timelineReady = timelineBaseline !== null
     && timelineController.state.saved.baseConfigRevision !== ''
-    && sameSavedIdentity(timelineController.state.saved, timelineBaseline)
+    && timelineController.state.saved.room.location === (location ?? '')
+    && timelineController.state.saved.room.cluster === (cluster ?? 'main')
 
   const { snapshot, mcpConnected } = useControlSnapshot()
 

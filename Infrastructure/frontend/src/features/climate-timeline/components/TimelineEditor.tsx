@@ -11,6 +11,6 @@ export function TimelineEditor({ controller, lockedPhotoperiodHours = null }: Ti
   const [expanded, setExpanded] = useState(false)
 
   return (
-    <ControlTimeline mode={expanded ? 'expanded' : 'compact'} controller={controller} onExpand={() => setExpanded(true)} lockedPhotoperiodHours={lockedPhotoperiodHours} />
+    <ControlTimeline mode={expanded ? 'expanded' : 'compact'} controller={controller} onExpand={() => setExpanded(true)} onCollapse={() => setExpanded(false)} lockedPhotoperiodHours={lockedPhotoperiodHours} />
   )
 }
