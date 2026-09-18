@@ -122,6 +122,19 @@ describe('useTimelineDraft', () => {
     expect(result.current.state.status).toEqual({ kind: 'editing' })
   })
 
+  it('reflects draft edits back into the table adapter view', () => {
+    // Given: a shared draft controller and its table adapter.
+    const { result } = renderHook(() => useTimelineDraft({ saved: savedBaseline(), publicationPort: successfulPort() }))
+    const before = createClimatePeriodsTableAdapter(result.current.state, result.current.editPeriods)
+
+    // When: the draft periods change from the timeline side.
+    act(() => result.current.editPeriods(before.periods.map((period) => ({ ...period, cooling_setpoint: 26 }))))
+    const after = createClimatePeriodsTableAdapter(result.current.state, result.current.editPeriods)
+
+    // Then: the adapter view carries the edited value for the table row.
+    expect(after.periods[0]?.cooling_setpoint).toBe(26)
+  })
+
   it('warns before a dirty room switch and keeps the original draft until confirmed', () => {
     // Given: an edited Flower draft.
     const { result } = renderHook(() => useTimelineDraft({ saved: savedBaseline(), publicationPort: successfulPort() }))
