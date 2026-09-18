@@ -27,27 +27,36 @@ describe('EventLog', () => {
     globalEventLogStore.reset()
     vi.unstubAllGlobals()
   })
+
+  async function showFlat(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(screen.getByRole('button', { name: 'All events' }))
+  }
+
   it('renders an empty state when no entries exist', () => {
     render(<EventLog entries={[]} now={new Date('2026-09-02T12:00:00Z')} />)
     expect(screen.getByText('No events yet')).toBeInTheDocument()
   })
 
-  it('renders all entries as list items', () => {
+  it('renders all entries as list items', async () => {
     const entries = [
       makeEntry('1-0', 'relay.state_changed', 'relay', { device_id: 'fan-1' }),
       makeEntry('2-0', 'config.updated', 'mutation'),
     ]
+    const user = userEvent.setup()
     render(<EventLog entries={entries} now={new Date('2026-09-02T12:00:00Z')} />)
+    await showFlat(user)
     expect(screen.getAllByRole('listitem')).toHaveLength(2)
   })
 
-  it('renders newest entries first', () => {
+  it('renders newest entries first', async () => {
     // Given: entries stored in ascending Redis-ID order (oldest first in the store)
     const entries = [
       makeEntry('1-0', 'relay.state_changed', 'relay', { device_id: 'fan-1' }),
       makeEntry('2-0', 'config.updated', 'mutation'),
     ]
+    const user = userEvent.setup()
     render(<EventLog entries={entries} now={new Date('2026-09-02T12:00:00Z')} />)
+    await showFlat(user)
     const rows = screen.getAllByRole('listitem')
 
     // Then: the topmost row is the newest event
@@ -62,6 +71,7 @@ describe('EventLog', () => {
       makeEntry('2-0', 'relay.state_changed', 'relay'),
     ]
     render(<EventLog entries={entries} now={new Date('2026-09-02T12:00:00Z')} />)
+    await showFlat(user)
     await user.click(screen.getByRole('button', { name: 'Critical' }))
     expect(screen.getAllByRole('listitem')).toHaveLength(1)
     expect(screen.getByText('Failsafe raised')).toBeInTheDocument()
@@ -73,6 +83,7 @@ describe('EventLog', () => {
       makeEntry(`${index + 1}-0`, 'relay.command_failed', 'relay', {}, entrySeverity),
     )
     render(<EventLog entries={entries} now={new Date('2026-09-02T12:00:00Z')} />)
+    await showFlat(user)
 
     await user.click(screen.getByRole('button', { name: label }))
 
@@ -87,6 +98,7 @@ describe('EventLog', () => {
     const user = userEvent.setup()
     const entries = [makeEntry('1-0', 'relay.command_failed', 'relay', {}, 'info')]
     render(<EventLog entries={entries} now={new Date('2026-09-02T12:00:00Z')} />)
+    await showFlat(user)
 
     await user.click(screen.getByRole('button', { name: label }))
 
@@ -104,6 +116,7 @@ describe('EventLog', () => {
       makeEntry('2-0', 'config.updated', 'mutation'),
     ]
     render(<EventLog entries={entries} now={new Date('2026-09-02T12:00:00Z')} />)
+    await showFlat(user)
     await user.type(screen.getByRole('searchbox', { name: /filter events/i }), 'relay')
     expect(screen.getAllByRole('listitem')).toHaveLength(1)
   })
@@ -115,6 +128,7 @@ describe('EventLog', () => {
       makeEntry('2-0', 'config.updated', 'mutation'),
     ]
     render(<EventLog entries={entries} now={new Date('2026-09-02T12:00:00Z')} />)
+    await showFlat(user)
     await user.click(screen.getByRole('button', { name: 'mutation', pressed: false }))
     expect(screen.getAllByRole('listitem')).toHaveLength(1)
     expect(screen.getByText('Configuration updated')).toBeInTheDocument()
@@ -128,6 +142,7 @@ describe('EventLog', () => {
       makeEntry('3-0', 'relay.command_issued', 'relay'),
     ]
     render(<EventLog entries={entries} now={new Date('2026-09-02T12:00:00Z')} />)
+    await showFlat(user)
     await user.click(screen.getByRole('button', { name: 'relay.command_issued', pressed: false }))
     expect(screen.getAllByRole('listitem')).toHaveLength(1)
     expect(screen.getByText('Relay command issued')).toBeInTheDocument()
@@ -140,6 +155,7 @@ describe('EventLog', () => {
       makeEntry('2-0', 'config.updated', 'mutation', { room: 'Veg Room' }),
     ]
     render(<EventLog entries={entries} now={new Date('2026-09-02T12:00:00Z')} />)
+    await showFlat(user)
     await user.click(screen.getByRole('button', { name: 'Veg Room', pressed: false }))
     expect(screen.getAllByRole('listitem')).toHaveLength(1)
     expect(screen.getByText('Configuration updated')).toBeInTheDocument()
@@ -171,5 +187,122 @@ describe('EventLog', () => {
     await waitFor(() => expect(mockFetch).toHaveBeenCalledTimes(1))
     expect(mockFetch).toHaveBeenCalledWith(expect.stringContaining('before=1-0'), expect.anything())
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Load older' })).not.toBeInTheDocument())
+  })
+
+  it('opens on the grouped console by default with one row per category', () => {
+    // Given: entries across three categories with a repeat in the oldest slot.
+    const entries = [
+      makeEntry('1-0', 'relay.state_changed', 'relay', { device_id: 'fan-1' }),
+      makeEntry('2-0', 'config.updated', 'mutation'),
+      makeEntry('3-0', 'relay.command_issued', 'relay', { device_id: 'fan-2' }),
+    ]
+    render(<EventLog entries={entries} now={new Date('2026-09-02T12:00:00Z')} />)
+
+    // Then: grouped rows come newest-category-first with counts and latest labels.
+    expect(screen.getByTestId('event-group-relay')).toBeInTheDocument()
+    expect(screen.getByTestId('event-group-mutation')).toBeInTheDocument()
+    expect(within(screen.getByTestId('event-group-relay')).getByText('Relay command issued')).toBeInTheDocument()
+    expect(within(screen.getByTestId('event-group-relay')).getByText('2 events')).toBeInTheDocument()
+    expect(within(screen.getByTestId('event-group-mutation')).getByText('1 event')).toBeInTheDocument()
+    expect(screen.queryByRole('listitem')).not.toBeInTheDocument()
+  })
+
+  it('shows the concurrent-entity summary for a multi-device ramp category', () => {
+    // Given: three distinct devices with events of one category inside the window.
+    const base = new Date('2026-09-02T12:00:00Z')
+    const entries = ['light_v_1', 'light_v_2', 'light_v_3'].map((entityId, index) => ({
+      ...makeEntry(`${index + 1}-0`, 'ramp.started', 'ramp', { ramp_type: 'light' }, 'info'),
+      occurredAt: new Date(base.getTime() + index * 1000),
+      entity: { entityType: 'device', entityId },
+    }))
+    render(<EventLog entries={entries} now={new Date('2026-09-02T12:00:05Z')} />)
+
+    // Then: one grouped row summarises all three devices in its context line.
+    const row = screen.getByTestId('event-group-ramp')
+    expect(within(row).getByText(/3 devices in the last 10 minutes/)).toBeInTheDocument()
+    expect(within(row).getByText(/light_v_1, light_v_2, light_v_3/)).toBeInTheDocument()
+  })
+
+  it('expands a category into its full newest-first list and collapses back', async () => {
+    const user = userEvent.setup()
+    const entries = [
+      makeEntry('1-0', 'relay.state_changed', 'relay', { device_id: 'fan-1' }),
+      makeEntry('2-0', 'config.updated', 'mutation'),
+      makeEntry('3-0', 'relay.command_issued', 'relay', { device_id: 'fan-2' }),
+    ]
+    render(<EventLog entries={entries} now={new Date('2026-09-02T12:00:00Z')} />)
+
+    // When: the relay category row is expanded.
+    await user.click(screen.getByTestId('event-group-relay'))
+
+    // Then: the section body is the full relay list, newest first.
+    const rows = screen.getAllByRole('listitem')
+    expect(rows).toHaveLength(2)
+    expect(within(rows[0]).getByText('Relay command issued')).toBeInTheDocument()
+
+    // When: the collapse control is used.
+    await user.click(screen.getByTestId('event-group-collapse'))
+
+    // Then: the grouped view is restored.
+    expect(screen.getByTestId('event-group-relay')).toBeInTheDocument()
+    expect(screen.queryByRole('listitem')).not.toBeInTheDocument()
+  })
+
+  it('shows the flat newest-first list through the All events toggle', async () => {
+    const user = userEvent.setup()
+    const entries = [
+      makeEntry('1-0', 'relay.state_changed', 'relay'),
+      makeEntry('2-0', 'config.updated', 'mutation'),
+    ]
+    render(<EventLog entries={entries} now={new Date('2026-09-02T12:00:00Z')} />)
+    await user.click(screen.getByTestId('event-group-mutation'))
+
+    // When: the flat view is selected.
+    await user.click(screen.getByRole('button', { name: 'All events' }))
+
+    // Then: the full newest-first list is shown and the category row is gone.
+    expect(screen.getAllByRole('listitem')).toHaveLength(2)
+    expect(screen.queryByTestId('event-group-mutation')).not.toBeInTheDocument()
+  })
+
+  it('applies the severity filter in the grouped view', async () => {
+    const user = userEvent.setup()
+    const entries = [
+      makeEntry('1-0', 'system.failsafe_raised', 'system', {}, 'critical'),
+      makeEntry('2-0', 'relay.state_changed', 'relay'),
+    ]
+    render(<EventLog entries={entries} now={new Date('2026-09-02T12:00:00Z')} />)
+    await user.click(screen.getByRole('button', { name: 'Critical' }))
+
+    // Then: only the matching category survives in the grouped console.
+    expect(screen.getByTestId('event-group-system')).toBeInTheDocument()
+    expect(screen.queryByTestId('event-group-relay')).not.toBeInTheDocument()
+  })
+
+  it('applies two columns on wide viewports when categories exceed four', () => {
+    const entries = (
+      [
+        ['relay', 'relay.state_changed'],
+        ['manual_override', 'manual_override.started'],
+        ['ramp', 'ramp.started'],
+        ['control', 'control.setpoint_changed'],
+        ['mutation', 'config.updated'],
+      ] as const
+    ).map(([category, type], index) => makeEntry(`${index + 1}-0`, type, category))
+    render(<EventLog entries={entries} now={new Date('2026-09-02T12:00:00Z')} />)
+    expect(screen.getByRole('group', { name: 'Grouped alert console' }).className).toContain('lg:grid-cols-2')
+  })
+
+  it('keeps two columns off when categories are few', () => {
+    const entries = [makeEntry('1-0', 'relay.state_changed', 'relay')]
+    render(<EventLog entries={entries} now={new Date('2026-09-02T12:00:00Z')} />)
+    expect(screen.getByRole('group', { name: 'Grouped alert console' }).className).toContain('grid-cols-1')
+  })
+
+  it('renders the fallback row for an unknown garbage category', () => {
+    const entries = [makeEntry('1-0', 'custom.thing', 'nonsense_category')]
+    render(<EventLog entries={entries} now={new Date('2026-09-02T12:00:00Z')} />)
+    const row = screen.getByTestId('event-group-nonsense_category')
+    expect(within(row).getByText('Other')).toBeInTheDocument()
   })
 })

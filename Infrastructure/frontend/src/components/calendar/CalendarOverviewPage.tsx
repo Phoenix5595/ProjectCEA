@@ -21,6 +21,12 @@ export default function CalendarOverviewPage({
   const { entries } = useEventLog({ location, cluster });
   const [wizardOpen, setWizardOpen] = useState(false);
   const [modeSchedule, setModeSchedule] = useState<ModeScheduleResponse | null>(null);
+  const [now, setNow] = useState(() => new Date());
+
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 10000)
+    return () => clearInterval(timer)
+  }, [])
 
   useEffect(() => {
     if (location === 'Flower Room') {
@@ -58,7 +64,7 @@ export default function CalendarOverviewPage({
         showAddTask={location === 'Flower Room'}
         onAddTask={() => setWizardOpen(true)}
       />
-      <EventLog entries={entries} now={new Date()} />
+      <EventLog entries={entries} now={now} />
       {location === 'Flower Room' && (
         <FlowerGrowWizard
           open={wizardOpen}

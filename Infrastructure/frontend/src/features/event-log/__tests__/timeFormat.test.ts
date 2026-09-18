@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, afterEach } from 'vitest'
-import { formatRelativeTime, formatExactTime } from '../presentation/timeFormat'
+import { formatRelativeTime, formatExactTime, formatLocalTime } from '../presentation/timeFormat'
 
 describe('formatRelativeTime', () => {
   afterEach(() => { vi.useRealTimers() })
@@ -41,5 +41,32 @@ describe('formatExactTime', () => {
     const result = formatExactTime(date)
     expect(result).toMatch(/2026-09-02/)
     expect(result).toMatch(/14:30:45|02:30:45\s*PM|14:30/)
+  })
+})
+
+describe('formatLocalTime', () => {
+  it('shows only the clock for a same-day timestamp', () => {
+    const now = new Date()
+    const date = new Date(now.getTime())
+    const result = formatLocalTime(date, now)
+    expect(result).toMatch(/^\d{2}:\d{2}:\d{2}$/)
+  })
+
+  it('prefixes the date when the timestamp is not today', () => {
+    const now = new Date()
+    const date = new Date(now.getTime() - 1000 * 60 * 60 * 24)
+    const result = formatLocalTime(date, now)
+    expect(result).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/)
+  })
+
+  it('is injectable-friendly: pure function of its two arguments', () => {
+    // Given: two renders with the same inputs at different wall-clock times.
+    const date = new Date('2026-09-02T12:00:00Z')
+    const now = new Date('2026-09-02T12:30:00Z')
+    const first = formatLocalTime(date, now)
+    const second = formatLocalTime(date, now)
+
+    // Then: the output does not depend on the real system clock.
+    expect(first).toBe(second)
   })
 })

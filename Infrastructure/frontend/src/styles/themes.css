@@ -38,6 +38,16 @@
   --mon-error-text: #fecaca; --mon-error-border: #f87171; --mon-error-icon: #f87171;
   --mon-warning-text: #fef08a;
   --mon-axis-left: #f87171; --mon-axis-right: #60a5fa;
+
+  /* Event-log alert categories (relay green / control ice blue / ramp teal /
+     manual_override amber / mutation violet / alarm red / system slate) */
+  --event-relay: #4ade80; --event-relay-dim: #14532d; --event-relay-border: #166534;
+  --event-control: #7dd3fc; --event-control-dim: #0c4a6e; --event-control-border: #075985;
+  --event-ramp: #2dd4bf; --event-ramp-dim: #134e4a; --event-ramp-border: #115e59;
+  --event-manual-override: #fbbf24; --event-manual-override-dim: #713f12; --event-manual-override-border: #a16207;
+  --event-mutation: #a78bfa; --event-mutation-dim: #4c1d95; --event-mutation-border: #6d28d9;
+  --event-alarm: #f87171; --event-alarm-dim: #7f1d1d; --event-alarm-border: #991b1b;
+  --event-system: #94a3b8; --event-system-dim: #334155; --event-system-border: #475569;
 }
 
 /* Theme 2: Control Room Zero — Industrial HMI/SCADA */
@@ -80,6 +90,15 @@
   --mon-error-text: #fee2e2; --mon-error-border: #ef4444; --mon-error-icon: #ef4444;
   --mon-warning-text: #fef3c7;
   --mon-axis-left: #f87171; --mon-axis-right: #67e8f9;
+
+  /* Event-log alert categories (see DESIGN.md event-log contract) */
+  --event-relay: #4ade80; --event-relay-dim: #064e3b; --event-relay-border: #065f46;
+  --event-control: #7dd3fc; --event-control-dim: #0c4a6e; --event-control-border: #075985;
+  --event-ramp: #2dd4bf; --event-ramp-dim: #134e4a; --event-ramp-border: #115e59;
+  --event-manual-override: #fbbf24; --event-manual-override-dim: #713f12; --event-manual-override-border: #a16207;
+  --event-mutation: #a78bfa; --event-mutation-dim: #4c1d95; --event-mutation-border: #6d28d9;
+  --event-alarm: #ef4444; --event-alarm-dim: #7f1d1d; --event-alarm-border: #991b1b;
+  --event-system: #94a3b8; --event-system-dim: #334155; --event-system-border: #475569;
 }
 
 /* Theme 3: Verdant Growth — Nature-tech fusion */
@@ -122,6 +141,15 @@
   --mon-error-text: #fff5f5; --mon-error-border: #ef4444; --mon-error-icon: #ef4444;
   --mon-warning-text: #fffaf0;
   --mon-axis-left: #f87171; --mon-axis-right: #67e8f9;
+
+  /* Event-log alert categories (see DESIGN.md event-log contract) */
+  --event-relay: #86c232; --event-relay-dim: #1a2e1a; --event-relay-border: #22543d;
+  --event-control: #7dd3fc; --event-control-dim: #0c4a6e; --event-control-border: #075985;
+  --event-ramp: #2dd4bf; --event-ramp-dim: #134e4a; --event-ramp-border: #115e59;
+  --event-manual-override: #d4a574; --event-manual-override-dim: #3e2b1c; --event-manual-override-border: #7b4a21;
+  --event-mutation: #a78bfa; --event-mutation-dim: #4c1d95; --event-mutation-border: #6d28d9;
+  --event-alarm: #ef4444; --event-alarm-dim: #4a1c1c; --event-alarm-border: #822727;
+  --event-system: #94a3b8; --event-system-dim: #334155; --event-system-border: #475569;
 }
 
 /* Theme 4: Spectrum Analytics — Bold modern SaaS */
@@ -164,6 +192,15 @@
   --mon-error-text: #fce7f3; --mon-error-border: #ec4899; --mon-error-icon: #ec4899;
   --mon-warning-text: #fef3c7;
   --mon-axis-left: #f87171; --mon-axis-right: #67e8f9;
+
+  /* Event-log alert categories (see DESIGN.md event-log contract) */
+  --event-relay: #34d399; --event-relay-dim: #064e3b; --event-relay-border: #065f46;
+  --event-control: #7dd3fc; --event-control-dim: #0c4a6e; --event-control-border: #075985;
+  --event-ramp: #2dd4bf; --event-ramp-dim: #134e4a; --event-ramp-border: #115e59;
+  --event-manual-override: #fbbf24; --event-manual-override-dim: #713f12; --event-manual-override-border: #a16207;
+  --event-mutation: #a78bfa; --event-mutation-dim: #4c1d95; --event-mutation-border: #6d28d9;
+  --event-alarm: #fb7185; --event-alarm-dim: #881337; --event-alarm-border: #be123c;
+  --event-system: #94a3b8; --event-system-dim: #334155; --event-system-border: #475569;
 }
 
 /* Theme 5: Obsidian Glass — Premium dark, NO blur effects */
@@ -206,6 +243,15 @@
   --mon-error-text: #fee2e2; --mon-error-border: #f87171; --mon-error-icon: #f87171;
   --mon-warning-text: #fef3c7;
   --mon-axis-left: #f87171; --mon-axis-right: #60a5fa;
+
+  /* Event-log alert categories (see DESIGN.md event-log contract) */
+  --event-relay: #4ade80; --event-relay-dim: #064e3b; --event-relay-border: #065f46;
+  --event-control: #7dd3fc; --event-control-dim: #0c4a6e; --event-control-border: #075985;
+  --event-ramp: #2dd4bf; --event-ramp-dim: #134e4a; --event-ramp-border: #115e59;
+  --event-manual-override: #fbbf24; --event-manual-override-dim: #713f12; --event-manual-override-border: #a16207;
+  --event-mutation: #a78bfa; --event-mutation-dim: #4c1d95; --event-mutation-border: #6d28d9;
+  --event-alarm: #f87171; --event-alarm-dim: #7f1d1d; --event-alarm-border: #991b1b;
+  --event-system: #94a3b8; --event-system-dim: #334155; --event-system-border: #475569;
 }
 
 /* Theme 6: Botanical — User's custom palette (DEFAULT) */
@@ -284,4 +330,13 @@
   --mon-error-text: #f2d9dd; --mon-error-border: #bd4253; --mon-error-icon: #bd4253;
   --mon-warning-text: #e4b4ba;
   --mon-axis-left: #bd4253; --mon-axis-right: #00fff2;
+
+  /* Event-log alert categories (see DESIGN.md event-log contract) */
+  --event-relay: #5e7953; --event-relay-dim: #1a2e1a; --event-relay-border: #2f3d29;
+  --event-control: #607d9c; --event-control-dim: #1c2733; --event-control-border: #2e4256;
+  --event-ramp: #4f8b80; --event-ramp-dim: #17352f; --event-ramp-border: #24524a;
+  --event-manual-override: #b08444; --event-manual-override-dim: #3a2a12; --event-manual-override-border: #5c4420;
+  --event-mutation: #8b6fae; --event-mutation-dim: #2c2340; --event-mutation-border: #42305e;
+  --event-alarm: #973542; --event-alarm-dim: #1a090c; --event-alarm-border: #4b1b21;
+  --event-system: #7a8288; --event-system-dim: #262b2f; --event-system-border: #3d444a;
 }

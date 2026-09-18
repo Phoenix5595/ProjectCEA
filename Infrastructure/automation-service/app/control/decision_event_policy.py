@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from collections import deque
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
-import math
+from types import MappingProxyType
 from typing import Final
 
 from app.events.operational_models import (
@@ -31,7 +32,20 @@ NUMERICAL_EVENT_INTERVAL_SECONDS: Final = 30.0
 RAPID_OUTPUT_DELTA_PERCENT: Final = 20.0
 RAPID_SAMPLE_WINDOW_SECONDS: Final = 60.0
 RAPID_SAMPLE_CAPACITY: Final = 256
-SETPOINT_LIFECYCLE_ABSOLUTE_TOLERANCE: Final = 1e-9
+# Meaningful setpoint-change thresholds per device type. Units differ by
+# device: light is a 0-1 fraction, heating/cooling are degrees Celsius, VPD is
+# kPa, and CO2 is ppm. Sub-threshold drift accumulates because the baseline
+# only advances on emission. Unknown device types fall back to 0.01 absolute.
+SETPOINT_CHANGE_THRESHOLDS: Final[Mapping[str, float]] = MappingProxyType(
+    {
+        "light": 0.005,
+        "heating": 0.1,
+        "cooling": 0.1,
+        "vpd": 0.02,
+        "co2": 10.0,
+    }
+)
+SETPOINT_CHANGE_FALLBACK_THRESHOLD: Final = 0.01
 
 
 @dataclass(frozen=True, slots=True)
@@ -118,14 +132,26 @@ class DecisionEventPolicy:
             self._record_sample(key, observation.output_percent, timestamp, inputs_available)
             return observation
 
-        event_type = _lifecycle_event_type(previous, baseline)
+        event_type = _lifecycle_event_type(
+            previous,
+            baseline,
+            _setpoint_change_threshold(observation.device_type),
+        )
         if event_type is not None:
             suppress_event = (
                 event_type in INPUT_LIFECYCLE_EVENT_TYPES
                 and observation.controller not in SENSOR_DRIVEN_CONTROLLERS
             )
             if not suppress_event:
-                self._emit(observation, event_type)
+                self._emit(
+                    observation,
+                    event_type,
+                    previous_setpoint=(
+                        previous.effective_setpoint
+                        if event_type == "control.setpoint_changed"
+                        else None
+                    ),
+                )
             self._baselines[key] = baseline
             if (
                 previous.control_mode != baseline.control_mode
@@ -205,7 +231,13 @@ class DecisionEventPolicy:
         """Emit a calculation lifecycle event with the exact decision context."""
         self._emit(observation, event_type)
 
-    def _emit(self, observation: DecisionObservation, event_type: str) -> None:
+    def _emit(
+        self,
+        observation: DecisionObservation,
+        event_type: str,
+        *,
+        previous_setpoint: float | None = None,
+    ) -> None:
         if self._sink is None:
             return
         event = OperationalEvent(
@@ -227,6 +259,7 @@ class DecisionEventPolicy:
                 device_type=observation.device_type or None,
                 sensor_value=observation.sensor_value,
                 effective_setpoint=observation.effective_setpoint,
+                previous_setpoint=previous_setpoint,
                 error=observation.error,
                 output_percent=observation.output_percent,
             ),
@@ -244,7 +277,16 @@ def _as_utc(timestamp: datetime) -> datetime:
     return timestamp.astimezone(UTC)
 
 
-def _lifecycle_event_type(previous: _DecisionBaseline, current: _DecisionBaseline) -> str | None:
+def _setpoint_change_threshold(device_type: str) -> float:
+    """Resolve the meaningful-change threshold for a device type."""
+    return SETPOINT_CHANGE_THRESHOLDS.get(device_type, SETPOINT_CHANGE_FALLBACK_THRESHOLD)
+
+
+def _lifecycle_event_type(
+    previous: _DecisionBaseline,
+    current: _DecisionBaseline,
+    setpoint_change_threshold: float,
+) -> str | None:
     if current.control_mode != previous.control_mode:
         if current.control_mode == "failsafe":
             return "control.failsafe_entered"
@@ -258,12 +300,7 @@ def _lifecycle_event_type(previous: _DecisionBaseline, current: _DecisionBaselin
     if current.effective_setpoint is None or previous.effective_setpoint is None:
         if current.effective_setpoint != previous.effective_setpoint:
             return "control.setpoint_changed"
-    elif not math.isclose(
-        current.effective_setpoint,
-        previous.effective_setpoint,
-        rel_tol=0.0,
-        abs_tol=SETPOINT_LIFECYCLE_ABSOLUTE_TOLERANCE,
-    ):
+    elif abs(current.effective_setpoint - previous.effective_setpoint) >= setpoint_change_threshold:
         return "control.setpoint_changed"
     if current.saturated and not previous.saturated:
         return "control.saturated"

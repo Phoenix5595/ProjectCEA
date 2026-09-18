@@ -15,3 +15,25 @@ export function formatRelativeTime(date: Date, now: Date = new Date()): string {
 export function formatExactTime(date: Date): string {
   return date.toISOString().replace('T', ' ').replace('Z', ' UTC')
 }
+
+const localClock: Intl.DateTimeFormat = new Intl.DateTimeFormat('en-GB', {
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+  hour12: false,
+})
+
+const localDate: Intl.DateTimeFormat = new Intl.DateTimeFormat('en-CA', {
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+})
+
+export function formatLocalTime(date: Date, now: Date = new Date()): string {
+  const clock = localClock.format(date)
+  const sameDay =
+    date.getFullYear() === now.getFullYear() &&
+    date.getMonth() === now.getMonth() &&
+    date.getDate() === now.getDate()
+  return sameDay ? clock : `${localDate.format(date)} ${clock}`
+}

@@ -140,3 +140,35 @@ Chart regions and tables stack to a single column below `768px`. At 375px, 768px
 ## Primitive Showcase
 
 A harness must exercise every primitive in isolation before product-page work. It renders a chart with left and right family axes, a min/max envelope, recorded vs projected targets with a "now" divider, a sun/moon overlay, a semantic table, and keyboard-focusable legend toggles. The harness asserts fixture origin and route guard so no request leaves `127.0.0.1:4173`.
+
+## Event Log Alert Console
+
+Contract for the event-log feature (`src/features/event-log/`), which presents the operational event stream as a colour-coded alert console. The monitoring `--mon-*` namespace is NOT used here; the log declares its own additive `--event-*` tokens in `src/styles/themes.css`.
+
+### Category palette
+
+One hue per backend `EventCategory`, owner-approved. Tokens come in triplets: base hue, `-dim` chip background, `-border` under-border. Coverage is enforced by `src/features/event-log/__tests__/categoryTheme.test.ts` for every category in all six themes.
+
+| Category | Label | Hue family |
+|---|---|---|
+| `relay` | Relay | green |
+| `manual_override` | Manual override | amber |
+| `ramp` | Ramp | teal |
+| `control` | Control | ice blue |
+| `mutation` | Mutation | violet |
+| `alarm` | Alarm | red |
+| `system` | System | slate |
+
+- **Colour never alone (WCAG 1.4.1):** every coloured chip is paired with its text label; unknown categories resolve the "Other" fallback instead of crashing.
+- **Relay-active emphasis:** relay events with an engaged state (`state: true` / `observed_state: true`) render the state text in the relay green shade (`categoryTheme.relayActiveStateClass`).
+- **Severity honesty:** `critical` uses a filled badge plus a heavier left border; `error` keeps an outline treatment — the two never render identically.
+
+### Views
+
+- **Grouped console (default):** one button row per category showing the newest event of that kind — category chip, count badge, latest type label, entity/zone/source line, reason, and a pinned 10-minute concurrent-entity summary ("N devices in the last 10 minutes: …"). Rows are buttons with `aria-expanded`; the grid goes two columns (`lg:grid-cols-2`) when more than four categories resolve.
+- **Flat "All events" (secondary):** today's full newest-first list, one labelled toggle away. All filters (severity, search, rooms, categories, types) apply in both views; expansion swaps the section to the selected category's complete list with a collapse control.
+
+### Dual timestamps and from-to values
+
+- Every row shows BOTH timestamps visibly: the relative chip ("3m ago") and a localized absolute clock (`formatLocalTime`: HH:MM:SS, with the date when not today). Title-attribute-only timestamps are not acceptable.
+- Self-contained setpoint changes render "from → to" values on the source line via `formatSetpointFromTo`: lights as percent ("44.2% → 43.8%"), heating/cooling in °C, VPD in kPa, CO2 in ppm. Legacy payloads without `previous_setpoint` render no change text and no crash.

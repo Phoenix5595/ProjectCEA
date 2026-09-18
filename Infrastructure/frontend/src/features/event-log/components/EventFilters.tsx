@@ -1,5 +1,6 @@
 import { useCallback, type ChangeEvent } from 'react'
 import type { SeverityLevel } from '../presentation/severity'
+import type { EventLogView } from './EventGroupedView'
 
 export type FilterDimension = 'room' | 'category' | 'type' | 'severity'
 
@@ -17,6 +18,8 @@ interface EventFiltersProps {
   rooms: readonly string[]
   categories: readonly string[]
   types: readonly string[]
+  view: EventLogView
+  onViewChange: (view: EventLogView) => void
 }
 
 const SEVERITY_OPTIONS: ReadonlyArray<{ value: SeverityLevel | 'all'; label: string }> = [
@@ -52,7 +55,12 @@ function MultiSelectChip({
   )
 }
 
-export function EventFilters({ filters, onChange, rooms, categories, types }: EventFiltersProps) {
+const VIEW_OPTIONS: ReadonlyArray<{ value: EventLogView; label: string }> = [
+  { value: 'grouped', label: 'Alerts' },
+  { value: 'flat', label: 'All events' },
+]
+
+export function EventFilters({ filters, onChange, rooms, categories, types, view, onViewChange }: EventFiltersProps) {
   const handleSearchChange = useCallback(
     (event: ChangeEvent<HTMLInputElement>) => {
       onChange({ ...filters, search: event.target.value })
@@ -72,6 +80,23 @@ export function EventFilters({ filters, onChange, rooms, categories, types }: Ev
   return (
     <div className="flex flex-col gap-2" role="toolbar" aria-label="Event filters">
       <div className="flex flex-wrap items-center gap-2">
+        <div className="flex gap-1" role="group" aria-label="Event log view">
+          {VIEW_OPTIONS.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              aria-pressed={view === option.value}
+              onClick={() => onViewChange(option.value)}
+              className={`px-2 py-1 text-xs font-semibold border transition-colors ${
+                view === option.value
+                  ? 'bg-surface-tertiary text-text-default border-border-emphasis'
+                  : 'bg-surface-secondary text-text-default border-border-subtle hover:text-text-default hover:border-border-default'
+              }`}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
         <div className="flex gap-1" role="group" aria-label="Severity filter">
           {SEVERITY_OPTIONS.map((option) => (
             <button
