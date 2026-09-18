@@ -113,7 +113,7 @@ export function EventLog({ entries, now }: EventLogProps) {
               {'\u2190'} {categoryTheme(expandedCategory).label ?? 'Back'} / All categories
             </button>
           )}
-          <ul role="list" className="flex flex-col gap-px bg-border-subtle border border-border-subtle overflow-auto max-h-[600px]">
+          <ul role="list" aria-label="Event list" className="flex flex-col gap-px bg-border-subtle border border-border-subtle overflow-auto max-h-[600px]">
             {(expandedCategory !== null ? expandedListView : ordered).map((entry) => (
               <EventRow key={entry.eventId} entry={entry} now={now} />
             ))}
