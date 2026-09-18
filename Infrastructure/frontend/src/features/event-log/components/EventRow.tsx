@@ -2,6 +2,7 @@ import { useState, useCallback, type KeyboardEvent } from 'react'
 import type { EventLogEntry } from '../state/eventLogStore'
 import { getEventDisplay } from '../presentation/eventRegistry'
 import { SEVERITY_LABELS, type SeverityLevel } from '../presentation/severity'
+import { isRelayActiveEvent, relayActiveStateClass } from '../presentation/categoryTheme'
 import { formatRelativeTime, formatExactTime } from '../presentation/timeFormat'
 import { EventDetails } from './EventDetails'
 
@@ -11,16 +12,16 @@ interface EventRowProps {
 }
 
 const SEVERITY_VISUAL: Record<SeverityLevel, string> = {
-  critical: 'border-l-status-danger bg-status-danger-bg/20',
+  critical: 'border-l-[var(--status-danger-vivid)] border-l-4 bg-status-danger-bg/20',
   warning: 'border-l-status-warning bg-status-warning-bg/20',
-  error: 'border-l-status-danger bg-status-danger-bg/20',
+  error: 'border-l-status-danger bg-surface-secondary',
   info: 'border-l-border-emphasis bg-surface-secondary',
 }
 
 const SEVERITY_BADGE: Record<SeverityLevel, string> = {
-  critical: 'bg-status-danger-bg text-status-danger-text border-status-danger-border',
+  critical: 'bg-status-danger-vivid text-status-danger-text border-status-danger-vivid font-bold',
   warning: 'bg-status-warning-bg text-status-warning-text border-status-warning-dim',
-  error: 'bg-status-danger-bg text-status-danger-text border-status-danger-border',
+  error: 'bg-surface-secondary text-status-danger-text border-status-danger-border',
   info: 'bg-surface-tertiary text-text-default border-border-default',
 }
 
@@ -82,17 +83,23 @@ export function EventRow({ entry, now }: EventRowProps) {
   const relayState = entry.payload.state === true ? 'ON' : entry.payload.state === false ? 'OFF' : null
   const missing = missingInputLabel(entry.type, deviceTypeValue)
 
-  const sourceParts: string[] = []
+  const sourceParts: Array<{ text: string; className?: string; title?: string }> = []
   if (entry.entity) {
-    sourceParts.push(
-      `${entityKindLabel(entry.entity.entityType)} ${entityShortName(entry.entity.entityId)}`,
-    )
+    sourceParts.push({
+      text: `${entityKindLabel(entry.entity.entityType)} ${entityShortName(entry.entity.entityId)}`,
+      title: entry.entity.entityId,
+    })
   }
-  if (zone !== null) sourceParts.push(zone)
-  if (relayState !== null) sourceParts.push(relayState)
-  if (controllerValue !== null) sourceParts.push(`controller: ${controllerValue}`)
-  if (deviceTypeValue !== null) sourceParts.push(`device type: ${deviceTypeValue}`)
-  if (missing !== null) sourceParts.push(missing)
+  if (zone !== null) sourceParts.push({ text: zone })
+  if (relayState !== null) {
+    sourceParts.push({
+      text: relayState,
+      className: isRelayActiveEvent(entry) ? relayActiveStateClass(true) : undefined,
+    })
+  }
+  if (controllerValue !== null) sourceParts.push({ text: `controller: ${controllerValue}` })
+  if (deviceTypeValue !== null) sourceParts.push({ text: `device type: ${deviceTypeValue}` })
+  if (missing !== null) sourceParts.push({ text: missing })
 
   const handleKeyDown = useCallback(
     (event: KeyboardEvent) => {
@@ -126,8 +133,13 @@ export function EventRow({ entry, now }: EventRowProps) {
           </div>
           <div className="text-[11px] text-text-default font-mono truncate">{entry.type}</div>
           {sourceParts.length > 0 && (
-            <div className="text-[11px] text-text-default truncate" title={entry.entity?.entityId ?? undefined}>
-              {sourceParts.join(' · ')}
+            <div className="text-[11px] text-text-default truncate">
+              {sourceParts.map((part, index) => (
+                <span key={index} className={part.className} title={part.title}>
+                  {part.text}
+                  {index < sourceParts.length - 1 && ' \u00b7 '}
+                </span>
+              ))}
             </div>
           )}
           {entry.reasonText !== null && (
