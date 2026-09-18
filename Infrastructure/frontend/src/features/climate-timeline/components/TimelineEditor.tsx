@@ -1,19 +1,16 @@
 import { useState } from 'react'
-import { apiClient } from '../../../services/api'
-import type { TimelineSavedBaseline } from '../state/timelineDraft'
-import { useTimelineDraft } from '../state/useTimelineDraft'
+import type { TimelineDraftController } from '../state/useTimelineDraft'
 import { ControlTimeline } from './ControlTimeline'
 
 export type TimelineEditorProps = {
-  readonly saved: TimelineSavedBaseline
+  readonly controller: TimelineDraftController
   readonly lockedPhotoperiodHours?: number | null
 }
 
-export function TimelineEditor({ saved, lockedPhotoperiodHours = null }: TimelineEditorProps) {
+export function TimelineEditor({ controller, lockedPhotoperiodHours = null }: TimelineEditorProps) {
   const [expanded, setExpanded] = useState(false)
-  const controller = useTimelineDraft({ saved, publicationPort: apiClient })
 
   return (
-    <ControlTimeline mode={expanded ? 'expanded' : 'compact'} controller={controller} onExpand={() => setExpanded(true)} lockedPhotoperiodHours={lockedPhotoperiodHours} />
+    <ControlTimeline mode={expanded ? 'expanded' : 'compact'} controller={controller} onExpand={() => setExpanded(true)} onCollapse={() => setExpanded(false)} lockedPhotoperiodHours={lockedPhotoperiodHours} />
   )
 }
