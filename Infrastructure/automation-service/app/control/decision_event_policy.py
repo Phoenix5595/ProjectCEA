@@ -65,6 +65,7 @@ class DecisionObservation:
     reason_code: str
     reason_text: str
     device_type: str = ""
+    ramping: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -138,10 +139,14 @@ class DecisionEventPolicy:
             _setpoint_change_threshold(observation.device_type),
         )
         if event_type is not None:
+            # Ramp interpolation owns its full lifecycle (ramp.started/midpoint/
+            # completed/interrupted, category ramp): effective-setpoint movement
+            # while a ramp is advancing is not a "target setpoint changed" event.
+            # The baseline still advances so no stale post-ramp emission leaks.
             suppress_event = (
                 event_type in INPUT_LIFECYCLE_EVENT_TYPES
                 and observation.controller not in SENSOR_DRIVEN_CONTROLLERS
-            )
+            ) or (event_type == "control.setpoint_changed" and observation.ramping)
             if not suppress_event:
                 self._emit(
                     observation,

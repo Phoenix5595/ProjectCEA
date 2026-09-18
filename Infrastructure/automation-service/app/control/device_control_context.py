@@ -29,6 +29,12 @@ def build_initial_control_context(
             "effective_co2_setpoint": effective_data.get("effective_co2_setpoint"),
             "effective_vpd_setpoint": effective_data.get("effective_vpd_setpoint"),
             "current_vpd": effective_data.get("current_vpd"),
+            "ramp_progress": {
+                "heating": effective_data.get("ramp_progress_heating"),
+                "cooling": effective_data.get("ramp_progress_cooling"),
+                "co2": effective_data.get("ramp_progress_co2"),
+                "vpd": effective_data.get("ramp_progress_vpd"),
+            },
             "failsafe_active": failsafe_active,
             "current_mode": current_mode,
             "previous_climate_mode": {(location, cluster): previous_climate_mode}
@@ -42,6 +48,12 @@ def build_initial_control_context(
         "effective_co2_setpoint": None,
         "effective_vpd_setpoint": None,
         "current_vpd": None,
+        "ramp_progress": {
+            "heating": None,
+            "cooling": None,
+            "co2": None,
+            "vpd": None,
+        },
         "failsafe_active": failsafe_active,
         "current_mode": current_mode,
         "previous_climate_mode": {},
