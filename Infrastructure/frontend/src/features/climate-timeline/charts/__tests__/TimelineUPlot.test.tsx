@@ -88,13 +88,15 @@ afterEach(() => {
 
 describe('TimelineUPlot mount', () => {
   it('creates one instance with static window, family series and photoperiod/now plugins', () => {
-    const data: uPlot.AlignedData = [[WINDOW.start, WINDOW.end], [22, 22], [21, 21]]
+    const data: uPlot.AlignedData = [[0, 1440], [22, 22], [21, 21]]
     render(<Harness data={data} revision={1} />)
 
     expect(instances).toHaveLength(1)
     const plot = instances[0]
     expect(plot.data).toBe(data)
-    expect(plot.opts.scales?.x).toMatchObject({ time: true })
+    expect(plot.opts.scales?.x).toMatchObject({ time: false })
+    const xRange = (plot.opts.scales?.x as { range?: () => [number, number] }).range?.() ?? []
+    expect(xRange).toEqual([0, 1441])
     const scaleKeys = Object.keys(plot.opts.scales ?? {})
     expect(scaleKeys).toEqual(expect.arrayContaining(['temp', 'vpd', 'co2']))
     expect(plot.opts.series).toHaveLength(3)
@@ -111,7 +113,7 @@ describe('TimelineUPlot mount', () => {
     const { rerender } = render(<Harness data={data1} revision={1} />)
     const plot = instances[0]
 
-    const data2: uPlot.AlignedData = [[WINDOW.start, WINDOW.end], [23, 23], [21, 21]]
+    const data2: uPlot.AlignedData = [[0, 1440], [23, 23], [21, 21]]
     rerender(<Harness data={data2} revision={2} />)
 
     expect(instances).toHaveLength(1)
@@ -130,13 +132,13 @@ describe('TimelineUPlot mount', () => {
     rerender(<Harness data={data1} revision={5} />)
     expect(plot.setData).not.toHaveBeenCalled()
 
-    const data2: uPlot.AlignedData = [[WINDOW.start, WINDOW.end], [19, 19], [21, 21]]
+    const data2: uPlot.AlignedData = [[0, 1440], [19, 19], [21, 21]]
     rerender(<Harness data={data2} revision={4} />)
     expect(plot.setData).not.toHaveBeenCalled()
   })
 
   it('passes the owner photoperiod colors to the band plugin and draws full-height bands', () => {
-    const data: uPlot.AlignedData = [[WINDOW.start, WINDOW.end], [22, 22], [21, 21]]
+    const data: uPlot.AlignedData = [[0, 1440], [22, 22], [21, 21]]
     render(<Harness data={data} revision={1} />)
     const plot = instances[0]
     const photoperiodPluginInstance = plot.opts.plugins?.find((plugin) =>
@@ -176,7 +178,7 @@ describe('TimelineUPlot mount', () => {
     })
     vi.stubGlobal('cancelAnimationFrame', () => undefined)
 
-    const data: uPlot.AlignedData = [[WINDOW.start, WINDOW.end], [22, 22], [21, 21]]
+    const data: uPlot.AlignedData = [[0, 1440], [22, 22], [21, 21]]
     render(<Harness data={data} revision={1} />)
     const plot = instances[0]
     const observer = MockResizeObserver.instances[0]
@@ -193,7 +195,7 @@ describe('TimelineUPlot mount', () => {
   })
 
   it('destroys its instance and disconnects the observer on unmount', () => {
-    const data: uPlot.AlignedData = [[WINDOW.start, WINDOW.end], [22, 22], [21, 21]]
+    const data: uPlot.AlignedData = [[0, 1440], [22, 22], [21, 21]]
     const { unmount } = render(<Harness data={data} revision={1} />)
     const plot = instances[0]
     const observer = MockResizeObserver.instances[0]

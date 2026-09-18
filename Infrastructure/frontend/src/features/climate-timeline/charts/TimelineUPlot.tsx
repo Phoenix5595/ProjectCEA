@@ -1,15 +1,9 @@
 import { useEffect, useRef } from 'react'
 import uPlot from 'uplot'
 import 'uplot/dist/uPlot.min.css'
-import { photoperiodPlugin } from '../../monitoring/charts/plugins/photoperiodPlugin'
-import { nowDividerPlugin } from '../../monitoring/charts/plugins/nowDividerPlugin'
+import { timelinePhotoperiodPlugin, timelineNowDividerPlugin, SUN_BG, MOON_BG } from './timeBandsPlugin'
 import type { TimelinePhotoperiodInterval } from './envelopeSeries'
 import { buildTimelineOptions, type TimelineSeriesMeta, type TimelineWindowMs } from './timelineOptions'
-import { readTimelineToken } from './tokens'
-
-/** Owner's original timeline colors — the two documented hardcoded exceptions. */
-const SUN_BG = 'rgba(234, 179, 8, 0.45)'
-const MOON_BG = 'rgba(168, 85, 247, 0.35)'
 
 export interface TimelineUPlotProps {
   readonly data: uPlot.AlignedData
@@ -68,8 +62,8 @@ export function TimelineUPlot({
     if (frameElement === null || container === null) return
 
     const basePlugins: uPlot.Plugin[] = [
-      photoperiodPlugin(() => photoperiodRef.current, { sunBg: SUN_BG, moonBg: MOON_BG }),
-      nowDividerPlugin(() => nowXRef.current, readTimelineToken('now')),
+      timelinePhotoperiodPlugin(() => photoperiodRef.current, windowMs.start),
+      timelineNowDividerPlugin(() => nowXRef.current, windowMs.start),
       ...plugins,
     ]
 
@@ -117,7 +111,7 @@ export function TimelineUPlot({
     }
     // Re-init only on rare structural changes (series shape or window); data
     // revisions take the setData path below, never a destroy.
-  }, [shapeKey, windowMs.start, windowMs.end]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [shapeKey, windowMs.start, windowMs.end])
 
   useEffect(() => {
     const plot = plotRef.current

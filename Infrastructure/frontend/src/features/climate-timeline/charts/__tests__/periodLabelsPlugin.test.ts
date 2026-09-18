@@ -82,7 +82,7 @@ describe('periodLabelsPlugin', () => {
   it('draws the layout with fillText after the photoperiod bands and before series strokes', () => {
     const plugin = periodLabelsPlugin(
       () => [{ text: 'Day', startMs: DAY + 12 * 60 * MIN, endMs: DAY + 22 * 60 * MIN }],
-      WINDOW,
+      { startMs: WINDOW.start, endMs: WINDOW.end },
     )
     const calls: string[] = []
     const ctx = {
@@ -99,7 +99,7 @@ describe('periodLabelsPlugin', () => {
     const u = {
       ctx,
       bbox: { left: 0, top: 0, width: 1440, height: 400 },
-      valToPos: (value: number) => ((value - WINDOW.start) / (WINDOW.end - WINDOW.start)) * 1440,
+      valToPos: (valueMinutes: number) => (valueMinutes / 1440) * 1440,
     } as unknown as uPlot
 
     act(() => {
@@ -108,7 +108,7 @@ describe('periodLabelsPlugin', () => {
       hooks.forEach((hook) => (hook as (u: uPlot) => void)(u))
     })
 
-    expect(calls).toContain(`fillText:Day:${(12 * 60 * MIN / (24 * 60 * MIN)) * 1440 + LABEL_EDGE_PADDING_PX}:${400 - LABEL_EDGE_PADDING_PX}`)
+    expect(calls).toContain(`fillText:Day:${12 * 60 + LABEL_EDGE_PADDING_PX}:${400 - LABEL_EDGE_PADDING_PX}`)
     expect(calls[0]).toBe('save')
     expect(ctx.globalAlpha).toBe(LABEL_ALPHA)
     expect(ctx.font).toBe(LABEL_FONT)
@@ -116,7 +116,7 @@ describe('periodLabelsPlugin', () => {
   })
 
   it('draws nothing when the layout is empty', () => {
-    const plugin = periodLabelsPlugin(() => [], WINDOW)
+    const plugin = periodLabelsPlugin(() => [], { startMs: WINDOW.start, endMs: WINDOW.end })
     const fillText = vi.fn()
     const ctx = { save: vi.fn(), restore: vi.fn(), fillText } as unknown as CanvasRenderingContext2D
     const u = { ctx, bbox: { left: 0, top: 0, width: 100, height: 100 }, valToPos: () => 0 } as unknown as uPlot

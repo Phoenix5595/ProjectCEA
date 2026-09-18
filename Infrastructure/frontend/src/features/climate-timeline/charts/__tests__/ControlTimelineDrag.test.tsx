@@ -9,7 +9,6 @@ import type { TimelineSavedBaseline } from '../../state/timelineDraft'
 
 const { MockUPlot, instances } = vi.hoisted(() => {
   const instances: MockUPlot[] = []
-  const WINDOW = { start: Date.parse('2026-01-01T00:00:00.000Z'), end: Date.parse('2026-01-02T00:00:00.000Z') }
   class MockUPlot {
     static instances = instances
     opts: uPlot.Options
@@ -17,7 +16,7 @@ const { MockUPlot, instances } = vi.hoisted(() => {
     root: HTMLElement
     bbox = { left: 0, top: 0, width: 800, height: 400 }
     scales: Record<string, { min: number; max: number }> = {
-      x: { min: WINDOW.start, max: WINDOW.end },
+      x: { min: 0, max: 1441 },
       temp: { min: 10, max: 35 },
       vpd: { min: 0, max: 5 },
       co2: { min: 400, max: 2000 },
@@ -78,9 +77,7 @@ const { MockUPlot, instances } = vi.hoisted(() => {
 
 vi.mock('uplot', () => ({ default: MockUPlot }))
 
-const WINDOW_START = Date.parse('2026-01-01T00:00:00.000Z')
-const WINDOW_END = Date.parse('2026-01-02T00:00:00.000Z')
-const MIN = 60_000
+
 
 const savedBaseline = (): TimelineSavedBaseline => ({
   room: { location: 'flower', cluster: 'main' },
@@ -150,7 +147,7 @@ function valueY(value: number): number {
 }
 
 function timeX(minuteOfDay: number): number {
-  return ((WINDOW_START + minuteOfDay * MIN) - WINDOW_START) / (WINDOW_END - WINDOW_START) * 800
+  return (minuteOfDay / 1440) * 800
 }
 
 let animationFrames: Array<(timestamp: number) => void> = []
