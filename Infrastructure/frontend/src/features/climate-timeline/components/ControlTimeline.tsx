@@ -68,6 +68,8 @@ function previewMessage(preview: TimelinePreviewState): string {
   }
 }
 
+export const AUTO_PREVIEW_DEBOUNCE_MS = 250
+
 function assertNever(value: never): never {
   throw new Error(`Unexpected timeline preview state: ${JSON.stringify(value)}`)
 }
@@ -106,8 +108,30 @@ export function ControlTimeline({ mode, controller, onExpand, onCollapse, locked
   const windowStartMs = envelope?.window.start.getTime() ?? (state.saved.window ? Date.parse(state.saved.window.start) : nowMs)
   const windowEndMs = envelope?.window.end.getTime() ?? (state.saved.window ? Date.parse(state.saved.window.end) : nowMs + 24 * 60 * 60 * 1000)
 
+  const editorDirty = changes.length > 0
+  const previewMatchesDraft = preview.kind === 'ready' && preview.draftRevision === state.draftRevision
+  const localMode = dragActive || (isExpanded && editorDirty && !previewMatchesDraft)
+  const dragEnabled = isExpanded && windowMode === 'daily'
+  const lastAutoPreviewRevisionRef = useRef<number | null>(null)
+
+  useEffect(() => {
+    if (!isExpanded) return
+    if (!editorDirty) {
+      lastAutoPreviewRevisionRef.current = null
+      return
+    }
+    if (state.status.kind !== 'editing') return
+    if (preview.kind === 'loading') return
+    if (previewMatchesDraft) return
+    if (lastAutoPreviewRevisionRef.current === state.draftRevision) return
+    const timer = window.setTimeout(() => {
+      lastAutoPreviewRevisionRef.current = state.draftRevision
+      void controllerRef.current.review()
+    }, AUTO_PREVIEW_DEBOUNCE_MS)
+    return () => window.clearTimeout(timer)
+  }, [isExpanded, editorDirty, preview.kind, previewMatchesDraft, state.draftRevision, state.status.kind])
   const chart = useMemo(() => {
-    if (dragActive) {
+    if (localMode) {
       const local = buildLocalScheduledSeries(draftPeriods, {
         start: new Date(windowStartMs),
         end: new Date(windowEndMs),
@@ -126,7 +150,7 @@ export function ControlTimeline({ mode, controller, onExpand, onCollapse, locked
       data: [sampleTimes.slice(), ...built.keys.map((key) => [...(built.series.get(key) ?? [])])] as uPlot.AlignedData,
       meta: timelineSeriesMeta(built.keys),
     }
-  }, [envelope, dragActive, draftPeriods, windowStartMs, windowEndMs])
+  }, [envelope, localMode, draftPeriods, windowStartMs, windowEndMs])
 
   const bands = useMemo(
     () => photoperiodIntervals(state.draft.photoperiod, windowStartMs, windowEndMs),
@@ -140,7 +164,6 @@ export function ControlTimeline({ mode, controller, onExpand, onCollapse, locked
     [state.draft.periods, windowStartMs, windowEndMs],
   )
 
-  const dragEnabled = isExpanded && windowMode === 'daily'
 
   const dataRevision = useRef(0)
   const revisionInputsRef = useRef<{ envelope: typeof envelope; bands: typeof bands; nowBucket: number; labelSegments: typeof labelSegments; draftPeriods: typeof draftPeriods; dragEnabled: boolean }>({ envelope, bands, nowBucket: 0, labelSegments, draftPeriods, dragEnabled })
@@ -330,6 +353,11 @@ export function ControlTimeline({ mode, controller, onExpand, onCollapse, locked
           {dragActive && (
             <span data-testid="control-timeline-local-estimate" className="pointer-events-none absolute left-1 top-1 z-20 border border-accent-data bg-surface-primary/80 px-1 text-[9px] font-bold uppercase text-accent-data">
               Local draft estimate
+            </span>
+          )}
+          {localMode && !dragActive && (
+            <span data-testid="control-timeline-effective-stale" className="pointer-events-none absolute right-1 top-1 z-20 border border-status-warning-border bg-surface-primary/80 px-1 text-[9px] font-bold uppercase text-status-warning-text">
+              Effective stale — preview pending
             </span>
           )}
         </div>
