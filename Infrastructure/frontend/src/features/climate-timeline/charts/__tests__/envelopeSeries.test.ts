@@ -3,6 +3,7 @@ import { RichTrajectoryEnvelope } from '../../api/contracts'
 import type { RichTrajectoryEnvelope as Envelope } from '../../api/contracts'
 import {
   buildEnvelopeSeries,
+  displayWindowFor,
   envelopeSampleTimes,
   groupEnvelopeSegments,
   normalizeTimelineMetric,
@@ -193,5 +194,27 @@ describe('photoperiodIntervals', () => {
     expect(intervals).toEqual([
       { start: Date.parse('2026-01-01T00:00:00.000Z'), end: Date.parse('2026-01-01T12:00:00.000Z'), phase: 'MOON' },
     ])
+  })
+})
+
+describe('displayWindowFor', () => {
+  it('daily is always the current UTC calendar day, exactly 24 hours', () => {
+    const nowMs = Date.parse('2026-09-18T17:22:31.123Z')
+    const window = displayWindowFor('daily', nowMs)
+    expect(window.start).toBe(Date.parse('2026-09-18T00:00:00.000Z'))
+    expect(window.end).toBe(Date.parse('2026-09-19T00:00:00.000Z'))
+    expect(window.end - window.start).toBe(86_400_000)
+  })
+
+  it('rolling is a 24-hour span centred on now', () => {
+    const nowMs = Date.parse('2026-09-18T17:22:31.123Z')
+    const window = displayWindowFor('rolling', nowMs)
+    expect(window.start).toBe(nowMs - 12 * 3_600_000)
+    expect(window.end).toBe(nowMs + 12 * 3_600_000)
+  })
+
+  it('daily wraps onto the next day after midnight', () => {
+    const window = displayWindowFor('daily', Date.parse('2026-09-19T03:00:00.000Z'))
+    expect(window.start).toBe(Date.parse('2026-09-19T00:00:00.000Z'))
   })
 })

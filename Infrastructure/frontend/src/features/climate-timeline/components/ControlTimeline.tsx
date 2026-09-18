@@ -6,6 +6,7 @@ import type { TimelineDraftController, TimelinePreviewState } from '../state/use
 import { timeToMinutes, minutesToTime } from '../../../utils/timeMath'
 import {
   buildEnvelopeSeries,
+  displayWindowFor,
   envelopeSampleTimes,
   photoperiodIntervals,
 } from '../charts/envelopeSeries'
@@ -105,8 +106,13 @@ export function ControlTimeline({ mode, controller, onExpand, onCollapse, locked
   const skippedWarning = warnings.find((warning) => warning.code === 'calendar.transition_skipped')
   const genericWarnings = warnings.filter((warning) => warning.code !== 'calendar.transition_skipped')
 
-  const windowStartMs = envelope?.window.start.getTime() ?? (state.saved.window ? Date.parse(state.saved.window.start) : nowMs)
-  const windowEndMs = envelope?.window.end.getTime() ?? (state.saved.window ? Date.parse(state.saved.window.end) : nowMs + 24 * 60 * 60 * 1000)
+  const nowBucket = Math.floor(nowMs / 30_000)
+  const displayWindow = useMemo(
+    () => displayWindowFor(windowMode, nowMs),
+    [windowMode, nowMs],
+  )
+  const windowStartMs = displayWindow.start
+  const windowEndMs = displayWindow.end
 
   const editorDirty = changes.length > 0
   const previewMatchesDraft = preview.kind === 'ready' && preview.draftRevision === state.draftRevision
@@ -144,7 +150,10 @@ export function ControlTimeline({ mode, controller, onExpand, onCollapse, locked
       }
     }
     if (!envelope) return null
-    const sampleTimes = envelopeSampleTimes(envelope.window)
+    const sampleTimes = envelopeSampleTimes({
+      start: new Date(windowStartMs),
+      end: new Date(windowEndMs),
+    })
     const built = buildEnvelopeSeries(envelope, sampleTimes)
     return {
       data: [sampleTimes.slice(), ...built.keys.map((key) => [...(built.series.get(key) ?? [])])] as uPlot.AlignedData,
@@ -167,7 +176,6 @@ export function ControlTimeline({ mode, controller, onExpand, onCollapse, locked
 
   const dataRevision = useRef(0)
   const revisionInputsRef = useRef<{ envelope: typeof envelope; bands: typeof bands; nowBucket: number; labelSegments: typeof labelSegments; draftPeriods: typeof draftPeriods; dragEnabled: boolean }>({ envelope, bands, nowBucket: 0, labelSegments, draftPeriods, dragEnabled })
-  const nowBucket = Math.floor(nowMs / 30_000)
   const revisionInputs = revisionInputsRef.current
   if (revisionInputs.envelope !== envelope || revisionInputs.bands !== bands || revisionInputs.nowBucket !== nowBucket || revisionInputs.labelSegments !== labelSegments || revisionInputs.draftPeriods !== draftPeriods || revisionInputs.dragEnabled !== dragEnabled) {
     revisionInputsRef.current = { envelope, bands, nowBucket, labelSegments, draftPeriods, dragEnabled }
