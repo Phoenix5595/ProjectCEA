@@ -171,6 +171,7 @@ class DeviceController(
                         f"control.{controller}_decision",
                         f"{controller.upper()} decision; rules={active_rule_ids}; schedules={active_schedule_ids}",
                         device_type,
+                        self._observation_ramping(device_type, context),
                     )
                 )
 
@@ -186,6 +187,22 @@ class DeviceController(
                     context,
                     batch_executor,
                 )
+
+    def _observation_ramping(self, device_type: str, context: dict[str, Any]) -> bool:
+        """Report whether this observation's setpoint is ramp interpolation.
+
+        The ``ramp`` event category owns ramp movement (ramp.started/midpoint/
+        completed/interrupted, emitted by the scheduler and ramp manager), so the
+        decision-event policy must not fold interpolated steps into
+        ``control.setpoint_changed``.
+        """
+        if device_type == "light":
+            decision = context.get("light_decision")
+            progress = getattr(decision, "ramp_progress", None)
+            return isinstance(progress, (int, float))
+        ramp_progress = context.get("ramp_progress") or {}
+        setpoint_type = "vpd" if device_type in ("humidifier", "dehumidifier") else device_type
+        return ramp_progress.get(setpoint_type) is not None
 
     def _determine_control_mode(
         self, device_name: str, device_info: dict[str, Any], context: dict[str, Any]

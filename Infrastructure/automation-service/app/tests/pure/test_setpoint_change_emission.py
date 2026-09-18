@@ -29,6 +29,7 @@ def observation(
     mode: str = "auto",
     controller: str = "pid",
     device_type: str = "",
+    ramping: bool = False,
 ) -> DecisionObservation:
     return DecisionObservation(
         location="Flower Room",
@@ -46,6 +47,7 @@ def observation(
         reason_code="pid.calculated",
         reason_text="PID calculated control output",
         device_type=device_type,
+        ramping=ramping,
     )
 
 
@@ -248,4 +250,108 @@ def test_sub_threshold_float_artifact_stays_silent_for_light() -> None:
     )
 
     # Then: no setpoint lifecycle event is emitted.
+    assert sink.events == []
+
+
+def test_ramp_progress_never_emits_setpoint_changed() -> None:
+    # Given: a light mid-ramp (every tick is flagged as ramp interpolation).
+    sink = RecordingSink()
+    policy = DecisionEventPolicy(sink)
+    started_at = datetime(2026, 9, 1, tzinfo=UTC)
+    policy.observe(observation(started_at, 20.0, setpoint=0.5, device_type="light"))
+
+    # When: a full 0.15-sun ramp drifts tick by tick while ramping.
+    for tick in range(1, 751):
+        policy.observe(
+            observation(
+                started_at + timedelta(seconds=tick),
+                20.0,
+                setpoint=0.5 - 0.0002 * tick,
+                device_type="light",
+                ramping=True,
+            )
+        )
+
+    # Then: ZERO setpoint_changed events; the ramp category owns ramp movement.
+    assert all(e.event_type != "control.setpoint_changed" for e in sink.events)
+    assert sink.events == []
+
+
+def test_post_ramp_target_stability_emits_nothing_stale() -> None:
+    # Given: a completed ramp whose drift was silently consumed.
+    sink = RecordingSink()
+    policy = DecisionEventPolicy(sink)
+    started_at = datetime(2026, 9, 1, tzinfo=UTC)
+    policy.observe(observation(started_at, 20.0, setpoint=0.5, device_type="light"))
+    for tick in range(1, 751):
+        policy.observe(
+            observation(
+                started_at + timedelta(seconds=tick),
+                20.0,
+                setpoint=0.5 - 0.0002 * tick,
+                device_type="light",
+                ramping=True,
+            )
+        )
+
+    # When: the ramp ends and the light sits at the ramp target.
+    for tick in range(752, 761):
+        policy.observe(
+            observation(
+                started_at + timedelta(seconds=tick),
+                20.0,
+                setpoint=0.35,
+                device_type="light",
+                ramping=False,
+            )
+        )
+
+    # Then: no delayed/distilled setpoint_changed appears after the ramp.
+    assert all(e.event_type != "control.setpoint_changed" for e in sink.events if e.event_type)
+    assert sink.events == []
+
+
+def test_non_ramp_target_change_still_emits_immediately() -> None:
+    # Given: a light at a stable post-ramp target.
+    sink = RecordingSink()
+    policy = DecisionEventPolicy(sink)
+    started_at = datetime(2026, 9, 1, tzinfo=UTC)
+    policy.observe(observation(started_at, 20.0, setpoint=0.35, device_type="light"))
+
+    # When: a human or schedule retargets without any ramp (ramping=False).
+    policy.observe(
+        observation(
+            started_at + timedelta(seconds=1),
+            20.0,
+            setpoint=0.8,
+            device_type="light",
+            ramping=False,
+        )
+    )
+
+    # Then: one immediate self-contained emission.
+    assert [e.event_type for e in sink.events] == ["control.setpoint_changed"]
+    assert sink.events[0].payload.previous_setpoint == 0.35
+
+
+def test_heating_ramp_progress_swallows_interpolated_steps() -> None:
+    # Given: a heating target ramping over ten minutes (ramp_progress present).
+    sink = RecordingSink()
+    policy = DecisionEventPolicy(sink)
+    started_at = datetime(2026, 9, 1, tzinfo=UTC)
+    policy.observe(observation(started_at, 20.0, setpoint=22.0, device_type="heating"))
+
+    # When: 30 interpolated ticks at 0.01 C/s with ramping=True.
+    for tick in range(1, 31):
+        policy.observe(
+            observation(
+                started_at + timedelta(seconds=tick),
+                20.0,
+                setpoint=22.0 + 0.01 * tick,
+                device_type="heating",
+                ramping=True,
+            )
+        )
+
+    # Then: no setpoint_changed while the ramp owns the movement.
     assert sink.events == []
