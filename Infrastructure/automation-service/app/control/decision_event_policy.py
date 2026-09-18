@@ -42,6 +42,7 @@ class DecisionObservation:
     control_mode: str
     reason_code: str
     reason_text: str
+    device_type: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -210,6 +211,7 @@ class DecisionEventPolicy:
             reason_text=_reason_text(event_type, observation.reason_text),
             payload=ControlPayload(
                 controller=observation.controller,
+                device_type=observation.device_type or None,
                 sensor_value=observation.sensor_value,
                 effective_setpoint=observation.effective_setpoint,
                 error=observation.error,

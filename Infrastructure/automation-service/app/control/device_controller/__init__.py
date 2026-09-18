@@ -118,6 +118,7 @@ class DeviceController(
                             control_mode,
                             "control.manual_mode",
                             "Manual control mode selected",
+                            device_info.get("device_type", ""),
                         ),
                         "control.mode_changed",
                     )
@@ -169,6 +170,7 @@ class DeviceController(
                         control_mode,
                         f"control.{controller}_decision",
                         f"{controller.upper()} decision; rules={active_rule_ids}; schedules={active_schedule_ids}",
+                        device_type,
                     )
                 )
 

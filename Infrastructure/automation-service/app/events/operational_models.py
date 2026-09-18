@@ -151,6 +151,7 @@ class RampPayload(FrozenOperationalModel):
 class ControlPayload(FrozenOperationalModel):
     family: Literal["control"] = "control"
     controller: str = Field(min_length=1, max_length=64)
+    device_type: str | None = Field(default=None, max_length=64)
     sensor_value: float | None = None
     effective_setpoint: float | None = None
     error: float | None = None

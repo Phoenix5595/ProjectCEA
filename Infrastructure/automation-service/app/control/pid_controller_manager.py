@@ -374,6 +374,7 @@ class PIDControllerManager:
                             control_mode,
                             "control.input_missing",
                             "PID control input is unavailable",
+                            device_type,
                         )
                     )
                     return None
@@ -399,6 +400,7 @@ class PIDControllerManager:
                         control_mode,
                         "control.on_off_decision",
                         "ON/OFF hysteresis calculated control output",
+                        device_type,
                     )
                 )
                 return output
@@ -422,6 +424,7 @@ class PIDControllerManager:
                             control_mode,
                             "control.input_missing",
                             "PID control input is unavailable",
+                            device_type,
                         )
                     )
                     return None
@@ -442,6 +445,7 @@ class PIDControllerManager:
                         control_mode,
                         "control.auto_pid_decision",
                         "Auto-tuning PID calculated control output",
+                        device_type,
                     )
                 )
                 return output
@@ -469,6 +473,7 @@ class PIDControllerManager:
                         control_mode,
                         "control.input_missing",
                         "PID setpoint is unavailable",
+                        device_type,
                     )
                 )
                 return None
@@ -491,6 +496,7 @@ class PIDControllerManager:
                         control_mode,
                         "control.input_missing",
                         "PID sensor value is unavailable",
+                        device_type,
                     )
                 )
                 return None
@@ -536,6 +542,7 @@ class PIDControllerManager:
                         "control.pid_decision",
                         f"PID calculated control output; Kp={controller.kp:g}, "
                         f"Ki={controller.ki:g}, Kd={controller.kd:g}",
+                        device_type,
                     )
                 )
 
