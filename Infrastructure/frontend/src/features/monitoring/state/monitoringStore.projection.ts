@@ -77,7 +77,7 @@ export function projectionTimeline(publication: ProjectionPublicationResponse): 
   }
 }
 
-function richProjectionTimeline(trajectory: RichTrajectoryEnvelope): ProjectionTimeline {
+export function richProjectionTimeline(trajectory: RichTrajectoryEnvelope): ProjectionTimeline {
   validateRichTrajectory(trajectory)
   const climate = new Map<string, ClimateTimelineSeries>()
   const lights = new Map<string, LightTimelineSeries>()

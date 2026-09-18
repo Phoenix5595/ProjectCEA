@@ -88,10 +88,15 @@ export function groupEnvelopeSegments(envelope: RichTrajectoryEnvelope): MetricG
     }
     groups.set(key, group)
   }
-  return [...groups.values()].sort((left, right) => {
+  const result = [...groups.values()].sort((left, right) => {
     const metricDiff = metricOrder(left.metric) - metricOrder(right.metric)
     return metricDiff !== 0 ? metricDiff : kindOrder(left.kind) - kindOrder(right.kind)
   })
+  for (const group of result) {
+    group.steps.push({ t: envelope.window.end.getTime(), value: null })
+    group.steps.sort((left, right) => left.t - right.t)
+  }
+  return result
 }
 
 function sampleGroup(group: MetricGroup, t: number): number | null {
