@@ -14,6 +14,8 @@ const makeEntry = (redisId: string, type: string, room?: string, cluster?: strin
     ...(room !== undefined && { room }),
     ...(cluster !== undefined && { cluster }),
   },
+  entity: null,
+  reasonText: null,
 })
 
 function TestComponent({ location, cluster }: { location?: string; cluster?: string }) {

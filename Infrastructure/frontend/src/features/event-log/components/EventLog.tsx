@@ -43,6 +43,8 @@ export function EventLog({ entries, now }: EventLogProps) {
     })
   }, [entries, filters])
 
+  const ordered = useMemo(() => [...filtered].reverse(), [filtered])
+
   return (
     <section aria-labelledby="event-log-heading" className="flex flex-col gap-2">
       <div className="flex items-center justify-between">
@@ -68,7 +70,7 @@ export function EventLog({ entries, now }: EventLogProps) {
         <p className="text-xs text-text-default italic px-3 py-4 text-center">No events yet</p>
       ) : (
         <ul role="list" className="flex flex-col gap-px bg-border-subtle border border-border-subtle overflow-auto max-h-[600px]">
-          {filtered.map((entry) => (
+          {ordered.map((entry) => (
             <EventRow key={entry.eventId} entry={entry} now={now} />
           ))}
         </ul>

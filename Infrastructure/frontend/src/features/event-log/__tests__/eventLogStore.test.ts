@@ -9,6 +9,8 @@ const entry = (redisId: string, eventId: string): EventLogEntry => ({
   severity: 'info',
   occurredAt: new Date(),
   payload: {},
+  entity: null,
+  reasonText: null,
 })
 
 describe('EventLogStore', () => {

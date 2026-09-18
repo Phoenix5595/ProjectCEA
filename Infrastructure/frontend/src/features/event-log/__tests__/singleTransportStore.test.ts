@@ -23,6 +23,8 @@ describe('Event log single transport/store regression', () => {
         severity: 'info',
         occurredAt: new Date('2026-09-02T12:00:00Z'),
         payload: { room: 'Test Room' },
+        entity: null,
+        reasonText: null,
       },
     ])
     // Then: the entry is visible in the store snapshot
