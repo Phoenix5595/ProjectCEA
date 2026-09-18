@@ -154,6 +154,7 @@ class ControlPayload(FrozenOperationalModel):
     device_type: str | None = Field(default=None, max_length=64)
     sensor_value: float | None = None
     effective_setpoint: float | None = None
+    previous_setpoint: float | None = None
     error: float | None = None
     output_percent: float | None = Field(default=None, ge=0, le=100)
 
