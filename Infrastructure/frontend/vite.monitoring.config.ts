@@ -39,6 +39,7 @@ import {
   VEG_EVENTS,
   LAB_EVENTS,
   CJK_EVENT,
+  GROUPED_CONSOLE_EVENTS,
 } from './src/features/event-log/config/fixtures'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
@@ -711,6 +712,7 @@ function monitoringPreviewPlugin(): Plugin {
           else if (scenario === 'veg-only') eventsToSend = VEG_EVENTS
           else if (scenario === 'lab-only') eventsToSend = LAB_EVENTS
           else if (scenario === 'cjk-payload') eventsToSend = [...FLOWER_EVENTS, CJK_EVENT]
+          else if (scenario === 'grouped-console') eventsToSend = GROUPED_CONSOLE_EVENTS
 
           if (scenario === 'burst') {
             // Send 20 events rapidly
