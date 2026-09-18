@@ -116,6 +116,7 @@ export function dragHandlesPlugin(callbacks: DragHandlesCallbacks): uPlot.Plugin
       grip.style.border = '1px solid rgba(128, 128, 128, 0.6)'
       grip.style.background = 'rgba(128, 128, 128, 0.35)'
       grip.style.padding = '0'
+      grip.style.pointerEvents = 'auto'
       grip.style.cursor = spec.kind === 'boundary' ? 'ew-resize' : 'ns-resize'
       if (spec.kind === 'boundary') {
         grip.style.width = '8px'
