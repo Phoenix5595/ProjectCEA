@@ -22,6 +22,7 @@ from app.events.operational_models import (
 )
 from app.events.operational_stream import (
     OperationalEventDispatcher,
+    OperationalEventDispatchHealth,
     StreamReadResult,
 )
 
@@ -171,3 +172,84 @@ async def test_transient_failure_backs_off_and_poison_drops() -> None:
 
     # And: the loop task terminated cleanly after stop().
     assert dispatcher._drain_task is None
+
+
+class _DispatcherHealthStub:
+    def __init__(self, published: int) -> None:
+        self._published = published
+
+    def health(self):
+        return OperationalEventDispatchHealth(
+            queued_routine=1,
+            queued_priority=2,
+            dropped_routine=3,
+            dropped_priority=4,
+            published=self._published,
+            failed_dispatches=5,
+            secondary_failures=6,
+        )
+
+
+class _EmptyRelayManagerStub:
+    def get_all_states(self) -> dict:
+        return {}
+
+    def get_device_mode(self, location: str, cluster: str, device_name: str) -> None:
+        return None
+
+    def get_channel(self, location: str, cluster: str, device_name: str) -> None:
+        return None
+
+
+class _EmptyConfigStub:
+    async def get_devices(self) -> dict:
+        return {}
+
+    def get_sensor_mapping(self) -> dict:
+        return {}
+
+
+@pytest.mark.asyncio
+async def test_status_exposes_operational_event_health() -> None:
+    """t3: /api/status carries the dispatcher counters; null when disabled."""
+    from fastapi import FastAPI
+    from httpx import ASGITransport, AsyncClient
+
+    from app.routes import status as status_routes
+
+    async def _payload(app: FastAPI) -> dict:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            response = await client.get("/api/status")
+            assert response.status_code == 200
+            return response.json()
+
+    def _bind(app: FastAPI, dispatcher) -> None:
+        app.include_router(status_routes.router)
+        app.dependency_overrides[status_routes.get_database] = lambda: None
+        app.dependency_overrides[status_routes.get_relay_manager] = lambda: (
+            _EmptyRelayManagerStub()
+        )
+        app.dependency_overrides[status_routes.get_config] = lambda: _EmptyConfigStub()
+        app.dependency_overrides[status_routes.get_pid_controller_manager] = lambda: None
+        app.dependency_overrides[status_routes.get_monitoring_publication_workers] = lambda: None
+        app.dependency_overrides[status_routes.get_operational_event_dispatcher] = (
+            lambda: dispatcher
+        )
+
+    app = FastAPI()
+    _bind(app, _DispatcherHealthStub(published=42))
+    payload = await _payload(app)
+    assert payload["operational_events"] == {
+        "queued_routine": 1,
+        "queued_priority": 2,
+        "dropped_routine": 3,
+        "dropped_priority": 4,
+        "published": 42,
+        "failed_dispatches": 5,
+        "secondary_failures": 6,
+    }
+
+    app_disabled = FastAPI()
+    _bind(app_disabled, None)
+    payload_disabled = await _payload(app_disabled)
+    assert payload_disabled["operational_events"] is None

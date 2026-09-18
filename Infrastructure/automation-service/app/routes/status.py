@@ -70,6 +70,11 @@ def get_monitoring_publication_workers() -> MonitoringPublicationWorkers | None:
     raise RuntimeError("Dependency not injected")
 
 
+def get_operational_event_dispatcher():
+    """Dependency for the operational event dispatcher health (None when disabled)."""
+    raise RuntimeError("Dependency not injected")
+
+
 def _get_system_stats() -> dict[str, Any] | None:
     """Collect host system stats (CPU, memory, disk, uptime, load, process count, Pi temp/throttle).
 
@@ -234,6 +239,7 @@ async def get_status(
     publication_workers: MonitoringPublicationWorkers | None = Depends(
         get_monitoring_publication_workers
     ),
+    operational_event_dispatcher=Depends(get_operational_event_dispatcher),
     health: bool = Query(default=True, description="Include service health checks"),
 ) -> dict[str, Any]:
     """Get full system status."""
@@ -324,6 +330,19 @@ async def get_status(
         "service_health": service_health,
         "monitoring_publication": (
             None if publication_workers is None else publication_health_payload(publication_workers)
+        ),
+        "operational_events": (
+            None
+            if operational_event_dispatcher is None
+            else {
+                "queued_routine": operational_event_dispatcher.health().queued_routine,
+                "queued_priority": operational_event_dispatcher.health().queued_priority,
+                "dropped_routine": operational_event_dispatcher.health().dropped_routine,
+                "dropped_priority": operational_event_dispatcher.health().dropped_priority,
+                "published": operational_event_dispatcher.health().published,
+                "failed_dispatches": operational_event_dispatcher.health().failed_dispatches,
+                "secondary_failures": operational_event_dispatcher.health().secondary_failures,
+            }
         ),
     }
     if system is not None:

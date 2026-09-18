@@ -603,6 +603,10 @@ class ServiceContainer:
         """Return the single non-blocking sink shared by all runtime producers."""
         return self.operational_event_sink
 
+    def get_operational_event_dispatcher(self) -> OperationalEventDispatcher | None:
+        """Return the dispatcher for health reporting; None when Redis is unavailable."""
+        return self.operational_event_dispatcher
+
     def get_operational_event_reader(self) -> OperationalEventRouteReader:
         """Return the route reader only when operational Redis is available."""
         if self.operational_event_reader is None:

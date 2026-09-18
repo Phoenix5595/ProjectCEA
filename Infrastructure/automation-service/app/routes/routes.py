@@ -144,6 +144,9 @@ def setup_dependency_overrides(app: FastAPI, container) -> None:
     app.dependency_overrides[operational_events.get_operational_event_reader] = (
         container.get_operational_event_reader
     )
+    app.dependency_overrides[status.get_operational_event_dispatcher] = (
+        container.get_operational_event_dispatcher
+    )
 
     # Override dependencies in system_config module
     app.dependency_overrides[system_config.get_config] = container.get_config
