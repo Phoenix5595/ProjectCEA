@@ -60,6 +60,10 @@ function toEventLogEntry(redisId: string, event: OperationalEvent): EventLogEntr
     severity: event.severity,
     occurredAt: new Date(event.occurred_at),
     payload,
+    entity: event.entity
+      ? { entityType: event.entity.entity_type, entityId: event.entity.entity_id }
+      : null,
+    reasonText: event.reason_text,
   };
 }
 

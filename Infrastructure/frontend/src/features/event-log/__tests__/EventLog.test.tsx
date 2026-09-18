@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { EventLog } from '../components/EventLog'
@@ -18,6 +18,8 @@ const makeEntry = (
   severity,
   occurredAt: new Date('2026-09-02T12:00:00Z'),
   payload,
+  entity: null,
+  reasonText: null,
 })
 
 describe('EventLog', () => {
@@ -37,6 +39,20 @@ describe('EventLog', () => {
     ]
     render(<EventLog entries={entries} now={new Date('2026-09-02T12:00:00Z')} />)
     expect(screen.getAllByRole('listitem')).toHaveLength(2)
+  })
+
+  it('renders newest entries first', () => {
+    // Given: entries stored in ascending Redis-ID order (oldest first in the store)
+    const entries = [
+      makeEntry('1-0', 'relay.state_changed', 'relay', { device_id: 'fan-1' }),
+      makeEntry('2-0', 'config.updated', 'mutation'),
+    ]
+    render(<EventLog entries={entries} now={new Date('2026-09-02T12:00:00Z')} />)
+    const rows = screen.getAllByRole('listitem')
+
+    // Then: the topmost row is the newest event
+    expect(within(rows[0]).getByText('Configuration updated')).toBeInTheDocument()
+    expect(within(rows[1]).getByText('Relay state changed')).toBeInTheDocument()
   })
 
   it('filters entries by severity', async () => {

@@ -1,5 +1,10 @@
 import type { EventSeverity } from './eventLogTypes'
 
+export type EventLogEntity = Readonly<{
+  entityType: string
+  entityId: string
+}>
+
 export type EventLogEntry = Readonly<{
   redisId: string
   eventId: string
@@ -8,6 +13,8 @@ export type EventLogEntry = Readonly<{
   severity: EventSeverity
   occurredAt: Date
   payload: Record<string, unknown>
+  entity: EventLogEntity | null
+  reasonText: string | null
 }>
 
 type Listener = () => void

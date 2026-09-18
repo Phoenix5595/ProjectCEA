@@ -44,7 +44,21 @@ describe('toEventLogEntry', () => {
       severity: 'info',
       occurredAt: new Date('2026-09-03T12:00:00.000Z'),
       payload: { device_id: 'relay-1', room: 'Flower Room', cluster: 'main' },
+      entity: { entityType: 'relay', entityId: 'relay-1' },
+      reasonText: 'Relay command failed',
     })
+  })
+
+  it('keeps entity and reason as null when the envelope omits them', () => {
+    // Given: an envelope without entity context or a human reason
+    const event = { ...makeEvent('info'), entity: null, reason_text: null }
+
+    // When: the event is converted
+    const entry = toEventLogEntry('5-0', event)
+
+    // Then: the source fields stay null, not undefined
+    expect(entry.entity).toBeNull()
+    expect(entry.reasonText).toBeNull()
   })
 
   it.each(severities)('preserves authoritative %s severity unchanged', (severity) => {
