@@ -167,6 +167,109 @@ function timelineEnvelope(room: string, scope: 'saved' | 'draft', options: Timel
            draft_revision: draftRevision,
         },
       },
+      {
+        shape: 'linear',
+        start_value: 24,
+        end_value: 22,
+        start: '2026-08-02T18:00:00.000Z',
+        end: '2026-08-02T18:20:00.000Z',
+        metric: 'heating',
+        unit: 'C',
+        trajectory_kind: 'scheduled',
+        quality: 'exact',
+        source: {
+          mode: '1',
+          submode: null,
+          period: { period_id: '17', label: 'Day cycle' },
+           config_revision: baseConfigRevision,
+           draft_revision: draftRevision,
+        },
+      },
+      {
+        shape: 'step',
+        value: 22,
+        start: '2026-08-02T18:20:00.000Z',
+        end: '2026-08-03T06:00:00.000Z',
+        metric: 'heating',
+        unit: 'C',
+        trajectory_kind: 'scheduled',
+        quality: 'exact',
+        source: {
+          mode: '1',
+          submode: null,
+          period: { period_id: '17', label: 'Day cycle' },
+           config_revision: baseConfigRevision,
+           draft_revision: draftRevision,
+        },
+      },
+      {
+        shape: 'step',
+        value: 23,
+        start: '2026-08-02T06:00:00.000Z',
+        end: '2026-08-03T06:00:00.000Z',
+        metric: 'heating',
+        unit: 'C',
+        trajectory_kind: 'effective',
+        quality: 'estimated',
+        source: {
+          mode: '1',
+          submode: null,
+          period: { period_id: '17', label: 'Day cycle' },
+           config_revision: baseConfigRevision,
+           draft_revision: draftRevision,
+        },
+      },
+      {
+        shape: 'step',
+        value: 25,
+        start: '2026-08-02T00:00:00.000Z',
+        end: '2026-08-03T00:00:00.000Z',
+        metric: 'cooling_setpoint',
+        unit: 'C',
+        trajectory_kind: 'scheduled',
+        quality: 'exact',
+        source: {
+          mode: '1',
+          submode: null,
+          period: { period_id: '17', label: 'Day cycle' },
+           config_revision: baseConfigRevision,
+           draft_revision: draftRevision,
+        },
+      },
+      {
+        shape: 'step',
+        value: 1.1,
+        start: '2026-08-02T00:00:00.000Z',
+        end: '2026-08-03T00:00:00.000Z',
+        metric: 'vpd_setpoint',
+        unit: 'kPa',
+        trajectory_kind: 'scheduled',
+        quality: 'exact',
+        source: {
+          mode: '1',
+          submode: null,
+          period: { period_id: '17', label: 'Day cycle' },
+           config_revision: baseConfigRevision,
+           draft_revision: draftRevision,
+        },
+      },
+      {
+        shape: 'step',
+        value: 900,
+        start: '2026-08-02T00:00:00.000Z',
+        end: '2026-08-03T00:00:00.000Z',
+        metric: 'co2_setpoint',
+        unit: 'ppm',
+        trajectory_kind: 'scheduled',
+        quality: 'exact',
+        source: {
+          mode: '1',
+          submode: null,
+          period: { period_id: '17', label: 'Day cycle' },
+           config_revision: baseConfigRevision,
+           draft_revision: draftRevision,
+        },
+      },
     ],
     assumptions: ['Fixture trajectory is a saved schedule authority.'],
     warnings: options.warnings ?? [],
@@ -307,6 +410,24 @@ const FIXTURE_ROUTES: FixtureRoute[] = [
       mode_id: 1,
       submode_id: null,
       is_constant: scenario === 'veg-constant-flag',
+      parameters: {
+        day_start_time: '06:00',
+        night_start_time: '18:00',
+        light_ramp_up_minutes: 20,
+        light_ramp_down_minutes: 20,
+        main_light_intensity: 80,
+        supplemental_light_intensity: 10,
+      },
+    }),
+  },
+  {
+    re: /^\/api\/room-modes\/room\/[^/]+\/[^/]+\/parameters$/,
+    handler: (req, scenario) => ({
+      location: (req.url ?? '').includes('Veg%20Room') ? 'Veg Room' : 'Flower Room',
+      cluster: 'main',
+      mode_name: scenario === 'sleep-scheduled-flag' ? 'sleep' : 'flower',
+      mode_id: 1,
+      submode_id: null,
       parameters: {
         day_start_time: '06:00',
         night_start_time: '18:00',
@@ -570,6 +691,12 @@ function monitoringPreviewPlugin(): Plugin {
           res.statusCode = 503
           res.setHeader('Content-Type', 'application/json')
           res.end(JSON.stringify({ detail: 'preview unavailable (fixture)' }))
+          return
+        }
+        if (scenario === 'timeline-apply-conflict' && req.method === 'POST' && pathname.endsWith('/apply')) {
+          res.statusCode = 409
+          res.setHeader('Content-Type', 'application/json')
+          res.end(JSON.stringify({ detail: 'saved revision changed (fixture)' }))
           return
         }
         if (scenario === 'force-error' && isSensorPath(pathname)) {
