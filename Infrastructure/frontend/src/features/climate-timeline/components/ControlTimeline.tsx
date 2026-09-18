@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import type uPlot from 'uplot'
 import type { ClimatePeriod } from '../../../types/climatePeriod'
 import type { TimelinePhotoperiod } from '../state/timelineDraft'
@@ -11,6 +11,20 @@ import {
 } from '../charts/envelopeSeries'
 import { timelineSeriesMeta } from '../charts/timelineOptions'
 import {
+  applyBoundary,
+  applyValue,
+  buildLocalScheduledSeries,
+  clampedBoundaryMinutes,
+  createRafCoalescer,
+  isValueInRange,
+  rangeMessage,
+  snapValue,
+  type BoundaryEdge,
+  type RafCoalescer,
+  type ValueMetric,
+} from '../charts/dragInteraction'
+import { dragHandlesPlugin } from '../charts/dragHandlesPlugin'
+import {
   periodLabelSegments,
   periodLabelsPlugin,
   type PeriodLabelSegment,
@@ -19,7 +33,6 @@ import { TimelineUPlot } from '../charts/TimelineUPlot'
 import { TimelineWarningOverlay, timelineWarningLabel } from './TimelineWarningOverlay'
 
 type TimelineMode = 'compact' | 'expanded'
-type DragTarget = { readonly index: number; readonly edge: 'start' | 'end' }
 
 export type ControlTimelineProps = {
   readonly mode: TimelineMode
@@ -60,12 +73,21 @@ function assertNever(value: never): never {
 }
 
 export function ControlTimeline({ mode, controller, onExpand, onCollapse, lockedPhotoperiodHours = null }: ControlTimelineProps) {
-  const [dragTarget, setDragTarget] = useState<DragTarget | null>(null)
   const [editError, setEditError] = useState<string | null>(null)
   const [windowMode, setWindowMode] = useState<'daily' | 'rolling'>('rolling')
+  const [dragActive, setDragActive] = useState(false)
   const [nowMs, setNowMs] = useState(() => Date.now())
   const { state, preview } = controller
   const isExpanded = mode === 'expanded'
+  const draftPeriods = state.draft.periods
+  const draftPeriodsRef = useRef(draftPeriods)
+  draftPeriodsRef.current = draftPeriods
+  const controllerRef = useRef(controller)
+  controllerRef.current = controller
+  const windowModeRef = useRef(windowMode)
+  windowModeRef.current = windowMode
+  const isExpandedRef = useRef(isExpanded)
+  isExpandedRef.current = isExpanded
 
   useEffect(() => {
     const interval = setInterval(() => setNowMs(Date.now()), 30_000)
@@ -85,6 +107,18 @@ export function ControlTimeline({ mode, controller, onExpand, onCollapse, locked
   const windowEndMs = envelope?.window.end.getTime() ?? (state.saved.window ? Date.parse(state.saved.window.end) : nowMs + 24 * 60 * 60 * 1000)
 
   const chart = useMemo(() => {
+    if (dragActive) {
+      const local = buildLocalScheduledSeries(draftPeriods, {
+        start: new Date(windowStartMs),
+        end: new Date(windowEndMs),
+      })
+      const metrics: readonly ValueMetric[] = ['heating', 'cooling', 'vpd', 'co2']
+      const keys = metrics.map((metric) => `${metric}_setpoint:scheduled` as const)
+      return {
+        data: [local.sampleTimes.slice(), ...metrics.map((metric) => [...(local.series.get(metric) ?? [])])] as uPlot.AlignedData,
+        meta: timelineSeriesMeta(keys),
+      }
+    }
     if (!envelope) return null
     const sampleTimes = envelopeSampleTimes(envelope.window)
     const built = buildEnvelopeSeries(envelope, sampleTimes)
@@ -92,7 +126,7 @@ export function ControlTimeline({ mode, controller, onExpand, onCollapse, locked
       data: [sampleTimes.slice(), ...built.keys.map((key) => [...(built.series.get(key) ?? [])])] as uPlot.AlignedData,
       meta: timelineSeriesMeta(built.keys),
     }
-  }, [envelope])
+  }, [envelope, dragActive, draftPeriods, windowStartMs, windowEndMs])
 
   const bands = useMemo(
     () => photoperiodIntervals(state.draft.photoperiod, windowStartMs, windowEndMs),
@@ -106,12 +140,14 @@ export function ControlTimeline({ mode, controller, onExpand, onCollapse, locked
     [state.draft.periods, windowStartMs, windowEndMs],
   )
 
+  const dragEnabled = isExpanded && windowMode === 'daily'
+
   const dataRevision = useRef(0)
-  const revisionInputsRef = useRef<{ envelope: typeof envelope; bands: typeof bands; nowBucket: number; labelSegments: typeof labelSegments }>({ envelope, bands, nowBucket: 0, labelSegments })
+  const revisionInputsRef = useRef<{ envelope: typeof envelope; bands: typeof bands; nowBucket: number; labelSegments: typeof labelSegments; draftPeriods: typeof draftPeriods; dragEnabled: boolean }>({ envelope, bands, nowBucket: 0, labelSegments, draftPeriods, dragEnabled })
   const nowBucket = Math.floor(nowMs / 30_000)
   const revisionInputs = revisionInputsRef.current
-  if (revisionInputs.envelope !== envelope || revisionInputs.bands !== bands || revisionInputs.nowBucket !== nowBucket || revisionInputs.labelSegments !== labelSegments) {
-    revisionInputsRef.current = { envelope, bands, nowBucket, labelSegments }
+  if (revisionInputs.envelope !== envelope || revisionInputs.bands !== bands || revisionInputs.nowBucket !== nowBucket || revisionInputs.labelSegments !== labelSegments || revisionInputs.draftPeriods !== draftPeriods || revisionInputs.dragEnabled !== dragEnabled) {
+    revisionInputsRef.current = { envelope, bands, nowBucket, labelSegments, draftPeriods, dragEnabled }
     dataRevision.current += 1
   }
 
@@ -122,33 +158,68 @@ export function ControlTimeline({ mode, controller, onExpand, onCollapse, locked
     [windowStartMs, windowEndMs],
   )
 
-  useEffect(() => {
-    if (!dragTarget) return
-    const onMove = (event: MouseEvent): void => {
-      const plot = document.querySelector('[data-testid="control-timeline-plot"]')
-      if (!(plot instanceof HTMLElement)) return
-      const bounds = plot.getBoundingClientRect()
-      const minutes = Math.round(((event.clientX - bounds.left) / bounds.width) * 1440 / 5) * 5
-      if (minutes < 0 || minutes > 1435) {
-        setEditError('Timeline boundaries must stay within the 24-hour window.')
+  const boundaryCoalescerRef = useRef<RafCoalescer<{ index: number; edge: BoundaryEdge; rawMinutes: number }> | null>(null)
+  if (boundaryCoalescerRef.current === null) {
+    boundaryCoalescerRef.current = createRafCoalescer(({ index, edge, rawMinutes }) => {
+      const clamped = clampedBoundaryMinutes(draftPeriodsRef.current, index, edge, rawMinutes)
+      controllerRef.current.editPeriods(applyBoundary(draftPeriodsRef.current, index, edge, clamped))
+    })
+  }
+  const valueCoalescerRef = useRef<RafCoalescer<{ index: number; metric: ValueMetric; value: number }> | null>(null)
+  if (valueCoalescerRef.current === null) {
+    valueCoalescerRef.current = createRafCoalescer(({ index, metric, value }) => {
+      controllerRef.current.editPeriods(applyValue(draftPeriodsRef.current, index, metric, value))
+    })
+  }
+
+  const dragHandles = useMemo(() => dragHandlesPlugin({
+    getPeriods: () => draftPeriodsRef.current,
+    getWindow: () => ({ start: windowStartMs, end: windowEndMs }),
+    isDragEnabled: () => isExpandedRef.current && windowModeRef.current === 'daily',
+    onDragStart: () => setDragActive(true),
+    onDragEnd: () => {
+      boundaryCoalescerRef.current?.flush()
+      valueCoalescerRef.current?.flush()
+      setDragActive(false)
+    },
+    pushBoundary: (index, edge, rawMinutes) => boundaryCoalescerRef.current?.push({ index, edge, rawMinutes }),
+    pushValue: (index, metric, rawValue) => {
+      const value = snapValue(metric, rawValue)
+      if (!isValueInRange(metric, value)) {
+        setEditError(rangeMessage(metric))
         return
       }
-      const period = state.draft.periods[dragTarget.index]
-      if (!period) return
-      const field = dragTarget.edge === 'start' ? 'start_time' : 'end_time'
-      controller.editPeriods(state.draft.periods.map((candidate, index) => index === dragTarget.index
-        ? { ...candidate, [field]: minutesToTime(minutes) }
-        : candidate))
       setEditError(null)
-    }
-    const onUp = (): void => setDragTarget(null)
-    window.addEventListener('mousemove', onMove)
-    window.addEventListener('mouseup', onUp)
-    return () => {
-      window.removeEventListener('mousemove', onMove)
-      window.removeEventListener('mouseup', onUp)
-    }
-  }, [controller, dragTarget, state.draft.periods])
+      valueCoalescerRef.current?.push({ index, metric, value })
+    },
+    commitBoundaryKey: (index, edge, deltaMinutes) => {
+      const period = draftPeriodsRef.current[index]
+      if (!period) return
+      const current = timeToMinutes(edge === 'start' ? period.start_time : period.end_time)
+      const clamped = clampedBoundaryMinutes(draftPeriodsRef.current, index, edge, current + deltaMinutes)
+      controllerRef.current.editPeriods(applyBoundary(draftPeriodsRef.current, index, edge, clamped))
+      setEditError(null)
+    },
+    commitValueKey: (index, metric, deltaValue) => {
+      const period = draftPeriodsRef.current[index]
+      if (!period) return
+      const field = metric === 'heating' ? 'heating_setpoint' : metric === 'cooling' ? 'cooling_setpoint' : metric === 'vpd' ? 'vpd_setpoint' : 'co2_setpoint'
+      const current = period[field]
+      if (current == null) return
+      const value = snapValue(metric, current + deltaValue)
+      if (!isValueInRange(metric, value)) {
+        setEditError(rangeMessage(metric))
+        return
+      }
+      controllerRef.current.editPeriods(applyValue(draftPeriodsRef.current, index, metric, value))
+      setEditError(null)
+    },
+  }), [windowStartMs, windowEndMs])
+
+  useEffect(() => () => {
+    boundaryCoalescerRef.current?.cancel()
+    valueCoalescerRef.current?.cancel()
+  }, [])
 
   const adjustBoundary = (index: number, edge: 'start' | 'end', delta: number): void => {
     const period = state.draft.periods[index]
@@ -189,7 +260,6 @@ export function ControlTimeline({ mode, controller, onExpand, onCollapse, locked
       data-testid={`control-timeline-handle-${index}-${edge}`}
       aria-label={`Adjust ${state.draft.periods[index]?.period_name ?? `period ${index + 1}`} ${edge}`}
       className="border border-border-default bg-surface-secondary px-1 py-0.5 text-[10px] font-mono text-text-muted focus:outline-hidden focus:ring-2 focus:ring-accent-data"
-      onMouseDown={() => setDragTarget({ index, edge })}
       onKeyDown={(event) => {
         if (event.key === 'ArrowLeft') adjustBoundary(index, edge, -5)
         if (event.key === 'ArrowRight') adjustBoundary(index, edge, 5)
@@ -240,7 +310,7 @@ export function ControlTimeline({ mode, controller, onExpand, onCollapse, locked
               photoperiod={bands}
               nowX={nowX}
               revision={dataRevision.current}
-              plugins={[labelsPlugin]}
+              plugins={[labelsPlugin, dragHandles]}
               ariaLabel={`Climate control timeline plot, ${chart.meta.map((entry) => entry.label).join(', ')}`}
             />
           ) : (
@@ -257,11 +327,21 @@ export function ControlTimeline({ mode, controller, onExpand, onCollapse, locked
               </span>
             ))}
           </span>
+          {dragActive && (
+            <span data-testid="control-timeline-local-estimate" className="pointer-events-none absolute left-1 top-1 z-20 border border-accent-data bg-surface-primary/80 px-1 text-[9px] font-bold uppercase text-accent-data">
+              Local draft estimate
+            </span>
+          )}
         </div>
 
         {isExpanded && (
           <div className="flex flex-wrap gap-1" data-testid="control-timeline-boundaries">
-            {state.draft.periods.flatMap((_period, index) => [renderHandle(index, 'start'), renderHandle(index, 'end')])}
+            {state.draft.periods.map((period, index) => (
+              <Fragment key={`boundary-controls-${period.period_name}-${index}`}>
+                {renderHandle(index, 'start')}
+                {renderHandle(index, 'end')}
+              </Fragment>
+            ))}
           </div>
         )}
 
