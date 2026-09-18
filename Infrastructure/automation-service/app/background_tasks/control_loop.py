@@ -11,6 +11,9 @@ from shared.infra_logging import get_logger
 
 logger = get_logger(__name__)
 
+DEGRADED_KEY = "automation:degraded"
+DEGRADED_TTL_SECONDS = 15
+
 
 class ControlLoopMixin:
     """Mixin for the main control loop and failure tracking."""
@@ -142,11 +145,18 @@ class ControlLoopMixin:
         logger.info("Control loop degraded mode cleared after 10 successful ticks")
 
     async def _write_degraded_state(self, payload: dict[str, object]) -> None:
-        """Best-effort write of the control-loop degraded state to Redis."""
+        """Best-effort write of the control-loop degraded state to Redis.
+
+        Writes carry a short TTL (refreshed on every failure and recovery tick)
+        so a stale advisory flag can never outlive the loop that failed to
+        finish its recovery — e.g. across a restart or a counter reset.
+        """
         redis_client = None
         if self.database._automation_redis and self.database._automation_redis.redis_enabled:
             redis_client = self.database._automation_redis.redis_client
         if redis_client is None:
             logger.debug("Skipping automation:degraded write; Redis unavailable")
             return
-        await asyncio.to_thread(redis_client.set, "automation:degraded", json.dumps(payload))
+        await asyncio.to_thread(
+            redis_client.setex, DEGRADED_KEY, DEGRADED_TTL_SECONDS, json.dumps(payload)
+        )
