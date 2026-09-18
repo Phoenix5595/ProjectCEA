@@ -94,14 +94,15 @@ export function layoutPeriodLabels(
 /** Build a uPlot plugin that paints faint period names below the curve zone. */
 export function periodLabelsPlugin(
   getSegments: () => readonly PeriodLabelSegment[],
-  windowMs: { readonly start: number; readonly end: number },
+  window: { readonly startMs: number; readonly endMs: number },
 ): uPlot.Plugin {
+  const toWindowMinutes = (instantMs: number): number => (instantMs - window.startMs) / 60_000
   return {
     hooks: {
       drawClear: (u) => {
         const segments = getSegments()
         if (segments.length === 0) return
-        const labels = layoutPeriodLabels(segments, windowMs, u.bbox.width)
+        const labels = layoutPeriodLabels(segments, { start: window.startMs, end: window.endMs }, u.bbox.width)
         if (labels.length === 0) return
         const { ctx, bbox } = u
         ctx.save()
@@ -113,7 +114,7 @@ export function periodLabelsPlugin(
         const baseline = bbox.top + bbox.height - LABEL_EDGE_PADDING_PX
         const rightEdge = bbox.left + bbox.width
         for (const label of labels) {
-          const x0 = u.valToPos(label.startMs, 'x', true)
+          const x0 = u.valToPos(toWindowMinutes(label.startMs), 'x', true)
           if (x0 >= rightEdge) continue
           ctx.fillText(label.clippedText, Math.max(x0, bbox.left) + LABEL_EDGE_PADDING_PX, baseline)
         }

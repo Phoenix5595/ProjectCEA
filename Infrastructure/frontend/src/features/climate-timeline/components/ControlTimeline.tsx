@@ -144,8 +144,9 @@ export function ControlTimeline({ mode, controller, onExpand, onCollapse, locked
       })
       const metrics: readonly ValueMetric[] = ['heating', 'cooling', 'vpd', 'co2']
       const keys = metrics.map((metric) => `${metric}_setpoint:scheduled` as const)
+      const windowMinutes = local.sampleTimes.map((t) => (t - windowStartMs) / 60_000)
       return {
-        data: [local.sampleTimes.slice(), ...metrics.map((metric) => [...(local.series.get(metric) ?? [])])] as uPlot.AlignedData,
+        data: [windowMinutes, ...metrics.map((metric) => [...(local.series.get(metric) ?? [])])] as uPlot.AlignedData,
         meta: timelineSeriesMeta(keys),
       }
     }
@@ -155,8 +156,9 @@ export function ControlTimeline({ mode, controller, onExpand, onCollapse, locked
       end: new Date(windowEndMs),
     })
     const built = buildEnvelopeSeries(envelope, sampleTimes)
+    const windowMinutes = sampleTimes.map((t) => (t - windowStartMs) / 60_000)
     return {
-      data: [sampleTimes.slice(), ...built.keys.map((key) => [...(built.series.get(key) ?? [])])] as uPlot.AlignedData,
+      data: [windowMinutes, ...built.keys.map((key) => [...(built.series.get(key) ?? [])])] as uPlot.AlignedData,
       meta: timelineSeriesMeta(built.keys),
     }
   }, [envelope, localMode, draftPeriods, windowStartMs, windowEndMs])
@@ -166,7 +168,9 @@ export function ControlTimeline({ mode, controller, onExpand, onCollapse, locked
     [state.draft.photoperiod, windowStartMs, windowEndMs],
   )
 
-  const nowX = nowMs >= windowStartMs && nowMs <= windowEndMs ? nowMs : null
+  const nowX = nowMs >= windowStartMs && nowMs <= windowEndMs
+    ? (nowMs - windowStartMs) / 60_000
+    : null
 
   const labelSegments = useMemo(
     () => periodLabelSegments(state.draft.periods, windowStartMs, windowEndMs),
@@ -185,7 +189,7 @@ export function ControlTimeline({ mode, controller, onExpand, onCollapse, locked
   const labelSegmentsRef = useRef<readonly PeriodLabelSegment[]>(labelSegments)
   labelSegmentsRef.current = labelSegments
   const labelsPlugin = useMemo(
-    () => periodLabelsPlugin(() => labelSegmentsRef.current, { start: windowStartMs, end: windowEndMs }),
+    () => periodLabelsPlugin(() => labelSegmentsRef.current, { startMs: windowStartMs, endMs: windowEndMs }),
     [windowStartMs, windowEndMs],
   )
 

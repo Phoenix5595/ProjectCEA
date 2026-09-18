@@ -112,7 +112,7 @@ export function buildTimelineOptions(
   plugins: uPlot.Plugin[],
 ): uPlot.Options {
   const scales: uPlot.Scales = {
-    x: { time: true, range: () => [windowMs.start, windowMs.end] },
+    x: { time: false, range: () => [0, 1441] },
     temp: { auto: true, range: softRange(SOFT_BOUNDS.temp.min, SOFT_BOUNDS.temp.max) },
     vpd: { auto: true, range: softRange(SOFT_BOUNDS.vpd.min, SOFT_BOUNDS.vpd.max) },
     co2: { auto: true, range: softRange(SOFT_BOUNDS.co2.min, SOFT_BOUNDS.co2.max) },
@@ -126,6 +126,12 @@ export function buildTimelineOptions(
       stroke: axisStroke,
       grid: { stroke: gridStroke },
       ticks: { stroke: gridStroke },
+      values: (_self, splits) => splits.map((minutes) => {
+        const instant = new Date(windowMs.start + minutes * 60_000)
+        const hours = String(instant.getUTCHours()).padStart(2, '0')
+        const minutesText = String(instant.getUTCMinutes()).padStart(2, '0')
+        return `${hours}:${minutesText}`
+      }),
     },
     {
       scale: 'temp',
@@ -179,10 +185,14 @@ export function buildTimelineOptions(
     plugins,
     legend: { show: false },
     cursor: { points: { show: false } },
-    hooks: {
-      setScale: hooks.onSetScale
-        ? [(self: uPlot, scaleKey: string) => hooks.onSetScale?.(self, scaleKey)]
-        : undefined,
-    },
+    hooks: (() => {
+      const assembled: NonNullable<uPlot.Options['hooks']> = {}
+      if (hooks.onSetScale) {
+        assembled.setScale = [
+          (self: uPlot, scaleKey: string) => hooks.onSetScale?.(self, scaleKey),
+        ]
+      }
+      return assembled
+    })(),
   }
 }

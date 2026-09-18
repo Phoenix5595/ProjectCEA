@@ -161,7 +161,7 @@ export function dragHandlesPlugin(callbacks: DragHandlesCallbacks): uPlot.Plugin
           continue
         }
         grip.style.display = ''
-        grip.style.left = `${u.valToPos(instant, 'x', true) - 4}px`
+        grip.style.left = `${u.valToPos((instant - window.start) / 60_000, 'x', true) - 4}px`
       } else if (valueMatch) {
         const period = periods[Number(valueMatch[1])]
         const metric = valueMatch[2] as ValueMetric
@@ -174,7 +174,7 @@ export function dragHandlesPlugin(callbacks: DragHandlesCallbacks): uPlot.Plugin
           continue
         }
         grip.style.display = ''
-        grip.style.left = `${u.valToPos(instant, 'x', true) - 5}px`
+        grip.style.left = `${u.valToPos((instant - window.start) / 60_000, 'x', true) - 5}px`
         grip.style.top = `${u.valToPos(value, VALUE_SCALE[metric], true) - 5}px`
       }
     }
@@ -188,8 +188,10 @@ export function dragHandlesPlugin(callbacks: DragHandlesCallbacks): uPlot.Plugin
     const onMove = (moveEvent: MouseEvent): void => {
       if (spec.kind === 'boundary') {
         const xCanvas = moveEvent.clientX - rootRect.left
-        const instant = u.posToVal(xCanvas, 'x')
-        callbacks.pushBoundary(spec.index, spec.edge, minutesOfDay(instant))
+        const window = callbacks.getWindow()
+        const minutesSinceWindowStart = u.posToVal(xCanvas, 'x')
+        const instantAtPointer = window.start + minutesSinceWindowStart * 60_000
+        callbacks.pushBoundary(spec.index, spec.edge, minutesOfDay(instantAtPointer))
         return
       }
       if (spec.metric === undefined) return
