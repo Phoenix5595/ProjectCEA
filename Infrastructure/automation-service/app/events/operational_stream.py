@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections import deque
 from collections.abc import Awaitable, Callable, Mapping, Sequence
+import contextlib
 from dataclasses import dataclass
 from typing import Final, Protocol, TypeAlias
 
@@ -17,11 +19,14 @@ from app.events.operational_models import (
     serialize_operational_event,
 )
 from app.events.operational_ports import OperationalEventSecondarySink, OperationalEventSink
+from shared.infra_logging import get_logger
 from shared.redis_keys import (
     OPERATIONAL_EVENTS_MAXLEN,
     OPERATIONAL_EVENTS_RETENTION_MS,
     OPERATIONAL_EVENTS_STREAM,
 )
+
+logger = get_logger(__name__)
 
 ROUTINE_QUEUE_CAPACITY: Final[int] = 1_792
 PRIORITY_QUEUE_CAPACITY: Final[int] = 256
@@ -29,6 +34,17 @@ READ_BATCH_SIZE: Final[int] = 100
 READ_BLOCK_MILLISECONDS: Final[int] = 1_000
 READ_FAILURE_BACKOFF_SECONDS: Final[float] = 1.0
 EVENT_FIELD: Final[str] = "event"
+
+# Runtime drain loop: producers enqueue synchronously; the loop publishes without
+# ever blocking them. It wakes early once the queues hold DRAIN_WAKE_THRESHOLD
+# events, otherwise it sweeps on the fixed interval.
+DRAIN_INTERVAL_SECONDS: Final[float] = 0.5
+DRAIN_WAKE_THRESHOLD: Final[int] = 64
+DRAIN_FAILURE_BACKOFF_SECONDS: Final[float] = 5.0
+
+_PUBLISH_OUTCOME_OK: Final[str] = "ok"
+_PUBLISH_OUTCOME_DROPPED: Final[str] = "dropped"
+_PUBLISH_OUTCOME_TRANSIENT: Final[str] = "transient"
 
 _PUBLISH_SCRIPT: Final[str] = """
 local server_time = redis.call('TIME')
@@ -96,7 +112,12 @@ class OperationalEventStreamHealth:
 
 
 class OperationalEventDispatcher(OperationalEventSink):
-    """Owns bounded queues so operational producers never await Redis."""
+    """Owns bounded queues so operational producers never await Redis.
+
+    A runtime drain task (started by :meth:`start`, stopped by :meth:`stop`)
+    publishes queued events to Redis continuously, so the stream stays live
+    without any shutdown-time flush.
+    """
 
     def __init__(
         self,
@@ -113,10 +134,23 @@ class OperationalEventDispatcher(OperationalEventSink):
         self._failed_dispatches = 0
         self._secondary_failures = 0
         self._started = False
+        self._drain_task: asyncio.Task[None] | None = None
+        self._wake = asyncio.Event()
+        self._drain_lock = asyncio.Lock()
 
     async def start(self) -> None:
-        """Mark this lifecycle component ready to drain producer queues."""
+        """Mark this lifecycle component ready and start the runtime drain loop."""
         self._started = True
+        if self._drain_task is None or self._drain_task.done():
+            self._drain_task = asyncio.create_task(
+                self._drain_loop(), name="operational-event-drain-loop"
+            )
+            logger.info(
+                "Operational event dispatcher drain loop started "
+                "(interval=%.1fs, wake_threshold=%d)",
+                DRAIN_INTERVAL_SECONDS,
+                DRAIN_WAKE_THRESHOLD,
+            )
 
     def emit_nowait(self, event: OperationalEvent) -> None:
         """Enqueue an event synchronously, dropping only when its queue is full."""
@@ -128,15 +162,52 @@ class OperationalEventDispatcher(OperationalEventSink):
                 self._dropped_routine += 1
             return
         queue.append(event)
+        if len(self._routine) + len(self._priority) >= DRAIN_WAKE_THRESHOLD:
+            self._wake.set()
+
+    async def stop(self) -> None:
+        """Cancel the runtime drain task; the caller performs any final drain."""
+        task = self._drain_task
+        self._drain_task = None
+        if task is not None and not task.done():
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
 
     async def drain(self) -> None:
-        """Publish all queued events, always exhausting the priority queue first."""
+        """Publish queued events, always exhausting the priority queue first.
+
+        A transient publish failure stops the pass without popping, so the
+        affected event is retried by the next pass; a deterministic rejection
+        (e.g. oversized payload) is dropped so it can never block the queue.
+        """
         if not self._started:
             await self.start()
-        while self._priority or self._routine:
-            queue = self._priority if self._priority else self._routine
-            await self._publish(queue[0])
-            queue.popleft()
+        async with self._drain_lock:
+            while self._priority or self._routine:
+                queue = self._priority if self._priority else self._routine
+                event = queue[0]
+                outcome = await self._publish(event)
+                if outcome == _PUBLISH_OUTCOME_TRANSIENT:
+                    return
+                queue.popleft()
+
+    async def _drain_loop(self) -> None:
+        """Runtime publisher: sweep on the interval, wake early on bursts."""
+        while self._started:
+            try:
+                with contextlib.suppress(TimeoutError):
+                    await asyncio.wait_for(self._wake.wait(), timeout=DRAIN_INTERVAL_SECONDS)
+                self._wake.clear()
+                failures_before = self._failed_dispatches
+                await self.drain()
+                if self._failed_dispatches > failures_before:
+                    await asyncio.sleep(DRAIN_FAILURE_BACKOFF_SECONDS)
+            except asyncio.CancelledError:
+                raise
+            except Exception as error:  # noqa: BLE001 - the loop must survive anything
+                logger.error("Operational event drain loop iteration failed: %s", error)
+                await asyncio.sleep(DRAIN_FAILURE_BACKOFF_SECONDS)
 
     async def close(self) -> None:
         """Drain accepted work before releasing the Redis client."""
@@ -159,9 +230,16 @@ class OperationalEventDispatcher(OperationalEventSink):
         is_priority = event.severity.value in {"error", "critical"}
         return (self._priority, True) if is_priority else (self._routine, False)
 
-    async def _publish(self, event: OperationalEvent) -> None:
+    async def _publish(self, event: OperationalEvent) -> str:
         try:
             payload = serialize_operational_event(event)
+        except OperationalEventSerializationError as error:
+            logger.warning(
+                "Operational event dispatch rejected (type=%s): %s", event.event_type, error
+            )
+            self._failed_dispatches += 1
+            return _PUBLISH_OUTCOME_DROPPED
+        try:
             await self._redis.eval(
                 _PUBLISH_SCRIPT,
                 1,
@@ -170,16 +248,20 @@ class OperationalEventDispatcher(OperationalEventSink):
                 OPERATIONAL_EVENTS_RETENTION_MS,
                 OPERATIONAL_EVENTS_MAXLEN,
             )
-        except (OperationalEventSerializationError, RedisError, ConnectionError, OSError):
+        except (RedisError, ConnectionError, OSError) as error:
+            logger.warning(
+                "Operational event dispatch deferred (type=%s): %s", event.event_type, error
+            )
             self._failed_dispatches += 1
-            return
+            return _PUBLISH_OUTCOME_TRANSIENT
         self._published += 1
         if self._secondary_sink is None:
-            return
+            return _PUBLISH_OUTCOME_OK
         try:
             await self._secondary_sink.persist(event)
         except (RedisError, ConnectionError, OSError):
             self._secondary_failures += 1
+        return _PUBLISH_OUTCOME_OK
 
 
 class OperationalEventStreamReader:

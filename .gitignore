@@ -50,6 +50,7 @@ test_*.py
 !Infrastructure/automation-service/app/tests/pure/test_monitoring_history.py
 !Infrastructure/automation-service/app/tests/pure/test_photoperiod_history_logger.py
 !Infrastructure/automation-service/app/tests/pure/test_monitoring_routes.py
+!Infrastructure/automation-service/app/tests/pure/test_event_dispatcher_autodrain.py
 
 # Accidentally committed key files (legacy filenames in this repo)
 /ssh-keygen -t ed25519 -C "antoine.olivier.dion@gmail.com"
