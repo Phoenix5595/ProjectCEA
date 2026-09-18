@@ -224,6 +224,7 @@ describe('ZoneConfig timeline classification integration', () => {
     // Given: a timeline-backed room and its saved baseline.
     mocks.apiClient.getRoomModeWithParams.mockResolvedValue(mode('veg', true))
     render(<ZoneConfig location="Veg Room" cluster="main" />)
+    await screen.findByRole('region', { name: 'Climate control timeline' })
     const table = await screen.findByRole('table')
 
     // When: the operator edits the heating setpoint in the table, then invokes the header Save.
@@ -253,6 +254,7 @@ describe('ZoneConfig timeline classification integration', () => {
     mocks.apiClient.getRoomModeWithParams.mockResolvedValue(mode('veg', true))
     mocks.apiClient.apply.mockRejectedValue(new TimelineConflictError())
     render(<ZoneConfig location="Veg Room" cluster="main" />)
+    await screen.findByRole('region', { name: 'Climate control timeline' })
     const table = await screen.findByRole('table')
 
     // When: the operator edits a setpoint and saves through the header.

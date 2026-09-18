@@ -43,12 +43,13 @@ function lerp(a: number | null, b: number | null, t: number): number | null {
   return a + (b - a) * t
 }
 
-export type SetpointMetric = 'heating' | 'cooling' | 'vpd'
+export type SetpointMetric = 'heating' | 'cooling' | 'vpd' | 'co2'
 
 function pickMetric(p: ClimatePeriod, metric: SetpointMetric): number | null {
   if (metric === 'heating') return p.heating_setpoint
   if (metric === 'cooling') return p.cooling_setpoint
-  return p.vpd_setpoint
+  if (metric === 'vpd') return p.vpd_setpoint
+  return p.co2_setpoint
 }
 
 /**
