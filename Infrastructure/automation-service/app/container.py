@@ -481,6 +481,11 @@ class ServiceContainer:
 
         if self.operational_event_dispatcher is not None:
             try:
+                await asyncio.wait_for(self.operational_event_dispatcher.stop(), timeout=5)
+                logger.info("Operational event dispatcher drain loop stopped")
+            except (TimeoutError, ConnectionError, OSError) as error:
+                logger.error(f"Error stopping operational event dispatcher: {error}")
+            try:
                 await asyncio.wait_for(self.operational_event_dispatcher.drain(), timeout=5)
                 logger.info("Operational event dispatcher drained and closed")
             except (TimeoutError, ConnectionError, OSError) as error:

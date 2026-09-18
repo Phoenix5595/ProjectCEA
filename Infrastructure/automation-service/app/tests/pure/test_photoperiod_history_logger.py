@@ -144,6 +144,7 @@ async def test_lifecycle_flush_stops_logger_before_database_close() -> None:
         "control-stop",
         "logger-stop",
         "publication-stop",
+        "events-stop",
         "events-drain",
         "database-close",
     ]
