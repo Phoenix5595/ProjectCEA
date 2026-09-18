@@ -73,6 +73,9 @@ class _FakeContainer:
     def get_operational_event_reader(self) -> _FakeService:
         return self._operational_event_reader
 
+    def get_operational_event_dispatcher(self) -> _FakeService | None:
+        return None
+
 
 def test_setup_dependency_overrides_does_not_crash() -> None:
     app = FastAPI()
