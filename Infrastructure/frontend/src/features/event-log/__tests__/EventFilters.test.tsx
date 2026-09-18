@@ -7,7 +7,7 @@ describe('EventFilters', () => {
   const defaultFilters: FilterState = { severity: 'all', search: '', rooms: [], categories: [], types: [] }
 
   it('renders severity filter buttons', () => {
-    render(<EventFilters filters={defaultFilters} onChange={() => {}} rooms={[]} categories={[]} types={[]} />)
+    render(<EventFilters filters={defaultFilters} onChange={() => {}} view="grouped" onViewChange={() => {}} rooms={[]} categories={[]} types={[]} />)
     expect(screen.getByRole('button', { name: 'All' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Critical' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Warning' })).toBeInTheDocument()
@@ -16,18 +16,18 @@ describe('EventFilters', () => {
   })
 
   it('marks the active severity filter as pressed', () => {
-    render(<EventFilters filters={{ ...defaultFilters, severity: 'critical' }} onChange={() => {}} rooms={[]} categories={[]} types={[]} />)
+    render(<EventFilters filters={{ ...defaultFilters, severity: 'critical' }} onChange={() => {}} view="grouped" onViewChange={() => {}} rooms={[]} categories={[]} types={[]} />)
     expect(screen.getByRole('button', { name: 'Critical' })).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByRole('button', { name: 'All' })).toHaveAttribute('aria-pressed', 'false')
   })
 
   it('renders a search input with an accessible label', () => {
-    render(<EventFilters filters={defaultFilters} onChange={() => {}} rooms={[]} categories={[]} types={[]} />)
+    render(<EventFilters filters={defaultFilters} onChange={() => {}} view="grouped" onViewChange={() => {}} rooms={[]} categories={[]} types={[]} />)
     expect(screen.getByRole('searchbox', { name: /filter events/i })).toBeInTheDocument()
   })
 
   it('shows the current search value', () => {
-    render(<EventFilters filters={{ ...defaultFilters, search: 'relay' }} onChange={() => {}} rooms={[]} categories={[]} types={[]} />)
+    render(<EventFilters filters={{ ...defaultFilters, search: 'relay' }} onChange={() => {}} view="grouped" onViewChange={() => {}} rooms={[]} categories={[]} types={[]} />)
     expect(screen.getByRole('searchbox', { name: /filter events/i })).toHaveValue('relay')
   })
 
@@ -38,6 +38,8 @@ describe('EventFilters', () => {
       <EventFilters
         filters={defaultFilters}
         onChange={onChange}
+        view="grouped"
+        onViewChange={() => {}}
         rooms={['Flower Room', 'Veg Room']}
         categories={[]}
         types={[]}
@@ -55,6 +57,8 @@ describe('EventFilters', () => {
       <EventFilters
         filters={defaultFilters}
         onChange={onChange}
+        view="grouped"
+        onViewChange={() => {}}
         rooms={[]}
         categories={['relay', 'mutation']}
         types={[]}
@@ -72,6 +76,8 @@ describe('EventFilters', () => {
       <EventFilters
         filters={defaultFilters}
         onChange={onChange}
+        view="grouped"
+        onViewChange={() => {}}
         rooms={[]}
         categories={[]}
         types={['relay.state_changed', 'config.updated']}

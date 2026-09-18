@@ -2,7 +2,9 @@ import { useState, useMemo, useCallback } from 'react'
 import type { EventLogEntry } from '../state/eventLogStore'
 import { EventFilters, type FilterState } from './EventFilters'
 import { EventRow } from './EventRow'
+import { EventGroupedView, buildGroups, type EventLogView } from './EventGroupedView'
 import { useEventLogPagination } from '../state/useEventLog'
+import { categoryTheme } from '../presentation/categoryTheme'
 
 interface EventLogProps {
   entries: readonly EventLogEntry[]
@@ -11,6 +13,8 @@ interface EventLogProps {
 
 export function EventLog({ entries, now }: EventLogProps) {
   const { paging, loadOlder } = useEventLogPagination()
+  const [view, setView] = useState<EventLogView>('grouped')
+  const [expandedCategory, setExpandedCategory] = useState<string | null>(null)
   const [filters, setFilters] = useState<FilterState>({
     severity: 'all',
     search: '',
@@ -20,6 +24,11 @@ export function EventLog({ entries, now }: EventLogProps) {
   })
 
   const handleFilterChange = useCallback((next: FilterState) => setFilters(next), [])
+
+  const handleExpand = useCallback(
+    (category: string) => setExpandedCategory((current) => (current === category ? null : category)),
+    [],
+  )
 
   const rooms = useMemo(
     () => Array.from(new Set(entries.map((entry) => entry.payload.room).filter((room): room is string => typeof room === 'string'))).sort(),
@@ -44,6 +53,21 @@ export function EventLog({ entries, now }: EventLogProps) {
   }, [entries, filters])
 
   const ordered = useMemo(() => [...filtered].reverse(), [filtered])
+  const groups = useMemo(
+    () => (view === 'grouped' && expandedCategory === null ? buildGroups(ordered) : []),
+    [view, expandedCategory, ordered],
+  )
+  const expandedListView = useMemo(
+    () => (expandedCategory === null ? [] : ordered.filter((entry) => entry.category === expandedCategory)),
+    [ordered, expandedCategory],
+  )
+
+  const handleViewChange = useCallback((next: EventLogView) => {
+    setView(next)
+    setExpandedCategory(null)
+  }, [])
+
+  const showFlatList = view === 'flat' || expandedCategory !== null
 
   return (
     <section aria-labelledby="event-log-heading" className="flex flex-col gap-2">
@@ -55,7 +79,15 @@ export function EventLog({ entries, now }: EventLogProps) {
           {filtered.length} event{filtered.length === 1 ? '' : 's'}
         </span>
       </div>
-      <EventFilters filters={filters} onChange={handleFilterChange} rooms={rooms} categories={categories} types={types} />
+      <EventFilters
+        filters={filters}
+        onChange={handleFilterChange}
+        rooms={rooms}
+        categories={categories}
+        types={types}
+        view={view}
+        onViewChange={handleViewChange}
+      />
       {(paging.hasMore || paging.loadingOlder) && (
         <button
           type="button"
@@ -68,12 +100,27 @@ export function EventLog({ entries, now }: EventLogProps) {
       )}
       {filtered.length === 0 ? (
         <p className="text-xs text-text-default italic px-3 py-4 text-center">No events yet</p>
+      ) : showFlatList ? (
+        <div className="flex flex-col gap-2">
+          {expandedCategory !== null && (
+            <button
+              type="button"
+              data-testid="event-group-collapse"
+              aria-pressed={false}
+              onClick={() => setExpandedCategory(null)}
+              className="self-start px-2 py-1 text-xs font-semibold border bg-surface-secondary border-border-emphasis text-text-default"
+            >
+              {'\u2190'} {categoryTheme(expandedCategory).label ?? 'Back'} / All categories
+            </button>
+          )}
+          <ul role="list" className="flex flex-col gap-px bg-border-subtle border border-border-subtle overflow-auto max-h-[600px]">
+            {(expandedCategory !== null ? expandedListView : ordered).map((entry) => (
+              <EventRow key={entry.eventId} entry={entry} now={now} />
+            ))}
+          </ul>
+        </div>
       ) : (
-        <ul role="list" className="flex flex-col gap-px bg-border-subtle border border-border-subtle overflow-auto max-h-[600px]">
-          {ordered.map((entry) => (
-            <EventRow key={entry.eventId} entry={entry} now={now} />
-          ))}
-        </ul>
+        <EventGroupedView groups={groups} now={now} onExpand={handleExpand} />
       )}
     </section>
   )

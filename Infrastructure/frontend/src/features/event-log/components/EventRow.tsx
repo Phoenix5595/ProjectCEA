@@ -66,12 +66,13 @@ function missingInputLabel(type: string, deviceTypeValue: string | null): string
   return type === 'control.input_missing' ? `no ${inputName}` : `${inputName} back`
 }
 
-export function EventRow({ entry, now, formatAbsolute = formatLocalTime }: EventRowProps) {
-  const [expanded, setExpanded] = useState(false)
-  const display = getEventDisplay(entry.type)
-  const severity = entry.severity
-  const toggle = useCallback(() => setExpanded((prev) => !prev), [])
+export interface EventSourcePart {
+  text: string
+  className?: string
+  title?: string
+}
 
+export function sourcePartsFor(entry: EventLogEntry): EventSourcePart[] {
   const roomValue = stringPayload(entry.payload.room)
   const clusterValue = stringPayload(entry.payload.cluster)
   const zone =
@@ -85,7 +86,7 @@ export function EventRow({ entry, now, formatAbsolute = formatLocalTime }: Event
   const relayState = entry.payload.state === true ? 'ON' : entry.payload.state === false ? 'OFF' : null
   const missing = missingInputLabel(entry.type, deviceTypeValue)
 
-  const sourceParts: Array<{ text: string; className?: string; title?: string }> = []
+  const sourceParts: EventSourcePart[] = []
   if (entry.entity) {
     sourceParts.push({
       text: `${entityKindLabel(entry.entity.entityType)} ${entityShortName(entry.entity.entityId)}`,
@@ -104,6 +105,15 @@ export function EventRow({ entry, now, formatAbsolute = formatLocalTime }: Event
   if (missing !== null) sourceParts.push({ text: missing })
   const setpointChange = formatSetpointFromTo(entry.payload)
   if (setpointChange !== null) sourceParts.push({ text: setpointChange, className: 'font-semibold' })
+  return sourceParts
+}
+
+export function EventRow({ entry, now, formatAbsolute = formatLocalTime }: EventRowProps) {
+  const [expanded, setExpanded] = useState(false)
+  const display = getEventDisplay(entry.type)
+  const severity = entry.severity
+  const toggle = useCallback(() => setExpanded((prev) => !prev), [])
+  const sourceParts = sourcePartsFor(entry)
 
   const handleKeyDown = useCallback(
     (event: KeyboardEvent) => {
