@@ -176,7 +176,8 @@ def test_sensorless_flower_light_ticks_skip_numerical_events_and_apply_outputs()
 
     anyio.run(process_ticks)
 
-    # Then: both calculated outputs cross the apply boundary unchanged and stay event-quiet.
+    # Then: both calculated outputs cross the apply boundary unchanged and stay event-quiet:
+    #       rule-driven lights have no mapped sensor by design, so missing inputs are never reported.
     assert controller._apply_control_output.await_args_list[0].args[4] == 0.42
     assert controller._apply_control_output.await_args_list[1].args[4] == 0.42
-    assert [event.event_type for event in sink.events] == ["control.input_missing"]
+    assert [event.event_type for event in sink.events] == []

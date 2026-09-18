@@ -19,6 +19,14 @@ from app.events.operational_models import (
 from app.events.operational_ports import OperationalEventSink
 
 OUTPUT_DELTA_PERCENT: Final = 5.0
+
+# Missing-input lifecycle events only make sense for controllers that consume a
+# live sensor reading. Rule-driven devices (lights) and manual contexts have no
+# mapped sensor by design; dominating their input availability would emit noise.
+INPUT_LIFECYCLE_EVENT_TYPES: Final[frozenset[str]] = frozenset(
+    {"control.input_missing", "control.input_recovered"}
+)
+SENSOR_DRIVEN_CONTROLLERS: Final[frozenset[str]] = frozenset({"pid", "on_off", "auto_pid", "vpd"})
 NUMERICAL_EVENT_INTERVAL_SECONDS: Final = 30.0
 RAPID_OUTPUT_DELTA_PERCENT: Final = 20.0
 RAPID_SAMPLE_WINDOW_SECONDS: Final = 60.0
@@ -103,7 +111,7 @@ class DecisionEventPolicy:
         if previous is None:
             if observation.control_mode == "failsafe":
                 self._emit(observation, "control.failsafe_entered")
-            elif not inputs_available:
+            elif not inputs_available and observation.controller in SENSOR_DRIVEN_CONTROLLERS:
                 self._emit(observation, "control.input_missing")
             self._baselines[key] = baseline
             self._slow_baselines[key] = baseline
@@ -112,7 +120,12 @@ class DecisionEventPolicy:
 
         event_type = _lifecycle_event_type(previous, baseline)
         if event_type is not None:
-            self._emit(observation, event_type)
+            suppress_event = (
+                event_type in INPUT_LIFECYCLE_EVENT_TYPES
+                and observation.controller not in SENSOR_DRIVEN_CONTROLLERS
+            )
+            if not suppress_event:
+                self._emit(observation, event_type)
             self._baselines[key] = baseline
             if (
                 previous.control_mode != baseline.control_mode
