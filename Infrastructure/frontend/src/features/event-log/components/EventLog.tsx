@@ -2,7 +2,7 @@ import { useState, useMemo, useCallback } from 'react'
 import type { EventLogEntry } from '../state/eventLogStore'
 import { EventFilters, type FilterState } from './EventFilters'
 import { EventRow } from './EventRow'
-import { EventGroupedView, buildGroups, type EventLogView } from './EventGroupedView'
+import { EventGroupedView, buildGroups, withPreallocatedSlots, type EventLogView } from './EventGroupedView'
 import { useEventLogPagination } from '../state/useEventLog'
 import { categoryTheme, displayCategoryOf } from '../presentation/categoryTheme'
 
@@ -54,7 +54,7 @@ export function EventLog({ entries, now }: EventLogProps) {
 
   const ordered = useMemo(() => [...filtered].reverse(), [filtered])
   const groups = useMemo(
-    () => (view === 'grouped' && expandedCategory === null ? buildGroups(ordered) : []),
+    () => (view === 'grouped' && expandedCategory === null ? withPreallocatedSlots(buildGroups(ordered)) : []),
     [view, expandedCategory, ordered],
   )
   const expandedListView = useMemo(

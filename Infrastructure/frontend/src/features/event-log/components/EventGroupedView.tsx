@@ -13,8 +13,30 @@ export type EventLogView = 'grouped' | 'flat'
 interface CategoryGroup {
   category: string
   count: number
-  latest: EventLogEntry
+  latest: EventLogEntry | null
   entities: string[]
+}
+
+/** Fixed 2x4 grid: every bucket always occupies its slot so the layout never reflows as events arrive. Row-major pairs: (relay, sensor), (ramp, control), (manual_override, mutation), (alarm, system). */
+export const DISPLAY_BUCKET_ORDER: readonly string[] = [
+  'relay',
+  'sensor',
+  'ramp',
+  'control',
+  'manual_override',
+  'mutation',
+  'alarm',
+  'system',
+]
+
+export function withPreallocatedSlots(groups: CategoryGroup[]): CategoryGroup[] {
+  const filled = new Map(groups.map((group) => [group.category, group]))
+  const slots = DISPLAY_BUCKET_ORDER.map<CategoryGroup>((category) => {
+    const group = filled.get(category)
+    return group ?? { category, count: 0, latest: null, entities: [] }
+  })
+  const extra = groups.filter((group) => !DISPLAY_BUCKET_ORDER.includes(group.category))
+  return [...slots, ...extra]
 }
 
 export function buildGroups(orderedNewestFirst: readonly EventLogEntry[]): CategoryGroup[] {
@@ -54,13 +76,13 @@ export function buildGroups(orderedNewestFirst: readonly EventLogEntry[]): Categ
       entities: concurrentIds,
     })
   }
-  return groups.sort((a, b) => b.latest.occurredAt.getTime() - a.latest.occurredAt.getTime())
+  return groups
+    .filter((group): group is (typeof group) & { latest: EventLogEntry } => group.latest !== null)
+    .sort((a, b) => b.latest.occurredAt.getTime() - a.latest.occurredAt.getTime())
 }
 
-const GR_COLUMNS_WIDE_THRESHOLD = 4
-
-export function groupedGridClass(groupCount: number): string {
-  return groupCount > GR_COLUMNS_WIDE_THRESHOLD ? 'lg:grid-cols-2' : 'grid-cols-1'
+export function groupedGridClass(): string {
+  return 'lg:grid-cols-2'
 }
 
 const EventCategoryRow = memo(function EventCategoryRow({
@@ -73,6 +95,33 @@ const EventCategoryRow = memo(function EventCategoryRow({
   onExpand: (category: string) => void
 }) {
   const visual = categoryTheme(group.category)
+
+  if (group.latest === null || group.count === 0) {
+    // Pre-allocated empty slot: reserved space, non-interactive placeholder.
+    return (
+      <div
+        data-testid={`event-group-${group.category}`}
+        aria-disabled="true"
+        className={`flex flex-col gap-1 px-3 py-2 text-left border-b-2 bg-surface-secondary opacity-50 ${visual.border}`}
+      >
+        <div className="flex items-center gap-2 min-w-0">
+          <span
+            className={`shrink-0 inline-flex items-center px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider border ${visual.chip}`}
+          >
+            {visual.label}
+          </span>
+          <span
+            aria-label={`${visual.label} event count`}
+            className="shrink-0 text-[11px] font-bold text-text-default tabular-nums border border-border-subtle px-1.5"
+          >
+            0 events
+          </span>
+        </div>
+        <div className="text-sm text-text-default font-semibold truncate">No recent events</div>
+      </div>
+    )
+  }
+
   const display = getEventDisplay(group.latest.type)
   const sourceParts = sourcePartsFor(group.latest)
   const relative = formatRelativeTime(group.latest.occurredAt, now)
@@ -157,7 +206,7 @@ export function EventGroupedView({
     <div
       role="group"
       aria-label="Grouped alert console"
-      className={`grid gap-px bg-border-subtle border border-border-subtle overflow-auto max-h-[600px] ${groupedGridClass(groups.length)}`}
+      className={`grid gap-px bg-border-subtle border border-border-subtle overflow-auto max-h-[600px] ${groupedGridClass()}`}
     >
       {groups.map((group) => (
         <EventCategoryRow key={group.category} group={group} now={now} onExpand={onExpand} />
