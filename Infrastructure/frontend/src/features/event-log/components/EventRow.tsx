@@ -2,10 +2,10 @@ import { useState, useCallback, type KeyboardEvent } from 'react'
 import type { EventLogEntry } from '../state/eventLogStore'
 import { getEventDisplay } from '../presentation/eventRegistry'
 import { SEVERITY_LABELS, type SeverityLevel } from '../presentation/severity'
-import { isRelayActiveEvent, relayActiveStateClass } from '../presentation/categoryTheme'
-import { formatRelativeTime, formatExactTime, formatLocalTime } from '../presentation/timeFormat'
-import { formatSetpointFromTo } from '../presentation/setpointChange'
+import { sourcePartsFor } from '../presentation/eventSourceParts'
+import { formatLocalTime } from '../presentation/timeFormat'
 import { EventDetails } from './EventDetails'
+import { EventSourceLine, EventTimestamps } from './EventFragments'
 
 interface EventRowProps {
   entry: EventLogEntry
@@ -25,87 +25,6 @@ const SEVERITY_BADGE: Record<SeverityLevel, string> = {
   warning: 'bg-status-warning-bg text-status-warning-text border-status-warning-dim',
   error: 'bg-surface-secondary text-status-danger-text border-status-danger-border',
   info: 'bg-surface-tertiary text-text-default border-border-default',
-}
-
-const ENTITY_KIND_LABELS: Record<string, string> = {
-  device: 'Device',
-  light: 'Light',
-  relay_channel: 'Relay channel',
-  relay_board: 'Relay board',
-  room: 'Room',
-  sensor: 'Sensor',
-  system: 'System',
-}
-
-const SENSOR_INPUT_BY_DEVICE_TYPE: Record<string, string> = {
-  heating: 'temperature',
-  cooling: 'temperature',
-  humidifier: 'humidity',
-  dehumidifier: 'humidity',
-  co2: 'CO₂',
-}
-
-function entityKindLabel(entityType: string): string {
-  return ENTITY_KIND_LABELS[entityType] ?? entityType.replace(/_/g, ' ')
-}
-
-function entityShortName(entityId: string): string {
-  const segments = entityId.split('/')
-  return segments[segments.length - 1] || entityId
-}
-
-function stringPayload(value: unknown): string | null {
-  return typeof value === 'string' && value.length > 0 ? value : null
-}
-
-function missingInputLabel(type: string, deviceTypeValue: string | null): string | null {
-  if (type !== 'control.input_missing' && type !== 'control.input_recovered') return null
-  if (deviceTypeValue === null) return null
-  const sensorKind = SENSOR_INPUT_BY_DEVICE_TYPE[deviceTypeValue]
-  const inputName = sensorKind ? `${sensorKind} input` : `${deviceTypeValue} input`
-  return type === 'control.input_missing' ? `no ${inputName}` : `${inputName} back`
-}
-
-export interface EventSourcePart {
-  text: string
-  className?: string
-  title?: string
-}
-
-export function sourcePartsFor(entry: EventLogEntry): EventSourcePart[] {
-  const roomValue = stringPayload(entry.payload.room)
-  const clusterValue = stringPayload(entry.payload.cluster)
-  const zone =
-    roomValue !== null
-      ? clusterValue !== null
-        ? `${roomValue}/${clusterValue}`
-        : roomValue
-      : clusterValue
-  const controllerValue = stringPayload(entry.payload.controller)
-  const deviceTypeValue = stringPayload(entry.payload.device_type)
-  const relayState = entry.payload.state === true ? 'ON' : entry.payload.state === false ? 'OFF' : null
-  const missing = missingInputLabel(entry.type, deviceTypeValue)
-
-  const sourceParts: EventSourcePart[] = []
-  if (entry.entity) {
-    sourceParts.push({
-      text: `${entityKindLabel(entry.entity.entityType)} ${entityShortName(entry.entity.entityId)}`,
-      title: entry.entity.entityId,
-    })
-  }
-  if (zone !== null) sourceParts.push({ text: zone })
-  if (relayState !== null) {
-    sourceParts.push({
-      text: relayState,
-      className: isRelayActiveEvent(entry) ? relayActiveStateClass(true) : undefined,
-    })
-  }
-  if (controllerValue !== null) sourceParts.push({ text: `controller: ${controllerValue}` })
-  if (deviceTypeValue !== null) sourceParts.push({ text: `device type: ${deviceTypeValue}` })
-  if (missing !== null) sourceParts.push({ text: missing })
-  const setpointChange = formatSetpointFromTo(entry.payload)
-  if (setpointChange !== null) sourceParts.push({ text: setpointChange, className: 'font-semibold' })
-  return sourceParts
 }
 
 export function EventRow({ entry, now, formatAbsolute = formatLocalTime }: EventRowProps) {
@@ -137,34 +56,10 @@ export function EventRow({ entry, now, formatAbsolute = formatLocalTime }: Event
         <div className="flex-1 min-w-0">
           <div className="flex items-baseline justify-between gap-2">
             <span className="text-sm text-text-default font-semibold truncate">{display.label}</span>
-          <div className="flex flex-col items-end">
-            <time
-              dateTime={entry.occurredAt.toISOString()}
-              title={formatExactTime(entry.occurredAt)}
-              className="shrink-0 text-[11px] text-text-default tabular-nums"
-            >
-              {formatRelativeTime(entry.occurredAt, now)}
-            </time>
-            <time
-              dateTime={entry.occurredAt.toISOString()}
-              aria-label={`Absolute time: ${formatAbsolute(entry.occurredAt, now)}`}
-              className="shrink-0 text-[10px] text-text-secondary tabular-nums"
-            >
-              {formatAbsolute(entry.occurredAt, now)}
-            </time>
-          </div>
+            <EventTimestamps occurredAt={entry.occurredAt} now={now} formatAbsolute={formatAbsolute} />
           </div>
           <div className="text-[11px] text-text-default font-mono truncate">{entry.type}</div>
-          {sourceParts.length > 0 && (
-            <div className="text-[11px] text-text-default truncate">
-              {sourceParts.map((part, index) => (
-                <span key={index} className={part.className} title={part.title}>
-                  {part.text}
-                  {index < sourceParts.length - 1 && ' \u00b7 '}
-                </span>
-              ))}
-            </div>
-          )}
+          {sourceParts.length > 0 && <EventSourceLine parts={sourceParts} />}
           {entry.reasonText !== null && (
             <div className="text-[11px] text-text-default italic truncate" title={entry.reasonText}>
               {entry.reasonText}
