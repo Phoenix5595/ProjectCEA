@@ -274,9 +274,10 @@ describe('EventLog', () => {
     render(<EventLog entries={entries} now={new Date('2026-09-02T12:00:00Z')} />)
     await user.click(screen.getByRole('button', { name: 'Critical' }))
 
-    // Then: only the matching category survives in the grouped console.
+    // Then: only the matching category is populated; the relay slot is an
+    // empty pre-allocated placeholder.
     expect(screen.getByTestId('event-group-system')).toBeInTheDocument()
-    expect(screen.queryByTestId('event-group-relay')).not.toBeInTheDocument()
+    expect(screen.getByTestId('event-group-relay')).toHaveAttribute('aria-disabled', 'true')
   })
 
   it('applies two columns on wide viewports when categories exceed four', () => {
@@ -293,10 +294,22 @@ describe('EventLog', () => {
     expect(screen.getByRole('group', { name: 'Grouped alert console' }).className).toContain('lg:grid-cols-2')
   })
 
-  it('keeps two columns off when categories are few', () => {
+  it('pre-allocates the fixed 2x4 grid with muted slots for empty buckets', () => {
+    // Given: a single relay event.
     const entries = [makeEntry('1-0', 'relay.state_changed', 'relay')]
     render(<EventLog entries={entries} now={new Date('2026-09-02T12:00:00Z')} />)
-    expect(screen.getByRole('group', { name: 'Grouped alert console' }).className).toContain('grid-cols-1')
+
+    // Then: two columns always, all 8 canonical buckets present, and the
+    // seven empty buckets reserve their slot as non-interactive placeholders.
+    const grid = screen.getByRole('group', { name: 'Grouped alert console' })
+    expect(grid.className).toContain('lg:grid-cols-2')
+    for (const testid of ['relay', 'sensor', 'ramp', 'control', 'manual_override', 'mutation', 'alarm', 'system']) {
+      expect(grid.querySelector(`[data-testid="event-group-${testid}"]`)).not.toBeNull()
+    }
+    const emptySensor = screen.getByTestId('event-group-sensor')
+    expect(emptySensor).toHaveAttribute('aria-disabled', 'true')
+    expect(emptySensor).toHaveTextContent('No recent events')
+    expect(within(screen.getByTestId('event-group-relay')).getByText('1 event')).toBeInTheDocument()
   })
 
   it('renders the fallback row for an unknown garbage category', () => {
