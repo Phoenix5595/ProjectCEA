@@ -2,25 +2,8 @@ import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { EventLog } from '../components/EventLog'
-import { globalEventLogStore, type EventLogEntry } from '../state/eventLogStore'
-
-const makeEntry = (
-  redisId: string,
-  type: string,
-  category: string,
-  payload: Record<string, unknown> = {},
-  severity: EventLogEntry['severity'] = 'info',
-): EventLogEntry => ({
-  redisId,
-  eventId: `evt-${redisId}`,
-  type,
-  category,
-  severity,
-  occurredAt: new Date('2026-09-02T12:00:00Z'),
-  payload,
-  entity: null,
-  reasonText: null,
-})
+import { globalEventLogStore } from '../state/eventLogStore'
+import { makeEventEntry } from './testFactories'
 
 describe('EventLog', () => {
   afterEach(() => {
@@ -39,8 +22,8 @@ describe('EventLog', () => {
 
   it('renders all entries as list items', async () => {
     const entries = [
-      makeEntry('1-0', 'relay.state_changed', 'relay', { device_id: 'fan-1' }),
-      makeEntry('2-0', 'config.updated', 'mutation'),
+      makeEventEntry('1-0', 'relay.state_changed', 'relay', { device_id: 'fan-1' }),
+      makeEventEntry('2-0', 'config.updated', 'mutation'),
     ]
     const user = userEvent.setup()
     render(<EventLog entries={entries} now={new Date('2026-09-02T12:00:00Z')} />)
@@ -51,8 +34,8 @@ describe('EventLog', () => {
   it('renders newest entries first', async () => {
     // Given: entries stored in ascending Redis-ID order (oldest first in the store)
     const entries = [
-      makeEntry('1-0', 'relay.state_changed', 'relay', { device_id: 'fan-1' }),
-      makeEntry('2-0', 'config.updated', 'mutation'),
+      makeEventEntry('1-0', 'relay.state_changed', 'relay', { device_id: 'fan-1' }),
+      makeEventEntry('2-0', 'config.updated', 'mutation'),
     ]
     const user = userEvent.setup()
     render(<EventLog entries={entries} now={new Date('2026-09-02T12:00:00Z')} />)
@@ -67,8 +50,8 @@ describe('EventLog', () => {
   it('filters entries by severity', async () => {
     const user = userEvent.setup()
     const entries = [
-      makeEntry('1-0', 'system.failsafe_raised', 'system', {}, 'critical'),
-      makeEntry('2-0', 'relay.state_changed', 'relay'),
+      makeEventEntry('1-0', 'system.failsafe_raised', 'system', {}, 'critical'),
+      makeEventEntry('2-0', 'relay.state_changed', 'relay'),
     ]
     render(<EventLog entries={entries} now={new Date('2026-09-02T12:00:00Z')} />)
     await showFlat(user)
@@ -80,7 +63,7 @@ describe('EventLog', () => {
   it.each(['Info', 'Warning', 'Error', 'Critical'] as const)('filters identical event types by envelope severity: %s', async (label) => {
     const user = userEvent.setup()
     const entries = (['info', 'warning', 'error', 'critical'] as const).map((entrySeverity, index) =>
-      makeEntry(`${index + 1}-0`, 'relay.command_failed', 'relay', {}, entrySeverity),
+      makeEventEntry(`${index + 1}-0`, 'relay.command_failed', 'relay', {}, entrySeverity),
     )
     render(<EventLog entries={entries} now={new Date('2026-09-02T12:00:00Z')} />)
     await showFlat(user)
@@ -96,7 +79,7 @@ describe('EventLog', () => {
     ['Error', 0],
   ] as const)('uses envelope severity for relay.command_failed: %s selects %s row(s)', async (label, count) => {
     const user = userEvent.setup()
-    const entries = [makeEntry('1-0', 'relay.command_failed', 'relay', {}, 'info')]
+    const entries = [makeEventEntry('1-0', 'relay.command_failed', 'relay', {}, 'info')]
     render(<EventLog entries={entries} now={new Date('2026-09-02T12:00:00Z')} />)
     await showFlat(user)
 
@@ -112,8 +95,8 @@ describe('EventLog', () => {
   it('filters entries by search text', async () => {
     const user = userEvent.setup()
     const entries = [
-      makeEntry('1-0', 'relay.state_changed', 'relay', { device_id: 'heater-1' }),
-      makeEntry('2-0', 'config.updated', 'mutation'),
+      makeEventEntry('1-0', 'relay.state_changed', 'relay', { device_id: 'heater-1' }),
+      makeEventEntry('2-0', 'config.updated', 'mutation'),
     ]
     render(<EventLog entries={entries} now={new Date('2026-09-02T12:00:00Z')} />)
     await showFlat(user)
@@ -124,8 +107,8 @@ describe('EventLog', () => {
   it('filters entries by category chip', async () => {
     const user = userEvent.setup()
     const entries = [
-      makeEntry('1-0', 'relay.state_changed', 'relay'),
-      makeEntry('2-0', 'config.updated', 'mutation'),
+      makeEventEntry('1-0', 'relay.state_changed', 'relay'),
+      makeEventEntry('2-0', 'config.updated', 'mutation'),
     ]
     render(<EventLog entries={entries} now={new Date('2026-09-02T12:00:00Z')} />)
     await showFlat(user)
@@ -137,9 +120,9 @@ describe('EventLog', () => {
   it('filters entries by event type chip', async () => {
     const user = userEvent.setup()
     const entries = [
-      makeEntry('1-0', 'relay.state_changed', 'relay'),
-      makeEntry('2-0', 'config.updated', 'mutation'),
-      makeEntry('3-0', 'relay.command_issued', 'relay'),
+      makeEventEntry('1-0', 'relay.state_changed', 'relay'),
+      makeEventEntry('2-0', 'config.updated', 'mutation'),
+      makeEventEntry('3-0', 'relay.command_issued', 'relay'),
     ]
     render(<EventLog entries={entries} now={new Date('2026-09-02T12:00:00Z')} />)
     await showFlat(user)
@@ -151,8 +134,8 @@ describe('EventLog', () => {
   it('filters entries by room chip', async () => {
     const user = userEvent.setup()
     const entries = [
-      makeEntry('1-0', 'relay.state_changed', 'relay', { room: 'Flower Room' }),
-      makeEntry('2-0', 'config.updated', 'mutation', { room: 'Veg Room' }),
+      makeEventEntry('1-0', 'relay.state_changed', 'relay', { room: 'Flower Room' }),
+      makeEventEntry('2-0', 'config.updated', 'mutation', { room: 'Veg Room' }),
     ]
     render(<EventLog entries={entries} now={new Date('2026-09-02T12:00:00Z')} />)
     await showFlat(user)
@@ -192,9 +175,9 @@ describe('EventLog', () => {
   it('opens on the grouped console by default with one row per category', () => {
     // Given: entries across three categories with a repeat in the oldest slot.
     const entries = [
-      makeEntry('1-0', 'relay.state_changed', 'relay', { device_id: 'fan-1' }),
-      makeEntry('2-0', 'config.updated', 'mutation'),
-      makeEntry('3-0', 'relay.command_issued', 'relay', { device_id: 'fan-2' }),
+      makeEventEntry('1-0', 'relay.state_changed', 'relay', { device_id: 'fan-1' }),
+      makeEventEntry('2-0', 'config.updated', 'mutation'),
+      makeEventEntry('3-0', 'relay.command_issued', 'relay', { device_id: 'fan-2' }),
     ]
     render(<EventLog entries={entries} now={new Date('2026-09-02T12:00:00Z')} />)
 
@@ -211,7 +194,7 @@ describe('EventLog', () => {
     // Given: three distinct devices with events of one category inside the window.
     const base = new Date('2026-09-02T12:00:00Z')
     const entries = ['light_v_1', 'light_v_2', 'light_v_3'].map((entityId, index) => ({
-      ...makeEntry(`${index + 1}-0`, 'ramp.started', 'ramp', { ramp_type: 'light' }, 'info'),
+      ...makeEventEntry(`${index + 1}-0`, 'ramp.started', 'ramp', { ramp_type: 'light' }, 'info'),
       occurredAt: new Date(base.getTime() + index * 1000),
       entity: { entityType: 'device', entityId },
     }))
@@ -226,9 +209,9 @@ describe('EventLog', () => {
   it('expands a category into its full newest-first list and collapses back', async () => {
     const user = userEvent.setup()
     const entries = [
-      makeEntry('1-0', 'relay.state_changed', 'relay', { device_id: 'fan-1' }),
-      makeEntry('2-0', 'config.updated', 'mutation'),
-      makeEntry('3-0', 'relay.command_issued', 'relay', { device_id: 'fan-2' }),
+      makeEventEntry('1-0', 'relay.state_changed', 'relay', { device_id: 'fan-1' }),
+      makeEventEntry('2-0', 'config.updated', 'mutation'),
+      makeEventEntry('3-0', 'relay.command_issued', 'relay', { device_id: 'fan-2' }),
     ]
     render(<EventLog entries={entries} now={new Date('2026-09-02T12:00:00Z')} />)
 
@@ -251,8 +234,8 @@ describe('EventLog', () => {
   it('shows the flat newest-first list through the All events toggle', async () => {
     const user = userEvent.setup()
     const entries = [
-      makeEntry('1-0', 'relay.state_changed', 'relay'),
-      makeEntry('2-0', 'config.updated', 'mutation'),
+      makeEventEntry('1-0', 'relay.state_changed', 'relay'),
+      makeEventEntry('2-0', 'config.updated', 'mutation'),
     ]
     render(<EventLog entries={entries} now={new Date('2026-09-02T12:00:00Z')} />)
     await user.click(screen.getByTestId('event-group-mutation'))
@@ -268,8 +251,8 @@ describe('EventLog', () => {
   it('applies the severity filter in the grouped view', async () => {
     const user = userEvent.setup()
     const entries = [
-      makeEntry('1-0', 'system.failsafe_raised', 'system', {}, 'critical'),
-      makeEntry('2-0', 'relay.state_changed', 'relay'),
+      makeEventEntry('1-0', 'system.failsafe_raised', 'system', {}, 'critical'),
+      makeEventEntry('2-0', 'relay.state_changed', 'relay'),
     ]
     render(<EventLog entries={entries} now={new Date('2026-09-02T12:00:00Z')} />)
     await user.click(screen.getByRole('button', { name: 'Critical' }))
@@ -289,14 +272,14 @@ describe('EventLog', () => {
         ['control', 'control.setpoint_changed'],
         ['mutation', 'config.updated'],
       ] as const
-    ).map(([category, type], index) => makeEntry(`${index + 1}-0`, type, category))
+    ).map(([category, type], index) => makeEventEntry(`${index + 1}-0`, type, category))
     render(<EventLog entries={entries} now={new Date('2026-09-02T12:00:00Z')} />)
     expect(screen.getByRole('group', { name: 'Grouped alert console' }).className).toContain('lg:grid-cols-2')
   })
 
   it('pre-allocates the fixed 2x4 grid with muted slots for empty buckets', () => {
     // Given: a single relay event.
-    const entries = [makeEntry('1-0', 'relay.state_changed', 'relay')]
+    const entries = [makeEventEntry('1-0', 'relay.state_changed', 'relay')]
     render(<EventLog entries={entries} now={new Date('2026-09-02T12:00:00Z')} />)
 
     // Then: two columns always, all 8 canonical buckets present, and the
@@ -313,7 +296,7 @@ describe('EventLog', () => {
   })
 
   it('renders the fallback row for an unknown garbage category', () => {
-    const entries = [makeEntry('1-0', 'custom.thing', 'nonsense_category')]
+    const entries = [makeEventEntry('1-0', 'custom.thing', 'nonsense_category')]
     render(<EventLog entries={entries} now={new Date('2026-09-02T12:00:00Z')} />)
     const row = screen.getByTestId('event-group-nonsense_category')
     expect(within(row).getByText('Other')).toBeInTheDocument()
@@ -322,9 +305,9 @@ describe('EventLog', () => {
   it('splits system-category sensor events into their own Sensors row', () => {
     // Given: platform and sensor-health events that share the system category.
     const entries = [
-      makeEntry('1-0', 'sensor.degraded', 'system', { device_id: 'dry-bulb-front' }),
-      makeEntry('2-0', 'system.failsafe_raised', 'system', {}, 'critical'),
-      makeEntry('3-0', 'device.timeout', 'system', { device_id: 'soil-sensor-1' }),
+      makeEventEntry('1-0', 'sensor.degraded', 'system', { device_id: 'dry-bulb-front' }),
+      makeEventEntry('2-0', 'system.failsafe_raised', 'system', {}, 'critical'),
+      makeEventEntry('3-0', 'device.timeout', 'system', { device_id: 'soil-sensor-1' }),
     ]
     render(<EventLog entries={entries} now={new Date('2026-09-02T12:00:00Z')} />)
 

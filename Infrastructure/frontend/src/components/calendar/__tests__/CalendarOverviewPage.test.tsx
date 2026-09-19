@@ -2,6 +2,7 @@ import { render, screen, act } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import CalendarOverviewPage from '../CalendarOverviewPage'
 import type { EventLogEntry } from '../../../features/event-log/state/eventLogStore'
+import { makeEventEntryWith } from '../../../features/event-log/__tests__/testFactories'
 
 vi.mock('../../../services/api', () => ({
   apiClient: { getModeSchedule: vi.fn(() => Promise.resolve(null)) },
@@ -24,24 +25,18 @@ vi.mock('../../../features/event-log/state/useEventLog', async (importOriginal) 
   }
 })
 
-const makeEntry = (): EventLogEntry => ({
-  redisId: '1-0',
-  eventId: 'evt-1',
-  type: 'relay.state_changed',
-  category: 'relay',
-  severity: 'info',
-  occurredAt: new Date('2026-09-02T12:00:00Z'),
-  payload: { device_id: 'fan-1', state: 'on' },
-  entity: null,
-  reasonText: null,
-})
-
 describe('CalendarOverviewPage event-log time ticking', () => {
   beforeEach(() => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-09-02T12:05:00Z'))
     entries.length = 0
-    entries.push({ ...makeEntry(), occurredAt: new Date('2026-09-02T12:05:00Z') })
+    entries.push(
+  makeEventEntryWith({
+    type: 'relay.state_changed',
+    category: 'relay',
+    occurredAt: new Date('2026-09-02T12:05:00Z'),
+  }),
+)
   })
 
   afterEach(() => {

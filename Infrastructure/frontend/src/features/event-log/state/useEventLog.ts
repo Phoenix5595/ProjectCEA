@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useRef, useSyncExternalStore } from 'react'
 import { globalEventLogStore, type EventLogEntry, type EventLogPaging } from './eventLogStore'
 import {
   addConnectionRef,
@@ -16,14 +16,12 @@ interface UseEventLogOptions {
 interface UseEventLogResult {
   entries: readonly EventLogEntry[]
   connected: boolean
-  error: string | null
   paging: EventLogPaging
   loadOlder: () => Promise<void>
 }
 
 export function useEventLog(options: UseEventLogOptions = {}): UseEventLogResult {
   const { location, cluster } = options
-  const [error, setError] = useState<string | null>(null)
   const lastSnapshotRef = useRef<{
     source: readonly EventLogEntry[]
     filtered: readonly EventLogEntry[]
@@ -82,14 +80,9 @@ export function useEventLog(options: UseEventLogOptions = {}): UseEventLogResult
     getSnapshot,
   )
 
-  useEffect(() => {
-    if (error !== null) setError(null)
-  }, [location, cluster])
-
   return {
     entries,
     connected: getActiveConnections() > 0,
-    error,
     paging: globalEventLogStore.snapshot().paging,
     loadOlder,
   }
