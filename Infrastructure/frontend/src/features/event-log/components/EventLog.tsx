@@ -4,7 +4,7 @@ import { EventFilters, type FilterState } from './EventFilters'
 import { EventRow } from './EventRow'
 import { EventGroupedView, buildGroups, type EventLogView } from './EventGroupedView'
 import { useEventLogPagination } from '../state/useEventLog'
-import { categoryTheme } from '../presentation/categoryTheme'
+import { categoryTheme, displayCategoryOf } from '../presentation/categoryTheme'
 
 interface EventLogProps {
   entries: readonly EventLogEntry[]
@@ -58,7 +58,7 @@ export function EventLog({ entries, now }: EventLogProps) {
     [view, expandedCategory, ordered],
   )
   const expandedListView = useMemo(
-    () => (expandedCategory === null ? [] : ordered.filter((entry) => entry.category === expandedCategory)),
+    () => (expandedCategory === null ? [] : ordered.filter((entry) => displayCategoryOf(entry) === expandedCategory)),
     [ordered, expandedCategory],
   )
 

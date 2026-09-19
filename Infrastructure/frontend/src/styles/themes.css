@@ -42,6 +42,7 @@
   /* Event-log alert categories (relay green / control ice blue / ramp teal /
      manual_override amber / mutation violet / alarm red / system slate) */
   --event-relay: #4ade80; --event-relay-dim: #14532d; --event-relay-border: #166534;
+  --event-sensor: #fb923c; --event-sensor-dim: #7c2d12; --event-sensor-border: #c2410c;
   --event-control: #7dd3fc; --event-control-dim: #0c4a6e; --event-control-border: #075985;
   --event-ramp: #2dd4bf; --event-ramp-dim: #134e4a; --event-ramp-border: #115e59;
   --event-manual-override: #fbbf24; --event-manual-override-dim: #713f12; --event-manual-override-border: #a16207;
@@ -93,6 +94,7 @@
 
   /* Event-log alert categories (see DESIGN.md event-log contract) */
   --event-relay: #4ade80; --event-relay-dim: #064e3b; --event-relay-border: #065f46;
+  --event-sensor: #fb923c; --event-sensor-dim: #7c2d12; --event-sensor-border: #c2410c;
   --event-control: #7dd3fc; --event-control-dim: #0c4a6e; --event-control-border: #075985;
   --event-ramp: #2dd4bf; --event-ramp-dim: #134e4a; --event-ramp-border: #115e59;
   --event-manual-override: #fbbf24; --event-manual-override-dim: #713f12; --event-manual-override-border: #a16207;
@@ -144,6 +146,7 @@
 
   /* Event-log alert categories (see DESIGN.md event-log contract) */
   --event-relay: #86c232; --event-relay-dim: #1a2e1a; --event-relay-border: #22543d;
+  --event-sensor: #fb923c; --event-sensor-dim: #713f12; --event-sensor-border: #a16207;
   --event-control: #7dd3fc; --event-control-dim: #0c4a6e; --event-control-border: #075985;
   --event-ramp: #2dd4bf; --event-ramp-dim: #134e4a; --event-ramp-border: #115e59;
   --event-manual-override: #d4a574; --event-manual-override-dim: #3e2b1c; --event-manual-override-border: #7b4a21;
@@ -195,6 +198,7 @@
 
   /* Event-log alert categories (see DESIGN.md event-log contract) */
   --event-relay: #34d399; --event-relay-dim: #064e3b; --event-relay-border: #065f46;
+  --event-sensor: #fb923c; --event-sensor-dim: #78350f; --event-sensor-border: #c2410c;
   --event-control: #7dd3fc; --event-control-dim: #0c4a6e; --event-control-border: #075985;
   --event-ramp: #2dd4bf; --event-ramp-dim: #134e4a; --event-ramp-border: #115e59;
   --event-manual-override: #fbbf24; --event-manual-override-dim: #713f12; --event-manual-override-border: #a16207;
@@ -246,6 +250,7 @@
 
   /* Event-log alert categories (see DESIGN.md event-log contract) */
   --event-relay: #4ade80; --event-relay-dim: #064e3b; --event-relay-border: #065f46;
+  --event-sensor: #fb923c; --event-sensor-dim: #7c2d12; --event-sensor-border: #c2410c;
   --event-control: #7dd3fc; --event-control-dim: #0c4a6e; --event-control-border: #075985;
   --event-ramp: #2dd4bf; --event-ramp-dim: #134e4a; --event-ramp-border: #115e59;
   --event-manual-override: #fbbf24; --event-manual-override-dim: #713f12; --event-manual-override-border: #a16207;
@@ -333,6 +338,7 @@
 
   /* Event-log alert categories (see DESIGN.md event-log contract) */
   --event-relay: #5e7953; --event-relay-dim: #1a2e1a; --event-relay-border: #2f3d29;
+  --event-sensor: #b97a4a; --event-sensor-dim: #362614; --event-sensor-border: #6e4a24;
   --event-control: #607d9c; --event-control-dim: #1c2733; --event-control-border: #2e4256;
   --event-ramp: #4f8b80; --event-ramp-dim: #17352f; --event-ramp-border: #24524a;
   --event-manual-override: #b08444; --event-manual-override-dim: #3a2a12; --event-manual-override-border: #5c4420;

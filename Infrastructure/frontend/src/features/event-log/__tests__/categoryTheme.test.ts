@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
-import { categoryTheme, EVENT_CATEGORY_LABELS } from '../presentation/categoryTheme'
+import { categoryTheme, displayCategoryOf, EVENT_CATEGORY_LABELS } from '../presentation/categoryTheme'
 
 const themesCss = readFileSync(
   path.resolve(process.cwd(), 'src/styles/themes.css'),
@@ -16,6 +16,7 @@ const CATEGORIES = [
   'mutation',
   'alarm',
   'system',
+  'sensor',
 ] as const
 
 const THEMES = [
@@ -27,8 +28,25 @@ const THEMES = [
   'botanical',
 ] as const
 
+describe('display category split', () => {
+  it('funnels sensor/device health events into the Sensors bucket', () => {
+    expect(displayCategoryOf({ category: 'system', type: 'sensor.degraded' })).toBe('sensor')
+    expect(displayCategoryOf({ category: 'system', type: 'device.timeout' })).toBe('sensor')
+  })
+
+  it('keeps platform events in the System bucket', () => {
+    expect(displayCategoryOf({ category: 'system', type: 'system.failsafe_raised' })).toBe('system')
+    expect(displayCategoryOf({ category: 'system', type: 'transport.degraded' })).toBe('system')
+  })
+
+  it('passes all other categories through untouched', () => {
+    expect(displayCategoryOf({ category: 'relay', type: 'relay.commanded' })).toBe('relay')
+    expect(displayCategoryOf({ category: 'nonsense', type: 'x.y' })).toBe('nonsense')
+  })
+})
+
 describe('event category theme', () => {
-  it('resolves a chip, border, and text tuple for each of the 7 categories', () => {
+  it('resolves a chip, border, and text tuple for each of the 8 categories', () => {
     for (const category of CATEGORIES) {
       const visual = categoryTheme(category)
       expect(visual.label).toBe(EVENT_CATEGORY_LABELS[category as keyof typeof EVENT_CATEGORY_LABELS])
@@ -45,7 +63,7 @@ describe('event category theme', () => {
     expect(visual.text).toContain('text-text-default')
   })
 
-  it('gives relay, control, ramp, override, mutation, alarm, and system distinct hues', () => {
+  it('gives all 8 buckets distinct hues', () => {
     const hues = new Set(CATEGORIES.map((category) => categoryTheme(category).text))
     expect(hues.size).toBe(CATEGORIES.length)
   })
@@ -71,7 +89,7 @@ describe('event category theme', () => {
 
 function assertBlockHasCategoryTokens(theme: (typeof THEMES)[number], block: string): void {
   for (const category of CATEGORIES) {
-    const cssName = category.replace('manual_override', 'manual-override')
+    const cssName = category.replace('_', '-')
     for (const variant of ['', '-dim', '-border']) {
       expect(block, `${theme} --event-${cssName}${variant}`).toContain(`--event-${cssName}${variant}:`)
     }
