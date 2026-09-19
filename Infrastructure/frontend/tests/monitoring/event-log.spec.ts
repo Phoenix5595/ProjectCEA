@@ -23,7 +23,8 @@ test('grouped alert console opens by default with category rows, counts, and dua
   await expect(page.getByTestId('event-group-manual_override')).toBeVisible()
   await expect(page.getByTestId('event-group-mutation')).toBeVisible()
   await expect(page.getByTestId('event-group-alarm')).toBeVisible()
-  await expect(page.getByTestId('event-group-system')).toBeVisible()
+  await expect(page.getByTestId('event-group-sensor')).toBeVisible()
+  await expect(page.getByTestId('event-group-sensor')).toContainText('Sensor degraded')
 
   // Count badge + latest-event summary per row.
   await expect(page.getByTestId('event-group-control').getByText('3 events')).toBeVisible()

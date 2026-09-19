@@ -305,4 +305,20 @@ describe('EventLog', () => {
     const row = screen.getByTestId('event-group-nonsense_category')
     expect(within(row).getByText('Other')).toBeInTheDocument()
   })
+
+  it('splits system-category sensor events into their own Sensors row', () => {
+    // Given: platform and sensor-health events that share the system category.
+    const entries = [
+      makeEntry('1-0', 'sensor.degraded', 'system', { device_id: 'dry-bulb-front' }),
+      makeEntry('2-0', 'system.failsafe_raised', 'system', {}, 'critical'),
+      makeEntry('3-0', 'device.timeout', 'system', { device_id: 'soil-sensor-1' }),
+    ]
+    render(<EventLog entries={entries} now={new Date('2026-09-02T12:00:00Z')} />)
+
+    // Then: two buckets: orange Sensors (2 events) and slate System (1 event).
+    expect(within(screen.getByTestId('event-group-sensor')).getByText('2 events')).toBeInTheDocument()
+    expect(within(screen.getByTestId('event-group-sensor')).getByText('Device timeout')).toBeInTheDocument()
+    expect(within(screen.getByTestId('event-group-system')).getByText('1 event')).toBeInTheDocument()
+    expect(within(screen.getByTestId('event-group-system')).getByText('Failsafe raised')).toBeInTheDocument()
+  })
 })
