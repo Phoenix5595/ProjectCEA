@@ -1,3 +1,4 @@
+import { normalizeTypedTimeText } from './timeInputNormalization'
 import type { ClimatePeriod } from '../types/climatePeriod'
 
 export type { ClimatePeriod }
@@ -165,6 +166,10 @@ export default function ClimatePeriodsTable({
                       placeholder="HH:MM"
                       value={period.start_time}
                       onChange={(e) => updatePeriod(index, 'start_time', e.target.value)}
+                      onBlur={(e) => {
+                        const normalized = normalizeTypedTimeText(e.target.value)
+                        if (normalized !== e.target.value) updatePeriod(index, 'start_time', normalized)
+                      }}
                       className={`w-16 text-xs bg-surface-secondary ${inputBase}`}
                     />
                     {isAllDayPeriod(period) && (
@@ -180,6 +185,10 @@ export default function ClimatePeriodsTable({
                       placeholder="HH:MM"
                       value={period.end_time}
                       onChange={(e) => updatePeriod(index, 'end_time', e.target.value)}
+                      onBlur={(e) => {
+                        const normalized = normalizeTypedTimeText(e.target.value)
+                        if (normalized !== e.target.value) updatePeriod(index, 'end_time', normalized)
+                      }}
                       className={`w-16 text-xs bg-surface-secondary ${inputBase}`}
                     />
                     {isAllDayPeriod(period) && (
