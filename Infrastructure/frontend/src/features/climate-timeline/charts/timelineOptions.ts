@@ -126,6 +126,7 @@ export function buildTimelineOptions(
       stroke: axisStroke,
       grid: { stroke: gridStroke },
       ticks: { stroke: gridStroke },
+      size: 30,
       values: (_self, splits) => splits.map((minutes) => {
         const instant = new Date(windowMs.start + minutes * 60_000)
         const hours = String(instant.getUTCHours()).padStart(2, '0')
@@ -139,7 +140,7 @@ export function buildTimelineOptions(
       stroke: readTimelineToken(SCALE_TOKENS.temp),
       grid: { stroke: gridStroke },
       ticks: { stroke: readTimelineToken(SCALE_TOKENS.temp) },
-      size: 44,
+      size: 25,
       label: UNIT_LABELS.temp,
       labelSize: 10,
     },
@@ -148,7 +149,7 @@ export function buildTimelineOptions(
       side: 1,
       stroke: readTimelineToken(SCALE_TOKENS.vpd),
       ticks: { stroke: readTimelineToken(SCALE_TOKENS.vpd) },
-      size: 44,
+      size: 25,
       label: UNIT_LABELS.vpd,
       labelSize: 10,
     },
@@ -157,9 +158,10 @@ export function buildTimelineOptions(
       side: 1,
       stroke: readTimelineToken(SCALE_TOKENS.co2),
       ticks: { stroke: readTimelineToken(SCALE_TOKENS.co2) },
-      size: 44,
+      size: 25,
       label: UNIT_LABELS.co2,
       labelSize: 10,
+      values: (_self, splits) => splits.map((value) => (value >= 1000 ? `${(value / 1000).toFixed(1)}k` : String(value))),
     },
   ]
 
