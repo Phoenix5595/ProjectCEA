@@ -1,7 +1,7 @@
 import { memo } from 'react'
 import type { EventLogEntry } from '../state/eventLogStore'
 import { getEventDisplay } from '../presentation/eventRegistry'
-import { categoryTheme } from '../presentation/categoryTheme'
+import { categoryTheme, displayCategoryOf } from '../presentation/categoryTheme'
 import { formatRelativeTime, formatLocalTime } from '../presentation/timeFormat'
 import { sourcePartsFor } from './EventRow'
 
@@ -23,13 +23,14 @@ export function buildGroups(orderedNewestFirst: readonly EventLogEntry[]): Categ
     { count: number; latest: EventLogEntry; entities: string[] }
   >()
   for (const entry of orderedNewestFirst) {
+    const bucket = displayCategoryOf(entry)
     const entity = entry.entity?.entityId ?? entry.type
-    const existing = byCategory.get(entry.category)
+    const existing = byCategory.get(bucket)
     if (existing) {
       existing.count += 1
       if (!existing.entities.includes(entity)) existing.entities.push(entity)
     } else {
-      byCategory.set(entry.category, { count: 1, latest: entry, entities: [entity] })
+      byCategory.set(bucket, { count: 1, latest: entry, entities: [entity] })
     }
   }
 
@@ -40,7 +41,7 @@ export function buildGroups(orderedNewestFirst: readonly EventLogEntry[]): Categ
       .reverse()
       .filter(
         (entry) =>
-          entry.category === category &&
+          displayCategoryOf(entry) === category &&
           entry.occurredAt.getTime() >= cutoff &&
           entry.occurredAt.getTime() <= group.latest.occurredAt.getTime(),
       )

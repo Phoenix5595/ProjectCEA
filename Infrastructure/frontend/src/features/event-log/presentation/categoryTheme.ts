@@ -59,6 +59,12 @@ const CATEGORY_VISUALS: Record<string, CategoryVisual> = {
     border: 'border-[var(--event-system-border)]',
     text: 'text-[var(--event-system)]',
   },
+  sensor: {
+    label: 'Sensors',
+    chip: 'bg-[var(--event-sensor-dim)] text-[var(--event-sensor)] border-[var(--event-sensor-border)]',
+    border: 'border-[var(--event-sensor-border)]',
+    text: 'text-[var(--event-sensor)]',
+  },
 }
 
 const FALLBACK_VISUAL: CategoryVisual = {
@@ -76,6 +82,7 @@ export type EventCategoryName =
   | 'mutation'
   | 'alarm'
   | 'system'
+  | 'sensor'
 
 export const EVENT_CATEGORY_LABELS: Record<EventCategoryName, string> = Object.fromEntries(
   Object.entries(CATEGORY_VISUALS).map(([category, visual]) => [category, visual.label]),
@@ -83,6 +90,19 @@ export const EVENT_CATEGORY_LABELS: Record<EventCategoryName, string> = Object.f
 
 export function categoryTheme(category: string): CategoryVisual {
   return CATEGORY_VISUALS[category] ?? FALLBACK_VISUAL
+}
+
+/**
+ * Presentation bucket for an entry: same as the backend category, except the
+ * `system` category is displayed split — sensor/device health events land in
+ * the orange "Sensors" bucket while platform events stay slate "System".
+ * Filtering keeps working on the raw backend category.
+ */
+export function displayCategoryOf(entry: { category: string; type: string }): string {
+  if (entry.category === 'system' && (entry.type.startsWith('sensor.') || entry.type.startsWith('device.'))) {
+    return 'sensor'
+  }
+  return entry.category
 }
 
 export function relayActiveStateClass(isActive: boolean): string {
