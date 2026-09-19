@@ -167,6 +167,9 @@ One hue per backend `EventCategory`, owner-approved. Tokens come in triplets: ba
 | `mutation` | Mutation | violet |
 | `alarm` | Alarm | red |
 | `system` | System | slate |
+| `sensor` (display-only split of `system`) | Sensors | orange |
+
+The `Sensors` bucket is a frontend presentation split: `system`-category events of type `sensor.*` / `device.*` display in the orange Sensors bucket; platform events stay slate. Grouping and expansion use the display bucket; the category filter chips keep operating on the raw backend category, so a `system` filter shows System and Sensors rows.
 
 - **Colour never alone (WCAG 1.4.1):** every coloured chip is paired with its text label; unknown categories resolve the "Other" fallback instead of crashing.
 - **Relay-active emphasis:** relay events with an engaged state (`state: true` / `observed_state: true`) render the state text in the relay green shade (`categoryTheme.relayActiveStateClass`).
