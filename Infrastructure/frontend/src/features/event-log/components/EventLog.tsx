@@ -37,20 +37,29 @@ export function EventLog({ entries, now }: EventLogProps) {
   const categories = useMemo(() => Array.from(new Set(entries.map((entry) => entry.category))).sort(), [entries])
   const types = useMemo(() => Array.from(new Set(entries.map((entry) => entry.type))).sort(), [entries])
 
+  const searchHaystacks = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const entry of entries) {
+      map.set(
+        entry.eventId,
+        `${entry.type} ${entry.category} ${entry.eventId} ${JSON.stringify(entry.payload)}`.toLowerCase(),
+      )
+    }
+    return map
+  }, [entries])
+
   const filtered = useMemo(() => {
     return entries.filter((entry) => {
       if (filters.severity !== 'all' && entry.severity !== filters.severity) return false
       if (filters.rooms.length > 0 && typeof entry.payload.room === 'string' && !filters.rooms.includes(entry.payload.room)) return false
       if (filters.categories.length > 0 && !filters.categories.includes(entry.category)) return false
       if (filters.types.length > 0 && !filters.types.includes(entry.type)) return false
-      if (filters.search) {
-        const needle = filters.search.toLowerCase()
-        const haystack = `${entry.type} ${entry.category} ${entry.eventId} ${JSON.stringify(entry.payload)}`.toLowerCase()
-        if (!haystack.includes(needle)) return false
+      if (filters.search && !(searchHaystacks.get(entry.eventId) ?? '').includes(filters.search.toLowerCase())) {
+        return false
       }
       return true
     })
-  }, [entries, filters])
+  }, [entries, filters, searchHaystacks])
 
   const ordered = useMemo(() => [...filtered].reverse(), [filtered])
   const groups = useMemo(
@@ -110,7 +119,7 @@ export function EventLog({ entries, now }: EventLogProps) {
               onClick={() => setExpandedCategory(null)}
               className="self-start px-2 py-1 text-xs font-semibold border bg-surface-secondary border-border-emphasis text-text-default"
             >
-              {'\u2190'} {categoryTheme(expandedCategory).label ?? 'Back'} / All categories
+              {'\u2190'} {categoryTheme(expandedCategory).label} / All categories
             </button>
           )}
           <ul role="list" aria-label="Event list" className="flex flex-col gap-px bg-border-subtle border border-border-subtle overflow-auto max-h-[600px]">

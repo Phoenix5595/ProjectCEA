@@ -1,5 +1,5 @@
 import { useCallback, type ChangeEvent } from 'react'
-import type { SeverityLevel } from '../presentation/severity'
+import { SEVERITY_LABELS, type SeverityLevel } from '../presentation/severity'
 import type { EventLogView } from './EventGroupedView'
 
 export type FilterDimension = 'room' | 'category' | 'type' | 'severity'
@@ -24,10 +24,9 @@ interface EventFiltersProps {
 
 const SEVERITY_OPTIONS: ReadonlyArray<{ value: SeverityLevel | 'all'; label: string }> = [
   { value: 'all', label: 'All' },
-  { value: 'critical', label: 'Critical' },
-  { value: 'warning', label: 'Warning' },
-  { value: 'error', label: 'Error' },
-  { value: 'info', label: 'Info' },
+  ...(
+    Object.entries(SEVERITY_LABELS) as ReadonlyArray<[SeverityLevel, string]>
+  ).map(([value, label]) => ({ value, label })),
 ]
 
 function MultiSelectChip({

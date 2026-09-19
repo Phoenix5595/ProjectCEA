@@ -19,12 +19,11 @@ const makeEntry = (redisId: string, type: string, room?: string, cluster?: strin
 })
 
 function TestComponent({ location, cluster }: { location?: string; cluster?: string }) {
-  const { entries, connected, error } = useEventLog({ location, cluster })
+  const { entries, connected } = useEventLog({ location, cluster })
   return (
     <div>
       <div data-testid="count">{entries.length}</div>
       <div data-testid="connected">{connected ? 'yes' : 'no'}</div>
-      <div data-testid="error">{error ?? 'none'}</div>
       {entries.map((e) => (
         <div key={e.eventId}>
           {e.type}
@@ -78,11 +77,6 @@ describe('useEventLog', () => {
     ])
     render(<TestComponent location="Flower Room" cluster="front" />)
     expect(screen.getByTestId('count').textContent).toBe('2')
-  })
-
-  it('returns null error by default', () => {
-    render(<TestComponent />)
-    expect(screen.getByTestId('error').textContent).toBe('none')
   })
 
   it('uses global store singleton', () => {
