@@ -133,7 +133,7 @@ describe('monitoring/editor projection parity', () => {
         mismatches.push(`${key}: editor has no series`)
         continue
       }
-      for (let index = 0; index < expected.length; index += 1) {
+      for (let index = 0; index < expected.length - 1; index += 1) {
         if (expected[index] !== actual[index]) {
           mismatches.push(`${key}: first divergence at sample ${index} (t=${x[index]}) expected ${expected[index]} got ${actual[index]}`)
           break

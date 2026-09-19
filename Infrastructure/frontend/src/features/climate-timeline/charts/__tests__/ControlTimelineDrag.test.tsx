@@ -41,7 +41,7 @@ const { MockUPlot, instances } = vi.hoisted(() => {
       this.fireInit()
       this.fireDraw()
     }
-    private mergedHooks(): Record<string, unknown> {
+    mergedHooks(): Record<string, unknown> {
       const merged: Record<string, unknown> = { ...(this.opts.hooks ?? {}) }
       for (const plugin of this.opts.plugins ?? []) {
         for (const [name, pluginHooks] of Object.entries(plugin.hooks ?? {})) {
@@ -257,17 +257,27 @@ describe('drag editing on the uPlot timeline', () => {
     expect(hook.result.current.state.draft.periods[0]?.start_time).toBe('05:55')
   })
 
-  it('renders no grips in compact mode or while the rolling window is selected', async () => {
+  it('renders grips in the daily default and clears them once rolling is selected', async () => {
     const hook = renderHook(() => useTimelineDraft({ saved: savedBaseline(), publicationPort: port() }))
     const compact = render(<ControlTimeline mode="compact" controller={hook.result.current} />)
     expect(screen.queryByTestId('control-timeline-value-grip-0-heating')).not.toBeInTheDocument()
     compact.unmount()
 
     const view = render(<ControlTimeline mode="expanded" controller={hook.result.current} />)
-    expect(screen.queryByTestId('control-timeline-value-grip-0-heating')).not.toBeInTheDocument()
-
-    fireEvent.click(screen.getByRole('button', { name: 'daily' }))
+    const triggerDraw = () => {
+      for (const instance of instances) {
+        const mergedHooks = instance.mergedHooks()
+        for (const drawHook of (mergedHooks.draw as Array<(u: unknown) => void> | undefined) ?? []) {
+          drawHook?.(instance)
+        }
+      }
+    }
     await waitFor(() => expect(screen.getByTestId('control-timeline-boundary-grip-0-start')).toBeInTheDocument())
+    triggerDraw()
+
+    fireEvent.click(screen.getByRole('button', { name: 'rolling' }))
+    triggerDraw()
+    await waitFor(() => expect(screen.queryByTestId('control-timeline-value-grip-0-heating')).not.toBeInTheDocument())
     view.unmount()
   })
 
