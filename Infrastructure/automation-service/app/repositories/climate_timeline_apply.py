@@ -16,6 +16,16 @@ from app.schemas.climate_timeline import TimelineApplyRequest
 SqlArgument: TypeAlias = str | int | float | time | None
 
 
+def _parse_time_text(text: str) -> time:
+    """Convert an HH:MM or HH:MM:SS text into a Postgres TIME argument."""
+    for pattern in ("%H:%M", "%H:%M:%S"):
+        try:
+            return datetime.strptime(text, pattern).time()
+        except ValueError:
+            continue
+    raise ValueError(f"invalid time text: {text!r}")
+
+
 class TimelineApplyConnection(Protocol):
     """The transaction-scoped asyncpg operations owned by Apply."""
 
@@ -119,8 +129,8 @@ class TimelineApplyRepository:
 
             updated_parameter_id = await connection.fetchval(
                 _UPDATE_PHOTOPERIOD_QUERY,
-                request.photoperiod.day_start_time,
-                request.photoperiod.night_start_time,
+                _parse_time_text(request.photoperiod.day_start_time),
+                _parse_time_text(request.photoperiod.night_start_time),
                 request.photoperiod.ramp_up_minutes,
                 request.photoperiod.ramp_down_minutes,
                 location,
