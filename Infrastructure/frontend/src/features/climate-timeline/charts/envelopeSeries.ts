@@ -113,7 +113,6 @@ export function groupEnvelopeSegments(envelope: RichTrajectoryEnvelope): MetricG
     return metricDiff !== 0 ? metricDiff : kindOrder(left.kind) - kindOrder(right.kind)
   })
   for (const group of result) {
-    group.steps.push({ t: envelope.window.end.getTime(), value: null })
     group.steps.sort((left, right) => left.t - right.t)
   }
   return result

@@ -77,7 +77,7 @@ function assertNever(value: never): never {
 
 export function ControlTimeline({ mode, controller, onExpand, onCollapse, lockedPhotoperiodHours = null }: ControlTimelineProps) {
   const [editError, setEditError] = useState<string | null>(null)
-  const [windowMode, setWindowMode] = useState<'daily' | 'rolling'>('rolling')
+  const [windowMode, setWindowMode] = useState<'daily' | 'rolling'>('daily')
   const [dragActive, setDragActive] = useState(false)
   const [nowMs, setNowMs] = useState(() => Date.now())
   const { state, preview } = controller
