@@ -33,13 +33,13 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onToggle }) => {
         flex flex-col
         transition-[width] duration-300 ease-in-out
         z-40
-        ${collapsed ? 'w-12' : 'w-52'}
+        ${collapsed ? 'w-7.5' : 'w-52'}
       `}
     >
       {/* Logo / Header */}
-      <div className="flex items-center justify-center px-1 py-1 border-b border-border-default h-[50px]">
+      <div className="flex items-center justify-center border-b border-border-default h-ribbon">
         <Link to="/">
-          <img src="/logo.png" alt="CEA" className="w-6 h-6" />
+          <img src="/logo.png" alt="CEA" className="size-7.5" />
         </Link>
       </div>
 
@@ -83,7 +83,7 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onToggle }) => {
       {/* Footer */}
       <div className={`
         border-t border-border-default flex flex-col gap-2
-        ${collapsed ? 'items-center p-1.5' : 'p-2'}
+        ${collapsed ? 'items-center p-0.5' : 'p-2'}
       `}>
         {!collapsed && (
           <p className="text-xs text-text-muted">
@@ -93,7 +93,7 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onToggle }) => {
         <button
           onClick={onToggle}
           className={`
-            p-1.5 rounded-md
+            ${collapsed ? 'p-1' : 'p-1.5'} rounded-md
             hover:bg-surface-tertiary
             text-text-secondary hover:text-text-default
             transition-colors duration-200

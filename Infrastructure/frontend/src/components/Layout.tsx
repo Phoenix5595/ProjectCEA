@@ -118,7 +118,7 @@ const Layout: React.FC = () => {
       <div
         className={`
           transition-all duration-300 ease-in-out
-          ${isMobile ? 'ml-0' : collapsed ? 'ml-12' : 'ml-52'}
+          ${isMobile ? 'ml-0' : collapsed ? 'ml-7.5' : 'ml-52'}
         `}
       >
         {/* TopRibbon - only shown on sector pages */}

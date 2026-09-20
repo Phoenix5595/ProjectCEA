@@ -72,6 +72,9 @@
   --radius-4xl: 6px;
   --radius: 2px;
 
+  /* App chrome heights (top ribbon + sidebar logo band + collapsed rail) */
+  --spacing-ribbon: 1.875rem;
+
   /* ===== Semantic Design Tokens (linked to theme variables) ===== */
 
   /* Surfaces */
