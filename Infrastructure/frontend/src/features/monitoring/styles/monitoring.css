@@ -225,7 +225,7 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 0.5rem;
-  padding: 0.5rem 0;
+  padding: 2px;
 }
 
 .mon-legend__list {
@@ -361,6 +361,11 @@
 /* uPlot renders its own cursor legend under the canvas; the feature ships an
    external semantic legend, so hide the internal one to avoid duplicated
    labels (e.g. "dry_bulb_b" next to "dry_bulb_b min"/"max"). */
+/* Owner adjustment: 2px breathing room around the uPlot canvas. */
+.mon-chart .uplot .u-wrap {
+  padding: 2px;
+}
+
 .mon-chart .uplot .u-legend {
   display: none;
 }
