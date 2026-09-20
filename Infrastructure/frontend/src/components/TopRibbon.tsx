@@ -1,5 +1,7 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
+import { Flower2, FlaskConical, Settings, Sprout } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 
 import { AppRibbon } from './chrome/AppRibbon';
 
@@ -42,11 +44,11 @@ const sectorTabs: Record<Sector, Tab[]> = {
   devices: [{ id: 'overview', label: 'Overview', path: '/devices' }],
 };
 
-const sectorEmojis: Record<Sector, string> = {
-  laboratory: '🔬',
-  vegetation: '🌱',
-  flower: '🌻',
-  devices: '⚙️',
+const sectorIcons: Record<Sector, LucideIcon> = {
+  laboratory: FlaskConical,
+  vegetation: Sprout,
+  flower: Flower2,
+  devices: Settings,
 };
 
 const sectorDefaultNames: Record<Sector, string> = {
@@ -84,11 +86,12 @@ const TopRibbon: React.FC<TopRibbonProps> = ({
   const isControlPage = currentPath.includes('/control');
 
   const displayRoomName = roomName || sectorDefaultNames[sector];
+  const SectorIconComponent = sectorIcons[sector];
 
   return (
     <AppRibbon position="top" sticky className="max-sm:pl-14 sm:pl-2">
       <h1 className="flex max-w-7 shrink-0 items-center gap-1 overflow-hidden whitespace-nowrap text-base font-bold text-text-default sm:max-w-none">
-        <span className="text-xl leading-none">{sectorEmojis[sector]}</span>
+        <SectorIconComponent className="size-5 shrink-0" />
         <span className="hidden sm:inline">{displayRoomName}</span>
       </h1>
 

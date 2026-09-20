@@ -3,6 +3,8 @@ import { toast } from 'sonner';
 
 import { apiClient } from '../services/api';
 import { extractErrorMessage } from '../utils/errors';
+import { Input } from '@/components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 
 export default function CalendarSettings() {
   const [connection, setConnection] = useState<Record<string, unknown> | null>(null);
@@ -105,22 +107,19 @@ export default function CalendarSettings() {
         </p>
       )}
       <div className="space-y-3">
-        <input
+        <Input
           placeholder="CalDAV base URL"
-          className="w-full px-2 py-1 rounded border border-border-default bg-surface-secondary text-text-default"
           value={caldavBaseUrl}
           onChange={(e) => setCaldavBaseUrl(e.target.value)}
         />
-        <input
+        <Input
           placeholder="Username"
-          className="w-full px-2 py-1 rounded border border-border-default bg-surface-secondary text-text-default"
           value={username}
           onChange={(e) => setUsername(e.target.value)}
         />
-        <input
+        <Input
           type="password"
           placeholder="App password"
-          className="w-full px-2 py-1 rounded border border-border-default bg-surface-secondary text-text-default"
           value={appPassword}
           onChange={(e) => setAppPassword(e.target.value)}
         />
@@ -130,22 +129,25 @@ export default function CalendarSettings() {
           </button>
         </div>
         {calendars.length > 0 && (
-          <select
-            className="w-full px-2 py-1 rounded border border-border-default bg-surface-secondary text-text-default"
-            value={targetCalendarUrl}
-            onChange={(e) => setTargetCalendarUrl(e.target.value)}
+          <Select
+            value={targetCalendarUrl || '__none__'}
+            onValueChange={(v) => setTargetCalendarUrl(v === '__none__' ? '' : v)}
           >
-            <option value="">Select calendar</option>
-            {calendars.map((c) => (
-              <option key={c.url} value={c.url}>
-                {c.name}
-              </option>
-            ))}
-          </select>
+            <SelectTrigger className="w-full">
+              <SelectValue placeholder="Select calendar" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__none__">Select calendar</SelectItem>
+              {calendars.map((c) => (
+                <SelectItem key={c.url} value={c.url}>
+                  {c.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         )}
-        <input
+        <Input
           placeholder="Or paste target calendar URL"
-          className="w-full px-2 py-1 rounded border border-border-default bg-surface-secondary text-text-default"
           value={targetCalendarUrl}
           onChange={(e) => setTargetCalendarUrl(e.target.value)}
         />

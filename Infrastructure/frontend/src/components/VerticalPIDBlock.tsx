@@ -3,6 +3,8 @@ import { toast } from 'sonner'
 import { apiClient } from '../services/api'
 import type { PIDControlMode, PIDParameters, PIDParameterUpdate } from '../types/pid'
 import { logger } from '../utils/logger'
+import { Button } from '@/components/ui/button'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 
 interface PIDHistoryItem {
   changed_at?: string
@@ -152,16 +154,16 @@ export default function VerticalPIDBlock({ location, cluster }: VerticalPIDBlock
         <div className="text-text-muted uppercase font-bold tracking-wider text-14">PID Control</div>
 
         {/* Device Selector - Upper Left */}
-        <select
-          value={device}
-          onChange={(e) => setDevice(e.target.value)}
-          disabled={saving}
-          className="bg-surface-secondary border border-border-default rounded-sm text-text-input text-xs px-2 py-1 focus-visible:outline-hidden focus-visible:border-accent-vivid transition-colors"
-        >
-          <option value="heater">Heater</option>
-          <option value="fan">Fan</option>
-          <option value="co2">CO2</option>
-        </select>
+        <Select value={device} onValueChange={(v) => setDevice(v as typeof device)} disabled={saving}>
+          <SelectTrigger className="w-auto text-xs px-2 py-1">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="heater">Heater</SelectItem>
+            <SelectItem value="fan">Fan</SelectItem>
+            <SelectItem value="co2">CO2</SelectItem>
+          </SelectContent>
+        </Select>
 
         {/* Mode Selector - Upper Right */}
         <div className="flex gap-1">
@@ -266,13 +268,9 @@ export default function VerticalPIDBlock({ location, cluster }: VerticalPIDBlock
           {/* Save Button */}
           {hasUnsavedChanges && (
             <div className="mt-2">
-              <button
-                onClick={saveParameters}
-                disabled={saving}
-                className="w-full px-3 py-2 bg-accent-active hover:bg-accent-hover disabled:bg-surface-secondary disabled:text-text-faint rounded-sm text-text-default text-xs font-bold tracking-wide transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent-vivid/50"
-              >
+              <Button variant="accent-strong" className="w-full px-3 py-2 text-xs font-bold tracking-wide" onClick={saveParameters} disabled={saving}>
                 {saving ? 'Saving...' : 'Save Changes'}
-              </button>
+              </Button>
             </div>
           )}
         </>
@@ -281,13 +279,9 @@ export default function VerticalPIDBlock({ location, cluster }: VerticalPIDBlock
       {/* Save Button for ON/OFF mode (hysteresis-only changes) */}
       {isOff && hasUnsavedChanges && (
         <div className="mt-2">
-          <button
-            onClick={saveParameters}
-            disabled={saving}
-            className="w-full px-3 py-2 bg-accent-active hover:bg-accent-hover disabled:bg-surface-secondary disabled:text-text-faint rounded-sm text-text-default text-xs font-bold tracking-wide transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent-vivid/50"
-          >
+          <Button variant="accent-strong" className="w-full px-3 py-2 text-xs font-bold tracking-wide" onClick={saveParameters} disabled={saving}>
             {saving ? 'Saving...' : 'Save Changes'}
-          </button>
+          </Button>
         </div>
       )}
 

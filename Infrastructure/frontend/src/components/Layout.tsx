@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Menu, X } from 'lucide-react';
 import { Outlet, useLocation } from 'react-router-dom';
 import Sidebar, { useSidebarState } from './Sidebar';
 import TopRibbon, { Sector } from './TopRibbon';
@@ -67,28 +68,11 @@ const Layout: React.FC = () => {
           className="fixed top-3 left-3 z-50 p-2 rounded-md bg-surface-secondary border border-border-default hover:bg-surface-tertiary"
           aria-label={mobileDrawerOpen ? 'Close menu' : 'Open menu'}
         >
-          <svg
-            className="size-6 text-text-default"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            {mobileDrawerOpen ? (
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M6 18L18 6M6 6l12 12"
-              />
-            ) : (
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M4 6h16M4 12h16M4 18h16"
-              />
-            )}
-          </svg>
+          {mobileDrawerOpen ? (
+            <X className="size-6 text-text-default" />
+          ) : (
+            <Menu className="size-6 text-text-default" />
+          )}
         </button>
       )}
 
