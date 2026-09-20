@@ -4,6 +4,7 @@ import { apiClient } from '../services/api'
 import type { PIDControlMode, PIDParameters, PIDParameterUpdate } from '../types/pid'
 import { logger } from '../utils/logger'
 import { Button } from '@/components/ui/button'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 
 interface PIDHistoryItem {
   changed_at?: string
@@ -153,16 +154,16 @@ export default function VerticalPIDBlock({ location, cluster }: VerticalPIDBlock
         <div className="text-text-muted uppercase font-bold tracking-wider text-14">PID Control</div>
 
         {/* Device Selector - Upper Left */}
-        <select
-          value={device}
-          onChange={(e) => setDevice(e.target.value)}
-          disabled={saving}
-          className="bg-surface-secondary border border-border-default rounded-sm text-text-input text-xs px-2 py-1 focus-visible:outline-hidden focus-visible:border-accent-vivid transition-colors"
-        >
-          <option value="heater">Heater</option>
-          <option value="fan">Fan</option>
-          <option value="co2">CO2</option>
-        </select>
+        <Select value={device} onValueChange={(v) => setDevice(v as typeof device)} disabled={saving}>
+          <SelectTrigger className="w-auto text-xs px-2 py-1">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="heater">Heater</SelectItem>
+            <SelectItem value="fan">Fan</SelectItem>
+            <SelectItem value="co2">CO2</SelectItem>
+          </SelectContent>
+        </Select>
 
         {/* Mode Selector - Upper Right */}
         <div className="flex gap-1">
