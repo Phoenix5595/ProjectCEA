@@ -136,7 +136,7 @@ export default function VerticalPIDBlock({ location, cluster }: VerticalPIDBlock
   if (loading) {
     return (
       <div className="bg-surface-primary rounded-lg border border-border-subtle p-2">
-        <div className="text-text-muted uppercase font-bold tracking-wider text-[14px] mb-4">PID Control</div>
+        <div className="text-text-muted uppercase font-bold tracking-wider text-14 mb-4">PID Control</div>
         <div className="text-text-subtle text-sm">Loading...</div>
       </div>
     )
@@ -149,14 +149,14 @@ export default function VerticalPIDBlock({ location, cluster }: VerticalPIDBlock
     <div className="bg-surface-primary rounded-lg border border-border-subtle p-2 h-full flex flex-col">
       {/* Header with Device and Mode */}
       <div className="flex justify-between items-start mb-4">
-        <div className="text-text-muted uppercase font-bold tracking-wider text-[14px]">PID Control</div>
+        <div className="text-text-muted uppercase font-bold tracking-wider text-14">PID Control</div>
 
         {/* Device Selector - Upper Left */}
         <select
           value={device}
           onChange={(e) => setDevice(e.target.value)}
           disabled={saving}
-          className="bg-surface-secondary border border-border-default rounded-sm text-text-input text-xs px-2 py-1 focus:outline-hidden focus:border-accent-vivid transition-colors"
+          className="bg-surface-secondary border border-border-default rounded-sm text-text-input text-xs px-2 py-1 focus-visible:outline-hidden focus-visible:border-accent-vivid transition-colors"
         >
           <option value="heater">Heater</option>
           <option value="fan">Fan</option>
@@ -168,7 +168,7 @@ export default function VerticalPIDBlock({ location, cluster }: VerticalPIDBlock
           <button
             onClick={() => handleModeChange('on_off')}
             disabled={saving}
-            className={`px-2 py-1 rounded text-xs font-medium transition-colors focus:outline-hidden focus:ring-2 focus:ring-accent-vivid/50 ${
+            className={`px-2 py-1 rounded text-xs font-medium transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent-vivid/50 ${
               mode === 'on_off'
                 ? 'bg-surface-tertiary text-text-input border border-border-emphasis'
                 : 'bg-surface-secondary text-text-muted border border-border-default hover:bg-surface-tertiary'
@@ -179,7 +179,7 @@ export default function VerticalPIDBlock({ location, cluster }: VerticalPIDBlock
           <button
             onClick={() => handleModeChange('pid')}
             disabled={saving}
-            className={`px-2 py-1 rounded text-xs font-medium transition-colors focus:outline-hidden focus:ring-2 focus:ring-accent-vivid/50 ${
+            className={`px-2 py-1 rounded text-xs font-medium transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent-vivid/50 ${
               mode === 'pid'
                 ? 'bg-accent-dim/50 text-accent-data border border-accent-dim/50'
                 : 'bg-surface-secondary text-text-muted border border-border-default hover:bg-surface-tertiary'
@@ -190,7 +190,7 @@ export default function VerticalPIDBlock({ location, cluster }: VerticalPIDBlock
           <button
             onClick={() => handleModeChange('auto_pid')}
             disabled={saving}
-            className={`px-2 py-1 rounded text-xs font-medium transition-colors focus:outline-hidden focus:ring-2 focus:ring-accent-vivid/50 ${
+            className={`px-2 py-1 rounded text-xs font-medium transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent-vivid/50 ${
               mode === 'auto_pid'
                 ? 'bg-mode-auto-dim/50 text-mode-auto-text border border-mode-auto-border/50'
                 : 'bg-surface-secondary text-text-muted border border-border-default hover:bg-surface-tertiary'
@@ -213,7 +213,7 @@ export default function VerticalPIDBlock({ location, cluster }: VerticalPIDBlock
             value={tempHysteresis}
             onChange={(e) => handleHysteresisChange(parseFloat(e.target.value))}
             disabled={saving}
-            className="w-full bg-surface-secondary border border-border-default rounded-sm text-text-input text-sm px-2 py-1 text-center font-mono tabular-nums focus:outline-hidden focus:border-accent-vivid transition-colors"
+            className="w-full bg-surface-secondary border border-border-default rounded-sm text-text-input text-sm px-2 py-1 text-center font-mono tabular-nums focus-visible:outline-hidden focus-visible:border-accent-vivid transition-colors"
           />
         </div>
       )}
@@ -232,7 +232,7 @@ export default function VerticalPIDBlock({ location, cluster }: VerticalPIDBlock
                 value={tempParameters.kp}
                 onChange={(e) => handleParameterChange('kp', parseFloat(e.target.value))}
                 disabled={isAuto || saving}
-                className="w-full bg-surface-secondary border border-border-default rounded-sm text-status-danger text-sm px-2 py-1 text-center font-mono tabular-nums focus:outline-hidden focus:border-accent-vivid transition-colors"
+                className="w-full bg-surface-secondary border border-border-default rounded-sm text-status-danger text-sm px-2 py-1 text-center font-mono tabular-nums focus-visible:outline-hidden focus-visible:border-accent-vivid transition-colors"
               />
             </div>
             <div className="flex-1">
@@ -245,7 +245,7 @@ export default function VerticalPIDBlock({ location, cluster }: VerticalPIDBlock
                 value={tempParameters.ki}
                 onChange={(e) => handleParameterChange('ki', parseFloat(e.target.value))}
                 disabled={isAuto || saving}
-                className="w-full bg-surface-secondary border border-border-default rounded-sm text-status-success text-sm px-2 py-1 text-center font-mono tabular-nums focus:outline-hidden focus:border-accent-vivid transition-colors"
+                className="w-full bg-surface-secondary border border-border-default rounded-sm text-status-success text-sm px-2 py-1 text-center font-mono tabular-nums focus-visible:outline-hidden focus-visible:border-accent-vivid transition-colors"
               />
             </div>
             <div className="flex-1">
@@ -258,7 +258,7 @@ export default function VerticalPIDBlock({ location, cluster }: VerticalPIDBlock
                 value={tempParameters.kd}
                 onChange={(e) => handleParameterChange('kd', parseFloat(e.target.value))}
                 disabled={isAuto || saving}
-                className="w-full bg-surface-secondary border border-border-default rounded-sm text-btn-primary-data text-sm px-2 py-1 text-center font-mono tabular-nums focus:outline-hidden focus:border-accent-vivid transition-colors"
+                className="w-full bg-surface-secondary border border-border-default rounded-sm text-btn-primary-data text-sm px-2 py-1 text-center font-mono tabular-nums focus-visible:outline-hidden focus-visible:border-accent-vivid transition-colors"
               />
             </div>
           </div>
@@ -269,7 +269,7 @@ export default function VerticalPIDBlock({ location, cluster }: VerticalPIDBlock
               <button
                 onClick={saveParameters}
                 disabled={saving}
-                className="w-full px-3 py-2 bg-accent-active hover:bg-accent-hover disabled:bg-surface-secondary disabled:text-text-faint rounded-sm text-text-default text-xs font-bold tracking-wide transition-colors focus:outline-hidden focus:ring-2 focus:ring-accent-vivid/50"
+                className="w-full px-3 py-2 bg-accent-active hover:bg-accent-hover disabled:bg-surface-secondary disabled:text-text-faint rounded-sm text-text-default text-xs font-bold tracking-wide transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent-vivid/50"
               >
                 {saving ? 'Saving...' : 'Save Changes'}
               </button>
@@ -284,7 +284,7 @@ export default function VerticalPIDBlock({ location, cluster }: VerticalPIDBlock
           <button
             onClick={saveParameters}
             disabled={saving}
-            className="w-full px-3 py-2 bg-accent-active hover:bg-accent-hover disabled:bg-surface-secondary disabled:text-text-faint rounded-sm text-text-default text-xs font-bold tracking-wide transition-colors focus:outline-hidden focus:ring-2 focus:ring-accent-vivid/50"
+            className="w-full px-3 py-2 bg-accent-active hover:bg-accent-hover disabled:bg-surface-secondary disabled:text-text-faint rounded-sm text-text-default text-xs font-bold tracking-wide transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent-vivid/50"
           >
             {saving ? 'Saving...' : 'Save Changes'}
           </button>

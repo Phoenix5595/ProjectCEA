@@ -120,7 +120,7 @@ export function EventFilters({ filters, onChange, rooms, categories, types, view
           placeholder="Filter events..."
           value={filters.search}
           onChange={handleSearchChange}
-          className="flex-1 min-w-[120px] px-2 py-1 text-xs bg-surface-secondary border border-border-subtle text-text-default placeholder-text-secondary focus:outline-none focus:border-border-emphasis"
+          className="flex-1 min-w-[120px] px-2 py-1 text-xs bg-surface-secondary border border-border-subtle text-text-default placeholder-text-secondary focus-visible:outline-none focus-visible:border-border-emphasis"
         />
       </div>
 

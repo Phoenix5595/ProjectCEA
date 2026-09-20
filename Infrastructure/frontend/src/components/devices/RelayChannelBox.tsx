@@ -86,7 +86,7 @@ export default function RelayChannelBox({
     : ''
 
   const baseClasses = [
-    'group/relay relative w-full aspect-[20/11] min-h-0 rounded-sm border-2 text-left transition-all overflow-visible',
+    'group/relay relative w-full aspect-[20/11] min-h-0 rounded-sm border-2 text-left transition-[color,background-color,border-color,opacity,filter] overflow-visible',
     isForeignTile || isUnassignedInRoomView
       ? 'bg-surface-tertiary/40 border-border-subtle opacity-50 grayscale'
       : `bg-surface-tertiary ${modeOutlineClass}`,
@@ -152,12 +152,12 @@ export default function RelayChannelBox({
     <div className="flex h-full gap-2" title={tooltipTitle}>
       <div className="flex min-w-0 flex-1 flex-col justify-between py-0.5">
         <div>
-          <span className="text-[12px] font-bold text-text-input">R{relayNum}</span>
-          <div className="mt-0.5 truncate text-[10px] font-medium text-text-default">{deviceLabel}</div>
+          <span className="text-12 font-bold text-text-input">R{relayNum}</span>
+          <div className="mt-0.5 truncate text-10 font-medium text-text-default">{deviceLabel}</div>
         </div>
         <div>
-          <div className="truncate text-[9px] text-text-secondary">{typeLabel}</div>
-          <div className="truncate text-[9px] text-text-muted">{locationLabel}</div>
+          <div className="truncate text-9 text-text-secondary">{typeLabel}</div>
+          <div className="truncate text-9 text-text-muted">{locationLabel}</div>
         </div>
       </div>
 
@@ -173,7 +173,7 @@ export default function RelayChannelBox({
               }
               onToggleMenu?.(channel.channel)
             }}
-            className={`flex h-full w-full items-center justify-center rounded-sm px-2 text-[14px] font-black uppercase leading-none ${button.outlineClass} ${!isDisabled ? 'cursor-pointer' : 'cursor-not-allowed opacity-70'}`}
+            className={`flex h-full w-full items-center justify-center rounded-sm px-2 text-14 font-black uppercase leading-none ${button.outlineClass} ${!isDisabled ? 'cursor-pointer' : 'cursor-not-allowed opacity-70'}`}
             title={isDisabled ? 'Channel unavailable' : 'Click for control mode'}
           >
             {button.text}
@@ -181,7 +181,7 @@ export default function RelayChannelBox({
           {menu}
         </div>
         <div className="flex flex-1 w-full items-center justify-center rounded-sm bg-surface-primary/60 px-1">
-          <span className="shrink-0 font-mono text-[10px] font-semibold text-text-muted">{elapsedLabel}</span>
+          <span className="shrink-0 font-mono text-10 font-semibold text-text-muted">{elapsedLabel}</span>
         </div>
       </div>
     </div>

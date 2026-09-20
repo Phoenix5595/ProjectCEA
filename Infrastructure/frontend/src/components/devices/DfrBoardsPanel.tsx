@@ -81,7 +81,7 @@ export default function DfrBoardsPanel() {
   return (
     <div className="rounded-lg border border-border-subtle bg-surface-primary p-2 space-y-2">
       <div className="flex items-center justify-between gap-2">
-        <div className="text-text-muted uppercase font-bold tracking-wider text-[14px]">
+        <div className="text-text-muted uppercase font-bold tracking-wider text-14">
           DFR0971 boards
         </div>
         <button
@@ -104,11 +104,11 @@ export default function DfrBoardsPanel() {
               className="rounded-lg border border-border-subtle bg-surface-primary p-2 flex flex-col gap-2"
             >
               <div className="flex items-start justify-between gap-2">
-                <div className="text-text-muted uppercase font-bold tracking-wider text-[14px]">
+                <div className="text-text-muted uppercase font-bold tracking-wider text-14">
                   DFR{boardId}
                 </div>
                 <div
-                  className={`text-[11px] rounded-full px-2 py-0.5 border ${
+                  className={`text-11 rounded-full px-2 py-0.5 border ${
                     isAvailable
                       ? 'bg-status-success-bg/30 text-status-success-text border-status-success-border/60'
                       : 'bg-status-danger-bg/30 text-status-danger-text border-status-danger-border/60'
@@ -197,13 +197,13 @@ function SlotRenderer({
 
       {assignment ? (
         <div className="space-y-1">
-          <div className="text-[11px] text-text-subtle">Commanded intensity</div>
+          <div className="text-11 text-text-subtle">Commanded intensity</div>
           <div className="flex items-center gap-2">
             <div className="text-sm font-mono text-text-input">
               {commandedIntensity !== null ? `${commandedIntensity.toFixed(1)}%` : '—'}
             </div>
             <div
-              className={`text-[10px] rounded-full px-1.5 py-0.5 border ${
+              className={`text-10 rounded-full px-1.5 py-0.5 border ${
                 commandAcknowledged
                   ? 'bg-status-success-bg/30 text-status-success-text border-status-success-border/60'
                   : 'bg-status-warning-bg/30 text-status-warning-text border-status-warning-border/60'
@@ -213,7 +213,7 @@ function SlotRenderer({
             </div>
           </div>
 
-          <div className="text-[11px] text-text-subtle">Display name</div>
+          <div className="text-11 text-text-subtle">Display name</div>
           <div className="flex items-center gap-2">
             <input
               value={renameValue}
@@ -221,7 +221,7 @@ function SlotRenderer({
                 setRenameDraftByKey((prev) => ({ ...prev, [key]: e.target.value }))
               }
               disabled={!!workingKey}
-              className="w-full rounded-sm border border-border-emphasis bg-surface-primary px-2 py-1 text-xs text-text-input focus:outline-hidden focus:ring-2 focus:ring-btn-primary-light disabled:opacity-50"
+              className="w-full rounded-sm border border-border-emphasis bg-surface-primary px-2 py-1 text-xs text-text-input focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-btn-primary-light disabled:opacity-50"
               placeholder="Light name"
             />
             <button
@@ -250,13 +250,13 @@ function SlotRenderer({
                 className="flex-1 h-1 rounded-full bg-border-emphasis overflow-hidden"
               >
                 <div
-                  className="h-full bg-btn-primary-light transition-all"
+                  className="h-full bg-btn-primary-light transition-[width]"
                   style={{ width: '100%', animation: 'dfr-test-progress 5s linear' }}
                 />
               </div>
             )}
           </div>
-          <div className="text-[11px] text-text-subtle">
+          <div className="text-11 text-text-subtle">
             Device key: <span className="font-mono">{assignment.device_name}</span>
           </div>
         </div>

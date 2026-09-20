@@ -102,8 +102,8 @@ const TopRibbon: React.FC<TopRibbonProps> = ({
                 to={tab.path}
                 onClick={() => onTabChange(tab.id)}
                 className={`
-                  px-1.5 py-1 text-sm font-medium whitespace-nowrap max-sm:px-0.5 max-sm:text-[10px]
-                  transition-all duration-200 rounded-lg
+                  px-1.5 py-1 text-sm font-medium whitespace-nowrap max-sm:px-0.5 max-sm:text-10
+                  transition-colors duration-200 rounded-lg
                   ${
                     isActive
                       ? 'bg-accent-vivid text-surface-base'
@@ -127,7 +127,7 @@ const TopRibbon: React.FC<TopRibbonProps> = ({
                   <button
                     key={mode}
                     onClick={() => onModeChange(mode)}
-                    className={`px-2 py-0.5 text-sm font-bold rounded border transition-all ${
+                    className={`px-2 py-0.5 text-sm font-bold rounded border transition-colors ${
                       currentMode.mode_name === mode
                         ? 'bg-accent-vivid text-white border-accent-vivid'
                         : 'bg-transparent text-text-default border-border-default hover:bg-surface-tertiary hover:border-border-emphasis'
@@ -143,7 +143,7 @@ const TopRibbon: React.FC<TopRibbonProps> = ({
                     <button
                       key={sub}
                       onClick={() => onModeChange('flower', sub)}
-                      className={`px-2 py-0.5 text-sm font-bold rounded border transition-all ${
+                      className={`px-2 py-0.5 text-sm font-bold rounded border transition-colors ${
                         currentMode.submode_name === sub
                           ? 'bg-accent-vivid text-white border-accent-vivid'
                           : 'bg-transparent text-text-default border-border-default hover:bg-surface-tertiary hover:border-border-emphasis'

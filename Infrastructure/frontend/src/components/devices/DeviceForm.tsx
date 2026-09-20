@@ -36,7 +36,7 @@ interface DeviceFormProps {
 }
 
 const inputClass =
-  'w-full rounded-sm border border-border-emphasis bg-surface-primary px-2 py-1 text-xs text-text-input focus:outline-hidden focus:ring-2 focus:ring-btn-primary-light disabled:opacity-50';
+  'w-full rounded-sm border border-border-emphasis bg-surface-primary px-2 py-1 text-xs text-text-input focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-btn-primary-light disabled:opacity-50';
 
 const readOnlyClass = 'text-sm text-text-secondary';
 
@@ -96,7 +96,7 @@ export default function DeviceForm({
             autoFocus
           />
           {mode === 'edit' && canonicalName ? (
-            <span className="text-[10px] uppercase tracking-wider text-text-muted">
+            <span className="text-10 uppercase tracking-wider text-text-muted">
               {canonicalName}
             </span>
           ) : null}
@@ -168,7 +168,7 @@ export default function DeviceForm({
           ))}
         </select>
         {mode === 'edit' && currentRelayLabel ? (
-          <span className="block text-[10px] uppercase tracking-wider text-text-muted">
+          <span className="block text-10 uppercase tracking-wider text-text-muted">
             current: {currentRelayLabel}
           </span>
         ) : null}
@@ -238,7 +238,7 @@ export default function DeviceForm({
           {stealPrompt ? (
             <>
               <span
-                className="text-[11px] text-status-danger-text"
+                className="text-11 text-status-danger-text"
                 data-testid="steal-prompt"
               >
                 Steal relay from {stealPrompt.ownerLabel}?
@@ -288,7 +288,7 @@ export default function DeviceForm({
               </div>
               {error ? (
                 <span
-                  className="text-[11px] text-status-danger-text"
+                  className="text-11 text-status-danger-text"
                   data-testid="form-error"
                 >
                   {error}

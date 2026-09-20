@@ -48,7 +48,7 @@ export function EventRow({ entry, now, formatAbsolute = formatLocalTime }: Event
     <li role="listitem" className={`border-l-2 ${SEVERITY_VISUAL[severity]}`}>
       <div className="flex items-start gap-2 px-3 py-2">
         <span
-          className={`shrink-0 inline-flex items-center px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider border ${SEVERITY_BADGE[severity]}`}
+          className={`shrink-0 inline-flex items-center px-1.5 py-0.5 text-10 font-bold uppercase tracking-wider border ${SEVERITY_BADGE[severity]}`}
           aria-label={`Severity: ${SEVERITY_LABELS[severity]}`}
         >
           {SEVERITY_LABELS[severity]}
@@ -58,10 +58,10 @@ export function EventRow({ entry, now, formatAbsolute = formatLocalTime }: Event
             <span className="text-sm text-text-default font-semibold truncate">{display.label}</span>
             <EventTimestamps occurredAt={entry.occurredAt} now={now} formatAbsolute={formatAbsolute} />
           </div>
-          <div className="text-[11px] text-text-default font-mono truncate">{entry.type}</div>
+          <div className="text-11 text-text-default font-mono truncate">{entry.type}</div>
           {sourceParts.length > 0 && <EventSourceLine parts={sourceParts} />}
           {entry.reasonText !== null && (
-            <div className="text-[11px] text-text-default italic truncate" title={entry.reasonText}>
+            <div className="text-11 text-text-default italic truncate" title={entry.reasonText}>
               {entry.reasonText}
             </div>
           )}
@@ -72,7 +72,7 @@ export function EventRow({ entry, now, formatAbsolute = formatLocalTime }: Event
           onKeyDown={handleKeyDown}
           aria-expanded={expanded}
           aria-label="Toggle details"
-          className="shrink-0 w-6 h-6 flex items-center justify-center text-text-default hover:text-text-default border border-border-subtle hover:border-border-default bg-surface-secondary transition-colors"
+          className="shrink-0 size-6 flex items-center justify-center text-text-default hover:text-text-default border border-border-subtle hover:border-border-default bg-surface-secondary transition-colors"
         >
           <span aria-hidden="true" className={`transition-transform ${expanded ? 'rotate-90' : ''}`}>&#9654;</span>
         </button>

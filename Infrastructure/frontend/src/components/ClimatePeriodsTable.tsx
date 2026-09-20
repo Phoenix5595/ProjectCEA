@@ -28,7 +28,7 @@ const ZONE = {
 } as const
 
 const inputBase =
-  'px-1 py-0 text-xs border border-border-default rounded text-text-default focus:border-accent-primary focus:ring-1 focus:ring-accent-primary focus:outline-none placeholder:text-text-subtle'
+  'px-1 py-0 text-xs border border-border-default rounded text-text-default focus-visible:border-accent-primary focus-visible:ring-1 focus-visible:ring-accent-primary focus-visible:outline-none placeholder:text-text-subtle'
 
 function isAllDayPeriod(period: ClimatePeriod): boolean {
   return period.start_time === period.end_time
@@ -76,7 +76,7 @@ export default function ClimatePeriodsTable({
     <div>
       <div className="flex items-center justify-between mb-1">
         <div>
-          <h3 className="text-[14px] text-text-muted uppercase font-bold tracking-wider">Climate Periods</h3>
+          <h3 className="text-14 text-text-muted uppercase font-bold tracking-wider">Climate Periods</h3>
         </div>
         <div className="flex gap-2">
           <button
@@ -173,7 +173,7 @@ export default function ClimatePeriodsTable({
                       className={`w-16 text-xs bg-surface-secondary ${inputBase}`}
                     />
                     {isAllDayPeriod(period) && (
-                      <span className="text-[9px] uppercase tracking-wide text-text-subtle">All day</span>
+                      <span className="text-9 uppercase tracking-wide text-text-subtle">All day</span>
                     )}
                   </div>
                 </td>
@@ -192,7 +192,7 @@ export default function ClimatePeriodsTable({
                       className={`w-16 text-xs bg-surface-secondary ${inputBase}`}
                     />
                     {isAllDayPeriod(period) && (
-                      <span className="text-[9px] uppercase tracking-wide text-text-subtle">24h</span>
+                      <span className="text-9 uppercase tracking-wide text-text-subtle">24h</span>
                     )}
                   </div>
                 </td>

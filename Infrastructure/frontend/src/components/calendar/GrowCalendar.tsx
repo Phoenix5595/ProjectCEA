@@ -76,7 +76,7 @@ export default function GrowCalendar({
   return (
     <div
       className={`grow-calendar flex flex-col gap-0 ${
-        scaled ? 'grow-calendar--fill w-full min-h-0' : compact ? 'max-h-[620px]' : ''
+        scaled ? 'grow-calendar--fill w-full min-h-0' : compact ? 'max-h-155' : ''
       }`}
     >
       <div className="flex items-center justify-between gap-0 px-2 pt-2 pb-1 shrink-0">

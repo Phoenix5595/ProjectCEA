@@ -667,7 +667,7 @@ export default function SystemSettingsPanel() {
                 {(['kp', 'ki', 'kd'] as const).map(param => (
                   <div key={param} className="grid grid-cols-2 gap-2">
                     <div>
-                      <label className="mb-1 block text-[10px] text-text-subtle">{param}_min</label>
+                      <label className="mb-1 block text-10 text-text-subtle">{param}_min</label>
                       <input
                         type="number"
                         step={0.1}
@@ -680,7 +680,7 @@ export default function SystemSettingsPanel() {
                       />
                     </div>
                     <div>
-                      <label className="mb-1 block text-[10px] text-text-subtle">{param}_max</label>
+                      <label className="mb-1 block text-10 text-text-subtle">{param}_max</label>
                       <input
                         type="number"
                         step={0.1}

@@ -31,7 +31,7 @@ const NUMERIC_COLUMNS: { key: SortKey; label: string }[] = [
 ]
 
 const TH =
-  'px-1 py-1 text-left text-xs uppercase tracking-wider text-[color:var(--mon-text-secondary)] font-semibold border-b border-border-default bg-surface-secondary'
+  'px-1 py-1 text-left text-xs uppercase tracking-wider text-mon-text-secondary font-semibold border-b border-border-default bg-surface-secondary'
 const TD = 'px-1 py-1 border-b border-border-subtle'
 
 export function StatisticsTable({ title, rows, statistics }: StatisticsTableProps) {
@@ -83,7 +83,7 @@ export function StatisticsTable({ title, rows, statistics }: StatisticsTableProp
                 <button
                   type="button"
                   onClick={() => toggleSort(col.key)}
-                  className="uppercase tracking-wider text-[color:var(--mon-text-secondary)] font-semibold hover:text-text-default"
+                  className="uppercase tracking-wider text-mon-text-secondary font-semibold hover:text-text-default"
                 >
                   {col.label}
                   {sortKey === col.key ? (sortDir === 'asc' ? ' ↑' : ' ↓') : ''}

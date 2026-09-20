@@ -377,7 +377,7 @@ export default function DeviceTable({
   if (loading && devices.length === 0) {
     return (
       <div className="rounded-lg border border-border-subtle bg-surface-primary p-2">
-        <div className="text-text-muted uppercase font-bold tracking-wider text-[14px] mb-2">
+        <div className="text-text-muted uppercase font-bold tracking-wider text-14 mb-2">
           Device Registry
         </div>
         <div className="text-text-subtle text-sm">Loading…</div>
@@ -388,7 +388,7 @@ export default function DeviceTable({
   return (
     <div className="rounded-lg border border-border-subtle bg-surface-primary p-2 space-y-2">
       <div className="flex items-center justify-between gap-2">
-        <div className="text-text-muted uppercase font-bold tracking-wider text-[14px]">
+        <div className="text-text-muted uppercase font-bold tracking-wider text-14">
           Device Registry
         </div>
         <button
@@ -512,7 +512,7 @@ export default function DeviceTable({
                         {device.display_name ?? device.device_name}
                       </span>
                       {device.display_name ? (
-                        <span className="text-[10px] uppercase tracking-wider text-text-muted">
+                        <span className="text-10 uppercase tracking-wider text-text-muted">
                           {device.device_name}
                         </span>
                       ) : null}
@@ -546,7 +546,7 @@ export default function DeviceTable({
                   )}
                   <td className="whitespace-nowrap px-2 py-1 text-sm text-text-secondary">
                     {mode ? (
-                      <span className="inline-flex items-center rounded-full bg-surface-tertiary px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-text-muted">
+                      <span className="inline-flex items-center rounded-full bg-surface-tertiary px-2 py-0.5 text-10 font-medium uppercase tracking-wider text-text-muted">
                         {mode}
                       </span>
                     ) : (

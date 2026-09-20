@@ -22,14 +22,14 @@ export function EventTimestamps({
       <time
         dateTime={occurredAt.toISOString()}
         title={formatExactTime(occurredAt)}
-        className="shrink-0 text-[11px] text-text-default tabular-nums"
+        className="shrink-0 text-11 text-text-default tabular-nums"
       >
         {formatRelativeTime(occurredAt, now)}
       </time>
       <time
         dateTime={occurredAt.toISOString()}
         aria-label={`Absolute time: ${absolute}`}
-        className="shrink-0 text-[10px] text-text-secondary tabular-nums"
+        className="shrink-0 text-10 text-text-secondary tabular-nums"
       >
         {absolute}
       </time>
@@ -41,7 +41,7 @@ export function EventTimestamps({
 export function EventSourceLine({ parts }: { parts: readonly SourcePart[] }): ReactNode | null {
   if (parts.length === 0) return null
   return (
-    <div className="text-[11px] text-text-default truncate">
+    <div className="text-11 text-text-default truncate">
       {parts.map((part, index) => (
         <span key={`${part.text}-${index}`} className={part.className} title={part.title}>
           {part.text}

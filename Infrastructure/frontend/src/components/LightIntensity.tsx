@@ -146,7 +146,7 @@ const LightIntensity = forwardRef<{ savePendingChanges: () => Promise<void> }, L
   if (loading) {
     return (
       <div className="bg-surface-primary rounded-lg border border-border-subtle p-2 h-full flex flex-col">
-        <div className="text-text-muted uppercase font-bold tracking-wider text-[14px] mb-4">
+        <div className="text-text-muted uppercase font-bold tracking-wider text-14 mb-4">
           Light intensity
         </div>
         <div className="text-text-subtle text-sm flex-1 flex items-center justify-center">Loading...</div>
@@ -157,7 +157,7 @@ const LightIntensity = forwardRef<{ savePendingChanges: () => Promise<void> }, L
   return (
     <div className="bg-surface-primary rounded-lg border border-border-subtle p-2 h-full flex flex-col">
       <div className="flex items-center justify-between mb-2">
-        <div className="text-[14px] text-text-muted uppercase font-bold tracking-wider">Light intensity</div>
+        <div className="text-14 text-text-muted uppercase font-bold tracking-wider">Light intensity</div>
         <div className="flex items-center gap-2">
           {lights.map((light) => {
             const status = statuses[light.device_name!]
@@ -165,7 +165,7 @@ const LightIntensity = forwardRef<{ savePendingChanges: () => Promise<void> }, L
             return (
               <div
                 key={light.device_name}
-                className={`text-[14px] px-1 py-0 rounded cursor-help transition-colors ${
+                className={`text-14 px-1 py-0 rounded cursor-help transition-colors ${
                   isOn
                     ? 'bg-status-success-bg/50 text-status-success border border-status-success-border/50'
                     : 'bg-surface-secondary text-text-subtle border border-border-default'
@@ -205,7 +205,7 @@ const LightIntensity = forwardRef<{ savePendingChanges: () => Promise<void> }, L
                 className={`${!isOn ? 'opacity-50' : ''} flex items-center gap-3 flex-1 min-h-0 bg-surface-secondary/30 rounded px-2`}
               >
                 <div
-                  className={`${compact ? 'text-[14px] w-[80px]' : 'text-[16px] w-[100px]'} text-text-secondary font-bold whitespace-normal leading-tight tracking-wider shrink-0`}
+                  className={`${compact ? 'text-14 w-[80px]' : 'text-[16px] w-[100px]'} text-text-secondary font-bold whitespace-normal leading-tight tracking-wider shrink-0`}
                   title={light.display_name || light.device_name}
                 >
                   {light.display_name || light.device_name}
@@ -213,16 +213,16 @@ const LightIntensity = forwardRef<{ savePendingChanges: () => Promise<void> }, L
 
                 <div className="flex flex-col justify-center gap-1 shrink-0 w-16">
                   <div className="flex items-center justify-between bg-surface-secondary px-1 py-0.5 rounded-sm">
-                    <span className="text-accent-setpoint font-mono tabular-nums text-[12px] leading-none">
+                    <span className="text-accent-setpoint font-mono tabular-nums text-12 leading-none">
                       {dayTarget}%
                     </span>
-                    <span className="text-text-subtle text-[9px] leading-none">TGT</span>
+                    <span className="text-text-subtle text-9 leading-none">TGT</span>
                   </div>
                   <div className="flex items-center justify-between bg-surface-secondary px-1 py-0.5 rounded-sm">
-                    <span className="text-accent-data font-mono tabular-nums text-[12px] leading-none">
+                    <span className="text-accent-data font-mono tabular-nums text-12 leading-none">
                       {currentIntensity}%
                     </span>
-                    <span className="text-text-subtle text-[9px] leading-none">CUR</span>
+                    <span className="text-text-subtle text-9 leading-none">CUR</span>
                   </div>
                 </div>
 
@@ -230,7 +230,7 @@ const LightIntensity = forwardRef<{ savePendingChanges: () => Promise<void> }, L
                   <div className="relative w-full h-full min-h-[40px]">
                     <div className="absolute inset-0 bg-surface-secondary rounded overflow-hidden shadow-inner">
                       <div
-                        className="absolute top-0 bottom-0 right-0 bg-linear-to-l from-btn-primary-hover to-btn-primary-data transition-all"
+                        className="absolute top-0 bottom-0 right-0 bg-linear-to-l from-btn-primary-hover to-btn-primary-data transition-[width]"
                         style={{ width: `${sliderPosition}%` }}
                       />
                     </div>
@@ -279,19 +279,19 @@ const LightIntensity = forwardRef<{ savePendingChanges: () => Promise<void> }, L
                         handleTargetChange(light.device_name!, value)
                       }
                     }}
-                    className={`w-14 h-6 px-1 text-center bg-surface-secondary border rounded-sm text-[14px] text-text-input font-mono ${
+                    className={`w-14 h-6 px-1 text-center bg-surface-secondary border rounded-sm text-14 text-text-input font-mono ${
                       validationErrors[light.device_name!]
                         ? 'border-status-danger'
                         : 'border-border-default'
                     }`}
                   />
                   {validationErrors[light.device_name!] && (
-                    <div className="text-[10px] text-status-danger font-bold">
+                    <div className="text-10 text-status-danger font-bold">
                       {validationErrors[light.device_name!]}
                     </div>
                   )}
                   {!validationErrors[light.device_name!] && (
-                    <span className="text-[10px] text-text-subtle font-bold tracking-wide">% SET</span>
+                    <span className="text-10 text-text-subtle font-bold tracking-wide">% SET</span>
                   )}
                 </div>
               </div>
