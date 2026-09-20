@@ -17,6 +17,7 @@ const RANGE_BOUNDS: Partial<
 > = {
   temperature: {},
   rh: { max: 100 },
+  vpd: { min: 0 },
   device: { min: 0, max: 100 },
   light: { min: 0, max: 100 },
   pressure: { min: 1012, max: 1014 },
@@ -144,7 +145,7 @@ export function buildScales(data: AlignedData): ChartScales {
   const seriesBounds = familySoftBounds(data)
   const defaultFamilyForUnit = defaultFamily(data)
 
-  const AXIS_SIZES: Partial<Record<ChartFamily, number>> = { temperature: 30, vpd: 40 }
+  const AXIS_SIZES: Partial<Record<ChartFamily, number>> = { temperature: 40, vpd: 40 }
 
   for (const family of families) {
     // auto:true is required for uPlot to rescale user-defined value scales;
@@ -162,6 +163,16 @@ export function buildScales(data: AlignedData): ChartScales {
     if (scale.range === undefined) {
       const bounds = RANGE_BOUNDS[family]
       scale.range = boundedRange(bounds?.min, bounds?.max)
+    }
+    if (family === 'vpd') {
+      scale.range = (self, dataMin, dataMax, scaleKey) => {
+        const inner = scale.range as NonNullable<uPlot.Scale['range']>
+        const innerFn = typeof inner === 'function'
+          ? inner
+          : (_s: uPlot, a: number, b: number) => [a, b] as uPlot.Range.MinMax
+        const [lo, hi] = innerFn(self, dataMin, dataMax, scaleKey)
+        return [lo === null ? null : Math.max(0, lo), hi === null ? null : Math.max(0, hi)]
+      }
     }
     scales[family] = scale
 
