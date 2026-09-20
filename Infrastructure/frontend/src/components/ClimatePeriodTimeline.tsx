@@ -276,7 +276,7 @@ export default function ClimatePeriodTimeline({
           {tempScalePositions.map(({ value, top }) => (
             <div
               key={`temp-${value}-${top}`}
-              className="absolute text-[9px] text-text-muted font-medium text-right pr-0.5 bg-surface-base/80 px-0.5 rounded-r font-mono tabular-nums"
+              className="absolute text-9 text-text-muted font-medium text-right pr-0.5 bg-surface-base/80 px-0.5 rounded-r font-mono tabular-nums"
               style={{ top: `${top}%`, transform: 'translateY(-50%)', left: 0 }}
             >
               {value}&deg;
@@ -288,7 +288,7 @@ export default function ClimatePeriodTimeline({
           {vpdScalePositions.map(({ value, top }) => (
             <div
               key={`vpd-${value}-${top}`}
-              className="absolute text-[9px] text-accent-data font-medium text-left pl-0.5 bg-surface-base/80 px-0.5 rounded-l font-mono tabular-nums"
+              className="absolute text-9 text-accent-data font-medium text-left pl-0.5 bg-surface-base/80 px-0.5 rounded-l font-mono tabular-nums"
               style={{ top: `${top}%`, transform: 'translateY(-50%)', right: 0 }}
             >
               {value}
@@ -434,11 +434,11 @@ export default function ClimatePeriodTimeline({
             <div className="absolute top-0 bottom-4 left-0 right-0 z-[7] flex items-start justify-end gap-2 pointer-events-none pr-1 pt-0.5">
               {hasPeriods && (
                 <>
-                  <span className="text-[8px] font-mono text-orange-600 dark:text-orange-400">
+                  <span className="text-8 font-mono text-orange-600 dark:text-orange-400">
                     heat
                   </span>
-                  <span className="text-[8px] font-mono text-blue-500">cool</span>
-                  <span className="text-[8px] font-mono text-green-500">VPD</span>
+                  <span className="text-8 font-mono text-blue-500">cool</span>
+                  <span className="text-8 font-mono text-green-500">VPD</span>
                 </>
               )}
             </div>
@@ -455,7 +455,7 @@ export default function ClimatePeriodTimeline({
               return (
                 <div
                   key={`label-${i}`}
-                  className="absolute bottom-0 text-[10px] text-text-subtle font-medium font-mono tabular-nums"
+                  className="absolute bottom-0 text-10 text-text-subtle font-medium font-mono tabular-nums"
                   style={{
                     left: `${(hour / 24) * 100}%`,
                     transform: 'translateX(-50%)',
@@ -471,7 +471,7 @@ export default function ClimatePeriodTimeline({
       {showContextMenu && (
         <div
           data-testid="timeline-context-menu"
-          className="fixed z-50 bg-surface-primary border border-border-default rounded-lg shadow-lg py-1 min-w-[180px]"
+          className="fixed z-50 bg-surface-primary border border-border-default rounded-lg shadow-lg py-1 min-w-45"
           style={{ left: contextMenuPosition.x, top: contextMenuPosition.y }}
         >
           <button
@@ -514,13 +514,13 @@ export default function ClimatePeriodTimeline({
       {showRampPopover && (
         <div
           data-testid="timeline-ramp-popover"
-          className="fixed z-50 bg-surface-primary border border-border-default rounded-lg shadow-lg p-3 flex flex-col gap-2 min-w-[180px]"
+          className="fixed z-50 bg-surface-primary border border-border-default rounded-lg shadow-lg p-3 flex flex-col gap-2 min-w-45"
           style={{ left: popoverPosition.x, top: popoverPosition.y }}
         >
           {popoverMode === 'ramp' && (
             <>
               <div className="flex flex-col gap-1">
-                <label className="text-[12px] text-text-muted">Ramp up (min)</label>
+                <label className="text-12 text-text-muted">Ramp up (min)</label>
                 <input
                   aria-label="Ramp up (min)"
                   type="number"
@@ -528,11 +528,11 @@ export default function ClimatePeriodTimeline({
                   max={180}
                   value={rampUpInput}
                   onChange={(e) => setRampUpInput(parseInt(e.target.value) || 0)}
-                  className="w-full h-6 px-1 text-center bg-surface-secondary border border-border-default rounded text-[14px] text-text-input [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                  className="w-full h-6 px-1 text-center bg-surface-secondary border border-border-default rounded text-14 text-text-input no-spinner"
                 />
               </div>
               <div className="flex flex-col gap-1">
-                <label className="text-[12px] text-text-muted">Ramp down (min)</label>
+                <label className="text-12 text-text-muted">Ramp down (min)</label>
                 <input
                   aria-label="Ramp down (min)"
                   type="number"
@@ -540,7 +540,7 @@ export default function ClimatePeriodTimeline({
                   max={180}
                   value={rampDownInput}
                   onChange={(e) => setRampDownInput(parseInt(e.target.value) || 0)}
-                  className="w-full h-6 px-1 text-center bg-surface-secondary border border-border-default rounded text-[14px] text-text-input [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                  className="w-full h-6 px-1 text-center bg-surface-secondary border border-border-default rounded text-14 text-text-input no-spinner"
                 />
               </div>
               <button
@@ -558,14 +558,14 @@ export default function ClimatePeriodTimeline({
           {popoverMode === 'night-start' && (
             <>
               <div className="flex flex-col gap-1">
-                <label className="text-[12px] text-text-muted">Night start time (HH:MM)</label>
+                <label className="text-12 text-text-muted">Night start time (HH:MM)</label>
                 <input
                   aria-label="Night start time"
                   type="text"
                   value={nightStartInput}
                   onChange={(e) => setNightStartInput(e.target.value)}
                   placeholder="HH:MM"
-                  className="w-full h-6 px-1 text-center bg-surface-secondary border border-border-default rounded text-[14px] text-text-input"
+                  className="w-full h-6 px-1 text-center bg-surface-secondary border border-border-default rounded text-14 text-text-input"
                 />
               </div>
               <button
@@ -591,14 +591,14 @@ export default function ClimatePeriodTimeline({
           {popoverMode === 'night-end' && (
             <>
               <div className="flex flex-col gap-1">
-                <label className="text-[12px] text-text-muted">Night end time (HH:MM)</label>
+                <label className="text-12 text-text-muted">Night end time (HH:MM)</label>
                 <input
                   aria-label="Night end time"
                   type="text"
                   value={nightEndInput}
                   onChange={(e) => setNightEndInput(e.target.value)}
                   placeholder="HH:MM"
-                  className="w-full h-6 px-1 text-center bg-surface-secondary border border-border-default rounded text-[14px] text-text-input"
+                  className="w-full h-6 px-1 text-center bg-surface-secondary border border-border-default rounded text-14 text-text-input"
                 />
               </div>
               <button

@@ -45,7 +45,7 @@ function ClimateMini({
       className="bg-surface-secondary rounded-sm p-1.5 min-w-[9.5rem]"
       title={unplugged ? 'No live sensor data for this cluster' : undefined}
     >
-      <div className="text-[10px] text-text-muted mb-0.5 flex items-center gap-1">
+      <div className="text-10 text-text-muted mb-0.5 flex items-center gap-1">
         <span>{label}</span>
         {unplugged && (
           <span className="text-status-danger" title="Sensor offline or missing">
@@ -53,7 +53,7 @@ function ClimateMini({
           </span>
         )}
       </div>
-      <div className="grid grid-cols-2 gap-x-2 gap-y-0.5 text-[10px]">
+      <div className="grid grid-cols-2 gap-x-2 gap-y-0.5 text-10">
         <div>
           <span className="text-text-subtle">T </span>
           <span className="text-text-default font-mono tabular-nums">{renderTemperature(location, cluster, sensorData)}</span>
@@ -110,7 +110,7 @@ export const DashboardZoneRow = memo(function DashboardZoneRow({
             <span className="truncate">{displayName}</span>
           </div>
           <span
-            className="mt-1 text-[10px] px-1 py-0.5 rounded-sm bg-status-success-bg/50 text-status-success border border-status-success-border/50 w-fit"
+            className="mt-1 text-10 px-1 py-0.5 rounded-sm bg-status-success-bg/50 text-status-success border border-status-success-border/50 w-fit"
             title={lightState === '☀️' ? 'Day' : 'Night'}
           >
             {lightState}
@@ -138,8 +138,8 @@ export const DashboardZoneRow = memo(function DashboardZoneRow({
         </div>
 
         <div className="shrink-0 bg-surface-secondary rounded-sm p-1.5 min-w-[10rem]">
-          <div className="text-[10px] text-text-muted mb-0.5">Setpoints</div>
-          <div className="flex flex-wrap gap-x-2 gap-y-0.5 text-[10px] font-mono tabular-nums">
+          <div className="text-10 text-text-muted mb-0.5">Setpoints</div>
+          <div className="flex flex-wrap gap-x-2 gap-y-0.5 text-10 font-mono tabular-nums">
             <span className={getSetpointColor()}>
               H {getSensorDisplay(sensorData, `${setpointPrefix}heating_setpoint`, '°')}
             </span>
@@ -157,7 +157,7 @@ export const DashboardZoneRow = memo(function DashboardZoneRow({
 
         {lightDevices.length > 0 && (
           <div className="shrink-0 bg-surface-secondary rounded-sm p-1.5 min-w-[8rem] max-w-[14rem]">
-            <div className="text-[10px] text-text-muted mb-0.5">Lights</div>
+            <div className="text-10 text-text-muted mb-0.5">Lights</div>
             <div className="flex flex-col gap-0.5">
               {lightDevices.map((device) => {
                 const deviceName = device.device_name || '';
@@ -169,8 +169,8 @@ export const DashboardZoneRow = memo(function DashboardZoneRow({
                     location
                   ]?.[cluster]?.[deviceName]?.intensity;
                 return (
-                  <div key={deviceName} className="flex items-center justify-between gap-1 text-[10px]">
-                    <span className="text-text-secondary truncate max-w-[5rem]" title={name}>
+                  <div key={deviceName} className="flex items-center justify-between gap-1 text-10">
+                    <span className="text-text-secondary truncate max-w-20" title={name}>
                       {name.split(' ')[0]}
                     </span>
                     <span className="text-accent-data font-mono tabular-nums shrink-0">
@@ -186,17 +186,17 @@ export const DashboardZoneRow = memo(function DashboardZoneRow({
 
         {nonLightDevices.length > 0 && (
           <div className="shrink-0 bg-surface-secondary rounded-sm p-1.5 min-w-[7rem] max-w-[10rem]">
-            <div className="text-[10px] text-text-muted mb-0.5">Devices</div>
+            <div className="text-10 text-text-muted mb-0.5">Devices</div>
             <div className="flex flex-col gap-0.5">
               {nonLightDevices.slice(0, 4).map((device) => {
                 const loadPct = (statusDevices as Record<string, Record<string, Record<string, { load_percent?: number }>>>)?.[
                   location
                 ]?.[cluster]?.[device.device_name ?? '']?.load_percent;
                 return (
-                  <div key={device.device_name} className="flex justify-between gap-1 text-[10px]">
+                  <div key={device.device_name} className="flex justify-between gap-1 text-10">
                     <span className="text-text-secondary truncate">{device.device_name}</span>
                     <span
-                      className={`shrink-0 px-1 rounded text-[8px] ${
+                      className={`shrink-0 px-1 rounded text-8 ${
                         device.state === 1
                           ? 'bg-status-success-bg text-status-success-text'
                           : 'bg-surface-tertiary text-text-muted'

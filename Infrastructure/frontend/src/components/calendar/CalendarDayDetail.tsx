@@ -38,7 +38,7 @@ export default function CalendarDayDetail({ date, events, onClose }: CalendarDay
                 key={ev.id}
                 className="flex items-start gap-0 text-sm bg-surface-base border border-border-default rounded-sm px-2 py-1.5"
               >
-                <span className={`grow-cal-bar ${roomClass} shrink-0 mt-0.5 max-w-[5rem]`}>
+                <span className={`grow-cal-bar ${roomClass} shrink-0 mt-0.5 max-w-20`}>
                   <span className="grow-cal-bar-text">{truncateMarkerLabel(ev.title, 12)}</span>
                 </span>
                 <span className="min-w-0">

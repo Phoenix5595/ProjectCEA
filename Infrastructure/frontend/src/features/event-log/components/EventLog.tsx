@@ -84,7 +84,7 @@ export function EventLog({ entries, now }: EventLogProps) {
         <h2 id="event-log-heading" className="text-sm font-bold uppercase tracking-wider text-text-default">
           Event Log
         </h2>
-        <span className="text-[11px] text-text-default tabular-nums">
+        <span className="text-11 text-text-default tabular-nums">
           {filtered.length} event{filtered.length === 1 ? '' : 's'}
         </span>
       </div>
@@ -122,7 +122,7 @@ export function EventLog({ entries, now }: EventLogProps) {
               {'\u2190'} {categoryTheme(expandedCategory).label} / All categories
             </button>
           )}
-          <ul role="list" aria-label="Event list" className="flex flex-col gap-px bg-border-subtle border border-border-subtle overflow-auto max-h-[600px]">
+          <ul role="list" aria-label="Event list" className="flex flex-col gap-px bg-border-subtle border border-border-subtle overflow-auto max-h-150">
             {(expandedCategory !== null ? expandedListView : ordered).map((entry) => (
               <EventRow key={entry.eventId} entry={entry} now={now} />
             ))}

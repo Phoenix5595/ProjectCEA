@@ -61,7 +61,7 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onToggle }) => {
               to={item.path}
               className={`
                 flex items-center gap-0.5 py-1 my-0 rounded-lg
-                transition-all duration-200
+                transition-colors duration-200
                 ${collapsed ? 'justify-center px-0 mx-0' : 'px-1.5 mx-1'}
                 ${
                   isActive
@@ -102,7 +102,7 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onToggle }) => {
           aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
         >
           <svg
-            className={`w-5 h-5 transition-transform duration-300 ${collapsed ? 'rotate-180' : ''}`}
+            className={`size-5 transition-transform duration-300 ${collapsed ? 'rotate-180' : ''}`}
             fill="none"
             stroke="currentColor"
             viewBox="0 0 24 24"

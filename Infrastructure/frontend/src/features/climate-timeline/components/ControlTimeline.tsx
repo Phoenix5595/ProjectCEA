@@ -294,7 +294,7 @@ export function ControlTimeline({ mode, controller, onExpand, onCollapse, locked
       type="button"
       data-testid={`control-timeline-handle-${index}-${edge}`}
       aria-label={`Adjust ${state.draft.periods[index]?.period_name ?? `period ${index + 1}`} ${edge}`}
-      className="border border-border-default bg-surface-secondary px-1 py-0.5 text-[10px] font-mono text-text-muted focus:outline-hidden focus:ring-2 focus:ring-accent-data"
+      className="border border-border-default bg-surface-secondary px-1 py-0.5 text-10 font-mono text-text-muted focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent-data"
       onKeyDown={(event) => {
         if (event.key === 'ArrowLeft') adjustBoundary(index, edge, -5)
         if (event.key === 'ArrowRight') adjustBoundary(index, edge, 5)
@@ -311,21 +311,21 @@ export function ControlTimeline({ mode, controller, onExpand, onCollapse, locked
           <fieldset className="flex items-center gap-1">
             <legend className="sr-only">Timeline window</legend>
             {(['rolling', 'daily'] as const).map((value) => (
-              <button key={value} type="button" onClick={() => setWindowMode(value)} className={`border px-1.5 py-0.5 text-[10px] uppercase ${windowMode === value ? 'border-accent-data text-accent-data' : 'border-border-default text-text-subtle'}`}>
+              <button key={value} type="button" onClick={() => setWindowMode(value)} className={`border px-1.5 py-0.5 text-10 uppercase ${windowMode === value ? 'border-accent-data text-accent-data' : 'border-border-default text-text-subtle'}`}>
                 {value}
               </button>
             ))}
           </fieldset>
-          <span className="border border-border-default px-1 text-[10px] text-accent-data">{isExpanded ? 'EDITABLE' : 'READ ONLY'}</span>
+          <span className="border border-border-default px-1 text-10 text-accent-data">{isExpanded ? 'EDITABLE' : 'READ ONLY'}</span>
         </div>
         <div className="flex items-center gap-1">
           {isExpanded && onCollapse && (
-            <button type="button" onClick={onCollapse} data-testid="control-timeline-collapse" className="border border-border-default px-2 py-1 text-[10px] font-bold uppercase text-text-muted hover:bg-surface-secondary">
+            <button type="button" onClick={onCollapse} data-testid="control-timeline-collapse" className="border border-border-default px-2 py-1 text-10 font-bold uppercase text-text-muted hover:bg-surface-secondary">
               Collapse editor
             </button>
           )}
           {!isExpanded && onExpand && (
-            <button type="button" onClick={onExpand} className="border border-accent-data px-2 py-1 text-[10px] font-bold uppercase text-accent-data hover:bg-accent-data/10">
+            <button type="button" onClick={onExpand} className="border border-accent-data px-2 py-1 text-10 font-bold uppercase text-accent-data hover:bg-accent-data/10">
               Expand editor
             </button>
           )}
@@ -349,7 +349,7 @@ export function ControlTimeline({ mode, controller, onExpand, onCollapse, locked
               ariaLabel={`Climate control timeline plot, ${chart.meta.map((entry) => entry.label).join(', ')}`}
             />
           ) : (
-            <div className="flex h-full items-center justify-center text-[10px] text-text-subtle uppercase">No trajectory envelope available</div>
+            <div className="flex h-full items-center justify-center text-10 text-text-subtle uppercase">No trajectory envelope available</div>
           )}
           <div className="pointer-events-none absolute inset-0 z-10">
             {skippedWarning !== undefined && envelope !== undefined && <TimelineWarningOverlay warning={skippedWarning} window={envelope.window} />}
@@ -363,12 +363,12 @@ export function ControlTimeline({ mode, controller, onExpand, onCollapse, locked
             ))}
           </span>
           {dragActive && (
-            <span data-testid="control-timeline-local-estimate" className="pointer-events-none absolute left-1 top-1 z-20 border border-accent-data bg-surface-primary/80 px-1 text-[9px] font-bold uppercase text-accent-data">
+            <span data-testid="control-timeline-local-estimate" className="pointer-events-none absolute left-1 top-1 z-20 border border-accent-data bg-surface-primary/80 px-1 text-9 font-bold uppercase text-accent-data">
               Local draft estimate
             </span>
           )}
           {localMode && !dragActive && (
-            <span data-testid="control-timeline-effective-stale" className="pointer-events-none absolute right-1 top-1 z-20 border border-status-warning-border bg-surface-primary/80 px-1 text-[9px] font-bold uppercase text-status-warning-text">
+            <span data-testid="control-timeline-effective-stale" className="pointer-events-none absolute right-1 top-1 z-20 border border-status-warning-border bg-surface-primary/80 px-1 text-9 font-bold uppercase text-status-warning-text">
               Effective stale — preview pending
             </span>
           )}
@@ -386,17 +386,17 @@ export function ControlTimeline({ mode, controller, onExpand, onCollapse, locked
         )}
 
         {genericWarnings.map((warning, index) => (
-          <p key={`timeline-generic-warning-${index}`} className="text-[10px] text-status-warning-text">
+          <p key={`timeline-generic-warning-${index}`} className="text-10 text-status-warning-text">
             {timelineWarningLabel(warning)}
           </p>
         ))}
         {genericWarnings.length === 0 && !skippedWarning && (
-          <p className="text-[10px] text-text-subtle">Saved schedule authority; no runtime assumptions reported.</p>
+          <p className="text-10 text-text-subtle">Saved schedule authority; no runtime assumptions reported.</p>
         )}
-        {editError && <p role="alert" className="text-[10px] text-status-danger-text">{editError}</p>}
+        {editError && <p role="alert" className="text-10 text-status-danger-text">{editError}</p>}
 
         {isExpanded && (
-          <div className="grid grid-cols-2 gap-1 border border-border-subtle p-1 text-[10px] sm:grid-cols-4">
+          <div className="grid grid-cols-2 gap-1 border border-border-subtle p-1 text-10 sm:grid-cols-4">
             {([
               ['Day start', 'dayStartTime'],
               ['Night start', 'nightStartTime'],
@@ -418,13 +418,13 @@ export function ControlTimeline({ mode, controller, onExpand, onCollapse, locked
 
         {isExpanded && (
           <div className="flex flex-wrap items-center gap-1 border-t border-border-subtle pt-1">
-            <span className={`text-[10px] ${state.status.kind === 'conflict' ? 'text-status-warning-text' : 'text-text-subtle'}`}>{state.status.kind === 'conflict' ? 'Conflict: saved revision changed. Draft preserved.' : previewMessage(preview)}</span>
-            <button type="button" onClick={() => void controller.review()} disabled={!changes.length || preview.kind === 'loading'} className="ml-auto border border-accent-data px-2 py-1 text-[10px] font-bold uppercase text-accent-data disabled:cursor-not-allowed disabled:opacity-40">Review</button>
-            <button type="button" onClick={() => void controller.apply()} disabled={state.status.kind !== 'reviewed' || preview.kind !== 'ready'} className="border border-status-success px-2 py-1 text-[10px] font-bold uppercase text-status-success disabled:cursor-not-allowed disabled:opacity-40">Apply</button>
-            <button type="button" onClick={controller.discard} disabled={!changes.length} className="border border-border-default px-2 py-1 text-[10px] font-bold uppercase text-text-muted disabled:cursor-not-allowed disabled:opacity-40">Discard</button>
+            <span className={`text-10 ${state.status.kind === 'conflict' ? 'text-status-warning-text' : 'text-text-subtle'}`}>{state.status.kind === 'conflict' ? 'Conflict: saved revision changed. Draft preserved.' : previewMessage(preview)}</span>
+            <button type="button" onClick={() => void controller.review()} disabled={!changes.length || preview.kind === 'loading'} className="ml-auto border border-accent-data px-2 py-1 text-10 font-bold uppercase text-accent-data disabled:cursor-not-allowed disabled:opacity-40">Review</button>
+            <button type="button" onClick={() => void controller.apply()} disabled={state.status.kind !== 'reviewed' || preview.kind !== 'ready'} className="border border-status-success px-2 py-1 text-10 font-bold uppercase text-status-success disabled:cursor-not-allowed disabled:opacity-40">Apply</button>
+            <button type="button" onClick={controller.discard} disabled={!changes.length} className="border border-border-default px-2 py-1 text-10 font-bold uppercase text-text-muted disabled:cursor-not-allowed disabled:opacity-40">Discard</button>
           </div>
         )}
-        {isExpanded && changes.length > 0 && <div className="border border-accent-data/50 bg-accent-data/5 p-1 text-[10px] text-text-secondary"><strong>Draft changes:</strong> {changes.join(' · ')}</div>}
+        {isExpanded && changes.length > 0 && <div className="border border-accent-data/50 bg-accent-data/5 p-1 text-10 text-text-secondary"><strong>Draft changes:</strong> {changes.join(' · ')}</div>}
       </div>
     </section>
   )

@@ -84,7 +84,7 @@ function EventCategoryChip({ category }: { category: string }) {
   const visual = categoryTheme(category)
   return (
     <span
-      className={`shrink-0 inline-flex items-center px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider border ${visual.chip}`}
+      className={`shrink-0 inline-flex items-center px-2 py-0.5 text-10 font-bold uppercase tracking-wider border ${visual.chip}`}
     >
       {visual.label}
     </span>
@@ -95,7 +95,7 @@ function EventCountBadge({ label, count }: { label: string; count: number }) {
   return (
     <span
       aria-label={`${label} event count`}
-      className="shrink-0 text-[11px] font-bold text-text-default tabular-nums border border-border-subtle px-1.5"
+      className="shrink-0 text-11 font-bold text-text-default tabular-nums border border-border-subtle px-1.5"
     >
       {count === 0 ? '0 events' : count > 1 ? `${count} events` : '1 event'}
     </span>
@@ -154,12 +154,12 @@ const EventCategoryRow = memo(function EventCategoryRow({
       </div>
       {sourceParts.length > 0 && <EventSourceLine parts={sourceParts} />}
       {group.latest.reasonText !== null && (
-        <div className="text-[11px] text-text-default italic truncate">
+        <div className="text-11 text-text-default italic truncate">
           {group.latest.reasonText}
         </div>
       )}
       {entityCount > 1 && (
-        <div className="text-[11px] text-text-secondary truncate">
+        <div className="text-11 text-text-secondary truncate">
           {entityCount} devices in the last 10 minutes: {group.entities.join(', ')}
         </div>
       )}
@@ -180,7 +180,7 @@ export function EventGroupedView({
     <div
       role="group"
       aria-label="Grouped alert console"
-      className={`grid gap-px bg-border-subtle border border-border-subtle overflow-auto max-h-[600px] ${groupedGridClass()}`}
+      className={`grid gap-px bg-border-subtle border border-border-subtle overflow-auto max-h-150 ${groupedGridClass()}`}
     >
       {groups.map((group) => (
         <EventCategoryRow key={group.category} group={group} now={now} onExpand={onExpand} />

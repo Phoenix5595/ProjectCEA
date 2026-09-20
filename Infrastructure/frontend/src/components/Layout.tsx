@@ -68,7 +68,7 @@ const Layout: React.FC = () => {
           aria-label={mobileDrawerOpen ? 'Close menu' : 'Open menu'}
         >
           <svg
-            className="w-6 h-6 text-text-default"
+            className="size-6 text-text-default"
             fill="none"
             stroke="currentColor"
             viewBox="0 0 24 24"
@@ -117,7 +117,7 @@ const Layout: React.FC = () => {
       {/* Main Content */}
       <div
         className={`
-          transition-all duration-300 ease-in-out
+          transition-[margin] duration-300 ease-in-out
           ${isMobile ? 'ml-0' : collapsed ? 'ml-7.5' : 'ml-52'}
         `}
       >

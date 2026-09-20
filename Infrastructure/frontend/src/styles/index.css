@@ -75,6 +75,14 @@
   /* App chrome heights (top ribbon + sidebar logo band + collapsed rail) */
   --spacing-ribbon: 1.875rem;
 
+  /* Micro type scale (px-named, font-size only) */
+  --text-8: 0.5rem;
+  --text-9: 0.5625rem;
+  --text-10: 0.625rem;
+  --text-11: 0.6875rem;
+  --text-12: 0.75rem;
+  --text-14: 0.875rem;
+
   /* ===== Semantic Design Tokens (linked to theme variables) ===== */
 
   /* Surfaces */
@@ -158,6 +166,9 @@
   --color-border-subtle: var(--border-subtle);
   --color-border-input: var(--border-input, #9ca3af);
 
+  /* Monitoring feature */
+  --color-mon-text-secondary: var(--mon-text-secondary);
+
   /* Period/Mode colors (SetpointsTable) */
   --color-period-day: var(--period-day, #b45309);
   --color-period-day-bg: var(--period-day-bg, #78350f);
@@ -196,6 +207,14 @@
   --color-event-system: var(--event-system);
   --color-event-system-dim: var(--event-system-dim);
   --color-event-system-border: var(--event-system-border);
+}
+
+@utility no-spinner {
+  appearance: textfield;
+  &::-webkit-outer-spin-button,
+  &::-webkit-inner-spin-button {
+    appearance: none;
+  }
 }
 
 

@@ -36,7 +36,7 @@ export function MothernodeRibbon({ systemStats }: MothernodeRibbonProps) {
           aria-expanded={open}
           aria-label={open ? 'Close mothernode status' : 'Open mothernode status'}
         >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className="size-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
           </svg>
         </RibbonMenuButton>
@@ -95,7 +95,7 @@ export function MothernodeRibbon({ systemStats }: MothernodeRibbonProps) {
                         <div key={index} className="flex items-center justify-between text-xs">
                           <span className="text-text-secondary">{service.name}</span>
                           <span
-                            className={`px-1 py-0.5 rounded text-[8px] font-medium ${
+                            className={`px-1 py-0.5 rounded text-8 font-medium ${
                               service.status === 'running'
                                 ? 'bg-status-success-bg text-status-success-text'
                                 : 'bg-status-danger-bg text-status-danger-text'

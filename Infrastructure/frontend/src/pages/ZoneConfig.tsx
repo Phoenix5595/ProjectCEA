@@ -418,7 +418,7 @@ export default function ZoneConfig({
   if (section === 'automation') {
     return (
       <div className="min-h-screen bg-surface-base p-1">
-        <div className="max-w-[1920px] mx-auto h-[calc(100vh-1rem)] flex flex-col min-h-0">
+        <div className="max-w-480 mx-auto h-[calc(100vh-1rem)] flex flex-col min-h-0">
           <div className="flex-1 min-h-0">
             <VerticalPIDBlock location={location} cluster={cluster} />
           </div>
@@ -442,7 +442,7 @@ export default function ZoneConfig({
 
   return (
     <div className="min-h-screen bg-surface-base p-1">
-      <div className="max-w-[1920px] mx-auto h-[calc(100vh-1rem)] min-w-0 flex flex-col">
+      <div className="max-w-480 mx-auto h-[calc(100vh-1rem)] min-w-0 flex flex-col">
         {params && (
           <div className="flex-1 flex flex-col gap-1 min-h-0">
             {roomMode && (
@@ -483,7 +483,7 @@ export default function ZoneConfig({
               </div>
               <div className="shrink-0 min-w-0">
                 {!mcpConnected && (
-                  <div className="mb-1 rounded-sm border border-status-error-border/80 bg-status-error-bg/30 px-2 py-1 text-[10px] font-semibold text-status-error-text">
+                  <div className="mb-1 rounded-sm border border-status-error-border/80 bg-status-error-bg/30 px-2 py-1 text-10 font-semibold text-status-error-text">
                     MCP23017 disconnected
                   </div>
                 )}
