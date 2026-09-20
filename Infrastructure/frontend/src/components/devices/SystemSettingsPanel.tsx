@@ -11,6 +11,7 @@ import type {
 } from '../../types/systemConfig'
 import { logger } from '../../utils/logger'
 import { Input } from '@/components/ui/input'
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 
 interface DraftHardware {
   i2c_bus: string
@@ -704,13 +705,20 @@ export default function SystemSettingsPanel() {
       </section>
 
       {/* Active Low Confirmation Modal */}
-      {showActiveLowModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" data-testid="active-low-modal">
-          <div className="w-full max-w-md rounded-lg border border-border-emphasis bg-surface-primary p-6 shadow-xl">
-            <h3 className="mb-3 text-lg font-semibold text-status-danger">WARNING</h3>
-            <p className="mb-4 text-sm text-text-secondary">
+      <Dialog
+        open={showActiveLowModal}
+        onOpenChange={(o) => {
+          if (!o) {
+            setShowActiveLowModal(false)
+            setPendingSave(null)
+          }
+        }}
+      >
+        <DialogContent className="w-full max-w-md rounded-lg border-border-emphasis bg-surface-primary p-6 shadow-xl" data-testid="active-low-modal">
+          <DialogTitle className="normal-case tracking-normal mb-3 text-lg font-semibold text-status-danger">WARNING</DialogTitle>
+          <DialogDescription className="mb-4 text-sm text-text-secondary">
               Changing active_low inverts all 16 relays on next restart. The live driver keeps the OLD value until then — relays will NOT flip immediately. Heaters/lights/fans will toggle state only after the service restarts. Type the current value (&apos;true&apos;/&apos;false&apos;) to confirm.
-            </p>
+          </DialogDescription>
             <input
               type="text"
               value={activeLowConfirmText}
@@ -740,9 +748,8 @@ export default function SystemSettingsPanel() {
                 Confirm
               </button>
             </div>
-          </div>
-        </div>
-      )}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
