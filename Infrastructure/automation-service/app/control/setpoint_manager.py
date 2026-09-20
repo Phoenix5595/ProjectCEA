@@ -6,6 +6,7 @@ from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any, cast
 
+from app.control.scheduler import LOCAL_TZ
 from shared.infra_logging import LoggingContext, get_logger
 
 if TYPE_CHECKING:
@@ -371,6 +372,24 @@ class RampManager:
             for ramp_key, ramp in self.active_ramps.items()
         }
 
+    def current_ramp_values(
+        self, location: str, cluster: str, current_time: datetime
+    ) -> dict[str, float]:
+        """Snapshot the live interpolated value of every unfinished room ramp.
+
+        Callers snapshot BEFORE clearing a room's ramps so an interrupted
+        transition can resume from where the schedule actually was instead of
+        re-reading the ended period's table values.
+        """
+        snapshot: dict[str, float] = {}
+        for ramp_key, ramp in self.active_ramps.items():
+            if ramp_key[0] != location or ramp_key[1] != cluster:
+                continue
+            if ramp.is_complete(current_time):
+                continue
+            snapshot[ramp_key[2]] = ramp.get_current_value(current_time)
+        return snapshot
+
     def has_active_ramps(self, location: str | None = None, cluster: str | None = None) -> bool:
         """Check if any ramps are currently active, optionally filtered by room.
 
@@ -538,7 +557,10 @@ class SetpointManager:
             period_changed = self._detect_mode_change(current_period, previous_period)
 
             if period_changed:
-                # CRITICAL: Clear ALL stale ramps when period changes to prevent sawtoothing
+                # CRITICAL: Clear ALL stale ramps when period changes to prevent sawtoothing.
+                # Snapshot the live interpolated values first so the replacement
+                # ramps resume from where the schedule actually was.
+                in_flight = self.ramp_manager.current_ramp_values(location, cluster, current_time)
                 self.ramp_manager.clear_ramps_for_room(location, cluster)
 
                 if ramp_in_duration > 0:
@@ -552,6 +574,8 @@ class SetpointManager:
                         current_time,
                         result,
                         previous_period,
+                        in_flight,
+                        setpoint_data.get("period_start_time"),
                     )
                 else:
                     self._apply_nominal_values(result, nominal_values)
@@ -621,18 +645,38 @@ class SetpointManager:
         current_time: datetime,
         result: dict[str, Any],
         previous_period: str | None = None,
+        in_flight: Mapping[str, float] | None = None,
+        period_start_time: str | None = None,
     ) -> None:
         """Handle ramp transitions when period changes."""
         if current_period is None:
+            return
+
+        anchor = self._scheduled_boundary(current_time, period_start_time)
+        if current_time - anchor >= timedelta(minutes=ramp_in_duration):
+            # The scheduled ramp window already elapsed (e.g. an outage spanned
+            # the transition): the schedule already reached the target.
+            logger.info(
+                f"RAMP WINDOW ELAPSED: {location}/{cluster} - applying nominal "
+                f"{current_period} setpoints directly"
+            )
+            self._apply_nominal_values(result, nominal_values)
             return
 
         logger.debug(
             f"RAMP DEBUG: {location}/{cluster} - period_changed=True, current_period={current_period}"
         )
 
-        # Determine ramp start values based on previous period
+        # Determine ramp start values based on the interrupted ramp, the
+        # previous period, then sensors.
         ramp_starts = await self._calculate_ramp_start_values(
-            location, cluster, current_period, nominal_values, sensor_values, previous_period
+            location,
+            cluster,
+            current_period,
+            nominal_values,
+            sensor_values,
+            previous_period,
+            in_flight,
         )
 
         # Start ramps for each setpoint type
@@ -650,7 +694,7 @@ class SetpointManager:
                     start_value,
                     nominal_value,
                     ramp_in_duration,
-                    current_time,
+                    anchor,
                 )
                 ramps_started.append(setpoint_type)
             elif nominal_value is None:
@@ -672,6 +716,42 @@ class SetpointManager:
         # Apply current ramp values
         self._apply_ramp_values(location, cluster, result, nominal_values, current_time)
 
+    def _scheduled_boundary(
+        self, current_time: datetime, period_start_time: str | None
+    ) -> datetime:
+        """Resolve the scheduled period boundary as the ramp anchor.
+
+        The climate_periods row stores a local wall-clock ``HH:MM`` start. The
+        anchor is the most recent occurrence of that wall clock at or before the
+        control loop's time, so ramp progress matches the schedule trajectory
+        even when a transition is observed late. Falls back to the observation
+        time when the row carries no usable start.
+        """
+        if not period_start_time:
+            return current_time
+        try:
+            hour_text, minute_text = str(period_start_time).split(":")[:2]
+            hour, minute = int(hour_text), int(minute_text)
+            if not (0 <= hour <= 23 and 0 <= minute <= 59):
+                raise ValueError
+        except (ValueError, TypeError):
+            logger.warning(
+                f"RAMP ANCHOR: unusable period start {period_start_time!r}; anchoring at observation time"
+            )
+            return current_time
+
+        local_now = current_time if current_time.tzinfo else current_time.replace(tzinfo=LOCAL_TZ)
+        local_now = local_now.astimezone(LOCAL_TZ)
+        boundary = local_now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+        if boundary > local_now:
+            boundary -= timedelta(days=1)
+        anchor = boundary.astimezone(current_time.tzinfo or LOCAL_TZ)
+        if current_time.tzinfo is None:
+            anchor = anchor.replace(tzinfo=None)
+        if anchor > current_time:  # defensive: never anchor in the future
+            anchor = current_time
+        return anchor
+
     async def _calculate_ramp_start_values(
         self,
         location: str,
@@ -680,13 +760,17 @@ class SetpointManager:
         nominal_values: Mapping[str, float | None],
         sensor_values: Mapping[str, float | None] | None,
         previous_period: str | None = None,
+        in_flight: Mapping[str, float] | None = None,
     ) -> dict[str, float | None]:
         """Calculate starting values for ramps based on previous period.
 
-        Queries the climate_periods table to get the previous period's setpoints
-        as the ramp starting point. Falls back to sensor values or nominal values.
+        An interrupted ramp resumes from its live interpolated value. Otherwise
+        the climate_periods table supplies the previous period's setpoints as the
+        ramp starting point, falling back to sensor values or nominal values.
         """
         ramp_starts: dict[str, float | None] = {}
+        if in_flight:
+            ramp_starts.update(in_flight)
 
         def _extract_setpoints_from_period(period_data: dict[str, Any]) -> dict[str, float | None]:
             """Helper to extract setpoint values from climate period record."""
@@ -698,6 +782,12 @@ class SetpointManager:
                 "vpd": period_data.get("vpd_setpoint"),
             }
 
+        def _fill_missing(sources: Mapping[str, Any]) -> None:
+            """Fill only setpoint types the interrupted-ramp snapshot did not provide."""
+            for setpoint_type, value in sources.items():
+                if ramp_starts.get(setpoint_type) is None:
+                    ramp_starts[setpoint_type] = value
+
         # If we know the previous period name, look it up in climate_periods table
         if previous_period:
             logger.debug(
@@ -706,9 +796,9 @@ class SetpointManager:
             periods = await self.database.climate_periods_repo.get_periods(location, cluster)
             for period in periods:
                 if period.get("period_name") == previous_period:
-                    ramp_starts = _extract_setpoints_from_period(period)
+                    _fill_missing(_extract_setpoints_from_period(period))
                     logger.info(
-                        f"RAMP: Using {previous_period} period setpoints as ramp start: {ramp_starts}"
+                        f"RAMP: Ramp starts for {previous_period} -> {current_period}: {ramp_starts}"
                     )
                     return ramp_starts
             logger.warning(
@@ -720,27 +810,31 @@ class SetpointManager:
             logger.debug(
                 f"RAMP: Using sensor values as ramp start fallback for {location}/{cluster}"
             )
-            ramp_starts = {
-                "heating": sensor_values.get("dry_bulb"),
-                "cooling": sensor_values.get("dry_bulb"),
-                "humidity": sensor_values.get("humidity"),
-                "co2": sensor_values.get("co2"),
-                "vpd": sensor_values.get("vpd"),
-            }
-            logger.info(f"RAMP: Using sensor values as ramp start: {ramp_starts}")
+            _fill_missing(
+                {
+                    "heating": sensor_values.get("dry_bulb"),
+                    "cooling": sensor_values.get("dry_bulb"),
+                    "humidity": sensor_values.get("humidity"),
+                    "co2": sensor_values.get("co2"),
+                    "vpd": sensor_values.get("vpd"),
+                }
+            )
+            logger.info(f"RAMP: Using ramp starts: {ramp_starts}")
             return ramp_starts
 
         # Ultimate fallback: use nominal values (target = start, so no actual ramp)
         logger.warning(
             f"RAMP: No previous period or sensor data for {location}/{cluster}, using nominal values"
         )
-        ramp_starts = {
-            "heating": nominal_values["heating"],
-            "cooling": nominal_values["cooling"],
-            "humidity": nominal_values["humidity"],
-            "co2": nominal_values["co2"],
-            "vpd": nominal_values["vpd"],
-        }
+        _fill_missing(
+            {
+                "heating": nominal_values["heating"],
+                "cooling": nominal_values["cooling"],
+                "humidity": nominal_values["humidity"],
+                "co2": nominal_values["co2"],
+                "vpd": nominal_values["vpd"],
+            }
+        )
         return ramp_starts
 
     def _apply_ramp_values(
