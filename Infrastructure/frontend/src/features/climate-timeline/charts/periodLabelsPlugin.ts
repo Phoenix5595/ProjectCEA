@@ -2,9 +2,10 @@ import type uPlot from 'uplot'
 import { timeToMinutes } from '../../../utils/timeMath'
 import { readTimelineToken } from './tokens'
 
-export const LABEL_ALPHA = 0.25
 export const LABEL_FONT = '10px "JetBrains Mono", ui-monospace, monospace'
 export const LABEL_EDGE_PADDING_PX = 2
+export const LABEL_SHADOW_COLOR = 'rgba(0, 0, 0, 0.65)'
+export const LABEL_SHADOW_BLUR_PX = 2
 
 export interface PeriodLabelSegment {
   readonly text: string
@@ -91,7 +92,7 @@ export function layoutPeriodLabels(
   return labels
 }
 
-/** Build a uPlot plugin that paints faint period names below the curve zone. */
+/** Build a uPlot plugin that paints readable period names below the curve zone. */
 export function periodLabelsPlugin(
   getSegments: () => readonly PeriodLabelSegment[],
   window: { readonly startMs: number; readonly endMs: number },
@@ -106,9 +107,10 @@ export function periodLabelsPlugin(
         if (labels.length === 0) return
         const { ctx, bbox } = u
         ctx.save()
-        ctx.globalAlpha = LABEL_ALPHA
         ctx.font = LABEL_FONT
-        ctx.fillStyle = readTimelineToken('axis')
+        ctx.fillStyle = readTimelineToken('label')
+        ctx.shadowColor = LABEL_SHADOW_COLOR
+        ctx.shadowBlur = LABEL_SHADOW_BLUR_PX
         ctx.textAlign = 'left'
         ctx.textBaseline = 'alphabetic'
         const baseline = bbox.top + bbox.height - LABEL_EDGE_PADDING_PX

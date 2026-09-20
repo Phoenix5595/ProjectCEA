@@ -35,7 +35,7 @@ const SCALE_TOKENS: Record<TimelineScale, TimelineTokenName> = {
   co2: 'co2',
 }
 
-const UNIT_LABELS: Record<TimelineScale, string> = {
+export const UNIT_LABELS: Record<TimelineScale, string> = {
   temp: '°C',
   vpd: 'kPa',
   co2: 'ppm',
@@ -141,8 +141,6 @@ export function buildTimelineOptions(
       grid: { stroke: gridStroke },
       ticks: { stroke: readTimelineToken(SCALE_TOKENS.temp) },
       size: 25,
-      label: UNIT_LABELS.temp,
-      labelSize: 10,
     },
     {
       scale: 'vpd',
@@ -150,8 +148,6 @@ export function buildTimelineOptions(
       stroke: readTimelineToken(SCALE_TOKENS.vpd),
       ticks: { stroke: readTimelineToken(SCALE_TOKENS.vpd) },
       size: 25,
-      label: UNIT_LABELS.vpd,
-      labelSize: 10,
     },
     {
       scale: 'co2',
@@ -159,8 +155,6 @@ export function buildTimelineOptions(
       stroke: readTimelineToken(SCALE_TOKENS.co2),
       ticks: { stroke: readTimelineToken(SCALE_TOKENS.co2) },
       size: 25,
-      label: UNIT_LABELS.co2,
-      labelSize: 10,
       values: (_self, splits) => splits.map((value) => (value >= 1000 ? `${(value / 1000).toFixed(1)}k` : String(value))),
     },
   ]
