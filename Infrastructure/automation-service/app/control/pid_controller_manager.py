@@ -375,6 +375,7 @@ class PIDControllerManager:
                             "control.input_missing",
                             "PID control input is unavailable",
                             device_type,
+                            self.ramping_now(device_type, context),
                         )
                     )
                     return None
@@ -401,6 +402,7 @@ class PIDControllerManager:
                         "control.on_off_decision",
                         "ON/OFF hysteresis calculated control output",
                         device_type,
+                        self.ramping_now(device_type, context),
                     )
                 )
                 return output
@@ -425,6 +427,7 @@ class PIDControllerManager:
                             "control.input_missing",
                             "PID control input is unavailable",
                             device_type,
+                            self.ramping_now(device_type, context),
                         )
                     )
                     return None
@@ -446,6 +449,7 @@ class PIDControllerManager:
                         "control.auto_pid_decision",
                         "Auto-tuning PID calculated control output",
                         device_type,
+                        self.ramping_now(device_type, context),
                     )
                 )
                 return output
@@ -474,6 +478,7 @@ class PIDControllerManager:
                         "control.input_missing",
                         "PID setpoint is unavailable",
                         device_type,
+                        self.ramping_now(device_type, context),
                     )
                 )
                 return None
@@ -497,6 +502,7 @@ class PIDControllerManager:
                         "control.input_missing",
                         "PID sensor value is unavailable",
                         device_type,
+                        self.ramping_now(device_type, context),
                     )
                 )
                 return None
@@ -543,6 +549,7 @@ class PIDControllerManager:
                         f"PID calculated control output; Kp={controller.kp:g}, "
                         f"Ki={controller.ki:g}, Kd={controller.kd:g}",
                         device_type,
+                        self.ramping_now(device_type, context),
                     )
                 )
 
@@ -551,6 +558,13 @@ class PIDControllerManager:
             except Exception as e:
                 logger.error(f"PID calculation failed for {device_name} ({device_type}): {e}")
                 return None
+
+    @staticmethod
+    def ramping_now(device_type: str, context: dict[str, Any]) -> bool:
+        """Map each PID device type onto its own ramp-progress domain."""
+        ramp_progress = context.get("ramp_progress") or {}
+        domain = {"humidifier": "humidity", "dehumidifier": "vpd"}.get(device_type, device_type)
+        return ramp_progress.get(domain) is not None
 
     def _get_setpoint_for_device(self, device_type: str, context: dict[str, Any]) -> float | None:
         """Get the appropriate setpoint for a device type."""
