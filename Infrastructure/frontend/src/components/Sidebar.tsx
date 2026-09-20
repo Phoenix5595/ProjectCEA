@@ -31,13 +31,10 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onToggle }) => {
         fixed left-0 top-0 h-full
         bg-surface-secondary border-r border-border-default
         flex flex-col
-        transition-all duration-300 ease-in-out
+        transition-[width] duration-300 ease-in-out
         z-40
         ${collapsed ? 'w-12' : 'w-52'}
       `}
-      style={{
-        width: collapsed ? '3rem' : '13rem',
-      }}
     >
       {/* Logo / Header */}
       <div className="flex items-center justify-center px-1 py-1 border-b border-border-default h-[50px]">
@@ -68,8 +65,8 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onToggle }) => {
                 ${collapsed ? 'justify-center px-0 mx-0' : 'px-1.5 mx-1'}
                 ${
                   isActive
-                    ? 'bg-accent text-surface-base font-medium'
-                    : 'text-text-secondary hover:bg-surface-tertiary hover:text-default'
+                    ? 'bg-accent-vivid text-surface-base font-medium'
+                    : 'text-text-secondary hover:bg-surface-tertiary hover:text-text-default'
                 }
               `}
               title={collapsed ? item.label : undefined}
@@ -98,7 +95,7 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onToggle }) => {
           className={`
             p-1.5 rounded-md
             hover:bg-surface-tertiary
-            text-text-secondary hover:text-default
+            text-text-secondary hover:text-text-default
             transition-colors duration-200
             ${collapsed ? '' : 'self-start'}
           `}

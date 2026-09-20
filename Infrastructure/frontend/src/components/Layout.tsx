@@ -68,7 +68,7 @@ const Layout: React.FC = () => {
           aria-label={mobileDrawerOpen ? 'Close menu' : 'Open menu'}
         >
           <svg
-            className="w-6 h-6 text-default"
+            className="w-6 h-6 text-text-default"
             fill="none"
             stroke="currentColor"
             viewBox="0 0 24 24"

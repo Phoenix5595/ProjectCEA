@@ -27,7 +27,7 @@ function App() {
         <Toaster position="top-right" richColors closeButton />
         <BrowserRouter>
           <ErrorBoundary>
-          <Suspense fallback={<div className="flex items-center justify-center h-screen text-muted">Loading...</div>}>
+          <Suspense fallback={<div className="flex items-center justify-center h-screen text-text-muted">Loading...</div>}>
             <Routes>
               <Route path="/zone/Veg Room/main" element={<Navigate to="/vegetation/control" replace />} />
               <Route path="/zone/Flower Room/main" element={<Navigate to="/flower/control" replace />} />
