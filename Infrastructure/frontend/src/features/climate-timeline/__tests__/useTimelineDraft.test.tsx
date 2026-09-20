@@ -36,6 +36,41 @@ const savedBaseline = (revision = 'config-1'): TimelineSavedBaseline => ({
   trajectory: previewEnvelope(0),
 })
 
+function savedEnvelopeFixture() {
+  return RichTrajectoryEnvelope.parse({
+    contract_version: 1,
+    room: 'Flower Room',
+    generated_at: '2026-01-01T00:00:00.000Z',
+    window: {
+      start: '2026-01-01T00:00:00.000Z',
+      end: '2026-01-02T00:00:00.000Z',
+      timezone: 'America/Toronto',
+    },
+    revision_scope: 'saved',
+    base_config_revision: 'config-2',
+    draft_revision: null,
+    segments: [{
+      shape: 'step',
+      value: 22,
+      start: '2026-01-01T00:00:00.000Z',
+      end: '2026-01-01T01:00:00.000Z',
+      metric: 'temperature',
+      unit: 'celsius',
+      trajectory_kind: 'scheduled',
+      quality: 'exact',
+      source: {
+        mode: 'flower',
+        submode: null,
+        period: { period_id: 'day', label: 'Day' },
+        config_revision: 'config-2',
+        draft_revision: null,
+      },
+    }],
+    assumptions: [],
+    warnings: [],
+  })
+}
+
 function previewEnvelope(draftRevision: number) {
   return RichTrajectoryEnvelope.parse({
     contract_version: 1,
@@ -294,4 +329,28 @@ describe('useTimelineDraft', () => {
     expect(result.current.state.status).toEqual({ kind: 'editing' })
   })
 
+})
+
+describe('useTimelineDraft saved trajectory re-anchor', () => {
+  it('switches the preview to the saved envelope after Apply returns a matching saved snapshot', async () => {
+    // Given: an applied draft whose publication returns the authoritative saved
+    // aggregate (envelope included) for the previewed window.
+    const saved = savedBaseline('config-2')
+    const port: TimelinePublicationPort = {
+      preview: async (request) => previewEnvelope(request.draftRevision),
+      apply: async () => ({ ...saved, trajectory: savedEnvelopeFixture() }),
+    }
+    const { result } = renderHook(() => useTimelineDraft({ saved: savedBaseline(), publicationPort: port }))
+    act(() => result.current.editPeriods(result.current.state.draft.periods.map((period) => ({ ...period, heating_setpoint: 23 }))))
+    await act(async () => result.current.review())
+
+    // When: the operator applies.
+    await act(async () => result.current.apply())
+
+    // Then: the chart authority re-anchors to the saved envelope instead of the stale draft preview.
+    expect(result.current.preview.kind).toBe('ready')
+    expect(result.current.preview).toMatchObject({ source: 'saved', value: savedEnvelopeFixture() })
+    expect(result.current.state.saved.trajectory).toEqual(savedEnvelopeFixture())
+    expect(result.current.state.status).toEqual({ kind: 'editing' })
+  })
 })

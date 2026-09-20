@@ -109,6 +109,19 @@ function requestPayload(
   return includeWindow ? { ...payload, window: request.window } : payload
 }
 
+/** Fetch the saved timeline aggregate for an exact window, envelope included. */
+async function fetchSavedBaseline(
+  core: ApiClientCore,
+  room: TimelineRoomForApi,
+  window: TimelineWindow,
+): Promise<TimelineSavedBaseline> {
+  const response = await core.automationClient.get(
+    `/api/climate-timeline/${encodeURIComponent(room.location)}/${encodeURIComponent(room.cluster)}`,
+    { params: window },
+  )
+  return mapSavedResponse(room, savedResponseSchema.parse(response.data), window)
+}
+
 function mapPeriod(raw: z.infer<typeof periodSchema>): ClimatePeriod {
   const period: ClimatePeriod = {
     period_name: raw.period_name,
@@ -154,13 +167,10 @@ export const timelineMethods = {
     request: TimelineSavedRequest
   ): Promise<TimelineSavedBaseline> {
     try {
-      const response = await this.automationClient.get(
-        `/api/climate-timeline/${encodeURIComponent(request.location)}/${encodeURIComponent(request.cluster)}`,
-        { params: request.window }
-      )
-      return mapSavedResponse(
+      return await fetchSavedBaseline(
+        this,
         { location: request.location, cluster: request.cluster },
-        savedResponseSchema.parse(response.data)
+        request.window,
       )
     } catch (error) {
       if (axios.isAxiosError(error) && error.response?.status === 409) {
@@ -196,7 +206,16 @@ export const timelineMethods = {
         requestPayload(request, false)
       )
       const parsed = applyResponseSchema.parse(response.data)
-      return mapSavedResponse(request.room, parsed, request.window)
+      const committed = mapSavedResponse(request.room, parsed, request.window)
+      // The apply response itself carries no envelope; re-read the saved
+      // snapshot for the previewed window so the chart re-anchors to what the
+      // server actually persisted. A refresh hiccup must not fail a committed
+      // save, so fall back to the commit-only baseline.
+      try {
+        return await fetchSavedBaseline(this, request.room, request.window)
+      } catch {
+        return committed
+      }
     } catch (error) {
       if (axios.isAxiosError(error) && error.response?.status === 409) {
         throw new TimelineConflictError(request.requestId)
