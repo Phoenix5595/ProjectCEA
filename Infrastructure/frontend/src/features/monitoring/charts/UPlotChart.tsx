@@ -6,7 +6,6 @@ import {
   useImperativeHandle,
   useMemo,
   useRef,
-  useState,
   useSyncExternalStore,
 } from 'react'
 import uPlot from 'uplot'
@@ -18,6 +17,7 @@ import { measureMonitoringConversion, measureMonitoringResize, measureMonitoring
 import type { MonitoringChartFeed } from './MonitoringChartFeed'
 import { measureChartContainer } from './chartSizing'
 import { ExternalLegend, type LegendEntry } from './legend/ExternalLegend'
+import { getSeriesVisibilitySnapshot, isSeriesHidden, registerSeriesEntries, resetSeriesVisibility, subscribeSeriesVisibility, toggleSeries } from './seriesVisibility'
 import { isEnvelopeSeries, seriesColor } from './options/seriesOptions'
 import { buildOptions, toUPlotData } from './uPlotOptions'
 import { useRequestBudgetReporter } from './useRequestBudgetReporter'
@@ -72,7 +72,7 @@ export const UPlotChart = memo(
     const isProgrammaticScale = useCallback((): boolean => {
       return pendingProgrammaticScaleTokensRef.current.size > 0
     }, [])
-    const [hiddenKeys, setHiddenKeys] = useState<Set<string>>(new Set())
+    const visibility = useSyncExternalStore(subscribeSeriesVisibility, getSeriesVisibilitySnapshot)
     const onZoomRef = useRef(onZoom)
     onZoomRef.current = onZoom
     const reportRequestBudget = useRequestBudgetReporter(onRequestBudgetChange)
@@ -80,6 +80,21 @@ export const UPlotChart = memo(
     useEffect(() => {
       feed.setTheme(theme)
     }, [feed, theme])
+
+    useEffect(() => {
+      registerSeriesEntries(structural.series.map((series) => ({ key: series.key, color: seriesColor(series) })))
+    }, [structural.series])
+
+    useEffect(() => {
+      const plot = plotRef.current
+      if (plot === null) return
+      structuralRef.current.series.forEach((series, index) => {
+        const show = !visibility.hidden.has(series.key)
+        if (visibilityRef.current.get(series.key) === show) return
+        visibilityRef.current.set(series.key, show)
+        plot.setSeries(index + 1, { show })
+      })
+    }, [visibility, structural.revision])
 
     const legendEntries = useMemo<LegendEntry[]>(() => {
       const seenKeys = new Set<string>()
@@ -96,30 +111,18 @@ export const UPlotChart = memo(
           color: seriesColor(series),
           projected: series.origin === 'projected',
           index,
-          visible: !hiddenKeys.has(series.key),
+          visible: !visibility.hidden.has(series.key),
         }))
-    }, [hiddenKeys, structural.series])
+    }, [visibility, structural.series])
 
     const handleToggle = (index: number, show: boolean): void => {
       const key = structuralRef.current.series[index - 1]?.key
-      if (key !== undefined) {
-        setHiddenKeys((previous) => {
-          const next = new Set(previous)
-          if (show) next.delete(key)
-          else next.add(key)
-          return next
-        })
-      }
-      plotRef.current?.setSeries(index, { show })
+      if (key === undefined) return
+      if (show === isSeriesHidden(key)) toggleSeries(key)
     }
 
     const handleReset = (): void => {
-      setHiddenKeys(new Set())
-      const plot = plotRef.current
-      if (plot === null) return
-      structuralRef.current.series.forEach((_series, index) => {
-        plot.setSeries(index + 1, { show: true }, false)
-      })
+      resetSeriesVisibility(structuralRef.current.series.map((series) => series.key))
     }
 
     useImperativeHandle(ref, () => ({
@@ -197,12 +200,7 @@ export const UPlotChart = memo(
               const key = structuralRef.current.series[seriesIndex - 1]?.key
               if (key === undefined) return
               visibilityRef.current.set(key, options.show)
-              setHiddenKeys((previous) => {
-                const next = new Set(previous)
-                if (options.show) next.delete(key)
-                else next.add(key)
-                return next
-              })
+              if (isSeriesHidden(key) === options.show) toggleSeries(key)
             },
           }, () => {
             const current = feed.getData()

@@ -26,7 +26,7 @@ export interface RoomAveragesTableProps {
 const TH =
   'px-1 py-1 text-left text-xs uppercase tracking-wider text-mon-text-secondary font-semibold border-b border-border-default bg-surface-secondary'
 const TD = 'px-1 py-1 border-b border-border-subtle'
-const LABEL_TD = 'w-20 min-w-20 max-w-20 px-1 py-1 border-b border-border-subtle'
+const LABEL_TD = 'w-[75px] min-w-[75px] max-w-[75px] px-1 py-1 border-b border-border-subtle'
 
 export function RoomAveragesTable({
   title,
