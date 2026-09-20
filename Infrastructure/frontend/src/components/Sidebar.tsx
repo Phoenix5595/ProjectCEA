@@ -1,4 +1,6 @@
 import React, { useEffect, useState } from 'react';
+import { ChevronsLeft, Flower2, FlaskConical, Settings, Sprout } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import packageJson from '../../package.json';
 
@@ -10,14 +12,14 @@ interface SidebarProps {
 interface NavItem {
   label: string;
   path: string;
-  icon: string;
+  icon: LucideIcon;
 }
 
 const navItems: NavItem[] = [
-  { label: 'Laboratory', path: '/laboratory', icon: '🔬' },
-  { label: 'Vegetation', path: '/vegetation', icon: '🌱' },
-  { label: 'Flower', path: '/flower', icon: '🌻' },
-  { label: 'Devices', path: '/devices', icon: '⚙️' },
+  { label: 'Laboratory', path: '/laboratory', icon: FlaskConical },
+  { label: 'Vegetation', path: '/vegetation', icon: Sprout },
+  { label: 'Flower', path: '/flower', icon: Flower2 },
+  { label: 'Devices', path: '/devices', icon: Settings },
 ];
 
 const Sidebar: React.FC<SidebarProps> = ({ collapsed, onToggle }) => {
@@ -54,6 +56,7 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onToggle }) => {
         {/* Collapsible Items */}
         {collapsibleItems.map((item) => {
           const isActive = location.pathname.startsWith(item.path);
+          const Icon = item.icon;
           
           return (
             <Link
@@ -71,7 +74,7 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onToggle }) => {
               `}
               title={collapsed ? item.label : undefined}
             >
-              <span className="text-xl flex-shrink-0">{item.icon}</span>
+              <Icon className="size-5 shrink-0" />
               {!collapsed && (
                 <span className="text-base whitespace-nowrap">{item.label}</span>
               )}
@@ -91,6 +94,7 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onToggle }) => {
           </p>
         )}
         <button
+          type="button"
           onClick={onToggle}
           className={`
             ${collapsed ? 'p-1' : 'p-1.5'} rounded-md
@@ -101,19 +105,9 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onToggle }) => {
           `}
           aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
         >
-          <svg
+          <ChevronsLeft
             className={`size-5 transition-transform duration-300 ${collapsed ? 'rotate-180' : ''}`}
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M11 19l-7-7 7-7m8 14l-7-7 7-7"
-            />
-          </svg>
+          />
         </button>
       </div>
     </aside>
