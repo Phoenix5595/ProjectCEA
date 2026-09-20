@@ -43,11 +43,15 @@ class RelayOperation:
 
 @dataclass
 class DimmerOperation:
-    """Represents a dimmer (0-10V) operation."""
+    """Represents a dimmer (0-10V) operation.
+
+    Intensity is a float percent (0-100): the driver's 12-bit DAC truncation
+    is the coarsest quantizer in the light path.
+    """
 
     board_id: str
     channel: int
-    intensity: int  # 0-100 percent
+    intensity: float
     dfr0971_manager: Any  # DFR0971Manager - using Any to avoid import issues
 
 
@@ -125,7 +129,7 @@ class HardwareBatchExecutor:
         location: str,
         cluster: str,
         device_name: str,
-        intensity: int,
+        intensity: float,
         relay_manager: Any,
         dfr0971_manager: Any,
         board_id: str,
@@ -140,7 +144,7 @@ class HardwareBatchExecutor:
             location: Room location (e.g., "Flower Room")
             cluster: Cluster name (e.g., "main")
             device_name: Device name (e.g., "grow_light_1")
-            intensity: Target intensity 0-100 percent
+            intensity: Target intensity 0-100 percent (float; DAC truncates)
             relay_manager: RelayManager instance
             dfr0971_manager: DFR0971Manager instance
             board_id: DFR0971 board ID
