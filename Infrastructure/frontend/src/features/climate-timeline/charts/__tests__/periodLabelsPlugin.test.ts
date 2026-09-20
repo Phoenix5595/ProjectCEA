@@ -2,9 +2,10 @@ import { describe, expect, it, vi } from 'vitest'
 import { act } from '@testing-library/react'
 import type uPlot from 'uplot'
 import {
-  LABEL_ALPHA,
   LABEL_EDGE_PADDING_PX,
   LABEL_FONT,
+  LABEL_SHADOW_BLUR_PX,
+  LABEL_SHADOW_COLOR,
   layoutPeriodLabels,
   periodLabelSegments,
   periodLabelsPlugin,
@@ -73,10 +74,10 @@ describe('layoutPeriodLabels', () => {
 })
 
 describe('periodLabelsPlugin', () => {
-  it('carries the alpha and font constants in one place', () => {
-    expect(LABEL_ALPHA).toBeGreaterThanOrEqual(0.15)
-    expect(LABEL_ALPHA).toBeLessThanOrEqual(0.3)
+  it('carries the font and shadow constants in one place', () => {
     expect(LABEL_FONT).toContain('JetBrains Mono')
+    expect(LABEL_SHADOW_BLUR_PX).toBeGreaterThan(0)
+    expect(LABEL_SHADOW_COLOR).toContain('rgba(0, 0, 0')
   })
 
   it('draws the layout with fillText after the photoperiod bands and before series strokes', () => {
@@ -90,9 +91,10 @@ describe('periodLabelsPlugin', () => {
       restore: () => calls.push('restore'),
       fillText: (text: string, x: number, y: number) => calls.push(`fillText:${text}:${x}:${y}`),
       valToPos: undefined,
-      globalAlpha: 1,
       font: '',
       fillStyle: '',
+      shadowColor: '',
+      shadowBlur: 0,
       textAlign: '',
       textBaseline: '',
     } as unknown as CanvasRenderingContext2D
@@ -110,8 +112,10 @@ describe('periodLabelsPlugin', () => {
 
     expect(calls).toContain(`fillText:Day:${12 * 60 + LABEL_EDGE_PADDING_PX}:${400 - LABEL_EDGE_PADDING_PX}`)
     expect(calls[0]).toBe('save')
-    expect(ctx.globalAlpha).toBe(LABEL_ALPHA)
     expect(ctx.font).toBe(LABEL_FONT)
+    expect(ctx.fillStyle).toBe('#e2e8f0')
+    expect(ctx.shadowColor).toBe(LABEL_SHADOW_COLOR)
+    expect(ctx.shadowBlur).toBe(LABEL_SHADOW_BLUR_PX)
     expect(calls.at(-1)).toBe('restore')
   })
 

@@ -5,6 +5,7 @@ export const TIMELINE_TOKEN_NAMES = {
   co2: '--tl-co2',
   axis: '--tl-axis',
   grid: '--tl-grid',
+  label: '--tl-label',
   now: '--tl-now',
 } as const
 
@@ -17,6 +18,7 @@ const FALLBACK: Record<TimelineTokenName, string> = {
   co2: '#64748b',
   axis: 'rgba(128, 128, 128, 0.9)',
   grid: 'rgba(128, 128, 128, 0.15)',
+  label: '#e2e8f0',
   now: '#e11d48',
 }
 
