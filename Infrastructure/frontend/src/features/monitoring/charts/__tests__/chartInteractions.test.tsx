@@ -9,12 +9,13 @@
  * one series keeps its sibling family scale and the accessible table.
  */
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, act } from '@testing-library/react'
 import { createRef, useEffect, useRef, type Ref } from 'react'
 import type uPlot from 'uplot'
 import { ThemeProvider } from '../../../../contexts/ThemeContext'
 import type { AlignedData } from '../../data'
 import { seriesKey } from '../../data/alignSeries.types'
+import { toggleSeries } from '../../charts/seriesVisibility'
 import type { MonitoringRange } from '../../state'
 import { createMonitoringChartFeed } from '../MonitoringChartFeed'
 import { UPlotChart, type UPlotChartHandle } from '../UPlotChart'
@@ -153,9 +154,8 @@ describe('monitoring chart interactions', () => {
     const heating = plot.opts.series?.[7]
     expect(heating?.dash).toBeDefined()
 
-    // Legend swatch click toggles the series via setSeries.
-    const tempButton = screen.getByRole('button', { name: /temp/ })
-    fireEvent.click(tempButton)
+    // Rail-toggle path: visibility store → setSeries diff effect.
+    act(() => toggleSeries(seriesKey('sensor', 'temp', 'mean')))
     expect(plot.setSeries).toHaveBeenCalledWith(1, { show: false })
 
     // Drag zoom emits an exact UTC range from the setScale hook.
@@ -177,9 +177,8 @@ describe('monitoring chart interactions', () => {
     )
     const plot = instances[0]
 
-    // Hide the rh series via its legend swatch.
-    const rhButton = screen.getByRole('button', { name: /rh/ })
-    fireEvent.click(rhButton)
+    // Hide the rh series through the visibility store (the rail boxes' path).
+    act(() => toggleSeries(seriesKey('sensor', 'rh', 'mean')))
     expect(plot.setSeries).toHaveBeenCalledWith(4, { show: false })
 
     // The sibling rh family scale/axis is preserved in the options.

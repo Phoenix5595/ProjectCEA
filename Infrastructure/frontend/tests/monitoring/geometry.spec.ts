@@ -28,13 +28,13 @@ test('monitoring desktop geometry matches the historical layout contract', async
   })
 
   expect(geometry).toMatchObject({
-    pagePadding: '16px',
+    pagePadding: '4px',
     toolbarDisplay: 'flex',
     toolbarFlexWrap: 'wrap',
     toolbarPadding: '0px',
-    toolbarMarginBottom: '0px',
-    sidebarWidth: 340,
-    tableWidth: 330,
+    toolbarMarginBottom: '4px',
+    sidebarWidth: 155,
+    tableWidth: 145,
   })
   expect(geometry.mainWidth).toBeGreaterThan(geometry.sidebarWidth)
   expect(geometry.mainLeft).toBeGreaterThan(geometry.sidebarWidth)

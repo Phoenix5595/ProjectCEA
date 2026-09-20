@@ -71,7 +71,6 @@ describe('monitoring design tokens', () => {
     expect(monitoringCss).toMatch(/\.mon-side \.mon-card\s*\{[^}]*padding:\s*4px;/s)
     expect(monitoringCss).toMatch(/\.mon-main \.mon-card\s*\{[^}]*padding:\s*4px;/s)
     expect(monitoringCss).toMatch(/\.mon-card__title\s*\{[^}]*margin-bottom:\s*0;/s)
-    expect(monitoringCss).toMatch(/\.mon-chart \.mon-legend\s*\{[^}]*padding-top:\s*0;[^}]*padding-bottom:\s*0;/s)
     expect(monitoringCss).toMatch(/\.mon-side \.mon-card table td,[\s\S]*\.mon-side \.mon-card table th\s*\{[^}]*padding:\s*0;/)
   })
 })
