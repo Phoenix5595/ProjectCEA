@@ -9,7 +9,7 @@
 
 .mon-page {
   width: 100%;
-  padding: 1rem;
+  padding: 0.25rem;
   box-sizing: border-box;
   background: var(--surface-base, #10150e);
   color: var(--text-default, #f1f5f0);
