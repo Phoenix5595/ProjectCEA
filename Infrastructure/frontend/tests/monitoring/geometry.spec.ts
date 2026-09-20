@@ -33,8 +33,8 @@ test('monitoring desktop geometry matches the historical layout contract', async
     toolbarFlexWrap: 'wrap',
     toolbarPadding: '0px',
     toolbarMarginBottom: '4px',
-    sidebarWidth: 155,
-    tableWidth: 145,
+    sidebarWidth: 160,
+    tableWidth: 146,
   })
   expect(geometry.mainWidth).toBeGreaterThan(geometry.sidebarWidth)
   expect(geometry.mainLeft).toBeGreaterThan(geometry.sidebarWidth)

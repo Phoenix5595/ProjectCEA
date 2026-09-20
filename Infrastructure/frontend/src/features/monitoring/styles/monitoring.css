@@ -208,9 +208,35 @@
 
 .mon-toolbar__absolute {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
-  gap: 0.375rem;
+  gap: 0.25rem;
+}
+
+.mon-toolbar__absolute input[type='datetime-local'] {
+  width: 11.5rem;
+  padding: 0.125rem 0.375rem;
+  font-size: 0.75rem;
+  border: 1px solid var(--border-default, #475b3e);
+  border-radius: 0.375rem;
+  background: var(--surface-tertiary, #475b3e);
+  color: var(--text-default, #f1f5f0);
+  color-scheme: dark;
+}
+
+.mon-toolbar__absolute--invalid input[type='datetime-local'] {
+  border-color: var(--mon-error-border, var(--status-danger, #bd4253));
+}
+
+.mon-toolbar__arrow {
+  font-size: 0.75rem;
+  color: var(--mon-text-secondary, #c8d6c2);
+}
+
+.mon-toolbar__absolute button {
+  padding: 0.125rem 0.5rem;
+  font-size: 0.8rem;
+  line-height: 1.2;
 }
 
 .mon-toolbar__error {
@@ -310,7 +336,7 @@
 
 @media (min-width: 1100px) {
   .mon-layout {
-    grid-template-columns: 155px minmax(0, 1fr);
+    grid-template-columns: 160px minmax(0, 1fr);
     align-items: start;
   }
 
@@ -332,9 +358,10 @@
   display: none;
 }
 
-/* Owner adjustment: sidebar cards use tight 4px padding. */
+/* Owner adjustment: sidebar cards use tight 4px padding with a faint margin. */
 .mon-side .mon-card {
   padding: 4px;
+  margin: 2px;
 }
 
 /* Owner adjustment: main-area chart cards use tight 4px padding too. */

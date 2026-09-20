@@ -11,6 +11,7 @@ from monitoring_service.control_models import (
     ControlHistoryRange,
     ControlHistoryEnvelope,
     ControlPublicationResponse,
+    ControlReadValidationError,
     CurrentPublicationResponse,
     ProjectionPublicationResponse,
 )
@@ -41,6 +42,8 @@ def register_control_routes(app: FastAPI, reads: ControlReadService) -> None:
         try:
             history_range = _history_range(start, end)
             return await reads.history(location, history_range, max_points)
+        except ControlReadValidationError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from None
         except (ConnectionError, OSError, RuntimeError):
             raise HTTPException(
                 status_code=503, detail="control monitoring history is unavailable"

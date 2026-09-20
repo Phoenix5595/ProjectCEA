@@ -209,11 +209,11 @@ test('fixed range has no tail or recorded mutation and Retry recovers its failed
   await page.goto(fixtureUrl('/flower/monitoring', testInfo, 'fixed', 'fixed-range-retry'))
   await expect(page.getByRole('table', { name: 'Back Cluster' }).getByText('24.6°C')).toBeVisible()
 
-  const fixedStart = page.getByRole('textbox', { name: 'Start', exact: true })
-  const fixedEnd = page.getByRole('textbox', { name: 'End', exact: true })
+  const fixedStart = page.getByRole('textbox', { name: 'Range start', exact: true })
+  const fixedEnd = page.getByRole('textbox', { name: 'Range end', exact: true })
   await fixedStart.fill('2026-08-02T12:00')
   await fixedEnd.fill('2026-08-02T13:00')
-  await page.getByRole('button', { name: 'Apply' }).click()
+  await page.getByRole('button', { name: 'Apply fixed range' }).click()
 
   await expect(page.getByRole('alert').first()).toBeVisible()
   const fixedBackTable = page.getByRole('table', { name: 'Back Cluster' })

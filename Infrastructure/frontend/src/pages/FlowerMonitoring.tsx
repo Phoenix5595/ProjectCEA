@@ -38,7 +38,7 @@ const FLOWER_SERIES_SPECS = flowerManifest.panels.flatMap((panel) =>
   panel.kind === 'timeseries' ? panel.series : [],
 )
 
-const CHART_HEIGHT = { height: 640 }
+const CHART_HEIGHT = { height: 320 }
 const CLIMATE_CHART_HEIGHT = { height: 780 }
 const FLOWER_TIMESERIES_PANELS = timeseriesPanels(flowerManifest)
 
@@ -191,7 +191,7 @@ function FlowerMonitoringInner() {
               onZoom={zoomToRange}
               onRequestBudgetChange={(budget) => reportBudget('climate', budget)}
               title="Flower climate conditions"
-              description="Temperature, relative humidity and VPD over the selected time range. Toggle series with the legend, change the range with the toolbar, and open the table below for the underlying data."
+              description="Temperature, relative humidity and VPD over the selected time range. Toggle series with the sensor boxes, change the range with the toolbar, and open the table below for the underlying data."
             />
           </div>
         )}
@@ -211,7 +211,7 @@ function FlowerMonitoringInner() {
               onZoom={zoomToRange}
               onRequestBudgetChange={(budget) => reportBudget('device', budget)}
               title="Flower atmosphere & equipment"
-              description="CO2 and pressure over the selected time range. Toggle series with the legend, change the range with the toolbar, and open the table below for the underlying data."
+              description="CO2 and pressure over the selected time range. Toggle series with the sensor boxes, change the range with the toolbar, and open the table below for the underlying data."
             />
           </div>
         )}

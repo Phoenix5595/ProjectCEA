@@ -112,9 +112,9 @@ describe('monitoring time-range toolbar', () => {
     expect(screen.getByRole('status')).toHaveTextContent('LIVE')
 
     // Absolute Toronto wall-time entry converts to UTC and pushes the URL.
-    fireEvent.change(screen.getByLabelText('Start'), { target: { value: '2026-07-15T10:00' } })
-    fireEvent.change(screen.getByLabelText('End'), { target: { value: '2026-07-15T12:00' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Apply' }))
+    fireEvent.change(screen.getByLabelText('Range start'), { target: { value: '2026-07-15T10:00' } })
+    fireEvent.change(screen.getByLabelText('Range end'), { target: { value: '2026-07-15T12:00' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Apply fixed range' }))
     expect(h.onFixedRange).toHaveBeenCalledWith(
       new Date('2026-07-15T14:00:00.000Z'),
       new Date('2026-07-15T16:00:00.000Z'),
@@ -160,16 +160,16 @@ describe('monitoring time-range toolbar', () => {
     const h = renderStateful(liveRange(3 * 3600_000), true, ['/'])
 
     // Spring-forward gap: 2026-03-08 02:30 does not exist in Toronto.
-    fireEvent.change(screen.getByLabelText('Start'), { target: { value: '2026-03-08T02:30' } })
-    fireEvent.change(screen.getByLabelText('End'), { target: { value: '2026-03-08T04:30' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Apply' }))
+    fireEvent.change(screen.getByLabelText('Range start'), { target: { value: '2026-03-08T02:30' } })
+    fireEvent.change(screen.getByLabelText('Range end'), { target: { value: '2026-03-08T04:30' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Apply fixed range' }))
     expect(h.onFixedRange).not.toHaveBeenCalled()
     expect(screen.getByRole('alert')).toHaveTextContent(/does not exist/)
 
     // Fall-back fold: 2026-11-01 01:30 occurs twice → require explicit choice.
-    fireEvent.change(screen.getByLabelText('Start'), { target: { value: '2026-11-01T01:30' } })
-    fireEvent.change(screen.getByLabelText('End'), { target: { value: '2026-11-01T03:30' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Apply' }))
+    fireEvent.change(screen.getByLabelText('Range start'), { target: { value: '2026-11-01T01:30' } })
+    fireEvent.change(screen.getByLabelText('Range end'), { target: { value: '2026-11-01T03:30' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Apply fixed range' }))
     expect(h.onFixedRange).not.toHaveBeenCalled()
     expect(screen.getByRole('button', { name: 'EDT UTC-04:00' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'EST UTC-05:00' })).toBeInTheDocument()
@@ -186,17 +186,17 @@ describe('monitoring time-range toolbar', () => {
     const h = renderStateful(liveRange(3 * 3600_000), true, ['/'])
 
     // Range shorter than 5 minutes is rejected.
-    fireEvent.change(screen.getByLabelText('Start'), { target: { value: '2026-07-15T10:00' } })
-    fireEvent.change(screen.getByLabelText('End'), { target: { value: '2026-07-15T10:02' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Apply' }))
+    fireEvent.change(screen.getByLabelText('Range start'), { target: { value: '2026-07-15T10:00' } })
+    fireEvent.change(screen.getByLabelText('Range end'), { target: { value: '2026-07-15T10:02' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Apply fixed range' }))
     expect(h.onFixedRange).not.toHaveBeenCalled()
     expect(screen.getByRole('alert')).toHaveTextContent(/at least 5 minutes/)
 
     // Missing input is rejected.
-    fireEvent.change(screen.getByLabelText('Start'), { target: { value: '' } })
-    fireEvent.change(screen.getByLabelText('End'), { target: { value: '' } })
-    expect(screen.getByRole('button', { name: 'Apply' })).toBeDisabled()
-    fireEvent.click(screen.getByRole('button', { name: 'Apply' }))
+    fireEvent.change(screen.getByLabelText('Range start'), { target: { value: '' } })
+    fireEvent.change(screen.getByLabelText('Range end'), { target: { value: '' } })
+    expect(screen.getByRole('button', { name: 'Apply fixed range' })).toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Apply fixed range' }))
     expect(h.onFixedRange).not.toHaveBeenCalled()
     expect(screen.getByRole('alert')).toHaveTextContent(/Enter both/)
   })
@@ -218,9 +218,9 @@ describe('monitoring time-range toolbar', () => {
   it('applies valid Toronto wall-time inputs through the fixed-range callback', () => {
     const h = renderStateful(liveRange(3 * 3600_000), true, ['/'])
 
-    fireEvent.change(screen.getByLabelText('Start'), { target: { value: '2026-07-15T10:00' } })
-    fireEvent.change(screen.getByLabelText('End'), { target: { value: '2026-07-15T12:00' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Apply' }))
+    fireEvent.change(screen.getByLabelText('Range start'), { target: { value: '2026-07-15T10:00' } })
+    fireEvent.change(screen.getByLabelText('Range end'), { target: { value: '2026-07-15T12:00' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Apply fixed range' }))
 
     expect(h.onFixedRange).toHaveBeenCalledWith(
       new Date('2026-07-15T14:00:00.000Z'),
@@ -270,7 +270,7 @@ describe('monitoring time-range toolbar', () => {
       </MemoryRouter>,
     )
 
-    expect(screen.getByLabelText('Start')).toHaveValue('2026-07-15T10:00')
-    expect(screen.getByLabelText('End')).toHaveValue('2026-07-15T12:00')
+    expect(screen.getByLabelText('Range start')).toHaveValue('2026-07-15T10:00')
+    expect(screen.getByLabelText('Range end')).toHaveValue('2026-07-15T12:00')
   })
 })

@@ -77,7 +77,7 @@ export function buildSeries(data: AlignedData): uPlot.Series[] {
         width: s.presentation?.lineWidth ?? (target ? 2 : 1.5),
       }
       if (isEnvelopeSeries(s)) {
-        series.show = false
+        series.width = 0
       }
       if (target) {
         const dash = s.presentation?.dash ? [...s.presentation.dash] : parseDash(readToken('targetDash'))

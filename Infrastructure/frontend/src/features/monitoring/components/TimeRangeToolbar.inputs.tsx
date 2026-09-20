@@ -69,29 +69,28 @@ export function AbsoluteRangeForm({
   applyDisabled,
 }: AbsoluteRangeFormProps) {
   return (
-    <div className="mon-toolbar__absolute">
-      <label>
-        Start
-        <input
-          type="datetime-local"
-          value={startInput}
-          onChange={(e) => onStartChange(e.target.value)}
-          aria-invalid={error !== null}
-          aria-describedby={error !== null ? errorId : undefined}
-        />
-      </label>
-      <label>
-        End
-        <input
-          type="datetime-local"
-          value={endInput}
-          onChange={(e) => onEndChange(e.target.value)}
-          aria-invalid={error !== null}
-          aria-describedby={error !== null ? errorId : undefined}
-        />
-      </label>
-      <button type="button" onClick={onApply} disabled={applyDisabled}>
-        Apply
+    <div className={`mon-toolbar__absolute${error !== null ? ' mon-toolbar__absolute--invalid' : ''}`}>
+      <input
+        type="datetime-local"
+        aria-label="Range start"
+        value={startInput}
+        onChange={(e) => onStartChange(e.target.value)}
+        aria-invalid={error !== null}
+        aria-describedby={error !== null ? errorId : undefined}
+      />
+      <span className="mon-toolbar__arrow" aria-hidden>
+        →
+      </span>
+      <input
+        type="datetime-local"
+        aria-label="Range end"
+        value={endInput}
+        onChange={(e) => onEndChange(e.target.value)}
+        aria-invalid={error !== null}
+        aria-describedby={error !== null ? errorId : undefined}
+      />
+      <button type="button" onClick={onApply} disabled={applyDisabled} aria-label="Apply fixed range" title="Apply">
+        ✓
       </button>
     </div>
   )
