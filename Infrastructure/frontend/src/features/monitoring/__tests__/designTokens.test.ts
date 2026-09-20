@@ -67,7 +67,7 @@ describe('monitoring design tokens', () => {
   })
 
   it('keeps the compact monitoring layout spacing contracts', () => {
-    expect(monitoringCss).toMatch(/\.mon-toolbar\s*\{[^}]*margin-bottom:\s*0;/s)
+    expect(monitoringCss).toMatch(/\.mon-toolbar\s*\{[^}]*margin-bottom:\s*0\.25rem;/s)
     expect(monitoringCss).toMatch(/\.mon-side \.mon-card\s*\{[^}]*padding:\s*4px;/s)
     expect(monitoringCss).toMatch(/\.mon-main \.mon-card\s*\{[^}]*padding:\s*4px;/s)
     expect(monitoringCss).toMatch(/\.mon-card__title\s*\{[^}]*margin-bottom:\s*0;/s)

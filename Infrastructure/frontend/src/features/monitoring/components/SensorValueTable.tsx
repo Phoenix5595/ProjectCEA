@@ -18,6 +18,9 @@ import {
   isStale,
 } from './tables/tableFormat'
 import { familyForRow, sensorNameForRow } from './tables/tableManifest'
+import { seriesKey } from '../data/alignSeries.types'
+import { getSeriesVisibilitySnapshot, subscribeSeriesVisibility, toggleSeries } from '../charts/seriesVisibility'
+import { useSyncExternalStore } from 'react'
 
 export interface SensorValueTableProps {
   title: string
@@ -38,7 +41,7 @@ export interface SensorValueTableProps {
 const TH =
   'px-1 py-1 text-left text-xs uppercase tracking-wider text-mon-text-secondary font-semibold border-b border-border-default bg-surface-secondary'
 const TD = 'px-1 py-1 border-b border-border-subtle'
-const LABEL_TD = 'w-20 min-w-20 max-w-20 px-1 py-1 border-b border-border-subtle'
+const LABEL_TD = 'w-[75px] min-w-[75px] max-w-[75px] px-1 py-1 border-b border-border-subtle'
 
 export function SensorValueTable({
   title,
@@ -57,6 +60,7 @@ export function SensorValueTable({
   )
 
   const lastUpdateDisplay = lastUpdate === null ? null : formatLastUpdate(lastUpdate)
+  const visibility = useSyncExternalStore(subscribeSeriesVisibility, getSeriesVisibilitySnapshot)
 
   return (
     <div className="overflow-x-auto">
@@ -105,7 +109,9 @@ export function SensorValueTable({
             const stale = live !== undefined && isStale(live.timestamp, now, staleAfterMs)
             return (
               <tr key={row}>
-                <td className={LABEL_TD}>{row}</td>
+                <td className={LABEL_TD}>
+                  <RowToggle row={row} nodeSuffix={nodeSuffix} visibility={visibility} />
+                </td>
                 <td className={TD}>
                   {live === undefined ? (
                     <span aria-label={`${row} unavailable`}>—</span>
@@ -126,5 +132,40 @@ export function SensorValueTable({
         </tbody>
       </table>
     </div>
+  )
+}
+
+interface RowToggleProps {
+  row: string
+  nodeSuffix: 'f' | 'b' | 'v'
+  visibility: ReturnType<typeof getSeriesVisibilitySnapshot>
+}
+
+/** The row label doubles as a series toggle once its chart series is registered:
+ *  pressing it greys the box out and hides the matching line; the dot carries
+ *  the series color. Layout stays untouched when no series exists yet. */
+function RowToggle({ row, nodeSuffix, visibility }: RowToggleProps) {
+  const sensor = sensorNameForRow(row, nodeSuffix)
+  if (sensor === null) return <>{row}</>
+  const key = seriesKey('sensor', sensor, 'mean')
+  const color = visibility.known.get(key)
+  if (color === undefined) return <>{row}</>
+  const visible = !visibility.hidden.has(key)
+  return (
+    <button
+      type="button"
+      aria-pressed={!visible}
+      onClick={() => toggleSeries(key)}
+      title={visible ? `Hide ${row} line` : `Show ${row} line`}
+      className="flex w-full min-w-0 items-center gap-1 overflow-hidden text-left whitespace-nowrap text-ellipsis text-text-default transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent-vivid"
+      style={visible ? undefined : { opacity: 0.4 }}
+    >
+      <span
+        aria-hidden
+        className="inline-block size-2 shrink-0 rounded-[2px]"
+        style={{ background: color }}
+      />
+      <span className="truncate">{row}</span>
+    </button>
   )
 }

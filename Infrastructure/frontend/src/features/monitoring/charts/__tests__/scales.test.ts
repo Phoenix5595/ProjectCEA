@@ -50,12 +50,13 @@ describe('buildScales', () => {
     for (const axes of [narrow.axes, wide.axes]) {
       const familyAxes = axes.filter((axis) => axis.scale !== 'x')
       expect(familyAxes).toHaveLength(7)
+      const dictatedSizes: Record<string, number> = { temperature: 40, vpd: 40 }
       for (const axis of familyAxes) {
         expect(axis.label).toBeUndefined()
         expect(axis.gap).toBeUndefined()
         expect(axis.font).toBeUndefined()
         expect(axis.labelSize).toBeUndefined()
-        expect(axis.size).toBe(48)
+        expect(axis.size).toBe(dictatedSizes[axis.scale as string] ?? 48)
         expect(axis.ticks).toEqual({ stroke: axis.stroke })
       }
     }
