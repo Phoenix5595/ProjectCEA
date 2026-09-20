@@ -106,7 +106,7 @@ const TopRibbon: React.FC<TopRibbonProps> = ({
                   transition-all duration-200 rounded-lg
                   ${
                     isActive
-                      ? 'bg-accent text-surface-base'
+                      ? 'bg-accent-vivid text-surface-base'
                       : 'text-text-secondary hover:text-text-default hover:bg-surface-tertiary'
                   }
                 `}
@@ -129,7 +129,7 @@ const TopRibbon: React.FC<TopRibbonProps> = ({
                     onClick={() => onModeChange(mode)}
                     className={`px-2 py-0.5 text-sm font-bold rounded border transition-all ${
                       currentMode.mode_name === mode
-                        ? 'bg-accent text-white border-accent'
+                        ? 'bg-accent-vivid text-white border-accent-vivid'
                         : 'bg-transparent text-text-default border-border-default hover:bg-surface-tertiary hover:border-border-emphasis'
                     }`}
                   >

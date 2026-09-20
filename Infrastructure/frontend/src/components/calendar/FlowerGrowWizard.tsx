@@ -187,7 +187,7 @@ export default function FlowerGrowWizard({ open, onClose, onCreated }: FlowerGro
             type="button"
             disabled={saving || !!preview.error}
             onClick={() => void handleSubmit()}
-            className="px-3 py-1 rounded bg-accent text-surface-base disabled:opacity-50"
+            className="px-3 py-1 rounded bg-accent-vivid text-surface-base disabled:opacity-50"
           >
             {saving ? 'Creating…' : 'Create plan'}
           </button>

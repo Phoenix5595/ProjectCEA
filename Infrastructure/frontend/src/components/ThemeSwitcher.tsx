@@ -23,14 +23,14 @@ const ThemeSwitcher: React.FC = () => {
 
   return (
     <div className="fixed bottom-4 right-4 z-50 flex flex-col items-end gap-1 pointer-events-auto">
-      <label htmlFor="theme-switcher" className="text-[10px] font-bold uppercase tracking-wider text-secondary opacity-70">
+      <label htmlFor="theme-switcher" className="text-[10px] font-bold uppercase tracking-wider text-text-secondary opacity-70">
         🎨 Theme
       </label>
       <select
         id="theme-switcher"
         value={theme}
         onChange={handleChange}
-        className="bg-surface-secondary text-default border border-default rounded px-2 py-1 text-sm shadow-lg focus:outline-none focus:ring-1 focus:ring-accent appearance-none cursor-pointer"
+        className="bg-surface-secondary text-text-default border border-border-default rounded px-2 py-1 text-sm shadow-lg focus:outline-none focus:ring-1 focus:ring-accent-vivid appearance-none cursor-pointer"
         style={{ minWidth: '140px' }}
       >
         {themes.map((t) => (

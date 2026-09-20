@@ -150,7 +150,7 @@ export default function CalendarSettings() {
           onChange={(e) => setTargetCalendarUrl(e.target.value)}
         />
         <div className="flex gap-2">
-          <button type="button" onClick={() => void handleSave()} className="px-3 py-1 rounded bg-accent text-surface-base">
+          <button type="button" onClick={() => void handleSave()} className="px-3 py-1 rounded bg-accent-vivid text-surface-base">
             Save
           </button>
           <button

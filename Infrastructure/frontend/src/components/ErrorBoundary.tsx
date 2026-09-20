@@ -40,7 +40,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
           className="flex flex-col items-center justify-center min-h-screen p-8 gap-4 text-center bg-background text-foreground"
         >
           <h1 className="text-2xl font-semibold">Something went wrong</h1>
-          <p className="text-muted max-w-lg break-words">{message}</p>
+          <p className="text-text-muted max-w-lg break-words">{message}</p>
           <button
             type="button"
             onClick={this.handleReload}

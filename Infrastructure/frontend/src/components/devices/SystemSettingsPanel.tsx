@@ -451,7 +451,7 @@ export default function SystemSettingsPanel() {
           type="button"
           onClick={handleSave}
           disabled={!dirty || saving}
-          className="rounded bg-accent px-4 py-2 text-sm font-medium text-surface-base hover:bg-accent-data disabled:opacity-50 disabled:cursor-not-allowed"
+          className="rounded bg-accent-vivid px-4 py-2 text-sm font-medium text-surface-base hover:bg-accent-data disabled:opacity-50 disabled:cursor-not-allowed"
           data-testid="save-button"
         >
           {saving ? 'Saving...' : 'Save'}
