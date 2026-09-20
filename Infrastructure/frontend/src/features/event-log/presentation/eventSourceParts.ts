@@ -83,6 +83,6 @@ export function sourcePartsFor(entry: EventLogEntry): EventSourcePart[] {
 function relayEngagedClass(entry: EventLogEntry): string | undefined {
   if (entry.category !== 'relay') return undefined
   const engaged = entry.payload.state === true || entry.payload.observed_state === true
-  return engaged ? 'text-[var(--event-relay)] font-bold' : undefined
+  return engaged ? 'text-event-relay font-bold' : undefined
 }
 

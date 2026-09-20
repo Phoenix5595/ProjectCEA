@@ -203,7 +203,7 @@ describe('EventRow', () => {
     })
     render(<EventRow entry={entry} now={new Date('2026-09-02T12:05:00Z')} />)
     const stateBadge = screen.getByText('ON')
-    expect(stateBadge).toHaveClass('text-[var(--event-relay)]', 'font-bold')
+    expect(stateBadge).toHaveClass('text-event-relay', 'font-bold')
   })
 
   it('distinguishes error from critical severity visually', () => {

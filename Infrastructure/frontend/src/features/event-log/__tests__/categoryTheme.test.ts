@@ -50,9 +50,9 @@ describe('event category theme', () => {
     for (const category of CATEGORIES) {
       const visual = categoryTheme(category)
       expect(visual.label).toBe(EVENT_CATEGORY_LABELS[category as keyof typeof EVENT_CATEGORY_LABELS])
-      expect(visual.chip).toMatch(/bg-\[/)
-      expect(visual.chip).toMatch(/border-\[/)
-      expect(visual.text).toMatch(/text-\[/)
+      expect(visual.chip).toMatch(/bg-event-/)
+      expect(visual.chip).toMatch(/border-event-/)
+      expect(visual.text).toMatch(/text-event-/)
     }
   })
 

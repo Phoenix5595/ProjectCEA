@@ -19,51 +19,51 @@ export interface CategoryVisual {
 const CATEGORY_VISUALS: Record<string, CategoryVisual> = {
   relay: {
     label: 'Relay',
-    chip: 'bg-[var(--event-relay-dim)] text-[var(--event-relay)] border-[var(--event-relay-border)]',
-    border: 'border-[var(--event-relay-border)]',
-    text: 'text-[var(--event-relay)]',
+    chip: 'bg-event-relay-dim text-event-relay border-event-relay-border',
+    border: 'border-event-relay-border',
+    text: 'text-event-relay',
   },
   manual_override: {
     label: 'Manual override',
-    chip: 'bg-[var(--event-manual-override-dim)] text-[var(--event-manual-override)] border-[var(--event-manual-override-border)]',
-    border: 'border-[var(--event-manual-override-border)]',
-    text: 'text-[var(--event-manual-override)]',
+    chip: 'bg-event-manual-override-dim text-event-manual-override border-event-manual-override-border',
+    border: 'border-event-manual-override-border',
+    text: 'text-event-manual-override',
   },
   ramp: {
     label: 'Ramp',
-    chip: 'bg-[var(--event-ramp-dim)] text-[var(--event-ramp)] border-[var(--event-ramp-border)]',
-    border: 'border-[var(--event-ramp-border)]',
-    text: 'text-[var(--event-ramp)]',
+    chip: 'bg-event-ramp-dim text-event-ramp border-event-ramp-border',
+    border: 'border-event-ramp-border',
+    text: 'text-event-ramp',
   },
   control: {
     label: 'Control',
-    chip: 'bg-[var(--event-control-dim)] text-[var(--event-control)] border-[var(--event-control-border)]',
-    border: 'border-[var(--event-control-border)]',
-    text: 'text-[var(--event-control)]',
+    chip: 'bg-event-control-dim text-event-control border-event-control-border',
+    border: 'border-event-control-border',
+    text: 'text-event-control',
   },
   mutation: {
     label: 'Mutation',
-    chip: 'bg-[var(--event-mutation-dim)] text-[var(--event-mutation)] border-[var(--event-mutation-border)]',
-    border: 'border-[var(--event-mutation-border)]',
-    text: 'text-[var(--event-mutation)]',
+    chip: 'bg-event-mutation-dim text-event-mutation border-event-mutation-border',
+    border: 'border-event-mutation-border',
+    text: 'text-event-mutation',
   },
   alarm: {
     label: 'Alarm',
-    chip: 'bg-[var(--event-alarm-dim)] text-[var(--event-alarm)] border-[var(--event-alarm-border)]',
-    border: 'border-[var(--event-alarm-border)]',
-    text: 'text-[var(--event-alarm)]',
+    chip: 'bg-event-alarm-dim text-event-alarm border-event-alarm-border',
+    border: 'border-event-alarm-border',
+    text: 'text-event-alarm',
   },
   system: {
     label: 'System',
-    chip: 'bg-[var(--event-system-dim)] text-[var(--event-system)] border-[var(--event-system-border)]',
-    border: 'border-[var(--event-system-border)]',
-    text: 'text-[var(--event-system)]',
+    chip: 'bg-event-system-dim text-event-system border-event-system-border',
+    border: 'border-event-system-border',
+    text: 'text-event-system',
   },
   sensor: {
     label: 'Sensors',
-    chip: 'bg-[var(--event-sensor-dim)] text-[var(--event-sensor)] border-[var(--event-sensor-border)]',
-    border: 'border-[var(--event-sensor-border)]',
-    text: 'text-[var(--event-sensor)]',
+    chip: 'bg-event-sensor-dim text-event-sensor border-event-sensor-border',
+    border: 'border-event-sensor-border',
+    text: 'text-event-sensor',
   },
 }
 
@@ -106,7 +106,7 @@ export function displayCategoryOf(entry: { category: string; type: string }): st
 }
 
 export function relayActiveStateClass(isActive: boolean): string {
-  return isActive ? 'text-[var(--event-relay)] font-bold' : 'text-text-default'
+  return isActive ? 'text-event-relay font-bold' : 'text-text-default'
 }
 
 /**
