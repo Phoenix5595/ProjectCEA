@@ -4,6 +4,7 @@ import 'uplot/dist/uPlot.min.css'
 import { timelinePhotoperiodPlugin, timelineNowDividerPlugin, SUN_BG, MOON_BG } from './timeBandsPlugin'
 import type { TimelinePhotoperiodInterval } from './envelopeSeries'
 import { buildTimelineOptions, type TimelineSeriesMeta, type TimelineWindowMs } from './timelineOptions'
+import { unitTooltipPlugin } from './unitTooltipPlugin'
 
 export interface TimelineUPlotProps {
   readonly data: uPlot.AlignedData
@@ -38,6 +39,8 @@ export function TimelineUPlot({
   nowXRef.current = nowX
   const metaRef = useRef(meta)
   metaRef.current = meta
+  const dataRef = useRef(data)
+  dataRef.current = data
 
   const withProgrammaticScale = <T,>(action: () => T): T => {
     const token = programmaticScaleTokenRef.current + 1
@@ -64,6 +67,7 @@ export function TimelineUPlot({
     const basePlugins: uPlot.Plugin[] = [
       timelinePhotoperiodPlugin(() => photoperiodRef.current, windowMs.start),
       timelineNowDividerPlugin(() => nowXRef.current, windowMs.start),
+      unitTooltipPlugin(() => ({ data: dataRef.current, meta: metaRef.current })),
       ...plugins,
     ]
 

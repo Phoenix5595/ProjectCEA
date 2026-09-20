@@ -15,6 +15,8 @@ const { MockUPlot, instances } = vi.hoisted(() => {
     data: uPlot.AlignedData
     root: HTMLElement
     bbox = { left: 0, top: 0, width: 800, height: 400 }
+    over = document.createElement('div')
+    cursor = { left: -1, top: -1, idx: null }
     scales: Record<string, { min: number; max: number }> = {
       x: { min: 0, max: 1441 },
       temp: { min: 10, max: 35 },
