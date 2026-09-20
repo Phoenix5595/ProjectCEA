@@ -167,6 +167,32 @@
   --color-timeline-pre: var(--timeline-pre, #a855f7);
   --color-timeline-ramp: var(--timeline-ramp, #713f12);
   --color-timeline-now: var(--timeline-now, #ef4444);
+
+  /* Event-log alert categories (declared per-theme in themes.css) */
+  --color-event-relay: var(--event-relay);
+  --color-event-relay-dim: var(--event-relay-dim);
+  --color-event-relay-border: var(--event-relay-border);
+  --color-event-sensor: var(--event-sensor);
+  --color-event-sensor-dim: var(--event-sensor-dim);
+  --color-event-sensor-border: var(--event-sensor-border);
+  --color-event-ramp: var(--event-ramp);
+  --color-event-ramp-dim: var(--event-ramp-dim);
+  --color-event-ramp-border: var(--event-ramp-border);
+  --color-event-control: var(--event-control);
+  --color-event-control-dim: var(--event-control-dim);
+  --color-event-control-border: var(--event-control-border);
+  --color-event-manual-override: var(--event-manual-override);
+  --color-event-manual-override-dim: var(--event-manual-override-dim);
+  --color-event-manual-override-border: var(--event-manual-override-border);
+  --color-event-mutation: var(--event-mutation);
+  --color-event-mutation-dim: var(--event-mutation-dim);
+  --color-event-mutation-border: var(--event-mutation-border);
+  --color-event-alarm: var(--event-alarm);
+  --color-event-alarm-dim: var(--event-alarm-dim);
+  --color-event-alarm-border: var(--event-alarm-border);
+  --color-event-system: var(--event-system);
+  --color-event-system-dim: var(--event-system-dim);
+  --color-event-system-border: var(--event-system-border);
 }
 
 

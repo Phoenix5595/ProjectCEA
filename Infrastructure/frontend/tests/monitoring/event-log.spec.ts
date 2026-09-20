@@ -58,7 +58,7 @@ test('relay-active state text renders in the green category shade', async ({ pag
   const items = page.getByRole('list', { name: 'Event list' }).getByRole('listitem')
   await expect(items).toHaveCount(3)
   const onState = items.filter({ hasText: 'Relay state changed' }).getByText('ON', { exact: true }).first()
-  await expect(onState).toHaveClass(/text-\[var\(--event-relay\)\]/)
+  await expect(onState).toHaveClass(/text-event-relay/)
 
   expect(violations).toEqual([])
 })
