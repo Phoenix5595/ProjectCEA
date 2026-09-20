@@ -9,6 +9,8 @@ import {
   type FlowerGrowPlanInput,
 } from '../../utils/flowerGrowPlan';
 import { Input } from '@/components/ui/input'
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 
 interface FlowerGrowWizardProps {
   open: boolean;
@@ -49,7 +51,6 @@ export default function FlowerGrowWizard({ open, onClose, onCreated }: FlowerGro
   const preview = useMemo(() => buildFlowerGrowPlanPreview(planInput), [planInput]);
   const pastWarning = isFlowerEndInPast(flowerEnd);
 
-  if (!open) return null;
 
   const handleSubmit = async () => {
     if (preview.error) {
@@ -87,9 +88,9 @@ export default function FlowerGrowWizard({ open, onClose, onCreated }: FlowerGro
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="bg-surface-base border border-border-default rounded-lg max-w-lg w-full max-h-[90vh] overflow-y-auto p-4 shadow-xl">
-        <h2 className="text-lg font-bold text-text-default mb-4">Flower grow plan</h2>
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-h-[90vh] overflow-y-auto bg-surface-base rounded-lg shadow-xl">
+        <DialogTitle className="normal-case tracking-normal text-lg font-bold text-text-default mb-4">Flower grow plan</DialogTitle>
 
         <label className="block text-sm text-text-secondary mb-1">Crop name</label>
         <Input
@@ -98,14 +99,15 @@ export default function FlowerGrowWizard({ open, onClose, onCreated }: FlowerGro
         />
 
         <label className="block text-sm text-text-secondary mb-1">Environment</label>
-        <select
-          className="w-full mb-3 px-2 py-1 rounded border border-border-default bg-surface-secondary text-text-default"
-          value={environment}
-          onChange={(e) => setEnvironment(e.target.value as 'indoor' | 'outdoor')}
-        >
-          <option value="indoor">Indoor</option>
-          <option value="outdoor">Outdoor</option>
-        </select>
+        <Select value={environment} onValueChange={(v) => setEnvironment(v as 'indoor' | 'outdoor')}>
+          <SelectTrigger className="w-full mb-3">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="indoor">Indoor</SelectItem>
+            <SelectItem value="outdoor">Outdoor</SelectItem>
+          </SelectContent>
+        </Select>
 
         <label className="block text-sm text-text-secondary mb-1">Flower end (last day of ripen)</label>
         <input
@@ -191,7 +193,7 @@ export default function FlowerGrowWizard({ open, onClose, onCreated }: FlowerGro
             {saving ? 'Creating…' : 'Create plan'}
           </button>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
