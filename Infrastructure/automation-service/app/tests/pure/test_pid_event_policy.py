@@ -2,6 +2,8 @@ from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
 from app.control.decision_event_policy import DecisionEventPolicy, DecisionObservation
+from app.control.device_control_context import build_initial_control_context
+from app.control.pid_controller_manager import PIDControllerManager
 
 
 class RecordingSink:
@@ -387,3 +389,35 @@ def test_distinct_device_identities_do_not_share_numerical_history() -> None:
 
     # Then: the first room's history does not make the second device rapid.
     assert [event.event_type for event in sink.events] == ["control.adjusted"]
+
+
+def test_ramping_now_maps_each_pid_device_type_to_its_own_ramp_domain() -> None:
+    # Given: a control context built from engine effective data with a heating
+    # ramp and a VPD ramp mid-flight.
+    context = build_initial_control_context(
+        "Veg Room",
+        "main",
+        {
+            "effective_heating_setpoint": 21.0,
+            "ramp_progress_heating": 0.5,
+            "ramp_progress_humidity": None,
+            "ramp_progress_vpd": 0.25,
+            "ramp_progress_cooling": None,
+            "ramp_progress_co2": None,
+        },
+        current_mode="day",
+        previous_climate_mode=None,
+    )
+
+    # Then: heating and the VPD-driven dehumidifier are ramping; the others are not.
+    assert PIDControllerManager.ramping_now("heating", context) is True
+    assert PIDControllerManager.ramping_now("cooling", context) is False
+    assert PIDControllerManager.ramping_now("co2", context) is False
+    assert PIDControllerManager.ramping_now("dehumidifier", context) is True
+    assert PIDControllerManager.ramping_now("humidifier", context) is False
+
+    # When: a humidity ramp becomes active.
+    context["ramp_progress"]["humidity"] = 0.1
+
+    # Then: the humidifier lane is marked as ramping without reading the VPD domain.
+    assert PIDControllerManager.ramping_now("humidifier", context) is True

@@ -32,6 +32,7 @@ def build_initial_control_context(
             "ramp_progress": {
                 "heating": effective_data.get("ramp_progress_heating"),
                 "cooling": effective_data.get("ramp_progress_cooling"),
+                "humidity": effective_data.get("ramp_progress_humidity"),
                 "co2": effective_data.get("ramp_progress_co2"),
                 "vpd": effective_data.get("ramp_progress_vpd"),
             },
@@ -51,6 +52,7 @@ def build_initial_control_context(
         "ramp_progress": {
             "heating": None,
             "cooling": None,
+            "humidity": None,
             "co2": None,
             "vpd": None,
         },
