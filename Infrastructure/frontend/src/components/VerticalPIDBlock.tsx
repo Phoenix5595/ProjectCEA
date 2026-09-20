@@ -3,6 +3,7 @@ import { toast } from 'sonner'
 import { apiClient } from '../services/api'
 import type { PIDControlMode, PIDParameters, PIDParameterUpdate } from '../types/pid'
 import { logger } from '../utils/logger'
+import { Button } from '@/components/ui/button'
 
 interface PIDHistoryItem {
   changed_at?: string
@@ -266,13 +267,9 @@ export default function VerticalPIDBlock({ location, cluster }: VerticalPIDBlock
           {/* Save Button */}
           {hasUnsavedChanges && (
             <div className="mt-2">
-              <button
-                onClick={saveParameters}
-                disabled={saving}
-                className="w-full px-3 py-2 bg-accent-active hover:bg-accent-hover disabled:bg-surface-secondary disabled:text-text-faint rounded-sm text-text-default text-xs font-bold tracking-wide transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent-vivid/50"
-              >
+              <Button variant="accent-strong" className="w-full px-3 py-2 text-xs font-bold tracking-wide" onClick={saveParameters} disabled={saving}>
                 {saving ? 'Saving...' : 'Save Changes'}
-              </button>
+              </Button>
             </div>
           )}
         </>
@@ -281,13 +278,9 @@ export default function VerticalPIDBlock({ location, cluster }: VerticalPIDBlock
       {/* Save Button for ON/OFF mode (hysteresis-only changes) */}
       {isOff && hasUnsavedChanges && (
         <div className="mt-2">
-          <button
-            onClick={saveParameters}
-            disabled={saving}
-            className="w-full px-3 py-2 bg-accent-active hover:bg-accent-hover disabled:bg-surface-secondary disabled:text-text-faint rounded-sm text-text-default text-xs font-bold tracking-wide transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent-vivid/50"
-          >
+          <Button variant="accent-strong" className="w-full px-3 py-2 text-xs font-bold tracking-wide" onClick={saveParameters} disabled={saving}>
             {saving ? 'Saving...' : 'Save Changes'}
-          </button>
+          </Button>
         </div>
       )}
 

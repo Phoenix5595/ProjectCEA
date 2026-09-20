@@ -10,6 +10,7 @@ import type {
   SystemConfigResponse,
 } from '../../types/systemConfig'
 import { logger } from '../../utils/logger'
+import { Input } from '@/components/ui/input'
 
 interface DraftHardware {
   i2c_bus: string
@@ -490,41 +491,37 @@ export default function SystemSettingsPanel() {
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label className="mb-1 block text-xs text-text-secondary">I2C Bus</label>
-            <input
+            <Input
               type="number"
               value={draft.hardware.i2c_bus}
               onChange={e => updateDraft('hardware.i2c_bus', e.target.value)}
-              className="w-full rounded border border-border-default bg-surface-secondary px-2 py-1 text-sm text-text-default"
               data-testid="i2c_bus"
             />
           </div>
           <div>
             <label className="mb-1 block text-xs text-text-secondary">MCP I2C Bus</label>
-            <input
+            <Input
               type="number"
               value={draft.hardware.mcp_i2c_bus}
               onChange={e => updateDraft('hardware.mcp_i2c_bus', e.target.value)}
-              className="w-full rounded border border-border-default bg-surface-secondary px-2 py-1 text-sm text-text-default"
               data-testid="mcp_i2c_bus"
             />
           </div>
           <div>
             <label className="mb-1 block text-xs text-text-secondary">DFR I2C Bus</label>
-            <input
+            <Input
               type="number"
               value={draft.hardware.dfr0971_i2c_bus}
               onChange={e => updateDraft('hardware.dfr0971_i2c_bus', e.target.value)}
-              className="w-full rounded border border-border-default bg-surface-secondary px-2 py-1 text-sm text-text-default"
               data-testid="dfr0971_i2c_bus"
             />
           </div>
           <div>
             <label className="mb-1 block text-xs text-text-secondary">I2C Address</label>
-            <input
+            <Input
               type="number"
               value={draft.hardware.i2c_address}
               onChange={e => updateDraft('hardware.i2c_address', e.target.value)}
-              className="w-full rounded border border-border-default bg-surface-secondary px-2 py-1 text-sm text-text-default"
               data-testid="i2c_address"
             />
           </div>
@@ -625,34 +622,31 @@ export default function SystemSettingsPanel() {
         <div className="grid grid-cols-3 gap-4">
           <div>
             <label className="mb-1 block text-xs text-text-secondary">Update Interval (1-5s)</label>
-            <input
+            <Input
               type="number"
               min={1}
               max={5}
               value={draft.tuning.update_interval}
               onChange={e => updateDraft('tuning.update_interval', e.target.value)}
-              className="w-full rounded border border-border-default bg-surface-secondary px-2 py-1 text-sm text-text-default"
               data-testid="update_interval"
             />
           </div>
           <div>
             <label className="mb-1 block text-xs text-text-secondary">Last Good Hold (s)</label>
-            <input
+            <Input
               type="number"
               value={draft.tuning.last_good_hold_period}
               onChange={e => updateDraft('tuning.last_good_hold_period', e.target.value)}
-              className="w-full rounded border border-border-default bg-surface-secondary px-2 py-1 text-sm text-text-default"
               data-testid="last_good_hold_period"
             />
           </div>
           <div>
             <label className="mb-1 block text-xs text-text-secondary">Binary Hysteresis</label>
-            <input
+            <Input
               type="number"
               step={0.1}
               value={draft.tuning.binary_hysteresis}
               onChange={e => updateDraft('tuning.binary_hysteresis', e.target.value)}
-              className="w-full rounded border border-border-default bg-surface-secondary px-2 py-1 text-sm text-text-default"
               data-testid="binary_hysteresis"
             />
           </div>

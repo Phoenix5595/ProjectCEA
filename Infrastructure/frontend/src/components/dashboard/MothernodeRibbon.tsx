@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Menu } from 'lucide-react';
 
 import { AppRibbon } from '../chrome/AppRibbon';
 import { RibbonMenuButton } from '../chrome/ribbonMenuButton';
@@ -36,9 +37,7 @@ export function MothernodeRibbon({ systemStats }: MothernodeRibbonProps) {
           aria-expanded={open}
           aria-label={open ? 'Close mothernode status' : 'Open mothernode status'}
         >
-          <svg className="size-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-          </svg>
+          <Menu className="size-5" />
         </RibbonMenuButton>
       </AppRibbon>
 
