@@ -1,10 +1,10 @@
 /**
- * External semantic legend for the monitoring chart.
+ * Semantic data table for the monitoring chart.
  *
- * Renders each visible series as a real button swatch (click / Enter / Space
- * toggle via `aria-pressed`), a reset action that restores every series, and a
- * visually-hidden-but-discoverable semantic table that doubles as the chart's
- * accessible data alternative.
+ * The visible legend is gone — the sensor rail boxes are the toggle UI. This
+ * component now only renders the visually-hidden-but-discoverable table that
+ * doubles as the chart's accessible data alternative; rail toggles keep its
+ * Visible column in sync through the shared visibility store.
  */
 import type { CSSProperties } from 'react'
 export interface LegendEntry {
@@ -19,8 +19,6 @@ export interface LegendEntry {
 
 export interface ExternalLegendProps {
   entries: LegendEntry[]
-  onToggle: (index: number, show: boolean) => void
-  onReset: () => void
 }
 
 const visuallyHidden: CSSProperties = {
@@ -32,34 +30,9 @@ const visuallyHidden: CSSProperties = {
   whiteSpace: 'nowrap',
 }
 
-export function ExternalLegend({ entries, onToggle, onReset }: ExternalLegendProps) {
+export function ExternalLegend({ entries }: ExternalLegendProps) {
   return (
     <div className="mon-legend" role="group" aria-label="Chart series legend">
-      <ul className="mon-legend__list">
-        {entries.map((entry) => (
-          <li key={entry.key}>
-            <button
-              type="button"
-              aria-pressed={entry.visible}
-              onClick={() => onToggle(entry.index, !entry.visible)}
-              className="mon-legend__swatch"
-            >
-              <span
-                className="mon-legend__color"
-                style={{ background: entry.color }}
-                aria-hidden="true"
-              />
-              <span>
-                {entry.label}
-                {entry.projected ? ' (Projected)' : ''}
-              </span>
-            </button>
-          </li>
-        ))}
-      </ul>
-      <button type="button" onClick={onReset} className="mon-legend__reset" aria-label="Reset all series">
-        Reset
-      </button>
       <table className="mon-legend__table" style={visuallyHidden}>
         <caption>Chart series data</caption>
         <thead>
@@ -71,7 +44,7 @@ export function ExternalLegend({ entries, onToggle, onReset }: ExternalLegendPro
         <tbody>
           {entries.map((entry) => (
             <tr key={entry.key}>
-              <td>{entry.label}</td>
+              <td>{entry.label}{entry.projected ? ' (Projected)' : ''}</td>
               <td>{entry.visible ? 'Yes' : 'No'}</td>
             </tr>
           ))}

@@ -68,21 +68,21 @@ for (const page of PAGES) {
   })
 }
 
-test('legend toggles and reset zoom are keyboard-operable', async ({ page }, testInfo) => {
+test('sensor rail toggles and reset zoom are keyboard-operable', async ({ page }, testInfo) => {
   const violations = trackViolations(page)
   await page.goto(fixtureUrl('/flower/monitoring', testInfo))
   await expect(page.getByRole('heading', { name: 'Flower climate conditions' })).toBeVisible()
 
-  const swatch = page.locator('.mon-legend__swatch').first()
-  await expect(swatch).toBeVisible()
-  const pressedBefore = await swatch.getAttribute('aria-pressed')
-  await swatch.focus()
+  const boxToggle = page.getByRole('button', { name: /Dry Bulb/ }).first()
+  await expect(boxToggle).toBeVisible()
+  const pressedBefore = await boxToggle.getAttribute('aria-pressed')
+  await boxToggle.focus()
   await page.keyboard.press('Enter')
-  const pressedAfter = await swatch.getAttribute('aria-pressed')
+  const pressedAfter = await boxToggle.getAttribute('aria-pressed')
   expect(pressedAfter).not.toBe(pressedBefore)
 
-  await page.getByRole('button', { name: 'Reset all series' }).first().click()
-  await expect(page.locator('.mon-legend__swatch').first()).toHaveAttribute('aria-pressed', 'true')
+  await page.keyboard.press('Enter')
+  await expect(boxToggle).toHaveAttribute('aria-pressed', pressedBefore ?? 'false')
 
   await page.getByRole('button', { name: 'Reset Zoom' }).click()
   expect(violations).toEqual([])

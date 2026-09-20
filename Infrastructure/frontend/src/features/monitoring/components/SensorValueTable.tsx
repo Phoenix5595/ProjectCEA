@@ -19,7 +19,7 @@ import {
 } from './tables/tableFormat'
 import { familyForRow, sensorNameForRow } from './tables/tableManifest'
 import { seriesKey } from '../data/alignSeries.types'
-import { getSeriesVisibilitySnapshot, subscribeSeriesVisibility, toggleSeries } from '../charts/seriesVisibility'
+import { getSeriesVisibilitySnapshot, isSeriesHidden, subscribeSeriesVisibility, toggleSeries } from '../charts/seriesVisibility'
 import { useSyncExternalStore } from 'react'
 
 export interface SensorValueTableProps {
@@ -142,12 +142,15 @@ interface RowToggleProps {
 }
 
 /** The row label doubles as a series toggle once its chart series is registered:
- *  pressing it greys the box out and hides the matching line; the dot carries
- *  the series color. Layout stays untouched when no series exists yet. */
+ *  pressing it greys the box out and hides the whole sensor group (mean + min +
+ *  max, which also drops the envelope band) so no orphaned "bucket" lines stay
+ *  behind; the dot carries the series color. Layout stays untouched when no
+ *  series exists yet. */
 function RowToggle({ row, nodeSuffix, visibility }: RowToggleProps) {
   const sensor = sensorNameForRow(row, nodeSuffix)
   if (sensor === null) return <>{row}</>
-  const key = seriesKey('sensor', sensor, 'mean')
+  const keys = (['mean', 'min', 'max'] as const).map((role) => seriesKey('sensor', sensor, role))
+  const key = keys[0]
   const color = visibility.known.get(key)
   if (color === undefined) return <>{row}</>
   const visible = !visibility.hidden.has(key)
@@ -155,8 +158,14 @@ function RowToggle({ row, nodeSuffix, visibility }: RowToggleProps) {
     <button
       type="button"
       aria-pressed={!visible}
-      onClick={() => toggleSeries(key)}
-      title={visible ? `Hide ${row} line` : `Show ${row} line`}
+      onClick={() => {
+        // Toggle only roles whose state differs from the target (show===hidden reads inverted).
+        const show = !visible
+        for (const k of keys) {
+          if (show === isSeriesHidden(k)) toggleSeries(k)
+        }
+      }}
+      title={visible ? `Hide ${row} lines` : `Show ${row} lines`}
       className="flex w-full min-w-0 items-center gap-1 overflow-hidden text-left whitespace-nowrap text-ellipsis text-text-default transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent-vivid"
       style={visible ? undefined : { opacity: 0.4 }}
     >

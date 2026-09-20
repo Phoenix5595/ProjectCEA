@@ -17,7 +17,7 @@ import { measureMonitoringConversion, measureMonitoringResize, measureMonitoring
 import type { MonitoringChartFeed } from './MonitoringChartFeed'
 import { measureChartContainer } from './chartSizing'
 import { ExternalLegend, type LegendEntry } from './legend/ExternalLegend'
-import { getSeriesVisibilitySnapshot, isSeriesHidden, registerSeriesEntries, resetSeriesVisibility, subscribeSeriesVisibility, toggleSeries } from './seriesVisibility'
+import { getSeriesVisibilitySnapshot, isSeriesHidden, registerSeriesEntries, subscribeSeriesVisibility, toggleSeries } from './seriesVisibility'
 import { isEnvelopeSeries, seriesColor } from './options/seriesOptions'
 import { buildOptions, toUPlotData } from './uPlotOptions'
 import { useRequestBudgetReporter } from './useRequestBudgetReporter'
@@ -114,16 +114,6 @@ export const UPlotChart = memo(
           visible: !visibility.hidden.has(series.key),
         }))
     }, [visibility, structural.series])
-
-    const handleToggle = (index: number, show: boolean): void => {
-      const key = structuralRef.current.series[index - 1]?.key
-      if (key === undefined) return
-      if (show === isSeriesHidden(key)) toggleSeries(key)
-    }
-
-    const handleReset = (): void => {
-      resetSeriesVisibility(structuralRef.current.series.map((series) => series.key))
-    }
 
     useImperativeHandle(ref, () => ({
       resetZoom: () => {
@@ -301,7 +291,7 @@ export const UPlotChart = memo(
           <div ref={containerRef} className={className} role="img" aria-label={title ?? 'Monitoring chart'} aria-describedby={descId} style={{ position: 'absolute', inset: 0 }} />
         </div>
         {description !== undefined && descId !== undefined && <p id={descId} className="mon-chart__desc">{description}</p>}
-        <ExternalLegend entries={legendEntries} onToggle={handleToggle} onReset={handleReset} />
+        <ExternalLegend entries={legendEntries} />
       </div>
     )
   }),

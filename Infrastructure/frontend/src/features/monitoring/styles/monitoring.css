@@ -127,7 +127,6 @@
 
 /* Visible keyboard focus for every interactive monitoring control. */
 .mon-toolbar button:focus-visible,
-.mon-legend button:focus-visible,
 .mon-status button:focus-visible,
 .mon-status a:focus-visible,
 .mon-card button:focus-visible,
@@ -139,7 +138,6 @@
 /* Respect reduced-motion: no transitions or animated state changes. */
 @media (prefers-reduced-motion: reduce) {
   .mon-toolbar button,
-  .mon-legend button,
   .mon-status button,
   .mon-card button,
   .mon-card a {
@@ -218,42 +216,6 @@
 .mon-toolbar__error {
   font-size: 0.8rem;
   color: var(--mon-error-text, var(--mon-error, var(--status-danger, #bd4253)));
-}
-
-.mon-legend {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 2px;
-}
-
-.mon-legend__list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.375rem;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.mon-legend__swatch,
-.mon-legend__reset {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.375rem;
-  font-size: 0.75rem;
-  border: 1px solid var(--border-default, #475b3e);
-  border-radius: 0.375rem;
-  background: var(--surface-tertiary, #475b3e);
-  color: var(--text-default, #f1f5f0);
-  cursor: pointer;
-}
-
-.mon-legend__color {
-  width: 0.75rem;
-  height: 0.75rem;
-  border-radius: 0.25rem;
 }
 
 .mon-status {
@@ -348,7 +310,7 @@
 
 @media (min-width: 1100px) {
   .mon-layout {
-    grid-template-columns: 340px minmax(0, 1fr);
+    grid-template-columns: 155px minmax(0, 1fr);
     align-items: start;
   }
 
@@ -383,11 +345,6 @@
 /* Owner adjustments: tight card headers/legends. */
 .mon-card__title {
   margin-bottom: 0;
-}
-
-.mon-chart .mon-legend {
-  padding-top: 0;
-  padding-bottom: 0;
 }
 
 /* Owner adjustment: zero padding on sidebar table cells/headers. */

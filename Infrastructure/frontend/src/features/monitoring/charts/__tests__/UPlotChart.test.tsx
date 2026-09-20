@@ -242,8 +242,9 @@ describe('UPlotChart lifecycle', () => {
       </ThemeProvider>,
     )
 
-    expect(screen.getAllByRole('button', { name: 'Series 0' })).toHaveLength(1)
-    expect(screen.queryByRole('button', { name: 'Duplicate series' })).toBeNull()
+    // Swatches are gone (rail boxes toggle); the semantic table carries entries.
+    expect(screen.getAllByRole('cell', { name: 'Series 0' })).toHaveLength(1)
+    expect(screen.queryByRole('cell', { name: 'Duplicate series' })).toBeNull()
   })
 
   it('draws 120 live feed revisions without rendering its parent or recreating uPlot', () => {
