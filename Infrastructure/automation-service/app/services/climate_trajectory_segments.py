@@ -21,7 +21,6 @@ def scheduled_segments(request: TrajectoryRequest, metric: str) -> tuple[Traject
     unit = metric_unit(request.periods, metric)
     segments: list[TrajectorySegment] = []
     cursor = request.window.start
-    previous_end: datetime | None = None
     previous_value: float | None = None
     source = request.periods[0].source
     for period in sorted(request.periods, key=lambda item: item.start):
@@ -33,17 +32,17 @@ def scheduled_segments(request: TrajectoryRequest, metric: str) -> tuple[Traject
             segments.append(
                 unavailable(cursor, start, metric, unit, source, "schedule coverage is unavailable")
             )
-            previous_end, previous_value = None, None
         target = target_for(period, metric)
         if target is None:
             segments.append(
                 unavailable(start, end, metric, unit, period.source, "setpoint is unavailable")
             )
-            previous_end, previous_value, cursor = end, None, end
+            previous_value, cursor = None, end
             continue
-        initial = (
-            previous_value if previous_end == start and previous_value is not None else target.value
-        )
+        # The ramp at a period start transitions from the schedule's last known
+        # value, even across a coverage gap: a gap is a reporting hole, not a
+        # reset of the prior setpoint. Unknown prior values step instead.
+        initial = previous_value if previous_value is not None else target.value
         ramp_end = min(start + timedelta(minutes=period.ramp_minutes), end)
         if initial != target.value and ramp_end > start:
             segments.append(
@@ -68,7 +67,7 @@ def scheduled_segments(request: TrajectoryRequest, metric: str) -> tuple[Traject
                 step(start, end, metric, unit, period.source, "scheduled", target.value)
             )
             final = target.value
-        previous_end, previous_value, cursor, source = end, final, end, period.source
+        previous_value, cursor, source = final, end, period.source
     if cursor < request.window.end:
         segments.append(
             unavailable(
