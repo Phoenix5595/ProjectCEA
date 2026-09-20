@@ -2,6 +2,7 @@ import { useMemo, useState, useEffect, useRef } from 'react'
 import type { ClimatePeriod } from '../types/climatePeriod'
 import { sampleMetricSeries, timeToMinutes } from '../utils/climatePeriodTimeline'
 import { minutesToTime } from '../utils/timeMath'
+import { Input } from '@/components/ui/input'
 
 export interface ClimatePeriodTimelineProps {
   periods?: ClimatePeriod[]
@@ -521,27 +522,25 @@ export default function ClimatePeriodTimeline({
             <>
               <div className="flex flex-col gap-1">
                 <label className="text-12 text-text-muted">Ramp up (min)</label>
-                <input
+                <Input
                   aria-label="Ramp up (min)"
                   type="number"
                   min={0}
                   max={180}
                   value={rampUpInput}
                   onChange={(e) => setRampUpInput(parseInt(e.target.value) || 0)}
-                  className="w-full h-6 px-1 text-center bg-surface-secondary border border-border-default rounded text-14 text-text-input no-spinner"
-                />
+                  className="h-6 px-1 py-0 text-center text-14 text-text-input no-spinner" />
               </div>
               <div className="flex flex-col gap-1">
                 <label className="text-12 text-text-muted">Ramp down (min)</label>
-                <input
+                <Input
                   aria-label="Ramp down (min)"
                   type="number"
                   min={0}
                   max={180}
                   value={rampDownInput}
                   onChange={(e) => setRampDownInput(parseInt(e.target.value) || 0)}
-                  className="w-full h-6 px-1 text-center bg-surface-secondary border border-border-default rounded text-14 text-text-input no-spinner"
-                />
+                  className="h-6 px-1 py-0 text-center text-14 text-text-input no-spinner" />
               </div>
               <button
                 onClick={() => {

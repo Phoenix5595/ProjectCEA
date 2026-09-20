@@ -8,6 +8,7 @@ import {
   isFlowerEndInPast,
   type FlowerGrowPlanInput,
 } from '../../utils/flowerGrowPlan';
+import { Input } from '@/components/ui/input'
 
 interface FlowerGrowWizardProps {
   open: boolean;
@@ -91,9 +92,8 @@ export default function FlowerGrowWizard({ open, onClose, onCreated }: FlowerGro
         <h2 className="text-lg font-bold text-text-default mb-4">Flower grow plan</h2>
 
         <label className="block text-sm text-text-secondary mb-1">Crop name</label>
-        <input
-          className="w-full mb-3 px-2 py-1 rounded border border-border-default bg-surface-secondary text-text-default"
-          value={cropName}
+        <Input
+          className="mb-3" value={cropName}
           onChange={(e) => setCropName(e.target.value)}
         />
 
@@ -119,12 +119,11 @@ export default function FlowerGrowWizard({ open, onClose, onCreated }: FlowerGro
         )}
 
         <label className="block text-sm text-text-secondary mb-1">Flower length (weeks)</label>
-        <input
+        <Input
           type="number"
           min={1}
           max={52}
-          className="w-full mb-3 px-2 py-1 rounded border border-border-default bg-surface-secondary text-text-default"
-          value={flowerWeeks}
+          className="mb-3" value={flowerWeeks}
           onChange={(e) => setFlowerWeeks(Number(e.target.value))}
         />
 
