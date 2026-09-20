@@ -292,7 +292,7 @@ body {
   margin: 0 auto;
 }
 
-
+@layer components {
 @keyframes flash-red {
   0%, 100% { background-color: #dc2626; }
   50% { background-color: #7f1d1d; }
@@ -791,4 +791,5 @@ body {
 .size-1\.5.rounded-full,
 .size-2.rounded-full {
   border-radius: 9999px;
+}
 }
