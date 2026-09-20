@@ -269,7 +269,7 @@ describe('VegetationMonitoring page', () => {
     expect(instances).toHaveLength(0)
     const chartSlots = [...container.querySelectorAll('div')]
       .map((element) => element.style.height)
-      .filter((height) => height === '780px' || height === '640px')
-    expect(chartSlots).toEqual(['780px', '640px'])
+      .filter((height) => height === '780px' || height === '320px')
+    expect(chartSlots).toEqual(['780px', '320px'])
   })
 })

@@ -57,6 +57,14 @@ describe('monitoring polling policy', () => {
     expect(start.getTime()).toBe(recentLast.getTime() - 2_000)
   })
 
+  it('clamps a control anchor ahead of the local clock below the end', () => {
+    const skewedLast = new Date(NOW.getTime() + 30_000)
+
+    const start = controlTailStart(NOW, skewedLast)
+
+    expect(start.getTime()).toBeLessThan(NOW.getTime())
+  })
+
   it.each([
     ['sensor-history', 60_000],
     ['control-history', 30_000],

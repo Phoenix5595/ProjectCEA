@@ -38,7 +38,7 @@ const VEG_SERIES_SPECS = vegManifest.panels.flatMap((panel) =>
   panel.kind === 'timeseries' ? panel.series : [],
 )
 
-const CHART_HEIGHT = { height: 640 }
+const CHART_HEIGHT = { height: 320 }
 const CLIMATE_CHART_HEIGHT = { height: 780 }
 const VEG_TIMESERIES_PANELS = timeseriesPanels(vegManifest)
 
@@ -160,7 +160,7 @@ function VegetationMonitoringInner() {
               onZoom={zoomToRange}
               onRequestBudgetChange={(budget) => reportBudget('climate', budget)}
               title="Veg climate conditions"
-              description="Temperature, relative humidity and VPD over the selected time range. Toggle series with the legend, change the range with the toolbar, and open the table below for the underlying data."
+              description="Temperature, relative humidity and VPD over the selected time range. Toggle series with the sensor boxes, change the range with the toolbar, and open the table below for the underlying data."
             />
           </div>
         )}
@@ -180,7 +180,7 @@ function VegetationMonitoringInner() {
               onZoom={zoomToRange}
               onRequestBudgetChange={(budget) => reportBudget('device', budget)}
               title="Veg atmosphere & equipment"
-              description="Pressure and device output over the selected time range. Toggle series with the legend, change the range with the toolbar, and open the table below for the underlying data."
+              description="Pressure and device output over the selected time range. Toggle series with the sensor boxes, change the range with the toolbar, and open the table below for the underlying data."
             />
           </div>
         )}

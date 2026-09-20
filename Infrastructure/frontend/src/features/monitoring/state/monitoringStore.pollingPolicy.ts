@@ -29,9 +29,11 @@ export function pollingEligibility(range: MonitoringRange): PollingEligibility {
 }
 
 export function controlTailStart(now: Date, last: Date | null): Date {
+  // A control anchor ahead of the local clock (server clock skew) would send
+  // start >= end, which the monitoring API rejects as an invalid interval.
   const minimumStart = now.getTime() - CONTROL_TAIL_MAX_MS
   const overlapStart = last === null ? minimumStart : last.getTime() - CONTROL_TAIL_OVERLAP_MS
-  return new Date(Math.max(overlapStart, minimumStart))
+  return new Date(Math.max(Math.min(overlapStart, now.getTime() - 1), minimumStart))
 }
 
 export function isSourceRetryEligible(
