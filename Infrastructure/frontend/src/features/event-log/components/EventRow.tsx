@@ -14,7 +14,7 @@ interface EventRowProps {
 }
 
 const SEVERITY_VISUAL: Record<SeverityLevel, string> = {
-  critical: 'border-l-[var(--status-danger-vivid)] border-l-4 bg-status-danger-bg/20',
+  critical: 'border-l-status-danger-vivid border-l-4 bg-status-danger-bg/20',
   warning: 'border-l-status-warning bg-status-warning-bg/20',
   error: 'border-l-status-danger bg-surface-secondary',
   info: 'border-l-border-emphasis bg-surface-secondary',
