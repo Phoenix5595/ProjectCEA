@@ -38,6 +38,7 @@ export interface SensorValueTableProps {
 const TH =
   'px-1 py-1 text-left text-xs uppercase tracking-wider text-mon-text-secondary font-semibold border-b border-border-default bg-surface-secondary'
 const TD = 'px-1 py-1 border-b border-border-subtle'
+const LABEL_TD = 'w-20 min-w-20 max-w-20 px-1 py-1 border-b border-border-subtle'
 
 export function SensorValueTable({
   title,
@@ -83,7 +84,7 @@ export function SensorValueTable({
             if (row === 'Last Update') {
               return (
                 <tr key={row}>
-                  <td className={TD}>{row}</td>
+                  <td className={LABEL_TD}>{row}</td>
                   <td className={TD}>
                     {lastUpdateDisplay === null ? (
                       '—'
@@ -104,7 +105,7 @@ export function SensorValueTable({
             const stale = live !== undefined && isStale(live.timestamp, now, staleAfterMs)
             return (
               <tr key={row}>
-                <td className={TD}>{row}</td>
+                <td className={LABEL_TD}>{row}</td>
                 <td className={TD}>
                   {live === undefined ? (
                     <span aria-label={`${row} unavailable`}>—</span>
