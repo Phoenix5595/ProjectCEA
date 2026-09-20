@@ -102,7 +102,6 @@
   flex-direction: column;
   height: 100%;
   box-sizing: border-box;
-  padding: 0.5rem;
   background: var(--surface-primary, #181e15);
   border: 1px solid var(--border-default, #475b3e);
   border-radius: 0.5rem;
@@ -243,7 +242,6 @@
   display: inline-flex;
   align-items: center;
   gap: 0.375rem;
-  padding: 0.25rem 0.5rem;
   font-size: 0.75rem;
   border: 1px solid var(--border-default, #475b3e);
   border-radius: 0.375rem;

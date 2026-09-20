@@ -144,6 +144,8 @@ export function buildScales(data: AlignedData): ChartScales {
   const seriesBounds = familySoftBounds(data)
   const defaultFamilyForUnit = defaultFamily(data)
 
+  const AXIS_SIZES: Partial<Record<ChartFamily, number>> = { temperature: 30, vpd: 40 }
+
   for (const family of families) {
     // auto:true is required for uPlot to rescale user-defined value scales;
     // the bounded range function then clamps the proposed extent.
@@ -170,7 +172,7 @@ export function buildScales(data: AlignedData): ChartScales {
       stroke: familyColor(family),
       grid: { stroke: 'rgba(128, 128, 128, 0.15)' },
       ticks: { stroke: familyColor(family) },
-      size: 48,
+      size: AXIS_SIZES[family] ?? 48,
     })
   }
 
