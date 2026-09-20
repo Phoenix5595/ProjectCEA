@@ -72,6 +72,7 @@ class ClimatePeriodResolver:
                 "co2": active_period.get("co2_setpoint"),
                 "humidity": None,  # VPD cascade derives humidity
                 "ramp_in_duration": ramp_minutes,
+                "period_start_time": active_period.get("start_time"),
             }
 
             logger.debug(
