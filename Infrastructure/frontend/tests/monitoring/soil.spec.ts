@@ -35,7 +35,9 @@ test('flower soil renders beds, live values, badge, and history', async ({ page 
   if (frontBox === null || backBox === null) {
     throw new Error('bed schematics must be measurable')
   }
-  expect(frontBox.y).toBeLessThan(backBox.y)
+  // Graph above, the two beds side by side at the bottom.
+  expect(backBox.y).toBeGreaterThan(frontBox.y)
+  expect(backBox.x).toBeGreaterThan(frontBox.x)
 
   // Live probe cards carry the four metric families.
   await expect(page.getByTestId('soil-probe-card').first()).toContainText('Water content')
