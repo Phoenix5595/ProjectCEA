@@ -117,7 +117,7 @@ function BedSchematic({
     <figure
       aria-label={`${label} schematic`}
       className="relative mx-auto aspect-square w-full rounded border-2 border-border-strong bg-bg-subtle"
-      style={{ width: 'min(31vh, 380px)' }}
+      style={{ width: 'min(36vh, 400px)' }}
     >
       <figcaption className="mb-1 flex items-baseline justify-between px-1 text-xs font-semibold uppercase tracking-wide text-text-secondary">
         <span>{label}</span>
@@ -267,7 +267,8 @@ export default function FlowerSoil() {
         </button>
       )}
 
-      <section className="space-y-2">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_auto]">
+      <section className="flex min-w-0 flex-col space-y-2">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h2 className="mon-card__title text-lg font-bold text-text-input">Soil history</h2>
         </div>
@@ -281,7 +282,7 @@ export default function FlowerSoil() {
           onResetZoom={() => chartRef.current?.resetZoom()}
           defaultDuration={LIVE_DURATION_MS}
         />
-        <div className="mon-card" style={{ height: 'min(34vh, 400px)' }}>
+        <div className="min-h-[320px] flex-1">
           <UPlotChart
             ref={chartRef}
             feed={feed}
@@ -322,15 +323,16 @@ export default function FlowerSoil() {
         </details>
       </section>
 
-      <section className="space-y-2">
+      <section className="space-y-2 lg:border-l lg:border-border-subtle lg:pl-6">
         <h2 className="px-1 text-xs font-semibold uppercase tracking-wide text-text-secondary">
           Raised beds
         </h2>
-        <div className="mx-auto flex max-w-[900px] flex-wrap items-center justify-center gap-8">
+        <div className="flex flex-col items-center gap-6">
           <BedSchematic label="Front Bed" probes={beds.frontBed} />
           <BedSchematic label="Back Bed" probes={beds.backBed} />
         </div>
       </section>
+      </div>
     </div>
   )
 }
