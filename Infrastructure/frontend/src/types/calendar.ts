@@ -1,3 +1,5 @@
+import type { components } from '../generated/api';
+
 /** Calendar event DTO from automation API. */
 export interface CalendarEventDto {
   id: string;
@@ -14,6 +16,10 @@ export interface CalendarEventDto {
   notes?: string;
   metadata?: Record<string, unknown>;
 }
+
+/** Generated OpenAPI request contracts for manual event writes. */
+export type CalendarEventCreate = components['schemas']['CalendarEventCreate'];
+export type CalendarEventUpdate = components['schemas']['CalendarEventUpdate'];
 
 export interface CalendarRoomProfile {
   location: string;

@@ -398,6 +398,7 @@ body {
   width: 14.28%;
 }
 
+
 .grow-calendar-picker {
   --rdp-accent-color: var(--accent-data);
   --rdp-accent-background-color: color-mix(in srgb, var(--accent) 22%, var(--surface-primary));
@@ -792,4 +793,40 @@ body {
 .size-2.rounded-full {
   border-radius: 9999px;
 }
+}
+
+/* Dashboard density: six weeks fit a ~55%-height upper row.
+   Placed after .grow-calendar-picker so these overrides win the cascade. */
+.grow-calendar--dashboard {
+  min-height: 0;
+}
+
+.grow-calendar--dashboard .rdp-root {
+  width: 100%;
+  max-width: 100%;
+  --rdp-day-width: 100%;
+  --rdp-day-height: clamp(3.25rem, 7vh, 4.75rem);
+  --rdp-day_button-width: 100%;
+  --rdp-day_button-height: clamp(3.25rem, 7vh, 4.75rem);
+}
+
+.grow-calendar--dashboard .rdp-months,
+.grow-calendar--dashboard .rdp-month {
+  width: 100%;
+  max-width: 100%;
+}
+
+.grow-calendar--dashboard .rdp-month_grid {
+  width: 100%;
+  table-layout: fixed;
+}
+
+.grow-calendar--dashboard .rdp-weekday,
+.grow-calendar--dashboard .rdp-day {
+  width: 14.28%;
+}
+
+.grow-calendar--dashboard .rdp-day {
+  aspect-ratio: auto;
+  height: clamp(3.25rem, 7vh, 4.75rem);
 }

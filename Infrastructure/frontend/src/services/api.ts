@@ -10,12 +10,15 @@ import type { LightStatus, LightTargetSetResponse } from '../types/light';
 import type { RoomMode, FlowerSubmode, RoomModeWithParams, SetModeRequest, UpdateParametersRequest } from '../types/modes';
 import type {
   CalendarEventsResponse,
+  CalendarEventCreate,
   CalendarEventDto,
+  CalendarEventUpdate,
   CalendarRoomProfile,
   FlowerCalendarModeTransitionSetting,
   FlowerGrowPlanRequest,
   ModeScheduleResponse,
 } from '../types/calendar';
+import { normalizeCalendarEvent } from '../utils/normalizeCalendarEvent';
 import type {
   SystemConfigResponse,
   ConfigUpdateRequest,
@@ -286,6 +289,16 @@ class ApiClient implements ApiClientCore {
     if (cursor) params.cursor = cursor;
     const response = await this.automationClient.get('/api/calendar/events', { params });
     return response.data;
+  }
+
+  async createCalendarEvent(body: CalendarEventCreate): Promise<CalendarEventDto> {
+    const response = await this.automationClient.post('/api/calendar/events', body);
+    return normalizeCalendarEvent(response.data as unknown as Record<string, unknown>);
+  }
+
+  async updateCalendarEvent(eventId: number, body: CalendarEventUpdate): Promise<CalendarEventDto> {
+    const response = await this.automationClient.patch(`/api/calendar/events/${eventId}`, body);
+    return normalizeCalendarEvent(response.data as unknown as Record<string, unknown>);
   }
 
   async createFlowerGrowPlan(body: FlowerGrowPlanRequest): Promise<{
