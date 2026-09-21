@@ -1,8 +1,14 @@
-"""Helper functions to process Redis Stream entries into sensor data points."""
+"""Helper functions to process Redis Stream entries into sensor data points.
+
+CAN stream entries ship an assignment snapshot (registry id + topology
+location) from ingestion; routing follows that snapshot, and the canonical
+suffix derivation is owned by ``shared.cluster_topology`` (the same owner
+the CAN processor consults).
+"""
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from app.models import DataPoint
@@ -12,54 +18,21 @@ from shared import (
     get_pressure_state,
     update_pressure_state,
 )
+from shared.cluster_topology import sensor_name_like_pattern
+from shared.stream_assignment import all_entries_qualified, entry_qualified
 
-
-# Cluster suffix mapping. Mirrors processor.py in can-processor-service so
-# both write the same sensor key shape. Will be unified through
-# shared.cluster_topology in a follow-up Phase 6 step (see processor.py
-# for the full rationale on why the data-plane rename is deferred).
-def shared_get_sensor_suffix(location: str, cluster: str) -> str:
-    suffix_map = {
-        ("Veg Room", "clusterA"): "_f",
-        ("Veg Room", "clusterB"): "_b",
-        ("Flower Room", "clusterA"): "_f",
-        ("Flower Room", "clusterB"): "_b",
-        ("Mother Room", "clusterA"): "_f",
-        ("Mother Room", "clusterB"): "_b",
-    }
-    return suffix_map.get((location, cluster), "_f")
-
-
-def get_location_from_node(node_id: int | None) -> tuple[str, str]:
-    """Map node_id to location and cluster."""
-    if node_id is None:
-        return ("Flower Room", "back")
-    mapping = {
-        1: ("Flower Room", "back"),
-        2: ("Flower Room", "front"),
-        3: ("Veg Room", "main"),
-        4: ("Lab", "main"),
-        5: ("Outside", "main"),
-    }
-    return mapping.get(node_id, ("Flower Room", "back"))
+__all__ = [
+    "all_entries_qualified",
+    "entry_qualified",
+    "extract_sensor_values_from_decoded",
+    "process_stream_entries_to_sensor_data",
+]
 
 
 def get_sensor_suffix(location: str, cluster: str) -> str:
-    """Get the sensor suffix for a location/cluster combination.
-
-    Note: Stream processor uses different cluster naming than CAN processor.
-    This function adapts the shared suffix mapping to stream processor conventions.
-    """
-    # Adapt cluster names for stream processor
-    adapted_cluster = cluster
-    if cluster == "back":
-        adapted_cluster = "clusterB"
-    elif cluster == "front":
-        adapted_cluster = "clusterA"
-    elif cluster == "main":
-        adapted_cluster = "clusterA"  # Default to clusterA for main
-
-    return shared_get_sensor_suffix(location, adapted_cluster)
+    """Return the canonical measurement-name suffix via the topology owner."""
+    pattern = sensor_name_like_pattern(location, cluster)
+    return pattern[1:] if pattern else ""
 
 
 def extract_sensor_values_from_decoded(
@@ -84,13 +57,13 @@ def extract_sensor_values_from_decoded(
             if location == "Lab":
                 sensor_key = "lab_temp"
             elif suffix:
-                sensor_key = f"dry_bulb_{suffix}"
+                sensor_key = f"dry_bulb{suffix}"
             else:
                 sensor_key = "dry_bulb"
             sensors.append((sensor_key, float(decoded["temp_dry_c"]), "°C"))
 
         if "temp_wet_c" in decoded and decoded["temp_wet_c"] is not None:
-            sensor_key = f"wet_bulb_{suffix}" if suffix else "wet_bulb"
+            sensor_key = f"wet_bulb{suffix}" if suffix else "wet_bulb"
             sensors.append((sensor_key, float(decoded["temp_wet_c"]), "°C"))
 
         # Calculate RH and VPD
@@ -100,39 +73,39 @@ def extract_sensor_values_from_decoded(
             pressure = get_pressure_state(location, cluster)
             rh = round(calculate_rh(float(temp_dry), float(temp_wet), pressure), 3)
             vpd = round(calculate_vpd(float(temp_dry), float(temp_wet), pressure), 3)
-            rh_key = f"rh_{suffix}" if suffix else "rh"
-            vpd_key = f"vpd_{suffix}" if suffix else "vpd"
+            rh_key = f"rh{suffix}" if suffix else "rh"
+            vpd_key = f"vpd{suffix}" if suffix else "vpd"
             sensors.append((rh_key, rh, "%"))
             sensors.append((vpd_key, vpd, "kPa"))
 
     elif message_type == "SCD30":
         if "co2_ppm" in decoded and decoded["co2_ppm"] is not None:
-            sensor_key = f"co2_{suffix}" if suffix else "co2"
+            sensor_key = f"co2{suffix}" if suffix else "co2"
             sensors.append((sensor_key, float(decoded["co2_ppm"]), "ppm"))
 
         if "temperature_c" in decoded and decoded["temperature_c"] is not None:
             if location == "Lab":
                 sensor_key = "water_temp"
             elif suffix:
-                sensor_key = f"secondary_temp_{suffix}"
+                sensor_key = f"secondary_temp{suffix}"
             else:
                 sensor_key = "secondary_temp"
             sensors.append((sensor_key, float(decoded["temperature_c"]), "°C"))
 
         if "humidity_percent" in decoded and decoded["humidity_percent"] is not None:
-            sensor_key = f"secondary_rh_{suffix}" if suffix else "secondary_rh"
+            sensor_key = f"secondary_rh{suffix}" if suffix else "secondary_rh"
             sensors.append((sensor_key, float(decoded["humidity_percent"]), "%"))
 
     elif message_type == "BME280":
         if "pressure_hpa" in decoded and decoded["pressure_hpa"] is not None:
             pressure_value = float(decoded["pressure_hpa"])
-            sensor_key = f"pressure_{suffix}" if suffix else "pressure"
+            sensor_key = f"pressure{suffix}" if suffix else "pressure"
             sensors.append((sensor_key, pressure_value, "hPa"))
             update_pressure_state(location, cluster, pressure_value)
 
     elif message_type == "VL53" or message_type == "VL53L0X":
         if "distance_mm" in decoded and decoded["distance_mm"] is not None:
-            sensor_key = f"water_level_{suffix}" if suffix else "water_level"
+            sensor_key = f"water_level{suffix}" if suffix else "water_level"
             sensors.append((sensor_key, float(decoded["distance_mm"]), "mm"))
 
     return sensors
@@ -143,13 +116,9 @@ def process_stream_entries_to_sensor_data(
 ) -> dict[str, list[DataPoint]]:
     """Process Redis Stream entries into sensor data points.
 
-    Args:
-        stream_entries: List of decoded stream entries
-        location: Location name
-        cluster: Cluster name
-
-    Returns:
-        Dictionary mapping sensor_name -> List[DataPoint]
+    Every CAN entry carries an assignment snapshot from ingestion; entries
+    are routed by that snapshot (never by a node-id map), and only entries
+    whose qualified location matches the requested filter feed the result.
     """
     sensor_data: dict[str, list[DataPoint]] = {}
 
@@ -162,9 +131,8 @@ def process_stream_entries_to_sensor_data(
         if not decoded:
             continue
 
-        # Get node_id and map to location/cluster
-        node_id = decoded.get("node_id")
-        entry_location, entry_cluster = get_location_from_node(node_id)
+        entry_location = entry.get("location")
+        entry_cluster = entry.get("cluster")
 
         # Filter by requested location/cluster
         if entry_location != location or entry_cluster != cluster:
@@ -175,17 +143,21 @@ def process_stream_entries_to_sensor_data(
 
         # Get timestamp
         ts_ms = entry.get("timestamp_ms")
-        timestamp = datetime.fromtimestamp(ts_ms / 1000.0) if ts_ms else datetime.now()
+        timestamp = (
+            datetime.fromtimestamp(ts_ms / 1000.0, tz=timezone.utc) if ts_ms else datetime.now()
+        )
 
         # Add to sensor data
         for sensor_name, value, unit in sensors:
             if sensor_name not in sensor_data:
                 sensor_data[sensor_name] = []
 
-            sensor_data[sensor_name].append(DataPoint(timestamp=timestamp, value=value, unit=unit))
+            sensor_data[sensor_name].append(
+                DataPoint(timestamp=timestamp, value=value, unit=unit)
+            )
 
     # Sort each sensor's data points by timestamp
     for sensor_name in sensor_data:
-        sensor_data[sensor_name].sort(key=lambda x: x.timestamp)
+        sensor_data[sensor_name].sort(key=lambda point: point.timestamp)
 
     return sensor_data

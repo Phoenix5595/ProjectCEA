@@ -207,8 +207,9 @@ with_monitoring_test_db() (
   require_command psql
   require_command openssl
   require_command sudo
-  [[ -f "$FIXTURE_SQL" ]] || {
-    fail "fixture SQL is missing: $FIXTURE_SQL"
+  local effective_fixture="${MONITORING_TEST_FIXTURE_SQL:-$FIXTURE_SQL}"
+  [[ -f "$effective_fixture" ]] || {
+    fail "fixture SQL is missing: $effective_fixture"
     exit 1
   }
 
@@ -268,7 +269,7 @@ with_monitoring_test_db() (
   }
   printf 'activated TimescaleDB %s in: %s\n' "$timescaledb_version" "$MONITORING_DATABASE_NAME"
 
-  psql -X --set=ON_ERROR_STOP=1 --file="$FIXTURE_SQL" "$database_url"
+  psql -X --set=ON_ERROR_STOP=1 --file="$effective_fixture" "$database_url"
   printf 'loaded monitoring fixtures into: %s\n' "$MONITORING_DATABASE_NAME"
 
   env \

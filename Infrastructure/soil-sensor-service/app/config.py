@@ -9,7 +9,11 @@ from shared.config import YamlConfigLoader
 
 
 class ConfigLoader(YamlConfigLoader):
-    """Loads and parses ``soil_sensor_config.yaml``."""
+    """Loads and parses ``soil_sensor_config.yaml``.
+
+    Serial + polling settings only: sensor assignment authority lives in
+    the `sensor_registry` table, so no ``sensors:`` list exists here.
+    """
 
     def __init__(self, config_path: str | None = None) -> None:
         super().__init__(
@@ -30,7 +34,3 @@ class ConfigLoader(YamlConfigLoader):
     def get_polling_config(self) -> dict[str, Any]:
         """Get polling interval configuration."""
         return self._config.get("polling", {"interval_seconds": 5})
-
-    def get_sensors(self) -> list[dict[str, Any]]:
-        """Get list of sensor configurations."""
-        return self._config.get("sensors", [])

@@ -38,6 +38,7 @@ const sectorTabs: Record<Sector, Tab[]> = {
   flower: [
     { id: 'overview', label: 'Overview', path: '/flower' },
     { id: 'monitoring', label: 'Monitoring', path: '/flower/monitoring' },
+    { id: 'soil', label: 'Soil', path: '/flower/soil' },
     { id: 'control', label: 'Control', path: '/flower/control' },
     { id: 'automation', label: 'Automation', path: '/flower/automation' },
   ],

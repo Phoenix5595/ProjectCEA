@@ -24,6 +24,12 @@ export function familyColor(family: ChartFamily): string {
       return readToken('familyDevice')
     case 'light':
       return readToken('familyLight')
+    case 'water_content':
+      return readToken('familyWaterContent')
+    case 'conductivity':
+      return readToken('familyConductivity')
+    case 'ph':
+      return readToken('familyPh')
   }
 }
 
@@ -78,6 +84,18 @@ export function buildSeries(data: AlignedData): uPlot.Series[] {
       }
       if (isEnvelopeSeries(s)) {
         series.width = 0
+      }
+      // Sensor-source series may declare a line pattern (soil: Water content
+      // solid, EC dashed, pH dotted, temperature dash-dot) without touching
+      // the target-series behavior above.
+      if (!target && s.presentation?.dash) {
+        const dash = [...s.presentation.dash]
+        if (dash[0] === 0) {
+          series.dash = [1, dash[1] ?? 5]
+          series.cap = 'round'
+        } else {
+          series.dash = dash
+        }
       }
       if (target) {
         const dash = s.presentation?.dash ? [...s.presentation.dash] : parseDash(readToken('targetDash'))
