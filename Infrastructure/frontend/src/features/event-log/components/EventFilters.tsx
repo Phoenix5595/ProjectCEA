@@ -1,4 +1,5 @@
 import { useCallback, type ChangeEvent } from 'react'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { SEVERITY_LABELS, type SeverityLevel } from '../presentation/severity'
 import type { EventLogView } from './EventGroupedView'
 
@@ -59,19 +60,117 @@ const VIEW_OPTIONS: ReadonlyArray<{ value: EventLogView; label: string }> = [
   { value: 'flat', label: 'All events' },
 ]
 
+interface FilterDropdownProps {
+  filters: FilterState
+  categories: readonly string[]
+  types: readonly string[]
+  onChange: (next: FilterState) => void
+}
+
+function FilterCheckboxList({
+  label,
+  heading,
+  options,
+  selected,
+  onToggle,
+}: {
+  label: string
+  heading: string
+  options: readonly string[]
+  selected: readonly string[]
+  onToggle: (value: string) => void
+}) {
+  if (options.length === 0) return null
+  return (
+    <div className="flex flex-col gap-1" role="group" aria-label={label}>
+      <p className="text-11 font-bold uppercase tracking-wide text-text-secondary">{heading}</p>
+      {options.map((option) => (
+        <label
+          key={option}
+          className="flex items-center gap-2 px-1.5 py-0.5 text-xs text-text-default rounded-sm hover:bg-surface-secondary cursor-pointer"
+        >
+          <input
+            type="checkbox"
+            checked={selected.includes(option)}
+            onChange={() => onToggle(option)}
+            className="size-3.5 accent-[var(--accent)]"
+          />
+          <span className="break-all">{option}</span>
+        </label>
+      ))}
+    </div>
+  )
+}
+
+function FilterDropdown({ filters, categories, types, onChange }: FilterDropdownProps) {
+  const activeCount = filters.categories.length + filters.types.length
+
+  const clear = useCallback(() => {
+    onChange({ ...filters, categories: [], types: [] })
+  }, [filters, onChange])
+
+  return (
+    <Popover>
+      <PopoverTrigger
+        type="button"
+        className={`px-2 py-1 text-xs font-semibold border transition-colors whitespace-nowrap ${
+          activeCount > 0
+            ? 'bg-surface-tertiary text-text-default border-border-emphasis'
+            : 'bg-surface-secondary text-text-default border-border-subtle hover:text-text-default hover:border-border-default'
+        }`}
+      >
+        Categories &amp; types{activeCount > 0 ? ` (${activeCount})` : ''}
+      </PopoverTrigger>
+      <PopoverContent
+        align="start"
+        className="w-56 p-2"
+        aria-label="Category and type filters"
+      >
+        <div className="flex flex-col gap-2 max-h-64 overflow-y-auto">
+          <FilterCheckboxList
+            label="Category filter"
+            heading="Categories"
+            options={categories}
+            selected={filters.categories}
+            onToggle={(value) => toggleDimension(filters, onChange, 'categories', value)}
+          />
+          <FilterCheckboxList
+            label="Event type filter"
+            heading="Types"
+            options={types}
+            selected={filters.types}
+            onToggle={(value) => toggleDimension(filters, onChange, 'types', value)}
+          />
+        </div>
+        {activeCount > 0 && (
+          <button
+            type="button"
+            onClick={clear}
+            className="mt-2 px-2 py-1 text-xs font-semibold border bg-surface-secondary border-border-subtle text-text-default hover:border-border-default"
+          >
+            Clear
+          </button>
+        )}
+      </PopoverContent>
+    </Popover>
+  )
+}
+
+function toggleDimension(
+  filters: FilterState,
+  onChange: (next: FilterState) => void,
+  key: 'rooms' | 'categories' | 'types',
+  value: string,
+) {
+  const current = filters[key]
+  const next = current.includes(value) ? current.filter((v) => v !== value) : [...current, value]
+  onChange({ ...filters, [key]: next })
+}
+
 export function EventFilters({ filters, onChange, rooms, categories, types, view, onViewChange }: EventFiltersProps) {
   const handleSearchChange = useCallback(
     (event: ChangeEvent<HTMLInputElement>) => {
       onChange({ ...filters, search: event.target.value })
-    },
-    [filters, onChange],
-  )
-
-  const toggle = useCallback(
-    (key: 'rooms' | 'categories' | 'types', value: string) => {
-      const current = filters[key]
-      const next = current.includes(value) ? current.filter((v) => v !== value) : [...current, value]
-      onChange({ ...filters, [key]: next })
     },
     [filters, onChange],
   )
@@ -113,6 +212,7 @@ export function EventFilters({ filters, onChange, rooms, categories, types, view
             </button>
           ))}
         </div>
+        <FilterDropdown filters={filters} categories={categories} types={types} onChange={onChange} />
         <input
           type="search"
           role="searchbox"
@@ -132,35 +232,7 @@ export function EventFilters({ filters, onChange, rooms, categories, types, view
               key={room}
               label={room}
               selected={filters.rooms.includes(room)}
-              onClick={() => toggle('rooms', room)}
-            />
-          ))}
-        </div>
-      )}
-
-      {categories.length > 0 && (
-        <div className="flex flex-wrap items-center gap-1" role="group" aria-label="Category filter">
-          <span className="text-xs text-text-default font-semibold">Categories:</span>
-          {categories.map((category) => (
-            <MultiSelectChip
-              key={category}
-              label={category}
-              selected={filters.categories.includes(category)}
-              onClick={() => toggle('categories', category)}
-            />
-          ))}
-        </div>
-      )}
-
-      {types.length > 0 && (
-        <div className="flex flex-wrap items-center gap-1" role="group" aria-label="Event type filter">
-          <span className="text-xs text-text-default font-semibold">Types:</span>
-          {types.map((type) => (
-            <MultiSelectChip
-              key={type}
-              label={type}
-              selected={filters.types.includes(type)}
-              onClick={() => toggle('types', type)}
+              onClick={() => toggleDimension(filters, onChange, 'rooms', room)}
             />
           ))}
         </div>

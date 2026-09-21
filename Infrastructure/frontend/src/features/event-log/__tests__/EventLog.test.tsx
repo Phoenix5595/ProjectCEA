@@ -104,7 +104,7 @@ describe('EventLog', () => {
     expect(screen.getAllByRole('listitem')).toHaveLength(1)
   })
 
-  it('filters entries by category chip', async () => {
+  it('filters entries by category checkbox from the dropdown', async () => {
     const user = userEvent.setup()
     const entries = [
       makeEventEntry('1-0', 'relay.state_changed', 'relay'),
@@ -112,12 +112,13 @@ describe('EventLog', () => {
     ]
     render(<EventLog entries={entries} now={new Date('2026-09-02T12:00:00Z')} />)
     await showFlat(user)
-    await user.click(screen.getByRole('button', { name: 'mutation', pressed: false }))
+    await user.click(screen.getByRole('button', { name: /Categories & types/ }))
+    await user.click(screen.getByRole('checkbox', { name: 'mutation' }))
     expect(screen.getAllByRole('listitem')).toHaveLength(1)
     expect(screen.getByText('Configuration updated')).toBeInTheDocument()
   })
 
-  it('filters entries by event type chip', async () => {
+  it('filters entries by event type checkbox from the dropdown', async () => {
     const user = userEvent.setup()
     const entries = [
       makeEventEntry('1-0', 'relay.state_changed', 'relay'),
@@ -126,7 +127,8 @@ describe('EventLog', () => {
     ]
     render(<EventLog entries={entries} now={new Date('2026-09-02T12:00:00Z')} />)
     await showFlat(user)
-    await user.click(screen.getByRole('button', { name: 'relay.command_issued', pressed: false }))
+    await user.click(screen.getByRole('button', { name: /Categories & types/ }))
+    await user.click(screen.getByRole('checkbox', { name: 'relay.command_issued' }))
     expect(screen.getAllByRole('listitem')).toHaveLength(1)
     expect(screen.getByText('Relay command issued')).toBeInTheDocument()
   })
