@@ -127,12 +127,15 @@ class BackgroundTasks:
         self.sensor_configs = {}
         for entry in await self.database.load_registry_sensors():
             modbus_id = entry["hardware_address"]
-            self.discovered_modbus_ids.add(modbus_id)
             try:
                 await self._wire_probe(modbus_id, entry["registry_id"], entry["bed_name"])
+                self.discovered_modbus_ids.add(modbus_id)
                 state = "assigned to " + entry["bed_name"] if entry["bed_name"] else "unassigned"
                 logger.info(f"Loaded sensor: soil_sensor_{modbus_id} ({state})")
             except Exception as e:
+                # A failed wiring (e.g. serial adapter absent) stays
+                # undiscovered so the next scan retries it instead of the
+                # probe being lost until a service restart.
                 logger.error(f"Failed to load sensor Modbus ID {modbus_id}: {e}")
 
     async def _discovery_loop(self) -> None:
@@ -158,6 +161,10 @@ class BackgroundTasks:
         """Scan the bus for new sensors and upsert unknown addresses as
         unassigned registry rows. Polling metadata refreshes here on the
         existing discovery cadence."""
+        # Registry metadata refresh happens before bus work so freshness and
+        # bed assignment still follow the registry when the serial adapter is
+        # absent or the scan fails.
+        await self._refresh_assignments()
         try:
             temp_modbus = ModbusRTU(cast(str, self.rs485_port), self.rs485_baudrate, timeout=0.5)
             temp_modbus.connect()
@@ -181,9 +188,6 @@ class BackgroundTasks:
                     logger.debug(f"Modbus probe id={modbus_id} no response ({type(e).__name__})")
 
             temp_modbus.disconnect()
-
-            # Registry-backed refresh: bed metadata follows the registry.
-            await self._refresh_assignments()
         except Exception as e:
             logger.error(f"Error scanning bus: {e}")
             # Don't raise, keep trying
