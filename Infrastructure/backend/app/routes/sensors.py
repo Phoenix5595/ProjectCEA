@@ -14,7 +14,7 @@ from app.redis_client import (
     get_sensor_value,
 )
 from app.redis_stream_reader import RedisStreamReader
-from app.stream_processor import process_stream_entries_to_sensor_data
+from app.stream_processor import all_entries_qualified, process_stream_entries_to_sensor_data
 from shared.cluster_topology import (
     ClusterMismatchError,
     UnknownRoomError,
@@ -174,21 +174,32 @@ async def get_sensor_data(
 
                     if stream_entries:
                         logger.debug(f"API: Found {len(stream_entries)} entries in Redis Stream")
-                        stream_sensor_data = process_stream_entries_to_sensor_data(
-                            stream_entries, location, cluster
-                        )
-
-                        if stream_sensor_data:
+                        if not all_entries_qualified(stream_entries):
+                            # Any legacy/unqualified CAN entry in the interval
+                            # could mix locations or hide reassignment, so the
+                            # stream result is bypassed entirely and the
+                            # database (metadata-consistent) path is used.
                             logger.debug(
-                                f"API: Processed {len(stream_sensor_data)} sensor types from Stream"
+                                "API: Unqualified CAN stream entries in range; "
+                                "bypassing stream and querying TimescaleDB"
                             )
-                            sensor_data = stream_sensor_data
-                            total_points = sum(len(points) for points in sensor_data.values())
-                            if total_points > 0:
+                            use_stream = False
+                        else:
+                            stream_sensor_data = process_stream_entries_to_sensor_data(
+                                stream_entries, location, cluster
+                            )
+
+                            if stream_sensor_data:
                                 logger.debug(
-                                    f"API: Using data from Redis Stream ({total_points} total data points)"
+                                    f"API: Processed {len(stream_sensor_data)} sensor types from Stream"
                                 )
-                                use_stream = True
+                                sensor_data = stream_sensor_data
+                                total_points = sum(len(points) for points in sensor_data.values())
+                                if total_points > 0:
+                                    logger.debug(
+                                        f"API: Using data from Redis Stream ({total_points} total data points)"
+                                    )
+                                    use_stream = True
         except Exception as e:
             logger.warning(f"Error reading from Redis Stream: {e}, falling back to database")
             use_stream = False

@@ -83,7 +83,7 @@ class RedisClient:
         sensor_name: str,
         value: float,
         unit: str,
-        bed_name: str,
+        bed_name: str | None,
         location: str = "Flower Room",
     ) -> bool:
         """
@@ -93,7 +93,7 @@ class RedisClient:
             sensor_name: Full sensor name (e.g., "soil_sensor_front_bed_temperature")
             value: Sensor value
             unit: Unit of measurement
-            bed_name: Bed name (e.g., "Front Bed")
+            bed_name: Assigned bed name, or None while unassigned
             location: Location/room name
 
         Returns:
@@ -143,7 +143,7 @@ class RedisClient:
         self,
         sensor_base_name: str,
         readings: dict[str, float],
-        bed_name: str,
+        bed_name: str | None,
         location: str = "Flower Room",
     ) -> bool:
         """Write sensor readings to Redis Stream (sensor:raw).
@@ -151,7 +151,9 @@ class RedisClient:
         Args:
             sensor_base_name: Base sensor name (e.g., "soil_sensor_front_bed")
             readings: Dict with temperature, humidity, ec, ph values
-            bed_name: Bed name
+            bed_name: Assigned bed name, or None while unassigned
+                (the raw stream is always written; bed metadata stays empty)
+
             location: Location/room name
 
         Returns:
@@ -169,8 +171,8 @@ class RedisClient:
                 b"ts": str(timestamp_ms).encode(),
                 b"type": b"soil",  # Mark as soil sensor data
                 b"sensor_name": sensor_base_name.encode(),
-                b"bed_name": bed_name.encode(),
-                b"location": location.encode(),
+                b"bed_name": (bed_name or "").encode(),
+                b"location": (location or "").encode(),
                 b"readings": json.dumps(readings).encode(),
             }
 
@@ -186,7 +188,7 @@ class RedisClient:
         self,
         sensor_base_name: str,
         readings: dict[str, float],
-        bed_name: str,
+        bed_name: str | None,
         location: str = "Flower Room",
     ) -> bool:
         """
@@ -195,7 +197,9 @@ class RedisClient:
         Args:
             sensor_base_name: Base sensor name (e.g., "soil_sensor_front_bed")
             readings: Dict with temperature, humidity, ec, ph values
-            bed_name: Bed name
+            bed_name: Assigned bed name, or None while unassigned
+                (the raw stream is always written; bed metadata stays empty)
+
             location: Location/room name
 
         Returns:

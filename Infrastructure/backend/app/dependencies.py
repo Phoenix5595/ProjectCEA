@@ -5,12 +5,14 @@ from __future__ import annotations
 from app.config import ConfigLoader
 from app.database import DatabaseManager
 from app.repositories.config_repository import ConfigRepository
+from app.repositories.sensor_registry_repository import SensorRegistryRepository
 from app.repositories.sensor_repository import SensorRepository
 
 _db_manager: DatabaseManager | None = None
 _config_loader: ConfigLoader | None = None
 _sensor_repository: SensorRepository | None = None
 _config_repository: ConfigRepository | None = None
+_sensor_registry_repository: SensorRegistryRepository | None = None
 
 
 def get_db_manager() -> DatabaseManager:
@@ -40,3 +42,11 @@ def get_config_repository() -> ConfigRepository:
         loader = get_config_loader()
         _config_repository = ConfigRepository(config_path=loader.config_path)
     return _config_repository
+
+
+def get_sensor_registry_repository() -> SensorRegistryRepository:
+    """DI seam for the sensor-registry router (override-friendly for tests)."""
+    global _sensor_registry_repository
+    if _sensor_registry_repository is None:
+        _sensor_registry_repository = SensorRegistryRepository(db_manager=get_db_manager())
+    return _sensor_registry_repository

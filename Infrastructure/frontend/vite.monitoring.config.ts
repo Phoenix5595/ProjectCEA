@@ -29,6 +29,7 @@ import {
   sensorStatsFixture,
   wsFixtureMessage,
 } from './src/features/monitoring/config/fixtures'
+import { SOIL_FIXTURE_ROUTES } from './src/features/soil/config/soilFixtures'
 import {
   eventHistoryFixture,
   sseFrameForEntry,
@@ -341,6 +342,7 @@ function timelineFixture(req: { url?: string; method?: string; body?: string }, 
 }
 
 const FIXTURE_ROUTES: FixtureRoute[] = [
+  ...SOIL_FIXTURE_ROUTES,
   {
     re: /^\/api\/sensors\/monitoring\/range\/([^/]+)/,
     handler: (req, scenario) => {
@@ -1039,9 +1041,15 @@ function monitoringPreviewPlugin(): Plugin {
         }
 
         for (const route of FIXTURE_ROUTES) {
-      if (route.re.test(pathname)) {
+          if (route.re.test(pathname)) {
             res.setHeader('Content-Type', 'application/json')
-            const body = JSON.stringify(route.handler({ url: req.url, method: req.method, body: requestBody }, scenario))
+            const handlerBody = route.handler({ url: req.url, method: req.method, body: requestBody }, scenario)
+            const body = JSON.stringify(handlerBody)
+            if (scenario === 'bed-capacity-conflict' && pathname.endsWith('/assignment')) {
+              res.statusCode = 409
+              res.end(body)
+              return
+            }
             if (scenario === 'delayed-control-recovery' && pathname.endsWith('/tail')) {
               const key = counterKey('delayed-control-tail')
               const count = scenarioCounters.get(key) ?? 0

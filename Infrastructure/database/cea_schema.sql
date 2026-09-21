@@ -60,6 +60,60 @@ CREATE TABLE IF NOT EXISTS sensor (
 );
 
 -- ============================================
+-- Sensor Registry: physical sensor units (CAN nodes, RS-485 probes)
+-- ============================================
+
+-- Canonical commissioned placement for every physical sensor unit.
+-- `device` / `sensor` / `measurement` remain the metric/history store;
+-- this registry only records which room position or Flower bed a unit
+-- belongs to (see Infrastructure/database/migrate_sensor_registry.sql
+-- for the legacy-data seed migration).
+-- Assignment shapes enforced by sensor_registry_legal_state:
+--   * unassigned (any bus): room_id / rack_id / location_in_room all NULL
+--   * assigned CAN:         room_id + location_in_room set, rack_id NULL
+--   * assigned RS-485:      rack_id set (a Flower bed), room/location NULL
+CREATE TABLE IF NOT EXISTS sensor_registry (
+    registry_id BIGSERIAL PRIMARY KEY,
+    bus TEXT NOT NULL CHECK (bus IN ('can', 'rs485')),
+    hardware_address INTEGER NOT NULL CHECK (hardware_address > 0),
+    device_id INTEGER REFERENCES device(device_id) ON DELETE SET NULL,
+    display_name TEXT NOT NULL CHECK (length(btrim(display_name)) > 0),
+    room_id INTEGER REFERENCES room(room_id) ON DELETE RESTRICT,
+    rack_id INTEGER REFERENCES rack(rack_id) ON DELETE RESTRICT,
+    location_in_room TEXT CHECK (location_in_room IN ('front', 'back', 'main')),
+    first_seen TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    last_seen TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT sensor_registry_bus_address_unique UNIQUE (bus, hardware_address),
+    CONSTRAINT sensor_registry_device_unique UNIQUE (device_id),
+    CONSTRAINT sensor_registry_legal_state CHECK (
+        (room_id IS NULL AND rack_id IS NULL AND location_in_room IS NULL)
+        OR (
+            bus = 'can'
+            AND room_id IS NOT NULL
+            AND location_in_room IS NOT NULL
+            AND rack_id IS NULL
+        )
+        OR (
+            bus = 'rs485'
+            AND rack_id IS NOT NULL
+            AND room_id IS NULL
+            AND location_in_room IS NULL
+        )
+    )
+);
+
+-- A CAN room position holds at most one physical node.
+CREATE UNIQUE INDEX IF NOT EXISTS sensor_registry_can_position_unique
+    ON sensor_registry (room_id, location_in_room)
+WHERE bus = 'can'
+  AND room_id IS NOT NULL
+  AND location_in_room IS NOT NULL;
+
+COMMENT ON TABLE sensor_registry IS
+    'Physical sensor units (CAN nodes, RS-485 probes) with commissioned room/bed placement; links to device rows for time-series data';
+
+-- ============================================
 -- Time-Series Table (Hypertable)
 -- ============================================
 
