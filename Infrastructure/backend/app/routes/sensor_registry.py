@@ -40,9 +40,7 @@ async def list_sensor_registry(
 @router.put("/registry/{registry_id}/assignment")
 async def assign_sensor_registry(
     registry_id: int,
-    body: Annotated[
-        CanAssignmentRequest | Rs485AssignmentRequest, Body(discriminator="kind")
-    ],
+    body: Annotated[CanAssignmentRequest | Rs485AssignmentRequest, Body(discriminator="kind")],
     repository: Annotated[SensorRegistryRepository, Depends(get_sensor_registry_repository)],
 ):
     """Assign a physical sensor unit to a room position (CAN) or Flower bed (RS-485)."""
@@ -62,7 +60,9 @@ async def get_soil_history(
     repository: Annotated[SensorRegistryRepository, Depends(get_sensor_registry_repository)],
     start: datetime = Query(...),
     end: datetime = Query(...),
-    max_points: Annotated[int, Query(..., ge=SOIL_HISTORY_MIN_POINTS, le=SOIL_HISTORY_MAX_POINTS)] = 500,
+    max_points: Annotated[
+        int, Query(..., ge=SOIL_HISTORY_MIN_POINTS, le=SOIL_HISTORY_MAX_POINTS)
+    ] = 500,
 ) -> SoilHistoryResponse:
     """Envelope history for assigned RS-485 probes within an aware UTC window.
 

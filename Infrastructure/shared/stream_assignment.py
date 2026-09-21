@@ -33,6 +33,4 @@ def entry_qualified(entry: dict[str, Any]) -> bool:
 
 def all_entries_qualified(stream_entries: list[dict[str, Any]]) -> bool:
     """True when every CAN entry covering an interval has qualified metadata."""
-    return all(
-        entry_qualified(entry) for entry in stream_entries if entry.get("type") == "can"
-    )
+    return all(entry_qualified(entry) for entry in stream_entries if entry.get("type") == "can")

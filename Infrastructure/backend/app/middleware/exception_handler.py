@@ -63,7 +63,9 @@ class ServiceUnavailableError(APIError):
     unavailable. Never silently degrade — callers must see the 503."""
 
     def __init__(
-        self, message: str = "Service temporarily unavailable", error_code: str = "SERVICE_UNAVAILABLE"
+        self,
+        message: str = "Service temporarily unavailable",
+        error_code: str = "SERVICE_UNAVAILABLE",
     ):
         super().__init__(status_code=503, message=message, error_code=error_code)
 

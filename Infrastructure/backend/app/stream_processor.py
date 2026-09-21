@@ -143,18 +143,14 @@ def process_stream_entries_to_sensor_data(
 
         # Get timestamp
         ts_ms = entry.get("timestamp_ms")
-        timestamp = (
-            datetime.fromtimestamp(ts_ms / 1000.0, tz=UTC) if ts_ms else datetime.now()
-        )
+        timestamp = datetime.fromtimestamp(ts_ms / 1000.0, tz=UTC) if ts_ms else datetime.now()
 
         # Add to sensor data
         for sensor_name, value, unit in sensors:
             if sensor_name not in sensor_data:
                 sensor_data[sensor_name] = []
 
-            sensor_data[sensor_name].append(
-                DataPoint(timestamp=timestamp, value=value, unit=unit)
-            )
+            sensor_data[sensor_name].append(DataPoint(timestamp=timestamp, value=value, unit=unit))
 
     # Sort each sensor's data points by timestamp
     for sensor_name in sensor_data:

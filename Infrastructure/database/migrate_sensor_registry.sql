@@ -194,3 +194,25 @@ FROM resolved
 ON CONFLICT (bus, hardware_address) DO NOTHING;
 
 COMMIT;
+
+-- Production services connect as cea_user; the new table must be owned and
+-- accessible by the service role the way every other metadata table is.
+-- Disposable verification databases have no cea_user role, so the grant
+-- step is applied only where that role exists (idempotent either way).
+DO $grant$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'cea_user')
+       AND NOT (SELECT rolsuper FROM pg_roles WHERE rolname = current_user) THEN
+        -- Applied by the service-role owner itself: ownership already correct.
+        RETURN;
+    END IF;
+    ALTER TABLE sensor_registry OWNER TO cea_user;
+    GRANT ALL PRIVILEGES ON TABLE sensor_registry TO cea_user;
+    GRANT USAGE, SELECT ON SEQUENCE sensor_registry_registry_id_seq TO cea_user;
+EXCEPTION
+    WHEN insufficient_privilege THEN
+        -- Disposable verification databases run under a non-member role;
+        -- skip the service-role alignment there (production applies it).
+        NULL;
+END
+$grant$;
