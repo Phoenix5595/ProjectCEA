@@ -191,12 +191,46 @@ class RedisStreamReader:
                 with contextlib.suppress(AttributeError, UnicodeDecodeError):
                     raw_data = data_bytes.decode("utf-8")
 
+            # Assignment snapshot (CAN ingestion): assigned entries carry a
+            # numeric registry id plus the topology-qualified location;
+            # unassigned entries are marked explicitly. Legacy entries carry
+            # neither field and stay unqualified (assigned=None).
+            assigned: bool | None = None
+            registry_id: int | None = None
+            location: str | None = None
+            cluster: str | None = None
+            assigned_bytes = fields.get(b"assigned")
+            if assigned_bytes:
+                with contextlib.suppress(AttributeError, UnicodeDecodeError):
+                    assigned_value = assigned_bytes.decode("utf-8")
+                    if assigned_value == "true":
+                        assigned = True
+                    elif assigned_value == "false":
+                        assigned = False
+            if assigned:
+                registry_bytes = fields.get(b"registry_id")
+                if registry_bytes:
+                    with contextlib.suppress(ValueError, AttributeError):
+                        registry_id = int(registry_bytes.decode("utf-8"))
+                location_bytes = fields.get(b"location")
+                if location_bytes:
+                    with contextlib.suppress(AttributeError, UnicodeDecodeError):
+                        location = location_bytes.decode("utf-8")
+                cluster_bytes = fields.get(b"cluster")
+                if cluster_bytes:
+                    with contextlib.suppress(AttributeError, UnicodeDecodeError):
+                        cluster = cluster_bytes.decode("utf-8")
+
             return {
                 "id": entry_id_str,
                 "timestamp_ms": ts_ms,
                 "type": entry_type,
                 "raw_data": raw_data,
                 "decoded": decoded_data,
+                "assigned": assigned,
+                "registry_id": registry_id,
+                "location": location,
+                "cluster": cluster,
             }
 
         except Exception as e:

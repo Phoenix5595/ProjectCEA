@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
 
 import { normalizeDeviceControlCluster } from '../config/zones'
@@ -8,16 +9,30 @@ import { logger } from '../utils/logger'
 import DeviceTable from './devices/DeviceTable'
 import DfrBoardsPanel from './devices/DfrBoardsPanel'
 import RelayChannelMatrix from './devices/RelayChannelMatrix'
+import SensorSettingsPanel from './devices/SensorSettingsPanel'
 import SystemSettingsPanel from './devices/SystemSettingsPanel'
 import { buildRelayChannelViewModels } from './devices/relayViewModel'
 
+type DeviceTab = 'devices' | 'sensors' | 'settings'
+
+function parseTab(raw: string | null): DeviceTab {
+  if (raw === 'sensors') return 'sensors'
+  if (raw === 'settings') return 'settings'
+  return 'devices'
+}
+
 export default function DeviceManager() {
-  const [activeTab, setActiveTab] = useState<'devices' | 'settings'>('devices')
+  const [searchParams, setSearchParams] = useSearchParams()
+  const activeTab: DeviceTab = parseTab(searchParams.get('tab'))
   const [refreshKey, setRefreshKey] = useState(0)
   const handleSharedRefresh = useCallback(() => setRefreshKey((k) => k + 1), [])
   const { snapshot, mcpConnected, refreshNow } = useControlSnapshot()
   const [menuOpenChannel, setMenuOpenChannel] = useState<number | null>(null)
   const [nowMs, setNowMs] = useState(Date.now())
+
+  function selectTab(tab: DeviceTab) {
+    setSearchParams(tab === 'devices' ? {} : { tab }, { replace: false })
+  }
 
   const relayChannels = useMemo(
     () => buildRelayChannelViewModels(snapshot),
@@ -122,7 +137,7 @@ export default function DeviceManager() {
       <div className="flex border-b border-border-subtle">
         <button
           type="button"
-          onClick={() => setActiveTab('devices')}
+          onClick={() => selectTab('devices')}
           className={`px-4 py-2 text-sm font-medium ${
             activeTab === 'devices'
               ? 'border-b-2 border-btn-primary-light text-btn-primary-text'
@@ -133,16 +148,33 @@ export default function DeviceManager() {
         </button>
         <button
           type="button"
-          onClick={() => setActiveTab('settings')}
+          onClick={() => selectTab('sensors')}
+          className={`px-4 py-2 text-sm font-medium ${
+            activeTab === 'sensors'
+              ? 'border-b-2 border-btn-primary-light text-btn-primary-text'
+              : 'text-text-muted hover:text-text-secondary'
+          }`}
+        >
+          Sensor Settings
+        </button>
+        <button
+          type="button"
+          onClick={() => selectTab('settings')}
           className={`px-4 py-2 text-sm font-medium ${
             activeTab === 'settings'
               ? 'border-b-2 border-btn-primary-light text-btn-primary-text'
               : 'text-text-muted hover:text-text-secondary'
           }`}
         >
-          Settings
+          System Settings
         </button>
       </div>
+
+      {activeTab === 'sensors' && (
+        <SensorSettingsPanel
+          initialStatus={searchParams.get('status') === 'unassigned' ? 'unassigned' : undefined}
+        />
+      )}
 
       {activeTab === 'settings' && <SystemSettingsPanel />}
 
