@@ -8,7 +8,7 @@ the CAN processor consults).
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from app.models import DataPoint
@@ -144,7 +144,7 @@ def process_stream_entries_to_sensor_data(
         # Get timestamp
         ts_ms = entry.get("timestamp_ms")
         timestamp = (
-            datetime.fromtimestamp(ts_ms / 1000.0, tz=timezone.utc) if ts_ms else datetime.now()
+            datetime.fromtimestamp(ts_ms / 1000.0, tz=UTC) if ts_ms else datetime.now()
         )
 
         # Add to sensor data

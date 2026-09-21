@@ -28,9 +28,7 @@ def entry_qualified(entry: dict[str, Any]) -> bool:
         return False
     if entry.get("registry_id") is None:
         return False
-    if entry.get("location") is None or entry.get("cluster") is None:
-        return False
-    return True
+    return entry.get("location") is not None and entry.get("cluster") is not None
 
 
 def all_entries_qualified(stream_entries: list[dict[str, Any]]) -> bool:

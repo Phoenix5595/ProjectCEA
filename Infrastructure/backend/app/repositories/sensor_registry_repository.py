@@ -10,10 +10,10 @@ store, Redis stays live state only.
 
 from __future__ import annotations
 
-import math
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
+import math
 from typing import TYPE_CHECKING, Any
 
 import asyncpg
@@ -24,8 +24,13 @@ from app.middleware.exception_handler import (
     ServiceUnavailableError,
     ValidationAPIError,
 )
+from app.repositories.sensor_repository import _pick_aggregate_tier
 from app.sensor_registry_models import (
     RS485_BEDS,
+    SOIL_HISTORY_MAX_POINTS,
+    SOIL_HISTORY_MAX_RANGE_SECONDS,
+    SOIL_HISTORY_MIN_POINTS,
+    SOIL_HISTORY_MIN_RANGE_SECONDS,
     CanAssignmentRequest,
     CanAssignmentView,
     Rs485AssignmentRequest,
@@ -37,12 +42,7 @@ from app.sensor_registry_models import (
     SoilMetricHistory,
     SoilMetricValue,
     SoilProbeLive,
-    SOIL_HISTORY_MAX_POINTS,
-    SOIL_HISTORY_MAX_RANGE_SECONDS,
-    SOIL_HISTORY_MIN_POINTS,
-    SOIL_HISTORY_MIN_RANGE_SECONDS,
 )
-from app.repositories.sensor_repository import _pick_aggregate_tier
 from shared.cluster_topology import known_rooms, sensor_name_like_pattern, sensor_url_clusters_for
 from shared.infra_logging import get_logger
 
@@ -95,7 +95,7 @@ _SOURCE_BUCKET_SECONDS: dict[str, int] = {"1min": 60, "5min": 300, "hourly": 360
 def _aware_utc(value: datetime) -> datetime:
     if value.tzinfo is None:
         raise ValidationAPIError(message="Timestamps must carry an explicit UTC offset")
-    return value.astimezone(timezone.utc)
+    return value.astimezone(UTC)
 
 
 class SensorRegistryRepository:
@@ -479,15 +479,13 @@ class SensorRegistryRepository:
                     sensor_names = [r["name"] for r in sensor_rows]
                 probes.append(await self._probe_live(row, sensor_names))
 
-        return SoilLiveResponse(generated_at=datetime.now(timezone.utc), probes=probes)
+        return SoilLiveResponse(generated_at=datetime.now(UTC), probes=probes)
 
     async def _probe_live(self, row: Any, sensor_names: list[str]) -> SoilProbeLive:
         from app.redis_client import get_sensor_timestamp, get_sensor_value
 
-        metrics: dict[str, SoilMetricValue | None] = {
-            metric: None for metric in ("temperature", "water_content", "ec", "ph")
-        }
-        now = datetime.now(timezone.utc)
+        metrics: dict[str, SoilMetricValue | None] = dict.fromkeys(("temperature", "water_content", "ec", "ph"))
+        now = datetime.now(UTC)
         for name in sensor_names:
             metric = self._metric_for_channel(name)
             if metric is None:
@@ -497,7 +495,7 @@ class SensorRegistryRepository:
                 continue
             ts_ms = await get_sensor_timestamp(name)
             observed_at = (
-                datetime.fromtimestamp(ts_ms / 1000.0, tz=timezone.utc)
+                datetime.fromtimestamp(ts_ms / 1000.0, tz=UTC)
                 if ts_ms is not None
                 else now
             )
