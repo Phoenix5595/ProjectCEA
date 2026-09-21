@@ -19,7 +19,17 @@ vi.mock('../../hooks/useSensorPolling', () => ({
 }));
 
 vi.mock('../../hooks/useSystemStatus', () => ({
-  useSystemStatus: () => ({ systemStats: null, statusDevices: {}, degraded: null }),
+  useSystemStatus: () => ({
+    systemStats: {
+      cpu_usage: 10,
+      memory_usage: 20,
+      disk_usage: 30,
+      uptime: '0d 1h',
+      services: [{ name: 'automation-service', status: 'running' }],
+    },
+    statusDevices: {},
+    degraded: null,
+  }),
 }));
 
 vi.mock('../../hooks/useCalendarEvents', () => ({
@@ -38,6 +48,7 @@ vi.mock('../../services/api', () => ({
   apiClient: {
     getLatestWeather: vi.fn().mockResolvedValue({ data: null }),
     getSystemStatus: vi.fn().mockResolvedValue({}),
+    getSystemHealth: vi.fn().mockResolvedValue([]),
   },
 }));
 
@@ -51,33 +62,49 @@ function renderPage() {
   );
 }
 
-describe('Dashboard legacy control history removal', () => {
+describe('Dashboard dense layout', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it('renders current dashboard cards and shared EventLog without Recent on/off cards', () => {
+  it('renders exactly the Flower and Veg room links (Lab lives in the rail)', () => {
     renderPage();
 
-    expect(screen.getByText('Vegetation Room')).toBeInTheDocument();
-    expect(screen.getByText('Flower Room')).toBeInTheDocument();
-
-    const zoneRows = screen.getAllByRole('link');
-    expect(zoneRows.some((link) => link.textContent?.includes('Lab'))).toBe(true);
-
-    expect(screen.queryByText('Recent on/off')).not.toBeInTheDocument();
+    const zoneLinks = screen
+      .getAllByRole('link')
+      .filter((link) => link.getAttribute('href')?.startsWith('/zone/'));
+    expect(zoneLinks).toHaveLength(2);
+    expect(zoneLinks.map((l) => l.getAttribute('href'))).toEqual(
+      expect.arrayContaining(['/zone/Flower%20Room/main', '/zone/Veg%20Room/main'])
+    );
+    expect(zoneLinks.some((link) => link.getAttribute('href')?.includes('Lab'))).toBe(false);
   });
 
-  it('renders shared EventLog heading', () => {
+  it('renders exactly one shared EventLog', () => {
     renderPage();
-    expect(screen.getByRole('heading', { name: /Event Log/i })).toBeInTheDocument();
+    expect(screen.getAllByRole('heading', { name: /Event Log/i })).toHaveLength(1);
   });
 
-  it('retains navigation links to zone detail pages', () => {
-    const { container } = renderPage();
-    const links = Array.from(container.querySelectorAll('a'));
-    expect(links.some((a) => a.getAttribute('href')?.includes('/zone/Veg%20Room/main'))).toBe(true);
-    expect(links.some((a) => a.getAttribute('href')?.includes('/zone/Flower%20Room/main'))).toBe(true);
-    expect(links.some((a) => a.getAttribute('href')?.includes('/zone/Lab/main'))).toBe(true);
+  it('renders both ribbons', () => {
+    renderPage();
+    expect(screen.getByText('Siberian Jungle')).toBeInTheDocument();
+    expect(screen.getByText('Mothernode')).toBeInTheDocument();
+  });
+
+  it('renders the operations rail with Lab section and service text', () => {
+    renderPage();
+    expect(screen.getByRole('region', { name: 'Lab' })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Services' })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Pi' })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Water' })).toBeInTheDocument();
+    // Rail pin + MothernodeRibbon pin
+    expect(screen.getAllByText('automation-service')).toHaveLength(2);
+  });
+
+  it('renders the calendar inspector with its overview actions', () => {
+    renderPage();
+    expect(screen.getByRole('complementary', { name: 'Calendar inspector' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'New event' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Create flower grow plan' })).toBeInTheDocument();
   });
 });

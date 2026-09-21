@@ -1,9 +1,11 @@
-/** Main dashboard page component. */
-import { useEffect, useState, useMemo } from 'react';
+/** Main dashboard page component: dense desktop command view. */
+import { useEffect, useState, useMemo, useCallback } from 'react';
 import { Sun } from 'lucide-react';
 
 import GrowCalendar from '../components/calendar/GrowCalendar';
 import FlowerGrowWizard from '../components/calendar/FlowerGrowWizard';
+import DashboardCalendarInspector from '../components/dashboard/DashboardCalendarInspector';
+import DashboardOperationsRail from '../components/dashboard/DashboardOperationsRail';
 import { useCalendarEvents } from '../hooks/useCalendarEvents';
 import { apiClient } from '../services/api';
 import { useTheme } from '../contexts/ThemeContext';
@@ -17,6 +19,7 @@ import { MothernodeRibbon } from '../components/dashboard/MothernodeRibbon';
 import { DASHBOARD_ROW_ZONES } from '../config/zones';
 import { EventLog } from '../features/event-log/components/EventLog';
 import { useEventLog } from '../features/event-log/state/useEventLog';
+import type { CalendarEventDto } from '../types/calendar';
 
 interface WeatherData {
   temperature: number;
@@ -36,6 +39,9 @@ const ROOM_ICONS: Record<string, string> = {
   'Lab': '🧪'
 };
 
+/** Lower-row room map: Lab stats live in the operations rail, not here. */
+const ROOM_MAP_ZONES = DASHBOARD_ROW_ZONES.filter((zone) => zone.location !== 'Lab');
+
 export default function Dashboard() {
   const { theme, setTheme, themes } = useTheme();
 
@@ -47,8 +53,15 @@ export default function Dashboard() {
   const [weatherData, setWeatherData] = useState<WeatherData | null>(null);
   const [wizardOpen, setWizardOpen] = useState(false);
   const [now, setNow] = useState(() => new Date());
+  const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined);
+  const [selectedDateEvents, setSelectedDateEvents] = useState<CalendarEventDto[]>([]);
   const { events: calendarEvents, loading: calendarLoading, refresh: refreshCalendar } =
     useCalendarEvents();
+
+  const handleDaySelect = useCallback((date: Date | undefined, events: CalendarEventDto[]) => {
+    setSelectedDate(date);
+    setSelectedDateEvents(events);
+  }, []);
 
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 10000)
@@ -147,45 +160,75 @@ export default function Dashboard() {
         </RibbonMenuButton>
       </AppRibbon>
 
-      <div className="flex-1 flex flex-col min-h-0 overflow-hidden p-2 gap-2">
+      <div className="flex-1 flex flex-col min-h-0 overflow-y-auto lg:overflow-hidden p-2 gap-2">
         {degraded?.active && (
           <div
             role="alert"
-            className="rounded border border-amber-500/60 bg-amber-500/15 px-3 py-2 text-sm text-amber-100"
+            className="rounded border border-amber-500/60 bg-amber-500/15 px-3 py-2 text-sm text-amber-100 shrink-0"
           >
             <strong>Control loop degraded:</strong> {degraded.reason || 'recovering'} · failures{' '}
             {degraded.failure_count ?? 0} · recovery ticks {degraded.success_count ?? 0}/10
           </div>
         )}
 
-        <div className="flex-1 flex flex-col lg:flex-row gap-2 min-h-0 overflow-hidden">
-          <div className="w-full lg:w-1/2 lg:max-w-[50%] shrink-0 min-h-0 flex flex-col overflow-auto">
-            <GrowCalendar
-              variant="compact"
-              fillWidth
-              viewMode="unified"
-              events={calendarEvents}
-              loading={calendarLoading}
-              onRefresh={refreshCalendar}
-              showAddTask
-              onAddTask={() => setWizardOpen(true)}
-            />
-          </div>
-          <div className="flex-1 flex flex-col gap-2 min-h-0 overflow-y-auto min-w-0">
-            {DASHBOARD_ROW_ZONES.map((zone) => (
-              <DashboardZoneRow
-                key={`${zone.location}_${zone.cluster}`}
-                location={zone.location}
-                cluster={zone.cluster}
-                devices={mergedDevices}
-                sensorData={mergedSensorData}
-                statusDevices={statusDevices}
-                icon={ROOM_ICONS[zone.location] || '📦'}
-              />
-            ))}
-            <div className="bg-surface-primary rounded-lg border border-border-subtle p-3">
-              <EventLog entries={eventLogEntries} now={now} />
+        <div className="flex-1 flex flex-col lg:flex-row gap-2 min-h-0">
+          {/* Center workspace: calendar/inspector row above rooms/event-log row */}
+          <div className="min-h-0 min-w-0 flex flex-col lg:grid lg:grid-rows-[minmax(0,55fr)_minmax(0,45fr)] gap-2">
+            {/* Upper row: calendar + inspector */}
+            <div className="min-h-0 flex flex-col lg:grid lg:grid-cols-[minmax(0,80fr)_minmax(0,20fr)] gap-2">
+              <div className="min-h-0 min-w-0 overflow-y-auto flex flex-col">
+                <GrowCalendar
+                  variant="compact"
+                  fillWidth
+                  viewMode="unified"
+                  events={calendarEvents}
+                  loading={calendarLoading}
+                  onRefresh={refreshCalendar}
+                  density="dashboard"
+                  showInlineDayDetail={false}
+                  onDaySelect={handleDaySelect}
+                />
+              </div>
+              <div className="min-h-0 min-w-0 overflow-y-auto">
+                <DashboardCalendarInspector
+                  events={calendarEvents}
+                  now={now}
+                  selectedDate={selectedDate}
+                  selectedDateEvents={selectedDateEvents}
+                  onRefresh={refreshCalendar}
+                  onOpenGrowPlan={() => setWizardOpen(true)}
+                />
+              </div>
             </div>
+            {/* Lower row: room bars + event log */}
+            <div className="min-h-0 flex flex-col lg:grid lg:grid-cols-[minmax(0,42fr)_minmax(0,58fr)] gap-2">
+              <div className="min-h-0 min-w-0 flex flex-col gap-2 overflow-y-auto">
+                {ROOM_MAP_ZONES.map((zone) => (
+                  <DashboardZoneRow
+                    key={`${zone.location}_${zone.cluster}`}
+                    location={zone.location}
+                    cluster={zone.cluster}
+                    devices={mergedDevices}
+                    sensorData={mergedSensorData}
+                    statusDevices={statusDevices}
+                    icon={ROOM_ICONS[zone.location] || '📦'}
+                  />
+                ))}
+              </div>
+              <div className="min-h-0 min-w-0 overflow-y-auto bg-surface-primary rounded-lg border border-border-subtle p-3">
+                <EventLog entries={eventLogEntries} now={now} />
+              </div>
+            </div>
+          </div>
+
+          {/* Full-height operations/SCADA rail */}
+          <div className="w-full lg:w-[clamp(12rem,15vw,18rem)] lg:shrink-0 min-h-0">
+            <DashboardOperationsRail
+              sensorData={mergedSensorData}
+              systemStats={systemStats}
+              degraded={degraded}
+              waterLevelPercent={null}
+            />
           </div>
         </div>
       </div>

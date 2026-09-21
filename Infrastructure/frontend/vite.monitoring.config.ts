@@ -530,6 +530,22 @@ const FIXTURE_ROUTES: FixtureRoute[] = [
       'Veg Room_main_humidity': 68,
       'Lab_main_temperature': 22.1,
       'Lab_main_humidity': 55,
+      'Lab_main_lab_temp': 24.6,
+      'Lab_main_water_temperature': 19.5,
+      'Flower Room_main_heating_setpoint': 24,
+      'Flower Room_main_cooling_setpoint': 27,
+      'Flower Room_main_co2_setpoint': 900,
+      'Flower Room_main_vpd_setpoint': 0.95,
+      'Veg Room_main_heating_setpoint': 22,
+      'Veg Room_main_cooling_setpoint': 26,
+      'Veg Room_main_co2_setpoint': 800,
+      'Veg Room_main_vpd_setpoint': 0.9,
+      'Flower Room_main_light_1_intensity': 55,
+      'Flower Room_main_light_2_intensity': 48,
+      'Flower Room_main_light_3_intensity': 60,
+      'Veg Room_main_light_1_intensity': 40,
+      'Veg Room_main_light_2_intensity': 35,
+      'Veg Room_main_light_3_intensity': 42,
     }),
   },
   {
@@ -540,30 +556,176 @@ const FIXTURE_ROUTES: FixtureRoute[] = [
       if (isHealth) {
         return {
           service_health: [
-            { name: 'automation-service', status: 'healthy', latency_ms: 12 },
-            { name: 'cea-backend', status: 'healthy', latency_ms: 8 },
-            { name: 'can-processor', status: 'healthy', latency_ms: 5 },
+            { name: 'automation-service', status: 'running', latency_ms: 12 },
+            { name: 'cea-backend', status: 'running', latency_ms: 8 },
+            { name: 'can-processor', status: 'stopped' },
           ],
         }
       }
       return {
         system: {
-          cpu_usage: 15,
-          memory_usage: 42,
-          disk_usage: 28,
-          uptime: '86400',
-          load_avg: '0.5 0.3 0.2',
+          cpu_percent: 15,
+          memory_percent: 42,
+          disk_percent: 28,
+          uptime_seconds: 86400,
+          load_avg: [0.5, 0.3, 0.2],
           process_count: 42,
           cpu_temp_c: 45,
-          throttle_status: 'normal',
-          services: [
-            { name: 'automation-service', status: 'running', latency_ms: 12 },
-            { name: 'cea-backend', status: 'running', latency_ms: 8 },
-            { name: 'can-processor', status: 'running', latency_ms: 5 },
-          ],
+          throttle_status: '0x0',
         },
+        devices: {},
+        degraded: null,
       }
     },
+  },
+  {
+    re: /^\/api\/calendar\/events$/,
+    handler: (req) => {
+      const method = req.method ?? 'GET'
+      const today = new Date()
+      const plus = (n: number): string => {
+        const d = new Date(today)
+        d.setDate(d.getDate() + n)
+        return d.toISOString().slice(0, 10)
+      }
+      if (method === 'POST') {
+        const body = (typeof req.body === 'string' ? JSON.parse(req.body || '{}') : req.body ?? {}) as Record<string, unknown>
+        return {
+          id: 99,
+          source: 'manual',
+          event_type: body.event_type ?? 'planned_task',
+          title: body.title ?? 'New event',
+          start_date: body.start_date ?? plus(0),
+          end_date: body.end_date ?? null,
+          location: body.location ?? 'Flower Room',
+          cluster: body.cluster ?? 'main',
+          editable: true,
+          notes: body.notes ?? null,
+          deleted_at: null,
+        }
+      }
+      if (method === 'PATCH') {
+        const body = (typeof req.body === 'string' ? JSON.parse(req.body || '{}') : req.body ?? {}) as Record<string, unknown>
+        return {
+          id: 11,
+          source: 'manual',
+          event_type: body.event_type ?? 'planned_task',
+          title: body.title ?? 'Updated event',
+          start_date: body.start_date ?? plus(0),
+          end_date: body.end_date ?? null,
+          location: body.location ?? 'Flower Room',
+          cluster: body.cluster ?? 'main',
+          editable: true,
+          notes: body.notes ?? null,
+          deleted_at: null,
+        }
+      }
+      return {
+        items: [
+          {
+            id: 11,
+            source: 'manual',
+            event_type: 'planned_task',
+            title: 'Reseed trays',
+            start_date: plus(0),
+            end_date: null,
+            location: 'Flower Room',
+            cluster: 'main',
+            editable: true,
+            notes: 'check domes after lights on',
+            deleted_at: null,
+          },
+          {
+            id: 12,
+            source: 'manual',
+            event_type: 'planned_task',
+            title: 'Top dress Flower',
+            start_date: plus(1),
+            end_date: null,
+            location: 'Flower Room',
+            cluster: 'main',
+            editable: true,
+            notes: null,
+            deleted_at: null,
+          },
+          {
+            id: 13,
+            source: 'mode_transition',
+            event_type: 'flower_bulk',
+            title: 'Flower bulk',
+            start_date: plus(-5),
+            end_date: plus(9),
+            location: 'Flower Room',
+            cluster: 'main',
+            editable: false,
+            notes: null,
+            metadata: { grow_plan_id: 'gp-fixture' },
+            deleted_at: null,
+          },
+          {
+            id: 14,
+            source: 'mode_transition',
+            event_type: 'flower_ripen',
+            title: 'Flower ripen',
+            start_date: plus(14),
+            end_date: plus(28),
+            location: 'Flower Room',
+            cluster: 'main',
+            editable: false,
+            notes: null,
+            metadata: { grow_plan_id: 'gp-fixture' },
+            deleted_at: null,
+          },
+          {
+            id: 15,
+            source: 'manual',
+            event_type: 'planned_task',
+            title: 'Water transplant mix',
+            start_date: plus(2),
+            end_date: null,
+            location: 'Veg Room',
+            cluster: 'main',
+            editable: true,
+            notes: null,
+            deleted_at: null,
+          },
+        ],
+        next_cursor: null,
+      }
+    },
+  },
+  {
+    re: /^\/api\/calendar\/events\/\d+$/,
+    handler: (req) => {
+      const body = (typeof req.body === 'string' ? JSON.parse(req.body || '{}') : req.body ?? {}) as Record<string, unknown>
+      return {
+        id: 11,
+        source: 'manual',
+        event_type: body.event_type ?? 'planned_task',
+        title: body.title ?? 'Updated event',
+        start_date: body.start_date ?? new Date().toISOString().slice(0, 10),
+        end_date: body.end_date ?? null,
+        location: body.location ?? 'Flower Room',
+        cluster: body.cluster ?? 'main',
+        editable: true,
+        notes: body.notes ?? null,
+        deleted_at: null,
+      }
+    },
+  },
+  {
+    re: /^\/weather\/latest$/,
+    handler: () => ({
+      timestamp: new Date().toISOString(),
+      data: {
+        temp: { value: 18.4 },
+        rh: { value: 62 },
+        pressure: { value: 1013 },
+        wind_speed: { value: 9.1 },
+        wind_direction: { value: 240 },
+        description: { value: 'Overcast' },
+      },
+    }),
   },
   {
     re: /^\/api\/devices\/control-snapshot$/,
@@ -644,7 +806,8 @@ function monitoringPreviewPlugin(): Plugin {
         log(`REQUEST ${req.method} ${req.url}`)
         res.setHeader('Content-Security-Policy', CSP)
         const pathname = (req.url ?? '/').split('?')[0]
-        const requestBody = req.method === 'POST' && /^\/api\/climate-timeline\//.test(pathname)
+        const requestBody = (req.method === 'POST' || req.method === 'PATCH') &&
+            /^\/api\/(climate-timeline|calendar\/events)/.test(pathname)
           ? await readRequestBody(req)
           : undefined
         const scenario = scenarioFrom(req.url ?? '') ?? scenarioFrom(req.headers.referer ?? '')
