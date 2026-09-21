@@ -12,6 +12,7 @@ service never chooses a bed.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from datetime import datetime
 from typing import Any, cast
 
@@ -80,16 +81,12 @@ class BackgroundTasks:
         self.running = False
         if self.discovery_task:
             self.discovery_task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await self.discovery_task
-            except asyncio.CancelledError:
-                pass
         if self.task:
             self.task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await self.task
-            except asyncio.CancelledError:
-                pass
 
         for reader in self.sensor_readers.values():
             try:
@@ -170,14 +167,13 @@ class BackgroundTasks:
                     registers = await asyncio.to_thread(
                         temp_modbus.read_holding_registers, modbus_id, 0x0000, 1
                     )
-                    if registers is not None:
-                        if modbus_id not in self.discovered_modbus_ids:
-                            logger.info(f"Discovered new sensor at Modbus ID {modbus_id}")
-                            # Discovery never assigns a bed: the probe joins
-                            # polling unassigned and stays there until it is
-                            # commissioned through Sensor Settings.
-                            if await self._auto_register_sensor(modbus_id):
-                                self.discovered_modbus_ids.add(modbus_id)
+                    if registers is not None and modbus_id not in self.discovered_modbus_ids:
+                        logger.info(f"Discovered new sensor at Modbus ID {modbus_id}")
+                        # Discovery never assigns a bed: the probe joins
+                        # polling unassigned and stays there until it is
+                        # commissioned through Sensor Settings.
+                        if await self._auto_register_sensor(modbus_id):
+                            self.discovered_modbus_ids.add(modbus_id)
                 except Exception as e:
                     # Probe of a slot with no device is the common case here -
                     # debug-level so a tail -f can confirm the scan is running
@@ -194,7 +190,14 @@ class BackgroundTasks:
 
     async def _refresh_assignments(self) -> None:
         """Refresh bed metadata for wired probes from sensor_registry."""
-        for entry in await self.database.load_registry_sensors():
+        registry_rows = await self.database.load_registry_sensors()
+        wired_ids = [
+            entry["hardware_address"]
+            for entry in registry_rows
+            if self._probe_name(entry["hardware_address"]) in self.sensor_configs
+        ]
+        await self.database.touch_last_seen(wired_ids)
+        for entry in registry_rows:
             modbus_id = entry["hardware_address"]
             probe_name = self._probe_name(modbus_id)
             if registry_id := entry["registry_id"]:

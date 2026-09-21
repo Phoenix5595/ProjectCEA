@@ -11,12 +11,13 @@ good assignments stay cached and unknown nodes stay unassigned.
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from dataclasses import dataclass
 import os
 import queue
 import threading
 import time
-from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any
 
 import psycopg2
 import psycopg2.extensions
@@ -173,9 +174,11 @@ class MetadataWorker:
             self._upsert_node(connection, node_id)
             seen.add(node_id)
 
+        # Seed the refresh map only for first-time observations: re-seeding
+        # on every busy cycle would keep the 30 s window open forever.
         now = time.monotonic()
         for node_id in seen:
-            self._last_seen_refreshed_at[node_id] = now
+            self._last_seen_refreshed_at.setdefault(node_id, now)
 
     def _upsert_node(
         self, connection: psycopg2.extensions.connection, node_id: int
