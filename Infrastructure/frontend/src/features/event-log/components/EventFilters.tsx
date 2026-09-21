@@ -178,7 +178,7 @@ export function EventFilters({ filters, onChange, rooms, categories, types, view
   return (
     <div className="flex flex-col gap-2" role="toolbar" aria-label="Event filters">
       <div className="flex flex-wrap items-center gap-2">
-        <div className="flex gap-1" role="group" aria-label="Event log view">
+        <div className="flex flex-wrap gap-1" role="group" aria-label="Event log view">
           {VIEW_OPTIONS.map((option) => (
             <button
               key={option.value}
@@ -195,7 +195,7 @@ export function EventFilters({ filters, onChange, rooms, categories, types, view
             </button>
           ))}
         </div>
-        <div className="flex gap-1" role="group" aria-label="Severity filter">
+        <div className="flex flex-wrap gap-1" role="group" aria-label="Severity filter">
           {SEVERITY_OPTIONS.map((option) => (
             <button
               key={option.value}

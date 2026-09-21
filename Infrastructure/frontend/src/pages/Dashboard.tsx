@@ -200,7 +200,7 @@ export default function Dashboard() {
                 />
               </div>
             </div>
-            {/* Lower row: room bars + event log */}
+            {/* Lower row: room bars + operations/SCADA strip */}
             <div className="min-h-0 flex flex-col lg:grid lg:grid-cols-[minmax(0,42fr)_minmax(0,58fr)] gap-2">
               <div className="min-h-0 min-w-0 flex flex-col gap-2 overflow-y-auto">
                 {ROOM_MAP_ZONES.map((zone) => (
@@ -215,20 +215,23 @@ export default function Dashboard() {
                   />
                 ))}
               </div>
-              <div className="min-h-0 min-w-0 overflow-y-auto bg-surface-primary rounded-lg border border-border-subtle p-3">
-                <EventLog entries={eventLogEntries} now={now} />
+              <div className="min-h-0 min-w-0">
+                <DashboardOperationsRail
+                  sensorData={mergedSensorData}
+                  systemStats={systemStats}
+                  degraded={degraded}
+                  waterLevelPercent={null}
+                  layout="grid"
+                />
               </div>
             </div>
           </div>
 
-          {/* Full-height operations/SCADA rail */}
+          {/* Full-height event log column */}
           <div className="w-full lg:w-[clamp(12rem,15vw,18rem)] lg:shrink-0 min-h-0">
-            <DashboardOperationsRail
-              sensorData={mergedSensorData}
-              systemStats={systemStats}
-              degraded={degraded}
-              waterLevelPercent={null}
-            />
+            <div className="h-full min-h-0 overflow-y-auto bg-surface-primary rounded-lg border border-border-subtle p-3">
+              <EventLog entries={eventLogEntries} now={now} />
+            </div>
           </div>
         </div>
       </div>

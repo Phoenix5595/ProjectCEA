@@ -276,7 +276,7 @@ describe('EventLog', () => {
       ] as const
     ).map(([category, type], index) => makeEventEntry(`${index + 1}-0`, type, category))
     render(<EventLog entries={entries} now={new Date('2026-09-02T12:00:00Z')} />)
-    expect(screen.getByRole('group', { name: 'Grouped alert console' }).className).toContain('lg:grid-cols-2')
+    expect(screen.getByRole('group', { name: 'Grouped alert console' }).className).toContain('@2xl:grid-cols-2')
   })
 
   it('pre-allocates the fixed 2x4 grid with muted slots for empty buckets', () => {
@@ -287,7 +287,7 @@ describe('EventLog', () => {
     // Then: two columns always, all 8 canonical buckets present, and the
     // seven empty buckets reserve their slot as non-interactive placeholders.
     const grid = screen.getByRole('group', { name: 'Grouped alert console' })
-    expect(grid.className).toContain('lg:grid-cols-2')
+    expect(grid.className).toContain('@2xl:grid-cols-2')
     for (const testid of ['relay', 'sensor', 'ramp', 'control', 'manual_override', 'mutation', 'alarm', 'system']) {
       expect(grid.querySelector(`[data-testid="event-group-${testid}"]`)).not.toBeNull()
     }
