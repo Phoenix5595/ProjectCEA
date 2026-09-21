@@ -45,6 +45,9 @@ describe('DashboardOperationsRail', () => {
     expect(unavailable).toHaveLength(4);
     expect(screen.getByText('Pressure')).toBeInTheDocument();
     expect(screen.getByText('Irrigation today')).toBeInTheDocument();
+    // The tank itself stays visible with an explicit no-data state, never a level.
+    expect(screen.getByText('no data')).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: 'Water tank level: sensor not configured' })).toBeInTheDocument();
   });
 
   it('renders each service with both a text label and a status pin', () => {
