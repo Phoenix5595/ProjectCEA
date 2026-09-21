@@ -14,13 +14,13 @@ from fastapi import APIRouter, Body, Depends, Query
 from app.dependencies import get_sensor_registry_repository
 from app.repositories.sensor_registry_repository import SensorRegistryRepository
 from app.sensor_registry_models import (
+    SOIL_HISTORY_MAX_POINTS,
+    SOIL_HISTORY_MIN_POINTS,
     CanAssignmentRequest,
     Rs485AssignmentRequest,
     SensorRegistryListResponse,
     SoilHistoryResponse,
     SoilLiveResponse,
-    SOIL_HISTORY_MAX_POINTS,
-    SOIL_HISTORY_MIN_POINTS,
 )
 
 router = APIRouter(prefix="/api/sensors", tags=["sensor-registry"])
