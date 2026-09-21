@@ -91,6 +91,21 @@ class DatabaseManager:
             for row in rows
         ]
 
+    async def touch_last_seen(self, modbus_ids: list[int]) -> None:
+        """Refresh registry freshness for wired probes (discovery cadence)."""
+        if not modbus_ids:
+            return
+        pool = await self._get_pool()
+        async with pool.acquire() as conn:
+            await conn.execute(
+                """
+                UPDATE sensor_registry
+                SET last_seen = NOW()
+                WHERE bus = 'rs485' AND hardware_address = ANY($1::int[])
+                """,
+                modbus_ids,
+            )
+
     async def upsert_unassigned_probe(self, modbus_id: int) -> int | None:
         """Upsert a discovered Modbus address as an unassigned registry row."""
         pool = await self._get_pool()
@@ -157,12 +172,7 @@ class DatabaseManager:
             sensor_ids: dict[str, int] = {}
             for row in existing:
                 name: str = row["name"]
-                for wire_key, sensor_type in (
-                    ("temperature", "temperature"),
-                    ("humidity", "humidity"),
-                    ("ec", "ec"),
-                    ("ph", "ph"),
-                ):
+                for wire_key in ("temperature", "humidity", "ec", "ph"):
                     if name.endswith(f"_{wire_key}") and wire_key not in sensor_ids:
                         sensor_ids[wire_key] = int(row["sensor_id"])
 
