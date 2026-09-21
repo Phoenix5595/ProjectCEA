@@ -170,7 +170,9 @@ class SensorRegistryRepository:
 
     async def get_record(self, registry_id: int) -> SensorRegistryRecord:
         async with self._acquire() as conn:
-            row = await conn.fetchrow(f"{self._SELECT_RECORD} WHERE sr.registry_id = $1", registry_id)
+            row = await conn.fetchrow(
+                f"{self._SELECT_RECORD} WHERE sr.registry_id = $1", registry_id
+            )
         if row is None:
             raise NotFoundError(message=f"Registry record {registry_id} not found")
         return self._record_from_row(row)
@@ -206,7 +208,9 @@ class SensorRegistryRepository:
     # Assignment (one transaction; lock the target rack/position)
     # ------------------------------------------------------------------
 
-    async def assign(self, registry_id: int, body: CanAssignmentRequest | Rs485AssignmentRequest) -> SensorRegistryRecord:
+    async def assign(
+        self, registry_id: int, body: CanAssignmentRequest | Rs485AssignmentRequest
+    ) -> SensorRegistryRecord:
         """Validate and apply an assignment atomically.
 
         * Body discriminator must match the stored bus (422 otherwise).
@@ -248,9 +252,7 @@ class SensorRegistryRepository:
 
         return await self.get_record(registry_id)
 
-    async def _assign_can(
-        self, conn: Any, row: Any, body: CanAssignmentRequest
-    ) -> None:
+    async def _assign_can(self, conn: Any, row: Any, body: CanAssignmentRequest) -> None:
         room = body.room
         location = body.location_in_room
 
@@ -308,7 +310,9 @@ class SensorRegistryRepository:
 
         device_id = row["device_id"]
         if device_id is not None:
-            await self._rename_can_channels(conn, int(device_id), self._canonical_suffix(room, location))
+            await self._rename_can_channels(
+                conn, int(device_id), self._canonical_suffix(room, location)
+            )
             await conn.execute(
                 "UPDATE device SET rack_id = $2 WHERE device_id = $1", device_id, rack_id
             )
@@ -327,9 +331,7 @@ class SensorRegistryRepository:
             location,
         )
 
-    async def _assign_rs485(
-        self, conn: Any, row: Any, body: Rs485AssignmentRequest
-    ) -> None:
+    async def _assign_rs485(self, conn: Any, row: Any, body: Rs485AssignmentRequest) -> None:
         bed = body.bed
         if bed not in RS485_BEDS:
             raise ValidationAPIError(message=f"bed must be one of {list(RS485_BEDS)}")
@@ -484,7 +486,9 @@ class SensorRegistryRepository:
     async def _probe_live(self, row: Any, sensor_names: list[str]) -> SoilProbeLive:
         from app.redis_client import get_sensor_timestamp, get_sensor_value
 
-        metrics: dict[str, SoilMetricValue | None] = dict.fromkeys(("temperature", "water_content", "ec", "ph"))
+        metrics: dict[str, SoilMetricValue | None] = dict.fromkeys(
+            ("temperature", "water_content", "ec", "ph")
+        )
         now = datetime.now(UTC)
         for name in sensor_names:
             metric = self._metric_for_channel(name)
@@ -495,9 +499,7 @@ class SensorRegistryRepository:
                 continue
             ts_ms = await get_sensor_timestamp(name)
             observed_at = (
-                datetime.fromtimestamp(ts_ms / 1000.0, tz=UTC)
-                if ts_ms is not None
-                else now
+                datetime.fromtimestamp(ts_ms / 1000.0, tz=UTC) if ts_ms is not None else now
             )
             metrics[metric] = SoilMetricValue(
                 value=value,
@@ -572,8 +574,12 @@ class SensorRegistryRepository:
             device_rows = await conn.fetch(self._SELECT_BED_PROBE)
             if not device_rows:
                 return SoilHistoryResponse(
-                    start=start, end=end, max_points=max_points,
-                    tier=tier.name, bucket_seconds=bucket_seconds, series=[],
+                    start=start,
+                    end=end,
+                    max_points=max_points,
+                    tier=tier.name,
+                    bucket_seconds=bucket_seconds,
+                    series=[],
                 )
 
             device_ids = [int(r["device_id"]) for r in device_rows if r["device_id"] is not None]
@@ -678,8 +684,7 @@ class SensorRegistryRepository:
             ) from exc
 
         sensor_to_channel: dict[int, str | None] = {
-            int(r["sensor_id"]): self._wire_key_for_channel(str(r["name"]))
-            for r in device_sensors
+            int(r["sensor_id"]): self._wire_key_for_channel(str(r["name"])) for r in device_sensors
         }
 
         points_by_channel: dict[str, list[SoilHistoryPoint]] = {}
