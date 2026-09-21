@@ -52,3 +52,20 @@ export function groupByBed<T extends SoilProbeLike>(probes: readonly T[]): {
     backBed: assigned.filter((probe) => probe.bed === 'Back Bed'),
   }
 }
+
+const METRIC_LABELS: Record<string, string> = {
+  temperature: 'Temperature',
+  water_content: 'Water content',
+  ec: 'EC',
+  ph: 'pH',
+}
+
+/** Stable legend label: bed, probe id, metric, unit. */
+export function historySeriesLabel(history: {
+  bed: string
+  hardware_address: number
+  metric: string
+  unit: string
+}): string {
+  return `${history.bed} #${history.hardware_address} ${METRIC_LABELS[history.metric] ?? history.metric} (${history.unit})`
+}

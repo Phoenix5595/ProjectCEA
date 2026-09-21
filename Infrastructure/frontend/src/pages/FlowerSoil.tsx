@@ -17,7 +17,7 @@ import { TimeRangeToolbar } from '../features/monitoring/components'
 import { soilApi, type SensorRegistryRecord, type SoilLiveResponse, type SoilHistoryResponse } from '../features/soil/api'
 import { emptyAlignedData } from '../features/soil/empty'
 import { adaptSoilHistory } from '../features/soil/history'
-import { groupByBed, PROBE_LAYOUT } from '../features/soil/layout'
+import { groupByBed, historySeriesLabel, PROBE_LAYOUT } from '../features/soil/layout'
 import { logger } from '../utils/logger'
 import '../features/monitoring/styles/monitoring.css'
 
@@ -28,6 +28,40 @@ type SoilRange = { kind: 'live'; duration: number } | { kind: 'fixed'; start: Da
 
 
 const STALE_METRIC_MS = 20_000
+
+function formatMetricValue(value: number | null, decimals: number): string {
+  return value === null ? '—' : value.toFixed(decimals)
+}
+
+function formatBucket(date: Date): string {
+  return `${date.toISOString().slice(0, 19).replace('T', ' ')} UTC`
+}
+
+interface HistoryEnvelopeRow {
+  readonly key: string
+  readonly bucket: string
+  readonly label: string
+  readonly minimum: number | null
+  readonly average: number | null
+  readonly maximum: number | null
+  readonly sampleCount: number
+}
+
+function envelopeRows(history: SoilHistoryResponse | null): HistoryEnvelopeRow[] {
+  if (history === null) return []
+  return history.series.flatMap((series) =>
+    series.points.map((point) => ({
+      key: `${series.registry_id}:${series.metric}:${point.bucket_start.toISOString()}`,
+      bucket: formatBucket(point.bucket_start),
+      label: historySeriesLabel(series),
+      minimum: point.minimum,
+      average: point.average,
+      maximum: point.maximum,
+      sampleCount: point.sample_count,
+    })),
+  )
+}
+
 
 function freshnessText(observedAtMs: number | null): string | null {
   if (observedAtMs === null) return 'No reading'
@@ -82,7 +116,8 @@ function BedSchematic({
   return (
     <figure
       aria-label={`${label} schematic`}
-      className="relative mx-auto aspect-square w-full max-w-[560px] rounded border-2 border-border-strong bg-bg-subtle"
+      className="relative mx-auto aspect-square w-full rounded border-2 border-border-strong bg-bg-subtle"
+      style={{ width: 'min(31vh, 380px)' }}
     >
       <figcaption className="mb-1 flex items-baseline justify-between px-1 text-xs font-semibold uppercase tracking-wide text-text-secondary">
         <span>{label}</span>
@@ -204,7 +239,7 @@ export default function FlowerSoil() {
   const beds = groupByBed(live?.probes ?? [])
 
   return (
-    <div className="mon-page space-y-6 p-4">
+    <div className="mon-page space-y-4 p-4">
       <header className="space-y-1">
         <h1 className="text-2xl font-bold text-text-input">Flower soil</h1>
         <p className="text-sm text-text-muted">
@@ -221,25 +256,21 @@ export default function FlowerSoil() {
         </div>
       )}
 
-      <section className="space-y-4">
-        {unassignedRecords.length > 0 && (
-          <button
-            type="button"
-            onClick={goToSensorSettings}
-            className="rounded border border-status-warn-border/70 bg-status-warn-bg/30 px-3 py-1.5 text-xs font-semibold text-status-warn-text"
-          >
-            {unassignedRecords.length} unassigned sensor
-            {unassignedRecords.length === 1 ? '' : 's'} — open Sensor Settings
-          </button>
-        )}
-        <div className="mx-auto grid max-w-[640px] grid-cols-1 gap-8">
-          <BedSchematic label="Front Bed" probes={beds.frontBed} />
-          <BedSchematic label="Back Bed" probes={beds.backBed} />
-        </div>
-      </section>
+      {unassignedRecords.length > 0 && (
+        <button
+          type="button"
+          onClick={goToSensorSettings}
+          className="rounded border border-status-warn-border/70 bg-status-warn-bg/30 px-3 py-1.5 text-xs font-semibold text-status-warn-text"
+        >
+          {unassignedRecords.length} unassigned sensor
+          {unassignedRecords.length === 1 ? '' : 's'} — open Sensor Settings
+        </button>
+      )}
 
-      <section className="space-y-3">
-        <h2 className="mon-card__title text-lg font-bold text-text-input">Soil history</h2>
+      <section className="space-y-2">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="mon-card__title text-lg font-bold text-text-input">Soil history</h2>
+        </div>
         <TimeRangeToolbar
           range={range}
           isLive={isLive}
@@ -250,13 +281,55 @@ export default function FlowerSoil() {
           onResetZoom={() => chartRef.current?.resetZoom()}
           defaultDuration={LIVE_DURATION_MS}
         />
-        <UPlotChart
-          ref={chartRef}
-          feed={feed}
-          onZoom={(zoomed) => setRange({ kind: 'fixed', start: zoomed.start, end: zoomed.end })}
-          title="Soil history"
-          className="mon-card"
-        />
+        <div className="mon-card" style={{ height: 'min(34vh, 400px)' }}>
+          <UPlotChart
+            ref={chartRef}
+            feed={feed}
+            onZoom={(zoomed) => setRange({ kind: 'fixed', start: zoomed.start, end: zoomed.end })}
+            title="Soil history"
+          />
+        </div>
+        <details className="mon-card px-2 py-1 text-xs">
+          <summary className="cursor-pointer select-none py-1 font-semibold text-text-secondary">
+            History envelopes
+          </summary>
+          <div className="max-h-40 overflow-auto">
+            <table aria-label="Soil history envelopes" className="w-full text-left text-xs">
+              <thead>
+                <tr className="text-text-muted">
+                  <th scope="col" className="px-2 py-1">Bucket</th>
+                  <th scope="col" className="px-2 py-1">Probe</th>
+                  <th scope="col" className="px-2 py-1">Min</th>
+                  <th scope="col" className="px-2 py-1">Avg</th>
+                  <th scope="col" className="px-2 py-1">Max</th>
+                  <th scope="col" className="px-2 py-1">Samples</th>
+                </tr>
+              </thead>
+              <tbody>
+                {envelopeRows(history).map((row) => (
+                  <tr key={row.key}>
+                    <td className="px-2 py-1 font-mono text-text-secondary">{row.bucket}</td>
+                    <td className="px-2 py-1 text-text-secondary">{row.label}</td>
+                    <td className="px-2 py-1 font-mono text-text-input">{formatMetricValue(row.minimum, 2)}</td>
+                    <td className="px-2 py-1 font-mono text-text-input">{formatMetricValue(row.average, 2)}</td>
+                    <td className="px-2 py-1 font-mono text-text-input">{formatMetricValue(row.maximum, 2)}</td>
+                    <td className="px-2 py-1 font-mono text-text-input">{row.sampleCount}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </details>
+      </section>
+
+      <section className="space-y-2">
+        <h2 className="px-1 text-xs font-semibold uppercase tracking-wide text-text-secondary">
+          Raised beds
+        </h2>
+        <div className="mx-auto flex max-w-[900px] flex-wrap items-center justify-center gap-8">
+          <BedSchematic label="Front Bed" probes={beds.frontBed} />
+          <BedSchematic label="Back Bed" probes={beds.backBed} />
+        </div>
       </section>
     </div>
   )
