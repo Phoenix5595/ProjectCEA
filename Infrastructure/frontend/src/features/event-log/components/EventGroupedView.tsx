@@ -77,7 +77,9 @@ export function buildGroups(orderedNewestFirst: readonly EventLogEntry[]): Categ
 }
 
 export function groupedGridClass(): string {
-  return 'lg:grid-cols-2'
+  // Two columns only when the log CONTAINER is wide (zone pages); the narrow
+  // dashboard column stays single-column regardless of viewport width.
+  return '@2xl:grid-cols-2'
 }
 
 function EventCategoryChip({ category }: { category: string }) {

@@ -79,7 +79,7 @@ export function EventLog({ entries, now }: EventLogProps) {
   const showFlatList = view === 'flat' || expandedCategory !== null
 
   return (
-    <section aria-labelledby="event-log-heading" className="flex flex-col gap-2">
+    <section aria-labelledby="event-log-heading" className="flex flex-col gap-2 @container">
       <div className="flex items-center justify-between">
         <h2 id="event-log-heading" className="text-sm font-bold uppercase tracking-wider text-text-default">
           Event Log
