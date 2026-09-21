@@ -173,6 +173,21 @@ export function buildScales(data: AlignedData): ChartScales {
         return [lo === null ? null : Math.max(0, lo), hi === null ? null : Math.max(0, hi)]
       }
     }
+    if (family === 'rh') {
+      const inner = scale.range as NonNullable<uPlot.Scale['range']>
+      const innerFn = typeof inner === 'function'
+        ? inner
+        : (_s: uPlot, a: number, b: number) => [a, b] as uPlot.Range.MinMax
+      scale.range = (self, dataMin, dataMax, scaleKey) => {
+        const [lo, hi] = innerFn(self, dataMin, dataMax, scaleKey)
+        const clampedLo = lo === null ? null : Math.max(0, lo)
+        const clampedHi = hi === null ? null : Math.min(100, hi)
+        if (clampedLo !== null && clampedHi !== null && clampedLo >= clampedHi) {
+          return [clampedLo, clampedLo + 1]
+        }
+        return [clampedLo, clampedHi]
+      }
+    }
     scales[family] = scale
 
     const isTemperature = family === 'temperature'

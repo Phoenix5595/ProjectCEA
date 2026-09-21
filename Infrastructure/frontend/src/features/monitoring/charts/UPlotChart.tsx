@@ -59,19 +59,12 @@ export const UPlotChart = memo(
     const chartResizeCountRef = useRef(0)
     const followLiveViewportRef = useRef(true)
     const readyRef = useRef(false)
-    const programmaticScaleTokenRef = useRef(0)
-    const pendingProgrammaticScaleTokensRef = useRef<Set<number>>(new Set())
-
-    const withProgrammaticScale = useCallback(<T, >(action: () => T): T => {
-      const token = programmaticScaleTokenRef.current + 1
-      programmaticScaleTokenRef.current = token
-      pendingProgrammaticScaleTokensRef.current.add(token)
-      return action()
-    }, [])
-
-    const isProgrammaticScale = useCallback((): boolean => {
-      return pendingProgrammaticScaleTokensRef.current.size > 0
-    }, [])
+    // uPlot fires setSelect (with the box still visible) immediately before a
+    // drag-zoom's own scale set, and silently when it hides the box, so this
+    // flag is an exact origin gate for the next setScale event. Scale events
+    // are batched and coalesced by uPlot's commit(), so counting call tokens
+    // misclassified user drags (leaked tokens made zooms snap back to live).
+    const dragScaleExpectedRef = useRef(false)
     const visibility = useSyncExternalStore(subscribeSeriesVisibility, getSeriesVisibilitySnapshot)
     const onZoomRef = useRef(onZoom)
     onZoomRef.current = onZoom
@@ -125,9 +118,9 @@ export const UPlotChart = memo(
           : fullDataRange(feed)
         if (bounds === null) return
         followLiveViewportRef.current = true
-        withProgrammaticScale(() => plot.setScale('x', bounds))
+        plot.setScale('x', bounds)
       },
-    }), [feed, withProgrammaticScale])
+    }), [feed])
 
     useEffect(() => {
       if (structural.theme !== theme) return
@@ -144,20 +137,21 @@ export const UPlotChart = memo(
         const existingPlot = plotRef.current
         if (existingPlot !== null) {
           chartResizeCountRef.current += 1
-          withProgrammaticScale(() => {
-            if (PERFORMANCE_MARKS_ENABLED) {
-              measureMonitoringResize(() => existingPlot.setSize({ width, height }))
-            } else {
-              existingPlot.setSize({ width, height })
-            }
-          })
+          if (PERFORMANCE_MARKS_ENABLED) {
+            measureMonitoringResize(() => existingPlot.setSize({ width, height }))
+          } else {
+            existingPlot.setSize({ width, height })
+          }
           const chartDebug = chartDebugRef.current
           if (chartDebug !== null) updateMonitoringChart(chartDebug, { width, height, resizeCount: chartResizeCountRef.current })
           return
         }
         const data = feed.getData()
-        const plot = withProgrammaticScale(() => new uPlot(
+        const plot = new uPlot(
           buildOptions(data, width, height, {
+            onSetSelect: (select) => {
+              dragScaleExpectedRef.current = select.show === true && (select.width ?? 0) > 0
+            },
             onSetScale: (self, scaleKey) => {
               if (scaleKey !== 'x') return
               const chartDebug = chartDebugRef.current
@@ -165,18 +159,14 @@ export const UPlotChart = memo(
               if (chartDebug !== null) {
                 updateMonitoringChart(chartDebug, { xScaleMin: min ?? null, xScaleMax: max ?? null })
               }
-              if (isProgrammaticScale()) {
-                const pending = pendingProgrammaticScaleTokensRef.current
-                const first = pending.values().next().value
-                if (first !== undefined) pending.delete(first)
-                if (!readyRef.current) readyRef.current = true
-                return
-              }
-              followLiveViewportRef.current = false
+              const userScale = dragScaleExpectedRef.current
+              dragScaleExpectedRef.current = false
+              if (userScale) followLiveViewportRef.current = false
               if (!readyRef.current) {
                 readyRef.current = true
                 return
               }
+              if (!userScale) return
               if (min === undefined || max === undefined) return
               const data = feed.getData()
               const recordedEnd = data.x[data.nowIndex]
@@ -200,7 +190,7 @@ export const UPlotChart = memo(
           }, () => feed.getData().photoperiod),
           PERFORMANCE_MARKS_ENABLED ? measureMonitoringConversion(() => toUPlotData(data)) : toUPlotData(data),
           container,
-        ))
+        )
         plotRef.current = plot
         lastAppliedStructuralRevisionRef.current = structural.revision
         structural.series.forEach((series, index) => {
@@ -258,7 +248,7 @@ export const UPlotChart = memo(
           if (currentStructural.range.kind === 'fixed') {
             const rangeBounds = fullDataRange(feed)
             if (rangeBounds !== null) {
-              withProgrammaticScale(() => plot.setScale('x', rangeBounds))
+              plot.setScale('x', rangeBounds)
             }
           }
           lastAppliedViewportRevisionRef.current = currentStructural.viewportRevision
@@ -267,7 +257,7 @@ export const UPlotChart = memo(
           const alignedNow = data.x[data.nowIndex]
           const duration = currentStructural.range.duration
           if (alignedNow !== undefined) {
-            withProgrammaticScale(() => plot.setScale('x', { min: alignedNow - duration, max: alignedNow + duration / 9 }))
+            plot.setScale('x', { min: alignedNow - duration, max: alignedNow + duration / 9 })
           }
         }
       } else {
@@ -280,7 +270,7 @@ export const UPlotChart = memo(
       }
       const chartDebug = chartDebugRef.current
       if (chartDebug !== null) updateMonitoringChart(chartDebug, { viewportRevision: currentStructural.viewportRevision })
-    }, [feed, withProgrammaticScale])
+    }, [feed])
 
     useEffect(() => feed.subscribe(updateData), [feed, updateData])
 

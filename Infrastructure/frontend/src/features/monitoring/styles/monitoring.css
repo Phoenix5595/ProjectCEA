@@ -301,8 +301,8 @@
 .mon-status__actions {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 0.5rem;
-  margin-top: 0.5rem;
 }
 
 .mon-status__actions button {
@@ -336,7 +336,7 @@
 
 @media (min-width: 1100px) {
   .mon-layout {
-    grid-template-columns: 160px minmax(0, 1fr);
+    grid-template-columns: 164px minmax(0, 1fr);
     align-items: start;
   }
 
