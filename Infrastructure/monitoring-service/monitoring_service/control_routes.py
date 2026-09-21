@@ -11,7 +11,6 @@ from monitoring_service.control_models import (
     ControlHistoryRange,
     ControlHistoryEnvelope,
     ControlPublicationResponse,
-    ControlReadValidationError,
     CurrentPublicationResponse,
     ProjectionPublicationResponse,
 )
@@ -42,8 +41,6 @@ def register_control_routes(app: FastAPI, reads: ControlReadService) -> None:
         try:
             history_range = _history_range(start, end)
             return await reads.history(location, history_range, max_points)
-        except ControlReadValidationError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from None
         except (ConnectionError, OSError, RuntimeError):
             raise HTTPException(
                 status_code=503, detail="control monitoring history is unavailable"
@@ -94,4 +91,8 @@ def _history_range(start: datetime | None, end: datetime | None) -> ControlHisto
         start = end - timedelta(hours=1)
     if start is None or end is None:
         raise HTTPException(status_code=400, detail="start and end must be supplied together")
+    if end <= start:
+        # Pre-validate: pydantic wraps the model validator's ValueError, which
+        # would escape as an unhandled 500 instead of a client-error response.
+        raise HTTPException(status_code=400, detail="end must be later than start")
     return ControlHistoryRange(start=start, end=end)
