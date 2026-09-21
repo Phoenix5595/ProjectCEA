@@ -47,7 +47,7 @@ export interface TimeseriesPanelSpec {
   id: string
   title: string
   sources: Array<'sensor' | 'climate' | 'light' | 'device' | 'pid'>
-  families: Array<'temperature' | 'rh' | 'vpd' | 'co2' | 'pressure' | 'device' | 'light'>
+  families: Array<'temperature' | 'rh' | 'vpd' | 'co2' | 'pressure' | 'device' | 'light' | 'water_content' | 'conductivity' | 'ph'>
   /** Panel-level defaults (unit, soft bounds) applied to the whole panel. */
   defaults?: {
     unit?: UnitFamily

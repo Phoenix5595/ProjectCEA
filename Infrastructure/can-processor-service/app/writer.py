@@ -25,8 +25,32 @@ from shared.redis_keys import (
     sensor_full,
     sensor_full_ts,
 )
+from app.sensor_registry import AssignmentCache, MetadataWorker, SensorAssignment
 
 logger = get_logger(__name__)
+
+# unit/data_type for auto-created metric channels, keyed by canonical base.
+CHANNEL_SPECS: dict[str, tuple[str, str]] = {
+    "dry_bulb": ("°C", "temperature"),
+    "wet_bulb": ("°C", "temperature"),
+    "rh": ("%", "humidity"),
+    "vpd": ("kPa", "vpd"),
+    "co2": ("ppm", "co2"),
+    "secondary_temp": ("°C", "temperature"),
+    "secondary_rh": ("%", "humidity"),
+    "pressure": ("hPa", "pressure"),
+    "water_level": ("mm", "water_level"),
+}
+
+
+def channel_base(name: str) -> str | None:
+    """Return the canonical metric base of a channel name, else None."""
+    for base in sorted(CHANNEL_SPECS, key=len, reverse=True):
+        if name == base:
+            return base
+        if name.startswith(base) and name[len(base) :] in ("_f", "_b", "_v"):
+            return base
+    return None
 
 
 @dataclass
@@ -35,6 +59,7 @@ class DBWriteItem:
     raw_data: str
     sensors: list[tuple[str, float, str]]
     timestamp: object  # datetime
+    assignment: SensorAssignment | None = None
 
 
 class DataWriter:
@@ -98,6 +123,29 @@ class DataWriter:
             name="can-db-flush",
         )
 
+        # Registry authority: nonblocking cache for the hot path, dedicated
+        # worker thread for metadata I/O.
+        self.assignment_cache = AssignmentCache()
+        self._metadata_worker = MetadataWorker(
+            cache=self.assignment_cache,
+            db_config=self.db_config,
+            on_change=self._on_assignments_changed,
+        )
+
+    def assignment_for(self, node_id: int | None) -> SensorAssignment | None:
+        """Nonblocking lookup of the cached assignment for a node."""
+        return self.assignment_cache.get(node_id)
+
+    def observe(self, node_id: int | None) -> None:
+        """Nonblocking metadata observation offer for a node."""
+        self._metadata_worker.offer(node_id)
+
+    def _on_assignments_changed(self) -> None:
+        # Metric channel names change on assignment; stale (device, name)
+        # cache entries would point at renamed rows, so drop them. Device
+        # lookups keyed by `Node N` names stay valid.
+        self.sensor_cache.clear()
+
     def connect_db(self) -> bool:
         """Connect to TimescaleDB with optimizations for high throughput."""
         try:
@@ -137,6 +185,33 @@ class DataWriter:
         for device_id, name in cursor.fetchall():
             self.device_cache[str(name)] = int(device_id)
 
+    def _ensure_devices(self, cursor: Any, device_names: set[str]) -> None:
+        """Create missing `Node N` device rows so unassigned nodes keep storing."""
+        missing = [n for n in device_names if n not in self.device_cache]
+        for name in missing:
+            cursor.execute(
+                """
+                INSERT INTO device (name, type)
+                SELECT %s, 'sensor-node'
+                WHERE NOT EXISTS (SELECT 1 FROM device WHERE name = %s)
+                """,
+                (name, name),
+            )
+
+    def _ensure_channels(self, cursor: Any, by_device: dict[int, set[str]]) -> None:
+        """Create observed metric channels instead of silently dropping them."""
+        for device_id, names in by_device.items():
+            for sensor_name in names:
+                unit, data_type = CHANNEL_SPECS.get(channel_base(sensor_name) or "", ("", "unknown"))
+                cursor.execute(
+                    """
+                    INSERT INTO sensor (device_id, name, unit, data_type)
+                    VALUES (%s, %s, %s, %s)
+                    ON CONFLICT (device_id, name) DO NOTHING
+                    """,
+                    (device_id, sensor_name, unit, data_type),
+                )
+
     def _prefetch_sensor_ids(self, cursor: Any, by_device: dict[int, set[str]]) -> None:
         """Load missing (device_id, sensor name) rows grouped per device (one query per device)."""
         for device_id, names in by_device.items():
@@ -172,6 +247,10 @@ class DataWriter:
                     if not node_id:
                         continue
                     device_names.add(f"Node {node_id}")
+
+                # Unassigned/unknown nodes create their `Node N` device row;
+                # observed metric channels are created rather than dropped.
+                self._ensure_devices(cursor, device_names)
                 self._prefetch_device_ids(cursor, device_names)
 
                 by_device: dict[int, set[str]] = {}
@@ -187,6 +266,7 @@ class DataWriter:
                         cache_key = (device_id, sensor_name)
                         if cache_key not in self.sensor_cache:
                             by_device.setdefault(device_id, set()).add(sensor_name)
+                self._ensure_channels(cursor, by_device)
                 self._prefetch_sensor_ids(cursor, by_device)
 
                 measurements = []
@@ -274,12 +354,16 @@ class DataWriter:
             self.redis_enabled = False
             return False
 
-    def write_to_stream(self, msg, decoded_data: dict[str, Any]) -> bool:
+    def write_to_stream(
+        self, msg, decoded_data: dict[str, Any], assignment: SensorAssignment | None = None
+    ) -> bool:
         """Write CAN message to Redis Stream.
 
         Args:
             msg: CAN message object
             decoded_data: Decoded CAN frame data
+            assignment: cached registry assignment snapshot for the frame's
+                node, or ``None`` when unassigned/unknown
 
         Returns:
             True if successful, False otherwise
@@ -306,6 +390,18 @@ class DataWriter:
                 decoded_json = json.dumps(decoded_data)
                 stream_data[b"decoded"] = decoded_json.encode()
 
+            # Assignment snapshot: assigned entries qualify their location;
+            # unassigned entries are marked explicitly so recent-history
+            # consumers can never mix locations.
+            if assignment is not None:
+                stream_data[b"assigned"] = b"true"
+                stream_data[b"registry_id"] = str(assignment.registry_id).encode()
+                stream_data[b"location"] = assignment.room.encode()
+                stream_data[b"cluster"] = assignment.cluster.encode()
+            else:
+                stream_data[b"assigned"] = b"false"
+                stream_data[b"registry_id"] = b""
+
             if self.redis_client:
                 self.redis_client.xadd(
                     self.stream_name,
@@ -327,12 +423,25 @@ class DataWriter:
 
             return False
 
-    def queue_db_write(self, decoded, raw_data, sensors, timestamp):
+    def queue_db_write(
+        self,
+        decoded,
+        raw_data,
+        sensors,
+        timestamp,
+        assignment: SensorAssignment | None = None,
+    ) -> bool:
         # When DB was lost, try reconnect once so recovery does not require service restart
         if not self.db_enabled:
             if not self.connect_db():
                 return False
-        item = DBWriteItem(decoded=decoded, raw_data=raw_data, sensors=sensors, timestamp=timestamp)
+        item = DBWriteItem(
+            decoded=decoded,
+            raw_data=raw_data,
+            sensors=sensors,
+            timestamp=timestamp,
+            assignment=assignment,
+        )
         ok = self._batch_queue.put(item)
         if not ok:
             logger.error("DB write queue full, dropping measurement")
@@ -538,6 +647,7 @@ class DataWriter:
         sensors: list[tuple[str, float, str]],
         timestamp: datetime,
         timestamp_ms: int,
+        assignment: SensorAssignment | None = None,
     ) -> dict[str, bool]:
         """Write data to Redis Stream, TimescaleDB and Redis state immediately.
 
@@ -548,29 +658,35 @@ class DataWriter:
             sensors: List of sensor values to write to Redis and DB
             timestamp: Timestamp for database
             timestamp_ms: Timestamp in milliseconds for Redis
+            assignment: cached registry assignment snapshot for the frame's
+                node; ``None`` marks the entry unassigned
 
         Returns:
             Dictionary with 'stream', 'db' and 'redis' keys indicating success
         """
         result = {"stream": False, "db": False, "redis": False}
 
-        # Write to Redis Stream first
-        result["stream"] = self.write_to_stream(msg, decoded)
+        # Write to Redis Stream first (every decodable frame enters the stream)
+        result["stream"] = self.write_to_stream(msg, decoded, assignment)
 
-        result["db"] = self.queue_db_write(decoded, raw_data, sensors, timestamp)
+        result["db"] = self.queue_db_write(decoded, raw_data, sensors, timestamp, assignment)
 
-        # Write to Redis state immediately
-        node_id = decoded.get("node_id")
-        # Local import to keep this module's imports stable and avoid cycles.
-        from app.processor import get_location_from_node
-
-        location, cluster = get_location_from_node(node_id)
-        result["redis"] = self.write_to_redis_state(location, cluster, sensors, timestamp_ms)
+        # Topology-qualified Redis live state only for assigned nodes.
+        # Unassigned nodes omit only falsely located live state.
+        if assignment is not None:
+            result["redis"] = self.write_to_redis_state(
+                assignment.room, assignment.cluster, sensors, timestamp_ms
+            )
 
         return result
 
+    def start_metadata_worker(self) -> None:
+        """Start the dedicated registry metadata worker thread."""
+        self._metadata_worker.start()
+
     def close(self):
         """Close all connections and stop flush thread."""
+        self._metadata_worker.stop()
         # BatchQueue.stop() drains remaining items and invokes the flush
         # callback one last time before joining the worker thread.
         self._batch_queue.stop(drain_timeout_sec=2.0)
