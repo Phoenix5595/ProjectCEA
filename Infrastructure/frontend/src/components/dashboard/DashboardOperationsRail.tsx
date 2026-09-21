@@ -14,13 +14,14 @@ function formatMetric(value: number | undefined, unit: string, digits = 1): stri
   return value != null ? `${Number(value).toFixed(digits)}${unit}` : '—';
 }
 
-/** Low-contrast 2-D water drum with a reserved level strip; no decoration, no animation. */
+/** 2-D SCADA water drum: visible vessel outline, graduation ticks, reserved level strip.
+ * With no sensor data the tank still renders — dashed strip + NO DATA, never a level. */
 function WaterTankGraphic({ levelPercent }: { levelPercent: number | null }) {
   const hasLevel = levelPercent != null;
   const clamped = hasLevel ? Math.min(100, Math.max(0, levelPercent)) : null;
   return (
     <div
-      className="flex flex-wrap items-center gap-1.5"
+      className="flex flex-wrap items-center gap-2"
       role="img"
       aria-label={
         hasLevel
@@ -28,18 +29,36 @@ function WaterTankGraphic({ levelPercent }: { levelPercent: number | null }) {
           : 'Water tank level: sensor not configured'
       }
     >
-      <div className="relative w-14 border border-border-default rounded-sm bg-surface-secondary overflow-hidden">
-        {/* Level strip: ~15% of vessel width, filled from the bottom */}
-        <div className="absolute inset-y-1 left-1 w-[15%] border border-border-subtle rounded-xs">
+      <div className="relative h-24 w-16 shrink-0 rounded-sm border border-border-emphasis bg-surface-tertiary">
+        {/* Graduation ticks at 25/50/75% of vessel height */}
+        {[25, 50, 75].map((pct) => (
+          <div
+            key={pct}
+            aria-hidden
+            className="absolute left-0 right-0 border-t border-dashed border-border-default"
+            style={{ bottom: `${pct}%` }}
+          />
+        ))}
+        {/* Reserved level strip (~18% of vessel width), filled from the bottom */}
+        <div
+          className={`absolute bottom-1.5 top-1.5 left-1.5 w-[18%] rounded-xs ${
+            hasLevel ? 'border border-border-emphasis bg-surface-base' : 'border border-dashed border-border-emphasis'
+          }`}
+        >
           {hasLevel && (
             <div
-              className="absolute inset-x-0 bottom-0 bg-sky-500/60"
+              className="absolute inset-x-0 bottom-0 bg-sky-500/70"
               style={{ height: `${clamped}%` }}
             />
           )}
         </div>
+        {!hasLevel && (
+          <span className="absolute left-[26%] right-1 top-1/2 -translate-y-1/2 text-center text-[9px] font-semibold uppercase tracking-wide text-text-muted leading-tight">
+            no data
+          </span>
+        )}
       </div>
-      <div className="flex flex-col justify-center text-xs">
+      <div className="flex flex-col justify-center text-xs min-w-0">
         <span className="text-text-secondary">Tank level</span>
         <span className="font-mono tabular-nums text-text-default">
           {hasLevel ? `${clamped}%` : '—'}

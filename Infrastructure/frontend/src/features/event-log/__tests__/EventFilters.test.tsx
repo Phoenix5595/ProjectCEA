@@ -50,7 +50,7 @@ describe('EventFilters', () => {
     expect(onChange).toHaveBeenCalledWith({ ...defaultFilters, rooms: ['Flower Room'] })
   })
 
-  it('toggles category chips and reports changes', async () => {
+  it('toggles category checkboxes from the dropdown and reports changes', async () => {
     const user = userEvent.setup()
     const onChange = vi.fn()
     render(
@@ -65,11 +65,17 @@ describe('EventFilters', () => {
       />,
     )
 
-    await user.click(screen.getByRole('button', { name: 'mutation', pressed: false }))
+    // No inline category chips anymore — they live behind the dropdown trigger.
+    expect(screen.queryByRole('button', { name: 'mutation' })).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /Categories & types/ }))
+    const box = screen.getByRole('checkbox', { name: 'mutation' })
+    expect(box).not.toBeChecked()
+    await user.click(box)
     expect(onChange).toHaveBeenCalledWith({ ...defaultFilters, categories: ['mutation'] })
   })
 
-  it('toggles type chips and reports changes', async () => {
+  it('toggles type checkboxes from the dropdown and reports changes', async () => {
     const user = userEvent.setup()
     const onChange = vi.fn()
     render(
@@ -84,7 +90,31 @@ describe('EventFilters', () => {
       />,
     )
 
-    await user.click(screen.getByRole('button', { name: 'config.updated', pressed: false }))
+    await user.click(screen.getByRole('button', { name: /Categories & types/ }))
+    await user.click(screen.getByRole('checkbox', { name: 'config.updated' }))
     expect(onChange).toHaveBeenCalledWith({ ...defaultFilters, types: ['config.updated'] })
+  })
+
+  it('marks selected dimensions in the dropdown and clears them', async () => {
+    const user = userEvent.setup()
+    const onChange = vi.fn()
+    render(
+      <EventFilters
+        filters={{ ...defaultFilters, types: ['config.updated'] }}
+        onChange={onChange}
+        view="grouped"
+        onViewChange={() => {}}
+        rooms={[]}
+        categories={['relay']}
+        types={['config.updated']}
+      />,
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Categories & types (1)' }))
+    expect(screen.getByRole('checkbox', { name: 'config.updated' })).toBeChecked()
+    expect(screen.getByRole('checkbox', { name: 'relay' })).not.toBeChecked()
+
+    await user.click(screen.getByRole('button', { name: 'Clear' }))
+    expect(onChange).toHaveBeenCalledWith({ ...defaultFilters })
   })
 })
