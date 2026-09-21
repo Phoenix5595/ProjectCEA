@@ -158,9 +158,15 @@ describe('monitoring chart interactions', () => {
     act(() => toggleSeries(seriesKey('sensor', 'temp', 'mean')))
     expect(plot.setSeries).toHaveBeenCalledWith(1, { show: false })
 
-    // Drag zoom emits an exact UTC range from the setScale hook.
+    // The initial uPlot scale marks the chart as ready (no zoom emitted).
     const setScaleHook = plot.opts.hooks?.setScale?.[0]
     setScaleHook?.(plot as unknown as uPlot, 'x')
+
+    // Drag zoom emits an exact UTC range from the setScale hook (uPlot fires
+    // setSelect with the box visible right before the drag's scale event).
+    const setSelectHook = plot.opts.hooks?.setSelect?.[0]
+    ;(plot as unknown as { select: { show: boolean; width: number } }).select = { show: true, width: 42 }
+    setSelectHook?.(plot as unknown as uPlot)
     setScaleHook?.(plot as unknown as uPlot, 'x')
     expect(onZoom).toHaveBeenCalledTimes(1)
     const range = onZoom.mock.calls[0][0] as { start: Date; end: Date }
@@ -203,9 +209,15 @@ describe('monitoring chart interactions', () => {
     )
     const plot = instances[0]
 
-    // The user drag-zooms to a fixed window.
-    plot.setScale('x', { min: 1500, max: 3500 })
-    plot.setScale('x', { min: 1500, max: 3500 })
+    // The user drag-zooms to a fixed window: an initial programmatic scale
+    // marks ready, then setSelect precedes the user's scale event.
+    const dragHook = plot.opts.hooks?.setScale?.[0] as (self: uPlot, key: string) => void
+    const selectHook = plot.opts.hooks?.setSelect?.[0] as (self: uPlot) => void
+    dragHook?.(plot as unknown as uPlot, 'x')
+    plot.setScale.mockClear()
+    ;(plot as unknown as { select: { show: boolean; width: number } }).select = { show: true, width: 42 }
+    selectHook?.(plot as unknown as uPlot)
+    dragHook?.(plot as unknown as uPlot, 'x')
     expect(onZoom).toHaveBeenCalledTimes(1)
 
     // A one-second live tick pushes new aligned data.
@@ -239,7 +251,11 @@ describe('monitoring chart interactions', () => {
     // The initial uPlot scale marks the chart as ready.
     plot.setScale('x', { min: 1500, max: 4000 })
 
-    // A cross-divider user selection must persist only the recorded portion.
+    // A cross-divider user selection must persist only the recorded portion
+    // (uPlot fires setSelect with the box visible right before the scale).
+    const crossSelectHook = plot.opts.hooks?.setSelect?.[0] as (self: uPlot) => void
+    ;(plot as unknown as { select: { show: boolean; width: number } }).select = { show: true, width: 60 }
+    crossSelectHook?.(plot as unknown as uPlot)
     plot.setScale('x', { min: 1500, max: 4000 })
     expect(onZoom).toHaveBeenCalledWith({ start: new Date(1500), end: new Date(3000) })
 
@@ -250,6 +266,8 @@ describe('monitoring chart interactions', () => {
         <ChartHarness data={makeData()} range={{ kind: 'fixed', start: new Date(1500), end: new Date(3000) }} onZoom={onZoom} />
       </ThemeProvider>,
     )
+    ;(plot as unknown as { select: { show: boolean; width: number } }).select = { show: true, width: 60 }
+    crossSelectHook?.(plot as unknown as uPlot)
     plot.setScale('x', { min: 1500, max: 4000 })
     expect(emittedEnds).toEqual([3000, 3000])
   })
@@ -275,7 +293,10 @@ describe('monitoring chart interactions', () => {
     expect(onZoom).not.toHaveBeenCalled()
 
     // A user drag is represented by uPlot's scale hook after the plot has settled.
+    const setSelectHook = plot.opts.hooks?.setSelect?.[0]
     plot.scales.x = { min: 2000, max: 3000 }
+    ;(plot as unknown as { select: { show: boolean; width: number } }).select = { show: true, width: 42 }
+    setSelectHook?.(plot as unknown as uPlot)
     setScaleHook?.(plot as unknown as uPlot, 'x')
     expect(onZoom).toHaveBeenCalledTimes(1)
     expect(onZoom).toHaveBeenCalledWith({ start: new Date(2000), end: new Date(3000) })

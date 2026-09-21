@@ -17,6 +17,7 @@ import { readToken } from './tokens'
 
 /** Callbacks the adapter wires into uPlot hooks. */
 export interface ChartCallbacks {
+  onSetSelect: (select: uPlot.Select) => void
   onSetScale: (self: uPlot, scaleKey: string) => void
   onSetSeries: (self: uPlot, seriesIdx: number | null, opts: uPlot.Series) => void
   onDraw?: () => void
@@ -62,6 +63,7 @@ export function buildOptions(
     bands,
     plugins,
     hooks: {
+      setSelect: [(self: uPlot) => callbacks.onSetSelect(self.select)],
       setScale: [callbacks.onSetScale],
       setSeries: [callbacks.onSetSeries],
       ...(callbacks.onDraw !== undefined ? { draw: [callbacks.onDraw] } : {}),

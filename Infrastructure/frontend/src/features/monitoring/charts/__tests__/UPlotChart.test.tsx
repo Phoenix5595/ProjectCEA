@@ -27,6 +27,7 @@ const { MockUPlot, instances } = vi.hoisted(() => {
     root: HTMLElement
     scales = { x: { min: 0, max: 100 } }
     pendingScaleEvents: Array<{ key: string; min: number; max: number }> = []
+    select = { show: false, width: 0, left: 0, top: 0, height: 0 } as uPlot.Select
     flushScaleEvents(): void {
       const hooks = this.opts.hooks?.setScale
       while (this.pendingScaleEvents.length > 0) {
@@ -42,8 +43,21 @@ const { MockUPlot, instances } = vi.hoisted(() => {
     private fireSetScaleHooks(scaleKey: string): void {
       const hooks = this.opts.hooks?.setScale
       hooks?.forEach((hook) => {
-        if (hook !== undefined) hook(this as unknown as uPlot, scaleKey)
+        if (hook !== undefined) hook(this as unknown as uPlot, scaleKey
+        )
       })
+    }
+
+    /** Simulate uPlot's real drag-zoom sequence: select fires first, then the
+     *  batched scale event. */
+    userDragZoom(range: { min: number; max: number }): void {
+      this.select = { show: true, width: 42, left: 0, top: 0, height: 0 } as uPlot.Select
+      const setSelectHooks = this.opts.hooks?.setSelect
+      setSelectHooks?.forEach((hook) => {
+        if (hook !== undefined) hook(this as unknown as uPlot)
+      })
+      this.scales.x = range
+      this.fireSetScaleHooks('x')
     }
     setData = vi.fn((_data: uPlot.AlignedData, redraw?: boolean) => {
       if (redraw === false) return
@@ -321,8 +335,7 @@ describe('UPlotChart lifecycle', () => {
     render(<ThemeProvider><UPlotChart feed={feed} /></ThemeProvider>)
     const plot = instances[0]
 
-    const setScaleHook = plot.opts.hooks?.setScale?.[0]
-    setScaleHook?.(plot as unknown as uPlot, 'x')
+    plot.userDragZoom({ min: 0, max: 100 })
     act(() => plot.flushScaleEvents())
 
     plot.setData.mockClear()
@@ -541,9 +554,7 @@ describe('UPlotChart lifecycle', () => {
 
     expect(onZoom).not.toHaveBeenCalled()
 
-    const setScaleHook = plot.opts.hooks?.setScale?.[0]
-    plot.scales.x = { min: 2500, max: 3500 }
-    setScaleHook?.(plot as unknown as uPlot, 'x')
+    plot.userDragZoom({ min: 2500, max: 3500 })
     expect(onZoom).toHaveBeenCalledOnce()
     expect(onZoom).toHaveBeenCalledWith({ start: new Date(2500), end: new Date(3005) })
 
@@ -561,12 +572,10 @@ describe('UPlotChart lifecycle', () => {
     const chartRef = createRef<UPlotChartHandle>()
     render(<ThemeProvider><UPlotChart ref={chartRef} feed={feed} onZoom={onZoom} /></ThemeProvider>)
     const plot = instances[0]
-    const setScaleHook = plot.opts.hooks?.setScale?.[0]
 
     act(() => plot.flushScaleEvents())
 
-    plot.scales.x = { min: 1500, max: 2500 }
-    setScaleHook?.(plot as unknown as uPlot, 'x')
+    plot.userDragZoom({ min: 1500, max: 2500 })
     expect(onZoom).toHaveBeenCalledOnce()
 
     chartRef.current?.resetZoom()
@@ -579,8 +588,7 @@ describe('UPlotChart lifecycle', () => {
     act(() => plot.flushScaleEvents())
     expect(plot.setScale).toHaveBeenLastCalledWith('x', { min: -3_596_000, max: 404_000 })
 
-    plot.scales.x = { min: 2000, max: 3000 }
-    setScaleHook?.(plot as unknown as uPlot, 'x')
+    plot.userDragZoom({ min: 2000, max: 3000 })
     expect(onZoom).toHaveBeenCalledTimes(2)
     expect(onZoom).toHaveBeenLastCalledWith({ start: new Date(2000), end: new Date(3000) })
   })

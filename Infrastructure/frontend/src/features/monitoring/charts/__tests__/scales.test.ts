@@ -152,8 +152,10 @@ describe('buildScales', () => {
 
     expect(softMin).toBeLessThan(10)
     expect(softMax).toBeGreaterThan(35)
+    // RH's 100% is the graph's exact top edge at the forced bound; only the
+    // low side gains padding.
     expect(rhMin).toBeLessThan(40)
-    expect(rhMax).toBeGreaterThan(100)
+    expect(rhMax).toBe(100)
     expect(deviceMin).toBeLessThan(0)
     expect(deviceMax).toBeGreaterThan(100)
 
