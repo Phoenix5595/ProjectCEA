@@ -591,6 +591,16 @@ describe('UPlotChart lifecycle', () => {
     plot.userDragZoom({ min: 2000, max: 3000 })
     expect(onZoom).toHaveBeenCalledTimes(2)
     expect(onZoom).toHaveBeenLastCalledWith({ start: new Date(2000), end: new Date(3000) })
+
+    // Switching back to a live preset resumes viewport following so the
+    // chart shows the preset window instead of the stale zoom window.
+    const fixedZoomRange = { kind: 'fixed', start: new Date(2000), end: new Date(3000) } as const
+    act(() => feed.publish(makeData([2000, 2100, 2200], [[20, 21, 22]]), fixedZoomRange))
+    act(() => plot.flushScaleEvents())
+
+    act(() => feed.publish(makeData([2100, 2200, 2300], [[20, 21, 24]]), TEST_RANGE))
+    act(() => plot.flushScaleEvents())
+    expect(plot.setScale).toHaveBeenLastCalledWith('x', { min: -3_597_700, max: 402_300 })
   })
 
   it('cancels a queued frame and disconnects its observer on unmount', () => {

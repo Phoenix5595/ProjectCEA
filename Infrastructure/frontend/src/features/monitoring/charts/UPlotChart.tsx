@@ -227,12 +227,19 @@ export const UPlotChart = memo(
       }
     }, [feed, reportRequestBudget, structural.revision, structural.theme, theme, title])
 
+    const wasLiveRef = useRef<boolean | null>(null)
     const updateData = useCallback((): void => {
       const plot = plotRef.current
       if (plot === null) return
       const currentStructural = feed.getStructuralSnapshot()
       if (currentStructural.revision !== lastAppliedStructuralRevisionRef.current) return
       const data = feed.getData()
+      // Returning to a live preset after a zoom must resume viewport
+      // following; otherwise the chart keeps the stale zoom window.
+      const isLive = currentStructural.range.kind === 'live'
+      const transitionedToLive = isLive && wasLiveRef.current === false
+      wasLiveRef.current = isLive
+      if (transitionedToLive) followLiveViewportRef.current = true
       const needsViewportScale =
         currentStructural.viewportRevision !== lastAppliedViewportRevisionRef.current ||
         (currentStructural.range.kind === 'live' && followLiveViewportRef.current)
