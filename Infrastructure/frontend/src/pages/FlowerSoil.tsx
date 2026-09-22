@@ -98,13 +98,12 @@ function BedSchematic({
   const slots = PROBE_LAYOUT[Math.min(probes.length, 4) as 0 | 1 | 2 | 3 | 4]
   return (
     <figure
-      aria-label={`${label} schematic`}
+      aria-label={`${label} bed schematic`}
       className="mon-card w-full"
       style={{ width: 'min(34vh, 380px)' }}
     >
-      <figcaption className="mon-card__title flex items-baseline justify-between text-xs font-semibold uppercase tracking-wide text-mon-text-secondary">
-        <span>{label}</span>
-        <span className="font-mono normal-case">4 ft x 4 ft</span>
+      <figcaption className="mon-card__title text-xs font-semibold uppercase tracking-wide text-mon-text-secondary">
+        {label}
       </figcaption>
       <MonitoringFreshness lastGoodAt={live?.generated_at ?? null} errorAt={errorAt} />
       <div className="relative aspect-square w-full rounded border border-border-strong bg-surface-base">
@@ -226,12 +225,16 @@ export default function FlowerSoil() {
 
   return (
     <div className="mon-page">
-      <header className="mon-banner">
-        <h1 className="text-2xl font-bold">Flower soil</h1>
-        <p className="text-sm text-mon-text-secondary">
-          Raised-bed probe schematics, live readings, and multi-axis history.
-        </p>
-      </header>
+      <TimeRangeToolbar
+        range={range}
+        isLive={isLive}
+        onLive={(duration) => setRange({ kind: 'live', duration })}
+        onFixedRange={(start, end) => setRange({ kind: 'fixed', start, end })}
+        onPause={() => undefined}
+        onResume={() => undefined}
+        onResetZoom={() => chartRef.current?.resetZoom()}
+        defaultDuration={LIVE_DURATION_MS}
+      />
 
       {errorAt !== null && (
         <div role="alert" className="mon-banner mon-banner--error">
@@ -257,18 +260,6 @@ export default function FlowerSoil() {
       </aside>
       <div className="mon-main">
       <section className="mon-card">
-        <h2 className="mon-card__title text-lg">Soil history</h2>
-        <MonitoringFreshness lastGoodAt={history === null ? null : history.end} errorAt={errorAt} />
-        <TimeRangeToolbar
-          range={range}
-          isLive={isLive}
-          onLive={(duration) => setRange({ kind: 'live', duration })}
-          onFixedRange={(start, end) => setRange({ kind: 'fixed', start, end })}
-          onPause={() => undefined}
-          onResume={() => undefined}
-          onResetZoom={() => chartRef.current?.resetZoom()}
-          defaultDuration={LIVE_DURATION_MS}
-        />
         <div style={{ height: 'min(50vh, 540px)' }}>
           <UPlotChart
             ref={chartRef}
