@@ -29,6 +29,8 @@ interface EventFiltersProps {
   compact?: boolean
   /** Rooms always shown as chips in compact mode (e.g. Flower Room, Veg Room). */
   primaryRooms?: readonly string[]
+  /** Move the compact Filters trigger into the Event Log heading. */
+  hideCompactTrigger?: boolean
 }
 
 const SEVERITY_OPTIONS: ReadonlyArray<{ value: SeverityLevel | 'all'; label: string }> = [
@@ -244,7 +246,34 @@ function FiltersMenu({
           />
         </div>
       </PopoverContent>
+
     </Popover>
+  )
+}
+export function CompactFiltersTrigger({
+  filters,
+  onChange,
+  rooms,
+  categories,
+  types,
+  view,
+  onViewChange,
+  primaryRooms = [],
+  triggerLabel = 'Filters',
+}: Omit<EventFiltersProps, 'compact' | 'hideCompactTrigger'> & {
+  triggerLabel?: string
+}) {
+  return (
+    <FiltersMenu
+      filters={filters}
+      rooms={rooms.filter((room) => !primaryRooms.includes(room))}
+      categories={categories}
+      types={types}
+      view={view}
+      onViewChange={onViewChange}
+      onChange={onChange}
+      triggerLabel={triggerLabel}
+    />
   )
 }
 
@@ -258,6 +287,7 @@ export function EventFilters({
   onViewChange,
   compact = false,
   primaryRooms = [],
+  hideCompactTrigger = false,
 }: EventFiltersProps) {
   const extraRooms = rooms.filter((room) => !primaryRooms.includes(room))
 
@@ -279,16 +309,18 @@ export function EventFilters({
               onClick={() => toggleDimension(filters, onChange, 'rooms', room)}
             />
           ))}
-          <FiltersMenu
-            filters={filters}
-            rooms={extraRooms}
-            categories={categories}
-            types={types}
-            view={view}
-            onViewChange={onViewChange}
-            onChange={onChange}
-            triggerLabel="Filters"
-          />
+          {!hideCompactTrigger && (
+            <FiltersMenu
+              filters={filters}
+              rooms={extraRooms}
+              categories={categories}
+              types={types}
+              view={view}
+              onViewChange={onViewChange}
+              onChange={onChange}
+              triggerLabel="Filters"
+            />
+          )}
         </div>
         {activeCount > 0 && (
           <button

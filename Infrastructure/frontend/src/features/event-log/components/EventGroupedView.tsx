@@ -127,7 +127,7 @@ const EventCategoryRow = memo(function EventCategoryRow({
         <div
           data-testid={`event-group-${group.category}`}
           aria-disabled="true"
-          className={`flex flex-col gap-0.5 px-2 py-1.5 text-left border border-border-subtle rounded-sm bg-surface-secondary opacity-60 ${visual.border}`}
+          className={`flex min-h-0 flex-col gap-0.5 overflow-hidden px-2 py-1.5 text-left border border-border-subtle rounded-sm bg-surface-secondary opacity-60 ${visual.border}`}
         >
           <div className="flex items-center gap-1.5 min-w-0">
             <EventCategoryChip category={group.category} />
@@ -144,7 +144,7 @@ const EventCategoryRow = memo(function EventCategoryRow({
         data-testid={`event-group-${group.category}`}
         aria-expanded={false}
         onClick={() => onExpand(group.category)}
-        className={`flex flex-col gap-0.5 px-2 py-1.5 text-left border border-border-subtle rounded-sm bg-surface-secondary hover:bg-surface-tertiary transition-colors ${visual.border}`}
+        className={`flex min-h-0 flex-col gap-0.5 overflow-hidden px-2 py-1.5 text-left border border-border-subtle rounded-sm bg-surface-secondary hover:bg-surface-tertiary transition-colors ${visual.border}`}
       >
         <div className="flex items-center justify-between gap-1.5 min-w-0">
           <div className="flex items-center gap-1.5 min-w-0">
@@ -178,7 +178,7 @@ const EventCategoryRow = memo(function EventCategoryRow({
       <div
         data-testid={`event-group-${group.category}`}
         aria-disabled="true"
-        className={`flex flex-col gap-1 px-3 py-2 text-left border border-border-subtle rounded-sm bg-surface-secondary opacity-50 ${visual.border}`}
+        className={`flex min-h-0 flex-col gap-1 overflow-hidden px-3 py-2 text-left border border-border-subtle rounded-sm bg-surface-secondary opacity-50 ${visual.border}`}
       >
         <div className="flex items-center gap-2 min-w-0">
           <EventCategoryChip category={group.category} />
@@ -199,7 +199,7 @@ const EventCategoryRow = memo(function EventCategoryRow({
       data-testid={`event-group-${group.category}`}
       aria-expanded={false}
       onClick={() => onExpand(group.category)}
-      className={`flex flex-col gap-1 px-3 py-2 text-left border border-border-subtle rounded-sm bg-surface-secondary hover:bg-surface-tertiary transition-colors ${visual.border}`}
+      className={`flex min-h-0 flex-col gap-1 overflow-hidden px-3 py-2 text-left border border-border-subtle rounded-sm bg-surface-secondary hover:bg-surface-tertiary transition-colors ${visual.border}`}
     >
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0">
@@ -246,8 +246,8 @@ export function EventGroupedView({
     <div
       role="group"
       aria-label="Grouped alert console"
-      className={`grid gap-1 bg-surface-base border border-border-subtle rounded-sm overflow-auto ${
-        compact ? '' : 'max-h-150'
+      className={`grid min-h-0 gap-1 bg-surface-base border border-border-subtle rounded-sm ${
+        compact ? 'flex-1 grid-rows-[repeat(8,minmax(0,1fr))] overflow-hidden' : 'max-h-150 overflow-auto'
       } ${compact ? '' : groupedGridClass()}`}
     >
       {groups.map((group) => (
