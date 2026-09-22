@@ -27,8 +27,13 @@ function formatMetric(value: number | undefined, unit: string, digits = 1): stri
  * inlet/outlet pipes and a side sight-glass level gauge with graduation ticks.
  * With no sensor data the gauge renders dashed with an explicit NO DATA tag —
  * never a fabricated level. Static SVG, no animation. */
-function WaterTankGraphic({ levelPercent }: { levelPercent: number | null }) {
-  // Vessel interior: y 20 (top) .. 82 (bottom); gauge sits alongside.
+function WaterTankGraphic({
+  levelPercent,
+  waterTemp,
+}: {
+  levelPercent: number | null;
+  waterTemp: number | undefined;
+}) {
   const BODY_TOP = 20;
   const BODY_BOTTOM = 82;
   const level = levelPercent != null ? Math.min(100, Math.max(0, levelPercent)) : null;
@@ -37,7 +42,7 @@ function WaterTankGraphic({ levelPercent }: { levelPercent: number | null }) {
   const seam = 'var(--border-subtle)';
   return (
     <div
-      className="flex flex-wrap items-center gap-2"
+      className="relative w-full aspect-square min-h-0"
       role="img"
       aria-label={
         hasLevel
@@ -45,60 +50,44 @@ function WaterTankGraphic({ levelPercent }: { levelPercent: number | null }) {
           : 'Water tank level: sensor not configured'
       }
     >
-      <svg viewBox="0 0 76 100" className="h-24 w-[4.75rem] shrink-0" aria-hidden focusable="false">
-        {/* inlet pipe from the roof */}
-        <path d="M36 12 V5 H50 V13" fill="none" stroke={outline} strokeWidth="2" />
-        {/* domed roof */}
-        <path
-          d="M12 20 Q38 4 64 20 Z"
-          fill="var(--surface-tertiary)"
-          stroke={outline}
-          strokeWidth="2"
-        />
-        {/* cylindrical body */}
-        <rect x="12" y={BODY_TOP} width="52" height={BODY_BOTTOM - BODY_TOP} fill="var(--surface-tertiary)" stroke={outline} strokeWidth="2" />
-        {/* water level inside the vessel */}
+      <svg viewBox="0 0 100 100" className="absolute inset-0 size-full" aria-hidden focusable="false">
+        <path d="M46 13 V5 H64 V14" fill="none" stroke={outline} strokeWidth="1.8" />
+        <path d="M15 20 Q48 3 81 20 Z" fill="var(--surface-tertiary)" stroke={outline} strokeWidth="1.8" />
+        <rect x="15" y={BODY_TOP} width="66" height={BODY_BOTTOM - BODY_TOP} fill="var(--surface-tertiary)" stroke={outline} strokeWidth="1.8" />
         {level != null && (
           <rect
-            x="13"
+            x="16"
             y={BODY_BOTTOM - (level / 100) * (BODY_BOTTOM - BODY_TOP)}
-            width="50"
+            width="64"
             height={(level / 100) * (BODY_BOTTOM - BODY_TOP)}
             fill="#3b82f6"
             opacity="0.4"
           />
         )}
-        {/* siding seams */}
-        <line x1="27" y1={BODY_TOP + 1} x2="27" y2={BODY_BOTTOM - 1} stroke={seam} strokeWidth="1" />
-        <line x1="38" y1={BODY_TOP + 1} x2="38" y2={BODY_BOTTOM - 1} stroke={seam} strokeWidth="1" />
-        <line x1="49" y1={BODY_TOP + 1} x2="49" y2={BODY_BOTTOM - 1} stroke={seam} strokeWidth="1" />
-        {/* ladder rail hint on the vessel */}
-        <line x1="20" y1={BODY_TOP + 4} x2="20" y2={BODY_BOTTOM - 4} stroke={seam} strokeWidth="1" />
-        <line x1="16" y1={BODY_TOP + 4} x2="16" y2={BODY_BOTTOM - 4} stroke={seam} strokeWidth="1" />
         {[30, 42, 54, 66, 74].map((y) => (
-          <line key={y} x1="16" y1={y} x2="20" y2={y} stroke={seam} strokeWidth="1" />
+          <line key={y} x1="20" y1={y} x2="76" y2={y} stroke={seam} strokeWidth="0.7" />
         ))}
-        {/* skirt + ground line */}
-        <rect x="18" y={BODY_BOTTOM} width="40" height="6" fill="var(--surface-secondary)" stroke={outline} strokeWidth="2" />
-        <line x1="4" y1="94" x2="72" y2="94" stroke={outline} strokeWidth="2" />
-        {/* outlet pipe with valve */}
-        <path d="M12 74 H4 M6 72 H12 M6 72 V78" fill="none" stroke={outline} strokeWidth="2" />
-        {/* sight glass level gauge with graduation ticks */}
+        <line x1="29" y1={BODY_TOP + 1} x2="29" y2={BODY_BOTTOM - 1} stroke={seam} strokeWidth="0.8" />
+        <line x1="51" y1={BODY_TOP + 1} x2="51" y2={BODY_BOTTOM - 1} stroke={seam} strokeWidth="0.8" />
+        <line x1="70" y1={BODY_TOP + 1} x2="70" y2={BODY_BOTTOM - 1} stroke={seam} strokeWidth="0.8" />
+        <rect x="23" y={BODY_BOTTOM} width="50" height="6" fill="var(--surface-secondary)" stroke={outline} strokeWidth="1.8" />
+        <line x1="8" y1="94" x2="92" y2="94" stroke={outline} strokeWidth="1.8" />
+        <path d="M15 74 H7 M9 71 V77" fill="none" stroke={outline} strokeWidth="1.8" />
         <rect
-          x="66"
+          x="83"
           y={BODY_TOP}
-          width="8"
+          width="10"
           height={BODY_BOTTOM - BODY_TOP}
           fill="var(--surface-base)"
           stroke={outline}
-          strokeWidth="1.5"
+          strokeWidth="1.4"
           strokeDasharray={level != null ? undefined : '3 2'}
         />
         {level != null && (
           <rect
-            x="66.75"
+            x="83.75"
             y={BODY_BOTTOM - (level / 100) * (BODY_BOTTOM - BODY_TOP)}
-            width="6.5"
+            width="8.5"
             height={(level / 100) * (BODY_BOTTOM - BODY_TOP)}
             fill="#38bdf8"
             opacity="0.85"
@@ -107,26 +96,28 @@ function WaterTankGraphic({ levelPercent }: { levelPercent: number | null }) {
         {[0, 25, 50, 75, 100].map((pct) => (
           <line
             key={pct}
-            x1="66"
+            x1="83"
             y1={BODY_BOTTOM - (pct / 100) * (BODY_BOTTOM - BODY_TOP)}
-            x2="70"
+            x2="88"
             y2={BODY_BOTTOM - (pct / 100) * (BODY_BOTTOM - BODY_TOP)}
             stroke={outline}
-            strokeWidth="1"
+            strokeWidth="0.9"
           />
         ))}
-        {!hasLevel && (
-          <text x="38" y="54" textAnchor="middle" fontSize="8.5" fontWeight="700" letterSpacing="0.06em" fill="var(--color-text-muted, #94a3b8)">
-            NO DATA
-          </text>
-        )}
       </svg>
-      <div className="flex flex-col justify-center text-xs min-w-0">
-        <span className="text-text-secondary">Tank level</span>
-        <span className="font-mono tabular-nums text-text-default">
-          {level != null ? `${level}%` : '—'}
+      <div className="absolute left-[22%] right-[24%] top-[34%] bottom-[12%] flex flex-col justify-center gap-1 px-1 text-center">
+        <span className="text-[clamp(0.55rem,1.1vw,0.8rem)] font-bold uppercase tracking-wide text-text-secondary">
+          Water tank
         </span>
-        {!hasLevel && <span className="text-text-muted">sensor not configured</span>}
+        {!hasLevel && <span className="font-mono text-[clamp(0.55rem,1vw,0.75rem)] font-bold text-text-muted">NO DATA</span>}
+        <span className="font-mono text-[clamp(0.55rem,1vw,0.75rem)] text-text-default">
+          Temp {waterTemp != null ? `${waterTemp.toFixed(1)}°C` : '—'}
+        </span>
+        <span className="font-mono text-[clamp(0.5rem,0.9vw,0.7rem)] text-text-secondary">Pressure —</span>
+        <span className="font-mono text-[clamp(0.5rem,0.9vw,0.7rem)] text-text-secondary">Irrig. today —</span>
+      </div>
+      <div className="absolute right-0 top-[31%] text-[clamp(0.45rem,0.8vw,0.6rem)] font-mono text-text-muted [writing-mode:vertical-rl]">
+        {level != null ? `${level}%` : '—'}
       </div>
     </div>
   );
@@ -217,15 +208,7 @@ export default function DashboardOperationsRail({
 
       {showWater && (
         <RailSection title="Water" boxed={grid}>
-          <WaterTankGraphic levelPercent={waterLevelPercent} />
-          <div className="mt-2 space-y-1">
-            <MetricRow
-              label="Water temp"
-              value={waterTemp != null ? formatMetric(waterTemp, '°C') : '—'}
-            />
-            <MetricRow label="Pressure" value="—" hint="sensor not configured" />
-            <MetricRow label="Irrigation today" value="—" hint="sensor not configured" />
-          </div>
+          <WaterTankGraphic levelPercent={waterLevelPercent} waterTemp={waterTemp} />
         </RailSection>
       )}
     </div>

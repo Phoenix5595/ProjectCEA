@@ -1,10 +1,10 @@
 import { memo } from 'react'
 import type { EventLogEntry } from '../state/eventLogStore'
 import { getEventDisplay } from '../presentation/eventRegistry'
-import { categoryTheme, displayCategoryOf } from '../presentation/categoryTheme'
+import { displayCategoryOf, categoryTheme } from '../presentation/categoryTheme'
 import { sourcePartsFor } from '../presentation/eventSourceParts'
-import { EventSourceLine, EventTimestamps } from './EventFragments'
 import { formatExactTime, formatLocalTime, formatRelativeTime } from '../presentation/timeFormat'
+import { EventRoomIndicator, EventSourceLine, EventTimestamps } from './EventFragments'
 
 /** Pinned trailing window for concurrent-entity summaries (deterministic tests). */
 export const GROUPING_WINDOW_MS = 10 * 60 * 1000
@@ -127,7 +127,7 @@ const EventCategoryRow = memo(function EventCategoryRow({
         <div
           data-testid={`event-group-${group.category}`}
           aria-disabled="true"
-          className={`flex flex-col gap-0.5 px-2 py-1.5 text-left border-b-2 bg-surface-secondary opacity-60 ${visual.border}`}
+          className={`flex flex-col gap-0.5 px-2 py-1.5 text-left border border-border-subtle rounded-sm bg-surface-secondary opacity-60 ${visual.border}`}
         >
           <div className="flex items-center gap-1.5 min-w-0">
             <EventCategoryChip category={group.category} />
@@ -144,7 +144,7 @@ const EventCategoryRow = memo(function EventCategoryRow({
         data-testid={`event-group-${group.category}`}
         aria-expanded={false}
         onClick={() => onExpand(group.category)}
-        className={`flex flex-col gap-0.5 px-2 py-1.5 text-left border-b-2 bg-surface-secondary hover:bg-surface-tertiary transition-colors ${visual.border}`}
+        className={`flex flex-col gap-0.5 px-2 py-1.5 text-left border border-border-subtle rounded-sm bg-surface-secondary hover:bg-surface-tertiary transition-colors ${visual.border}`}
       >
         <div className="flex items-center justify-between gap-1.5 min-w-0">
           <div className="flex items-center gap-1.5 min-w-0">
@@ -164,7 +164,10 @@ const EventCategoryRow = memo(function EventCategoryRow({
             {formatLocalTime(group.latest.occurredAt, now)}
           </time>
         </div>
-        <div className="text-xs text-text-default font-semibold truncate">{display.label}</div>
+        <div className="flex items-center gap-1.5 min-w-0">
+          <EventRoomIndicator room={group.latest.payload.room} />
+          <div className="text-xs text-text-default font-semibold truncate">{display.label}</div>
+        </div>
       </button>
     )
   }
@@ -175,7 +178,7 @@ const EventCategoryRow = memo(function EventCategoryRow({
       <div
         data-testid={`event-group-${group.category}`}
         aria-disabled="true"
-        className={`flex flex-col gap-1 px-3 py-2 text-left border-b-2 bg-surface-secondary opacity-50 ${visual.border}`}
+        className={`flex flex-col gap-1 px-3 py-2 text-left border border-border-subtle rounded-sm bg-surface-secondary opacity-50 ${visual.border}`}
       >
         <div className="flex items-center gap-2 min-w-0">
           <EventCategoryChip category={group.category} />
@@ -196,7 +199,7 @@ const EventCategoryRow = memo(function EventCategoryRow({
       data-testid={`event-group-${group.category}`}
       aria-expanded={false}
       onClick={() => onExpand(group.category)}
-      className={`flex flex-col gap-1 px-3 py-2 text-left border-b-2 bg-surface-secondary hover:bg-surface-tertiary transition-colors ${visual.border}`}
+      className={`flex flex-col gap-1 px-3 py-2 text-left border border-border-subtle rounded-sm bg-surface-secondary hover:bg-surface-tertiary transition-colors ${visual.border}`}
     >
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0">
@@ -243,7 +246,7 @@ export function EventGroupedView({
     <div
       role="group"
       aria-label="Grouped alert console"
-      className={`grid gap-px bg-border-subtle border border-border-subtle overflow-auto ${
+      className={`grid gap-1 bg-surface-base border border-border-subtle rounded-sm overflow-auto ${
         compact ? '' : 'max-h-150'
       } ${compact ? '' : groupedGridClass()}`}
     >

@@ -1,3 +1,4 @@
+import { Flower2, Sprout } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { formatRelativeTime, formatExactTime, formatLocalTime } from '../presentation/timeFormat'
 type SourcePart = { text: string; className?: string; title?: string }
@@ -37,6 +38,25 @@ export function EventTimestamps({
   )
 }
 
+
+export function EventRoomIndicator({ room }: { room: unknown }): ReactNode | null {
+  if (typeof room !== 'string' || room.length === 0) return null
+  const isFlower = room.toLowerCase().includes('flower')
+  const isVeg = room.toLowerCase().includes('veg')
+  if (!isFlower && !isVeg) return null
+  const label = isFlower ? 'Flower Room' : 'Veg Room'
+  const Icon = isFlower ? Flower2 : Sprout
+  return (
+    <span
+      className="inline-flex items-center gap-1 text-11 text-text-secondary"
+      title={`Event room: ${label}`}
+      aria-label={`Event room: ${label}`}
+    >
+      <Icon aria-hidden="true" className="size-3.5 shrink-0" />
+      <span className="sr-only">{label}</span>
+    </span>
+  )
+}
 /** The "at a glance" source line: entity · zone · state · controller · from-to values. */
 export function EventSourceLine({ parts }: { parts: readonly SourcePart[] }): ReactNode | null {
   if (parts.length === 0) return null
