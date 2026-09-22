@@ -259,8 +259,9 @@ export default function FlowerSoil() {
         <BedSchematic label="Front Bed" probes={beds.frontBed} live={live} errorAt={errorAt} />
       </aside>
       <div className="mon-main">
-      <section className="mon-card">
-        <div style={{ height: 'min(50vh, 540px)' }}>
+      <section className="mon-card flex min-h-0 flex-col">
+        <h2 className="mon-card__title text-lg">Soil history</h2>
+        <div className="min-h-0 flex-1">
           <UPlotChart
             ref={chartRef}
             feed={feed}
