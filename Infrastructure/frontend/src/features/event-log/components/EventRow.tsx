@@ -5,7 +5,7 @@ import { SEVERITY_LABELS, type SeverityLevel } from '../presentation/severity'
 import { sourcePartsFor } from '../presentation/eventSourceParts'
 import { formatLocalTime } from '../presentation/timeFormat'
 import { EventDetails } from './EventDetails'
-import { EventSourceLine, EventTimestamps } from './EventFragments'
+import { EventRoomIndicator, EventSourceLine, EventTimestamps } from './EventFragments'
 
 interface EventRowProps {
   entry: EventLogEntry
@@ -45,7 +45,7 @@ export function EventRow({ entry, now, formatAbsolute = formatLocalTime }: Event
   )
 
   return (
-    <li role="listitem" className={`border-l-2 ${SEVERITY_VISUAL[severity]}`}>
+    <li role="listitem" className={`border border-border-subtle rounded-sm ${SEVERITY_VISUAL[severity]}`}>
       <div className="flex items-start gap-2 px-3 py-2">
         <span
           className={`shrink-0 inline-flex items-center px-1.5 py-0.5 text-10 font-bold uppercase tracking-wider border ${SEVERITY_BADGE[severity]}`}
@@ -55,7 +55,10 @@ export function EventRow({ entry, now, formatAbsolute = formatLocalTime }: Event
         </span>
         <div className="flex-1 min-w-0">
           <div className="flex items-baseline justify-between gap-2">
-            <span className="text-sm text-text-default font-semibold truncate">{display.label}</span>
+            <span className="flex min-w-0 items-center gap-1.5">
+              <EventRoomIndicator room={entry.payload.room} />
+              <span className="text-sm text-text-default font-semibold truncate">{display.label}</span>
+            </span>
             <EventTimestamps occurredAt={entry.occurredAt} now={now} formatAbsolute={formatAbsolute} />
           </div>
           <div className="text-11 text-text-default font-mono truncate">{entry.type}</div>

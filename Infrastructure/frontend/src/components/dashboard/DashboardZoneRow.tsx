@@ -1,6 +1,5 @@
-import { memo } from 'react';
+import { memo, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-
 import type { Device } from '../../types/device';
 import { getFlowerDualClimateLayers, getLocationDisplayName } from '../../config/zones';
 import {
@@ -18,7 +17,7 @@ export interface DashboardZoneRowProps {
   devices: Device[];
   sensorData: Record<string, number>;
   statusDevices?: Record<string, Record<string, { intensity?: number; load_percent?: number }>> | null;
-  icon: string;
+  icon: ReactNode;
   /** Config-driven `${location}_${cluster}_${device_name}` → display name. */
   lightDisplayNames?: Record<string, string>;
 }

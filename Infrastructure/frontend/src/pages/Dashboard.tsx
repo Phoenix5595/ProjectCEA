@@ -1,6 +1,6 @@
 /** Main dashboard page component: dense desktop command view. */
-import { useEffect, useState, useMemo, useCallback } from 'react';
-import { Sun } from 'lucide-react';
+import { useEffect, useState, useMemo, useCallback, type ReactNode } from 'react';
+import { Flower2, Sprout, Sun } from 'lucide-react';
 
 import GrowCalendar from '../components/calendar/GrowCalendar';
 import FlowerGrowWizard from '../components/calendar/FlowerGrowWizard';
@@ -32,11 +32,10 @@ interface WeatherData {
   timestamp: string;
 }
 
-/** Room configuration with icons */
-const ROOM_ICONS: Record<string, string> = {
-  'Veg Room': '🌱',
-  'Flower Room': '🌻',
-  'Lab': '🧪'
+/** Room icons are semantic, not decorative: the same marks identify room-origin events. */
+const ROOM_ICONS: Record<string, ReactNode> = {
+  'Veg Room': <Sprout aria-hidden="true" className="size-3.5 text-emerald-400" />,
+  'Flower Room': <Flower2 aria-hidden="true" className="size-3.5 text-pink-400" />,
 };
 
 /** Lower-row room map: Lab stats live in the operations rail, not here. */

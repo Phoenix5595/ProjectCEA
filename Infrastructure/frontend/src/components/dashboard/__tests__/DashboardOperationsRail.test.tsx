@@ -47,10 +47,10 @@ describe('DashboardOperationsRail', () => {
       />,
     );
     expect(screen.getByRole('region', { name: 'Water' })).toBeInTheDocument();
-    expect(screen.getByText('19.5°C')).toBeInTheDocument();
+    expect(screen.getByText('Temp 19.5°C')).toBeInTheDocument();
     expect(screen.getByText('NO DATA')).toBeInTheDocument();
-    // tank level + pressure + irrigation (Lab is not rendered in this mode)
-    expect(screen.getAllByText('sensor not configured')).toHaveLength(3);
+    expect(screen.getByText('Pressure —')).toBeInTheDocument();
+    expect(screen.getByText('Irrig. today —')).toBeInTheDocument();
     expect(screen.queryByRole('region', { name: 'Lab' })).not.toBeInTheDocument();
   });
 
