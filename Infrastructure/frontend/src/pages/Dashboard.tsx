@@ -219,18 +219,18 @@ export default function Dashboard() {
               <div className="min-h-0 min-w-0">
                 <DashboardOperationsRail
                   sensorData={mergedSensorData}
-                  systemStats={systemStats}
                   degraded={degraded}
                   waterLevelPercent={null}
                   layout="grid"
+                  sections="lab"
                 />
               </div>
             </div>
           </div>
 
-          {/* Full-height event log column */}
-          <div className="w-full lg:w-[clamp(12rem,15vw,18rem)] lg:shrink-0 min-h-0">
-            <div className="h-full min-h-0 overflow-y-auto bg-surface-primary rounded-lg border border-border-subtle p-3">
+          {/* Full-height event log column with the SCADA tank below */}
+          <div className="w-full lg:w-[clamp(12rem,15vw,18rem)] lg:shrink-0 min-h-0 flex flex-col gap-2">
+            <div className="flex-1 min-h-0 overflow-y-auto bg-surface-primary rounded-lg border border-border-subtle p-3">
               <EventLog
                 entries={eventLogEntries}
                 now={now}
@@ -238,6 +238,11 @@ export default function Dashboard() {
                 primaryRooms={ROOM_MAP_ZONES.map((zone) => zone.location)}
               />
             </div>
+            <DashboardOperationsRail
+              sensorData={mergedSensorData}
+              waterLevelPercent={null}
+              sections="water"
+            />
           </div>
         </div>
       </div>

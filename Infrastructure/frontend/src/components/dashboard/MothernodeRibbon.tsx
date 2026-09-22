@@ -58,9 +58,6 @@ export function MothernodeRibbon({ systemStats }: MothernodeRibbonProps) {
                   >
                     <span aria-hidden className={`size-2.5 rounded-full shrink-0 ${presentation.dotClass}`} />
                     <span className="text-text-secondary">{service.name}</span>
-                    <span className={`font-medium font-sans ${presentation.textClass}`}>
-                      {presentation.label}
-                    </span>
                   </span>
                 );
               })
