@@ -77,7 +77,7 @@ function ProbeCard({
   const freshness = freshnessText(metrics.water_content?.observed_at.getTime() ?? null)
   return (
     <div className="soil-probe-card" data-testid="soil-probe-card">
-      <div className="soil-probe-card__name">{probe.display_name}</div>
+      <div className="soil-probe-card__name">Soil probe #{probe.hardware_address}</div>
       <dl className="soil-probe-card__metrics">
         <div>
           <dt>Water content</dt>
@@ -178,7 +178,7 @@ export default function FlowerSoil() {
       // unassigned records surface only in the badge, never as a toast storm.
       for (const record of freshUnassigned) {
         seenUnassignedRef.current.add(record.registry_id)
-        toast(`New soil probe detected: ${record.display_name}`, {
+        toast(`New soil probe detected: Soil probe #${record.hardware_address}`, {
           action: { label: 'Sensor Settings', onClick: goToSensorSettings },
         })
       }
