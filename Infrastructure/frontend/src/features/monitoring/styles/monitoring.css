@@ -379,3 +379,13 @@
 .mon-side .mon-card table th {
   padding: 0;
 }
+
+/* Soil page: the side column hosts 4 ft × 4 ft bed schematic cards, so it
+   runs wider than the 164px table sidebar while keeping mon-side compact
+   card styling (4px padding, 2px margins). Cards stay sticky like the
+   monitoring sidebar. */
+@media (min-width: 1100px) {
+  .mon-layout--beds {
+    grid-template-columns: minmax(280px, 380px) minmax(0, 1fr);
+  }
+}
