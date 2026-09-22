@@ -46,7 +46,7 @@ export default function Dashboard() {
   const { theme, setTheme, themes } = useTheme();
 
   const { devices: wsDevices, sensorData: wsSensorData } = useWebSocket();
-  const { devices, sensorData, loading } = useSensorPolling();
+  const { devices, sensorData, lightDisplayNames, loading } = useSensorPolling();
   const { systemStats, statusDevices, degraded } = useSystemStatus();
   const { entries: eventLogEntries } = useEventLog();
 
@@ -211,6 +211,7 @@ export default function Dashboard() {
                     devices={mergedDevices}
                     sensorData={mergedSensorData}
                     statusDevices={statusDevices}
+                    lightDisplayNames={lightDisplayNames}
                     icon={ROOM_ICONS[zone.location] || '📦'}
                   />
                 ))}

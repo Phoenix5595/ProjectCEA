@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import type { Device } from '../../types/device';
 import { getFlowerDualClimateLayers, getLocationDisplayName } from '../../config/zones';
 import {
+  getClimateDisplay,
   getRoomLightState,
   getSensorDisplay,
   getSetpointColor,
@@ -18,6 +19,8 @@ export interface DashboardZoneRowProps {
   sensorData: Record<string, number>;
   statusDevices?: Record<string, Record<string, { intensity?: number; load_percent?: number }>> | null;
   icon: string;
+  /** Config-driven `${location}_${cluster}_${device_name}` → display name. */
+  lightDisplayNames?: Record<string, string>;
 }
 
 const LIGHT_DISPLAY_NAMES: Record<string, Record<string, string>> = {
@@ -38,7 +41,6 @@ function ClimateMini({
   sensorData: Record<string, number>;
 }) {
   const unplugged = !hasClimateData(location, cluster, sensorData);
-  const prefix = `${location}_${cluster}_`;
 
   return (
     <div
@@ -61,19 +63,19 @@ function ClimateMini({
         <div>
           <span className="text-text-subtle">RH </span>
           <span className="text-text-default font-mono tabular-nums">
-            {getSensorDisplay(sensorData, `${prefix}relative_humidity`, '%')}
+            {getClimateDisplay(sensorData, location, cluster, 'rh', '%')}
           </span>
         </div>
         <div>
           <span className="text-text-subtle">CO₂ </span>
           <span className="text-text-default font-mono tabular-nums">
-            {getSensorDisplay(sensorData, `${prefix}co2`, ' ppm', 0)}
+            {getClimateDisplay(sensorData, location, cluster, 'co2', ' ppm', 0)}
           </span>
         </div>
         <div>
           <span className="text-text-subtle">VPD </span>
           <span className="text-text-default font-mono tabular-nums">
-            {getSensorDisplay(sensorData, `${prefix}vpd`, ' kPa')}
+            {getClimateDisplay(sensorData, location, cluster, 'vpd', ' kPa')}
           </span>
         </div>
       </div>
@@ -87,6 +89,7 @@ export const DashboardZoneRow = memo(function DashboardZoneRow({
   devices,
   sensorData,
   statusDevices,
+  lightDisplayNames,
   icon,
 }: DashboardZoneRowProps) {
   const roomDevices = devices.filter((d) => d.location === location && d.cluster === cluster);
@@ -94,7 +97,6 @@ export const DashboardZoneRow = memo(function DashboardZoneRow({
   const nonLightDevices = roomDevices.filter((d) => !d.device_name?.startsWith('light_'));
   const lightState = getRoomLightState(location, devices);
   const displayName = getLocationDisplayName(location);
-  const displayNames = LIGHT_DISPLAY_NAMES[location] || {};
   const setpointPrefix = `${location}_${cluster}_`;
   const isFlower = location === 'Flower Room';
 
@@ -161,7 +163,11 @@ export const DashboardZoneRow = memo(function DashboardZoneRow({
             <div className="flex flex-col gap-0.5">
               {lightDevices.map((device) => {
                 const deviceName = device.device_name || '';
-                const name = displayNames[deviceName] || deviceName;
+                // Config-driven map is keyed `${location}_${cluster}_${device}`.
+                const name =
+                  lightDisplayNames?.[`${location}_${cluster}_${deviceName}`] ??
+                  LIGHT_DISPLAY_NAMES[location]?.[deviceName] ??
+                  deviceName;
                 const intensityKey = `${location}_${cluster}_${deviceName}_intensity`;
                 const intensity =
                   sensorData[intensityKey] ??
@@ -170,8 +176,8 @@ export const DashboardZoneRow = memo(function DashboardZoneRow({
                   ]?.[cluster]?.[deviceName]?.intensity;
                 return (
                   <div key={deviceName} className="flex items-center justify-between gap-1 text-10">
-                    <span className="text-text-secondary truncate max-w-20" title={name}>
-                      {name.split(' ')[0]}
+                    <span className="text-text-secondary truncate flex-1 min-w-0" title={name}>
+                      {name}
                     </span>
                     <span className="text-accent-data font-mono tabular-nums shrink-0">
                       {intensity != null ? `${Number(intensity).toFixed(0)}%` : '--'}
