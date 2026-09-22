@@ -109,12 +109,20 @@ function WaterTankGraphic({
         <span className="text-[clamp(0.55rem,1.1vw,0.8rem)] font-bold uppercase tracking-wide text-text-secondary">
           Water tank
         </span>
-        {!hasLevel && <span className="font-mono text-[clamp(0.55rem,1vw,0.75rem)] font-bold text-text-muted">NO DATA</span>}
-        <span className="font-mono text-[clamp(0.55rem,1vw,0.75rem)] text-text-default">
+        {!hasLevel && (
+          <span className="rounded-sm border border-border-subtle/70 bg-surface-base/25 px-1 py-0.5 font-mono text-[clamp(0.55rem,1vw,0.75rem)] font-bold text-text-muted">
+            NO DATA
+          </span>
+        )}
+        <span className="rounded-sm border border-border-subtle/70 bg-surface-base/25 px-1 py-0.5 font-mono text-[clamp(0.55rem,1vw,0.75rem)] text-text-default">
           Temp {waterTemp != null ? `${waterTemp.toFixed(1)}°C` : '—'}
         </span>
-        <span className="font-mono text-[clamp(0.5rem,0.9vw,0.7rem)] text-text-secondary">Pressure —</span>
-        <span className="font-mono text-[clamp(0.5rem,0.9vw,0.7rem)] text-text-secondary">Irrig. today —</span>
+        <span className="rounded-sm border border-border-subtle/70 bg-surface-base/25 px-1 py-0.5 font-mono text-[clamp(0.5rem,0.9vw,0.7rem)] text-text-secondary">
+          Pressure —
+        </span>
+        <span className="rounded-sm border border-border-subtle/70 bg-surface-base/25 px-1 py-0.5 font-mono text-[clamp(0.5rem,0.9vw,0.7rem)] text-text-secondary">
+          Irrig. today —
+        </span>
       </div>
       <div className="absolute right-0 top-[31%] text-[clamp(0.45rem,0.8vw,0.6rem)] font-mono text-text-muted [writing-mode:vertical-rl]">
         {level != null ? `${level}%` : '—'}
