@@ -386,9 +386,14 @@
 @media (min-width: 1100px) {
   .mon-layout--beds {
     grid-template-columns: minmax(280px, 380px) minmax(0, 1fr);
+    align-items: stretch;
   }
 
   .mon-layout--beds .mon-side {
-    gap: 0;
+    gap: 0.25rem;
+  }
+
+  .mon-layout--beds .mon-side .mon-card {
+    margin: 0;
   }
 }
