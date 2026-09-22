@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback } from 'react'
 import type { EventLogEntry } from '../state/eventLogStore'
-import { EventFilters, type FilterState } from './EventFilters'
+import { EventFilters, CompactFiltersTrigger, type FilterState } from './EventFilters'
 import { EventRow } from './EventRow'
 import { EventGroupedView, buildGroups, withPreallocatedSlots, type EventLogView } from './EventGroupedView'
 import { useEventLogPagination } from '../state/useEventLog'
@@ -83,14 +83,30 @@ export function EventLog({ entries, now, compact = false, primaryRooms }: EventL
   const showFlatList = view === 'flat' || expandedCategory !== null
 
   return (
-    <section aria-labelledby="event-log-heading" className="flex flex-col gap-2 @container">
-      <div className="flex items-center justify-between">
+    <section
+      aria-labelledby="event-log-heading"
+      className={`flex flex-col gap-2 @container ${compact ? 'h-full min-h-0' : ''}`}
+    >
+      <div className="flex items-center justify-between gap-2">
         <h2 id="event-log-heading" className="text-sm font-bold uppercase tracking-wider text-text-default">
           Event Log
         </h2>
-        <span className="text-11 text-text-default tabular-nums">
-          {filtered.length} event{filtered.length === 1 ? '' : 's'}
-        </span>
+        {compact ? (
+          <CompactFiltersTrigger
+            filters={filters}
+            onChange={handleFilterChange}
+            rooms={rooms}
+            categories={categories}
+            types={types}
+            view={view}
+            onViewChange={handleViewChange}
+            primaryRooms={primaryRooms}
+          />
+        ) : (
+          <span className="text-11 text-text-default tabular-nums">
+            {filtered.length} event{filtered.length === 1 ? '' : 's'}
+          </span>
+        )}
       </div>
       <EventFilters
         filters={filters}
@@ -102,6 +118,7 @@ export function EventLog({ entries, now, compact = false, primaryRooms }: EventL
         onViewChange={handleViewChange}
         compact={compact}
         primaryRooms={primaryRooms}
+        hideCompactTrigger={compact}
       />
       {(paging.hasMore || paging.loadingOlder) && (
         <button
