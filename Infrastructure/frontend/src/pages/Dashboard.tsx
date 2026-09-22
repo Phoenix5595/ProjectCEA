@@ -1,6 +1,6 @@
 /** Main dashboard page component: dense desktop command view. */
 import { useEffect, useState, useMemo, useCallback, type ReactNode } from 'react';
-import { Flower2, Sprout, Sun } from 'lucide-react';
+import { FlaskConical, Flower2, Sprout, Sun } from 'lucide-react';
 
 import GrowCalendar from '../components/calendar/GrowCalendar';
 import FlowerGrowWizard from '../components/calendar/FlowerGrowWizard';
@@ -36,10 +36,11 @@ interface WeatherData {
 const ROOM_ICONS: Record<string, ReactNode> = {
   'Veg Room': <Sprout aria-hidden="true" className="size-3.5 text-emerald-400" />,
   'Flower Room': <Flower2 aria-hidden="true" className="size-3.5 text-pink-400" />,
+  Lab: <FlaskConical aria-hidden="true" className="size-3.5 text-cyan-400" />,
 };
 
-/** Lower-row room map: Lab stats live in the operations rail, not here. */
-const ROOM_MAP_ZONES = DASHBOARD_ROW_ZONES.filter((zone) => zone.location !== 'Lab');
+/** Lower-row room map: the Lab is a third horizontal zone, ending at the SCADA column. */
+const ROOM_MAP_ZONES = DASHBOARD_ROW_ZONES;
 
 export default function Dashboard() {
   const { theme, setTheme, themes } = useTheme();
@@ -199,31 +200,20 @@ export default function Dashboard() {
                 />
               </div>
             </div>
-            {/* Lower row: room bars + operations/SCADA strip */}
-            <div className="min-h-0 flex flex-col lg:grid lg:grid-cols-[minmax(0,42fr)_minmax(0,58fr)] gap-2">
-              <div className="min-h-0 min-w-0 flex flex-col gap-2 overflow-y-auto">
-                {ROOM_MAP_ZONES.map((zone) => (
-                  <DashboardZoneRow
-                    key={`${zone.location}_${zone.cluster}`}
-                    location={zone.location}
-                    cluster={zone.cluster}
-                    devices={mergedDevices}
-                    sensorData={mergedSensorData}
-                    statusDevices={statusDevices}
-                    lightDisplayNames={lightDisplayNames}
-                    icon={ROOM_ICONS[zone.location] || '📦'}
-                  />
-                ))}
-              </div>
-              <div className="min-h-0 min-w-0">
-                <DashboardOperationsRail
+            {/* Lower row: three full-width horizontal room bars ending at the SCADA column */}
+            <div className="min-h-0 min-w-0 flex flex-col gap-2 overflow-y-auto">
+              {ROOM_MAP_ZONES.map((zone) => (
+                <DashboardZoneRow
+                  key={`${zone.location}_${zone.cluster}`}
+                  location={zone.location}
+                  cluster={zone.cluster}
+                  devices={mergedDevices}
                   sensorData={mergedSensorData}
-                  degraded={degraded}
-                  waterLevelPercent={null}
-                  layout="grid"
-                  sections="lab"
+                  statusDevices={statusDevices}
+                  lightDisplayNames={lightDisplayNames}
+                  icon={ROOM_ICONS[zone.location] || '📦'}
                 />
-              </div>
+              ))}
             </div>
           </div>
 
