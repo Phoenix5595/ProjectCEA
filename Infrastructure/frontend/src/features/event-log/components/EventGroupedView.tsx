@@ -4,6 +4,7 @@ import { getEventDisplay } from '../presentation/eventRegistry'
 import { categoryTheme, displayCategoryOf } from '../presentation/categoryTheme'
 import { sourcePartsFor } from '../presentation/eventSourceParts'
 import { EventSourceLine, EventTimestamps } from './EventFragments'
+import { formatExactTime, formatLocalTime, formatRelativeTime } from '../presentation/timeFormat'
 
 /** Pinned trailing window for concurrent-entity summaries (deterministic tests). */
 export const GROUPING_WINDOW_MS = 10 * 60 * 1000
@@ -117,6 +118,56 @@ const EventCategoryRow = memo(function EventCategoryRow({
   compact?: boolean
 }) {
   const visual = categoryTheme(group.category)
+
+  if (compact) {
+    // Sidebar row: chip + count on the left, compact visible time right,
+    // latest title below. Every category stays one glanceable unit.
+    if (group.latest === null || group.count === 0) {
+      return (
+        <div
+          data-testid={`event-group-${group.category}`}
+          aria-disabled="true"
+          className={`flex flex-col gap-0.5 px-2 py-1.5 text-left border-b-2 bg-surface-secondary opacity-60 ${visual.border}`}
+        >
+          <div className="flex items-center gap-1.5 min-w-0">
+            <EventCategoryChip category={group.category} />
+            <span className="text-11 font-bold text-text-default tabular-nums">0</span>
+          </div>
+          <div className="text-xs text-text-default font-semibold truncate">No recent events</div>
+        </div>
+      )
+    }
+    const display = getEventDisplay(group.latest.type)
+    return (
+      <button
+        type="button"
+        data-testid={`event-group-${group.category}`}
+        aria-expanded={false}
+        onClick={() => onExpand(group.category)}
+        className={`flex flex-col gap-0.5 px-2 py-1.5 text-left border-b-2 bg-surface-secondary hover:bg-surface-tertiary transition-colors ${visual.border}`}
+      >
+        <div className="flex items-center justify-between gap-1.5 min-w-0">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <EventCategoryChip category={group.category} />
+            <span className="text-11 font-bold text-text-default tabular-nums shrink-0">
+              {group.count}
+            </span>
+          </div>
+          <time
+            dateTime={group.latest.occurredAt.toISOString()}
+            title={formatExactTime(group.latest.occurredAt)}
+            className="shrink-0 text-10 text-text-secondary tabular-nums truncate"
+            aria-label={`${formatRelativeTime(group.latest.occurredAt, now)} — absolute time: ${formatLocalTime(group.latest.occurredAt, now)}`}
+          >
+            {formatRelativeTime(group.latest.occurredAt, now)}
+            {' · '}
+            {formatLocalTime(group.latest.occurredAt, now)}
+          </time>
+        </div>
+        <div className="text-xs text-text-default font-semibold truncate">{display.label}</div>
+      </button>
+    )
+  }
 
   if (group.latest === null || group.count === 0) {
     // Pre-allocated empty slot: reserved space, non-interactive placeholder.

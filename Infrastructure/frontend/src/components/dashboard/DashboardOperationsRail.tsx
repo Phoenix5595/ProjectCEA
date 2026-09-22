@@ -1,18 +1,22 @@
-/** Full-height right operations/SCADA rail: Lab, services, Pi, and water tank. */
-import type { SystemStats, UseSystemStatusReturn } from '../../hooks/useSystemStatus';
-import { getServiceStatusPresentation } from './serviceStatusPresentation';
+/** Operations rail: Lab strip in the dashboard lower row and the SCADA water
+ * tank under the event log. Machine/service status lives in the bottom
+ * Mothernode ribbon, so this rail only carries what the ribbon does not. */
+import type { UseSystemStatusReturn } from '../../hooks/useSystemStatus';
 
 export interface DashboardOperationsRailProps {
   sensorData: Record<string, number>;
-  systemStats: SystemStats | null;
-  degraded: UseSystemStatusReturn['degraded'];
+  /** Kept for API compatibility; service/machine status lives in the ribbon. */
+  systemStats?: UseSystemStatusReturn['systemStats'];
+  degraded?: UseSystemStatusReturn['degraded'];
   /** Canonical tank level percent; null when no real level sensor exists. */
   waterLevelPercent: number | null;
   /**
-   * 'stack' (default): narrow full-height rail, sections stacked.
-   * 'grid': wide slot (e.g. dashboard lower row), sections in a 2x2 grid.
+   * 'stack' (default): narrow rail, sections stacked.
+   * 'grid': wide slot (dashboard lower row), sections side by side.
    */
   layout?: 'stack' | 'grid';
+  /** Which sections to render. 'water' is shown alone under the event log. */
+  sections?: 'all' | 'lab' | 'water';
 }
 
 function formatMetric(value: number | undefined, unit: string, digits = 1): string {
@@ -170,92 +174,60 @@ function MetricRow({ label, value, hint }: MetricRowProps) {
 
 export default function DashboardOperationsRail({
   sensorData,
-  systemStats,
   degraded,
   waterLevelPercent,
   layout = 'stack',
+  sections = 'all',
 }: DashboardOperationsRailProps) {
   const labTemp = sensorData['Lab_main_lab_temp'];
   const waterTemp = sensorData['Lab_main_water_temperature'];
   const labHumidity = sensorData['Lab_main_humidity'];
   const grid = layout === 'grid';
+  const showLab = sections !== 'water';
+  const showWater = sections !== 'lab';
+  // Pi machine stats and service status live in the bottom Mothernode ribbon;
+  // the lower-row strip only carries Lab (and degraded, while it is active).
 
   return (
     <div
       className={
         grid
-          ? 'grid h-full min-h-0 grid-cols-2 auto-rows-fr gap-2 overflow-y-auto bg-surface-primary border border-border-subtle rounded-lg p-2'
-          : 'flex flex-col h-full min-h-0 overflow-y-auto bg-surface-primary border border-border-subtle rounded-lg'
+          ? `grid h-full min-h-0 grid-cols-1 auto-rows-fr gap-2 overflow-y-auto bg-surface-primary border border-border-subtle rounded-lg p-2`
+          : sections === 'water'
+            ? 'flex flex-col min-h-0 bg-surface-primary border border-border-subtle rounded-lg'
+            : 'flex flex-col h-full min-h-0 overflow-y-auto bg-surface-primary border border-border-subtle rounded-lg'
       }
     >
-      <RailSection title="Lab" boxed={grid}>
-        <MetricRow label="Temp" value={formatMetric(labTemp, '°C')} />
-        <MetricRow
-          label="Humidity"
-          value={labHumidity != null ? formatMetric(labHumidity, '%') : '—'}
-          hint={labHumidity != null ? undefined : 'sensor not configured'}
-        />
-      </RailSection>
-
-      <RailSection title="Services" boxed={grid}>
-        {!systemStats || systemStats.services.length === 0 ? (
-          <p className="text-xs text-text-muted">Services —</p>
-        ) : (
-          <ul className="space-y-1.5">
-            {systemStats.services.map((service, index) => {
-              const presentation = getServiceStatusPresentation(service.status);
-              return (
-                <li key={`${service.name}-${index}`} className="text-xs">
-                  <span className="flex items-center gap-1.5 min-w-0">
-                    <span
-                      aria-hidden
-                      className={`size-2 rounded-full shrink-0 ${presentation.dotClass}`}
-                    />
-                    <span className="text-text-secondary min-w-0 break-words">{service.name}</span>
-                  </span>
-                  <span className={`block pl-3.5 font-medium ${presentation.textClass}`}>
-                    {presentation.label}
-                  </span>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </RailSection>
-
-      <RailSection title="Pi" boxed={grid}>
-        <MetricRow label="CPU" value={formatMetric(systemStats?.cpu_usage ?? undefined, '%', 0)} />
-        <MetricRow
-          label="Memory"
-          value={formatMetric(systemStats?.memory_usage ?? undefined, '%', 0)}
-        />
-        <MetricRow label="Disk" value={formatMetric(systemStats?.disk_usage ?? undefined, '%', 0)} />
-        <MetricRow label="Load" value={systemStats?.load_avg ?? '—'} />
-        <MetricRow
-          label="CPU temp"
-          value={formatMetric(systemStats?.cpu_temp_c ?? undefined, '°C')}
-        />
-        <MetricRow label="Uptime" value={systemStats?.uptime ?? '—'} />
-        <MetricRow label="Throttle" value={systemStats?.throttle_status ?? '—'} />
-        {degraded?.active && (
-          <p role="alert" className="mt-1.5 text-xs text-status-warning-text">
-            Control loop degraded: {degraded.reason || 'recovering'} · failures{' '}
-            {degraded.failure_count ?? 0}
-          </p>
-        )}
-      </RailSection>
-
-      <RailSection title="Water" boxed={grid}>
-        <WaterTankGraphic levelPercent={waterLevelPercent} />
-        <div className="mt-2 space-y-1">
+      {showLab && (
+        <RailSection title="Lab" boxed={grid}>
+          <MetricRow label="Temp" value={formatMetric(labTemp, '°C')} />
           <MetricRow
-            label="Water temp"
-            value={waterTemp != null ? formatMetric(waterTemp, '°C') : '—'}
+            label="Humidity"
+            value={labHumidity != null ? formatMetric(labHumidity, '%') : '—'}
+            hint={labHumidity != null ? undefined : 'sensor not configured'}
           />
-          <MetricRow label="Pressure" value="—" hint="sensor not configured" />
-          <MetricRow label="Irrigation today" value="—" hint="sensor not configured" />
-        </div>
-      </RailSection>
+          {degraded?.active && (
+            <p role="alert" className="mt-1.5 text-xs text-status-warning-text">
+              Control loop degraded: {degraded.reason || 'recovering'} · failures{' '}
+              {degraded.failure_count ?? 0}
+            </p>
+          )}
+        </RailSection>
+      )}
+
+      {showWater && (
+        <RailSection title="Water" boxed={grid}>
+          <WaterTankGraphic levelPercent={waterLevelPercent} />
+          <div className="mt-2 space-y-1">
+            <MetricRow
+              label="Water temp"
+              value={waterTemp != null ? formatMetric(waterTemp, '°C') : '—'}
+            />
+            <MetricRow label="Pressure" value="—" hint="sensor not configured" />
+            <MetricRow label="Irrigation today" value="—" hint="sensor not configured" />
+          </div>
+        </RailSection>
+      )}
     </div>
   );
 }

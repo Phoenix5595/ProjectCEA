@@ -91,14 +91,16 @@ describe('Dashboard dense layout', () => {
     expect(screen.getByText('Mothernode')).toBeInTheDocument();
   });
 
-  it('renders the operations rail with Lab section and service text', () => {
+  it('renders the Lab strip and the water tank section (machine stats live in the ribbon)', () => {
     renderPage();
     expect(screen.getByRole('region', { name: 'Lab' })).toBeInTheDocument();
-    expect(screen.getByRole('region', { name: 'Services' })).toBeInTheDocument();
-    expect(screen.getByRole('region', { name: 'Pi' })).toBeInTheDocument();
     expect(screen.getByRole('region', { name: 'Water' })).toBeInTheDocument();
-    // Rail pin + MothernodeRibbon pin
-    expect(screen.getAllByText('automation-service')).toHaveLength(2);
+    // Services/Pi sections are gone; service pins live only in the ribbon.
+    expect(screen.queryByRole('region', { name: 'Services' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Pi' })).not.toBeInTheDocument();
+    expect(screen.getAllByText('automation-service')).toHaveLength(1);
+    // Ribbon pin shows the name only; status words live in tooltips.
+    expect(screen.queryByText('running')).not.toBeInTheDocument();
   });
 
   it('renders the calendar inspector with its overview actions', () => {

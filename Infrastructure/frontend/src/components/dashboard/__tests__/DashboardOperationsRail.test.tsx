@@ -2,96 +2,79 @@ import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
 
 import DashboardOperationsRail from '../DashboardOperationsRail';
-import type { SystemStats } from '../../../hooks/useSystemStatus';
 
-const STATS: SystemStats = {
-  cpu_usage: 12.3,
-  memory_usage: 45.6,
-  disk_usage: 78.9,
-  uptime: '1d 2h',
-  load_avg: '0.10 / 0.20 / 0.30',
-  cpu_temp_c: 47.5,
-  throttle_status: '0x0',
-  services: [
-    { name: 'automation-service', status: 'running' },
-    { name: 'can-processor', status: 'stopped' },
-    { name: 'backend', status: 'error' },
-  ],
-};
-
-function renderRail(props: Partial<Parameters<typeof DashboardOperationsRail>[0]> = {}) {
-  return render(
-    <DashboardOperationsRail
-      sensorData={{}}
-      systemStats={STATS}
-      degraded={null}
-      waterLevelPercent={null}
-      {...props}
-    />
-  );
-}
+const DEGRADED = { active: true, reason: 'stale setpoints', failure_count: 3 } as const;
 
 describe('DashboardOperationsRail', () => {
-  it('renders live Lab temperature and water temperature from sensorData', () => {
-    renderRail({ sensorData: { Lab_main_lab_temp: 24.5, Lab_main_water_temperature: 19.5 } });
+  it('renders the Lab strip with live temperature and humidity hint', () => {
+    render(
+      <DashboardOperationsRail
+        sensorData={{ Lab_main_lab_temp: 24.5, Lab_main_water_temperature: 19.5 }}
+        degraded={null}
+        waterLevelPercent={null}
+        layout="grid"
+        sections="lab"
+      />,
+    );
+    expect(screen.getByRole('region', { name: 'Lab' })).toBeInTheDocument();
     expect(screen.getByText('24.5°C')).toBeInTheDocument();
-    expect(screen.getByText('19.5°C')).toBeInTheDocument();
+    expect(screen.getAllByText('sensor not configured').length).toBe(1); // humidity only
+    expect(screen.queryByRole('region', { name: 'Water' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Services' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Pi' })).not.toBeInTheDocument();
   });
 
-  it('labels unavailable humidity, tank level, pressure and irrigation explicitly', () => {
-    renderRail();
-    const unavailable = screen.getAllByText('sensor not configured');
-    // Lab humidity + tank level + pressure + irrigation today
-    expect(unavailable).toHaveLength(4);
-    expect(screen.getByText('Pressure')).toBeInTheDocument();
-    expect(screen.getByText('Irrigation today')).toBeInTheDocument();
-    // The tank itself stays visible with an explicit no-data state, never a level.
-    expect(screen.getByText('NO DATA')).toBeInTheDocument();
-    expect(screen.getByRole('img', { name: 'Water tank level: sensor not configured' })).toBeInTheDocument();
-  });
-
-  it('renders each service with both a text label and a status pin', () => {
-    renderRail();
-    expect(screen.getByText('automation-service')).toBeInTheDocument();
-    expect(screen.getByText('running')).toBeInTheDocument();
-    expect(screen.getByText('stopped')).toBeInTheDocument();
-    expect(screen.getByText('error')).toBeInTheDocument();
-    expect(document.querySelector('.bg-status-success-vivid')).not.toBeNull();
-    expect(document.querySelector('.bg-status-danger-vivid')).not.toBeNull();
-  });
-
-  it('renders Pi stats with dashes for missing values', () => {
-    renderRail({ systemStats: { ...STATS, load_avg: null, throttle_status: null } });
-    expect(screen.getByText('12%')).toBeInTheDocument();
-    expect(screen.getByText('47.5°C')).toBeInTheDocument();
-    expect(screen.getByText('1d 2h')).toBeInTheDocument();
-    expect(screen.getAllByText('—').length).toBeGreaterThanOrEqual(2);
-  });
-
-  it('surfaces the degraded control loop as a labeled warning', () => {
-    renderRail({
-      degraded: { active: true, reason: 'stale setpoints', failure_count: 3 },
-    });
+  it('surfaces the degraded control loop in the Lab strip', () => {
+    render(
+      <DashboardOperationsRail
+        sensorData={{}}
+        degraded={DEGRADED}
+        waterLevelPercent={null}
+        layout="grid"
+        sections="lab"
+      />,
+    );
     expect(screen.getByText(/Control loop degraded: stale setpoints/)).toBeInTheDocument();
   });
 
-  it('renders no service pins when service data is unknown', () => {
-    renderRail({ systemStats: null });
-    expect(screen.getByText('Services —')).toBeInTheDocument();
-    expect(screen.queryByText('automation-service')).not.toBeInTheDocument();
+  it('renders the SCADA water tank section with honest unavailable states', () => {
+    render(
+      <DashboardOperationsRail
+        sensorData={{ Lab_main_water_temperature: 19.5 }}
+        degraded={null}
+        waterLevelPercent={null}
+        sections="water"
+      />,
+    );
+    expect(screen.getByRole('region', { name: 'Water' })).toBeInTheDocument();
+    expect(screen.getByText('19.5°C')).toBeInTheDocument();
+    expect(screen.getByText('NO DATA')).toBeInTheDocument();
+    // tank level + pressure + irrigation (Lab is not rendered in this mode)
+    expect(screen.getAllByText('sensor not configured')).toHaveLength(3);
+    expect(screen.queryByRole('region', { name: 'Lab' })).not.toBeInTheDocument();
   });
 
-  it('clamps a supplied tank level to 0-100 and reports it accessibly', () => {
-    renderRail({ waterLevelPercent: 150 });
-    expect(
-      screen.getByRole('img', { name: 'Water tank level 100%' })
-    ).toBeInTheDocument();
+  it('clamps a supplied tank level and reports it accessibly', () => {
+    render(
+      <DashboardOperationsRail
+        sensorData={{}}
+        degraded={null}
+        waterLevelPercent={150}
+        sections="water"
+      />,
+    );
+    expect(screen.getByRole('img', { name: 'Water tank level 100%' })).toBeInTheDocument();
   });
 
-  it('reports a mid-range tank level accessibly', () => {
-    renderRail({ waterLevelPercent: 42 });
-    expect(
-      screen.getByRole('img', { name: 'Water tank level 42%' })
-    ).toBeInTheDocument();
+  it('renders both sections in the default full-rail mode', () => {
+    render(
+      <DashboardOperationsRail
+        sensorData={{ Lab_main_lab_temp: 21.0 }}
+        degraded={null}
+        waterLevelPercent={null}
+      />,
+    );
+    expect(screen.getByRole('region', { name: 'Lab' })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Water' })).toBeInTheDocument();
   });
 });
