@@ -44,9 +44,10 @@ const ROOM_MAP_ZONES = DASHBOARD_ROW_ZONES;
 
 export default function Dashboard() {
   const { theme, setTheme, themes } = useTheme();
-
   const { devices: wsDevices, sensorData: wsSensorData } = useWebSocket();
-  const { devices, sensorData, lightDisplayNames, loading } = useSensorPolling();
+
+  // Keep the main command view at the control-loop cadence; WebSocket data still wins when available.
+  const { devices, sensorData, lightDisplayNames, loading } = useSensorPolling({ interval: 1000 });
   const { systemStats, statusDevices, degraded } = useSystemStatus();
   const { entries: eventLogEntries } = useEventLog();
 
