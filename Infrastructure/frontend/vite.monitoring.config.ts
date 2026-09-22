@@ -486,29 +486,31 @@ const FIXTURE_ROUTES: FixtureRoute[] = [
   },
   {
     re: /^\/api\/sensors\/([^/]+)\/([^/]+)\/live$/,
-    handler: (_req) => {
+    handler: (req) => {
+      // Real production shape: cluster-suffixed sensor types, per-type
+      // freshness. Flower back is live except CO2 (stale); front is
+      // entirely stale so its values must be dropped.
+      const parts = (req.url ?? '').split('/').filter(Boolean)
+      const location = decodeURIComponent(parts[2] ?? '')
+      const cluster = decodeURIComponent(parts[3] ?? '')
+      if (location !== 'Flower Room') return {}
       const now = new Date().toISOString()
+      if (cluster === 'back') {
+        return {
+          dry_bulb_b: { sensor_type: 'dry_bulb_b', location, cluster, unit: '°C', data: [{ timestamp: now, value: 20.02 }] },
+          wet_bulb_b: { sensor_type: 'wet_bulb_b', location, cluster, unit: '°C', data: [{ timestamp: now, value: 20.29 }] },
+          rh_b: { sensor_type: 'rh_b', location, cluster, unit: '%', data: [{ timestamp: now, value: 92.98 }] },
+          vpd_b: { sensor_type: 'vpd_b', location, cluster, unit: 'kPa', data: [{ timestamp: now, value: 0.12 }] },
+          co2_b: { sensor_type: 'co2_b', location, cluster, unit: 'ppm', data: [{ timestamp: '2026-01-15T14:46:05.213000', value: 400.0 }] },
+        }
+      }
+      const stale = '2026-01-26T18:14:12'
       return {
-        temperature: {
-          data: [{ time: now, timestamp: now, value: 24.5 }],
-          unit: '°C',
-          sensor_name: 'temperature',
-        },
-        humidity: {
-          data: [{ time: now, timestamp: now, value: 65 }],
-          unit: '%',
-          sensor_name: 'humidity',
-        },
-        co2: {
-          data: [{ time: now, timestamp: now, value: 850 }],
-          unit: 'ppm',
-          sensor_name: 'co2',
-        },
-        vpd: {
-          data: [{ time: now, timestamp: now, value: 1.2 }],
-          unit: 'kPa',
-          sensor_name: 'vpd',
-        },
+        dry_bulb_f: { sensor_type: 'dry_bulb_f', location, cluster, unit: '°C', data: [{ timestamp: stale, value: 16.75 }] },
+        wet_bulb_f: { sensor_type: 'wet_bulb_f', location, cluster, unit: '°C', data: [{ timestamp: stale, value: 16.71 }] },
+        rh_f: { sensor_type: 'rh_f', location, cluster, unit: '%', data: [{ timestamp: stale, value: 48.0 }] },
+        co2_f: { sensor_type: 'co2_f', location, cluster, unit: 'ppm', data: [{ timestamp: stale, value: 400.0 }] },
+        vpd_f: { sensor_type: 'vpd_f', location, cluster, unit: 'kPa', data: [{ timestamp: stale, value: 0.6 }] },
       }
     },
   },
