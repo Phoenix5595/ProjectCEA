@@ -115,11 +115,11 @@ beforeEach(() => {
 })
 
 describe('soil page', () => {
-  it('renders Front Bed above Back Bed', async () => {
+  it('renders Back Bed above Front Bed (swapped per operator layout)', async () => {
     renderSoil()
-    const front = await screen.findByText('Front Bed')
-    const back = screen.getByText('Back Bed')
-    expect(front.compareDocumentPosition(back) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    const back = await screen.findByText('Back Bed')
+    const front = screen.getByText('Front Bed')
+    expect(back.compareDocumentPosition(front) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
   it('renders a probe card with the four metric families', async () => {
