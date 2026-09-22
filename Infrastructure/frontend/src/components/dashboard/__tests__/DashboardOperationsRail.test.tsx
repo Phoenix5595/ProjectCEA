@@ -46,7 +46,7 @@ describe('DashboardOperationsRail', () => {
     expect(screen.getByText('Pressure')).toBeInTheDocument();
     expect(screen.getByText('Irrigation today')).toBeInTheDocument();
     // The tank itself stays visible with an explicit no-data state, never a level.
-    expect(screen.getByText('no data')).toBeInTheDocument();
+    expect(screen.getByText('NO DATA')).toBeInTheDocument();
     expect(screen.getByRole('img', { name: 'Water tank level: sensor not configured' })).toBeInTheDocument();
   });
 

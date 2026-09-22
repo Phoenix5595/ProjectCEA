@@ -548,14 +548,28 @@ body {
   color: var(--accent-data);
 }
 
+/* Selected day: rectangular accent outline + accent day number. No fill wash
+   and no pill/oval border so markers inside the day square stay visible. */
+.grow-calendar-picker .rdp-selected {
+  font-size: inherit;
+}
+
+/* rdp's default pill radius turns wide dashboard cells into ellipses;
+   the day buttons must stay square so markers keep their corners. */
+.grow-calendar-picker .rdp-day_button {
+  border-radius: 0;
+}
+
+.grow-calendar-picker .rdp-selected .rdp-day_button {
+  border: none;
+}
+
 .grow-cal-day-btn--selected {
-  background: color-mix(in srgb, var(--accent) 32%, var(--surface-base));
-  border-color: var(--accent);
-  box-shadow: inset 0 0 0 1px var(--accent);
+  box-shadow: inset 0 0 0 2px var(--accent);
 }
 
 .grow-cal-day-btn--selected .grow-cal-day-num {
-  color: var(--text-default);
+  color: var(--accent-data);
   font-weight: 700;
 }
 
@@ -829,4 +843,16 @@ body {
 .grow-calendar--dashboard .rdp-day {
   aspect-ratio: auto;
   height: clamp(3.25rem, 7vh, 4.75rem);
+}
+
+/* Unlayered on purpose: react-day-picker's chunk CSS is unlayered and loads
+   after this stylesheet, so layered overrides lose every cascade tie. Higher
+   specificity + unlayered placement is what makes these stick. */
+.grow-calendar-picker.grow-calendar-picker {
+  --rdp-day_button-border-radius: 0;
+  --rdp-selected-border: none;
+}
+
+.grow-calendar-picker .rdp-selected {
+  font-size: inherit;
 }

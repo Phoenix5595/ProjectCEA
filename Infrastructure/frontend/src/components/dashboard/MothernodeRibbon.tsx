@@ -5,7 +5,20 @@ import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { AppRibbon } from '../chrome/AppRibbon';
 import { RibbonMenuButton } from '../chrome/ribbonMenuButton';
 import type { SystemStats } from '../../hooks/useSystemStatus';
-import { getServiceStatusPresentation } from './serviceStatusPresentation';
+import { getServiceStatusPresentation, type ServiceStatus } from './serviceStatusPresentation';
+
+const SERVICE_STATUS_DETAIL: Record<ServiceStatus, string> = {
+  running: 'Service is active and responding to health probes.',
+  stopped: 'Service process is registered but not running.',
+  error: 'Service reported an error or failed its health check.',
+  unreachable: 'Service did not answer — it may be offline or the network path is down.',
+};
+
+function serviceTitle(name: string, status: ServiceStatus, latencyMs: number | undefined): string {
+  const lines = [`${name}: ${status}`, SERVICE_STATUS_DETAIL[status]];
+  if (typeof latencyMs === 'number') lines.push(`Latency ${latencyMs} ms`);
+  return lines.filter(Boolean).join('\n');
+}
 
 export interface MothernodeRibbonProps {
   systemStats: SystemStats | null;
@@ -40,9 +53,10 @@ export function MothernodeRibbon({ systemStats }: MothernodeRibbonProps) {
                 return (
                   <span
                     key={`${service.name}-${index}`}
-                    className="flex items-center gap-1 whitespace-nowrap shrink-0"
+                    className="flex items-center gap-1 whitespace-nowrap shrink-0 cursor-help"
+                    title={serviceTitle(service.name, service.status, service.latency_ms)}
                   >
-                    <span aria-hidden className={`size-2 rounded-full shrink-0 ${presentation.dotClass}`} />
+                    <span aria-hidden className={`size-2.5 rounded-full shrink-0 ${presentation.dotClass}`} />
                     <span className="text-text-secondary">{service.name}</span>
                     <span className={`font-medium font-sans ${presentation.textClass}`}>
                       {presentation.label}
@@ -92,10 +106,14 @@ export function MothernodeRibbon({ systemStats }: MothernodeRibbonProps) {
                       systemStats.services.map((service, index) => {
                         const presentation = getServiceStatusPresentation(service.status);
                         return (
-                          <div key={index} className="flex items-center justify-between text-xs">
+                          <div
+                            key={index}
+                            className="flex items-center justify-between text-xs cursor-help"
+                            title={serviceTitle(service.name, service.status, service.latency_ms)}
+                          >
                             <span className="text-text-secondary">{service.name}</span>
                             <span className={`flex items-center gap-1.5 font-medium ${presentation.textClass}`}>
-                              <span aria-hidden className={`size-2 rounded-full ${presentation.dotClass}`} />
+                              <span aria-hidden className={`size-2.5 rounded-full ${presentation.dotClass}`} />
                               {presentation.label}
                             </span>
                           </div>
