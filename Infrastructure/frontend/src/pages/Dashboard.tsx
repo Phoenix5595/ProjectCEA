@@ -231,7 +231,12 @@ export default function Dashboard() {
           {/* Full-height event log column */}
           <div className="w-full lg:w-[clamp(12rem,15vw,18rem)] lg:shrink-0 min-h-0">
             <div className="h-full min-h-0 overflow-y-auto bg-surface-primary rounded-lg border border-border-subtle p-3">
-              <EventLog entries={eventLogEntries} now={now} />
+              <EventLog
+                entries={eventLogEntries}
+                now={now}
+                compact
+                primaryRooms={ROOM_MAP_ZONES.map((zone) => zone.location)}
+              />
             </div>
           </div>
         </div>

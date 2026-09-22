@@ -108,10 +108,13 @@ const EventCategoryRow = memo(function EventCategoryRow({
   group,
   now,
   onExpand,
+  compact = false,
 }: {
   group: CategoryGroup
   now: Date
   onExpand: (category: string) => void
+  /** Sidebar mode: header + latest title only, so every category fits. */
+  compact?: boolean
 }) {
   const visual = categoryTheme(group.category)
 
@@ -154,16 +157,20 @@ const EventCategoryRow = memo(function EventCategoryRow({
       <div className="text-sm text-text-default font-semibold truncate">
         {display.label}
       </div>
-      {sourceParts.length > 0 && <EventSourceLine parts={sourceParts} />}
-      {group.latest.reasonText !== null && (
-        <div className="text-11 text-text-default italic truncate">
-          {group.latest.reasonText}
-        </div>
-      )}
-      {entityCount > 1 && (
-        <div className="text-11 text-text-secondary truncate">
-          {entityCount} devices in the last 10 minutes: {group.entities.join(', ')}
-        </div>
+      {!compact && (
+        <>
+          {sourceParts.length > 0 && <EventSourceLine parts={sourceParts} />}
+          {group.latest.reasonText !== null && (
+            <div className="text-11 text-text-default italic truncate">
+              {group.latest.reasonText}
+            </div>
+          )}
+          {entityCount > 1 && (
+            <div className="text-11 text-text-secondary truncate">
+              {entityCount} devices in the last 10 minutes: {group.entities.join(', ')}
+            </div>
+          )}
+        </>
       )}
     </button>
   )
@@ -173,19 +180,30 @@ export function EventGroupedView({
   groups,
   now,
   onExpand,
+  compact = false,
 }: {
   groups: readonly CategoryGroup[]
   now: Date
   onExpand: (category: string) => void
+  /** Sidebar mode: one compact row per category, no height cap, no reflow. */
+  compact?: boolean
 }) {
   return (
     <div
       role="group"
       aria-label="Grouped alert console"
-      className={`grid gap-px bg-border-subtle border border-border-subtle overflow-auto max-h-150 ${groupedGridClass()}`}
+      className={`grid gap-px bg-border-subtle border border-border-subtle overflow-auto ${
+        compact ? '' : 'max-h-150'
+      } ${compact ? '' : groupedGridClass()}`}
     >
       {groups.map((group) => (
-        <EventCategoryRow key={group.category} group={group} now={now} onExpand={onExpand} />
+        <EventCategoryRow
+          key={group.category}
+          group={group}
+          now={now}
+          onExpand={onExpand}
+          compact={compact}
+        />
       ))}
     </div>
   )

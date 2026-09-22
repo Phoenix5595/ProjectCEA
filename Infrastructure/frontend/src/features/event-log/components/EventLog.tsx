@@ -9,9 +9,13 @@ import { categoryTheme, displayCategoryOf } from '../presentation/categoryTheme'
 interface EventLogProps {
   entries: readonly EventLogEntry[]
   now: Date
+  /** Sidebar mode: compact filter row (rooms + Filters submenu) and compact groups. */
+  compact?: boolean
+  /** Rooms always rendered as chips in compact mode. */
+  primaryRooms?: readonly string[]
 }
 
-export function EventLog({ entries, now }: EventLogProps) {
+export function EventLog({ entries, now, compact = false, primaryRooms }: EventLogProps) {
   const { paging, loadOlder } = useEventLogPagination()
   const [view, setView] = useState<EventLogView>('grouped')
   const [expandedCategory, setExpandedCategory] = useState<string | null>(null)
@@ -96,6 +100,8 @@ export function EventLog({ entries, now }: EventLogProps) {
         types={types}
         view={view}
         onViewChange={handleViewChange}
+        compact={compact}
+        primaryRooms={primaryRooms}
       />
       {(paging.hasMore || paging.loadingOlder) && (
         <button
@@ -129,7 +135,7 @@ export function EventLog({ entries, now }: EventLogProps) {
           </ul>
         </div>
       ) : (
-        <EventGroupedView groups={groups} now={now} onExpand={handleExpand} />
+        <EventGroupedView groups={groups} now={now} onExpand={handleExpand} compact={compact} />
       )}
     </section>
   )
