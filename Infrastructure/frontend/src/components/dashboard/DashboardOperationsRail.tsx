@@ -105,7 +105,7 @@ function WaterTankGraphic({
           />
         ))}
       </svg>
-      <div className="absolute left-[22%] right-[24%] top-[34%] bottom-[12%] flex flex-col justify-center gap-1 px-1 text-center">
+      <div className="absolute left-[22%] right-[24%] top-[29%] bottom-[17%] flex flex-col justify-center gap-1 px-1 text-center">
         <span className="text-[clamp(0.55rem,1.1vw,0.8rem)] font-bold uppercase tracking-wide text-text-secondary">
           Water tank
         </span>
