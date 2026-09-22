@@ -28,7 +28,9 @@ const VIEWPORTS = [
       () => document.documentElement.scrollHeight - document.documentElement.clientHeight,
     )
     const probeCards = await page.getByTestId('soil-probe-card').count()
+    const firstCard = await page.getByTestId('soil-probe-card').first().textContent()
     console.log(`viewport ${viewport.slug}: overflow=${overflow}px probeCards=${probeCards} consoleErrors=${consoleErrors.length}`)
+    console.log(`  first card: ${(firstCard ?? '').slice(0, 60)}`)
     for (const error of consoleErrors.slice(0, 3)) console.log(`  console error: ${error.slice(0, 200)}`)
     await context.close()
   }
