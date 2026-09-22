@@ -164,7 +164,7 @@ export default function SensorSettingsPanel({
       })
       try {
         await soilApi.assign(record.registry_id, body)
-        toast.success(`${record.display_name} assigned`)
+        toast.success(`Soil/CAN sensor #${record.hardware_address} assigned`)
         await refresh()
       } catch (error) {
         const detail = extractSoilApiError(error)
@@ -248,7 +248,7 @@ export default function SensorSettingsPanel({
                   {isCan ? 'CAN' : 'RS-485'}
                 </span>
                 <span className="font-mono text-sm text-text-input">#{record.hardware_address}</span>
-                <span className="text-sm font-medium text-text-input">{record.display_name}</span>
+                <span className="text-sm font-medium text-text-input">Soil probe #{record.hardware_address}</span>
                 <span
                   className={
                     record.status === 'unassigned'
