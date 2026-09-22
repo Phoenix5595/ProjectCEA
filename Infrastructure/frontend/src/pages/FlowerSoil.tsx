@@ -98,13 +98,12 @@ function BedSchematic({
   const slots = PROBE_LAYOUT[Math.min(probes.length, 4) as 0 | 1 | 2 | 3 | 4]
   return (
     <figure
-      aria-label={`${label} schematic`}
+      aria-label={`${label} bed schematic`}
       className="mon-card w-full"
       style={{ width: 'min(34vh, 380px)' }}
     >
-      <figcaption className="mon-card__title flex items-baseline justify-between text-xs font-semibold uppercase tracking-wide text-mon-text-secondary">
-        <span>{label}</span>
-        <span className="font-mono normal-case">4 ft x 4 ft</span>
+      <figcaption className="mon-card__title text-xs font-semibold uppercase tracking-wide text-mon-text-secondary">
+        {label}
       </figcaption>
       <MonitoringFreshness lastGoodAt={live?.generated_at ?? null} errorAt={errorAt} />
       <div className="relative aspect-square w-full rounded border border-border-strong bg-surface-base">
@@ -225,13 +224,17 @@ export default function FlowerSoil() {
   const beds = groupByBed(live?.probes ?? [])
 
   return (
-    <div className="mon-page space-y-4 p-4">
-      <header className="space-y-1">
-        <h1 className="mon-card__title text-2xl">Flower soil</h1>
-        <p className="text-sm text-mon-text-secondary">
-          Raised-bed probe schematics, live readings, and multi-axis history.
-        </p>
-      </header>
+    <div className="mon-page">
+      <TimeRangeToolbar
+        range={range}
+        isLive={isLive}
+        onLive={(duration) => setRange({ kind: 'live', duration })}
+        onFixedRange={(start, end) => setRange({ kind: 'fixed', start, end })}
+        onPause={() => undefined}
+        onResume={() => undefined}
+        onResetZoom={() => chartRef.current?.resetZoom()}
+        defaultDuration={LIVE_DURATION_MS}
+      />
 
       {errorAt !== null && (
         <div role="alert" className="mon-banner mon-banner--error">
@@ -243,28 +246,21 @@ export default function FlowerSoil() {
         <button
           type="button"
           onClick={goToSensorSettings}
-          className="rounded border border-status-warn-border/70 bg-status-warn-bg/30 px-3 py-1.5 text-xs font-semibold text-status-warn-text"
+          className="mon-banner mon-banner--error"
         >
           {unassignedRecords.length} unassigned sensor
           {unassignedRecords.length === 1 ? '' : 's'} — open Sensor Settings
         </button>
       )}
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_auto]">
-      <section className="mon-card flex min-w-0 flex-col space-y-2">
-        <h2 className="mon-card__title text-lg">Soil history</h2>
-        <MonitoringFreshness lastGoodAt={history === null ? null : history.end} errorAt={errorAt} />
-        <TimeRangeToolbar
-          range={range}
-          isLive={isLive}
-          onLive={(duration) => setRange({ kind: 'live', duration })}
-          onFixedRange={(start, end) => setRange({ kind: 'fixed', start, end })}
-          onPause={() => undefined}
-          onResume={() => undefined}
-          onResetZoom={() => chartRef.current?.resetZoom()}
-          defaultDuration={LIVE_DURATION_MS}
-        />
-        <div className="min-h-[320px] flex-1">
+      <div className="mon-layout mon-layout--beds">
+      <aside className="mon-side mon-side--beds">
+        <BedSchematic label="Back Bed" probes={beds.backBed} live={live} errorAt={errorAt} />
+        <BedSchematic label="Front Bed" probes={beds.frontBed} live={live} errorAt={errorAt} />
+      </aside>
+      <div className="mon-main">
+      <section className="mon-card">
+        <div style={{ height: 'min(50vh, 540px)' }}>
           <UPlotChart
             ref={chartRef}
             feed={feed}
@@ -274,16 +270,7 @@ export default function FlowerSoil() {
         </div>
         <ChartDataTable title="Soil history" data={aligned} />
       </section>
-
-      <section className="space-y-2 lg:border-l lg:border-border-subtle lg:pl-6">
-        <h2 className="px-1 text-xs font-semibold uppercase tracking-wide text-text-secondary">
-          Raised beds
-        </h2>
-        <div className="flex flex-col items-center gap-6">
-          <BedSchematic label="Back Bed" probes={beds.backBed} live={live} errorAt={errorAt} />
-          <BedSchematic label="Front Bed" probes={beds.frontBed} live={live} errorAt={errorAt} />
-        </div>
-      </section>
+      </div>
       </div>
     </div>
   )

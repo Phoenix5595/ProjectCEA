@@ -35,13 +35,14 @@ test('flower soil renders beds, live values, badge, and history', async ({ page 
   if (frontBox === null || backBox === null) {
     throw new Error('bed schematics must be measurable')
   }
-  // Beds stacked in a side column to the right of the full-height graph.
-  expect(backBox.y).toBeGreaterThan(frontBox.y)
-  const chartBox = await page.locator('.mon-card').first().boundingBox()
+  // Monitoring layout: beds are the sticky side column (left), the full-height
+  // graph is the main column.
+  expect(backBox.y).toBeLessThan(frontBox.y)
+  const chartBox = await page.locator('.mon-main .mon-card').first().boundingBox()
   if (chartBox === null) {
     throw new Error('history chart must be measurable')
   }
-  expect(frontBox.x).toBeGreaterThan(chartBox.x + chartBox.width)
+  expect(frontBox.x + frontBox.width).toBeLessThan(chartBox.x)
 
   // Live probe cards carry the four metric families.
   await expect(page.getByTestId('soil-probe-card').first()).toContainText('Water content')

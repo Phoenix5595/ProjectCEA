@@ -128,6 +128,18 @@ Required tokens are listed in `src/features/monitoring/designTokens.ts` (`REQUIR
 - Type uses `JetBrains Mono` (self-hosted, `--font-sans`/`--font-mono`). Axis labels and table cells use the mono stack.
 - Corners stay sharp app-wide (`--radius-sm: 2px`, `--radius-md: 2px`, `--radius-lg: 3px`).
 
+## Soil Page Layout Contract
+
+The `/flower/soil` page reuses the monitoring layout system verbatim instead of inventing parallel structure:
+
+- **Box system** (`monitoring.css`): `.mon-page` hosts a `.mon-layout` grid of two zones — a `.mon-side` column of compact `mon-card` boxes and a `.mon-main` column of chart/table cards.
+- **Side boxes** (`.mon-side`): compact cards at `4px` padding with `2px` margins, zero table-cell padding, and `position: sticky` at ≥1100px. Each box carries a `mon-card__title` and a `MonitoringFreshness` chip.
+- **Main cards** (`.mon-main`): `4px` padding, `1rem` internal gap, tight `mon-card__title` margins. Contrast comes from the shared surface/border tokens (`surface-secondary` on `surface-base`, `border-default`); never introduce ad-hoc wrappers with custom padding.
+- **Soil extension — `.mon-layout--beds`**: the side column hosts the bed schematic cards, using the same compact card treatment as monitoring without a second large gap between cards.
+- **Chart sizing**: `.mon-chart` is `height: 100%`, so its wrapper must carry a definite height (monitoring pages use fixed pixel heights; soil uses `min(50vh, 540px)`). A wrapper sized only by `min-height`/flex-basis collapses the uPlot frame to zero height.
+- **Semantic table**: the chart's accessible data alternative is the shared `ChartDataTable` primitive consuming the exact `AlignedData` the plot renders; the page does not maintain its own table markup.
+- Beds render Back Bed above Front Bed; probe identity is the registry hardware address (`Soil probe #N`), and per-metric fresh/stale text uses `--mon-stale`.
+
 ## Responsive Layout
 
 Chart regions and tables stack to a single column below `768px`. At 375px, 768px, and 1280px the layout must remain usable: axes legible, tables horizontally scrollable, controls reachable.
