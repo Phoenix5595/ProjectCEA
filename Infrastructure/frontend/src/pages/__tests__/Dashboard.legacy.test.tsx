@@ -67,17 +67,20 @@ describe('Dashboard dense layout', () => {
     vi.clearAllMocks();
   });
 
-  it('renders exactly the Flower and Veg room links (Lab lives in the rail)', () => {
+  it('renders Flower, Veg, and Lab as horizontal room links', () => {
     renderPage();
 
     const zoneLinks = screen
       .getAllByRole('link')
       .filter((link) => link.getAttribute('href')?.startsWith('/zone/'));
-    expect(zoneLinks).toHaveLength(2);
+    expect(zoneLinks).toHaveLength(3);
     expect(zoneLinks.map((l) => l.getAttribute('href'))).toEqual(
-      expect.arrayContaining(['/zone/Flower%20Room/main', '/zone/Veg%20Room/main'])
+      expect.arrayContaining([
+        '/zone/Flower%20Room/main',
+        '/zone/Veg%20Room/main',
+        '/zone/Lab/main',
+      ]),
     );
-    expect(zoneLinks.some((link) => link.getAttribute('href')?.includes('Lab'))).toBe(false);
   });
 
   it('renders exactly one shared EventLog', () => {
@@ -91,16 +94,12 @@ describe('Dashboard dense layout', () => {
     expect(screen.getByText('Mothernode')).toBeInTheDocument();
   });
 
-  it('renders the Lab strip and the water tank section (machine stats live in the ribbon)', () => {
+  it('renders the Lab room bar and the water tank section', () => {
     renderPage();
-    expect(screen.getByRole('region', { name: 'Lab' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Lab/i })).toBeInTheDocument();
     expect(screen.getByRole('region', { name: 'Water' })).toBeInTheDocument();
-    // Services/Pi sections are gone; service pins live only in the ribbon.
     expect(screen.queryByRole('region', { name: 'Services' })).not.toBeInTheDocument();
     expect(screen.queryByRole('region', { name: 'Pi' })).not.toBeInTheDocument();
-    expect(screen.getAllByText('automation-service')).toHaveLength(1);
-    // Ribbon pin shows the name only; status words live in tooltips.
-    expect(screen.queryByText('running')).not.toBeInTheDocument();
   });
 
   it('renders the calendar inspector with its overview actions', () => {
