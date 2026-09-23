@@ -1,30 +1,37 @@
 /** Sensor polling hook for dashboard data. */
-import { useEffect, useState, useCallback } from 'react';
-import { apiClient } from '../services/api';
-import type { Device } from '../types/device';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { apiClient } from '../services/api'
+import type { Device } from '../types/device'
+import {
+  SENSOR_STALE_AFTER_MS,
+  type SensorSampleMeta,
+  type ZoneSensorStatus,
+} from '../types/sensor'
 import {
   ZONES,
   FLOWER_DASHBOARD_CLUSTERS,
   getDashboardPollZones,
   getSensorPollZones,
   buildDashboardBulkSensorKeys,
-} from '../config/zones';
-import { parseLiveResponse } from '../utils/sensorLive';
-import { logger } from '../utils/logger';
-
+} from '../config/zones'
+import { parseLiveSnapshot } from '../utils/sensorLive'
+import { logger } from '../utils/logger'
 export interface UseSensorPollingOptions {
-  interval?: number;
+  interval?: number
 }
 
 export interface UseSensorPollingReturn {
-  devices: Device[];
-  sensorData: Record<string, number>;
+  devices: Device[]
+  sensorData: Record<string, number>
+  sensorMeta: Record<string, SensorSampleMeta>
+  zoneStatus: Record<string, ZoneSensorStatus>
+  lastPollAt: number | null
   /** `${location}_${cluster}_${device_name}` → config `display_name` for lights UI */
-  lightDisplayNames: Record<string, string>;
+  lightDisplayNames: Record<string, string>
   /** Temporary hybrid warning layer: DB/ingestion-observed clusters vs configured clusters. */
-  flowerClusterWarnings: string[];
-  loading: boolean;
-  refresh: () => Promise<void>;
+  flowerClusterWarnings: string[]
+  loading: boolean
+  refresh: () => Promise<void>
 }
 
 async function loadLightDisplayNamesMap(): Promise<Record<string, string>> {
@@ -36,163 +43,277 @@ async function loadLightDisplayNamesMap(): Promise<Record<string, string>> {
   // console. ZONES is the device-plane registry (one entry per room,
   // cluster = "main"), which is exactly what /api/devices wants.
   const pairs = await Promise.all(
-    ZONES.map(async (zone) => {
+    ZONES.map(async zone => {
       try {
-        const res = await apiClient.getDevicesForLocationCluster(zone.location, zone.cluster);
-        const devs = res?.devices as Record<string, { display_name?: string }> | undefined;
-        if (!devs) return [] as [string, string][];
-        const out: [string, string][] = [];
+        const res = await apiClient.getDevicesForLocationCluster(zone.location, zone.cluster)
+        const devs = res?.devices as Record<string, { display_name?: string }> | undefined
+        if (!devs) return [] as [string, string][]
+        const out: [string, string][] = []
         for (const [deviceName, info] of Object.entries(devs)) {
-          const dn = info?.display_name?.trim();
+          const dn = info?.display_name?.trim()
           if (dn) {
-            out.push([`${zone.location}_${zone.cluster}_${deviceName}`, dn]);
+            out.push([`${zone.location}_${zone.cluster}_${deviceName}`, dn])
           }
         }
-        return out;
+        return out
       } catch {
-        return [] as [string, string][];
+        return [] as [string, string][]
       }
     })
-  );
-  return Object.fromEntries(pairs.flat());
+  )
+  return Object.fromEntries(pairs.flat())
+}
+export function deriveZoneSensorStatus(
+  location: string,
+  cluster: string,
+  sensorMeta: Record<string, SensorSampleMeta>,
+  error: string | null,
+  nowMs: number
+): ZoneSensorStatus {
+  const prefix = `${location}_${cluster}_`
+  const entries = Object.entries(sensorMeta)
+    .filter(([key]) => key.startsWith(prefix))
+    .map(([, value]) => value)
+  const invalidEntries = entries.filter(entry => entry.invalid)
+  const validEntries = entries.filter(entry => !entry.invalid)
+
+  if (validEntries.length === 0) {
+    return {
+      quality: invalidEntries.length > 0 ? 'bad' : 'missing',
+      newestObservedAtMs: null,
+      ageMs: null,
+      source: entries[0]?.source ?? null,
+      error,
+    }
+  }
+
+  const newestEntry = validEntries.reduce((newest, entry) => {
+    const newestTime = newest.observedAtMs ?? newest.receivedAtMs
+    const entryTime = entry.observedAtMs ?? entry.receivedAtMs
+    return entryTime > newestTime ? entry : newest
+  })
+  const newestObservedAtMs = validEntries.reduce<number | null>(
+    (newest, entry) =>
+      entry.observedAtMs != null && (newest == null || entry.observedAtMs > newest)
+        ? entry.observedAtMs
+        : newest,
+    null
+  )
+  const ageMs = Math.max(0, nowMs - (newestEntry.observedAtMs ?? newestEntry.receivedAtMs))
+
+  return {
+    quality: ageMs > SENSOR_STALE_AFTER_MS ? 'stale' : 'live',
+    newestObservedAtMs,
+    ageMs,
+    source: newestEntry.source,
+    error,
+  }
 }
 
 /**
  * Hook for polling sensor data and device state for the dashboard.
- * Refreshes live sensors every 5 seconds.
+ * Live samples retain their age and failed zones retain their last good value.
  */
-export function useSensorPolling({ interval = 5000 }: UseSensorPollingOptions = {}): UseSensorPollingReturn {
-  const [devices, setDevices] = useState<Device[]>([]);
-  const [sensorData, setSensorData] = useState<Record<string, number>>({});
-  const [lightDisplayNames, setLightDisplayNames] = useState<Record<string, string>>({});
-  const [flowerClusterWarnings, setFlowerClusterWarnings] = useState<string[]>([]);
-  const [loading, setLoading] = useState(true);
+export function useSensorPolling({
+  interval = 5000,
+}: UseSensorPollingOptions = {}): UseSensorPollingReturn {
+  const [devices, setDevices] = useState<Device[]>([])
+  const [sensorData, setSensorData] = useState<Record<string, number>>({})
+  const [sensorMeta, setSensorMeta] = useState<Record<string, SensorSampleMeta>>({})
+  const [zoneErrors, setZoneErrors] = useState<Record<string, string | null>>({})
+  const [lastPollAt, setLastPollAt] = useState<number | null>(null)
+  const [statusNowMs, setStatusNowMs] = useState(() => Date.now())
+  const [lightDisplayNames, setLightDisplayNames] = useState<Record<string, string>>({})
+  const [flowerClusterWarnings, setFlowerClusterWarnings] = useState<string[]>([])
+  const [loading, setLoading] = useState(true)
+  const liveKeysRef = useRef(new Set<string>())
+  const refreshInFlightRef = useRef(false)
 
   const loadInitialData = useCallback(async () => {
-    const pollZones = getDashboardPollZones();
-    const bulkKeys = buildDashboardBulkSensorKeys(pollZones);
+    const pollZones = getDashboardPollZones()
+    const bulkKeys = buildDashboardBulkSensorKeys(pollZones)
     try {
       const [devicesData, setpointData, nameMap] = await Promise.all([
         apiClient.getAllDevices().catch(() => []),
         apiClient.getSensorDataBulk(bulkKeys).catch(() => ({})),
         loadLightDisplayNamesMap(),
-      ]);
+      ])
 
-      if (devicesData) setDevices(devicesData);
-      setLightDisplayNames(nameMap);
+      if (devicesData) setDevices(devicesData)
+      setLightDisplayNames(nameMap)
       if (setpointData && Object.keys(setpointData).length > 0) {
-        setSensorData(prev => ({ ...prev, ...setpointData }));
+        setSensorData(prev => ({ ...prev, ...setpointData }))
       }
-
     } catch (error) {
-      logger.error('Error loading initial sensor data:', error);
+      logger.error('Error loading initial sensor data:', error)
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
-  }, []);
+  }, [])
 
-  // Live sensor polling
   useEffect(() => {
-    loadInitialData();
+    void loadInitialData()
 
     const refreshLiveSensors = async () => {
+      if (refreshInFlightRef.current) return
+      refreshInFlightRef.current = true
       try {
-        // Sensor-plane only: Flower fans into front+back; every other
-        // room is `main`. Hitting /api/sensors/Flower Room/main/live
-        // would now (post-Phase-5e) return a 400 instead of silently
-        // returning {}, so we no longer iterate the device-plane
-        // entries here.
-        const pollZones = getSensorPollZones();
-        const liveDataResults = await Promise.all(
-          pollZones.map((zone) => apiClient.getLiveSensorData(zone.location, zone.cluster).catch(() => ({})))
-        );
+        const pollZones = getSensorPollZones()
+        const results = await Promise.allSettled(
+          pollZones.map(zone => apiClient.getLiveSensorData(zone.location, zone.cluster))
+        )
+        const successful: Array<{
+          location: string
+          cluster: string
+          values: Record<string, number>
+          meta: Record<string, SensorSampleMeta>
+        }> = []
+        const errors: Record<string, string | null> = {}
+        const successfulZoneKeys = new Set<string>()
 
-        const allLiveFlat: Record<string, number> = {};
-        pollZones.forEach((zone, index) => {
-          const parsed = parseLiveResponse(
-            zone.location,
-            zone.cluster,
-            liveDataResults[index] as Parameters<typeof parseLiveResponse>[2],
-          );
-          Object.assign(allLiveFlat, parsed);
-        });
+        results.forEach((result, index) => {
+          const zone = pollZones[index]
+          const zoneKey = `${zone.location}:${zone.cluster}`
+          if (result.status === 'fulfilled') {
+            const parsed = parseLiveSnapshot(zone.location, zone.cluster, result.value, Date.now())
+            successful.push({ ...zone, values: parsed.values, meta: parsed.meta })
+            successfulZoneKeys.add(zoneKey)
+            errors[zoneKey] = null
+          } else {
+            errors[zoneKey] =
+              result.reason instanceof Error ? result.reason.message : 'Sensor request failed'
+            logger.warn(`[sensor-poll] ${zoneKey} failed`, result.reason)
+          }
+        })
 
-        const livePrefixes = pollZones.map((zone) => `${zone.location}_${zone.cluster}_`);
-        setSensorData((prev) => {
-          // Remove previous live keys for polled zones so disconnected clusters do not keep stale values.
-          const next = Object.fromEntries(
-            Object.entries(prev).filter(
-              ([key]) => !livePrefixes.some((prefix) => key.startsWith(prefix))
-            )
-          );
-          return { ...next, ...allLiveFlat };
-        });
-      } catch (err) {
-        logger.warn('Live sensor refresh failed', err);
+        const prefixes = new Set(successful.map(zone => `${zone.location}_${zone.cluster}_`))
+        const removedLiveKeys = [...liveKeysRef.current].filter(key =>
+          [...prefixes].some(prefix => key.startsWith(prefix))
+        )
+        for (const key of removedLiveKeys) liveKeysRef.current.delete(key)
+
+        const nextValues: Record<string, number> = {}
+        const nextMeta: Record<string, SensorSampleMeta> = {}
+        for (const zone of successful) {
+          Object.assign(nextValues, zone.values)
+          Object.assign(nextMeta, zone.meta)
+          Object.keys(zone.meta).forEach(key => liveKeysRef.current.add(key))
+        }
+
+        setSensorData(prev => {
+          const next = { ...prev }
+          removedLiveKeys.forEach(key => delete next[key])
+          return { ...next, ...nextValues }
+        })
+        setSensorMeta(prev => {
+          const next = { ...prev }
+          removedLiveKeys.forEach(key => delete next[key])
+          return { ...next, ...nextMeta }
+        })
+        setZoneErrors(prev => {
+          const next = { ...prev }
+          for (const zone of pollZones) {
+            const key = `${zone.location}:${zone.cluster}`
+            if (successfulZoneKeys.has(key)) next[key] = errors[key] ?? null
+            else if (errors[key]) next[key] = errors[key]
+          }
+          return next
+        })
+        setLastPollAt(Date.now())
+      } catch (error) {
+        logger.warn('Live sensor refresh failed', error)
+      } finally {
+        refreshInFlightRef.current = false
       }
-    };
+    }
 
-    refreshLiveSensors();
-    const sensorInterval = setInterval(refreshLiveSensors, interval);
-    return () => clearInterval(sensorInterval);
-  }, [interval, loadInitialData]);
+    void refreshLiveSensors()
+    const sensorInterval = setInterval(() => void refreshLiveSensors(), interval)
+    return () => clearInterval(sensorInterval)
+  }, [interval, loadInitialData])
 
-  // Light display names from automation config (120s — matches rare config edits)
+  useEffect(() => {
+    const clock = setInterval(() => setStatusNowMs(Date.now()), 1000)
+    return () => clearInterval(clock)
+  }, [])
+
   useEffect(() => {
     const refreshNames = async () => {
-      const map = await loadLightDisplayNamesMap();
-      setLightDisplayNames(map);
-    };
-    const nameInterval = setInterval(() => void refreshNames(), 120000);
-    return () => clearInterval(nameInterval);
-  }, []);
+      const map = await loadLightDisplayNamesMap()
+      setLightDisplayNames(map)
+    }
+    const nameInterval = setInterval(() => void refreshNames(), 120000)
+    return () => clearInterval(nameInterval)
+  }, [])
 
-  // Temporary hybrid warning layer: compare live discovered Flower clusters with configured ones.
   useEffect(() => {
     const refreshClusterWarnings = async () => {
       try {
-        const allLive = await apiClient.getAllLiveSensorData();
-        const discovered = new Set<string>();
+        const allLive = await apiClient.getAllLiveSensorData()
+        const discovered = new Set<string>()
         for (const row of allLive) {
-          const name = row?.sensor ?? '';
-          if (name.endsWith('_f')) discovered.add('front');
-          if (name.endsWith('_b')) discovered.add('back');
+          const name = row?.sensor ?? ''
+          if (name.endsWith('_f')) discovered.add('front')
+          if (name.endsWith('_b')) discovered.add('back')
         }
-        const configured = new Set(FLOWER_DASHBOARD_CLUSTERS);
-        const warnings: string[] = [];
+        const configured = new Set(FLOWER_DASHBOARD_CLUSTERS)
+        const warnings: string[] = []
 
         for (const c of configured) {
           if (!discovered.has(c)) {
-            warnings.push(`Configured Flower cluster '${c}' has no live sensor stream.`);
+            warnings.push(`Configured Flower cluster '${c}' has no live sensor stream.`)
           }
         }
         for (const c of discovered) {
           if (!configured.has(c)) {
-            warnings.push(`Live Flower cluster '${c}' is discovered but not configured.`);
+            warnings.push(`Live Flower cluster '${c}' is discovered but not configured.`)
           }
         }
 
-        setFlowerClusterWarnings(warnings);
+        setFlowerClusterWarnings(warnings)
         for (const message of warnings) {
-          logger.warn(`[flower-cluster-warning] ${message}`);
+          logger.warn(`[flower-cluster-warning] ${message}`)
         }
       } catch (error) {
-        setFlowerClusterWarnings(['Failed to compare configured vs discovered Flower clusters.']);
-        logger.warn('[flower-cluster-warning] comparison failed', error);
+        setFlowerClusterWarnings(['Failed to compare configured vs discovered Flower clusters.'])
+        logger.warn('[flower-cluster-warning] comparison failed', error)
       }
-    };
+    }
 
-    void refreshClusterWarnings();
-    const warningInterval = setInterval(() => void refreshClusterWarnings(), 60000);
-    return () => clearInterval(warningInterval);
-  }, []);
+    void refreshClusterWarnings()
+    const warningInterval = setInterval(() => void refreshClusterWarnings(), 60000)
+    return () => clearInterval(warningInterval)
+  }, [])
+
+  const zoneStatus = useMemo(
+    () =>
+      Object.fromEntries(
+        getSensorPollZones().map(zone => {
+          const key = `${zone.location}:${zone.cluster}`
+          return [
+            key,
+            deriveZoneSensorStatus(
+              zone.location,
+              zone.cluster,
+              sensorMeta,
+              zoneErrors[key] ?? null,
+              statusNowMs
+            ),
+          ]
+        })
+      ),
+    [sensorMeta, statusNowMs, zoneErrors]
+  )
 
   return {
     devices,
     sensorData,
+    sensorMeta,
+    zoneStatus,
+    lastPollAt,
     lightDisplayNames,
     flowerClusterWarnings,
     loading,
-    refresh: loadInitialData
-  };
+    refresh: loadInitialData,
+  }
 }

@@ -54,7 +54,18 @@ class RelayControlSnapshotResponse(BaseModel):
     stale: bool
     last_command_succeeded: bool | None
     recovery_pending: bool
+    interlock_blocked: bool
+    interlock_reason: str | None
     alarm: HardwareAlarmResponse | None
+
+
+class FailsafeSnapshotResponse(BaseModel):
+    """Active room failsafe authority included in the control read model."""
+
+    model_config = ConfigDict(frozen=True)
+
+    location: str
+    cluster: str
 
 
 class DfrChannelSnapshotResponse(BaseModel):
@@ -92,3 +103,4 @@ class ControlSnapshotResponse(BaseModel):
     relays: tuple[RelayControlSnapshotResponse, ...]
     dfr_boards: tuple[DfrBoardSnapshotResponse, ...]
     hardware_alarms: tuple[HardwareAlarmResponse, ...]
+    failsafes: tuple[FailsafeSnapshotResponse, ...]

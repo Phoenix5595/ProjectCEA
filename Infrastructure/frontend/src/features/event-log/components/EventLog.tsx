@@ -2,7 +2,12 @@ import { useState, useMemo, useCallback } from 'react'
 import type { EventLogEntry } from '../state/eventLogStore'
 import { EventFilters, CompactFiltersTrigger, type FilterState } from './EventFilters'
 import { EventRow } from './EventRow'
-import { EventGroupedView, buildGroups, withPreallocatedSlots, type EventLogView } from './EventGroupedView'
+import {
+  EventGroupedView,
+  buildGroups,
+  withPreallocatedSlots,
+  type EventLogView,
+} from './EventGroupedView'
 import { useEventLogPagination } from '../state/useEventLog'
 import { categoryTheme, displayCategoryOf } from '../presentation/categoryTheme'
 
@@ -11,13 +16,22 @@ interface EventLogProps {
   now: Date
   /** Sidebar mode: compact filter row (rooms + Filters submenu) and compact groups. */
   compact?: boolean
+  /** Initial presentation mode; full-width logs default to flat, dense logs to grouped. */
+  initialView?: EventLogView
   /** Rooms always rendered as chips in compact mode. */
   primaryRooms?: readonly string[]
 }
 
-export function EventLog({ entries, now, compact = false, primaryRooms }: EventLogProps) {
+export function EventLog({
+  entries,
+  now,
+  compact = false,
+  initialView,
+  primaryRooms,
+}: EventLogProps) {
   const { paging, loadOlder } = useEventLogPagination()
-  const [view, setView] = useState<EventLogView>('grouped')
+  // The dense dashboard keeps its compact grouped console; full-width room logs open as a readable list.
+  const [view, setView] = useState<EventLogView>(initialView ?? (compact ? 'grouped' : 'flat'))
   const [expandedCategory, setExpandedCategory] = useState<string | null>(null)
   const [filters, setFilters] = useState<FilterState>({
     severity: 'all',
@@ -30,35 +44,57 @@ export function EventLog({ entries, now, compact = false, primaryRooms }: EventL
   const handleFilterChange = useCallback((next: FilterState) => setFilters(next), [])
 
   const handleExpand = useCallback(
-    (category: string) => setExpandedCategory((current) => (current === category ? null : category)),
-    [],
+    (category: string) => setExpandedCategory(current => (current === category ? null : category)),
+    []
   )
 
   const rooms = useMemo(
-    () => Array.from(new Set(entries.map((entry) => entry.payload.room).filter((room): room is string => typeof room === 'string'))).sort(),
-    [entries],
+    () =>
+      Array.from(
+        new Set(
+          entries
+            .map(entry => entry.payload.room)
+            .filter((room): room is string => typeof room === 'string')
+        )
+      ).sort(),
+    [entries]
   )
-  const categories = useMemo(() => Array.from(new Set(entries.map((entry) => entry.category))).sort(), [entries])
-  const types = useMemo(() => Array.from(new Set(entries.map((entry) => entry.type))).sort(), [entries])
+  const categories = useMemo(
+    () => Array.from(new Set(entries.map(entry => entry.category))).sort(),
+    [entries]
+  )
+  const types = useMemo(
+    () => Array.from(new Set(entries.map(entry => entry.type))).sort(),
+    [entries]
+  )
 
   const searchHaystacks = useMemo(() => {
     const map = new Map<string, string>()
     for (const entry of entries) {
       map.set(
         entry.eventId,
-        `${entry.type} ${entry.category} ${entry.eventId} ${JSON.stringify(entry.payload)}`.toLowerCase(),
+        `${entry.type} ${entry.category} ${entry.eventId} ${JSON.stringify(entry.payload)}`.toLowerCase()
       )
     }
     return map
   }, [entries])
 
   const filtered = useMemo(() => {
-    return entries.filter((entry) => {
+    return entries.filter(entry => {
       if (filters.severity !== 'all' && entry.severity !== filters.severity) return false
-      if (filters.rooms.length > 0 && typeof entry.payload.room === 'string' && !filters.rooms.includes(entry.payload.room)) return false
-      if (filters.categories.length > 0 && !filters.categories.includes(entry.category)) return false
+      if (
+        filters.rooms.length > 0 &&
+        typeof entry.payload.room === 'string' &&
+        !filters.rooms.includes(entry.payload.room)
+      )
+        return false
+      if (filters.categories.length > 0 && !filters.categories.includes(entry.category))
+        return false
       if (filters.types.length > 0 && !filters.types.includes(entry.type)) return false
-      if (filters.search && !(searchHaystacks.get(entry.eventId) ?? '').includes(filters.search.toLowerCase())) {
+      if (
+        filters.search &&
+        !(searchHaystacks.get(entry.eventId) ?? '').includes(filters.search.toLowerCase())
+      ) {
         return false
       }
       return true
@@ -67,12 +103,18 @@ export function EventLog({ entries, now, compact = false, primaryRooms }: EventL
 
   const ordered = useMemo(() => [...filtered].reverse(), [filtered])
   const groups = useMemo(
-    () => (view === 'grouped' && expandedCategory === null ? withPreallocatedSlots(buildGroups(ordered)) : []),
-    [view, expandedCategory, ordered],
+    () =>
+      view === 'grouped' && expandedCategory === null
+        ? withPreallocatedSlots(buildGroups(ordered))
+        : [],
+    [view, expandedCategory, ordered]
   )
   const expandedListView = useMemo(
-    () => (expandedCategory === null ? [] : ordered.filter((entry) => displayCategoryOf(entry) === expandedCategory)),
-    [ordered, expandedCategory],
+    () =>
+      expandedCategory === null
+        ? []
+        : ordered.filter(entry => displayCategoryOf(entry) === expandedCategory),
+    [ordered, expandedCategory]
   )
 
   const handleViewChange = useCallback((next: EventLogView) => {
@@ -88,7 +130,10 @@ export function EventLog({ entries, now, compact = false, primaryRooms }: EventL
       className={`flex flex-col gap-2 @container ${compact ? 'h-full min-h-0' : ''}`}
     >
       <div className="flex items-center justify-between gap-2">
-        <h2 id="event-log-heading" className="text-sm font-bold uppercase tracking-wider text-text-default">
+        <h2
+          id="event-log-heading"
+          className="text-sm font-bold uppercase tracking-wider text-text-default"
+        >
           Event Log
         </h2>
         {compact ? (
@@ -145,8 +190,12 @@ export function EventLog({ entries, now, compact = false, primaryRooms }: EventL
               {'\u2190'} {categoryTheme(expandedCategory).label} / All categories
             </button>
           )}
-          <ul role="list" aria-label="Event list" className="flex flex-col gap-px bg-border-subtle border border-border-subtle overflow-auto max-h-150">
-            {(expandedCategory !== null ? expandedListView : ordered).map((entry) => (
+          <ul
+            role="list"
+            aria-label="Event list"
+            className="flex flex-col gap-px bg-border-subtle border border-border-subtle overflow-auto max-h-150"
+          >
+            {(expandedCategory !== null ? expandedListView : ordered).map(entry => (
               <EventRow key={entry.eventId} entry={entry} now={now} />
             ))}
           </ul>
