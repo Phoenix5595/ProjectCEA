@@ -8,7 +8,6 @@ import {
   withPreallocatedSlots,
   type EventLogView,
 } from './EventGroupedView'
-import { useEventLogPagination } from '../state/useEventLog'
 import { categoryTheme, displayCategoryOf } from '../presentation/categoryTheme'
 
 interface EventLogProps {
@@ -29,7 +28,6 @@ export function EventLog({
   initialView,
   primaryRooms,
 }: EventLogProps) {
-  const { paging, loadOlder } = useEventLogPagination()
   // The dense dashboard keeps its compact grouped console; full-width room logs open as a readable list.
   const [view, setView] = useState<EventLogView>(initialView ?? (compact ? 'grouped' : 'flat'))
   const [expandedCategory, setExpandedCategory] = useState<string | null>(null)
@@ -165,16 +163,6 @@ export function EventLog({
         primaryRooms={primaryRooms}
         hideCompactTrigger={compact}
       />
-      {(paging.hasMore || paging.loadingOlder) && (
-        <button
-          type="button"
-          className="self-center text-xs text-text-default underline disabled:cursor-wait disabled:opacity-60"
-          disabled={paging.loadingOlder}
-          onClick={() => void loadOlder()}
-        >
-          {paging.loadingOlder ? 'Loading older events...' : 'Load older'}
-        </button>
-      )}
       {filtered.length === 0 ? (
         <p className="text-xs text-text-default italic px-3 py-4 text-center">No events yet</p>
       ) : showFlatList ? (
