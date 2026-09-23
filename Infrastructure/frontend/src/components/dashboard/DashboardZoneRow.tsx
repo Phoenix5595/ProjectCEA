@@ -66,8 +66,12 @@ function ClimateMini({
 
   return (
     <div
-      className="bg-surface-secondary rounded-sm p-1.5 min-w-[9.5rem]"
-      title={unplugged ? 'No live sensor data for this cluster' : undefined}
+      className="bg-surface-secondary rounded-sm p-1.5 min-w-[9.5rem] cursor-help"
+      title={
+        unplugged
+          ? `No live climate data for ${label.toLowerCase()} (${cluster}).`
+          : `${label} current sensor readings: temperature, relative humidity, CO₂ concentration, and calculated vapor pressure deficit (VPD).`
+      }
     >
       <div className="text-10 text-text-muted mb-0.5 flex items-center gap-1">
         <span>{label}</span>
@@ -112,6 +116,42 @@ function qualityLabel(status: RoomSensorStatus): string {
   if (status.quality === 'stale') return 'STALE'
   if (status.quality === 'missing') return 'NO DATA'
   return 'LIVE'
+}
+function qualityTooltip(status: RoomSensorStatus): string {
+  const cluster = status.cluster ?? 'room'
+  const source =
+    status.source === 'websocket'
+      ? 'WebSocket stream'
+      : status.source === 'poll'
+        ? 'live sensor polling'
+        : 'no known transport'
+  const age =
+    status.newestAgeMs == null
+      ? ''
+      : ` The newest valid sample is ${Math.floor(status.newestAgeMs / 1000)} seconds old.`
+
+  if (status.quality === 'live')
+    return `LIVE: recent valid sensor data for ${cluster} from ${source}.${age}`
+  if (status.quality === 'stale')
+    return `STALE: the newest valid sample for ${cluster} is older than 45 seconds. The last value is retained, not treated as current.${age}`
+  if (status.quality === 'bad')
+    return `BAD VALUE: ${cluster} returned sensor samples, but none were valid finite numbers.`
+  return `NO DATA: no usable live samples are available for ${cluster}.`
+}
+
+function controlModeTooltip(mode: RoomControlContext['mode']): string {
+  switch (mode) {
+    case 'FAILSAFE':
+      return 'A room failsafe is active and takes precedence over other control modes.'
+    case 'MANUAL TIMED':
+      return 'At least one relay has a timed manual command. Its expiry is shown below.'
+    case 'MANUAL OFF':
+      return 'At least one relay is held off by a manual override.'
+    case 'SCHEDULED':
+      return 'At least one relay currently follows a scheduled command.'
+    case 'AUTO':
+      return 'No manual, scheduled, or failsafe command is reported; automatic control is in effect.'
+  }
 }
 
 function qualityClass(status: RoomSensorStatus): string {
@@ -212,7 +252,8 @@ export const DashboardZoneRow = memo(function DashboardZoneRow({
             <span className="truncate">{displayName}</span>
           </div>
           <div
-            className={`mt-1 text-10 px-1 py-0.5 rounded-sm border w-fit ${qualityClass(sensorStatus)}`}
+            title={qualityTooltip(sensorStatus)}
+            className={`mt-1 text-10 px-1 py-0.5 rounded-sm border w-fit cursor-help ${qualityClass(sensorStatus)}`}
           >
             <span>{qualityLabel(sensorStatus)}</span>
             <span className="ml-1 font-mono tabular-nums">
@@ -224,15 +265,27 @@ export const DashboardZoneRow = memo(function DashboardZoneRow({
                   : '—'}
             </span>
           </div>
-          <span className="mt-1 text-10 text-text-secondary">
+          <span
+            className="mt-1 text-10 text-text-secondary cursor-help"
+            title={
+              activeMode
+                ? `Current grow mode reported by automation: ${activeMode}.`
+                : 'Current grow mode is unavailable.'
+            }
+          >
             Mode:{' '}
             <strong className="text-text-default">
               {activeMode ? activeMode.toUpperCase() : '—'}
             </strong>
           </span>
           <span
-            className="mt-1 text-10 px-1 py-0.5 rounded-sm bg-status-success-bg/50 text-status-success border border-status-success-border/50 w-fit"
-            title={lightState === '☀️' ? 'Day' : 'Night'}
+            className="mt-1 text-10 px-1 py-0.5 rounded-sm bg-status-success-bg/50 text-status-success border border-status-success-border/50 w-fit cursor-help"
+            title={
+              `${lightState === '☀️' ? 'Day: at least one room light is on.' : 'Night: no room lights are on.'} ` +
+              (nextTransition
+                ? `${nextTransition.label} is the next enabled room schedule transition ${transitionText}. Timing comes from automation schedules, not calendar tasks.`
+                : 'No enabled room schedule transition is available in the next eight local calendar days.')
+            }
           >
             {lightState}{' '}
             <span className="ml-1">
@@ -244,7 +297,10 @@ export const DashboardZoneRow = memo(function DashboardZoneRow({
         </div>
 
         <div className="shrink-0 flex flex-col gap-1 min-w-[12rem]">
-          <div className="rounded-sm bg-surface-secondary px-1.5 py-1">
+          <div
+            title="Room decision summary. The headline prioritizes temperature outside its heating/cooling band, then an active correcting device, then the largest VPD delta. VPD and CO₂ deltas are informational, not alarms."
+            className="rounded-sm bg-surface-secondary px-1.5 py-1 cursor-help"
+          >
             <div className="text-10 uppercase tracking-wide text-text-muted">Decision</div>
             <div className="text-xs font-semibold text-text-default">
               {decisionSummary.headline}
@@ -252,31 +308,51 @@ export const DashboardZoneRow = memo(function DashboardZoneRow({
             {selectedLayer &&
               selectedLayer.temperatureState !== 'missing' &&
               selectedLayer.temperatureState !== 'in_band' && (
-                <div className="text-10 font-mono tabular-nums text-status-warning-text">
+                <div
+                  title={`${selectedLayer.temperatureState === 'low' ? 'Temperature is below the heating setpoint.' : 'Temperature is above the cooling setpoint.'} The signed delta is current temperature minus that band boundary; time is continuous out-of-band duration from trend history.`}
+                  className="text-10 font-mono tabular-nums text-status-warning-text cursor-help"
+                >
                   {signed(selectedLayer.temperatureDelta, 1, '°C')} ·{' '}
                   {selectedLayer.breachFullWindow ? '≥60m' : `${selectedLayer.breachMinutes ?? 0}m`}
                 </div>
               )}
             {selectedLayer && selectedLayer.vpdDelta != null && (
-              <div className="text-10 font-mono tabular-nums text-text-secondary">
+              <div
+                title="VPD delta is current VPD minus the VPD setpoint. Positive means above target; this is informational, not an alarm."
+                className="text-10 font-mono tabular-nums text-text-secondary cursor-help"
+              >
                 VPD {signed(selectedLayer.vpdDelta, 2, ' kPa')}
               </div>
             )}
             {selectedLayer && selectedLayer.co2Delta != null && (
-              <div className="text-10 font-mono tabular-nums text-text-secondary">
+              <div
+                title="CO₂ delta is current concentration minus the CO₂ setpoint. Positive means above target; this is informational, not an alarm."
+                className="text-10 font-mono tabular-nums text-text-secondary cursor-help"
+              >
                 CO₂ {signed(selectedLayer.co2Delta, 0, ' ppm')}
               </div>
             )}
             {decisionSummary.correctingDevice && (
-              <div className="text-10 text-text-secondary">
+              <div
+                title="An active non-light device whose type/name matches the current temperature correction direction."
+                className="text-10 text-text-secondary cursor-help"
+              >
                 Correcting: {decisionSummary.correctingDevice}
               </div>
             )}
           </div>
           <div className="rounded-sm bg-surface-secondary px-1.5 py-1 text-10">
-            <div className="font-semibold text-text-default">{controlContext.mode}</div>
+            <div
+              className="font-semibold text-text-default cursor-help"
+              title={controlModeTooltip(controlContext.mode)}
+            >
+              {controlContext.mode}
+            </div>
             {controlContext.manualExpiresAt && (
-              <div className="text-text-secondary">
+              <div
+                className="text-text-secondary cursor-help"
+                title="Expiry time reported by the timed manual relay command."
+              >
                 Expires{' '}
                 {new Date(controlContext.manualExpiresAt).toLocaleTimeString([], {
                   hour: '2-digit',
@@ -284,19 +360,38 @@ export const DashboardZoneRow = memo(function DashboardZoneRow({
                 })}
               </div>
             )}
-            {controlContext.syncing && <div className="text-status-warning-text">SYNCING</div>}
+            {controlContext.syncing && (
+              <div
+                className="text-status-warning-text cursor-help"
+                title="Desired relay commands and observed physical states are being reconciled."
+              >
+                SYNCING
+              </div>
+            )}
             {controlContext.mismatch && (
-              <div className="text-status-warning-text">
+              <div
+                className="text-status-warning-text cursor-help"
+                title="A relay's desired state differs from observed hardware state. Mismatch is suppressed while syncing."
+              >
                 MISMATCH · {controlContext.mismatchDevices.join(', ')}
               </div>
             )}
             {controlContext.interlockReasons.map(reason => (
-              <div key={reason} className="text-status-danger-text">
+              <div
+                key={reason}
+                className="text-status-danger-text cursor-help"
+                title={`Backend interlock check says an ON request would be blocked: ${reason}`}
+              >
                 INTERLOCK · {reason}
               </div>
             ))}
             {controlContext.degraded && (
-              <div className="text-status-warning-text">CONTROL DEGRADED</div>
+              <div
+                className="text-status-warning-text cursor-help"
+                title="The control service reports a degraded loop. See the Mothernode status ribbon for details."
+              >
+                CONTROL DEGRADED
+              </div>
             )}
           </div>
         </div>
@@ -333,7 +428,12 @@ export const DashboardZoneRow = memo(function DashboardZoneRow({
         </div>
 
         <div className="shrink-0 bg-surface-secondary rounded-sm p-1.5 min-w-[10rem]">
-          <div className="text-10 text-text-muted mb-0.5">Setpoints</div>
+          <div
+            className="text-10 text-text-muted mb-0.5 cursor-help"
+            title="Room setpoints: heating and cooling define the temperature band; CO₂ and VPD are control targets."
+          >
+            Setpoints
+          </div>
           <div className="flex flex-wrap gap-x-2 gap-y-0.5 text-10 font-mono tabular-nums">
             <span className={getSetpointColor()}>
               H {getSensorDisplay(sensorData, `${setpointPrefix}heating_setpoint`, '°')}
@@ -352,7 +452,12 @@ export const DashboardZoneRow = memo(function DashboardZoneRow({
 
         {lightDevices.length > 0 && (
           <div className="shrink-0 bg-surface-secondary rounded-sm p-1.5 min-w-[8rem] max-w-[14rem]">
-            <div className="text-10 text-text-muted mb-0.5">Lights</div>
+            <div
+              className="text-10 text-text-muted mb-0.5 cursor-help"
+              title="Room light outputs. Percent is the reported dimmer intensity; sun/moon indicates the reported on/off state."
+            >
+              Lights
+            </div>
             <div className="flex flex-col gap-0.5">
               {lightDevices.map(device => {
                 const deviceName = device.device_name || ''
@@ -369,10 +474,22 @@ export const DashboardZoneRow = memo(function DashboardZoneRow({
                     <span className="text-text-secondary truncate flex-1 min-w-0" title={name}>
                       {name}
                     </span>
-                    <span className="text-accent-data font-mono tabular-nums shrink-0">
+                    <span
+                      className="text-accent-data font-mono tabular-nums shrink-0 cursor-help"
+                      title="Reported dimmer intensity, in percent."
+                    >
                       {intensity != null ? `${Number(intensity).toFixed(0)}%` : '--'}
                     </span>
-                    <span className="shrink-0">{device.state === 1 ? '☀️' : '🌙'}</span>
+                    <span
+                      className="shrink-0 cursor-help"
+                      title={
+                        device.state === 1
+                          ? 'Reported light state: ON.'
+                          : 'Reported light state: OFF.'
+                      }
+                    >
+                      {device.state === 1 ? '☀️' : '🌙'}
+                    </span>
                   </div>
                 )
               })}
@@ -382,7 +499,12 @@ export const DashboardZoneRow = memo(function DashboardZoneRow({
 
         {nonLightDevices.length > 0 && (
           <div className="shrink-0 bg-surface-secondary rounded-sm p-1.5 min-w-[7rem] max-w-[10rem]">
-            <div className="text-10 text-text-muted mb-0.5">Devices</div>
+            <div
+              className="text-10 text-text-muted mb-0.5 cursor-help"
+              title="Non-light room outputs. ON/OFF is the reported device state; load percentage appears when available."
+            >
+              Devices
+            </div>
             <div className="flex flex-col gap-0.5">
               {nonLightDevices.slice(0, 4).map(device => {
                 const loadPct =
@@ -391,7 +513,8 @@ export const DashboardZoneRow = memo(function DashboardZoneRow({
                   <div key={device.device_name} className="flex justify-between gap-1 text-10">
                     <span className="text-text-secondary truncate">{device.device_name}</span>
                     <span
-                      className={`shrink-0 px-1 rounded text-8 ${device.state === 1 ? 'bg-status-success-bg text-status-success-text' : 'bg-surface-tertiary text-text-muted'}`}
+                      className={`shrink-0 px-1 rounded text-8 cursor-help ${device.state === 1 ? 'bg-status-success-bg text-status-success-text' : 'bg-surface-tertiary text-text-muted'}`}
+                      title={`Reported device state: ${device.state === 1 ? 'ON' : 'OFF'}${loadPct != null ? `; load ${Number(loadPct).toFixed(0)} percent` : ''}.`}
                     >
                       {device.state === 1 ? 'ON' : 'OFF'}
                       {loadPct != null ? ` ${Number(loadPct).toFixed(0)}%` : ''}
