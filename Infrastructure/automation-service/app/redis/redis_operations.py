@@ -114,6 +114,10 @@ class RedisOperations:
         """Read all active alarms for a location/cluster."""
         return self.alarms.read_alarms(location, cluster)
 
+    def read_all_alarms(self) -> dict[str, dict[str, Any]]:
+        """Read active alarms across every room from durable Redis state."""
+        return self.alarms.read_all_alarms()
+
     def clear_alarm(self, location: str, cluster: str, alarm_name: str) -> bool:
         """Clear an alarm."""
         return self.alarms.clear_alarm(location, cluster, alarm_name)

@@ -2,6 +2,7 @@ import { memo } from 'react'
 import type { EventLogEntry } from '../state/eventLogStore'
 import { getEventDisplay } from '../presentation/eventRegistry'
 import { displayCategoryOf, categoryTheme } from '../presentation/categoryTheme'
+import { SEVERITY_LABELS, type SeverityLevel } from '../presentation/severity'
 import { sourcePartsFor } from '../presentation/eventSourceParts'
 import { formatExactTime, formatLocalTime, formatRelativeTime } from '../presentation/timeFormat'
 import { EventRoomIndicator, EventSourceLine, EventTimestamps } from './EventFragments'
@@ -38,13 +39,13 @@ export const DISPLAY_BUCKET_ORDER: readonly string[] = [
 ]
 
 export function withPreallocatedSlots(groups: CategoryGroup[]): CategoryGroup[] {
-  const filled = new Map(groups.map((group) => [group.category, group]))
+  const filled = new Map(groups.map(group => [group.category, group]))
   const known = new Set(DISPLAY_BUCKET_ORDER)
-  const slots = DISPLAY_BUCKET_ORDER.map<CategoryGroup>((category) => {
+  const slots = DISPLAY_BUCKET_ORDER.map<CategoryGroup>(category => {
     const group = filled.get(category)
     return group ?? { category, count: 0, latest: null, entities: [] }
   })
-  const extra = groups.filter((group) => !known.has(group.category))
+  const extra = groups.filter(group => !known.has(group.category))
   return [...slots, ...extra]
 }
 
@@ -101,6 +102,23 @@ function EventCountBadge({ label, count }: { label: string; count: number }) {
       className="shrink-0 text-11 font-bold text-text-default tabular-nums border border-border-subtle px-1.5"
     >
       {count === 0 ? '0 events' : count > 1 ? `${count} events` : '1 event'}
+    </span>
+  )
+}
+const SEVERITY_BADGE: Record<SeverityLevel, string> = {
+  critical: 'bg-status-danger-vivid text-status-danger-text border-status-danger-vivid font-bold',
+  warning: 'bg-status-warning-bg text-status-warning-text border-status-warning-dim',
+  error: 'bg-surface-secondary text-status-danger-text border-status-danger-border',
+  info: 'bg-surface-tertiary text-text-default border-border-default',
+}
+
+function EventSeverityBadge({ severity }: { severity: SeverityLevel }) {
+  return (
+    <span
+      aria-label={`Severity: ${SEVERITY_LABELS[severity]}`}
+      className={`shrink-0 inline-flex items-center px-1 py-0.5 text-10 font-bold uppercase tracking-wider border ${SEVERITY_BADGE[severity]}`}
+    >
+      {SEVERITY_LABELS[severity]}
     </span>
   )
 }
@@ -167,6 +185,7 @@ const EventCategoryRow = memo(function EventCategoryRow({
         <div className="flex items-center gap-1.5 min-w-0">
           <EventRoomIndicator room={group.latest.payload.room} />
           <div className="text-xs text-text-default font-semibold truncate">{display.label}</div>
+          <EventSeverityBadge severity={group.latest.severity} />
         </div>
       </button>
     )
@@ -208,8 +227,9 @@ const EventCategoryRow = memo(function EventCategoryRow({
         </div>
         <EventTimestamps occurredAt={group.latest.occurredAt} now={now} />
       </div>
-      <div className="text-sm text-text-default font-semibold truncate">
+      <div className="flex items-center gap-1.5 text-sm text-text-default font-semibold truncate">
         {display.label}
+        <EventSeverityBadge severity={group.latest.severity} />
       </div>
       {!compact && (
         <>
@@ -247,10 +267,12 @@ export function EventGroupedView({
       role="group"
       aria-label="Grouped alert console"
       className={`grid min-h-0 gap-1 bg-surface-base border border-border-subtle rounded-sm ${
-        compact ? 'flex-1 grid-rows-[repeat(8,minmax(0,1fr))] overflow-hidden' : 'max-h-150 overflow-auto'
+        compact
+          ? 'flex-1 grid-rows-[repeat(8,minmax(0,1fr))] overflow-hidden'
+          : 'max-h-150 overflow-auto'
       } ${compact ? '' : groupedGridClass()}`}
     >
-      {groups.map((group) => (
+      {groups.map(group => (
         <EventCategoryRow
           key={group.category}
           group={group}

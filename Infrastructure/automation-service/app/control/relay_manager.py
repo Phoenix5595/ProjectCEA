@@ -186,6 +186,24 @@ class RelayManager:
         devices = self._snapshot().hierarchy.get(location, {}).get(cluster, {})
         return {device_name: dict(device_info) for device_name, device_info in devices.items()}
 
+    def get_interlock_status(
+        self,
+        location: str,
+        cluster: str,
+        device_name: str,
+        snapshot: RuntimeDeviceSnapshot | None = None,
+    ) -> tuple[bool, str | None]:
+        """Return whether an ON request is currently blocked without side effects."""
+        can_turn_on, reason = self.interlock_manager.check_interlock(
+            location,
+            cluster,
+            device_name,
+            self._current_states,
+            requested_load=None,
+            snapshot=snapshot or self._snapshot(),
+        )
+        return (not can_turn_on, reason if not can_turn_on else None)
+
     async def set_device_state(
         self,
         location: str,

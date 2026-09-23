@@ -1,35 +1,48 @@
 /** Main dashboard page component: dense desktop command view. */
-import { useEffect, useState, useMemo, useCallback, type ReactNode } from 'react';
-import { FlaskConical, Flower2, Sprout, Sun } from 'lucide-react';
+import { useEffect, useState, useMemo, useCallback, type ReactNode } from 'react'
+import { FlaskConical, Flower2, Sprout, Sun } from 'lucide-react'
 
-import GrowCalendar from '../components/calendar/GrowCalendar';
-import FlowerGrowWizard from '../components/calendar/FlowerGrowWizard';
-import DashboardCalendarInspector from '../components/dashboard/DashboardCalendarInspector';
-import DashboardOperationsRail from '../components/dashboard/DashboardOperationsRail';
-import { useCalendarEvents } from '../hooks/useCalendarEvents';
-import { apiClient } from '../services/api';
-import { useTheme } from '../contexts/ThemeContext';
-import { useWebSocket } from '../hooks/useWebSocket';
-import { useSensorPolling } from '../hooks/useSensorPolling';
-import { useSystemStatus } from '../hooks/useSystemStatus';
-import { AppRibbon } from '../components/chrome/AppRibbon';
-import { RibbonMenuButton } from '../components/chrome/ribbonMenuButton';
-import { DashboardZoneRow } from '../components/dashboard/DashboardZoneRow';
-import { MothernodeRibbon } from '../components/dashboard/MothernodeRibbon';
-import { DASHBOARD_ROW_ZONES } from '../config/zones';
-import { EventLog } from '../features/event-log/components/EventLog';
-import { useEventLog } from '../features/event-log/state/useEventLog';
-import type { CalendarEventDto } from '../types/calendar';
+import GrowCalendar from '../components/calendar/GrowCalendar'
+import FlowerGrowWizard from '../components/calendar/FlowerGrowWizard'
+import DashboardCalendarInspector from '../components/dashboard/DashboardCalendarInspector'
+import DashboardOperationsRail from '../components/dashboard/DashboardOperationsRail'
+import {
+  DashboardAlarmButton,
+  DashboardAlarmSummary,
+} from '../components/dashboard/DashboardAlarmSummary'
+import {
+  deriveRoomControlContext,
+  deriveRoomDecisionSummary,
+  deriveRoomSensorStatus,
+} from '../components/dashboard/dashboardStatus'
+import { useCalendarEvents } from '../hooks/useCalendarEvents'
+import { useActiveAlarms } from '../hooks/useActiveAlarms'
+import { useControlSnapshot } from '../hooks/useControlSnapshot'
+import { useDashboardLiveData } from '../hooks/useDashboardLiveData'
+import { getDashboardMode, useDashboardScheduleContext } from '../hooks/useDashboardScheduleContext'
+import { useDashboardTrends } from '../hooks/useDashboardTrends'
+import { apiClient } from '../services/api'
+import { useTheme } from '../contexts/ThemeContext'
+import { useSystemStatus } from '../hooks/useSystemStatus'
+import { nextRoomTransition } from '../utils/dashboardSchedule'
+import { AppRibbon } from '../components/chrome/AppRibbon'
+import { RibbonMenuButton } from '../components/chrome/ribbonMenuButton'
+import { DashboardZoneRow } from '../components/dashboard/DashboardZoneRow'
+import { MothernodeRibbon } from '../components/dashboard/MothernodeRibbon'
+import { DASHBOARD_ROW_ZONES } from '../config/zones'
+import { EventLog } from '../features/event-log/components/EventLog'
+import { useEventLog } from '../features/event-log/state/useEventLog'
+import type { CalendarEventDto } from '../types/calendar'
 
 interface WeatherData {
-  temperature: number;
-  humidity: number;
-  pressure: number;
-  wind_speed: number;
-  wind_direction: number | null;
-  description: string;
-  location: string;
-  timestamp: string;
+  temperature: number
+  humidity: number
+  pressure: number
+  wind_speed: number
+  wind_direction: number | null
+  description: string
+  location: string
+  timestamp: string
 }
 
 /** Room icons are semantic, not decorative: the same marks identify room-origin events. */
@@ -37,86 +50,126 @@ const ROOM_ICONS: Record<string, ReactNode> = {
   'Veg Room': <Sprout aria-hidden="true" className="size-3.5 text-emerald-400" />,
   'Flower Room': <Flower2 aria-hidden="true" className="size-3.5 text-pink-400" />,
   Lab: <FlaskConical aria-hidden="true" className="size-3.5 text-cyan-400" />,
-};
+}
 
 /** Lower-row room map: the Lab is a third horizontal zone, ending at the SCADA column. */
-const ROOM_MAP_ZONES = DASHBOARD_ROW_ZONES;
+const ROOM_MAP_ZONES = DASHBOARD_ROW_ZONES
 
 export default function Dashboard() {
-  const { theme, setTheme, themes } = useTheme();
-  const { devices: wsDevices, sensorData: wsSensorData } = useWebSocket();
+  const { theme, setTheme, themes } = useTheme()
+  const live = useDashboardLiveData()
+  const control = useControlSnapshot()
+  const schedule = useDashboardScheduleContext()
+  const trends = useDashboardTrends()
+  const alarms = useActiveAlarms()
+  const { systemStats, statusDevices, degraded } = useSystemStatus()
+  const { entries: eventLogEntries } = useEventLog()
 
-  // Keep the main command view at the control-loop cadence; WebSocket data still wins when available.
-  const { devices, sensorData, lightDisplayNames, loading } = useSensorPolling({ interval: 1000 });
-  const { systemStats, statusDevices, degraded } = useSystemStatus();
-  const { entries: eventLogEntries } = useEventLog();
-
-  const [weatherData, setWeatherData] = useState<WeatherData | null>(null);
-  const [wizardOpen, setWizardOpen] = useState(false);
-  const [now, setNow] = useState(() => new Date());
-  const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined);
-  const [selectedDateEvents, setSelectedDateEvents] = useState<CalendarEventDto[]>([]);
-  const { events: calendarEvents, loading: calendarLoading, refresh: refreshCalendar } =
-    useCalendarEvents();
+  const [weatherData, setWeatherData] = useState<WeatherData | null>(null)
+  const [wizardOpen, setWizardOpen] = useState(false)
+  const [alarmOpen, setAlarmOpen] = useState(false)
+  const [now, setNow] = useState(() => new Date())
+  const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined)
+  const [selectedDateEvents, setSelectedDateEvents] = useState<CalendarEventDto[]>([])
+  const {
+    events: calendarEvents,
+    loading: calendarLoading,
+    refresh: refreshCalendar,
+  } = useCalendarEvents()
 
   const handleDaySelect = useCallback((date: Date | undefined, events: CalendarEventDto[]) => {
-    setSelectedDate(date);
-    setSelectedDateEvents(events);
-  }, []);
+    setSelectedDate(date)
+    setSelectedDateEvents(events)
+  }, [])
 
   useEffect(() => {
-    const timer = setInterval(() => setNow(new Date()), 10000)
+    const timer = setInterval(() => setNow(new Date()), 1000)
     return () => clearInterval(timer)
   }, [])
 
-  // Merge WebSocket data with polled data (WS takes precedence if it has data)
-  const mergedDevices = useMemo(
-    () => (wsDevices.length > 0 ? wsDevices : devices),
-    [wsDevices, devices]
-  );
-  const mergedSensorData = useMemo(
-    () => ({ ...sensorData, ...wsSensorData }),
-    [sensorData, wsSensorData]
-  );
+  const roomPresentations = useMemo(
+    () =>
+      ROOM_MAP_ZONES.map(zone => {
+        const sensorClusters = zone.location === 'Flower Room' ? ['front', 'back'] : [zone.cluster]
+        return {
+          zone,
+          sensorStatus: deriveRoomSensorStatus(
+            zone.location,
+            sensorClusters,
+            live.sensorMeta,
+            now.getTime()
+          ),
+          decisionSummary: deriveRoomDecisionSummary(
+            zone.location,
+            sensorClusters,
+            live.sensorData,
+            trends.byRoom[zone.location] ?? {},
+            live.devices
+          ),
+          controlContext: deriveRoomControlContext(
+            zone.location,
+            control.snapshot,
+            live.devices,
+            Boolean(degraded?.active) || live.transport === 'degraded'
+          ),
+          activeMode: getDashboardMode(schedule.modes, zone.location, zone.cluster),
+          nextTransition: nextRoomTransition(schedule.schedules, zone.location, zone.cluster, now),
+          trendData: trends.byRoom[zone.location] ?? {},
+        }
+      }),
+    [
+      control.snapshot,
+      degraded?.active,
+      live.devices,
+      live.sensorData,
+      live.sensorMeta,
+      live.transport,
+      now,
+      schedule.modes,
+      schedule.schedules,
+      trends.byRoom,
+    ]
+  )
 
   // Weather refresh (15 minutes)
   useEffect(() => {
     const refreshWeather = async () => {
       try {
-        const weatherResponse = await apiClient.getLatestWeather();
+        const weatherResponse = await apiClient.getLatestWeather()
         if (weatherResponse?.data) {
-          const d = weatherResponse.data;
-          const temp = d.temp?.value ?? d.temperature?.value;
-          const rh = d.rh?.value ?? d.humidity?.value;
+          const d = weatherResponse.data
+          const temp = d.temp?.value ?? d.temperature?.value
+          const rh = d.rh?.value ?? d.humidity?.value
           if (temp != null && rh != null) {
             setWeatherData({
               temperature: Number(temp),
               humidity: Number(rh),
               pressure: Number(d.pressure?.value ?? 0),
               wind_speed: Number(d.wind_speed?.value ?? 0),
-              wind_direction: d.wind_direction?.value != null ? Number(d.wind_direction.value) : null,
+              wind_direction:
+                d.wind_direction?.value != null ? Number(d.wind_direction.value) : null,
               description: d.description?.value ?? 'N/A',
               location: 'Quebec City',
-              timestamp: weatherResponse.timestamp ?? ''
-            });
+              timestamp: weatherResponse.timestamp ?? '',
+            })
           }
         }
       } catch {
         // Silently fail weather updates
       }
-    };
+    }
 
-    refreshWeather();
-    const interval = setInterval(refreshWeather, 15 * 60 * 1000);
-    return () => clearInterval(interval);
-  }, []);
+    refreshWeather()
+    const interval = setInterval(refreshWeather, 15 * 60 * 1000)
+    return () => clearInterval(interval)
+  }, [])
 
-  if (loading) {
+  if (live.loading) {
     return (
       <div className="main-dashboard h-screen bg-surface-base flex items-center justify-center">
         <p className="text-sm text-text-secondary">Loading dashboard…</p>
       </div>
-    );
+    )
   }
 
   return (
@@ -149,17 +202,27 @@ export default function Dashboard() {
             )}
           </div>
         )}
+        <DashboardAlarmButton alarms={alarms.alarms} onOpen={() => setAlarmOpen(true)} />
         <RibbonMenuButton
           onClick={() => {
-            const currentIndex = themes.indexOf(theme);
-            const nextIndex = (currentIndex + 1) % themes.length;
-            setTheme(themes[nextIndex]);
+            const currentIndex = themes.indexOf(theme)
+            const nextIndex = (currentIndex + 1) % themes.length
+            setTheme(themes[nextIndex])
           }}
           aria-label="Toggle theme"
         >
           <Sun className="size-5" />
         </RibbonMenuButton>
       </AppRibbon>
+      <DashboardAlarmSummary
+        alarms={alarms.alarms}
+        open={alarmOpen}
+        onOpenChange={setAlarmOpen}
+        serviceError={alarms.error}
+        acknowledgingKey={alarms.acknowledgingKey}
+        acknowledgementErrors={alarms.acknowledgementErrors}
+        acknowledge={alarms.acknowledge}
+      />
 
       <div className="flex-1 flex flex-col min-h-0 overflow-y-auto lg:overflow-hidden p-2 gap-2">
         {degraded?.active && (
@@ -203,16 +266,18 @@ export default function Dashboard() {
             </div>
             {/* Lower row: three full-width horizontal room bars ending at the SCADA column */}
             <div className="min-h-0 min-w-0 flex flex-col gap-2 overflow-y-auto">
-              {ROOM_MAP_ZONES.map((zone) => (
+              {roomPresentations.map(({ zone, ...presentation }) => (
                 <DashboardZoneRow
                   key={`${zone.location}_${zone.cluster}`}
                   location={zone.location}
                   cluster={zone.cluster}
-                  devices={mergedDevices}
-                  sensorData={mergedSensorData}
+                  devices={live.devices}
+                  sensorData={live.sensorData}
                   statusDevices={statusDevices}
-                  lightDisplayNames={lightDisplayNames}
+                  lightDisplayNames={live.lightDisplayNames}
                   icon={ROOM_ICONS[zone.location] || '📦'}
+                  {...presentation}
+                  now={now}
                 />
               ))}
             </div>
@@ -225,11 +290,11 @@ export default function Dashboard() {
                 entries={eventLogEntries}
                 now={now}
                 compact
-                primaryRooms={ROOM_MAP_ZONES.map((zone) => zone.location)}
+                primaryRooms={ROOM_MAP_ZONES.map(zone => zone.location)}
               />
             </div>
             <DashboardOperationsRail
-              sensorData={mergedSensorData}
+              sensorData={live.sensorData}
               waterLevelPercent={null}
               sections="water"
             />
@@ -245,5 +310,5 @@ export default function Dashboard() {
         onCreated={refreshCalendar}
       />
     </div>
-  );
+  )
 }
