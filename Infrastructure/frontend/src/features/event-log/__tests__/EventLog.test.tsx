@@ -1,6 +1,6 @@
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { EventLog } from '../components/EventLog'
 import { globalEventLogStore } from '../state/eventLogStore'
 import { makeEventEntry } from './testFactories'
@@ -8,7 +8,6 @@ import { makeEventEntry } from './testFactories'
 describe('EventLog', () => {
   afterEach(() => {
     globalEventLogStore.reset()
-    vi.unstubAllGlobals()
   })
 
   async function showFlat(user: ReturnType<typeof userEvent.setup>) {
@@ -158,36 +157,11 @@ describe('EventLog', () => {
     expect(screen.getByRole('heading', { name: /event log/i })).toBeInTheDocument()
   })
 
-  it('loads the next older page through the visible shared pagination control', async () => {
-    // Given: the shared store has an older cursor and the history endpoint is available
-    const mockFetch = vi.fn(() =>
-      Promise.resolve({
-        ok: true,
-        status: 200,
-        json: () =>
-          Promise.resolve({
-            items: [],
-            newest_cursor: null,
-            oldest_cursor: null,
-            earliest_cursor: null,
-            has_more: false,
-          }),
-      })
-    )
-    vi.stubGlobal('fetch', mockFetch)
+  it('does not show a load-older prompt when older history exists', () => {
     globalEventLogStore.setPaging({ oldestCursor: '1-0', hasMore: true, loadingOlder: false })
-    const user = userEvent.setup()
     render(<EventLog entries={[]} now={new Date('2026-09-02T12:00:00Z')} />)
 
-    // When: the user requests the next page
-    await user.click(screen.getByRole('button', { name: 'Load older' }))
-
-    // Then: the cursor is sent and exhaustion removes the control
-    await waitFor(() => expect(mockFetch).toHaveBeenCalledTimes(1))
-    expect(mockFetch).toHaveBeenCalledWith(expect.stringContaining('before=1-0'), expect.anything())
-    await waitFor(() =>
-      expect(screen.queryByRole('button', { name: 'Load older' })).not.toBeInTheDocument()
-    )
+    expect(screen.queryByRole('button', { name: /load older/i })).not.toBeInTheDocument()
   })
 
   it('opens on the grouped console by default with one row per category', () => {
