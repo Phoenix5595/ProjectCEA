@@ -12,10 +12,21 @@ function formatDelta(metric: TrendMetric): string {
   return `Δ10m ${sign}${metric.delta10m.toFixed(precision)} ${metric.unit}`
 }
 
+function trendTooltip(metric: TrendMetric): string {
+  const delta =
+    metric.delta10m == null
+      ? 'The 10-minute change is unavailable because history does not span enough time.'
+      : `The 10-minute change is newest minus the closest sample at or before 10 minutes ago: ${formatDelta(metric)}.`
+  return `${metric.label} (${metric.unit}): trailing 60-minute sensor history. The sparkline uses bucket averages and auto-scales vertically. ${delta}`
+}
+
 export function DashboardMiniTrend({ metric, compact = false }: DashboardMiniTrendProps) {
   if (!metric || metric.points.length < 2) {
     return (
-      <div className="flex min-w-[6.5rem] flex-col justify-center rounded-sm bg-surface-secondary px-1.5 py-1 text-10 text-text-muted">
+      <div
+        title={`${metric?.label ?? 'Sensor'} trend unavailable. Historical samples are missing or insufficient to draw a meaningful trend.`}
+        className="flex min-w-[6.5rem] flex-col justify-center rounded-sm bg-surface-secondary px-1.5 py-1 text-10 text-text-muted cursor-help"
+      >
         <span>{metric?.label ?? 'Trend'}</span>
         <span>Trend unavailable</span>
       </div>
@@ -37,8 +48,9 @@ export function DashboardMiniTrend({ metric, compact = false }: DashboardMiniTre
 
   return (
     <div
-      className="flex min-w-[6.5rem] flex-col rounded-sm bg-surface-secondary px-1.5 py-1 text-10"
+      title={trendTooltip(metric)}
       aria-label={`${metric.label} 60 minute trend; ${formatDelta(metric)}`}
+      className="flex min-w-[6.5rem] flex-col rounded-sm bg-surface-secondary px-1.5 py-1 text-10 cursor-help"
     >
       <div className="flex items-center justify-between gap-1 text-text-muted">
         <span>{metric.label}</span>
