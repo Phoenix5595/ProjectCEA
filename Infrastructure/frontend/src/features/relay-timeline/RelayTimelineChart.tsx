@@ -27,6 +27,7 @@ export interface RelayTimelineChartLane {
   readonly intervals: readonly RelayStateInterval[]
   readonly requestedOutput: readonly RequestedOutputSegment[]
   readonly summary: RelayIntervalSummary
+  readonly preview?: boolean
 }
 
 export interface RelayTimelineChartProps {
@@ -167,18 +168,25 @@ function drawLaneTimeline(plot: uPlot, lanes: readonly RelayTimelineChartLane[])
     ctx.fillStyle = '#e2e8f0'
     ctx.font = '12px system-ui, sans-serif'
     ctx.textBaseline = 'middle'
-    ctx.fillText(
-      `R${lane.physicalRelay} · ${lane.label}`,
-      laneLabelX,
-      centerY,
-      LEFT_LABEL_GUTTER - 12
-    )
+    const label = lane.preview
+      ? `EXAMPLE · ${lane.label}`
+      : `R${lane.physicalRelay} · ${lane.label}`
+    ctx.fillText(label, laneLabelX, centerY, LEFT_LABEL_GUTTER - 12)
   })
 }
 
-function requestedPercentDescription(segment: RequestedOutputSegment | null): string {
-  if (segment === null) return 'No recorded requested PID output at this time.'
-  return `${segment.requestedPercent.toFixed(1)}% requested PID output; ${formatRequestedResolution(segment)}.`
+function requestedPercentDescription(
+  segment: RequestedOutputSegment | null,
+  preview: boolean
+): string {
+  if (segment === null) {
+    return preview
+      ? 'No example requested PID output at this time.'
+      : 'No recorded requested PID output at this time.'
+  }
+  return preview
+    ? `${segment.requestedPercent.toFixed(1)}% requested PID output; synthetic preview segment, not recorded.`
+    : `${segment.requestedPercent.toFixed(1)}% requested PID output; ${formatRequestedResolution(segment)}.`
 }
 
 function intervalDescription(interval: RelayStateInterval | null): string {
@@ -438,7 +446,9 @@ export const RelayTimelineChart = forwardRef<RelayTimelineChartHandle, RelayTime
             <span className="ml-1">0% center · 100% reaches both row edges</span>
           </div>
           <span className="text-xs text-text-muted">
-            Physical sample-time observations; requested output is not measured power.
+            {lanes.some(lane => lane.preview)
+              ? 'Illustrative synthetic preview; no relay observations are being shown.'
+              : 'Physical sample-time observations; requested output is not measured power.'}
           </span>
         </div>
 
@@ -446,7 +456,11 @@ export const RelayTimelineChart = forwardRef<RelayTimelineChartHandle, RelayTime
           ref={frameRef}
           role="application"
           tabIndex={0}
-          aria-label="Relay interval chart. Use left and right arrow keys to inspect intervals and requested PID output."
+          aria-label={
+            lanes.some(lane => lane.preview)
+              ? 'Illustrative synthetic relay chart. Use left and right arrow keys to inspect intervals and requested PID output.'
+              : 'Relay interval chart. Use left and right arrow keys to inspect intervals and requested PID output.'
+          }
           aria-describedby="relay-timeline-selected-detail"
           className="relative w-full focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent-vivid"
           style={{ height: plotHeight }}
@@ -482,8 +496,11 @@ export const RelayTimelineChart = forwardRef<RelayTimelineChartHandle, RelayTime
         >
           {selectedLane && active ? (
             <>
-              <strong>{selectedLane.label}</strong> · {intervalDescription(selectedInterval)}{' '}
-              {requestedPercentDescription(selectedOutput)}
+              <strong>
+                {selectedLane.preview ? `Example ${selectedLane.label} relay` : selectedLane.label}
+              </strong>{' '}
+              · {intervalDescription(selectedInterval)}{' '}
+              {requestedPercentDescription(selectedOutput, selectedLane.preview === true)}
             </>
           ) : (
             'Focus the chart and use arrow keys to inspect sample intervals and requested PID output.'
@@ -515,7 +532,9 @@ export const RelayTimelineChart = forwardRef<RelayTimelineChartHandle, RelayTime
                   return (
                     <tr key={lane.key} className="border-t border-border-subtle text-text-default">
                       <th scope="row" className="px-2 py-1 font-medium">
-                        {lane.label} (R{lane.physicalRelay})
+                        {lane.preview
+                          ? `${lane.label} (synthetic example)`
+                          : `${lane.label} (R${lane.physicalRelay})`}
                       </th>
                       <td className="px-2 py-1">
                         {summary.onTransitions} ON / {summary.offTransitions} OFF
