@@ -7,10 +7,11 @@
  * choice). A stateful harness mimics the parent store so URL writes and reads
  * can be observed through a real memory router.
  */
-import { useState } from 'react'
-import { describe, expect, it, vi, type Mock } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { useState } from 'react'
 import { createMemoryRouter, MemoryRouter, RouterProvider } from 'react-router-dom'
+import { describe, expect, it, vi, type Mock } from 'vitest'
+
 import type { MonitoringRange } from '../../state'
 import { TimeRangeToolbar } from '../TimeRangeToolbar'
 
@@ -45,7 +46,7 @@ function StatefulToolbar({
     <TimeRangeToolbar
       range={range}
       isLive={isLive}
-      onLive={(d) => {
+      onLive={d => {
         spies.onLive(d)
         setRange(liveRange(d))
         setIsLive(true)
@@ -65,7 +66,7 @@ function StatefulToolbar({
 function renderStateful(
   initialRange: MonitoringRange,
   initialIsLive: boolean,
-  initialEntries: string[] = ['/'],
+  initialEntries: string[] = ['/']
 ): Spies & { router: ReturnType<typeof createMemoryRouter> } {
   const spies: Spies = {
     onLive: vi.fn<(duration: number) => void>(),
@@ -79,11 +80,15 @@ function renderStateful(
       {
         path: '/',
         element: (
-          <StatefulToolbar initialRange={initialRange} initialIsLive={initialIsLive} spies={spies} />
+          <StatefulToolbar
+            initialRange={initialRange}
+            initialIsLive={initialIsLive}
+            spies={spies}
+          />
         ),
       },
     ],
-    { initialEntries },
+    { initialEntries }
   )
   render(<RouterProvider router={router} />)
   return { ...spies, router }
@@ -112,12 +117,14 @@ describe('monitoring time-range toolbar', () => {
     expect(screen.getByRole('status')).toHaveTextContent('LIVE')
 
     // Absolute Toronto wall-time entry converts to UTC and pushes the URL.
-    fireEvent.change(screen.getByLabelText('Range start'), { target: { value: '2026-07-15T10:00' } })
+    fireEvent.change(screen.getByLabelText('Range start'), {
+      target: { value: '2026-07-15T10:00' },
+    })
     fireEvent.change(screen.getByLabelText('Range end'), { target: { value: '2026-07-15T12:00' } })
     fireEvent.click(screen.getByRole('button', { name: 'Apply fixed range' }))
     expect(h.onFixedRange).toHaveBeenCalledWith(
       new Date('2026-07-15T14:00:00.000Z'),
-      new Date('2026-07-15T16:00:00.000Z'),
+      new Date('2026-07-15T16:00:00.000Z')
     )
     await waitFor(() => {
       const params = new URLSearchParams(h.router.state.location.search)
@@ -134,17 +141,33 @@ describe('monitoring time-range toolbar', () => {
     await waitFor(() =>
       expect(h.onFixedRange).toHaveBeenCalledWith(
         new Date('2026-07-15T14:00:00.000Z'),
-        new Date('2026-07-15T16:00:00.000Z'),
-      ),
+        new Date('2026-07-15T16:00:00.000Z')
+      )
     )
   })
 
+  it('restores the default live range when history clears fixed range parameters', async () => {
+    const start = new Date('2026-07-15T14:00:00.000Z')
+    const end = new Date('2026-07-15T16:00:00.000Z')
+    const h = renderStateful(fixedRange(start, end), false, [
+      '/?start=2026-07-15T14%3A00%3A00.000Z&end=2026-07-15T16%3A00%3A00.000Z',
+    ])
+    await waitFor(() => expect(h.onFixedRange).toHaveBeenCalledWith(start, end))
+
+    h.router.navigate('/')
+
+    await waitFor(() => expect(h.onLive).toHaveBeenCalledWith(3 * 3600_000))
+    expect(h.router.state.location.search).toBe('')
+    expect(screen.getByRole('status')).toHaveTextContent('LIVE')
+    h.router.navigate('/?start=2026-07-15T14:00:00.000Z&end=2026-07-15T16:00:00.000Z')
+    await waitFor(() => expect(h.onFixedRange).toHaveBeenCalledTimes(2))
+    expect(h.router.state.location.search).toContain('start=2026-07-15T14:00:00.000Z')
+  })
+
   it('preserves non-range URL parameters when writing a selected range', async () => {
-    const h = renderStateful(
-      liveRange(3 * 3600_000),
-      true,
-      ['/?scenario=performance-delay&fixtureSession=toolbar-test'],
-    )
+    const h = renderStateful(liveRange(3 * 3600_000), true, [
+      '/?scenario=performance-delay&fixtureSession=toolbar-test',
+    ])
 
     fireEvent.click(screen.getByRole('button', { name: '6h' }))
 
@@ -160,14 +183,18 @@ describe('monitoring time-range toolbar', () => {
     const h = renderStateful(liveRange(3 * 3600_000), true, ['/'])
 
     // Spring-forward gap: 2026-03-08 02:30 does not exist in Toronto.
-    fireEvent.change(screen.getByLabelText('Range start'), { target: { value: '2026-03-08T02:30' } })
+    fireEvent.change(screen.getByLabelText('Range start'), {
+      target: { value: '2026-03-08T02:30' },
+    })
     fireEvent.change(screen.getByLabelText('Range end'), { target: { value: '2026-03-08T04:30' } })
     fireEvent.click(screen.getByRole('button', { name: 'Apply fixed range' }))
     expect(h.onFixedRange).not.toHaveBeenCalled()
     expect(screen.getByRole('alert')).toHaveTextContent(/does not exist/)
 
     // Fall-back fold: 2026-11-01 01:30 occurs twice → require explicit choice.
-    fireEvent.change(screen.getByLabelText('Range start'), { target: { value: '2026-11-01T01:30' } })
+    fireEvent.change(screen.getByLabelText('Range start'), {
+      target: { value: '2026-11-01T01:30' },
+    })
     fireEvent.change(screen.getByLabelText('Range end'), { target: { value: '2026-11-01T03:30' } })
     fireEvent.click(screen.getByRole('button', { name: 'Apply fixed range' }))
     expect(h.onFixedRange).not.toHaveBeenCalled()
@@ -178,7 +205,7 @@ describe('monitoring time-range toolbar', () => {
     fireEvent.click(screen.getByRole('button', { name: 'EDT UTC-04:00' }))
     expect(h.onFixedRange).toHaveBeenCalledWith(
       new Date('2026-11-01T05:30:00.000Z'),
-      new Date('2026-11-01T08:30:00.000Z'),
+      new Date('2026-11-01T08:30:00.000Z')
     )
   })
 
@@ -186,7 +213,9 @@ describe('monitoring time-range toolbar', () => {
     const h = renderStateful(liveRange(3 * 3600_000), true, ['/'])
 
     // Range shorter than 5 minutes is rejected.
-    fireEvent.change(screen.getByLabelText('Range start'), { target: { value: '2026-07-15T10:00' } })
+    fireEvent.change(screen.getByLabelText('Range start'), {
+      target: { value: '2026-07-15T10:00' },
+    })
     fireEvent.change(screen.getByLabelText('Range end'), { target: { value: '2026-07-15T10:02' } })
     fireEvent.click(screen.getByRole('button', { name: 'Apply fixed range' }))
     expect(h.onFixedRange).not.toHaveBeenCalled()
@@ -218,13 +247,15 @@ describe('monitoring time-range toolbar', () => {
   it('applies valid Toronto wall-time inputs through the fixed-range callback', () => {
     const h = renderStateful(liveRange(3 * 3600_000), true, ['/'])
 
-    fireEvent.change(screen.getByLabelText('Range start'), { target: { value: '2026-07-15T10:00' } })
+    fireEvent.change(screen.getByLabelText('Range start'), {
+      target: { value: '2026-07-15T10:00' },
+    })
     fireEvent.change(screen.getByLabelText('Range end'), { target: { value: '2026-07-15T12:00' } })
     fireEvent.click(screen.getByRole('button', { name: 'Apply fixed range' }))
 
     expect(h.onFixedRange).toHaveBeenCalledWith(
       new Date('2026-07-15T14:00:00.000Z'),
-      new Date('2026-07-15T16:00:00.000Z'),
+      new Date('2026-07-15T16:00:00.000Z')
     )
   })
 
@@ -254,7 +285,7 @@ describe('monitoring time-range toolbar', () => {
           onPause={onPause}
           onResume={onResume}
         />
-      </MemoryRouter>,
+      </MemoryRouter>
     )
 
     rerender(
@@ -267,7 +298,7 @@ describe('monitoring time-range toolbar', () => {
           onPause={onPause}
           onResume={onResume}
         />
-      </MemoryRouter>,
+      </MemoryRouter>
     )
 
     expect(screen.getByLabelText('Range start')).toHaveValue('2026-07-15T10:00')

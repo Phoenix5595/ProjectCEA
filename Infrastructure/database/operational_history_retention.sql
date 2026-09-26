@@ -13,6 +13,7 @@ $guard$;
 SELECT add_retention_policy('automation_state', INTERVAL '7 days', if_not_exists => TRUE);
 SELECT add_retention_policy('effective_setpoints', INTERVAL '7 days', if_not_exists => TRUE);
 SELECT add_retention_policy('control_history', INTERVAL '30 days', if_not_exists => TRUE);
+SELECT add_retention_policy('relay_observation', INTERVAL '30 days', if_not_exists => TRUE);
 SELECT add_retention_policy('monitoring_automation_state_1min', INTERVAL '30 days', if_not_exists => TRUE);
 SELECT add_retention_policy('monitoring_automation_state_5min', INTERVAL '30 days', if_not_exists => TRUE);
 SELECT add_retention_policy('monitoring_effective_setpoints_1min', INTERVAL '30 days', if_not_exists => TRUE);

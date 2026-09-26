@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import ClassVar, Literal, Self
+from uuid import UUID
 
 from pydantic import (
     AwareDatetime,
     BaseModel,
     ConfigDict,
+    Field,
+    FiniteFloat,
     field_validator,
     model_validator,
 )
@@ -176,3 +179,107 @@ class ControlHistoryEnvelope(ControlReadModel):
     devices: tuple[DeviceTimelineSeriesOut, ...] = ()
     pid: tuple[PidTimelineSeriesOut, ...] = ()
     photoperiod: tuple[PhotoperiodTimelinePointOut, ...] = ()
+
+
+class RelayTimelineRange(ControlReadModel):
+    """A bounded half-open UTC interval for physical relay observations."""
+
+    start: AwareDatetime
+    end: AwareDatetime
+
+    @field_validator("start", "end")
+    @classmethod
+    def normalize_utc(cls, value: datetime) -> datetime:
+        return value.astimezone(UTC)
+
+    @model_validator(mode="after")
+    def validate_interval(self) -> Self:
+        duration = self.end - self.start
+        if duration < timedelta(minutes=5):
+            raise ControlReadValidationError("relay timeline range must be at least 5 minutes")
+        if duration > timedelta(days=7):
+            raise ControlReadValidationError("relay timeline range must not exceed 7 days")
+        return self
+
+
+class RelayTimelineTransition(ControlReadModel):
+    """One persisted sample-time physical observation or recorder heartbeat."""
+
+    observation_id: int = Field(gt=0)
+    observed_at: AwareDatetime
+    channel: int | None = Field(ge=0, le=15)
+    observed_state: bool | None
+    reason: Literal[
+        "initial",
+        "state_changed",
+        "stale",
+        "recovered",
+        "assignment_changed",
+        "recording_gap",
+        "heartbeat",
+    ]
+    session_id: UUID
+    registry_version: int = Field(ge=0)
+    device_id: int | None = Field(ge=0)
+    device_name: str | None
+    device_type: str | None
+    location: str | None
+    cluster: str | None
+
+    @field_validator("observed_at")
+    @classmethod
+    def normalize_utc(cls, value: datetime) -> datetime:
+        return value.astimezone(UTC)
+
+    @model_validator(mode="after")
+    def validate_fact_shape(self) -> Self:
+        if self.reason == "heartbeat":
+            if any(
+                value is not None
+                for value in (
+                    self.channel,
+                    self.observed_state,
+                    self.device_id,
+                    self.location,
+                    self.cluster,
+                )
+            ):
+                raise ValueError("heartbeat rows cannot carry channel or device assignment facts")
+        elif self.channel is None:
+            raise ValueError("non-heartbeat rows require a channel")
+        return self
+
+
+class RelayTimelineLoadPoint(ControlReadModel):
+    """Requested PID output, not measured electrical or thermal load."""
+
+    device_id: int | None = Field(ge=0)
+    device_name: str
+    timestamp: AwareDatetime
+    requested_percent: FiniteFloat | None = Field(ge=0, le=100)
+    aggregated: bool
+    interval_seconds: int = Field(ge=1)
+
+    @field_validator("timestamp")
+    @classmethod
+    def normalize_utc(cls, value: datetime) -> datetime:
+        return value.astimezone(UTC)
+
+
+class RelayTimelineResponse(ControlReadModel):
+    """One bounded, cursor-paged physical relay timeline response."""
+
+    range: RelayTimelineRange
+    transitions: tuple[RelayTimelineTransition, ...] = ()
+    anchors: tuple[RelayTimelineTransition, ...] = ()
+    load: tuple[RelayTimelineLoadPoint, ...] = ()
+    coverage_complete: bool
+    last_heartbeat_at: AwareDatetime | None
+    watermark: int = Field(ge=0)
+    has_more: bool
+    next_cursor: str | None
+
+    @field_validator("last_heartbeat_at")
+    @classmethod
+    def normalize_heartbeat_utc(cls, value: datetime | None) -> datetime | None:
+        return value.astimezone(UTC) if value is not None else None
