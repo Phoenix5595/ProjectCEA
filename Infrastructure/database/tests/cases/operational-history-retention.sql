@@ -13,6 +13,46 @@ CREATE TABLE control_history (
 );
 SELECT create_hypertable('control_history', by_range('timestamp', INTERVAL '1 day'));
 
+CREATE TABLE relay_observation (
+    observation_id BIGINT GENERATED ALWAYS AS IDENTITY,
+    observed_at TIMESTAMPTZ NOT NULL,
+    session_id UUID NOT NULL,
+    channel SMALLINT CHECK (channel BETWEEN 0 AND 15),
+    observed_state BOOLEAN,
+    device_id INTEGER,
+    device_name TEXT,
+    device_type TEXT,
+    location TEXT,
+    cluster TEXT,
+    registry_version BIGINT NOT NULL,
+    reason TEXT NOT NULL CHECK (
+        reason IN (
+            'initial',
+            'state_changed',
+            'stale',
+            'recovered',
+            'assignment_changed',
+            'recording_gap',
+            'heartbeat'
+        )
+    ),
+    PRIMARY KEY (observed_at, observation_id),
+    CHECK (
+        (reason = 'heartbeat'
+         AND channel IS NULL
+         AND observed_state IS NULL
+         AND device_id IS NULL
+         AND location IS NULL
+         AND cluster IS NULL)
+        OR (reason <> 'heartbeat' AND channel IS NOT NULL)
+    )
+);
+SELECT create_hypertable('relay_observation', by_range('observed_at', INTERVAL '1 day'));
+CREATE INDEX relay_observation_assignment_time_idx
+    ON relay_observation (location, cluster, device_id, observed_at, observation_id);
+CREATE INDEX relay_observation_channel_time_idx
+    ON relay_observation (channel, observed_at, observation_id);
+
 INSERT INTO automation_state (timestamp, location, cluster, device_name, device_state, device_mode, control_reason)
 VALUES
     (NOW() - INTERVAL '15 days', 'Veg Room', 'main', 'old_relay', 0, 'auto', 'old'),
@@ -31,6 +71,23 @@ VALUES
     (NOW() - INTERVAL '30 days' + INTERVAL '1 second', 'Veg Room', 'main', 'alarm:recent', -1, 0, 1, 'alarm:open:error', 'recent'),
     (NOW() - INTERVAL '1 day', 'Veg Room', 'main', 'heater_1', 0, 0, 1, 'manual', 'relay');
 
+INSERT INTO relay_observation (
+    observed_at,
+    session_id,
+    channel,
+    observed_state,
+    device_id,
+    device_name,
+    device_type,
+    location,
+    cluster,
+    registry_version,
+    reason
+)
+VALUES
+    (NOW() - INTERVAL '31 days', '00000000-0000-0000-0000-000000000001', 0, TRUE, 1, 'old_observation', 'heating', 'Veg Room', 'main', 1, 'initial'),
+    (NOW() - INTERVAL '1 day', '00000000-0000-0000-0000-000000000001', 0, FALSE, 1, 'recent_observation', 'heating', 'Veg Room', 'main', 1, 'state_changed');
+
 \ir ../../monitoring_read_models.sql
 CALL refresh_continuous_aggregate('monitoring_automation_state_1min', NOW() - INTERVAL '32 days', NOW());
 CALL refresh_continuous_aggregate('monitoring_automation_state_5min', NOW() - INTERVAL '32 days', NOW());
@@ -48,12 +105,23 @@ DECLARE
     refresh_targets TEXT[];
     invalid_retention_policy_count INTEGER;
     invalid_refresh_policy_count INTEGER;
+    relay_observation_is_hypertable BOOLEAN;
 BEGIN
+    SELECT EXISTS (
+        SELECT 1
+        FROM timescaledb_information.hypertables
+        WHERE hypertable_schema = current_schema()
+          AND hypertable_name = 'relay_observation'
+    ) INTO relay_observation_is_hypertable;
+    IF NOT relay_observation_is_hypertable THEN
+        RAISE EXCEPTION 'relay_observation must be present as a TimescaleDB hypertable';
+    END IF;
+
     SELECT count(*) INTO retention_count
     FROM timescaledb_information.jobs
     WHERE proc_name = 'policy_retention';
-    IF retention_count <> 7 THEN
-        RAISE EXCEPTION 'expected seven idempotent retention policies, got %', retention_count;
+    IF retention_count <> 8 THEN
+        RAISE EXCEPTION 'expected eight idempotent retention policies, got %', retention_count;
     END IF;
 
     SELECT array_agg(hypertable_name::TEXT ORDER BY hypertable_name)
@@ -67,7 +135,8 @@ BEGIN
         'monitoring_automation_state_1min',
         'monitoring_automation_state_5min',
         'monitoring_effective_setpoints_1min',
-        'monitoring_effective_setpoints_5min'
+        'monitoring_effective_setpoints_5min',
+        'relay_observation'
     ]::TEXT[] THEN
         RAISE EXCEPTION 'retention targets must remain control-only, got %', retention_targets;
     END IF;
@@ -82,7 +151,7 @@ BEGIN
               AND (config ->> 'drop_after')::INTERVAL <> INTERVAL '30 days')
       );
     IF invalid_retention_policy_count <> 0 THEN
-        RAISE EXCEPTION 'retention intervals must be seven-day raw and thirty-day control history';
+        RAISE EXCEPTION 'retention intervals must be seven-day raw and thirty-day control history, including relay_observation';
     END IF;
 
     SELECT count(*) INTO refresh_count
@@ -146,6 +215,12 @@ BEGIN
     IF EXISTS (SELECT 1 FROM control_history WHERE device_name = 'alarm:old') THEN
         RAISE EXCEPTION 'old control_history row survived retention';
     END IF;
+    IF EXISTS (SELECT 1 FROM relay_observation WHERE device_name = 'old_observation') THEN
+        RAISE EXCEPTION 'old relay_observation row survived retention';
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM relay_observation WHERE device_name = 'recent_observation') THEN
+        RAISE EXCEPTION 'recent relay_observation row was removed by retention';
+    END IF;
     IF EXISTS (SELECT 1 FROM monitoring_automation_state_1min WHERE device_name = 'old_aggregate') THEN
         RAISE EXCEPTION 'old automation aggregate row survived retention';
     END IF;
@@ -174,4 +249,4 @@ BEGIN
 END
 $outcomes$;
 
-SELECT json_build_object('case', 'operational-history-retention', 'retention_policies', 7) AS result;
+SELECT json_build_object('case', 'operational-history-retention', 'retention_policies', 8) AS result;

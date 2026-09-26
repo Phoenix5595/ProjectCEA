@@ -16,6 +16,7 @@ from app.control.decision_event_policy import DecisionEventPolicy
 from app.control.device_command_service import DeviceCommandService
 from app.control.relay_board_state_manager import RelayBoardStateManager
 from app.control.relay_manager import RelayManager
+from app.control.relay_observation_recorder import RelayObservationRecorder
 from app.control.runtime_device_registry import RuntimeDeviceRegistry
 from app.control.schedule_merge import merge_schedules_with_config
 from app.control.scheduler import Scheduler
@@ -34,6 +35,7 @@ from app.hardware.safe_outputs import (
 from app.monitoring_publication.workers import MonitoringPublicationWorkers
 from app.redis_client import AutomationRedisClient
 from app.repositories.monitoring_snapshot_sources import build_monitoring_publication_workers
+from app.repositories.relay_observations import RelayObservationRepository
 from app.routes.operational_events import OperationalEventRouteReader
 from app.services.device_registry_service import DeviceRegistryService
 from app.services.photoperiod_history_logger import (
@@ -113,6 +115,7 @@ class ServiceContainer:
         self.relay_manager: RelayManager | None = None
         self.relay_board_state_manager: RelayBoardStateManager | None = None
         self.runtime_device_registry: RuntimeDeviceRegistry | None = None
+        self.relay_observation_recorder: RelayObservationRecorder | None = None
         self.device_registry_service: DeviceRegistryService | None = None
         self.scheduler: Scheduler | None = None
         self.rules_engine: RulesEngine | None = None
@@ -177,6 +180,15 @@ class ServiceContainer:
             self.runtime_device_registry = RuntimeDeviceRegistry(self.database)
             await self.runtime_device_registry.load_startup()
             self.config.set_runtime_device_registry(self.runtime_device_registry)
+            assert self.database.pool is not None
+            self.relay_observation_recorder = RelayObservationRecorder(
+                RelayObservationRepository(self.database.pool)
+            )
+            self.runtime_device_registry.subscribe(
+                self.relay_observation_recorder.on_registry_snapshot
+            )
+            await self.relay_observation_recorder.start()
+            logger.info("Relay observation recorder started")
 
             # Compose per-room monitoring publication workers (current + 24h projections)
             self.monitoring_publication_workers = build_monitoring_publication_workers(
@@ -214,7 +226,14 @@ class ServiceContainer:
             # with one live GPIOA/GPIOB sample before control work begins.
             if self.mcp23017 is not None:
                 self.relay_board_state_manager = RelayBoardStateManager(
-                    self.mcp23017, self.automation_redis, event_sink=self.operational_event_sink
+                    self.mcp23017,
+                    self.automation_redis,
+                    event_sink=self.operational_event_sink,
+                    observation_callback=(
+                        self.relay_observation_recorder.observe_sample
+                        if self.relay_observation_recorder is not None
+                        else None
+                    ),
                 )
                 await self.relay_board_state_manager.on_startup_restore()
 
@@ -464,6 +483,12 @@ class ServiceContainer:
                 logger.info("Background tasks stopped")
             except Exception as e:
                 logger.error(f"Error stopping background tasks: {e}")
+        if self.relay_observation_recorder is not None:
+            try:
+                await self.relay_observation_recorder.stop()
+                logger.info("Relay observation recorder stopped and drained")
+            except Exception as error:
+                logger.error("Error stopping relay observation recorder: %s", error)
 
         if self.photoperiod_history_logger:
             try:

@@ -1,33 +1,45 @@
-import { useParams } from 'react-router-dom'
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
-import { apiClient } from '../services/api'
-import { extractErrorMessage } from '../utils/errors'
-import { logger } from '../utils/logger'
-import { getLocationDisplayName, getLocationBackendName, getClusterDisplayName } from '../config/zones'
-import type { RoomModeWithParams } from '../types/modes'
-import { useControlActions } from '../contexts/ControlActionsContext'
-import LightIntensity from '../components/LightIntensity'
-import VerticalPIDBlock from '../components/VerticalPIDBlock'
-import VerticalNotesBlock from '../components/VerticalNotesBlock'
-import ManualLightControl from '../components/ManualLightControl'
+import { useParams } from 'react-router-dom'
+
+import ClimatePeriodsTable from '../components/ClimatePeriodsTable'
 import RelayChannelMatrix from '../components/devices/RelayChannelMatrix'
 import { buildRelayChannelViewModels } from '../components/devices/relayViewModel'
 import type { RelayChannelViewModel } from '../components/devices/relayViewModel'
-import { useControlSnapshot } from '../hooks/useControlSnapshot'
-import type { ClimatePeriod } from '../types/climatePeriod'
-import ClimatePeriodsTable from '../components/ClimatePeriodsTable'
-import { TimelineEditor } from '../features/climate-timeline/components/TimelineEditor'
-import { useTimelineDraft, type TimelineDraftController } from '../features/climate-timeline/state/useTimelineDraft'
-import { isTimelineDraftDirty, type TimelineSavedBaseline } from '../features/climate-timeline/state/timelineDraft'
+import LightIntensity from '../components/LightIntensity'
+import ManualLightControl from '../components/ManualLightControl'
+import PIDTuningPanel from '../components/PIDTuningPanel'
+import VerticalNotesBlock from '../components/VerticalNotesBlock'
+import {
+  getLocationDisplayName,
+  getLocationBackendName,
+  getClusterDisplayName,
+} from '../config/zones'
+import { useControlActions } from '../contexts/ControlActionsContext'
 import { createClimatePeriodsTableAdapter } from '../features/climate-timeline/adapters/climatePeriodsTableAdapter'
+import { TimelineEditor } from '../features/climate-timeline/components/TimelineEditor'
 import { isCanonicalConstantMode } from '../features/climate-timeline/domain/modeClassifier'
+import {
+  isTimelineDraftDirty,
+  type TimelineSavedBaseline,
+} from '../features/climate-timeline/state/timelineDraft'
+import {
+  useTimelineDraft,
+  type TimelineDraftController,
+} from '../features/climate-timeline/state/useTimelineDraft'
+import { RelayPidTimeline } from '../features/relay-timeline/RelayPidTimeline'
+import { useControlSnapshot } from '../hooks/useControlSnapshot'
+import { apiClient } from '../services/api'
+import type { ClimatePeriod } from '../types/climatePeriod'
+import type { RoomModeWithParams } from '../types/modes'
+import { extractErrorMessage } from '../utils/errors'
+import { logger } from '../utils/logger'
 
-export type ZoneConfigSection = 'control' | 'automation';
+export type ZoneConfigSection = 'control' | 'automation'
 
 export interface ZoneConfigProps {
-  location?: string;
-  cluster?: string;
-  section?: ZoneConfigSection;
+  location?: string
+  cluster?: string
+  section?: ZoneConfigSection
 }
 
 interface RawClimatePeriod {
@@ -45,7 +57,7 @@ interface RawClimatePeriod {
 
 export function shouldPersistLegacyTimelineValues(
   modeName: string,
-  timelineBaseline: TimelineSavedBaseline | null,
+  timelineBaseline: TimelineSavedBaseline | null
 ): boolean {
   return isCanonicalConstantMode(modeName) || timelineBaseline === null
 }
@@ -54,18 +66,22 @@ const EMPTY_TIMELINE_BASELINE: TimelineSavedBaseline = {
   room: { location: '', cluster: '' },
   baseConfigRevision: '',
   periods: [],
-  photoperiod: { dayStartTime: '00:00', nightStartTime: '00:00', rampUpMinutes: 0, rampDownMinutes: 0 },
+  photoperiod: {
+    dayStartTime: '00:00',
+    nightStartTime: '00:00',
+    rampUpMinutes: 0,
+    rampDownMinutes: 0,
+  },
 }
 
-function sameSavedIdentity(
-  saved: TimelineSavedBaseline,
-  baseline: TimelineSavedBaseline,
-): boolean {
-  return saved.baseConfigRevision === baseline.baseConfigRevision
-    && saved.room.location === baseline.room.location
-    && saved.room.cluster === baseline.room.cluster
-    && (saved.modeId ?? null) === (baseline.modeId ?? null)
-    && (saved.submodeId ?? null) === (baseline.submodeId ?? null)
+function sameSavedIdentity(saved: TimelineSavedBaseline, baseline: TimelineSavedBaseline): boolean {
+  return (
+    saved.baseConfigRevision === baseline.baseConfigRevision &&
+    saved.room.location === baseline.room.location &&
+    saved.room.cluster === baseline.room.cluster &&
+    (saved.modeId ?? null) === (baseline.modeId ?? null) &&
+    (saved.submodeId ?? null) === (baseline.submodeId ?? null)
+  )
 }
 
 function baselineIdentityKey(baseline: TimelineSavedBaseline): string {
@@ -79,7 +95,7 @@ function baselineIdentityKey(baseline: TimelineSavedBaseline): string {
 }
 
 function mapPeriodsFromApi(periods: RawClimatePeriod[]): ClimatePeriod[] {
-  return periods.map((p) => ({
+  return periods.map(p => ({
     id: p.id,
     period_name: p.period_name,
     start_time: p.start_time ? p.start_time.substring(0, 5) : '00:00',
@@ -89,7 +105,7 @@ function mapPeriodsFromApi(periods: RawClimatePeriod[]): ClimatePeriod[] {
     cooling_setpoint: p.cooling_setpoint ?? null,
     vpd_setpoint: p.vpd_setpoint != null ? Math.round(p.vpd_setpoint * 100) / 100 : null,
     co2_setpoint: p.co2_setpoint ?? null,
-    details: p.details || ''
+    details: p.details || '',
   }))
 }
 
@@ -103,7 +119,7 @@ function createConstantPeriod(modeName: string): ClimatePeriod {
     cooling_setpoint: null,
     vpd_setpoint: null,
     co2_setpoint: null,
-    details: '24h constant setpoints'
+    details: '24h constant setpoints',
   }
 }
 
@@ -120,15 +136,20 @@ export default function ZoneConfig({
   cluster: propsCluster,
   section = 'control',
 }: ZoneConfigProps) {
-  const { location: locationParam, cluster: urlCluster } = useParams<{ location: string; cluster: string }>()
+  const { location: locationParam, cluster: urlCluster } = useParams<{
+    location: string
+    cluster: string
+  }>()
   const { setActions } = useControlActions()
   const lightIntensityRef = useRef<{ savePendingChanges: () => Promise<void> }>(null)
 
-  const location = propsLocation 
+  const location = propsLocation
     ? getLocationBackendName(propsLocation)
-    : (locationParam ? getLocationBackendName(locationParam) : null)
+    : locationParam
+      ? getLocationBackendName(locationParam)
+      : null
   const cluster = propsCluster ?? urlCluster ?? 'main'
-  
+
   const [roomMode, setRoomMode] = useState<RoomModeWithParams | null>(null)
   const [climatePeriods, setClimatePeriods] = useState<ClimatePeriod[]>([])
   const [timelineBaseline, setTimelineBaseline] = useState<TimelineSavedBaseline | null>(null)
@@ -137,7 +158,10 @@ export default function ZoneConfig({
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
 
-  const timelineController = useTimelineDraft({ saved: EMPTY_TIMELINE_BASELINE, publicationPort: apiClient })
+  const timelineController = useTimelineDraft({
+    saved: EMPTY_TIMELINE_BASELINE,
+    publicationPort: apiClient,
+  })
   const timelineControllerRef = useRef<TimelineDraftController | null>(null)
   timelineControllerRef.current = timelineController
   const initializedBaselineRef = useRef<string | null>(null)
@@ -156,16 +180,17 @@ export default function ZoneConfig({
     controller.confirmRoomSwitch(timelineBaseline)
   }, [baselineKey, timelineBaseline])
 
-  const timelineReady = timelineBaseline !== null
-    && timelineController.state.saved.baseConfigRevision !== ''
-    && timelineController.state.saved.room.location === (location ?? '')
-    && timelineController.state.saved.room.cluster === (cluster ?? 'main')
+  const timelineReady =
+    timelineBaseline !== null &&
+    timelineController.state.saved.baseConfigRevision !== '' &&
+    timelineController.state.saved.room.location === (location ?? '') &&
+    timelineController.state.saved.room.cluster === (cluster ?? 'main')
 
-  const { snapshot, mcpConnected } = useControlSnapshot()
+  const { snapshot, registry, mcpConnected, loading: snapshotLoading } = useControlSnapshot()
 
   const relayChannels: RelayChannelViewModel[] = useMemo(
     () => buildRelayChannelViewModels(snapshot),
-    [snapshot],
+    [snapshot]
   )
   const [nowMs, setNowMs] = useState(Date.now())
 
@@ -177,40 +202,55 @@ export default function ZoneConfig({
   // Relay menu state — consumed by RelayChannelMatrix
   const [menuOpenChannel, setMenuOpenChannel] = useState<number | null>(null)
 
-  const handleRelayMenuAction = useCallback(async (channel: number, action: 'auto' | 'timer-5m' | 'timer-10m' | 'timer-30m' | 'timer-1h' | 'off') => {
-    const vm = relayChannels.find((c) => c.channel === channel)
-    if (!vm) return
-    if (!vm.isAssigned || !vm.assignedDeviceName || !vm.location || !vm.cluster) {
-      return
-    }
-
-    const device = vm.assignedDeviceName
-    const loc = vm.location
-    const cluster = vm.cluster
-
-    setMenuOpenChannel(null)
-
-    try {
-      if (action === 'auto') {
-        await apiClient.commandDevice(loc, cluster, device, { action: 'AUTO', reason: 'Room menu AUTO' })
-      } else if (action === 'off') {
-        await apiClient.commandDevice(loc, cluster, device, { action: 'MANUAL_OFF', reason: 'Room menu OFF' })
-      } else {
-        const durationSeconds =
-          action === 'timer-5m' ? 300
-          : action === 'timer-10m' ? 600
-          : action === 'timer-30m' ? 1800
-          : 3600
-        await apiClient.commandDevice(loc, cluster, device, {
-          action: 'TIMED_ON',
-          duration_seconds: durationSeconds,
-          reason: `Room menu ON ${durationSeconds / 60}m`,
-        })
+  const handleRelayMenuAction = useCallback(
+    async (
+      channel: number,
+      action: 'auto' | 'timer-5m' | 'timer-10m' | 'timer-30m' | 'timer-1h' | 'off'
+    ) => {
+      const vm = relayChannels.find(c => c.channel === channel)
+      if (!vm) return
+      if (!vm.isAssigned || !vm.assignedDeviceName || !vm.location || !vm.cluster) {
+        return
       }
-    } catch (err) {
-      logger.error(`Relay action failed for channel ${channel}:`, err)
-    }
-  }, [relayChannels])
+
+      const device = vm.assignedDeviceName
+      const loc = vm.location
+      const cluster = vm.cluster
+
+      setMenuOpenChannel(null)
+
+      try {
+        if (action === 'auto') {
+          await apiClient.commandDevice(loc, cluster, device, {
+            action: 'AUTO',
+            reason: 'Room menu AUTO',
+          })
+        } else if (action === 'off') {
+          await apiClient.commandDevice(loc, cluster, device, {
+            action: 'MANUAL_OFF',
+            reason: 'Room menu OFF',
+          })
+        } else {
+          const durationSeconds =
+            action === 'timer-5m'
+              ? 300
+              : action === 'timer-10m'
+                ? 600
+                : action === 'timer-30m'
+                  ? 1800
+                  : 3600
+          await apiClient.commandDevice(loc, cluster, device, {
+            action: 'TIMED_ON',
+            duration_seconds: durationSeconds,
+            reason: `Room menu ON ${durationSeconds / 60}m`,
+          })
+        }
+      } catch (err) {
+        logger.error(`Relay action failed for channel ${channel}:`, err)
+      }
+    },
+    [relayChannels]
+  )
 
   const loadClimatePeriodsForMode = useCallback(
     async (mode: RoomModeWithParams) => {
@@ -248,7 +288,7 @@ export default function ZoneConfig({
         },
       })
       setTimelineBaseline(saved)
-      setClimatePeriods(saved.periods.map((period) => ({ ...period })))
+      setClimatePeriods(saved.periods.map(period => ({ ...period })))
     } catch (err) {
       logger.error('Error loading saved timeline:', err)
       setError(extractErrorMessage(err, 'Failed to load saved timeline'))
@@ -274,22 +314,28 @@ export default function ZoneConfig({
     }
   }, [location, cluster, loadClimatePeriodsForMode, loadSavedTimelineForMode])
 
-  const handleModeChange = useCallback(async (modeName: string, submodeName?: string) => {
-    if (!location || !cluster) return
-    
-    try {
-      const newMode = await apiClient.setRoomMode(location, cluster, { mode_name: modeName, submode_name: submodeName })
-      setRoomMode(newMode)
-      setTimelineBaseline(null)
-      await loadClimatePeriodsForMode(newMode)
-      await loadSavedTimelineForMode()
-      setSuccess('Mode changed')
-      setTimeout(() => setSuccess(null), 2000)
-    } catch (err) {
-      logger.error('Error changing mode:', err)
-      setError(extractErrorMessage(err, 'Failed to change mode'))
-    }
-  }, [location, cluster, loadClimatePeriodsForMode, loadSavedTimelineForMode])
+  const handleModeChange = useCallback(
+    async (modeName: string, submodeName?: string) => {
+      if (!location || !cluster) return
+
+      try {
+        const newMode = await apiClient.setRoomMode(location, cluster, {
+          mode_name: modeName,
+          submode_name: submodeName,
+        })
+        setRoomMode(newMode)
+        setTimelineBaseline(null)
+        await loadClimatePeriodsForMode(newMode)
+        await loadSavedTimelineForMode()
+        setSuccess('Mode changed')
+        setTimeout(() => setSuccess(null), 2000)
+      } catch (err) {
+        logger.error('Error changing mode:', err)
+        setError(extractErrorMessage(err, 'Failed to change mode'))
+      }
+    },
+    [location, cluster, loadClimatePeriodsForMode, loadSavedTimelineForMode]
+  )
 
   const handleSave = useCallback(async () => {
     if (!roomMode || !location || !cluster) return
@@ -330,12 +376,18 @@ export default function ZoneConfig({
         if (!controller) throw new Error('Timeline editor is not ready')
         if (isTimelineDraftDirty(controller.state)) {
           await controller.review()
-          await new Promise((resolve) => setTimeout(resolve, 0))
+          await new Promise(resolve => setTimeout(resolve, 0))
           await timelineControllerRef.current?.apply()
-          await new Promise((resolve) => setTimeout(resolve, 0))
+          await new Promise(resolve => setTimeout(resolve, 0))
           const after = timelineControllerRef.current
-          if (!after || after.state.status.kind === 'conflict' || isTimelineDraftDirty(after.state)) {
-            setError('Climate timeline save conflict: your draft is preserved — review and apply again.')
+          if (
+            !after ||
+            after.state.status.kind === 'conflict' ||
+            isTimelineDraftDirty(after.state)
+          ) {
+            setError(
+              'Climate timeline save conflict: your draft is preserved — review and apply again.'
+            )
             return
           }
           setTimelineBaseline(after.state.saved)
@@ -369,7 +421,7 @@ export default function ZoneConfig({
     if (location && cluster && section === 'control') {
       void loadRoomMode()
     }
-  }, [location, cluster, section, loadRoomMode]);
+  }, [location, cluster, section, loadRoomMode])
 
   useEffect(() => {
     if (section !== 'control') {
@@ -379,8 +431,8 @@ export default function ZoneConfig({
             ? getLocationDisplayName(location || '')
             : `${getLocationDisplayName(location || '')} - ${getClusterDisplayName(location || '', cluster)}`,
         showActions: false,
-      });
-      return () => setActions({});
+      })
+      return () => setActions({})
     }
 
     setActions({
@@ -395,9 +447,9 @@ export default function ZoneConfig({
       currentMode: roomMode,
       onSave: handleSave,
       onModeChange: handleModeChange,
-    });
+    })
 
-    return () => setActions({});
+    return () => setActions({})
   }, [
     section,
     location,
@@ -409,22 +461,27 @@ export default function ZoneConfig({
     handleSave,
     handleModeChange,
     setActions,
-  ]);
+  ])
 
   if (!location || !cluster) {
-    return <div className="text-text-default">Invalid zone</div>;
+    return <div className="text-text-default">Invalid zone</div>
   }
 
   if (section === 'automation') {
     return (
       <div className="min-h-screen bg-surface-base p-1">
-        <div className="max-w-480 mx-auto h-[calc(100vh-1rem)] flex flex-col min-h-0">
-          <div className="flex-1 min-h-0">
-            <VerticalPIDBlock location={location} cluster={cluster} />
-          </div>
+        <div className="max-w-480 mx-auto flex min-h-0 flex-col gap-2">
+          <RelayPidTimeline
+            location={location}
+            cluster={cluster}
+            registry={registry}
+            snapshot={snapshot}
+            snapshotLoading={snapshotLoading}
+          />
+          <PIDTuningPanel location={location} cluster={cluster} devices={registry} />
         </div>
       </div>
-    );
+    )
   }
 
   if (loading) {
@@ -432,21 +489,22 @@ export default function ZoneConfig({
       <div className="min-h-screen bg-surface-base flex items-center justify-center text-text-muted">
         Loading...
       </div>
-    );
+    )
   }
 
   const params = roomMode?.parameters
   const isConstant = roomMode ? isCanonicalConstantMode(roomMode.mode_name) : false
   const currentModeName = roomMode?.mode_name || 'veg'
-  const lockedPhotoperiod = currentModeName === 'flower' ? 12 : currentModeName === 'veg' ? 18 : null
+  const lockedPhotoperiod =
+    currentModeName === 'flower' ? 12 : currentModeName === 'veg' ? 18 : null
 
   return (
     <div className="min-h-screen bg-surface-base p-1">
       <div className="max-w-480 mx-auto h-[calc(100vh-1rem)] min-w-0 flex flex-col">
         {params && (
           <div className="flex-1 flex flex-col gap-1 min-h-0">
-            {roomMode && (
-              timelineBaseline && timelineReady ? (
+            {roomMode &&
+              (timelineBaseline && timelineReady ? (
                 <div className="w-full min-w-0 shrink-0 overflow-auto">
                   <TimelineEditor
                     key={`${location}-${cluster}-${timelineBaseline.baseConfigRevision}-${roomMode.mode_id ?? 'unknown'}-${roomMode.submode_id ?? 'none'}`}
@@ -458,8 +516,7 @@ export default function ZoneConfig({
                 <div className="w-full min-w-0 shrink-0 overflow-auto rounded-lg border border-status-warning-border bg-status-warning-bg/30 px-3 py-2 text-xs text-status-warning-text">
                   Timeline unavailable — editing periods in the row below.
                 </div>
-              )
-            )}
+              ))}
 
             {/* Climate Periods + Relay Matrix row (owner layout) */}
             <div className="flex gap-1">
@@ -468,13 +525,26 @@ export default function ZoneConfig({
                   <>
                     <div className="bg-surface-primary rounded-lg border border-border-subtle p-1 flex-[56] overflow-auto">
                       {timelineBaseline && timelineReady ? (
-                        <ClimatePeriodsTable {...createClimatePeriodsTableAdapter(timelineController.state, timelineController.editPeriods)} />
+                        <ClimatePeriodsTable
+                          {...createClimatePeriodsTableAdapter(
+                            timelineController.state,
+                            timelineController.editPeriods
+                          )}
+                        />
                       ) : (
-                        <ClimatePeriodsTable periods={climatePeriods} onChange={setClimatePeriods} />
+                        <ClimatePeriodsTable
+                          periods={climatePeriods}
+                          onChange={setClimatePeriods}
+                        />
                       )}
                     </div>
                     <div className="flex-[44] overflow-auto">
-                      <LightIntensity ref={lightIntensityRef} location={location} cluster={cluster} compact={true} />
+                      <LightIntensity
+                        ref={lightIntensityRef}
+                        location={location}
+                        cluster={cluster}
+                        compact={true}
+                      />
                     </div>
                   </>
                 ) : (
@@ -493,14 +563,20 @@ export default function ZoneConfig({
                   variant="compact"
                   location={location}
                   menuOpenChannel={menuOpenChannel}
-                  onToggleMenu={(ch: number) => setMenuOpenChannel(prev => prev === ch ? null : ch)}
+                  onToggleMenu={(ch: number) =>
+                    setMenuOpenChannel(prev => (prev === ch ? null : ch))
+                  }
                   onMenuAction={handleRelayMenuAction}
                 />
               </div>
             </div>
 
             <div className="flex-1 min-h-[160px]">
-              <VerticalNotesBlock location={location} cluster={cluster} currentMode={roomMode?.mode_name} />
+              <VerticalNotesBlock
+                location={location}
+                cluster={cluster}
+                currentMode={roomMode?.mode_name}
+              />
             </div>
           </div>
         )}

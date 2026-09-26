@@ -1,4 +1,7 @@
 import { z } from 'zod/v3'
+
+import { RelayTimelineResponse } from '../../relay-timeline/contracts'
+
 import { buildQuery, MonitoringClient } from './client'
 import type { MonitoringRequestContext, MonitoringRequestOptions } from './client'
 import {
@@ -15,10 +18,7 @@ export const SENSOR_RANGE_MAX_POINTS = 2000
 export const CONTROL_HISTORY_MAX_POINTS = 1000
 
 export class MonitoringApi {
-  constructor(
-    requestContext?: MonitoringRequestContext,
-    client?: MonitoringClient,
-  ) {
+  constructor(requestContext?: MonitoringRequestContext, client?: MonitoringClient) {
     this.client = client ?? new MonitoringClient(requestContext)
   }
 
@@ -29,7 +29,7 @@ export class MonitoringApi {
     start?: string,
     end?: string,
     maxPoints?: number,
-    options?: MonitoringRequestOptions,
+    options?: MonitoringRequestOptions
   ): Promise<MonitoringResponse> {
     const path = `/api/sensors/monitoring/range/${encodeURIComponent(location)}${buildQuery({
       start,
@@ -42,7 +42,7 @@ export class MonitoringApi {
   sensorLive(
     location: string,
     node: string,
-    options?: MonitoringRequestOptions,
+    options?: MonitoringRequestOptions
   ): Promise<LiveSensorValue[]> {
     const path = `/api/sensors/monitoring/live/${encodeURIComponent(location)}/${encodeURIComponent(node)}`
     return this.client.get(path, z.array(LiveSensorValue), options)
@@ -53,7 +53,7 @@ export class MonitoringApi {
     start?: string,
     end?: string,
     maxPoints?: number,
-    options?: MonitoringRequestOptions,
+    options?: MonitoringRequestOptions
   ): Promise<MonitoringResponse> {
     const path = `/api/sensors/monitoring/stats/${encodeURIComponent(location)}${buildQuery({
       start,
@@ -68,7 +68,7 @@ export class MonitoringApi {
     start?: string,
     end?: string,
     maxPoints?: number,
-    options?: MonitoringRequestOptions,
+    options?: MonitoringRequestOptions
   ): Promise<ControlMonitoringResponse> {
     const path = `/api/monitoring/control/${encodeURIComponent(location)}/history${buildQuery({
       start,
@@ -82,7 +82,7 @@ export class MonitoringApi {
     location: string,
     start?: string,
     end?: string,
-    options?: MonitoringRequestOptions,
+    options?: MonitoringRequestOptions
   ): Promise<ControlMonitoringResponse> {
     const path = `/api/monitoring/control/${encodeURIComponent(location)}/tail${buildQuery({
       start,
@@ -94,9 +94,27 @@ export class MonitoringApi {
 
   controlProjection(
     location: string,
-    options?: MonitoringRequestOptions,
+    options?: MonitoringRequestOptions
   ): Promise<ProjectionPublicationResponse> {
     const path = `/api/monitoring/control/${encodeURIComponent(location)}/projection`
     return this.client.get(path, ProjectionPublicationResponse, options)
+  }
+  relayTimeline(
+    location: string,
+    start: string,
+    end: string,
+    limit = 2_000,
+    cursor?: string | null,
+    options?: MonitoringRequestOptions
+  ): Promise<RelayTimelineResponse> {
+    const path = `/api/monitoring/control/${encodeURIComponent(location)}/relay-timeline${buildQuery(
+      {
+        start,
+        end,
+        limit: limit.toString(),
+        cursor: cursor ?? undefined,
+      }
+    )}`
+    return this.client.get(path, RelayTimelineResponse, options)
   }
 }

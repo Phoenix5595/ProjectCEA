@@ -65,11 +65,13 @@ class RelayBoardStateManager:
         redis: RelayBoardRedis | None = None,
         now: Callable[[], datetime] = lambda: datetime.now(UTC),
         event_sink: OperationalEventSink | None = None,
+        observation_callback: Callable[[tuple[bool, ...] | None, datetime], None] | None = None,
     ) -> None:
         self._mcp23017 = mcp23017
         self._redis = redis
         self._now = now
         self._event_sink = event_sink
+        self._observation_callback = observation_callback
         self._snapshot = RelayBoardSnapshot(None, None, (None,) * 16)
         self._last_persisted_channels: tuple[bool, ...] | None = None
         self._stale_since: datetime | None = None
@@ -100,10 +102,16 @@ class RelayBoardStateManager:
 
     async def sample(self, *, force_persist: bool = False) -> bool:
         """Observe GPIOA/GPIOB once each and retain the last valid state on failure."""
-        channels = await asyncio.to_thread(self._mcp23017.sample_all_channels)
+        try:
+            channels = await asyncio.to_thread(self._mcp23017.sample_all_channels)
+        except Exception:
+            self._mark_stale()
+            self._notify_observation(None, self._stale_since or self._now())
+            raise
         if channels is None:
             was_fresh = self._stale_since is None
             self._mark_stale()
+            self._notify_observation(None, self._stale_since or self._now())
             if was_fresh:
                 self._emit_observation_failure()
             logger.warning("Relay board sample failed; retaining the last successful snapshot")
@@ -111,6 +119,7 @@ class RelayBoardStateManager:
         if len(channels) != 16:
             was_fresh = self._stale_since is None
             self._mark_stale()
+            self._notify_observation(None, self._stale_since or self._now())
             if was_fresh:
                 self._emit_observation_failure()
             logger.warning(
@@ -125,6 +134,7 @@ class RelayBoardStateManager:
         previous_channels = self._snapshot.channels
         self._snapshot = RelayBoardSnapshot(channels, sampled_at, changed_at)
         self._stale_since = None
+        self._notify_observation(channels, sampled_at)
         self._emit_observation_transitions(channels, previous_channels)
         if was_stale:
             self._emit_observation_recovery()
@@ -203,6 +213,17 @@ class RelayBoardStateManager:
                 channels, self._snapshot.channels, self._snapshot.changed_at, strict=True
             )
         )
+
+    def _notify_observation(
+        self, channels: tuple[bool, ...] | None, observed_at: datetime
+    ) -> None:
+        """Offer a sample-time fact without allowing the recorder to affect control."""
+        if self._observation_callback is None:
+            return
+        try:
+            self._observation_callback(channels, observed_at)
+        except Exception as error:
+            logger.warning("Failed to offer relay observation: %s", error)
 
     def _restore_persisted_snapshot(self) -> None:
         if self._redis is None:

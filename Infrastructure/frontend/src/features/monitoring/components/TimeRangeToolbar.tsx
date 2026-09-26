@@ -11,9 +11,18 @@
  */
 import { useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
+
 import type { MonitoringRange } from '../state'
+
 import { MonitoringToolbarStatus } from './MonitoringToolbarStatus'
 export type { ToolbarMonitoring } from './TimeRangeToolbar.monitoring'
+import {
+  AbsoluteRangeFeedback,
+  AbsoluteRangeForm,
+  fixedInputError,
+  formatWallInput,
+  type FallFoldState,
+} from './TimeRangeToolbar.inputs'
 import {
   PRESETS,
   offsetLabel,
@@ -24,13 +33,6 @@ import {
   validateRange,
   type FallFoldChoice,
 } from './timeRangeToolbar.time'
-import {
-  AbsoluteRangeFeedback,
-  AbsoluteRangeForm,
-  fixedInputError,
-  formatWallInput,
-  type FallFoldState,
-} from './TimeRangeToolbar.inputs'
 
 export interface TimeRangeToolbarProps {
   range: MonitoringRange
@@ -65,7 +67,7 @@ export function TimeRangeToolbar({
   const effectiveEndInput = formatWallInput(effectiveEnd)
 
   const [selectedDuration, setSelectedDuration] = useState<number>(() =>
-    range.kind === 'live' ? range.duration : (defaultDuration ?? PRESETS[1].duration),
+    range.kind === 'live' ? range.duration : (defaultDuration ?? PRESETS[1].duration)
   )
   const [startInput, setStartInput] = useState(effectiveStartInput)
   const [endInput, setEndInput] = useState(effectiveEndInput)
@@ -78,6 +80,7 @@ export function TimeRangeToolbar({
   callbacksRef.current = { onLive, onFixedRange }
   const lastWrittenRef = useRef<string | null>(null)
   const initializedRef = useRef(false)
+  const skipNextWriteRef = useRef(false)
   const prevRangeRef = useRef(range)
 
   // Keep the selected preset duration in sync with the live range.
@@ -102,15 +105,24 @@ export function TimeRangeToolbar({
   useEffect(() => {
     const current = searchParams.toString()
     if (current === lastWrittenRef.current) return
+    lastWrittenRef.current = current
     const parsed = parseUrlRange(searchParams)
     if (parsed.kind === 'live') {
+      skipNextWriteRef.current = true
       setSelectedDuration(parsed.duration)
       callbacksRef.current.onLive(parsed.duration)
     } else if (parsed.kind === 'fixed') {
+      skipNextWriteRef.current = true
       callbacksRef.current.onFixedRange(parsed.start, parsed.end)
+    } else if (initializedRef.current) {
+      const duration = defaultDuration ?? PRESETS[1].duration
+      skipNextWriteRef.current = true
+      setSelectedDuration(duration)
+      setPaused(false)
+      callbacksRef.current.onLive(duration)
     }
     initializedRef.current = true
-  }, [searchParams])
+  }, [defaultDuration, searchParams])
 
   // Write the URL only after the initial read and when the range actually
   // changes, so the mount read is never overwritten by the default range.
@@ -118,6 +130,10 @@ export function TimeRangeToolbar({
     if (!initializedRef.current) return
     if (prevRangeRef.current === range) return
     prevRangeRef.current = range
+    if (skipNextWriteRef.current) {
+      skipNextWriteRef.current = false
+      return
+    }
     const serialized = serializeRange(range)
     const nextSearchParams = new URLSearchParams(searchParams)
     nextSearchParams.delete('range')
@@ -148,9 +164,17 @@ export function TimeRangeToolbar({
 
   function submitFixed(override?: { field: 'start' | 'end'; choice: FallFoldChoice }): void {
     const startChoice =
-      override?.field === 'start' ? override.choice : fallFold?.field === 'start' ? fallFold.choice : null
+      override?.field === 'start'
+        ? override.choice
+        : fallFold?.field === 'start'
+          ? fallFold.choice
+          : null
     const endChoice =
-      override?.field === 'end' ? override.choice : fallFold?.field === 'end' ? fallFold.choice : null
+      override?.field === 'end'
+        ? override.choice
+        : fallFold?.field === 'end'
+          ? fallFold.choice
+          : null
     const startComps = parseWallInput(startInput)
     const endComps = parseWallInput(endInput)
     if (startComps === null || endComps === null) {
@@ -208,7 +232,7 @@ export function TimeRangeToolbar({
     <div className="mon-toolbar">
       <div className="mon-toolbar__controls">
         <div className="mon-toolbar__presets" role="group" aria-label="Time range presets">
-          {PRESETS.map((p) => (
+          {PRESETS.map(p => (
             <button
               key={p.label}
               type="button"
@@ -228,13 +252,13 @@ export function TimeRangeToolbar({
           endInput={endInput}
           error={formError}
           errorId={errorId}
-          onStartChange={(value) => {
+          onStartChange={value => {
             setStartInput(value)
             setEditingRange(true)
             setError(null)
             setFallFold(null)
           }}
-          onEndChange={(value) => {
+          onEndChange={value => {
             setEndInput(value)
             setEditingRange(true)
             setError(null)
@@ -244,7 +268,10 @@ export function TimeRangeToolbar({
           applyDisabled={inputError !== null}
         />
         <div className="mon-toolbar__status">
-          <span className={`mon-status__badge mon-status__badge--${live ? 'loading' : 'normal'}`} role="status">
+          <span
+            className={`mon-status__badge mon-status__badge--${live ? 'loading' : 'normal'}`}
+            role="status"
+          >
             {paused ? 'PAUSED' : live ? 'LIVE' : 'FIXED'}
           </span>
           {live && !paused && (
@@ -283,11 +310,7 @@ export function TimeRangeToolbar({
         errorId={errorId}
         onFallFoldChoice={chooseFallFold}
       />
-      {monitoring && (
-        <MonitoringToolbarStatus
-          monitoring={monitoring}
-        />
-      )}
+      {monitoring && <MonitoringToolbarStatus monitoring={monitoring} />}
     </div>
   )
 }

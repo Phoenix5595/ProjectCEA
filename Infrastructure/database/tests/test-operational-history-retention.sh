@@ -22,6 +22,10 @@ reject_sensor_retention_targets() {
   local policy_sql
 
   policy_sql="$(<"$OPERATIONAL_RETENTION_POLICY_SQL")"
+  [[ "$policy_sql" == *"add_retention_policy('relay_observation', INTERVAL '30 days', if_not_exists => TRUE)"* ]] || {
+    fail 'relay_observation must have an idempotent thirty-day retention policy'
+    return 1
+  }
   [[ "$policy_sql" != *"add_retention_policy('measurement'"* ]] || {
     fail 'retention policy must not target measurement'
     return 1

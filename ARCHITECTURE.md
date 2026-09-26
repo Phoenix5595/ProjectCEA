@@ -113,6 +113,10 @@ Redis holds live state and streams. `sensor:raw` is the main telemetry stream; `
 
 TimescaleDB on the Pi primary holds history and configuration. It streams WAL to the Iskra standby (`iskraprojectcea`). Grafana on Iskra reads the local WAL replica; live current-value panels read Redis via `redis_sync`.
 
+The automation service also records sample-time MCP23017 state and event-time device assignments in the append-only `relay_observation` hypertable. A bounded asynchronous writer preserves observation order without blocking the control tick; stale, recovery, assignment, restart, and recording-gap boundaries remain explicit. The table starts at deployment with no physical-state backfill.
+
+`GET /api/monitoring/control/{location}/relay-timeline` serves those exact transitions and separately labels requested PID output. Coarse `automation_state` aggregates are load-only and never drive physical interval or switching calculations. The automation-page timeline is read-only; its optional 30-day retention policy is operator-activated and does not run during service startup.
+
 ## Operational Event Log
 
 Automation also publishes a bounded, global `cea:events:operational` Redis stream. It records meaningful transitions, decisions, persisted mutations, alarms, and system events for human operators. The stream is **observability-only**: no consumer may drive control, hardware, or configuration writes from it.

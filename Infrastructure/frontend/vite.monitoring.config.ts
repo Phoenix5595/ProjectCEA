@@ -51,7 +51,10 @@ const CSP =
 
 interface FixtureRoute {
   re: RegExp
-  handler: (req: { url?: string; method?: string; body?: string }, scenario: string | null) => unknown
+  handler: (
+    req: { url?: string; method?: string; body?: string },
+    scenario: string | null
+  ) => unknown
 }
 
 function roomFrom(url: string, index: number): string {
@@ -64,7 +67,7 @@ function scenarioFrom(url: string): string | null {
 }
 
 function readRequestBody(req: IncomingMessage): Promise<string> {
-  return new Promise((resolve) => {
+  return new Promise(resolve => {
     const chunks: Buffer[] = []
     req.on('data', (chunk: Buffer | string) => chunks.push(Buffer.from(chunk)))
     req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')))
@@ -133,9 +136,13 @@ type TimelineEnvelopeOptions = {
   readonly warnings?: readonly Record<string, string>[]
 }
 
-function timelineEnvelope(room: string, scope: 'saved' | 'draft', options: TimelineEnvelopeOptions = {}): unknown {
+function timelineEnvelope(
+  room: string,
+  scope: 'saved' | 'draft',
+  options: TimelineEnvelopeOptions = {}
+): unknown {
   const baseConfigRevision = options.baseConfigRevision ?? '0000009'
-  const draftRevision = scope === 'saved' ? null : options.draftRevision ?? '1'
+  const draftRevision = scope === 'saved' ? null : (options.draftRevision ?? '1')
   const window = options.window ?? {
     start: '2026-08-02T00:00:00.000Z',
     end: '2026-08-03T00:00:00.000Z',
@@ -163,8 +170,8 @@ function timelineEnvelope(room: string, scope: 'saved' | 'draft', options: Timel
           mode: '1',
           submode: null,
           period: { period_id: '17', label: 'Day cycle' },
-           config_revision: baseConfigRevision,
-           draft_revision: draftRevision,
+          config_revision: baseConfigRevision,
+          draft_revision: draftRevision,
         },
       },
       {
@@ -181,8 +188,8 @@ function timelineEnvelope(room: string, scope: 'saved' | 'draft', options: Timel
           mode: '1',
           submode: null,
           period: { period_id: '17', label: 'Day cycle' },
-           config_revision: baseConfigRevision,
-           draft_revision: draftRevision,
+          config_revision: baseConfigRevision,
+          draft_revision: draftRevision,
         },
       },
       {
@@ -198,8 +205,8 @@ function timelineEnvelope(room: string, scope: 'saved' | 'draft', options: Timel
           mode: '1',
           submode: null,
           period: { period_id: '17', label: 'Day cycle' },
-           config_revision: baseConfigRevision,
-           draft_revision: draftRevision,
+          config_revision: baseConfigRevision,
+          draft_revision: draftRevision,
         },
       },
       {
@@ -215,8 +222,8 @@ function timelineEnvelope(room: string, scope: 'saved' | 'draft', options: Timel
           mode: '1',
           submode: null,
           period: { period_id: '17', label: 'Day cycle' },
-           config_revision: baseConfigRevision,
-           draft_revision: draftRevision,
+          config_revision: baseConfigRevision,
+          draft_revision: draftRevision,
         },
       },
       {
@@ -232,8 +239,8 @@ function timelineEnvelope(room: string, scope: 'saved' | 'draft', options: Timel
           mode: '1',
           submode: null,
           period: { period_id: '17', label: 'Day cycle' },
-           config_revision: baseConfigRevision,
-           draft_revision: draftRevision,
+          config_revision: baseConfigRevision,
+          draft_revision: draftRevision,
         },
       },
       {
@@ -249,8 +256,8 @@ function timelineEnvelope(room: string, scope: 'saved' | 'draft', options: Timel
           mode: '1',
           submode: null,
           period: { period_id: '17', label: 'Day cycle' },
-           config_revision: baseConfigRevision,
-           draft_revision: draftRevision,
+          config_revision: baseConfigRevision,
+          draft_revision: draftRevision,
         },
       },
       {
@@ -266,8 +273,8 @@ function timelineEnvelope(room: string, scope: 'saved' | 'draft', options: Timel
           mode: '1',
           submode: null,
           period: { period_id: '17', label: 'Day cycle' },
-           config_revision: baseConfigRevision,
-           draft_revision: draftRevision,
+          config_revision: baseConfigRevision,
+          draft_revision: draftRevision,
         },
       },
     ],
@@ -276,8 +283,14 @@ function timelineEnvelope(room: string, scope: 'saved' | 'draft', options: Timel
   }
 }
 
-function timelineFixture(req: { url?: string; method?: string; body?: string }, scenario: string | null): unknown {
-  const room = (req.url ?? '').includes('Veg%20Room') || (req.url ?? '').includes('Veg Room') ? 'Veg Room' : 'Flower Room'
+function timelineFixture(
+  req: { url?: string; method?: string; body?: string },
+  scenario: string | null
+): unknown {
+  const room =
+    (req.url ?? '').includes('Veg%20Room') || (req.url ?? '').includes('Veg Room')
+      ? 'Veg Room'
+      : 'Flower Room'
   const periods = timelinePeriods()
   const photoperiod = {
     day_start_time: '06:00:00',
@@ -285,15 +298,18 @@ function timelineFixture(req: { url?: string; method?: string; body?: string }, 
     ramp_up_minutes: 20,
     ramp_down_minutes: 20,
   }
-  const warnings = scenario === 'calendar-transition-skipped'
-    ? [{
-        code: 'calendar.transition_skipped',
-        detail: 'Calendar destination flower/bulk was skipped',
-        reason: 'unknown_mode',
-        start: '2026-08-02T06:00:00.000Z',
-        end: '2026-08-02T12:00:00.000Z',
-      }]
-    : []
+  const warnings =
+    scenario === 'calendar-transition-skipped'
+      ? [
+          {
+            code: 'calendar.transition_skipped',
+            detail: 'Calendar destination flower/bulk was skipped',
+            reason: 'unknown_mode',
+            start: '2026-08-02T06:00:00.000Z',
+            end: '2026-08-02T12:00:00.000Z',
+          },
+        ]
+      : []
   if (req.method === 'POST' && (req.url ?? '').endsWith('/preview')) {
     const request = JSON.parse(req.body ?? '{}') as {
       request_id?: string
@@ -301,12 +317,14 @@ function timelineFixture(req: { url?: string; method?: string; body?: string }, 
       draft_revision?: number
       window?: { start: string; end: string; timezone: string }
     }
-    const previewRevision = scenario === 'timeline-preview-stale'
-      ? 'stale-config-revision'
-      : request.expected_config_revision ?? '0000009'
-    const previewDraftRevision = scenario === 'timeline-preview-stale'
-      ? String((request.draft_revision ?? 1) + 1)
-      : String(request.draft_revision ?? 1)
+    const previewRevision =
+      scenario === 'timeline-preview-stale'
+        ? 'stale-config-revision'
+        : (request.expected_config_revision ?? '0000009')
+    const previewDraftRevision =
+      scenario === 'timeline-preview-stale'
+        ? String((request.draft_revision ?? 1) + 1)
+        : String(request.draft_revision ?? 1)
     const previewRoom = scenario === 'timeline-wrong-room' ? 'Veg Room' : room
     return {
       request_id: request.request_id ?? 'fixture-request',
@@ -339,6 +357,344 @@ function timelineFixture(req: { url?: string; method?: string; body?: string }, 
     trajectory: timelineEnvelope(room, 'saved', { warnings }),
   }
 }
+const RELAY_TIMELINE_SESSION = 'b8a8be48-8ee7-4f10-9d5c-7a63f9f0a001'
+interface RelayTimelineFixtureDevice {
+  device_id: number
+  device_name: string
+  device_type: string
+  display_name: string
+  location: string
+  cluster: string
+  channel?: number
+  relay_channel?: number
+  physical_relay: number
+  pid_enabled?: boolean
+}
+
+const RELAY_TIMELINE_DEVICES: RelayTimelineFixtureDevice[] = [
+  {
+    device_id: 101,
+    device_name: 'veg_heater',
+    device_type: 'heating',
+    display_name: 'Veg Heater',
+    location: 'Veg Room',
+    cluster: 'main',
+    channel: 0,
+    physical_relay: 8,
+    pid_enabled: false,
+  },
+  {
+    device_id: 103,
+    device_name: 'veg_co2',
+    device_type: 'co2',
+    display_name: 'CO₂',
+    location: 'Veg Room',
+    cluster: 'main',
+    channel: 7,
+    physical_relay: 3,
+    pid_enabled: true,
+  },
+  {
+    device_id: 102,
+    device_name: 'veg_light',
+    device_type: 'light',
+    display_name: 'Grow Light',
+    location: 'Veg Room',
+    cluster: 'main',
+    relay_channel: 1,
+    physical_relay: 2,
+  },
+  {
+    device_id: 201,
+    device_name: 'flower_heater',
+    device_type: 'heating',
+    display_name: 'Flower Heater',
+    location: 'Flower Room',
+    cluster: 'main',
+    channel: 2,
+    physical_relay: 15,
+    pid_enabled: false,
+  },
+  {
+    device_id: 203,
+    device_name: 'flower_co2',
+    device_type: 'co2',
+    display_name: 'Flower CO₂',
+    location: 'Flower Room',
+    cluster: 'main',
+    channel: 8,
+    physical_relay: 5,
+    pid_enabled: true,
+  },
+  {
+    device_id: 202,
+    device_name: 'flower_light',
+    device_type: 'light',
+    display_name: 'Flower Light',
+    location: 'Flower Room',
+    cluster: 'main',
+    relay_channel: 3,
+    physical_relay: 4,
+  },
+]
+
+function relayTimelineObservation(
+  observationId: number,
+  at: number,
+  channel: number | null,
+  state: boolean | null,
+  reason: string,
+  device: RelayTimelineFixtureDevice | null
+): Record<string, unknown> {
+  return {
+    observation_id: observationId,
+    observed_at: new Date(at).toISOString(),
+    channel,
+    observed_state: state,
+    reason,
+    session_id: RELAY_TIMELINE_SESSION,
+    registry_version: 1,
+    device_id: device?.device_id ?? null,
+    device_name: device?.device_name ?? null,
+    device_type: device?.device_type ?? null,
+    location: device?.location ?? null,
+    cluster: device ? 'main' : null,
+  }
+}
+
+function relayTimelineFixture(req: { url?: string }, _scenario: string | null): unknown {
+  const { start, end } = parseRange(req.url ?? '')
+  const startMs = Date.parse(start)
+  const endMs = Date.parse(end)
+  const room = roomFrom(req.url ?? '', 3)
+  const roomDevices = RELAY_TIMELINE_DEVICES.filter(device => device.location === room)
+  const heating =
+    roomDevices.find(device => device.device_type === 'heating') ?? RELAY_TIMELINE_DEVICES[0]!
+  const co2 = roomDevices.find(device => device.device_type === 'co2') ?? RELAY_TIMELINE_DEVICES[1]!
+  const light =
+    roomDevices.find(device => device.device_type === 'light') ?? RELAY_TIMELINE_DEVICES[2]!
+  const heatingChannel = heating.channel ?? 0
+  const co2Channel = co2.channel ?? 7
+  const lightChannel = light.channel ?? light.relay_channel ?? 1
+  const staleAt = startMs + 18 * 60_000
+  const recoveredAt = startMs + 20 * 60_000
+  const events: Array<Record<string, unknown>> = []
+  const eventAt = (
+    offsetMs: number,
+    channel: number,
+    state: boolean | null,
+    reason: string,
+    device: RelayTimelineFixtureDevice | null
+  ): void => {
+    const at = startMs + offsetMs
+    if (at >= startMs && at < endMs)
+      events.push(relayTimelineObservation(0, at, channel, state, reason, device))
+  }
+
+  eventAt(8 * 60_000, heatingChannel, false, 'state_changed', heating)
+  eventAt(9 * 60_000, heatingChannel, true, 'state_changed', heating)
+  eventAt(18 * 60_000, heatingChannel, null, 'stale', heating)
+  eventAt(20 * 60_000, heatingChannel, false, 'recovered', heating)
+  eventAt(25 * 60_000, heatingChannel, true, 'state_changed', heating)
+  eventAt(27 * 60_000, heatingChannel, false, 'state_changed', heating)
+  eventAt(28 * 60_000, heatingChannel, true, 'state_changed', heating)
+  eventAt(10 * 60_000, co2Channel, true, 'state_changed', co2)
+  eventAt(12 * 60_000, co2Channel, false, 'state_changed', co2)
+  eventAt(6 * 60_000, lightChannel, true, 'state_changed', light)
+
+  for (let at = startMs + 15_000; at < endMs; at += 30_000) {
+    if (at >= staleAt && at < recoveredAt) continue
+    events.push(relayTimelineObservation(0, at, null, null, 'heartbeat', null))
+  }
+  events.sort((a, b) => Date.parse(String(a.observed_at)) - Date.parse(String(b.observed_at)))
+  const transitions = events.map((row, index) => ({ ...row, observation_id: 1_000 + index }))
+  const anchors = [
+    relayTimelineObservation(1, startMs - 40_000, heatingChannel, true, 'initial', heating),
+    relayTimelineObservation(2, startMs - 40_000, co2Channel, false, 'initial', co2),
+    relayTimelineObservation(3, startMs - 40_000, lightChannel, false, 'initial', light),
+    relayTimelineObservation(4, startMs - 10_000, null, null, 'heartbeat', null),
+  ]
+  const query = new URLSearchParams((req.url ?? '').split('?')[1] ?? '')
+  const cursor = query.get('cursor')
+  const cursorOffset = cursor?.startsWith('fixture:') ? Number(cursor.slice('fixture:'.length)) : 0
+  const offset = Number.isFinite(cursorOffset) && cursorOffset >= 0 ? Math.floor(cursorOffset) : 0
+  const requestedLimit = Number(query.get('limit') ?? 2_000)
+  const limit = Math.min(
+    2_000,
+    Math.max(1, Number.isFinite(requestedLimit) ? Math.floor(requestedLimit) : 2_000)
+  )
+  const page = transitions.slice(offset, offset + limit)
+  const nextOffset = offset + page.length
+  const hasMore = nextOffset < transitions.length
+  const heartbeatTimes = transitions
+    .filter(row => row.reason === 'heartbeat')
+    .map(row => Date.parse(String(row.observed_at)))
+  const latestHeartbeat = heartbeatTimes.length > 0 ? Math.max(...heartbeatTimes) : startMs - 10_000
+  const durationMs = endMs - startMs
+  const aggregated = durationMs > 60 * 60_000
+  const outputInterval = durationMs >= 24 * 60 * 60_000 ? 300 : aggregated ? 60 : 10
+  const load = [
+    {
+      device_id: heating.device_id,
+      device_name: heating.device_name,
+      timestamp: new Date(startMs + 20_000).toISOString(),
+      requested_percent: 0,
+      aggregated,
+      interval_seconds: outputInterval,
+    },
+    {
+      device_id: heating.device_id,
+      device_name: heating.device_name,
+      timestamp: new Date(startMs + 50_000).toISOString(),
+      requested_percent: 50,
+      aggregated,
+      interval_seconds: outputInterval,
+    },
+    {
+      device_id: heating.device_id,
+      device_name: heating.device_name,
+      timestamp: new Date(startMs + 80_000).toISOString(),
+      requested_percent: null,
+      aggregated,
+      interval_seconds: outputInterval,
+    },
+    {
+      device_id: heating.device_id,
+      device_name: heating.device_name,
+      timestamp: new Date(startMs + 110_000).toISOString(),
+      requested_percent: 100,
+      aggregated,
+      interval_seconds: outputInterval,
+    },
+    {
+      device_id: co2.device_id,
+      device_name: co2.device_name,
+      timestamp: new Date(startMs + 45_000).toISOString(),
+      requested_percent: 25,
+      aggregated,
+      interval_seconds: outputInterval,
+    },
+  ].filter(point => Date.parse(point.timestamp) >= startMs && Date.parse(point.timestamp) < endMs)
+  const coverageComplete = !(startMs < recoveredAt && endMs > staleAt)
+
+  return {
+    range: { start, end },
+    transitions: page,
+    anchors: offset === 0 ? anchors : [],
+    load: offset === 0 ? load : [],
+    coverage_complete: coverageComplete,
+    last_heartbeat_at: new Date(latestHeartbeat).toISOString(),
+    watermark: 1_000_000,
+    has_more: hasMore,
+    next_cursor: hasMore ? `fixture:${nextOffset}` : null,
+  }
+}
+
+function relayTimelineRegistryFixture(): unknown {
+  return RELAY_TIMELINE_DEVICES.map(device => ({
+    ...device,
+    inherited_schedule_count: 0,
+    interlock_with: [],
+    pid_setpoints: {},
+  }))
+}
+
+function relayTimelineSnapshotFixture(): unknown {
+  const assignmentsByChannel = new Map<number, RelayTimelineFixtureDevice>()
+  for (const device of RELAY_TIMELINE_DEVICES) {
+    const channel = device.channel ?? device.relay_channel
+    if (channel !== undefined) assignmentsByChannel.set(channel, device)
+  }
+  const sampledAt = new Date().toISOString()
+  return {
+    generated_at: sampledAt,
+    sampled_at: sampledAt,
+    freshness: 'FRESH',
+    registry_version: 1,
+    stale_since: null,
+    dfr_boards: [],
+    relays: Array.from({ length: 16 }, (_, channel) => {
+      const device = assignmentsByChannel.get(channel)
+      return {
+        alarm: null,
+        assignment: device
+          ? {
+              device_id: device.device_id,
+              device_name: device.device_name,
+              device_type: device.device_type,
+              display_name: device.display_name,
+              location: device.location,
+              cluster: device.cluster,
+              inherited_schedule_count: 0,
+              inherited_schedule_summary: null,
+            }
+          : null,
+        changed_at: sampledAt,
+        channel,
+        command_expires_at: null,
+        command_mode: 'scheduled',
+        desired_state: null,
+        last_command_succeeded: null,
+        observed_state: device?.device_type === 'heating',
+        physical_relay: device?.physical_relay ?? channel + 1,
+        pin_label: `GPA${channel}`,
+        prior_command_mode: null,
+        recovery_pending: false,
+        stale: false,
+        syncing: false,
+      }
+    }),
+    hardware_alarms: [],
+  }
+}
+
+function relayTimelinePidFixture(req: { url?: string; method?: string; body?: string }): unknown {
+  const pathParts = (req.url ?? '').split('?')[0].split('/').map(decodeURIComponent)
+  const deviceType =
+    pathParts[pathParts.length - (pathParts[pathParts.length - 1] === 'history' ? 2 : 1)] ??
+    'heating'
+  const location = pathParts[4] ?? 'Veg Room'
+  const cluster = pathParts[5] ?? 'main'
+  const bodyValue: unknown = req.method === 'POST' && req.body ? JSON.parse(req.body) : {}
+  const body =
+    typeof bodyValue === 'object' && bodyValue !== null
+      ? (bodyValue as Record<string, unknown>)
+      : {}
+  if (pathParts[pathParts.length - 1] === 'history') {
+    return [
+      {
+        location,
+        cluster,
+        device_type: deviceType,
+        changed_at: '2026-09-25T12:00:00.000Z',
+        kp: 1.4,
+        ki: 0.25,
+        kd: 0.08,
+        binary_hysteresis: 0.1,
+        source: 'fixture',
+        updated_by: 'fixture operator',
+      },
+    ]
+  }
+  if ((req.url ?? '').includes('/api/pid/mode/')) {
+    return {
+      device_type: deviceType,
+      mode: typeof body.mode === 'string' ? body.mode : 'pid',
+      hysteresis_high: typeof body.hysteresis_high === 'number' ? body.hysteresis_high : 0.8,
+      hysteresis_low: typeof body.hysteresis_low === 'number' ? body.hysteresis_low : 0.2,
+      autotune_active: false,
+      updated_at: '2026-09-25T12:00:00.000Z',
+    }
+  }
+  return {
+    kp: typeof body.kp === 'number' ? body.kp : 1.4,
+    ki: typeof body.ki === 'number' ? body.ki : 0.25,
+    kd: typeof body.kd === 'number' ? body.kd : 0.08,
+    binary_hysteresis: 0.1,
+    source: typeof body.source === 'string' ? body.source : 'fixture',
+    updated_by: typeof body.updated_by === 'string' ? body.updated_by : 'fixture operator',
+  }
+}
 
 const FIXTURE_ROUTES: FixtureRoute[] = [
   {
@@ -365,6 +721,10 @@ const FIXTURE_ROUTES: FixtureRoute[] = [
     },
   },
   {
+    re: /^\/api\/monitoring\/control\/([^/]+)\/relay-timeline$/,
+    handler: (req, scenario) => relayTimelineFixture(req, scenario),
+  },
+  {
     re: /^\/api\/monitoring\/control\/([^/]+)\/projection$/,
     handler: (req, scenario) => {
       const start = new Date().toISOString()
@@ -388,6 +748,18 @@ const FIXTURE_ROUTES: FixtureRoute[] = [
     },
   },
   {
+    re: /^\/api\/pid\/parameters\/[^/]+\/[^/]+\/[^/]+\/history$/,
+    handler: req => relayTimelinePidFixture(req),
+  },
+  {
+    re: /^\/api\/pid\/parameters\/[^/]+\/[^/]+\/[^/]+$/,
+    handler: req => relayTimelinePidFixture(req),
+  },
+  {
+    re: /^\/api\/pid\/mode\/[^/]+\/[^/]+\/[^/]+$/,
+    handler: req => relayTimelinePidFixture(req),
+  },
+  {
     re: /^\/grafana\//,
     handler: () => grafanaPlaceholder(),
   },
@@ -397,16 +769,22 @@ const FIXTURE_ROUTES: FixtureRoute[] = [
   },
   {
     re: /^\/api\/calendar\/mode-schedule\//,
-    handler: () => ({ expected: { mode_name: 'flower', submode_name: null, title: 'Flowering' }, active: { mode_name: 'flower', submode_name: null } }),
+    handler: () => ({
+      expected: { mode_name: 'flower', submode_name: null, title: 'Flowering' },
+      active: { mode_name: 'flower', submode_name: null },
+    }),
   },
   {
     re: /^\/api\/room-modes\/room\/[^/]+\/[^/]+$/,
     handler: (req, scenario) => ({
       location: (req.url ?? '').includes('Veg%20Room') ? 'Veg Room' : 'Flower Room',
       cluster: 'main',
-      mode_name: scenario === 'sleep-scheduled-flag'
-        ? 'sleep'
-        : (req.url ?? '').includes('Veg%20Room') ? 'veg' : 'flower',
+      mode_name:
+        scenario === 'sleep-scheduled-flag'
+          ? 'sleep'
+          : (req.url ?? '').includes('Veg%20Room')
+            ? 'veg'
+            : 'flower',
       mode_id: 1,
       submode_id: null,
       is_constant: scenario === 'veg-constant-flag',
@@ -449,15 +827,43 @@ const FIXTURE_ROUTES: FixtureRoute[] = [
   {
     re: /^\/api\/devices$/,
     handler: () => [
-      { location: 'Flower Room', cluster: 'main', device_name: 'exhaust-fan', state: 1, mode: 'auto', channel: 1 },
-      { location: 'Flower Room', cluster: 'main', device_name: 'circulation-fan', state: 1, mode: 'auto', channel: 2 },
-      { location: 'Veg Room', cluster: 'main', device_name: 'circulation-fan', state: 1, mode: 'auto', channel: 3 },
-      { location: 'Lab', cluster: 'main', device_name: 'heater-1', state: 0, mode: 'auto', channel: 4 },
+      {
+        location: 'Flower Room',
+        cluster: 'main',
+        device_name: 'exhaust-fan',
+        state: 1,
+        mode: 'auto',
+        channel: 1,
+      },
+      {
+        location: 'Flower Room',
+        cluster: 'main',
+        device_name: 'circulation-fan',
+        state: 1,
+        mode: 'auto',
+        channel: 2,
+      },
+      {
+        location: 'Veg Room',
+        cluster: 'main',
+        device_name: 'circulation-fan',
+        state: 1,
+        mode: 'auto',
+        channel: 3,
+      },
+      {
+        location: 'Lab',
+        cluster: 'main',
+        device_name: 'heater-1',
+        state: 0,
+        mode: 'auto',
+        channel: 4,
+      },
     ],
   },
   {
     re: /^\/api\/devices\/([^/]+)\/([^/]+)$/,
-    handler: (req) => {
+    handler: req => {
       const location = decodeURIComponent(roomFrom(req.url ?? '', 2))
       const cluster = decodeURIComponent(roomFrom(req.url ?? '', 3))
       return {
@@ -484,7 +890,7 @@ const FIXTURE_ROUTES: FixtureRoute[] = [
   },
   {
     re: /^\/api\/sensors\/([^/]+)\/([^/]+)\/live$/,
-    handler: (_req) => {
+    handler: _req => {
       const now = new Date().toISOString()
       return {
         temperature: {
@@ -513,9 +919,19 @@ const FIXTURE_ROUTES: FixtureRoute[] = [
   {
     re: /^\/api\/sensors\/live\/all$/,
     handler: () => [
-      { sensor: 'Flower Room_main_temperature', value: 24.5, time: new Date().toISOString(), unit: '°C' },
+      {
+        sensor: 'Flower Room_main_temperature',
+        value: 24.5,
+        time: new Date().toISOString(),
+        unit: '°C',
+      },
       { sensor: 'Flower Room_main_humidity', value: 65, time: new Date().toISOString(), unit: '%' },
-      { sensor: 'Veg Room_main_temperature', value: 23.8, time: new Date().toISOString(), unit: '°C' },
+      {
+        sensor: 'Veg Room_main_temperature',
+        value: 23.8,
+        time: new Date().toISOString(),
+        unit: '°C',
+      },
       { sensor: 'Veg Room_main_humidity', value: 68, time: new Date().toISOString(), unit: '%' },
       { sensor: 'Lab_main_temperature', value: 22.1, time: new Date().toISOString(), unit: '°C' },
       { sensor: 'Lab_main_humidity', value: 55, time: new Date().toISOString(), unit: '%' },
@@ -528,13 +944,13 @@ const FIXTURE_ROUTES: FixtureRoute[] = [
       'Flower Room_main_humidity': 65,
       'Veg Room_main_temperature': 23.8,
       'Veg Room_main_humidity': 68,
-      'Lab_main_temperature': 22.1,
-      'Lab_main_humidity': 55,
+      Lab_main_temperature: 22.1,
+      Lab_main_humidity: 55,
     }),
   },
   {
     re: /^\/api\/status$/,
-    handler: (req) => {
+    handler: req => {
       const url = req.url ?? ''
       const isHealth = url.includes('health=true')
       if (isHealth) {
@@ -567,36 +983,40 @@ const FIXTURE_ROUTES: FixtureRoute[] = [
   },
   {
     re: /^\/api\/devices\/control-snapshot$/,
-    handler: () => ({
-      generated_at: new Date().toISOString(),
-      sampled_at: new Date().toISOString(),
-      freshness: 'FRESH',
-      registry_version: 1,
-      stale_since: null,
-      dfr_boards: [],
-      relays: Array.from({ length: 16 }, (_, channel) => ({
-        alarm: null,
-        assignment: null,
-        changed_at: null,
-        channel,
-        command_expires_at: null,
-        command_mode: 'scheduled',
-        desired_state: null,
-        last_command_succeeded: null,
-        observed_state: false,
-        physical_relay: channel + 1,
-        pin_label: `GPA${channel}`,
-        prior_command_mode: null,
-        recovery_pending: false,
-        stale: false,
-        syncing: false,
-      })),
-      hardware_alarms: [],
-    }),
+    handler: (_req, scenario) =>
+      scenario === 'relay-pid-timeline'
+        ? relayTimelineSnapshotFixture()
+        : {
+            generated_at: new Date().toISOString(),
+            sampled_at: new Date().toISOString(),
+            freshness: 'FRESH',
+            registry_version: 1,
+            stale_since: null,
+            dfr_boards: [],
+            relays: Array.from({ length: 16 }, (_, channel) => ({
+              alarm: null,
+              assignment: null,
+              changed_at: null,
+              channel,
+              command_expires_at: null,
+              command_mode: 'scheduled',
+              desired_state: null,
+              last_command_succeeded: null,
+              observed_state: false,
+              physical_relay: channel + 1,
+              pin_label: `GPA${channel}`,
+              prior_command_mode: null,
+              recovery_pending: false,
+              stale: false,
+              syncing: false,
+            })),
+            hardware_alarms: [],
+          },
   },
   {
     re: /^\/api\/devices\/registry$/,
-    handler: () => [],
+    handler: (_req, scenario) =>
+      scenario === 'relay-pid-timeline' ? relayTimelineRegistryFixture() : [],
   },
 ]
 
@@ -644,13 +1064,15 @@ function monitoringPreviewPlugin(): Plugin {
         log(`REQUEST ${req.method} ${req.url}`)
         res.setHeader('Content-Security-Policy', CSP)
         const pathname = (req.url ?? '/').split('?')[0]
-        const requestBody = req.method === 'POST' && /^\/api\/climate-timeline\//.test(pathname)
-          ? await readRequestBody(req)
-          : undefined
+        const isFixturePost =
+          req.method === 'POST' &&
+          (/^\/api\/climate-timeline\//.test(pathname) ||
+            /^\/api\/pid\/(?:parameters|mode)\//.test(pathname))
+        const requestBody = isFixturePost ? await readRequestBody(req) : undefined
         const scenario = scenarioFrom(req.url ?? '') ?? scenarioFrom(req.headers.referer ?? '')
-        const fixtureSession = new URLSearchParams((req.url ?? '').split('?')[1] ?? '').get(
-          'fixtureSession',
-        ) ?? MISSING_FIXTURE_SESSION
+        const fixtureSession =
+          new URLSearchParams((req.url ?? '').split('?')[1] ?? '').get('fixtureSession') ??
+          MISSING_FIXTURE_SESSION
         const counterKey = (name: string): string => `${name}:${fixtureSession}:${pathname}`
 
         if (scenario === 'backend-down' && isSensorPath(pathname)) {
@@ -675,25 +1097,48 @@ function monitoringPreviewPlugin(): Plugin {
             return
           }
         }
-        if (scenario === 'timeline-api-failure' && req.method === 'GET' && /^\/api\/climate-timeline\//.test(pathname)) {
+        if (
+          scenario === 'timeline-api-failure' &&
+          req.method === 'GET' &&
+          /^\/api\/climate-timeline\//.test(pathname)
+        ) {
           res.statusCode = 503
           res.setHeader('Content-Type', 'application/json')
           res.end(JSON.stringify({ detail: 'saved timeline unavailable (fixture)' }))
           return
         }
-        if (scenario === 'timeline-unavailable-409' && req.method === 'GET' && /^\/api\/climate-timeline\//.test(pathname)) {
+        if (
+          scenario === 'timeline-unavailable-409' &&
+          req.method === 'GET' &&
+          /^\/api\/climate-timeline\//.test(pathname)
+        ) {
           res.statusCode = 409
           res.setHeader('Content-Type', 'application/json')
-          res.end(JSON.stringify({ detail: { code: 'timeline_unavailable', detail: 'saved timeline unavailable (fixture)' } }))
+          res.end(
+            JSON.stringify({
+              detail: {
+                code: 'timeline_unavailable',
+                detail: 'saved timeline unavailable (fixture)',
+              },
+            })
+          )
           return
         }
-        if (scenario === 'timeline-preview-failed' && req.method === 'POST' && pathname.endsWith('/preview')) {
+        if (
+          scenario === 'timeline-preview-failed' &&
+          req.method === 'POST' &&
+          pathname.endsWith('/preview')
+        ) {
           res.statusCode = 503
           res.setHeader('Content-Type', 'application/json')
           res.end(JSON.stringify({ detail: 'preview unavailable (fixture)' }))
           return
         }
-        if (scenario === 'timeline-apply-conflict' && req.method === 'POST' && pathname.endsWith('/apply')) {
+        if (
+          scenario === 'timeline-apply-conflict' &&
+          req.method === 'POST' &&
+          pathname.endsWith('/apply')
+        ) {
           res.statusCode = 409
           res.setHeader('Content-Type', 'application/json')
           res.end(JSON.stringify({ detail: 'saved revision changed (fixture)' }))
@@ -736,7 +1181,10 @@ function monitoringPreviewPlugin(): Plugin {
             }
           }
         }
-        if (scenario === 'range-503-after-good' && /^\/api\/sensors\/monitoring\/range\//.test(pathname)) {
+        if (
+          scenario === 'range-503-after-good' &&
+          /^\/api\/sensors\/monitoring\/range\//.test(pathname)
+        ) {
           const key = counterKey('range-503-after-good')
           const count = scenarioCounters.get(key) ?? 0
           scenarioCounters.set(key, count + 1)
@@ -747,7 +1195,10 @@ function monitoringPreviewPlugin(): Plugin {
             return
           }
         }
-        if (scenario === 'malformed-sensor' && /^\/api\/sensors\/monitoring\/range\//.test(pathname)) {
+        if (
+          scenario === 'malformed-sensor' &&
+          /^\/api\/sensors\/monitoring\/range\//.test(pathname)
+        ) {
           const key = counterKey('malformed-sensor')
           const count = scenarioCounters.get(key) ?? 0
           scenarioCounters.set(key, count + 1)
@@ -781,7 +1232,7 @@ function monitoringPreviewPlugin(): Plugin {
                   },
                 ],
                 statistics: [],
-              }),
+              })
             )
             return
           }
@@ -804,7 +1255,12 @@ function monitoringPreviewPlugin(): Plugin {
           if (scenario === 'cursor-trimmed-409') {
             res.statusCode = 409
             res.setHeader('Content-Type', 'application/json')
-            res.end(JSON.stringify({ earliest_cursor: `${Date.now() - 60000}-0`, latest_cursor: `${Date.now()}-999` }))
+            res.end(
+              JSON.stringify({
+                earliest_cursor: `${Date.now() - 60000}-0`,
+                latest_cursor: `${Date.now()}-999`,
+              })
+            )
             return
           }
         }
@@ -849,7 +1305,11 @@ function monitoringPreviewPlugin(): Plugin {
               burstEvents.push({
                 ...base,
                 redis_id: `${Date.now() + i}-${1000 + i}`,
-                event: { ...base.event, event_id: base.event.event_id + `-burst-${i}`, occurred_at: new Date(Date.now() + i * 100).toISOString() },
+                event: {
+                  ...base.event,
+                  event_id: base.event.event_id + `-burst-${i}`,
+                  occurred_at: new Date(Date.now() + i * 100).toISOString(),
+                },
               })
             }
             eventsToSend = burstEvents
@@ -862,7 +1322,11 @@ function monitoringPreviewPlugin(): Plugin {
               // Send final cursor and keep alive briefly
               res.write(sseCursorFrame(`${Date.now()}-9999`))
               setTimeout(() => {
-                try { res.end() } catch { /* client may have disconnected */ }
+                try {
+                  res.end()
+                } catch {
+                  /* client may have disconnected */
+                }
               }, 500)
               return
             }
@@ -876,9 +1340,11 @@ function monitoringPreviewPlugin(): Plugin {
         }
 
         for (const route of FIXTURE_ROUTES) {
-      if (route.re.test(pathname)) {
+          if (route.re.test(pathname)) {
             res.setHeader('Content-Type', 'application/json')
-            const body = JSON.stringify(route.handler({ url: req.url, method: req.method, body: requestBody }, scenario))
+            const body = JSON.stringify(
+              route.handler({ url: req.url, method: req.method, body: requestBody }, scenario)
+            )
             if (scenario === 'delayed-control-recovery' && pathname.endsWith('/tail')) {
               const key = counterKey('delayed-control-tail')
               const count = scenarioCounters.get(key) ?? 0
@@ -935,7 +1401,7 @@ function monitoringPreviewPlugin(): Plugin {
           'HTTP/1.1 101 Switching Protocols\r\n' +
             'Upgrade: websocket\r\n' +
             'Connection: Upgrade\r\n' +
-            `Sec-WebSocket-Accept: ${wsAccept(key)}\r\n\r\n`,
+            `Sec-WebSocket-Accept: ${wsAccept(key)}\r\n\r\n`
         )
         socket.write(encodeTextFrame(Buffer.from(JSON.stringify(wsFixtureMessage()))))
         setTimeout(() => socket.end(), 1000)

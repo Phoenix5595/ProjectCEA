@@ -1,12 +1,13 @@
-import { forwardRef } from 'react'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { forwardRef } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import ZoneConfig from '../ZoneConfig'
+
+import { RichTrajectoryEnvelope } from '../../features/climate-timeline/api/contracts'
 import {
   TimelineConflictError,
   TimelineUnavailableError,
 } from '../../features/climate-timeline/api/timelinePublicationPort'
-import { RichTrajectoryEnvelope } from '../../features/climate-timeline/api/contracts'
+import ZoneConfig from '../ZoneConfig'
 
 const mocks = vi.hoisted(() => ({
   apiClient: {
@@ -28,10 +29,12 @@ vi.mock('../../contexts/ControlActionsContext', () => ({
   useControlActions: () => ({ setActions: mocks.setActions }),
 }))
 vi.mock('../../hooks/useControlSnapshot', () => ({
-  useControlSnapshot: () => ({ snapshot: null, mcpConnected: false }),
+  useControlSnapshot: () => ({ snapshot: null, registry: [], mcpConnected: false, loading: false }),
 }))
 vi.mock('../../components/LightIntensity', () => ({
-  default: forwardRef(() => <div data-testid="light-intensity" />),
+  default: forwardRef(function MockLightIntensity() {
+    return <div data-testid="light-intensity" />
+  }),
 }))
 vi.mock('../../components/ClimatePeriodTimeline', () => ({
   default: ({ className }: { className?: string }) => (
@@ -41,8 +44,11 @@ vi.mock('../../components/ClimatePeriodTimeline', () => ({
 vi.mock('../../components/ManualLightControl', () => ({
   default: () => <div data-testid="manual-light-control" />,
 }))
-vi.mock('../../components/VerticalPIDBlock', () => ({
-  default: () => <div data-testid="pid-block" />,
+vi.mock('../../features/relay-timeline/RelayPidTimeline', () => ({
+  RelayPidTimeline: () => <div data-testid="relay-pid-timeline" />,
+}))
+vi.mock('../../components/PIDTuningPanel', () => ({
+  default: () => <div data-testid="pid-tuning-panel" />,
 }))
 vi.mock('../../components/VerticalNotesBlock', () => ({
   default: () => <div data-testid="notes-block" />,
@@ -100,38 +106,41 @@ const saved = {
   },
 }
 
-const draftEnvelope = (draftRevision: number) => RichTrajectoryEnvelope.parse({
-  contract_version: 1,
-  room: 'Veg Room',
-  generated_at: '2026-01-01T00:00:00.000Z',
-  window: {
-    start: '2026-01-01T00:00:00.000Z',
-    end: '2026-01-02T00:00:00.000Z',
-    timezone: 'America/Toronto',
-  },
-  revision_scope: 'draft',
-  base_config_revision: 'config-1',
-  draft_revision: `draft-${draftRevision}`,
-  segments: [{
-    shape: 'step',
-    value: 22,
-    start: '2026-01-01T00:00:00.000Z',
-    end: '2026-01-02T00:00:00.000Z',
-    metric: 'temperature',
-    unit: 'celsius',
-    trajectory_kind: 'scheduled',
-    quality: 'exact',
-    source: {
-      mode: 'veg',
-      submode: null,
-      period: { period_id: 'day', label: 'Day cycle' },
-      config_revision: 'config-1',
-      draft_revision: `draft-${draftRevision}`,
+const draftEnvelope = (draftRevision: number) =>
+  RichTrajectoryEnvelope.parse({
+    contract_version: 1,
+    room: 'Veg Room',
+    generated_at: '2026-01-01T00:00:00.000Z',
+    window: {
+      start: '2026-01-01T00:00:00.000Z',
+      end: '2026-01-02T00:00:00.000Z',
+      timezone: 'America/Toronto',
     },
-  }],
-  assumptions: [],
-  warnings: [],
-})
+    revision_scope: 'draft',
+    base_config_revision: 'config-1',
+    draft_revision: `draft-${draftRevision}`,
+    segments: [
+      {
+        shape: 'step',
+        value: 22,
+        start: '2026-01-01T00:00:00.000Z',
+        end: '2026-01-02T00:00:00.000Z',
+        metric: 'temperature',
+        unit: 'celsius',
+        trajectory_kind: 'scheduled',
+        quality: 'exact',
+        source: {
+          mode: 'veg',
+          submode: null,
+          period: { period_id: 'day', label: 'Day cycle' },
+          config_revision: 'config-1',
+          draft_revision: `draft-${draftRevision}`,
+        },
+      },
+    ],
+    assumptions: [],
+    warnings: [],
+  })
 
 describe('ZoneConfig timeline classification integration', () => {
   beforeEach(() => {
@@ -139,16 +148,26 @@ describe('ZoneConfig timeline classification integration', () => {
     mocks.apiClient.getClimatePeriods.mockResolvedValue(periods)
     mocks.apiClient.getSaved.mockResolvedValue(saved)
     mocks.apiClient.updateRoomParameters.mockImplementation(async () => mode('veg', true))
-    mocks.apiClient.preview.mockImplementation(async (request: { draftRevision: number }) => draftEnvelope(request.draftRevision))
-    mocks.apiClient.apply.mockImplementation(async (request: {
-      room: { location: string; cluster: string }
-      values: { periods: typeof periods; photoperiod: unknown }
-    }) => ({
-      room: request.room,
-      baseConfigRevision: 'config-2',
-      periods: request.values.periods,
-      photoperiod: request.values.photoperiod,
-    }))
+    mocks.apiClient.preview.mockImplementation(async (request: { draftRevision: number }) =>
+      draftEnvelope(request.draftRevision)
+    )
+    mocks.apiClient.apply.mockImplementation(
+      async (request: {
+        room: { location: string; cluster: string }
+        values: { periods: typeof periods; photoperiod: unknown }
+      }) => ({
+        room: request.room,
+        baseConfigRevision: 'config-2',
+        periods: request.values.periods,
+        photoperiod: request.values.photoperiod,
+      })
+    )
+  })
+  it('mounts the relay timeline and PID tuning panel on the automation section', () => {
+    render(<ZoneConfig location="Veg Room" cluster="main" section="automation" />)
+
+    expect(screen.getByTestId('relay-pid-timeline')).toBeInTheDocument()
+    expect(screen.getByTestId('pid-tuning-panel')).toBeInTheDocument()
   })
 
   it('renders the saved timeline editor despite is_constant=true', async () => {
@@ -159,12 +178,16 @@ describe('ZoneConfig timeline classification integration', () => {
     const rendered = render(<ZoneConfig location="Veg Room" cluster="main" />)
 
     // Then: canonical Veg behavior uses the saved timeline editor path.
-    expect(await screen.findByRole('region', { name: 'Climate control timeline' })).toBeInTheDocument()
+    expect(
+      await screen.findByRole('region', { name: 'Climate control timeline' })
+    ).toBeInTheDocument()
     expect(screen.getByText('READ ONLY')).toBeInTheDocument()
     expect(await screen.findByRole('table')).toBeInTheDocument()
     expect(screen.getByTestId('light-intensity')).toBeInTheDocument()
     expect(screen.getByTestId('relay-matrix')).toBeInTheDocument()
-    expect(rendered.container.querySelector('[data-testid="legacy-climate-period-timeline"]')).not.toBeInTheDocument()
+    expect(
+      rendered.container.querySelector('[data-testid="legacy-climate-period-timeline"]')
+    ).not.toBeInTheDocument()
     expect(mocks.apiClient.getSaved).toHaveBeenCalledOnce()
   })
 
@@ -177,7 +200,9 @@ describe('ZoneConfig timeline classification integration', () => {
     render(<ZoneConfig location="Veg Room" cluster="main" />)
 
     // Then: the saved timeline still loads and renders for the 24h constant mode.
-    expect(await screen.findByRole('region', { name: 'Climate control timeline' })).toBeInTheDocument()
+    expect(
+      await screen.findByRole('region', { name: 'Climate control timeline' })
+    ).toBeInTheDocument()
     expect(screen.getByText('READ ONLY')).toBeInTheDocument()
     expect(mocks.apiClient.getSaved).toHaveBeenCalledOnce()
     expect(screen.queryByText('Constant mode - no timeline')).not.toBeInTheDocument()
@@ -286,7 +311,9 @@ describe('ZoneConfig timeline classification integration', () => {
 
     // Then: the legacy periods endpoint carries the edit without any preview/apply traffic.
     expect(mocks.apiClient.saveClimatePeriods).toHaveBeenCalledOnce()
-    const savedPeriods = mocks.apiClient.saveClimatePeriods.mock.calls[0]?.[2] as Array<{ heating_setpoint: number | null }>
+    const savedPeriods = mocks.apiClient.saveClimatePeriods.mock.calls[0]?.[2] as Array<{
+      heating_setpoint: number | null
+    }>
     expect(savedPeriods[0]?.heating_setpoint).toBe(23.5)
     expect(mocks.apiClient.preview).not.toHaveBeenCalled()
     expect(mocks.apiClient.apply).not.toHaveBeenCalled()
