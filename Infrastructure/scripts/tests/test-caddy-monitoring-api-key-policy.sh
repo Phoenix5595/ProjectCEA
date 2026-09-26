@@ -132,6 +132,7 @@ request_selected GET '/api/sensors/monitoring/live/Future-Room/back'
 request_selected GET '/api/monitoring/control/Future-Room/history'
 request_selected GET '/api/monitoring/control/Future-Room/current'
 request_selected GET '/api/monitoring/control/Future-Room/projection'
+request_selected GET '/api/monitoring/control/Future-Room/relay-timeline'
 
 # When: path, encoding, and method boundaries are crossed.
 readonly ENCODED_SLASH_STATUS="$(request GET '/api/sensors/monitoring/range/Future%2FRoom')"
@@ -139,9 +140,10 @@ readonly DOUBLE_ENCODED_SLASH_STATUS="$(request GET '/api/sensors/monitoring/ran
 readonly SUFFIX_STATUS="$(request GET '/api/sensors/monitoring/range/Future-Room/extra')"
 readonly SENSOR_POST_STATUS="$(request POST '/api/sensors/monitoring/range/Future-Room')"
 readonly CONTROL_PUT_STATUS="$(request PUT '/api/monitoring/control/Future-Room/current')"
+readonly CONTROL_TIMELINE_POST_STATUS="$(request POST '/api/monitoring/control/Future-Room/relay-timeline')"
 readonly ARBITRARY_PATH_STATUS="$(request GET '/api/controls/open')"
 
-for status in "$ENCODED_SLASH_STATUS" "$DOUBLE_ENCODED_SLASH_STATUS" "$SUFFIX_STATUS" "$SENSOR_POST_STATUS" "$CONTROL_PUT_STATUS" "$ARBITRARY_PATH_STATUS"; do
+for status in "$ENCODED_SLASH_STATUS" "$DOUBLE_ENCODED_SLASH_STATUS" "$SUFFIX_STATUS" "$SENSOR_POST_STATUS" "$CONTROL_PUT_STATUS" "$CONTROL_TIMELINE_POST_STATUS" "$ARBITRARY_PATH_STATUS"; do
   [[ "$status" == "200" ]] || {
     printf 'dummy upstream request did not complete: HTTP %s\n' "$status" >&2
     exit 1
@@ -158,10 +160,10 @@ from pathlib import Path
 
 records = [json.loads(line) for line in Path(sys.argv[1]).read_text(encoding="utf-8").splitlines()]
 expected_key = sys.argv[2]
-selected = records[:7]
-unselected = records[7:]
+selected = records[:8]
+unselected = records[8:]
 
-if len(selected) != 7 or len(unselected) != 6:
+if len(selected) != 8 or len(unselected) != 7:
     raise SystemExit(f"unexpected upstream request count: {len(records)}")
 if any(record["api_keys"] != [expected_key] for record in selected):
     raise SystemExit(f"approved monitoring request did not receive exactly one injected key: {selected}")
