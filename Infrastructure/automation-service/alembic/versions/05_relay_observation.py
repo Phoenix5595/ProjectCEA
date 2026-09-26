@@ -1,7 +1,7 @@
 """Persist sample-time physical relay and assignment observations.
 
 Revision ID: 05_relay_observation
-Revises: 04fbbb9b5ba4
+Revises: 008_device_registry
 Create Date: 2026-09-25
 """
 
@@ -10,7 +10,8 @@ from collections.abc import Sequence
 from alembic import op
 
 revision: str = "05_relay_observation"
-down_revision: str | Sequence[str] | None = "04fbbb9b5ba4"
+down_revision: str | Sequence[str] | None = "008_device_registry"
+# Keep this additive table off the pending legacy schedule/name migration branch.
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
