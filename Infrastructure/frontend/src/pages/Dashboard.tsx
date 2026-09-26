@@ -11,9 +11,10 @@ import {
   DashboardAlarmSummary,
 } from '../components/dashboard/DashboardAlarmSummary'
 import {
+  deriveClusterSensorStatus,
   deriveRoomControlContext,
   deriveRoomDecisionSummary,
-  deriveRoomSensorStatus,
+  type RoomSensorStatus,
 } from '../components/dashboard/dashboardStatus'
 import { useCalendarEvents } from '../hooks/useCalendarEvents'
 import { useActiveAlarms } from '../hooks/useActiveAlarms'
@@ -90,30 +91,46 @@ export default function Dashboard() {
   const roomPresentations = useMemo(
     () =>
       ROOM_MAP_ZONES.map(zone => {
+        const isGrowRoom = zone.location !== 'Lab'
         const sensorClusters = zone.location === 'Flower Room' ? ['front', 'back'] : [zone.cluster]
+        const sensorStatuses: Record<string, RoomSensorStatus> = Object.fromEntries(
+          sensorClusters.map(
+            cluster =>
+              [
+                cluster,
+                deriveClusterSensorStatus(zone.location, cluster, live.sensorMeta, now.getTime()),
+              ] as const
+          )
+        )
         return {
           zone,
-          sensorStatus: deriveRoomSensorStatus(
-            zone.location,
-            sensorClusters,
-            live.sensorMeta,
-            now.getTime()
-          ),
-          decisionSummary: deriveRoomDecisionSummary(
-            zone.location,
-            sensorClusters,
-            live.sensorData,
-            trends.byRoom[zone.location] ?? {},
-            live.devices
-          ),
-          controlContext: deriveRoomControlContext(
-            zone.location,
-            control.snapshot,
-            live.devices,
-            Boolean(degraded?.active) || live.transport === 'degraded'
-          ),
-          activeMode: getDashboardMode(schedule.modes, zone.location, zone.cluster),
-          nextTransition: nextRoomTransition(schedule.schedules, zone.location, zone.cluster, now),
+          sensorStatuses,
+          decisionSummary: isGrowRoom
+            ? deriveRoomDecisionSummary(
+                zone.location,
+                sensorClusters,
+                live.sensorData,
+                trends.byRoom[zone.location] ?? {},
+                live.devices
+              )
+            : undefined,
+          controlContext: isGrowRoom
+            ? deriveRoomControlContext(
+                zone.location,
+                control.snapshot,
+                live.devices,
+                Boolean(degraded?.active) || live.transport === 'degraded'
+              )
+            : undefined,
+          activeMode: isGrowRoom
+            ? getDashboardMode(schedule.modes, zone.location, zone.cluster)
+            : null,
+          modeError: isGrowRoom
+            ? (schedule.modeErrors[`${zone.location}:${zone.cluster}`] ?? null)
+            : null,
+          nextTransition: isGrowRoom
+            ? nextRoomTransition(schedule.schedules, zone.location, zone.cluster, now)
+            : null,
           trendData: trends.byRoom[zone.location] ?? {},
         }
       }),
@@ -125,6 +142,7 @@ export default function Dashboard() {
       live.sensorMeta,
       live.transport,
       now,
+      schedule.modeErrors,
       schedule.modes,
       schedule.schedules,
       trends.byRoom,
@@ -166,21 +184,21 @@ export default function Dashboard() {
 
   if (live.loading) {
     return (
-      <div className="main-dashboard h-screen bg-surface-base flex items-center justify-center">
+      <div className="main-dashboard min-h-dvh bg-surface-base flex items-center justify-center">
         <p className="text-sm text-text-secondary">Loading dashboard…</p>
       </div>
     )
   }
 
   return (
-    <div className="main-dashboard flex flex-col h-screen min-h-0 bg-surface-base">
-      <AppRibbon position="top" sticky>
+    <div className="main-dashboard bg-surface-base">
+      <AppRibbon position="top" wrap className="dashboard-ribbon">
         <h1 className="text-base font-bold text-text-default whitespace-nowrap shrink-0">
           Siberian Jungle
         </h1>
         {weatherData && (
           <div
-            className="flex items-center gap-3 text-xs text-text-secondary min-w-0 flex-1 overflow-x-auto font-mono tabular-nums"
+            className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-text-secondary min-w-0 flex-1 font-mono tabular-nums"
             title={
               weatherData.timestamp
                 ? `Quebec City weather · ${new Date(weatherData.timestamp).toLocaleString()}`
@@ -214,17 +232,19 @@ export default function Dashboard() {
           <Sun className="size-5" />
         </RibbonMenuButton>
       </AppRibbon>
-      <DashboardAlarmSummary
-        alarms={alarms.alarms}
-        open={alarmOpen}
-        onOpenChange={setAlarmOpen}
-        serviceError={alarms.error}
-        acknowledgingKey={alarms.acknowledgingKey}
-        acknowledgementErrors={alarms.acknowledgementErrors}
-        acknowledge={alarms.acknowledge}
-      />
+      <div className="min-w-0">
+        <DashboardAlarmSummary
+          alarms={alarms.alarms}
+          open={alarmOpen}
+          onOpenChange={setAlarmOpen}
+          serviceError={alarms.error}
+          acknowledgingKey={alarms.acknowledgingKey}
+          acknowledgementErrors={alarms.acknowledgementErrors}
+          acknowledge={alarms.acknowledge}
+        />
+      </div>
 
-      <div className="flex-1 flex flex-col min-h-0 overflow-y-auto lg:overflow-hidden p-2 gap-2">
+      <div className="dashboard-layout__body">
         {degraded?.active && (
           <div
             role="alert"
@@ -235,12 +255,12 @@ export default function Dashboard() {
           </div>
         )}
 
-        <div className="flex-1 flex flex-col lg:flex-row gap-2 min-h-0">
+        <div className="dashboard-workspace">
           {/* Center workspace: calendar/inspector row above rooms/event-log row */}
-          <div className="min-h-0 min-w-0 flex flex-col lg:grid lg:grid-rows-[minmax(0,55fr)_minmax(0,45fr)] gap-2">
+          <div className="dashboard-center">
             {/* Upper row: calendar + inspector */}
-            <div className="min-h-0 flex flex-col lg:grid lg:grid-cols-[minmax(0,80fr)_minmax(0,20fr)] gap-2">
-              <div className="min-h-0 min-w-0 overflow-y-auto flex flex-col">
+            <div className="dashboard-upper">
+              <div className="dashboard-calendar-slot">
                 <GrowCalendar
                   variant="compact"
                   fillWidth
@@ -253,7 +273,7 @@ export default function Dashboard() {
                   onDaySelect={handleDaySelect}
                 />
               </div>
-              <div className="min-h-0 min-w-0 overflow-y-auto">
+              <div className="dashboard-inspector-slot">
                 <DashboardCalendarInspector
                   events={calendarEvents}
                   now={now}
@@ -265,7 +285,7 @@ export default function Dashboard() {
               </div>
             </div>
             {/* Lower row: three full-width horizontal room bars ending at the SCADA column */}
-            <div className="min-h-0 min-w-0 flex flex-col gap-2 overflow-y-auto">
+            <div className="dashboard-room-rows">
               {roomPresentations.map(({ zone, ...presentation }) => (
                 <DashboardZoneRow
                   key={`${zone.location}_${zone.cluster}`}
@@ -284,8 +304,8 @@ export default function Dashboard() {
           </div>
 
           {/* Full-height event log column with the SCADA tank below */}
-          <div className="w-full lg:w-[clamp(12rem,15vw,18rem)] lg:shrink-0 min-h-0 flex flex-col gap-2">
-            <div className="flex-1 min-h-0 overflow-y-auto bg-surface-primary rounded-lg border border-border-subtle p-3">
+          <div className="dashboard-rail">
+            <div className="dashboard-event-log-panel bg-surface-primary rounded-lg border border-border-subtle p-3">
               <EventLog
                 entries={eventLogEntries}
                 now={now}
@@ -293,11 +313,14 @@ export default function Dashboard() {
                 primaryRooms={ROOM_MAP_ZONES.map(zone => zone.location)}
               />
             </div>
-            <DashboardOperationsRail
-              sensorData={live.sensorData}
-              waterLevelPercent={null}
-              sections="water"
-            />
+            <div className="dashboard-water-panel">
+              <DashboardOperationsRail
+                sensorData={live.sensorData}
+                waterLevelPercent={null}
+                sections="water"
+                compact
+              />
+            </div>
           </div>
         </div>
       </div>

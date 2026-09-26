@@ -5,12 +5,19 @@ import { SEVERITY_LABELS, type SeverityLevel } from '../presentation/severity'
 import { sourcePartsFor } from '../presentation/eventSourceParts'
 import { formatLocalTime } from '../presentation/timeFormat'
 import { EventDetails } from './EventDetails'
-import { EventRoomIndicator, EventSourceLine, EventTimestamps } from './EventFragments'
+import {
+  EventRoomIndicator,
+  EventSourceLine,
+  EventTimestamps,
+  eventReasonTooltip,
+} from './EventFragments'
 
 interface EventRowProps {
   entry: EventLogEntry
   now: Date
   formatAbsolute?: (date: Date, now: Date) => string
+  /** Compact dashboard rows open full details in their owning EventLog dialog. */
+  onOpenDetail?: (entry: EventLogEntry) => void
 }
 
 const SEVERITY_VISUAL: Record<SeverityLevel, string> = {
@@ -27,25 +34,41 @@ const SEVERITY_BADGE: Record<SeverityLevel, string> = {
   info: 'bg-surface-tertiary text-text-default border-border-default',
 }
 
-export function EventRow({ entry, now, formatAbsolute = formatLocalTime }: EventRowProps) {
+export function EventRow({
+  entry,
+  now,
+  formatAbsolute = formatLocalTime,
+  onOpenDetail,
+}: EventRowProps) {
   const [expanded, setExpanded] = useState(false)
   const display = getEventDisplay(entry.type)
   const severity = entry.severity
-  const toggle = useCallback(() => setExpanded((prev) => !prev), [])
+  const toggle = useCallback(() => setExpanded(prev => !prev), [])
+  const handleActivate = useCallback(() => {
+    if (onOpenDetail) {
+      onOpenDetail(entry)
+      return
+    }
+    toggle()
+  }, [entry, onOpenDetail, toggle])
   const sourceParts = sourcePartsFor(entry)
 
   const handleKeyDown = useCallback(
     (event: KeyboardEvent) => {
+      if (onOpenDetail) return
       if (event.key === 'Enter' || event.key === ' ') {
         event.preventDefault()
         toggle()
       }
     },
-    [toggle],
+    [onOpenDetail, toggle]
   )
 
   return (
-    <li role="listitem" className={`border border-border-subtle rounded-sm ${SEVERITY_VISUAL[severity]}`}>
+    <li
+      role="listitem"
+      className={`border border-border-subtle rounded-sm ${SEVERITY_VISUAL[severity]}`}
+    >
       <div className="flex items-start gap-2 px-3 py-2">
         <span
           className={`shrink-0 inline-flex items-center px-1.5 py-0.5 text-10 font-bold uppercase tracking-wider border ${SEVERITY_BADGE[severity]}`}
@@ -57,30 +80,45 @@ export function EventRow({ entry, now, formatAbsolute = formatLocalTime }: Event
           <div className="flex items-baseline justify-between gap-2">
             <span className="flex min-w-0 items-center gap-1.5">
               <EventRoomIndicator room={entry.payload.room} />
-              <span className="text-sm text-text-default font-semibold truncate">{display.label}</span>
+              <span className="text-sm text-text-default font-semibold truncate">
+                {display.label}
+              </span>
             </span>
-            <EventTimestamps occurredAt={entry.occurredAt} now={now} formatAbsolute={formatAbsolute} />
+            <EventTimestamps
+              occurredAt={entry.occurredAt}
+              now={now}
+              formatAbsolute={formatAbsolute}
+            />
           </div>
           <div className="text-11 text-text-default font-mono truncate">{entry.type}</div>
           {sourceParts.length > 0 && <EventSourceLine parts={sourceParts} />}
           {entry.reasonText !== null && (
-            <div className="text-11 text-text-default italic truncate" title={entry.reasonText}>
+            <div
+              className="text-11 text-text-default italic truncate"
+              title={eventReasonTooltip(entry.reasonText, 'event')}
+            >
               {entry.reasonText}
             </div>
           )}
         </div>
         <button
           type="button"
-          onClick={toggle}
+          onClick={handleActivate}
           onKeyDown={handleKeyDown}
-          aria-expanded={expanded}
-          aria-label="Toggle details"
+          aria-expanded={onOpenDetail ? undefined : expanded}
+          aria-label={onOpenDetail ? 'View event details' : 'Toggle details'}
+          data-testid={onOpenDetail ? 'event-detail-opener' : undefined}
           className="shrink-0 size-6 flex items-center justify-center text-text-default hover:text-text-default border border-border-subtle hover:border-border-default bg-surface-secondary transition-colors"
         >
-          <span aria-hidden="true" className={`transition-transform ${expanded ? 'rotate-90' : ''}`}>&#9654;</span>
+          <span
+            aria-hidden="true"
+            className={`transition-transform ${expanded ? 'rotate-90' : ''}`}
+          >
+            &#9654;
+          </span>
         </button>
       </div>
-      <EventDetails payload={entry.payload} expanded={expanded} />
+      <EventDetails payload={entry.payload} expanded={onOpenDetail ? false : expanded} />
     </li>
   )
 }

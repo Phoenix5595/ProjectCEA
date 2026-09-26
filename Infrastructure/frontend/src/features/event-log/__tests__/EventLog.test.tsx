@@ -1,17 +1,24 @@
-import { render, screen, within } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
+import { render, screen, waitFor, within } from '@testing-library/react'
+import userEvent, { type UserEvent } from '@testing-library/user-event'
 import { afterEach, describe, expect, it } from 'vitest'
 import { EventLog } from '../components/EventLog'
 import { globalEventLogStore } from '../state/eventLogStore'
-import { makeEventEntry } from './testFactories'
+import { makeEventEntry, makeEventEntryWith } from './testFactories'
 
 describe('EventLog', () => {
   afterEach(() => {
     globalEventLogStore.reset()
   })
 
-  async function showFlat(user: ReturnType<typeof userEvent.setup>) {
+  async function showFlat(user: UserEvent) {
     await user.click(screen.getByRole('button', { name: 'All events' }))
+  }
+  async function selectCompactView(user: UserEvent, label: 'Alerts' | 'All events') {
+    const name = new RegExp(`^${label}$`)
+    if (!screen.queryByRole('button', { name })) {
+      await user.click(screen.getByRole('button', { name: 'Filters' }))
+    }
+    await user.click(screen.getByRole('button', { name }))
   }
 
   it('renders an empty state when no entries exist', () => {
@@ -351,5 +358,181 @@ describe('EventLog', () => {
     expect(
       within(screen.getByTestId('event-group-system')).getByText('Failsafe raised')
     ).toBeInTheDocument()
+  })
+  it('pages compact flat events five at a time through the oldest sentinel', async () => {
+    const entries = Array.from({ length: 50 }, (_, index) => {
+      const sentinel = index === 0
+      return makeEventEntry(
+        `${index + 1}-0`,
+        sentinel ? 'custom.sentinel' : 'relay.state_changed',
+        sentinel ? 'mutation' : 'relay',
+        sentinel ? { device_id: 'oldest-sentinel' } : {}
+      )
+    })
+    const user = userEvent.setup()
+    render(<EventLog entries={entries} now={new Date('2026-09-02T12:00:00Z')} compact />)
+
+    expect(screen.getByTestId('event-group-relay')).toBeInTheDocument()
+    await selectCompactView(user, 'All events')
+    expect(screen.getByTestId('event-events-page-status')).toHaveTextContent(
+      'Page 1 of 10 · 50 events'
+    )
+    expect(screen.getAllByRole('listitem')).toHaveLength(5)
+    expect(screen.getByRole('button', { name: 'Previous events page' })).toBeDisabled()
+
+    for (let page = 1; page < 10; page += 1) {
+      await user.click(screen.getByRole('button', { name: 'Next events page' }))
+    }
+
+    expect(screen.getByTestId('event-events-page-status')).toHaveTextContent(
+      'Page 10 of 10 · 50 events'
+    )
+    expect(screen.getAllByRole('listitem')).toHaveLength(5)
+    expect(screen.getByText('Custom sentinel')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Next events page' })).toBeDisabled()
+  })
+
+  it('pages categories, resets on view/category changes, and keeps the ninth category reachable', async () => {
+    const entries = [
+      ...Array.from({ length: 50 }, (_, index) =>
+        makeEventEntry(`${index + 1}-0`, 'relay.state_changed', 'relay')
+      ),
+      makeEventEntry('51-0', 'custom.rare_event', 'rare_event'),
+    ]
+    const user = userEvent.setup()
+    render(<EventLog entries={entries} now={new Date('2026-09-02T12:00:00Z')} compact />)
+
+    expect(screen.getByTestId('event-groups-page-status')).toHaveTextContent(
+      'Groups 1 of 2 · 9 categories'
+    )
+    await user.click(screen.getByTestId('event-group-relay'))
+    expect(screen.getByTestId('event-events-page-status')).toHaveTextContent(
+      'Page 1 of 10 · 50 events'
+    )
+    await user.click(screen.getByRole('button', { name: 'Next events page' }))
+    expect(screen.getByTestId('event-events-page-status')).toHaveTextContent(
+      'Page 2 of 10 · 50 events'
+    )
+
+    await user.click(screen.getByTestId('event-group-collapse'))
+    expect(screen.getByTestId('event-groups-page-status')).toHaveTextContent(
+      'Groups 1 of 2 · 9 categories'
+    )
+    await user.click(screen.getByRole('button', { name: 'Next category page' }))
+    expect(screen.getByTestId('event-group-rare_event')).toBeInTheDocument()
+
+    await selectCompactView(user, 'All events')
+    expect(screen.getByTestId('event-events-page-status')).toHaveTextContent(
+      'Page 1 of 11 · 51 events'
+    )
+    await user.click(screen.getByRole('button', { name: 'Next events page' }))
+    expect(screen.getByTestId('event-events-page-status')).toHaveTextContent(
+      'Page 2 of 11 · 51 events'
+    )
+    await selectCompactView(user, 'Alerts')
+    expect(screen.getByTestId('event-groups-page-status')).toHaveTextContent(
+      'Groups 1 of 2 · 9 categories'
+    )
+    await user.click(screen.getByRole('button', { name: 'Next category page' }))
+    await user.click(screen.getByTestId('event-group-rare_event'))
+    expect(screen.getByTestId('event-events-page-status')).toHaveTextContent(
+      'Page 1 of 1 · 1 event'
+    )
+    expect(screen.getByText('Custom rare event')).toBeInTheDocument()
+  })
+
+  it('resets compact paging after filters and clamps when live entries shrink', async () => {
+    const entries = Array.from({ length: 12 }, (_, index) =>
+      makeEventEntry(
+        `${index + 1}-0`,
+        index === 0 ? 'custom.sentinel' : 'relay.state_changed',
+        index === 0 ? 'mutation' : 'relay',
+        {},
+        index === 0 ? 'critical' : 'info'
+      )
+    )
+    const user = userEvent.setup()
+    const { rerender } = render(
+      <EventLog
+        entries={entries}
+        now={new Date('2026-09-02T12:00:00Z')}
+        compact
+        initialView="flat"
+      />
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Next events page' }))
+    expect(screen.getByTestId('event-events-page-status')).toHaveTextContent(
+      'Page 2 of 3 · 12 events'
+    )
+    await user.click(screen.getByRole('button', { name: 'Filters' }))
+    await user.click(screen.getByRole('button', { name: 'Critical' }))
+    expect(screen.getByTestId('event-events-page-status')).toHaveTextContent(
+      'Page 1 of 1 · 1 event'
+    )
+    expect(screen.getByText('Custom sentinel')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Info' }))
+    await user.click(screen.getByRole('button', { name: 'Next events page' }))
+    await user.click(screen.getByRole('button', { name: 'Next events page' }))
+    expect(screen.getByTestId('event-events-page-status')).toHaveTextContent(
+      'Page 3 of 3 · 11 events'
+    )
+    const shrunkEntries = Array.from({ length: 6 }, (_, index) =>
+      makeEventEntry(`${index + 1}-0`, 'relay.state_changed', 'relay', {}, 'info')
+    )
+    rerender(
+      <EventLog
+        entries={shrunkEntries}
+        now={new Date('2026-09-02T12:00:00Z')}
+        compact
+        initialView="flat"
+      />
+    )
+    expect(screen.getByTestId('event-events-page-status')).toHaveTextContent(
+      'Page 2 of 2 · 6 events'
+    )
+    expect(screen.getByRole('button', { name: 'Next events page' })).toBeDisabled()
+  })
+
+  it('opens compact detail in a focus-restoring dialog without expanding the row', async () => {
+    const reason = 'PID output crossed the relay threshold'
+    const entry = makeEventEntryWith({
+      type: 'relay.commanded',
+      category: 'relay',
+      payload: {
+        room: 'Flower Room',
+        cluster: 'main',
+        device_id: 'heater-1',
+        state: 'on',
+      },
+      entity: { entityType: 'device', entityId: 'heater-1' },
+      reasonText: reason,
+    })
+    const user = userEvent.setup()
+    render(
+      <EventLog
+        entries={[entry]}
+        now={new Date('2026-09-02T12:05:00Z')}
+        compact
+        initialView="flat"
+      />
+    )
+
+    const openButton = screen.getByTestId('event-detail-opener')
+    const row = screen.getByRole('listitem')
+    await user.click(openButton)
+
+    const dialog = screen.getByRole('dialog', { name: /Event details — Relay commanded/ })
+    expect(dialog).toHaveTextContent(reason)
+    expect(dialog).toHaveTextContent('Device heater-1')
+    expect(dialog).toHaveTextContent('5m ago')
+    expect(within(dialog).getByRole('region', { name: 'Event details' })).toHaveTextContent(
+      'heater-1'
+    )
+    expect(within(row).queryByRole('region', { name: 'Event details' })).not.toBeInTheDocument()
+
+    await user.keyboard('{Escape}')
+    await waitFor(() => expect(document.activeElement).toBe(openButton))
   })
 })

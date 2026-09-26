@@ -25,7 +25,7 @@ export interface RoomSensorStatus {
   quality: SensorQuality
   newestAgeMs: number | null
   source: SensorSource | null
-  cluster: string | null
+  cluster: string
 }
 
 export type TemperatureState = 'low' | 'high' | 'in_band' | 'missing'
@@ -180,54 +180,48 @@ function correctingDeviceFor(
   return candidates.find(device => pattern.test(device.device_name))?.device_name ?? null
 }
 
-export function deriveRoomSensorStatus(
-  _location: string,
-  clusters: string[],
+export function deriveClusterSensorStatus(
+  location: string,
+  cluster: string,
   sensorMeta: Record<string, SensorSampleMeta>,
   nowMs: number
 ): RoomSensorStatus {
-  const qualityRank: Record<SensorQuality, number> = { live: 0, missing: 1, stale: 2, bad: 3 }
-  let selected: RoomSensorStatus = {
-    quality: 'missing',
-    newestAgeMs: null,
-    source: null,
-    cluster: null,
-  }
+  const prefix = `${location}_${cluster}_`
+  let hasInvalidSample = false
+  let newest: SensorSampleMeta | null = null
 
-  for (const cluster of clusters) {
-    const prefix = `${_location}_${cluster}_`
-    const entries = Object.entries(sensorMeta)
-      .filter(([key]) => key.startsWith(prefix))
-      .map(([, meta]) => meta)
-    const valid = entries.filter(meta => !meta.invalid)
-    const invalid = entries.some(meta => meta.invalid)
-    const newest = [...valid].sort(
-      (a, b) => (b.observedAtMs ?? b.receivedAtMs) - (a.observedAtMs ?? a.receivedAtMs)
-    )[0]
-    const ageMs = newest ? Math.max(0, nowMs - (newest.observedAtMs ?? newest.receivedAtMs)) : null
-    const quality: SensorQuality =
-      valid.length === 0
-        ? invalid
-          ? 'bad'
-          : 'missing'
-        : ageMs != null && ageMs > SENSOR_STALE_AFTER_MS
-          ? 'stale'
-          : 'live'
-    const candidate: RoomSensorStatus = {
-      quality,
-      newestAgeMs: ageMs,
-      source: newest?.source ?? entries[0]?.source ?? null,
-      cluster,
+  for (const [key, meta] of Object.entries(sensorMeta)) {
+    if (!key.startsWith(prefix)) continue
+    if (meta.invalid) {
+      hasInvalidSample = true
+      continue
     }
-    if (qualityRank[candidate.quality] > qualityRank[selected.quality]) selected = candidate
-    else if (
-      qualityRank[candidate.quality] === qualityRank[selected.quality] &&
-      (ageMs ?? Infinity) > (selected.newestAgeMs ?? -1)
-    )
-      selected = candidate
+    if (
+      newest == null ||
+      (meta.observedAtMs ?? meta.receivedAtMs) >
+        (newest.observedAtMs ?? newest.receivedAtMs)
+    ) {
+      newest = meta
+    }
   }
 
-  return selected
+  const ageMs =
+    newest == null ? null : Math.max(0, nowMs - (newest.observedAtMs ?? newest.receivedAtMs))
+  const quality: SensorQuality =
+    newest == null
+      ? hasInvalidSample
+        ? 'bad'
+        : 'missing'
+      : ageMs != null && ageMs > SENSOR_STALE_AFTER_MS
+        ? 'stale'
+        : 'live'
+
+  return {
+    quality,
+    newestAgeMs: ageMs,
+    source: newest?.source ?? null,
+    cluster,
+  }
 }
 
 export function deriveRoomDecisionSummary(

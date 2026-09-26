@@ -5,7 +5,12 @@ import { displayCategoryOf, categoryTheme } from '../presentation/categoryTheme'
 import { SEVERITY_LABELS, type SeverityLevel } from '../presentation/severity'
 import { sourcePartsFor } from '../presentation/eventSourceParts'
 import { formatExactTime, formatLocalTime, formatRelativeTime } from '../presentation/timeFormat'
-import { EventRoomIndicator, EventSourceLine, EventTimestamps } from './EventFragments'
+import {
+  EventRoomIndicator,
+  EventSourceLine,
+  EventTimestamps,
+  eventReasonTooltip,
+} from './EventFragments'
 
 /** Pinned trailing window for concurrent-entity summaries (deterministic tests). */
 export const GROUPING_WINDOW_MS = 10 * 60 * 1000
@@ -84,11 +89,11 @@ export function groupedGridClass(): string {
   return '@2xl:grid-cols-2'
 }
 
-function EventCategoryChip({ category }: { category: string }) {
+function EventCategoryChip({ category, compact = false }: { category: string; compact?: boolean }) {
   const visual = categoryTheme(category)
   return (
     <span
-      className={`shrink-0 inline-flex items-center px-2 py-0.5 text-10 font-bold uppercase tracking-wider border ${visual.chip}`}
+      className={`${compact ? 'min-w-0 max-w-full break-words' : 'shrink-0'} inline-flex items-center px-2 py-0.5 text-10 font-bold uppercase tracking-wider border ${visual.chip}`}
     >
       {visual.label}
     </span>
@@ -138,20 +143,21 @@ const EventCategoryRow = memo(function EventCategoryRow({
   const visual = categoryTheme(group.category)
 
   if (compact) {
-    // Sidebar row: chip + count on the left, compact visible time right,
-    // latest title below. Every category stays one glanceable unit.
+    // Dashboard rows keep the category/count/time and latest label/severity in two content-safe bands.
     if (group.latest === null || group.count === 0) {
       return (
         <div
           data-testid={`event-group-${group.category}`}
           aria-disabled="true"
-          className={`flex min-h-0 flex-col gap-0.5 overflow-hidden px-2 py-1.5 text-left border border-border-subtle rounded-sm bg-surface-secondary opacity-60 ${visual.border}`}
+          className={`flex min-w-0 flex-col gap-0.5 px-2 py-1.5 text-left border border-border-subtle rounded-sm bg-surface-secondary opacity-60 ${visual.border}`}
         >
-          <div className="flex items-center gap-1.5 min-w-0">
-            <EventCategoryChip category={group.category} />
-            <span className="text-11 font-bold text-text-default tabular-nums">0</span>
+          <div className="flex min-w-0 items-start gap-1.5">
+            <EventCategoryChip category={group.category} compact />
+            <span className="shrink-0 text-11 font-bold text-text-default tabular-nums">0</span>
           </div>
-          <div className="text-xs text-text-default font-semibold truncate">No recent events</div>
+          <div className="min-w-0 break-words text-xs text-text-default font-semibold">
+            No recent events
+          </div>
         </div>
       )
     }
@@ -162,29 +168,31 @@ const EventCategoryRow = memo(function EventCategoryRow({
         data-testid={`event-group-${group.category}`}
         aria-expanded={false}
         onClick={() => onExpand(group.category)}
-        className={`flex min-h-0 flex-col gap-0.5 overflow-hidden px-2 py-1.5 text-left border border-border-subtle rounded-sm bg-surface-secondary hover:bg-surface-tertiary transition-colors ${visual.border}`}
+        title={eventReasonTooltip(group.latest.reasonText, 'latest')}
+        className={`flex min-w-0 flex-col gap-1 px-2 py-1.5 text-left border border-border-subtle rounded-sm bg-surface-secondary hover:bg-surface-tertiary transition-colors ${visual.border}`}
       >
-        <div className="flex items-center justify-between gap-1.5 min-w-0">
-          <div className="flex items-center gap-1.5 min-w-0">
-            <EventCategoryChip category={group.category} />
-            <span className="text-11 font-bold text-text-default tabular-nums shrink-0">
+        <div className="flex min-w-0 items-start gap-1.5">
+          <div className="flex min-w-0 flex-1 items-start gap-1.5">
+            <EventCategoryChip category={group.category} compact />
+            <span className="shrink-0 text-11 font-bold text-text-default tabular-nums">
               {group.count}
             </span>
           </div>
           <time
             dateTime={group.latest.occurredAt.toISOString()}
             title={formatExactTime(group.latest.occurredAt)}
-            className="shrink-0 text-10 text-text-secondary tabular-nums truncate"
+            className="min-w-0 max-w-[45%] text-right text-10 text-text-secondary tabular-nums leading-tight break-words"
             aria-label={`${formatRelativeTime(group.latest.occurredAt, now)} — absolute time: ${formatLocalTime(group.latest.occurredAt, now)}`}
           >
-            {formatRelativeTime(group.latest.occurredAt, now)}
-            {' · '}
-            {formatLocalTime(group.latest.occurredAt, now)}
+            <span className="block">{formatRelativeTime(group.latest.occurredAt, now)}</span>
+            <span className="block">{formatLocalTime(group.latest.occurredAt, now)}</span>
           </time>
         </div>
-        <div className="flex items-center gap-1.5 min-w-0">
+        <div className="flex min-w-0 items-start gap-1.5">
           <EventRoomIndicator room={group.latest.payload.room} />
-          <div className="text-xs text-text-default font-semibold truncate">{display.label}</div>
+          <div className="min-w-0 flex-1 break-words text-xs text-text-default font-semibold">
+            {display.label}
+          </div>
           <EventSeverityBadge severity={group.latest.severity} />
         </div>
       </button>
@@ -235,7 +243,10 @@ const EventCategoryRow = memo(function EventCategoryRow({
         <>
           {sourceParts.length > 0 && <EventSourceLine parts={sourceParts} />}
           {group.latest.reasonText !== null && (
-            <div className="text-11 text-text-default italic truncate">
+            <div
+              className="text-11 text-text-default italic truncate"
+              title={eventReasonTooltip(group.latest.reasonText, 'latest')}
+            >
               {group.latest.reasonText}
             </div>
           )}
@@ -267,9 +278,7 @@ export function EventGroupedView({
       role="group"
       aria-label="Grouped alert console"
       className={`grid min-h-0 gap-1 bg-surface-base border border-border-subtle rounded-sm ${
-        compact
-          ? 'flex-1 grid-rows-[repeat(8,minmax(0,1fr))] overflow-hidden'
-          : 'max-h-150 overflow-auto'
+        compact ? 'flex-1 grid-rows-[repeat(8,minmax(min-content,1fr))]' : 'max-h-150 overflow-auto'
       } ${compact ? '' : groupedGridClass()}`}
     >
       {groups.map(group => (

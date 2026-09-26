@@ -348,6 +348,7 @@ class PIDControllerManager:
             Control output value (0.0-1.0) or None if not applicable
         """
         with LoggingContext(operation="process_pid_control"):
+            context.pop("pid_decision_observation", None)
             device_type = device_info.get("device_type", "")
 
             # Get control mode for this device type
@@ -387,24 +388,24 @@ class PIDControllerManager:
                     device_type,
                 )
                 logger.debug(f"ON/OFF {device_name}: error={error:.2f}, output={output}")
-                self._event_policy.observe(
-                    DecisionObservation(
-                        location,
-                        cluster,
-                        device_name,
-                        current_time,
-                        "on_off",
-                        sensor_value,
-                        setpoint,
-                        error,
-                        output * 100.0,
-                        control_mode,
-                        "control.on_off_decision",
-                        "ON/OFF hysteresis calculated control output",
-                        device_type,
-                        self.ramping_now(device_type, context),
-                    )
+                observation = DecisionObservation(
+                    location,
+                    cluster,
+                    device_name,
+                    current_time,
+                    "on_off",
+                    sensor_value,
+                    setpoint,
+                    error,
+                    output * 100.0,
+                    control_mode,
+                    "control.on_off_decision",
+                    "ON/OFF hysteresis calculated control output",
+                    device_type,
+                    self.ramping_now(device_type, context),
                 )
+                context["pid_decision_observation"] = observation
+                self._event_policy.observe(observation)
                 return output
 
             elif control_mode == "auto_pid":
@@ -434,24 +435,25 @@ class PIDControllerManager:
                 output = await self._process_autotune_control(
                     device_type, setpoint, sensor_value, current_time
                 )
-                self._event_policy.observe(
-                    DecisionObservation(
-                        location,
-                        cluster,
-                        device_name,
-                        current_time,
-                        "auto_pid",
-                        sensor_value,
-                        setpoint,
-                        self._calculate_error(device_type, setpoint, sensor_value),
-                        output * 100.0,
-                        control_mode,
-                        "control.auto_pid_decision",
-                        "Auto-tuning PID calculated control output",
-                        device_type,
-                        self.ramping_now(device_type, context),
-                    )
+                error = self._calculate_error(device_type, setpoint, sensor_value)
+                observation = DecisionObservation(
+                    location,
+                    cluster,
+                    device_name,
+                    current_time,
+                    "auto_pid",
+                    sensor_value,
+                    setpoint,
+                    error,
+                    output * 100.0,
+                    control_mode,
+                    "control.auto_pid_decision",
+                    "Auto-tuning PID calculated control output",
+                    device_type,
+                    self.ramping_now(device_type, context),
                 )
+                context["pid_decision_observation"] = observation
+                self._event_policy.observe(observation)
                 return output
 
             # Standard PID control (control_mode == 'pid')
@@ -533,25 +535,25 @@ class PIDControllerManager:
                     f"PID {device_name} ({device_type}): setpoint={setpoint}, "
                     f"sensor={sensor_value}, error={error:.3f}, output={output:.3f}"
                 )
-                self._event_policy.observe(
-                    DecisionObservation(
-                        location,
-                        cluster,
-                        device_name,
-                        current_time,
-                        "pid",
-                        sensor_value,
-                        setpoint,
-                        error,
-                        output * 100.0,
-                        current_mode or control_mode,
-                        "control.pid_decision",
-                        f"PID calculated control output; Kp={controller.kp:g}, "
-                        f"Ki={controller.ki:g}, Kd={controller.kd:g}",
-                        device_type,
-                        self.ramping_now(device_type, context),
-                    )
+                observation = DecisionObservation(
+                    location,
+                    cluster,
+                    device_name,
+                    current_time,
+                    "pid",
+                    sensor_value,
+                    setpoint,
+                    error,
+                    output * 100.0,
+                    current_mode or control_mode,
+                    "control.pid_decision",
+                    f"PID calculated control output; Kp={controller.kp:g}, "
+                    f"Ki={controller.ki:g}, Kd={controller.kd:g}",
+                    device_type,
+                    self.ramping_now(device_type, context),
                 )
+                context["pid_decision_observation"] = observation
+                self._event_policy.observe(observation)
 
                 return output
 

@@ -25,7 +25,7 @@ export function DashboardMiniTrend({ metric, compact = false }: DashboardMiniTre
     return (
       <div
         title={`${metric?.label ?? 'Sensor'} trend unavailable. Historical samples are missing or insufficient to draw a meaningful trend.`}
-        className="flex min-w-[6.5rem] flex-col justify-center rounded-sm bg-surface-secondary px-1.5 py-1 text-10 text-text-muted cursor-help"
+        className="dashboard-mini-trend flex min-w-[6.5rem] flex-col justify-center rounded-sm bg-surface-secondary px-1.5 py-1 text-10 text-text-muted cursor-help"
       >
         <span>{metric?.label ?? 'Trend'}</span>
         <span>Trend unavailable</span>
@@ -50,7 +50,7 @@ export function DashboardMiniTrend({ metric, compact = false }: DashboardMiniTre
     <div
       title={trendTooltip(metric)}
       aria-label={`${metric.label} 60 minute trend; ${formatDelta(metric)}`}
-      className="flex min-w-[6.5rem] flex-col rounded-sm bg-surface-secondary px-1.5 py-1 text-10 cursor-help"
+      className="dashboard-mini-trend flex min-w-[6.5rem] flex-col rounded-sm bg-surface-secondary px-1.5 py-1 text-10 cursor-help"
     >
       <div className="flex items-center justify-between gap-1 text-text-muted">
         <span>{metric.label}</span>
@@ -60,7 +60,7 @@ export function DashboardMiniTrend({ metric, compact = false }: DashboardMiniTre
         viewBox={`0 0 ${width} ${height}`}
         role="img"
         aria-hidden="true"
-        className="mt-0.5 h-7 w-full"
+        className="dashboard-mini-trend__graphic mt-0.5 h-7 w-full"
       >
         <polyline
           points={points}

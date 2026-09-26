@@ -5,7 +5,7 @@ import {
   buildTrendMetric,
   deriveRoomControlContext,
   deriveRoomDecisionSummary,
-  deriveRoomSensorStatus,
+  deriveClusterSensorStatus,
   type TrendData,
 } from '../dashboardStatus'
 
@@ -20,26 +20,68 @@ function meta(
 }
 
 describe('dashboard status derivations', () => {
-  it('uses bad, stale, missing, live quality precedence', () => {
-    const bad = deriveRoomSensorStatus(
+  it('derives freshness only from the requested Flower cluster', () => {
+    const splitMeta = {
+      'Flower Room_front_temp': meta('poll', nowMs - 46_000),
+      'Flower Room_front_rh': meta('websocket', nowMs - 60_000),
+      'Flower Room_back_temp': meta('websocket', nowMs - 2_000),
+    }
+    const front = deriveClusterSensorStatus('Flower Room', 'front', splitMeta, nowMs)
+    const back = deriveClusterSensorStatus('Flower Room', 'back', splitMeta, nowMs)
+
+    expect(front).toEqual({
+      quality: 'stale',
+      newestAgeMs: 46_000,
+      source: 'poll',
+      cluster: 'front',
+    })
+    expect(back).toEqual({
+      quality: 'live',
+      newestAgeMs: 2_000,
+      source: 'websocket',
+      cluster: 'back',
+    })
+
+    const badFront = deriveClusterSensorStatus(
       'Flower Room',
-      ['front', 'back'],
+      'front',
       {
-        'Flower Room_front_temp': meta('poll', nowMs - 1_000),
-        'Flower Room_back_temp': meta('websocket', nowMs - 1_000, true),
+        'Flower Room_front_temp': meta('poll', nowMs - 1_000, true),
+        'Flower Room_back_temp': meta('websocket', nowMs - 2_000),
       },
       nowMs
     )
-    expect(bad.quality).toBe('bad')
-
-    const stale = deriveRoomSensorStatus(
+    expect(badFront).toEqual({
+      quality: 'bad',
+      newestAgeMs: null,
+      source: null,
+      cluster: 'front',
+    })
+    const backWithBadFront = deriveClusterSensorStatus(
       'Flower Room',
-      ['front'],
-      { 'Flower Room_front_temp': meta('poll', nowMs - 46_000) },
+      'back',
+      {
+        'Flower Room_front_temp': meta('poll', nowMs - 1_000, true),
+        'Flower Room_back_temp': meta('websocket', nowMs - 2_000),
+      },
       nowMs
     )
-    expect(stale.quality).toBe('stale')
-    expect(deriveRoomSensorStatus('Veg Room', ['main'], {}, nowMs).quality).toBe('missing')
+    expect(backWithBadFront.quality).toBe('live')
+
+    expect(
+      deriveClusterSensorStatus(
+        'Flower Room',
+        'front',
+        { 'Flower Room_back_temp': meta('websocket', nowMs - 2_000) },
+        nowMs
+      )
+    ).toEqual({
+      quality: 'missing',
+      newestAgeMs: null,
+      source: null,
+      cluster: 'front',
+    })
+    expect(deriveClusterSensorStatus('Veg Room', 'main', {}, nowMs).quality).toBe('missing')
   })
 
   it('selects the abnormal Flower layer and keeps signed deltas', () => {

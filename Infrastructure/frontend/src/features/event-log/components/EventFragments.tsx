@@ -1,6 +1,17 @@
 import { Flower2, Sprout } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { formatRelativeTime, formatExactTime, formatLocalTime } from '../presentation/timeFormat'
+import type { EventLogEntry } from '../state/eventLogStore'
+
+export function eventReasonTooltip(
+  reasonText: EventLogEntry['reasonText'],
+  scope: 'event' | 'latest',
+): string | undefined {
+  if (reasonText === null) return undefined
+  return scope === 'latest'
+    ? `Latest event in this category — recorded reason: ${reasonText}`
+    : `Recorded reason for this event: ${reasonText}`
+}
 type SourcePart = { text: string; className?: string; title?: string }
 
 /**

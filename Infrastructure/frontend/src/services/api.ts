@@ -6,6 +6,7 @@
  * Device, sensor, and schedule methods are mixed in from services/api/*.
  */
 import axios, { AxiosInstance } from 'axios'
+import type { components } from '../generated/api'
 import type { LightStatus, LightTargetSetResponse } from '../types/light'
 import type {
   RoomMode,
@@ -179,6 +180,16 @@ class ApiClient implements ApiClientCore {
     Record<string, { location: string; cluster: string; mode: string }>
   > {
     const response = await this.automationClient.get('/api/mode')
+    return response.data
+  }
+
+  async getActiveRoomMode(
+    location: string,
+    cluster: string
+  ): Promise<components['schemas']['ActiveModeResponse']> {
+    const response = await this.automationClient.get(
+      `/api/room-modes/active/${encodeURIComponent(location)}/${encodeURIComponent(cluster)}`
+    )
     return response.data
   }
 

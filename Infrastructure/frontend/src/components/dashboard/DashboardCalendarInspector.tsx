@@ -1,90 +1,101 @@
 /** Dashboard-only calendar inspector: day summaries, event detail, manual create/edit. */
-import { useEffect, useMemo, useState } from 'react';
-import { format } from 'date-fns';
-import { fr } from 'date-fns/locale';
-import { toZonedTime } from 'date-fns-tz';
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { format } from 'date-fns'
+import { fr } from 'date-fns/locale'
+import { toZonedTime } from 'date-fns-tz'
 
-import { apiClient } from '../../services/api';
+import { Dialog, DialogContent, DialogTitle } from '../ui/dialog'
+import { apiClient } from '../../services/api'
 import type {
   CalendarEventCreate,
   CalendarEventDto,
   CalendarEventUpdate,
-} from '../../types/calendar';
-import { DASHBOARD_ROW_ZONES } from '../../config/zones';
-import { CALENDAR_TZ } from '../../utils/flowerGrowPlan';
+} from '../../types/calendar'
+import { DASHBOARD_ROW_ZONES } from '../../config/zones'
+import { CALENDAR_TZ } from '../../utils/flowerGrowPlan'
 import {
   buildCalendarDayMarkers,
   calendarDayKey,
   calendarEventDayKey,
   calendarEventOccursOnDay,
   isGrowPlanPhase,
-} from '../../utils/calendarDayMarkers';
+} from '../../utils/calendarDayMarkers'
 
 export interface DashboardCalendarInspectorProps {
-  events: CalendarEventDto[];
-  now: Date;
-  selectedDate: Date | undefined;
-  selectedDateEvents: CalendarEventDto[];
-  onRefresh: () => void | Promise<void>;
-  onOpenGrowPlan: () => void;
+  events: CalendarEventDto[]
+  now: Date
+  selectedDate: Date | undefined
+  selectedDateEvents: CalendarEventDto[]
+  onRefresh: () => void | Promise<void>
+  onOpenGrowPlan: () => void
+}
+
+/** Views that can remain visible behind a detail overlay. */
+type InspectorBaseView = { kind: 'overview' } | { kind: 'day' }
+
+type EventListView = {
+  kind: 'events'
+  title: string
+  events: CalendarEventDto[]
+  returnTo: InspectorBaseView
 }
 
 /** Views below the top-level day selection; the form always returns to one of these. */
 type EventSourceView =
-  | { kind: 'overview' }
-  | { kind: 'day' }
-  | { kind: 'event'; event: CalendarEventDto };
+  | InspectorBaseView
+  | EventListView
+  | { kind: 'event'; event: CalendarEventDto; returnTo: EventSourceView }
 
 type InspectorView =
   | EventSourceView
   | {
-      kind: 'form';
-      mode: 'create' | 'edit';
+      kind: 'form'
+      mode: 'create' | 'edit'
       /** Edit source event; undefined for create. */
-      event?: CalendarEventDto;
+      event?: CalendarEventDto
       /** Preselected start date (yyyy-MM-dd) for create. */
-      date: string;
-      returnTo: EventSourceView;
-    };
+      date: string
+      returnTo: EventSourceView
+    }
 
 interface EventFormState {
-  title: string;
-  eventType: string;
-  location: string;
-  startDate: string;
-  endDate: string;
-  notes: string;
-  originalLocation: string;
-  originalCluster?: string;
+  title: string
+  eventType: string
+  location: string
+  startDate: string
+  endDate: string
+  notes: string
+  originalLocation: string
+  originalCluster?: string
 }
 
 function zonedNow(now: Date): Date {
-  return toZonedTime(now, CALENDAR_TZ);
+  return toZonedTime(now, CALENDAR_TZ)
 }
 
 /** 'today' / 'tomorrow' / 'N days' between two yyyy-MM-dd keys. */
 function relativeDayLabel(fromKey: string, toKey: string): string {
   const diff = Math.round(
     (Date.parse(`${toKey}T00:00:00Z`) - Date.parse(`${fromKey}T00:00:00Z`)) / 86400000
-  );
-  if (diff <= 0) return 'today';
-  if (diff === 1) return 'tomorrow';
-  return `${diff} days`;
+  )
+  if (diff <= 0) return 'today'
+  if (diff === 1) return 'tomorrow'
+  return `${diff} days`
 }
 
 function dateRangeLabel(ev: CalendarEventDto): string {
-  if (ev.end && ev.end !== ev.start) return `${ev.start} → ${ev.end}`;
-  return ev.start;
+  if (ev.end && ev.end !== ev.start) return `${ev.start} → ${ev.end}`
+  return ev.start
 }
 
 function eventIsEditable(ev: CalendarEventDto): boolean {
-  return ev.source === 'manual' && ev.editable && typeof ev.numericId === 'number';
+  return ev.source === 'manual' && ev.editable && typeof ev.numericId === 'number'
 }
 
 function locationOptions(edited?: string): string[] {
-  const rooms = DASHBOARD_ROW_ZONES.map((z) => z.location);
-  if (edited && edited.trim() && !rooms.includes(edited)) rooms.push(edited);
-  return rooms;
+  const rooms = DASHBOARD_ROW_ZONES.map(z => z.location)
+  if (edited && edited.trim() && !rooms.includes(edited)) rooms.push(edited)
+  return rooms
 }
 
 export default function DashboardCalendarInspector({
@@ -97,53 +108,78 @@ export default function DashboardCalendarInspector({
 }: DashboardCalendarInspectorProps) {
   const [view, setView] = useState<InspectorView>(() =>
     selectedDate ? { kind: 'day' } : { kind: 'overview' }
-  );
-  const [form, setForm] = useState<EventFormState | null>(null);
-  const [validation, setValidation] = useState<string | null>(null);
-  const [apiError, setApiError] = useState<string | null>(null);
-  const [pending, setPending] = useState(false);
+  )
+  const [form, setForm] = useState<EventFormState | null>(null)
+  const [validation, setValidation] = useState<string | null>(null)
+  const [apiError, setApiError] = useState<string | null>(null)
+  const [pending, setPending] = useState(false)
+  const dialogTriggerRef = useRef<HTMLElement | null>(null)
+  const pendingFocusRestoreRef = useRef(false)
+  const dashboardTriggerRef = useRef<HTMLElement | null>(null)
+  const dialogContentRef = useRef<HTMLDivElement | null>(null)
+
+  const dialogOpen = view.kind === 'events' || view.kind === 'event' || view.kind === 'form'
+  const baseView = (() => {
+    let current: EventSourceView = view.kind === 'form' ? view.returnTo : view
+    while (current.kind !== 'overview' && current.kind !== 'day') {
+      current = current.returnTo
+    }
+    return current
+  })()
+
+  useEffect(() => {
+    if (!dialogOpen || !pendingFocusRestoreRef.current) return
+    pendingFocusRestoreRef.current = false
+    const trigger = dialogTriggerRef.current
+    if (trigger?.isConnected) {
+      trigger.focus()
+      return
+    }
+    dialogContentRef.current?.querySelector<HTMLElement>('button:not([disabled])')?.focus()
+  }, [view, dialogOpen])
 
   // A selectedDate prop change deterministically resets to the matching date view.
   useEffect(() => {
-    setView(selectedDate ? { kind: 'day' } : { kind: 'overview' });
-    setForm(null);
-    setValidation(null);
-    setApiError(null);
-  }, [selectedDate]);
+    setView(selectedDate ? { kind: 'day' } : { kind: 'overview' })
+    setForm(null)
+    setValidation(null)
+    setApiError(null)
+  }, [selectedDate])
 
-  const markers = useMemo(() => buildCalendarDayMarkers(events), [events]);
+  const markers = useMemo(() => buildCalendarDayMarkers(events), [events])
 
-  const dayKeyNow = calendarDayKey(now);
+  const dayKeyNow = calendarDayKey(now)
 
   const activePhase = useMemo(() => {
-    const found = events.filter(
-      (ev) =>
-        isGrowPlanPhase(ev) &&
-        calendarEventOccursOnDay(ev, now)
-    );
-    if (found.length === 0) return undefined;
-    return found.reduce((a, b) => (calendarEventDayKey(b.start) > calendarEventDayKey(a.start) ? b : a));
-  }, [events, now]);
+    const found = events.filter(ev => isGrowPlanPhase(ev) && calendarEventOccursOnDay(ev, now))
+    if (found.length === 0) return undefined
+    return found.reduce((a, b) =>
+      calendarEventDayKey(b.start) > calendarEventDayKey(a.start) ? b : a
+    )
+  }, [events, now])
 
   const upcomingPhase = useMemo(() => {
-    const startDay = (ev: CalendarEventDto) => calendarEventDayKey(ev.start);
-    const later = events.filter(
-      (ev) => isGrowPlanPhase(ev) && startDay(ev) > dayKeyNow
-    );
-    if (later.length === 0) return undefined;
-    return later.reduce((a, b) => (startDay(b) < startDay(a) ? b : a));
-  }, [events, dayKeyNow]);
+    const startDay = (ev: CalendarEventDto) => calendarEventDayKey(ev.start)
+    const later = events.filter(ev => isGrowPlanPhase(ev) && startDay(ev) > dayKeyNow)
+    if (later.length === 0) return undefined
+    return later.reduce((a, b) => (startDay(b) < startDay(a) ? b : a))
+  }, [events, dayKeyNow])
 
-  const todayTasks = markers.get(dayKeyNow)?.tasks ?? [];
+  const todayTasks = markers.get(dayKeyNow)?.tasks ?? []
 
-  const selectedDateKey = selectedDate ? calendarDayKey(selectedDate) : undefined;
+  const selectedDateKey = selectedDate ? calendarDayKey(selectedDate) : undefined
 
-  const openForm = (next: InspectorView & { kind: 'form' }) => {
-    setView(next);
-    setValidation(null);
-    setApiError(null);
+  const openForm = (next: InspectorView & { kind: 'form' }, trigger: HTMLElement) => {
+    dialogTriggerRef.current = trigger
+    if (next.returnTo.kind === 'overview' || next.returnTo.kind === 'day') {
+      dashboardTriggerRef.current = trigger
+    }
+    pendingFocusRestoreRef.current = false
+    setView(next)
+    setValidation(null)
+    setApiError(null)
     if (next.mode === 'edit' && next.event) {
-      const ev = next.event;
+      const ev = next.event
       setForm({
         title: ev.title,
         eventType: ev.eventType,
@@ -153,7 +189,7 @@ export default function DashboardCalendarInspector({
         notes: ev.notes ?? '',
         originalLocation: ev.location,
         originalCluster: ev.cluster,
-      });
+      })
     } else {
       setForm({
         title: '',
@@ -163,32 +199,56 @@ export default function DashboardCalendarInspector({
         endDate: '',
         notes: '',
         originalLocation: DASHBOARD_ROW_ZONES[0]?.location ?? 'Flower Room',
-      });
+      })
     }
-  };
+  }
+  const openEventDetails = (
+    event: CalendarEventDto,
+    returnTo: EventSourceView,
+    trigger: HTMLElement
+  ) => {
+    dialogTriggerRef.current = trigger
+    if (returnTo.kind === 'overview' || returnTo.kind === 'day') {
+      dashboardTriggerRef.current = trigger
+    }
+    pendingFocusRestoreRef.current = false
+    setView({ kind: 'event', event, returnTo })
+  }
+
+  const openEventList = (
+    title: string,
+    list: CalendarEventDto[],
+    returnTo: InspectorBaseView,
+    trigger: HTMLElement
+  ) => {
+    dialogTriggerRef.current = trigger
+    dashboardTriggerRef.current = trigger
+    pendingFocusRestoreRef.current = false
+    setView({ kind: 'events', title, events: list, returnTo })
+  }
 
   const updateForm = (patch: Partial<EventFormState>) => {
-    setForm((prev) => (prev ? { ...prev, ...patch } : prev));
-  };
+    setForm(prev => (prev ? { ...prev, ...patch } : prev))
+  }
 
   const submitForm = async () => {
-    if (!form || view.kind !== 'form') return;
-    const title = form.title.trim();
-    const eventType = form.eventType.trim();
-    const location = form.location.trim();
-    const startDate = form.startDate.trim();
-    if (!title) return setValidation('Title is required.');
-    if (!eventType) return setValidation('Event type is required.');
-    if (!location) return setValidation('Location is required.');
-    if (!startDate) return setValidation('Start date is required.');
+    if (!form || view.kind !== 'form') return
+    const title = form.title.trim()
+    const eventType = form.eventType.trim()
+    const location = form.location.trim()
+    const startDate = form.startDate.trim()
+    if (!title) return setValidation('Title is required.')
+    if (!eventType) return setValidation('Event type is required.')
+    if (!location) return setValidation('Location is required.')
+    if (!startDate) return setValidation('Start date is required.')
     if (form.endDate && form.endDate < startDate) {
-      return setValidation('End date must be on or after the start date.');
+      return setValidation('End date must be on or after the start date.')
     }
-    setValidation(null);
-    setApiError(null);
-    setPending(true);
+    setValidation(null)
+    setApiError(null)
+    setPending(true)
     try {
-      let saved: CalendarEventDto;
+      let saved: CalendarEventDto
       if (view.mode === 'create') {
         const body: CalendarEventCreate = {
           title,
@@ -199,16 +259,16 @@ export default function DashboardCalendarInspector({
           notes: form.notes.trim() ? form.notes.trim() : null,
           cluster: 'main',
           all_day: true,
-        };
-        saved = await apiClient.createCalendarEvent(body);
+        }
+        saved = await apiClient.createCalendarEvent(body)
       } else {
-        const numericId = view.event?.numericId;
+        const numericId = view.event?.numericId
         if (typeof numericId !== 'number') {
-          setApiError('This event cannot be edited (missing numeric id).');
-          return;
+          setApiError('This event cannot be edited (missing numeric id).')
+          return
         }
         const cluster =
-          location !== form.originalLocation ? 'main' : (form.originalCluster ?? 'main');
+          location !== form.originalLocation ? 'main' : (form.originalCluster ?? 'main')
         const body: CalendarEventUpdate = {
           title,
           event_type: eventType,
@@ -217,81 +277,135 @@ export default function DashboardCalendarInspector({
           end_date: form.endDate || null,
           notes: form.notes.trim() ? form.notes.trim() : null,
           cluster,
-        };
-        saved = await apiClient.updateCalendarEvent(numericId, body);
+        }
+        saved = await apiClient.updateCalendarEvent(numericId, body)
       }
-      setView({ kind: 'event', event: saved });
-      setForm(null);
-      void onRefresh();
+      const returnTo = view.returnTo.kind === 'event' ? view.returnTo.returnTo : view.returnTo
+      setView({ kind: 'event', event: saved, returnTo })
+      setForm(null)
+      void onRefresh()
     } catch (e) {
-      setApiError(e instanceof Error ? e.message : 'Failed to save event.');
+      setApiError(e instanceof Error ? e.message : 'Failed to save event.')
     } finally {
-      setPending(false);
+      setPending(false)
     }
-  };
+  }
 
   const cancelForm = () => {
-    setForm(null);
-    setValidation(null);
-    setApiError(null);
-    if (view.kind === 'form') setView(view.returnTo);
-  };
+    setForm(null)
+    setValidation(null)
+    setApiError(null)
+    pendingFocusRestoreRef.current = true
+    if (view.kind === 'form') setView(view.returnTo)
+  }
+
+  const closeDialog = () => {
+    if (view.kind === 'form') {
+      cancelForm()
+      return
+    }
+    if (view.kind === 'events' || view.kind === 'event') {
+      pendingFocusRestoreRef.current = true
+      setView(view.returnTo)
+    }
+  }
+
+  const handleCloseAutoFocus = (event: Event) => {
+    if (!pendingFocusRestoreRef.current) return
+    pendingFocusRestoreRef.current = false
+    const trigger = dialogTriggerRef.current?.isConnected
+      ? dialogTriggerRef.current
+      : dashboardTriggerRef.current
+    if (!trigger?.isConnected) return
+    event.preventDefault()
+    trigger.focus()
+  }
 
   const renderOverview = () => (
-    <div className="flex flex-col gap-2 min-h-0 overflow-y-auto">
-      <section aria-label="Today">
-        <h3 className="text-xs font-bold uppercase tracking-wide text-text-muted mb-1">Today</h3>
-        {todayTasks.length === 0 ? (
-          <p className="text-xs text-text-muted">No tasks today</p>
-        ) : (
-          <ul className="space-y-1">
-            {todayTasks.map((ev) => (
-              <li key={ev.id} className="text-xs text-text-default truncate" title={ev.title}>
-                {ev.title}
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-      <section aria-label="Grow phases">
-        <h3 className="text-xs font-bold uppercase tracking-wide text-text-muted mb-1">Phase</h3>
-        <p className="text-xs text-text-default">
-          {activePhase ? (
-            <>
-              <span className="font-semibold">{activePhase.title}</span>{' '}
-              <span className="text-text-muted">
-                (ends {relativeDayLabel(dayKeyNow, calendarEventDayKey(activePhase.end ?? activePhase.start))})
-              </span>
-            </>
+    <div className="dashboard-inspector__overview flex flex-col gap-2">
+      <div className="dashboard-inspector__overview-summary flex flex-col gap-2">
+        <section aria-label="Today">
+          <h3 className="text-xs font-bold uppercase tracking-wide text-text-muted mb-1">Today</h3>
+          {todayTasks.length === 0 ? (
+            <p className="text-xs text-text-muted">No tasks today</p>
           ) : (
-            <span className="text-text-muted">No active phase</span>
+            <ul className="dashboard-inspector__today-events space-y-1">
+              {todayTasks.slice(0, 3).map(ev => (
+                <li key={ev.id}>
+                  <button
+                    type="button"
+                    className="w-full text-left text-xs text-text-default truncate"
+                    title={ev.title}
+                    onClick={event =>
+                      openEventDetails(ev, { kind: 'overview' }, event.currentTarget)
+                    }
+                  >
+                    {ev.title}
+                  </button>
+                </li>
+              ))}
+            </ul>
           )}
-        </p>
-        <p className="text-xs text-text-default mt-1">
-          {upcomingPhase ? (
-            <>
-              <span className="text-text-muted">Next:</span>{' '}
-              <span className="font-semibold">{upcomingPhase.title}</span>{' '}
-              <span className="text-text-muted">
-                in {relativeDayLabel(dayKeyNow, calendarEventDayKey(upcomingPhase.start))}
-              </span>
-            </>
-          ) : (
-            <span className="text-text-muted">No upcoming phase in loaded range</span>
+          {todayTasks.length > 3 && (
+            <button
+              type="button"
+              className="grow-cal-toolbar-btn mt-1"
+              onClick={event =>
+                openEventList('Today events', todayTasks, { kind: 'overview' }, event.currentTarget)
+              }
+            >
+              All {todayTasks.length} events
+            </button>
           )}
-        </p>
-      </section>
-      <div className="flex flex-col gap-1 mt-auto pt-2">
+        </section>
+        <section aria-label="Grow phases">
+          <h3 className="text-xs font-bold uppercase tracking-wide text-text-muted mb-1">Phase</h3>
+          <p className="text-xs text-text-default">
+            {activePhase ? (
+              <>
+                <span className="font-semibold">{activePhase.title}</span>{' '}
+                <span className="text-text-muted">
+                  (ends{' '}
+                  {relativeDayLabel(
+                    dayKeyNow,
+                    calendarEventDayKey(activePhase.end ?? activePhase.start)
+                  )}
+                  )
+                </span>
+              </>
+            ) : (
+              <span className="text-text-muted">No active phase</span>
+            )}
+          </p>
+          <p className="text-xs text-text-default mt-1">
+            {upcomingPhase ? (
+              <>
+                <span className="text-text-muted">Next:</span>{' '}
+                <span className="font-semibold">{upcomingPhase.title}</span>{' '}
+                <span className="text-text-muted">
+                  in {relativeDayLabel(dayKeyNow, calendarEventDayKey(upcomingPhase.start))}
+                </span>
+              </>
+            ) : (
+              <span className="text-text-muted">No upcoming phase in loaded range</span>
+            )}
+          </p>
+        </section>
+      </div>
+      <div className="dashboard-inspector__overview-actions flex flex-col gap-1 mt-auto pt-2">
         <button
           type="button"
           className="grow-cal-toolbar-btn grow-cal-toolbar-btn--primary"
-          onClick={() =>
-            openForm({
-              kind: 'form',
-              mode: 'create',
-              date: format(zonedNow(now), 'yyyy-MM-dd'),
-              returnTo: { kind: 'overview' },
-            })
+          onClick={event =>
+            openForm(
+              {
+                kind: 'form',
+                mode: 'create',
+                date: format(zonedNow(now), 'yyyy-MM-dd'),
+                returnTo: { kind: 'overview' },
+              },
+              event.currentTarget
+            )
           }
         >
           New event
@@ -301,23 +415,25 @@ export default function DashboardCalendarInspector({
         </button>
       </div>
     </div>
-  );
+  )
 
   const renderDay = () => (
-    <div className="flex flex-col gap-2 min-h-0 overflow-y-auto">
+    <div className="dashboard-inspector__day flex flex-col gap-2">
       <h3 className="text-xs font-bold uppercase tracking-wide text-text-muted">
-        {selectedDate ? format(toZonedTime(selectedDate, CALENDAR_TZ), 'EEE d MMM', { locale: fr }) : ''}
+        {selectedDate
+          ? format(toZonedTime(selectedDate, CALENDAR_TZ), 'EEE d MMM', { locale: fr })
+          : ''}
       </h3>
       {selectedDateEvents.length === 0 ? (
         <p className="text-xs text-text-muted">No events on this day</p>
       ) : (
-        <ul className="space-y-1">
-          {selectedDateEvents.map((ev) => (
+        <ul className="dashboard-inspector__event-summary space-y-1">
+          {selectedDateEvents.slice(0, 3).map(ev => (
             <li key={ev.id}>
               <button
                 type="button"
                 className="w-full text-left text-xs bg-surface-base border border-border-default rounded-sm px-2 py-1.5 hover:bg-surface-secondary focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
-                onClick={() => setView({ kind: 'event', event: ev })}
+                onClick={event => openEventDetails(ev, { kind: 'day' }, event.currentTarget)}
               >
                 <span className="block font-semibold text-text-default truncate">{ev.title}</span>
                 <span className="block text-text-muted">
@@ -328,26 +444,64 @@ export default function DashboardCalendarInspector({
           ))}
         </ul>
       )}
+      {selectedDateEvents.length > 3 && (
+        <button
+          type="button"
+          className="grow-cal-toolbar-btn"
+          onClick={event =>
+            openEventList(
+              'Selected day events',
+              selectedDateEvents,
+              { kind: 'day' },
+              event.currentTarget
+            )
+          }
+        >
+          All {selectedDateEvents.length} events
+        </button>
+      )}
       <button
         type="button"
         className="grow-cal-toolbar-btn grow-cal-toolbar-btn--primary mt-auto"
-        onClick={() =>
+        onClick={event =>
           selectedDateKey &&
-          openForm({
-            kind: 'form',
-            mode: 'create',
-            date: selectedDateKey,
-            returnTo: { kind: 'day' },
-          })
+          openForm(
+            {
+              kind: 'form',
+              mode: 'create',
+              date: selectedDateKey,
+              returnTo: { kind: 'day' },
+            },
+            event.currentTarget
+          )
         }
       >
         New event on this date
       </button>
     </div>
-  );
+  )
+
+  const renderEventList = (list: EventListView) => (
+    <ul className="dashboard-inspector__dialog-event-list space-y-2">
+      {list.events.map(ev => (
+        <li key={ev.id}>
+          <button
+            type="button"
+            className="w-full text-left text-xs bg-surface-base border border-border-default rounded-sm px-2 py-1.5 hover:bg-surface-secondary focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
+            onClick={event => openEventDetails(ev, list, event.currentTarget)}
+          >
+            <span className="block font-semibold text-text-default break-words">{ev.title}</span>
+            <span className="block text-text-muted">
+              {ev.eventType} · {ev.location} · {dateRangeLabel(ev)}
+            </span>
+          </button>
+        </li>
+      ))}
+    </ul>
+  )
 
   const renderEvent = (ev: CalendarEventDto) => (
-    <div className="flex flex-col gap-2 min-h-0 overflow-y-auto">
+    <div className="flex flex-col gap-2">
       <h3 className="text-sm font-bold text-text-default break-words">{ev.title}</h3>
       <dl className="text-xs space-y-1">
         <div>
@@ -369,7 +523,7 @@ export default function DashboardCalendarInspector({
         {ev.notes && (
           <div>
             <dt className="text-text-muted">Notes:</dt>
-            <dd className="text-text-default whitespace-pre-wrap">{ev.notes}</dd>
+            <dd className="text-text-default whitespace-pre-wrap break-words">{ev.notes}</dd>
           </div>
         )}
       </dl>
@@ -377,27 +531,36 @@ export default function DashboardCalendarInspector({
         <button
           type="button"
           className="grow-cal-toolbar-btn mt-auto"
-          onClick={() =>
-            openForm({ kind: 'form', mode: 'edit', event: ev, date: ev.start.slice(0, 10), returnTo: { kind: 'event', event: ev } })
+          onClick={event =>
+            openForm(
+              {
+                kind: 'form',
+                mode: 'edit',
+                event: ev,
+                date: ev.start.slice(0, 10),
+                returnTo: view.kind === 'event' ? view : { kind: 'day' },
+              },
+              event.currentTarget
+            )
           }
         >
           Edit
         </button>
       )}
     </div>
-  );
+  )
 
   const renderForm = () => {
-    if (view.kind !== 'form' || !form) return null;
-    const mode = view.mode;
-    const rooms = locationOptions(mode === 'edit' ? form.originalLocation : undefined);
+    if (view.kind !== 'form' || !form) return null
+    const mode = view.mode
+    const rooms = locationOptions(mode === 'edit' ? form.originalLocation : undefined)
     return (
       <form
         noValidate
-        className="flex flex-col gap-1.5 min-h-0 overflow-y-auto"
-        onSubmit={(e) => {
-          e.preventDefault();
-          void submitForm();
+        className="flex flex-col gap-1.5"
+        onSubmit={e => {
+          e.preventDefault()
+          void submitForm()
         }}
       >
         <h3 className="text-xs font-bold uppercase tracking-wide text-text-muted">
@@ -408,7 +571,7 @@ export default function DashboardCalendarInspector({
           <input
             type="text"
             value={form.title}
-            onChange={(e) => updateForm({ title: e.target.value })}
+            onChange={e => updateForm({ title: e.target.value })}
             className="mt-0.5 w-full bg-surface-base border border-border-default rounded-sm px-1.5 py-1 text-xs text-text-default"
           />
         </label>
@@ -417,7 +580,7 @@ export default function DashboardCalendarInspector({
           <input
             type="text"
             value={form.eventType}
-            onChange={(e) => updateForm({ eventType: e.target.value })}
+            onChange={e => updateForm({ eventType: e.target.value })}
             className="mt-0.5 w-full bg-surface-base border border-border-default rounded-sm px-1.5 py-1 text-xs text-text-default"
           />
         </label>
@@ -425,10 +588,10 @@ export default function DashboardCalendarInspector({
           Location
           <select
             value={form.location}
-            onChange={(e) => updateForm({ location: e.target.value })}
+            onChange={e => updateForm({ location: e.target.value })}
             className="mt-0.5 w-full bg-surface-base border border-border-default rounded-sm px-1.5 py-1 text-xs text-text-default"
           >
-            {rooms.map((room) => (
+            {rooms.map(room => (
               <option key={room} value={room}>
                 {room}
               </option>
@@ -441,7 +604,7 @@ export default function DashboardCalendarInspector({
             type="date"
             required
             value={form.startDate}
-            onChange={(e) => updateForm({ startDate: e.target.value })}
+            onChange={e => updateForm({ startDate: e.target.value })}
             className="mt-0.5 w-full bg-surface-base border border-border-default rounded-sm px-1.5 py-1 text-xs text-text-default font-mono tabular-nums"
           />
         </label>
@@ -451,7 +614,7 @@ export default function DashboardCalendarInspector({
             type="date"
             value={form.endDate}
             min={form.startDate || undefined}
-            onChange={(e) => updateForm({ endDate: e.target.value })}
+            onChange={e => updateForm({ endDate: e.target.value })}
             className="mt-0.5 w-full bg-surface-base border border-border-default rounded-sm px-1.5 py-1 text-xs text-text-default font-mono tabular-nums"
           />
         </label>
@@ -460,7 +623,7 @@ export default function DashboardCalendarInspector({
           <textarea
             value={form.notes}
             rows={2}
-            onChange={(e) => updateForm({ notes: e.target.value })}
+            onChange={e => updateForm({ notes: e.target.value })}
             className="mt-0.5 w-full bg-surface-base border border-border-default rounded-sm px-1.5 py-1 text-xs text-text-default"
           />
         </label>
@@ -492,19 +655,39 @@ export default function DashboardCalendarInspector({
           </button>
         </div>
       </form>
-    );
-  };
+    )
+  }
 
   return (
-    <div
-      role="complementary"
-      aria-label="Calendar inspector"
-      className="dashboard-inspector flex flex-col min-h-0 bg-surface-primary border border-border-subtle rounded-lg p-2 gap-1"
-    >
-      {view.kind === 'overview' && renderOverview()}
-      {view.kind === 'day' && renderDay()}
-      {view.kind === 'event' && renderEvent(view.event)}
-      {view.kind === 'form' && renderForm()}
-    </div>
-  );
+    <Dialog open={dialogOpen} onOpenChange={open => !open && closeDialog()}>
+      <div
+        role="complementary"
+        aria-label="Calendar inspector"
+        className="dashboard-inspector flex flex-col bg-surface-primary border border-border-subtle rounded-lg p-2 gap-1"
+      >
+        {baseView.kind === 'overview' && renderOverview()}
+        {baseView.kind === 'day' && renderDay()}
+      </div>
+      <DialogContent
+        ref={dialogContentRef}
+        onCloseAutoFocus={handleCloseAutoFocus}
+        className="max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] overflow-y-auto overscroll-contain sm:max-w-xl"
+      >
+        <DialogTitle className="mb-3">
+          {view.kind === 'form'
+            ? view.mode === 'create'
+              ? 'New event'
+              : 'Edit event'
+            : view.kind === 'events'
+              ? view.title
+              : view.kind === 'event'
+                ? 'Event details'
+                : 'Calendar details'}
+        </DialogTitle>
+        {view.kind === 'events' && renderEventList(view)}
+        {view.kind === 'event' && renderEvent(view.event)}
+        {view.kind === 'form' && renderForm()}
+      </DialogContent>
+    </Dialog>
+  )
 }

@@ -30,6 +30,8 @@ Every event uses `schema_version=1` and the immutable envelope in [`operational_
 
 Reason fields are not prose logs. Use `reason_code` for routers and `reason_text` for display.
 
+PID-driven binary relay reasons are attached only to a successful `relay.commanded` event when the desired relay state changes. Build `reason_code` and `reason_text` from the same recorded `DecisionObservation` and evaluated hysteresis boundary; never infer causes from nearby control events or annotate failed, interlocked, manual, unchanged-state, or unmatched `relay.observed` events.
+
 ## Payload families and event catalog
 
 | Family | Typical event_type | Severity | Payload highlights |

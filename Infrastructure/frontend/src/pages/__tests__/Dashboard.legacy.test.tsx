@@ -48,6 +48,7 @@ vi.mock('../../hooks/useControlSnapshot', () => ({
 vi.mock('../../hooks/useDashboardScheduleContext', () => ({
   useDashboardScheduleContext: () => ({
     modes: {},
+    modeErrors: {},
     schedules: [],
     loading: false,
     error: null,
@@ -158,11 +159,15 @@ describe('Dashboard dense layout', () => {
     expect(screen.getByText('Mothernode')).toBeInTheDocument()
   })
 
-  it('renders the Lab room bar and the water tank section', () => {
+  it('renders the compact Lab room bar and water tank section', () => {
     renderPage()
-    expect(
-      screen.getAllByRole('link').some(link => link.getAttribute('href')?.includes('/zone/Lab/'))
-    ).toBe(true)
+    const labLink = screen
+      .getAllByRole('link')
+      .find(link => link.getAttribute('href') === '/zone/Lab/main')
+    expect(labLink).toBeDefined()
+    expect(labLink).not.toHaveTextContent(
+      /Mode:|No scheduled transition|TEMP IN BAND|AUTO|Setpoints/
+    )
     expect(screen.getByRole('region', { name: 'Water' })).toBeInTheDocument()
     expect(screen.queryByRole('region', { name: 'Services' })).not.toBeInTheDocument()
     expect(screen.queryByRole('region', { name: 'Pi' })).not.toBeInTheDocument()

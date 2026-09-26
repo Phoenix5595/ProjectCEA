@@ -14,9 +14,12 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass, field
 import time
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from shared.infra_logging import get_logger
+
+if TYPE_CHECKING:
+    from .relay_manager import RelayCommandReason
 
 logger = get_logger(__name__)
 
@@ -39,6 +42,7 @@ class RelayOperation:
     relay_manager: Any  # RelayManager - using Any to avoid import issues
     mode: str = "auto"
     check_interlock: bool = True
+    command_reason: RelayCommandReason | None = None
 
 
 @dataclass
@@ -257,6 +261,8 @@ class HardwareBatchExecutor:
         device_name: str,
         state: int,
         relay_manager: Any,
+        *,
+        command_reason: RelayCommandReason | None = None,
     ) -> None:
         """Queue a binary (on/off) device operation.
 
@@ -276,6 +282,7 @@ class HardwareBatchExecutor:
                 device_name=device_name,
                 state=state,
                 relay_manager=relay_manager,
+                command_reason=command_reason,
             )
         )
 
@@ -298,6 +305,7 @@ class HardwareBatchExecutor:
                     op.state,
                     op.mode,
                     op.check_interlock,
+                    command_reason=op.command_reason,
                 )
                 return success, reason
             elif isinstance(op, DimmerOperation):
