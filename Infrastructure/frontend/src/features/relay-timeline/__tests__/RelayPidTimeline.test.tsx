@@ -28,7 +28,9 @@ vi.mock('../RelayTimelineChart', async () => {
             {props.lanes.map(lane => (
               <div key={lane.key} data-testid={`lane-${lane.deviceType}`}>
                 <span>{lane.label}</span>
-                <span>relay {lane.physicalRelay}</span>
+                <span>
+                  {lane.preview ? 'example only; no hardware' : `relay ${lane.physicalRelay}`}
+                </span>
                 <span>
                   {lane.requestedOutput.map(segment => segment.requestedPercent).join(',')}
                 </span>
@@ -188,8 +190,9 @@ function timelinePage(start: string, end: string, watermark = 42) {
 }
 
 function renderTimeline(
-  snapshot: ControlSnapshotResponse,
-  registry: DeviceRegistryEntry[] = [heater, light]
+  snapshot: ControlSnapshotResponse | null,
+  registry: DeviceRegistryEntry[] = [heater, light],
+  snapshotLoading = false
 ) {
   return render(
     <MemoryRouter
@@ -202,7 +205,7 @@ function renderTimeline(
         cluster="main"
         registry={registry}
         snapshot={snapshot}
-        snapshotLoading={false}
+        snapshotLoading={snapshotLoading}
       />
     </MemoryRouter>
   )
@@ -261,12 +264,44 @@ describe('RelayPidTimeline integration', () => {
     ).not.toBeInTheDocument()
   })
 
-  it('shows a real no-relays state when no assigned devices match the current snapshot', async () => {
+  it('shows an explicitly synthetic example lane when assignments are absent', async () => {
     renderTimeline(controlSnapshot(new Date().toISOString()), [])
 
     expect(
       await screen.findByText(/No assigned non-light relays are available/)
     ).toBeInTheDocument()
+    const disableButton = screen.getByRole('button', { name: 'Disable beta synthetic example' })
+    expect(disableButton).toHaveAttribute('aria-pressed', 'true')
+    const preview = screen.getByRole('group', { name: 'Illustrative relay timeline preview' })
+    const previewChart = within(preview).getByTestId('relay-timeline-chart')
+    expect(within(previewChart).getByTestId('lane-heating')).toHaveTextContent('Heating relay')
+    expect(within(previewChart).getByText('example only; no hardware')).toBeInTheDocument()
+    expect(within(previewChart).getByText('25,50,75,35')).toBeInTheDocument()
+    expect(
+      within(preview).getByText(
+        /not assigned hardware, a relay observation, or recorded PID output/
+      )
+    ).toBeInTheDocument()
+
+    fireEvent.click(disableButton)
+    expect(
+      screen.queryByRole('group', { name: 'Illustrative relay timeline preview' })
+    ).not.toBeInTheDocument()
+    const enableButton = screen.getByRole('button', { name: 'Enable beta synthetic example' })
+    expect(enableButton).toHaveAttribute('aria-pressed', 'false')
+    fireEvent.click(enableButton)
+    expect(
+      screen.getByRole('group', { name: 'Illustrative relay timeline preview' })
+    ).toBeInTheDocument()
+  })
+
+  it('does not show the example lane while assignments are still loading', () => {
+    renderTimeline(null, [], true)
+
+    expect(screen.getByText(/Loading current relay assignments/)).toBeInTheDocument()
+    expect(
+      screen.queryByRole('group', { name: 'Illustrative relay timeline preview' })
+    ).not.toBeInTheDocument()
   })
 
   it('refreshes the requested live preset range and ignores a stale response after range change', async () => {
