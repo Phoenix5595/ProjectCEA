@@ -6,6 +6,7 @@ import asyncio
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from functools import partial
 from typing import Final, Literal, Protocol
 from uuid import UUID, uuid4
 
@@ -157,9 +158,7 @@ class RelayObservationRecorder:
         )
         self._offer_batch(rows)
 
-    def observe_sample(
-        self, channels: tuple[bool, ...] | None, observed_at: datetime
-    ) -> None:
+    def observe_sample(self, channels: tuple[bool, ...] | None, observed_at: datetime) -> None:
         """Offer a successful 16-channel sample or a failed-sample stale boundary."""
         if not self._accepting:
             return
@@ -304,7 +303,7 @@ class RelayObservationRecorder:
 
             try:
                 await retry_async(
-                    lambda: self._store.append(tuple(batch)),
+                    partial(self._store.append, tuple(batch)),
                     retry_on=_RETRYABLE_DATABASE_ERRORS,
                     max_attempts=RETRY_ATTEMPTS,
                     base_delay=0.05,
@@ -425,9 +424,7 @@ class RelayObservationRecorder:
                 device_id=device_id if isinstance(device_id, int) else None,
                 device_name=key[2],
                 device_type=(
-                    str(info["device_type"])
-                    if info.get("device_type") is not None
-                    else None
+                    str(info["device_type"]) if info.get("device_type") is not None else None
                 ),
                 location=key[0],
                 cluster=key[1],
