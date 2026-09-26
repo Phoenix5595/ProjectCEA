@@ -1,14 +1,23 @@
-import { useState, useMemo, useCallback } from 'react'
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react'
 import type { EventLogEntry } from '../state/eventLogStore'
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { EventFilters, CompactFiltersTrigger, type FilterState } from './EventFilters'
 import { EventRow } from './EventRow'
+import { EventDetails } from './EventDetails'
+import { EventTimestamps, EventRoomIndicator } from './EventFragments'
 import {
   EventGroupedView,
   buildGroups,
   withPreallocatedSlots,
   type EventLogView,
 } from './EventGroupedView'
+import { getEventDisplay } from '../presentation/eventRegistry'
+import { sourcePartsFor } from '../presentation/eventSourceParts'
+import { SEVERITY_LABELS } from '../presentation/severity'
 import { categoryTheme, displayCategoryOf } from '../presentation/categoryTheme'
+
+const COMPACT_EVENT_PAGE_SIZE = 5
+const COMPACT_GROUP_PAGE_SIZE = 8
 
 interface EventLogProps {
   entries: readonly EventLogEntry[]
@@ -31,6 +40,9 @@ export function EventLog({
   // The dense dashboard keeps its compact grouped console; full-width room logs open as a readable list.
   const [view, setView] = useState<EventLogView>(initialView ?? (compact ? 'grouped' : 'flat'))
   const [expandedCategory, setExpandedCategory] = useState<string | null>(null)
+  const [page, setPage] = useState(1)
+  const [detailEntry, setDetailEntry] = useState<EventLogEntry | null>(null)
+  const detailOpenerRef = useRef<HTMLElement | null>(null)
   const [filters, setFilters] = useState<FilterState>({
     severity: 'all',
     search: '',
@@ -39,12 +51,21 @@ export function EventLog({
     types: [],
   })
 
-  const handleFilterChange = useCallback((next: FilterState) => setFilters(next), [])
+  const handleFilterChange = useCallback((next: FilterState) => {
+    setFilters(next)
+    setPage(1)
+  }, [])
 
-  const handleExpand = useCallback(
-    (category: string) => setExpandedCategory(current => (current === category ? null : category)),
-    []
-  )
+  const handleExpand = useCallback((category: string) => {
+    setExpandedCategory(current => (current === category ? null : category))
+    setPage(1)
+  }, [])
+
+  const handleOpenDetail = useCallback((entry: EventLogEntry) => {
+    detailOpenerRef.current =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null
+    setDetailEntry(entry)
+  }, [])
 
   const rooms = useMemo(
     () =>
@@ -118,15 +139,37 @@ export function EventLog({
   const handleViewChange = useCallback((next: EventLogView) => {
     setView(next)
     setExpandedCategory(null)
+    setPage(1)
   }, [])
 
   const showFlatList = view === 'flat' || expandedCategory !== null
+  const listEntries = expandedCategory !== null ? expandedListView : ordered
+  const listPageCount = Math.max(1, Math.ceil(listEntries.length / COMPACT_EVENT_PAGE_SIZE))
+  const groupPageCount = Math.max(1, Math.ceil(groups.length / COMPACT_GROUP_PAGE_SIZE))
+  const activePageCount = compact ? (showFlatList ? listPageCount : groupPageCount) : 1
+  const currentPage = Math.min(page, activePageCount)
+
+  useEffect(() => {
+    if (compact && page > activePageCount) setPage(activePageCount)
+  }, [activePageCount, compact, page])
+
+  const visibleEntries = compact
+    ? listEntries.slice(
+        (currentPage - 1) * COMPACT_EVENT_PAGE_SIZE,
+        currentPage * COMPACT_EVENT_PAGE_SIZE
+      )
+    : listEntries
+  const visibleGroups = compact
+    ? groups.slice(
+        (currentPage - 1) * COMPACT_GROUP_PAGE_SIZE,
+        currentPage * COMPACT_GROUP_PAGE_SIZE
+      )
+    : groups
+  const detailSourceParts = detailEntry === null ? [] : sourcePartsFor(detailEntry)
+  const detailDisplay = detailEntry === null ? null : getEventDisplay(detailEntry.type)
 
   return (
-    <section
-      aria-labelledby="event-log-heading"
-      className={`flex flex-col gap-2 @container ${compact ? 'h-full min-h-0' : ''}`}
-    >
+    <section aria-labelledby="event-log-heading" className="flex flex-col gap-2 @container">
       <div className="flex items-center justify-between gap-2">
         <h2
           id="event-log-heading"
@@ -172,7 +215,10 @@ export function EventLog({
               type="button"
               data-testid="event-group-collapse"
               aria-pressed={false}
-              onClick={() => setExpandedCategory(null)}
+              onClick={() => {
+                setExpandedCategory(null)
+                setPage(1)
+              }}
               className="self-start px-2 py-1 text-xs font-semibold border bg-surface-secondary border-border-emphasis text-text-default"
             >
               {'\u2190'} {categoryTheme(expandedCategory).label} / All categories
@@ -181,16 +227,149 @@ export function EventLog({
           <ul
             role="list"
             aria-label="Event list"
-            className="flex flex-col gap-px bg-border-subtle border border-border-subtle overflow-auto max-h-150"
+            className={`flex flex-col gap-px bg-border-subtle border border-border-subtle ${compact ? '' : 'overflow-auto max-h-150'}`}
           >
-            {(expandedCategory !== null ? expandedListView : ordered).map(entry => (
-              <EventRow key={entry.eventId} entry={entry} now={now} />
+            {visibleEntries.map(entry => (
+              <EventRow
+                key={entry.eventId}
+                entry={entry}
+                now={now}
+                onOpenDetail={compact ? handleOpenDetail : undefined}
+              />
             ))}
           </ul>
+          {compact && (
+            <div className="flex items-center justify-between gap-2 text-11 text-text-default">
+              <p
+                role="status"
+                data-testid="event-events-page-status"
+                aria-live="polite"
+                className="tabular-nums"
+              >
+                Page {currentPage} of {listPageCount} · {listEntries.length} event
+                {listEntries.length === 1 ? '' : 's'}
+              </p>
+              <div className="flex shrink-0 gap-1">
+                <button
+                  type="button"
+                  aria-label="Previous events page"
+                  data-testid="event-events-previous-page"
+                  disabled={currentPage === 1}
+                  onClick={() => setPage(currentPage - 1)}
+                  className="border border-border-subtle px-2 py-1 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Previous
+                </button>
+                <button
+                  type="button"
+                  aria-label="Next events page"
+                  data-testid="event-events-next-page"
+                  disabled={currentPage === listPageCount}
+                  onClick={() => setPage(currentPage + 1)}
+                  className="border border-border-subtle px-2 py-1 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      ) : compact ? (
+        <div className="flex min-h-0 flex-col gap-2">
+          <EventGroupedView groups={visibleGroups} now={now} onExpand={handleExpand} compact />
+          <div className="flex items-center justify-between gap-2 text-11 text-text-default">
+            <p
+              role="status"
+              data-testid="event-groups-page-status"
+              aria-live="polite"
+              className="tabular-nums"
+            >
+              Groups {currentPage} of {groupPageCount} · {groups.length} categories
+            </p>
+            <div className="flex shrink-0 gap-1">
+              <button
+                type="button"
+                aria-label="Previous category page"
+                data-testid="event-groups-previous-page"
+                disabled={currentPage === 1}
+                onClick={() => setPage(currentPage - 1)}
+                className="border border-border-subtle px-2 py-1 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Previous
+              </button>
+              <button
+                type="button"
+                aria-label="Next category page"
+                data-testid="event-groups-next-page"
+                disabled={currentPage === groupPageCount}
+                onClick={() => setPage(currentPage + 1)}
+                className="border border-border-subtle px-2 py-1 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Next
+              </button>
+            </div>
+          </div>
         </div>
       ) : (
-        <EventGroupedView groups={groups} now={now} onExpand={handleExpand} compact={compact} />
+        <EventGroupedView groups={groups} now={now} onExpand={handleExpand} />
       )}
+      <Dialog
+        open={compact && detailEntry !== null}
+        onOpenChange={open => {
+          if (!open) setDetailEntry(null)
+        }}
+      >
+        {detailEntry !== null && detailDisplay !== null && compact && (
+          <DialogContent
+            className="w-[calc(100vw-2rem)] max-w-2xl max-h-[80vh] overflow-y-auto overscroll-contain bg-surface-primary"
+            onCloseAutoFocus={event => {
+              const opener = detailOpenerRef.current
+              if (opener?.isConnected) {
+                event.preventDefault()
+                opener.focus()
+              }
+              detailOpenerRef.current = null
+            }}
+          >
+            <DialogTitle>Event details — {detailDisplay.label}</DialogTitle>
+            <DialogDescription className="mb-3">{detailEntry.type}</DialogDescription>
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5 text-sm font-semibold">
+                  <EventRoomIndicator room={detailEntry.payload.room} />
+                  <span className="break-words">{detailDisplay.label}</span>
+                </div>
+                <p className="break-words font-mono text-11 text-text-default">
+                  {detailEntry.type}
+                </p>
+                <p className="text-11 font-semibold text-text-secondary">
+                  Severity: {SEVERITY_LABELS[detailEntry.severity]}
+                </p>
+              </div>
+              <EventTimestamps occurredAt={detailEntry.occurredAt} now={now} />
+            </div>
+            {detailSourceParts.length > 0 && (
+              <p className="mt-3 break-words text-11 text-text-default">
+                {detailSourceParts.map((part, index) => (
+                  <span key={`${part.text}-${index}`} className={part.className} title={part.title}>
+                    {index > 0 && ' · '}
+                    {part.text}
+                  </span>
+                ))}
+              </p>
+            )}
+            {detailEntry.reasonText !== null && (
+              <div className="mt-3 border-t border-border-subtle pt-2">
+                <p className="text-11 font-semibold text-text-secondary">Recorded reason</p>
+                <p className="whitespace-pre-wrap break-words text-sm text-text-default">
+                  {detailEntry.reasonText}
+                </p>
+              </div>
+            )}
+            <EventDetails payload={detailEntry.payload} expanded />
+          </DialogContent>
+        )}
+      </Dialog>
     </section>
   )
 }

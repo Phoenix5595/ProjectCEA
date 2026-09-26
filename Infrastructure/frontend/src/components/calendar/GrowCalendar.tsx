@@ -1,38 +1,38 @@
-import { useMemo, useState } from 'react';
-import { DayPicker } from 'react-day-picker';
-import { fr } from 'react-day-picker/locale';
-import { format } from 'date-fns';
-import { fr as dateFnsFr } from 'date-fns/locale';
-import { toZonedTime } from 'date-fns-tz';
+import { useMemo, useState } from 'react'
+import { DayPicker } from 'react-day-picker'
+import { fr } from 'react-day-picker/locale'
+import { format } from 'date-fns'
+import { fr as dateFnsFr } from 'date-fns/locale'
+import { toZonedTime } from 'date-fns-tz'
 
-import type { CalendarEventDto } from '../../types/calendar';
-import { ROOM_CALENDAR_COLORS } from '../../types/calendar';
-import { buildCalendarDayMarkers, calendarEventOccursOnDay } from '../../utils/calendarDayMarkers';
-import { CALENDAR_TZ } from '../../utils/flowerGrowPlan';
-import { CalendarDayButton } from './CalendarDayButton';
-import { CalendarMarkersContext } from './CalendarMarkersContext';
-import CalendarDayDetail from './CalendarDayDetail';
+import type { CalendarEventDto } from '../../types/calendar'
+import { ROOM_CALENDAR_COLORS } from '../../types/calendar'
+import { buildCalendarDayMarkers, calendarEventOccursOnDay } from '../../utils/calendarDayMarkers'
+import { CALENDAR_TZ } from '../../utils/flowerGrowPlan'
+import { CalendarDayButton } from './CalendarDayButton'
+import { CalendarMarkersContext } from './CalendarMarkersContext'
+import CalendarDayDetail from './CalendarDayDetail'
 
-import 'react-day-picker/style.css';
+import 'react-day-picker/style.css'
 
 export interface GrowCalendarProps {
-  variant: 'compact' | 'full';
-  viewMode?: 'unified' | 'room';
-  location?: string;
-  events: CalendarEventDto[];
-  loading?: boolean;
-  onMonthChange?: (month: Date) => void;
-  onRefresh?: () => void;
-  showAddTask?: boolean;
-  onAddTask?: () => void;
+  variant: 'compact' | 'full'
+  viewMode?: 'unified' | 'room'
+  location?: string
+  events: CalendarEventDto[]
+  loading?: boolean
+  onMonthChange?: (month: Date) => void
+  onRefresh?: () => void
+  showAddTask?: boolean
+  onAddTask?: () => void
   /** Scale month grid to fill parent width (e.g. dashboard column up to 50%). */
-  fillWidth?: boolean;
+  fillWidth?: boolean
   /** Notified on selection/clear with the date and all events active on it. */
-  onDaySelect?: (date: Date | undefined, events: CalendarEventDto[]) => void;
+  onDaySelect?: (date: Date | undefined, events: CalendarEventDto[]) => void
   /** Render the built-in inline day detail panel (default true). */
-  showInlineDayDetail?: boolean;
+  showInlineDayDetail?: boolean
   /** Density preset; "dashboard" fits six weeks into a dense upper row. */
-  density?: 'standard' | 'dashboard';
+  density?: 'standard' | 'dashboard'
 }
 
 export default function GrowCalendar({
@@ -50,42 +50,48 @@ export default function GrowCalendar({
   showInlineDayDetail = true,
   density = 'standard',
 }: GrowCalendarProps) {
-  const [month, setMonth] = useState(() => toZonedTime(new Date(), CALENDAR_TZ));
-  const [selected, setSelected] = useState<Date | undefined>();
+  const [month, setMonth] = useState(() => toZonedTime(new Date(), CALENDAR_TZ))
+  const [selected, setSelected] = useState<Date | undefined>()
 
   const filtered = useMemo(() => {
     if (viewMode === 'room' && location) {
-      return events.filter((e) => e.location === location);
+      return events.filter(e => e.location === location)
     }
-    return events;
-  }, [events, viewMode, location]);
+    return events
+  }, [events, viewMode, location])
 
-  const dayMarkers = useMemo(() => buildCalendarDayMarkers(filtered), [filtered]);
+  const dayMarkers = useMemo(() => buildCalendarDayMarkers(filtered), [filtered])
 
-  const dayEvents = selected ? filtered.filter((e) => calendarEventOccursOnDay(e, selected)) : [];
+  const dayEvents = selected ? filtered.filter(e => calendarEventOccursOnDay(e, selected)) : []
 
   const handleSelect = (date: Date | undefined) => {
-    setSelected(date);
-    onDaySelect?.(date, date ? filtered.filter((e) => calendarEventOccursOnDay(e, date)) : []);
-  };
+    setSelected(date)
+    onDaySelect?.(date, date ? filtered.filter(e => calendarEventOccursOnDay(e, date)) : [])
+  }
 
-  const compact = variant === 'compact';
-  const scaled = compact && fillWidth;
-  const dashboard = density === 'dashboard';
+  const compact = variant === 'compact'
+  const scaled = compact && fillWidth
+  const dashboard = density === 'dashboard'
 
-  const weekdayFormat = compact ? 'EEE' : 'cccc';
+  const weekdayFormat = compact ? 'EEE' : 'cccc'
 
   const calendarFormatters = useMemo(
     () => ({
       formatWeekdayName: (weekday: Date) => format(weekday, weekdayFormat, { locale: dateFnsFr }),
     }),
     [weekdayFormat]
-  );
+  )
 
   return (
     <div
       className={`grow-calendar flex flex-col gap-0 ${
-        dashboard ? 'grow-calendar--dashboard' : scaled ? 'grow-calendar--fill w-full min-h-0' : compact ? 'max-h-155' : ''
+        dashboard
+          ? 'grow-calendar--dashboard flex-1 min-h-0'
+          : scaled
+            ? 'grow-calendar--fill w-full min-h-0'
+            : compact
+              ? 'max-h-155'
+              : ''
       }`}
     >
       <div className="flex items-center justify-between gap-0 px-2 pt-2 pb-1 shrink-0">
@@ -96,7 +102,11 @@ export default function GrowCalendar({
         </h2>
         <div className="flex gap-0">
           {showAddTask && onAddTask && (
-            <button type="button" onClick={onAddTask} className="grow-cal-toolbar-btn grow-cal-toolbar-btn--primary">
+            <button
+              type="button"
+              onClick={onAddTask}
+              className="grow-cal-toolbar-btn grow-cal-toolbar-btn--primary"
+            >
               Add task
             </button>
           )}
@@ -133,7 +143,9 @@ export default function GrowCalendar({
       </div>
 
       {loading ? (
-        <p className="text-sm text-text-secondary py-8 text-center grow-cal-panel">Loading calendar…</p>
+        <p className="text-sm text-text-secondary py-8 text-center grow-cal-panel">
+          Loading calendar…
+        </p>
       ) : (
         <CalendarMarkersContext.Provider value={dayMarkers}>
           <div className="grow-cal-panel min-h-0 flex-1 flex flex-col">
@@ -146,12 +158,13 @@ export default function GrowCalendar({
               selected={selected}
               onSelect={handleSelect}
               month={month}
-              onMonthChange={(m) => {
-                setMonth(m);
-                onMonthChange?.(m);
+              onMonthChange={m => {
+                setMonth(m)
+                onMonthChange?.(m)
               }}
               components={{ DayButton: CalendarDayButton }}
               className={`${scaled ? 'text-sm' : compact ? 'text-xs' : 'text-sm'} w-full grow-calendar-picker`}
+              fixedWeeks={dashboard}
             />
           </div>
         </CalendarMarkersContext.Provider>
@@ -165,5 +178,5 @@ export default function GrowCalendar({
         />
       )}
     </div>
-  );
+  )
 }

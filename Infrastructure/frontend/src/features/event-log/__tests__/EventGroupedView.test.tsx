@@ -38,6 +38,35 @@ describe('EventGroupedView compact sidebar mode', () => {
     expect(wide.container.textContent).toContain('devices in the last 10 minutes')
   })
 
+  it('uses only the latest event reason for a compact category hover', () => {
+    const latestReason = 'PID output 65% crossed the >60% relay ON threshold'
+    const groups = withPreallocatedSlots(
+      buildGroups([
+        makeEventEntryWith({
+          redisId: '2-0',
+          occurredAt: new Date('2026-09-02T12:00:00Z'),
+          reasonText: latestReason,
+        }),
+        makeEventEntryWith({
+          redisId: '1-0',
+          occurredAt: new Date('2026-09-02T11:59:00Z'),
+          reasonText: 'Older event reason',
+        }),
+      ]),
+    )
+
+    const compact = render(
+      <EventGroupedView groups={groups} now={NOW} onExpand={() => {}} compact />,
+    )
+
+    const relayCategory = compact.getByTestId('event-group-relay')
+    expect(relayCategory).toHaveAttribute(
+      'title',
+      `Latest event in this category — recorded reason: ${latestReason}`,
+    )
+    expect(relayCategory.getAttribute('title')).not.toContain('Older event reason')
+  })
+
   it('keeps every pre-allocated category slot visible in compact mode', () => {
     const groups = withPreallocatedSlots(
       buildGroups([makeEventEntry('1-0', 'relay.command_issued', 'relay')]),

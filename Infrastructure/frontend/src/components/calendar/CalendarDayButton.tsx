@@ -1,12 +1,10 @@
-import { useRef, useEffect } from 'react';
-import type { DayButtonProps } from 'react-day-picker';
+import { useRef, useEffect } from 'react'
+import { format } from 'date-fns'
+import { fr } from 'date-fns/locale'
+import type { DayButtonProps } from 'react-day-picker'
 
-import {
-  MARKER_LIMITS,
-  noteMarkerLabel,
-  truncateMarkerLabel,
-} from '../../utils/calendarDayMarkers';
-import { useCalendarMarkers } from './CalendarMarkersContext';
+import { MARKER_LIMITS, noteMarkerLabel, truncateMarkerLabel } from '../../utils/calendarDayMarkers'
+import { useCalendarMarkers } from './CalendarMarkersContext'
 
 export function CalendarDayButton({
   day,
@@ -15,22 +13,35 @@ export function CalendarDayButton({
   children,
   ...buttonProps
 }: DayButtonProps) {
-  const ref = useRef<HTMLButtonElement>(null);
-  const markers = useCalendarMarkers(day.date);
+  const ref = useRef<HTMLButtonElement>(null)
+  const markers = useCalendarMarkers(day.date)
 
   useEffect(() => {
     if (modifiers.focused) {
-      ref.current?.focus();
+      ref.current?.focus()
     }
-  }, [modifiers.focused]);
+  }, [modifiers.focused])
 
-  const tasks = markers.tasks.slice(0, MARKER_LIMITS.tasks);
-  const notes = markers.notes.slice(0, MARKER_LIMITS.notes);
-  const bars = markers.scheduleBars.slice(0, MARKER_LIMITS.scheduleBars);
-  const extraTasks = markers.tasks.length - tasks.length;
-  const extraNotes = markers.notes.length - notes.length;
-  const extraBars = markers.scheduleBars.length - bars.length;
-  const hasMarkers = tasks.length + notes.length + bars.length > 0;
+  const tasks = markers.tasks.slice(0, MARKER_LIMITS.tasks)
+  const notes = markers.notes.slice(0, MARKER_LIMITS.notes)
+  const bars = markers.scheduleBars.slice(0, MARKER_LIMITS.scheduleBars)
+  const extraTasks = markers.tasks.length - tasks.length
+  const extraNotes = markers.notes.length - notes.length
+  const extraBars = markers.scheduleBars.length - bars.length
+  const hasMarkers = tasks.length + notes.length + bars.length > 0
+  const markerCounts = [
+    markers.tasks.length
+      ? `${markers.tasks.length} task${markers.tasks.length === 1 ? '' : 's'}`
+      : null,
+    markers.notes.length
+      ? `${markers.notes.length} note${markers.notes.length === 1 ? '' : 's'}`
+      : null,
+    markers.scheduleBars.length
+      ? `${markers.scheduleBars.length} phase${markers.scheduleBars.length === 1 ? '' : 's'}`
+      : null,
+  ].filter((count): count is string => count !== null)
+  const dateName = buttonProps['aria-label'] ?? format(day.date, 'PPP', { locale: fr })
+  const accessibleLabel = [dateName, ...markerCounts].join(', ')
 
   return (
     <button
@@ -47,12 +58,13 @@ export function CalendarDayButton({
       ]
         .filter(Boolean)
         .join(' ')}
+      aria-label={accessibleLabel}
     >
       <span className="grow-cal-day-num">{children}</span>
 
       {(tasks.length > 0 || notes.length > 0 || bars.length > 0) && (
         <span className="grow-cal-day-markers">
-          {tasks.map((ev) => (
+          {tasks.map(ev => (
             <span key={ev.id} className="grow-cal-marker grow-cal-marker--task" title={ev.title}>
               <span className="grow-cal-marker-dot grow-cal-marker-dot--task" aria-hidden />
               <span className="grow-cal-marker-text">{truncateMarkerLabel(ev.title)}</span>
@@ -60,8 +72,8 @@ export function CalendarDayButton({
           ))}
           {extraTasks > 0 && <span className="grow-cal-more">+{extraTasks} tasks</span>}
 
-          {notes.map((ev) => {
-            const label = noteMarkerLabel(ev);
+          {notes.map(ev => {
+            const label = noteMarkerLabel(ev)
             return (
               <span
                 key={`note-${ev.id}`}
@@ -71,11 +83,11 @@ export function CalendarDayButton({
                 <span className="grow-cal-marker-dot grow-cal-marker-dot--note" aria-hidden />
                 <span className="grow-cal-marker-text">{label}</span>
               </span>
-            );
+            )
           })}
           {extraNotes > 0 && <span className="grow-cal-more">+{extraNotes} notes</span>}
 
-          {bars.map((bar) => (
+          {bars.map(bar => (
             <span
               key={`${bar.eventId}-${bar.location}`}
               className={`grow-cal-phase ${bar.colorClass}`}
@@ -88,5 +100,5 @@ export function CalendarDayButton({
         </span>
       )}
     </button>
-  );
+  )
 }

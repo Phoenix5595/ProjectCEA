@@ -2,8 +2,8 @@
  * Monitoring preview config (test-only).
  *
  * Serves the production `dist` build plus deterministic REST / WebSocket /
- * Grafana-placeholder / SPA-fallback fixtures on exactly
- * `http://127.0.0.1:4173`. It injects a restrictive CSP and writes a request
+ * Grafana-placeholder / SPA-fallback fixtures on
+ * `http://127.0.0.1:${MONITORING_FIXTURE_PORT ?? 4173}`. It injects a restrictive CSP and writes a request
  * log so exact-origin enforcement stays executable without Playwright route
  * interception (the same fixture endpoints are available to `/visual-qa`).
  *
@@ -46,8 +46,9 @@ import {
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const DIST_DIR = path.resolve(HERE, 'dist')
 
+const FIXTURE_PORT = Number(process.env.MONITORING_FIXTURE_PORT ?? 4173)
 const CSP =
-  "default-src 'self'; connect-src 'self' ws://127.0.0.1:4173; " +
+  `default-src 'self'; connect-src 'self' ws://127.0.0.1:${FIXTURE_PORT}; ` +
   "frame-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'"
 
 interface FixtureRoute {
@@ -400,6 +401,24 @@ const FIXTURE_ROUTES: FixtureRoute[] = [
   {
     re: /^\/api\/calendar\/mode-schedule\//,
     handler: () => ({ expected: { mode_name: 'flower', submode_name: null, title: 'Flowering' }, active: { mode_name: 'flower', submode_name: null } }),
+  },
+  {
+    re: /^\/api\/room-modes\/active\/[^/]+\/[^/]+$/,
+    handler: (req) => {
+      const parts = new URL(req.url ?? '', 'http://fixture.invalid').pathname
+        .split('/')
+        .filter(Boolean)
+      const location = decodeURIComponent(parts[3] ?? '')
+      const cluster = decodeURIComponent(parts[4] ?? '')
+      return {
+        location,
+        cluster,
+        mode_name: location === 'Flower Room' ? 'sleep' : 'veg',
+        submode_name: null,
+        mode_id: 1,
+        submode_id: null,
+      }
+    },
   },
   {
     re: /^\/api\/room-modes\/room\/[^/]+\/[^/]+$/,
@@ -1130,7 +1149,7 @@ export default defineConfig({
   },
   preview: {
     host: '127.0.0.1',
-    port: 4173,
+    port: FIXTURE_PORT,
     strictPort: true,
   },
   build: {
