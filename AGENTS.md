@@ -17,33 +17,33 @@ Current source: [`ARCHITECTURE.md`](ARCHITECTURE.md). Deployment state may lag; 
 
 ## Authority Map
 
-| Topic | Canonical Source |
-|---|---|
-| Service inventory, ports | [`Infrastructure/services.yaml`](Infrastructure/services.yaml) |
-| Caddy reverse-proxy routing | [`Infrastructure/caddy/Caddyfile`](Infrastructure/caddy/Caddyfile) |
-| Cluster topology | [`Infrastructure/shared/cluster_topology.py`](Infrastructure/shared/cluster_topology.py) + [`Infrastructure/frontend/src/config/clusterTopology.ts`](Infrastructure/frontend/src/config/clusterTopology.ts) |
-| Redis keys / retention | [`Infrastructure/shared/redis_keys.py`](Infrastructure/shared/redis_keys.py) |
-| Hardware addresses | [`Infrastructure/automation-service/automation_config.yaml`](Infrastructure/automation-service/automation_config.yaml) |
-| Control cadence | `automation_config.yaml` `control.update_interval` (1 s, valid 1–5 s) |
-| Heating↔exhaust interlock | Removed / unconfigured per `automation_config.yaml` line 77 |
-| Aggregate ladders | Backend: `Infrastructure/backend/app/repositories/sensor_repository.py`; Grafana: `Infrastructure/database/grafana_performance_migration.sql` |
+| Topic                       | Canonical Source                                                                                                                                                                                            |
+| --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Service inventory, ports    | [`Infrastructure/services.yaml`](Infrastructure/services.yaml)                                                                                                                                              |
+| Caddy reverse-proxy routing | [`Infrastructure/caddy/Caddyfile`](Infrastructure/caddy/Caddyfile)                                                                                                                                          |
+| Cluster topology            | [`Infrastructure/shared/cluster_topology.py`](Infrastructure/shared/cluster_topology.py) + [`Infrastructure/frontend/src/config/clusterTopology.ts`](Infrastructure/frontend/src/config/clusterTopology.ts) |
+| Redis keys / retention      | [`Infrastructure/shared/redis_keys.py`](Infrastructure/shared/redis_keys.py)                                                                                                                                |
+| Hardware addresses          | [`Infrastructure/automation-service/automation_config.yaml`](Infrastructure/automation-service/automation_config.yaml)                                                                                      |
+| Control cadence             | `automation_config.yaml` `control.update_interval` (1 s, valid 1–5 s)                                                                                                                                       |
+| Heating↔exhaust interlock   | Removed / unconfigured per `automation_config.yaml` line 77                                                                                                                                                 |
+| Aggregate ladders           | Backend: `Infrastructure/backend/app/repositories/sensor_repository.py`; Grafana: `Infrastructure/database/grafana_performance_migration.sql`                                                               |
 
 ## Where to Look
 
-| Component | Document |
-|---|---|
-| Root architecture | [`ARCHITECTURE.md`](ARCHITECTURE.md) |
-| Infrastructure overview | [`Infrastructure/AGENTS.md`](Infrastructure/AGENTS.md) |
-| Automation service | [`Infrastructure/automation-service/AGENTS.md`](Infrastructure/automation-service/AGENTS.md) |
-| Control subsystem | [`Infrastructure/automation-service/app/control/AGENTS.md`](Infrastructure/automation-service/app/control/AGENTS.md) |
-| Backend / sensor API | [`Infrastructure/backend/AGENTS.md`](Infrastructure/backend/AGENTS.md) |
-| CAN processor | [`Infrastructure/can-processor-service/AGENTS.md`](Infrastructure/can-processor-service/AGENTS.md) |
-| Database / schema | [`Infrastructure/database/AGENTS.md`](Infrastructure/database/AGENTS.md) |
-| Frontend | [`Infrastructure/frontend/AGENTS.md`](Infrastructure/frontend/AGENTS.md) |
-| Monitoring feature | Created by T6 |
-| Sensor nodes | [`Sensor_Nodes/AGENTS.md`](Sensor_Nodes/AGENTS.md) |
-| Iskra / Grafana | [`Infrastructure/iskra_stack/AGENTS.md`](Infrastructure/iskra_stack/AGENTS.md) |
-| Shared code | [`Infrastructure/shared/AGENTS.md`](Infrastructure/shared/AGENTS.md) |
+| Component               | Document                                                                                                             |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| Root architecture       | [`ARCHITECTURE.md`](ARCHITECTURE.md)                                                                                 |
+| Infrastructure overview | [`Infrastructure/AGENTS.md`](Infrastructure/AGENTS.md)                                                               |
+| Automation service      | [`Infrastructure/automation-service/AGENTS.md`](Infrastructure/automation-service/AGENTS.md)                         |
+| Control subsystem       | [`Infrastructure/automation-service/app/control/AGENTS.md`](Infrastructure/automation-service/app/control/AGENTS.md) |
+| Backend / sensor API    | [`Infrastructure/backend/AGENTS.md`](Infrastructure/backend/AGENTS.md)                                               |
+| CAN processor           | [`Infrastructure/can-processor-service/AGENTS.md`](Infrastructure/can-processor-service/AGENTS.md)                   |
+| Database / schema       | [`Infrastructure/database/AGENTS.md`](Infrastructure/database/AGENTS.md)                                             |
+| Frontend                | [`Infrastructure/frontend/AGENTS.md`](Infrastructure/frontend/AGENTS.md)                                             |
+| Monitoring feature      | Created by T6                                                                                                        |
+| Sensor nodes            | [`Sensor_Nodes/AGENTS.md`](Sensor_Nodes/AGENTS.md)                                                                   |
+| Iskra / Grafana         | [`Infrastructure/iskra_stack/AGENTS.md`](Infrastructure/iskra_stack/AGENTS.md)                                       |
+| Shared code             | [`Infrastructure/shared/AGENTS.md`](Infrastructure/shared/AGENTS.md)                                                 |
 
 ## Approved Local Commands
 
@@ -60,7 +60,11 @@ Do not extend these commands to contact production endpoints, databases, Redis, 
 
 ## Browser QA viewport rule
 
-Every Playwright run uses exactly **1920x1080** and **1280x1440** (the right half of a 2560x1440 display). Nothing smaller is permitted. Mobile/small-screen QA is a planned future focused pass, per the owner decision on 2026-09-15.
+The monitoring Playwright QA gate remains exactly **1920x1080** and **1280x1440**. Nothing smaller is used for monitoring-page QA.
+The focused dashboard `/` layout suite additionally uses **960x1080** and a custom
+**Pixel 9 Pro XL 448x997 CSS-pixel / DPR 3** project. These dashboard-only viewports do not change monitoring projects.
+Use the isolated loopback fixture preview and route guards; never set `BASE_URL`, contact production,
+or reuse, navigate, or stop an unrelated listener. If port 4173 is occupied, select a free loopback fixture port.
 
 ## Working Tree Discipline
 
@@ -70,4 +74,4 @@ Every Playwright run uses exactly **1920x1080** and **1280x1440** (the right hal
 
 ---
 
-*Last updated: 2026-08-10*
+_Last updated: 2026-08-10_

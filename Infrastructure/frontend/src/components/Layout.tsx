@@ -1,63 +1,53 @@
-import React, { useState, useEffect } from 'react';
-import { Menu, X } from 'lucide-react';
-import { Outlet, useLocation } from 'react-router-dom';
-import Sidebar, { useSidebarState } from './Sidebar';
-import TopRibbon, { Sector } from './TopRibbon';
-import { useControlActions } from '../contexts/ControlActionsContext';
+import React, { useState, useEffect } from 'react'
+import { Menu, X } from 'lucide-react'
+import { Outlet, useLocation } from 'react-router-dom'
+import Sidebar from './Sidebar'
+import TopRibbon, { Sector } from './TopRibbon'
+import { useControlActions } from '../contexts/ControlActionsContext'
 
-const MOBILE_BREAKPOINT = 768;
+const MOBILE_BREAKPOINT = 768
 
 // Map pathname to sector
 const getSectorFromPath = (pathname: string): Sector | null => {
-  if (pathname.startsWith('/laboratory')) return 'laboratory';
-  if (pathname.startsWith('/vegetation')) return 'vegetation';
-  if (pathname.startsWith('/flower')) return 'flower';
-  if (pathname.startsWith('/devices')) return 'devices';
-  return null;
-};
+  if (pathname.startsWith('/laboratory')) return 'laboratory'
+  if (pathname.startsWith('/vegetation')) return 'vegetation'
+  if (pathname.startsWith('/flower')) return 'flower'
+  if (pathname.startsWith('/devices')) return 'devices'
+  return null
+}
 
 const Layout: React.FC = () => {
-  const location = useLocation();
-  const { collapsed, toggle: toggleSidebar } = useSidebarState();
-  const { actions } = useControlActions();
-  
-  const [isMobile, setIsMobile] = useState<boolean>(false);
-  const [mobileDrawerOpen, setMobileDrawerOpen] = useState<boolean>(false);
-  const [activeTab, setActiveTab] = useState<string>('overview');
+  const location = useLocation()
+  const { actions } = useControlActions()
+
+  const [isMobile, setIsMobile] = useState<boolean>(false)
+  const [mobileDrawerOpen, setMobileDrawerOpen] = useState<boolean>(false)
+  const [activeTab, setActiveTab] = useState<string>('overview')
 
   // Check for mobile viewport
   useEffect(() => {
     const checkMobile = () => {
-      setIsMobile(window.innerWidth < MOBILE_BREAKPOINT);
-    };
-    
-    checkMobile();
-    window.addEventListener('resize', checkMobile);
-    return () => window.removeEventListener('resize', checkMobile);
-  }, []);
+      setIsMobile(window.innerWidth < MOBILE_BREAKPOINT)
+    }
+
+    checkMobile()
+    window.addEventListener('resize', checkMobile)
+    return () => window.removeEventListener('resize', checkMobile)
+  }, [])
 
   // Determine sector from current path
-  const sector = getSectorFromPath(location.pathname);
-  const showTopRibbon = sector !== null;
+  const sector = getSectorFromPath(location.pathname)
+  const showTopRibbon = sector !== null
 
   // Close mobile drawer on route change
   useEffect(() => {
-    setMobileDrawerOpen(false);
-  }, [location.pathname]);
+    setMobileDrawerOpen(false)
+  }, [location.pathname])
 
   // Handle hamburger menu toggle
   const handleHamburgerClick = () => {
-    setMobileDrawerOpen((prev) => !prev);
-  };
-
-  // Handle sidebar toggle (works for both mobile and desktop)
-  const handleSidebarToggle = () => {
-    if (isMobile) {
-      setMobileDrawerOpen((prev) => !prev);
-    } else {
-      toggleSidebar();
-    }
-  };
+    setMobileDrawerOpen(prev => !prev)
+  }
 
   return (
     <div className="min-h-screen bg-surface-base">
@@ -67,6 +57,8 @@ const Layout: React.FC = () => {
           onClick={handleHamburgerClick}
           className="fixed top-3 left-3 z-50 p-2 rounded-md bg-surface-secondary border border-border-default hover:bg-surface-tertiary"
           aria-label={mobileDrawerOpen ? 'Close menu' : 'Open menu'}
+          aria-expanded={mobileDrawerOpen}
+          aria-controls="primary-navigation"
         >
           {mobileDrawerOpen ? (
             <X className="size-6 text-text-default" />
@@ -85,24 +77,17 @@ const Layout: React.FC = () => {
       )}
 
       {/* Sidebar */}
-      {(!isMobile || mobileDrawerOpen) && (
-        <div
-          className={`
-            ${isMobile ? 'fixed left-0 top-0 h-full z-40' : ''}
-          `}
-        >
-          <Sidebar
-            collapsed={isMobile ? false : collapsed}
-            onToggle={handleSidebarToggle}
-          />
-        </div>
-      )}
+      <div
+        className={isMobile ? (mobileDrawerOpen ? 'fixed left-0 top-0 h-full z-40' : 'hidden') : ''}
+      >
+        <Sidebar variant={isMobile ? 'drawer' : 'rail'} />
+      </div>
 
       {/* Main Content */}
       <div
         className={`
           transition-[margin] duration-300 ease-in-out
-          ${isMobile ? 'ml-0' : collapsed ? 'ml-7.5' : 'ml-52'}
+          ${isMobile ? 'ml-0' : 'ml-7.5'}
         `}
       >
         {/* TopRibbon - only shown on sector pages */}
@@ -128,7 +113,7 @@ const Layout: React.FC = () => {
         </main>
       </div>
     </div>
-  );
-};
+  )
+}
 
-export default Layout;
+export default Layout

@@ -18,7 +18,7 @@ from fastapi.responses import FileResponse
 # Third-party imports
 import uvicorn
 
-from app.routes import config, live, sensor_data, sensors
+from app.routes import config, live, sensor_data, sensor_registry, sensors
 from app.websocket import websocket_manager
 
 # Local imports
@@ -239,7 +239,10 @@ setup_cors(app, service_name="cea-backend")
 # API-key gate for /api/*. No-op until CEA_API_KEY_REQUIRE=true (phase 3.4c).
 app.add_middleware(APIKeyAuthMiddleware)
 
-# Include routers
+# Include routers. The registry/soil router is registered FIRST: its static
+# paths (/api/sensors/registry, /api/sensors/soil/*) must win over the legacy
+# /{location}/{cluster} catch-all in sensors.router.
+app.include_router(sensor_registry.router)
 app.include_router(sensors.router)
 app.include_router(config.router)
 app.include_router(live.router)

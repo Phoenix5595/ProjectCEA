@@ -19,7 +19,6 @@ from app.can_reader import CANReader  # noqa: E402
 from app.decoder import decode_message_data  # noqa: E402
 from app.processor import (  # noqa: E402
     extract_sensor_values,
-    get_location_from_node,  # type: ignore
     validate_decoded_data,
 )
 from app.writer import DataWriter  # noqa: E402
@@ -62,15 +61,14 @@ def signal_handler(sig, frame):
     running = False
 
 
-def format_message_display(msg, decoded, sensors, location, cluster):
+def format_message_display(msg, decoded, sensors, assignment):
     """Format a CAN message for display (similar to old scanner).
 
     Args:
         msg: CAN message object
         decoded: Decoded message data
         sensors: List of (sensor_name, value, unit) tuples
-        location: Location name
-        cluster: Cluster name
+        assignment: cached registry assignment snapshot or None
 
     Returns:
         Formatted string for display
@@ -98,8 +96,8 @@ def format_message_display(msg, decoded, sensors, location, cluster):
             lines.extend(sensor_lines)
 
     # Add location info
-    if location and cluster:
-        lines.append(f"  Location: {location}/{cluster}")
+    if assignment is not None:
+        lines.append(f"  Location: {assignment.room}/{assignment.cluster}")
 
     return "\n".join(lines)
 
@@ -148,14 +146,18 @@ def process_can_message(msg):
         timestamp = datetime.now(UTC)
         timestamp_ms = int(timestamp.timestamp() * 1000)
 
-        # Extract sensor values (this also calculates RH/VPD if PT100 message)
+        # Extract sensor values (this also calculates RH/VPD if PT100 message).
+        # Assignment comes from the nonblocking cache; metadata I/O happens
+        # only in the dedicated worker (queue offer below).
         node_id = decoded.get("node_id")
-        location, cluster = get_location_from_node(node_id)
-        sensors = extract_sensor_values(decoded, location, cluster)
+        assert data_writer is not None, "data_writer must be initialized"
+        assignment = data_writer.assignment_for(node_id)
+        data_writer.observe(node_id)
+        sensors = extract_sensor_values(decoded, assignment)
 
         # Display message if enabled
         if display_messages:
-            display_str = format_message_display(msg, decoded, sensors, location, cluster)
+            display_str = format_message_display(msg, decoded, sensors, assignment)
             print(display_str)
             logger.info(display_str)
 
@@ -183,6 +185,7 @@ def process_can_message(msg):
             sensors=sensors,
             timestamp=timestamp,
             timestamp_ms=timestamp_ms,
+            assignment=assignment,
         )
 
         # Update statistics
@@ -262,6 +265,9 @@ def main():
 
     # Connect to Redis (for Stream and state writes)
     data_writer.connect_redis()
+
+    # Registry metadata worker: discovery upserts + assignment cache refresh
+    data_writer.start_metadata_worker()
 
     logger.info("Connected to CAN bus: can0")
     logger.info("Connected to TimescaleDB")

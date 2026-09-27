@@ -35,6 +35,14 @@ _SYSTEM_HARDWARE_CLUSTER = "hardware"
 
 
 @dataclass(frozen=True, slots=True)
+class RelayCommandReason:
+    """Immutable operator-facing cause attached to one successful relay command."""
+
+    reason_code: str
+    reason_text: str
+
+
+@dataclass(frozen=True, slots=True)
 class RelayControlState:
     """Desired physical relay command and its independent MCP reconciliation state."""
 
@@ -186,6 +194,24 @@ class RelayManager:
         devices = self._snapshot().hierarchy.get(location, {}).get(cluster, {})
         return {device_name: dict(device_info) for device_name, device_info in devices.items()}
 
+    def get_interlock_status(
+        self,
+        location: str,
+        cluster: str,
+        device_name: str,
+        snapshot: RuntimeDeviceSnapshot | None = None,
+    ) -> tuple[bool, str | None]:
+        """Return whether an ON request is currently blocked without side effects."""
+        can_turn_on, reason = self.interlock_manager.check_interlock(
+            location,
+            cluster,
+            device_name,
+            self._current_states,
+            requested_load=None,
+            snapshot=snapshot or self._snapshot(),
+        )
+        return (not can_turn_on, reason if not can_turn_on else None)
+
     async def set_device_state(
         self,
         location: str,
@@ -194,6 +220,8 @@ class RelayManager:
         state: int,
         mode: str = "auto",
         check_interlock: bool = True,
+        *,
+        command_reason: RelayCommandReason | None = None,
     ) -> tuple[bool, str | None]:
         """Set device state (ON/OFF).
 
@@ -237,8 +265,16 @@ class RelayManager:
 
         if success:
             self._current_states[key] = state
+            previous_command = self._channel_control_states.get(channel)
+            state_changed = previous_command is None or previous_command.desired_state != state
             correlation_id = self._record_desired_command(channel, state, mode, succeeded=True)
-            self._emit_command_event(channel, state, mode, correlation_id)
+            self._emit_command_event(
+                channel,
+                state,
+                mode,
+                correlation_id,
+                command_reason=command_reason if state_changed else None,
+            )
             self._record_board_correlation(channel, state, correlation_id)
             if self._relay_board_state_manager is not None:
                 await self._relay_board_state_manager.on_write_done()
@@ -281,7 +317,9 @@ class RelayManager:
         """
         return self._current_states.copy()
 
-    async def set_channel_state(self, channel: int, state: int) -> bool:
+    async def set_channel_state(
+        self, channel: int, state: int, *, command_reason: RelayCommandReason | None = None
+    ) -> bool:
         """Set channel state directly by channel number.
 
         Args:
@@ -300,8 +338,16 @@ class RelayManager:
             device_key = self._snapshot().by_channel.get(channel)
             if device_key:
                 self._current_states[device_key] = state
+            previous_command = self._channel_control_states.get(channel)
+            state_changed = previous_command is None or previous_command.desired_state != state
             correlation_id = self._record_desired_command(channel, state, "manual", succeeded=True)
-            self._emit_command_event(channel, state, "manual", correlation_id)
+            self._emit_command_event(
+                channel,
+                state,
+                "manual",
+                correlation_id,
+                command_reason=command_reason if state_changed else None,
+            )
             self._record_board_correlation(channel, state, correlation_id)
             if self._relay_board_state_manager is not None:
                 await self._relay_board_state_manager.on_write_done()
@@ -467,11 +513,24 @@ class RelayManager:
         )
 
     def _emit_command_event(
-        self, channel: int, state: int, mode: str, correlation_id: UUID | None
+        self,
+        channel: int,
+        state: int,
+        mode: str,
+        correlation_id: UUID | None,
+        *,
+        command_reason: RelayCommandReason | None = None,
     ) -> None:
         if correlation_id is None:
             return
-        self._emit_relay_event("relay.commanded", channel, state, mode, correlation_id)
+        self._emit_relay_event(
+            "relay.commanded",
+            channel,
+            state,
+            mode,
+            correlation_id,
+            command_reason=command_reason,
+        )
 
     def _emit_relay_event(
         self,
@@ -481,6 +540,8 @@ class RelayManager:
         mode: str,
         correlation_id: UUID | None,
         severity: EventSeverity = EventSeverity.INFO,
+        *,
+        command_reason: RelayCommandReason | None = None,
     ) -> None:
         if self._event_sink is None:
             return
@@ -505,6 +566,16 @@ class RelayManager:
                 correlation_id=correlation_id,
                 entity=entity,
                 payload=RelayPayload(state=state == 1, command_mode=mode),
+                reason_code=(
+                    command_reason.reason_code
+                    if event_type == "relay.commanded" and command_reason is not None
+                    else None
+                ),
+                reason_text=(
+                    command_reason.reason_text
+                    if event_type == "relay.commanded" and command_reason is not None
+                    else None
+                ),
             )
         )
 

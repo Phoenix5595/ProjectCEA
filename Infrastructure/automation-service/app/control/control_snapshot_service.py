@@ -18,6 +18,7 @@ from app.schemas.control_snapshot import (
     DeviceAssignmentResponse,
     DfrBoardSnapshotResponse,
     DfrChannelSnapshotResponse,
+    FailsafeSnapshotResponse,
     HardwareAlarmResponse,
     RelayControlSnapshotResponse,
 )
@@ -65,6 +66,8 @@ class ControlSnapshotService:
         alarms = self._hardware_alarms()
         assignments = self._assignments(registry_snapshot)
         dfr_availability = self._dfr_availability()
+        get_failsafes = getattr(self._alarm_manager, "get_active_failsafes", None)
+        active_failsafes = get_failsafes() if callable(get_failsafes) else frozenset()
         response = ControlSnapshotResponse(
             generated_at=self._now(),
             registry_version=registry_snapshot.version,
@@ -91,6 +94,10 @@ class ControlSnapshotService:
                 for board_id in _DFR_BOARD_IDS
             ),
             hardware_alarms=tuple(sorted(alarms.values(), key=lambda alarm: alarm.alarm_name)),
+            failsafes=tuple(
+                FailsafeSnapshotResponse(location=location, cluster=cluster)
+                for location, cluster in sorted(active_failsafes)
+            ),
         )
         return registry_snapshot, response
 
@@ -115,6 +122,14 @@ class ControlSnapshotService:
             if key is not None and self._device_command_service is not None
             else None
         )
+        interlock_blocked = False
+        interlock_reason: str | None = None
+        if key is not None:
+            get_interlock_status = getattr(self._relay_manager, "get_interlock_status", None)
+            if callable(get_interlock_status):
+                interlock_blocked, interlock_reason = get_interlock_status(
+                    *key, snapshot=registry_snapshot
+                )
         alarm_name = (
             f"relay_mismatch_channel_{channel}"
             if key is not None
@@ -151,6 +166,8 @@ class ControlSnapshotService:
             stale=stale,
             last_command_succeeded=state.last_command_succeeded if state is not None else None,
             recovery_pending=state.recovery_pending if state is not None else False,
+            interlock_blocked=interlock_blocked,
+            interlock_reason=interlock_reason,
             alarm=alarms.get(alarm_name),
         )
 

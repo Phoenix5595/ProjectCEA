@@ -139,6 +139,11 @@ def alarm_pattern(location: str, cluster: str) -> str:
     return f"cea:alarm:{location}:{cluster}:*"
 
 
+def all_alarm_pattern() -> str:
+    """Return the canonical scan pattern for alarms in every room."""
+    return "cea:alarm:*:*:*"
+
+
 def legacy_failsafe_key(location: str, cluster: str) -> str:
     return f"failsafe:{location}:{cluster}"
 
@@ -186,7 +191,7 @@ __all__ = [
     "alarm_key",
     "alarm_prefix",
     "pid_key",
-    "heartbeat_key",
+    "all_alarm_pattern",
     "relay_raw_override_key",
     "schedule_cache_key",
     "pid_key_with_location",

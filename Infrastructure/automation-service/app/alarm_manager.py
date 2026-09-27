@@ -42,6 +42,10 @@ class AlarmManager:
         self._active_alarms: dict[str, dict[str, Any]] = {}  # Cache of active alarms
         self._active_failsafes: set[tuple[str, str]] = set()
 
+    def get_active_failsafes(self) -> frozenset[tuple[str, str]]:
+        """Return an immutable snapshot of currently active room failsafes."""
+        return frozenset(self._active_failsafes)
+
     def raise_alarm(
         self, location: str, cluster: str, alarm_name: str, severity: str, message: str
     ) -> bool:
@@ -131,9 +135,7 @@ class AlarmManager:
         if location and cluster:
             return self.redis_client.read_alarms(location, cluster)
 
-        # Get all alarms (would need to scan all locations/clusters)
-        # For now, return cached alarms
-        return self._active_alarms.copy()
+        return self.redis_client.read_all_alarms()
 
     def check_critical_alarms(self, location: str, cluster: str) -> bool:
         """Check if there are any critical alarms for a location/cluster.
