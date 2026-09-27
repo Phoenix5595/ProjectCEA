@@ -97,7 +97,7 @@ async def test_acknowledge_emits_one_correlated_semantic_alarm_event_when_persis
     )
 
     # Then: the route emits its single semantic lifecycle event with request correlation.
-    assert response["success"] is True
+    assert response.success is True
     assert len(sink.events) == 1
     assert sink.events[0].event_type == "alarm.acknowledged"
     assert sink.events[0].correlation_id == context.correlation_id

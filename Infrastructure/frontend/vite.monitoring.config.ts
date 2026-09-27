@@ -2,8 +2,8 @@
  * Monitoring preview config (test-only).
  *
  * Serves the production `dist` build plus deterministic REST / WebSocket /
- * Grafana-placeholder / SPA-fallback fixtures on exactly
- * `http://127.0.0.1:4173`. It injects a restrictive CSP and writes a request
+ * Grafana-placeholder / SPA-fallback fixtures on
+ * `http://127.0.0.1:${MONITORING_FIXTURE_PORT ?? 4173}`. It injects a restrictive CSP and writes a request
  * log so exact-origin enforcement stays executable without Playwright route
  * interception (the same fixture endpoints are available to `/visual-qa`).
  *
@@ -29,6 +29,7 @@ import {
   sensorStatsFixture,
   wsFixtureMessage,
 } from './src/features/monitoring/config/fixtures'
+import { SOIL_FIXTURE_ROUTES } from './src/features/soil/config/soilFixtures'
 import {
   eventHistoryFixture,
   sseFrameForEntry,
@@ -45,8 +46,9 @@ import {
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const DIST_DIR = path.resolve(HERE, 'dist')
 
+const FIXTURE_PORT = Number(process.env.MONITORING_FIXTURE_PORT ?? 4173)
 const CSP =
-  "default-src 'self'; connect-src 'self' ws://127.0.0.1:4173; " +
+  `default-src 'self'; connect-src 'self' ws://127.0.0.1:${FIXTURE_PORT}; ` +
   "frame-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'"
 
 interface FixtureRoute {
@@ -697,6 +699,7 @@ function relayTimelinePidFixture(req: { url?: string; method?: string; body?: st
 }
 
 const FIXTURE_ROUTES: FixtureRoute[] = [
+  ...SOIL_FIXTURE_ROUTES,
   {
     re: /^\/api\/sensors\/monitoring\/range\/([^/]+)/,
     handler: (req, scenario) => {
@@ -773,6 +776,24 @@ const FIXTURE_ROUTES: FixtureRoute[] = [
       expected: { mode_name: 'flower', submode_name: null, title: 'Flowering' },
       active: { mode_name: 'flower', submode_name: null },
     }),
+  },
+  {
+    re: /^\/api\/room-modes\/active\/[^/]+\/[^/]+$/,
+    handler: (req) => {
+      const parts = new URL(req.url ?? '', 'http://fixture.invalid').pathname
+        .split('/')
+        .filter(Boolean)
+      const location = decodeURIComponent(parts[3] ?? '')
+      const cluster = decodeURIComponent(parts[4] ?? '')
+      return {
+        location,
+        cluster,
+        mode_name: location === 'Flower Room' ? 'sleep' : 'veg',
+        submode_name: null,
+        mode_id: 1,
+        submode_id: null,
+      }
+    },
   },
   {
     re: /^\/api\/room-modes\/room\/[^/]+\/[^/]+$/,
@@ -890,29 +911,38 @@ const FIXTURE_ROUTES: FixtureRoute[] = [
   },
   {
     re: /^\/api\/sensors\/([^/]+)\/([^/]+)\/live$/,
-    handler: _req => {
+    handler: (req, scenario) => {
+      const parts = (req.url ?? '').split('/').filter(Boolean)
+      const location = decodeURIComponent(parts[2] ?? '')
+      const cluster = decodeURIComponent(parts[3] ?? '')
+      if (scenario !== 'dashboard-layout' && scenario !== 'disconnect') {
+        const now = new Date().toISOString()
+        return {
+          temperature: { data: [{ time: now, timestamp: now, value: 24.5 }], unit: '°C', sensor_name: 'temperature' },
+          humidity: { data: [{ time: now, timestamp: now, value: 65 }], unit: '%', sensor_name: 'humidity' },
+          co2: { data: [{ time: now, timestamp: now, value: 850 }], unit: 'ppm', sensor_name: 'co2' },
+          vpd: { data: [{ time: now, timestamp: now, value: 1.2 }], unit: 'kPa', sensor_name: 'vpd' },
+        }
+      }
+      // Dashboard fixtures model stale front readings and live back readings.
+      if (location !== 'Flower Room') return {}
       const now = new Date().toISOString()
+      if (cluster === 'back') {
+        return {
+          dry_bulb_b: { sensor_type: 'dry_bulb_b', location, cluster, unit: '°C', data: [{ timestamp: now, value: 20.02 }] },
+          wet_bulb_b: { sensor_type: 'wet_bulb_b', location, cluster, unit: '°C', data: [{ timestamp: now, value: 20.29 }] },
+          rh_b: { sensor_type: 'rh_b', location, cluster, unit: '%', data: [{ timestamp: now, value: 92.98 }] },
+          vpd_b: { sensor_type: 'vpd_b', location, cluster, unit: 'kPa', data: [{ timestamp: now, value: 0.12 }] },
+          co2_b: { sensor_type: 'co2_b', location, cluster, unit: 'ppm', data: [{ timestamp: '2026-01-15T14:46:05.213000', value: 400.0 }] },
+        }
+      }
+      const stale = '2026-01-26T18:14:12'
       return {
-        temperature: {
-          data: [{ time: now, timestamp: now, value: 24.5 }],
-          unit: '°C',
-          sensor_name: 'temperature',
-        },
-        humidity: {
-          data: [{ time: now, timestamp: now, value: 65 }],
-          unit: '%',
-          sensor_name: 'humidity',
-        },
-        co2: {
-          data: [{ time: now, timestamp: now, value: 850 }],
-          unit: 'ppm',
-          sensor_name: 'co2',
-        },
-        vpd: {
-          data: [{ time: now, timestamp: now, value: 1.2 }],
-          unit: 'kPa',
-          sensor_name: 'vpd',
-        },
+        dry_bulb_f: { sensor_type: 'dry_bulb_f', location, cluster, unit: '°C', data: [{ timestamp: stale, value: 16.75 }] },
+        wet_bulb_f: { sensor_type: 'wet_bulb_f', location, cluster, unit: '°C', data: [{ timestamp: stale, value: 16.71 }] },
+        rh_f: { sensor_type: 'rh_f', location, cluster, unit: '%', data: [{ timestamp: stale, value: 48.0 }] },
+        co2_f: { sensor_type: 'co2_f', location, cluster, unit: 'ppm', data: [{ timestamp: stale, value: 400.0 }] },
+        vpd_f: { sensor_type: 'vpd_f', location, cluster, unit: 'kPa', data: [{ timestamp: stale, value: 0.6 }] },
       }
     },
   },
@@ -944,8 +974,24 @@ const FIXTURE_ROUTES: FixtureRoute[] = [
       'Flower Room_main_humidity': 65,
       'Veg Room_main_temperature': 23.8,
       'Veg Room_main_humidity': 68,
-      Lab_main_temperature: 22.1,
-      Lab_main_humidity: 55,
+      'Lab_main_temperature': 22.1,
+      'Lab_main_humidity': 55,
+      'Lab_main_lab_temp': 24.6,
+      'Lab_main_water_temperature': 19.5,
+      'Flower Room_main_heating_setpoint': 24,
+      'Flower Room_main_cooling_setpoint': 27,
+      'Flower Room_main_co2_setpoint': 900,
+      'Flower Room_main_vpd_setpoint': 0.95,
+      'Veg Room_main_heating_setpoint': 22,
+      'Veg Room_main_cooling_setpoint': 26,
+      'Veg Room_main_co2_setpoint': 800,
+      'Veg Room_main_vpd_setpoint': 0.9,
+      'Flower Room_main_light_1_intensity': 55,
+      'Flower Room_main_light_2_intensity': 48,
+      'Flower Room_main_light_3_intensity': 60,
+      'Veg Room_main_light_1_intensity': 40,
+      'Veg Room_main_light_2_intensity': 35,
+      'Veg Room_main_light_3_intensity': 42,
     }),
   },
   {
@@ -956,30 +1002,176 @@ const FIXTURE_ROUTES: FixtureRoute[] = [
       if (isHealth) {
         return {
           service_health: [
-            { name: 'automation-service', status: 'healthy', latency_ms: 12 },
-            { name: 'cea-backend', status: 'healthy', latency_ms: 8 },
-            { name: 'can-processor', status: 'healthy', latency_ms: 5 },
+            { name: 'automation-service', status: 'running', latency_ms: 12 },
+            { name: 'cea-backend', status: 'running', latency_ms: 8 },
+            { name: 'can-processor', status: 'stopped' },
           ],
         }
       }
       return {
         system: {
-          cpu_usage: 15,
-          memory_usage: 42,
-          disk_usage: 28,
-          uptime: '86400',
-          load_avg: '0.5 0.3 0.2',
+          cpu_percent: 15,
+          memory_percent: 42,
+          disk_percent: 28,
+          uptime_seconds: 86400,
+          load_avg: [0.5, 0.3, 0.2],
           process_count: 42,
           cpu_temp_c: 45,
-          throttle_status: 'normal',
-          services: [
-            { name: 'automation-service', status: 'running', latency_ms: 12 },
-            { name: 'cea-backend', status: 'running', latency_ms: 8 },
-            { name: 'can-processor', status: 'running', latency_ms: 5 },
-          ],
+          throttle_status: '0x0',
         },
+        devices: {},
+        degraded: null,
       }
     },
+  },
+  {
+    re: /^\/api\/calendar\/events$/,
+    handler: (req) => {
+      const method = req.method ?? 'GET'
+      const today = new Date()
+      const plus = (n: number): string => {
+        const d = new Date(today)
+        d.setDate(d.getDate() + n)
+        return d.toISOString().slice(0, 10)
+      }
+      if (method === 'POST') {
+        const body = (typeof req.body === 'string' ? JSON.parse(req.body || '{}') : req.body ?? {}) as Record<string, unknown>
+        return {
+          id: 99,
+          source: 'manual',
+          event_type: body.event_type ?? 'planned_task',
+          title: body.title ?? 'New event',
+          start_date: body.start_date ?? plus(0),
+          end_date: body.end_date ?? null,
+          location: body.location ?? 'Flower Room',
+          cluster: body.cluster ?? 'main',
+          editable: true,
+          notes: body.notes ?? null,
+          deleted_at: null,
+        }
+      }
+      if (method === 'PATCH') {
+        const body = (typeof req.body === 'string' ? JSON.parse(req.body || '{}') : req.body ?? {}) as Record<string, unknown>
+        return {
+          id: 11,
+          source: 'manual',
+          event_type: body.event_type ?? 'planned_task',
+          title: body.title ?? 'Updated event',
+          start_date: body.start_date ?? plus(0),
+          end_date: body.end_date ?? null,
+          location: body.location ?? 'Flower Room',
+          cluster: body.cluster ?? 'main',
+          editable: true,
+          notes: body.notes ?? null,
+          deleted_at: null,
+        }
+      }
+      return {
+        items: [
+          {
+            id: 11,
+            source: 'manual',
+            event_type: 'planned_task',
+            title: 'Reseed trays',
+            start_date: plus(0),
+            end_date: null,
+            location: 'Flower Room',
+            cluster: 'main',
+            editable: true,
+            notes: 'check domes after lights on',
+            deleted_at: null,
+          },
+          {
+            id: 12,
+            source: 'manual',
+            event_type: 'planned_task',
+            title: 'Top dress Flower',
+            start_date: plus(1),
+            end_date: null,
+            location: 'Flower Room',
+            cluster: 'main',
+            editable: true,
+            notes: null,
+            deleted_at: null,
+          },
+          {
+            id: 13,
+            source: 'mode_transition',
+            event_type: 'flower_bulk',
+            title: 'Flower bulk',
+            start_date: plus(-5),
+            end_date: plus(9),
+            location: 'Flower Room',
+            cluster: 'main',
+            editable: false,
+            notes: null,
+            metadata: { grow_plan_id: 'gp-fixture' },
+            deleted_at: null,
+          },
+          {
+            id: 14,
+            source: 'mode_transition',
+            event_type: 'flower_ripen',
+            title: 'Flower ripen',
+            start_date: plus(14),
+            end_date: plus(28),
+            location: 'Flower Room',
+            cluster: 'main',
+            editable: false,
+            notes: null,
+            metadata: { grow_plan_id: 'gp-fixture' },
+            deleted_at: null,
+          },
+          {
+            id: 15,
+            source: 'manual',
+            event_type: 'planned_task',
+            title: 'Water transplant mix',
+            start_date: plus(2),
+            end_date: null,
+            location: 'Veg Room',
+            cluster: 'main',
+            editable: true,
+            notes: null,
+            deleted_at: null,
+          },
+        ],
+        next_cursor: null,
+      }
+    },
+  },
+  {
+    re: /^\/api\/calendar\/events\/\d+$/,
+    handler: (req) => {
+      const body = (typeof req.body === 'string' ? JSON.parse(req.body || '{}') : req.body ?? {}) as Record<string, unknown>
+      return {
+        id: 11,
+        source: 'manual',
+        event_type: body.event_type ?? 'planned_task',
+        title: body.title ?? 'Updated event',
+        start_date: body.start_date ?? new Date().toISOString().slice(0, 10),
+        end_date: body.end_date ?? null,
+        location: body.location ?? 'Flower Room',
+        cluster: body.cluster ?? 'main',
+        editable: true,
+        notes: body.notes ?? null,
+        deleted_at: null,
+      }
+    },
+  },
+  {
+    re: /^\/weather\/latest$/,
+    handler: () => ({
+      timestamp: new Date().toISOString(),
+      data: {
+        temp: { value: 18.4 },
+        rh: { value: 62 },
+        pressure: { value: 1013 },
+        wind_speed: { value: 9.1 },
+        wind_direction: { value: 240 },
+        description: { value: 'Overcast' },
+      },
+    }),
   },
   {
     re: /^\/api\/devices\/control-snapshot$/,
@@ -1064,11 +1256,13 @@ function monitoringPreviewPlugin(): Plugin {
         log(`REQUEST ${req.method} ${req.url}`)
         res.setHeader('Content-Security-Policy', CSP)
         const pathname = (req.url ?? '/').split('?')[0]
-        const isFixturePost =
-          req.method === 'POST' &&
-          (/^\/api\/climate-timeline\//.test(pathname) ||
-            /^\/api\/pid\/(?:parameters|mode)\//.test(pathname))
-        const requestBody = isFixturePost ? await readRequestBody(req) : undefined
+        const isFixtureMutation =
+          (req.method === 'POST' &&
+            (/^\/api\/climate-timeline\//.test(pathname) ||
+              /^\/api\/pid\/(?:parameters|mode)\//.test(pathname) ||
+              /^\/api\/calendar\/events/.test(pathname))) ||
+          (req.method === 'PATCH' && /^\/api\/calendar\/events/.test(pathname))
+        const requestBody = isFixtureMutation ? await readRequestBody(req) : undefined
         const scenario = scenarioFrom(req.url ?? '') ?? scenarioFrom(req.headers.referer ?? '')
         const fixtureSession =
           new URLSearchParams((req.url ?? '').split('?')[1] ?? '').get('fixtureSession') ??
@@ -1342,9 +1536,13 @@ function monitoringPreviewPlugin(): Plugin {
         for (const route of FIXTURE_ROUTES) {
           if (route.re.test(pathname)) {
             res.setHeader('Content-Type', 'application/json')
-            const body = JSON.stringify(
-              route.handler({ url: req.url, method: req.method, body: requestBody }, scenario)
-            )
+            const handlerBody = route.handler({ url: req.url, method: req.method, body: requestBody }, scenario)
+            const body = JSON.stringify(handlerBody)
+            if (scenario === 'bed-capacity-conflict' && pathname.endsWith('/assignment')) {
+              res.statusCode = 409
+              res.end(body)
+              return
+            }
             if (scenario === 'delayed-control-recovery' && pathname.endsWith('/tail')) {
               const key = counterKey('delayed-control-tail')
               const count = scenarioCounters.get(key) ?? 0
@@ -1423,7 +1621,7 @@ export default defineConfig({
   },
   preview: {
     host: '127.0.0.1',
-    port: 4173,
+    port: FIXTURE_PORT,
     strictPort: true,
   },
   build: {

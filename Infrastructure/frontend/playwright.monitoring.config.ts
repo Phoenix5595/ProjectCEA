@@ -3,7 +3,7 @@
  *
  * Builds the production `dist` with the default Vite config, then serves it
  * through the monitoring preview config (`vite.monitoring.config.ts`) on
- * exactly `http://127.0.0.1:4173`. The preview middleware serves deterministic
+ * exactly `http://127.0.0.1:${MONITORING_FIXTURE_PORT}`. The preview middleware serves deterministic
  * REST / WebSocket / Grafana-placeholder / SPA-fallback fixtures and injects a
  * restrictive CSP, so a correctly-built page never touches a production
  * service.
@@ -13,13 +13,16 @@
  * local Chromium. `reuseExistingServer: false` guarantees a fresh preview for
  * every run.
  *
- * Fixture and live runs use only 1920x1080 and 1280x1440. Set `BASE_URL` for a
- * live read-only run; fixture runs start the local preview server below.
+ * Monitoring functional projects remain 1920x1080 and 1280x1440. Two focused
+ * dashboard fixture projects add 960x1080 and a custom Pixel 9 Pro XL profile.
+ * Set `BASE_URL` only for existing live read-only monitoring runs.
  */
 import { defineConfig, devices } from '@playwright/test'
 
-const PORT = 4173
-const BASE_URL = process.env.BASE_URL ?? `http://127.0.0.1:${PORT}`
+const PORT = Number(process.env.MONITORING_FIXTURE_PORT ?? 4173)
+const FIXTURE_ORIGIN = `http://127.0.0.1:${PORT}`
+const FIXTURE_WS_ORIGIN = `ws://127.0.0.1:${PORT}`
+const BASE_URL = process.env.BASE_URL ?? FIXTURE_ORIGIN
 
 export default defineConfig({
   testDir: './tests/monitoring',
@@ -43,6 +46,24 @@ export default defineConfig({
       name: 'chromium-functional-1280x1440',
       use: { ...devices['Desktop Chrome'], viewport: { width: 1280, height: 1440 } },
       testIgnore: '**/performance.spec.ts',
+      fullyParallel: true,
+    },
+    {
+      name: 'chromium-functional-960x1080',
+      use: { ...devices['Desktop Chrome'], viewport: { width: 960, height: 1080 } },
+      testMatch: '**/dashboard-layout.spec.ts',
+      fullyParallel: true,
+    },
+    {
+      name: 'chromium-functional-pixel-9-pro-xl',
+      use: {
+        ...devices['Desktop Chrome'],
+        viewport: { width: 448, height: 997 },
+        deviceScaleFactor: 3,
+        isMobile: true,
+        hasTouch: true,
+      },
+      testMatch: '**/dashboard-layout.spec.ts',
       fullyParallel: true,
     },
     {
@@ -70,16 +91,24 @@ export default defineConfig({
       testMatch: '**/chart-lifecycle.spec.ts',
     },
   ],
-  webServer: process.env.BASE_URL ? undefined : {
-      command: `npx vite build --config vite.monitoring.config.ts && npx vite preview --config vite.monitoring.config.ts --host 127.0.0.1 --port ${PORT} --strictPort`,
-      url: BASE_URL,
-      reuseExistingServer: false,
-      timeout: 120_000,
-      env: {
-        PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1',
-        VITE_API_BASE_URL: BASE_URL,
-        VITE_MONITORING_DEBUG: '1',
-        VITE_MONITORING_PERF_MARKS: '1',
+  webServer: process.env.BASE_URL
+    ? undefined
+    : {
+        command: `npx vite build --config vite.monitoring.config.ts && npx vite preview --config vite.monitoring.config.ts --host 127.0.0.1 --port ${PORT} --strictPort`,
+        url: BASE_URL,
+        reuseExistingServer: false,
+        timeout: 120_000,
+        env: {
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1',
+          MONITORING_FIXTURE_PORT: String(PORT),
+          VITE_API_BASE_URL: FIXTURE_ORIGIN,
+          VITE_BACKEND_API_URL: FIXTURE_ORIGIN,
+          VITE_AUTOMATION_API_URL: FIXTURE_ORIGIN,
+          VITE_WEATHER_API_URL: FIXTURE_ORIGIN,
+          VITE_MONITORING_API_URL: FIXTURE_ORIGIN,
+          VITE_WEBSOCKET_URL: `${FIXTURE_WS_ORIGIN}/ws`,
+          VITE_MONITORING_DEBUG: '1',
+          VITE_MONITORING_PERF_MARKS: '1',
+        },
       },
-    },
 })

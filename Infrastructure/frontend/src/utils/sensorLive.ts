@@ -1,26 +1,58 @@
+import type { SensorSampleMeta } from '../types/sensor'
+
+type LiveDataPoint = {
+  value?: number | string | null
+  time?: string | number | Date | null
+  timestamp?: string | number | Date | null
+}
+
+type LiveSensorResponse = {
+  data?: LiveDataPoint[]
+}
+
+export interface ParsedLiveSnapshot {
+  values: Record<string, number>
+  meta: Record<string, SensorSampleMeta>
+}
+
+function parseObservedAtMs(point: LiveDataPoint): number | null {
+  const raw = point.time ?? point.timestamp
+  if (raw == null) return null
+  const observedAtMs = raw instanceof Date ? raw.getTime() : new Date(raw).getTime()
+  return Number.isFinite(observedAtMs) ? observedAtMs : null
+}
+
 /**
- * Parse live sensor API response into flat keys `${location}_${cluster}_${sensorType}` → value.
+ * Parse live sensor data while retaining timestamps and invalid-value state.
+ * Stale finite samples remain available so the caller can render STALE.
  */
-export function parseLiveResponse(
+export function parseLiveSnapshot(
   location: string,
   cluster: string,
-  liveData: Record<string, { data?: Array<{ value?: number; timestamp?: string | number | Date }> }>,
-  options?: { maxAgeMs?: number; nowMs?: number }
-): Record<string, number> {
-  const flat: Record<string, number> = {};
-  const maxAgeMs = options?.maxAgeMs ?? 45000;
-  const nowMs = options?.nowMs ?? Date.now();
-  if (!liveData || typeof liveData !== 'object') return flat;
-  for (const [sensorType, resp] of Object.entries(liveData)) {
-    const dp = Array.isArray(resp?.data) && resp.data.length > 0 ? resp.data[0] : null;
-    if (dp?.value == null) continue;
-    if (dp.timestamp != null) {
-      const ts = dp.timestamp instanceof Date ? dp.timestamp.getTime() : new Date(dp.timestamp).getTime();
-      if (Number.isFinite(ts) && nowMs - ts > maxAgeMs) {
-        continue;
-      }
+  liveData: Record<string, LiveSensorResponse> | null | undefined,
+  nowMs = Date.now()
+): ParsedLiveSnapshot {
+  const values: Record<string, number> = {}
+  const meta: Record<string, SensorSampleMeta> = {}
+  if (!liveData || typeof liveData !== 'object') return { values, meta }
+
+  for (const [sensorType, response] of Object.entries(liveData)) {
+    const point =
+      Array.isArray(response?.data) && response.data.length > 0 ? response.data[0] : null
+    if (!point) continue
+
+    const key = `${location}_${cluster}_${sensorType}`
+    const observedAtMs = parseObservedAtMs(point)
+    const numericValue = Number(point.value)
+    const invalid = point.value == null || !Number.isFinite(numericValue)
+    meta[key] = {
+      observedAtMs,
+      receivedAtMs: nowMs,
+      source: 'poll',
+      invalid,
     }
-    flat[`${location}_${cluster}_${sensorType}`] = Number(dp.value);
+    if (!invalid) values[key] = numericValue
   }
-  return flat;
+
+  return { values, meta }
 }

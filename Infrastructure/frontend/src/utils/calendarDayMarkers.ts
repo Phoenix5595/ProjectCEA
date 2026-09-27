@@ -29,17 +29,31 @@ const GROW_PHASE_TYPES = new Set([
   'drying',
 ]);
 
-function dayKey(d: Date): string {
+/** Stable 'yyyy-MM-dd' key in CALENDAR_TZ; matches buildCalendarDayMarkers keys. */
+export function calendarDayKey(d: Date): string {
   return format(toZonedTime(d, CALENDAR_TZ), 'yyyy-MM-dd');
+}
+
+/** Day key of an event's start ISO string (date-only values get noon anchoring). */
+export function calendarEventDayKey(iso: string): string {
+  return calendarDayKey(parseEventDate(iso));
 }
 
 function parseEventDate(iso: string): Date {
   return toZonedTime(parseISO(iso.length === 10 ? `${iso}T12:00:00` : iso), CALENDAR_TZ);
 }
 
-function isGrowPlanPhase(ev: CalendarEventDto): boolean {
+export function isGrowPlanPhase(ev: CalendarEventDto): boolean {
   if (ev.metadata?.grow_plan_id) return true;
   return GROW_PHASE_TYPES.has(ev.eventType);
+}
+
+/** True when the event's inclusive [start, end] calendar interval covers the given day. */
+export function calendarEventOccursOnDay(ev: CalendarEventDto, day: Date): boolean {
+  const key = calendarDayKey(day);
+  const startKey = calendarEventDayKey(ev.start);
+  const endKey = calendarEventDayKey(ev.end ?? ev.start);
+  return startKey <= key && key <= endKey;
 }
 
 function isMultiDaySchedule(ev: CalendarEventDto): boolean {
@@ -84,7 +98,7 @@ export function buildCalendarDayMarkers(events: CalendarEventDto[]): Map<string,
 
     if (isMultiDaySchedule(ev)) {
       for (const d of days) {
-        const key = dayKey(d);
+        const key = calendarDayKey(d);
         const m = ensure(key);
         if (!m.scheduleBars.some((b) => b.eventId === ev.id)) {
           m.scheduleBars.push({
@@ -98,7 +112,7 @@ export function buildCalendarDayMarkers(events: CalendarEventDto[]): Map<string,
     }
 
     if (isTaskMarker(ev)) {
-      const key = dayKey(start);
+      const key = calendarDayKey(start);
       const m = ensure(key);
       if (!m.tasks.some((t) => t.id === ev.id)) {
         m.tasks.push(ev);
@@ -106,7 +120,7 @@ export function buildCalendarDayMarkers(events: CalendarEventDto[]): Map<string,
     }
 
     if (hasNotes(ev)) {
-      const noteDay = dayKey(start);
+      const noteDay = calendarDayKey(start);
       const m = ensure(noteDay);
       if (!m.notes.some((n) => n.id === ev.id)) {
         m.notes.push(ev);

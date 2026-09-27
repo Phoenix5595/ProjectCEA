@@ -9,6 +9,9 @@ export type ChartFamily =
   | 'pressure'
   | 'device'
   | 'light'
+  | 'water_content'
+  | 'conductivity'
+  | 'ph'
 
 export function resolveFamily(series: AlignedSeries): ChartFamily {
   return series.family
@@ -25,6 +28,7 @@ export function chartFamilyForUnit(unitFamily: UnitFamily): ChartFamily {
     case 'hpa':
       return 'pressure'
     case 'percent':
+      return 'water_content'
     case 'mm':
       return 'device'
   }

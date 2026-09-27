@@ -132,3 +132,11 @@ export function isSensorSubcluster(room: string, cluster: string): boolean {
 export function isSensorCluster(room: string, cluster: string): boolean {
   return sensorUrlClustersFor(room).includes(cluster);
 }
+
+export const CAN_LOCATION_SLUGS = ['front', 'back', 'main'] as const
+export type CanSlug = (typeof CAN_LOCATION_SLUGS)[number]
+
+/** Narrow a topology sub-cluster slug to the legal CAN location values. */
+export function canSlugFor(value: string): CanSlug | null {
+  return (CAN_LOCATION_SLUGS as readonly string[]).includes(value) ? (value as CanSlug) : null
+}

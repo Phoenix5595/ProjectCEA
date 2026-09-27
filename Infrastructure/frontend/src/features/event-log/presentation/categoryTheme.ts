@@ -19,49 +19,49 @@ export interface CategoryVisual {
 const CATEGORY_VISUALS: Record<string, CategoryVisual> = {
   relay: {
     label: 'Relay',
-    chip: 'bg-event-relay-dim text-event-relay border-event-relay-border',
+    chip: 'bg-event-relay-dim text-text-default border-event-relay-border',
     border: 'border-event-relay-border',
     text: 'text-event-relay',
   },
   manual_override: {
     label: 'Manual override',
-    chip: 'bg-event-manual-override-dim text-event-manual-override border-event-manual-override-border',
+    chip: 'bg-event-manual-override-dim text-text-default border-event-manual-override-border',
     border: 'border-event-manual-override-border',
     text: 'text-event-manual-override',
   },
   ramp: {
     label: 'Ramp',
-    chip: 'bg-event-ramp-dim text-event-ramp border-event-ramp-border',
+    chip: 'bg-event-ramp-dim text-text-default border-event-ramp-border',
     border: 'border-event-ramp-border',
     text: 'text-event-ramp',
   },
   control: {
     label: 'Control',
-    chip: 'bg-event-control-dim text-event-control border-event-control-border',
+    chip: 'bg-event-control-dim text-text-default border-event-control-border',
     border: 'border-event-control-border',
     text: 'text-event-control',
   },
   mutation: {
     label: 'Mutation',
-    chip: 'bg-event-mutation-dim text-event-mutation border-event-mutation-border',
+    chip: 'bg-event-mutation-dim text-text-default border-event-mutation-border',
     border: 'border-event-mutation-border',
     text: 'text-event-mutation',
   },
   alarm: {
     label: 'Alarm',
-    chip: 'bg-event-alarm-dim text-event-alarm border-event-alarm-border',
+    chip: 'bg-event-alarm-dim text-text-default border-event-alarm-border',
     border: 'border-event-alarm-border',
     text: 'text-event-alarm',
   },
   system: {
     label: 'System',
-    chip: 'bg-event-system-dim text-event-system border-event-system-border',
+    chip: 'bg-event-system-dim text-text-default border-event-system-border',
     border: 'border-event-system-border',
     text: 'text-event-system',
   },
   sensor: {
     label: 'Sensors',
-    chip: 'bg-event-sensor-dim text-event-sensor border-event-sensor-border',
+    chip: 'bg-event-sensor-dim text-text-default border-event-sensor-border',
     border: 'border-event-sensor-border',
     text: 'text-event-sensor',
   },
@@ -85,7 +85,7 @@ export type EventCategoryName =
   | 'sensor'
 
 export const EVENT_CATEGORY_LABELS: Record<EventCategoryName, string> = Object.fromEntries(
-  Object.entries(CATEGORY_VISUALS).map(([category, visual]) => [category, visual.label]),
+  Object.entries(CATEGORY_VISUALS).map(([category, visual]) => [category, visual.label])
 ) as Record<EventCategoryName, string>
 
 export function categoryTheme(category: string): CategoryVisual {
@@ -99,7 +99,10 @@ export function categoryTheme(category: string): CategoryVisual {
  * Filtering keeps working on the raw backend category.
  */
 export function displayCategoryOf(entry: { category: string; type: string }): string {
-  if (entry.category === 'system' && (entry.type.startsWith('sensor.') || entry.type.startsWith('device.'))) {
+  if (
+    entry.category === 'system' &&
+    (entry.type.startsWith('sensor.') || entry.type.startsWith('device.'))
+  ) {
     return 'sensor'
   }
   return entry.category

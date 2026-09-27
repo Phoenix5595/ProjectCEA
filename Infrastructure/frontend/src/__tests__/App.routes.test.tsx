@@ -17,11 +17,16 @@ vi.mock('../pages/FlowerOverview', () => ({
   },
 }))
 
+vi.mock('../pages/FlowerSoil', () => ({
+  default: function FlowerSoilFixture() {
+    return <div>Flower soil fixture</div>
+  },
+}))
+
 const LEGACY_REDIRECTS = [
   { from: '/laboratory/climate', to: '/laboratory' },
   { from: '/laboratory/water', to: '/laboratory' },
   { from: '/laboratory/infrastructure', to: '/laboratory' },
-  { from: '/flower/soil', to: '/flower' },
 ] as const
 
 beforeEach(() => {
@@ -56,14 +61,26 @@ describe('sector navigation', () => {
     expect(screen.queryByRole('link', { name: 'Infrastructure' })).not.toBeInTheDocument()
   })
 
-  it('does not expose obsolete Flower Soil navigation', () => {
+  it('renders the Flower Soil page at /flower/soil with a Soil ribbon link', async () => {
+    window.history.replaceState({}, '', '/flower/soil')
+
+    render(<App />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Flower soil fixture')).toBeInTheDocument()
+    })
+    expect(window.location.pathname).toBe('/flower/soil')
+  })
+
+  it('exposes the Soil link in the Flower ribbon and marks it active on that path', () => {
     render(
-      <MemoryRouter initialEntries={['/flower']}>
-        <TopRibbon sector="flower" activeTab="overview" onTabChange={() => {}} />
+      <MemoryRouter initialEntries={['/flower/soil']}>
+        <TopRibbon sector="flower" activeTab="soil" onTabChange={() => {}} />
       </MemoryRouter>,
     )
 
     expect(screen.getByRole('link', { name: 'Monitoring' })).toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: 'Soil' })).not.toBeInTheDocument()
+    const soilLink = screen.getByRole('link', { name: 'Soil' })
+    expect(soilLink).toHaveAttribute('href', '/flower/soil')
   })
 })

@@ -20,6 +20,8 @@ const RANGE_BOUNDS: Partial<
   device: { min: 0, max: 100 },
   light: { min: 0, max: 100 },
   pressure: { min: 1012, max: 1014 },
+  water_content: { min: 0, max: 100 },
+  ph: { min: 0, max: 14 },
 }
 
 
@@ -190,10 +192,10 @@ export function buildScales(data: AlignedData): ChartScales {
     }
     scales[family] = scale
 
-    const isTemperature = family === 'temperature'
+    const isLeftAxis = family === 'temperature' || family === 'water_content'
     axes.push({
       scale: family,
-      side: isTemperature ? 3 : 1,
+      side: isLeftAxis ? 3 : 1,
       stroke: familyColor(family),
       grid: { stroke: 'rgba(128, 128, 128, 0.15)' },
       ticks: { stroke: familyColor(family) },

@@ -13,6 +13,7 @@ const VegetationMonitoring = lazy(() => import('./pages/VegetationMonitoring'))
 const VegetationControl = lazy(() => import('./pages/VegetationControl'))
 const VegetationAutomation = lazy(() => import('./pages/VegetationAutomation'))
 const FlowerMonitoring = lazy(() => import('./pages/FlowerMonitoring'))
+const FlowerSoil = lazy(() => import('./pages/FlowerSoil'))
 const FlowerControl = lazy(() => import('./pages/FlowerControl'))
 const FlowerAutomation = lazy(() => import('./pages/FlowerAutomation'))
 const LaboratoryOverview = lazy(() => import('./pages/LaboratoryOverview'))
@@ -35,7 +36,6 @@ function App() {
               <Route path="/laboratory/climate" element={<Navigate to="/laboratory" replace />} />
               <Route path="/laboratory/water" element={<Navigate to="/laboratory" replace />} />
               <Route path="/laboratory/infrastructure" element={<Navigate to="/laboratory" replace />} />
-              <Route path="/flower/soil" element={<Navigate to="/flower" replace />} />
 
               <Route element={<Layout />}>
                 <Route path="/" element={<Dashboard />} />
@@ -49,6 +49,7 @@ function App() {
 
                 <Route path="/flower" element={<FlowerOverview />} />
                 <Route path="/flower/monitoring" element={<FlowerMonitoring />} />
+                <Route path="/flower/soil" element={<FlowerSoil />} />
                 <Route path="/flower/control" element={<FlowerControl />} />
                 <Route path="/flower/automation" element={<FlowerAutomation />} />
 

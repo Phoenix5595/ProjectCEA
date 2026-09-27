@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from shared import (
     calculate_rh,
@@ -14,6 +14,9 @@ from shared import (
 )
 from shared.cluster_topology import ClusterMismatchError, sensor_name_like_pattern
 from shared.infra_logging import get_logger
+
+if TYPE_CHECKING:
+    from app.sensor_registry import SensorAssignment
 
 logger = get_logger(__name__)
 
@@ -28,17 +31,6 @@ def get_sensor_suffix(location: str, cluster: str) -> str:
     if pattern and pattern.startswith("%"):
         return pattern[1:]
     return ""
-
-
-def get_location_from_node(node_id):
-    if node_id is None:
-        return ("Unknown", "Unknown")
-    node_map = {
-        1: ("Flower Room", "back"),
-        2: ("Flower Room", "front"),
-        3: ("Veg Room", "main"),
-    }
-    return node_map.get(node_id, ("Unknown", f"node_{node_id}"))
 
 
 def validate_decoded_data(decoded: dict[str, Any]) -> bool:
@@ -59,44 +51,39 @@ def validate_decoded_data(decoded: dict[str, Any]) -> bool:
     if decoded["message_type"] not in valid_types:
         return False
 
-    # Validate node_id if present
-    if "node_id" in decoded and decoded["node_id"] is not None:
-        if decoded["node_id"] not in [1, 2, 3]:
-            logger.warning(f"Invalid node_id: {decoded['node_id']}")
-
     return True
 
 
 def extract_sensor_values(
-    decoded: dict[str, Any], location: str, cluster: str
+    decoded: dict[str, Any], assignment: SensorAssignment | None
 ) -> list[tuple[str, float, str]]:
     """Extract sensor values from decoded data.
 
     Args:
         decoded: Decoded CAN frame data
-        location: Location name (e.g., "Flower Room")
-        cluster: Cluster name (e.g., "front", "back", "main")
+        assignment: Commissioned placement snapshot for the frame's node,
+            or ``None`` when the node is unassigned/unknown
 
     Returns:
-        List of tuples: (sensor_name, value, unit)
+        List of tuples: (sensor_name, value, unit). Assigned nodes use the
+        canonical location-suffixed names; unassigned nodes use the bare
+        metric names.
     """
     sensors = []
 
-    # Get sensor suffix based on location/cluster
-    suffix = get_sensor_suffix(location, cluster)
+    if assignment is not None:
+        suffix = get_sensor_suffix(assignment.room, assignment.cluster)
+    else:
+        suffix = ""
 
     message_type = decoded.get("message_type", "")
-    node_id = decoded.get("node_id")
-
-    # Map node_id to location/cluster if not provided
-    if not location or not cluster:
-        location, cluster = get_location_from_node(node_id)
-        suffix = get_sensor_suffix(location, cluster)
+    room = assignment.room if assignment is not None else "Unknown"
+    cluster = assignment.cluster if assignment is not None else "Unknown"
 
     if message_type == "PT100":
         # Dry bulb temperature
         if "temp_dry_c" in decoded and decoded["temp_dry_c"] is not None:
-            if location == "Lab":
+            if room == "Lab":
                 sensor_key = "lab_temp"
             elif suffix:
                 sensor_key = f"dry_bulb{suffix}"
@@ -114,7 +101,7 @@ def extract_sensor_values(
         temp_wet = decoded.get("temp_wet_c")
         if temp_dry is not None and temp_wet is not None:
             # Get pressure for this location/cluster (default to sea level if not available)
-            pressure = get_pressure_state(location, cluster)
+            pressure = get_pressure_state(room, cluster)
 
             # Calculate RH and VPD
             rh = calculate_rh(float(temp_dry), float(temp_wet), pressure)
@@ -149,7 +136,7 @@ def extract_sensor_values(
 
         # Secondary temperature
         if "temperature_c" in decoded and decoded["temperature_c"] is not None:
-            if location == "Lab":
+            if room == "Lab":
                 sensor_key = "water_temp"
             elif suffix:
                 sensor_key = f"secondary_temp{suffix}"
@@ -170,7 +157,7 @@ def extract_sensor_values(
             sensors.append((sensor_key, pressure_value, "hPa"))
 
             # Update pressure state for this location/cluster
-            update_pressure_state(location, cluster, pressure_value)
+            update_pressure_state(room, cluster, pressure_value)
 
     elif message_type == "VL53" or message_type == "VL53L0X":
         # Water level (distance)

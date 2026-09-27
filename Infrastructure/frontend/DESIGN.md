@@ -10,44 +10,44 @@ Required tokens are listed in `src/features/monitoring/designTokens.ts` (`REQUIR
 
 ### Metric families
 
-| Token | Meaning |
-|---|---|
-| `--mon-family-temperature` | Temperature series color (left axis) |
-| `--mon-family-rh` | Relative-humidity series color (right axis) |
-| `--mon-family-vpd` | VPD series color (right axis) |
-| `--mon-family-co2` | CO₂ series color (right axis) |
-| `--mon-family-pressure` | Pressure series color (right axis) |
-| `--mon-family-device` | Device output/state series color (right axis) |
-| `--mon-family-light` | Light intensity/duty-cycle series color (right axis) |
+| Token                      | Meaning                                              |
+| -------------------------- | ---------------------------------------------------- |
+| `--mon-family-temperature` | Temperature series color (left axis)                 |
+| `--mon-family-rh`          | Relative-humidity series color (right axis)          |
+| `--mon-family-vpd`         | VPD series color (right axis)                        |
+| `--mon-family-co2`         | CO₂ series color (right axis)                        |
+| `--mon-family-pressure`    | Pressure series color (right axis)                   |
+| `--mon-family-device`      | Device output/state series color (right axis)        |
+| `--mon-family-light`       | Light intensity/duty-cycle series color (right axis) |
 
 ### Node variants
 
-| Token | Meaning |
-|---|---|
+| Token              | Meaning                         |
+| ------------------ | ------------------------------- |
 | `--mon-node-front` | Flower Front node variant color |
-| `--mon-node-back` | Flower Back node variant color |
+| `--mon-node-back`  | Flower Back node variant color  |
 
 ### Envelope and targets
 
-| Token | Meaning |
-|---|---|
-| `--mon-envelope-fill` | Translucent min/max band fill |
-| `--mon-envelope-stroke` | Min/max band edge stroke |
-| `--mon-target-recorded` | Historical effective-target color |
-| `--mon-target-projected` | Projected target color |
-| `--mon-target-projected-opacity` | Opacity for projected segments |
-| `--mon-target-dash` | Dash pattern for recorded/projected targets |
+| Token                            | Meaning                                     |
+| -------------------------------- | ------------------------------------------- |
+| `--mon-envelope-fill`            | Translucent min/max band fill               |
+| `--mon-envelope-stroke`          | Min/max band edge stroke                    |
+| `--mon-target-recorded`          | Historical effective-target color           |
+| `--mon-target-projected`         | Projected target color                      |
+| `--mon-target-projected-opacity` | Opacity for projected segments              |
+| `--mon-target-dash`              | Dash pattern for recorded/projected targets |
 
 ### Sun/moon and interaction
 
-| Token | Meaning |
-|---|---|
-| `--mon-sun-bg` | DAY background interval fill |
-| `--mon-moon-bg` | NIGHT background interval fill |
-| `--mon-focus-ring` | Keyboard focus ring color |
-| `--mon-tooltip-bg` / `--mon-tooltip-border` / `--mon-tooltip-text` | Tooltip colors |
-| `--mon-stale` / `--mon-error` | Provenance and error colors |
-| `--mon-axis-left` / `--mon-axis-right` | Axis label/tick colors |
+| Token                                                              | Meaning                        |
+| ------------------------------------------------------------------ | ------------------------------ |
+| `--mon-sun-bg`                                                     | DAY background interval fill   |
+| `--mon-moon-bg`                                                    | NIGHT background interval fill |
+| `--mon-focus-ring`                                                 | Keyboard focus ring color      |
+| `--mon-tooltip-bg` / `--mon-tooltip-border` / `--mon-tooltip-text` | Tooltip colors                 |
+| `--mon-stale` / `--mon-error`                                      | Provenance and error colors    |
+| `--mon-axis-left` / `--mon-axis-right`                             | Axis label/tick colors         |
 
 ## Axis Contract
 
@@ -106,7 +106,6 @@ Required tokens are listed in `src/features/monitoring/designTokens.ts` (`REQUIR
 - In the expanded editor with the daily window, mouse-drag handles edit scheduled setpoint values (snap 0.1 °C/kPa, 10 ppm; product-range validation rejects out-of-range drags visibly instead of clamping) and period boundaries (5-minute snap clamped between neighbours). Every frame of a drag coalesces into at most one draft commit; nothing persists during a drag; the effective series and the rolling/now-based window are never draggable; the table retains full keyboard parity.
 - During a drag or the dirty-not-yet-previewed window, the chart paints the labelled local draft estimate ("Local draft estimate" tag) and marks the effective line stale ("Effective stale — preview pending"); a preview 250 ms after the last edit (single-flight, latest-result ownership) restores the backend envelope. Apply stays explicit; 409 conflicts keep the draft and mark it stale.
 
-
 ### Operator handoff boundaries
 
 - The climate periods table is permanent and remains the primary fine-tuning interface. Operators can edit period names, times, targets, and ramps there without opening the graph. The expanded graph is supplementary.
@@ -128,9 +127,32 @@ Required tokens are listed in `src/features/monitoring/designTokens.ts` (`REQUIR
 - Type uses `JetBrains Mono` (self-hosted, `--font-sans`/`--font-mono`). Axis labels and table cells use the mono stack.
 - Corners stay sharp app-wide (`--radius-sm: 2px`, `--radius-md: 2px`, `--radius-lg: 3px`).
 
+## Soil Page Layout Contract
+
+The `/flower/soil` page reuses the monitoring layout system verbatim instead of inventing parallel structure:
+
+- **Box system** (`monitoring.css`): `.mon-page` hosts a `.mon-layout` grid of two zones — a `.mon-side` column of compact `mon-card` boxes and a `.mon-main` column of chart/table cards.
+- **Side boxes** (`.mon-side`): compact cards at `4px` padding with `2px` margins, zero table-cell padding, and `position: sticky` at ≥1100px. Each box carries a `mon-card__title` and a `MonitoringFreshness` chip.
+- **Main cards** (`.mon-main`): `4px` padding, `1rem` internal gap, tight `mon-card__title` margins. Contrast comes from the shared surface/border tokens (`surface-secondary` on `surface-base`, `border-default`); never introduce ad-hoc wrappers with custom padding.
+- **Soil extension — `.mon-layout--beds`**: the side column hosts the bed schematic cards, using the same compact card treatment as monitoring without a second large gap between cards.
+- **Chart sizing**: `.mon-chart` is `height: 100%`, so its wrapper must carry a definite height (monitoring pages use fixed pixel heights; soil uses `min(50vh, 540px)`). A wrapper sized only by `min-height`/flex-basis collapses the uPlot frame to zero height.
+- **Semantic table**: the chart's accessible data alternative is the shared `ChartDataTable` primitive consuming the exact `AlignedData` the plot renders; the page does not maintain its own table markup.
+- Beds render Back Bed above Front Bed; probe identity is the registry hardware address (`Soil probe #N`), and per-metric fresh/stale text uses `--mon-stale`.
+
 ## Responsive Layout
 
 Chart regions and tables stack to a single column below `768px`. At 375px, 768px, and 1280px the layout must remain usable: axes legible, tables horizontally scrollable, controls reachable.
+
+### Dashboard viewport contract
+
+The monitoring layout guidance above remains unchanged. Dashboard `/` uses a separate viewport layout:
+
+- At ≥1600px, calendar and vertical inspector share the center track; the event console and bounded water tile occupy the side rail; room cards sit below the calendar/inspector.
+- From 1100px to 1599px, calendar spans the center above a horizontal inspector summary and room cards. From 768px to 1099px, the center uses compact room summaries (including truthful ON/OFF/unknown totals and text trend deltas) beside the event/water rail.
+- Below 768px, the dashboard becomes a natural-height single column. The labelled navigation drawer and ribbon menu do not pin the page content; only the document scrolls vertically. Calendar, inspector, room cards, Event Log, water, and Mothernode remain in DOM order.
+- Desktop dashboard viewports do not scroll the document or dashboard panels and do not overlap. The phone has no horizontal overflow or in-page panel scrollers. Dialogs/popovers are transient overlays and may scroll independently.
+- The dashboard calendar is six rows in every month with 44px minimum date targets. Mobile markers become dots/counts while the date button's accessible name retains task, note, and phase counts.
+- Desktop navigation uses a permanent 30px icon rail app-wide; the phone retains a labelled drawer with visible links and version footer.
 
 ## Motion Constraints
 
@@ -158,16 +180,16 @@ Contract for the event-log feature (`src/features/event-log/`), which presents t
 
 One hue per backend `EventCategory`, owner-approved. Tokens come in triplets: base hue, `-dim` chip background, `-border` under-border. Coverage is enforced by `src/features/event-log/__tests__/categoryTheme.test.ts` for every category in all six themes.
 
-| Category | Label | Hue family |
-|---|---|---|
-| `relay` | Relay | green |
-| `manual_override` | Manual override | amber |
-| `ramp` | Ramp | teal |
-| `control` | Control | ice blue |
-| `mutation` | Mutation | violet |
-| `alarm` | Alarm | red |
-| `system` | System | slate |
-| `sensor` (display-only split of `system`) | Sensors | orange |
+| Category                                  | Label           | Hue family |
+| ----------------------------------------- | --------------- | ---------- |
+| `relay`                                   | Relay           | green      |
+| `manual_override`                         | Manual override | amber      |
+| `ramp`                                    | Ramp            | teal       |
+| `control`                                 | Control         | ice blue   |
+| `mutation`                                | Mutation        | violet     |
+| `alarm`                                   | Alarm           | red        |
+| `system`                                  | System          | slate      |
+| `sensor` (display-only split of `system`) | Sensors         | orange     |
 
 The `Sensors` bucket is a frontend presentation split: `system`-category events of type `sensor.*` / `device.*` display in the orange Sensors bucket; platform events stay slate. Grouping and expansion use the display bucket; the category filter chips keep operating on the raw backend category, so a `system` filter shows System and Sensors rows.
 
@@ -177,8 +199,15 @@ The `Sensors` bucket is a frontend presentation split: `system`-category events 
 
 ### Views
 
-- **Grouped console (default):** one button row per category showing the newest event of that kind — category chip, count badge, latest type label, entity/zone/source line, reason, and a pinned 10-minute concurrent-entity summary ("N devices in the last 10 minutes: …"). Rows are buttons with `aria-expanded`; the grid goes two columns (`lg:grid-cols-2`) when more than four categories resolve.
-- **Flat "All events" (secondary):** today's full newest-first list, one labelled toggle away. All filters (severity, search, rooms, categories, types) apply in both views; expansion swaps the section to the selected category's complete list with a collapse control.
+- **Dashboard compact console:** grouped by default, with eight category summaries per page. Each two-line summary shows category/count/time then latest label/severity; visible group paging keeps categories beyond the first eight reachable.
+- **Dashboard flat "All events" and expanded-category list:** five newest-first rows per page with visible status and disabled Previous/Next bounds. Filter, view, and category changes reset paging; live result shrink clamps it. A compact row opens an overlay with full recorded source, reason, timestamps, and safe payload, restoring focus on close.
+- **Full-width room log:** remains flat by default with its established filters, full newest-first list, max-height scroll, and inline row details. Dashboard paging and detail dialogs do not change this view.
+
+### Recorded reasons
+
+- A flat row’s reason hover is scoped to that event and displays only its recorded `reason_text`; it never infers a cause.
+- A grouped category’s reason help identifies the latest event in that category. Historical reasons are not current control authority.
+- PID binary relay explanations use the recorded controller inputs/output and the evaluated hysteresis boundary. Show them only on successful changed-state `relay.commanded` events; failed, interlocked, manual, unchanged, and unmatched `relay.observed` events remain unattributed.
 
 ### Dual timestamps and from-to values
 

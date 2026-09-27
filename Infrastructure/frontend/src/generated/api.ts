@@ -33,10 +33,7 @@ export interface paths {
         };
         /**
          * Get All Alarms
-         * @description Get all alarms for all locations/clusters.
-         *
-         *     Returns:
-         *         Dict mapping "location:cluster" to alarms dict
+         * @description Return all active durable alarms in operator order.
          */
         get: operations["get_api_alarms"];
         put?: never;
@@ -56,10 +53,7 @@ export interface paths {
         };
         /**
          * Get Alarms
-         * @description Get all alarms for a location/cluster.
-         *
-         *     Returns:
-         *         Dict mapping alarm_name to alarm data
+         * @description Return active alarms for one location/cluster in operator order.
          */
         get: operations["get_api_alarms_{location}_{cluster}"];
         put?: never;
@@ -133,6 +127,24 @@ export interface paths {
         head?: never;
         /** Update Event */
         patch: operations["patch_api_calendar_events_{event_id}"];
+        trace?: never;
+    };
+    "/api/calendar/flower-mode-transitions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Flower Mode Transitions */
+        get: operations["get_api_calendar_flower-mode-transitions"];
+        /** Update Flower Mode Transitions */
+        put: operations["put_api_calendar_flower-mode-transitions"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/calendar/grow-plans/flower": {
@@ -322,6 +334,66 @@ export interface paths {
         get: operations["get_api_climate-periods_{location}_{cluster}_validate"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/climate-timeline/{location}/{cluster}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Saved Climate Timeline
+         * @description Read the saved timeline aggregate and rich trajectory for one window.
+         */
+        get: operations["get_api_climate-timeline_{location}_{cluster}"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/climate-timeline/{location}/{cluster}/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Apply Climate Timeline
+         * @description Commit one reviewed timeline aggregate without touching light-intensity state.
+         */
+        post: operations["post_api_climate-timeline_{location}_{cluster}_apply"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/climate-timeline/{location}/{cluster}/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview Climate Timeline
+         * @description Evaluate a validated complete draft without persistence or publication.
+         */
+        post: operations["post_api_climate-timeline_{location}_{cluster}_preview"];
         delete?: never;
         options?: never;
         head?: never;
@@ -681,6 +753,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/events/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Operational Event History
+         * @description Return one bounded event page in the direction selected by its cursor.
+         */
+        get: operations["get_api_events_history"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/events/stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Operational Event Stream
+         * @description Replay strictly after a retained cursor, then tail the global event stream.
+         */
+        get: operations["get_api_events_stream"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/failsafe": {
         parameters: {
             query?: never;
@@ -1031,66 +1143,6 @@ export interface paths {
          *         Updated mode information
          */
         post: operations["post_api_mode_{location}_{cluster}"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/monitoring/control/{location}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Control Monitoring Range
-         * @description Return one atomic historical range and per-source tail high-water marks.
-         */
-        get: operations["get_api_monitoring_control_{location}"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/monitoring/control/{location}/projection": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Control Projection
-         * @description Return only future climate, light, and photoperiod projections.
-         */
-        get: operations["get_api_monitoring_control_{location}_projection"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/monitoring/control/{location}/tail": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Control Monitoring Tail
-         * @description Return bounded tail pages, reconciling one range after a continuity signal.
-         */
-        get: operations["get_api_monitoring_control_{location}_tail"];
-        put?: never;
-        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1750,6 +1802,35 @@ export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
         /**
+         * ActiveAlarmResponse
+         * @description One active durable alarm exposed to operators.
+         */
+        ActiveAlarmResponse: {
+            /** Acknowledged */
+            acknowledged: boolean;
+            /** Acknowledged At */
+            acknowledged_at: string | null;
+            /** Acknowledged By */
+            acknowledged_by: string | null;
+            /** Active */
+            active: boolean;
+            /** Alarm Name */
+            alarm_name: string;
+            /** Cluster */
+            cluster: string;
+            /** Location */
+            location: string;
+            /** Message */
+            message: string;
+            /**
+             * Opened At
+             * Format: date-time
+             */
+            opened_at: string;
+            /** Severity */
+            severity: string;
+        };
+        /**
          * ActiveModeResponse
          * @description Response model for active room mode.
          */
@@ -1767,15 +1848,59 @@ export interface components {
             /** Submode Name */
             submode_name?: string | null;
         };
+        /** ActorContext */
+        ActorContext: {
+            /** Actor Id */
+            actor_id?: string | null;
+            actor_type: components["schemas"]["ActorType"];
+        };
         /**
-         * AggregationMetadata
-         * @description Source bucket information retained when a timeline series is aggregated.
+         * ActorType
+         * @enum {string}
          */
-        AggregationMetadata: {
-            /** Interval Seconds */
-            interval_seconds: number;
-            /** Sample Count */
-            sample_count: number;
+        ActorType: "operator" | "service" | "system";
+        /**
+         * AlarmAcknowledgeResponse
+         * @description Recognition result for one alarm.
+         */
+        AlarmAcknowledgeResponse: {
+            /** Acknowledged */
+            acknowledged: boolean;
+            /** Alarm Name */
+            alarm_name: string;
+            /** Cluster */
+            cluster: string;
+            /** Location */
+            location: string;
+            /** Success */
+            success: boolean;
+        };
+        /**
+         * AlarmListResponse
+         * @description Sorted active alarms for a room or the complete facility.
+         */
+        AlarmListResponse: {
+            /** Alarms */
+            alarms: components["schemas"]["ActiveAlarmResponse"][];
+            /**
+             * Generated At
+             * Format: date-time
+             */
+            generated_at: string;
+        };
+        /** AlarmPayload */
+        AlarmPayload: {
+            /** Alarm Code */
+            alarm_code: string;
+            /** Detail */
+            detail?: string | null;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            family: "alarm";
+            /** State */
+            state: string;
         };
         /**
          * AutoCommand
@@ -1846,58 +1971,6 @@ export interface components {
             title?: string | null;
         };
         /**
-         * ClimateTimelinePoint
-         * @description Recorded or projected effective/nominal climate setpoint values.
-         */
-        ClimateTimelinePoint: {
-            aggregation?: components["schemas"]["AggregationMetadata"] | null;
-            /** Device Name */
-            device_name?: string | null;
-            /** Metric */
-            metric: string;
-            /** Mode */
-            mode?: string | null;
-            /** Nominal Value */
-            nominal_value: number | null;
-            provenance: components["schemas"]["TimelineProvenance"];
-            /** Ramp Progress */
-            ramp_progress?: number | null;
-            /**
-             * Timestamp
-             * Format: date-time
-             */
-            timestamp: string;
-            /** Value */
-            value: number | null;
-        };
-        /**
-         * ClimateTimelineSeries
-         * @description Climate target timeline with step and linear ramp representations.
-         */
-        ClimateTimelineSeries: {
-            /**
-             * Linear
-             * @default []
-             */
-            linear: components["schemas"]["TimelineLinear"][];
-            /** Name */
-            name: string;
-            /** Points */
-            points: components["schemas"]["ClimateTimelinePoint"][];
-            projection?: components["schemas"]["ProjectionMetadata"] | null;
-            provenance: components["schemas"]["TimelineProvenance"];
-            /**
-             * Steps
-             * @default []
-             */
-            steps: components["schemas"]["TimelineStep"][];
-            /**
-             * Warnings
-             * @default []
-             */
-            warnings: components["schemas"]["MonitoringWarning"][];
-        };
-        /**
          * ConfigUpdateRequest
          * @description Request model for system config update.
          */
@@ -1906,43 +1979,27 @@ export interface components {
             safety_limits?: components["schemas"]["SafetyLimitsGroup"] | null;
             tuning?: components["schemas"]["TuningGroup"] | null;
         };
-        /**
-         * ControlMonitoringResponse
-         * @description Range or tail response containing immutable recorded and projected timelines.
-         */
-        ControlMonitoringResponse: {
+        /** ControlPayload */
+        ControlPayload: {
+            /** Controller */
+            controller: string;
+            /** Device Type */
+            device_type?: string | null;
+            /** Effective Setpoint */
+            effective_setpoint?: number | null;
+            /** Error */
+            error?: number | null;
             /**
-             * Climate
-             * @default []
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
              */
-            climate: components["schemas"]["ClimateTimelineSeries"][];
-            /** Cursors */
-            cursors: components["schemas"]["SourceCursor"][];
-            /**
-             * Devices
-             * @default []
-             */
-            devices: components["schemas"]["DeviceTimelineSeries"][];
-            /** Flush Health */
-            flush_health: components["schemas"]["FlushHealth"][];
-            /**
-             * Lights
-             * @default []
-             */
-            lights: components["schemas"]["LightTimelineSeries"][];
-            /**
-             * Photoperiod
-             * @default []
-             */
-            photoperiod: components["schemas"]["PhotoperiodTimelinePoint"][];
-            /**
-             * Pid
-             * @default []
-             */
-            pid: components["schemas"]["PidTimelineSeries"][];
-            range: components["schemas"]["MonitoringRange"];
-            /** Runtime Snapshot Version */
-            runtime_snapshot_version: number;
+            family: "control";
+            /** Output Percent */
+            output_percent?: number | null;
+            /** Previous Setpoint */
+            previous_setpoint?: number | null;
+            /** Sensor Value */
+            sensor_value?: number | null;
         };
         /**
          * ControlSnapshotResponse
@@ -1951,6 +2008,8 @@ export interface components {
         ControlSnapshotResponse: {
             /** Dfr Boards */
             dfr_boards: components["schemas"]["DfrBoardSnapshotResponse"][];
+            /** Failsafes */
+            failsafes: components["schemas"]["FailsafeSnapshotResponse"][];
             /**
              * Freshness
              * @enum {string}
@@ -2123,41 +2182,6 @@ export interface components {
             mode: string;
         };
         /**
-         * DeviceTimelinePoint
-         * @description Historical automation-state observation; future device state is never fabricated.
-         */
-        DeviceTimelinePoint: {
-            /** Control Reason */
-            control_reason: string;
-            /** Device Mode */
-            device_mode: string;
-            /** Device Name */
-            device_name: string;
-            /** Device State */
-            device_state: number;
-            provenance: components["schemas"]["TimelineProvenance"];
-            /**
-             * Timestamp
-             * Format: date-time
-             */
-            timestamp: string;
-        };
-        /**
-         * DeviceTimelineSeries
-         * @description Historical device automation states only.
-         */
-        DeviceTimelineSeries: {
-            /** Name */
-            name: string;
-            /** Points */
-            points: components["schemas"]["DeviceTimelinePoint"][];
-            /**
-             * Warnings
-             * @default []
-             */
-            warnings: components["schemas"]["MonitoringWarning"][];
-        };
-        /**
          * DfrBoardSnapshotResponse
          * @description One DFR board's public, address-free output slots.
          */
@@ -2195,6 +2219,63 @@ export interface components {
             command_acknowledged: boolean;
             /** Commanded Intensity */
             commanded_intensity: number | null;
+        };
+        /** EntityContext */
+        EntityContext: {
+            /** Cluster */
+            cluster?: string | null;
+            /** Entity Id */
+            entity_id: string;
+            /** Entity Type */
+            entity_type: string;
+            /** Location */
+            location?: string | null;
+        };
+        /**
+         * EventCategory
+         * @enum {string}
+         */
+        EventCategory: "relay" | "manual_override" | "ramp" | "control" | "mutation" | "alarm" | "system";
+        /** EventDetail */
+        EventDetail: {
+            /** Key */
+            key: string;
+            /** Value */
+            value: string | number | boolean | null;
+        };
+        /**
+         * EventSeverity
+         * @enum {string}
+         */
+        EventSeverity: "info" | "warning" | "error" | "critical";
+        /**
+         * EventSource
+         * @enum {string}
+         */
+        EventSource: "automation" | "api" | "operator" | "system" | "transport";
+        /**
+         * FailsafeSnapshotResponse
+         * @description Active room failsafe authority included in the control read model.
+         */
+        FailsafeSnapshotResponse: {
+            /** Cluster */
+            cluster: string;
+            /** Location */
+            location: string;
+        };
+        /** FieldChange */
+        FieldChange: {
+            /** After */
+            after?: string | number | boolean | null;
+            /** Before */
+            before?: string | number | boolean | null;
+            /** Key */
+            key: string;
+        };
+        /** FlowerCalendarModeTransitionUpdate */
+        FlowerCalendarModeTransitionUpdate: {
+            /** Enabled */
+            enabled: boolean;
         };
         /** FlowerGrowPlanRequest */
         FlowerGrowPlanRequest: {
@@ -2276,20 +2357,6 @@ export interface components {
             week_end?: number | null;
             /** Week Start */
             week_start?: number | null;
-        };
-        /**
-         * FlushHealth
-         * @description Persisted-history flush status, including rows dropped before storage.
-         */
-        FlushHealth: {
-            /** Dropped Rows */
-            dropped_rows: number;
-            /** Healthy */
-            healthy: boolean;
-            /** Last Flushed At */
-            last_flushed_at?: string | null;
-            /** Source */
-            source: string;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -2468,54 +2535,44 @@ export interface components {
             target_intensity: number;
         };
         /**
-         * LightTimelinePoint
-         * @description Recorded or projected per-device effective/nominal light intensity.
+         * LinearTrajectorySegment
+         * @description A finite ramp evaluated between explicit UTC endpoints.
          */
-        LightTimelinePoint: {
-            aggregation?: components["schemas"]["AggregationMetadata"] | null;
-            /** Device Name */
-            device_name: string;
-            /** Mode */
-            mode?: string | null;
-            /** Nominal Value */
-            nominal_value: number | null;
-            provenance: components["schemas"]["TimelineProvenance"];
-            /** Ramp Progress */
-            ramp_progress?: number | null;
+        LinearTrajectorySegment: {
             /**
-             * Timestamp
+             * End
              * Format: date-time
              */
-            timestamp: string;
-            /** Value */
-            value: number | null;
-        };
-        /**
-         * LightTimelineSeries
-         * @description Per-light target timeline with step and linear ramp representations.
-         */
-        LightTimelineSeries: {
+            end: string;
+            /** End Value */
+            end_value: number;
+            /** Metric */
+            metric: string;
             /**
-             * Linear
-             * @default []
+             * Quality
+             * @enum {string}
              */
-            linear: components["schemas"]["TimelineLinear"][];
-            /** Name */
-            name: string;
-            /** Points */
-            points: components["schemas"]["LightTimelinePoint"][];
-            projection?: components["schemas"]["ProjectionMetadata"] | null;
-            provenance: components["schemas"]["TimelineProvenance"];
+            quality: "exact" | "estimated" | "unavailable";
             /**
-             * Steps
-             * @default []
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
              */
-            steps: components["schemas"]["TimelineStep"][];
+            shape: "linear";
+            source: components["schemas"]["SegmentSource"];
             /**
-             * Warnings
-             * @default []
+             * Start
+             * Format: date-time
              */
-            warnings: components["schemas"]["MonitoringWarning"][];
+            start: string;
+            /** Start Value */
+            start_value: number;
+            /**
+             * Trajectory Kind
+             * @enum {string}
+             */
+            trajectory_kind: "scheduled" | "effective";
+            /** Unit */
+            unit: string;
         };
         /**
          * ManualOffCommand
@@ -2532,6 +2589,20 @@ export interface components {
              * @default Manual OFF
              */
             reason: string;
+        };
+        /** ManualOverridePayload */
+        ManualOverridePayload: {
+            /** Duration Seconds */
+            duration_seconds?: number | null;
+            /** Expires At */
+            expires_at?: string | null;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            family: "manual_override";
+            /** Mode */
+            mode: string;
         };
         /**
          * ModeParameters
@@ -2579,43 +2650,95 @@ export interface components {
              */
             source: string;
         };
-        /**
-         * MonitoringRange
-         * @description Validated aware-UTC half-open monitoring interval ``[start, end)``.
-         */
-        MonitoringRange: {
+        /** MutationPayload */
+        MutationPayload: {
+            /** Changes */
+            changes: components["schemas"]["FieldChange"][];
             /**
-             * End
-             * Format: date-time
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
              */
-            end: string;
-            /**
-             * Start
-             * Format: date-time
-             */
-            start: string;
-        };
-        /**
-         * MonitoringWarning
-         * @description A non-fatal reason a control timeline is estimated or incomplete.
-         */
-        MonitoringWarning: {
-            /** Code */
-            code: string;
-            /** Detail */
-            detail: string;
+            family: "mutation";
+            /** Operation */
+            operation: string;
         };
         /** NotesBody */
         NotesBody: {
             /** Content */
             content: string;
         };
+        /** OperationalEvent */
+        OperationalEvent: {
+            actor?: components["schemas"]["ActorContext"] | null;
+            category: components["schemas"]["EventCategory"];
+            /** Causation Id */
+            causation_id?: string | null;
+            /** Correlation Id */
+            correlation_id?: string | null;
+            entity?: components["schemas"]["EntityContext"] | null;
+            /**
+             * Event Id
+             * Format: uuid
+             */
+            event_id?: string;
+            /** Event Type */
+            event_type: string;
+            /**
+             * Occurred At
+             * Format: date-time
+             */
+            occurred_at: string;
+            /** Payload */
+            payload: components["schemas"]["RelayPayload"] | components["schemas"]["ManualOverridePayload"] | components["schemas"]["RampPayload"] | components["schemas"]["ControlPayload"] | components["schemas"]["MutationPayload"] | components["schemas"]["AlarmPayload"] | components["schemas"]["SystemPayload"];
+            /** Reason Code */
+            reason_code?: string | null;
+            /** Reason Text */
+            reason_text?: string | null;
+            /**
+             * Schema Version
+             * @default 1
+             * @constant
+             */
+            schema_version: 1;
+            severity: components["schemas"]["EventSeverity"];
+            source: components["schemas"]["EventSource"];
+        };
         /**
-         * Origin
-         * @description How a timeline value entered the response.
-         * @enum {string}
+         * OperationalEventHistory
+         * @description A cursor page of operational events and retained-stream bounds.
          */
-        Origin: "recorded" | "derived" | "projected";
+        OperationalEventHistory: {
+            /** Earliest Cursor */
+            earliest_cursor?: string | null;
+            /** Has More */
+            has_more: boolean;
+            /** Items */
+            items: components["schemas"]["OperationalEventItem"][];
+            /** Newest Cursor */
+            newest_cursor?: string | null;
+            /** Oldest Cursor */
+            oldest_cursor?: string | null;
+            scan: components["schemas"]["OperationalEventScan"];
+        };
+        /**
+         * OperationalEventItem
+         * @description One immutable event paired with its Redis stream cursor.
+         */
+        OperationalEventItem: {
+            event: components["schemas"]["OperationalEvent"];
+            /** Redis Id */
+            redis_id: string;
+        };
+        /**
+         * OperationalEventScan
+         * @description Bounded scan accounting for filtered event-history pages.
+         */
+        OperationalEventScan: {
+            /** Limit */
+            limit: number;
+            /** Scanned */
+            scanned: number;
+        };
         /**
          * PIDModeUpdate
          * @description Request model for PID control mode update.
@@ -2648,6 +2771,16 @@ export interface components {
             source: string;
             /** Updated By */
             updated_by?: string | null;
+        };
+        /**
+         * PeriodIdentity
+         * @description Stable schedule-period identity displayed with a trajectory segment.
+         */
+        PeriodIdentity: {
+            /** Label */
+            label: string;
+            /** Period Id */
+            period_id: string;
         };
         /**
          * PeriodInput
@@ -2689,31 +2822,6 @@ export interface components {
             submode_id?: number | null;
         };
         /**
-         * Phase
-         * @description The resolved photoperiod phase for a room.
-         * @enum {string}
-         */
-        Phase: "SUN" | "MOON" | "UNKNOWN";
-        /**
-         * PhotoperiodTimelinePoint
-         * @description A historical or projected room photoperiod phase transition.
-         */
-        PhotoperiodTimelinePoint: {
-            /** Mode Id */
-            mode_id?: number | null;
-            phase: components["schemas"]["Phase"];
-            provenance: components["schemas"]["TimelineProvenance"];
-            /** Runtime Snapshot Version */
-            runtime_snapshot_version?: number | null;
-            /** Submode Id */
-            submode_id?: number | null;
-            /**
-             * Timestamp
-             * Format: date-time
-             */
-            timestamp: string;
-        };
-        /**
          * PidLimitsGroup
          * @description PID limits for all device types.
          */
@@ -2740,66 +2848,24 @@ export interface components {
             /** Kp Min */
             kp_min: number;
         };
-        /**
-         * PidTimelinePoint
-         * @description Historical PID output observation; null output stays null.
-         */
-        PidTimelinePoint: {
-            /** Device Name */
-            device_name: string;
-            /** Duty Cycle Percent */
-            duty_cycle_percent?: number | null;
-            /** Pid Output */
-            pid_output?: number | null;
-            provenance: components["schemas"]["TimelineProvenance"];
+        /** RampPayload */
+        RampPayload: {
+            /** Duration Seconds */
+            duration_seconds?: number | null;
             /**
-             * Timestamp
-             * Format: date-time
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
              */
-            timestamp: string;
+            family: "ramp";
+            /** Phase */
+            phase?: string | null;
+            /** Ramp Type */
+            ramp_type: string;
+            /** Start Value */
+            start_value?: number | null;
+            /** Target Value */
+            target_value?: number | null;
         };
-        /**
-         * PidTimelineSeries
-         * @description Historical PID observations only.
-         */
-        PidTimelineSeries: {
-            /** Name */
-            name: string;
-            /** Points */
-            points: components["schemas"]["PidTimelinePoint"][];
-            /**
-             * Warnings
-             * @default []
-             */
-            warnings: components["schemas"]["MonitoringWarning"][];
-        };
-        /**
-         * ProjectionMetadata
-         * @description Stable provenance captured with every projected control series.
-         */
-        ProjectionMetadata: {
-            /** Anchor Fingerprint */
-            anchor_fingerprint: string;
-            /**
-             * Anchor Observed At
-             * Format: date-time
-             */
-            anchor_observed_at: string;
-            anchor_quality: components["schemas"]["Quality"];
-            /**
-             * Anchor Valid Until
-             * Format: date-time
-             */
-            anchor_valid_until: string;
-            /** Projection Revision */
-            projection_revision: string;
-        };
-        /**
-         * Quality
-         * @description Confidence in a timeline value independently of its origin.
-         * @enum {string}
-         */
-        Quality: "exact" | "estimated" | "unavailable";
         /**
          * RegistryDeviceUpdate
          * @description Validated update envelope parsed into a device-kind-specific DTO while locked.
@@ -2851,6 +2917,10 @@ export interface components {
             command_mode: string | null;
             /** Desired State */
             desired_state: number | null;
+            /** Interlock Blocked */
+            interlock_blocked: boolean;
+            /** Interlock Reason */
+            interlock_reason: string | null;
             /** Last Command Succeeded */
             last_command_succeeded: boolean | null;
             /** Observed State */
@@ -2867,6 +2937,25 @@ export interface components {
             stale: boolean;
             /** Syncing */
             syncing: boolean;
+        };
+        /** RelayPayload */
+        RelayPayload: {
+            /** Command Mode */
+            command_mode?: string | null;
+            /**
+             * Details
+             * @default []
+             */
+            details: components["schemas"]["EventDetail"][];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            family: "relay";
+            /** Observed State */
+            observed_state?: boolean | null;
+            /** State */
+            state?: boolean | null;
         };
         /**
          * RelayTestRequest
@@ -2885,6 +2974,46 @@ export interface components {
              * @default 200
              */
             duration_ms: number;
+        };
+        /**
+         * RichTrajectoryEnvelope
+         * @description Versioned saved or draft trajectory envelope independent of legacy scalars.
+         */
+        RichTrajectoryEnvelope: {
+            /**
+             * Assumptions
+             * @default []
+             */
+            assumptions: string[];
+            /** Base Config Revision */
+            base_config_revision: string;
+            /**
+             * Contract Version
+             * @constant
+             */
+            contract_version: 1;
+            /** Draft Revision */
+            draft_revision?: string | null;
+            /**
+             * Generated At
+             * Format: date-time
+             */
+            generated_at: string;
+            /**
+             * Revision Scope
+             * @enum {string}
+             */
+            revision_scope: "saved" | "draft";
+            /** Room */
+            room: string;
+            /** Segments */
+            segments: (components["schemas"]["StepTrajectorySegment"] | components["schemas"]["LinearTrajectorySegment"] | components["schemas"]["UnavailableTrajectorySegment"])[];
+            /**
+             * Warnings
+             * @default []
+             */
+            warnings: components["schemas"]["TimelineWarning"][];
+            window: components["schemas"]["UtcWindow"];
         };
         /**
          * RoomMode
@@ -3035,6 +3164,21 @@ export interface components {
             target_intensity?: number | null;
         };
         /**
+         * SegmentSource
+         * @description Saved or draft schedule identity that produced one segment.
+         */
+        SegmentSource: {
+            /** Config Revision */
+            config_revision: string;
+            /** Draft Revision */
+            draft_revision?: string | null;
+            /** Mode */
+            mode: string;
+            period: components["schemas"]["PeriodIdentity"];
+            /** Submode */
+            submode?: string | null;
+        };
+        /**
          * SetModeRequest
          * @description Request model for setting room mode.
          */
@@ -3050,16 +3194,42 @@ export interface components {
             submode_name?: string | null;
         };
         /**
-         * SourceCursor
-         * @description Opaque per-source tail cursor and bounded-page state.
+         * StepTrajectorySegment
+         * @description A finite value that holds throughout its UTC half-open interval.
          */
-        SourceCursor: {
-            /** Cursor */
-            cursor?: string | null;
-            /** Has More */
-            has_more: boolean;
-            /** Source */
-            source: string;
+        StepTrajectorySegment: {
+            /**
+             * End
+             * Format: date-time
+             */
+            end: string;
+            /** Metric */
+            metric: string;
+            /**
+             * Quality
+             * @enum {string}
+             */
+            quality: "exact" | "estimated" | "unavailable";
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            shape: "step";
+            source: components["schemas"]["SegmentSource"];
+            /**
+             * Start
+             * Format: date-time
+             */
+            start: string;
+            /**
+             * Trajectory Kind
+             * @enum {string}
+             */
+            trajectory_kind: "scheduled" | "effective";
+            /** Unit */
+            unit: string;
+            /** Value */
+            value: number;
         };
         /** SyncConnectionCreate */
         SyncConnectionCreate: {
@@ -3084,6 +3254,25 @@ export interface components {
             caldav_base_url: string;
             /** Username */
             username: string;
+        };
+        /** SystemPayload */
+        SystemPayload: {
+            /** Component */
+            component: string;
+            /** Detail */
+            detail?: string | null;
+            /**
+             * Details
+             * @default []
+             */
+            details: components["schemas"]["EventDetail"][];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            family: "system";
+            /** State */
+            state: string;
         };
         /**
          * TargetIntensityControl
@@ -3112,52 +3301,154 @@ export interface components {
             reason: string;
         };
         /**
-         * TimelineLinear
-         * @description A linear target segment with explicit UTC endpoints.
+         * TimelineApplyRequest
+         * @description A reviewed complete timeline aggregate authorized for one atomic replacement.
          */
-        TimelineLinear: {
+        TimelineApplyRequest: {
+            /** Draft Revision */
+            draft_revision: number;
+            /** Expected Config Revision */
+            expected_config_revision: string;
+            /** Mode Id */
+            mode_id: number;
+            /** Periods */
+            periods: components["schemas"]["TimelinePeriodDraft"][];
+            photoperiod: components["schemas"]["TimelinePhotoperiodDraft"];
+            /** Request Id */
+            request_id: string;
+            /** Submode Id */
+            submode_id?: number | null;
+        };
+        /**
+         * TimelineApplyResponse
+         * @description Committed timeline values and the one revision produced by Apply.
+         */
+        TimelineApplyResponse: {
+            /** Config Revision */
+            config_revision: string;
+            /** Mode Id */
+            mode_id: number;
+            /** Periods */
+            periods: components["schemas"]["TimelinePeriodDraft"][];
+            photoperiod: components["schemas"]["TimelinePhotoperiodDraft"];
+            /** Request Id */
+            request_id: string;
+            /** Submode Id */
+            submode_id?: number | null;
+        };
+        /**
+         * TimelinePeriodDraft
+         * @description One complete, non-persisted climate-period edit.
+         */
+        TimelinePeriodDraft: {
+            /** Co2 Setpoint */
+            co2_setpoint?: number | null;
+            /** Cooling Setpoint */
+            cooling_setpoint?: number | null;
             /**
-             * End
-             * Format: date-time
+             * Details
+             * @default
              */
+            details: string;
+            /** End Time */
+            end_time: string;
+            /** Heating Setpoint */
+            heating_setpoint?: number | null;
+            /** Id */
+            id: string;
+            /** Period Name */
+            period_name: string;
+            /** Ramp Minutes */
+            ramp_minutes: number;
+            /** Start Time */
+            start_time: string;
+            /** Vpd Setpoint */
+            vpd_setpoint?: number | null;
+        };
+        /**
+         * TimelinePhotoperiodDraft
+         * @description Timeline-owned photoperiod values supplied with every draft preview.
+         */
+        TimelinePhotoperiodDraft: {
+            /** Day Start Time */
+            day_start_time: string;
+            /** Night Start Time */
+            night_start_time: string;
+            /** Ramp Down Minutes */
+            ramp_down_minutes: number;
+            /** Ramp Up Minutes */
+            ramp_up_minutes: number;
+        };
+        /**
+         * TimelinePreviewRequest
+         * @description Strict complete draft input for a non-persisting trajectory preview.
+         */
+        TimelinePreviewRequest: {
+            /** Draft Revision */
+            draft_revision: number;
+            /** Expected Config Revision */
+            expected_config_revision: string;
+            /** Mode Id */
+            mode_id: number;
+            /** Periods */
+            periods: components["schemas"]["TimelinePeriodDraft"][];
+            photoperiod: components["schemas"]["TimelinePhotoperiodDraft"];
+            /** Request Id */
+            request_id: string;
+            /** Submode Id */
+            submode_id?: number | null;
+            window: components["schemas"]["TimelinePreviewWindow"];
+        };
+        /**
+         * TimelinePreviewResponse
+         * @description Preview result paired with the request identity that produced it.
+         */
+        TimelinePreviewResponse: {
+            /** Draft Revision */
+            draft_revision: number;
+            /** Expected Config Revision */
+            expected_config_revision: string;
+            /** Request Id */
+            request_id: string;
+            trajectory: components["schemas"]["RichTrajectoryEnvelope"];
+        };
+        /**
+         * TimelinePreviewWindow
+         * @description JSON request window retained as strings until the HTTP boundary parses it.
+         */
+        TimelinePreviewWindow: {
+            /** End */
             end: string;
-            /** End Value */
-            end_value: number;
-            provenance: components["schemas"]["TimelineProvenance"];
-            /**
-             * Start
-             * Format: date-time
-             */
+            /** Start */
             start: string;
-            /** Start Value */
-            start_value: number;
+            /** Timezone */
+            timezone: string;
         };
         /**
-         * TimelineProvenance
-         * @description Orthogonal source, confidence, and aggregation facts for timeline values.
+         * TimelineSavedResponse
+         * @description Saved timeline values and the saved rich trajectory for one window.
          */
-        TimelineProvenance: {
-            /**
-             * Is Aggregated
-             * @default false
-             */
-            is_aggregated: boolean;
-            origin: components["schemas"]["Origin"];
-            quality: components["schemas"]["Quality"];
+        TimelineSavedResponse: {
+            /** Config Revision */
+            config_revision: string;
+            /** Mode Id */
+            mode_id: number;
+            /** Periods */
+            periods: components["schemas"]["TimelinePeriodDraft"][];
+            photoperiod: components["schemas"]["TimelinePhotoperiodDraft"];
+            /** Submode Id */
+            submode_id?: number | null;
+            trajectory?: components["schemas"]["RichTrajectoryEnvelope"] | null;
         };
         /**
-         * TimelineStep
-         * @description A value that holds from ``timestamp`` until the following point.
+         * TimelineWarning
+         * @description One non-fatal reason a trajectory may be estimated or incomplete.
          */
-        TimelineStep: {
-            provenance: components["schemas"]["TimelineProvenance"];
-            /**
-             * Timestamp
-             * Format: date-time
-             */
-            timestamp: string;
-            /** Value */
-            value: number | null;
+        TimelineWarning: {
+            /** Code */
+            code: string;
+            /** Detail */
+            detail: string;
         };
         /**
          * TuningGroup
@@ -3171,6 +3462,44 @@ export interface components {
             pid_limits?: components["schemas"]["PidLimitsGroup"] | null;
             /** Update Interval */
             update_interval?: number | null;
+        };
+        /**
+         * UnavailableTrajectorySegment
+         * @description An explicit gap that must never be joined into an adjacent trajectory.
+         */
+        UnavailableTrajectorySegment: {
+            /**
+             * End
+             * Format: date-time
+             */
+            end: string;
+            /** Metric */
+            metric: string;
+            /**
+             * Quality
+             * @enum {string}
+             */
+            quality: "exact" | "estimated" | "unavailable";
+            /** Reason */
+            reason: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            shape: "unavailable";
+            source: components["schemas"]["SegmentSource"];
+            /**
+             * Start
+             * Format: date-time
+             */
+            start: string;
+            /**
+             * Trajectory Kind
+             * @enum {string}
+             */
+            trajectory_kind: "scheduled" | "effective";
+            /** Unit */
+            unit: string;
         };
         /**
          * UpdateParametersRequest
@@ -3189,6 +3518,24 @@ export interface components {
             night_start_time?: string | null;
             /** Supplemental Light Intensity */
             supplemental_light_intensity?: number | null;
+        };
+        /**
+         * UtcWindow
+         * @description One named timezone view over a UTC half-open interval ``[start, end)``.
+         */
+        UtcWindow: {
+            /**
+             * End
+             * Format: date-time
+             */
+            end: string;
+            /**
+             * Start
+             * Format: date-time
+             */
+            start: string;
+            /** Timezone */
+            timezone: string;
         };
         /** ValidationError */
         ValidationError: {
@@ -3253,9 +3600,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: Record<string, never>;
-                    };
+                    "application/json": components["schemas"]["AlarmListResponse"];
                 };
             };
         };
@@ -3278,7 +3623,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["AlarmListResponse"];
                 };
             };
             /** @description Validation Error */
@@ -3311,7 +3656,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["AlarmAcknowledgeResponse"];
                 };
             };
             /** @description Validation Error */
@@ -3479,6 +3824,63 @@ export interface operations {
                 };
                 content: {
                     "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    "get_api_calendar_flower-mode-transitions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: boolean;
+                    };
+                };
+            };
+        };
+    };
+    "put_api_calendar_flower-mode-transitions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FlowerCalendarModeTransitionUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: boolean;
+                    };
                 };
             };
             /** @description Validation Error */
@@ -3901,6 +4303,114 @@ export interface operations {
                 };
                 content: {
                     "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    "get_api_climate-timeline_{location}_{cluster}": {
+        parameters: {
+            query: {
+                start: string;
+                end: string;
+                timezone: string;
+            };
+            header?: never;
+            path: {
+                location: string;
+                cluster: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TimelineSavedResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    "post_api_climate-timeline_{location}_{cluster}_apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                location: string;
+                cluster: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TimelineApplyRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TimelineApplyResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    "post_api_climate-timeline_{location}_{cluster}_preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                location: string;
+                cluster: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TimelinePreviewRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TimelinePreviewResponse"];
                 };
             };
             /** @description Validation Error */
@@ -4523,6 +5033,80 @@ export interface operations {
             };
         };
     };
+    get_api_events_history: {
+        parameters: {
+            query?: {
+                before?: string | null;
+                after?: string | null;
+                limit?: number;
+                location?: string | null;
+                cluster?: string | null;
+                category?: components["schemas"]["EventCategory"] | null;
+                severity?: components["schemas"]["EventSeverity"] | null;
+                type?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OperationalEventHistory"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_api_events_stream: {
+        parameters: {
+            query: {
+                after: string;
+                location?: string | null;
+                cluster?: string | null;
+                category?: components["schemas"]["EventCategory"] | null;
+                severity?: components["schemas"]["EventSeverity"] | null;
+                type?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_api_failsafe: {
         parameters: {
             query?: never;
@@ -5088,111 +5672,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": Record<string, never>;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    "get_api_monitoring_control_{location}": {
-        parameters: {
-            query?: {
-                start?: string | null;
-                end?: string | null;
-            };
-            header?: never;
-            path: {
-                location: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ControlMonitoringResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    "get_api_monitoring_control_{location}_projection": {
-        parameters: {
-            query?: {
-                start?: string | null;
-                end?: string | null;
-            };
-            header?: never;
-            path: {
-                location: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ControlMonitoringResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    "get_api_monitoring_control_{location}_tail": {
-        parameters: {
-            query?: {
-                start?: string | null;
-                end?: string | null;
-                effective_setpoints_cursor?: string | null;
-                automation_state_cursor?: string | null;
-                photoperiod_history_cursor?: string | null;
-            };
-            header?: never;
-            path: {
-                location: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ControlMonitoringResponse"];
                 };
             };
             /** @description Validation Error */

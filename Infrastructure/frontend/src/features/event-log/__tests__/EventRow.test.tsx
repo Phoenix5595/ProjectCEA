@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { EventRow } from '../components/EventRow'
 import { makeEventEntryWith } from './testFactories'
 
@@ -33,7 +33,11 @@ describe('EventRow', () => {
     // distinct from critical's filled treatment.
     const badge = screen.getByText('Error')
     expect(badge).toBeInTheDocument()
-    expect(badge).toHaveClass('bg-surface-secondary', 'text-status-danger-text', 'border-status-danger-border')
+    expect(badge).toHaveClass(
+      'bg-surface-secondary',
+      'text-status-danger-text',
+      'border-status-danger-border'
+    )
     expect(badge).not.toHaveClass('bg-status-danger-bg')
     expect(badge).toHaveAttribute('aria-label', 'Severity: Error')
   })
@@ -123,9 +127,35 @@ describe('EventRow', () => {
 
     // Then: the controller, device type, missing-input kind, and reason are visible.
     expect(container.textContent).toContain(
-      'Device light_f_1 · Flower Room/main · controller: pid · device type: heating · no temperature input',
+      'Device light_f_1 · Flower Room/main · controller: pid · device type: heating · no temperature input'
     )
     expect(screen.getByText('PID sensor value is unavailable')).toBeInTheDocument()
+  })
+
+  it('labels a recorded relay cause as the reason for that event', () => {
+    const reason = 'PID output 65% crossed the >60% relay ON threshold'
+    const entry = makeEventEntryWith({
+      type: 'relay.commanded',
+      reasonText: reason,
+    })
+
+    render(<EventRow entry={entry} now={new Date('2026-09-02T12:05:00Z')} />)
+
+    expect(screen.getByText(reason)).toHaveAttribute(
+      'title',
+      `Recorded reason for this event: ${reason}`
+    )
+  })
+
+  it('does not invent a reason tooltip when the event has no recorded reason', () => {
+    const { container } = render(
+      <EventRow
+        entry={makeEventEntryWith({ reasonText: null })}
+        now={new Date('2026-09-02T12:05:00Z')}
+      />
+    )
+
+    expect(container.querySelector('[title*="recorded reason"]')).toBeNull()
   })
 
   it('maps less common entity types with a human fallback', () => {
@@ -144,8 +174,8 @@ describe('EventRow', () => {
       <EventRow
         entry={makeEventEntryWith({})}
         now={new Date('2026-09-02T12:05:00Z')}
-        formatAbsolute={(date) => `ABS:${date.getTime()}`}
-      />,
+        formatAbsolute={date => `ABS:${date.getTime()}`}
+      />
     )
 
     // Then: the absolute value is visible DOM text, not a hover-only title.
@@ -208,16 +238,41 @@ describe('EventRow', () => {
 
   it('distinguishes error from critical severity visually', () => {
     // Given: the same source event rendered under error, then critical.
-    const first = render(<EventRow entry={makeEventEntryWith({ severity: 'error' })} now={new Date('2026-09-02T12:05:00Z')} />)
+    const first = render(
+      <EventRow
+        entry={makeEventEntryWith({ severity: 'error' })}
+        now={new Date('2026-09-02T12:05:00Z')}
+      />
+    )
     const errorBadge = screen.getByText('Error')
     const errorClasses = errorBadge.className
     first.unmount()
-    render(<EventRow entry={makeEventEntryWith({ severity: 'critical' })} now={new Date('2026-09-02T12:05:00Z')} />)
+    render(
+      <EventRow
+        entry={makeEventEntryWith({ severity: 'critical' })}
+        now={new Date('2026-09-02T12:05:00Z')}
+      />
+    )
     const criticalBadge = screen.getByText('Critical')
 
     // Then: the class tuples are distinct and critical is filled/bolder.
     expect(criticalBadge.className).not.toBe(errorClasses)
     expect(criticalBadge).toHaveClass('bg-status-danger-vivid', 'font-bold')
     expect(errorClasses).toContain('bg-surface-secondary')
+  })
+  it('delegates compact detail actions instead of expanding payload inline', async () => {
+    const user = userEvent.setup()
+    const entry = makeEventEntryWith({})
+    const onOpenDetail = vi.fn()
+    render(
+      <EventRow entry={entry} now={new Date('2026-09-02T12:05:00Z')} onOpenDetail={onOpenDetail} />
+    )
+
+    const openButton = screen.getByRole('button', { name: 'View event details' })
+    expect(openButton).not.toHaveAttribute('aria-expanded')
+    await user.click(openButton)
+
+    expect(onOpenDetail).toHaveBeenCalledWith(entry)
+    expect(screen.queryByRole('region', { name: 'Event details' })).not.toBeInTheDocument()
   })
 })

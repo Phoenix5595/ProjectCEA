@@ -325,6 +325,24 @@ class DeviceController(
         is_dfr0971_light = bool(
             device_info.get("dimming_enabled") and device_info.get("dimming_type") == "dfr0971"
         )
+        pid_decision = None
+        if (
+            not is_dfr0971_light
+            and device_type in {"heating", "cooling", "co2"}
+            and context is not None
+            and context.get("pid_output") is not None
+        ):
+            candidate = context.get("pid_decision_observation")
+            if (
+                isinstance(candidate, DecisionObservation)
+                and isinstance(candidate.controller, str)
+                and candidate.controller in {"pid", "auto_pid", "on_off"}
+                and candidate.location == location
+                and candidate.cluster == cluster
+                and candidate.device_name == device_name
+                and candidate.device_type == device_type
+            ):
+                pid_decision = candidate
 
         # Binary actuators require a relay channel. DFR0971 lights may omit relay (dimmer-only);
         # _control_dimmable_light already handles relay_channel is None.
@@ -370,6 +388,7 @@ class DeviceController(
                     control_output,
                     batch_executor,
                     device_info,
+                    pid_decision=pid_decision,
                 )
 
             # Log the control action
