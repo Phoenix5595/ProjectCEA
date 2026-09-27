@@ -76,6 +76,7 @@ function controlSnapshot(sampledAt: string): ControlSnapshotResponse {
     registry_version: 1,
     stale_since: null,
     dfr_boards: [],
+    failsafes: [],
     relays: Array.from({ length: 16 }, (_, channel) => ({
       alarm: null,
       assignment:
@@ -110,6 +111,8 @@ function controlSnapshot(sampledAt: string): ControlSnapshotResponse {
       last_command_succeeded: null,
       observed_state: channel === 0,
       physical_relay: channel === 0 ? 8 : channel + 1,
+      interlock_blocked: false,
+      interlock_reason: null,
       pin_label: `GPA${channel}`,
       prior_command_mode: null,
       recovery_pending: false,

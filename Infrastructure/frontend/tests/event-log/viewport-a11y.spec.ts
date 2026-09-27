@@ -14,7 +14,7 @@ import AxeBuilder from '@axe-core/playwright'
 import type { AxeResults } from 'axe-core'
 import { mkdir, writeFile } from 'node:fs/promises'
 import path from 'node:path'
-import { describeViolation } from '../../src/features/monitoring/config/originGuard'
+import { describeViolation, FIXTURE_ORIGIN } from '../../src/features/monitoring/config/originGuard'
 import { fixtureUrl } from '../monitoring/fixtureUrl'
 
 const PAGES = [
@@ -158,7 +158,7 @@ test('event-label fixture exposes readable labels, exact severity, and keyboard 
   await writeFile(
     path.join(evidenceDirectory, 'network.json'),
     JSON.stringify({
-      fixture_origin: 'http://127.0.0.1:4173',
+      fixture_origin: FIXTURE_ORIGIN,
       requests: requestUrls,
       violations,
     }, null, 2),

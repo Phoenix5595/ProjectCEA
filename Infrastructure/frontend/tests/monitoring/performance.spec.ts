@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test'
 import { mkdir, writeFile } from 'node:fs/promises'
 import path from 'node:path'
-import { describeViolation } from '../../src/features/monitoring/config/originGuard'
+import { describeViolation, FIXTURE_ORIGIN } from '../../src/features/monitoring/config/originGuard'
 import type { MonitoringPerfDebug } from '../../src/features/monitoring/perfMarks'
 import { fixtureUrl } from './fixtureUrl'
 
@@ -179,7 +179,7 @@ test('records fixture-only client processing and paint-age SLO samples', async (
 
   happyArtifact = {
     schema_version: 1,
-    fixture_origin: 'http://127.0.0.1:4173',
+    fixture_origin: FIXTURE_ORIGIN,
     percentile_method: 'nearest-rank',
     thresholds: { client_processing_p95_ms: CLIENT_PROCESSING_SLO_MS, visual_age_ms: VISUAL_AGE_SLO_MS },
     happy_run: {

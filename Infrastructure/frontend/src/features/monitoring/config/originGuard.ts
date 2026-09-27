@@ -1,7 +1,7 @@
 /**
  * Exact-origin request guard for the monitoring browser harness.
  *
- * The monitoring preview serves fixtures on exactly `http://127.0.0.1:4173`.
+ * The monitoring preview serves fixtures on `127.0.0.1` at the selected test-only port.
  * Every REST, WebSocket, and Grafana URL in the browser build is overridden to
  * a dedicated path on that origin, so a correctly-built page must never issue
  * a request to a production service. This guard is the single source of truth
@@ -10,7 +10,18 @@
  * traffic to the production ports/hosts).
  */
 
-export const FIXTURE_ORIGIN = 'http://127.0.0.1:4173'
+const configuredPort = process.env.MONITORING_FIXTURE_PORT ?? '4187'
+export const FIXTURE_PORT = Number(configuredPort)
+if (
+  !/^\d+$/.test(configuredPort) ||
+  !Number.isInteger(FIXTURE_PORT) ||
+  FIXTURE_PORT < 4187 ||
+  FIXTURE_PORT > 4199
+) {
+  throw new Error('MONITORING_FIXTURE_PORT must be an integer from 4187 through 4199')
+}
+export const FIXTURE_ORIGIN = `http://127.0.0.1:${FIXTURE_PORT}`
+export const FIXTURE_WS_ORIGIN = `ws://127.0.0.1:${FIXTURE_PORT}`
 
 /** Production ports that must never receive traffic from the fixture build. */
 export const FORBIDDEN_PORTS = [8000, 8001, 8003, 8080]

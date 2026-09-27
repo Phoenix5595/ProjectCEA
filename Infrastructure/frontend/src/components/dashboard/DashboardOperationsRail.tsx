@@ -17,8 +17,6 @@ export interface DashboardOperationsRailProps {
   layout?: 'stack' | 'grid'
   /** Which sections to render. 'water' is shown alone under the event log. */
   sections?: 'all' | 'lab' | 'water'
-  /** Use a bounded horizontal water card in the dashboard rail. */
-  compact?: boolean
 }
 
 function formatMetric(value: number | undefined, unit: string, digits = 1): string {
@@ -32,11 +30,9 @@ function formatMetric(value: number | undefined, unit: string, digits = 1): stri
 function WaterTankGraphic({
   levelPercent,
   waterTemp,
-  compact,
 }: {
   levelPercent: number | null
   waterTemp: number | undefined
-  compact: boolean
 }) {
   const BODY_TOP = 20
   const BODY_BOTTOM = 82
@@ -50,7 +46,7 @@ function WaterTankGraphic({
   const tank = (
     <svg
       viewBox="0 0 100 100"
-      className={compact ? 'size-full' : 'absolute inset-0 size-full'}
+      className="absolute inset-0 size-full"
       aria-hidden
       focusable="false"
     >
@@ -151,18 +147,14 @@ function WaterTankGraphic({
       ))}
     </svg>
   )
-  const titleClass = compact
-    ? 'text-xs font-bold uppercase tracking-wide text-text-secondary'
-    : 'text-[clamp(0.55rem,1.1vw,0.8rem)] font-bold uppercase tracking-wide text-text-secondary'
-  const statusClass = compact
-    ? 'rounded-sm border border-border-subtle/70 bg-surface-base/25 px-1 py-0.5 font-mono text-xs text-text-default'
-    : 'rounded-sm border border-border-subtle/70 bg-surface-base/25 px-1 py-0.5 font-mono text-[clamp(0.55rem,1vw,0.75rem)] text-text-default'
-  const mutedClass = compact
-    ? 'rounded-sm border border-border-subtle/70 bg-surface-base/25 px-1 py-0.5 font-mono text-xs text-text-secondary'
-    : 'rounded-sm border border-border-subtle/70 bg-surface-base/25 px-1 py-0.5 font-mono text-[clamp(0.5rem,0.9vw,0.7rem)] text-text-secondary'
-  const noDataClass = compact
-    ? 'rounded-sm border border-border-subtle/70 bg-surface-base/25 px-1 py-0.5 font-mono text-xs font-bold text-text-muted'
-    : 'rounded-sm border border-border-subtle/70 bg-surface-base/25 px-1 py-0.5 font-mono text-[clamp(0.55rem,1vw,0.75rem)] font-bold text-text-muted'
+  const titleClass =
+    'text-[clamp(0.55rem,1.1vw,0.8rem)] font-bold uppercase tracking-wide text-text-secondary'
+  const statusClass =
+    'rounded-sm border border-border-subtle/70 bg-surface-base/25 px-1 py-0.5 font-mono text-[clamp(0.55rem,1vw,0.75rem)] text-text-default'
+  const mutedClass =
+    'rounded-sm border border-border-subtle/70 bg-surface-base/25 px-1 py-0.5 font-mono text-[clamp(0.5rem,0.9vw,0.7rem)] text-text-secondary'
+  const noDataClass =
+    'rounded-sm border border-border-subtle/70 bg-surface-base/25 px-1 py-0.5 font-mono text-[clamp(0.55rem,1vw,0.75rem)] font-bold text-text-muted'
   const details = (
     <>
       <span className={titleClass}>Water tank</span>
@@ -174,20 +166,6 @@ function WaterTankGraphic({
       <span className={mutedClass}>Irrig. today —</span>
     </>
   )
-
-  if (compact) {
-    return (
-      <div className="flex min-w-0 items-center gap-3">
-        <div className="relative size-32 shrink-0" role="img" aria-label={ariaLabel}>
-          {tank}
-        </div>
-        <div className="flex min-w-0 flex-col gap-1">
-          {details}
-          {hasLevel && <span className="font-mono text-xs text-text-default">Level {level}%</span>}
-        </div>
-      </div>
-    )
-  }
 
   return (
     <div className="relative w-full aspect-square min-h-0" role="img" aria-label={ariaLabel}>
@@ -248,7 +226,6 @@ export default function DashboardOperationsRail({
   waterLevelPercent,
   layout = 'stack',
   sections = 'all',
-  compact = false,
 }: DashboardOperationsRailProps) {
   const labTemp = sensorData['Lab_main_lab_temp']
   const waterTemp = sensorData['Lab_main_water_temperature']
@@ -288,11 +265,7 @@ export default function DashboardOperationsRail({
 
       {showWater && (
         <RailSection title="Water" boxed={grid}>
-          <WaterTankGraphic
-            levelPercent={waterLevelPercent}
-            waterTemp={waterTemp}
-            compact={compact}
-          />
+          <WaterTankGraphic levelPercent={waterLevelPercent} waterTemp={waterTemp} />
         </RailSection>
       )}
     </div>

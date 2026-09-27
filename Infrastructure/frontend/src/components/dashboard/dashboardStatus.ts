@@ -145,7 +145,13 @@ function continuousBreach(
     state === 'low'
       ? heatingSetpoint != null && value < heatingSetpoint
       : coolingSetpoint != null && value > coolingSetpoint
-  const points = [...trend.points].sort((a, b) => a.timestampMs - b.timestampMs)
+  let points = trend.points
+  for (let index = 1; index < points.length; index += 1) {
+    if (!(points[index - 1].timestampMs <= points[index].timestampMs)) {
+      points = [...points].sort((a, b) => a.timestampMs - b.timestampMs)
+      break
+    }
+  }
   let startIndex = points.length - 1
   while (startIndex > 0 && isBreach(points[startIndex - 1].value)) startIndex -= 1
   if (!isBreach(points[startIndex].value)) return { minutes: 0, fullWindow: false }
@@ -392,7 +398,14 @@ export function buildTrendMetric(metric: ClimateMetric, points: TrendPoint[]): T
   const { label, unit } = METRIC_LABELS[metric]
   const newest = points[points.length - 1]
   const cutoff = newest ? newest.timestampMs - 10 * 60_000 : 0
-  const prior = [...points].reverse().find(point => point.timestampMs <= cutoff)
+  let prior: TrendPoint | undefined
+  for (let index = points.length - 1; index >= 0; index -= 1) {
+    const point = points[index]
+    if (point.timestampMs <= cutoff) {
+      prior = point
+      break
+    }
+  }
   const spansMinimumWindow =
     points.length >= 2 && newest != null && newest.timestampMs - points[0].timestampMs >= 2 * 60_000
   return {

@@ -60,11 +60,9 @@ Do not extend these commands to contact production endpoints, databases, Redis, 
 
 ## Browser QA viewport rule
 
-The monitoring Playwright QA gate remains exactly **1920x1080** and **1280x1440**. Nothing smaller is used for monitoring-page QA.
-The focused dashboard `/` layout suite additionally uses **960x1080** and a custom
-**Pixel 9 Pro XL 448x997 CSS-pixel / DPR 3** project. These dashboard-only viewports do not change monitoring projects.
-Use the isolated loopback fixture preview and route guards; never set `BASE_URL`, contact production,
-or reuse, navigate, or stop an unrelated listener. If port 4173 is occupied, select a free loopback fixture port.
+- Dashboard and frontend desktop QA use exactly **1920x1080** and **1280x1440** in this pass. The 960px redesign is deferred; no phone or mobile-web QA project is supported.
+- The web application uses a permanent 30px icon rail on every route and has no mobile drawer/layout guarantee; a separate mobile app does not exist yet.
+- Use the isolated, guarded loopback fixture preview only. Port 4187 is the default; if occupied, select a free port from 4188–4199. Never set `BASE_URL`, contact production, or reuse, navigate, or stop an unrelated listener.
 
 ## Working Tree Discipline
 

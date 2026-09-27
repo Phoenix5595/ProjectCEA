@@ -90,10 +90,10 @@ const TopRibbon: React.FC<TopRibbonProps> = ({
   const SectorIconComponent = sectorIcons[sector];
 
   return (
-    <AppRibbon position="top" sticky className="max-sm:pl-14 sm:pl-2">
-      <h1 className="flex max-w-7 shrink-0 items-center gap-1 overflow-hidden whitespace-nowrap text-base font-bold text-text-default sm:max-w-none">
+    <AppRibbon position="top" sticky className="pl-2">
+      <h1 className="flex max-w-none shrink-0 items-center gap-1 overflow-hidden whitespace-nowrap text-base font-bold text-text-default">
         <SectorIconComponent className="size-5 shrink-0" />
-        <span className="hidden sm:inline">{displayRoomName}</span>
+        <span className="inline">{displayRoomName}</span>
       </h1>
 
       <nav className="flex overflow-x-auto scrollbar-hide min-w-0 flex-1">
@@ -106,7 +106,7 @@ const TopRibbon: React.FC<TopRibbonProps> = ({
                 to={tab.path}
                 onClick={() => onTabChange(tab.id)}
                 className={`
-                  px-1.5 py-1 text-sm font-medium whitespace-nowrap max-sm:px-0.5 max-sm:text-10
+                  px-1.5 py-1 text-sm font-medium whitespace-nowrap
                   transition-colors duration-200 rounded-lg
                   ${
                     isActive

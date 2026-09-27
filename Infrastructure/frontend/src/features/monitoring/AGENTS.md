@@ -24,7 +24,7 @@ Native Flower and Veg monitoring dashboards at `/flower/monitoring` and `/vegeta
 ## Fixture Origin Guard
 
 - `config/originGuard.ts` is the single source of truth for allowed origins.
-- Fixture build and browser harness target exactly `http://127.0.0.1:4173`.
+- The fixture preview binds to `127.0.0.1` on `MONITORING_FIXTURE_PORT` (default 4187; allowed range 4187–4199).
 - **Production and fixture origins must never mix.** Fixture/browser tests must never contact ports `8000`, `8001`, `8003`, `8080` or host `iskraprojectcea`.
 - `tests/monitoring/network-guard.spec.ts` and `__tests__/monitoringBrowserHarness.test.ts` enforce this.
 
@@ -42,7 +42,7 @@ npx vitest run src/features/monitoring
 npx playwright test --config=playwright.monitoring.config.ts
 ```
 
-The Playwright config builds `dist/` and serves it through `vite.monitoring.config.ts` on `127.0.0.1:4173` with deterministic fixtures and a restrictive CSP.
+The Playwright config builds `dist/` and serves it through `vite.monitoring.config.ts` on the configured loopback fixture port with deterministic fixtures and a restrictive CSP.
 
 ## Anti-Patterns
 

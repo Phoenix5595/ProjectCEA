@@ -141,18 +141,17 @@ The `/flower/soil` page reuses the monitoring layout system verbatim instead of 
 
 ## Responsive Layout
 
-Chart regions and tables stack to a single column below `768px`. At 375px, 768px, and 1280px the layout must remain usable: axes legible, tables horizontally scrollable, controls reachable.
+Chart regions and tables retain the existing single-column rule below `768px`; small-screen viewport QA is outside this pass.
 
 ### Dashboard viewport contract
 
 The monitoring layout guidance above remains unchanged. Dashboard `/` uses a separate viewport layout:
 
-- At ≥1600px, calendar and vertical inspector share the center track; the event console and bounded water tile occupy the side rail; room cards sit below the calendar/inspector.
-- From 1100px to 1599px, calendar spans the center above a horizontal inspector summary and room cards. From 768px to 1099px, the center uses compact room summaries (including truthful ON/OFF/unknown totals and text trend deltas) beside the event/water rail.
-- Below 768px, the dashboard becomes a natural-height single column. The labelled navigation drawer and ribbon menu do not pin the page content; only the document scrolls vertically. Calendar, inspector, room cards, Event Log, water, and Mothernode remain in DOM order.
-- Desktop dashboard viewports do not scroll the document or dashboard panels and do not overlap. The phone has no horizontal overflow or in-page panel scrollers. Dialogs/popovers are transient overlays and may scroll independently.
-- The dashboard calendar is six rows in every month with 44px minimum date targets. Mobile markers become dots/counts while the date button's accessible name retains task, note, and phase counts.
-- Desktop navigation uses a permanent 30px icon rail app-wide; the phone retains a labelled drawer with visible links and version footer.
+- Dashboard `/` desktop QA covers 1920×1080 and 1280×1440: calendar and inspector share the upper center row, Flower/Veg/Lab cards occupy ordered rows below, the Event Log sits above the square water-tank graphic in the right rail, and Mothernode remains beneath the workspace.
+- The existing 768–1099px compact dashboard layout is retained but is outside this pass's focused QA; the 960px redesign is deferred. The web app has no mobile drawer or supported mobile-layout guarantee, and a separate mobile app does not exist yet.
+- At both supported desktop viewports the dashboard does not scroll the document or dashboard panels or overlap. Dialogs/popovers are transient overlays and may scroll independently.
+- The dashboard calendar renders six rows in every month, keeps 44px minimum date targets, and preserves task, note, and phase marker counts in each date's accessible name.
+- Desktop navigation uses a permanent 30px icon rail app-wide; there is no mobile drawer.
 
 ## Motion Constraints
 
@@ -170,7 +169,7 @@ The monitoring layout guidance above remains unchanged. Dashboard `/` uses a sep
 
 ## Primitive Showcase
 
-A harness must exercise every primitive in isolation before product-page work. It renders a chart with left and right family axes, a min/max envelope, recorded vs projected targets with a "now" divider, a sun/moon overlay, a semantic table, and keyboard-focusable legend toggles. The harness asserts fixture origin and route guard so no request leaves `127.0.0.1:4173`.
+- A harness must exercise every primitive in isolation before product-page work. It renders a chart with left and right family axes, a min/max envelope, recorded vs projected targets with a "now" divider, a sun/moon overlay, a semantic table, and keyboard-focusable legend toggles. The harness asserts the configured exact fixture origin (`http://127.0.0.1:${MONITORING_FIXTURE_PORT}`, default port 4187; allowed ports 4187–4199) and route guard so no request leaves the loopback preview.
 
 ## Event Log Alert Console
 

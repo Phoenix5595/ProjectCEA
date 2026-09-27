@@ -4,7 +4,7 @@
  * Full Playwright browser coverage is added in later todos. This Vitest suite
  * verifies that the harness is available (the preview and Playwright configs
  * exist) and that the exact-origin route guard rejects every production
- * port/host while allowing only `http://127.0.0.1:4173`.
+ * port/host while allowing only the configured test fixture origin.
  */
 import { describe, it, expect } from 'vitest'
 import { existsSync } from 'node:fs'
@@ -27,14 +27,10 @@ describe('monitoring browser harness', () => {
       true,
     )
 
-    // The fixture origin is exactly 127.0.0.1:4173.
-    expect(FIXTURE_ORIGIN).toBe('http://127.0.0.1:4173')
-    expect(isAllowedOrigin('http://127.0.0.1:4173/')).toBe(true)
-    expect(
-      isAllowedOrigin(
-        'http://127.0.0.1:4173/api/sensors/monitoring/range/Flower%20Room',
-      ),
-    ).toBe(true)
+    expect(FIXTURE_ORIGIN).toBe(`http://127.0.0.1:${process.env.MONITORING_FIXTURE_PORT ?? '4187'}`)
+    expect(isAllowedOrigin(`${FIXTURE_ORIGIN}/`)).toBe(true)
+    expect(isAllowedOrigin(`${FIXTURE_ORIGIN}/api/sensors/monitoring/range/Flower%20Room`)).toBe(true)
+    expect(isAllowedOrigin('http://127.0.0.1:4173/')).toBe(false)
 
     // Mandatory route guard: every production port is forbidden.
     for (const port of FORBIDDEN_PORTS) {
@@ -64,6 +60,6 @@ describe('monitoring browser harness', () => {
       'external-origin-https://example.com',
     )
     expect(describeViolation('not a url')).toBe('malformed-url')
-    expect(isAllowedOrigin('http://127.0.0.1:4173/')).toBe(true)
+    expect(isAllowedOrigin(`${FIXTURE_ORIGIN}/`)).toBe(true)
   })
 })

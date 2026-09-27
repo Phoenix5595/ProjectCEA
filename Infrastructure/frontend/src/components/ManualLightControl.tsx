@@ -311,7 +311,7 @@ export default function ManualLightControl({ location, cluster, compact = false 
  </div>
  )}
  {!loadingDetails && lightDetails.length > 0 ? (
- <div className={compact ? "grid grid-cols-2 gap-2 sm:grid-cols-3" : "flex flex-wrap gap-2"}>
+ <div className={compact ? "grid grid-cols-3 gap-2" : "flex flex-wrap gap-2"}>
  <button
  onClick={() => restoreMode(lastDefaultMode || 'auto')}
  disabled={loading}

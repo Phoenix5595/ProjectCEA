@@ -83,7 +83,7 @@ export function MothernodeRibbon({ systemStats }: MothernodeRibbonProps) {
       </AppRibbon>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-sm:top-auto max-sm:bottom-0 max-sm:left-0 max-sm:translate-x-0 max-sm:translate-y-0 max-sm:rounded-b-none w-full max-w-md max-h-[70vh] overflow-y-auto bg-surface-primary border-border-default rounded-sm p-4 shadow-xl">
+        <DialogContent className="w-full max-w-md max-h-[70vh] overflow-y-auto bg-surface-primary border-border-default rounded-sm p-4 shadow-xl">
           <DialogTitle className="text-sm font-bold text-text-default uppercase tracking-wide mb-3">
             Mothernode
           </DialogTitle>

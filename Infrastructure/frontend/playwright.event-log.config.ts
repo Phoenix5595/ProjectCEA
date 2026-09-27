@@ -4,13 +4,13 @@
  * Reuses the monitoring preview server (which now includes event-log fixtures)
  * to run Playwright specs against the event-log UI at 1920x1080 and 1280x1440. The
  * preview serves deterministic REST + SSE fixtures on exactly
- * `http://127.0.0.1:4173`, so no production service is contacted.
+ * `127.0.0.1` at the selected test-only port, so no production service is contacted.
  * Set `BASE_URL` for a live read-only run; fixture runs start the local preview server below.
  */
 import { defineConfig, devices } from '@playwright/test'
+import { FIXTURE_ORIGIN, FIXTURE_PORT, FIXTURE_WS_ORIGIN } from './src/features/monitoring/config/originGuard'
 
-const PORT = 4173
-const BASE_URL = process.env.BASE_URL ?? `http://127.0.0.1:${PORT}`
+const BASE_URL = process.env.BASE_URL ?? FIXTURE_ORIGIN
 
 export default defineConfig({
   testDir: './tests/event-log',
@@ -36,13 +36,19 @@ export default defineConfig({
     },
   ],
   webServer: process.env.BASE_URL ? undefined : {
-      command: `npx vite build --config vite.monitoring.config.ts && npx vite preview --config vite.monitoring.config.ts --host 127.0.0.1 --port ${PORT} --strictPort`,
+      command: `npx vite build --config vite.monitoring.config.ts && npx vite preview --config vite.monitoring.config.ts --host 127.0.0.1 --port ${FIXTURE_PORT} --strictPort`,
       url: BASE_URL,
       reuseExistingServer: false,
       timeout: 120_000,
       env: {
         PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1',
-        VITE_API_BASE_URL: BASE_URL,
+        MONITORING_FIXTURE_PORT: String(FIXTURE_PORT),
+        VITE_API_BASE_URL: FIXTURE_ORIGIN,
+        VITE_BACKEND_API_URL: FIXTURE_ORIGIN,
+        VITE_AUTOMATION_API_URL: FIXTURE_ORIGIN,
+        VITE_WEATHER_API_URL: FIXTURE_ORIGIN,
+        VITE_MONITORING_API_URL: FIXTURE_ORIGIN,
+        VITE_WEBSOCKET_URL: `${FIXTURE_WS_ORIGIN}/ws`,
       },
     },
 })

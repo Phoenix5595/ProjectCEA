@@ -3,7 +3,7 @@
  *
  * These are read-only, deterministic JSON bodies that stand in for the real
  * sensor/control APIs during local browser QA. They are served on dedicated
- * paths under the exact fixture origin (`http://127.0.0.1:4173`) so a fixture
+ * paths under the exact configured loopback fixture origin (default `http://127.0.0.1:4187`) so a fixture
  * build never touches a production service. The response shapes mirror the
  * real sensor/control monitoring contracts so the native page renders with
  * data. Points are generated inside the requested `[start, end)` range so the
