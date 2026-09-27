@@ -55,6 +55,47 @@ export interface RequestedOutputSegment {
   readonly aggregated: boolean
   readonly intervalSeconds: number
 }
+export interface RequestedOutputAt {
+  readonly segment: RequestedOutputSegment
+  readonly percent: number
+  readonly interpolated: boolean
+}
+
+/** Smoothly interpolate adjacent sampled PID values without bridging data gaps. */
+export function requestedOutputAt(
+  segments: readonly RequestedOutputSegment[],
+  instant: number
+): RequestedOutputAt | null {
+  let low = 0
+  let high = segments.length - 1
+  while (low <= high) {
+    const middle = low + Math.floor((high - low) / 2)
+    const segment = segments[middle]
+    if (segment === undefined) return null
+    if (instant < segment.start) {
+      high = middle - 1
+      continue
+    }
+    if (instant >= segment.end) {
+      low = middle + 1
+      continue
+    }
+
+    const next = segments[middle + 1]
+    if (next === undefined || segment.end !== next.start || segment.end <= segment.start) {
+      return { segment, percent: segment.requestedPercent, interpolated: false }
+    }
+    const progress = (instant - segment.start) / (segment.end - segment.start)
+    const eased = progress * progress * (3 - 2 * progress)
+    return {
+      segment,
+      percent:
+        segment.requestedPercent + (next.requestedPercent - segment.requestedPercent) * eased,
+      interpolated: next.requestedPercent !== segment.requestedPercent && progress > 0,
+    }
+  }
+  return null
+}
 
 const PID_DEVICE_TYPES: Record<string, true> = { heating: true, cooling: true, co2: true }
 const VALID_BASELINE_REASONS: Record<string, true> = {
@@ -71,7 +112,7 @@ function compareTransition(a: RelayTimelineTransition, b: RelayTimelineTransitio
 
 function latestTransition(
   transitions: readonly RelayTimelineTransition[],
-  predicate: (transition: RelayTimelineTransition) => boolean,
+  predicate: (transition: RelayTimelineTransition) => boolean
 ): RelayTimelineTransition | null {
   let latest: RelayTimelineTransition | null = null
   for (const transition of transitions) {
@@ -83,12 +124,14 @@ function latestTransition(
 }
 
 function belongsToLane(transition: RelayTimelineTransition, lane: RelayLaneIdentity): boolean {
-  return transition.channel === lane.channel
-    && transition.device_id === lane.deviceId
-    && transition.device_name === lane.deviceName
-    && transition.device_type === lane.deviceType
-    && transition.location === lane.location
-    && transition.cluster === lane.cluster
+  return (
+    transition.channel === lane.channel &&
+    transition.device_id === lane.deviceId &&
+    transition.device_name === lane.deviceName &&
+    transition.device_type === lane.deviceType &&
+    transition.location === lane.location &&
+    transition.cluster === lane.cluster
+  )
 }
 
 function mean(values: readonly number[]): number | null {
@@ -133,29 +176,38 @@ export function buildRelayLaneIntervals(input: {
     }
   }
 
-  const anchorCandidates = [...input.anchors, ...input.transitions.filter((transition) => transition.observed_at.getTime() < start)]
+  const anchorCandidates = [
+    ...input.anchors,
+    ...input.transitions.filter(transition => transition.observed_at.getTime() < start),
+  ]
   const channelAnchor = latestTransition(
     anchorCandidates,
-    (transition) => transition.channel === input.lane.channel,
+    transition => transition.channel === input.lane.channel
   )
   const heartbeatAnchor = latestTransition(
     anchorCandidates,
-    (transition) => transition.reason === 'heartbeat' && transition.observed_at.getTime() <= start,
+    transition => transition.reason === 'heartbeat' && transition.observed_at.getTime() <= start
   )
-  const anchorMatches = channelAnchor !== null
-    && belongsToLane(channelAnchor, input.lane)
-    && channelAnchor.observed_state !== null
-    && VALID_BASELINE_REASONS[channelAnchor.reason] === true
-  const heartbeatSupportsAnchor = anchorMatches
-    && heartbeatAnchor !== null
-    && heartbeatAnchor.session_id === channelAnchor.session_id
-    && heartbeatAnchor.observed_at.getTime() <= start
-    && start - heartbeatAnchor.observed_at.getTime() <= HEARTBEAT_MAX_GAP_MS
+  const anchorMatches =
+    channelAnchor !== null &&
+    belongsToLane(channelAnchor, input.lane) &&
+    channelAnchor.observed_state !== null &&
+    VALID_BASELINE_REASONS[channelAnchor.reason] === true
+  const heartbeatSupportsAnchor =
+    anchorMatches &&
+    heartbeatAnchor !== null &&
+    heartbeatAnchor.session_id === channelAnchor.session_id &&
+    heartbeatAnchor.observed_at.getTime() <= start &&
+    start - heartbeatAnchor.observed_at.getTime() <= HEARTBEAT_MAX_GAP_MS
 
   let cursor = start
-  let state: boolean | null = heartbeatSupportsAnchor ? channelAnchor?.observed_state ?? null : null
+  let state: boolean | null = heartbeatSupportsAnchor
+    ? (channelAnchor?.observed_state ?? null)
+    : null
   let sessionId: string | null = heartbeatAnchor?.session_id ?? channelAnchor?.session_id ?? null
-  let lastSupportAt = heartbeatSupportsAnchor ? heartbeatAnchor?.observed_at.getTime() ?? null : null
+  let lastSupportAt = heartbeatSupportsAnchor
+    ? (heartbeatAnchor?.observed_at.getTime() ?? null)
+    : null
   let partialStart = state !== null
   let activeReason: string | null = state === null ? 'no supported baseline' : null
   let onTransitions = 0
@@ -163,7 +215,11 @@ export function buildRelayLaneIntervals(input: {
   let offToOnCycles = 0
   const intervals: RelayStateInterval[] = []
 
-  const append = (until: number, partialEnd: boolean, reason: string | null = activeReason): void => {
+  const append = (
+    until: number,
+    partialEnd: boolean,
+    reason: string | null = activeReason
+  ): void => {
     const clippedEnd = Math.min(until, end)
     if (clippedEnd <= cursor) return
     const interval: RelayStateInterval = {
@@ -175,7 +231,12 @@ export function buildRelayLaneIntervals(input: {
       reason: state === null ? reason : null,
     }
     const previous = intervals[intervals.length - 1]
-    if (previous && previous.state === 'unknown' && interval.state === 'unknown' && previous.end === interval.start) {
+    if (
+      previous &&
+      previous.state === 'unknown' &&
+      interval.state === 'unknown' &&
+      previous.end === interval.start
+    ) {
       intervals[intervals.length - 1] = {
         ...previous,
         end: interval.end,
@@ -220,10 +281,13 @@ export function buildRelayLaneIntervals(input: {
   }
 
   const observations = input.transitions
-    .filter((transition) => {
+    .filter(transition => {
       const instant = transition.observed_at.getTime()
-      return instant >= start && instant < dataEnd
-        && (transition.reason === 'heartbeat' || transition.channel === input.lane.channel)
+      return (
+        instant >= start &&
+        instant < dataEnd &&
+        (transition.reason === 'heartbeat' || transition.channel === input.lane.channel)
+      )
     })
     .slice()
     .sort(compareTransition)
@@ -330,17 +394,20 @@ export function buildRelayLaneIntervals(input: {
     knownMs += duration
     if (interval.state === 'on') {
       onMs += duration
-      if (!interval.partialStart && !interval.partialEnd) completeOnDurationsSeconds.push(duration / 1000)
+      if (!interval.partialStart && !interval.partialEnd)
+        completeOnDurationsSeconds.push(duration / 1000)
     } else {
       offMs += duration
-      if (!interval.partialStart && !interval.partialEnd) completeOffDurationsSeconds.push(duration / 1000)
+      if (!interval.partialStart && !interval.partialEnd)
+        completeOffDurationsSeconds.push(duration / 1000)
     }
   }
 
   const knownObservationHours = knownMs / 3_600_000
-  const coverageComplete = input.sourceCoverageComplete
-    && knownMs === end - start
-    && intervals.every((interval) => interval.state !== 'unknown')
+  const coverageComplete =
+    input.sourceCoverageComplete &&
+    knownMs === end - start &&
+    intervals.every(interval => interval.state !== 'unknown')
   return {
     intervals,
     summary: {
@@ -376,9 +443,12 @@ export function buildRequestedOutputSegments(input: {
   const start = input.range.start.getTime()
   const end = input.range.end.getTime()
   const points = input.points
-    .filter((point) => point.device_id === input.deviceId
-      && point.device_name === input.deviceName
-      && point.timestamp.getTime() < end)
+    .filter(
+      point =>
+        point.device_id === input.deviceId &&
+        point.device_name === input.deviceName &&
+        point.timestamp.getTime() < end
+    )
     .slice()
     .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime())
   const segments: RequestedOutputSegment[] = []
@@ -390,9 +460,7 @@ export function buildRequestedOutputSegments(input: {
     const next = points[index + 1]
     const nextAt = next?.timestamp.getTime()
     const maxHoldEnd = pointAt + point.interval_seconds * 2_000
-    const segmentEnd = nextAt !== undefined && nextAt <= maxHoldEnd
-      ? nextAt
-      : maxHoldEnd
+    const segmentEnd = nextAt !== undefined && nextAt <= maxHoldEnd ? nextAt : maxHoldEnd
     const clippedStart = Math.max(start, pointAt)
     const clippedEnd = Math.min(end, segmentEnd)
     if (clippedEnd <= clippedStart) continue
@@ -415,7 +483,9 @@ export function formatDuration(seconds: number | null): string {
   return `${(seconds / 3_600).toFixed(2)} h`
 }
 
-export function formatRequestedResolution(segment: Pick<RequestedOutputSegment, 'aggregated' | 'intervalSeconds'>): string {
+export function formatRequestedResolution(
+  segment: Pick<RequestedOutputSegment, 'aggregated' | 'intervalSeconds'>
+): string {
   const resolution = formatDuration(segment.intervalSeconds)
   return segment.aggregated ? `aggregated, ${resolution} resolution` : `raw, ${resolution} interval`
 }

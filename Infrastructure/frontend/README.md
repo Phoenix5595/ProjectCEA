@@ -10,6 +10,10 @@ React + TypeScript frontend for the CEA (Controlled Environment Agriculture) gre
 - **VPD Control**: Set VPD setpoints that control dehumidifying devices (fans, dehumidifiers)
 - **Schedule Management**: Create, edit, and delete schedules with conflict detection
 - **PID Parameter Editing**: Configure PID parameters for heaters and CO₂ systems
+- **Relay/PID timeline**: Inspect relay states and interval bounds beside a smooth symmetric PID
+  requested-output curve. Hover details show requested %, sample or smoothed status, resolution, and
+  partial/gap reason; the latest request is freshness-labelled. Gaps remain broken, preview data is
+  synthetic-only, and output is controller demand—not measured load.
 
 ## Setup
 

@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest'
 
 import type { RelayTimelineLoadPoint, RelayTimelineTransition } from '../contracts'
-import { buildRelayLaneIntervals, buildRequestedOutputSegments } from '../intervals'
+import {
+  buildRelayLaneIntervals,
+  buildRequestedOutputSegments,
+  requestedOutputAt,
+} from '../intervals'
 import type { RelayTimelineWindow } from '../intervals'
 
 const SESSION_A = 'b8a8be48-8ee7-4f10-9d5c-7a63f9f0a001'
@@ -404,5 +408,42 @@ describe('requested PID output step segments', () => {
     })
 
     expect(result[0]).toMatchObject({ requestedPercent: 50, aggregated: true, intervalSeconds: 60 })
+  })
+
+  it('smoothly connects adjacent samples and preserves the sample values at boundaries', () => {
+    const segments = [
+      { start: 0, end: 10, requestedPercent: 20, aggregated: false, intervalSeconds: 10 },
+      { start: 10, end: 20, requestedPercent: 80, aggregated: false, intervalSeconds: 10 },
+    ]
+
+    expect(requestedOutputAt(segments, 0)).toMatchObject({
+      percent: 20,
+      interpolated: false,
+    })
+    expect(requestedOutputAt(segments, 5)).toMatchObject({
+      percent: 50,
+      interpolated: true,
+    })
+    expect(requestedOutputAt(segments, 10)).toMatchObject({
+      percent: 80,
+      interpolated: false,
+    })
+  })
+
+  it('holds the last sample and never bridges a missing-output gap', () => {
+    const segments = [
+      { start: 0, end: 10, requestedPercent: 25, aggregated: false, intervalSeconds: 10 },
+      { start: 20, end: 30, requestedPercent: 75, aggregated: false, intervalSeconds: 10 },
+    ]
+
+    expect(requestedOutputAt(segments, 5)).toMatchObject({
+      percent: 25,
+      interpolated: false,
+    })
+    expect(requestedOutputAt(segments, 15)).toBeNull()
+    expect(requestedOutputAt(segments, 25)).toMatchObject({
+      percent: 75,
+      interpolated: false,
+    })
   })
 })
