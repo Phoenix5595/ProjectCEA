@@ -1,7 +1,7 @@
 /**
  * Veg monitoring page browser coverage.
  *
- * Runs against the fixture preview on exactly `http://127.0.0.1:4173`. Asserts
+ * Runs against the guarded test-only loopback fixture preview. Asserts
  * the native page renders the toolbar, both chart regions, and the canonical
  * tables at the two configured desktop viewports, and that no request is made to `/grafana/*` or to
  * any external production endpoint (loopback ports 8000/8001/8003/8080 or the

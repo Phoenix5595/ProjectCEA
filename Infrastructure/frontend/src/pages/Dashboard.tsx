@@ -318,7 +318,6 @@ export default function Dashboard() {
                 sensorData={live.sensorData}
                 waterLevelPercent={null}
                 sections="water"
-                compact
               />
             </div>
           </div>

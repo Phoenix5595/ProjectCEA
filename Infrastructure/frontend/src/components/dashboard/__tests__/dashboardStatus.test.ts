@@ -114,6 +114,76 @@ describe('dashboard status derivations', () => {
     expect(summary.layer?.breachFullWindow).toBe(true)
   })
 
+  it('keeps trend deltas consistent for ordered and out-of-order points', () => {
+    const orderedPoints = [
+      { timestampMs: nowMs - 20 * 60_000, value: 20 },
+      { timestampMs: nowMs - 11 * 60_000, value: 21 },
+      { timestampMs: nowMs - 8 * 60_000, value: 22 },
+      { timestampMs: nowMs, value: 23 },
+    ]
+    const outOfOrderPoints = [
+      orderedPoints[0],
+      orderedPoints[2],
+      orderedPoints[1],
+      orderedPoints[3],
+    ]
+    const orderedBefore = orderedPoints.map(point => ({ ...point }))
+    const outOfOrderBefore = outOfOrderPoints.map(point => ({ ...point }))
+
+    const ordered = buildTrendMetric('temperature', orderedPoints)
+    const outOfOrder = buildTrendMetric('temperature', outOfOrderPoints)
+
+    expect(ordered.delta10m).toBe(2)
+    expect(outOfOrder.delta10m).toBe(ordered.delta10m)
+    expect(orderedPoints).toEqual(orderedBefore)
+    expect(outOfOrderPoints).toEqual(outOfOrderBefore)
+  })
+
+  it('preserves breach durations and input order for ordered and out-of-order trends', () => {
+    const orderedPoints = [
+      { timestampMs: nowMs - 60 * 60_000, value: 23 },
+      { timestampMs: nowMs - 40 * 60_000, value: 21 },
+      { timestampMs: nowMs - 20 * 60_000, value: 21 },
+      { timestampMs: nowMs, value: 21 },
+    ]
+    const outOfOrderPoints = [
+      orderedPoints[3],
+      orderedPoints[0],
+      orderedPoints[2],
+      orderedPoints[1],
+    ]
+    const orderedBefore = orderedPoints.map(point => ({ ...point }))
+    const outOfOrderBefore = outOfOrderPoints.map(point => ({ ...point }))
+    const ordered = deriveRoomDecisionSummary(
+      'Veg Room',
+      ['main'],
+      {
+        'Veg Room_main_temperature': 21,
+        'Veg Room_main_heating_setpoint': 22,
+        'Veg Room_main_cooling_setpoint': 24,
+      },
+      { main: { temperature: buildTrendMetric('temperature', orderedPoints) } },
+      []
+    )
+    const outOfOrder = deriveRoomDecisionSummary(
+      'Veg Room',
+      ['main'],
+      {
+        'Veg Room_main_temperature': 21,
+        'Veg Room_main_heating_setpoint': 22,
+        'Veg Room_main_cooling_setpoint': 24,
+      },
+      { main: { temperature: buildTrendMetric('temperature', outOfOrderPoints) } },
+      []
+    )
+
+    expect(ordered.layer?.breachMinutes).toBe(40)
+    expect(ordered.layer?.breachFullWindow).toBe(false)
+    expect(outOfOrder.layer).toEqual(ordered.layer)
+    expect(orderedPoints).toEqual(orderedBefore)
+    expect(outOfOrderPoints).toEqual(outOfOrderBefore)
+  })
+
   it('gives failsafe precedence and suppresses mismatch while syncing', () => {
     const snapshot = {
       failsafes: [{ location: 'Veg Room', cluster: 'main' }],

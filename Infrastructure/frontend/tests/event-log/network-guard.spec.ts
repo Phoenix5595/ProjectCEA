@@ -2,11 +2,11 @@
  * Event-log network guard QA.
  *
  * Proves that no request from the event-log UI leaves the exact fixture
- * origin (http://127.0.0.1:4173). Asserts zero violations against the
+ * origin (the configured test-only loopback port). Asserts zero violations against the
  * originGuard for every page and scenario.
  */
 import { test, expect } from '@playwright/test'
-import { describeViolation } from '../../src/features/monitoring/config/originGuard'
+import { describeViolation, FIXTURE_ORIGIN } from '../../src/features/monitoring/config/originGuard'
 import { fixtureUrl } from '../monitoring/fixtureUrl'
 
 const PAGES = ['/', '/flower', '/vegetation', '/laboratory'] as const
@@ -61,7 +61,7 @@ test('network guard: event-log history and stream endpoints are on fixture origi
   expect(streamRequests.length).toBeGreaterThan(0)
 
   for (const url of eventLogRequests) {
-    expect(url).toContain('http://127.0.0.1:4173')
+    expect(url).toContain(FIXTURE_ORIGIN)
     expect(describeViolation(url)).toBeNull()
   }
 })

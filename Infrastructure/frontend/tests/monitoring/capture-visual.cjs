@@ -3,7 +3,7 @@ const { chromium } = require('@playwright/test')
 const fs = require('fs')
 const path = require('path')
 
-const BASE = 'http://127.0.0.1:4173'
+const BASE = `http://127.0.0.1:${process.env.MONITORING_FIXTURE_PORT ?? '4187'}`
 const OUT = path.resolve(__dirname, '../../../../.omo/evidence/grafana-replacement-veg-flower/29-visual-a11y')
 const VIEWPORTS = [
   { width: 1920, height: 1080 },

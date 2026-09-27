@@ -1,10 +1,9 @@
 import { expect, test } from '@playwright/test'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
-import { describeViolation } from '../../src/features/monitoring/config/originGuard'
+import { describeViolation, FIXTURE_ORIGIN } from '../../src/features/monitoring/config/originGuard'
 import { fixtureUrl } from './fixtureUrl'
 
-const FIXTURE_ORIGIN = 'http://127.0.0.1:4173'
 const EVIDENCE_DIR = path.resolve(process.cwd(), '../../.omo/evidence/grafana-chart-lifecycle-parity/T6')
 const CHART_TITLES = ['Flower climate conditions', 'Flower atmosphere & equipment'] as const
 const RANGE_DURATION_MS = 3_600_000

@@ -37,7 +37,7 @@ describe('DashboardOperationsRail', () => {
     expect(screen.getByText(/Control loop degraded: stale setpoints/)).toBeInTheDocument()
   })
 
-  it('renders the SCADA water tank section with honest unavailable states', () => {
+  it('renders the square SCADA water tank with honest unavailable states', () => {
     render(
       <DashboardOperationsRail
         sensorData={{ Lab_main_water_temperature: 19.5 }}
@@ -47,29 +47,15 @@ describe('DashboardOperationsRail', () => {
       />
     )
     expect(screen.getByRole('region', { name: 'Water' })).toBeInTheDocument()
+    const graphic = screen.getByRole('img', {
+      name: 'Water tank level: sensor not configured',
+    })
+    expect(graphic).toHaveClass('relative', 'w-full', 'aspect-square', 'min-h-0')
+    expect(graphic).toHaveTextContent('NO DATA')
     expect(screen.getByText('Temp 19.5°C')).toBeInTheDocument()
-    expect(screen.getByText('NO DATA')).toBeInTheDocument()
     expect(screen.getByText('Pressure —')).toBeInTheDocument()
     expect(screen.getByText('Irrig. today —')).toBeInTheDocument()
     expect(screen.queryByRole('region', { name: 'Lab' })).not.toBeInTheDocument()
-  })
-
-  it('keeps compact water labels beside its bounded graphic', () => {
-    render(
-      <DashboardOperationsRail
-        sensorData={{ Lab_main_water_temperature: 19.5 }}
-        waterLevelPercent={null}
-        sections="water"
-        compact
-      />
-    )
-
-    const graphic = screen.getByRole('img', { name: 'Water tank level: sensor not configured' })
-    expect(graphic).not.toHaveTextContent('NO DATA')
-    expect(screen.getByText('NO DATA')).toBeInTheDocument()
-    expect(screen.getByText('Temp 19.5°C')).toBeInTheDocument()
-    expect(screen.getByText('Pressure —')).toBeInTheDocument()
-    expect(screen.getByText('Irrig. today —')).toBeInTheDocument()
   })
 
   it('clamps a supplied tank level and reports it accessibly', () => {

@@ -1,7 +1,7 @@
 /**
  * Monitoring failure/recovery browser coverage.
  *
- * Runs against the fixture preview on exactly `http://127.0.0.1:4173`. Each
+ * Runs against the guarded test-only loopback fixture preview. Each
  * scenario is selected via the `?scenario=` query param (threaded to the API
  * requests by the page). Asserts the expected status/banner appears, last-good
  * panels still render (never blanked), and transient failures clear on retry.

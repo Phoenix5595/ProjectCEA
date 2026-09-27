@@ -5,9 +5,12 @@ import path from 'node:path'
 const OUT = '/home/antoine/ProjectCEA/.omo/evidence/grafana-replacement-veg-flower-2/07-visual-qa'
 fs.mkdirSync(OUT, { recursive: true })
 
-const base = 'http://127.0.0.1:4173'
+const base = `http://127.0.0.1:${process.env.MONITORING_FIXTURE_PORT ?? '4187'}`
 const themes = ['precision-void', 'control-room', 'verdant-growth', 'spectrum', 'obsidian', 'botanical']
-const widths = [375, 768, 1280]
+const viewports = [
+  { width: 1920, height: 1080 },
+  { width: 1280, height: 1440 },
+]
 const pages = [
   { name: 'flower', path: '/flower/monitoring' },
   { name: 'vegetation', path: '/vegetation/monitoring' },
@@ -22,18 +25,18 @@ const browser = await chromium.launch()
 
 let idx = 0
 for (const p of pages) {
-  for (const w of widths) {
-    const page = await browser.newPage({ viewport: { width: w, height: 900 } })
-    const u = url(p, `t7-${p.name}-${w}-${idx++}`)
+  for (const viewport of viewports) {
+    const page = await browser.newPage({ viewport })
+    const u = url(p, `t7-${p.name}-${viewport.width}-${idx++}`)
     await page.goto(u, { waitUntil: 'networkidle' })
     await page.waitForSelector('.mon-banner--error', { state: 'visible' })
-    await page.screenshot({ path: path.join(OUT, `${p.name}-${w}.png`), fullPage: true })
+    await page.screenshot({ path: path.join(OUT, `${p.name}-${viewport.width}.png`), fullPage: true })
     await page.close()
   }
 }
 
 for (const theme of themes) {
-  const page = await browser.newPage({ viewport: { width: 1280, height: 900 } })
+  const page = await browser.newPage({ viewport: { width: 1280, height: 1440 } })
   const u = url({ path: '/flower/monitoring' }, `t7-theme-${theme}-${idx++}`)
   await page.goto(u, { waitUntil: 'networkidle' })
   await page.evaluate((t) => localStorage.setItem('cea-theme', t), theme)

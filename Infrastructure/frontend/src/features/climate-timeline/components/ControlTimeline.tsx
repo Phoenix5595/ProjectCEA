@@ -396,7 +396,7 @@ export function ControlTimeline({ mode, controller, onExpand, onCollapse, locked
         {editError && <p role="alert" className="text-10 text-status-danger-text">{editError}</p>}
 
         {isExpanded && (
-          <div className="grid grid-cols-2 gap-1 border border-border-subtle p-1 text-10 sm:grid-cols-4">
+          <div className="grid grid-cols-4 gap-1 border border-border-subtle p-1 text-10">
             {([
               ['Day start', 'dayStartTime'],
               ['Night start', 'nightStartTime'],

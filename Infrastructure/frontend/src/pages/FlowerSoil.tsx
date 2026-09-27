@@ -100,7 +100,6 @@ function BedSchematic({
     <figure
       aria-label={`${label} bed schematic`}
       className="mon-card w-full"
-      style={{ width: '100%' }}
     >
       <figcaption className="mon-card__title text-xs font-semibold uppercase tracking-wide text-mon-text-secondary">
         {label}

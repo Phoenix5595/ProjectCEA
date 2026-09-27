@@ -4,7 +4,7 @@
  * badge; follow the badge to filtered Sensor Settings; assign the probe;
  * return and verify the correct bed/reflow; exercise the history preset,
  * drag zoom, reset, grouped legend, and semantic table; assert no request
- * leaves 127.0.0.1:4173.
+ * leaves the selected test-only loopback origin.
  */
 import { expect, test, type Page } from '@playwright/test'
 

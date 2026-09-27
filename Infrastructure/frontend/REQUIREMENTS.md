@@ -35,15 +35,14 @@ Sensor display names in Grafana follow frontend mappings; backend sensor keys re
 ## Dashboard Status
 
 - Sensor freshness is scoped to `(location, cluster)`. Flower Front and Back render separate age, source, and quality badges next to the readings they qualify; a live cluster never upgrades another cluster’s status.
-- Grow-mode labels use `GET /api/room-modes/active/{location}/{cluster}` for Flower Room/main and Veg Room/main. Do not use Redis control modes from `/api/mode` as grow modes. Lab has no grow mode; its dashboard card shows sensor freshness/readings and available trend labels/deltas, plus named devices at wide/mobile widths or ON/OFF/unknown counts in the 768–1099px summary—never grow mode, decision, schedule, or setpoint placeholders.
+- Grow-mode labels use `GET /api/room-modes/active/{location}/{cluster}` for Flower Room/main and Veg Room/main. Do not use Redis control modes from `/api/mode` as grow modes. Lab has no grow mode; its dashboard card shows sensor freshness/readings and available trend labels/deltas, plus named devices in full cards or ON/OFF/unknown counts in the existing 768–1099px summary—never grow mode, decision, schedule, or setpoint placeholders.
 
 ## Dashboard Viewports and Navigation
 
-- Desktop navigation is a permanent 30px icon rail on every route. Each icon link has an accessible label and title; there is no expanded desktop state or persisted collapse preference. Below 768px the hamburger opens a labelled 208px drawer with visible link labels and the package-version footer; route changes and the close control dismiss it.
-- Dashboard QA viewports are 1920×1080, 1280×1440, 960×1080, and Pixel 9 Pro XL at 448×997 CSS px, DPR 3. The 960 and phone projects apply only to `/`; monitoring page viewport gates remain unchanged.
-- At all three desktop sizes the dashboard fits one viewport without document or in-panel scrolling and without overlapping panels. Long lists and notes remain reachable through paging or transient detail dialogs; dialogs/popovers may scroll as overlays.
-- Pixel 9 Pro XL uses one-column document flow in DOM order. The document may scroll vertically; horizontal page scroll and internal dashboard-panel scrolling are not allowed.
-- The dashboard calendar always renders six complete weeks and keeps 44px minimum day-button targets. Phone day cells show marker dots/counts; each date's accessible name includes task, note, and phase counts.
+- Web navigation is a permanent 30px icon rail on every route. Each icon link has an accessible label and title; there is no expanded desktop state, persisted collapse preference, hamburger, or mobile drawer.
+- Dashboard QA in this pass uses exactly 1920×1080 and 1280×1440. The 960px redesign is deferred; no mobile-web layout guarantee or phone QA project is supported. A separate mobile app does not exist yet.
+- At both supported dashboard QA sizes the page fits one viewport without document or in-panel scrolling or overlapping panels. Long lists and notes remain reachable through paging or transient detail dialogs; dialogs/popovers may scroll as overlays.
+- The dashboard calendar always renders six complete weeks, keeps 44px minimum day-button targets, and exposes task, note, and phase counts in each date's accessible name.
 - Compact dashboard Event Log shows eight category groups per page and five newest-first events per flat/expanded page, with visible status and bounded controls. Detail payloads, long inspector notes, event lists, and forms remain available in accessible dialogs. Full-width room logs retain their existing inline-detail behavior and do not use dashboard pagination.
 
 ## Zone Configuration

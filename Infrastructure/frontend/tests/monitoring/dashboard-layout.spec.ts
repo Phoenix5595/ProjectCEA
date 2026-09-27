@@ -2,11 +2,9 @@ import { expect, test } from '@playwright/test'
 import type { Page } from '@playwright/test'
 
 import { eventHistoryFixture } from '../../src/features/event-log/config/fixtures'
+import { FIXTURE_ORIGIN, FIXTURE_WS_ORIGIN } from '../../src/features/monitoring/config/originGuard'
 import { fixtureUrl } from './fixtureUrl'
 
-const FIXTURE_PORT = Number(process.env.MONITORING_FIXTURE_PORT ?? 4173)
-const FIXTURE_ORIGIN = `http://127.0.0.1:${FIXTURE_PORT}`
-const FIXTURE_WS_ORIGIN = `ws://127.0.0.1:${FIXTURE_PORT}`
 const FIXED_NOW = new Date('2026-08-15T12:00:00.000Z')
 const LONG_NOTE = Array.from(
   { length: 10 },
@@ -179,7 +177,7 @@ async function calendarGeometry(page: Page) {
   })
 }
 
-test('dashboard fits desktop viewports and scrolls only the phone document', async ({
+test('dashboard fits both supported desktop viewports without overflow', async ({
   page,
   context,
 }, testInfo) => {
@@ -188,14 +186,11 @@ test('dashboard fits desktop viewports and scrolls only the phone document', asy
     'This layout regression requires the isolated fixture preview'
   )
 
-  const mobile = testInfo.project.name === 'chromium-functional-pixel-9-pro-xl'
   const viewport = page.viewportSize()
   expect(viewport).not.toBeNull()
   const expectedViewports = {
     'chromium-functional-1920x1080': { width: 1920, height: 1080 },
     'chromium-functional-1280x1440': { width: 1280, height: 1440 },
-    'chromium-functional-960x1080': { width: 960, height: 1080 },
-    'chromium-functional-pixel-9-pro-xl': { width: 448, height: 997 },
   }
   expect(expectedViewports[testInfo.project.name as keyof typeof expectedViewports]).toBeDefined()
   expect(viewport).toEqual(
@@ -313,39 +308,25 @@ test('dashboard fits desktop viewports and scrolls only the phone document', asy
     '44px'
   )
 
-  const primaryNavigation = page.getByRole('navigation', { name: 'Primary navigation' })
-  if (mobile) {
-    await expect(page.getByRole('button', { name: 'Open menu' })).toHaveAttribute(
-      'aria-expanded',
-      'false'
-    )
-    await page.getByRole('button', { name: 'Open menu' }).click()
-    await expect(primaryNavigation).toBeVisible()
-    await expect(primaryNavigation.getByRole('link', { name: 'Laboratory' })).toBeVisible()
-    await expect(primaryNavigation.locator('xpath=..').getByText(/^v\d/)).toBeVisible()
-    await page.getByRole('button', { name: 'Close menu' }).click()
-    await expect(primaryNavigation).not.toBeVisible()
-  } else {
-    const shell = await page.evaluate(() => {
-      const navigation = document.querySelector('#primary-navigation')
-      const sidebar = navigation?.closest('aside')
-      const dashboard = document.querySelector('.main-dashboard')
-      const ribbon = document.querySelector('.dashboard-ribbon')
-      if (!sidebar || !dashboard || !ribbon) return null
-      const sidebarRect = sidebar.getBoundingClientRect()
-      const dashboardRect = dashboard.getBoundingClientRect()
-      return {
-        sidebar: { x: sidebarRect.x, width: sidebarRect.width },
-        dashboard: { x: dashboardRect.x, width: dashboardRect.width },
-        ribbonPosition: getComputedStyle(ribbon).position,
-      }
-    })
-    expect(shell).not.toBeNull()
-    expect(shell!.sidebar).toEqual({ x: 0, width: 30 })
-    expect(shell!.dashboard.x).toBe(30)
-    expect(shell!.ribbonPosition).toBe('static')
-    await expect(page.getByRole('button', { name: /sidebar/i })).toHaveCount(0)
-  }
+  const shell = await page.evaluate(() => {
+    const navigation = document.querySelector('#primary-navigation')
+    const sidebar = navigation?.closest('aside')
+    const dashboard = document.querySelector('.main-dashboard')
+    const ribbon = document.querySelector('.dashboard-ribbon')
+    if (!sidebar || !dashboard || !ribbon) return null
+    const sidebarRect = sidebar.getBoundingClientRect()
+    const dashboardRect = dashboard.getBoundingClientRect()
+    return {
+      sidebar: { x: sidebarRect.x, width: sidebarRect.width },
+      dashboard: { x: dashboardRect.x, width: dashboardRect.width },
+      ribbonPosition: getComputedStyle(ribbon).position,
+    }
+  })
+  expect(shell).not.toBeNull()
+  expect(shell!.sidebar).toEqual({ x: 0, width: 30 })
+  expect(shell!.dashboard.x).toBe(30)
+  expect(shell!.ribbonPosition).toBe('static')
+  await expect(page.getByRole('button', { name: /sidebar/i })).toHaveCount(0)
 
   const flowerRow = page.locator('a[href="/zone/Flower%20Room/main"]')
   const vegRow = page.locator('a[href="/zone/Veg%20Room/main"]')
@@ -355,15 +336,12 @@ test('dashboard fits desktop viewports and scrolls only the phone document', asy
   await expect(labRow).not.toContainText(
     /Mode:|No scheduled transition|TEMP IN BAND|AUTO|Setpoints/
   )
-  if (viewport!.width >= 768 && viewport!.width < 1100) {
-    const deviceSummary = labRow.locator('.dashboard-zone-row__device-summary')
-    await expect(deviceSummary).toBeVisible()
-    await expect(deviceSummary).toContainText(/\d+ ON · \d+ OFF · \d+ unknown/)
-    await expect(labRow.locator('.dashboard-zone-row__narrow')).not.toContainText('heater-1')
-    await expect(flowerRow.locator('.dashboard-mini-trend__graphic').first()).toBeHidden()
-  } else {
-    await expect(labRow).toContainText('heater-1')
-  }
+  await expect(labRow).toContainText('heater-1')
+  await expect(flowerRow).toBeInViewport()
+  await expect(vegRow).toBeInViewport()
+  await expect(labRow).toBeInViewport()
+  await expect(page.locator('.dashboard-water-panel [role="img"]')).toBeInViewport()
+  await expect(page.locator('button[aria-label="Open mothernode status"]')).toBeInViewport()
 
   const metrics = await page.evaluate(() => {
     const box = (selector: string) => {
@@ -375,18 +353,31 @@ test('dashboard fits desktop viewports and scrolls only the phone document', asy
     const root = box('.main-dashboard')
     const names = {
       calendar: '.grow-calendar--dashboard',
+      calendarTrack: '.dashboard-calendar-slot',
       inspector: '.dashboard-inspector',
+      inspectorTrack: '.dashboard-inspector-slot',
+      upper: '.dashboard-upper',
       rooms: '.dashboard-room-rows',
       center: '.dashboard-center',
       rail: '.dashboard-rail',
       events: '.dashboard-event-log-panel',
       water: '.dashboard-water-panel',
+      waterGraphic: '.dashboard-water-panel [role="img"]',
       footer: 'button[aria-label="Open mothernode status"]',
     }
     const boxes = Object.fromEntries(
       Object.entries(names).map(([name, selector]) => [name, box(selector)])
     )
     const documentElement = document.documentElement
+    const rail = document.querySelector<HTMLElement>('.dashboard-rail')
+    const railOverflow = rail
+      ? {
+          scrollHeight: rail.scrollHeight,
+          clientHeight: rail.clientHeight,
+          scrollWidth: rail.scrollWidth,
+          clientWidth: rail.clientWidth,
+        }
+      : null
     const scrollContainers = Array.from(document.querySelectorAll<HTMLElement>('.main-dashboard *'))
       .filter(element => {
         const style = getComputedStyle(element)
@@ -441,61 +432,91 @@ test('dashboard fits desktop viewports and scrolls only the phone document', asy
       },
       root,
       boxes,
+      railOverflow,
       scrollContainers,
       outsideControls,
     }
   })
 
   expect(metrics.boxes.calendar).not.toBeNull()
+  expect(metrics.boxes.calendarTrack).not.toBeNull()
   expect(metrics.boxes.inspector).not.toBeNull()
+  expect(metrics.boxes.inspectorTrack).not.toBeNull()
+  expect(metrics.boxes.upper).not.toBeNull()
   expect(metrics.boxes.rooms).not.toBeNull()
   expect(metrics.boxes.center).not.toBeNull()
   expect(metrics.boxes.rail).not.toBeNull()
   expect(metrics.boxes.events).not.toBeNull()
   expect(metrics.boxes.water).not.toBeNull()
+  expect(metrics.boxes.waterGraphic).not.toBeNull()
   expect(metrics.boxes.footer).not.toBeNull()
+  expect(metrics.railOverflow).not.toBeNull()
   expect(metrics.scrollContainers).toEqual([])
   expect(metrics.outsideControls).toEqual([])
   expect(metrics.document.width).toBeLessThanOrEqual(metrics.document.clientWidth + 1)
-
-  if (mobile) {
-    expect(metrics.document.height).toBeGreaterThan(metrics.document.clientHeight)
-    const order = [
-      metrics.boxes.calendar!.top,
-      metrics.boxes.inspector!.top,
-      metrics.boxes.rooms!.top,
-      metrics.boxes.events!.top,
-      metrics.boxes.water!.top,
-      metrics.boxes.footer!.top,
-    ]
-    expect(order).toEqual([...order].sort((left, right) => left - right))
-    await expect(page.locator('.grow-cal-day-markers .grow-cal-marker-text:visible')).toHaveCount(0)
-    await expect(page.locator('.grow-cal-day-markers .grow-cal-phase-text:visible')).toHaveCount(0)
-    await expect(page.locator('.rdp-day_button[aria-label*="2 tasks"]')).toHaveCount(1)
-  } else {
-    expect(metrics.document.height).toBeLessThanOrEqual(metrics.document.clientHeight + 1)
-    expect(metrics.document.scrollY).toBe(0)
-    expect(metrics.root!.x).toBe(30)
-    expect(metrics.root!.right).toBeLessThanOrEqual(metrics.viewport.width + 1)
-    expect(metrics.boxes.center!.right).toBeLessThanOrEqual(metrics.boxes.rail!.left + 1)
-    expect(metrics.boxes.water!.bottom).toBeLessThanOrEqual(metrics.boxes.footer!.top + 1)
-    if (viewport!.width >= 1600) {
-      expect(metrics.boxes.calendar!.right).toBeLessThanOrEqual(metrics.boxes.inspector!.left + 1)
-    } else {
-      expect(metrics.boxes.calendar!.bottom).toBeLessThanOrEqual(metrics.boxes.inspector!.top + 1)
-    }
-    expect(metrics.boxes.rooms!.top).toBeGreaterThanOrEqual(metrics.boxes.inspector!.bottom - 1)
-  }
+  expect(metrics.document.height).toBeLessThanOrEqual(metrics.document.clientHeight + 1)
+  expect(metrics.document.scrollY).toBe(0)
+  expect(metrics.root!.x).toBe(30)
+  expect(metrics.root!.right).toBeLessThanOrEqual(metrics.viewport.width + 1)
+  expect(metrics.boxes.center!.right).toBeLessThanOrEqual(metrics.boxes.rail!.left + 1)
+  expect(metrics.boxes.calendar!.top).toBeCloseTo(metrics.boxes.inspector!.top, 0)
+  expect(metrics.boxes.calendar!.right).toBeLessThanOrEqual(metrics.boxes.inspector!.left + 1)
+  expect(
+    metrics.boxes.inspectorTrack!.left - metrics.boxes.calendarTrack!.right
+  ).toBeCloseTo(8, 0)
+  const upperTrackRatio =
+    metrics.boxes.calendarTrack!.width / metrics.boxes.inspectorTrack!.width
+  expect(upperTrackRatio).toBeGreaterThan(3.8)
+  expect(upperTrackRatio).toBeLessThan(4.2)
+  expect(metrics.boxes.inspectorTrack!.width).toBeGreaterThanOrEqual(
+    viewport!.width >= 1600 ? 16 * 16 : 12 * 16
+  )
+  const centerTrackRatio = metrics.boxes.upper!.height / metrics.boxes.rooms!.height
+  expect(centerTrackRatio).toBeCloseTo(viewport!.width >= 1600 ? 55 / 45 : 52 / 48, 1)
+  expect(metrics.boxes.rooms!.top).toBeGreaterThanOrEqual(metrics.boxes.upper!.bottom - 1)
+  expect(metrics.boxes.rooms!.left).toBeGreaterThanOrEqual(metrics.boxes.center!.left - 1)
+  expect(metrics.boxes.rooms!.right).toBeLessThanOrEqual(metrics.boxes.center!.right + 1)
+  expect(metrics.boxes.rooms!.width).toBeGreaterThanOrEqual(metrics.boxes.center!.width - 1)
+  expect(metrics.boxes.rooms!.height).toBeGreaterThanOrEqual(metrics.boxes.center!.height * 0.38)
+  expect(metrics.boxes.events!.bottom).toBeLessThanOrEqual(metrics.boxes.water!.top + 1)
+  expect(metrics.boxes.events!.left).toBeGreaterThanOrEqual(metrics.boxes.rail!.left - 1)
+  expect(metrics.boxes.events!.right).toBeLessThanOrEqual(metrics.boxes.rail!.right + 1)
+  expect(metrics.boxes.water!.bottom).toBeLessThanOrEqual(metrics.boxes.footer!.top + 1)
+  expect(metrics.boxes.water!.left).toBeGreaterThanOrEqual(metrics.boxes.rail!.left - 1)
+  expect(metrics.boxes.water!.right).toBeLessThanOrEqual(metrics.boxes.rail!.right + 1)
+  expect(
+    metrics.boxes.waterGraphic!.left
+  ).toBeGreaterThanOrEqual(metrics.boxes.water!.left - 1)
+  expect(metrics.boxes.waterGraphic!.right).toBeLessThanOrEqual(metrics.boxes.water!.right + 1)
+  expect(metrics.boxes.waterGraphic!.top).toBeGreaterThanOrEqual(metrics.boxes.water!.top - 1)
+  expect(metrics.boxes.waterGraphic!.bottom).toBeLessThanOrEqual(metrics.boxes.water!.bottom + 1)
+  expect(
+    Math.abs(metrics.boxes.waterGraphic!.width - metrics.boxes.waterGraphic!.height)
+  ).toBeLessThanOrEqual(1)
+  expect(metrics.railOverflow!.scrollHeight).toBeLessThanOrEqual(
+    metrics.railOverflow!.clientHeight + 1
+  )
+  expect(metrics.railOverflow!.scrollWidth).toBeLessThanOrEqual(metrics.railOverflow!.clientWidth + 1)
 
   const roomBoxes = await Promise.all([flowerRow, vegRow, labRow].map(row => row.boundingBox()))
   expect(roomBoxes.every(box => box !== null)).toBe(true)
+  expect(roomBoxes[0]!.height / roomBoxes[1]!.height).toBeCloseTo(1.5, 1)
+  expect(roomBoxes[2]!.height / roomBoxes[1]!.height).toBeCloseTo(0.55, 1)
   for (let first = 0; first < roomBoxes.length; first += 1) {
-    for (let second = first + 1; second < roomBoxes.length; second += 1) {
-      const a = roomBoxes[first]!
-      const b = roomBoxes[second]!
-      expect(a.y + a.height).toBeLessThanOrEqual(b.y + 1)
+    const current = roomBoxes[first]!
+    expect(current.x).toBeGreaterThanOrEqual(metrics.boxes.center!.left - 1)
+    expect(current.x + current.width).toBeLessThanOrEqual(metrics.boxes.center!.right + 1)
+    expect(current.x + current.width).toBeGreaterThanOrEqual(metrics.boxes.center!.right - 1)
+    if (first === 0) {
+      expect(current.y).toBeGreaterThanOrEqual(metrics.boxes.rooms!.top - 1)
+    } else {
+      const previous = roomBoxes[first - 1]!
+      expect(previous.y + previous.height).toBeLessThanOrEqual(current.y + 1)
     }
   }
+  expect(roomBoxes[2]!.y + roomBoxes[2]!.height).toBeLessThanOrEqual(
+    metrics.boxes.rooms!.bottom + 1
+  )
   const initialPanels = [
     metrics.boxes.calendar!,
     metrics.boxes.inspector!,
@@ -615,23 +636,16 @@ test('dashboard fits desktop viewports and scrolls only the phone document', asy
     scrollY: window.scrollY,
   }))
   expect(finalMetrics.documentWidth).toBeLessThanOrEqual(finalMetrics.viewportWidth + 1)
-  if (mobile) {
-    expect(finalMetrics.documentHeight).toBeGreaterThan(finalMetrics.viewportHeight)
-    for (const selector of [
-      '.dashboard-room-rows',
-      '.dashboard-event-log-panel',
-      '.dashboard-water-panel',
-      'button[aria-label="Open mothernode status"]',
-    ]) {
-      const target = page.locator(selector)
-      await target.scrollIntoViewIfNeeded()
-      await expect(target).toBeInViewport()
-    }
-    expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(0)
-  } else {
-    expect(finalMetrics.documentHeight).toBeLessThanOrEqual(finalMetrics.viewportHeight + 1)
-    expect(finalMetrics.scrollY).toBe(0)
-  }
+  expect(finalMetrics.documentHeight).toBeLessThanOrEqual(finalMetrics.viewportHeight + 1)
+  expect(finalMetrics.scrollY).toBe(0)
+  const finalRailOverflow = await page.locator('.dashboard-rail').evaluate(rail => ({
+    scrollHeight: rail.scrollHeight,
+    clientHeight: rail.clientHeight,
+    scrollWidth: rail.scrollWidth,
+    clientWidth: rail.clientWidth,
+  }))
+  expect(finalRailOverflow.scrollHeight).toBeLessThanOrEqual(finalRailOverflow.clientHeight + 1)
+  expect(finalRailOverflow.scrollWidth).toBeLessThanOrEqual(finalRailOverflow.clientWidth + 1)
 
   await page.screenshot({
     path: testInfo.outputPath('dashboard-full-page.png'),

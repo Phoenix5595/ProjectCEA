@@ -3,7 +3,7 @@
  *
  * Serves the production `dist` build plus deterministic REST / WebSocket /
  * Grafana-placeholder / SPA-fallback fixtures on
- * `http://127.0.0.1:${MONITORING_FIXTURE_PORT ?? 4173}`. It injects a restrictive CSP and writes a request
+ * `127.0.0.1` at the selected test-only port. It injects a restrictive CSP and writes a request
  * log so exact-origin enforcement stays executable without Playwright route
  * interception (the same fixture endpoints are available to `/visual-qa`).
  *
@@ -42,13 +42,13 @@ import {
   CJK_EVENT,
   GROUPED_CONSOLE_EVENTS,
 } from './src/features/event-log/config/fixtures'
+import { FIXTURE_PORT, FIXTURE_WS_ORIGIN } from './src/features/monitoring/config/originGuard'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const DIST_DIR = path.resolve(HERE, 'dist')
 
-const FIXTURE_PORT = Number(process.env.MONITORING_FIXTURE_PORT ?? 4173)
 const CSP =
-  `default-src 'self'; connect-src 'self' ws://127.0.0.1:${FIXTURE_PORT}; ` +
+  `default-src 'self'; connect-src 'self' ${FIXTURE_WS_ORIGIN}; ` +
   "frame-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'"
 
 interface FixtureRoute {
@@ -615,6 +615,7 @@ function relayTimelineSnapshotFixture(): unknown {
     registry_version: 1,
     stale_since: null,
     dfr_boards: [],
+    failsafes: [],
     relays: Array.from({ length: 16 }, (_, channel) => {
       const device = assignmentsByChannel.get(channel)
       return {
@@ -637,6 +638,8 @@ function relayTimelineSnapshotFixture(): unknown {
         command_mode: 'scheduled',
         desired_state: null,
         last_command_succeeded: null,
+        interlock_blocked: false,
+        interlock_reason: null,
         observed_state: device?.device_type === 'heating',
         physical_relay: device?.physical_relay ?? channel + 1,
         pin_label: `GPA${channel}`,

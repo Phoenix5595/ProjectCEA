@@ -671,7 +671,7 @@ export default function DashboardCalendarInspector({
       <DialogContent
         ref={dialogContentRef}
         onCloseAutoFocus={handleCloseAutoFocus}
-        className="max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] overflow-y-auto overscroll-contain sm:max-w-xl"
+        className="max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] overflow-y-auto overscroll-contain max-w-xl"
       >
         <DialogTitle className="mb-3">
           {view.kind === 'form'

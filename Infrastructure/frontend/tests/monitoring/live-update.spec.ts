@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test'
 import path from 'node:path'
 import { mkdirSync, writeFileSync } from 'node:fs'
-import { describeViolation } from '../../src/features/monitoring/config/originGuard'
+import { describeViolation, FIXTURE_ORIGIN } from '../../src/features/monitoring/config/originGuard'
 import type { MonitoringPerfDebug } from '../../src/features/monitoring/perfMarks'
 import { fixtureUrl } from './fixtureUrl'
 
@@ -77,13 +77,13 @@ test('renders five live value and viewport updates, handles stale pause/resume, 
 
   const beforeTeardown = await telemetry(page)
   expect(beforeTeardown).toHaveLength(2)
-  await page.goto('http://127.0.0.1:4173/')
+  await page.goto(`${FIXTURE_ORIGIN}/`)
   await expect.poll(() => telemetry(page)).toEqual([])
   expect(violations).toEqual([])
 
   mkdirSync(EVIDENCE_DIR, { recursive: true })
   writeFileSync(path.join(EVIDENCE_DIR, 'live-update-proof.json'), JSON.stringify({
-    origin: 'http://127.0.0.1:4173',
+    origin: FIXTURE_ORIGIN,
     values: observedValues,
     scales: observedScales,
     staleObserved: true,

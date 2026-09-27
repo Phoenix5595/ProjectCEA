@@ -880,7 +880,7 @@ body {
 .grow-calendar-picker .rdp-selected {
   font-size: inherit;
 }
-/* Dashboard viewport contract: desktop is one fixed viewport; phone is natural document flow. */
+/* Dashboard desktop viewport contract: workspace fills the available viewport. */
 @media (min-width: 768px) {
   .main-dashboard:has(.dashboard-workspace) {
     display: grid;
@@ -998,9 +998,17 @@ body {
     grid-template-columns: minmax(0, 1fr) 17rem;
   }
 
+  .dashboard-center {
+    grid-template-rows: minmax(0, 55fr) minmax(0, 45fr);
+  }
+
   .dashboard-upper {
-    grid-template-columns: minmax(0, 1fr) minmax(16rem, 22rem);
+    grid-template-columns: minmax(0, 4fr) minmax(16rem, 1fr);
     grid-template-rows: minmax(0, 1fr);
+  }
+
+  .dashboard-room-rows {
+    grid-template-rows: minmax(0, 1.5fr) minmax(0, 1fr) minmax(0, 0.55fr);
   }
 
   .dashboard-inspector__overview {
@@ -1017,29 +1025,63 @@ body {
   .dashboard-workspace {
     grid-template-columns: minmax(0, 1fr) 16rem;
   }
+
+  .dashboard-center {
+    grid-template-rows: minmax(0, 52fr) minmax(0, 48fr);
+  }
+
+  .dashboard-upper {
+    grid-template-columns: minmax(0, 4fr) minmax(12rem, 1fr);
+    grid-template-rows: minmax(0, 1fr);
+  }
+
+  .dashboard-room-rows {
+    grid-template-rows: minmax(0, 1.5fr) minmax(0, 1fr) minmax(0, 0.55fr);
+  }
 }
 
 @media (min-width: 768px) and (max-width: 1599px) {
-  .dashboard-upper {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: minmax(0, 1fr) auto;
+  .dashboard-inspector {
+    gap: 0.25rem;
+    padding: 0.35rem;
   }
 
   .dashboard-inspector__overview {
+    display: grid;
+    grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+    align-items: center;
     flex-direction: row;
     flex-wrap: wrap;
-    align-items: center;
     justify-content: space-between;
-    gap: 0.5rem;
+    gap: 0.3rem;
   }
 
-  .dashboard-inspector__overview-summary,
-  .dashboard-inspector__overview-actions {
-    display: flex;
+  .dashboard-inspector__overview-summary {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     flex-direction: row;
     flex-wrap: wrap;
     align-items: center;
-    gap: 0.5rem;
+    gap: 0.3rem;
+  }
+
+  .dashboard-inspector__overview-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    flex-direction: column;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 0.2rem;
+    margin-top: 0;
+    padding-top: 0;
+  }
+
+  .dashboard-inspector__overview-actions > button {
+    min-height: 1.5rem;
+    width: 100%;
+    padding: 0.2rem 0.35rem;
+    font-size: 0.65rem;
+    white-space: normal;
   }
 }
 
@@ -1086,110 +1128,7 @@ body {
   .dashboard-inspector__overview {
     flex-direction: row;
   }
-}
 
-@media (max-width: 767px) {
-  .main-dashboard:has(.dashboard-workspace) {
-    display: grid;
-    grid-template-rows: auto auto auto auto;
-    width: 100%;
-    height: auto;
-    min-height: 100svh;
-  }
-
-  .main-dashboard:has(.dashboard-workspace) > .dashboard-ribbon {
-    padding-left: 3.5rem;
-  }
-
-  .dashboard-layout__body {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-    min-width: 0;
-    padding: 0.5rem;
-  }
-
-  .dashboard-workspace,
-  .dashboard-center,
-  .dashboard-upper,
-  .dashboard-room-rows,
-  .dashboard-rail {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-    min-width: 0;
-  }
-
-  .dashboard-calendar-slot,
-  .dashboard-inspector-slot,
-  .dashboard-event-log-panel,
-  .dashboard-water-panel {
-    min-width: 0;
-  }
-
-  .grow-calendar--dashboard,
-  .grow-calendar--dashboard .grow-cal-panel,
-  .grow-calendar--dashboard .rdp-root,
-  .grow-calendar--dashboard .rdp-months,
-  .grow-calendar--dashboard .rdp-month,
-  .grow-calendar--dashboard .rdp-month_grid {
-    flex: none;
-    height: auto;
-    min-height: 0;
-  }
-
-  .grow-calendar--dashboard .rdp-day,
-  .grow-calendar--dashboard .rdp-day_button {
-    height: auto;
-    min-height: 44px;
-  }
-
-  .grow-calendar--dashboard .grow-cal-day-markers {
-    flex-direction: row;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: center;
-    gap: 0.15rem;
-    overflow: visible;
-  }
-
-  .grow-calendar--dashboard .grow-cal-marker-text,
-  .grow-calendar--dashboard .grow-cal-phase-text {
-    display: none;
-  }
-
-  .grow-calendar--dashboard .grow-cal-marker {
-    flex: 0 0 auto;
-  }
-
-  .grow-calendar--dashboard .grow-cal-phase {
-    width: 5px;
-    min-width: 5px;
-    height: 5px;
-    min-height: 5px;
-    padding: 0;
-    border-radius: 9999px;
-  }
-
-  .grow-calendar--dashboard .grow-cal-more {
-    font-size: 0.45rem;
-    line-height: 1;
-  }
-}
-
-@media (min-width: 768px) {
-  .dashboard-event-log-panel [aria-label='Grouped alert console'] {
-    grid-template-rows: repeat(8, minmax(0, 1fr));
-  }
-
-  .dashboard-event-log-panel [aria-label='Grouped alert console'] > * {
-    min-width: 0;
-    min-height: 0;
-    overflow-wrap: anywhere;
-  }
-}
-
-@media (min-width: 768px) and (max-width: 1099px) {
   .dashboard-zone-row__narrow-header {
     display: flex;
     grid-column: 1;
@@ -1236,47 +1175,7 @@ body {
   .dashboard-zone-row__narrow-trends {
     grid-column: 1 / -1;
   }
-}
 
-@media (min-width: 768px) and (max-width: 1599px) {
-  .dashboard-inspector {
-    gap: 0.25rem;
-    padding: 0.35rem;
-  }
-
-  .dashboard-inspector__overview {
-    display: grid;
-    grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
-    align-items: center;
-    gap: 0.3rem;
-  }
-
-  .dashboard-inspector__overview-summary {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0.3rem;
-  }
-
-  .dashboard-inspector__overview-actions {
-    display: flex;
-    flex-direction: column;
-    flex-wrap: nowrap;
-    align-items: stretch;
-    gap: 0.2rem;
-    margin-top: 0;
-    padding-top: 0;
-  }
-
-  .dashboard-inspector__overview-actions > button {
-    min-height: 1.5rem;
-    width: 100%;
-    padding: 0.2rem 0.35rem;
-    font-size: 0.65rem;
-    white-space: normal;
-  }
-}
-
-@media (min-width: 768px) and (max-width: 1099px) {
   .dashboard-zone-row__narrow {
     grid-template-columns: minmax(0, 1fr);
     align-items: start;
@@ -1377,17 +1276,7 @@ body {
     padding: 0.15rem 0.2rem !important;
     font-size: 0.5rem;
   }
-}
 
-@media (min-width: 768px) and (max-width: 1599px) {
-  .dashboard-inspector__overview-actions {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    align-items: center;
-  }
-}
-
-@media (min-width: 768px) and (max-width: 1099px) {
   .dashboard-zone-row__narrow-controls {
     gap: 0.1rem;
   }
@@ -1418,6 +1307,11 @@ body {
   .dashboard-zone-row__narrow-trends > .dashboard-mini-trend > div:first-child {
     gap: 0.1rem;
     white-space: nowrap;
+  }
+
+  .dashboard-zone-row {
+    padding-top: 0.2rem !important;
+    padding-bottom: 0.2rem !important;
   }
 }
 
@@ -1452,21 +1346,17 @@ body {
   }
 }
 
-@media (min-width: 768px) and (max-width: 1099px) {
-  .dashboard-zone-row {
-    padding-top: 0.2rem !important;
-    padding-bottom: 0.2rem !important;
-  }
-}
-
 @media (min-width: 768px) {
-  .dashboard-event-log-panel > section {
-    height: 100%;
+  .dashboard-event-log-panel [aria-label='Grouped alert console'] {
+    grid-template-rows: repeat(8, minmax(0, 1fr));
+  }
+
+  .dashboard-event-log-panel [aria-label='Grouped alert console'] > * {
+    min-width: 0;
     min-height: 0;
+    overflow-wrap: anywhere;
   }
-}
 
-@media (min-width: 768px) {
   .dashboard-event-log-panel {
     display: flex;
     min-height: 0;
@@ -1488,35 +1378,5 @@ body {
   .dashboard-event-log-panel [aria-label='Event list'] {
     flex: 1 1 0%;
     min-height: 0;
-  }
-}
-
-@media (max-width: 767px) {
-  .dashboard-zone-row__wide {
-    width: 100%;
-    min-width: 0;
-  }
-
-  .dashboard-zone-row__wide > .flex.flex-wrap.items-stretch.gap-2 {
-    display: flex;
-    flex-direction: column;
-    flex-wrap: nowrap;
-    align-items: stretch;
-    width: 100%;
-    min-width: 0;
-  }
-
-  .dashboard-zone-row__wide > .flex.flex-wrap.items-stretch.gap-2 > * {
-    flex: 0 1 auto;
-    width: 100%;
-    min-width: 0 !important;
-    max-width: 100%;
-  }
-
-  .dashboard-zone-row__wide * {
-    min-width: 0 !important;
-    max-width: 100%;
-    overflow-wrap: anywhere;
-    white-space: normal !important;
   }
 }
