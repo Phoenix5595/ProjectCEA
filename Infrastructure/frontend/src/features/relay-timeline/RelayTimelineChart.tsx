@@ -9,7 +9,7 @@ import type {
   RequestedOutputSegment,
   RelayTimelineWindow,
 } from './intervals'
-import { formatDuration, formatRequestedResolution } from './intervals'
+import { formatDuration, formatRequestedResolution, requestedOutputAt } from './intervals'
 
 const LANE_HEIGHT = 58
 const LEFT_LABEL_GUTTER = 154
@@ -142,16 +142,50 @@ function drawLaneTimeline(plot: uPlot, lanes: readonly RelayTimelineChartLane[])
 
     const centerY = rowTop + rowHeight / 2
     const maxAmplitude = backgroundHeight / 2
-    for (const output of lane.requestedOutput) {
-      const left = Math.max(bbox.left, xPosition(Math.max(output.start, rangeMin * 1000)))
-      const right = Math.min(
-        bbox.left + bbox.width,
-        xPosition(Math.min(output.end, rangeMax * 1000))
-      )
-      if (right <= left || output.requestedPercent <= 0) continue
-      const amplitude = maxAmplitude * (output.requestedPercent / 100)
+    const outputs = lane.requestedOutput
+    for (let index = 0; index < outputs.length; index += 1) {
+      const output = outputs[index]
+      if (output === undefined) continue
+      const next = outputs[index + 1]
+      const hasNextSample = next !== undefined && output.end === next.start
+      const visibleStart = Math.max(output.start, rangeMin * 1000)
+      const visibleEnd = Math.min(output.end, rangeMax * 1000)
+      const left = xPosition(visibleStart)
+      const right = xPosition(visibleEnd)
+      if (right <= left) continue
+
+      const startPercent =
+        requestedOutputAt(outputs, visibleStart)?.percent ?? output.requestedPercent
+      const endPercent =
+        requestedOutputAt(outputs, visibleEnd)?.percent ??
+        (hasNextSample ? next.requestedPercent : output.requestedPercent)
+      if (startPercent <= 0 && endPercent <= 0) continue
+      const startAmplitude = maxAmplitude * (startPercent / 100)
+      const endAmplitude = maxAmplitude * (endPercent / 100)
+      const controlOffset = (right - left) / 3
       ctx.fillStyle = output.aggregated ? 'rgba(56, 189, 248, 0.62)' : 'rgba(14, 165, 233, 0.72)'
-      ctx.fillRect(left, centerY - amplitude, right - left, amplitude * 2)
+      ctx.beginPath()
+      ctx.moveTo(left, centerY)
+      ctx.lineTo(left, centerY - startAmplitude)
+      ctx.bezierCurveTo(
+        left + controlOffset,
+        centerY - startAmplitude,
+        right - controlOffset,
+        centerY - endAmplitude,
+        right,
+        centerY - endAmplitude
+      )
+      ctx.lineTo(right, centerY + endAmplitude)
+      ctx.bezierCurveTo(
+        right - controlOffset,
+        centerY + endAmplitude,
+        left + controlOffset,
+        centerY + startAmplitude,
+        left,
+        centerY + startAmplitude
+      )
+      ctx.closePath()
+      ctx.fill()
     }
 
     ctx.strokeStyle = 'rgba(148, 163, 184, 0.28)'
@@ -175,28 +209,37 @@ function drawLaneTimeline(plot: uPlot, lanes: readonly RelayTimelineChartLane[])
   })
 }
 
-function requestedPercentDescription(
-  segment: RequestedOutputSegment | null,
-  preview: boolean
-): string {
-  if (segment === null) {
-    return preview
-      ? 'No example requested PID output at this time.'
-      : 'No recorded requested PID output at this time.'
-  }
-  return preview
-    ? `${segment.requestedPercent.toFixed(1)}% requested PID output; synthetic preview segment, not recorded.`
-    : `${segment.requestedPercent.toFixed(1)}% requested PID output; ${formatRequestedResolution(segment)}.`
-}
+const relayIntervalDate = new Intl.DateTimeFormat(undefined, {
+  timeZone: 'America/Toronto',
+  year: 'numeric',
+  month: 'short',
+  day: 'numeric',
+})
+const relayIntervalTime = new Intl.DateTimeFormat(undefined, {
+  timeZone: 'America/Toronto',
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+  hourCycle: 'h23',
+})
 
-function intervalDescription(interval: RelayStateInterval | null): string {
-  if (interval === null) return 'No interval at the selected time.'
-  const state = interval.state === 'on' ? 'ON' : interval.state === 'off' ? 'OFF' : 'Unknown'
-  const duration = (interval.end - interval.start) / 1000
-  const partial =
-    interval.partialStart || interval.partialEnd ? ' Boundary-clipped or partial interval.' : ''
-  const reason = interval.reason ? ` ${interval.reason}.` : ''
-  return `${state} from ${localTimestamp(interval.start)} to ${localTimestamp(interval.end)}, ${formatDuration(duration)}.${partial}${reason}`
+function intervalTimeRange(interval: RelayStateInterval): string {
+  const start = new Date(interval.start)
+  const end = new Date(interval.end)
+  const startDate = relayIntervalDate.format(start)
+  const endDate = relayIntervalDate.format(end)
+  const startLabel = `${startDate} ${relayIntervalTime.format(start)}`
+  const endLabel =
+    startDate === endDate
+      ? relayIntervalTime.format(end)
+      : `${endDate} ${relayIntervalTime.format(end)}`
+  return `${startLabel}–${endLabel} · ${formatDuration((interval.end - interval.start) / 1000)}`
+}
+function intervalNote(interval: RelayStateInterval): string | null {
+  const partial = interval.partialStart || interval.partialEnd
+  if (partial && interval.reason) return `Partial interval · ${interval.reason}`
+  if (partial) return 'Partial interval'
+  return interval.reason
 }
 
 export const RelayTimelineChart = forwardRef<RelayTimelineChartHandle, RelayTimelineChartProps>(
@@ -368,7 +411,7 @@ export const RelayTimelineChart = forwardRef<RelayTimelineChartHandle, RelayTime
     const selectedOutput =
       selectedLane === null || active === null
         ? null
-        : timelineSegmentAt(selectedLane.requestedOutput, active.instant)
+        : requestedOutputAt(selectedLane.requestedOutput, active.instant)
 
     const moveFocus = (direction: -1 | 1): void => {
       if (focusStops.length === 0) return
@@ -448,7 +491,7 @@ export const RelayTimelineChart = forwardRef<RelayTimelineChartHandle, RelayTime
           <span className="text-xs text-text-muted">
             {lanes.some(lane => lane.preview)
               ? 'Illustrative synthetic preview; no relay observations are being shown.'
-              : 'Physical sample-time observations; requested output is not measured power.'}
+              : 'Smooth symmetric curve interpolates requested PID samples; gaps remain broken. Output is not measured load.'}
           </span>
         </div>
 
@@ -492,16 +535,81 @@ export const RelayTimelineChart = forwardRef<RelayTimelineChartHandle, RelayTime
           id="relay-timeline-selected-detail"
           role="status"
           aria-live="polite"
-          className="mt-2 rounded border border-border-subtle bg-surface-secondary px-2 py-1 text-xs text-text-default"
+          className="mt-2 rounded border border-border-subtle bg-surface-secondary px-2 py-2 text-xs text-text-default"
         >
           {selectedLane && active ? (
-            <>
-              <strong>
-                {selectedLane.preview ? `Example ${selectedLane.label} relay` : selectedLane.label}
-              </strong>{' '}
-              · {intervalDescription(selectedInterval)}{' '}
-              {requestedPercentDescription(selectedOutput, selectedLane.preview === true)}
-            </>
+            <dl className="grid gap-x-4 gap-y-2 sm:grid-cols-3">
+              <div className="min-w-0">
+                <dt className="text-[10px] font-semibold uppercase tracking-wide text-text-muted">
+                  Relay state
+                </dt>
+                <dd className="mt-0.5 flex flex-wrap items-center gap-1.5">
+                  <span className="font-semibold">{selectedLane.label}</span>
+                  {selectedLane.preview && (
+                    <span className="rounded border border-border-subtle px-1.5 py-0.5 text-[10px] font-semibold">
+                      Example
+                    </span>
+                  )}
+                  <span className="rounded border border-border-subtle px-1.5 py-0.5 text-[10px] font-semibold">
+                    {selectedInterval?.state === 'on'
+                      ? 'ON'
+                      : selectedInterval?.state === 'off'
+                        ? 'OFF'
+                        : 'UNKNOWN'}
+                  </span>
+                </dd>
+              </div>
+              <div className="min-w-0">
+                <dt className="text-[10px] font-semibold uppercase tracking-wide text-text-muted">
+                  Interval
+                </dt>
+                <dd className="mt-0.5 break-words">
+                  {selectedInterval === null ? (
+                    'No relay interval at this time'
+                  ) : (
+                    <>
+                      <span>{intervalTimeRange(selectedInterval)}</span>
+                      {(selectedInterval.partialStart ||
+                        selectedInterval.partialEnd ||
+                        selectedInterval.reason) && (
+                        <span className="mt-0.5 block text-text-muted">
+                          {intervalNote(selectedInterval)}
+                        </span>
+                      )}
+                    </>
+                  )}
+                </dd>
+              </div>
+              <div className="min-w-0">
+                <dt className="text-[10px] font-semibold uppercase tracking-wide text-text-muted">
+                  PID requested
+                </dt>
+                <dd className="mt-0.5">
+                  {selectedOutput === null ? (
+                    <>
+                      <span className="block font-semibold">Unavailable</span>
+                      <span className="block text-text-muted">
+                        {selectedLane.preview
+                          ? 'No synthetic sample at this time'
+                          : 'No recorded sample at this time'}
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="block font-semibold">
+                        {selectedOutput.percent.toFixed(1)}%
+                      </span>
+                      <span className="block text-text-muted">
+                        {selectedOutput.interpolated ? 'Smoothed' : 'Sample'} ·{' '}
+                        {selectedLane.preview
+                          ? 'synthetic only'
+                          : formatRequestedResolution(selectedOutput.segment)}
+                      </span>
+                    </>
+                  )}
+                </dd>
+              </div>
+            </dl>
           ) : (
             'Focus the chart and use arrow keys to inspect sample intervals and requested PID output.'
           )}
