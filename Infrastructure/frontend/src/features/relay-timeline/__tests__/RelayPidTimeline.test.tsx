@@ -237,6 +237,9 @@ describe('RelayPidTimeline integration', () => {
     expect(within(chart).getByText('Veg Heater')).toBeInTheDocument()
     expect(within(chart).getByText('relay 8')).toBeInTheDocument()
     expect(within(chart).getByText('50')).toBeInTheDocument()
+    const latestOutput = screen.getByRole('group', { name: 'Latest requested PID output' })
+    expect(within(latestOutput).getByText('50%')).toBeInTheDocument()
+    expect(within(latestOutput).getByText(/Stale/)).toBeInTheDocument()
     expect(within(chart).queryByText('Grow Light')).not.toBeInTheDocument()
     expect(mocks.relayTimeline).toHaveBeenCalledWith(
       'Veg Room',
@@ -247,6 +250,31 @@ describe('RelayPidTimeline integration', () => {
       expect.objectContaining({ signal: expect.any(AbortSignal) })
     )
   })
+
+  it('shows the freshest requested PID percent as a quick-read value', async () => {
+    mocks.relayTimeline.mockImplementationOnce(
+      async (_location: string, start: string, end: string) => ({
+        ...timelinePage(start, end),
+        load: [
+          {
+            device_id: 101,
+            device_name: 'veg_heater',
+            timestamp: new Date(Date.parse(end) - 1_000),
+            requested_percent: 42,
+            aggregated: false,
+            interval_seconds: 5,
+          },
+        ],
+      })
+    )
+    renderTimeline(controlSnapshot(new Date().toISOString()))
+
+    const latestOutput = await screen.findByRole('group', { name: 'Latest requested PID output' })
+    expect(within(latestOutput).getByText('42%')).toBeInTheDocument()
+    expect(within(latestOutput).getByText(/Fresh/)).toBeInTheDocument()
+    expect(within(latestOutput).getByText(/raw, 5.0 s interval/)).toBeInTheDocument()
+  })
+
   it('keeps the assigned lane but draws no waveform when requested PID output is absent', async () => {
     mocks.relayTimeline.mockImplementationOnce(
       async (_location: string, start: string, end: string) => ({
@@ -263,6 +291,36 @@ describe('RelayPidTimeline integration', () => {
       within(screen.getByTestId('relay-timeline-chart')).queryByText('50')
     ).not.toBeInTheDocument()
   })
+  it('does not reuse a prior PID percent after a null sample', async () => {
+    mocks.relayTimeline.mockImplementationOnce(
+      async (_location: string, start: string, end: string) => ({
+        ...timelinePage(start, end),
+        load: [
+          {
+            device_id: 101,
+            device_name: 'veg_heater',
+            timestamp: new Date(Date.parse(end) - 2_000),
+            requested_percent: 75,
+            aggregated: false,
+            interval_seconds: 1,
+          },
+          {
+            device_id: 101,
+            device_name: 'veg_heater',
+            timestamp: new Date(Date.parse(end) - 500),
+            requested_percent: null,
+            aggregated: false,
+            interval_seconds: 1,
+          },
+        ],
+      })
+    )
+    renderTimeline(controlSnapshot(new Date().toISOString()))
+
+    const latestOutput = await screen.findByRole('group', { name: 'Latest requested PID output' })
+    expect(within(latestOutput).getByText('Unavailable')).toBeInTheDocument()
+    expect(within(latestOutput).queryByText('75%')).not.toBeInTheDocument()
+  })
 
   it('shows an explicitly synthetic example lane when assignments are absent', async () => {
     renderTimeline(controlSnapshot(new Date().toISOString()), [])
@@ -277,6 +335,9 @@ describe('RelayPidTimeline integration', () => {
     expect(within(previewChart).getByTestId('lane-heating')).toHaveTextContent('Heating relay')
     expect(within(previewChart).getByText('example only; no hardware')).toBeInTheDocument()
     expect(within(previewChart).getByText('25,50,75,35')).toBeInTheDocument()
+    expect(
+      within(preview).getByText(/Example requested PID output at the range end/)
+    ).toHaveTextContent('35%')
     expect(
       within(preview).getByText(
         /not assigned hardware, a relay observation, or recorded PID output/
