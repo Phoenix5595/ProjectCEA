@@ -11,6 +11,8 @@ import type { RelayTimelineResponse } from './contracts'
 import {
   buildRelayLaneIntervals,
   buildRequestedOutputSegments,
+  formatDuration,
+  formatRequestedResolution,
   MAX_RELAY_TIMELINE_TRANSITIONS,
 } from './intervals'
 import type {
@@ -215,6 +217,26 @@ function makePreviewLane(range: RelayTimelineWindow): RelayTimelineChartLane {
     requestedOutput,
     summary,
   }
+}
+
+function latestRequestedPoint(
+  lane: CurrentRelayLane,
+  points: RelayTimelineResponse['load'],
+  edgeMs: number
+): RelayTimelineResponse['load'][number] | null {
+  let latest: RelayTimelineResponse['load'][number] | null = null
+  for (const point of points) {
+    const timestamp = point.timestamp.getTime()
+    if (
+      point.device_id !== lane.deviceId ||
+      point.device_name !== lane.deviceName ||
+      timestamp > edgeMs
+    ) {
+      continue
+    }
+    if (latest === null || timestamp > latest.timestamp.getTime()) latest = point
+  }
+  return latest
 }
 
 export function RelayPidTimeline({
@@ -431,6 +453,24 @@ export function RelayPidTimeline({
     currentHistory.pageComplete &&
     !currentHistory.residentTruncated
 
+  const outputReferenceMs = isLive && !paused ? nowMs : displayRange.end.getTime()
+  const latestOutputRows = useMemo(() => {
+    if (currentHistory === null) return []
+    return currentLanes
+      .filter(lane => PID_DEVICE_TYPES[lane.deviceType] === true)
+      .map(lane => {
+        const point = latestRequestedPoint(lane, currentHistory.load, outputReferenceMs)
+        return {
+          lane,
+          point,
+          ageSeconds:
+            point === null
+              ? null
+              : Math.max(0, (outputReferenceMs - point.timestamp.getTime()) / 1000),
+        }
+      })
+  }, [currentHistory, currentLanes, outputReferenceMs])
+
   const chartLanes = useMemo<RelayTimelineChartLane[]>(() => {
     if (currentHistory === null) return []
     return currentLanes.map(lane => {
@@ -496,6 +536,8 @@ export function RelayPidTimeline({
     })
   }, [currentHistory, currentLanes, displayRange, isLive, paused, snapshot, sourceCoverageComplete])
   const previewLane = useMemo(() => makePreviewLane(displayRange), [displayRange])
+  const previewOutputPercent =
+    previewLane.requestedOutput[previewLane.requestedOutput.length - 1]?.requestedPercent ?? null
   const showPreview =
     previewEnabled && currentLanes.length === 0 && !snapshotLoading && snapshot !== null
 
@@ -535,8 +577,8 @@ export function RelayPidTimeline({
           Relay observations &amp; requested PID output
         </h2>
         <p className="mt-1 text-xs text-text-subtle">
-          Sample-time GPIO facts show physical ON/OFF duration. The centered waveform is requested
-          PID output, not measured watts or hardware power.
+          Sample-time GPIO facts show physical ON/OFF duration. The centered PID curve smoothly
+          interpolates requested-output samples; it is not measured physical load.
         </p>
       </div>
       <TimeRangeToolbar
@@ -635,6 +677,12 @@ export function RelayPidTimeline({
                 <strong>Example preview — synthetic data.</strong> This illustrative heating lane is
                 not assigned hardware, a relay observation, or recorded PID output.
               </p>
+              {previewOutputPercent !== null && (
+                <p className="mt-2 text-sm text-text-default" role="status">
+                  Example requested PID output at the range end:{' '}
+                  <strong>{previewOutputPercent.toFixed(0)}%</strong> · synthetic only.
+                </p>
+              )}
               <div className="min-w-0 overflow-auto">
                 <RelayTimelineChart
                   ref={chartRef}
@@ -661,6 +709,57 @@ export function RelayPidTimeline({
                 selected range.
               </p>
             )}
+          {latestOutputRows.length > 0 && (
+            <section
+              className="mb-2 rounded border border-border-subtle bg-surface-secondary p-2"
+              role="group"
+              aria-label="Latest requested PID output"
+            >
+              <h3 className="text-xs font-semibold text-text-default">
+                {isLive && !paused
+                  ? 'Latest requested PID output'
+                  : 'Requested PID output at selected range end'}
+              </h3>
+              <p className="mt-1 text-xs text-text-muted">
+                Controller demand, not measured electrical or thermal load.
+              </p>
+              <ul className="mt-2 flex flex-wrap gap-2">
+                {latestOutputRows.map(({ lane, point, ageSeconds }) => (
+                  <li
+                    key={lane.key}
+                    className="flex min-w-52 flex-col rounded border border-border-subtle px-2 py-1"
+                  >
+                    <span className="text-xs text-text-subtle">{lane.displayName}</span>
+                    {point !== null && point.requested_percent !== null ? (
+                      <>
+                        <strong className="text-lg text-text-default">
+                          {point.requested_percent.toFixed(0)}%
+                        </strong>
+                        <span className="text-10 text-text-muted">
+                          {ageSeconds !== null && ageSeconds <= point.interval_seconds * 2
+                            ? 'Fresh'
+                            : 'Stale'}
+                          {' · sampled '}
+                          {formatDuration(ageSeconds ?? 0)} ago ·{' '}
+                          {formatRequestedResolution({
+                            aggregated: point.aggregated,
+                            intervalSeconds: point.interval_seconds,
+                          })}
+                        </span>
+                      </>
+                    ) : (
+                      <div className="flex flex-col">
+                        <strong className="text-lg text-text-muted">Unavailable</strong>
+                        <span className="text-10 text-text-muted">
+                          Latest requested output sample is null or absent.
+                        </span>
+                      </div>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
           <div className="mt-2 min-w-0 overflow-auto">
             <RelayTimelineChart
               ref={chartRef}
