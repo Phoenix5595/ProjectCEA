@@ -2,11 +2,9 @@
  * Monitoring design-system contract.
  *
  * Single source of truth for the CSS custom properties that the Flower/Veg
- * monitoring dashboards consume at runtime. Every token listed here MUST be
- * present in every theme block of `src/styles/themes.css`; the accompanying
- * test (`__tests__/designTokens.test.ts`) enforces that coverage so a theme
- * can never silently drop a chart-family color, envelope, target, or state
- * token.
+ * monitoring dashboards consume at runtime. The browser visual-a11y suite checks that required
+ * custom properties survive CSS compilation and resolve in all six themes, so a theme cannot silently
+ * drop a chart-family color, envelope, target, or state token.
  *
  * The token set is additive-only: it never removes or renames an existing
  * theme variable, and it never touches product pages or Grafana code.
@@ -78,52 +76,3 @@ export const REQUIRED_MONITORING_TOKENS = [
   '--mon-axis-left',
   '--mon-axis-right',
 ] as const
-
-export interface ThemeTokenCoverage {
-  theme: string
-  missing: string[]
-}
-
-/** Parse `[data-theme="..."] { ... }` blocks into a theme -> token-set map. */
-export function parseThemeBlocks(css: string): Map<string, Set<string>> {
-  const blocks = new Map<string, Set<string>>()
-  const blockRe = /\[data-theme="([^"]+)"\]\s*\{([^}]*)\}/g
-  let block: RegExpExecArray | null
-  while ((block = blockRe.exec(css)) !== null) {
-    const [, theme, body] = block
-    const tokens = new Set<string>()
-    const tokenRe = /(--[a-zA-Z0-9-]+)\s*:/g
-    let token: RegExpExecArray | null
-    while ((token = tokenRe.exec(body)) !== null) {
-      tokens.add(token[1])
-    }
-    blocks.set(theme, tokens)
-  }
-  return blocks
-}
-
-/** Non-throwing coverage report for every known theme. */
-export function getThemeTokenCoverage(css: string): ThemeTokenCoverage[] {
-  const blocks = parseThemeBlocks(css)
-  return MONITORING_THEMES.map((theme) => {
-    const tokens = blocks.get(theme) ?? new Set<string>()
-    const missing = REQUIRED_MONITORING_TOKENS.filter((t) => !tokens.has(t))
-    return { theme, missing }
-  })
-}
-
-/**
- * Throws with theme + token when any required monitoring token is absent
- * from any theme. Returns the coverage report when everything is present.
- */
-export function assertThemeTokenCoverage(css: string): ThemeTokenCoverage[] {
-  const coverage = getThemeTokenCoverage(css)
-  for (const entry of coverage) {
-    if (entry.missing.length > 0) {
-      throw new Error(
-        `Theme "${entry.theme}" is missing required monitoring token(s): ${entry.missing.join(', ')}`,
-      )
-    }
-  }
-  return coverage
-}

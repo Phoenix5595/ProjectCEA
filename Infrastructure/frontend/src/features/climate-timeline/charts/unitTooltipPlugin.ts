@@ -1,4 +1,5 @@
 import type uPlot from 'uplot'
+
 import { UNIT_LABELS, type TimelineScale, type TimelineSeriesMeta } from './timelineOptions'
 
 export type TimelineTooltipState = {
@@ -43,7 +44,7 @@ export function unitTooltipPlugin(getState: () => TimelineTooltipState): uPlot.P
       const entry = meta[seriesIndex - 1]
       if (value == null || !Number.isFinite(value) || entry === undefined) continue
       lines.push(
-        `<span style="color:${entry.stroke}">●</span> ${formatTooltipValue(entry.scale, value)}`,
+        `<span style="color:${entry.stroke}">●</span> ${formatTooltipValue(entry.scale, value)}`
       )
     }
     if (lines.length === 0) {
@@ -60,7 +61,7 @@ export function unitTooltipPlugin(getState: () => TimelineTooltipState): uPlot.P
       : left + TOOLTIP_PADDING_PX
     const y = Math.max(
       Math.min(top - height - EDGE_MARGIN_PX, plot.over.clientHeight - height),
-      EDGE_MARGIN_PX,
+      EDGE_MARGIN_PX
     )
     tooltip.style.left = `${x}px`
     tooltip.style.top = `${y}px`

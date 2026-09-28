@@ -1,5 +1,6 @@
-import { normalizeTypedTimeText } from './timeInputNormalization'
 import type { ClimatePeriod } from '../types/climatePeriod'
+
+import { normalizeTypedTimeText } from './timeInputNormalization'
 
 export type { ClimatePeriod }
 
@@ -8,27 +9,27 @@ const ZONE = {
   heat: {
     th: 'bg-red-500/15',
     td: 'bg-red-500/[0.07] group-hover:bg-red-500/12',
-    input: 'bg-red-500/10'
+    input: 'bg-red-500/10',
   },
   cool: {
     th: 'bg-blue-500/15',
     td: 'bg-blue-500/[0.07] group-hover:bg-blue-500/12',
-    input: 'bg-blue-500/10'
+    input: 'bg-blue-500/10',
   },
   vpd: {
     th: 'bg-emerald-500/15',
     td: 'bg-emerald-500/[0.07] group-hover:bg-emerald-500/12',
-    input: 'bg-emerald-500/10'
+    input: 'bg-emerald-500/10',
   },
   co2: {
     th: 'bg-slate-500/18',
     td: 'bg-slate-500/[0.08] group-hover:bg-slate-500/14',
-    input: 'bg-slate-500/12'
-  }
+    input: 'bg-slate-500/12',
+  },
 } as const
 
 const inputBase =
-  'px-1 py-0 text-xs border border-border-default rounded text-text-default focus-visible:border-accent-primary focus-visible:ring-1 focus-visible:ring-accent-primary focus-visible:outline-none placeholder:text-text-subtle'
+  'px-1 py-0 text-xs border border-border-default rounded text-text-default focus-visible:border-accent-vivid focus-visible:ring-1 focus-visible:ring-accent-vivid focus-visible:outline-none placeholder:text-text-subtle'
 
 function isAllDayPeriod(period: ClimatePeriod): boolean {
   return period.start_time === period.end_time
@@ -43,7 +44,7 @@ interface ClimatePeriodsTableProps {
 export default function ClimatePeriodsTable({
   periods,
   onChange,
-  validationErrors = []
+  validationErrors = [],
 }: ClimatePeriodsTableProps) {
   const addPeriod = () => {
     if (periods.length >= 7) return
@@ -56,7 +57,7 @@ export default function ClimatePeriodsTable({
       cooling_setpoint: null,
       vpd_setpoint: null,
       co2_setpoint: null,
-      details: ''
+      details: '',
     }
     onChange([...periods, newPeriod])
   }
@@ -66,7 +67,11 @@ export default function ClimatePeriodsTable({
     onChange(periods.filter((_, i) => i !== index))
   }
 
-  const updatePeriod = (index: number, field: keyof ClimatePeriod, value: string | number | null) => {
+  const updatePeriod = (
+    index: number,
+    field: keyof ClimatePeriod,
+    value: string | number | null
+  ) => {
     const updated = [...periods]
     updated[index] = { ...updated[index], [field]: value }
     onChange(updated)
@@ -76,14 +81,16 @@ export default function ClimatePeriodsTable({
     <div>
       <div className="flex items-center justify-between mb-1">
         <div>
-          <h3 className="text-14 text-text-muted uppercase font-bold tracking-wider">Climate Periods</h3>
+          <h3 className="text-14 text-text-muted uppercase font-bold tracking-wider">
+            Climate Periods
+          </h3>
         </div>
         <div className="flex gap-2">
           <button
             type="button"
             onClick={addPeriod}
             disabled={periods.length >= 7}
-            className="px-3 py-1 text-xs font-medium rounded-md bg-accent-primary text-surface-base hover:bg-accent-data disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            className="px-3 py-1 text-xs font-medium rounded-md bg-accent-vivid text-accent-vivid-foreground hover:bg-accent-data disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             + Add Period
           </button>
@@ -145,15 +152,12 @@ export default function ClimatePeriodsTable({
           </thead>
           <tbody>
             {periods.map((period, index) => (
-              <tr
-                key={index}
-                className="group border-b border-border-subtle transition-colors"
-              >
+              <tr key={index} className="group border-b border-border-subtle transition-colors">
                 <td className="px-1 py-1 border-r border-border-subtle group-hover:bg-surface-secondary/50">
                   <input
                     type="text"
                     value={period.period_name}
-                    onChange={(e) => updatePeriod(index, 'period_name', e.target.value)}
+                    onChange={e => updatePeriod(index, 'period_name', e.target.value)}
                     className={`w-full text-xs bg-surface-secondary ${inputBase}`}
                     placeholder="Period name"
                   />
@@ -165,15 +169,18 @@ export default function ClimatePeriodsTable({
                       pattern="[0-9]{2}:[0-9]{2}"
                       placeholder="HH:MM"
                       value={period.start_time}
-                      onChange={(e) => updatePeriod(index, 'start_time', e.target.value)}
-                      onBlur={(e) => {
+                      onChange={e => updatePeriod(index, 'start_time', e.target.value)}
+                      onBlur={e => {
                         const normalized = normalizeTypedTimeText(e.target.value)
-                        if (normalized !== e.target.value) updatePeriod(index, 'start_time', normalized)
+                        if (normalized !== e.target.value)
+                          updatePeriod(index, 'start_time', normalized)
                       }}
                       className={`w-16 text-xs bg-surface-secondary ${inputBase}`}
                     />
                     {isAllDayPeriod(period) && (
-                      <span className="text-9 uppercase tracking-wide text-text-subtle">All day</span>
+                      <span className="text-9 uppercase tracking-wide text-text-subtle">
+                        All day
+                      </span>
                     )}
                   </div>
                 </td>
@@ -184,10 +191,11 @@ export default function ClimatePeriodsTable({
                       pattern="[0-9]{2}:[0-9]{2}"
                       placeholder="HH:MM"
                       value={period.end_time}
-                      onChange={(e) => updatePeriod(index, 'end_time', e.target.value)}
-                      onBlur={(e) => {
+                      onChange={e => updatePeriod(index, 'end_time', e.target.value)}
+                      onBlur={e => {
                         const normalized = normalizeTypedTimeText(e.target.value)
-                        if (normalized !== e.target.value) updatePeriod(index, 'end_time', normalized)
+                        if (normalized !== e.target.value)
+                          updatePeriod(index, 'end_time', normalized)
                       }}
                       className={`w-16 text-xs bg-surface-secondary ${inputBase}`}
                     />
@@ -202,7 +210,9 @@ export default function ClimatePeriodsTable({
                     min="0"
                     max="240"
                     value={period.ramp_minutes}
-                    onChange={(e) => updatePeriod(index, 'ramp_minutes', parseInt(e.target.value) || 0)}
+                    onChange={e =>
+                      updatePeriod(index, 'ramp_minutes', parseInt(e.target.value) || 0)
+                    }
                     className={`w-14 text-xs bg-surface-secondary ${inputBase}`}
                   />
                 </td>
@@ -213,7 +223,13 @@ export default function ClimatePeriodsTable({
                     max="35"
                     step="0.5"
                     value={period.heating_setpoint ?? ''}
-                    onChange={(e) => updatePeriod(index, 'heating_setpoint', e.target.value ? parseFloat(e.target.value) : null)}
+                    onChange={e =>
+                      updatePeriod(
+                        index,
+                        'heating_setpoint',
+                        e.target.value ? parseFloat(e.target.value) : null
+                      )
+                    }
                     className={`w-14 text-xs ${ZONE.heat.input} ${inputBase}`}
                     placeholder="°C"
                   />
@@ -225,7 +241,13 @@ export default function ClimatePeriodsTable({
                     max="35"
                     step="0.5"
                     value={period.cooling_setpoint ?? ''}
-                    onChange={(e) => updatePeriod(index, 'cooling_setpoint', e.target.value ? parseFloat(e.target.value) : null)}
+                    onChange={e =>
+                      updatePeriod(
+                        index,
+                        'cooling_setpoint',
+                        e.target.value ? parseFloat(e.target.value) : null
+                      )
+                    }
                     className={`w-14 text-xs ${ZONE.cool.input} ${inputBase}`}
                     placeholder="°C"
                   />
@@ -237,7 +259,13 @@ export default function ClimatePeriodsTable({
                     max="5"
                     step="0.01"
                     value={period.vpd_setpoint ?? ''}
-                    onChange={(e) => updatePeriod(index, 'vpd_setpoint', e.target.value ? parseFloat(e.target.value) : null)}
+                    onChange={e =>
+                      updatePeriod(
+                        index,
+                        'vpd_setpoint',
+                        e.target.value ? parseFloat(e.target.value) : null
+                      )
+                    }
                     className={`w-18 text-xs ${ZONE.vpd.input} ${inputBase}`}
                     placeholder="kPa"
                   />
@@ -248,7 +276,13 @@ export default function ClimatePeriodsTable({
                     min="400"
                     max="2000"
                     value={period.co2_setpoint ?? ''}
-                    onChange={(e) => updatePeriod(index, 'co2_setpoint', e.target.value ? parseInt(e.target.value) : null)}
+                    onChange={e =>
+                      updatePeriod(
+                        index,
+                        'co2_setpoint',
+                        e.target.value ? parseInt(e.target.value) : null
+                      )
+                    }
                     className={`w-18 text-xs ${ZONE.co2.input} ${inputBase}`}
                     placeholder="ppm"
                   />
@@ -257,7 +291,7 @@ export default function ClimatePeriodsTable({
                   <input
                     type="text"
                     value={period.details}
-                    onChange={(e) => updatePeriod(index, 'details', e.target.value)}
+                    onChange={e => updatePeriod(index, 'details', e.target.value)}
                     className={`w-full text-xs bg-surface-secondary ${inputBase}`}
                     placeholder="Notes"
                   />

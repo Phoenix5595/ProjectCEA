@@ -4,7 +4,7 @@ import { fixtureUrl } from './fixtureUrl'
 
 function trackViolations(page: import('@playwright/test').Page): string[] {
   const violations: string[] = []
-  page.on('request', (request) => {
+  page.on('request', request => {
     const violation = describeViolation(request.url())
     if (violation !== null) violations.push(`${violation}: ${request.url()}`)
   })
@@ -39,7 +39,9 @@ test('climate timeline remains usable', async ({ page }, testInfo) => {
   expect(violations).toEqual([])
 })
 
-test('renders a skipped calendar transition over the saved reality in compact and expanded modes', async ({ page }, testInfo) => {
+test('renders a skipped calendar transition over the saved reality in compact and expanded modes', async ({
+  page,
+}, testInfo) => {
   await page.goto(fixtureUrl('/flower/control', testInfo, undefined, 'calendar-transition-skipped'))
 
   const overlay = page.getByTestId('calendar-transition-skipped-overlay')
@@ -54,11 +56,15 @@ test('renders a skipped calendar transition over the saved reality in compact an
   await expect(page.getByTestId('control-timeline-handle-0-start')).toBeVisible()
 })
 
-for (const scenario of ['timeline-preview-failed', 'timeline-preview-stale', 'timeline-wrong-room'] as const) {
+for (const scenario of [
+  'timeline-preview-failed',
+  'timeline-preview-stale',
+  'timeline-wrong-room',
+] as const) {
   test(`rejects ${scenario} without an unsafe Apply call`, async ({ page }, testInfo) => {
     const violations = trackViolations(page)
     const applyRequests: string[] = []
-    page.on('request', (request) => {
+    page.on('request', request => {
       if (new URL(request.url()).pathname.endsWith('/apply')) applyRequests.push(request.url())
     })
 
@@ -75,7 +81,9 @@ for (const scenario of ['timeline-preview-failed', 'timeline-preview-stale', 'ti
   })
 }
 
-test('keeps the primary climate periods table functional when the saved timeline API fails', async ({ page }, testInfo) => {
+test('keeps the primary climate periods table functional when the saved timeline API fails', async ({
+  page,
+}, testInfo) => {
   const violations = trackViolations(page)
 
   await page.goto(fixtureUrl('/flower/control', testInfo, undefined, 'timeline-api-failure'))
@@ -89,7 +97,9 @@ test('keeps the primary climate periods table functional when the saved timeline
   expect(violations).toEqual([])
 })
 
-test('surfaces timeline_unavailable while retaining the fallback periods UI', async ({ page }, testInfo) => {
+test('surfaces timeline_unavailable while retaining the fallback periods UI', async ({
+  page,
+}, testInfo) => {
   const violations = trackViolations(page)
 
   await page.goto(fixtureUrl('/flower/control', testInfo, undefined, 'timeline-unavailable-409'))
@@ -100,7 +110,9 @@ test('surfaces timeline_unavailable while retaining the fallback periods UI', as
   expect(violations).toEqual([])
 })
 
-test('uses the canonical mode instead of contradictory API is_constant flags', async ({ page }, testInfo) => {
+test('uses the canonical mode instead of contradictory API is_constant flags', async ({
+  page,
+}, testInfo) => {
   await page.goto(fixtureUrl('/vegetation/control', testInfo, undefined, 'veg-constant-flag'))
   await expect(page.getByRole('region', { name: 'Climate control timeline' })).toBeVisible()
   await expect(page.getByText('READ ONLY')).toBeVisible()
@@ -110,11 +122,14 @@ test('uses the canonical mode instead of contradictory API is_constant flags', a
   await expect(page.getByText('READ ONLY')).toBeVisible()
 })
 
-async function canvasPixelStats(page: import('@playwright/test').Page, selector: string): Promise<{
+async function canvasPixelStats(
+  page: import('@playwright/test').Page,
+  selector: string
+): Promise<{
   orangeRows: number
   grayStrip: number
 }> {
-  return page.evaluate((sel) => {
+  return page.evaluate(sel => {
     const host = document.querySelector(sel)
     const canvas = host?.querySelector('canvas')
     if (!(canvas instanceof HTMLCanvasElement)) return { orangeRows: -1, grayStrip: -1 }
@@ -127,16 +142,21 @@ async function canvasPixelStats(page: import('@playwright/test').Page, selector:
     for (let y = 0; y < height; y += 1) {
       for (let x = 0; x < width; x += 1) {
         const index = (y * width + x) * 4
-        const r = data[index], g = data[index + 1], b = data[index + 2]
+        const r = data[index],
+          g = data[index + 1],
+          b = data[index + 2]
         if (Math.abs(r - 234) < 45 && Math.abs(g - 88) < 45 && b < 60) orangeRows.add(y)
-        if (y > height * 0.9 && Math.abs(r - g) < 8 && Math.abs(g - b) < 8 && r > 30 && r < 200) grayStrip += 1
+        if (y > height * 0.9 && Math.abs(r - g) < 8 && Math.abs(g - b) < 8 && r > 30 && r < 200)
+          grayStrip += 1
       }
     }
     return { orangeRows: orangeRows.size, grayStrip }
   }, selector)
 }
 
-test('expanded daily editor supports mouse drags and two-way table sync', async ({ page }, testInfo) => {
+test('expanded daily editor supports mouse drags and two-way table sync', async ({
+  page,
+}, testInfo) => {
   const violations = trackViolations(page)
 
   await page.goto(fixtureUrl('/flower/control', testInfo))
@@ -175,10 +195,21 @@ test('expanded daily editor supports mouse drags and two-way table sync', async 
   expect(minutes % 5).toBe(0)
 
   const heatBefore = page.locator('input[placeholder="°C"]').first()
-  await heatBefore.fill('24')
-  await expect(page.getByTestId('control-timeline-effective-stale')).toBeVisible()
-  await expect(page.getByText('Reviewed draft')).toBeVisible({ timeout: 3000 })
-  await expect(page.getByTestId('control-timeline-effective-stale')).toHaveCount(0, { timeout: 3000 })
+  const reviewStatus = page.getByText(/^Reviewed draft \d+$/)
+  await expect(reviewStatus).toBeVisible()
+  const previousReviewStatus = await reviewStatus.textContent()
+  if (previousReviewStatus === null) throw new Error('timeline preview status was missing')
+  const currentHeatValue = Number(await heatBefore.inputValue())
+  const nextHeatValue = currentHeatValue === 24 ? '23' : '24'
+  await heatBefore.fill(nextHeatValue)
+  await expect(heatBefore).toHaveValue(nextHeatValue)
+  await expect
+    .poll(async () => {
+      const currentStatus = await reviewStatus.textContent()
+      return currentStatus !== previousReviewStatus ? currentStatus : null
+    })
+    .not.toBeNull()
+  await expect(page.getByTestId('control-timeline-effective-stale')).toHaveCount(0)
 
   await page.getByRole('button', { name: 'Collapse editor' }).click()
   await expect(page.getByText('READ ONLY')).toBeVisible()
@@ -186,16 +217,24 @@ test('expanded daily editor supports mouse drags and two-way table sync', async 
   expect(violations).toEqual([])
 })
 
-test('renders faint period labels and archives viewport screenshots', async ({ page }, testInfo) => {
+test('renders faint period labels and archives viewport screenshots', async ({
+  page,
+}, testInfo) => {
   const violations = trackViolations(page)
   const browserDir = 'browser/'
 
   await page.goto(fixtureUrl('/flower/control', testInfo))
-  await page.screenshot({ path: `${browserDir}climate-timeline-compact-${testInfo.project.name}.png`, fullPage: false })
+  await page.screenshot({
+    path: `${browserDir}climate-timeline-compact-${testInfo.project.name}.png`,
+    fullPage: false,
+  })
 
   await page.getByRole('button', { name: 'Expand editor' }).click()
   await expect(page.getByText('EDITABLE')).toBeVisible()
-  await page.screenshot({ path: `${browserDir}climate-timeline-expanded-${testInfo.project.name}.png`, fullPage: false })
+  await page.screenshot({
+    path: `${browserDir}climate-timeline-expanded-${testInfo.project.name}.png`,
+    fullPage: false,
+  })
 
   await expect(page.getByTestId('control-timeline-period-legend')).toContainText('Day cycle')
   const stats = await canvasPixelStats(page, '[data-testid="control-timeline-uplot"]')
@@ -203,10 +242,12 @@ test('renders faint period labels and archives viewport screenshots', async ({ p
   expect(violations).toEqual([])
 })
 
-test('header Save through the draft persists, and a 409 keeps the draft', async ({ page }, testInfo) => {
+test('header Save through the draft persists, and a 409 keeps the draft', async ({
+  page,
+}, testInfo) => {
   const violations = trackViolations(page)
   const applyCalls: string[] = []
-  page.on('request', (request) => {
+  page.on('request', request => {
     if (new URL(request.url()).pathname.endsWith('/apply')) applyCalls.push(request.url())
   })
 
@@ -222,7 +263,9 @@ test('header Save through the draft persists, and a 409 keeps the draft', async 
   expect(violations).toEqual([])
 })
 
-test('surfaces a 409 conflict from the header Save and preserves the draft', async ({ page }, testInfo) => {
+test('surfaces a 409 conflict from the header Save and preserves the draft', async ({
+  page,
+}, testInfo) => {
   const violations = trackViolations(page)
 
   await page.goto(fixtureUrl('/flower/control', testInfo, undefined, 'timeline-apply-conflict'))

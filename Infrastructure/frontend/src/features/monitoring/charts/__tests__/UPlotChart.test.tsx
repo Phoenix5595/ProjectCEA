@@ -8,10 +8,11 @@
  * visibility, and that React StrictMode double-mounting leaks no uPlot
  * instances or ResizeObservers.
  */
-import { describe, expect, it, vi, beforeEach, afterAll, afterEach } from 'vitest'
 import { act, render, screen, fireEvent } from '@testing-library/react'
-import React, { createRef, useEffect, useRef } from 'react'
+import { createRef, StrictMode, useEffect, useRef } from 'react'
 import type uPlot from 'uplot'
+import { describe, expect, it, vi, beforeEach, afterAll, afterEach } from 'vitest'
+
 import { ThemeProvider, useTheme } from '../../../../contexts/ThemeContext'
 import type { AlignedData } from '../../data'
 import { seriesKey } from '../../data/alignSeries.types'
@@ -34,7 +35,7 @@ const { MockUPlot, instances } = vi.hoisted(() => {
         const event = this.pendingScaleEvents.shift()
         if (event !== undefined) {
           this.scales.x = { min: event.min, max: event.max }
-          hooks?.forEach((hook) => {
+          hooks?.forEach(hook => {
             if (hook !== undefined) hook(this as unknown as uPlot, event.key)
           })
         }
@@ -42,9 +43,8 @@ const { MockUPlot, instances } = vi.hoisted(() => {
     }
     private fireSetScaleHooks(scaleKey: string): void {
       const hooks = this.opts.hooks?.setScale
-      hooks?.forEach((hook) => {
-        if (hook !== undefined) hook(this as unknown as uPlot, scaleKey
-        )
+      hooks?.forEach(hook => {
+        if (hook !== undefined) hook(this as unknown as uPlot, scaleKey)
       })
     }
 
@@ -53,7 +53,7 @@ const { MockUPlot, instances } = vi.hoisted(() => {
     userDragZoom(range: { min: number; max: number }): void {
       this.select = { show: true, width: 42, left: 0, top: 0, height: 0 } as uPlot.Select
       const setSelectHooks = this.opts.hooks?.setSelect
-      setSelectHooks?.forEach((hook) => {
+      setSelectHooks?.forEach(hook => {
         if (hook !== undefined) hook(this as unknown as uPlot)
       })
       this.scales.x = range
@@ -62,7 +62,7 @@ const { MockUPlot, instances } = vi.hoisted(() => {
     setData = vi.fn((_data: uPlot.AlignedData, redraw?: boolean) => {
       if (redraw === false) return
       const drawHooks = this.opts.hooks?.draw
-      drawHooks?.forEach((hook) => {
+      drawHooks?.forEach(hook => {
         if (hook !== undefined) hook(this as unknown as uPlot)
       })
     })
@@ -104,7 +104,10 @@ class MockResizeObserver {
 let frameWidth = 800
 let frameHeight = 400
 const clientWidthDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'clientWidth')
-const clientHeightDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'clientHeight')
+const clientHeightDescriptor = Object.getOwnPropertyDescriptor(
+  HTMLElement.prototype,
+  'clientHeight'
+)
 
 function makeData(x: number[], yRows: number[][]): AlignedData {
   return {
@@ -130,7 +133,7 @@ function makeData(x: number[], yRows: number[][]): AlignedData {
 }
 
 function toUPlot(data: AlignedData): uPlot.AlignedData {
-  return [data.x, ...data.series.map((s) => s.y)]
+  return [data.x, ...data.series.map(s => s.y)]
 }
 
 const TEST_RANGE = { kind: 'live', duration: 3_600_000 } as const
@@ -178,8 +181,10 @@ afterEach(() => {
 })
 
 afterAll(() => {
-  if (clientWidthDescriptor !== undefined) Object.defineProperty(HTMLElement.prototype, 'clientWidth', clientWidthDescriptor)
-  if (clientHeightDescriptor !== undefined) Object.defineProperty(HTMLElement.prototype, 'clientHeight', clientHeightDescriptor)
+  if (clientWidthDescriptor !== undefined)
+    Object.defineProperty(HTMLElement.prototype, 'clientWidth', clientWidthDescriptor)
+  if (clientHeightDescriptor !== undefined)
+    Object.defineProperty(HTMLElement.prototype, 'clientHeight', clientHeightDescriptor)
 })
 
 describe('UPlotChart lifecycle', () => {
@@ -190,7 +195,7 @@ describe('UPlotChart lifecycle', () => {
     const { rerender } = render(
       <ThemeProvider>
         <Harness data={data1} />
-      </ThemeProvider>,
+      </ThemeProvider>
     )
 
     expect(instances).toHaveLength(1)
@@ -204,7 +209,7 @@ describe('UPlotChart lifecycle', () => {
     rerender(
       <ThemeProvider>
         <Harness data={data2} />
-      </ThemeProvider>,
+      </ThemeProvider>
     )
     expect(instances).toHaveLength(1)
     // resetScale=false keeps a fixed user zoom alive across live ticks.
@@ -224,11 +229,11 @@ describe('UPlotChart lifecycle', () => {
     const data = makeData([1000, 2000, 3000], [[20, 21, 22]])
 
     const { unmount } = render(
-      <React.StrictMode>
-          <ThemeProvider>
-            <Harness data={data} />
+      <StrictMode>
+        <ThemeProvider>
+          <Harness data={data} />
         </ThemeProvider>
-      </React.StrictMode>,
+      </StrictMode>
     )
 
     expect(instances).toHaveLength(1)
@@ -247,13 +252,19 @@ describe('UPlotChart lifecycle', () => {
   })
 
   it('keeps the first legend entry for duplicate series keys', () => {
-    const data = makeData([1000, 2000, 3000], [[20, 21, 22], [23, 24, 25]])
+    const data = makeData(
+      [1000, 2000, 3000],
+      [
+        [20, 21, 22],
+        [23, 24, 25],
+      ]
+    )
     data.series[1] = { ...data.series[0], label: 'Duplicate series' }
 
     render(
       <ThemeProvider>
         <Harness data={data} />
-      </ThemeProvider>,
+      </ThemeProvider>
     )
 
     // Swatches are gone (rail boxes toggle); the semantic table carries entries.
@@ -272,7 +283,7 @@ describe('UPlotChart lifecycle', () => {
     const { unmount } = render(
       <ThemeProvider>
         <CountedParent />
-      </ThemeProvider>,
+      </ThemeProvider>
     )
     const plot = instances[0]
     plot.setData.mockClear()
@@ -286,7 +297,10 @@ describe('UPlotChart lifecycle', () => {
     expect(parentRenders).toBe(1)
     expect(instances).toHaveLength(1)
     expect(plot.setData).toHaveBeenCalledTimes(120)
-    expect(plot.setData).toHaveBeenLastCalledWith(toUPlot(makeData([1000, 2000, 3000], [[20, 21, 119]])), false)
+    expect(plot.setData).toHaveBeenLastCalledWith(
+      toUPlot(makeData([1000, 2000, 3000], [[20, 21, 119]])),
+      false
+    )
 
     unmount()
     plot.setData.mockClear()
@@ -300,7 +314,7 @@ describe('UPlotChart lifecycle', () => {
     render(
       <ThemeProvider>
         <UPlotChart feed={feed} />
-      </ThemeProvider>,
+      </ThemeProvider>
     )
     const plot = instances[0]
     plot.setScale.mockClear()
@@ -308,19 +322,43 @@ describe('UPlotChart lifecycle', () => {
     const fixedRange = { kind: 'fixed', start: new Date(1250), end: new Date(2750) } as const
     act(() => feed.publish(makeData([1000, 2000, 3000], [[20, 21, 22]]), fixedRange))
     expect(instances).toHaveLength(1)
-    expect(plot.setData).toHaveBeenCalledWith(toUPlot(makeData([1000, 2000, 3000], [[20, 21, 22]])), false)
+    expect(plot.setData).toHaveBeenCalledWith(
+      toUPlot(makeData([1000, 2000, 3000], [[20, 21, 22]])),
+      false
+    )
     expect(plot.setScale).toHaveBeenCalledWith('x', { min: 1000, max: 3000 })
 
-    act(() => feed.publish(makeData([1000, 2000, 3000], [[20, 21, 22], [30, 31, 32]]), fixedRange))
+    act(() =>
+      feed.publish(
+        makeData(
+          [1000, 2000, 3000],
+          [
+            [20, 21, 22],
+            [30, 31, 32],
+          ]
+        ),
+        fixedRange
+      )
+    )
     expect(instances).toHaveLength(2)
     expect(instances[0]?.destroy).toHaveBeenCalledTimes(1)
   })
 
   it('does not update the old chart with a changed series shape', () => {
     const firstData = makeData([1000, 2000, 3000], [[20, 21, 22]])
-    const nextData = makeData([1000, 2000, 3000], [[20, 21, 22], [30, 31, 32]])
+    const nextData = makeData(
+      [1000, 2000, 3000],
+      [
+        [20, 21, 22],
+        [30, 31, 32],
+      ]
+    )
     const feed = createMonitoringChartFeed(firstData, TEST_RANGE)
-    render(<ThemeProvider><UPlotChart feed={feed} /></ThemeProvider>)
+    render(
+      <ThemeProvider>
+        <UPlotChart feed={feed} />
+      </ThemeProvider>
+    )
     const previousPlot = instances[0]
     previousPlot?.setData.mockClear()
 
@@ -332,7 +370,11 @@ describe('UPlotChart lifecycle', () => {
 
   it('keeps a user zoom when a same live-range tick arrives', () => {
     const feed = createMonitoringChartFeed(makeData([1000, 2000, 3000], [[20, 21, 22]]), TEST_RANGE)
-    render(<ThemeProvider><UPlotChart feed={feed} /></ThemeProvider>)
+    render(
+      <ThemeProvider>
+        <UPlotChart feed={feed} />
+      </ThemeProvider>
+    )
     const plot = instances[0]
 
     plot.userDragZoom({ min: 0, max: 100 })
@@ -346,7 +388,10 @@ describe('UPlotChart lifecycle', () => {
 
     expect(instances).toHaveLength(1)
     expect(plot.setData).toHaveBeenCalledTimes(1)
-    expect(plot.setData).toHaveBeenLastCalledWith(toUPlot(makeData([1000, 2000, 3000, 4000], [[20, 21, 22, 23]])), false)
+    expect(plot.setData).toHaveBeenLastCalledWith(
+      toUPlot(makeData([1000, 2000, 3000, 4000], [[20, 21, 22, 23]])),
+      false
+    )
     expect(plot.setScale).not.toHaveBeenCalled()
   })
 
@@ -362,7 +407,7 @@ describe('UPlotChart lifecycle', () => {
     render(
       <ThemeProvider>
         <Harness data={data} />
-      </ThemeProvider>,
+      </ThemeProvider>
     )
 
     const observer = MockResizeObserver.instances[0]
@@ -371,8 +416,16 @@ describe('UPlotChart lifecycle', () => {
     expect(observer).toBeDefined()
     expect(plot).toBeDefined()
     expect(container).toBeDefined()
-    Object.defineProperty(container, 'clientWidth', { value: 800, configurable: true, writable: true })
-    Object.defineProperty(container, 'clientHeight', { value: 400, configurable: true, writable: true })
+    Object.defineProperty(container, 'clientWidth', {
+      value: 800,
+      configurable: true,
+      writable: true,
+    })
+    Object.defineProperty(container, 'clientHeight', {
+      value: 400,
+      configurable: true,
+      writable: true,
+    })
     for (let index = 0; index < 10; index += 1) observer?.callback([], observer)
 
     expect(plot?.setSize).not.toHaveBeenCalled()
@@ -392,7 +445,7 @@ describe('UPlotChart lifecycle', () => {
     render(
       <ThemeProvider>
         <Harness data={data} />
-      </ThemeProvider>,
+      </ThemeProvider>
     )
 
     const observer = MockResizeObserver.instances[0]
@@ -404,19 +457,38 @@ describe('UPlotChart lifecycle', () => {
     // Simulate browser flattening the container to zero during fullscreen transition.
     const originalWidth = container.clientWidth
     const originalHeight = container.clientHeight
-    Object.defineProperty(container, 'clientWidth', { value: 0, configurable: true, writable: true })
-    Object.defineProperty(container, 'clientHeight', { value: 0, configurable: true, writable: true })
+    Object.defineProperty(container, 'clientWidth', {
+      value: 0,
+      configurable: true,
+      writable: true,
+    })
+    Object.defineProperty(container, 'clientHeight', {
+      value: 0,
+      configurable: true,
+      writable: true,
+    })
     observer?.callback([], observer)
     animationFrames.at(-1)?.(0)
     expect(plot?.setSize).not.toHaveBeenCalled()
 
     // Restore valid dimensions and trigger another resize; it must apply.
-    Object.defineProperty(container, 'clientWidth', { value: originalWidth || 800, configurable: true, writable: true })
-    Object.defineProperty(container, 'clientHeight', { value: originalHeight || 400, configurable: true, writable: true })
+    Object.defineProperty(container, 'clientWidth', {
+      value: originalWidth || 800,
+      configurable: true,
+      writable: true,
+    })
+    Object.defineProperty(container, 'clientHeight', {
+      value: originalHeight || 400,
+      configurable: true,
+      writable: true,
+    })
     observer?.callback([], observer)
     animationFrames.at(-1)?.(0)
     expect(plot?.setSize).toHaveBeenCalledTimes(1)
-    expect(plot?.setSize).toHaveBeenLastCalledWith({ width: originalWidth || 800, height: originalHeight || 400 })
+    expect(plot?.setSize).toHaveBeenLastCalledWith({
+      width: originalWidth || 800,
+      height: originalHeight || 400,
+    })
   })
 
   it('creates only after a zero-size frame becomes positive', () => {
@@ -431,8 +503,10 @@ describe('UPlotChart lifecycle', () => {
 
     render(
       <ThemeProvider>
-        <UPlotChart feed={createMonitoringChartFeed(makeData([1000, 2000, 3000], [[20, 21, 22]]), TEST_RANGE)} />
-      </ThemeProvider>,
+        <UPlotChart
+          feed={createMonitoringChartFeed(makeData([1000, 2000, 3000], [[20, 21, 22]]), TEST_RANGE)}
+        />
+      </ThemeProvider>
     )
 
     const observer = MockResizeObserver.instances[0]
@@ -450,8 +524,10 @@ describe('UPlotChart lifecycle', () => {
   it('measures the relative frame instead of the fixed-width uPlot host child', () => {
     render(
       <ThemeProvider>
-        <UPlotChart feed={createMonitoringChartFeed(makeData([1000, 2000, 3000], [[20, 21, 22]]), TEST_RANGE)} />
-      </ThemeProvider>,
+        <UPlotChart
+          feed={createMonitoringChartFeed(makeData([1000, 2000, 3000], [[20, 21, 22]]), TEST_RANGE)}
+        />
+      </ThemeProvider>
     )
 
     const host = screen.getByRole('img')
@@ -473,8 +549,10 @@ describe('UPlotChart lifecycle', () => {
     vi.stubGlobal('cancelAnimationFrame', () => undefined)
     render(
       <ThemeProvider>
-        <UPlotChart feed={createMonitoringChartFeed(makeData([1000, 2000, 3000], [[20, 21, 22]]), TEST_RANGE)} />
-      </ThemeProvider>,
+        <UPlotChart
+          feed={createMonitoringChartFeed(makeData([1000, 2000, 3000], [[20, 21, 22]]), TEST_RANGE)}
+        />
+      </ThemeProvider>
     )
     const plot = instances[0]
     const observer = MockResizeObserver.instances[0]
@@ -494,7 +572,11 @@ describe('UPlotChart lifecycle', () => {
 
   it('sets data before scaling each newly fulfilled viewport revision', () => {
     const feed = createMonitoringChartFeed(makeData([1000, 2000, 3000], [[20, 21, 22]]), TEST_RANGE)
-    render(<ThemeProvider><UPlotChart feed={feed} /></ThemeProvider>)
+    render(
+      <ThemeProvider>
+        <UPlotChart feed={feed} />
+      </ThemeProvider>
+    )
     const plot = instances[0]
     plot?.setData.mockClear()
     plot?.setScale.mockClear()
@@ -506,13 +588,19 @@ describe('UPlotChart lifecycle', () => {
     act(() => feed.publish(makeData([1000, 2000, 3000, 5000], [[20, 21, 22, 24]]), TEST_RANGE, 1))
     expect(plot?.setScale).toHaveBeenCalledTimes(2)
     expect(plot?.setScale).toHaveBeenLastCalledWith('x', { min: -3_595_000, max: 405_000 })
-    expect(plot?.setData.mock.invocationCallOrder[1]).toBeLessThan(plot?.setScale.mock.invocationCallOrder[1] ?? Infinity)
+    expect(plot?.setData.mock.invocationCallOrder[1]).toBeLessThan(
+      plot?.setScale.mock.invocationCallOrder[1] ?? Infinity
+    )
   })
 
   it('consumes queued programmatic callbacks as programmatic and keeps following live ticks', () => {
     const feed = createMonitoringChartFeed(makeData([1000, 2000, 3000], [[20, 21, 22]]), TEST_RANGE)
     const onZoom = vi.fn()
-    render(<ThemeProvider><UPlotChart feed={feed} onZoom={onZoom} /></ThemeProvider>)
+    render(
+      <ThemeProvider>
+        <UPlotChart feed={feed} onZoom={onZoom} />
+      </ThemeProvider>
+    )
     const plot = instances[0]
     plot.setScale.mockClear()
     onZoom.mockClear()
@@ -537,7 +625,11 @@ describe('UPlotChart lifecycle', () => {
   it('stops following live ticks on a genuine user zoom and resumes only on reset', () => {
     const feed = createMonitoringChartFeed(makeData([1000, 2000, 3000], [[20, 21, 22]]), TEST_RANGE)
     const onZoom = vi.fn()
-    const { unmount } = render(<ThemeProvider><UPlotChart feed={feed} onZoom={onZoom} /></ThemeProvider>)
+    const { unmount } = render(
+      <ThemeProvider>
+        <UPlotChart feed={feed} onZoom={onZoom} />
+      </ThemeProvider>
+    )
     const plot = instances[0]
     plot.setScale.mockClear()
     onZoom.mockClear()
@@ -546,7 +638,7 @@ describe('UPlotChart lifecycle', () => {
       for (let tick = 1; tick <= 5; tick += 1) {
         feed.publish(
           makeData([1000 + tick, 2000 + tick, 3000 + tick], [[20, 21, 22 + tick]]),
-          TEST_RANGE,
+          TEST_RANGE
         )
       }
     })
@@ -570,7 +662,11 @@ describe('UPlotChart lifecycle', () => {
     const feed = createMonitoringChartFeed(makeData([1000, 2000, 3000], [[20, 21, 22]]), TEST_RANGE)
     const onZoom = vi.fn()
     const chartRef = createRef<UPlotChartHandle>()
-    render(<ThemeProvider><UPlotChart ref={chartRef} feed={feed} onZoom={onZoom} /></ThemeProvider>)
+    render(
+      <ThemeProvider>
+        <UPlotChart ref={chartRef} feed={feed} onZoom={onZoom} />
+      </ThemeProvider>
+    )
     const plot = instances[0]
 
     act(() => plot.flushScaleEvents())
@@ -581,7 +677,9 @@ describe('UPlotChart lifecycle', () => {
     chartRef.current?.resetZoom()
     act(() => plot.flushScaleEvents())
 
-    act(() => feed.publish({ ...makeData([1000, 2000, 3000], [[20, 21, 22]]), nowIndex: -1 }, TEST_RANGE))
+    act(() =>
+      feed.publish({ ...makeData([1000, 2000, 3000], [[20, 21, 22]]), nowIndex: -1 }, TEST_RANGE)
+    )
     act(() => plot.flushScaleEvents())
 
     act(() => feed.publish(makeData([1000, 2000, 3000, 4000], [[20, 21, 23]]), TEST_RANGE))
@@ -613,8 +711,10 @@ describe('UPlotChart lifecycle', () => {
     vi.stubGlobal('cancelAnimationFrame', cancelAnimationFrame)
     const { unmount } = render(
       <ThemeProvider>
-        <UPlotChart feed={createMonitoringChartFeed(makeData([1000, 2000, 3000], [[20, 21, 22]]), TEST_RANGE)} />
-      </ThemeProvider>,
+        <UPlotChart
+          feed={createMonitoringChartFeed(makeData([1000, 2000, 3000], [[20, 21, 22]]), TEST_RANGE)}
+        />
+      </ThemeProvider>
     )
     const observer = MockResizeObserver.instances[0]
     observer?.callback([], observer)

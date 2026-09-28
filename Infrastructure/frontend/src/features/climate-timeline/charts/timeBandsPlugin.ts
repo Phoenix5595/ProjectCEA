@@ -1,4 +1,5 @@
 import uPlot from 'uplot'
+
 import type { TimelinePhotoperiodInterval } from './envelopeSeries'
 import { readTimelineToken } from './tokens'
 
@@ -15,11 +16,11 @@ export function toWindowMinutes(instantMs: number, windowStartMs: number): numbe
 /** Full-height sun/moon bands behind the series, in window-minute x units. */
 export function timelinePhotoperiodPlugin(
   getIntervals: () => readonly TimelinePhotoperiodInterval[],
-  windowStartMs: number,
+  windowStartMs: number
 ): uPlot.Plugin {
   return {
     hooks: {
-      drawClear: (u) => {
+      drawClear: u => {
         const { ctx, bbox } = u
         for (const interval of getIntervals()) {
           const x0 = u.valToPos(toWindowMinutes(interval.start, windowStartMs), 'x', true)
@@ -37,11 +38,11 @@ export function timelinePhotoperiodPlugin(
 /** Dashed "now" divider at the current instant, in window-minute x space. */
 export function timelineNowDividerPlugin(
   getNowInstant: () => number | null,
-  windowStartMs: number,
+  windowStartMs: number
 ): uPlot.Plugin {
   return {
     hooks: {
-      drawClear: (u) => {
+      drawClear: u => {
         const nowInstant = getNowInstant()
         if (nowInstant === null) return
         const { ctx, bbox } = u

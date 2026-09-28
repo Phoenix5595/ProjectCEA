@@ -1,9 +1,19 @@
 import { useEffect, useRef } from 'react'
 import uPlot from 'uplot'
+
 import 'uplot/dist/uPlot.min.css'
-import { timelinePhotoperiodPlugin, timelineNowDividerPlugin, SUN_BG, MOON_BG } from './timeBandsPlugin'
 import type { TimelinePhotoperiodInterval } from './envelopeSeries'
-import { buildTimelineOptions, type TimelineSeriesMeta, type TimelineWindowMs } from './timelineOptions'
+import {
+  timelinePhotoperiodPlugin,
+  timelineNowDividerPlugin,
+  SUN_BG,
+  MOON_BG,
+} from './timeBandsPlugin'
+import {
+  buildTimelineOptions,
+  type TimelineSeriesMeta,
+  type TimelineWindowMs,
+} from './timelineOptions'
 import { unitTooltipPlugin } from './unitTooltipPlugin'
 
 export interface TimelineUPlotProps {
@@ -42,6 +52,13 @@ export function TimelineUPlot({
   const dataRef = useRef(data)
   dataRef.current = data
 
+  const pluginsRef = useRef(plugins)
+  pluginsRef.current = plugins
+  const revisionRef = useRef(revision)
+  revisionRef.current = revision
+  const windowStartMs = windowMs.start
+  const windowEndMs = windowMs.end
+
   const withProgrammaticScale = <T,>(action: () => T): T => {
     const token = programmaticScaleTokenRef.current + 1
     programmaticScaleTokenRef.current = token
@@ -57,18 +74,19 @@ export function TimelineUPlot({
     return true
   }
 
-  const shapeKey = meta.map((entry) => entry.key).join('|')
+  const shapeKey = meta.map(entry => entry.key).join('|')
 
   useEffect(() => {
     const frameElement = frameRef.current
     const container = containerRef.current
     if (frameElement === null || container === null) return
+    const currentWindowMs: TimelineWindowMs = { start: windowStartMs, end: windowEndMs }
 
     const basePlugins: uPlot.Plugin[] = [
-      timelinePhotoperiodPlugin(() => photoperiodRef.current, windowMs.start),
-      timelineNowDividerPlugin(() => nowXRef.current, windowMs.start),
+      timelinePhotoperiodPlugin(() => photoperiodRef.current, windowStartMs),
+      timelineNowDividerPlugin(() => nowXRef.current, windowStartMs),
       unitTooltipPlugin(() => ({ data: dataRef.current, meta: metaRef.current })),
-      ...plugins,
+      ...pluginsRef.current,
     ]
 
     let frame: number | null = null
@@ -77,23 +95,32 @@ export function TimelineUPlot({
       if (clientWidth <= 0 || clientHeight <= 0) return
       const existingPlot = plotRef.current
       if (existingPlot !== null) {
-        withProgrammaticScale(() => existingPlot.setSize({ width: clientWidth, height: clientHeight }))
+        withProgrammaticScale(() =>
+          existingPlot.setSize({ width: clientWidth, height: clientHeight })
+        )
         return
       }
-      const plot = withProgrammaticScale(() => new uPlot(
-        buildTimelineOptions(
-          metaRef.current,
-          clientWidth,
-          clientHeight,
-          windowMs,
-          { onSetScale: () => { consumeProgrammaticScale() } },
-          basePlugins,
-        ),
-        data,
-        container,
-      ))
+      const plot = withProgrammaticScale(
+        () =>
+          new uPlot(
+            buildTimelineOptions(
+              metaRef.current,
+              clientWidth,
+              clientHeight,
+              currentWindowMs,
+              {
+                onSetScale: () => {
+                  consumeProgrammaticScale()
+                },
+              },
+              basePlugins
+            ),
+            dataRef.current,
+            container
+          )
+      )
       plotRef.current = plot
-      lastRevisionRef.current = revision
+      lastRevisionRef.current = revisionRef.current
     }
     const scheduleFrameSize = (): void => {
       if (frame !== null) return
@@ -115,7 +142,7 @@ export function TimelineUPlot({
     }
     // Re-init only on rare structural changes (series shape or window); data
     // revisions take the setData path below, never a destroy.
-  }, [shapeKey, windowMs.start, windowMs.end])
+  }, [shapeKey, windowStartMs, windowEndMs])
 
   useEffect(() => {
     const plot = plotRef.current

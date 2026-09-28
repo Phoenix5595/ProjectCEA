@@ -39,7 +39,7 @@ export function controlTailStart(now: Date, last: Date | null): Date {
 export function isSourceRetryEligible(
   source: PollingSource,
   now: Date,
-  lastAttemptAt: Date | null,
+  lastAttemptAt: Date | null
 ): boolean {
   if (lastAttemptAt === null) return true
   return now.getTime() - lastAttemptAt.getTime() > SOURCE_RETRY_CADENCE_MS[source]

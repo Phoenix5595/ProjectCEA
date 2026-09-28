@@ -52,24 +52,24 @@ export const MODE_DISPLAY_NAMES: Record<string, string> = {
   veg: 'Veg',
   flower: 'Flower',
   drying: 'Drying',
-  sleep: 'Sleep'
+  sleep: 'Sleep',
 }
 
 export const SUBMODE_DISPLAY_NAMES: Record<string, string> = {
   stretch: 'Stretch',
   bulk: 'Bulk',
-  ripen: 'Ripen'
+  ripen: 'Ripen',
 }
 
 export const MODE_COLORS: Record<string, string> = {
   veg: 'bg-emerald-600',
   flower: 'bg-pink-600',
   drying: 'bg-amber-600',
-  sleep: 'bg-muted'
+  sleep: 'bg-muted',
 }
 
 export const SUBMODE_COLORS: Record<string, string> = {
   stretch: 'bg-pink-500',
   bulk: 'bg-pink-600',
-  ripen: 'bg-pink-700'
+  ripen: 'bg-pink-700',
 }

@@ -2,10 +2,10 @@
  * Legacy right-column Mothernode panel (includes Hardware/Network blocks).
  * Kept in repo for reference; the main dashboard uses `MothernodeRibbon` instead — do not wire this back without review.
  */
-import type { SystemStats } from '../hooks/useSystemStatus';
+import type { SystemStats } from '../hooks/useSystemStatus'
 
 export interface SystemStatusPanelProps {
-  systemStats: SystemStats | null;
+  systemStats: SystemStats | null
 }
 
 export function SystemStatusPanel({ systemStats }: SystemStatusPanelProps) {
@@ -13,9 +13,13 @@ export function SystemStatusPanel({ systemStats }: SystemStatusPanelProps) {
     return (
       <div className="bg-surface-primary rounded-lg border border-border-subtle p-3 flex flex-col lg:w-[26%]">
         <div className="text-14 text-text-muted uppercase font-bold tracking-wider mb-2 flex items-center justify-between">
-          <span className="flex items-center gap-2"><span>🖥</span> Mothernode Status</span>
+          <span className="flex items-center gap-2">
+            <span>🖥</span> Mothernode Status
+          </span>
           <div className="flex items-center gap-1">
-            <span className="text-10 px-1.5 py-0.5 rounded-sm bg-surface-tertiary text-text-muted">?</span>
+            <span className="text-10 px-1.5 py-0.5 rounded-sm bg-surface-tertiary text-text-muted">
+              ?
+            </span>
           </div>
         </div>
         <div className="flex-1 border-b border-border-subtle pb-2 mb-2 overflow-y-auto">
@@ -25,16 +29,23 @@ export function SystemStatusPanel({ systemStats }: SystemStatusPanelProps) {
           </div>
         </div>
       </div>
-    );
+    )
   }
 
   return (
     <div className="bg-surface-primary rounded-lg border border-border-subtle p-3 flex flex-col lg:w-[26%]">
       <div className="flex-1 border-b border-border-subtle pb-2 mb-2 overflow-y-auto">
         <div className="text-14 text-text-muted uppercase font-bold tracking-wider mb-2 flex items-center justify-between">
-          <span className="flex items-center gap-2"><span>🖥</span> Mothernode Status</span>
+          <span className="flex items-center gap-2">
+            <span>🖥</span> Mothernode Status
+          </span>
           <div className="flex items-center gap-1">
-            <span className="text-10 px-1.5 py-0.5 rounded-sm bg-status-success-bg/50 text-status-success border border-status-success-border/50 cursor-help" title="All Systems Operational">✓</span>
+            <span
+              className="text-10 px-1.5 py-0.5 rounded-sm bg-status-success-bg/50 text-status-success border border-status-success-border/50 cursor-help"
+              title="All Systems Operational"
+            >
+              ✓
+            </span>
           </div>
         </div>
         <div className="space-y-2">
@@ -45,10 +56,17 @@ export function SystemStatusPanel({ systemStats }: SystemStatusPanelProps) {
               <div>
                 <div className="text-text-subtle">CPU</div>
                 <div className="text-text-default font-mono tabular-nums flex items-center gap-1">
-                  <span>{systemStats.cpu_usage != null ? `${Number(systemStats.cpu_usage).toFixed(2)}%` : '—'}</span>
+                  <span>
+                    {systemStats.cpu_usage != null
+                      ? `${Number(systemStats.cpu_usage).toFixed(2)}%`
+                      : '—'}
+                  </span>
                   {systemStats.cpu_usage != null && (
                     <div className="w-8 h-1 bg-surface-tertiary rounded-sm overflow-hidden">
-                      <div className="h-full bg-status-success transition-[width]" style={{ width: `${Math.min(systemStats.cpu_usage, 100)}%` }} />
+                      <div
+                        className="h-full bg-status-success transition-[width]"
+                        style={{ width: `${Math.min(systemStats.cpu_usage, 100)}%` }}
+                      />
                     </div>
                   )}
                 </div>
@@ -56,10 +74,17 @@ export function SystemStatusPanel({ systemStats }: SystemStatusPanelProps) {
               <div>
                 <div className="text-text-subtle">Memory</div>
                 <div className="text-text-default font-mono tabular-nums flex items-center gap-1">
-                  <span>{systemStats.memory_usage != null ? `${Number(systemStats.memory_usage).toFixed(2)}%` : '—'}</span>
+                  <span>
+                    {systemStats.memory_usage != null
+                      ? `${Number(systemStats.memory_usage).toFixed(2)}%`
+                      : '—'}
+                  </span>
                   {systemStats.memory_usage != null && (
                     <div className="w-8 h-1 bg-surface-tertiary rounded-sm overflow-hidden">
-                      <div className="h-full bg-btn-primary-data transition-[width]" style={{ width: `${Math.min(systemStats.memory_usage, 100)}%` }} />
+                      <div
+                        className="h-full bg-btn-primary-data transition-[width]"
+                        style={{ width: `${Math.min(systemStats.memory_usage, 100)}%` }}
+                      />
                     </div>
                   )}
                 </div>
@@ -67,25 +92,38 @@ export function SystemStatusPanel({ systemStats }: SystemStatusPanelProps) {
               <div>
                 <div className="text-text-subtle">Disk</div>
                 <div className="text-text-default font-mono tabular-nums flex items-center gap-1">
-                  <span>{systemStats.disk_usage != null ? `${Number(systemStats.disk_usage).toFixed(2)}%` : '—'}</span>
+                  <span>
+                    {systemStats.disk_usage != null
+                      ? `${Number(systemStats.disk_usage).toFixed(2)}%`
+                      : '—'}
+                  </span>
                   {systemStats.disk_usage != null && (
                     <div className="w-8 h-1 bg-surface-tertiary rounded-sm overflow-hidden">
-                      <div className="h-full bg-accent-setpoint transition-[width]" style={{ width: `${Math.min(systemStats.disk_usage, 100)}%` }} />
+                      <div
+                        className="h-full bg-accent-setpoint transition-[width]"
+                        style={{ width: `${Math.min(systemStats.disk_usage, 100)}%` }}
+                      />
                     </div>
                   )}
                 </div>
               </div>
               <div>
                 <div className="text-text-subtle">Load Avg</div>
-                <div className="text-text-default font-mono tabular-nums text-10">{systemStats.load_avg ?? '—'}</div>
+                <div className="text-text-default font-mono tabular-nums text-10">
+                  {systemStats.load_avg ?? '—'}
+                </div>
               </div>
               <div>
                 <div className="text-text-subtle">Processes</div>
-                <div className="text-text-default font-mono tabular-nums text-10">{systemStats.process_count ?? '—'}</div>
+                <div className="text-text-default font-mono tabular-nums text-10">
+                  {systemStats.process_count ?? '—'}
+                </div>
               </div>
               <div>
                 <div className="text-text-subtle">Uptime</div>
-                <div className="text-text-default font-mono tabular-nums text-10">{systemStats.uptime ?? '—'}</div>
+                <div className="text-text-default font-mono tabular-nums text-10">
+                  {systemStats.uptime ?? '—'}
+                </div>
               </div>
             </div>
           </div>
@@ -100,21 +138,30 @@ export function SystemStatusPanel({ systemStats }: SystemStatusPanelProps) {
                 systemStats.services.map((service, index) => (
                   <div key={index} className="flex items-center justify-between text-xs">
                     <div className="flex items-center gap-2 flex-1">
-                      <div className={`size-1.5 rounded-full ${
-                        service.status === 'running' ? 'bg-status-success' :
-                        service.status === 'unreachable' ? 'bg-status-danger' : 'bg-status-warning'
-                      }`} />
+                      <div
+                        className={`size-1.5 rounded-full ${
+                          service.status === 'running'
+                            ? 'bg-status-success'
+                            : service.status === 'unreachable'
+                              ? 'bg-status-danger'
+                              : 'bg-status-warning'
+                        }`}
+                      />
                       <span className="text-text-secondary">{service.name}</span>
                     </div>
                     <div className="flex items-center gap-1">
                       {service.latency_ms != null && (
                         <span className="text-text-subtle text-8">{service.latency_ms}ms</span>
                       )}
-                      <span className={`px-1 py-0.5 rounded text-8 font-medium ${
-                        service.status === 'running' ? 'bg-status-success-bg text-status-success-text' :
-                        service.status === 'unreachable' || service.status === 'stopped' ? 'bg-status-danger-bg text-status-danger-text' :
-                        'bg-status-warning-bg text-status-warning-text'
-                      }`}>
+                      <span
+                        className={`px-1 py-0.5 rounded text-8 font-medium ${
+                          service.status === 'running'
+                            ? 'bg-status-success-bg text-status-success-text'
+                            : service.status === 'unreachable' || service.status === 'stopped'
+                              ? 'bg-status-danger-bg text-status-danger-text'
+                              : 'bg-status-warning-bg text-status-warning-text'
+                        }`}
+                      >
                         {service.status === 'running' ? '✓' : '✗'}
                       </span>
                     </div>
@@ -130,7 +177,9 @@ export function SystemStatusPanel({ systemStats }: SystemStatusPanelProps) {
             <div className="grid grid-cols-2 gap-2 text-xs">
               <div>
                 <div className="text-text-subtle">Model</div>
-                <div className="text-text-default font-mono tabular-nums text-10">Raspberry Pi 5</div>
+                <div className="text-text-default font-mono tabular-nums text-10">
+                  Raspberry Pi 5
+                </div>
               </div>
               <div>
                 <div className="text-text-subtle">CPU Cores</div>
@@ -147,12 +196,16 @@ export function SystemStatusPanel({ systemStats }: SystemStatusPanelProps) {
               <div>
                 <div className="text-text-subtle">Temp</div>
                 <div className="text-text-default font-mono tabular-nums text-10">
-                  {systemStats.cpu_temp_c != null ? `${Number(systemStats.cpu_temp_c).toFixed(2)}°C` : '—'}
+                  {systemStats.cpu_temp_c != null
+                    ? `${Number(systemStats.cpu_temp_c).toFixed(2)}°C`
+                    : '—'}
                 </div>
               </div>
               <div>
                 <div className="text-text-subtle">Throttle</div>
-                <div className="text-text-default font-mono tabular-nums text-10">{systemStats.throttle_status ?? '—'}</div>
+                <div className="text-text-default font-mono tabular-nums text-10">
+                  {systemStats.throttle_status ?? '—'}
+                </div>
               </div>
             </div>
           </div>
@@ -194,5 +247,5 @@ export function SystemStatusPanel({ systemStats }: SystemStatusPanelProps) {
         </div>
       </div>
     </div>
-  );
+  )
 }

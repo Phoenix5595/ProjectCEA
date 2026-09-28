@@ -1,19 +1,13 @@
 import { memo, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 
-import type { Device } from '../../types/device'
-import type { components } from '../../generated/api'
 import { getFlowerDualClimateLayers, getLocationDisplayName } from '../../config/zones'
+import type { components } from '../../generated/api'
+import type { Device } from '../../types/device'
 import { MODE_DISPLAY_NAMES, SUBMODE_DISPLAY_NAMES } from '../../types/modes'
-import type {
-  RoomControlContext,
-  RoomDecisionSummary,
-  RoomSensorStatus,
-  TrendData,
-} from './dashboardStatus'
-import { DashboardMiniTrend } from './DashboardMiniTrend'
 import type { RoomTransition } from '../../utils/dashboardSchedule'
 import { formatTransitionCountdown } from '../../utils/dashboardSchedule'
+
 import {
   getClimateDisplay,
   getRoomLightState,
@@ -22,6 +16,13 @@ import {
   hasClimateData,
   renderTemperature,
 } from './dashboardDisplay'
+import { DashboardMiniTrend } from './DashboardMiniTrend'
+import type {
+  RoomControlContext,
+  RoomDecisionSummary,
+  RoomSensorStatus,
+  TrendData,
+} from './dashboardStatus'
 
 export interface DashboardZoneRowProps {
   location: string
@@ -183,7 +184,7 @@ function qualityClass(status: RoomSensorStatus): string {
   if (status.quality === 'bad')
     return 'border-status-danger-border text-status-danger-text bg-status-danger-bg'
   if (status.quality === 'stale')
-    return 'border-status-warning-border text-status-warning-text bg-status-warning-bg'
+    return 'border-status-warning text-status-warning-text bg-status-warning-bg'
   if (status.quality === 'missing')
     return 'border-border-subtle text-text-muted bg-surface-tertiary'
   return 'border-status-success-border text-status-success-text bg-status-success-bg'

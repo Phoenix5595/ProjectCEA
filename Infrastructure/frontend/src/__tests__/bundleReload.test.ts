@@ -1,11 +1,18 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
+
 import { registerBundleReloadHandler, isDynamicModuleLoadError } from '../main'
 
-function fireWindowEvent(type: string, init: { message?: string; reason?: unknown; error?: unknown }): void {
+function fireWindowEvent(
+  type: string,
+  init: { message?: string; reason?: unknown; error?: unknown }
+): void {
   window.dispatchEvent(
     type === 'unhandledrejection'
-      ? new PromiseRejectionEvent('unhandledrejection', { promise: Promise.resolve(), reason: init.reason ?? init.error ?? init.message ?? '' })
-      : new ErrorEvent(type, { message: init.message ?? '', error: init.error }),
+      ? new PromiseRejectionEvent('unhandledrejection', {
+          promise: Promise.resolve(),
+          reason: init.reason ?? init.error ?? init.message ?? '',
+        })
+      : new ErrorEvent(type, { message: init.message ?? '', error: init.error })
   )
 }
 
@@ -38,7 +45,7 @@ describe('stale-bundle reload guard', () => {
     'Failed to fetch dynamically imported module http://x/a.js',
     'Importing a module script failed.',
     'Loading chunk 5 failed.',
-  ])('matches the documented browser phrasings: %s', (message) => {
+  ])('matches the documented browser phrasings: %s', message => {
     expect(isDynamicModuleLoadError(message)).toBe(true)
   })
 
@@ -49,19 +56,27 @@ describe('stale-bundle reload guard', () => {
   })
 
   it('reload-once via the generic error channel, repeat suppressed in the window', () => {
-    fireWindowEvent('error', { message: 'Error loading dynamically imported module: http://x/old.js' })
+    fireWindowEvent('error', {
+      message: 'Error loading dynamically imported module: http://x/old.js',
+    })
     expect(reload).toHaveBeenCalledTimes(1)
 
-    fireWindowEvent('error', { message: 'Error loading dynamically imported module: http://x/old.js' })
+    fireWindowEvent('error', {
+      message: 'Error loading dynamically imported module: http://x/old.js',
+    })
     expect(reload).toHaveBeenCalledTimes(1)
   })
 
   it('recovers again after the guard window expires', () => {
-    fireWindowEvent('error', { message: 'Failed to fetch dynamically imported module http://x/a.js' })
+    fireWindowEvent('error', {
+      message: 'Failed to fetch dynamically imported module http://x/a.js',
+    })
     expect(reload).toHaveBeenCalledTimes(1)
 
     vi.setSystemTime(new Date('2026-09-01T00:00:06Z'))
-    fireWindowEvent('error', { message: 'Failed to fetch dynamically imported module http://x/a.js' })
+    fireWindowEvent('error', {
+      message: 'Failed to fetch dynamically imported module http://x/a.js',
+    })
     expect(reload).toHaveBeenCalledTimes(2)
   })
 
@@ -84,11 +99,15 @@ describe('stale-bundle reload guard', () => {
       removeItem: () => undefined,
     }
     vi.stubGlobal('sessionStorage', throwing)
-    fireWindowEvent('error', { message: 'Failed to fetch dynamically imported module http://x/a.js' })
+    fireWindowEvent('error', {
+      message: 'Failed to fetch dynamically imported module http://x/a.js',
+    })
     expect(reload).toHaveBeenCalledTimes(1)
 
     // And repeats inside the window are still suppressed without storage.
-    fireWindowEvent('error', { message: 'Failed to fetch dynamically imported module http://x/a.js' })
+    fireWindowEvent('error', {
+      message: 'Failed to fetch dynamically imported module http://x/a.js',
+    })
     expect(reload).toHaveBeenCalledTimes(1)
   })
 })

@@ -1,14 +1,20 @@
 import { useEffect, useMemo, useState } from 'react'
 
 import { getSensorPollZones } from '../config/zones'
+import type { Device } from '../types/device'
 import {
   SENSOR_STALE_AFTER_MS,
   type SensorSampleMeta,
   type ZoneSensorStatus,
 } from '../types/sensor'
-import type { Device } from '../types/device'
+
 import { useSensorPolling, deriveZoneSensorStatus } from './useSensorPolling'
 import { useWebSocket } from './useWebSocket'
+
+const EMPTY_DEVICES: Device[] = []
+const EMPTY_SENSOR_DATA: Record<string, number> = {}
+const EMPTY_SENSOR_META: Record<string, SensorSampleMeta> = {}
+const EMPTY_ZONE_STATUS: Record<string, ZoneSensorStatus> = {}
 
 export interface DashboardLiveData {
   devices: Device[]
@@ -34,14 +40,13 @@ export function useDashboardLiveData(): DashboardLiveData {
   const polling = useSensorPolling({ interval: 1000 })
   const websocket = useWebSocket()
   const [nowMs, setNowMs] = useState(() => Date.now())
-  const pollingDevices = polling.devices ?? []
-  const pollingSensorData = polling.sensorData ?? {}
-  const pollingSensorMeta = polling.sensorMeta ?? {}
-  const pollingZoneStatus = polling.zoneStatus ?? {}
-  const websocketDevices = websocket.devices ?? []
-  const websocketSensorData = websocket.sensorData ?? {}
-  const websocketSensorMeta = websocket.sensorMeta ?? {}
-  const websocketConnectionState = websocket.connectionState ?? 'closed'
+  const pollingDevices = polling.devices ?? EMPTY_DEVICES
+  const pollingSensorData = polling.sensorData ?? EMPTY_SENSOR_DATA
+  const pollingSensorMeta = polling.sensorMeta ?? EMPTY_SENSOR_META
+  const pollingZoneStatus = polling.zoneStatus ?? EMPTY_ZONE_STATUS
+  const websocketDevices = websocket.devices ?? EMPTY_DEVICES
+  const websocketSensorData = websocket.sensorData ?? EMPTY_SENSOR_DATA
+  const websocketSensorMeta = websocket.sensorMeta ?? EMPTY_SENSOR_META
 
   useEffect(() => {
     const clock = setInterval(() => setNowMs(Date.now()), 1000)
@@ -64,7 +69,7 @@ export function useDashboardLiveData(): DashboardLiveData {
       const wsMeta = websocketSensorMeta[key]
       const wsValue = websocketSensorData[key]
       const wsFresh =
-        websocketConnectionState === 'open' &&
+        websocket.connectionState === 'open' &&
         wsMeta != null &&
         !wsMeta.invalid &&
         wsValue != null &&
@@ -92,7 +97,7 @@ export function useDashboardLiveData(): DashboardLiveData {
     nowMs,
     pollingSensorData,
     pollingSensorMeta,
-    websocketConnectionState,
+    websocket.connectionState,
     websocketSensorData,
     websocketSensorMeta,
   ])

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+
 import { RichTrajectoryEnvelope } from '../contracts'
 
 const linearSegment = () => ({
@@ -73,18 +74,15 @@ describe('RichTrajectoryEnvelope', () => {
     expect(parsed.success).toBe(false)
   })
 
-  it.each(['start_value', 'end_value'] as const)(
-    'rejects nonfinite linear %s',
-    (field) => {
-      // Given: a linear endpoint whose number is non-finite.
-      const payload = envelope()
-      payload.segments[0][field] = Number.POSITIVE_INFINITY
+  it.each(['start_value', 'end_value'] as const)('rejects nonfinite linear %s', field => {
+    // Given: a linear endpoint whose number is non-finite.
+    const payload = envelope()
+    payload.segments[0][field] = Number.POSITIVE_INFINITY
 
-      // When: it enters the frontend API boundary.
-      const parsed = RichTrajectoryEnvelope.safeParse(payload)
+    // When: it enters the frontend API boundary.
+    const parsed = RichTrajectoryEnvelope.safeParse(payload)
 
-      // Then: the finite numeric contract rejects it.
-      expect(parsed.success).toBe(false)
-    },
-  )
+    // Then: the finite numeric contract rejects it.
+    expect(parsed.success).toBe(false)
+  })
 })

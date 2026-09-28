@@ -3,15 +3,16 @@ import { useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
 
 import { normalizeDeviceControlCluster } from '../config/zones'
-import { apiClient } from '../services/api'
 import { useControlSnapshot } from '../hooks/useControlSnapshot'
+import { apiClient } from '../services/api'
 import { logger } from '../utils/logger'
+
 import DeviceTable from './devices/DeviceTable'
 import DfrBoardsPanel from './devices/DfrBoardsPanel'
 import RelayChannelMatrix from './devices/RelayChannelMatrix'
+import { buildRelayChannelViewModels } from './devices/relayViewModel'
 import SensorSettingsPanel from './devices/SensorSettingsPanel'
 import SystemSettingsPanel from './devices/SystemSettingsPanel'
-import { buildRelayChannelViewModels } from './devices/relayViewModel'
 
 type DeviceTab = 'devices' | 'sensors' | 'settings'
 
@@ -25,7 +26,7 @@ export default function DeviceManager() {
   const [searchParams, setSearchParams] = useSearchParams()
   const activeTab: DeviceTab = parseTab(searchParams.get('tab'))
   const [refreshKey, setRefreshKey] = useState(0)
-  const handleSharedRefresh = useCallback(() => setRefreshKey((k) => k + 1), [])
+  const handleSharedRefresh = useCallback(() => setRefreshKey(k => k + 1), [])
   const { snapshot, mcpConnected, refreshNow } = useControlSnapshot()
   const [menuOpenChannel, setMenuOpenChannel] = useState<number | null>(null)
   const [nowMs, setNowMs] = useState(Date.now())
@@ -34,10 +35,7 @@ export default function DeviceManager() {
     setSearchParams(tab === 'devices' ? {} : { tab }, { replace: false })
   }
 
-  const relayChannels = useMemo(
-    () => buildRelayChannelViewModels(snapshot),
-    [snapshot],
-  )
+  const relayChannels = useMemo(() => buildRelayChannelViewModels(snapshot), [snapshot])
 
   async function refreshRelayState() {
     try {
@@ -62,7 +60,7 @@ export default function DeviceManager() {
     channel: number,
     action: 'auto' | 'timer-5m' | 'timer-10m' | 'timer-30m' | 'timer-1h' | 'off'
   ) {
-    const vm = relayChannels.find((c) => c.channel === channel)
+    const vm = relayChannels.find(c => c.channel === channel)
     if (!vm) return
 
     const isAssigned = !!vm.isAssigned && !!vm.assignedDeviceName && !!vm.location && !!vm.cluster
@@ -75,20 +73,26 @@ export default function DeviceManager() {
         const cluster = normalizeDeviceControlCluster(location, rawCluster)
 
         if (action === 'auto') {
-          await apiClient.commandDevice(location, cluster, deviceName, { action: 'AUTO', reason: 'Relay menu AUTO' })
+          await apiClient.commandDevice(location, cluster, deviceName, {
+            action: 'AUTO',
+            reason: 'Relay menu AUTO',
+          })
           toast.success(`R${vm.physicalRelay} set to auto`)
         } else if (action === 'off') {
-          await apiClient.commandDevice(location, cluster, deviceName, { action: 'MANUAL_OFF', reason: 'Relay menu OFF' })
+          await apiClient.commandDevice(location, cluster, deviceName, {
+            action: 'MANUAL_OFF',
+            reason: 'Relay menu OFF',
+          })
           toast.success(`R${vm.physicalRelay} turned off`)
         } else {
           const durationSeconds =
             action === 'timer-5m'
               ? 300
               : action === 'timer-10m'
-              ? 600
-              : action === 'timer-30m'
-              ? 1800
-              : 3600
+                ? 600
+                : action === 'timer-30m'
+                  ? 1800
+                  : 3600
           await apiClient.commandDevice(location, cluster, deviceName, {
             action: 'TIMED_ON',
             duration_seconds: durationSeconds,
@@ -107,12 +111,14 @@ export default function DeviceManager() {
             action === 'timer-5m'
               ? 300
               : action === 'timer-10m'
-              ? 600
-              : action === 'timer-30m'
-              ? 1800
-              : 3600
+                ? 600
+                : action === 'timer-30m'
+                  ? 1800
+                  : 3600
           await apiClient.controlChannel(channel, 1, durationSeconds)
-          toast.success(`Relay R${vm.physicalRelay} (${vm.pinLabel || '?'}) ON for ${durationSeconds / 60}m`)
+          toast.success(
+            `Relay R${vm.physicalRelay} (${vm.pinLabel || '?'}) ON for ${durationSeconds / 60}m`
+          )
         }
       }
 
@@ -124,9 +130,7 @@ export default function DeviceManager() {
     }
   }
 
-  const relayStatusLabel = mcpConnected
-    ? 'Connected'
-    : 'Unavailable'
+  const relayStatusLabel = mcpConnected ? 'Connected' : 'Unavailable'
 
   const relayStatusClasses = mcpConnected
     ? 'bg-status-success-bg/40 text-status-success-text border-status-success-border/70'
@@ -189,7 +193,9 @@ export default function DeviceManager() {
               </p>
             </div>
             <div className="flex items-center gap-2">
-              <div className={`rounded border px-3 py-1.5 text-xs font-semibold uppercase tracking-wide ${relayStatusClasses}`}>
+              <div
+                className={`rounded border px-3 py-1.5 text-xs font-semibold uppercase tracking-wide ${relayStatusClasses}`}
+              >
                 Relay board: {relayStatusLabel}
               </div>
             </div>
@@ -205,8 +211,8 @@ export default function DeviceManager() {
                 nowMs={nowMs}
                 variant="panel"
                 menuOpenChannel={menuOpenChannel}
-                onToggleMenu={(channel) =>
-                  setMenuOpenChannel((previous) => (previous === channel ? null : channel))
+                onToggleMenu={channel =>
+                  setMenuOpenChannel(previous => (previous === channel ? null : channel))
                 }
                 onMenuAction={handleRelayMenuAction}
               />

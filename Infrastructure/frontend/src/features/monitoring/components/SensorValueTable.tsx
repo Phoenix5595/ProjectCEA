@@ -8,7 +8,17 @@
  * `--mon-stale` token, and a "Last Update" row shows the most recent live
  * observation timestamp.
  */
+import { useSyncExternalStore } from 'react'
+
 import type { LiveSensorValue } from '../api'
+import {
+  getSeriesVisibilitySnapshot,
+  isSeriesHidden,
+  subscribeSeriesVisibility,
+  toggleSeries,
+} from '../charts/seriesVisibility'
+import { seriesKey } from '../data/alignSeries.types'
+
 import {
   DEFAULT_STALE_AFTER_MS,
   FAMILY_TO_UNIT,
@@ -18,9 +28,6 @@ import {
   isStale,
 } from './tables/tableFormat'
 import { familyForRow, sensorNameForRow } from './tables/tableManifest'
-import { seriesKey } from '../data/alignSeries.types'
-import { getSeriesVisibilitySnapshot, isSeriesHidden, subscribeSeriesVisibility, toggleSeries } from '../charts/seriesVisibility'
-import { useSyncExternalStore } from 'react'
 
 export interface SensorValueTableProps {
   title: string
@@ -53,10 +60,10 @@ export function SensorValueTable({
   now = new Date(),
   staleAfterMs = DEFAULT_STALE_AFTER_MS,
 }: SensorValueTableProps) {
-  const bySensor = new Map(values.map((v) => [v.sensor, v]))
+  const bySensor = new Map(values.map(v => [v.sensor, v]))
   const lastUpdate = values.reduce<Date | null>(
     (acc, v) => (acc === null || v.timestamp > acc ? v.timestamp : acc),
-    null,
+    null
   )
 
   const lastUpdateDisplay = lastUpdate === null ? null : formatLastUpdate(lastUpdate)
@@ -84,7 +91,7 @@ export function SensorValueTable({
           </tr>
         </thead>
         <tbody>
-          {rows.map((row) => {
+          {rows.map(row => {
             if (row === 'Last Update') {
               return (
                 <tr key={row}>
@@ -118,7 +125,9 @@ export function SensorValueTable({
                   ) : (
                     <span
                       style={stale ? { color: 'var(--mon-stale)' } : undefined}
-                      title={stale ? `Stale (last update ${formatTimestamp(live.timestamp)})` : undefined}
+                      title={
+                        stale ? `Stale (last update ${formatTimestamp(live.timestamp)})` : undefined
+                      }
                       aria-label={stale ? `${row} stale` : undefined}
                     >
                       {formatValue(live.value, family ?? '')}
@@ -149,7 +158,7 @@ interface RowToggleProps {
 function RowToggle({ row, nodeSuffix, visibility }: RowToggleProps) {
   const sensor = sensorNameForRow(row, nodeSuffix)
   if (sensor === null) return <>{row}</>
-  const keys = (['mean', 'min', 'max'] as const).map((role) => seriesKey('sensor', sensor, role))
+  const keys = (['mean', 'min', 'max'] as const).map(role => seriesKey('sensor', sensor, role))
   const key = keys[0]
   const color = visibility.known.get(key)
   if (color === undefined) return <>{row}</>

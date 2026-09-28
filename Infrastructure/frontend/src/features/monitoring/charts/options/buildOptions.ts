@@ -6,10 +6,12 @@
  * preserving the adapter's `ms: 1`, `tzDate`, and `setScale`/`setSeries` hooks.
  */
 import uPlot from 'uplot'
+
 import type { AlignedData } from '../../data'
 import { nowDividerPlugin } from '../plugins/nowDividerPlugin'
 import { photoperiodPlugin } from '../plugins/photoperiodPlugin'
 import { tooltipPlugin } from '../tooltip/chartTooltip'
+
 import { buildBands } from './bands'
 import { buildScales } from './scales'
 import { buildSeries } from './seriesOptions'
@@ -30,7 +32,7 @@ export function buildOptions(
   height: number,
   callbacks: ChartCallbacks,
   getNowX?: () => number | null,
-  getPhotoperiod?: () => ReadonlyArray<AlignedData['photoperiod'][number]>,
+  getPhotoperiod?: () => ReadonlyArray<AlignedData['photoperiod'][number]>
 ): uPlot.Options {
   const { scales, axes } = buildScales(data)
   const series = buildSeries(data)
@@ -56,7 +58,7 @@ export function buildOptions(
     width,
     height,
     ms: 1,
-    tzDate: (ts) => new Date(ts),
+    tzDate: ts => new Date(ts),
     series,
     scales,
     axes,

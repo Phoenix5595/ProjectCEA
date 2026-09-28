@@ -2,6 +2,7 @@ import { fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+
 import ClimatePeriodsTable from '../../../components/ClimatePeriodsTable'
 import type { ClimatePeriod } from '../../../types/climatePeriod'
 import { sampleMetricSeries } from '../../../utils/climatePeriodTimeline'
@@ -47,7 +48,7 @@ describe('ClimatePeriodsTable baseline', () => {
   it('renders every column and exposes HTML5 validation constraints (not component enforcement)', () => {
     render(<ControlledTable initial={[seedPeriod()]} />)
 
-    const headers = screen.getAllByRole('columnheader').map((h) => h.textContent)
+    const headers = screen.getAllByRole('columnheader').map(h => h.textContent)
     expect(headers).toEqual(
       expect.arrayContaining([
         'Period',
@@ -59,7 +60,7 @@ describe('ClimatePeriodsTable baseline', () => {
         'VPD',
         'CO₂',
         'Details',
-      ]),
+      ])
     )
 
     const row = screen.getAllByRole('row')[1]
@@ -165,7 +166,7 @@ describe('ClimatePeriodsTable baseline', () => {
       <ControlledTable
         initial={[seedPeriod()]}
         validationErrors={['Overlapping periods detected']}
-      />,
+      />
     )
     expect(screen.getByText(/validation errors/i)).toBeInTheDocument()
     expect(screen.getByText(/overlapping periods detected/i)).toBeInTheDocument()

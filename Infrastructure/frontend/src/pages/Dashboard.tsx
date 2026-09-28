@@ -1,39 +1,39 @@
 /** Main dashboard page component: dense desktop command view. */
-import { useEffect, useState, useMemo, useCallback, type ReactNode } from 'react'
 import { FlaskConical, Flower2, Sprout, Sun } from 'lucide-react'
+import { useEffect, useState, useMemo, useCallback, type ReactNode } from 'react'
 
-import GrowCalendar from '../components/calendar/GrowCalendar'
 import FlowerGrowWizard from '../components/calendar/FlowerGrowWizard'
-import DashboardCalendarInspector from '../components/dashboard/DashboardCalendarInspector'
-import DashboardOperationsRail from '../components/dashboard/DashboardOperationsRail'
+import GrowCalendar from '../components/calendar/GrowCalendar'
+import { AppRibbon } from '../components/chrome/AppRibbon'
+import { RibbonMenuButton } from '../components/chrome/ribbonMenuButton'
 import {
   DashboardAlarmButton,
   DashboardAlarmSummary,
 } from '../components/dashboard/DashboardAlarmSummary'
+import DashboardCalendarInspector from '../components/dashboard/DashboardCalendarInspector'
+import DashboardOperationsRail from '../components/dashboard/DashboardOperationsRail'
 import {
   deriveClusterSensorStatus,
   deriveRoomControlContext,
   deriveRoomDecisionSummary,
   type RoomSensorStatus,
 } from '../components/dashboard/dashboardStatus'
-import { useCalendarEvents } from '../hooks/useCalendarEvents'
+import { DashboardZoneRow } from '../components/dashboard/DashboardZoneRow'
+import { MothernodeRibbon } from '../components/dashboard/MothernodeRibbon'
+import { DASHBOARD_ROW_ZONES } from '../config/zones'
+import { useTheme } from '../contexts/ThemeContext'
+import { EventLog } from '../features/event-log/components/EventLog'
+import { useEventLog } from '../features/event-log/state/useEventLog'
 import { useActiveAlarms } from '../hooks/useActiveAlarms'
+import { useCalendarEvents } from '../hooks/useCalendarEvents'
 import { useControlSnapshot } from '../hooks/useControlSnapshot'
 import { useDashboardLiveData } from '../hooks/useDashboardLiveData'
 import { getDashboardMode, useDashboardScheduleContext } from '../hooks/useDashboardScheduleContext'
 import { useDashboardTrends } from '../hooks/useDashboardTrends'
-import { apiClient } from '../services/api'
-import { useTheme } from '../contexts/ThemeContext'
 import { useSystemStatus } from '../hooks/useSystemStatus'
-import { nextRoomTransition } from '../utils/dashboardSchedule'
-import { AppRibbon } from '../components/chrome/AppRibbon'
-import { RibbonMenuButton } from '../components/chrome/ribbonMenuButton'
-import { DashboardZoneRow } from '../components/dashboard/DashboardZoneRow'
-import { MothernodeRibbon } from '../components/dashboard/MothernodeRibbon'
-import { DASHBOARD_ROW_ZONES } from '../config/zones'
-import { EventLog } from '../features/event-log/components/EventLog'
-import { useEventLog } from '../features/event-log/state/useEventLog'
+import { apiClient } from '../services/api'
 import type { CalendarEventDto } from '../types/calendar'
+import { nextRoomTransition } from '../utils/dashboardSchedule'
 
 interface WeatherData {
   temperature: number
@@ -248,7 +248,7 @@ export default function Dashboard() {
         {degraded?.active && (
           <div
             role="alert"
-            className="rounded border border-amber-500/60 bg-amber-500/15 px-3 py-2 text-sm text-amber-100 shrink-0"
+            className="rounded border border-status-warning-vivid/60 bg-status-warning-bg/30 px-3 py-2 text-sm text-status-warning-text shrink-0"
           >
             <strong>Control loop degraded:</strong> {degraded.reason || 'recovering'} · failures{' '}
             {degraded.failure_count ?? 0} · recovery ticks {degraded.success_count ?? 0}/10

@@ -49,7 +49,9 @@ export type MonitoringRangeFreshness = {
   readonly rangeErrorAt: Date | null
 }
 
-function idleOutcome<Source extends MonitoringRangeSource>(source: Source): MonitoringRangeOutcomeFor<Source> {
+function idleOutcome<Source extends MonitoringRangeSource>(
+  source: Source
+): MonitoringRangeOutcomeFor<Source> {
   return Object.freeze({ source, status: 'idle', lastGoodAt: null })
 }
 
@@ -63,7 +65,7 @@ export function createIdleSourceOutcomes(): MonitoringSourceOutcomes {
 
 export function applySourceSuccess(
   outcomes: MonitoringSourceOutcomes,
-  success: MonitoringSourceSuccess,
+  success: MonitoringSourceSuccess
 ): MonitoringSourceOutcomes {
   return Object.freeze({
     ...outcomes,
@@ -77,7 +79,7 @@ export function applySourceSuccess(
 
 export function applySourceFailure(
   outcomes: MonitoringSourceOutcomes,
-  failure: MonitoringSourceFailure,
+  failure: MonitoringSourceFailure
 ): MonitoringSourceOutcomes {
   return Object.freeze({
     ...outcomes,
@@ -92,7 +94,7 @@ export function applySourceFailure(
 }
 
 export function deriveActiveSourceErrors(
-  outcomes: MonitoringSourceOutcomes,
+  outcomes: MonitoringSourceOutcomes
 ): readonly MonitoringSourceError[] {
   const errors: MonitoringSourceError[] = []
   for (const source of MONITORING_RANGE_SOURCES) {
@@ -113,21 +115,21 @@ export function deriveActiveSourceErrors(
   return Object.freeze(errors)
 }
 
-export function deriveRangeFreshness(
-  outcomes: MonitoringSourceOutcomes,
-): MonitoringRangeFreshness {
+export function deriveRangeFreshness(outcomes: MonitoringSourceOutcomes): MonitoringRangeFreshness {
   const sensorLastGoodAt = outcomes['sensor-history'].lastGoodAt
   const controlLastGoodAt = outcomes['control-history'].lastGoodAt
-  const lastGoodRangeAt = sensorLastGoodAt === null || controlLastGoodAt === null
-    ? null
-    : new Date(Math.min(sensorLastGoodAt.getTime(), controlLastGoodAt.getTime()))
+  const lastGoodRangeAt =
+    sensorLastGoodAt === null || controlLastGoodAt === null
+      ? null
+      : new Date(Math.min(sensorLastGoodAt.getTime(), controlLastGoodAt.getTime()))
 
   const historicalErrors = deriveActiveSourceErrors(outcomes).filter(
-    ({ source }) => source === 'sensor-history' || source === 'control-history',
+    ({ source }) => source === 'sensor-history' || source === 'control-history'
   )
-  const rangeErrorAt = historicalErrors.length === 0
-    ? null
-    : new Date(Math.max(...historicalErrors.map(({ errorAt }) => errorAt.getTime())))
+  const rangeErrorAt =
+    historicalErrors.length === 0
+      ? null
+      : new Date(Math.max(...historicalErrors.map(({ errorAt }) => errorAt.getTime())))
 
   return Object.freeze({ lastGoodRangeAt, rangeErrorAt })
 }

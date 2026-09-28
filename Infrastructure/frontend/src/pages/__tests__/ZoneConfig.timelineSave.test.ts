@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+
 import { shouldPersistLegacyTimelineValues } from '../ZoneConfig'
 
 describe('ZoneConfig legacy timeline save policy', () => {

@@ -1,4 +1,5 @@
 import type { ClimatePeriod } from '../types/climatePeriod'
+
 import { timeToMinutes } from './timeMath'
 
 export { timeToMinutes }

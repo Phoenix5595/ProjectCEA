@@ -17,7 +17,7 @@ import { fixtureUrl } from '../monitoring/fixtureUrl'
 
 function trackViolations(page: import('@playwright/test').Page): string[] {
   const violations: string[] = []
-  page.on('request', (req) => {
+  page.on('request', req => {
     const url = req.url()
     const violation = describeViolation(url)
     if (violation !== null) violations.push(`${violation}: ${url}`)
@@ -33,7 +33,7 @@ type EventFixture = Readonly<{
 test('empty scenario shows "No events yet" message', async ({ page }, testInfo) => {
   const violations = trackViolations(page)
 
-  await page.route('**/api/events/history**', (route) => {
+  await page.route('**/api/events/history**', route => {
     route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -48,7 +48,7 @@ test('empty scenario shows "No events yet" message', async ({ page }, testInfo) 
     })
   })
 
-  await page.route('**/api/events/stream**', (route) => {
+  await page.route('**/api/events/stream**', route => {
     route.fulfill({
       status: 200,
       contentType: 'text/event-stream',
@@ -68,10 +68,13 @@ test('empty scenario shows "No events yet" message', async ({ page }, testInfo) 
   expect(violations).toEqual([])
 })
 
-test('error-500 scenario shows empty state after history failure', async ({ page, context }, testInfo) => {
+test('error-500 scenario shows empty state after history failure', async ({
+  page,
+  context,
+}, testInfo) => {
   const violations = trackViolations(page)
 
-  await context.route('**/api/events/history**', (route) => {
+  await context.route('**/api/events/history**', route => {
     route.fulfill({
       status: 500,
       contentType: 'application/json',
@@ -90,10 +93,13 @@ test('error-500 scenario shows empty state after history failure', async ({ page
   expect(violations).toEqual([])
 })
 
-test('auth-401 scenario shows empty state after auth pause', async ({ page, context }, testInfo) => {
+test('auth-401 scenario shows empty state after auth pause', async ({
+  page,
+  context,
+}, testInfo) => {
   const violations = trackViolations(page)
 
-  await context.route('**/api/events/history**', (route) => {
+  await context.route('**/api/events/history**', route => {
     route.fulfill({
       status: 401,
       contentType: 'application/json',
@@ -112,10 +118,13 @@ test('auth-401 scenario shows empty state after auth pause', async ({ page, cont
   expect(violations).toEqual([])
 })
 
-test('disconnect scenario shows empty state after stream closes immediately', async ({ page, context }, testInfo) => {
+test('disconnect scenario shows empty state after stream closes immediately', async ({
+  page,
+  context,
+}, testInfo) => {
   const violations = trackViolations(page)
 
-  await context.route('**/api/events/history**', (route) => {
+  await context.route('**/api/events/history**', route => {
     route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -130,7 +139,7 @@ test('disconnect scenario shows empty state after stream closes immediately', as
     })
   })
 
-  await context.route('**/api/events/stream**', (route) => {
+  await context.route('**/api/events/stream**', route => {
     route.fulfill({
       status: 200,
       contentType: 'text/event-stream',
@@ -201,7 +210,12 @@ test('burst scenario renders many events without crash', async ({ page, context 
         event_type: 'relay.state_changed',
         correlation_id: null,
         causation_id: null,
-        entity: { entity_type: 'device', entity_id: `device-${i}`, location: 'Flower Room', cluster: 'main' },
+        entity: {
+          entity_type: 'device',
+          entity_id: `device-${i}`,
+          location: 'Flower Room',
+          cluster: 'main',
+        },
         actor: { actor_type: 'system', actor_id: 'automation-service' },
         reason_code: null,
         reason_text: null,
@@ -210,7 +224,7 @@ test('burst scenario renders many events without crash', async ({ page, context 
     })
   }
 
-  await context.route('**/api/events/history**', (route) => {
+  await context.route('**/api/events/history**', route => {
     route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -225,7 +239,7 @@ test('burst scenario renders many events without crash', async ({ page, context 
     })
   })
 
-  await context.route('**/api/events/stream**', (route) => {
+  await context.route('**/api/events/stream**', route => {
     route.fulfill({
       status: 200,
       contentType: 'text/event-stream',

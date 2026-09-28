@@ -8,6 +8,7 @@
  * without a pointer or without a data alternative must fail policy.
  */
 import { describe, expect, it } from 'vitest'
+
 import {
   AccessibilityPolicyError,
   validateChartAccessibility,

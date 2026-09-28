@@ -2,7 +2,8 @@
  * Sensor monitoring contracts mirroring the backend
  * `/api/sensors/monitoring/{range,live,stats}` response shapes.
  */
-import { z } from 'zod/v3'
+import { z } from 'zod'
+
 import { MonitoringRange, Tier, UnitFamily, utcDate } from './shared'
 
 /** Average and envelope for one timestamp on the shared UTC grid. */

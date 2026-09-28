@@ -10,18 +10,16 @@
 import type { LiveSensorValue } from '../api'
 import type { MonitoringManifest, TablePanelSpec } from '../config'
 
-export function tablePanel(
-  manifest: MonitoringManifest,
-  id: string,
-): TablePanelSpec | null {
-  const panel = manifest.panels.find((p) => p.kind === 'table' && p.id === id)
+export function tablePanel(manifest: MonitoringManifest, id: string): TablePanelSpec | null {
+  const panel = manifest.panels.find(p => p.kind === 'table' && p.id === id)
   return panel && panel.kind === 'table' ? panel : null
 }
 
 /** Split live values into Front (`_f`) and Back (`_b`) arrays. */
-export function splitLiveByNode(
-  live: LiveSensorValue[],
-): { front: LiveSensorValue[]; back: LiveSensorValue[] } {
+export function splitLiveByNode(live: LiveSensorValue[]): {
+  front: LiveSensorValue[]
+  back: LiveSensorValue[]
+} {
   const front: LiveSensorValue[] = []
   const back: LiveSensorValue[] = []
   for (const v of live) {

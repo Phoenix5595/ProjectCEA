@@ -1,4 +1,4 @@
-import type { ButtonHTMLAttributes, ReactNode } from 'react';
+import type { ButtonHTMLAttributes, ReactNode } from 'react'
 
 /** Icon/action control sized like the sidebar collapse button. */
 export function RibbonMenuButton({
@@ -14,5 +14,5 @@ export function RibbonMenuButton({
     >
       {children}
     </button>
-  );
+  )
 }

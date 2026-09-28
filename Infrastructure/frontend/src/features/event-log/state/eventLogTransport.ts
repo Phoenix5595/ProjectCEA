@@ -1,7 +1,12 @@
-import { globalEventLogStore, type EventLogPaging } from './eventLogStore'
-import { parseSse } from '../api/sseParser'
 import { AUTOMATION_API_URL, CEA_API_KEY } from '../../../config/env'
-import { toEventLogEntry, type OperationalEvent, type OperationalEventHistory } from './eventLogTypes'
+import { parseSse } from '../api/sseParser'
+
+import { globalEventLogStore, type EventLogPaging } from './eventLogStore'
+import {
+  toEventLogEntry,
+  type OperationalEvent,
+  type OperationalEventHistory,
+} from './eventLogTypes'
 
 const INITIAL_LIMIT = 200
 const STALE_TIMEOUT_MS = 45_000
@@ -104,7 +109,7 @@ async function loadHistory(options: HistoryFetchOptions = {}): Promise<LoadHisto
   }
 
   const history: OperationalEventHistory = await response.json()
-  const entries = history.items.map((item) => toEventLogEntry(item.redis_id, item.event))
+  const entries = history.items.map(item => toEventLogEntry(item.redis_id, item.event))
   globalEventLogStore.merge(entries)
   const result = {
     newestCursor: history.newest_cursor,

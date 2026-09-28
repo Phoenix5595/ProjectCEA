@@ -8,6 +8,7 @@ export type LiveRequest = {
 
 export interface PollerHooks {
   read: () => StoreState
+  getSensorRangeMaxPoints: () => number
   applyData: (data: StoreData) => void
   setFlags: (patch: Partial<StoreState>) => void
   isActive: () => boolean
@@ -16,5 +17,9 @@ export interface PollerHooks {
   liveRequest: () => LiveRequest | null
   isLiveRequestCurrent: (request: LiveRequest) => boolean
   applySourceSuccess: (source: MonitoringRangeSource, lastGoodAt: Date) => void
-  applySourceFailure: (failure: { readonly source: MonitoringRangeSource; readonly message: string; readonly errorAt: Date }) => void
+  applySourceFailure: (failure: {
+    readonly source: MonitoringRangeSource
+    readonly message: string
+    readonly errorAt: Date
+  }) => void
 }

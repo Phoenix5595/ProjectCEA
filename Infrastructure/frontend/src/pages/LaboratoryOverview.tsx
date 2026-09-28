@@ -1,5 +1,5 @@
-import CalendarOverviewPage from '../components/calendar/CalendarOverviewPage';
+import CalendarOverviewPage from '../components/calendar/CalendarOverviewPage'
 
 export default function LaboratoryOverview() {
-  return <CalendarOverviewPage location="Lab" />;
+  return <CalendarOverviewPage location="Lab" />
 }

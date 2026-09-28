@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest'
+
+import type { ClimatePeriod } from '../../../types/climatePeriod'
 import {
   createTimelineDraft,
   discardTimelineDraft,
@@ -7,7 +9,6 @@ import {
   reviewTimelineDraft,
   updateTimelineDraftPeriods,
 } from '../state/timelineDraft'
-import type { ClimatePeriod } from '../../../types/climatePeriod'
 
 const savedPeriod = (overrides: Partial<ClimatePeriod> = {}): ClimatePeriod => ({
   period_name: 'Day',
@@ -72,10 +73,9 @@ describe('timeline draft state', () => {
 
   it('discards table edits by restoring the saved baseline', () => {
     // Given: a dirty draft from a table-only edit.
-    const dirty = updateTimelineDraftPeriods(
-      createTimelineDraft(savedBaseline()),
-      [savedPeriod({ period_name: 'Edited day' })],
-    )
+    const dirty = updateTimelineDraftPeriods(createTimelineDraft(savedBaseline()), [
+      savedPeriod({ period_name: 'Edited day' }),
+    ])
 
     // When: the operator discards it.
     const discarded = discardTimelineDraft(dirty)
@@ -88,10 +88,9 @@ describe('timeline draft state', () => {
   it('preserves the draft when a revision conflict is reported', () => {
     // Given: a reviewed draft awaiting Apply.
     const reviewed = reviewTimelineDraft(
-      updateTimelineDraftPeriods(
-        createTimelineDraft(savedBaseline()),
-        [savedPeriod({ co2_setpoint: 1000 })],
-      ),
+      updateTimelineDraftPeriods(createTimelineDraft(savedBaseline()), [
+        savedPeriod({ co2_setpoint: 1000 }),
+      ])
     )
 
     // When: Apply receives an HTTP 409 conflict.

@@ -6,13 +6,14 @@
  * with provenance) and the failure path (missing paired averages and null PID
  * values are never fabricated).
  */
-import { afterEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, within } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+
 import type { LiveSensorValue, SensorStatistics } from '../../api'
-import type { AlignedData } from '../../data'
-import { seriesKey } from '../../data/alignSeries.types'
 import { flowerManifest } from '../../config/flowerManifest'
 import { vegManifest } from '../../config/vegManifest'
+import type { AlignedData } from '../../data'
+import { seriesKey } from '../../data/alignSeries.types'
 import { ChartDataTable } from '../ChartDataTable'
 import { MonitoringFreshness } from '../MonitoringFreshness'
 import { RoomAveragesTable } from '../RoomAveragesTable'
@@ -20,98 +21,62 @@ import { SensorValueTable } from '../SensorValueTable'
 import { StatisticsTable } from '../StatisticsTable'
 
 function tablePanel(manifest: typeof flowerManifest, title: string) {
-  const panel = manifest.panels.find((p) => p.kind === 'table' && p.title === title)
+  const panel = manifest.panels.find(p => p.kind === 'table' && p.title === title)
   if (!panel || panel.kind !== 'table') throw new Error(`table panel not found: ${title}`)
   return panel
 }
 
 function cellForRow(table: HTMLElement, label: string, col = 1): string {
   const rows = within(table).getAllByRole('row')
-  const row = rows.find((r) => within(r).queryAllByRole('cell')[0]?.textContent === label)
+  const row = rows.find(r => within(r).queryAllByRole('cell')[0]?.textContent === label)
   if (!row) throw new Error(`row not found: ${label}`)
   return within(row).queryAllByRole('cell')[col]?.textContent ?? ''
 }
 
 function lastUpdateSpans(table: HTMLElement): HTMLElement[] {
   const rows = within(table).getAllByRole('row')
-  const row = rows.find((r) => within(r).queryAllByRole('cell')[0]?.textContent === 'Last Update')
+  const row = rows.find(r => within(r).queryAllByRole('cell')[0]?.textContent === 'Last Update')
   if (!row) throw new Error('Last Update row not found')
   return Array.from(row.querySelectorAll<HTMLElement>('.mon-last-update > span'))
 }
 
 const NOW = new Date(2026, 6, 15, 12, 0, 0)
-const emptyAlignedData: AlignedData = {
-  x: [],
-  series: [],
-  bands: [],
-  photoperiod: [],
-  nowIndex: 0,
-  aggregated: false,
-}
 
 afterEach(() => {
   vi.unstubAllEnvs()
 })
 
 describe('monitoring table primitives', () => {
-  it('hides the chart data disclosure in production builds by default', () => {
-    vi.stubEnv('MODE', 'production')
-    vi.stubEnv('VITE_MONITORING_DEBUG', '')
-
-    const { container } = render(<ChartDataTable title="Climate" data={emptyAlignedData} />)
-
-    expect(screen.queryByRole('button', { name: 'View data as table' })).toBeNull()
-    expect(container.querySelector('table')).toBeNull()
-  })
-
-  it('retains the accessible disclosure in development builds', () => {
-    vi.stubEnv('MODE', 'development')
-
-    const { container } = render(<ChartDataTable title="Climate" data={emptyAlignedData} />)
-
-    const toggle = screen.getByRole('button', { name: 'View data as table' })
-    expect(toggle).toHaveAttribute('aria-expanded', 'false')
-    fireEvent.click(toggle)
-    expect(toggle).toHaveAttribute('aria-expanded', 'true')
-    expect(within(container).getByRole('table', { name: 'Climate data' })).toBeTruthy()
-  })
-
-  it('retains the disclosure for an explicitly enabled debug production build', () => {
-    vi.stubEnv('MODE', 'production')
-    vi.stubEnv('VITE_MONITORING_DEBUG', 'true')
-
-    render(<ChartDataTable title="Climate" data={emptyAlignedData} />)
-
-    expect(screen.getByRole('button', { name: 'View data as table' })).toBeTruthy()
-  })
-
   it('labels retained range data with its last-good and error timestamps', () => {
     render(
       <MonitoringFreshness
         lastGoodAt={new Date(2026, 6, 15, 11, 59)}
         errorAt={new Date(2026, 6, 15, 12)}
-      />,
+      />
     )
 
     expect(screen.getByRole('status')).toHaveTextContent('Data stale.')
-    expect(screen.getByRole('status')).toHaveTextContent('Last good monitoring range: 2026/07/15 11:59:00.')
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Last good monitoring range: 2026/07/15 11:59:00.'
+    )
     expect(screen.getByRole('status')).toHaveTextContent('Latest range error: 2026/07/15 12:00:00.')
   })
 
   it('renders the averages title above the Sensor and Value columns', () => {
     const averages = tablePanel(flowerManifest, 'Averages')
     const { container } = render(
-      <RoomAveragesTable title="Averages" rows={averages.rows} front={[]} back={[]} />,
+      <RoomAveragesTable title="Averages" rows={averages.rows} front={[]} back={[]} />
     )
     const table = within(container).getByRole('table', { name: 'Averages' })
     const headerRows = within(table).getAllByRole('row').slice(0, 2)
 
     expect(within(headerRows[0]).getByRole('columnheader')).toHaveTextContent('Averages')
     expect(within(headerRows[0]).getByRole('columnheader')).toHaveAttribute('colspan', '2')
-    expect(within(headerRows[1]).getAllByRole('columnheader').map((header) => header.textContent)).toEqual([
-      'Sensor',
-      'Value',
-    ])
+    expect(
+      within(headerRows[1])
+        .getAllByRole('columnheader')
+        .map(header => header.textContent)
+    ).toEqual(['Sensor', 'Value'])
   })
 
   it('stacks SensorValueTable Last Update time and date in separate spans', () => {
@@ -122,14 +87,14 @@ describe('monitoring table primitives', () => {
         values={[{ sensor: 'dry_bulb_v', value: 24.5, timestamp: NOW }]}
         nodeSuffix="v"
         now={NOW}
-      />,
+      />
     )
     const table = within(container).getByRole('table', { name: 'Sensor Values' })
     const spans = lastUpdateSpans(table)
 
     expect(spans).toHaveLength(2)
-    expect(spans.map((span) => span.textContent)).toEqual(['12:00:00', '15/07/2026'])
-    expect(spans.every((span) => span.classList.contains('block'))).toBe(true)
+    expect(spans.map(span => span.textContent)).toEqual(['12:00:00', '15/07/2026'])
+    expect(spans.every(span => span.classList.contains('block'))).toBe(true)
   })
 
   it('stacks RoomAveragesTable Last Update time and date in separate spans', () => {
@@ -139,17 +104,17 @@ describe('monitoring table primitives', () => {
         rows={['Last Update']}
         front={[{ sensor: 'dry_bulb_f', value: 22.0, timestamp: NOW }]}
         back={[{ sensor: 'dry_bulb_b', value: 24.0, timestamp: NOW }]}
-      />,
+      />
     )
     const table = within(container).getByRole('table', { name: 'Averages' })
     const spans = lastUpdateSpans(table)
 
     expect(spans).toHaveLength(2)
-    expect(spans.map((span) => span.textContent)).toEqual(['12:00:00', '15/07/2026'])
-    expect(spans.every((span) => span.classList.contains('block'))).toBe(true)
+    expect(spans.map(span => span.textContent)).toEqual(['12:00:00', '15/07/2026'])
+    expect(spans.every(span => span.classList.contains('block'))).toBe(true)
   })
 
-  it('matches Flower Veg statistics and accessible data tables', () => {
+  it('matches Flower Veg statistics and keeps the accessible chart data table in production', () => {
     // --- Veg sensor values: canonical ordering + unit-family formatting ---
     const veg = tablePanel(vegManifest, 'Sensor Values')
     const vegValues: LiveSensorValue[] = [
@@ -164,7 +129,13 @@ describe('monitoring table primitives', () => {
       { sensor: 'water_level_v', value: 42.7, timestamp: NOW },
     ]
     const { container: vegContainer } = render(
-      <SensorValueTable title="Sensor Values" rows={veg.rows} values={vegValues} nodeSuffix="v" now={NOW} />,
+      <SensorValueTable
+        title="Sensor Values"
+        rows={veg.rows}
+        values={vegValues}
+        nodeSuffix="v"
+        now={NOW}
+      />
     )
     const vegTable = within(vegContainer).getByRole('table', { name: 'Sensor Values' })
     expect(cellForRow(vegTable, 'Dry Bulb')).toBe('24.5°C')
@@ -195,7 +166,7 @@ describe('monitoring table primitives', () => {
       { sensor: 'water_level_b', value: 50.0, timestamp: NOW },
     ]
     const { container: avgContainer } = render(
-      <RoomAveragesTable title="Averages" rows={avg.rows} front={front} back={back} />,
+      <RoomAveragesTable title="Averages" rows={avg.rows} front={front} back={back} />
     )
     const avgTable = within(avgContainer).getByRole('table', { name: 'Averages' })
     expect(cellForRow(avgTable, 'Dry Bulb Avg')).toBe('23.0°C')
@@ -206,12 +177,36 @@ describe('monitoring table primitives', () => {
     // --- Flower statistics: values + numeric sorting ---
     const statsPanel = tablePanel(flowerManifest, 'Statistics - All Available Sensors')
     const stats: SensorStatistics[] = [
-      { sensor: 'dry_bulb_f', node: 'front', minimum: 20.1, maximum: 26.3, average: 23.2, stddev_samp: 1.5, sample_count: 100 },
-      { sensor: 'dry_bulb_b', node: 'back', minimum: 21.0, maximum: 27.0, average: 24.0, stddev_samp: 1.2, sample_count: 100 },
-      { sensor: 'vpd_f', node: 'front', minimum: 0.8, maximum: 1.6, average: 1.2, stddev_samp: 0.2, sample_count: 100 },
+      {
+        sensor: 'dry_bulb_f',
+        node: 'front',
+        minimum: 20.1,
+        maximum: 26.3,
+        average: 23.2,
+        stddev_samp: 1.5,
+        sample_count: 100,
+      },
+      {
+        sensor: 'dry_bulb_b',
+        node: 'back',
+        minimum: 21.0,
+        maximum: 27.0,
+        average: 24.0,
+        stddev_samp: 1.2,
+        sample_count: 100,
+      },
+      {
+        sensor: 'vpd_f',
+        node: 'front',
+        minimum: 0.8,
+        maximum: 1.6,
+        average: 1.2,
+        stddev_samp: 0.2,
+        sample_count: 100,
+      },
     ]
     const { container: statsContainer } = render(
-      <StatisticsTable title="Statistics" rows={statsPanel.rows} statistics={stats} />,
+      <StatisticsTable title="Statistics" rows={statsPanel.rows} statistics={stats} />
     )
     const statsTable = within(statsContainer).getByRole('table', { name: 'Statistics' })
     expect(cellForRow(statsTable, 'Dry Bulb (°C) - Front', 1)).toBe('20.1')
@@ -231,23 +226,88 @@ describe('monitoring table primitives', () => {
     const aligned: AlignedData = {
       x: [1750000000000, 1750000001000],
       series: [
-        { key: seriesKey('sensor', 'dry_bulb_f', 'mean'), label: 'Dry Bulb (°C) - Front', kind: 'sensor', source: 'sensor', metric: 'dry_bulb_f', family: 'temperature', role: 'mean', y: [23.2, 23.5], origin: 'recorded', quality: 'exact', isAggregated: false, unit: '°C', unitFamily: 'celsius' },
-        { key: seriesKey('sensor', 'dry_bulb_f', 'min'), label: 'Dry Bulb (°C) - Front min', kind: 'sensor', source: 'sensor', metric: 'dry_bulb_f', family: 'temperature', role: 'min', y: [22.9, 23.1], origin: 'recorded', quality: 'exact', isAggregated: false, unit: '°C', unitFamily: 'celsius' },
-        { key: seriesKey('sensor', 'dry_bulb_f', 'max'), label: 'Dry Bulb (°C) - Front max', kind: 'sensor', source: 'sensor', metric: 'dry_bulb_f', family: 'temperature', role: 'max', y: [23.6, 23.9], origin: 'recorded', quality: 'exact', isAggregated: false, unit: '°C', unitFamily: 'celsius' },
-        { key: seriesKey('climate', 'heater_pid_output', 'point'), label: 'Heater - PID Output', kind: 'point', source: 'climate', metric: 'heater_pid_output', family: 'device', role: 'point', y: [null, 42.0], origin: 'recorded', quality: 'exact', isAggregated: false, unit: '%', unitFamily: 'percent' },
+        {
+          key: seriesKey('sensor', 'dry_bulb_f', 'mean'),
+          label: 'Dry Bulb (°C) - Front',
+          kind: 'sensor',
+          source: 'sensor',
+          metric: 'dry_bulb_f',
+          family: 'temperature',
+          role: 'mean',
+          y: [23.2, 23.5],
+          origin: 'recorded',
+          quality: 'exact',
+          isAggregated: false,
+          unit: '°C',
+          unitFamily: 'celsius',
+        },
+        {
+          key: seriesKey('sensor', 'dry_bulb_f', 'min'),
+          label: 'Dry Bulb (°C) - Front min',
+          kind: 'sensor',
+          source: 'sensor',
+          metric: 'dry_bulb_f',
+          family: 'temperature',
+          role: 'min',
+          y: [22.9, 23.1],
+          origin: 'recorded',
+          quality: 'exact',
+          isAggregated: false,
+          unit: '°C',
+          unitFamily: 'celsius',
+        },
+        {
+          key: seriesKey('sensor', 'dry_bulb_f', 'max'),
+          label: 'Dry Bulb (°C) - Front max',
+          kind: 'sensor',
+          source: 'sensor',
+          metric: 'dry_bulb_f',
+          family: 'temperature',
+          role: 'max',
+          y: [23.6, 23.9],
+          origin: 'recorded',
+          quality: 'exact',
+          isAggregated: false,
+          unit: '°C',
+          unitFamily: 'celsius',
+        },
+        {
+          key: seriesKey('climate', 'heater_pid_output', 'point'),
+          label: 'Heater - PID Output',
+          kind: 'point',
+          source: 'climate',
+          metric: 'heater_pid_output',
+          family: 'device',
+          role: 'point',
+          y: [null, 42.0],
+          origin: 'recorded',
+          quality: 'exact',
+          isAggregated: false,
+          unit: '%',
+          unitFamily: 'percent',
+        },
       ],
-      bands: [{ key: seriesKey('sensor', 'dry_bulb_f', 'band'), minKey: seriesKey('sensor', 'dry_bulb_f', 'min'), maxKey: seriesKey('sensor', 'dry_bulb_f', 'max') }],
+      bands: [
+        {
+          key: seriesKey('sensor', 'dry_bulb_f', 'band'),
+          minKey: seriesKey('sensor', 'dry_bulb_f', 'min'),
+          maxKey: seriesKey('sensor', 'dry_bulb_f', 'max'),
+        },
+      ],
       photoperiod: [],
       nowIndex: 0,
       aggregated: false,
     }
+    vi.stubEnv('MODE', 'production')
     const { container: chartContainer } = render(<ChartDataTable title="Climate" data={aligned} />)
     const toggle = screen.getByRole('button', { name: 'View data as table' })
     expect(toggle).toHaveAttribute('aria-expanded', 'false')
     fireEvent.click(toggle)
     expect(toggle).toHaveAttribute('aria-expanded', 'true')
     const chartTable = within(chartContainer).getByRole('table', { name: 'Climate data' })
-    const headers = within(chartTable).getAllByRole('columnheader').map((h) => h.textContent)
+    const headers = within(chartTable)
+      .getAllByRole('columnheader')
+      .map(h => h.textContent)
     expect(headers).toContain('Dry Bulb (°C) - Front')
     expect(headers).toContain('Heater - PID Output')
     expect(headers).not.toContain('Dry Bulb (°C) - Front min')
@@ -266,7 +326,7 @@ describe('monitoring table primitives', () => {
       { sensor: 'rh_b', value: 55.0, timestamp: NOW },
     ]
     const { container: avgContainer } = render(
-      <RoomAveragesTable title="Averages" rows={avg.rows} front={[]} back={back} />,
+      <RoomAveragesTable title="Averages" rows={avg.rows} front={[]} back={back} />
     )
     const avgTable = within(avgContainer).getByRole('table', { name: 'Averages' })
     expect(cellForRow(avgTable, 'Dry Bulb Avg')).toBe('—')
@@ -277,7 +337,21 @@ describe('monitoring table primitives', () => {
     const aligned: AlignedData = {
       x: [1750000000000],
       series: [
-        { key: seriesKey('climate', 'heater_pid_output', 'point'), label: 'Heater - PID Output', kind: 'point', source: 'climate', metric: 'heater_pid_output', family: 'device', role: 'point', y: [null], origin: 'recorded', quality: 'exact', isAggregated: false, unit: '%', unitFamily: 'percent' },
+        {
+          key: seriesKey('climate', 'heater_pid_output', 'point'),
+          label: 'Heater - PID Output',
+          kind: 'point',
+          source: 'climate',
+          metric: 'heater_pid_output',
+          family: 'device',
+          role: 'point',
+          y: [null],
+          origin: 'recorded',
+          quality: 'exact',
+          isAggregated: false,
+          unit: '%',
+          unitFamily: 'percent',
+        },
       ],
       bands: [],
       photoperiod: [],

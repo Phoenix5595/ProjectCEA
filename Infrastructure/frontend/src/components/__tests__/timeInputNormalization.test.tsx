@@ -1,22 +1,25 @@
 import { fireEvent, render } from '@testing-library/react'
-import type { ClimatePeriod } from '../../types/climatePeriod'
-import { describe, expect, it } from 'vitest'
 import { useState } from 'react'
+import { describe, expect, it } from 'vitest'
+
+import type { ClimatePeriod } from '../../types/climatePeriod'
 import ClimatePeriodsTable from '../ClimatePeriodsTable'
 import { normalizeTypedTimeText } from '../timeInputNormalization'
 
 function makePeriods(): Array<Record<string, unknown>> {
-  return [{
-    period_name: 'Day',
-    start_time: '06:00',
-    end_time: '18:00',
-    ramp_minutes: 0,
-    heating_setpoint: 22,
-    cooling_setpoint: 28,
-    vpd_setpoint: 1.1,
-    co2_setpoint: 900,
-    details: '',
-  }]
+  return [
+    {
+      period_name: 'Day',
+      start_time: '06:00',
+      end_time: '18:00',
+      ramp_minutes: 0,
+      heating_setpoint: 22,
+      cooling_setpoint: 28,
+      vpd_setpoint: 1.1,
+      co2_setpoint: 900,
+      details: '',
+    },
+  ]
 }
 
 describe('normalizeTypedTimeText', () => {
@@ -49,7 +52,9 @@ describe('normalizeTypedTimeText', () => {
 describe('ClimatePeriodsTable time fields', () => {
   it('normalizes unseparated digits to HH:MM on blur without touching live typing', () => {
     function StatefulTable() {
-      const [periods, setPeriods] = useState<ClimatePeriod[]>(makePeriods() as unknown as ClimatePeriod[])
+      const [periods, setPeriods] = useState<ClimatePeriod[]>(
+        makePeriods() as unknown as ClimatePeriod[]
+      )
       return <ClimatePeriodsTable periods={periods} onChange={setPeriods} />
     }
     const view = render(<StatefulTable />)

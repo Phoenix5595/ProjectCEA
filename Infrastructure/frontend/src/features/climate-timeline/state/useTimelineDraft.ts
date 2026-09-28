@@ -1,10 +1,13 @@
 import { useCallback, useRef, useState } from 'react'
+
+import type { ClimatePeriod } from '../../../types/climatePeriod'
 import type { RichTrajectoryEnvelope } from '../api/contracts'
 import {
   TimelineConflictError,
   type TimelinePreviewRequest,
   type TimelinePublicationPort,
 } from '../api/timelinePublicationPort'
+
 import {
   applyTimelineDraft,
   createTimelineDraft,
@@ -19,7 +22,6 @@ import {
   type TimelineSavedBaseline,
   type TimelineWindow,
 } from './timelineDraft'
-import type { ClimatePeriod } from '../../../types/climatePeriod'
 
 export type TimelinePreviewState =
   | { readonly kind: 'idle' }
@@ -71,44 +73,66 @@ function requestFor(state: TimelineDraft): TimelinePreviewRequest {
   }
 }
 
-function sameWindow(left: TimelineWindow, right: { readonly start: Date; readonly end: Date; readonly timezone: string }): boolean {
-  return left.start === right.start.toISOString() && left.end === right.end.toISOString() && left.timezone === right.timezone
+function sameWindow(
+  left: TimelineWindow,
+  right: { readonly start: Date; readonly end: Date; readonly timezone: string }
+): boolean {
+  return (
+    left.start === right.start.toISOString() &&
+    left.end === right.end.toISOString() &&
+    left.timezone === right.timezone
+  )
 }
 
-function previewMatchesRequest(value: RichTrajectoryEnvelope, request: TimelinePreviewRequest): boolean {
+function previewMatchesRequest(
+  value: RichTrajectoryEnvelope,
+  request: TimelinePreviewRequest
+): boolean {
   const requestedRoom = request.room.location.toLowerCase()
-  return value.revision_scope === 'draft'
-    && value.room.toLowerCase().includes(requestedRoom === 'veg' ? 'vegetation' : requestedRoom)
-    && value.base_config_revision === request.expectedConfigRevision
-    && (value.draft_revision === String(request.draftRevision) || value.draft_revision === `draft-${request.draftRevision}`)
-    && sameWindow(request.window, value.window)
+  return (
+    value.revision_scope === 'draft' &&
+    value.room.toLowerCase().includes(requestedRoom === 'veg' ? 'vegetation' : requestedRoom) &&
+    value.base_config_revision === request.expectedConfigRevision &&
+    (value.draft_revision === String(request.draftRevision) ||
+      value.draft_revision === `draft-${request.draftRevision}`) &&
+    sameWindow(request.window, value.window)
+  )
 }
 
 function requestMatchesState(request: TimelinePreviewRequest, state: TimelineDraft): boolean {
-  return request.room.location === state.saved.room.location
-    && request.room.cluster === state.saved.room.cluster
-    && request.expectedConfigRevision === state.saved.baseConfigRevision
-    && request.draftRevision === state.draftRevision
-    && request.modeId === (state.saved.modeId ?? 0)
-    && request.submodeId === (state.saved.submodeId ?? null)
-    && request.window.start === (state.saved.window ?? request.window).start
-    && request.window.end === (state.saved.window ?? request.window).end
-    && request.window.timezone === (state.saved.window ?? request.window).timezone
+  return (
+    request.room.location === state.saved.room.location &&
+    request.room.cluster === state.saved.room.cluster &&
+    request.expectedConfigRevision === state.saved.baseConfigRevision &&
+    request.draftRevision === state.draftRevision &&
+    request.modeId === (state.saved.modeId ?? 0) &&
+    request.submodeId === (state.saved.submodeId ?? null) &&
+    request.window.start === (state.saved.window ?? request.window).start &&
+    request.window.end === (state.saved.window ?? request.window).end &&
+    request.window.timezone === (state.saved.window ?? request.window).timezone
+  )
 }
 
 function savedTrajectoryMatchesRequest(
   value: RichTrajectoryEnvelope,
   saved: TimelineSavedBaseline,
-  request: TimelinePreviewRequest,
+  request: TimelinePreviewRequest
 ): boolean {
-  return value.revision_scope === 'saved'
-    && value.draft_revision === null
-    && value.room.toLowerCase().includes(request.room.location === 'veg' ? 'vegetation' : request.room.location)
-    && value.base_config_revision === saved.baseConfigRevision
-    && sameWindow(request.window, value.window)
+  return (
+    value.revision_scope === 'saved' &&
+    value.draft_revision === null &&
+    value.room
+      .toLowerCase()
+      .includes(request.room.location === 'veg' ? 'vegetation' : request.room.location) &&
+    value.base_config_revision === saved.baseConfigRevision &&
+    sameWindow(request.window, value.window)
+  )
 }
 
-export function useTimelineDraft({ saved, publicationPort }: UseTimelineDraftOptions): TimelineDraftController {
+export function useTimelineDraft({
+  saved,
+  publicationPort,
+}: UseTimelineDraftOptions): TimelineDraftController {
   const [state, setState] = useState(() => createTimelineDraft(saved))
   const [preview, setPreview] = useState<TimelinePreviewState>({ kind: 'idle' })
   const previewToken = useRef(0)
@@ -116,13 +140,13 @@ export function useTimelineDraft({ saved, publicationPort }: UseTimelineDraftOpt
 
   const editPeriods = useCallback((periods: readonly ClimatePeriod[]) => {
     previewToken.current += 1
-    setState((current) => updateTimelineDraftPeriods(current, periods))
+    setState(current => updateTimelineDraftPeriods(current, periods))
     setPreview({ kind: 'idle' })
   }, [])
 
   const editPhotoperiod = useCallback((photoperiod: TimelinePhotoperiod) => {
     previewToken.current += 1
-    setState((current) => updateTimelineDraftPhotoperiod(current, photoperiod))
+    setState(current => updateTimelineDraftPhotoperiod(current, photoperiod))
     setPreview({ kind: 'idle' })
   }, [])
 
@@ -140,7 +164,13 @@ export function useTimelineDraft({ saved, publicationPort }: UseTimelineDraftOpt
           setPreview({ kind: 'failed', draftRevision: request.draftRevision })
           return
         }
-        setPreview({ kind: 'ready', draftRevision: request.draftRevision, value, request, source: 'preview' })
+        setPreview({
+          kind: 'ready',
+          draftRevision: request.draftRevision,
+          value,
+          request,
+          source: 'preview',
+        })
       }
     } catch {
       if (previewToken.current === requestToken) {
@@ -151,7 +181,8 @@ export function useTimelineDraft({ saved, publicationPort }: UseTimelineDraftOpt
 
   const apply = useCallback(async () => {
     if (applyInFlight.current) return
-    if (state.status.kind !== 'reviewed' || state.status.draftRevision !== state.draftRevision) return
+    if (state.status.kind !== 'reviewed' || state.status.draftRevision !== state.draftRevision)
+      return
     if (preview.kind !== 'ready' || preview.draftRevision !== state.draftRevision) return
     if (!requestMatchesState(preview.request, state)) return
     applyInFlight.current = true
@@ -160,7 +191,10 @@ export function useTimelineDraft({ saved, publicationPort }: UseTimelineDraftOpt
       const savedBaseline = await publicationPort.apply(preview.request)
       if (previewToken.current !== applyToken) return
       setState(applyTimelineDraft(savedBaseline))
-      if (savedBaseline.trajectory && savedTrajectoryMatchesRequest(savedBaseline.trajectory, savedBaseline, preview.request)) {
+      if (
+        savedBaseline.trajectory &&
+        savedTrajectoryMatchesRequest(savedBaseline.trajectory, savedBaseline, preview.request)
+      ) {
         setPreview({ ...preview, value: savedBaseline.trajectory, source: 'saved' })
       } else {
         setPreview(preview)
@@ -169,7 +203,7 @@ export function useTimelineDraft({ saved, publicationPort }: UseTimelineDraftOpt
       if (previewToken.current !== applyToken) return
       if (error instanceof TimelineConflictError) {
         previewToken.current += 1
-        setState((current) => markTimelineDraftConflict(current))
+        setState(current => markTimelineDraftConflict(current))
         setPreview({ kind: 'idle' })
         return
       }
@@ -181,18 +215,21 @@ export function useTimelineDraft({ saved, publicationPort }: UseTimelineDraftOpt
 
   const discard = useCallback(() => {
     previewToken.current += 1
-    setState((current) => discardTimelineDraft(current))
+    setState(current => discardTimelineDraft(current))
     setPreview({ kind: 'idle' })
   }, [])
 
-  const switchRoom = useCallback((nextSaved: TimelineSavedBaseline): TimelineRoomSwitchResult => {
-    const result = requestTimelineRoomSwitch(state, nextSaved)
-    if (result.kind === 'requires-discard') return result.kind
-    previewToken.current += 1
-    setState(result.state)
-    setPreview({ kind: 'idle' })
-    return result.kind
-  }, [state])
+  const switchRoom = useCallback(
+    (nextSaved: TimelineSavedBaseline): TimelineRoomSwitchResult => {
+      const result = requestTimelineRoomSwitch(state, nextSaved)
+      if (result.kind === 'requires-discard') return result.kind
+      previewToken.current += 1
+      setState(result.state)
+      setPreview({ kind: 'idle' })
+      return result.kind
+    },
+    [state]
+  )
 
   const confirmRoomSwitch = useCallback((nextSaved: TimelineSavedBaseline) => {
     previewToken.current += 1

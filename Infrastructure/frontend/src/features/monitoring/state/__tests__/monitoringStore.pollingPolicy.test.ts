@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest'
 
-import type { FixedRange, LiveRange } from '../monitoringStore.types'
 import {
   controlTailStart,
   isSourceRetryEligible,
   pollingEligibility,
 } from '../monitoringStore.pollingPolicy'
+import type { FixedRange, LiveRange } from '../monitoringStore.types'
 
 const NOW = new Date('2026-09-12T12:00:00.000Z')
 const TWO_HOURS_MS = 2 * 60 * 60 * 1000

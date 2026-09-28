@@ -6,17 +6,16 @@
  * schemas parse the wire once at the boundary. Timestamps are aware ISO
  * 8601 (`Z` or `+00:00`) and are parsed into `Date` exactly once.
  */
-import { z } from 'zod/v3'
+import { z } from 'zod'
 
-const ISO_AWARE_SHAPE =
-  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/
+const ISO_AWARE_SHAPE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/
 
 /** Parse an aware ISO 8601 timestamp into a `Date` exactly once. */
 export const awareDate = z
   .string()
   .regex(ISO_AWARE_SHAPE, 'timestamp must be an aware ISO 8601 instant')
-  .transform((value) => new Date(value))
-  .refine((date) => !Number.isNaN(date.getTime()), 'timestamp is not a valid date')
+  .transform(value => new Date(value))
+  .refine(date => !Number.isNaN(date.getTime()), 'timestamp is not a valid date')
 
 // ---------------------------------------------------------------------------
 // Registry records

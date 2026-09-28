@@ -1,13 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
+
 import type { AlignedData } from '../../data'
 import { seriesKey } from '../../data/alignSeries.types'
 import { createPanelAlignment } from '../../data/panelAlignment'
-import { createIdleSourceOutcomes } from '../../state/monitoringStore.health'
 import type { MonitoringRange, StoreState } from '../../state'
-import {
-  createMonitoringChartFeed,
-  createMonitoringPanelChartFeed,
-} from '../MonitoringChartFeed'
+import { createIdleSourceOutcomes } from '../../state/monitoringStore.health'
+import { createMonitoringChartFeed, createMonitoringPanelChartFeed } from '../MonitoringChartFeed'
 
 function makeData(value: number): AlignedData {
   return {
@@ -34,25 +32,33 @@ function makeData(value: number): AlignedData {
   }
 }
 
-function stateFor(range: MonitoringRange, fulfilledRange: StoreState['fulfilledRange'], value: number): StoreState {
+function stateFor(
+  range: MonitoringRange,
+  fulfilledRange: StoreState['fulfilledRange'],
+  value: number
+): StoreState {
   return {
     range,
     fulfilledRange,
     isLive: range.kind === 'live',
     data: {
-      series: [{
-        sensor: 'temperature',
-        node: 'main',
-        unit_family: 'celsius',
-        unit: '°C',
-        points: [{
-          timestamp: fulfilledRange?.end ?? new Date(0),
-          average: value,
-          minimum: value,
-          maximum: value,
-          sample_count: 1,
-        }],
-      }],
+      series: [
+        {
+          sensor: 'temperature',
+          node: 'main',
+          unit_family: 'celsius',
+          unit: '°C',
+          points: [
+            {
+              timestamp: fulfilledRange?.end ?? new Date(0),
+              average: value,
+              minimum: value,
+              maximum: value,
+              sample_count: 1,
+            },
+          ],
+        },
+      ],
       statistics: [],
       live: [],
       controlHistory: null,
@@ -82,7 +88,10 @@ function panelFeed() {
 }
 
 function sourceFor(initial: StoreState): {
-  readonly source: { readonly getSnapshot: () => StoreState; readonly subscribe: (listener: () => void) => () => void }
+  readonly source: {
+    readonly getSnapshot: () => StoreState
+    readonly subscribe: (listener: () => void) => () => void
+  }
   emit(next: StoreState): void
 } {
   let snapshot = initial
@@ -90,7 +99,7 @@ function sourceFor(initial: StoreState): {
   return {
     source: {
       getSnapshot: () => snapshot,
-      subscribe: (listener) => {
+      subscribe: listener => {
         listeners.add(listener)
         return () => listeners.delete(listener)
       },
@@ -136,7 +145,11 @@ describe('MonitoringChartFeed', () => {
     feed.subscribe(listener)
 
     // When: the user switches to a fixed range with the same series shape.
-    const fixedRange: MonitoringRange = { kind: 'fixed', start: new Date(1000), end: new Date(2000) }
+    const fixedRange: MonitoringRange = {
+      kind: 'fixed',
+      start: new Date(1000),
+      end: new Date(2000),
+    }
     feed.publish(makeData(22), fixedRange)
 
     // Then: the structural snapshot identity is stable (no chart recreation),
@@ -187,7 +200,12 @@ describe('MonitoringChartFeed', () => {
   it('publishes a requested range only after its history fulfillment', () => {
     // Given: a chart showing a previously fulfilled live viewport.
     const liveRange = { kind: 'live', duration: 3_600_000 } as const
-    const liveFulfillment = { range: liveRange, start: new Date(0), end: new Date(3_600_000), revision: 0 }
+    const liveFulfillment = {
+      range: liveRange,
+      start: new Date(0),
+      end: new Date(3_600_000),
+      revision: 0,
+    }
     const source = sourceFor(stateFor(liveRange, liveFulfillment, 20))
     const feed = panelFeed()
     feed.connect(source.source, source.source.getSnapshot())
@@ -197,7 +215,11 @@ describe('MonitoringChartFeed', () => {
     feed.subscribe(listener)
 
     // When: a fixed request is emitted before history fulfills.
-    const fixedRange = { kind: 'fixed', start: new Date(4_000_000), end: new Date(7_600_000) } as const
+    const fixedRange = {
+      kind: 'fixed',
+      start: new Date(4_000_000),
+      end: new Date(7_600_000),
+    } as const
     source.emit(stateFor(fixedRange, null, 21))
 
     // Then: the requested viewport cannot replace the last fulfilled one.
@@ -216,7 +238,12 @@ describe('MonitoringChartFeed', () => {
     expect(listener).not.toHaveBeenCalled()
 
     // When: the transaction fulfills with fresh history.
-    const fixedFulfillment = { range: fixedRange, start: fixedRange.start, end: fixedRange.end, revision: 1 }
+    const fixedFulfillment = {
+      range: fixedRange,
+      start: fixedRange.start,
+      end: fixedRange.end,
+      revision: 1,
+    }
     source.emit(stateFor(fixedRange, fixedFulfillment, 22))
 
     // Then: exactly the fulfilled viewport and data become observable.
@@ -265,8 +292,17 @@ describe('MonitoringChartFeed', () => {
 
   it('rejects stale fulfillments after a newer viewport is published', () => {
     // Given: the feed has accepted revision two.
-    const newestRange = { kind: 'fixed', start: new Date(3_600_000), end: new Date(7_200_000) } as const
-    const newest = { range: newestRange, start: newestRange.start, end: newestRange.end, revision: 2 }
+    const newestRange = {
+      kind: 'fixed',
+      start: new Date(3_600_000),
+      end: new Date(7_200_000),
+    } as const
+    const newest = {
+      range: newestRange,
+      start: newestRange.start,
+      end: newestRange.end,
+      revision: 2,
+    }
     const source = sourceFor(stateFor(newestRange, newest, 22))
     const feed = panelFeed()
     feed.connect(source.source, source.source.getSnapshot())

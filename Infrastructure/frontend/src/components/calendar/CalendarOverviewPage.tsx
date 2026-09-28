@@ -1,27 +1,28 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react'
 
-import GrowCalendar from './GrowCalendar';
-import FlowerGrowWizard from './FlowerGrowWizard';
-import { useCalendarEvents } from '../../hooks/useCalendarEvents';
-import { useEventLog } from '../../features/event-log/state/useEventLog';
-import { EventLog } from '../../features/event-log/components/EventLog';
-import { apiClient } from '../../services/api';
-import type { ModeScheduleResponse } from '../../types/calendar';
+import { EventLog } from '../../features/event-log/components/EventLog'
+import { useEventLog } from '../../features/event-log/state/useEventLog'
+import { useCalendarEvents } from '../../hooks/useCalendarEvents'
+import { apiClient } from '../../services/api'
+import type { ModeScheduleResponse } from '../../types/calendar'
+
+import FlowerGrowWizard from './FlowerGrowWizard'
+import GrowCalendar from './GrowCalendar'
 
 interface CalendarOverviewPageProps {
-  location: string;
-  cluster?: string;
+  location: string
+  cluster?: string
 }
 
 export default function CalendarOverviewPage({
   location,
   cluster = 'main',
 }: CalendarOverviewPageProps) {
-  const { events, loading, refresh } = useCalendarEvents(location);
-  const { entries } = useEventLog({ location, cluster });
-  const [wizardOpen, setWizardOpen] = useState(false);
-  const [modeSchedule, setModeSchedule] = useState<ModeScheduleResponse | null>(null);
-  const [now, setNow] = useState(() => new Date());
+  const { events, loading, refresh } = useCalendarEvents(location)
+  const { entries } = useEventLog({ location, cluster })
+  const [wizardOpen, setWizardOpen] = useState(false)
+  const [modeSchedule, setModeSchedule] = useState<ModeScheduleResponse | null>(null)
+  const [now, setNow] = useState(() => new Date())
 
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 10000)
@@ -30,16 +31,19 @@ export default function CalendarOverviewPage({
 
   useEffect(() => {
     if (location === 'Flower Room') {
-      void apiClient.getModeSchedule(location, cluster).then(setModeSchedule).catch(() => setModeSchedule(null));
+      void apiClient
+        .getModeSchedule(location, cluster)
+        .then(setModeSchedule)
+        .catch(() => setModeSchedule(null))
     }
-  }, [location, cluster, events]);
+  }, [location, cluster, events])
 
   const mismatch =
     modeSchedule &&
     modeSchedule.expected.mode_name &&
     (modeSchedule.active.mode_name !== modeSchedule.expected.mode_name ||
       (modeSchedule.expected.submode_name &&
-        modeSchedule.active.submode_name !== modeSchedule.expected.submode_name));
+        modeSchedule.active.submode_name !== modeSchedule.expected.submode_name))
 
   return (
     <div className="p-4 flex flex-col gap-4 min-h-screen bg-surface-base">
@@ -73,5 +77,5 @@ export default function CalendarOverviewPage({
         />
       )}
     </div>
-  );
+  )
 }

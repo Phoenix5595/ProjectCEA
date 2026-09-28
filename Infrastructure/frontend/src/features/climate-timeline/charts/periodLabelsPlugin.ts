@@ -1,5 +1,7 @@
 import type uPlot from 'uplot'
+
 import { timeToMinutes } from '../../../utils/timeMath'
+
 import { readTimelineToken } from './tokens'
 
 export const LABEL_FONT = '10px "JetBrains Mono", ui-monospace, monospace'
@@ -25,9 +27,13 @@ const MINUTE_MS = 60_000
 
 /** Expand time-of-day periods into non-overlapping absolute segments across the window. */
 export function periodLabelSegments(
-  periods: readonly { readonly period_name: string; readonly start_time: string; readonly end_time: string }[],
+  periods: readonly {
+    readonly period_name: string
+    readonly start_time: string
+    readonly end_time: string
+  }[],
   windowStartMs: number,
-  windowEndMs: number,
+  windowEndMs: number
 ): PeriodLabelSegment[] {
   if (windowEndMs <= windowStartMs) return []
   const origin = new Date(windowStartMs)
@@ -39,11 +45,15 @@ export function periodLabelSegments(
     for (const period of periods) {
       const startMin = timeToMinutes(period.start_time)
       const endMin = timeToMinutes(period.end_time)
-      const pieces: Array<[number, number]> = startMin < endMin
-        ? [[startMin, endMin]]
-        : startMin > endMin
-          ? [[startMin, 1440], [0, endMin]]
-          : []
+      const pieces: Array<[number, number]> =
+        startMin < endMin
+          ? [[startMin, endMin]]
+          : startMin > endMin
+            ? [
+                [startMin, 1440],
+                [0, endMin],
+              ]
+            : []
       for (const [fromMin, toMin] of pieces) {
         const startMs = dayOrigin + dayOffset * DAY_MS + fromMin * MINUTE_MS
         const endMs = dayOrigin + dayOffset * DAY_MS + toMin * MINUTE_MS
@@ -67,7 +77,7 @@ export function layoutPeriodLabels(
   segments: readonly PeriodLabelSegment[],
   windowMs: { readonly start: number; readonly end: number },
   plotWidthPx: number,
-  charWidthPx = 6,
+  charWidthPx = 6
 ): LaidOutLabel[] {
   const span = Math.max(windowMs.end - windowMs.start, 1)
   const labels: LaidOutLabel[] = []
@@ -78,9 +88,10 @@ export function layoutPeriodLabels(
     const x1 = fraction1 * plotWidthPx - LABEL_EDGE_PADDING_PX
     if (x1 - x0 < charWidthPx) continue
     const maxWidthChars = Math.floor((x1 - x0) / charWidthPx)
-    const clippedText = maxWidthChars < segment.text.length
-      ? `${segment.text.slice(0, Math.max(0, maxWidthChars - 1))}…`
-      : segment.text
+    const clippedText =
+      maxWidthChars < segment.text.length
+        ? `${segment.text.slice(0, Math.max(0, maxWidthChars - 1))}…`
+        : segment.text
     if (clippedText.length === 0 || clippedText === '…') continue
     labels.push({
       text: segment.text,
@@ -95,15 +106,19 @@ export function layoutPeriodLabels(
 /** Build a uPlot plugin that paints readable period names below the curve zone. */
 export function periodLabelsPlugin(
   getSegments: () => readonly PeriodLabelSegment[],
-  window: { readonly startMs: number; readonly endMs: number },
+  window: { readonly startMs: number; readonly endMs: number }
 ): uPlot.Plugin {
   const toWindowMinutes = (instantMs: number): number => (instantMs - window.startMs) / 60_000
   return {
     hooks: {
-      drawClear: (u) => {
+      drawClear: u => {
         const segments = getSegments()
         if (segments.length === 0) return
-        const labels = layoutPeriodLabels(segments, { start: window.startMs, end: window.endMs }, u.bbox.width)
+        const labels = layoutPeriodLabels(
+          segments,
+          { start: window.startMs, end: window.endMs },
+          u.bbox.width
+        )
         if (labels.length === 0) return
         const { ctx, bbox } = u
         ctx.save()

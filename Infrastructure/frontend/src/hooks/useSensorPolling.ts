@@ -1,12 +1,6 @@
 /** Sensor polling hook for dashboard data. */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { apiClient } from '../services/api'
-import type { Device } from '../types/device'
-import {
-  SENSOR_STALE_AFTER_MS,
-  type SensorSampleMeta,
-  type ZoneSensorStatus,
-} from '../types/sensor'
+
 import {
   ZONES,
   FLOWER_DASHBOARD_CLUSTERS,
@@ -14,8 +8,15 @@ import {
   getSensorPollZones,
   buildDashboardBulkSensorKeys,
 } from '../config/zones'
-import { parseLiveSnapshot } from '../utils/sensorLive'
+import { apiClient } from '../services/api'
+import type { Device } from '../types/device'
+import {
+  SENSOR_STALE_AFTER_MS,
+  type SensorSampleMeta,
+  type ZoneSensorStatus,
+} from '../types/sensor'
 import { logger } from '../utils/logger'
+import { parseLiveSnapshot } from '../utils/sensorLive'
 export interface UseSensorPollingOptions {
   interval?: number
 }

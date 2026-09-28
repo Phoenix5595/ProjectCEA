@@ -380,7 +380,7 @@ export default function PIDTuningPanel({ location, cluster, devices }: PIDTuning
       ) : null}
       {loadError ? (
         <p
-          className="mt-3 rounded border border-status-error-border bg-status-error-bg/30 px-2 py-1 text-sm text-status-error-text"
+          className="mt-3 rounded border border-status-danger-border bg-status-danger-bg/30 px-2 py-1 text-sm text-status-danger-text"
           role="alert"
         >
           {loadError}

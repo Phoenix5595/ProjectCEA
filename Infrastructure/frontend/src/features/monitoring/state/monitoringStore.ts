@@ -1,12 +1,11 @@
-import {
-  CONTROL_HISTORY_MAX_POINTS,
-  MonitoringApi,
-  SENSOR_RANGE_MAX_POINTS,
-} from '../api'
-import type { MonitoringRange, MonitoringStoreOptions, StoreState } from './monitoringStore.types'
+import { CONTROL_HISTORY_MAX_POINTS, MonitoringApi, SENSOR_RANGE_MAX_POINTS } from '../api'
 
 import { applyInitialPartial } from './monitoringStore.control'
-import { createIdleSourceOutcomes, deriveActiveSourceErrors, deriveRangeFreshness } from './monitoringStore.health'
+import {
+  createIdleSourceOutcomes,
+  deriveActiveSourceErrors,
+  deriveRangeFreshness,
+} from './monitoringStore.health'
 import { iso, sameRange } from './monitoringStore.merge'
 import {
   applySettledSource,
@@ -15,6 +14,7 @@ import {
 } from './monitoringStore.outcomes'
 import { MonitoringLivePoller } from './monitoringStore.poller'
 import { rangeBounds, rangeChanged } from './monitoringStore.range'
+import type { MonitoringRange, MonitoringStoreOptions, StoreState } from './monitoringStore.types'
 
 const DEFAULT_POLL_MS = 1000
 const DEFAULT_DURATION_MS = 3600_000
@@ -46,22 +46,24 @@ export class MonitoringStore {
   constructor(
     private readonly location: string,
     private readonly monitoringApi: MonitoringApi,
-    options: MonitoringStoreOptions = {},
+    options: MonitoringStoreOptions = {}
   ) {
     this.pollIntervalMs = options.pollIntervalMs ?? DEFAULT_POLL_MS
     this.now = options.now ?? (() => new Date())
     this.state = this.initialState()
     this.poller = new MonitoringLivePoller(location, monitoringApi, {
       read: () => this.state,
-      applyData: (data) => this.setState({ data }),
-      setFlags: (patch) => this.setState(patch),
+      getSensorRangeMaxPoints: () => this.rangeBudget.sensor,
+      applyData: data => this.setState({ data }),
+      setFlags: patch => this.setState(patch),
       isActive: () => this.active,
       isPaused: () => this.paused,
       now: () => this.now(),
-      liveRequest: () => this.state.range.kind === 'live'
-        ? { range: this.state.range, generation: this.rangeSequence }
-        : null,
-      isLiveRequestCurrent: (request) =>
+      liveRequest: () =>
+        this.state.range.kind === 'live'
+          ? { range: this.state.range, generation: this.rangeSequence }
+          : null,
+      isLiveRequestCurrent: request =>
         this.active &&
         !this.paused &&
         this.rangeSequence === request.generation &&
@@ -69,7 +71,7 @@ export class MonitoringStore {
       applySourceSuccess: (source, lastGoodAt) => {
         this.setState(applySourceSuccessToState(this.state, { source, lastGoodAt }))
       },
-      applySourceFailure: (failure) => {
+      applySourceFailure: failure => {
         this.setState(applySourceFailureToState(this.state, failure))
       },
     })
@@ -219,12 +221,24 @@ export class MonitoringStore {
     this.rangeInFlight = true
     this.setState({ loading: true })
     const settled = await Promise.allSettled([
-      this.monitoringApi.sensorRange(this.location, iso(requestedStart), iso(requestedEnd), this.rangeBudget.sensor, {
-        signal: controller.signal,
-      }),
-      this.monitoringApi.controlRange(this.location, iso(requestedStart), iso(requestedEnd), this.rangeBudget.control, {
-        signal: controller.signal,
-      }),
+      this.monitoringApi.sensorRange(
+        this.location,
+        iso(requestedStart),
+        iso(requestedEnd),
+        this.rangeBudget.sensor,
+        {
+          signal: controller.signal,
+        }
+      ),
+      this.monitoringApi.controlRange(
+        this.location,
+        iso(requestedStart),
+        iso(requestedEnd),
+        this.rangeBudget.control,
+        {
+          signal: controller.signal,
+        }
+      ),
       this.monitoringApi.controlProjection(this.location, {
         signal: controller.signal,
       }),
@@ -237,8 +251,18 @@ export class MonitoringStore {
     if (sequence !== this.rangeSequence) return
     const completedAt = this.now()
     const sensorResult = applySettledSource(this.state, 'sensor-history', settled[0], completedAt)
-    const controlResult = applySettledSource(sensorResult.state, 'control-history', settled[1], completedAt)
-    const projectionResult = applySettledSource(controlResult.state, 'projection', settled[2], completedAt)
+    const controlResult = applySettledSource(
+      sensorResult.state,
+      'control-history',
+      settled[1],
+      completedAt
+    )
+    const projectionResult = applySettledSource(
+      controlResult.state,
+      'projection',
+      settled[2],
+      completedAt
+    )
     const sensorRange = sensorResult.value
     const controlRange = controlResult.value
     const projection = projectionResult.value
@@ -251,9 +275,10 @@ export class MonitoringStore {
       loading: false,
       errors,
       sourceOutcomes: outcomes,
-      data: hasHistory || projection !== null
-        ? applyInitialPartial(this.state.data, sensorRange, controlRange, projection)
-        : this.state.data,
+      data:
+        hasHistory || projection !== null
+          ? applyInitialPartial(this.state.data, sensorRange, controlRange, projection)
+          : this.state.data,
       ...(hasHistory
         ? {
             fulfilledRange: {

@@ -1,5 +1,6 @@
-import React from 'react'
-import ReactDOM from 'react-dom/client'
+import { StrictMode } from 'react'
+import { createRoot } from 'react-dom/client'
+
 import App from './App.tsx'
 import './styles/index.css'
 
@@ -22,7 +23,11 @@ export function isDynamicModuleLoadError(message: string | null | undefined): bo
   )
 }
 
-export function shouldReload(lastReloadAtMs: number | null, nowMs: number, windowMs: number): boolean {
+export function shouldReload(
+  lastReloadAtMs: number | null,
+  nowMs: number,
+  windowMs: number
+): boolean {
   if (lastReloadAtMs === null) return true
   return nowMs - lastReloadAtMs >= windowMs
 }
@@ -65,10 +70,10 @@ export function registerBundleReloadHandler(): void {
   // Vite emits this event for failed dynamic imports/modulepreloads; the
   // generic channels catch the same failures outside the Vite build path.
   window.addEventListener('vite:preloadError', reloadOnce)
-  window.addEventListener('error', (event) => {
+  window.addEventListener('error', event => {
     if (isDynamicModuleLoadError(event.message)) reloadOnce()
   })
-  window.addEventListener('unhandledrejection', (event) => {
+  window.addEventListener('unhandledrejection', event => {
     if (isDynamicModuleLoadError(String(event.reason))) reloadOnce()
   })
 }
@@ -77,9 +82,9 @@ registerBundleReloadHandler()
 
 const container = document.getElementById('root')
 if (container) {
-  ReactDOM.createRoot(container).render(
-    <React.StrictMode>
+  createRoot(container).render(
+    <StrictMode>
       <App />
-    </React.StrictMode>,
+    </StrictMode>
   )
 }

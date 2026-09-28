@@ -12,7 +12,7 @@ import uPlot from 'uplot'
 export function nowDividerPlugin(getNowX: () => number | null, color: string): uPlot.Plugin {
   return {
     hooks: {
-      drawClear: (u) => {
+      drawClear: u => {
         const nowX = getNowX()
         if (nowX === null) return
         const { ctx, bbox } = u

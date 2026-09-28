@@ -16,9 +16,18 @@
  * Monitoring and dashboard functional projects use exactly 1920x1080 and 1280x1440.
  */
 import { defineConfig, devices } from '@playwright/test'
-import { FIXTURE_ORIGIN, FIXTURE_PORT, FIXTURE_WS_ORIGIN } from './src/features/monitoring/config/originGuard'
+import {
+  FIXTURE_ORIGIN,
+  FIXTURE_PORT,
+  FIXTURE_WS_ORIGIN,
+} from './src/features/monitoring/config/originGuard'
 
 const BASE_URL = process.env.BASE_URL ?? FIXTURE_ORIGIN
+
+const chromiumExecutablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH
+const chromiumLaunchOptions = chromiumExecutablePath
+  ? { launchOptions: { executablePath: chromiumExecutablePath } }
+  : {}
 
 export default defineConfig({
   testDir: './tests/monitoring',
@@ -34,26 +43,42 @@ export default defineConfig({
   projects: [
     {
       name: 'chromium-functional-1920x1080',
-      use: { ...devices['Desktop Chrome'], viewport: { width: 1920, height: 1080 } },
+      use: {
+        ...devices['Desktop Chrome'],
+        ...chromiumLaunchOptions,
+        viewport: { width: 1920, height: 1080 },
+      },
       testIgnore: '**/performance.spec.ts',
       fullyParallel: true,
     },
     {
       name: 'chromium-functional-1280x1440',
-      use: { ...devices['Desktop Chrome'], viewport: { width: 1280, height: 1440 } },
+      use: {
+        ...devices['Desktop Chrome'],
+        ...chromiumLaunchOptions,
+        viewport: { width: 1280, height: 1440 },
+      },
       testIgnore: '**/performance.spec.ts',
       fullyParallel: true,
     },
     {
       name: 'chromium-performance-1920x1080',
-      use: { ...devices['Desktop Chrome'], viewport: { width: 1920, height: 1080 } },
+      use: {
+        ...devices['Desktop Chrome'],
+        ...chromiumLaunchOptions,
+        viewport: { width: 1920, height: 1080 },
+      },
       testMatch: '**/performance.spec.ts',
       dependencies: ['chromium-functional-1920x1080'],
       workers: 1,
     },
     {
       name: 'chromium-performance-1280x1440',
-      use: { ...devices['Desktop Chrome'], viewport: { width: 1280, height: 1440 } },
+      use: {
+        ...devices['Desktop Chrome'],
+        ...chromiumLaunchOptions,
+        viewport: { width: 1280, height: 1440 },
+      },
       testMatch: '**/performance.spec.ts',
       dependencies: ['chromium-functional-1280x1440'],
       workers: 1,
@@ -72,7 +97,7 @@ export default defineConfig({
   webServer: process.env.BASE_URL
     ? undefined
     : {
-        command: `npx vite build --config vite.monitoring.config.ts && npx vite preview --config vite.monitoring.config.ts --host 127.0.0.1 --port ${FIXTURE_PORT} --strictPort`,
+        command: `vite build --config vite.monitoring.config.ts && vite preview --config vite.monitoring.config.ts --host 127.0.0.1 --port ${FIXTURE_PORT} --strictPort`,
         url: BASE_URL,
         reuseExistingServer: false,
         timeout: 120_000,

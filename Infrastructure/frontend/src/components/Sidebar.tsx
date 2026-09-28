@@ -1,6 +1,6 @@
-import React from 'react'
 import { Flower2, FlaskConical, Settings, Sprout } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
+import type { FC } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 
 interface NavItem {
@@ -16,7 +16,7 @@ const navItems: NavItem[] = [
   { label: 'Devices', path: '/devices', icon: Settings },
 ]
 
-const Sidebar: React.FC = () => {
+const Sidebar: FC = () => {
   const location = useLocation()
 
   return (
@@ -32,10 +32,7 @@ const Sidebar: React.FC = () => {
         </Link>
       </div>
 
-      <nav
-        aria-label="Primary navigation"
-        className="flex-1 flex flex-col py-1 overflow-y-auto"
-      >
+      <nav aria-label="Primary navigation" className="flex-1 flex flex-col py-1 overflow-y-auto">
         {navItems.map(item => {
           const isActive = location.pathname.startsWith(item.path)
           const Icon = item.icon
@@ -51,7 +48,7 @@ const Sidebar: React.FC = () => {
                 justify-center px-0 mx-0
                 ${
                   isActive
-                    ? 'bg-accent-vivid text-surface-base font-medium'
+                    ? 'bg-accent-vivid text-accent-vivid-foreground font-medium'
                     : 'text-text-secondary hover:bg-surface-tertiary hover:text-text-default'
                 }
               `}
@@ -61,7 +58,6 @@ const Sidebar: React.FC = () => {
           )
         })}
       </nav>
-
     </aside>
   )
 }

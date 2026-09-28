@@ -3,17 +3,18 @@
  * 0–4 placement coordinates, Modbus ordering/reflow, stale/missing display,
  * one-toast-per-new-ID, badge navigation, and the history chart contract.
  */
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import FlowerSoil from '../../../pages/FlowerSoil'
 import { ThemeProvider } from '../../../contexts/ThemeContext'
-import { PROBE_LAYOUT, groupByBed } from '../layout'
+import FlowerSoil from '../../../pages/FlowerSoil'
 import { extractSoilApiError } from '../api/client'
 import type { SoilHistoryResponse } from '../api/contracts'
+import { adaptSoilHistory } from '../history'
+import { PROBE_LAYOUT, groupByBed } from '../layout'
 
-vi.mock('../api/client', async (importOriginal) => {
+vi.mock('../api/client', async importOriginal => {
   const actual = await importOriginal<typeof import('../api/client')>()
   return {
     ...actual,
@@ -54,10 +55,30 @@ const LIVE_RESPONSE = {
       bed: 'Front Bed',
       last_seen: new Date('2026-09-21T12:00:00Z'),
       metrics: {
-        temperature: { value: 21.4, unit: '°C', observed_at: new Date('2026-09-21T12:00:00Z'), age_seconds: 1 },
-        water_content: { value: 32.1, unit: '%', observed_at: new Date('2026-09-21T12:00:00Z'), age_seconds: 1 },
-        ec: { value: 1180, unit: 'µS/cm', observed_at: new Date('2026-09-21T12:00:00Z'), age_seconds: 1 },
-        ph: { value: 6.6, unit: 'pH', observed_at: new Date('2026-09-21T12:00:00Z'), age_seconds: 1 },
+        temperature: {
+          value: 21.4,
+          unit: '°C',
+          observed_at: new Date('2026-09-21T12:00:00Z'),
+          age_seconds: 1,
+        },
+        water_content: {
+          value: 32.1,
+          unit: '%',
+          observed_at: new Date('2026-09-21T12:00:00Z'),
+          age_seconds: 1,
+        },
+        ec: {
+          value: 1180,
+          unit: 'µS/cm',
+          observed_at: new Date('2026-09-21T12:00:00Z'),
+          age_seconds: 1,
+        },
+        ph: {
+          value: 6.6,
+          unit: 'pH',
+          observed_at: new Date('2026-09-21T12:00:00Z'),
+          age_seconds: 1,
+        },
       },
     },
   ],
@@ -104,7 +125,7 @@ function renderSoil(): void {
           <Route path="*" element={<LocationProbe />} />
         </Routes>
       </MemoryRouter>
-    </ThemeProvider>,
+    </ThemeProvider>
   )
 }
 
@@ -131,19 +152,71 @@ describe('soil page', () => {
     expect(card.textContent).toContain('°C')
   })
 
-  it('renders an em-dash plus explicit Stale text for unavailable metrics', async () => {
+  it('shows missing and stale freshness for the corresponding metric', async () => {
+    const probe = LIVE_RESPONSE.probes[0]
+    if (probe === undefined) throw new Error('soil fixture probe missing')
+    const now = new Date()
+    const stale = new Date(now.getTime() - 60_000)
+    vi.mocked(soilApi.soilLive).mockResolvedValue({
+      ...LIVE_RESPONSE,
+      probes: [
+        {
+          ...probe,
+          metrics: {
+            ...probe.metrics,
+            water_content: null,
+            ec: { ...probe.metrics.ec, observed_at: stale },
+            ph: { ...probe.metrics.ph, observed_at: now },
+            temperature: { ...probe.metrics.temperature, observed_at: now },
+          },
+        },
+      ],
+    })
+
     renderSoil()
-    await screen.findAllByTestId('soil-probe-card')
-    expect(screen.getAllByText('Stale').length).toBeGreaterThan(0)
+    const card = await screen.findByTestId('soil-probe-card')
+    const metricLabels = within(card)
+      .getAllByRole('term')
+      .map(term => (term.textContent ?? '').replace(/\s+/g, ' ').trim())
+    expect(metricLabels).toEqual(['Water content No reading', 'EC Stale', 'pH', 'Temperature'])
+    expect(within(card).getByText('—')).toBeInTheDocument()
+  })
+})
+
+describe('soil history labels', () => {
+  it('uses the operator-facing metric label rather than the wire enum', () => {
+    const series = adaptSoilHistory(HISTORY_RESPONSE).series
+    expect(series[0]?.label).toBe('Front Bed #226 Water content (%)')
   })
 })
 
 describe('deterministic 0–4 probe layout', () => {
   it.each([
     [1, [{ x: 50, y: 50 }]],
-    [2, [{ x: 30, y: 50 }, { x: 70, y: 50 }]],
-    [3, [{ x: 50, y: 28 }, { x: 32, y: 68 }, { x: 68, y: 68 }]],
-    [4, [{ x: 30, y: 30 }, { x: 70, y: 30 }, { x: 30, y: 70 }, { x: 70, y: 70 }]],
+    [
+      2,
+      [
+        { x: 30, y: 50 },
+        { x: 70, y: 50 },
+      ],
+    ],
+    [
+      3,
+      [
+        { x: 50, y: 28 },
+        { x: 32, y: 68 },
+        { x: 68, y: 68 },
+      ],
+    ],
+    [
+      4,
+      [
+        { x: 30, y: 30 },
+        { x: 70, y: 30 },
+        { x: 30, y: 70 },
+        { x: 70, y: 70 },
+      ],
+    ],
   ])('maps %i probes to fixed percentage coordinates', (count, expected) => {
     expect(PROBE_LAYOUT[count as 1 | 2 | 3 | 4]).toEqual(expected)
   })
@@ -155,8 +228,12 @@ describe('deterministic 0–4 probe layout', () => {
       { registry_id: 5, hardware_address: 227, bed: 'Back Bed', metrics: {} },
     ] as never[]
     const grouped = groupByBed(probes)
-    expect(grouped.frontBed.map((probe: { hardware_address: number }) => probe.hardware_address)).toEqual([226, 228])
-    expect(grouped.backBed.map((probe: { hardware_address: number }) => probe.hardware_address)).toEqual([227])
+    expect(
+      grouped.frontBed.map((probe: { hardware_address: number }) => probe.hardware_address)
+    ).toEqual([226, 228])
+    expect(
+      grouped.backBed.map((probe: { hardware_address: number }) => probe.hardware_address)
+    ).toEqual([227])
   })
 })
 
@@ -168,7 +245,11 @@ describe('structured error boundary', () => {
       response: {
         status: 409,
         data: {
-          error: { status_code: 409, message: 'Front Bed is at capacity', error_code: 'bed_capacity' },
+          error: {
+            status_code: 409,
+            message: 'Front Bed is at capacity',
+            error_code: 'bed_capacity',
+          },
         },
       },
     })

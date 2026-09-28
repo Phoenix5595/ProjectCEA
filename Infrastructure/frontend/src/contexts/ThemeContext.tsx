@@ -6,7 +6,7 @@ export const THEME_NAMES = [
   'verdant-growth',
   'spectrum',
   'obsidian',
-  'botanical'
+  'botanical',
 ] as const
 
 export type ThemeName = (typeof THEME_NAMES)[number]
@@ -45,4 +45,3 @@ export function useTheme() {
   }
   return context
 }
-

@@ -1,9 +1,10 @@
 import { render, screen, within } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
-import { DashboardZoneRow } from '../DashboardZoneRow'
+import { describe, expect, it } from 'vitest'
+
 import type { Device } from '../../../types/device'
 import { buildTrendMetric, type RoomSensorStatus, type TrendData } from '../dashboardStatus'
+import { DashboardZoneRow } from '../DashboardZoneRow'
 
 const missingMainStatuses: Record<string, RoomSensorStatus> = {
   main: { quality: 'missing', newestAgeMs: null, source: null, cluster: 'main' },

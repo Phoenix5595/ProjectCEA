@@ -1,11 +1,12 @@
 import { lazy, Suspense } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { Toaster } from 'sonner'
-import { ThemeProvider } from './contexts/ThemeContext'
-import { ControlActionsProvider } from './contexts/ControlActionsContext'
-import ErrorBoundary from './components/ErrorBoundary'
-import ThemeSwitcher from './components/ThemeSwitcher'
+
+import { ErrorBoundary } from './components/ErrorBoundary'
 import Layout from './components/Layout'
+import { ThemeSwitcher } from './components/ThemeSwitcher'
+import { ControlActionsProvider } from './contexts/ControlActionsContext'
+import { ThemeProvider } from './contexts/ThemeContext'
 
 const Dashboard = lazy(() => import('./pages/Dashboard'))
 const DeviceConfig = lazy(() => import('./pages/DeviceConfig'))
@@ -28,36 +29,52 @@ function App() {
         <Toaster position="top-right" richColors closeButton />
         <BrowserRouter>
           <ErrorBoundary>
-          <Suspense fallback={<div className="flex items-center justify-center h-screen text-text-muted">Loading...</div>}>
-            <Routes>
-              <Route path="/zone/Veg Room/main" element={<Navigate to="/vegetation/control" replace />} />
-              <Route path="/zone/Flower Room/main" element={<Navigate to="/flower/control" replace />} />
-              <Route path="/device-config" element={<Navigate to="/devices" replace />} />
-              <Route path="/laboratory/climate" element={<Navigate to="/laboratory" replace />} />
-              <Route path="/laboratory/water" element={<Navigate to="/laboratory" replace />} />
-              <Route path="/laboratory/infrastructure" element={<Navigate to="/laboratory" replace />} />
+            <Suspense
+              fallback={
+                <div className="flex items-center justify-center h-screen text-text-muted">
+                  Loading...
+                </div>
+              }
+            >
+              <Routes>
+                <Route path="/zone/Lab/main" element={<Navigate to="/laboratory" replace />} />
+                <Route
+                  path="/zone/Veg Room/main"
+                  element={<Navigate to="/vegetation/control" replace />}
+                />
+                <Route
+                  path="/zone/Flower Room/main"
+                  element={<Navigate to="/flower/control" replace />}
+                />
+                <Route path="/device-config" element={<Navigate to="/devices" replace />} />
+                <Route path="/laboratory/climate" element={<Navigate to="/laboratory" replace />} />
+                <Route path="/laboratory/water" element={<Navigate to="/laboratory" replace />} />
+                <Route
+                  path="/laboratory/infrastructure"
+                  element={<Navigate to="/laboratory" replace />}
+                />
 
-              <Route element={<Layout />}>
-                <Route path="/" element={<Dashboard />} />
+                <Route element={<Layout />}>
+                  <Route path="/" element={<Dashboard />} />
 
-                <Route path="/laboratory" element={<LaboratoryOverview />} />
+                  <Route path="/laboratory" element={<LaboratoryOverview />} />
 
-                <Route path="/vegetation" element={<VegetationOverview />} />
-                <Route path="/vegetation/monitoring" element={<VegetationMonitoring />} />
-                <Route path="/vegetation/control" element={<VegetationControl />} />
-                <Route path="/vegetation/automation" element={<VegetationAutomation />} />
+                  <Route path="/vegetation" element={<VegetationOverview />} />
+                  <Route path="/vegetation/monitoring" element={<VegetationMonitoring />} />
+                  <Route path="/vegetation/control" element={<VegetationControl />} />
+                  <Route path="/vegetation/automation" element={<VegetationAutomation />} />
 
-                <Route path="/flower" element={<FlowerOverview />} />
-                <Route path="/flower/monitoring" element={<FlowerMonitoring />} />
-                <Route path="/flower/soil" element={<FlowerSoil />} />
-                <Route path="/flower/control" element={<FlowerControl />} />
-                <Route path="/flower/automation" element={<FlowerAutomation />} />
+                  <Route path="/flower" element={<FlowerOverview />} />
+                  <Route path="/flower/monitoring" element={<FlowerMonitoring />} />
+                  <Route path="/flower/soil" element={<FlowerSoil />} />
+                  <Route path="/flower/control" element={<FlowerControl />} />
+                  <Route path="/flower/automation" element={<FlowerAutomation />} />
 
-                <Route path="/devices" element={<DeviceConfig />} />
-                <Route path="/settings/calendar" element={<CalendarSettings />} />
-              </Route>
-            </Routes>
-          </Suspense>
+                  <Route path="/devices" element={<DeviceConfig />} />
+                  <Route path="/settings/calendar" element={<CalendarSettings />} />
+                </Route>
+              </Routes>
+            </Suspense>
           </ErrorBoundary>
         </BrowserRouter>
         <ThemeSwitcher />

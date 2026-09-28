@@ -1,19 +1,20 @@
-import { useMemo, useState } from 'react'
-import { DayPicker } from 'react-day-picker'
-import { fr } from 'react-day-picker/locale'
+import { DayPicker } from '@daypicker/react'
+import { fr } from '@daypicker/react/locale'
 import { format } from 'date-fns'
 import { fr as dateFnsFr } from 'date-fns/locale'
 import { toZonedTime } from 'date-fns-tz'
+import { useMemo, useState } from 'react'
 
 import type { CalendarEventDto } from '../../types/calendar'
 import { ROOM_CALENDAR_COLORS } from '../../types/calendar'
 import { buildCalendarDayMarkers, calendarEventOccursOnDay } from '../../utils/calendarDayMarkers'
 import { CALENDAR_TZ } from '../../utils/flowerGrowPlan'
-import { CalendarDayButton } from './CalendarDayButton'
-import { CalendarMarkersContext } from './CalendarMarkersContext'
-import CalendarDayDetail from './CalendarDayDetail'
 
-import 'react-day-picker/style.css'
+import { CalendarDayButton } from './CalendarDayButton'
+import CalendarDayDetail from './CalendarDayDetail'
+import { CalendarMarkersContext } from './CalendarMarkersContext'
+
+import '@daypicker/react/style.css'
 
 export interface GrowCalendarProps {
   variant: 'compact' | 'full'

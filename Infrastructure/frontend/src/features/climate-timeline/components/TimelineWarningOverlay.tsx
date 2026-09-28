@@ -7,7 +7,7 @@ type WarningWindow = {
 
 function warningPosition(
   warning: TimelineWarning,
-  window: WarningWindow,
+  window: WarningWindow
 ): { readonly left: number; readonly width: number } | null {
   if (warning.start === undefined || warning.end === undefined) return null
   const duration = window.end.getTime() - window.start.getTime()
@@ -44,7 +44,9 @@ export function TimelineWarningOverlay({
       className="pointer-events-none absolute inset-y-0 z-20 overflow-hidden border border-dashed border-status-danger bg-status-danger-bg/30 text-status-danger-text"
       style={{ left: `${position.left}%`, width: `${position.width}%` }}
     >
-      <span className="block truncate px-1 text-9 font-bold uppercase">{timelineWarningLabel(warning)}</span>
+      <span className="block truncate px-1 text-9 font-bold uppercase">
+        {timelineWarningLabel(warning)}
+      </span>
     </div>
   )
 }

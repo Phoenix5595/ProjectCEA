@@ -1,4 +1,5 @@
 import type { EventLogEntry } from '../state/eventLogStore'
+
 import { formatSetpointFromTo } from './setpointChange'
 
 export interface EventSourcePart {
@@ -58,7 +59,8 @@ export function sourcePartsFor(entry: EventLogEntry): EventSourcePart[] {
       : clusterValue
   const controllerValue = stringPayload(entry.payload.controller)
   const deviceTypeValue = stringPayload(entry.payload.device_type)
-  const relayState = entry.payload.state === true ? 'ON' : entry.payload.state === false ? 'OFF' : null
+  const relayState =
+    entry.payload.state === true ? 'ON' : entry.payload.state === false ? 'OFF' : null
   const missing = missingInputLabel(entry.type, deviceTypeValue)
 
   const sourceParts: EventSourcePart[] = []
@@ -76,7 +78,8 @@ export function sourcePartsFor(entry: EventLogEntry): EventSourcePart[] {
   if (deviceTypeValue !== null) sourceParts.push({ text: `device type: ${deviceTypeValue}` })
   if (missing !== null) sourceParts.push({ text: missing })
   const setpointChange = formatSetpointFromTo(entry.payload)
-  if (setpointChange !== null) sourceParts.push({ text: setpointChange, className: 'font-semibold' })
+  if (setpointChange !== null)
+    sourceParts.push({ text: setpointChange, className: 'font-semibold' })
   return sourceParts
 }
 
@@ -85,4 +88,3 @@ function relayEngagedClass(entry: EventLogEntry): string | undefined {
   const engaged = entry.payload.state === true || entry.payload.observed_state === true
   return engaged ? 'text-event-relay font-bold' : undefined
 }
-

@@ -5,6 +5,7 @@
  * day/night intervals read as a backdrop rather than fake y-series.
  */
 import uPlot from 'uplot'
+
 import type { PhotoperiodInterval } from '../../data'
 
 export interface PhotoperiodColors {
@@ -15,11 +16,11 @@ export interface PhotoperiodColors {
 /** Build a uPlot plugin that draws photoperiod intervals behind the series. */
 export function photoperiodPlugin(
   getIntervals: () => readonly PhotoperiodInterval[],
-  colors: PhotoperiodColors,
+  colors: PhotoperiodColors
 ): uPlot.Plugin {
   return {
     hooks: {
-      drawClear: (u) => {
+      drawClear: u => {
         const { ctx, bbox } = u
         for (const interval of getIntervals()) {
           if (interval.phase === 'UNKNOWN') continue

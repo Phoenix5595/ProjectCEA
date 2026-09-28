@@ -15,7 +15,7 @@ import { fixtureUrl } from './fixtureUrl'
 
 function trackViolations(page: import('@playwright/test').Page): string[] {
   const violations: string[] = []
-  page.on('request', (req) => {
+  page.on('request', req => {
     const url = req.url()
     if (url.includes('/grafana/')) violations.push(`grafana: ${url}`)
     const violation = describeViolation(url)
@@ -94,16 +94,14 @@ test('flower monitoring renders natively', async ({ page }, testInfo) => {
 
   await expect(page.getByRole('button', { name: 'Reset Zoom' })).toBeVisible()
   await page.getByRole('button', { name: 'Reset Zoom' }).click()
-  await expect(
-    page.getByRole('heading', { name: 'Flower climate conditions' }),
-  ).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Flower climate conditions' })).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Flower atmosphere & equipment' })).toBeVisible()
 
   await expect(page.getByRole('table', { name: 'Averages' })).toBeVisible()
   await expect(page.getByRole('table', { name: 'Front Cluster' })).toBeVisible()
   await expect(page.getByRole('table', { name: 'Back Cluster' })).toBeVisible()
   await expect(
-    page.getByRole('table', { name: 'Statistics - All Available Sensors' }),
+    page.getByRole('table', { name: 'Statistics - All Available Sensors' })
   ).toBeVisible()
 
   expect(violations).toEqual([])
@@ -142,9 +140,7 @@ test('keeps Back and history when Front/projection fail', async ({ page }, testI
   await expect(backTable.getByText('Dry Bulb')).toBeVisible()
   await expect(backTable.getByText('24.6°C')).toBeVisible({ timeout: 15000 })
 
-  await expect(
-    page.getByRole('heading', { name: 'Flower climate conditions' }),
-  ).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Flower climate conditions' })).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Flower atmosphere & equipment' })).toBeVisible()
 
   expect(violations).toEqual([])

@@ -8,9 +8,18 @@
  * Set `BASE_URL` for a live read-only run; fixture runs start the local preview server below.
  */
 import { defineConfig, devices } from '@playwright/test'
-import { FIXTURE_ORIGIN, FIXTURE_PORT, FIXTURE_WS_ORIGIN } from './src/features/monitoring/config/originGuard'
+import {
+  FIXTURE_ORIGIN,
+  FIXTURE_PORT,
+  FIXTURE_WS_ORIGIN,
+} from './src/features/monitoring/config/originGuard'
 
 const BASE_URL = process.env.BASE_URL ?? FIXTURE_ORIGIN
+
+const chromiumExecutablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH
+const chromiumLaunchOptions = chromiumExecutablePath
+  ? { launchOptions: { executablePath: chromiumExecutablePath } }
+  : {}
 
 export default defineConfig({
   testDir: './tests/event-log',
@@ -26,29 +35,39 @@ export default defineConfig({
   projects: [
     {
       name: 'chromium-event-log-1920x1080',
-      use: { ...devices['Desktop Chrome'], viewport: { width: 1920, height: 1080 } },
+      use: {
+        ...devices['Desktop Chrome'],
+        ...chromiumLaunchOptions,
+        viewport: { width: 1920, height: 1080 },
+      },
       fullyParallel: false,
     },
     {
       name: 'chromium-event-log-1280x1440',
-      use: { ...devices['Desktop Chrome'], viewport: { width: 1280, height: 1440 } },
+      use: {
+        ...devices['Desktop Chrome'],
+        ...chromiumLaunchOptions,
+        viewport: { width: 1280, height: 1440 },
+      },
       fullyParallel: false,
     },
   ],
-  webServer: process.env.BASE_URL ? undefined : {
-      command: `npx vite build --config vite.monitoring.config.ts && npx vite preview --config vite.monitoring.config.ts --host 127.0.0.1 --port ${FIXTURE_PORT} --strictPort`,
-      url: BASE_URL,
-      reuseExistingServer: false,
-      timeout: 120_000,
-      env: {
-        PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1',
-        MONITORING_FIXTURE_PORT: String(FIXTURE_PORT),
-        VITE_API_BASE_URL: FIXTURE_ORIGIN,
-        VITE_BACKEND_API_URL: FIXTURE_ORIGIN,
-        VITE_AUTOMATION_API_URL: FIXTURE_ORIGIN,
-        VITE_WEATHER_API_URL: FIXTURE_ORIGIN,
-        VITE_MONITORING_API_URL: FIXTURE_ORIGIN,
-        VITE_WEBSOCKET_URL: `${FIXTURE_WS_ORIGIN}/ws`,
+  webServer: process.env.BASE_URL
+    ? undefined
+    : {
+        command: `vite build --config vite.monitoring.config.ts && vite preview --config vite.monitoring.config.ts --host 127.0.0.1 --port ${FIXTURE_PORT} --strictPort`,
+        url: BASE_URL,
+        reuseExistingServer: false,
+        timeout: 120_000,
+        env: {
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1',
+          MONITORING_FIXTURE_PORT: String(FIXTURE_PORT),
+          VITE_API_BASE_URL: FIXTURE_ORIGIN,
+          VITE_BACKEND_API_URL: FIXTURE_ORIGIN,
+          VITE_AUTOMATION_API_URL: FIXTURE_ORIGIN,
+          VITE_WEATHER_API_URL: FIXTURE_ORIGIN,
+          VITE_MONITORING_API_URL: FIXTURE_ORIGIN,
+          VITE_WEBSOCKET_URL: `${FIXTURE_WS_ORIGIN}/ws`,
+        },
       },
-    },
 })

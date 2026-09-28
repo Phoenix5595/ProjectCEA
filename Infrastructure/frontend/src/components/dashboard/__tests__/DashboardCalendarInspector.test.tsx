@@ -1,10 +1,11 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, fireEvent, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-import DashboardCalendarInspector from '../DashboardCalendarInspector'
+import { apiClient } from '../../../services/api'
 import type { CalendarEventDto } from '../../../types/calendar'
 import * as calendarUtils from '../../../utils/calendarDayMarkers'
+import DashboardCalendarInspector from '../DashboardCalendarInspector'
 
 vi.mock('../../../services/api', () => ({
   apiClient: {
@@ -12,8 +13,6 @@ vi.mock('../../../services/api', () => ({
     updateCalendarEvent: vi.fn(),
   },
 }))
-
-import { apiClient } from '../../../services/api'
 
 const NOW = new Date('2026-09-21T16:00:00Z') // noon in America/Toronto
 

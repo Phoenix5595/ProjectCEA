@@ -15,7 +15,10 @@ interface RelayChannelMatrixProps {
   onSelectChannel?: (channel: number) => void
   menuOpenChannel?: number | null
   onToggleMenu?: (channel: number) => void
-  onMenuAction?: (channel: number, action: 'auto' | 'timer-5m' | 'timer-10m' | 'timer-30m' | 'timer-1h' | 'off') => void
+  onMenuAction?: (
+    channel: number,
+    action: 'auto' | 'timer-5m' | 'timer-10m' | 'timer-30m' | 'timer-1h' | 'off'
+  ) => void
 }
 
 interface ChannelBoxRenderProps {
@@ -26,7 +29,10 @@ interface ChannelBoxRenderProps {
   onSelectChannel?: (channel: number) => void
   menuOpenChannel: number | null
   onToggleMenu?: (channel: number) => void
-  onMenuAction?: (channel: number, action: 'auto' | 'timer-5m' | 'timer-10m' | 'timer-30m' | 'timer-1h' | 'off') => void
+  onMenuAction?: (
+    channel: number,
+    action: 'auto' | 'timer-5m' | 'timer-10m' | 'timer-30m' | 'timer-1h' | 'off'
+  ) => void
 }
 
 function renderChannelBox(channel: RelayChannelViewModel, props: ChannelBoxRenderProps) {
@@ -119,8 +125,6 @@ export default function RelayChannelMatrix({
             </div>
           )
         })}
-
-
       </div>
     </div>
   )

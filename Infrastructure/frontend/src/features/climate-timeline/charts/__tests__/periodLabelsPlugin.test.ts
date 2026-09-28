@@ -1,6 +1,7 @@
-import { describe, expect, it, vi } from 'vitest'
 import { act } from '@testing-library/react'
 import type uPlot from 'uplot'
+import { describe, expect, it, vi } from 'vitest'
+
 import {
   LABEL_EDGE_PADDING_PX,
   LABEL_FONT,
@@ -31,8 +32,16 @@ describe('periodLabelSegments', () => {
   })
 
   it('tracks a draft time change in the segment extent', () => {
-    const before = periodLabelSegments([{ period_name: 'Day', start_time: '12:00', end_time: '22:00' }], WINDOW.start, WINDOW.end)
-    const after = periodLabelSegments([{ period_name: 'Day', start_time: '13:00', end_time: '22:00' }], WINDOW.start, WINDOW.end)
+    const before = periodLabelSegments(
+      [{ period_name: 'Day', start_time: '12:00', end_time: '22:00' }],
+      WINDOW.start,
+      WINDOW.end
+    )
+    const after = periodLabelSegments(
+      [{ period_name: 'Day', start_time: '13:00', end_time: '22:00' }],
+      WINDOW.start,
+      WINDOW.end
+    )
     expect(after[0].startMs).toBe(before[0].startMs + 60 * MIN)
   })
 })
@@ -46,7 +55,7 @@ describe('layoutPeriodLabels', () => {
     for (let index = 1; index < labels.length; index += 1) {
       expect(labels[index].startMs).toBeGreaterThanOrEqual(labels[index - 1].endMs - MIN)
     }
-    const morning = labels.find((label) => label.text === 'Morning shift')
+    const morning = labels.find(label => label.text === 'Morning shift')
     expect(morning?.clippedText).toBe('Morning shift')
     expect(morning?.startMs).toBe(DAY + 6 * 60 * MIN)
     expect(morning?.endMs).toBe(DAY + 12 * 60 * MIN)
@@ -67,7 +76,7 @@ describe('layoutPeriodLabels', () => {
     const labels = layoutPeriodLabels(
       [{ text: 'Blip', startMs: DAY, endMs: DAY + 2 * MIN }],
       WINDOW,
-      plotWidthPx,
+      plotWidthPx
     )
     expect(labels).toEqual([])
   })
@@ -83,7 +92,7 @@ describe('periodLabelsPlugin', () => {
   it('draws the layout with fillText after the photoperiod bands and before series strokes', () => {
     const plugin = periodLabelsPlugin(
       () => [{ text: 'Day', startMs: DAY + 12 * 60 * MIN, endMs: DAY + 22 * 60 * MIN }],
-      { startMs: WINDOW.start, endMs: WINDOW.end },
+      { startMs: WINDOW.start, endMs: WINDOW.end }
     )
     const calls: string[] = []
     const ctx = {
@@ -107,10 +116,12 @@ describe('periodLabelsPlugin', () => {
     act(() => {
       const drawClear = plugin.hooks.drawClear
       const hooks = Array.isArray(drawClear) ? drawClear : drawClear ? [drawClear] : []
-      hooks.forEach((hook) => (hook as (u: uPlot) => void)(u))
+      hooks.forEach(hook => (hook as (u: uPlot) => void)(u))
     })
 
-    expect(calls).toContain(`fillText:Day:${12 * 60 + LABEL_EDGE_PADDING_PX}:${400 - LABEL_EDGE_PADDING_PX}`)
+    expect(calls).toContain(
+      `fillText:Day:${12 * 60 + LABEL_EDGE_PADDING_PX}:${400 - LABEL_EDGE_PADDING_PX}`
+    )
     expect(calls[0]).toBe('save')
     expect(ctx.font).toBe(LABEL_FONT)
     expect(ctx.fillStyle).toBe('#e2e8f0')
@@ -123,10 +134,14 @@ describe('periodLabelsPlugin', () => {
     const plugin = periodLabelsPlugin(() => [], { startMs: WINDOW.start, endMs: WINDOW.end })
     const fillText = vi.fn()
     const ctx = { save: vi.fn(), restore: vi.fn(), fillText } as unknown as CanvasRenderingContext2D
-    const u = { ctx, bbox: { left: 0, top: 0, width: 100, height: 100 }, valToPos: () => 0 } as unknown as uPlot
+    const u = {
+      ctx,
+      bbox: { left: 0, top: 0, width: 100, height: 100 },
+      valToPos: () => 0,
+    } as unknown as uPlot
     const drawClear = plugin.hooks.drawClear
     const hooks = Array.isArray(drawClear) ? drawClear : drawClear ? [drawClear] : []
-    hooks.forEach((hook) => (hook as (u: uPlot) => void)(u))
+    hooks.forEach(hook => (hook as (u: uPlot) => void)(u))
     expect(fillText).not.toHaveBeenCalled()
   })
 })

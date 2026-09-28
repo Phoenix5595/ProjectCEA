@@ -1,42 +1,54 @@
-import { useEffect, useState } from 'react';
-import { toast } from 'sonner';
+import { useEffect, useState } from 'react'
+import { toast } from 'sonner'
 
-import { apiClient } from '../services/api';
-import { extractErrorMessage } from '../utils/errors';
 import { Input } from '@/components/ui/input'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+
+import { apiClient } from '../services/api'
+import { extractErrorMessage } from '../utils/errors'
 
 export default function CalendarSettings() {
-  const [connection, setConnection] = useState<Record<string, unknown> | null>(null);
-  const [caldavBaseUrl, setCaldavBaseUrl] = useState('');
-  const [username, setUsername] = useState('');
-  const [appPassword, setAppPassword] = useState('');
-  const [targetCalendarUrl, setTargetCalendarUrl] = useState('');
-  const [calendars, setCalendars] = useState<Array<{ name: string; url: string }>>([]);
-  const [syncing, setSyncing] = useState(false);
-  const [flowerCalendarTransitionsEnabled, setFlowerCalendarTransitionsEnabled] = useState(true);
-  const [savingFlowerCalendarTransitions, setSavingFlowerCalendarTransitions] = useState(false);
+  const [connection, setConnection] = useState<Record<string, unknown> | null>(null)
+  const [caldavBaseUrl, setCaldavBaseUrl] = useState('')
+  const [username, setUsername] = useState('')
+  const [appPassword, setAppPassword] = useState('')
+  const [targetCalendarUrl, setTargetCalendarUrl] = useState('')
+  const [calendars, setCalendars] = useState<Array<{ name: string; url: string }>>([])
+  const [syncing, setSyncing] = useState(false)
+  const [flowerCalendarTransitionsEnabled, setFlowerCalendarTransitionsEnabled] = useState(true)
+  const [savingFlowerCalendarTransitions, setSavingFlowerCalendarTransitions] = useState(false)
 
   useEffect(() => {
-    void apiClient.getCalendarSyncConnection().then(setConnection).catch(() => setConnection(null));
+    void apiClient
+      .getCalendarSyncConnection()
+      .then(setConnection)
+      .catch(() => setConnection(null))
     void apiClient
       .getFlowerCalendarModeTransitions()
-      .then((setting) => setFlowerCalendarTransitionsEnabled(setting.enabled))
-      .catch((error) => toast.error(extractErrorMessage(error, 'Failed to load Flower calendar control')));
-  }, []);
+      .then(setting => setFlowerCalendarTransitionsEnabled(setting.enabled))
+      .catch(error =>
+        toast.error(extractErrorMessage(error, 'Failed to load Flower calendar control'))
+      )
+  }, [])
 
   const handleFlowerCalendarTransitionChange = async (enabled: boolean) => {
-    setSavingFlowerCalendarTransitions(true);
+    setSavingFlowerCalendarTransitions(true)
     try {
-      const setting = await apiClient.updateFlowerCalendarModeTransitions(enabled);
-      setFlowerCalendarTransitionsEnabled(setting.enabled);
-      toast.success(`Flower calendar mode transitions ${setting.enabled ? 'enabled' : 'disabled'}`);
+      const setting = await apiClient.updateFlowerCalendarModeTransitions(enabled)
+      setFlowerCalendarTransitionsEnabled(setting.enabled)
+      toast.success(`Flower calendar mode transitions ${setting.enabled ? 'enabled' : 'disabled'}`)
     } catch (error) {
-      toast.error(extractErrorMessage(error, 'Failed to save Flower calendar control'));
+      toast.error(extractErrorMessage(error, 'Failed to save Flower calendar control'))
     } finally {
-      setSavingFlowerCalendarTransitions(false);
+      setSavingFlowerCalendarTransitions(false)
     }
-  };
+  }
 
   const handleTest = async () => {
     try {
@@ -44,13 +56,13 @@ export default function CalendarSettings() {
         caldav_base_url: caldavBaseUrl,
         username,
         app_password: appPassword,
-      });
-      setCalendars(list);
-      toast.success(`Found ${list.length} calendar(s)`);
+      })
+      setCalendars(list)
+      toast.success(`Found ${list.length} calendar(s)`)
     } catch {
-      toast.error('Connection test failed');
+      toast.error('Connection test failed')
     }
-  };
+  }
 
   const handleSave = async () => {
     try {
@@ -59,25 +71,25 @@ export default function CalendarSettings() {
         username,
         app_password: appPassword,
         target_calendar_url: targetCalendarUrl,
-      });
-      setConnection(row);
-      toast.success('Nextcloud connected');
+      })
+      setConnection(row)
+      toast.success('Nextcloud connected')
     } catch {
-      toast.error('Failed to save connection');
+      toast.error('Failed to save connection')
     }
-  };
+  }
 
   const handleSync = async () => {
-    setSyncing(true);
+    setSyncing(true)
     try {
-      const result = await apiClient.runCalendarSync();
-      toast.success(`Sync: pushed ${result.pushed ?? 0}, deleted ${result.deleted ?? 0}`);
+      const result = await apiClient.runCalendarSync()
+      toast.success(`Sync: pushed ${result.pushed ?? 0}, deleted ${result.deleted ?? 0}`)
     } catch {
-      toast.error('Sync failed');
+      toast.error('Sync failed')
     } finally {
-      setSyncing(false);
+      setSyncing(false)
     }
-  };
+  }
 
   return (
     <div className="p-6 max-w-xl">
@@ -85,7 +97,9 @@ export default function CalendarSettings() {
       <div className="mb-4 flex items-center justify-between gap-3 text-sm text-text-default">
         <div>
           <p className="font-medium">Flower calendar mode transitions</p>
-          <p className="text-text-secondary">Let the Flower grow calendar change the active mode.</p>
+          <p className="text-text-secondary">
+            Let the Flower grow calendar change the active mode.
+          </p>
         </div>
         <label className="flex items-center gap-2">
           <span>{flowerCalendarTransitionsEnabled ? 'Enabled' : 'Disabled'}</span>
@@ -94,51 +108,56 @@ export default function CalendarSettings() {
             type="checkbox"
             checked={flowerCalendarTransitionsEnabled}
             disabled={savingFlowerCalendarTransitions}
-            onChange={(event) => void handleFlowerCalendarTransitionChange(event.target.checked)}
+            onChange={event => void handleFlowerCalendarTransitionChange(event.target.checked)}
           />
         </label>
       </div>
       {connection && (
         <p className="text-sm text-text-secondary mb-4">
           Connected: {String(connection.display_name ?? connection.account_email ?? 'Nextcloud')}
-          {connection.last_sync_at
-            ? ` · Last sync ${String(connection.last_sync_at)}`
-            : null}
+          {connection.last_sync_at ? ` · Last sync ${String(connection.last_sync_at)}` : null}
         </p>
       )}
       <div className="space-y-3">
         <Input
           placeholder="CalDAV base URL"
+          aria-label="CalDAV base URL"
           value={caldavBaseUrl}
-          onChange={(e) => setCaldavBaseUrl(e.target.value)}
+          onChange={e => setCaldavBaseUrl(e.target.value)}
         />
         <Input
           placeholder="Username"
+          aria-label="Username"
           value={username}
-          onChange={(e) => setUsername(e.target.value)}
+          onChange={e => setUsername(e.target.value)}
         />
         <Input
           type="password"
           placeholder="App password"
+          aria-label="App password"
           value={appPassword}
-          onChange={(e) => setAppPassword(e.target.value)}
+          onChange={e => setAppPassword(e.target.value)}
         />
         <div className="flex gap-2">
-          <button type="button" onClick={() => void handleTest()} className="px-3 py-1 rounded bg-surface-secondary text-text-default">
+          <button
+            type="button"
+            onClick={() => void handleTest()}
+            className="px-3 py-1 rounded bg-surface-secondary text-text-default"
+          >
             Test
           </button>
         </div>
         {calendars.length > 0 && (
           <Select
             value={targetCalendarUrl || '__none__'}
-            onValueChange={(v) => setTargetCalendarUrl(v === '__none__' ? '' : v)}
+            onValueChange={v => setTargetCalendarUrl(v === '__none__' ? '' : v)}
           >
-            <SelectTrigger className="w-full">
+            <SelectTrigger className="w-full" aria-label="Target calendar">
               <SelectValue placeholder="Select calendar" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="__none__">Select calendar</SelectItem>
-              {calendars.map((c) => (
+              {calendars.map(c => (
                 <SelectItem key={c.url} value={c.url}>
                   {c.name}
                 </SelectItem>
@@ -148,11 +167,16 @@ export default function CalendarSettings() {
         )}
         <Input
           placeholder="Or paste target calendar URL"
+          aria-label="Target calendar URL"
           value={targetCalendarUrl}
-          onChange={(e) => setTargetCalendarUrl(e.target.value)}
+          onChange={e => setTargetCalendarUrl(e.target.value)}
         />
         <div className="flex gap-2">
-          <button type="button" onClick={() => void handleSave()} className="px-3 py-1 rounded bg-accent-vivid text-surface-base">
+          <button
+            type="button"
+            onClick={() => void handleSave()}
+            className="px-3 py-1 rounded bg-accent-vivid text-accent-vivid-foreground"
+          >
             Save
           </button>
           <button
@@ -166,5 +190,5 @@ export default function CalendarSettings() {
         </div>
       </div>
     </div>
-  );
+  )
 }

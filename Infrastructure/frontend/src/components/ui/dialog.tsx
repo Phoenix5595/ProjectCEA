@@ -1,5 +1,5 @@
-import { X } from 'lucide-react'
 import * as DialogPrimitive from '@radix-ui/react-dialog'
+import { X } from 'lucide-react'
 import { forwardRef, type ComponentProps } from 'react'
 
 import { cn } from '@/lib/utils'
@@ -19,7 +19,7 @@ const DialogOverlay = forwardRef<
     className={cn(
       'fixed inset-0 z-50 bg-black/60',
       'data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=closed]:animate-out data-[state=closed]:fade-out-0',
-      className,
+      className
     )}
     {...props}
   />
@@ -38,7 +38,7 @@ const DialogContent = forwardRef<
       className={cn(
         'fixed left-1/2 top-1/2 z-50 w-full max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-md border border-border-default bg-surface-primary p-4 text-text-default shadow-lg',
         'data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95',
-        className,
+        className
       )}
       {...props}
     >
@@ -53,11 +53,23 @@ const DialogContent = forwardRef<
 DialogContent.displayName = 'DialogContent'
 
 function DialogHeader({ className, ...props }: ComponentProps<'div'>) {
-  return <div data-slot="dialog-header" className={cn('mb-3 flex flex-col gap-1', className)} {...props} />
+  return (
+    <div
+      data-slot="dialog-header"
+      className={cn('mb-3 flex flex-col gap-1', className)}
+      {...props}
+    />
+  )
 }
 
 function DialogFooter({ className, ...props }: ComponentProps<'div'>) {
-  return <div data-slot="dialog-footer" className={cn('mt-4 flex justify-end gap-2', className)} {...props} />
+  return (
+    <div
+      data-slot="dialog-footer"
+      className={cn('mt-4 flex justify-end gap-2', className)}
+      {...props}
+    />
+  )
 }
 
 function DialogTitle({ className, ...props }: ComponentProps<typeof DialogPrimitive.Title>) {
@@ -70,7 +82,10 @@ function DialogTitle({ className, ...props }: ComponentProps<typeof DialogPrimit
   )
 }
 
-function DialogDescription({ className, ...props }: ComponentProps<typeof DialogPrimitive.Description>) {
+function DialogDescription({
+  className,
+  ...props
+}: ComponentProps<typeof DialogPrimitive.Description>) {
   return (
     <DialogPrimitive.Description
       data-slot="dialog-description"

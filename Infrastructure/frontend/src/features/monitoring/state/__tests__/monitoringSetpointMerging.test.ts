@@ -1,11 +1,16 @@
 import { describe, expect, it } from 'vitest'
+
 import type { ClimateTimelineSeries, ControlMonitoringResponse, TimelineStep } from '../../api'
 import { mergeControlSeries } from '../../data/alignSeries.control'
 import { mergeControlHistory } from '../monitoringStore.merge'
 
 const timestamp = new Date('2026-08-20T12:00:00.000Z')
 const provenance = { origin: 'recorded' as const, quality: 'exact' as const, is_aggregated: false }
-const unavailableProvenance = { origin: 'recorded' as const, quality: 'unavailable' as const, is_aggregated: false }
+const unavailableProvenance = {
+  origin: 'recorded' as const,
+  quality: 'unavailable' as const,
+  is_aggregated: false,
+}
 
 function targetSeries(value: number | null): ClimateTimelineSeries {
   const pointProvenance = value === null ? unavailableProvenance : provenance
@@ -15,7 +20,15 @@ function targetSeries(value: number | null): ClimateTimelineSeries {
     provenance,
     projection: null,
     warnings: [],
-    points: [{ timestamp, value, nominal_value: value, metric: 'vpd_setpoint', provenance: pointProvenance }],
+    points: [
+      {
+        timestamp,
+        value,
+        nominal_value: value,
+        metric: 'vpd_setpoint',
+        provenance: pointProvenance,
+      },
+    ],
     steps: [step],
     linear: [],
   }
@@ -42,19 +55,25 @@ describe('setpoint target merging', () => {
     const finiteTarget = targetSeries(1.2)
     const nullThenFinite = mergeControlHistory(response(nullTarget), response(finiteTarget))
     const finiteThenNull = mergeControlHistory(response(finiteTarget), response(nullTarget))
-    const genuineNull = mergeControlHistory(response(targetSeries(null)), response(targetSeries(null)))
-    const aligned = mergeControlSeries(response({
-      ...nullTarget,
-      points: [...nullTarget.points, ...finiteTarget.points],
-      steps: [...nullTarget.steps, ...finiteTarget.steps],
-    }), null)
+    const genuineNull = mergeControlHistory(
+      response(targetSeries(null)),
+      response(targetSeries(null))
+    )
+    const aligned = mergeControlSeries(
+      response({
+        ...nullTarget,
+        points: [...nullTarget.points, ...finiteTarget.points],
+        steps: [...nullTarget.steps, ...finiteTarget.steps],
+      }),
+      null
+    )
 
     // When: target timelines are deduplicated for tail/history and chart alignment.
     const merged = [nullThenFinite, finiteThenNull, genuineNull]
 
     // Then: finite exact targets win, while an all-null collision remains a real gap.
-    expect(merged.map((item) => item.climate[0]?.points[0]?.value)).toEqual([1.2, 1.2, null])
-    expect(merged.map((item) => item.climate[0]?.steps[0]?.value)).toEqual([1.2, 1.2, null])
+    expect(merged.map(item => item.climate[0]?.points[0]?.value)).toEqual([1.2, 1.2, null])
+    expect(merged.map(item => item.climate[0]?.steps[0]?.value)).toEqual([1.2, 1.2, null])
     expect(aligned[0]?.points).toEqual([expect.objectContaining({ value: 1.2 })])
     expect(aligned[0]?.steps).toEqual([expect.objectContaining({ value: 1.2 })])
   })

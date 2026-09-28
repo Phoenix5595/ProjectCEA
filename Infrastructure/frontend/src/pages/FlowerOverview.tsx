@@ -1,5 +1,5 @@
-import CalendarOverviewPage from '../components/calendar/CalendarOverviewPage';
+import CalendarOverviewPage from '../components/calendar/CalendarOverviewPage'
 
 export default function FlowerOverview() {
-  return <CalendarOverviewPage location="Flower Room" />;
+  return <CalendarOverviewPage location="Flower Room" />
 }

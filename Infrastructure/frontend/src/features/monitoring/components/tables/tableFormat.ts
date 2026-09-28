@@ -41,7 +41,7 @@ export function formatValue(value: number, family: string, decimals?: number): s
 export function isStale(
   timestamp: Date,
   now: Date,
-  staleAfterMs: number = DEFAULT_STALE_AFTER_MS,
+  staleAfterMs: number = DEFAULT_STALE_AFTER_MS
 ): boolean {
   return now.getTime() - timestamp.getTime() > staleAfterMs
 }

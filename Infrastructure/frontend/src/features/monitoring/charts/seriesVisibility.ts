@@ -26,7 +26,9 @@ function emit(): void {
   for (const listener of listeners) listener()
 }
 
-export function registerSeriesEntries(entries: ReadonlyArray<{ key: string; color: string }>): void {
+export function registerSeriesEntries(
+  entries: ReadonlyArray<{ key: string; color: string }>
+): void {
   let changed = false
   for (const { key, color } of entries) {
     if (!colors.has(key)) {

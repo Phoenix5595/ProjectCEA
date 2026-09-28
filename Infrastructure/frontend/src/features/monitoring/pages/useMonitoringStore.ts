@@ -8,6 +8,7 @@
  * initial live range before the first subscription so the first load uses it.
  */
 import { useCallback, useRef, useSyncExternalStore } from 'react'
+
 import { MonitoringApi } from '../api'
 import type { MonitoringRequestContext } from '../api'
 import { MonitoringStore } from '../state'
@@ -24,16 +25,14 @@ export interface MonitoringStoreBinding {
 
 export function useMonitoringStore(
   location: string,
-  requestContext?: MonitoringRequestContext,
+  requestContext?: MonitoringRequestContext
 ): MonitoringStoreBinding {
   const storeRef = useRef<MonitoringStore | null>(null)
   const requestContextRef = useRef(requestContext)
   if (storeRef.current === null) {
-    storeRef.current = new MonitoringStore(
-      location,
-      new MonitoringApi(requestContextRef.current),
-      { now: () => new Date() },
-    )
+    storeRef.current = new MonitoringStore(location, new MonitoringApi(requestContextRef.current), {
+      now: () => new Date(),
+    })
   }
   const store = storeRef.current
   const subscribe = useCallback((listener: () => void) => store.subscribe(listener), [store])

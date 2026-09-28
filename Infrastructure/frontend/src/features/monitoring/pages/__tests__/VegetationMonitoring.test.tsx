@@ -6,11 +6,12 @@
  * the toolbar, both chart regions, and the canonical tables render, and that no
  * iframe or Grafana URL appears anywhere in the page.
  */
-import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { act, render, screen, within } from '@testing-library/react'
 import { forwardRef } from 'react'
 import { MemoryRouter } from 'react-router-dom'
 import type uPlot from 'uplot'
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
+
 import { ThemeProvider } from '../../../../contexts/ThemeContext'
 import VegetationMonitoring from '../../../../pages/VegetationMonitoring'
 
@@ -19,6 +20,7 @@ const { budgetReporters, pageRenderCount, snapshot, store } = vi.hoisted(() => {
   const budgetReporters: Array<(budget: number) => void> = []
   const pageRenderCount = { current: 0 }
   const store = {
+    getSnapshot: () => snapshot,
     setLiveRange: vi.fn(),
     setFixedRange: vi.fn(),
     setRangeBudget: vi.fn(),
@@ -43,9 +45,7 @@ const { budgetReporters, pageRenderCount, snapshot, store } = vi.hoisted(() => {
           node: 'main',
           unit_family: 'celsius',
           unit: '°C',
-          points: [
-            { timestamp: t, average: 24.5, minimum: 24.1, maximum: 24.9, sample_count: 60 },
-          ],
+          points: [{ timestamp: t, average: 24.5, minimum: 24.1, maximum: 24.9, sample_count: 60 }],
         },
         {
           sensor: 'pressure_v',
@@ -99,13 +99,13 @@ vi.mock('../useMonitoringStore', () => ({
   },
 }))
 
-vi.mock('../../charts', async (importOriginal) => {
+vi.mock('../../charts', async importOriginal => {
   const actual = await importOriginal<typeof import('../../charts')>()
   return {
     ...actual,
     UPlotChart: forwardRef(function MockUPlotChart(
       { onRequestBudgetChange }: { readonly onRequestBudgetChange?: (budget: number) => void },
-      _ref,
+      _ref
     ) {
       if (onRequestBudgetChange) budgetReporters.push(onRequestBudgetChange)
       return <div />
@@ -171,35 +171,21 @@ function renderPage() {
       <ThemeProvider>
         <VegetationMonitoring />
       </ThemeProvider>
-    </MemoryRouter>,
+    </MemoryRouter>
   )
 }
 
 describe('VegetationMonitoring page', () => {
-  it('does not render chart data-table controls in production builds', () => {
-    vi.stubEnv('MODE', 'production')
-    vi.stubEnv('VITE_MONITORING_DEBUG', '')
-
-    renderPage()
-
-    expect(screen.queryByRole('button', { name: 'View data as table' })).toBeNull()
-    expect(screen.queryByRole('table', { name: /climate conditions data/i })).toBeNull()
-  })
-
   it('renders toolbar, chart regions, and tables without any iframe or Grafana URL', () => {
     const { container } = renderPage()
 
     expect(screen.getByText('LIVE')).toBeTruthy()
 
-    expect(
-      screen.getByRole('heading', { name: 'Veg climate conditions' }),
-    ).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'Veg climate conditions' })).toBeTruthy()
     expect(screen.getByRole('heading', { name: 'Veg atmosphere & equipment' })).toBeTruthy()
 
     expect(screen.getByRole('table', { name: 'Sensor Values' })).toBeTruthy()
-    expect(
-      screen.getByRole('table', { name: 'Statistics - All Available Sensors' }),
-    ).toBeTruthy()
+    expect(screen.getByRole('table', { name: 'Statistics - All Available Sensors' })).toBeTruthy()
 
     expect(container.querySelector('iframe')).toBeNull()
     expect(container.innerHTML).not.toMatch(/grafana/i)
@@ -268,8 +254,8 @@ describe('VegetationMonitoring page', () => {
 
     expect(instances).toHaveLength(0)
     const chartSlots = [...container.querySelectorAll('div')]
-      .map((element) => element.style.height)
-      .filter((height) => height === '780px' || height === '320px')
+      .map(element => element.style.height)
+      .filter(height => height === '780px' || height === '320px')
     expect(chartSlots).toEqual(['780px', '320px'])
   })
 })

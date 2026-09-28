@@ -8,14 +8,15 @@
  * photoperiod/now overlays are wired, drag zoom emits a UTC range, and hiding
  * one series keeps its sibling family scale and the accessible table.
  */
-import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { render, act } from '@testing-library/react'
 import { createRef, useEffect, useRef, type Ref } from 'react'
 import type uPlot from 'uplot'
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
+
 import { ThemeProvider } from '../../../../contexts/ThemeContext'
+import { toggleSeries } from '../../charts/seriesVisibility'
 import type { AlignedData } from '../../data'
 import { seriesKey } from '../../data/alignSeries.types'
-import { toggleSeries } from '../../charts/seriesVisibility'
 import type { MonitoringRange } from '../../state'
 import { createMonitoringChartFeed } from '../MonitoringChartFeed'
 import { UPlotChart, type UPlotChartHandle } from '../UPlotChart'
@@ -34,7 +35,7 @@ const { MockUPlot, instances } = vi.hoisted(() => {
       if (scaleKey !== 'x') return
       this.scales.x = range
       const setScaleHooks = this.opts.hooks?.setScale
-      setScaleHooks?.forEach((hook) => {
+      setScaleHooks?.forEach(hook => {
         if (hook !== undefined) hook(this as unknown as uPlot, scaleKey)
       })
     })
@@ -74,17 +75,121 @@ function makeData(): AlignedData {
   return {
     x,
     series: [
-      { key: seriesKey('sensor', 'temp', 'mean'), label: 'temp', kind: 'sensor', source: 'sensor', metric: 'temp', family: 'temperature', role: 'mean', y: [20, 21, 22, 23], origin: 'recorded', quality: 'exact', isAggregated: false, unit: '°C', unitFamily: 'celsius' },
-      { key: seriesKey('sensor', 'temp', 'min'), label: 'temp min', kind: 'sensor', source: 'sensor', metric: 'temp', family: 'temperature', role: 'min', y: [19, 20, 21, 22], origin: 'recorded', quality: 'exact', isAggregated: false, unit: '°C', unitFamily: 'celsius' },
-      { key: seriesKey('sensor', 'temp', 'max'), label: 'temp max', kind: 'sensor', source: 'sensor', metric: 'temp', family: 'temperature', role: 'max', y: [21, 22, 23, 24], origin: 'recorded', quality: 'exact', isAggregated: false, unit: '°C', unitFamily: 'celsius' },
-      { key: seriesKey('sensor', 'rh', 'mean'), label: 'rh', kind: 'sensor', source: 'sensor', metric: 'rh', family: 'rh', role: 'mean', y: [50, 51, 52, 53], origin: 'recorded', quality: 'exact', isAggregated: false, unit: '%', unitFamily: 'percent' },
-      { key: seriesKey('sensor', 'rh', 'min'), label: 'rh min', kind: 'sensor', source: 'sensor', metric: 'rh', family: 'rh', role: 'min', y: [49, 50, 51, 52], origin: 'recorded', quality: 'exact', isAggregated: false, unit: '%', unitFamily: 'percent' },
-      { key: seriesKey('sensor', 'rh', 'max'), label: 'rh max', kind: 'sensor', source: 'sensor', metric: 'rh', family: 'rh', role: 'max', y: [51, 52, 53, 54], origin: 'recorded', quality: 'exact', isAggregated: false, unit: '%', unitFamily: 'percent' },
-      { key: seriesKey('climate', 'heating', 'point'), label: 'heating', kind: 'point', source: 'climate', metric: 'heating', family: 'device', role: 'point', y: [20, 20, 21, 21], origin: 'projected', quality: 'estimated', isAggregated: false },
+      {
+        key: seriesKey('sensor', 'temp', 'mean'),
+        label: 'temp',
+        kind: 'sensor',
+        source: 'sensor',
+        metric: 'temp',
+        family: 'temperature',
+        role: 'mean',
+        y: [20, 21, 22, 23],
+        origin: 'recorded',
+        quality: 'exact',
+        isAggregated: false,
+        unit: '°C',
+        unitFamily: 'celsius',
+      },
+      {
+        key: seriesKey('sensor', 'temp', 'min'),
+        label: 'temp min',
+        kind: 'sensor',
+        source: 'sensor',
+        metric: 'temp',
+        family: 'temperature',
+        role: 'min',
+        y: [19, 20, 21, 22],
+        origin: 'recorded',
+        quality: 'exact',
+        isAggregated: false,
+        unit: '°C',
+        unitFamily: 'celsius',
+      },
+      {
+        key: seriesKey('sensor', 'temp', 'max'),
+        label: 'temp max',
+        kind: 'sensor',
+        source: 'sensor',
+        metric: 'temp',
+        family: 'temperature',
+        role: 'max',
+        y: [21, 22, 23, 24],
+        origin: 'recorded',
+        quality: 'exact',
+        isAggregated: false,
+        unit: '°C',
+        unitFamily: 'celsius',
+      },
+      {
+        key: seriesKey('sensor', 'rh', 'mean'),
+        label: 'rh',
+        kind: 'sensor',
+        source: 'sensor',
+        metric: 'rh',
+        family: 'rh',
+        role: 'mean',
+        y: [50, 51, 52, 53],
+        origin: 'recorded',
+        quality: 'exact',
+        isAggregated: false,
+        unit: '%',
+        unitFamily: 'percent',
+      },
+      {
+        key: seriesKey('sensor', 'rh', 'min'),
+        label: 'rh min',
+        kind: 'sensor',
+        source: 'sensor',
+        metric: 'rh',
+        family: 'rh',
+        role: 'min',
+        y: [49, 50, 51, 52],
+        origin: 'recorded',
+        quality: 'exact',
+        isAggregated: false,
+        unit: '%',
+        unitFamily: 'percent',
+      },
+      {
+        key: seriesKey('sensor', 'rh', 'max'),
+        label: 'rh max',
+        kind: 'sensor',
+        source: 'sensor',
+        metric: 'rh',
+        family: 'rh',
+        role: 'max',
+        y: [51, 52, 53, 54],
+        origin: 'recorded',
+        quality: 'exact',
+        isAggregated: false,
+        unit: '%',
+        unitFamily: 'percent',
+      },
+      {
+        key: seriesKey('climate', 'heating', 'point'),
+        label: 'heating',
+        kind: 'point',
+        source: 'climate',
+        metric: 'heating',
+        family: 'device',
+        role: 'point',
+        y: [20, 20, 21, 21],
+        origin: 'projected',
+        quality: 'estimated',
+        isAggregated: false,
+      },
     ],
     bands: [
-      { key: seriesKey('sensor', 'temp', 'band'), minKey: seriesKey('sensor', 'temp', 'min'), maxKey: seriesKey('sensor', 'temp', 'max') },
-      { key: seriesKey('sensor', 'rh', 'band'), minKey: seriesKey('sensor', 'rh', 'min'), maxKey: seriesKey('sensor', 'rh', 'max') },
+      {
+        key: seriesKey('sensor', 'temp', 'band'),
+        minKey: seriesKey('sensor', 'temp', 'min'),
+        maxKey: seriesKey('sensor', 'temp', 'max'),
+      },
+      {
+        key: seriesKey('sensor', 'rh', 'band'),
+        minKey: seriesKey('sensor', 'rh', 'min'),
+        maxKey: seriesKey('sensor', 'rh', 'max'),
+      },
     ],
     photoperiod: [
       { start: 1000, end: 2500, phase: 'SUN' },
@@ -134,7 +239,7 @@ describe('monitoring chart interactions', () => {
     render(
       <ThemeProvider>
         <ChartHarness data={data} onZoom={onZoom} />
-      </ThemeProvider>,
+      </ThemeProvider>
     )
     const plot = instances[0]
 
@@ -142,9 +247,9 @@ describe('monitoring chart interactions', () => {
     expect(plot.opts.bands).toHaveLength(2)
 
     // Temperature renders on the left; other families on the right.
-    const tempAxis = plot.opts.axes?.find((a) => a.scale === 'temperature')
+    const tempAxis = plot.opts.axes?.find(a => a.scale === 'temperature')
     expect(tempAxis?.side).toBe(3)
-    const rhAxis = plot.opts.axes?.find((a) => a.scale === 'rh')
+    const rhAxis = plot.opts.axes?.find(a => a.scale === 'rh')
     expect(rhAxis?.side).toBe(1)
 
     // Photoperiod + now-divider overlays are present as plugins.
@@ -165,7 +270,10 @@ describe('monitoring chart interactions', () => {
     // Drag zoom emits an exact UTC range from the setScale hook (uPlot fires
     // setSelect with the box visible right before the drag's scale event).
     const setSelectHook = plot.opts.hooks?.setSelect?.[0]
-    ;(plot as unknown as { select: { show: boolean; width: number } }).select = { show: true, width: 42 }
+    ;(plot as unknown as { select: { show: boolean; width: number } }).select = {
+      show: true,
+      width: 42,
+    }
     setSelectHook?.(plot as unknown as uPlot)
     setScaleHook?.(plot as unknown as uPlot, 'x')
     expect(onZoom).toHaveBeenCalledTimes(1)
@@ -179,7 +287,7 @@ describe('monitoring chart interactions', () => {
     render(
       <ThemeProvider>
         <ChartHarness data={data} />
-      </ThemeProvider>,
+      </ThemeProvider>
     )
     const plot = instances[0]
 
@@ -189,7 +297,7 @@ describe('monitoring chart interactions', () => {
 
     // The sibling rh family scale/axis is preserved in the options.
     expect(plot.opts.scales?.rh).toBeDefined()
-    const rhAxis = plot.opts.axes?.find((a) => a.scale === 'rh')
+    const rhAxis = plot.opts.axes?.find(a => a.scale === 'rh')
     expect(rhAxis).toBeDefined()
 
     // The accessible table still lists every legend series.
@@ -205,7 +313,7 @@ describe('monitoring chart interactions', () => {
     const { rerender } = render(
       <ThemeProvider>
         <ChartHarness data={data} onZoom={onZoom} />
-      </ThemeProvider>,
+      </ThemeProvider>
     )
     const plot = instances[0]
 
@@ -215,7 +323,10 @@ describe('monitoring chart interactions', () => {
     const selectHook = plot.opts.hooks?.setSelect?.[0] as (self: uPlot) => void
     dragHook?.(plot as unknown as uPlot, 'x')
     plot.setScale.mockClear()
-    ;(plot as unknown as { select: { show: boolean; width: number } }).select = { show: true, width: 42 }
+    ;(plot as unknown as { select: { show: boolean; width: number } }).select = {
+      show: true,
+      width: 42,
+    }
     selectHook?.(plot as unknown as uPlot)
     dragHook?.(plot as unknown as uPlot, 'x')
     expect(onZoom).toHaveBeenCalledTimes(1)
@@ -226,7 +337,7 @@ describe('monitoring chart interactions', () => {
     rerender(
       <ThemeProvider>
         <ChartHarness data={next} onZoom={onZoom} />
-      </ThemeProvider>,
+      </ThemeProvider>
     )
 
     // setData must run with resetScale=false so the user zoom survives the tick.
@@ -244,7 +355,7 @@ describe('monitoring chart interactions', () => {
     const { rerender } = render(
       <ThemeProvider>
         <ChartHarness data={data} onZoom={onZoom} />
-      </ThemeProvider>,
+      </ThemeProvider>
     )
     const plot = instances[0]
 
@@ -254,7 +365,10 @@ describe('monitoring chart interactions', () => {
     // A cross-divider user selection must persist only the recorded portion
     // (uPlot fires setSelect with the box visible right before the scale).
     const crossSelectHook = plot.opts.hooks?.setSelect?.[0] as (self: uPlot) => void
-    ;(plot as unknown as { select: { show: boolean; width: number } }).select = { show: true, width: 60 }
+    ;(plot as unknown as { select: { show: boolean; width: number } }).select = {
+      show: true,
+      width: 60,
+    }
     crossSelectHook?.(plot as unknown as uPlot)
     plot.setScale('x', { min: 1500, max: 4000 })
     expect(onZoom).toHaveBeenCalledWith({ start: new Date(1500), end: new Date(3000) })
@@ -263,10 +377,17 @@ describe('monitoring chart interactions', () => {
     // user zoom must not feed that strip back into the next fixed range.
     rerender(
       <ThemeProvider>
-        <ChartHarness data={makeData()} range={{ kind: 'fixed', start: new Date(1500), end: new Date(3000) }} onZoom={onZoom} />
-      </ThemeProvider>,
+        <ChartHarness
+          data={makeData()}
+          range={{ kind: 'fixed', start: new Date(1500), end: new Date(3000) }}
+          onZoom={onZoom}
+        />
+      </ThemeProvider>
     )
-    ;(plot as unknown as { select: { show: boolean; width: number } }).select = { show: true, width: 60 }
+    ;(plot as unknown as { select: { show: boolean; width: number } }).select = {
+      show: true,
+      width: 60,
+    }
     crossSelectHook?.(plot as unknown as uPlot)
     plot.setScale('x', { min: 1500, max: 4000 })
     expect(emittedEnds).toEqual([3000, 3000])
@@ -279,8 +400,13 @@ describe('monitoring chart interactions', () => {
     const onZoom = vi.fn()
     render(
       <ThemeProvider>
-        <ChartHarness data={data} range={{ kind: 'fixed', ...range }} chartRef={ref} onZoom={onZoom} />
-      </ThemeProvider>,
+        <ChartHarness
+          data={data}
+          range={{ kind: 'fixed', ...range }}
+          chartRef={ref}
+          onZoom={onZoom}
+        />
+      </ThemeProvider>
     )
     const plot = instances[0]
     const setScaleHook = plot.opts.hooks?.setScale?.[0]
@@ -295,7 +421,10 @@ describe('monitoring chart interactions', () => {
     // A user drag is represented by uPlot's scale hook after the plot has settled.
     const setSelectHook = plot.opts.hooks?.setSelect?.[0]
     plot.scales.x = { min: 2000, max: 3000 }
-    ;(plot as unknown as { select: { show: boolean; width: number } }).select = { show: true, width: 42 }
+    ;(plot as unknown as { select: { show: boolean; width: number } }).select = {
+      show: true,
+      width: 42,
+    }
     setSelectHook?.(plot as unknown as uPlot)
     setScaleHook?.(plot as unknown as uPlot, 'x')
     expect(onZoom).toHaveBeenCalledTimes(1)

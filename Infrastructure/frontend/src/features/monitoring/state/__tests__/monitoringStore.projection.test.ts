@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
+import type { ProjectionPublicationResponse as ProjectionPublication } from '../../api'
 import {
   ControlMonitoringResponse,
   ProjectionPublicationResponse,
 } from '../../api/contracts/control'
-import type { ProjectionPublicationResponse as ProjectionPublication } from '../../api'
 import { controlProjectionFixture, controlRangeFixture } from '../../config/fixtures.control'
 import { alignSeries } from '../../data/alignSeries'
 import { alignLinear } from '../../data/alignSeries.series'
@@ -53,7 +53,9 @@ describe('projectionTimeline', () => {
       now: NOW,
     })
 
-    const point = data.series.find((series) => series.metric === 'heating_setpoint' && series.role === 'step')
+    const point = data.series.find(
+      series => series.metric === 'heating_setpoint' && series.role === 'step'
+    )
     expect(point?.y[data.x.indexOf(NOW.getTime())]).toBe(22)
 
     const last = data.x[data.x.length - 1]
@@ -76,14 +78,24 @@ describe('projectionTimeline', () => {
     if (projected === null) return
     const recorded = {
       ...projected,
-      climate: projected.climate.map((series) => ({
+      climate: projected.climate.map(series => ({
         ...series,
-        provenance: { origin: 'recorded' as const, quality: 'exact' as const, is_aggregated: false },
-        steps: [{
-          timestamp: NOW,
-          value: 99,
-          provenance: { origin: 'recorded' as const, quality: 'exact' as const, is_aggregated: false },
-        }],
+        provenance: {
+          origin: 'recorded' as const,
+          quality: 'exact' as const,
+          is_aggregated: false,
+        },
+        steps: [
+          {
+            timestamp: NOW,
+            value: 99,
+            provenance: {
+              origin: 'recorded' as const,
+              quality: 'exact' as const,
+              is_aggregated: false,
+            },
+          },
+        ],
       })),
     }
 
@@ -97,22 +109,26 @@ describe('projectionTimeline', () => {
       now: NOW,
     })
 
-    const step = data.series.find((series) => series.metric === 'heating_setpoint' && series.role === 'step')
+    const step = data.series.find(
+      series => series.metric === 'heating_setpoint' && series.role === 'step'
+    )
     expect(step?.y[data.x.indexOf(NOW.getTime())]).toBe(99)
-    expect(data.series.filter((series) => series.metric === 'heating_setpoint' && series.role === 'step')).toHaveLength(1)
+    expect(
+      data.series.filter(series => series.metric === 'heating_setpoint' && series.role === 'step')
+    ).toHaveLength(1)
   })
 
   it('retains recorded and projected setpoints around a nullable projection sample', () => {
     const recorded = ControlMonitoringResponse.parse(
-      controlRangeFixture('Flower Room', START.toISOString(), NOW.toISOString()),
+      controlRangeFixture('Flower Room', START.toISOString(), NOW.toISOString())
     )
     const projectedPublication = ProjectionPublicationResponse.parse(
       controlProjectionFixture(
         'Flower Room',
         NOW.toISOString(),
         new Date('2026-08-02T13:00:00.000Z').toISOString(),
-        'nullable-projection',
-      ),
+        'nullable-projection'
+      )
     )
     const projected = projectionTimeline(projectedPublication).history
     expect(projected).not.toBeNull()
@@ -127,8 +143,12 @@ describe('projectionTimeline', () => {
       range: { kind: 'fixed', start: START, end: new Date('2026-08-02T13:00:00.000Z') },
       now: NOW,
     })
-    const heating = data.series.find((series) => series.metric === 'heating_setpoint' && series.role === 'step')
-    const cooling = data.series.find((series) => series.metric === 'cooling_setpoint' && series.role === 'step')
+    const heating = data.series.find(
+      series => series.metric === 'heating_setpoint' && series.role === 'step'
+    )
+    const cooling = data.series.find(
+      series => series.metric === 'cooling_setpoint' && series.role === 'step'
+    )
     const recordedIndex = data.x.indexOf(START.getTime())
     const overlapIndex = data.x.indexOf(NOW.getTime())
     const projectedIndex = data.x.indexOf(FUTURE.getTime())
@@ -195,10 +215,10 @@ describe('projectionTimeline', () => {
     })
 
     expect(result.history?.climate).toHaveLength(2)
-    const scheduled = result.history?.climate.find((series) => series.trajectory_kind === 'scheduled')
+    const scheduled = result.history?.climate.find(series => series.trajectory_kind === 'scheduled')
     expect(scheduled?.linear[0]?.start_value).toBe(22)
     expect(scheduled?.warnings[0]?.code).toBe('sample')
-    const effective = result.history?.climate.find((series) => series.trajectory_kind === 'effective')
+    const effective = result.history?.climate.find(series => series.trajectory_kind === 'effective')
     expect(effective?.steps[0]?.value).toBeNull()
 
     const aligned = alignSeries({
@@ -211,17 +231,22 @@ describe('projectionTimeline', () => {
       now: NOW,
     })
     const midpoint = new Date('2026-08-02T12:15:00.000Z').getTime()
-    const ramp = result.history?.climate.find((series) => series.trajectory_kind === 'scheduled')
-    const normalized = ramp?.linear.map((segment) => ({
-      start: segment.start.getTime(),
-      end: segment.end.getTime(),
-      startValue: segment.start_value,
-      endValue: segment.end_value,
-      origin: segment.provenance.origin,
-      quality: segment.provenance.quality,
-    })) ?? []
+    const ramp = result.history?.climate.find(series => series.trajectory_kind === 'scheduled')
+    const normalized =
+      ramp?.linear.map(segment => ({
+        start: segment.start.getTime(),
+        end: segment.end.getTime(),
+        startValue: segment.start_value,
+        endValue: segment.end_value,
+        origin: segment.provenance.origin,
+        quality: segment.provenance.quality,
+      })) ?? []
     expect(alignLinear(normalized, [midpoint], NOW.getTime(), rampEnd.getTime(), false)[0]).toBe(24)
-    expect(aligned.series.some((series) => series.metric === 'heating_setpoint' && series.role === 'linear')).toBe(true)
+    expect(
+      aligned.series.some(
+        series => series.metric === 'heating_setpoint' && series.role === 'linear'
+      )
+    ).toBe(true)
   })
 
   it('ignores rich draft trajectories', () => {

@@ -309,7 +309,7 @@ test('dashboard fits both supported desktop viewports without overflow', async (
   )
 
   const shell = await page.evaluate(() => {
-    const navigation = document.querySelector('#primary-navigation')
+    const navigation = document.querySelector('nav[aria-label="Primary navigation"]')
     const sidebar = navigation?.closest('aside')
     const dashboard = document.querySelector('.main-dashboard')
     const ribbon = document.querySelector('.dashboard-ribbon')
@@ -461,11 +461,8 @@ test('dashboard fits both supported desktop viewports without overflow', async (
   expect(metrics.boxes.center!.right).toBeLessThanOrEqual(metrics.boxes.rail!.left + 1)
   expect(metrics.boxes.calendar!.top).toBeCloseTo(metrics.boxes.inspector!.top, 0)
   expect(metrics.boxes.calendar!.right).toBeLessThanOrEqual(metrics.boxes.inspector!.left + 1)
-  expect(
-    metrics.boxes.inspectorTrack!.left - metrics.boxes.calendarTrack!.right
-  ).toBeCloseTo(8, 0)
-  const upperTrackRatio =
-    metrics.boxes.calendarTrack!.width / metrics.boxes.inspectorTrack!.width
+  expect(metrics.boxes.inspectorTrack!.left - metrics.boxes.calendarTrack!.right).toBeCloseTo(8, 0)
+  const upperTrackRatio = metrics.boxes.calendarTrack!.width / metrics.boxes.inspectorTrack!.width
   expect(upperTrackRatio).toBeGreaterThan(3.8)
   expect(upperTrackRatio).toBeLessThan(4.2)
   expect(metrics.boxes.inspectorTrack!.width).toBeGreaterThanOrEqual(
@@ -484,9 +481,7 @@ test('dashboard fits both supported desktop viewports without overflow', async (
   expect(metrics.boxes.water!.bottom).toBeLessThanOrEqual(metrics.boxes.footer!.top + 1)
   expect(metrics.boxes.water!.left).toBeGreaterThanOrEqual(metrics.boxes.rail!.left - 1)
   expect(metrics.boxes.water!.right).toBeLessThanOrEqual(metrics.boxes.rail!.right + 1)
-  expect(
-    metrics.boxes.waterGraphic!.left
-  ).toBeGreaterThanOrEqual(metrics.boxes.water!.left - 1)
+  expect(metrics.boxes.waterGraphic!.left).toBeGreaterThanOrEqual(metrics.boxes.water!.left - 1)
   expect(metrics.boxes.waterGraphic!.right).toBeLessThanOrEqual(metrics.boxes.water!.right + 1)
   expect(metrics.boxes.waterGraphic!.top).toBeGreaterThanOrEqual(metrics.boxes.water!.top - 1)
   expect(metrics.boxes.waterGraphic!.bottom).toBeLessThanOrEqual(metrics.boxes.water!.bottom + 1)
@@ -496,7 +491,9 @@ test('dashboard fits both supported desktop viewports without overflow', async (
   expect(metrics.railOverflow!.scrollHeight).toBeLessThanOrEqual(
     metrics.railOverflow!.clientHeight + 1
   )
-  expect(metrics.railOverflow!.scrollWidth).toBeLessThanOrEqual(metrics.railOverflow!.clientWidth + 1)
+  expect(metrics.railOverflow!.scrollWidth).toBeLessThanOrEqual(
+    metrics.railOverflow!.clientWidth + 1
+  )
 
   const roomBoxes = await Promise.all([flowerRow, vegRow, labRow].map(row => row.boundingBox()))
   expect(roomBoxes.every(box => box !== null)).toBe(true)

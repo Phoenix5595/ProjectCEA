@@ -19,7 +19,7 @@ for (const pagePath of PAGES) {
       page: p,
     }, testInfo) => {
       const violations: string[] = []
-      p.on('request', (req) => {
+      p.on('request', req => {
         const url = req.url()
         const violation = describeViolation(url)
         if (violation !== null) violations.push(`${violation}: ${url}`)
@@ -42,7 +42,7 @@ test('network guard: event-log history and stream endpoints are on fixture origi
   page: p,
 }, testInfo) => {
   const eventLogRequests: string[] = []
-  p.on('request', (req) => {
+  p.on('request', req => {
     const url = req.url()
     if (url.includes('/api/events/')) {
       eventLogRequests.push(url)
@@ -54,8 +54,8 @@ test('network guard: event-log history and stream endpoints are on fixture origi
 
   await p.waitForTimeout(3000)
 
-  const historyRequests = eventLogRequests.filter((u) => u.includes('/api/events/history'))
-  const streamRequests = eventLogRequests.filter((u) => u.includes('/api/events/stream'))
+  const historyRequests = eventLogRequests.filter(u => u.includes('/api/events/history'))
+  const streamRequests = eventLogRequests.filter(u => u.includes('/api/events/stream'))
 
   expect(historyRequests.length).toBeGreaterThan(0)
   expect(streamRequests.length).toBeGreaterThan(0)
@@ -66,9 +66,11 @@ test('network guard: event-log history and stream endpoints are on fixture origi
   }
 })
 
-test('network guard: event-log uses X-API-Key header, not query token', async ({ page }, testInfo) => {
+test('network guard: event-log uses X-API-Key header, not query token', async ({
+  page,
+}, testInfo) => {
   const historyRequests: string[] = []
-  await page.route('**/api/events/history**', async (route) => {
+  await page.route('**/api/events/history**', async route => {
     const request = route.request()
     historyRequests.push(request.url())
     await route.continue()

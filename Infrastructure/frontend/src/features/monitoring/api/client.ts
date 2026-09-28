@@ -1,5 +1,12 @@
-import { z } from 'zod/v3'
+import { z } from 'zod'
+
 import { CEA_API_KEY, MONITORING_API_URL } from '../../../config/env'
+import {
+  finishMonitoringRequest,
+  PERFORMANCE_MARKS_ENABLED,
+  startMonitoringRequest,
+} from '../perfMarks'
+
 import {
   MonitoringAbortError,
   MonitoringHttpError,
@@ -7,11 +14,6 @@ import {
   MonitoringParseError,
   MonitoringTimeoutError,
 } from './errors'
-import {
-  finishMonitoringRequest,
-  PERFORMANCE_MARKS_ENABLED,
-  startMonitoringRequest,
-} from '../perfMarks'
 
 export interface MonitoringRequestContext {
   readonly scenario?: string
@@ -19,7 +21,7 @@ export interface MonitoringRequestContext {
 }
 
 export function monitoringRequestContextFromSearchParams(
-  searchParams: URLSearchParams,
+  searchParams: URLSearchParams
 ): MonitoringRequestContext | undefined {
   const scenario = searchParams.get('scenario') ?? undefined
   const fixtureSession = searchParams.get('fixtureSession') ?? undefined
@@ -49,7 +51,7 @@ export class MonitoringClient {
 
   constructor(
     private readonly requestContext?: MonitoringRequestContext,
-    defaultTimeoutMs = 45000,
+    defaultTimeoutMs = 45000
   ) {
     this.defaultTimeoutMs = defaultTimeoutMs
   }
@@ -57,7 +59,7 @@ export class MonitoringClient {
   async get<TSchema extends z.ZodTypeAny>(
     path: string,
     schema: TSchema,
-    options: MonitoringRequestOptions = {},
+    options: MonitoringRequestOptions = {}
   ): Promise<z.infer<TSchema>> {
     const base = `${MONITORING_API_URL}${path}`
     const url = this.requestContext
@@ -91,12 +93,10 @@ export class MonitoringClient {
       }
       if (controller.signal.aborted) {
         throw new MonitoringTimeoutError(
-          `request to ${SERVICE_NAME} timed out after ${timeoutMs}ms`,
+          `request to ${SERVICE_NAME} timed out after ${timeoutMs}ms`
         )
       }
-      throw new MonitoringNetworkError(
-        `network error reaching ${SERVICE_NAME}: ${String(error)}`,
-      )
+      throw new MonitoringNetworkError(`network error reaching ${SERVICE_NAME}: ${String(error)}`)
     } finally {
       if (requestStartedAt !== undefined) finishMonitoringRequest(requestStartedAt)
       clearTimeout(timeoutId)
@@ -107,7 +107,7 @@ export class MonitoringClient {
       throw new MonitoringHttpError(
         SERVICE_NAME,
         response.status,
-        `HTTP ${response.status} from ${SERVICE_NAME} for ${path}`,
+        `HTTP ${response.status} from ${SERVICE_NAME} for ${path}`
       )
     }
 
@@ -116,14 +116,14 @@ export class MonitoringClient {
       json = await response.json()
     } catch (error) {
       throw new MonitoringParseError(
-        `response from ${SERVICE_NAME} was not valid JSON: ${String(error)}`,
+        `response from ${SERVICE_NAME} was not valid JSON: ${String(error)}`
       )
     }
 
     const result = schema.safeParse(json)
     if (!result.success) {
       throw new MonitoringParseError(
-        `response from ${SERVICE_NAME} failed contract validation: ${result.error.message}`,
+        `response from ${SERVICE_NAME} failed contract validation: ${result.error.message}`
       )
     }
     return result.data

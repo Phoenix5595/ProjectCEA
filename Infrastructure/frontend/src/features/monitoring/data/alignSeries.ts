@@ -7,8 +7,7 @@
  * modules so this file stays focused on the high-level pipeline.
  */
 import type { LiveSensorValue, SensorSeries } from '../api'
-import { alignPhotoperiod, alignSensor } from './alignSeries.series'
-import type { AlignInput, AlignedBand, AlignedData, AlignedSeries } from './alignSeries.types'
+
 import {
   bandForSensor,
   buildControlSeries,
@@ -22,6 +21,8 @@ import {
 } from './alignSeries.builder'
 import { mergeControlSeries, mergeDeviceSeries, mergePidSeries } from './alignSeries.control'
 import { collectTimestamps, coarsenedGrid, indexOfNow, windowBounds } from './alignSeries.grid'
+import { alignPhotoperiod, alignSensor } from './alignSeries.series'
+import type { AlignInput, AlignedBand, AlignedData, AlignedSeries } from './alignSeries.types'
 import { MAX_BUDGET } from './pointBudget'
 
 export interface BaseAlignment {
@@ -36,7 +37,7 @@ export function alignSeriesBase(input: BaseAlignInput): BaseAlignment {
   const maxPoints = boundedMaxPoints(input.maxPoints)
   const bounds = windowBounds(input.range, input.now)
   const start = bounds.start
-  let end = bounds.end
+  const end = bounds.end
   const now = input.now.getTime()
 
   const timestamps = collectTimestamps(input, start, end, now)
@@ -51,7 +52,20 @@ export function alignSeriesBase(input: BaseAlignInput): BaseAlignment {
     const family = familyForUnit(raw.unit_family)
     const node = nodeFromSensor(raw.sensor)
     const presentation = presentationFromSpec(findSpec(input.seriesSpecs, raw.sensor))
-    series.push(...buildSensorSeries(raw.sensor, family, mean, min, max, aggregated, node, raw.unit, raw.unit_family, presentation))
+    series.push(
+      ...buildSensorSeries(
+        raw.sensor,
+        family,
+        mean,
+        min,
+        max,
+        aggregated,
+        node,
+        raw.unit,
+        raw.unit_family,
+        presentation
+      )
+    )
     bands.push(bandForSensor(raw.sensor))
   }
 
@@ -70,7 +84,7 @@ export function alignSeriesBase(input: BaseAlignInput): BaseAlignment {
     series.push(...buildPidSeries(ps, x, start, end, aggregated, presentation))
   }
 
-    return {
+  return {
     data: {
       x,
       series,
@@ -85,7 +99,11 @@ export function alignSeriesBase(input: BaseAlignInput): BaseAlignment {
 }
 
 /** Apply the current live values without rebuilding historical grids. */
-export function applyLiveTail(base: BaseAlignment, live: LiveSensorValue[], now: Date): AlignedData {
+export function applyLiveTail(
+  base: BaseAlignment,
+  live: LiveSensorValue[],
+  now: Date
+): AlignedData {
   const { data } = base
   if (live.length === 0) return data
 
@@ -99,7 +117,7 @@ export function applyLiveTail(base: BaseAlignment, live: LiveSensorValue[], now:
 
   if (tailIndex < 0) {
     if (base.rangeKind === 'fixed') return data
-    const nextIndex = data.x.findIndex((timestamp) => timestamp > nowMs)
+    const nextIndex = data.x.findIndex(timestamp => timestamp > nowMs)
     if (data.x.length < MAX_BUDGET) {
       tailIndex = nextIndex < 0 ? data.x.length : nextIndex
       x = [...data.x.slice(0, tailIndex), nowMs, ...data.x.slice(tailIndex)]
@@ -108,7 +126,7 @@ export function applyLiveTail(base: BaseAlignment, live: LiveSensorValue[], now:
       const first = data.x[0]
       if (first === undefined || nowMs < first) return data
       const retained = data.x.slice(1)
-      const retainedNextIndex = retained.findIndex((timestamp) => timestamp > nowMs)
+      const retainedNextIndex = retained.findIndex(timestamp => timestamp > nowMs)
       tailIndex = retainedNextIndex < 0 ? retained.length : retainedNextIndex
       x = [...retained.slice(0, tailIndex), nowMs, ...retained.slice(tailIndex)]
       inserted = true
@@ -116,11 +134,17 @@ export function applyLiveTail(base: BaseAlignment, live: LiveSensorValue[], now:
     }
   }
 
-  const valuesBySensor = new Map(live.filter((value) => value.timestamp.getTime() <= nowMs).map((value) => [value.sensor, value.value]))
-  const series = data.series.map((aligned) => {
+  const valuesBySensor = new Map(
+    live
+      .filter(value => value.timestamp.getTime() <= nowMs)
+      .map(value => [value.sensor, value.value])
+  )
+  const series = data.series.map(aligned => {
     const retained = droppedOldest ? aligned.y.slice(1) : aligned.y
-    const heldValue = aligned.kind === 'step' ? retained[tailIndex - 1] ?? null : null
-    const y = inserted ? [...retained.slice(0, tailIndex), heldValue, ...retained.slice(tailIndex)] : retained.slice()
+    const heldValue = aligned.kind === 'step' ? (retained[tailIndex - 1] ?? null) : null
+    const y = inserted
+      ? [...retained.slice(0, tailIndex), heldValue, ...retained.slice(tailIndex)]
+      : retained.slice()
     const liveValue = aligned.source === 'sensor' ? valuesBySensor.get(aligned.metric) : undefined
     if (liveValue !== undefined) y[tailIndex] = liveValue
     return { ...aligned, y }
@@ -133,7 +157,10 @@ export const LEGACY_SAFETY_CEILING = 20_000
 
 /** Preserve the legacy whole-input API while enforcing the client safety ceiling. */
 export function alignSeries(input: AlignInput): AlignedData {
-  const base = alignSeriesBase({ ...input, series: withLive(input.series, input.live, input.now.getTime()) })
+  const base = alignSeriesBase({
+    ...input,
+    series: withLive(input.series, input.live, input.now.getTime()),
+  })
   return base.data
 }
 
@@ -146,15 +173,21 @@ function boundedMaxPoints(maxPoints: number | undefined): number {
 
 /** Merge live values into their matching sensor series at `now`. */
 function withLive(series: SensorSeries[], live: LiveSensorValue[], now: number): SensorSeries[] {
-  const bySensor = new Map(live.map((v) => [v.sensor, v]))
-  return series.map((s) => {
+  const bySensor = new Map(live.map(v => [v.sensor, v]))
+  return series.map(s => {
     const lv = bySensor.get(s.sensor)
-    if (!lv || s.points.some((p) => p.timestamp.getTime() === now)) return s
+    if (!lv || s.points.some(p => p.timestamp.getTime() === now)) return s
     return {
       ...s,
       points: [
         ...s.points,
-        { timestamp: new Date(now), average: lv.value, minimum: lv.value, maximum: lv.value, sample_count: 1 },
+        {
+          timestamp: new Date(now),
+          average: lv.value,
+          minimum: lv.value,
+          maximum: lv.value,
+          sample_count: 1,
+        },
       ],
     }
   })

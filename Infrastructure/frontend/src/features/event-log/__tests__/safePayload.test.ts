@@ -1,9 +1,16 @@
 import { describe, expect, it } from 'vitest'
+
 import { extractSafeFields, formatPayloadValue } from '../presentation/safePayload'
 
 describe('extractSafeFields', () => {
   it('returns allowlisted fields and drops unknown keys', () => {
-    const payload = { device_id: 'heater-1', state: 'on', secret_token: 'abc', password: 'xyz', internal_note: 'skip' }
+    const payload = {
+      device_id: 'heater-1',
+      state: 'on',
+      secret_token: 'abc',
+      password: 'xyz',
+      internal_note: 'skip',
+    }
     const safe = extractSafeFields(payload)
     expect(safe).toEqual({ device_id: 'heater-1', state: 'on' })
     expect(safe).not.toHaveProperty('secret_token')
@@ -32,9 +39,18 @@ describe('extractSafeFields', () => {
   })
 
   it('allowlists setpoint-change truth fields for expanded details', () => {
-    const payload = { controller: 'pid', previous_setpoint: 0.442, effective_setpoint: 0.438, device_id: 'light_v_3' }
+    const payload = {
+      controller: 'pid',
+      previous_setpoint: 0.442,
+      effective_setpoint: 0.438,
+      device_id: 'light_v_3',
+    }
     const safe = extractSafeFields(payload)
-    expect(safe).toEqual({ previous_setpoint: 0.442, effective_setpoint: 0.438, device_id: 'light_v_3' })
+    expect(safe).toEqual({
+      previous_setpoint: 0.442,
+      effective_setpoint: 0.438,
+      device_id: 'light_v_3',
+    })
   })
 })
 

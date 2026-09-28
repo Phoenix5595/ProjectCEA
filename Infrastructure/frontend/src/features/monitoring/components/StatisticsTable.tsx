@@ -8,7 +8,9 @@
  * the Sensor column is not.
  */
 import { useState } from 'react'
+
 import type { SensorStatistics } from '../api'
+
 import { formatValue } from './tables/tableFormat'
 import { familyForStatRow, sensorNameForStatRow } from './tables/tableManifest'
 
@@ -38,8 +40,8 @@ export function StatisticsTable({ title, rows, statistics }: StatisticsTableProp
   const [sortKey, setSortKey] = useState<SortKey | null>(null)
   const [sortDir, setSortDir] = useState<SortDir>('asc')
 
-  const bySensor = new Map(statistics.map((s) => [s.sensor, s]))
-  const dataRows = rows.map((row) => ({
+  const bySensor = new Map(statistics.map(s => [s.sensor, s]))
+  const dataRows = rows.map(row => ({
     row,
     stat: bySensor.get(sensorNameForStatRow(row) ?? ''),
   }))
@@ -55,7 +57,7 @@ export function StatisticsTable({ title, rows, statistics }: StatisticsTableProp
 
   const toggleSort = (key: SortKey): void => {
     if (sortKey === key) {
-      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
+      setSortDir(d => (d === 'asc' ? 'desc' : 'asc'))
     } else {
       setSortKey(key)
       setSortDir('asc')
@@ -71,7 +73,7 @@ export function StatisticsTable({ title, rows, statistics }: StatisticsTableProp
             <th scope="col" className={TH}>
               Sensor
             </th>
-            {NUMERIC_COLUMNS.map((col) => (
+            {NUMERIC_COLUMNS.map(col => (
               <th
                 key={col.key}
                 scope="col"
@@ -96,7 +98,7 @@ export function StatisticsTable({ title, rows, statistics }: StatisticsTableProp
           {sorted.map(({ row, stat }) => (
             <tr key={row}>
               <td className={TD}>{row}</td>
-              {NUMERIC_COLUMNS.map((col) => (
+              {NUMERIC_COLUMNS.map(col => (
                 <td key={col.key} className={TD}>
                   {stat === undefined ? (
                     <span aria-label={`${row} ${col.label} unavailable`}>—</span>

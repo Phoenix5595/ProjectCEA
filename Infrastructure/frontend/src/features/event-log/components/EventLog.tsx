@@ -1,9 +1,15 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react'
-import type { EventLogEntry } from '../state/eventLogStore'
+
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
-import { EventFilters, CompactFiltersTrigger, type FilterState } from './EventFilters'
-import { EventRow } from './EventRow'
+
+import { categoryTheme, displayCategoryOf } from '../presentation/categoryTheme'
+import { getEventDisplay } from '../presentation/eventRegistry'
+import { sourcePartsFor } from '../presentation/eventSourceParts'
+import { SEVERITY_LABELS } from '../presentation/severity'
+import type { EventLogEntry } from '../state/eventLogStore'
+
 import { EventDetails } from './EventDetails'
+import { EventFilters, CompactFiltersTrigger, type FilterState } from './EventFilters'
 import { EventTimestamps, EventRoomIndicator } from './EventFragments'
 import {
   EventGroupedView,
@@ -11,10 +17,7 @@ import {
   withPreallocatedSlots,
   type EventLogView,
 } from './EventGroupedView'
-import { getEventDisplay } from '../presentation/eventRegistry'
-import { sourcePartsFor } from '../presentation/eventSourceParts'
-import { SEVERITY_LABELS } from '../presentation/severity'
-import { categoryTheme, displayCategoryOf } from '../presentation/categoryTheme'
+import { EventRow } from './EventRow'
 
 const COMPACT_EVENT_PAGE_SIZE = 5
 const COMPACT_GROUP_PAGE_SIZE = 8

@@ -26,7 +26,7 @@ const PAGES = [
 
 function trackViolations(page: import('@playwright/test').Page): string[] {
   const violations: string[] = []
-  page.on('request', (req) => {
+  page.on('request', req => {
     const url = req.url()
     const violation = describeViolation(url)
     if (violation !== null) violations.push(`${violation}: ${url}`)
@@ -35,7 +35,7 @@ function trackViolations(page: import('@playwright/test').Page): string[] {
 }
 
 function seriousCritical(results: AxeResults) {
-  return results.violations.filter((v) => v.impact === 'serious' || v.impact === 'critical')
+  return results.violations.filter(v => v.impact === 'serious' || v.impact === 'critical')
 }
 
 for (const pageDef of PAGES) {
@@ -45,34 +45,41 @@ for (const pageDef of PAGES) {
     const violations = trackViolations(p)
     await p.goto(fixtureUrl(pageDef.path, testInfo))
 
-      const eventLogSection = p.getByRole('region', { name: 'Event Log' })
-      await expect(eventLogSection).toBeVisible({ timeout: 10_000 })
+    const eventLogSection = p.getByRole('region', { name: 'Event Log' })
+    await expect(eventLogSection).toBeVisible({ timeout: 10_000 })
 
-      const heading = p.getByRole('heading', { name: 'Event Log' })
-      await expect(heading).toBeVisible()
+    const heading = p.getByRole('heading', { name: 'Event Log' })
+    await expect(heading).toBeVisible()
 
-      const severityBadges = p.locator('[aria-label^="Severity:"]')
-      await expect(severityBadges.first()).toBeVisible({ timeout: 5_000 })
+    const severityBadges = p.locator('[aria-label^="Severity:"]')
+    await expect(severityBadges.first()).toBeVisible({ timeout: 5_000 })
 
-      const results = await new AxeBuilder({ page: p })
-        .include('[aria-labelledby="event-log-heading"]')
-        .analyze()
-      const bad = seriousCritical(results)
-      if (bad.length > 0) {
-        console.log('Axe violations:', JSON.stringify(bad.map((v) => ({
-          id: v.id,
-          impact: v.impact,
-          nodes: v.nodes.map((n) => ({
-            html: n.html,
-            target: n.target,
-            failureSummary: n.failureSummary,
+    const results = await new AxeBuilder({ page: p })
+      .include('[aria-labelledby="event-log-heading"]')
+      .analyze()
+    const bad = seriousCritical(results)
+    if (bad.length > 0) {
+      console.log(
+        'Axe violations:',
+        JSON.stringify(
+          bad.map(v => ({
+            id: v.id,
+            impact: v.impact,
+            nodes: v.nodes.map(n => ({
+              html: n.html,
+              target: n.target,
+              failureSummary: n.failureSummary,
+            })),
           })),
-        })), null, 2))
-      }
-      expect(
-        bad.map((v) => ({ id: v.id, impact: v.impact, nodes: v.nodes.length })),
-        `axe violations on ${pageDef.name}`,
-      ).toEqual([])
+          null,
+          2
+        )
+      )
+    }
+    expect(
+      bad.map(v => ({ id: v.id, impact: v.impact, nodes: v.nodes.length })),
+      `axe violations on ${pageDef.name}`
+    ).toEqual([])
 
     expect(violations).toEqual([])
   })
@@ -96,16 +103,22 @@ test('severity badges have non-color text treatment', async ({ page }, testInfo)
   }
 })
 
-test('event-label fixture exposes readable labels, exact severity, and keyboard details', async ({ page }, testInfo) => {
+test('event-label fixture exposes readable labels, exact severity, and keyboard details', async ({
+  page,
+}, testInfo) => {
   const violations = trackViolations(page)
   const requestUrls: string[] = []
-  page.on('request', (request) => requestUrls.push(request.url()))
+  page.on('request', request => requestUrls.push(request.url()))
   const consoleErrors: string[] = []
-  page.on('console', (message) => {
+  page.on('console', message => {
     if (message.type() === 'error') consoleErrors.push(message.text())
   })
-  await page.route('**/api/events/stream**', (route) =>
-    route.fulfill({ status: 200, contentType: 'text/event-stream', body: 'event: heartbeat\ndata: \n\n' }),
+  await page.route('**/api/events/stream**', route =>
+    route.fulfill({
+      status: 200,
+      contentType: 'text/event-stream',
+      body: 'event: heartbeat\ndata: \n\n',
+    })
   )
 
   await page.goto(fixtureUrl('/flower', testInfo, undefined, 'event-labels'))
@@ -148,27 +161,39 @@ test('event-label fixture exposes readable labels, exact severity, and keyboard 
   await expect(toggle).toHaveAttribute('aria-expanded', 'false')
   await page.keyboard.press('Enter')
   await expect(toggle).toHaveAttribute('aria-expanded', 'true')
-  await expect(failedEntry.getByRole('region', { name: 'Event details' })).toContainText('exhaust-fan')
+  await expect(failedEntry.getByRole('region', { name: 'Event details' })).toContainText(
+    'exhaust-fan'
+  )
   await page.keyboard.press('Space')
   await expect(toggle).toHaveAttribute('aria-expanded', 'false')
 
-  const evidenceDirectory = path.resolve(process.cwd(), '../../.omo/evidence/control-monitoring-correctness/T8')
+  const evidenceDirectory = path.resolve(
+    process.cwd(),
+    '../../.omo/evidence/control-monitoring-correctness/T8'
+  )
   await mkdir(evidenceDirectory, { recursive: true })
   await page.screenshot({ path: path.join(evidenceDirectory, 'event-log.png'), fullPage: true })
   await writeFile(
     path.join(evidenceDirectory, 'network.json'),
-    JSON.stringify({
-      fixture_origin: FIXTURE_ORIGIN,
-      requests: requestUrls,
-      violations,
-    }, null, 2),
+    JSON.stringify(
+      {
+        fixture_origin: FIXTURE_ORIGIN,
+        requests: requestUrls,
+        violations,
+      },
+      null,
+      2
+    )
   )
 
   expect(consoleErrors).toEqual([])
   expect(violations).toEqual([])
 })
 
-test('event-log renders with CJK payload without glyph drop', async ({ page, context }, testInfo) => {
+test('event-log renders with CJK payload without glyph drop', async ({
+  page,
+  context,
+}, testInfo) => {
   const cjkEvent = {
     redis_id: `${Date.now()}-100`,
     event: {
@@ -181,7 +206,12 @@ test('event-log renders with CJK payload without glyph drop', async ({ page, con
       event_type: 'system.test_cjk',
       correlation_id: null,
       causation_id: null,
-      entity: { entity_type: 'system', entity_id: 'test', location: 'Flower Room', cluster: 'main' },
+      entity: {
+        entity_type: 'system',
+        entity_id: 'test',
+        location: 'Flower Room',
+        cluster: 'main',
+      },
       actor: { actor_type: 'system', actor_id: null },
       reason_code: null,
       reason_text: null,
@@ -193,7 +223,7 @@ test('event-log renders with CJK payload without glyph drop', async ({ page, con
     },
   }
 
-  await context.route('**/api/events/history**', (route) => {
+  await context.route('**/api/events/history**', route => {
     route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -208,7 +238,7 @@ test('event-log renders with CJK payload without glyph drop', async ({ page, con
     })
   })
 
-  await context.route('**/api/events/stream**', (route) => {
+  await context.route('**/api/events/stream**', route => {
     route.fulfill({
       status: 200,
       contentType: 'text/event-stream',
@@ -232,7 +262,10 @@ test('event-log renders with CJK payload without glyph drop', async ({ page, con
   await expect(koreanText).toBeVisible()
 })
 
-test('unknown event type uses deterministic humanized label', async ({ page, context }, testInfo) => {
+test('unknown event type uses deterministic humanized label', async ({
+  page,
+  context,
+}, testInfo) => {
   const unknownEvent = {
     redis_id: `${Date.now()}-99`,
     event: {
@@ -245,7 +278,12 @@ test('unknown event type uses deterministic humanized label', async ({ page, con
       event_type: 'custom.unknown_type_xyz',
       correlation_id: null,
       causation_id: null,
-      entity: { entity_type: 'system', entity_id: 'test', location: 'Flower Room', cluster: 'main' },
+      entity: {
+        entity_type: 'system',
+        entity_id: 'test',
+        location: 'Flower Room',
+        cluster: 'main',
+      },
       actor: { actor_type: 'system', actor_id: null },
       reason_code: null,
       reason_text: null,
@@ -253,7 +291,7 @@ test('unknown event type uses deterministic humanized label', async ({ page, con
     },
   }
 
-  await context.route('**/api/events/history**', (route) => {
+  await context.route('**/api/events/history**', route => {
     route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -268,7 +306,7 @@ test('unknown event type uses deterministic humanized label', async ({ page, con
     })
   })
 
-  await context.route('**/api/events/stream**', (route) => {
+  await context.route('**/api/events/stream**', route => {
     route.fulfill({
       status: 200,
       contentType: 'text/event-stream',

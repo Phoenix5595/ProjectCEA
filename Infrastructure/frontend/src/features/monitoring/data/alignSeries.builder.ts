@@ -4,9 +4,10 @@
  * Produces `AlignedSeries` and `AlignedBand` objects from aligned y arrays,
  * chart families, manifest specs, and provenance metadata.
  */
-import type { UnitFamily } from '../api'
-import type { SeriesSpec } from '../config'
+import type { Origin, Quality, UnitFamily } from '../api'
 import type { ChartFamily } from '../charts/options/family'
+import type { SeriesSpec } from '../config'
+
 import { alignControlPoints, alignDeviceStates, alignLinear, alignPid } from './alignSeries.series'
 import type {
   AlignedBand,
@@ -22,7 +23,6 @@ import type {
   SeriesSource,
 } from './alignSeries.types'
 import { seriesKey } from './alignSeries.types'
-import type { Origin, Quality } from '../api'
 
 const NODE_SUFFIX: Record<string, string> = {
   _f: 'front',
@@ -72,9 +72,12 @@ export function controlFamily(cs: NormControlSeries): ChartFamily {
   return 'device'
 }
 
-export function findSpec(seriesSpecs: SeriesSpec[] | undefined, name: string): SeriesSpec | undefined {
+export function findSpec(
+  seriesSpecs: SeriesSpec[] | undefined,
+  name: string
+): SeriesSpec | undefined {
   if (seriesSpecs === undefined) return undefined
-  return seriesSpecs.find((s) => s.name === name || s.displayName === name)
+  return seriesSpecs.find(s => s.name === name || s.displayName === name)
 }
 
 export function presentationFromSpec(spec: SeriesSpec | undefined): SeriesPresentation | undefined {
@@ -105,14 +108,39 @@ export function buildSensorSeries(
   node?: string,
   unit?: string,
   unitFamily?: UnitFamily,
-  presentation?: SeriesPresentation,
+  presentation?: SeriesPresentation
 ): AlignedSeries[] {
   const base = { kind: 'sensor' as const, metric, family, isAggregated, node, unit, unitFamily }
   const label = presentation?.label ?? (metric === 'vpd' ? 'VPD' : metric)
   return [
-    mkSeries({ ...base, key: seriesKey('sensor', metric, 'mean'), label, role: 'mean', y: mean, origin: 'recorded', quality: 'exact', presentation }),
-    mkSeries({ ...base, key: seriesKey('sensor', metric, 'min'), label: `${metric} min`, role: 'min', y: min, origin: 'recorded', quality: 'exact' }),
-    mkSeries({ ...base, key: seriesKey('sensor', metric, 'max'), label: `${metric} max`, role: 'max', y: max, origin: 'recorded', quality: 'exact' }),
+    mkSeries({
+      ...base,
+      key: seriesKey('sensor', metric, 'mean'),
+      label,
+      role: 'mean',
+      y: mean,
+      origin: 'recorded',
+      quality: 'exact',
+      presentation,
+    }),
+    mkSeries({
+      ...base,
+      key: seriesKey('sensor', metric, 'min'),
+      label: `${metric} min`,
+      role: 'min',
+      y: min,
+      origin: 'recorded',
+      quality: 'exact',
+    }),
+    mkSeries({
+      ...base,
+      key: seriesKey('sensor', metric, 'max'),
+      label: `${metric} max`,
+      role: 'max',
+      y: max,
+      origin: 'recorded',
+      quality: 'exact',
+    }),
   ]
 }
 
@@ -130,7 +158,7 @@ export function buildControlSeries(
   start: number,
   end: number,
   aggregated: boolean,
-  presentation?: SeriesPresentation,
+  presentation?: SeriesPresentation
 ): AlignedSeries[] {
   const source: SeriesSource = cs.kind
   const family = controlFamily(cs)
@@ -138,51 +166,57 @@ export function buildControlSeries(
   if (cs.metric.endsWith('_setpoint')) {
     const candidates: AlignedSeries[] = []
     if (cs.steps.length > 0) {
-      candidates.push(mkSeries({
-        key: seriesKey(source, cs.metric, 'step'),
-        label: cs.name,
-        kind: 'step',
-        metric: cs.metric,
-        role: 'step',
-        family,
-        y: alignDeviceStates(cs.steps, x, start, end, aggregated),
-        origin: cs.seriesOrigin,
-        quality: cs.seriesQuality,
-        isAggregated: isAgg,
-        presentation,
-      }))
+      candidates.push(
+        mkSeries({
+          key: seriesKey(source, cs.metric, 'step'),
+          label: cs.name,
+          kind: 'step',
+          metric: cs.metric,
+          role: 'step',
+          family,
+          y: alignDeviceStates(cs.steps, x, start, end, aggregated),
+          origin: cs.seriesOrigin,
+          quality: cs.seriesQuality,
+          isAggregated: isAgg,
+          presentation,
+        })
+      )
     }
     if (cs.linear.length > 0) {
-      candidates.push(mkSeries({
-        key: seriesKey(source, cs.metric, 'linear'),
+      candidates.push(
+        mkSeries({
+          key: seriesKey(source, cs.metric, 'linear'),
+          label: cs.name,
+          kind: 'linear',
+          metric: cs.metric,
+          role: 'linear',
+          family,
+          y: alignLinear(cs.linear, x, start, end, aggregated),
+          origin: cs.seriesOrigin,
+          quality: cs.seriesQuality,
+          isAggregated: isAgg,
+          presentation,
+        })
+      )
+    }
+    candidates.push(
+      mkSeries({
+        key: seriesKey(source, cs.metric, 'point'),
         label: cs.name,
-        kind: 'linear',
+        kind: 'point',
         metric: cs.metric,
-        role: 'linear',
+        role: 'point',
         family,
-        y: alignLinear(cs.linear, x, start, end, aggregated),
+        y: alignControlPoints(cs, x, start, end, aggregated),
         origin: cs.seriesOrigin,
         quality: cs.seriesQuality,
         isAggregated: isAgg,
         presentation,
-      }))
-    }
-    candidates.push(mkSeries({
-      key: seriesKey(source, cs.metric, 'point'),
-      label: cs.name,
-      kind: 'point',
-      metric: cs.metric,
-      role: 'point',
-      family,
-      y: alignControlPoints(cs, x, start, end, aggregated),
-      origin: cs.seriesOrigin,
-      quality: cs.seriesQuality,
-      isAggregated: isAgg,
-      presentation,
-    }))
-    const selected = candidates.filter((candidate) => candidate.y.some(
-      (value) => value !== null && Number.isFinite(value),
-    ))
+      })
+    )
+    const selected = candidates.filter(candidate =>
+      candidate.y.some(value => value !== null && Number.isFinite(value))
+    )
     return cs.trajectoryKind === null ? selected.slice(0, 1) : selected
   }
   const out: AlignedSeries[] = [
@@ -214,7 +248,7 @@ export function buildControlSeries(
         quality: cs.seriesQuality,
         isAggregated: isAgg,
         presentation,
-      }),
+      })
     )
   }
   if (cs.linear.length > 0) {
@@ -231,7 +265,7 @@ export function buildControlSeries(
         quality: cs.seriesQuality,
         isAggregated: isAgg,
         presentation,
-      }),
+      })
     )
   }
   return out
@@ -243,7 +277,7 @@ export function buildDeviceSeries(
   start: number,
   end: number,
   aggregated: boolean,
-  presentation?: SeriesPresentation,
+  presentation?: SeriesPresentation
 ): AlignedSeries[] {
   const family: ChartFamily = 'device'
   const isAgg = aggregated || ds.seriesIsAggregated
@@ -280,7 +314,7 @@ export function buildDeviceSeries(
         unit: '%',
         unitFamily: 'percent',
         presentation,
-      }),
+      })
     )
   }
   return out
@@ -292,7 +326,7 @@ export function buildPidSeries(
   start: number,
   end: number,
   aggregated: boolean,
-  presentation?: SeriesPresentation,
+  presentation?: SeriesPresentation
 ): AlignedSeries[] {
   const family: ChartFamily = 'device'
   const isAgg = aggregated || ps.seriesIsAggregated
@@ -313,7 +347,7 @@ export function buildPidSeries(
         unit: '%',
         unitFamily: 'percent',
         presentation,
-      }),
+      })
     )
   }
   if (ps.dutyCycles.length > 0) {
@@ -332,7 +366,7 @@ export function buildPidSeries(
         unit: '%',
         unitFamily: 'percent',
         presentation,
-      }),
+      })
     )
   }
   return out
@@ -356,7 +390,22 @@ interface MkSeriesInput {
 }
 
 function mkSeries(input: MkSeriesInput): AlignedSeries {
-  const { key, label, kind, metric, role, family, y, origin, quality, isAggregated, node, unit, unitFamily, presentation } = input
+  const {
+    key,
+    label,
+    kind,
+    metric,
+    role,
+    family,
+    y,
+    origin,
+    quality,
+    isAggregated,
+    node,
+    unit,
+    unitFamily,
+    presentation,
+  } = input
   let source: SeriesSource
   if (kind === 'sensor') {
     source = 'sensor'

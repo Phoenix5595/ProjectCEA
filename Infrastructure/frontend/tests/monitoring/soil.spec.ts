@@ -13,7 +13,7 @@ import { fixtureUrl } from './fixtureUrl'
 
 function trackViolations(page: Page): string[] {
   const violations: string[] = []
-  page.on('request', (request) => {
+  page.on('request', request => {
     const url = request.url()
     const violation = describeViolation(url)
     if (violation !== null) violations.push(`${violation}: ${url}`)
@@ -25,9 +25,9 @@ test('flower soil renders beds, live values, badge, and history', async ({ page 
   const violations = trackViolations(page)
   await page.goto(fixtureUrl('/flower/soil', testInfo, 'soil', 'soil-probes-2'))
 
-  // Front Bed first, Back Bed second, both labelled 4 ft x 4 ft.
-  const front = page.getByRole('figure', { name: 'Front Bed schematic' })
-  const back = page.getByRole('figure', { name: 'Back Bed schematic' })
+  // Back Bed first, Front Bed second, both labelled 4 ft x 4 ft.
+  const front = page.getByRole('figure', { name: 'Front Bed bed schematic' })
+  const back = page.getByRole('figure', { name: 'Back Bed bed schematic' })
   await expect(front).toBeVisible()
   await expect(back).toBeVisible()
   const frontBox = await front.boundingBox()
@@ -56,7 +56,9 @@ test('flower soil renders beds, live values, badge, and history', async ({ page 
   expect(violations).toEqual([])
 })
 
-test('injected probe raises one toast and the badge navigates to Sensor Settings', async ({ page }, testInfo) => {
+test('injected probe raises one toast and the badge navigates to Sensor Settings', async ({
+  page,
+}, testInfo) => {
   const violations = trackViolations(page)
   await page.goto(fixtureUrl('/flower/soil', testInfo, 'badge', 'unassigned-after-mount'))
 

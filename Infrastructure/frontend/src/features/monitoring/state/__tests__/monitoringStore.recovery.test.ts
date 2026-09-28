@@ -18,22 +18,26 @@ function sensorResponse(average = 24): MonitoringResponse {
       range: { start: new Date(NOW.getTime() - 3600_000), end: NOW },
       room: { room: 'Flower Room', nodes: ['front'] },
     },
-    series: [{
-      sensor: 'dry_bulb',
-      node: 'front',
-      unit_family: 'celsius',
-      unit: '°C',
-      points: [{ timestamp: NOW, average, minimum: average, maximum: average, sample_count: 1 }],
-    }],
-    statistics: [{
-      sensor: 'dry_bulb',
-      node: 'front',
-      minimum: average,
-      maximum: average,
-      average,
-      stddev_samp: 0,
-      sample_count: 1,
-    }],
+    series: [
+      {
+        sensor: 'dry_bulb',
+        node: 'front',
+        unit_family: 'celsius',
+        unit: '°C',
+        points: [{ timestamp: NOW, average, minimum: average, maximum: average, sample_count: 1 }],
+      },
+    ],
+    statistics: [
+      {
+        sensor: 'dry_bulb',
+        node: 'front',
+        minimum: average,
+        maximum: average,
+        average,
+        stddev_samp: 0,
+        sample_count: 1,
+      },
+    ],
   }
 }
 
@@ -81,7 +85,7 @@ describe('monitoring store recovery', () => {
       .mockRejectedValueOnce(new MonitoringHttpError('monitoring', 503, 'control unavailable'))
       .mockResolvedValue(controlResponse())
     vi.mocked(api.controlProjection).mockRejectedValueOnce(
-      new MonitoringHttpError('monitoring', 503, 'projection unavailable'),
+      new MonitoringHttpError('monitoring', 503, 'projection unavailable')
     )
     const store = new MonitoringStore('Flower Room', api, { now: () => new Date() })
     const unsubscribe = store.subscribe(() => {})
@@ -103,7 +107,9 @@ describe('monitoring store recovery', () => {
 
   it('keeps fixed ranges immutable across ticks until an explicit retry', async () => {
     const api = apiWithHealthyDefaults()
-    vi.mocked(api.controlRange).mockRejectedValue(new MonitoringHttpError('monitoring', 503, 'control unavailable'))
+    vi.mocked(api.controlRange).mockRejectedValue(
+      new MonitoringHttpError('monitoring', 503, 'control unavailable')
+    )
     const store = new MonitoringStore('Flower Room', api, { now: () => new Date() })
     const unsubscribe = store.subscribe(() => {})
     await vi.advanceTimersByTimeAsync(0)
@@ -154,8 +160,9 @@ describe('monitoring store recovery', () => {
 
   it('recovers projection autonomously after its retry cadence', async () => {
     const api = apiWithHealthyDefaults()
-    vi.mocked(api.controlProjection)
-      .mockRejectedValue(new MonitoringHttpError('monitoring', 503, 'projection unavailable'))
+    vi.mocked(api.controlProjection).mockRejectedValue(
+      new MonitoringHttpError('monitoring', 503, 'projection unavailable')
+    )
     const store = new MonitoringStore('Flower Room', api, { now: () => new Date() })
     const unsubscribe = store.subscribe(() => {})
     await vi.advanceTimersByTimeAsync(0)

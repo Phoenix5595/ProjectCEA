@@ -12,16 +12,19 @@ export function useMonitoringRangeBudget(store: MonitoringStore): {
     device: null,
   })
 
-  const reportBudget = useCallback((key: ChartBudgetKey, budget: number): void => {
-    const previous = budgetsRef.current
-    if (previous[key] === budget) return
-    const previousMaximum = Math.max(previous.climate ?? 0, previous.device ?? 0)
-    const next = { ...previous, [key]: budget }
-    budgetsRef.current = next
-    const nextMaximum = Math.max(next.climate ?? 0, next.device ?? 0)
-    if (nextMaximum === previousMaximum || nextMaximum <= 0) return
-    store.setRangeBudget(nextMaximum)
-  }, [store])
+  const reportBudget = useCallback(
+    (key: ChartBudgetKey, budget: number): void => {
+      const previous = budgetsRef.current
+      if (previous[key] === budget) return
+      const previousMaximum = Math.max(previous.climate ?? 0, previous.device ?? 0)
+      const next = { ...previous, [key]: budget }
+      budgetsRef.current = next
+      const nextMaximum = Math.max(next.climate ?? 0, next.device ?? 0)
+      if (nextMaximum === previousMaximum || nextMaximum <= 0) return
+      store.setRangeBudget(nextMaximum)
+    },
+    [store]
+  )
 
   return { reportBudget }
 }

@@ -8,7 +8,9 @@
  * quality). A button toggles visibility with `aria-expanded`.
  */
 import { useState } from 'react'
+
 import type { AlignedData } from '../data'
+
 import { formatTimestamp, formatValue } from './tables/tableFormat'
 
 export interface ChartDataTableProps {
@@ -17,26 +19,23 @@ export interface ChartDataTableProps {
   data: AlignedData
 }
 
-function isChartDataTableEnabled(): boolean {
-  const debugFlag = import.meta.env.VITE_MONITORING_DEBUG
-  return import.meta.env.MODE !== 'production' || debugFlag === '1' || debugFlag === 'true'
-}
-
 const TH =
   'px-1 py-1 text-left text-xs uppercase tracking-wider text-mon-text-secondary font-semibold border-b border-border-default bg-surface-secondary'
 const TD = 'px-1 py-1 border-b border-border-subtle'
 
 function slugify(value: string): string {
-  return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
 }
 
 export function ChartDataTable({ title, data }: ChartDataTableProps) {
   const [open, setOpen] = useState(false)
-  if (!isChartDataTableEnabled()) return null
 
   const tableId = `chart-data-${slugify(title)}`
 
-  const visible = data.series.filter((s) => s.role !== 'min' && s.role !== 'max')
+  const visible = data.series.filter(s => s.role !== 'min' && s.role !== 'max')
 
   return (
     <div>
@@ -44,7 +43,7 @@ export function ChartDataTable({ title, data }: ChartDataTableProps) {
         type="button"
         aria-expanded={open}
         aria-controls={tableId}
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => setOpen(o => !o)}
         className="px-2 py-1 text-xs font-medium rounded-md bg-surface-secondary text-text-default border border-border-default hover:bg-surface-primary transition-colors"
       >
         View data as table
@@ -58,7 +57,7 @@ export function ChartDataTable({ title, data }: ChartDataTableProps) {
                 <th scope="col" className={TH}>
                   Time
                 </th>
-                {visible.map((s) => (
+                {visible.map(s => (
                   <th key={s.key} scope="col" className={TH}>
                     {s.label}
                   </th>
@@ -69,7 +68,7 @@ export function ChartDataTable({ title, data }: ChartDataTableProps) {
               {data.x.map((t, i) => (
                 <tr key={t}>
                   <td className={TD}>{formatTimestamp(new Date(t))}</td>
-                  {visible.map((s) => {
+                  {visible.map(s => {
                     const v = s.y[i]
                     return (
                       <td key={s.key} className={TD}>
@@ -79,7 +78,10 @@ export function ChartDataTable({ title, data }: ChartDataTableProps) {
                           <span>
                             {formatValue(v, s.unitFamily ?? '')}
                             {s.unit ?? ''}
-                            <span className="text-text-subtle"> ({s.origin}/{s.quality})</span>
+                            <span className="text-text-subtle">
+                              {' '}
+                              ({s.origin}/{s.quality})
+                            </span>
                           </span>
                         )}
                       </td>

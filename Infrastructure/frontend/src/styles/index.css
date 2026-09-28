@@ -33,6 +33,9 @@
   --border-default: #374151;
   --border-emphasis: #4b5563;
   --border-subtle: #1f2937;
+  --accent-vivid-foreground: #000000;
+  --accent-hover-foreground: #000000;
+  --accent-active-foreground: #000000;
 }
 
 @import 'tailwindcss';
@@ -107,6 +110,9 @@
   --color-accent-data: var(--accent-data);
   --color-accent-vivid: var(--accent);
   --color-accent-hover: var(--accent-hover, #0891b2);
+  --color-accent-vivid-foreground: var(--accent-vivid-foreground);
+  --color-accent-hover-foreground: var(--accent-hover-foreground);
+  --color-accent-active-foreground: var(--accent-active-foreground);
   --color-accent-active: var(--accent-active, #0e7490);
   --color-accent-dim: var(--accent-dim, #164e63);
 
@@ -869,7 +875,7 @@ body {
   min-height: 44px;
 }
 
-/* Unlayered on purpose: react-day-picker's chunk CSS is unlayered and loads
+/* Unlayered on purpose: @daypicker/react's chunk CSS is unlayered and loads
    after this stylesheet, so layered overrides lose every cascade tie. Higher
    specificity + unlayered placement is what makes these stick. */
 .grow-calendar-picker.grow-calendar-picker {

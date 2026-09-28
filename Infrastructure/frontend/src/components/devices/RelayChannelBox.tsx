@@ -11,7 +11,10 @@ interface RelayChannelBoxProps {
   onSelect?: (channel: number) => void
   isMenuOpen?: boolean
   onToggleMenu?: (channel: number) => void
-  onMenuAction?: (channel: number, action: 'auto' | 'timer-5m' | 'timer-10m' | 'timer-30m' | 'timer-1h' | 'off') => void
+  onMenuAction?: (
+    channel: number,
+    action: 'auto' | 'timer-5m' | 'timer-10m' | 'timer-30m' | 'timer-1h' | 'off'
+  ) => void
 }
 
 interface ButtonState {
@@ -73,7 +76,8 @@ export default function RelayChannelBox({
   const deviceLabel = channel.deviceName || 'Unassigned'
   const typeLabel = channel.displayType || '-'
 
-  const isForeignTile = !!currentLocation && !!channel.location && channel.location !== currentLocation
+  const isForeignTile =
+    !!currentLocation && !!channel.location && channel.location !== currentLocation
   const isUnassignedInRoomView = !channel.isAssigned && !!currentLocation
   const isDisabled = disabled || isForeignTile || isUnassignedInRoomView
   const isStale = channel.stale
@@ -81,9 +85,10 @@ export default function RelayChannelBox({
   const modeOutlineClass = resolveModeOutlineClass(channel)
   const button = resolveButtonState(channel)
 
-  const interactiveClasses = onSelect && !isDisabled
-    ? 'cursor-pointer hover:border-btn-primary-hover hover:bg-surface-primary/40'
-    : ''
+  const interactiveClasses =
+    onSelect && !isDisabled
+      ? 'cursor-pointer hover:border-btn-primary-hover hover:bg-surface-primary/40'
+      : ''
 
   const baseClasses = [
     'group/relay relative w-full aspect-[20/11] min-h-0 rounded-sm border-2 text-left transition-[color,background-color,border-color,opacity,filter] overflow-visible',
@@ -98,12 +103,7 @@ export default function RelayChannelBox({
     .filter(Boolean)
     .join(' ')
 
-  const tooltipParts = [
-    `R${relayNum}`,
-    deviceLabel,
-    locationLabel,
-    elapsedLabel,
-  ]
+  const tooltipParts = [`R${relayNum}`, deviceLabel, locationLabel, elapsedLabel]
   if (channel.alarm) tooltipParts.push(`[${channel.alarm.severity}] ${channel.alarm.message}`)
   if (isStale) tooltipParts.push('STALE')
   const tooltipTitle = tooltipParts.join(' · ')
@@ -111,7 +111,7 @@ export default function RelayChannelBox({
   const menu = isMenuOpen ? (
     <div
       className="absolute right-0 top-5 z-20 w-32 rounded-sm border border-border-emphasis bg-surface-primary p-1 shadow-lg"
-      onClick={(event) => event.stopPropagation()}
+      onClick={event => event.stopPropagation()}
     >
       {isStale ? (
         <button
@@ -124,23 +124,47 @@ export default function RelayChannelBox({
       ) : (
         <>
           {channel.isAssigned && (
-            <button type="button" className="w-full rounded-sm px-2 py-1 text-left text-xs hover:bg-surface-secondary" onClick={() => onMenuAction?.(channel.channel, 'auto')}>
+            <button
+              type="button"
+              className="w-full rounded-sm px-2 py-1 text-left text-xs hover:bg-surface-secondary"
+              onClick={() => onMenuAction?.(channel.channel, 'auto')}
+            >
               Auto
             </button>
           )}
-          <button type="button" className="w-full rounded-sm px-2 py-1 text-left text-xs hover:bg-surface-secondary" onClick={() => onMenuAction?.(channel.channel, 'timer-5m')}>
+          <button
+            type="button"
+            className="w-full rounded-sm px-2 py-1 text-left text-xs hover:bg-surface-secondary"
+            onClick={() => onMenuAction?.(channel.channel, 'timer-5m')}
+          >
             ON 5m
           </button>
-          <button type="button" className="w-full rounded-sm px-2 py-1 text-left text-xs hover:bg-surface-secondary" onClick={() => onMenuAction?.(channel.channel, 'timer-10m')}>
+          <button
+            type="button"
+            className="w-full rounded-sm px-2 py-1 text-left text-xs hover:bg-surface-secondary"
+            onClick={() => onMenuAction?.(channel.channel, 'timer-10m')}
+          >
             ON 10m
           </button>
-          <button type="button" className="w-full rounded-sm px-2 py-1 text-left text-xs hover:bg-surface-secondary" onClick={() => onMenuAction?.(channel.channel, 'timer-30m')}>
+          <button
+            type="button"
+            className="w-full rounded-sm px-2 py-1 text-left text-xs hover:bg-surface-secondary"
+            onClick={() => onMenuAction?.(channel.channel, 'timer-30m')}
+          >
             ON 30m
           </button>
-          <button type="button" className="w-full rounded-sm px-2 py-1 text-left text-xs hover:bg-surface-secondary" onClick={() => onMenuAction?.(channel.channel, 'timer-1h')}>
+          <button
+            type="button"
+            className="w-full rounded-sm px-2 py-1 text-left text-xs hover:bg-surface-secondary"
+            onClick={() => onMenuAction?.(channel.channel, 'timer-1h')}
+          >
             ON 1h
           </button>
-          <button type="button" className="w-full rounded-sm px-2 py-1 text-left text-xs hover:bg-surface-secondary" onClick={() => onMenuAction?.(channel.channel, 'off')}>
+          <button
+            type="button"
+            className="w-full rounded-sm px-2 py-1 text-left text-xs hover:bg-surface-secondary"
+            onClick={() => onMenuAction?.(channel.channel, 'off')}
+          >
             Off
           </button>
         </>
@@ -161,12 +185,14 @@ export default function RelayChannelBox({
         </div>
       </div>
 
-      <div className={`flex h-full shrink-0 flex-col items-center justify-between gap-1 ${isCompact ? 'min-w-10' : 'min-w-[60px]'}`}>
+      <div
+        className={`flex h-full shrink-0 flex-col items-center justify-between gap-1 ${isCompact ? 'min-w-10' : 'min-w-[60px]'}`}
+      >
         <div className="relative flex aspect-square h-[55%] items-center justify-center">
           <button
             type="button"
             disabled={isDisabled}
-            onClick={(event) => {
+            onClick={event => {
               event.stopPropagation()
               if (isDisabled) {
                 return
@@ -181,7 +207,9 @@ export default function RelayChannelBox({
           {menu}
         </div>
         <div className="flex flex-1 w-full items-center justify-center rounded-sm bg-surface-primary/60 px-1">
-          <span className="shrink-0 font-mono text-10 font-semibold text-text-muted">{elapsedLabel}</span>
+          <span className="shrink-0 font-mono text-10 font-semibold text-text-muted">
+            {elapsedLabel}
+          </span>
         </div>
       </div>
     </div>

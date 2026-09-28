@@ -1,10 +1,12 @@
 import { memo } from 'react'
-import type { EventLogEntry } from '../state/eventLogStore'
-import { getEventDisplay } from '../presentation/eventRegistry'
+
 import { displayCategoryOf, categoryTheme } from '../presentation/categoryTheme'
-import { SEVERITY_LABELS, type SeverityLevel } from '../presentation/severity'
+import { getEventDisplay } from '../presentation/eventRegistry'
 import { sourcePartsFor } from '../presentation/eventSourceParts'
+import { SEVERITY_LABELS, type SeverityLevel } from '../presentation/severity'
 import { formatExactTime, formatLocalTime, formatRelativeTime } from '../presentation/timeFormat'
+import type { EventLogEntry } from '../state/eventLogStore'
+
 import {
   EventRoomIndicator,
   EventSourceLine,

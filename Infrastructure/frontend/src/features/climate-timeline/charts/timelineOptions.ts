@@ -1,4 +1,5 @@
 import type uPlot from 'uplot'
+
 import type { EnvelopeSeriesKey } from './envelopeSeries'
 import { readTimelineToken, type TimelineTokenName } from './tokens'
 
@@ -55,7 +56,7 @@ export function timelineScaleForMetric(metric: string): TimelineScale {
 }
 
 export function timelineSeriesMeta(keys: readonly EnvelopeSeriesKey[]): TimelineSeriesMeta[] {
-  return keys.map((key) => {
+  return keys.map(key => {
     const separator = key.lastIndexOf(':')
     const metric = key.slice(0, separator)
     const kind = key.slice(separator + 1)
@@ -73,7 +74,7 @@ export function timelineSeriesMeta(keys: readonly EnvelopeSeriesKey[]): Timeline
 /** Soft-bounded family range: follows the data with padding, clamped to the soft window. */
 export function softRange(
   softMin: number,
-  softMax: number,
+  softMax: number
 ): (_self: uPlot, initMin: number | undefined, initMax: number | undefined) => [number, number] {
   return (_self, initMin, initMax) => {
     const hasMin = typeof initMin === 'number' && Number.isFinite(initMin)
@@ -81,9 +82,8 @@ export function softRange(
     let lo = hasMin ? initMin : softMin
     let hi = hasMax ? initMax : softMax
     if (hasMin && hasMax) {
-      const padding = initMin === initMax
-        ? Math.max(Math.abs(initMin) * 0.05, 1)
-        : (initMax - initMin) * 0.05
+      const padding =
+        initMin === initMax ? Math.max(Math.abs(initMin) * 0.05, 1) : (initMax - initMin) * 0.05
       lo = Math.min(lo, initMin - padding)
       hi = Math.max(hi, initMax + padding)
     }
@@ -109,7 +109,7 @@ export function buildTimelineOptions(
   height: number,
   windowMs: TimelineWindowMs,
   hooks: TimelineHooks,
-  plugins: uPlot.Plugin[],
+  plugins: uPlot.Plugin[]
 ): uPlot.Options {
   const scales: uPlot.Scales = {
     x: { time: false, range: () => [0, 1441] },
@@ -127,12 +127,13 @@ export function buildTimelineOptions(
       grid: { stroke: gridStroke },
       ticks: { stroke: gridStroke },
       size: 30,
-      values: (_self, splits) => splits.map((minutes) => {
-        const instant = new Date(windowMs.start + minutes * 60_000)
-        const hours = String(instant.getUTCHours()).padStart(2, '0')
-        const minutesText = String(instant.getUTCMinutes()).padStart(2, '0')
-        return `${hours}:${minutesText}`
-      }),
+      values: (_self, splits) =>
+        splits.map(minutes => {
+          const instant = new Date(windowMs.start + minutes * 60_000)
+          const hours = String(instant.getUTCHours()).padStart(2, '0')
+          const minutesText = String(instant.getUTCMinutes()).padStart(2, '0')
+          return `${hours}:${minutesText}`
+        }),
     },
     {
       scale: 'temp',
@@ -155,13 +156,14 @@ export function buildTimelineOptions(
       stroke: readTimelineToken(SCALE_TOKENS.co2),
       ticks: { stroke: readTimelineToken(SCALE_TOKENS.co2) },
       size: 25,
-      values: (_self, splits) => splits.map((value) => (value >= 1000 ? `${(value / 1000).toFixed(1)}k` : String(value))),
+      values: (_self, splits) =>
+        splits.map(value => (value >= 1000 ? `${(value / 1000).toFixed(1)}k` : String(value))),
     },
   ]
 
   const series: uPlot.Series[] = [
     {},
-    ...meta.map((entry) => ({
+    ...meta.map(entry => ({
       label: entry.label,
       stroke: entry.stroke,
       width: 1,
@@ -184,9 +186,7 @@ export function buildTimelineOptions(
     hooks: (() => {
       const assembled: NonNullable<uPlot.Options['hooks']> = {}
       if (hooks.onSetScale) {
-        assembled.setScale = [
-          (self: uPlot, scaleKey: string) => hooks.onSetScale?.(self, scaleKey),
-        ]
+        assembled.setScale = [(self: uPlot, scaleKey: string) => hooks.onSetScale?.(self, scaleKey)]
       }
       return assembled
     })(),

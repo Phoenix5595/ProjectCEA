@@ -16,11 +16,11 @@ import {
   sensorSubclustersFor,
   sensorUrlClustersFor,
   TOPOLOGY,
-} from './clusterTopology';
+} from './clusterTopology'
 
 export interface Zone {
-  location: string;
-  cluster: string;
+  location: string
+  cluster: string
 }
 
 /**
@@ -32,8 +32,8 @@ export interface Zone {
  * polling.
  */
 export const ZONES: Zone[] = knownRooms()
-  .filter((r) => r !== 'Outside') // Outside has no device-plane UI today.
-  .map((location) => ({ location, cluster: deviceClusterFor(location) }));
+  .filter(r => r !== 'Outside') // Outside has no device-plane UI today.
+  .map(location => ({ location, cluster: deviceClusterFor(location) }))
 
 /**
  * @deprecated Prefer `sensorSubclustersFor('Flower Room')`. Kept as a
@@ -43,10 +43,10 @@ export const ZONES: Zone[] = knownRooms()
  */
 export const FLOWER_DASHBOARD_CLUSTERS: string[] = [
   ...(TOPOLOGY['Flower Room']?.sensorSubclusters ?? []),
-];
+]
 
 /** Vertical order on the main dashboard (matches ZONES order: Flower, Veg, Lab). */
-export const DASHBOARD_ROW_ZONES: Zone[] = [...ZONES];
+export const DASHBOARD_ROW_ZONES: Zone[] = [...ZONES]
 
 /**
  * Sensor-plane zones — one entry per sensor URL slug.
@@ -64,14 +64,14 @@ export const DASHBOARD_ROW_ZONES: Zone[] = [...ZONES];
  * dedicated sensor-only list is required here.
  */
 export function getSensorPollZones(): Zone[] {
-  const out: Zone[] = [];
+  const out: Zone[] = []
   for (const location of knownRooms()) {
-    if (location === 'Outside') continue; // No dashboard rows for Outside.
+    if (location === 'Outside') continue // No dashboard rows for Outside.
     for (const cluster of sensorUrlClustersFor(location)) {
-      out.push({ location, cluster });
+      out.push({ location, cluster })
     }
   }
-  return out;
+  return out
 }
 
 /**
@@ -89,15 +89,15 @@ export function getSensorPollZones(): Zone[] {
  * device polling. Phase 5e fixed `useSensorPolling` to do exactly that.
  */
 export function getDashboardPollZones(): Zone[] {
-  const seen = new Set<string>();
-  const out: Zone[] = [];
+  const seen = new Set<string>()
+  const out: Zone[] = []
   // Device clusters first (legacy ordering — preserves Flower's `main`
   // entry at the top so dashboard rows render in their historical order).
   for (const z of ZONES) {
-    const k = `${z.location}\0${z.cluster}`;
+    const k = `${z.location}\0${z.cluster}`
     if (!seen.has(k)) {
-      seen.add(k);
-      out.push(z);
+      seen.add(k)
+      out.push(z)
     }
   }
   // Then sensor sub-clusters that aren't already represented. We
@@ -105,70 +105,70 @@ export function getDashboardPollZones(): Zone[] {
   // helper) here so unsplit rooms don't emit a duplicate `main` entry —
   // the `ZONES` loop above already handled the device-plane `main`.
   for (const location of knownRooms()) {
-    if (location === 'Outside') continue;
+    if (location === 'Outside') continue
     for (const cluster of sensorSubclustersFor(location)) {
-      const k = `${location}\0${cluster}`;
-      if (seen.has(k)) continue;
-      seen.add(k);
-      out.push({ location, cluster });
+      const k = `${location}\0${cluster}`
+      if (seen.has(k)) continue
+      seen.add(k)
+      out.push({ location, cluster })
     }
   }
-  return out;
+  return out
 }
 
 export interface FlowerClimateLayer {
-  label: string;
-  cluster: string | null;
+  label: string
+  cluster: string | null
 }
 
 /** Two UI layers (Front / Back); second uses another cluster when configured, else null (show placeholder, no fake data). */
 export function getFlowerDualClimateLayers(): FlowerClimateLayer[] {
-  const clusters = FLOWER_DASHBOARD_CLUSTERS;
+  const clusters = FLOWER_DASHBOARD_CLUSTERS
   return [
     { label: 'Front', cluster: clusters[0] ?? 'front' },
     { label: 'Back', cluster: clusters[1] ?? null },
-  ];
+  ]
 }
 
 /** Redis bulk keys for dashboard setpoints / light intensities for all poll zones. */
 export function buildDashboardBulkSensorKeys(zones: Zone[]): string[] {
-  const keys = new Set<string>();
+  const keys = new Set<string>()
   for (const z of zones) {
-    const p = `${z.location}_${z.cluster}_`;
+    const p = `${z.location}_${z.cluster}_`
     if (z.location === 'Lab') {
-      keys.add(`${p}lab_temp`);
-      keys.add(`${p}water_temperature`);
-      continue;
+      keys.add(`${p}lab_temp`)
+      keys.add(`${p}water_temperature`)
+      continue
     }
-    keys.add(`${p}heating_setpoint`);
-    keys.add(`${p}cooling_setpoint`);
-    keys.add(`${p}co2_setpoint`);
-    keys.add(`${p}vpd_setpoint`);
+    keys.add(`${p}heating_setpoint`)
+    keys.add(`${p}cooling_setpoint`)
+    keys.add(`${p}co2_setpoint`)
+    keys.add(`${p}vpd_setpoint`)
     for (let i = 1; i <= 3; i++) {
-      keys.add(`${p}light_${i}_intensity`);
+      keys.add(`${p}light_${i}_intensity`)
     }
   }
-  return [...keys];
+  return [...keys]
 }
 
 /** Display name mapping for locations (for UI display only) */
 export function getLocationDisplayName(location: string): string {
   const displayNames: Record<string, string> = {
-    "Veg Room": "Vegetation Room",
-    "Flower Room": "Flower Room",
-    "Lab": "Lab"
-  };
-  return displayNames[location] || location;
+    'Veg Room': 'Vegetation Room',
+    'Flower Room': 'Flower Room',
+    Lab: 'Lab',
+  }
+  return displayNames[location] || location
 }
 
 /** Reverse mapping: convert display name back to backend location name */
 export function getLocationBackendName(displayName: string): string {
   const reverseMap: Record<string, string> = {
-    "Vegetation Room": "Veg Room",
-    "Flower Room": "Flower Room",
-    "Lab": "Lab"
-  };
-  return reverseMap[displayName] || displayName;
+    'Vegetation Room': 'Veg Room',
+    'Flower Room': 'Flower Room',
+    Lab: 'Lab',
+  }
+  return reverseMap[displayName] || displayName
 }
 
 /**
@@ -176,29 +176,29 @@ export function getLocationBackendName(displayName: string): string {
  * Backend IDs stay `front` / `back`; UI must not show lowercase "back" (reads like browser Back).
  */
 export function getClusterDisplayName(location: string, cluster: string): string {
-  if (location === 'Flower Room' && cluster === 'front') return 'Front';
-  if (location === 'Flower Room' && cluster === 'back') return 'Back';
-  const words = cluster.replace(/_/g, ' ').trim();
-  if (!words) return cluster;
-  return words.replace(/\b\w/g, (c) => c.toUpperCase());
+  if (location === 'Flower Room' && cluster === 'front') return 'Front'
+  if (location === 'Flower Room' && cluster === 'back') return 'Back'
+  const words = cluster.replace(/_/g, ' ').trim()
+  if (!words) return cluster
+  return words.replace(/\b\w/g, c => c.toUpperCase())
 }
 
 export function getZoneKey(location: string, cluster: string): string {
-  return `${location}:${cluster}`;
+  return `${location}:${cluster}`
 }
 
 export function parseZoneKey(key: string): { location: string; cluster: string } | null {
-  const parts = key.split(':');
+  const parts = key.split(':')
   if (parts.length !== 2) {
-    return null;
+    return null
   }
-  return { location: parts[0], cluster: parts[1] };
+  return { location: parts[0], cluster: parts[1] }
 }
 
 /** Control-plane cluster for device APIs (Flower actuators: always `main`). */
 export function controlClusterForLocation(location: string): string {
-  const z = ZONES.find((zone) => zone.location === location);
-  return z?.cluster ?? 'main';
+  const z = ZONES.find(zone => zone.location === location)
+  return z?.cluster ?? 'main'
 }
 
 /** Map legacy persisted clusters to the control cluster (Flower front/back → main). */
@@ -207,10 +207,10 @@ export function normalizeDeviceControlCluster(
   cluster: string | null | undefined
 ): string {
   if (location === 'Flower Room' && (cluster === 'front' || cluster === 'back')) {
-    return 'main';
+    return 'main'
   }
   if (cluster && cluster.length > 0) {
-    return cluster;
+    return cluster
   }
-  return controlClusterForLocation(location);
+  return controlClusterForLocation(location)
 }

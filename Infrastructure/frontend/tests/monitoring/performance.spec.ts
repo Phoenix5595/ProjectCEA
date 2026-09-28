@@ -16,7 +16,7 @@ const VISUAL_AGE_SLO_MS = 1000
 const TICK_SAMPLE_COUNT = 120
 const ARTIFACT_PATH = path.resolve(
   process.cwd(),
-  '../../.omo/evidence/monitoring-pipeline-radical-optimization/task-7-monitoring-pipeline-radical-optimization-browser-baseline.json',
+  '../../.omo/evidence/monitoring-pipeline-radical-optimization/task-7-monitoring-pipeline-radical-optimization-browser-baseline.json'
 )
 let happyArtifact: Record<string, unknown> | undefined
 
@@ -51,7 +51,11 @@ function nearestRank(samples: readonly number[], percentile: number): number {
   return ordered[index] ?? 0
 }
 
-function latencySummary(samples: readonly number[]): { readonly p50: number; readonly p95: number; readonly p99: number } {
+function latencySummary(samples: readonly number[]): {
+  readonly p50: number
+  readonly p95: number
+  readonly p99: number
+} {
   return {
     p50: nearestRank(samples, 50),
     p95: nearestRank(samples, 95),
@@ -65,7 +69,7 @@ async function perfSnapshot(page: import('@playwright/test').Page): Promise<Perf
 
 async function waitForTickCount(
   page: import('@playwright/test').Page,
-  tickCount: number,
+  tickCount: number
 ): Promise<void> {
   await expect
     .poll(async () => (await perfSnapshot(page))?.tickCount ?? -1, {
@@ -84,9 +88,13 @@ async function heapUsed(page: import('@playwright/test').Page): Promise<number |
   })
 }
 
-function heapTrend(samples: readonly HeapSample[]): { readonly first: number | null; readonly last: number | null; readonly delta: number | null } {
-  const values = samples.flatMap((sample) =>
-    sample.usedJSHeapSize === null ? [] : [sample.usedJSHeapSize],
+function heapTrend(samples: readonly HeapSample[]): {
+  readonly first: number | null
+  readonly last: number | null
+  readonly delta: number | null
+} {
+  const values = samples.flatMap(sample =>
+    sample.usedJSHeapSize === null ? [] : [sample.usedJSHeapSize]
   )
   const first = values[0] ?? null
   const last = values[values.length - 1] ?? null
@@ -100,7 +108,7 @@ async function writeArtifact(contents: Record<string, unknown>): Promise<void> {
 
 function trackViolations(page: import('@playwright/test').Page): string[] {
   const violations: string[] = []
-  page.on('request', (request) => {
+  page.on('request', request => {
     const url = request.url()
     if (url.includes('/grafana/')) violations.push(`grafana: ${url}`)
     const violation = describeViolation(url)
@@ -109,11 +117,13 @@ function trackViolations(page: import('@playwright/test').Page): string[] {
   return violations
 }
 
-test('records fixture-only client processing and paint-age SLO samples', async ({ page }, testInfo) => {
+test('records fixture-only client processing and paint-age SLO samples', async ({
+  page,
+}, testInfo) => {
   test.setTimeout(150_000)
   const violations = trackViolations(page)
   let sensorRangeRequests = 0
-  page.on('request', (request) => {
+  page.on('request', request => {
     if (new URL(request.url()).pathname.startsWith('/api/sensors/monitoring/range/')) {
       sensorRangeRequests += 1
     }
@@ -128,14 +138,18 @@ test('records fixture-only client processing and paint-age SLO samples', async (
   const initialTickCount = initial?.tickCount ?? 0
   const heaps: HeapSample[] = []
 
-  for (let target = initialTickCount + 20; target <= initialTickCount + TICK_SAMPLE_COUNT; target += 20) {
+  for (
+    let target = initialTickCount + 20;
+    target <= initialTickCount + TICK_SAMPLE_COUNT;
+    target += 20
+  ) {
     await waitForTickCount(page, target)
     heaps.push({ tickIndex: target, usedJSHeapSize: await heapUsed(page) })
   }
 
   const afterTicks = await perfSnapshot(page)
   expect(afterTicks).not.toBeNull()
-  const samples = (afterTicks?.samples ?? []).filter((sample) => sample.tickIndex > initialTickCount)
+  const samples = (afterTicks?.samples ?? []).filter(sample => sample.tickIndex > initialTickCount)
   expect(samples.length).toBeGreaterThanOrEqual(TICK_SAMPLE_COUNT)
 
   const climateChart = page.getByRole('img', { name: 'Flower climate conditions' })
@@ -145,8 +159,8 @@ test('records fixture-only client processing and paint-age SLO samples', async (
 
   const beforeZoomRequests = sensorRangeRequests
   const zoomStartedAt = performance.now()
-  const rangeResponse = page.waitForResponse((response) =>
-    new URL(response.url()).pathname.startsWith('/api/sensors/monitoring/range/'),
+  const rangeResponse = page.waitForResponse(response =>
+    new URL(response.url()).pathname.startsWith('/api/sensors/monitoring/range/')
   )
   await page.mouse.move(chartBox.x + chartBox.width * 0.2, chartBox.y + chartBox.height * 0.5)
   await page.mouse.down()
@@ -168,10 +182,10 @@ test('records fixture-only client processing and paint-age SLO samples', async (
     .toBeGreaterThan(beforeResize?.resizeCount ?? -1)
   const afterResize = await perfSnapshot(page)
 
-  const totalTickMs = samples.map((sample) => sample.totalTickMs)
-  const visualAgeMs = samples.map((sample) => sample.visualAgeMs)
-  const requestToPaintMs = samples.flatMap((sample) =>
-    sample.requestToPaintMs === null ? [] : [sample.requestToPaintMs],
+  const totalTickMs = samples.map(sample => sample.totalTickMs)
+  const visualAgeMs = samples.map(sample => sample.visualAgeMs)
+  const requestToPaintMs = samples.flatMap(sample =>
+    sample.requestToPaintMs === null ? [] : [sample.requestToPaintMs]
   )
   const heap = heapTrend(heaps)
   const processing = latencySummary(totalTickMs)
@@ -181,14 +195,17 @@ test('records fixture-only client processing and paint-age SLO samples', async (
     schema_version: 1,
     fixture_origin: FIXTURE_ORIGIN,
     percentile_method: 'nearest-rank',
-    thresholds: { client_processing_p95_ms: CLIENT_PROCESSING_SLO_MS, visual_age_ms: VISUAL_AGE_SLO_MS },
+    thresholds: {
+      client_processing_p95_ms: CLIENT_PROCESSING_SLO_MS,
+      visual_age_ms: VISUAL_AGE_SLO_MS,
+    },
     happy_run: {
       tick_count: samples.length,
       samples,
       latency_ms: {
-        align: latencySummary(samples.map((sample) => sample.alignMs)),
-        convert: latencySummary(samples.map((sample) => sample.convertMs)),
-        set_data: latencySummary(samples.map((sample) => sample.setDataMs)),
+        align: latencySummary(samples.map(sample => sample.alignMs)),
+        convert: latencySummary(samples.map(sample => sample.convertMs)),
+        set_data: latencySummary(samples.map(sample => sample.setDataMs)),
         total_tick: processing,
         request_to_paint: latencySummary(requestToPaintMs),
         visual_age: visualAge,
@@ -196,8 +213,14 @@ test('records fixture-only client processing and paint-age SLO samples', async (
       heap,
       heap_samples: heaps,
       request_count: afterTicks?.requestCount ?? 0,
-      zoom: { range_refetches: sensorRangeRequests - beforeZoomRequests, requery_ms: zoomRefetchMs },
-      resize: { resize_ms: afterResize?.lastResizeMs ?? null, range_refetches: sensorRangeRequests - beforeZoomRequests - 1 },
+      zoom: {
+        range_refetches: sensorRangeRequests - beforeZoomRequests,
+        requery_ms: zoomRefetchMs,
+      },
+      resize: {
+        resize_ms: afterResize?.lastResizeMs ?? null,
+        range_refetches: sensorRangeRequests - beforeZoomRequests - 1,
+      },
     },
     gate_outputs: { performance_spec: 'pass' },
   }
@@ -221,7 +244,10 @@ test('detects the fixture-only synthetic alignment delay', async ({ page }, test
   await waitForTickCount(page, 20)
   const snapshot = await perfSnapshot(page)
   const samples = snapshot?.samples ?? []
-  const p95 = nearestRank(samples.map((sample) => sample.totalTickMs), 95)
+  const p95 = nearestRank(
+    samples.map(sample => sample.totalTickMs),
+    95
+  )
 
   let failureOutput = ''
   try {
@@ -245,7 +271,9 @@ test('detects the fixture-only synthetic alignment delay', async ({ page }, test
   })
 })
 
-test('permits one post-interval sensor refresh without per-tick history reloads', async ({ page }, testInfo) => {
+test('permits one post-interval sensor refresh without per-tick history reloads', async ({
+  page,
+}, testInfo) => {
   test.setTimeout(90_000)
   const violations = trackViolations(page)
   let sensorRangeRequests = 0
@@ -253,7 +281,7 @@ test('permits one post-interval sensor refresh without per-tick history reloads'
   let tailInFlight = 0
   let maxTailInFlight = 0
 
-  page.on('request', (request) => {
+  page.on('request', request => {
     const url = new URL(request.url())
     if (url.pathname.startsWith('/api/sensors/monitoring/range/')) sensorRangeRequests += 1
     const isControlRange =
@@ -295,14 +323,16 @@ test('permits one post-interval sensor refresh without per-tick history reloads'
   expect(violations).toEqual([])
 })
 
-test('performs one bounded control reconciliation after flush health recovers', async ({ page }, testInfo) => {
+test('performs one bounded control reconciliation after flush health recovers', async ({
+  page,
+}, testInfo) => {
   test.setTimeout(75_000)
   const violations = trackViolations(page)
   let controlRangeRequests = 0
   let tailInFlight = 0
   let maxTailInFlight = 0
 
-  page.on('request', (request) => {
+  page.on('request', request => {
     const url = new URL(request.url())
     const isControlRange =
       url.pathname.startsWith('/api/monitoring/control/') &&

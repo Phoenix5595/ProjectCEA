@@ -1,10 +1,11 @@
 import { act, renderHook } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
+
 import { createClimatePeriodsTableAdapter } from '../adapters/climatePeriodsTableAdapter'
 import { RichTrajectoryEnvelope } from '../api/contracts'
 import { TimelineConflictError, type TimelinePublicationPort } from '../api/timelinePublicationPort'
-import { useTimelineDraft } from '../state/useTimelineDraft'
 import type { TimelineSavedBaseline } from '../state/timelineDraft'
+import { useTimelineDraft } from '../state/useTimelineDraft'
 
 const savedBaseline = (revision = 'config-1'): TimelineSavedBaseline => ({
   room: { location: 'flower', cluster: 'main' },
@@ -16,17 +17,19 @@ const savedBaseline = (revision = 'config-1'): TimelineSavedBaseline => ({
     end: '2026-01-02T00:00:00.000Z',
     timezone: 'America/Toronto',
   },
-  periods: [{
-    period_name: 'Day',
-    start_time: '06:00',
-    end_time: '18:00',
-    ramp_minutes: 30,
-    heating_setpoint: 22,
-    cooling_setpoint: 25,
-    vpd_setpoint: 1.2,
-    co2_setpoint: 900,
-    details: 'saved',
-  }],
+  periods: [
+    {
+      period_name: 'Day',
+      start_time: '06:00',
+      end_time: '18:00',
+      ramp_minutes: 30,
+      heating_setpoint: 22,
+      cooling_setpoint: 25,
+      vpd_setpoint: 1.2,
+      co2_setpoint: 900,
+      details: 'saved',
+    },
+  ],
   photoperiod: {
     dayStartTime: '06:00',
     nightStartTime: '18:00',
@@ -49,23 +52,25 @@ function savedEnvelopeFixture() {
     revision_scope: 'saved',
     base_config_revision: 'config-2',
     draft_revision: null,
-    segments: [{
-      shape: 'step',
-      value: 22,
-      start: '2026-01-01T00:00:00.000Z',
-      end: '2026-01-01T01:00:00.000Z',
-      metric: 'temperature',
-      unit: 'celsius',
-      trajectory_kind: 'scheduled',
-      quality: 'exact',
-      source: {
-        mode: 'flower',
-        submode: null,
-        period: { period_id: 'day', label: 'Day' },
-        config_revision: 'config-2',
-        draft_revision: null,
+    segments: [
+      {
+        shape: 'step',
+        value: 22,
+        start: '2026-01-01T00:00:00.000Z',
+        end: '2026-01-01T01:00:00.000Z',
+        metric: 'temperature',
+        unit: 'celsius',
+        trajectory_kind: 'scheduled',
+        quality: 'exact',
+        source: {
+          mode: 'flower',
+          submode: null,
+          period: { period_id: 'day', label: 'Day' },
+          config_revision: 'config-2',
+          draft_revision: null,
+        },
       },
-    }],
+    ],
     assumptions: [],
     warnings: [],
   })
@@ -84,23 +89,25 @@ function previewEnvelope(draftRevision: number) {
     revision_scope: 'draft',
     base_config_revision: 'config-1',
     draft_revision: `draft-${draftRevision}`,
-    segments: [{
-      shape: 'step',
-      value: 22,
-      start: '2026-01-01T00:00:00.000Z',
-      end: '2026-01-01T01:00:00.000Z',
-      metric: 'temperature',
-      unit: 'celsius',
-      trajectory_kind: 'scheduled',
-      quality: 'exact',
-      source: {
-        mode: 'flower',
-        submode: null,
-        period: { period_id: 'day', label: 'Day' },
-        config_revision: 'config-1',
-        draft_revision: `draft-${draftRevision}`,
+    segments: [
+      {
+        shape: 'step',
+        value: 22,
+        start: '2026-01-01T00:00:00.000Z',
+        end: '2026-01-01T01:00:00.000Z',
+        metric: 'temperature',
+        unit: 'celsius',
+        trajectory_kind: 'scheduled',
+        quality: 'exact',
+        source: {
+          mode: 'flower',
+          submode: null,
+          period: { period_id: 'day', label: 'Day' },
+          config_revision: 'config-1',
+          draft_revision: `draft-${draftRevision}`,
+        },
       },
-    }],
+    ],
     assumptions: [],
     warnings: [],
   })
@@ -108,8 +115,8 @@ function previewEnvelope(draftRevision: number) {
 
 function successfulPort(): TimelinePublicationPort {
   return {
-    preview: async (request) => previewEnvelope(request.draftRevision),
-    apply: async (request) => ({
+    preview: async request => previewEnvelope(request.draftRevision),
+    apply: async request => ({
       room: request.room,
       baseConfigRevision: 'config-2',
       ...request.values,
@@ -123,7 +130,7 @@ describe('useTimelineDraft', () => {
     let requestedSubmodeId: number | null | undefined
     let requestedWindow: TimelineSavedBaseline['window']
     const port: TimelinePublicationPort = {
-      preview: async (request) => {
+      preview: async request => {
         requestedModeId = request.modeId
         requestedSubmodeId = request.submodeId
         requestedWindow = request.window
@@ -131,7 +138,9 @@ describe('useTimelineDraft', () => {
       },
       apply: async () => savedBaseline(),
     }
-    const { result } = renderHook(() => useTimelineDraft({ saved: savedBaseline(), publicationPort: port }))
+    const { result } = renderHook(() =>
+      useTimelineDraft({ saved: savedBaseline(), publicationPort: port })
+    )
 
     await act(async () => result.current.review())
 
@@ -143,11 +152,13 @@ describe('useTimelineDraft', () => {
 
   it('reviews and applies a primary-table-only edit without applying light settings', async () => {
     // Given: a shared draft exposed to the existing controlled primary table.
-    const { result } = renderHook(() => useTimelineDraft({ saved: savedBaseline(), publicationPort: successfulPort() }))
+    const { result } = renderHook(() =>
+      useTimelineDraft({ saved: savedBaseline(), publicationPort: successfulPort() })
+    )
     const table = createClimatePeriodsTableAdapter(result.current.state, result.current.editPeriods)
 
     // When: the table changes climate periods, then the operator reviews and applies the draft.
-    act(() => table.onChange(table.periods.map((period) => ({ ...period, heating_setpoint: 23.5 }))))
+    act(() => table.onChange(table.periods.map(period => ({ ...period, heating_setpoint: 23.5 }))))
     await act(async () => result.current.review())
     await act(async () => result.current.apply())
 
@@ -159,11 +170,20 @@ describe('useTimelineDraft', () => {
 
   it('reflects draft edits back into the table adapter view', () => {
     // Given: a shared draft controller and its table adapter.
-    const { result } = renderHook(() => useTimelineDraft({ saved: savedBaseline(), publicationPort: successfulPort() }))
-    const before = createClimatePeriodsTableAdapter(result.current.state, result.current.editPeriods)
+    const { result } = renderHook(() =>
+      useTimelineDraft({ saved: savedBaseline(), publicationPort: successfulPort() })
+    )
+    const before = createClimatePeriodsTableAdapter(
+      result.current.state,
+      result.current.editPeriods
+    )
 
     // When: the draft periods change from the timeline side.
-    act(() => result.current.editPeriods(before.periods.map((period) => ({ ...period, cooling_setpoint: 26 }))))
+    act(() =>
+      result.current.editPeriods(
+        before.periods.map(period => ({ ...period, cooling_setpoint: 26 }))
+      )
+    )
     const after = createClimatePeriodsTableAdapter(result.current.state, result.current.editPeriods)
 
     // Then: the adapter view carries the edited value for the table row.
@@ -172,13 +192,21 @@ describe('useTimelineDraft', () => {
 
   it('warns before a dirty room switch and keeps the original draft until confirmed', () => {
     // Given: an edited Flower draft.
-    const { result } = renderHook(() => useTimelineDraft({ saved: savedBaseline(), publicationPort: successfulPort() }))
-    act(() => result.current.editPeriods(result.current.state.draft.periods.map((period) => ({ ...period, details: 'unsaved' }))))
+    const { result } = renderHook(() =>
+      useTimelineDraft({ saved: savedBaseline(), publicationPort: successfulPort() })
+    )
+    act(() =>
+      result.current.editPeriods(
+        result.current.state.draft.periods.map(period => ({ ...period, details: 'unsaved' }))
+      )
+    )
     const vegetation = { ...savedBaseline(), room: { location: 'vegetation', cluster: 'main' } }
 
     // When: navigation requests another room before the operator discards the draft.
     let switchResult: string = ''
-    act(() => { switchResult = result.current.switchRoom(vegetation) })
+    act(() => {
+      switchResult = result.current.switchRoom(vegetation)
+    })
 
     // Then: the original dirty draft remains in place until explicit confirmation.
     expect(switchResult).toBe('requires-discard')
@@ -189,11 +217,19 @@ describe('useTimelineDraft', () => {
   it('preserves the reviewed draft after Apply receives a revision conflict', async () => {
     // Given: a reviewed timeline draft and a revision-checked publication boundary.
     const port: TimelinePublicationPort = {
-      preview: async (request) => previewEnvelope(request.draftRevision),
-      apply: async () => { throw new TimelineConflictError() },
+      preview: async request => previewEnvelope(request.draftRevision),
+      apply: async () => {
+        throw new TimelineConflictError()
+      },
     }
-    const { result } = renderHook(() => useTimelineDraft({ saved: savedBaseline(), publicationPort: port }))
-    act(() => result.current.editPeriods(result.current.state.draft.periods.map((period) => ({ ...period, co2_setpoint: 1100 }))))
+    const { result } = renderHook(() =>
+      useTimelineDraft({ saved: savedBaseline(), publicationPort: port })
+    )
+    act(() =>
+      result.current.editPeriods(
+        result.current.state.draft.periods.map(period => ({ ...period, co2_setpoint: 1100 }))
+      )
+    )
     await act(async () => result.current.review())
 
     // When: Apply returns HTTP 409 through the typed conflict error.
@@ -210,23 +246,38 @@ describe('useTimelineDraft', () => {
     let resolveSecond: ((value: ReturnType<typeof previewEnvelope>) => void) | undefined
     let previewCount = 0
     const port: TimelinePublicationPort = {
-      preview: () => new Promise((resolve) => {
-        previewCount += 1
-        if (previewCount === 1) resolveFirst = resolve
-        if (previewCount === 2) resolveSecond = resolve
-      }),
+      preview: () =>
+        new Promise(resolve => {
+          previewCount += 1
+          if (previewCount === 1) resolveFirst = resolve
+          if (previewCount === 2) resolveSecond = resolve
+        }),
       apply: async () => savedBaseline(),
     }
-    const { result } = renderHook(() => useTimelineDraft({ saved: savedBaseline(), publicationPort: port }))
+    const { result } = renderHook(() =>
+      useTimelineDraft({ saved: savedBaseline(), publicationPort: port })
+    )
     let firstReview: Promise<void> | undefined
     let secondReview: Promise<void> | undefined
 
     // When: a newer review begins and resolves before the stale first preview.
-    act(() => { firstReview = result.current.review() })
-    act(() => result.current.editPeriods(result.current.state.draft.periods.map((period) => ({ ...period, heating_setpoint: 24 }))))
-    act(() => { secondReview = result.current.review() })
-    await act(async () => { resolveSecond?.(previewEnvelope(1)) })
-    await act(async () => { resolveFirst?.(previewEnvelope(0)) })
+    act(() => {
+      firstReview = result.current.review()
+    })
+    act(() =>
+      result.current.editPeriods(
+        result.current.state.draft.periods.map(period => ({ ...period, heating_setpoint: 24 }))
+      )
+    )
+    act(() => {
+      secondReview = result.current.review()
+    })
+    await act(async () => {
+      resolveSecond?.(previewEnvelope(1))
+    })
+    await act(async () => {
+      resolveFirst?.(previewEnvelope(0))
+    })
     await firstReview
     await secondReview
 
@@ -238,16 +289,29 @@ describe('useTimelineDraft', () => {
     // Given: an in-flight preview for the current primary-table draft.
     let resolvePreview: ((value: ReturnType<typeof previewEnvelope>) => void) | undefined
     const port: TimelinePublicationPort = {
-      preview: () => new Promise((resolve) => { resolvePreview = resolve }),
+      preview: () =>
+        new Promise(resolve => {
+          resolvePreview = resolve
+        }),
       apply: async () => savedBaseline(),
     }
-    const { result } = renderHook(() => useTimelineDraft({ saved: savedBaseline(), publicationPort: port }))
+    const { result } = renderHook(() =>
+      useTimelineDraft({ saved: savedBaseline(), publicationPort: port })
+    )
     let review: Promise<void> | undefined
-    act(() => { review = result.current.review() })
+    act(() => {
+      review = result.current.review()
+    })
 
     // When: the table changes before that preview resolves.
-    act(() => result.current.editPeriods(result.current.state.draft.periods.map((period) => ({ ...period, heating_setpoint: 24 }))))
-    await act(async () => { resolvePreview?.(previewEnvelope(0)) })
+    act(() =>
+      result.current.editPeriods(
+        result.current.state.draft.periods.map(period => ({ ...period, heating_setpoint: 24 }))
+      )
+    )
+    await act(async () => {
+      resolvePreview?.(previewEnvelope(0))
+    })
     await review
 
     // Then: the stale response cannot repopulate preview state.
@@ -261,23 +325,35 @@ describe('useTimelineDraft', () => {
     const port: TimelinePublicationPort = {
       preview: () => {
         if (shouldFail) return Promise.reject(new Error('preview failed'))
-        return new Promise((resolve) => { resolvePreview = resolve })
+        return new Promise(resolve => {
+          resolvePreview = resolve
+        })
       },
       apply: async () => {
         applyCalls += 1
         return savedBaseline()
       },
     }
-    const { result } = renderHook(() => useTimelineDraft({ saved: savedBaseline(), publicationPort: port }))
+    const { result } = renderHook(() =>
+      useTimelineDraft({ saved: savedBaseline(), publicationPort: port })
+    )
     let review: Promise<void> | undefined
-    act(() => { review = result.current.review() })
+    act(() => {
+      review = result.current.review()
+    })
     await act(async () => result.current.apply())
     expect(applyCalls).toBe(0)
 
-    await act(async () => { resolvePreview?.(previewEnvelope(0)) })
+    await act(async () => {
+      resolvePreview?.(previewEnvelope(0))
+    })
     await review
     expect(result.current.preview.kind).toBe('ready')
-    act(() => result.current.editPeriods(result.current.state.draft.periods.map((period) => ({ ...period, details: 'failed review' }))))
+    act(() =>
+      result.current.editPeriods(
+        result.current.state.draft.periods.map(period => ({ ...period, details: 'failed review' }))
+      )
+    )
     shouldFail = true
     await act(async () => result.current.review())
     await act(async () => result.current.apply())
@@ -301,26 +377,40 @@ describe('useTimelineDraft', () => {
     let resolveApply: ((value: TimelineSavedBaseline) => void) | undefined
     let applyCalls = 0
     const port: TimelinePublicationPort = {
-      preview: async (request) => {
+      preview: async request => {
         previewRequestId = request.requestId
         return previewEnvelope(request.draftRevision)
       },
-      apply: (request) => {
+      apply: request => {
         applyCalls += 1
         applyRequestId = request.requestId
-        return new Promise((resolve) => { resolveApply = resolve })
+        return new Promise(resolve => {
+          resolveApply = resolve
+        })
       },
     }
-    const { result } = renderHook(() => useTimelineDraft({ saved: savedBaseline(), publicationPort: port }))
-    act(() => result.current.editPeriods(result.current.state.draft.periods.map((period) => ({ ...period, heating_setpoint: 23 }))))
+    const { result } = renderHook(() =>
+      useTimelineDraft({ saved: savedBaseline(), publicationPort: port })
+    )
+    act(() =>
+      result.current.editPeriods(
+        result.current.state.draft.periods.map(period => ({ ...period, heating_setpoint: 23 }))
+      )
+    )
     await act(async () => result.current.review())
     let firstApply: Promise<void> | undefined
     let secondApply: Promise<void> | undefined
-    act(() => { firstApply = result.current.apply() })
-    act(() => { secondApply = result.current.apply() })
+    act(() => {
+      firstApply = result.current.apply()
+    })
+    act(() => {
+      secondApply = result.current.apply()
+    })
     expect(applyCalls).toBe(1)
     expect(applyRequestId).toBe(previewRequestId)
-    await act(async () => { resolveApply?.(savedBaseline('config-2')) })
+    await act(async () => {
+      resolveApply?.(savedBaseline('config-2'))
+    })
     await firstApply
     await secondApply
 
@@ -328,7 +418,6 @@ describe('useTimelineDraft', () => {
     expect(result.current.preview).toMatchObject({ source: 'preview', value: previewEnvelope(1) })
     expect(result.current.state.status).toEqual({ kind: 'editing' })
   })
-
 })
 
 describe('useTimelineDraft saved trajectory re-anchor', () => {
@@ -337,11 +426,17 @@ describe('useTimelineDraft saved trajectory re-anchor', () => {
     // aggregate (envelope included) for the previewed window.
     const saved = savedBaseline('config-2')
     const port: TimelinePublicationPort = {
-      preview: async (request) => previewEnvelope(request.draftRevision),
+      preview: async request => previewEnvelope(request.draftRevision),
       apply: async () => ({ ...saved, trajectory: savedEnvelopeFixture() }),
     }
-    const { result } = renderHook(() => useTimelineDraft({ saved: savedBaseline(), publicationPort: port }))
-    act(() => result.current.editPeriods(result.current.state.draft.periods.map((period) => ({ ...period, heating_setpoint: 23 }))))
+    const { result } = renderHook(() =>
+      useTimelineDraft({ saved: savedBaseline(), publicationPort: port })
+    )
+    act(() =>
+      result.current.editPeriods(
+        result.current.state.draft.periods.map(period => ({ ...period, heating_setpoint: 23 }))
+      )
+    )
     await act(async () => result.current.review())
 
     // When: the operator applies.

@@ -290,9 +290,11 @@ describe('ZoneConfig timeline classification integration', () => {
     // Then: the table edit is preserved for another review/apply cycle and the failure is visible.
     expect(within(screen.getByRole('table')).getAllByPlaceholderText('°C')[0]).toHaveValue(23.5)
     expect(mocks.apiClient.preview).toHaveBeenCalledOnce()
-    expect(mocks.setActions.mock.calls.at(-1)?.[0]).toMatchObject({
-      saveError: expect.stringMatching(/conflict/i),
-    })
+    await waitFor(() =>
+      expect(mocks.setActions.mock.calls.at(-1)?.[0]).toMatchObject({
+        saveError: expect.stringMatching(/conflict/i),
+      })
+    )
   })
 
   it('keeps the legacy direct save when the timeline is unavailable', async () => {

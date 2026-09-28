@@ -1,8 +1,8 @@
 import { useMemo } from 'react'
 
-import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../ui/dialog'
-import type { ActiveAlarmResponse } from '../../services/api/alarms'
 import { alarmIdentity } from '../../hooks/useActiveAlarms'
+import type { ActiveAlarmResponse } from '../../services/api/alarms'
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../ui/dialog'
 
 interface AlarmActions {
   acknowledgingKey: string | null
@@ -42,7 +42,7 @@ function severityClass(severity: string): string {
   if (severity === 'critical')
     return 'border-status-danger-border bg-status-danger-bg text-status-danger-text'
   if (severity === 'warning')
-    return 'border-status-warning-border bg-status-warning-bg text-status-warning-text'
+    return 'border-status-warning bg-status-warning-bg text-status-warning-text'
   return 'border-border-subtle bg-surface-secondary text-text-secondary'
 }
 

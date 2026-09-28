@@ -3,14 +3,16 @@ import { expect, test } from '@playwright/test'
 import { describeViolation } from '../../src/features/monitoring/config/originGuard'
 import { fixtureUrl } from './fixtureUrl'
 
-test('renders recorded and projected setpoints with a nullable projected gap', async ({ page }, testInfo) => {
+test('renders recorded and projected setpoints with a nullable projected gap', async ({
+  page,
+}, testInfo) => {
   const violations: string[] = []
   const pageErrors: string[] = []
-  page.on('request', (request) => {
+  page.on('request', request => {
     const violation = describeViolation(request.url())
     if (violation !== null) violations.push(`${violation}: ${request.url()}`)
   })
-  page.on('pageerror', (error) => pageErrors.push(error.message))
+  page.on('pageerror', error => pageErrors.push(error.message))
 
   await page.goto(fixtureUrl('/flower/monitoring', testInfo, undefined, 'nullable-projection'))
 

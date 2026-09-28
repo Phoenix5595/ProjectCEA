@@ -1,9 +1,9 @@
-import type { CalendarEventDto } from '../types/calendar';
+import type { CalendarEventDto } from '../types/calendar'
 
 /** Normalize API row (snake_case or camelCase) to CalendarEventDto. */
 export function normalizeCalendarEvent(raw: Record<string, unknown>): CalendarEventDto {
-  const start = String(raw.start ?? raw.start_date ?? '');
-  const endRaw = raw.end ?? raw.end_date;
+  const start = String(raw.start ?? raw.start_date ?? '')
+  const endRaw = raw.end ?? raw.end_date
   return {
     id: String(raw.id ?? ''),
     source: (raw.source as CalendarEventDto['source']) ?? 'manual',
@@ -21,5 +21,5 @@ export function normalizeCalendarEvent(raw: Record<string, unknown>): CalendarEv
       raw.metadata && typeof raw.metadata === 'object'
         ? (raw.metadata as Record<string, unknown>)
         : undefined,
-  };
+  }
 }

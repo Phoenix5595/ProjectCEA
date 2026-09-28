@@ -12,6 +12,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 
+import { canSlugFor, knownRooms, sensorSubclustersFor } from '../../config/clusterTopology'
 import {
   extractSoilApiError,
   soilApi,
@@ -19,7 +20,6 @@ import {
   type Rs485Bed,
   type SensorRegistryRecord,
 } from '../../features/soil'
-import { canSlugFor, knownRooms, sensorSubclustersFor } from '../../config/clusterTopology'
 import { logger } from '../../utils/logger'
 
 const BED_CAPACITY = 4
@@ -40,7 +40,7 @@ interface Draft {
 function draftFor(record: SensorRegistryRecord): Draft {
   if (record.assignment === null) {
     return {
-      room: record.bus === 'can' ? knownRooms()[0] ?? 'Flower Room' : '',
+      room: record.bus === 'can' ? (knownRooms()[0] ?? 'Flower Room') : '',
       location: 'main',
       bed: '',
     }
@@ -91,7 +91,7 @@ export default function SensorSettingsPanel({
       const list = await soilApi.listRegistry()
       setRecords(list.records)
       setLoadError(null)
-      setDrafts((previous) => {
+      setDrafts(previous => {
         const next: Record<number, Draft> = {}
         for (const record of list.records) {
           next[record.registry_id] = previous[record.registry_id] ?? draftFor(record)
@@ -112,34 +112,34 @@ export default function SensorSettingsPanel({
     (room: string, position: 'front' | 'back' | 'main', excludeRegistryId: number): boolean => {
       if (records === null) return false
       return records.some(
-        (other) =>
+        other =>
           other.bus === 'can' &&
           other.registry_id !== excludeRegistryId &&
           other.assignment !== null &&
           other.assignment.kind === 'can' &&
           other.assignment.room === room &&
-          other.assignment.location_in_room === position,
+          other.assignment.location_in_room === position
       )
     },
-    [records],
+    [records]
   )
 
   const bedOccupancy = useCallback(
     (bed: Rs485Bed): number => {
       if (records === null) return 0
       return records.filter(
-        (record) =>
+        record =>
           record.bus === 'rs485' &&
           record.assignment !== null &&
           record.assignment.kind === 'rs485' &&
-          record.assignment.bed === bed,
+          record.assignment.bed === bed
       ).length
     },
-    [records],
+    [records]
   )
 
   const updateDraft = useCallback((registryId: number, patch: Partial<Draft>) => {
-    setDrafts((previous) => ({
+    setDrafts(previous => ({
       ...previous,
       [registryId]: { ...previous[registryId], ...patch },
     }))
@@ -150,14 +150,14 @@ export default function SensorSettingsPanel({
       const draft = drafts[record.registry_id] ?? draftFor(record)
       const body = assignmentBody(record, draft)
       if (body === null) {
-        setRowErrors((previous) => ({
+        setRowErrors(previous => ({
           ...previous,
           [record.registry_id]: 'Choose a placement first.',
         }))
         return
       }
-      setSavingIds((previous) => new Set(previous).add(record.registry_id))
-      setRowErrors((previous) => {
+      setSavingIds(previous => new Set(previous).add(record.registry_id))
+      setRowErrors(previous => {
         const next = { ...previous }
         delete next[record.registry_id]
         return next
@@ -169,27 +169,27 @@ export default function SensorSettingsPanel({
       } catch (error) {
         const detail = extractSoilApiError(error)
         logger.error(`Failed assignment for registry ${record.registry_id}`, error)
-        setRowErrors((previous) => ({
+        setRowErrors(previous => ({
           ...previous,
           [record.registry_id]: detail.errorCode
             ? `${detail.errorCode}: ${detail.message}`
             : detail.message,
         }))
       } finally {
-        setSavingIds((previous) => {
+        setSavingIds(previous => {
           const next = new Set(previous)
           next.delete(record.registry_id)
           return next
         })
       }
     },
-    [drafts, refresh],
+    [drafts, refresh]
   )
 
   const sortedRecords = useMemo(() => {
     if (records === null) return null
-    const unassigned = records.filter((item) => item.status === 'unassigned')
-    const assigned = records.filter((item) => item.status === 'assigned')
+    const unassigned = records.filter(item => item.status === 'unassigned')
+    const assigned = records.filter(item => item.status === 'assigned')
     return [...unassigned, ...assigned]
   }, [records])
 
@@ -199,7 +199,7 @@ export default function SensorSettingsPanel({
 
   const nowMs = Date.now()
   const visibleRecords = (sortedRecords ?? []).filter(
-    (record) => !unassignedOnly || record.status === 'unassigned',
+    record => !unassignedOnly || record.status === 'unassigned'
   )
 
   return (
@@ -215,7 +215,7 @@ export default function SensorSettingsPanel({
           <input
             type="checkbox"
             checked={unassignedOnly}
-            onChange={(event) => setUnassignedOnly(event.target.checked)}
+            onChange={event => setUnassignedOnly(event.target.checked)}
           />
           Unassigned only
         </label>
@@ -235,36 +235,41 @@ export default function SensorSettingsPanel({
       )}
 
       <div className="space-y-3">
-        {visibleRecords.map((record) => {
+        {visibleRecords.map(record => {
           const draft = drafts[record.registry_id] ?? draftFor(record)
           const isCan = record.bus === 'can'
           return (
             <div
               key={record.registry_id}
-              className="rounded border border-border-subtle bg-bg-card p-4 space-y-3"
+              className="rounded border border-border-subtle bg-surface-primary p-4 space-y-3"
             >
               <div className="flex flex-wrap items-center gap-3">
-                <span className="rounded bg-bg-subtle px-2 py-0.5 text-xs font-semibold uppercase tracking-wide text-text-secondary">
+                <span className="rounded bg-surface-tertiary px-2 py-0.5 text-xs font-semibold uppercase tracking-wide text-text-secondary">
                   {isCan ? 'CAN' : 'RS-485'}
                 </span>
-                <span className="font-mono text-sm text-text-input">#{record.hardware_address}</span>
-                <span className="text-sm font-medium text-text-input">Soil probe #{record.hardware_address}</span>
+                <span className="font-mono text-sm text-text-input">
+                  #{record.hardware_address}
+                </span>
+                <span className="text-sm font-medium text-text-input">
+                  Soil probe #{record.hardware_address}
+                </span>
                 <span
                   className={
                     record.status === 'unassigned'
-                      ? 'rounded border border-status-warn-border/70 bg-status-warn-bg/30 px-2 py-0.5 text-xs font-semibold text-status-warn-text'
+                      ? 'rounded border border-status-warning/70 bg-status-warning-bg/30 px-2 py-0.5 text-xs font-semibold text-status-warning-text'
                       : 'rounded border border-status-success-border/60 bg-status-success-bg/30 px-2 py-0.5 text-xs font-semibold text-status-success-text'
                   }
                 >
                   {record.status}
                 </span>
                 {freshnessText(record, nowMs) !== null && (
-                  <span className="text-xs font-semibold uppercase tracking-wide text-status-warn-text">
+                  <span className="text-xs font-semibold uppercase tracking-wide text-status-warning-text">
                     Stale
                   </span>
                 )}
                 <span className="ml-auto text-xs text-text-muted">
-                  First seen {formatInstant(record.first_seen)} · Last seen {formatInstant(record.last_seen)}
+                  First seen {formatInstant(record.first_seen)} · Last seen{' '}
+                  {formatInstant(record.last_seen)}
                 </span>
               </div>
 
@@ -273,9 +278,9 @@ export default function SensorSettingsPanel({
                   <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wide text-text-muted">
                     Room
                     <select
-                      className="rounded border border-border-subtle bg-bg-card px-2 py-1.5 text-sm normal-case tracking-normal text-text-input"
+                      className="rounded border border-border-subtle bg-surface-secondary px-2 py-1.5 text-sm normal-case tracking-normal text-text-input"
                       value={draft.room}
-                      onChange={(event) => {
+                      onChange={event => {
                         const room = event.target.value
                         const positions = sensorSubclustersFor(room)
                           .map(canSlugFor)
@@ -285,11 +290,11 @@ export default function SensorSettingsPanel({
                           room,
                           location: keepsDraft
                             ? draft.location
-                            : positions[positions.length - 1] ?? 'main',
+                            : (positions[positions.length - 1] ?? 'main'),
                         })
                       }}
                     >
-                      {knownRooms().map((room) => (
+                      {knownRooms().map(room => (
                         <option key={room} value={room}>
                           {room}
                         </option>
@@ -301,7 +306,7 @@ export default function SensorSettingsPanel({
                     <select
                       className="rounded border border-border-subtle px-2 py-1.5 text-sm normal-case tracking-normal text-text-input"
                       value={draft.location}
-                      onChange={(event) =>
+                      onChange={event =>
                         updateDraft(record.registry_id, {
                           location: event.target.value as Draft['location'],
                         })
@@ -310,22 +315,22 @@ export default function SensorSettingsPanel({
                       {sensorSubclustersFor(draft.room)
                         .map(canSlugFor)
                         .filter((slug): slug is NonNullable<typeof slug> => slug !== null)
-                        .map((position) => {
-                        const occupied = canPositionOccupied(
-                          draft.room,
-                          position,
-                          record.registry_id,
-                        )
-                        const isDraft = draft.location === position
-                        const disabled = occupied && !isDraft
-                        const label = POSITION_LABELS[position] ?? position
-                        return (
-                          <option key={position} value={position} disabled={disabled}>
-                            {label}
-                            {disabled ? ' (occupied)' : ''}
-                          </option>
-                        )
-                      })}
+                        .map(position => {
+                          const occupied = canPositionOccupied(
+                            draft.room,
+                            position,
+                            record.registry_id
+                          )
+                          const isDraft = draft.location === position
+                          const disabled = occupied && !isDraft
+                          const label = POSITION_LABELS[position] ?? position
+                          return (
+                            <option key={position} value={position} disabled={disabled}>
+                              {label}
+                              {disabled ? ' (occupied)' : ''}
+                            </option>
+                          )
+                        })}
                     </select>
                   </label>
                 </div>
@@ -335,12 +340,12 @@ export default function SensorSettingsPanel({
                   <select
                     className="rounded border border-border-subtle px-2 py-1.5 text-sm normal-case tracking-normal text-text-input"
                     value={draft.bed}
-                    onChange={(event) =>
+                    onChange={event =>
                       updateDraft(record.registry_id, { bed: event.target.value as Rs485Bed })
                     }
                   >
                     <option value="">Choose a bed…</option>
-                    {(['Front Bed', 'Back Bed'] as Rs485Bed[]).map((bed) => {
+                    {(['Front Bed', 'Back Bed'] as Rs485Bed[]).map(bed => {
                       const occupancy = bedOccupancy(bed)
                       const full = occupancy >= BED_CAPACITY
                       const isDraft = draft.bed === bed

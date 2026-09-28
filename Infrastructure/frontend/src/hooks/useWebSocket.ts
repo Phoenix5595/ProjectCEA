@@ -1,5 +1,6 @@
 /** WebSocket hook for real-time device and sensor updates. */
 import { useEffect, useRef, useState } from 'react'
+
 import { wsClient, type WebSocketConnectionState } from '../services/websocket'
 import type { Device } from '../types/device'
 import type { SensorSampleMeta } from '../types/sensor'

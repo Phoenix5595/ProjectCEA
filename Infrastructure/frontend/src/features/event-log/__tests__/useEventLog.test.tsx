@@ -1,9 +1,19 @@
 import { render, screen } from '@testing-library/react'
 import { describe, expect, it, beforeEach } from 'vitest'
-import { globalEventLogStore, type EventLogEntry } from '../state/eventLogStore'
-import { useEventLog, _getSharedStoreForTesting, _resetSharedStoreForTesting } from '../state/useEventLog'
 
-const makeEntry = (redisId: string, type: string, room?: string, cluster?: string): EventLogEntry => ({
+import { globalEventLogStore, type EventLogEntry } from '../state/eventLogStore'
+import {
+  useEventLog,
+  _getSharedStoreForTesting,
+  _resetSharedStoreForTesting,
+} from '../state/useEventLog'
+
+const makeEntry = (
+  redisId: string,
+  type: string,
+  room?: string,
+  cluster?: string
+): EventLogEntry => ({
   redisId,
   eventId: `evt-${redisId}`,
   type,
@@ -24,11 +34,15 @@ function TestComponent({ location, cluster }: { location?: string; cluster?: str
     <div>
       <div data-testid="count">{entries.length}</div>
       <div data-testid="connected">{connected ? 'yes' : 'no'}</div>
-      {entries.map((e) => (
+      {entries.map(e => (
         <div key={e.eventId}>
           {e.type}
-          {typeof e.payload.room === 'string' && <span data-testid={`room-${e.eventId}`}>{e.payload.room}</span>}
-          {typeof e.payload.cluster === 'string' && <span data-testid={`cluster-${e.eventId}`}>{e.payload.cluster}</span>}
+          {typeof e.payload.room === 'string' && (
+            <span data-testid={`room-${e.eventId}`}>{e.payload.room}</span>
+          )}
+          {typeof e.payload.cluster === 'string' && (
+            <span data-testid={`cluster-${e.eventId}`}>{e.payload.cluster}</span>
+          )}
         </div>
       ))}
     </div>

@@ -9,7 +9,8 @@
  * distinction.
  */
 import type { AlignedData, AlignedSeries } from '../monitoring/data'
-import type { SoilHistoryResponse } from './api'
+
+import { SOIL_METRIC_LABELS, type SoilHistoryResponse, type SoilMetricName } from './api/contracts'
 
 const PROBE_COLORS: readonly string[] = [
   'var(--mon-family-temperature)',
@@ -49,10 +50,10 @@ function familyForMetric(metric: string): AlignedSeries['family'] {
 export function probeMetricLabel(history: {
   bed: string
   hardware_address: number
-  metric: string
+  metric: SoilMetricName
   unit: string
 }): string {
-  return `${history.bed} #${history.hardware_address} ${history.metric} (${history.unit})`
+  return `${history.bed} #${history.hardware_address} ${SOIL_METRIC_LABELS[history.metric]} (${history.unit})`
 }
 
 /** Stable palette slot in a numeric-address ordering. */
@@ -74,12 +75,12 @@ export function adaptSoilHistory(response: SoilHistoryResponse): AlignedData {
     }
   }
   const x = [...anchors].sort((left, right) => left - right)
-  const orderedIds = [...new Set(response.series.map((entry) => entry.registry_id))].sort(
-    (left, right) => left - right,
+  const orderedIds = [...new Set(response.series.map(entry => entry.registry_id))].sort(
+    (left, right) => left - right
   )
-  const series: AlignedSeries[] = response.series.map((history) => {
-    const y: Array<number | null> = x.map((anchor) => {
-      const point = history.points.find((candidate) => candidate.bucket_start.getTime() === anchor)
+  const series: AlignedSeries[] = response.series.map(history => {
+    const y: Array<number | null> = x.map(anchor => {
+      const point = history.points.find(candidate => candidate.bucket_start.getTime() === anchor)
       return point === undefined ? null : point.average
     })
     return {

@@ -1,9 +1,11 @@
 import { useState, useCallback, type KeyboardEvent } from 'react'
-import type { EventLogEntry } from '../state/eventLogStore'
+
 import { getEventDisplay } from '../presentation/eventRegistry'
-import { SEVERITY_LABELS, type SeverityLevel } from '../presentation/severity'
 import { sourcePartsFor } from '../presentation/eventSourceParts'
+import { SEVERITY_LABELS, type SeverityLevel } from '../presentation/severity'
 import { formatLocalTime } from '../presentation/timeFormat'
+import type { EventLogEntry } from '../state/eventLogStore'
+
 import { EventDetails } from './EventDetails'
 import {
   EventRoomIndicator,

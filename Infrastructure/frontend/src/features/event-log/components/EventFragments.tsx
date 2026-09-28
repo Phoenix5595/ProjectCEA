@@ -1,11 +1,12 @@
 import { Flower2, Sprout } from 'lucide-react'
 import type { ReactNode } from 'react'
+
 import { formatRelativeTime, formatExactTime, formatLocalTime } from '../presentation/timeFormat'
 import type { EventLogEntry } from '../state/eventLogStore'
 
 export function eventReasonTooltip(
   reasonText: EventLogEntry['reasonText'],
-  scope: 'event' | 'latest',
+  scope: 'event' | 'latest'
 ): string | undefined {
   if (reasonText === null) return undefined
   return scope === 'latest'
@@ -48,7 +49,6 @@ export function EventTimestamps({
     </div>
   )
 }
-
 
 export function EventRoomIndicator({ room }: { room: unknown }): ReactNode | null {
   if (typeof room !== 'string' || room.length === 0) return null

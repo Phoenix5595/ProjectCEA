@@ -1,10 +1,10 @@
-import { describe, it, expect, vi } from 'vitest'
 import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { describe, it, expect, vi } from 'vitest'
 
-import GrowCalendar from '../GrowCalendar'
 import type { CalendarEventDto } from '../../../types/calendar'
 import { calendarDayKey } from '../../../utils/calendarDayMarkers'
+import GrowCalendar from '../GrowCalendar'
 
 function todayIso(): string {
   return calendarDayKey(new Date())

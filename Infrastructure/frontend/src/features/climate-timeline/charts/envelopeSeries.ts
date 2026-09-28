@@ -1,5 +1,5 @@
-import type { RichTrajectoryEnvelope } from '../api/contracts'
 import { isMinuteInPeriod, timeToMinutes } from '../../../utils/climatePeriodTimeline'
+import type { RichTrajectoryEnvelope } from '../api/contracts'
 
 export type TrajectoryKind = 'scheduled' | 'effective'
 export type EnvelopeSeriesKey = `${string}:${TrajectoryKind}`
@@ -11,7 +11,12 @@ export interface EnvelopeSeriesSet {
   readonly units: ReadonlyMap<string, string>
 }
 
-const TIMELINE_METRIC_ORDER = ['heating_setpoint', 'cooling_setpoint', 'vpd_setpoint', 'co2_setpoint'] as const
+const TIMELINE_METRIC_ORDER = [
+  'heating_setpoint',
+  'cooling_setpoint',
+  'vpd_setpoint',
+  'co2_setpoint',
+] as const
 
 export function normalizeTimelineMetric(metric: string): string | null {
   if (metric.startsWith('light.')) return null
@@ -41,7 +46,7 @@ interface MetricGroup {
 
 export function envelopeSampleTimes(
   window: { readonly start: Date; readonly end: Date },
-  stepMs = 60_000,
+  stepMs = 60_000
 ): number[] {
   const times: number[] = []
   const startMs = window.start.getTime()
@@ -61,7 +66,7 @@ const TWELVE_HOURS_MS = 12 * 3_600_000
  */
 export function displayWindowFor(
   windowMode: 'daily' | 'rolling',
-  nowMs: number,
+  nowMs: number
 ): { readonly start: number; readonly end: number } {
   if (windowMode === 'rolling') {
     return { start: nowMs - TWELVE_HOURS_MS, end: nowMs + TWELVE_HOURS_MS }
@@ -135,19 +140,22 @@ function sampleGroup(group: MetricGroup, t: number): number | null {
 
 export function buildEnvelopeSeries(
   envelope: RichTrajectoryEnvelope,
-  sampleTimes: readonly number[],
+  sampleTimes: readonly number[]
 ): EnvelopeSeriesSet {
   const groups = groupEnvelopeSegments(envelope)
   const series = new Map<EnvelopeSeriesKey, readonly (number | null)[]>()
   const units = new Map<string, string>()
   for (const group of groups) {
     const key = `${group.metric}:${group.kind}` as EnvelopeSeriesKey
-    series.set(key, sampleTimes.map((t) => sampleGroup(group, t)))
+    series.set(
+      key,
+      sampleTimes.map(t => sampleGroup(group, t))
+    )
     units.set(group.metric, group.unit)
   }
   return {
     sampleTimes,
-    keys: groups.map((group) => `${group.metric}:${group.kind}` as EnvelopeSeriesKey),
+    keys: groups.map(group => `${group.metric}:${group.kind}` as EnvelopeSeriesKey),
     series,
     units,
   }
@@ -170,7 +178,7 @@ const MINUTE_MS = 60_000
 export function photoperiodIntervals(
   photoperiod: TimelinePhotoperiodInput,
   windowStartMs: number,
-  windowEndMs: number,
+  windowEndMs: number
 ): TimelinePhotoperiodInterval[] {
   const dayStart = timeToMinutes(photoperiod.dayStartTime)
   const nightStart = timeToMinutes(photoperiod.nightStartTime)
@@ -183,10 +191,14 @@ export function photoperiodIntervals(
   const dayOrigin = Date.UTC(
     windowStart.getUTCFullYear(),
     windowStart.getUTCMonth(),
-    windowStart.getUTCDate(),
+    windowStart.getUTCDate()
   )
   const boundaries: number[] = []
-  for (let dayOffset = -1; dayOffset <= Math.ceil((windowEndMs - dayOrigin) / DAY_MS); dayOffset += 1) {
+  for (
+    let dayOffset = -1;
+    dayOffset <= Math.ceil((windowEndMs - dayOrigin) / DAY_MS);
+    dayOffset += 1
+  ) {
     for (const boundaryMinute of [dayStart, nightStart]) {
       const candidate = dayOrigin + dayOffset * DAY_MS + boundaryMinute * MINUTE_MS
       if (candidate > windowStartMs && candidate < windowEndMs) boundaries.push(candidate)

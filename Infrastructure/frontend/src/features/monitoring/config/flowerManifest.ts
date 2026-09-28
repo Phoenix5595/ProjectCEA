@@ -46,13 +46,15 @@ export const flowerManifest: MonitoringManifest = {
           displayName: 'Dry Bulb (°C) - Front',
           unit: 'celsius',
           axisPlacement: 'auto',
-          color: '#e02b2b',},
+          color: '#e02b2b',
+        },
         {
           name: 'wet_bulb_f',
           displayName: 'Wet Bulb (°C) - Front',
           unit: 'celsius',
           axisPlacement: 'auto',
-          color: '#23306e',},
+          color: '#23306e',
+        },
         {
           name: 'rh_f',
           displayName: 'RH (%) - Front',
@@ -60,7 +62,8 @@ export const flowerManifest: MonitoringManifest = {
           axisPlacement: 'right',
           softMax: 100,
           decimals: 1,
-          color: '#FADE2A',},
+          color: '#FADE2A',
+        },
         {
           name: 'vpd_f',
           displayName: 'VPD (kPa) - Front',
@@ -68,7 +71,8 @@ export const flowerManifest: MonitoringManifest = {
           axisPlacement: 'auto',
           decimals: 2,
           color: '#2f7fe0',
-          lineWidth: 3,},
+          lineWidth: 3,
+        },
         {
           name: 'dry_bulb_b',
           displayName: 'Dry Bulb (°C) - Back',
@@ -90,7 +94,8 @@ export const flowerManifest: MonitoringManifest = {
           axisPlacement: 'right',
           softMax: 100,
           decimals: 1,
-          color: '#fade2a',},
+          color: '#fade2a',
+        },
         {
           name: 'vpd_b',
           displayName: 'VPD (kPa) - Back',
@@ -98,7 +103,8 @@ export const flowerManifest: MonitoringManifest = {
           axisPlacement: 'auto',
           decimals: 2,
           color: '#2f7fe0',
-          lineWidth: 3,},
+          lineWidth: 3,
+        },
         {
           name: 'Heating Setpoint - Main',
           displayName: 'Heating Setpoint - Main',
@@ -153,7 +159,7 @@ export const flowerManifest: MonitoringManifest = {
           lineWidth: 2,
           lineInterpolation: 'stepBefore',
         },
-                {
+        {
           name: 'DAY Period Overlay',
           displayName: 'DAY Period Overlay',
           unit: 'percent',

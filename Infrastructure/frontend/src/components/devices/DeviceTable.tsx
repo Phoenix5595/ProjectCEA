@@ -1,17 +1,18 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { toast } from 'sonner';
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { toast } from 'sonner'
 
-import { apiClient } from '../../services/api';
+import { useControlSnapshot } from '../../hooks/useControlSnapshot'
+import { apiClient } from '../../services/api'
 import type {
   ControlSnapshotResponse,
   RegistryDeviceCreateBody,
   RegistryDeviceUpdateBody,
-} from '../../services/api/devices';
-import { useControlSnapshot } from '../../hooks/useControlSnapshot';
-import type { DeviceRegistryEntry } from '../../types/device';
-import { extractErrorMessage } from '../../utils/errors';
-import { logger } from '../../utils/logger';
-import DeviceForm from './DeviceForm';
+} from '../../services/api/devices'
+import type { DeviceRegistryEntry } from '../../types/device'
+import { extractErrorMessage } from '../../utils/errors'
+import { logger } from '../../utils/logger'
+
+import DeviceForm from './DeviceForm'
 import {
   EMPTY_DEVICE_FORM,
   approvedTypeLabel,
@@ -26,351 +27,336 @@ import {
   validateAddForm,
   validateEditDisplayName,
   type DeviceFormState,
-} from './deviceFormHelpers';
+} from './deviceFormHelpers'
 
 function relayChannelOf(device: DeviceRegistryEntry): number | null {
-  if (device.channel != null) return device.channel;
-  return device.relay_channel ?? null;
+  if (device.channel != null) return device.channel
+  return device.relay_channel ?? null
 }
 
 function isLight(device: DeviceRegistryEntry): boolean {
-  return device.device_type === 'light';
+  return device.device_type === 'light'
 }
 
 function editFormFromDevice(device: DeviceRegistryEntry): DeviceFormState {
-  const ch = relayChannelOf(device);
+  const ch = relayChannelOf(device)
   return {
     display_name: device.display_name ?? '',
     device_type: device.device_type as DeviceFormState['device_type'],
     room: device.location,
     relay_channel: ch != null ? String(ch) : '',
     board_id: device.board_id != null ? String(device.board_id) : '0',
-    dimming_channel:
-      device.dimming_channel != null ? String(device.dimming_channel) : '0',
-  };
+    dimming_channel: device.dimming_channel != null ? String(device.dimming_channel) : '0',
+  }
 }
 
 interface ParsedConflict {
-  assignment: 'relay' | 'DFR';
-  ownerDeviceId: number;
-  ownerDeviceName: string;
-  ownerDisplayName: string | null;
-  displacedDeviceId: number | null;
+  assignment: 'relay' | 'DFR'
+  ownerDeviceId: number
+  ownerDeviceName: string
+  ownerDisplayName: string | null
+  displacedDeviceId: number | null
 }
 
 function ownerLabelFromConflict(conflict: ParsedConflict): string {
-  return conflict.ownerDisplayName ?? conflict.ownerDeviceName ?? `#${conflict.ownerDeviceId}`;
+  return conflict.ownerDisplayName ?? conflict.ownerDeviceName ?? `#${conflict.ownerDeviceId}`
 }
 
 export default function DeviceTable({
   refreshKey = 0,
   onRefresh,
 }: {
-  refreshKey?: number;
-  onRefresh?: () => void;
+  refreshKey?: number
+  onRefresh?: () => void
 }) {
   const {
     registry: devicesFromHook,
     snapshot,
     loading: hookLoading,
     refreshNow,
-  } = useControlSnapshot();
+  } = useControlSnapshot()
 
-  const [devices, setDevices] = useState<DeviceRegistryEntry[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [editingId, setEditingId] = useState<number | null>(null);
-  const [editForm, setEditForm] = useState<DeviceFormState>(EMPTY_DEVICE_FORM);
-  const [adding, setAdding] = useState(false);
-  const [addForm, setAddForm] = useState<DeviceFormState>(EMPTY_DEVICE_FORM);
-  const [working, setWorking] = useState(false);
-  const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
-  const [displacedDeviceId, setDisplacedDeviceId] = useState<number | null>(null);
-  const [addError, setAddError] = useState<string | null>(null);
-  const [editError, setEditError] = useState<string | null>(null);
-  const [addConflict, setAddConflict] = useState<ParsedConflict | null>(null);
-  const [editConflict, setEditConflict] = useState<ParsedConflict | null>(null);
+  const [devices, setDevices] = useState<DeviceRegistryEntry[]>([])
+  const [loading, setLoading] = useState(true)
+  const [editingId, setEditingId] = useState<number | null>(null)
+  const [editForm, setEditForm] = useState<DeviceFormState>(EMPTY_DEVICE_FORM)
+  const [adding, setAdding] = useState(false)
+  const [addForm, setAddForm] = useState<DeviceFormState>(EMPTY_DEVICE_FORM)
+  const [working, setWorking] = useState(false)
+  const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null)
+  const [displacedDeviceId, setDisplacedDeviceId] = useState<number | null>(null)
+  const [addError, setAddError] = useState<string | null>(null)
+  const [editError, setEditError] = useState<string | null>(null)
+  const [addConflict, setAddConflict] = useState<ParsedConflict | null>(null)
+  const [editConflict, setEditConflict] = useState<ParsedConflict | null>(null)
   const [sortConfig, setSortConfig] = useState<{
-    key: string | null;
-    direction: 'asc' | 'desc' | null;
-  }>({ key: null, direction: null });
+    key: string | null
+    direction: 'asc' | 'desc' | null
+  }>({ key: null, direction: null })
 
-  const relayOptions = useMemo(() => buildRelayOptions(snapshot), [snapshot]);
-  const dfrOptions = useMemo(() => buildDfrOptions(snapshot), [snapshot]);
+  const relayOptions = useMemo(() => buildRelayOptions(snapshot), [snapshot])
+  const dfrOptions = useMemo(() => buildDfrOptions(snapshot), [snapshot])
 
   const relayByChannel = useMemo(() => {
-    const map = new Map<number, ControlSnapshotResponse['relays'][number]>();
+    const map = new Map<number, ControlSnapshotResponse['relays'][number]>()
     if (snapshot) {
       for (const r of snapshot.relays) {
-        map.set(r.channel, r);
+        map.set(r.channel, r)
       }
     }
-    return map;
-  }, [snapshot]);
+    return map
+  }, [snapshot])
 
   useEffect(() => {
-    setSortConfig({ key: null, direction: null });
-  }, [refreshKey]);
+    setSortConfig({ key: null, direction: null })
+  }, [refreshKey])
 
   useEffect(() => {
-    setDevices(devicesFromHook);
-    setLoading(hookLoading);
-  }, [devicesFromHook, hookLoading]);
+    setDevices(devicesFromHook)
+    setLoading(hookLoading)
+  }, [devicesFromHook, hookLoading])
 
   const refresh = useCallback(async () => {
-    await refreshNow();
-    onRefresh?.();
-  }, [refreshNow, onRefresh]);
+    await refreshNow()
+    onRefresh?.()
+  }, [refreshNow, onRefresh])
 
   useEffect(() => {
-    void refresh();
-  }, [refresh, refreshKey]);
+    void refresh()
+  }, [refresh, refreshKey])
 
   const sortedDevices = useMemo(() => {
     if (sortConfig.key === null || sortConfig.direction === null) {
-      return devices;
+      return devices
     }
-    const sorted = [...devices];
-    const dir = sortConfig.direction === 'asc' ? 1 : -1;
+    const sorted = [...devices]
+    const dir = sortConfig.direction === 'asc' ? 1 : -1
 
     sorted.sort((a, b) => {
       switch (sortConfig.key) {
         case 'name': {
-          const av = (a.display_name ?? a.device_name).toLowerCase();
-          const bv = (b.display_name ?? b.device_name).toLowerCase();
-          return av < bv ? -dir : av > bv ? dir : 0;
+          const av = (a.display_name ?? a.device_name).toLowerCase()
+          const bv = (b.display_name ?? b.device_name).toLowerCase()
+          return av < bv ? -dir : av > bv ? dir : 0
         }
         case 'type': {
-          const av = a.device_type.toLowerCase();
-          const bv = b.device_type.toLowerCase();
-          return av < bv ? -dir : av > bv ? dir : 0;
+          const av = a.device_type.toLowerCase()
+          const bv = b.device_type.toLowerCase()
+          return av < bv ? -dir : av > bv ? dir : 0
         }
         case 'room': {
-          const av = a.location.toLowerCase();
-          const bv = b.location.toLowerCase();
-          return av < bv ? -dir : av > bv ? dir : 0;
+          const av = a.location.toLowerCase()
+          const bv = b.location.toLowerCase()
+          return av < bv ? -dir : av > bv ? dir : 0
         }
         case 'relayCh': {
-          const av = relayChannelOf(a);
-          const bv = relayChannelOf(b);
-          if (av == null && bv == null) return 0;
-          if (av == null) return 1;
-          if (bv == null) return -1;
-          return (av - bv) * dir;
+          const av = relayChannelOf(a)
+          const bv = relayChannelOf(b)
+          if (av == null && bv == null) return 0
+          if (av == null) return 1
+          if (bv == null) return -1
+          return (av - bv) * dir
         }
         case 'dfrBoard': {
-          const aLight = isLight(a);
-          const bLight = isLight(b);
-          if (!aLight && !bLight) return 0;
-          if (!aLight) return 1;
-          if (!bLight) return -1;
-          const av = a.board_id ?? null;
-          const bv = b.board_id ?? null;
-          if (av == null && bv == null) return 0;
-          if (av == null) return 1;
-          if (bv == null) return -1;
-          return (av - bv) * dir;
+          const aLight = isLight(a)
+          const bLight = isLight(b)
+          if (!aLight && !bLight) return 0
+          if (!aLight) return 1
+          if (!bLight) return -1
+          const av = a.board_id ?? null
+          const bv = b.board_id ?? null
+          if (av == null && bv == null) return 0
+          if (av == null) return 1
+          if (bv == null) return -1
+          return (av - bv) * dir
         }
         case 'dfrChannel': {
-          const aLight = isLight(a);
-          const bLight = isLight(b);
-          if (!aLight && !bLight) return 0;
-          if (!aLight) return 1;
-          if (!bLight) return -1;
-          const av = a.dimming_channel ?? null;
-          const bv = b.dimming_channel ?? null;
-          if (av == null && bv == null) return 0;
-          if (av == null) return 1;
-          if (bv == null) return -1;
-          return (av - bv) * dir;
+          const aLight = isLight(a)
+          const bLight = isLight(b)
+          if (!aLight && !bLight) return 0
+          if (!aLight) return 1
+          if (!bLight) return -1
+          const av = a.dimming_channel ?? null
+          const bv = b.dimming_channel ?? null
+          if (av == null && bv == null) return 0
+          if (av == null) return 1
+          if (bv == null) return -1
+          return (av - bv) * dir
         }
         default:
-          return 0;
+          return 0
       }
-    });
+    })
 
-    return sorted;
-  }, [devices, sortConfig]);
+    return sorted
+  }, [devices, sortConfig])
 
   function toggleSort(key: string) {
-    setSortConfig((prev) => {
-      if (prev.key !== key) return { key, direction: 'asc' };
-      if (prev.direction === 'asc') return { key, direction: 'desc' };
-      return { key: null, direction: null };
-    });
+    setSortConfig(prev => {
+      if (prev.key !== key) return { key, direction: 'asc' }
+      if (prev.direction === 'asc') return { key, direction: 'desc' }
+      return { key: null, direction: null }
+    })
   }
 
   function sortIndicator(key: string): string {
-    if (sortConfig.key !== key || sortConfig.direction === null) return '';
-    return sortConfig.direction === 'asc' ? ' ▲' : ' ▼';
+    if (sortConfig.key !== key || sortConfig.direction === null) return ''
+    return sortConfig.direction === 'asc' ? ' ▲' : ' ▼'
   }
 
   function physicalRelayLabel(device: DeviceRegistryEntry): string | null {
-    const ch = relayChannelOf(device);
-    if (ch == null) return null;
-    const relay = relayByChannel.get(ch);
-    if (!relay) return null;
-    return `R${relay.physical_relay}`;
+    const ch = relayChannelOf(device)
+    if (ch == null) return null
+    const relay = relayByChannel.get(ch)
+    if (!relay) return null
+    return `R${relay.physical_relay}`
   }
 
   function commandModeFor(device: DeviceRegistryEntry): string | null {
-    const ch = relayChannelOf(device);
-    if (ch == null) return null;
-    const relay = relayByChannel.get(ch);
-    return relay?.command_mode ?? null;
+    const ch = relayChannelOf(device)
+    if (ch == null) return null
+    const relay = relayByChannel.get(ch)
+    return relay?.command_mode ?? null
   }
 
   function startEdit(device: DeviceRegistryEntry) {
     if (editingId !== null) {
-      toast.error('Save current changes before editing another device');
-      return;
+      toast.error('Save current changes before editing another device')
+      return
     }
-    setEditingId(device.device_id);
-    setDeleteConfirmId(null);
-    setEditForm(editFormFromDevice(device));
-    setEditError(null);
-    setEditConflict(null);
+    setEditingId(device.device_id)
+    setDeleteConfirmId(null)
+    setEditForm(editFormFromDevice(device))
+    setEditError(null)
+    setEditConflict(null)
   }
 
   function cancelEdit() {
-    setEditingId(null);
-    setEditForm(EMPTY_DEVICE_FORM);
-    setEditError(null);
-    setEditConflict(null);
+    setEditingId(null)
+    setEditForm(EMPTY_DEVICE_FORM)
+    setEditError(null)
+    setEditConflict(null)
   }
 
   function startAdd() {
     if (editingId !== null) {
-      toast.error('Save current changes before adding a device');
-      return;
+      toast.error('Save current changes before adding a device')
+      return
     }
-    setAdding(true);
-    setAddForm(EMPTY_DEVICE_FORM);
-    setAddError(null);
-    setAddConflict(null);
+    setAdding(true)
+    setAddForm(EMPTY_DEVICE_FORM)
+    setAddError(null)
+    setAddConflict(null)
   }
 
   function cancelAdd() {
-    setAdding(false);
-    setAddForm(EMPTY_DEVICE_FORM);
-    setAddError(null);
-    setAddConflict(null);
+    setAdding(false)
+    setAddForm(EMPTY_DEVICE_FORM)
+    setAddError(null)
+    setAddConflict(null)
   }
 
-  function handleConflict(
-    err: unknown,
-    mode: 'add' | 'edit',
-  ): boolean {
-    const parsed = parseConflictDetail(err);
-    if (!parsed) return false;
+  function handleConflict(err: unknown, mode: 'add' | 'edit'): boolean {
+    const parsed = parseConflictDetail(err)
+    if (!parsed) return false
     if (parsed.assignment === 'DFR') {
-      const label = ownerLabelFromConflict(parsed);
-      const message = `DFR slot already assigned to ${label}`;
-      if (mode === 'add') setAddError(message);
-      else setEditError(message);
-      toast.error(message);
-      return true;
+      const label = ownerLabelFromConflict(parsed)
+      const message = `DFR slot already assigned to ${label}`
+      if (mode === 'add') setAddError(message)
+      else setEditError(message)
+      toast.error(message)
+      return true
     }
     if (parsed.assignment === 'relay') {
-      if (mode === 'add') setAddConflict(parsed);
-      else setEditConflict(parsed);
-      return true;
+      if (mode === 'add') setAddConflict(parsed)
+      else setEditConflict(parsed)
+      return true
     }
-    return false;
+    return false
   }
 
   async function submitAdd(confirmedRelaySteal = false) {
-    const validation = validateAddForm(addForm);
+    const validation = validateAddForm(addForm)
     if (!validation.ok) {
-      setAddError(validation.error);
-      toast.error(validation.error ?? 'Invalid form');
-      return;
+      setAddError(validation.error)
+      toast.error(validation.error ?? 'Invalid form')
+      return
     }
-    setAddError(null);
-    const body: RegistryDeviceCreateBody = buildCreateBody(addForm);
-    setWorking(true);
+    setAddError(null)
+    const body: RegistryDeviceCreateBody = buildCreateBody(addForm)
+    setWorking(true)
     try {
-      await apiClient.createDevice(body, confirmedRelaySteal);
-      await refreshNow();
-      onRefresh?.();
-      cancelAdd();
-      toast.success('Device created');
+      await apiClient.createDevice(body, confirmedRelaySteal)
+      await refreshNow()
+      onRefresh?.()
+      cancelAdd()
+      toast.success('Device created')
     } catch (err) {
       if (!confirmedRelaySteal && handleConflict(err, 'add')) {
-        setWorking(false);
-        return;
+        setWorking(false)
+        return
       }
-      logger.error('Failed to create device', err);
-      setAddError(extractErrorMessage(err, 'Failed to create device'));
-      toast.error(extractErrorMessage(err, 'Failed to create device'));
+      logger.error('Failed to create device', err)
+      setAddError(extractErrorMessage(err, 'Failed to create device'))
+      toast.error(extractErrorMessage(err, 'Failed to create device'))
     } finally {
-      setWorking(false);
+      setWorking(false)
     }
   }
 
-  async function submitEdit(
-    device: DeviceRegistryEntry,
-    confirmedRelaySteal = false,
-  ) {
-    const validation = validateEditDisplayName(editForm.display_name);
+  async function submitEdit(device: DeviceRegistryEntry, confirmedRelaySteal = false) {
+    const validation = validateEditDisplayName(editForm.display_name)
     if (!validation.ok) {
-      setEditError(validation.error);
-      toast.error(validation.error ?? 'Invalid form');
-      return;
+      setEditError(validation.error)
+      toast.error(validation.error ?? 'Invalid form')
+      return
     }
-    setEditError(null);
+    setEditError(null)
     const editBody = isLight(device)
       ? buildLightEditBody(editForm)
-      : buildNonLightEditBody(editForm);
-    const body: RegistryDeviceUpdateBody = toRegistryUpdate(editBody);
-    setWorking(true);
+      : buildNonLightEditBody(editForm)
+    const body: RegistryDeviceUpdateBody = toRegistryUpdate(editBody)
+    setWorking(true)
     try {
-      const result = await apiClient.updateDevice(
-        device.device_id,
-        body,
-        confirmedRelaySteal,
-      );
+      const result = await apiClient.updateDevice(device.device_id, body, confirmedRelaySteal)
       if (result.displaced_device_id != null) {
-        setDisplacedDeviceId(result.displaced_device_id);
-        const displaced = devices.find(
-          (d) => d.device_id === result.displaced_device_id,
-        );
+        setDisplacedDeviceId(result.displaced_device_id)
+        const displaced = devices.find(d => d.device_id === result.displaced_device_id)
         const displacedLabel =
-          displaced?.display_name ??
-          displaced?.device_name ??
-          `#${result.displaced_device_id}`;
-        toast.warning(`Relay channel stolen from ${displacedLabel}`);
+          displaced?.display_name ?? displaced?.device_name ?? `#${result.displaced_device_id}`
+        toast.warning(`Relay channel stolen from ${displacedLabel}`)
       } else {
-        setDisplacedDeviceId(null);
+        setDisplacedDeviceId(null)
       }
-      await refreshNow();
-      cancelEdit();
-      toast.success('Device updated');
+      await refreshNow()
+      cancelEdit()
+      toast.success('Device updated')
     } catch (err) {
       if (!confirmedRelaySteal && handleConflict(err, 'edit')) {
-        setWorking(false);
-        return;
+        setWorking(false)
+        return
       }
-      logger.error('Failed to update device', err);
-      setEditError(extractErrorMessage(err, 'Failed to update device'));
-      toast.error(extractErrorMessage(err, 'Failed to update device'));
+      logger.error('Failed to update device', err)
+      setEditError(extractErrorMessage(err, 'Failed to update device'))
+      toast.error(extractErrorMessage(err, 'Failed to update device'))
     } finally {
-      setWorking(false);
+      setWorking(false)
     }
   }
 
   async function confirmDelete(device: DeviceRegistryEntry) {
-    setWorking(true);
+    setWorking(true)
     try {
-      await apiClient.deleteDevice(device.device_id);
-      await refreshNow();
-      onRefresh?.();
-      setDeleteConfirmId(null);
-      toast.success('Device deleted');
+      await apiClient.deleteDevice(device.device_id)
+      await refreshNow()
+      onRefresh?.()
+      setDeleteConfirmId(null)
+      toast.success('Device deleted')
     } catch (err) {
-      logger.error('Failed to delete device', err);
-      toast.error(extractErrorMessage(err, 'Failed to delete device'));
+      logger.error('Failed to delete device', err)
+      toast.error(extractErrorMessage(err, 'Failed to delete device'))
     } finally {
-      setWorking(false);
+      setWorking(false)
     }
   }
 
@@ -382,7 +368,7 @@ export default function DeviceTable({
         </div>
         <div className="text-text-subtle text-sm">Loading…</div>
       </div>
-    );
+    )
   }
 
   return (
@@ -453,16 +439,16 @@ export default function DeviceTable({
             </tr>
           </thead>
           <tbody className="divide-y divide-border-subtle bg-surface-primary">
-            {sortedDevices.map((device) => {
-              const isEditing = editingId === device.device_id;
-              const isConfirmingDelete = deleteConfirmId === device.device_id;
-              const light = isLight(device);
-              const relayLabel = physicalRelayLabel(device);
-              const mode = commandModeFor(device);
+            {sortedDevices.map(device => {
+              const isEditing = editingId === device.device_id
+              const isConfirmingDelete = deleteConfirmId === device.device_id
+              const light = isLight(device)
+              const relayLabel = physicalRelayLabel(device)
+              const mode = commandModeFor(device)
               const schedule = formatInheritedSchedule(
                 device.inherited_schedule_count,
-                device.inherited_schedule_summary,
-              );
+                device.inherited_schedule_summary
+              )
 
               if (isEditing) {
                 return (
@@ -492,7 +478,7 @@ export default function DeviceTable({
                         : null
                     }
                   />
-                );
+                )
               }
 
               return (
@@ -500,9 +486,7 @@ export default function DeviceTable({
                   key={device.device_id}
                   data-testid={`device-row-${device.device_id}`}
                   className={`hover:bg-surface-secondary cursor-pointer ${
-                    device.device_id === displacedDeviceId
-                      ? 'ring-2 ring-status-danger'
-                      : ''
+                    device.device_id === displacedDeviceId ? 'ring-2 ring-status-danger' : ''
                   }`}
                   onClick={() => startEdit(device)}
                 >
@@ -555,14 +539,15 @@ export default function DeviceTable({
                   </td>
                   <td
                     className="whitespace-nowrap px-2 py-1 text-sm text-text-secondary"
-                    title={Array.isArray(device.inherited_schedule_summary) ? device.inherited_schedule_summary.join(', ') : undefined}
+                    title={
+                      Array.isArray(device.inherited_schedule_summary)
+                        ? device.inherited_schedule_summary.join(', ')
+                        : undefined
+                    }
                   >
                     {schedule}
                   </td>
-                  <td
-                    className="whitespace-nowrap px-2 py-1"
-                    onClick={(e) => e.stopPropagation()}
-                  >
+                  <td className="whitespace-nowrap px-2 py-1" onClick={e => e.stopPropagation()}>
                     {isConfirmingDelete ? (
                       <div className="flex items-center gap-1">
                         <button
@@ -597,7 +582,7 @@ export default function DeviceTable({
                     )}
                   </td>
                 </tr>
-              );
+              )
             })}
 
             {adding ? (
@@ -639,5 +624,5 @@ export default function DeviceTable({
         </button>
       ) : null}
     </div>
-  );
+  )
 }

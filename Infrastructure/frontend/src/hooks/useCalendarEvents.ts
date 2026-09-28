@@ -1,58 +1,61 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { addMonths, endOfMonth, format, startOfMonth, subMonths } from 'date-fns';
-import { toZonedTime } from 'date-fns-tz';
+import { addMonths, endOfMonth, format, startOfMonth, subMonths } from 'date-fns'
+import { toZonedTime } from 'date-fns-tz'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 
-import { apiClient } from '../services/api';
-import type { CalendarEventDto } from '../types/calendar';
-import { CALENDAR_TZ } from '../utils/flowerGrowPlan';
-import { normalizeCalendarEvent } from '../utils/normalizeCalendarEvent';
+import { apiClient } from '../services/api'
+import type { CalendarEventDto } from '../types/calendar'
+import { CALENDAR_TZ } from '../utils/flowerGrowPlan'
+import { normalizeCalendarEvent } from '../utils/normalizeCalendarEvent'
 
 export function useCalendarEvents(location?: string, month?: Date) {
-  const [events, setEvents] = useState<CalendarEventDto[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [events, setEvents] = useState<CalendarEventDto[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
-  // Stable month reference — use getTime() for dependency arrays (value equality, not reference)
-  const safeMonth = useMemo(() => month ?? new Date(), [month?.getTime()]);
-
-  const zonedMonth = toZonedTime(safeMonth, CALENDAR_TZ);
+  const monthTimestamp = month?.getTime()
+  // Keep date memoization value-based rather than tied to Date object identity.
+  const safeMonth = useMemo(
+    () => (monthTimestamp === undefined ? new Date() : new Date(monthTimestamp)),
+    [monthTimestamp]
+  )
+  const zonedMonth = useMemo(() => toZonedTime(safeMonth, CALENDAR_TZ), [safeMonth])
 
   const rangeStart = useMemo(
     () => format(startOfMonth(subMonths(zonedMonth, 1)), 'yyyy-MM-dd'),
-    [zonedMonth.getTime()]
-  );
+    [zonedMonth]
+  )
 
   const rangeEnd = useMemo(
     () => format(endOfMonth(addMonths(zonedMonth, 1)), 'yyyy-MM-dd'),
-    [zonedMonth.getTime()]
-  );
+    [zonedMonth]
+  )
 
   const refresh = useCallback(async () => {
-    setLoading(true);
-    setError(null);
+    setLoading(true)
+    setError(null)
     try {
-      let cursor: string | undefined;
-      const all: CalendarEventDto[] = [];
+      let cursor: string | undefined
+      const all: CalendarEventDto[] = []
       do {
-        const res = await apiClient.getCalendarEvents(rangeStart, rangeEnd, location, cursor);
+        const res = await apiClient.getCalendarEvents(rangeStart, rangeEnd, location, cursor)
         all.push(
-          ...res.items.map((item) =>
+          ...res.items.map(item =>
             normalizeCalendarEvent(item as unknown as Record<string, unknown>)
           )
-        );
-        cursor = res.next_cursor ?? undefined;
-      } while (cursor);
-      setEvents(all);
+        )
+        cursor = res.next_cursor ?? undefined
+      } while (cursor)
+      setEvents(all)
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load calendar');
+      setError(e instanceof Error ? e.message : 'Failed to load calendar')
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
-  }, [rangeStart, rangeEnd, location]);
+  }, [rangeStart, rangeEnd, location])
 
   useEffect(() => {
-    void refresh();
-  }, [refresh]);
+    void refresh()
+  }, [refresh])
 
-  return { events, loading, error, refresh };
+  return { events, loading, error, refresh }
 }

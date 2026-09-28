@@ -7,6 +7,7 @@
  * and a deterministic rebucket when the timestamp union would exceed maxPoints.
  */
 import { describe, expect, it } from 'vitest'
+
 import type {
   ClimateTimelineSeries,
   ControlMonitoringResponse,
@@ -41,14 +42,14 @@ function sensorSeries(points: SensorSeries['points']): SensorSeries[] {
 }
 
 function climateSeries(
-  points: Array<{ timestamp: Date; value: number | null; origin?: Origin }>,
+  points: Array<{ timestamp: Date; value: number | null; origin?: Origin }>
 ): ClimateTimelineSeries {
   return {
     name: 'Heating Setpoint',
     provenance: { origin: 'recorded', quality: 'exact', is_aggregated: false },
     projection: null,
     warnings: [],
-    points: points.map((p) => ({
+    points: points.map(p => ({
       timestamp: p.timestamp,
       value: p.value,
       nominal_value: p.value,
@@ -62,7 +63,7 @@ function climateSeries(
 
 function controlResponse(
   climate: ClimateTimelineSeries[],
-  overrides: Partial<ControlMonitoringResponse> = {},
+  overrides: Partial<ControlMonitoringResponse> = {}
 ): ControlMonitoringResponse {
   return {
     range: { start: START, end: END },
@@ -87,7 +88,13 @@ describe('alignSeries', () => {
     const input: AlignInput = {
       series: sensorSeries([
         { timestamp: START, average: 24.5, minimum: 24.1, maximum: 24.9, sample_count: 60 },
-        { timestamp: new Date('2026-08-02T11:30:00.000Z'), average: 24.8, minimum: 24.4, maximum: 25.2, sample_count: 60 },
+        {
+          timestamp: new Date('2026-08-02T11:30:00.000Z'),
+          average: 24.8,
+          minimum: 24.4,
+          maximum: 25.2,
+          sample_count: 60,
+        },
       ]),
       controlHistory: null,
       projectionHistory: controlResponse([climateSeries(dense)]),
@@ -136,9 +143,9 @@ describe('alignSeries', () => {
     expect(out.aggregated).toBe(false)
     const t1Index = out.x.indexOf(t1.getTime())
     expect(t1Index).toBeGreaterThanOrEqual(0)
-    const sensorMean = out.series.find((s) => s.metric === 'dry_bulb' && s.role === 'mean')
+    const sensorMean = out.series.find(s => s.metric === 'dry_bulb' && s.role === 'mean')
     expect(sensorMean?.y[t1Index]).toBeNull()
-    const controlPoint = out.series.find((s) => s.metric === 'heating_setpoint' && s.role === 'point')
+    const controlPoint = out.series.find(s => s.metric === 'heating_setpoint' && s.role === 'point')
     expect(controlPoint?.y[t1Index]).toBeNull()
 
     const dense: Array<{ timestamp: Date; value: number }> = []
@@ -164,10 +171,20 @@ describe('alignSeries', () => {
         {
           ...climateSeries([]),
           steps: [
-            { timestamp: START, value: 22, provenance: { origin: 'recorded', quality: 'exact', is_aggregated: false } },
+            {
+              timestamp: START,
+              value: 22,
+              provenance: { origin: 'recorded', quality: 'exact', is_aggregated: false },
+            },
           ],
           linear: [
-            { start: START, end: END, start_value: 22, end_value: 24, provenance: { origin: 'projected', quality: 'estimated', is_aggregated: false } },
+            {
+              start: START,
+              end: END,
+              start_value: 22,
+              end_value: 24,
+              provenance: { origin: 'projected', quality: 'estimated', is_aggregated: false },
+            },
           ],
         },
       ]),
@@ -185,9 +202,9 @@ describe('alignSeries', () => {
     expect(out.bands[0].minKey).toContain('min')
     expect(out.bands[0].maxKey).toContain('dry_bulb')
     expect(out.bands[0].maxKey).toContain('max')
-    expect(out.series.some((s) => s.kind === 'step')).toBe(true)
+    expect(out.series.some(s => s.kind === 'step')).toBe(true)
     const startIdx = out.x.indexOf(START.getTime())
-    const step = out.series.find((s) => s.kind === 'step')
+    const step = out.series.find(s => s.kind === 'step')
     expect(step?.y[startIdx]).toBe(22)
   })
 
@@ -198,7 +215,11 @@ describe('alignSeries', () => {
         {
           ...climateSeries([{ timestamp: START, value: 22 }]),
           steps: [
-            { timestamp: START, value: 22, provenance: { origin: 'recorded', quality: 'exact', is_aggregated: false } },
+            {
+              timestamp: START,
+              value: 22,
+              provenance: { origin: 'recorded', quality: 'exact', is_aggregated: false },
+            },
           ],
         },
       ]),
@@ -209,7 +230,9 @@ describe('alignSeries', () => {
       now: NOW,
     }
 
-    const setpointSeries = alignSeries(input).series.filter((series) => series.metric === 'heating_setpoint')
+    const setpointSeries = alignSeries(input).series.filter(
+      series => series.metric === 'heating_setpoint'
+    )
 
     expect(setpointSeries).toHaveLength(1)
     expect(setpointSeries[0]?.role).toBe('step')
@@ -218,25 +241,27 @@ describe('alignSeries', () => {
   it('assigns co2_setpoint to the co2 family instead of temperature', () => {
     const input: AlignInput = {
       series: [],
-      controlHistory: controlResponse([
-        climateSeries(
-          [{ timestamp: START, value: 600 }],
-        ),
-      ], { climate: [{
-        name: 'CO2 Setpoint',
-        provenance: { origin: 'recorded', quality: 'exact', is_aggregated: false },
-        projection: null,
-        warnings: [],
-        points: [{
-          timestamp: START,
-          value: 600,
-          nominal_value: 600,
-          metric: 'co2_setpoint',
-          provenance: { origin: 'recorded', quality: 'exact', is_aggregated: false },
-        }],
-        steps: [],
-        linear: [],
-      }] }),
+      controlHistory: controlResponse([climateSeries([{ timestamp: START, value: 600 }])], {
+        climate: [
+          {
+            name: 'CO2 Setpoint',
+            provenance: { origin: 'recorded', quality: 'exact', is_aggregated: false },
+            projection: null,
+            warnings: [],
+            points: [
+              {
+                timestamp: START,
+                value: 600,
+                nominal_value: 600,
+                metric: 'co2_setpoint',
+                provenance: { origin: 'recorded', quality: 'exact', is_aggregated: false },
+              },
+            ],
+            steps: [],
+            linear: [],
+          },
+        ],
+      }),
       projectionHistory: null,
       photoperiod: [],
       live: [],
@@ -245,7 +270,7 @@ describe('alignSeries', () => {
     }
 
     const out = alignSeries(input)
-    const co2Point = out.series.find((s) => s.metric === 'co2_setpoint')
+    const co2Point = out.series.find(s => s.metric === 'co2_setpoint')
     expect(co2Point).toBeDefined()
     expect(co2Point?.family).toBe('co2')
   })
@@ -274,7 +299,7 @@ describe('alignSeries', () => {
       controlHistory: input.controlHistory
         ? {
             ...input.controlHistory,
-            climate: input.controlHistory.climate.map((s) => ({
+            climate: input.controlHistory.climate.map(s => ({
               ...s,
               name: `${s.name} [CHANGED]`,
             })),
@@ -283,11 +308,13 @@ describe('alignSeries', () => {
     }
     const changed = alignSeries(mutated)
 
-    expect(base.series.map((s) => s.family)).toEqual(changed.series.map((s) => s.family))
-    expect(base.series.map((s) => s.role)).toEqual(changed.series.map((s) => s.role))
-    expect(base.series.map((s) => s.source)).toEqual(changed.series.map((s) => s.source))
-    expect(base.series.map((s) => s.metric)).toEqual(changed.series.map((s) => s.metric))
-    expect(changed.series.every((s) => !s.label.includes('[CHANGED]') || s.metric === 'heating_setpoint')).toBe(true)
+    expect(base.series.map(s => s.family)).toEqual(changed.series.map(s => s.family))
+    expect(base.series.map(s => s.role)).toEqual(changed.series.map(s => s.role))
+    expect(base.series.map(s => s.source)).toEqual(changed.series.map(s => s.source))
+    expect(base.series.map(s => s.metric)).toEqual(changed.series.map(s => s.metric))
+    expect(
+      changed.series.every(s => !s.label.includes('[CHANGED]') || s.metric === 'heating_setpoint')
+    ).toBe(true)
   })
 
   it('uses manifest display metadata for a matching sensor series', () => {
@@ -318,7 +345,9 @@ describe('alignSeries', () => {
 
     const out = alignSeries(input)
 
-    const dryBulb = out.series.find((series) => series.metric === 'dry_bulb_b' && series.role === 'mean')
+    const dryBulb = out.series.find(
+      series => series.metric === 'dry_bulb_b' && series.role === 'mean'
+    )
     expect(dryBulb?.label).toBe('Dry Bulb (°C) - Back')
     expect(dryBulb?.presentation?.color).toBe('#b5121b')
   })
@@ -327,8 +356,12 @@ describe('alignSeries', () => {
     const t = new Date('2026-08-02T11:30:00.000Z')
     const input: AlignInput = {
       series: [],
-      controlHistory: controlResponse([climateSeries([{ timestamp: t, value: 22, origin: 'recorded' }])]),
-      projectionHistory: controlResponse([climateSeries([{ timestamp: t, value: 99, origin: 'projected' }])]),
+      controlHistory: controlResponse([
+        climateSeries([{ timestamp: t, value: 22, origin: 'recorded' }]),
+      ]),
+      projectionHistory: controlResponse([
+        climateSeries([{ timestamp: t, value: 99, origin: 'projected' }]),
+      ]),
       photoperiod: [],
       live: [],
       range: fixedRange(),
@@ -338,32 +371,40 @@ describe('alignSeries', () => {
     const out = alignSeries(input)
 
     const idx = out.x.indexOf(t.getTime())
-    const step = out.series.find((s) => s.metric === 'heating_setpoint' && s.role === 'step')
+    const step = out.series.find(s => s.metric === 'heating_setpoint' && s.role === 'step')
     expect(step?.y[idx]).toBe(22)
   })
 
   it('continues a recorded setpoint into the projected scheduled trajectory', () => {
-    const recorded = controlResponse([climateSeries([
-      { timestamp: START, value: 22 },
-      { timestamp: NOW, value: 23 },
-    ])])
+    const recorded = controlResponse([
+      climateSeries([
+        { timestamp: START, value: 22 },
+        { timestamp: NOW, value: 23 },
+      ]),
+    ])
     const scheduled = {
       ...climateSeries([]),
       trajectory_kind: 'scheduled' as const,
-      linear: [{
-        start: NOW,
-        end: END,
-        start_value: 23,
-        end_value: 25,
-        provenance: { origin: 'projected' as const, quality: 'estimated' as const, is_aggregated: false },
-      }],
+      linear: [
+        {
+          start: NOW,
+          end: END,
+          start_value: 23,
+          end_value: 25,
+          provenance: {
+            origin: 'projected' as const,
+            quality: 'estimated' as const,
+            is_aggregated: false,
+          },
+        },
+      ],
     }
 
     const merged = mergeControlSeries(recorded, controlResponse([scheduled]))
 
     expect(merged).toHaveLength(1)
     expect(merged[0]?.trajectoryKind).toBe('scheduled')
-    expect(merged[0]?.steps.map((step) => step.value)).toEqual([22, 23])
+    expect(merged[0]?.steps.map(step => step.value)).toEqual([22, 23])
     expect(merged[0]?.linear[0]?.startValue).toBe(23)
   })
 
@@ -376,9 +417,30 @@ describe('alignSeries', () => {
       name: 'Heater Flower',
       provenance: prov,
       points: [
-        { timestamp: t0, provenance: prov, device_name: 'Heater Flower', device_state: 0, device_mode: 'AUTO', control_reason: 'schedule' },
-        { timestamp: t1, provenance: prov, device_name: 'Heater Flower', device_state: 1, device_mode: 'AUTO', control_reason: 'pid' },
-        { timestamp: t2, provenance: prov, device_name: 'Heater Flower', device_state: 1, device_mode: 'MANUAL', control_reason: 'override' },
+        {
+          timestamp: t0,
+          provenance: prov,
+          device_name: 'Heater Flower',
+          device_state: 0,
+          device_mode: 'AUTO',
+          control_reason: 'schedule',
+        },
+        {
+          timestamp: t1,
+          provenance: prov,
+          device_name: 'Heater Flower',
+          device_state: 1,
+          device_mode: 'AUTO',
+          control_reason: 'pid',
+        },
+        {
+          timestamp: t2,
+          provenance: prov,
+          device_name: 'Heater Flower',
+          device_state: 1,
+          device_mode: 'MANUAL',
+          control_reason: 'override',
+        },
       ],
       warnings: [],
     }
@@ -386,9 +448,27 @@ describe('alignSeries', () => {
       name: 'Heater Flower',
       provenance: prov,
       points: [
-        { timestamp: t0, provenance: prov, device_name: 'Heater Flower', pid_output: 0, duty_cycle_percent: 0 },
-        { timestamp: t1, provenance: prov, device_name: 'Heater Flower', pid_output: 25, duty_cycle_percent: 25 },
-        { timestamp: t2, provenance: prov, device_name: 'Heater Flower', pid_output: 50, duty_cycle_percent: 50 },
+        {
+          timestamp: t0,
+          provenance: prov,
+          device_name: 'Heater Flower',
+          pid_output: 0,
+          duty_cycle_percent: 0,
+        },
+        {
+          timestamp: t1,
+          provenance: prov,
+          device_name: 'Heater Flower',
+          pid_output: 25,
+          duty_cycle_percent: 25,
+        },
+        {
+          timestamp: t2,
+          provenance: prov,
+          device_name: 'Heater Flower',
+          pid_output: 50,
+          duty_cycle_percent: 50,
+        },
       ],
       warnings: [],
     }
@@ -404,10 +484,10 @@ describe('alignSeries', () => {
 
     const out = alignSeries(input)
 
-    const state = out.series.find((s) => s.source === 'device' && s.role === 'state')
-    const duty = out.series.find((s) => s.source === 'device' && s.role === 'duty')
-    const pidOutput = out.series.find((s) => s.source === 'pid' && s.role === 'pid_output')
-    const pidDuty = out.series.find((s) => s.source === 'pid' && s.role === 'duty')
+    const state = out.series.find(s => s.source === 'device' && s.role === 'state')
+    const duty = out.series.find(s => s.source === 'device' && s.role === 'duty')
+    const pidOutput = out.series.find(s => s.source === 'pid' && s.role === 'pid_output')
+    const pidDuty = out.series.find(s => s.source === 'pid' && s.role === 'duty')
     expect(state).toBeDefined()
     expect(duty).toBeDefined()
     expect(pidOutput).toBeDefined()
@@ -452,7 +532,7 @@ describe('alignSeries', () => {
     for (const s of out.series) {
       expect(s.y).toHaveLength(out.x.length)
     }
-    const keys = new Set(out.series.map((s) => s.key))
+    const keys = new Set(out.series.map(s => s.key))
     expect(keys.size).toBe(out.series.length)
   })
 
@@ -503,5 +583,4 @@ describe('alignSeries', () => {
     expect(out.aggregated).toBe(false)
     expect(last).toBe(END.getTime())
   })
-
 })

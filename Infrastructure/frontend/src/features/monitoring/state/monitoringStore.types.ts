@@ -17,6 +17,7 @@ import type {
   SensorStatistics,
   SourceCursor,
 } from '../api'
+
 import type { MonitoringSourceOutcomes } from './monitoringStore.health'
 
 /** A rolling live window anchored to `now` with a fixed duration (ms). */

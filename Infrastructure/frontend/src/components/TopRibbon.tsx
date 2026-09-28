@@ -1,30 +1,30 @@
-import React from 'react';
-import { Link, useLocation } from 'react-router-dom';
-import { Flower2, FlaskConical, Settings, Sprout } from 'lucide-react';
-import type { LucideIcon } from 'lucide-react';
+import { Flower2, FlaskConical, Settings, Sprout } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
+import type { FC } from 'react'
+import { Link, useLocation } from 'react-router-dom'
 
-import { AppRibbon } from './chrome/AppRibbon';
+import { AppRibbon } from './chrome/AppRibbon'
 
-export type Sector = 'laboratory' | 'vegetation' | 'flower' | 'devices';
+export type Sector = 'laboratory' | 'vegetation' | 'flower' | 'devices'
 
 interface TopRibbonProps {
-  sector: Sector;
-  activeTab: string;
-  onTabChange: (tab: string) => void;
-  roomName?: string;
-  showActions?: boolean;
-  onSave?: () => void;
-  saving?: boolean;
-  saveSuccess?: string | null;
-  saveError?: string | null;
-  currentMode?: { mode_name?: string; submode_name?: string | null } | null;
-  onModeChange?: (mode: string, submode?: string) => void;
+  sector: Sector
+  activeTab: string
+  onTabChange: (tab: string) => void
+  roomName?: string
+  showActions?: boolean
+  onSave?: () => void
+  saving?: boolean
+  saveSuccess?: string | null
+  saveError?: string | null
+  currentMode?: { mode_name?: string; submode_name?: string | null } | null
+  onModeChange?: (mode: string, submode?: string) => void
 }
 
 interface Tab {
-  id: string;
-  label: string;
-  path: string;
+  id: string
+  label: string
+  path: string
 }
 
 const sectorTabs: Record<Sector, Tab[]> = {
@@ -43,23 +43,23 @@ const sectorTabs: Record<Sector, Tab[]> = {
     { id: 'automation', label: 'Automation', path: '/flower/automation' },
   ],
   devices: [{ id: 'overview', label: 'Overview', path: '/devices' }],
-};
+}
 
 const sectorIcons: Record<Sector, LucideIcon> = {
   laboratory: FlaskConical,
   vegetation: Sprout,
   flower: Flower2,
   devices: Settings,
-};
+}
 
 const sectorDefaultNames: Record<Sector, string> = {
   laboratory: 'Laboratory',
   vegetation: 'Vegetation Room',
   flower: 'Flower Room',
   devices: 'Device Configuration',
-};
+}
 
-const TopRibbon: React.FC<TopRibbonProps> = ({
+const TopRibbon: FC<TopRibbonProps> = ({
   sector,
   activeTab,
   onTabChange,
@@ -72,22 +72,22 @@ const TopRibbon: React.FC<TopRibbonProps> = ({
   currentMode,
   onModeChange,
 }) => {
-  const location = useLocation();
-  const tabs = sectorTabs[sector];
+  const location = useLocation()
+  const tabs = sectorTabs[sector]
 
-  const currentPath = location.pathname;
-  const activeTabFromPath = tabs.find((tab) => {
+  const currentPath = location.pathname
+  const activeTabFromPath = tabs.find(tab => {
     if (tab.id === 'overview') {
-      return currentPath === tab.path;
+      return currentPath === tab.path
     }
-    return currentPath.startsWith(tab.path);
-  });
+    return currentPath.startsWith(tab.path)
+  })
 
-  const activeTabId = activeTabFromPath?.id || activeTab || 'overview';
-  const isControlPage = currentPath.includes('/control');
+  const activeTabId = activeTabFromPath?.id || activeTab || 'overview'
+  const isControlPage = currentPath.includes('/control')
 
-  const displayRoomName = roomName || sectorDefaultNames[sector];
-  const SectorIconComponent = sectorIcons[sector];
+  const displayRoomName = roomName || sectorDefaultNames[sector]
+  const SectorIconComponent = sectorIcons[sector]
 
   return (
     <AppRibbon position="top" sticky className="pl-2">
@@ -98,8 +98,8 @@ const TopRibbon: React.FC<TopRibbonProps> = ({
 
       <nav className="flex overflow-x-auto scrollbar-hide min-w-0 flex-1">
         <div className="flex min-w-max gap-0.5">
-          {tabs.map((tab) => {
-            const isActive = activeTabId === tab.id;
+          {tabs.map(tab => {
+            const isActive = activeTabId === tab.id
             return (
               <Link
                 key={tab.id}
@@ -110,14 +110,14 @@ const TopRibbon: React.FC<TopRibbonProps> = ({
                   transition-colors duration-200 rounded-lg
                   ${
                     isActive
-                      ? 'bg-accent-vivid text-surface-base'
+                      ? 'bg-accent-vivid text-accent-vivid-foreground'
                       : 'text-text-secondary hover:text-text-default hover:bg-surface-tertiary'
                   }
                 `}
               >
                 {tab.label}
               </Link>
-            );
+            )
           })}
         </div>
       </nav>
@@ -127,13 +127,13 @@ const TopRibbon: React.FC<TopRibbonProps> = ({
           {currentMode && onModeChange && (
             <>
               <div className="flex gap-1">
-                {['veg', 'flower', 'drying', 'sleep'].map((mode) => (
+                {['veg', 'flower', 'drying', 'sleep'].map(mode => (
                   <button
                     key={mode}
                     onClick={() => onModeChange(mode)}
                     className={`px-2 py-0.5 text-sm font-bold rounded border transition-colors ${
                       currentMode.mode_name === mode
-                        ? 'bg-accent-vivid text-white border-accent-vivid'
+                        ? 'bg-accent-vivid text-accent-vivid-foreground border-accent-vivid'
                         : 'bg-transparent text-text-default border-border-default hover:bg-surface-tertiary hover:border-border-emphasis'
                     }`}
                   >
@@ -143,13 +143,13 @@ const TopRibbon: React.FC<TopRibbonProps> = ({
               </div>
               {currentMode.mode_name === 'flower' && (
                 <div className="flex gap-1 ml-2">
-                  {['stretch', 'bulk', 'ripen'].map((sub) => (
+                  {['stretch', 'bulk', 'ripen'].map(sub => (
                     <button
                       key={sub}
                       onClick={() => onModeChange('flower', sub)}
                       className={`px-2 py-0.5 text-sm font-bold rounded border transition-colors ${
                         currentMode.submode_name === sub
-                          ? 'bg-accent-vivid text-white border-accent-vivid'
+                          ? 'bg-accent-vivid text-accent-vivid-foreground border-accent-vivid'
                           : 'bg-transparent text-text-default border-border-default hover:bg-surface-tertiary hover:border-border-emphasis'
                       }`}
                     >
@@ -174,14 +174,14 @@ const TopRibbon: React.FC<TopRibbonProps> = ({
           <button
             onClick={onSave}
             disabled={saving}
-            className="px-2 py-0.5 bg-accent-vivid hover:bg-accent-hover text-text-default text-xs font-bold rounded transition-colors"
+            className="px-2 py-0.5 bg-accent-vivid hover:bg-accent-hover text-accent-vivid-foreground hover:text-accent-hover-foreground text-xs font-bold rounded transition-colors"
           >
             {saving ? '...' : 'SAVE'}
           </button>
         </div>
       )}
     </AppRibbon>
-  );
-};
+  )
+}
 
-export default TopRibbon;
+export default TopRibbon

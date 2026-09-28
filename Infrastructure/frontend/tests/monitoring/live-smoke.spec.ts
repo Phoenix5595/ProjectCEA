@@ -9,7 +9,10 @@ import { expect, test } from '@playwright/test'
 import { mkdir, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 
-const EVIDENCE_DIR = path.resolve(process.cwd(), '../../.omo/evidence/finish-climate-setpoints-release/T5')
+const EVIDENCE_DIR = path.resolve(
+  process.cwd(),
+  '../../.omo/evidence/finish-climate-setpoints-release/T5'
+)
 const ROUTES = [
   { path: '/flower/monitoring', name: 'Flower monitoring' },
   { path: '/vegetation/monitoring', name: 'Vegetation monitoring' },
@@ -18,19 +21,24 @@ const ROUTES = [
   { path: '/flower', name: 'Flower event log' },
 ] as const
 
-test('browses live monitoring, climate timelines, and event log without writes', async ({ page }) => {
+test('browses live monitoring, climate timelines, and event log without writes', async ({
+  page,
+}) => {
   const baseURL = process.env.BASE_URL
   test.skip(!baseURL, 'live smoke requires BASE_URL and is skipped for fixture runs')
   if (baseURL === undefined) return
 
   const viewport = page.viewportSize()
   const viewportTuple = [viewport?.width ?? 0, viewport?.height ?? 0]
-  expect([[1920, 1080], [1280, 1440]]).toContainEqual(viewportTuple)
+  expect([
+    [1920, 1080],
+    [1280, 1440],
+  ]).toContainEqual(viewportTuple)
 
   const pageErrors: string[] = []
   const consoleLines: string[] = []
-  page.on('pageerror', (error) => pageErrors.push(error.message))
-  page.on('console', (message) => {
+  page.on('pageerror', error => pageErrors.push(error.message))
+  page.on('console', message => {
     if (message.type() === 'warning' || message.type() === 'error') {
       consoleLines.push(`${message.type()}: ${message.text()}`)
     }
@@ -46,14 +54,18 @@ test('browses live monitoring, climate timelines, and event log without writes',
   await mkdir(EVIDENCE_DIR, { recursive: true })
   await writeFile(
     path.join(EVIDENCE_DIR, `live-smoke-${test.info().project.name}.json`),
-    `${JSON.stringify({
-      base_url: process.env.BASE_URL,
-      project: test.info().project.name,
-      viewport,
-      routes: ROUTES.map((route) => route.path),
-      page_errors: pageErrors,
-      console_warning_or_error_lines: consoleLines,
-    }, null, 2)}\n`,
+    `${JSON.stringify(
+      {
+        base_url: process.env.BASE_URL,
+        project: test.info().project.name,
+        viewport,
+        routes: ROUTES.map(route => route.path),
+        page_errors: pageErrors,
+        console_warning_or_error_lines: consoleLines,
+      },
+      null,
+      2
+    )}\n`
   )
 
   expect(pageErrors).toEqual([])

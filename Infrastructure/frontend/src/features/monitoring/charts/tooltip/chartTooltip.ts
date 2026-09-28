@@ -6,6 +6,7 @@
  * is created on `ready`, updated on `setCursor`, and removed on `destroy`.
  */
 import uPlot from 'uplot'
+
 import type { AlignedSeries, SeriesKind, SeriesPresentation } from '../../data'
 import { isEnvelopeSeries, seriesColor } from '../options/seriesOptions'
 
@@ -35,7 +36,7 @@ export function valueAtCursor(
   kind: SeriesKind,
   xValues: ArrayLike<number>,
   yValues: ArrayLike<number | null | undefined>,
-  cursorTime: number,
+  cursorTime: number
 ): number | null {
   let rightIndex = 0
   while (rightIndex < xValues.length && xValues[rightIndex] < cursorTime) rightIndex += 1
@@ -48,7 +49,12 @@ export function valueAtCursor(
   const leftTime = xValues[leftIndex]
   const leftValue = finiteValue(yValues[leftIndex])
   const rightValue = finiteValue(yValues[rightIndex])
-  if (leftTime === undefined || rightTime === undefined || leftValue === null || rightValue === null) {
+  if (
+    leftTime === undefined ||
+    rightTime === undefined ||
+    leftValue === null ||
+    rightValue === null
+  ) {
     return null
   }
 
@@ -57,7 +63,9 @@ export function valueAtCursor(
       return leftValue
     case 'linear':
     case 'sensor':
-      return leftValue + ((rightValue - leftValue) * (cursorTime - leftTime)) / (rightTime - leftTime)
+      return (
+        leftValue + ((rightValue - leftValue) * (cursorTime - leftTime)) / (rightTime - leftTime)
+      )
     case 'point':
       return cursorTime - leftTime <= rightTime - cursorTime ? leftValue : rightValue
   }
@@ -67,7 +75,7 @@ export function valueAtCursor(
 export function formatTooltipValue(
   value: number | null,
   presentation: SeriesPresentation | undefined,
-  unit: string | undefined,
+  unit: string | undefined
 ): string {
   if (value === null) return ' —'
   const decimals = presentation?.decimals ?? 1
@@ -75,10 +83,7 @@ export function formatTooltipValue(
 }
 
 /** Build a uPlot plugin that renders a value/provenance cursor tooltip. */
-export function tooltipPlugin(
-  series: AlignedSeries[],
-  colors: TooltipColors,
-): uPlot.Plugin {
+export function tooltipPlugin(series: AlignedSeries[], colors: TooltipColors): uPlot.Plugin {
   let el: HTMLDivElement | null = null
 
   const meta: TooltipSeries[] = series
@@ -92,11 +97,11 @@ export function tooltipPlugin(
       kind: s.kind,
       presentation: s.presentation,
     }))
-    .filter((s) => !isEnvelopeSeries(series[s.index - 1]))
+    .filter(s => !isEnvelopeSeries(series[s.index - 1]))
 
   return {
     hooks: {
-      ready: (u) => {
+      ready: u => {
         el = document.createElement('div')
         el.className = 'mon-tooltip'
         el.style.position = 'absolute'
@@ -110,14 +115,18 @@ export function tooltipPlugin(
         el.style.display = 'none'
         u.root.appendChild(el)
       },
-      setCursor: (u) => {
+      setCursor: u => {
         if (el === null) return
         const cursorLeft = u.cursor.left
         const cursorTop = u.cursor.top
         const xValues = u.data[0]
         if (
-          cursorLeft === null || cursorLeft === undefined || cursorLeft < 0 ||
-          cursorTop === null || cursorTop === undefined || cursorTop < 0 ||
+          cursorLeft === null ||
+          cursorLeft === undefined ||
+          cursorLeft < 0 ||
+          cursorTop === null ||
+          cursorTop === undefined ||
+          cursorTop < 0 ||
           xValues === undefined
         ) {
           el.style.display = 'none'
@@ -151,7 +160,7 @@ export function tooltipPlugin(
         el.style.left = `${Math.min(maxLeft, Math.max(0, cursorLeft + inset))}px`
         el.style.top = `${Math.min(maxTop, Math.max(0, cursorTop + inset))}px`
       },
-      destroy: (u) => {
+      destroy: u => {
         if (el !== null && el.parentNode === u.root) u.root.removeChild(el)
         el = null
       },

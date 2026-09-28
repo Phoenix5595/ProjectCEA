@@ -1,5 +1,6 @@
 import axios from 'axios'
 import { describe, expect, it, vi } from 'vitest'
+
 import { RichTrajectoryEnvelope } from '../contracts'
 import { timelineMethods, type TimelineSavedRequest } from '../timeline'
 import { TimelineUnavailableError, type TimelineApplyRequest } from '../timelinePublicationPort'
@@ -71,23 +72,25 @@ function savedEnvelopeFixture() {
     revision_scope: 'saved',
     base_config_revision: 'config-2',
     draft_revision: null,
-    segments: [{
-      shape: 'step',
-      value: 24,
-      start: '2026-01-01T00:00:00.000Z',
-      end: '2026-01-01T01:00:00.000Z',
-      metric: 'temperature',
-      unit: 'celsius',
-      trajectory_kind: 'scheduled',
-      quality: 'exact',
-      source: {
-        mode: 'veg',
-        submode: null,
-        period: { period_id: 'day', label: 'Day' },
-        config_revision: 'config-2',
-        draft_revision: null,
+    segments: [
+      {
+        shape: 'step',
+        value: 24,
+        start: '2026-01-01T00:00:00.000Z',
+        end: '2026-01-01T01:00:00.000Z',
+        metric: 'temperature',
+        unit: 'celsius',
+        trajectory_kind: 'scheduled',
+        quality: 'exact',
+        source: {
+          mode: 'veg',
+          submode: null,
+          period: { period_id: 'day', label: 'Day' },
+          config_revision: 'config-2',
+          draft_revision: null,
+        },
       },
-    }],
+    ],
     assumptions: [],
     warnings: [],
   })
@@ -99,17 +102,19 @@ function savedResponsePayload() {
     config_revision: 'config-2',
     mode_id: 17,
     submode_id: 3,
-    periods: [{
-      period_name: 'Day',
-      start_time: '06:00',
-      end_time: '18:00',
-      ramp_minutes: 30,
-      heating_setpoint: 22,
-      cooling_setpoint: 25,
-      vpd_setpoint: 1.2,
-      co2_setpoint: 900,
-      details: 'saved',
-    }],
+    periods: [
+      {
+        period_name: 'Day',
+        start_time: '06:00',
+        end_time: '18:00',
+        ramp_minutes: 30,
+        heating_setpoint: 22,
+        cooling_setpoint: 25,
+        vpd_setpoint: 1.2,
+        co2_setpoint: 900,
+        details: 'saved',
+      },
+    ],
     photoperiod: {
       day_start_time: '06:00',
       night_start_time: '18:00',
@@ -128,23 +133,25 @@ function savedResponsePayload() {
       revision_scope: 'saved',
       base_config_revision: 'config-2',
       draft_revision: null,
-      segments: [{
-        shape: 'step',
-        value: 24,
-        start: '2026-01-01T00:00:00.000Z',
-        end: '2026-01-01T01:00:00.000Z',
-        metric: 'temperature',
-        unit: 'celsius',
-        trajectory_kind: 'scheduled',
-        quality: 'exact',
-        source: {
-          mode: 'veg',
-          submode: null,
-          period: { period_id: 'day', label: 'Day' },
-          config_revision: 'config-2',
-          draft_revision: null,
+      segments: [
+        {
+          shape: 'step',
+          value: 24,
+          start: '2026-01-01T00:00:00.000Z',
+          end: '2026-01-01T01:00:00.000Z',
+          metric: 'temperature',
+          unit: 'celsius',
+          trajectory_kind: 'scheduled',
+          quality: 'exact',
+          source: {
+            mode: 'veg',
+            submode: null,
+            period: { period_id: 'day', label: 'Day' },
+            config_revision: 'config-2',
+            draft_revision: null,
+          },
         },
-      }],
+      ],
       assumptions: [],
       warnings: [],
     },
@@ -154,6 +161,7 @@ function savedResponsePayload() {
 function applyResponsePayload() {
   const payload = savedResponsePayload()
   const { trajectory: _trajectory, ...applyResponse } = payload
+  void _trajectory
   return { request_id: 'apply-1', ...applyResponse }
 }
 
@@ -184,17 +192,19 @@ const applyRequest: TimelineApplyRequest = {
   submodeId: 3,
   window: request.window,
   values: {
-    periods: [{
-      period_name: 'Day',
-      start_time: '06:00',
-      end_time: '18:00',
-      ramp_minutes: 30,
-      heating_setpoint: 22,
-      cooling_setpoint: 25,
-      vpd_setpoint: 1.2,
-      co2_setpoint: 900,
-      details: 'saved',
-    }],
+    periods: [
+      {
+        period_name: 'Day',
+        start_time: '06:00',
+        end_time: '18:00',
+        ramp_minutes: 30,
+        heating_setpoint: 22,
+        cooling_setpoint: 25,
+        vpd_setpoint: 1.2,
+        co2_setpoint: 900,
+        details: 'saved',
+      },
+    ],
     photoperiod: {
       dayStartTime: '06:00',
       nightStartTime: '18:00',
@@ -214,10 +224,9 @@ describe('timelineMethods.getSaved window round-trip', () => {
     const baseline = await timelineMethods.getSaved.call(core, request)
 
     // Then: the baseline carries that exact window so previews reuse it.
-    expect(get).toHaveBeenCalledWith(
-      '/api/climate-timeline/Veg%20Room/main',
-      { params: request.window },
-    )
+    expect(get).toHaveBeenCalledWith('/api/climate-timeline/Veg%20Room/main', {
+      params: request.window,
+    })
     expect(baseline.window).toEqual(request.window)
     expect(baseline.trajectory).toEqual(savedEnvelopeFixture())
   })
@@ -234,10 +243,9 @@ describe('timelineMethods.apply saved snapshot refresh', () => {
     const baseline = await timelineMethods.apply.call(core, applyRequest)
 
     // Then: the baseline is the authoritative saved snapshot over the same window.
-    expect(get).toHaveBeenCalledWith(
-      '/api/climate-timeline/Veg%20Room/main',
-      { params: request.window },
-    )
+    expect(get).toHaveBeenCalledWith('/api/climate-timeline/Veg%20Room/main', {
+      params: request.window,
+    })
     expect(baseline.baseConfigRevision).toBe('config-2')
     expect(baseline.window).toEqual(request.window)
     expect(baseline.trajectory).toEqual(savedEnvelopeFixture())

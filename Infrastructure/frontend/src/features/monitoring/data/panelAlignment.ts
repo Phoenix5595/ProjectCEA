@@ -4,9 +4,10 @@
  */
 import type { ControlMonitoringResponse, LiveSensorValue } from '../api'
 import type { TimeseriesPanelSpec } from '../config'
+
+import { alignSeriesBase, applyLiveTail } from './alignSeries'
 import { familyForUnit } from './alignSeries.builder'
 import { metricFromName } from './alignSeries.control'
-import { alignSeriesBase, applyLiveTail } from './alignSeries'
 import type { AlignInput, AlignedData } from './alignSeries.types'
 
 export interface PanelAlignmentInput extends AlignInput {
@@ -116,39 +117,56 @@ function sameTailKey(previous: TailKey | null, next: TailKey): boolean {
 }
 
 function sameLiveSnapshotContext(previous: BaseKey | null, next: BaseKey): boolean {
-  return previous !== null && previous.series === next.series && previous.range === next.range && previous.panel === next.panel
+  return (
+    previous !== null &&
+    previous.series === next.series &&
+    previous.range === next.range &&
+    previous.panel === next.panel
+  )
 }
 
 function recordLiveSnapshot(snapshots: LiveSnapshot[], input: PanelAlignmentInput): LiveSnapshot[] {
   const now = input.now.getTime()
-  const values = input.live.filter((value) => input.series.some(
-    (series) => series.sensor === value.sensor && accepts(input.panel, 'sensor', familyForUnit(series.unit_family)),
-  ))
+  const values = input.live.filter(value =>
+    input.series.some(
+      series =>
+        series.sensor === value.sensor &&
+        accepts(input.panel, 'sensor', familyForUnit(series.unit_family))
+    )
+  )
   if (input.range.kind === 'fixed') return values.length === 0 ? [] : [{ timestamp: now, values }]
   const start = now - input.range.duration
-  const retained = snapshots.filter((snapshot) => snapshot.timestamp >= start && snapshot.timestamp <= now)
+  const retained = snapshots.filter(
+    snapshot => snapshot.timestamp >= start && snapshot.timestamp <= now
+  )
   if (values.length === 0) return retained
   const snapshot = { timestamp: now, values }
-  const existing = retained.findIndex((candidate) => candidate.timestamp === now)
-  if (existing >= 0) return [...retained.slice(0, existing), snapshot, ...retained.slice(existing + 1)]
+  const existing = retained.findIndex(candidate => candidate.timestamp === now)
+  if (existing >= 0)
+    return [...retained.slice(0, existing), snapshot, ...retained.slice(existing + 1)]
   return [...retained, snapshot].sort((left, right) => left.timestamp - right.timestamp)
 }
 
 function replayLiveSnapshots(
   base: ReturnType<typeof alignSeriesBase>,
-  snapshots: LiveSnapshot[],
+  snapshots: LiveSnapshot[]
 ): AlignedData {
   return snapshots.reduce(
-    (data, snapshot) => applyLiveTail({ data, rangeKind: base.rangeKind }, snapshot.values, new Date(snapshot.timestamp)),
-    base.data,
+    (data, snapshot) =>
+      applyLiveTail(
+        { data, rangeKind: base.rangeKind },
+        snapshot.values,
+        new Date(snapshot.timestamp)
+      ),
+    base.data
   )
 }
 
 function filterPanelInput(input: PanelAlignmentInput): Omit<AlignInput, 'live'> {
   const { panel } = input
   return {
-    series: input.series.filter(
-      (series) => accepts(panel, 'sensor', familyForUnit(series.unit_family)),
+    series: input.series.filter(series =>
+      accepts(panel, 'sensor', familyForUnit(series.unit_family))
     ),
     controlHistory: filterControlResponse(input.controlHistory, panel),
     projectionHistory: filterControlResponse(input.projectionHistory, panel),
@@ -163,25 +181,27 @@ function filterPanelInput(input: PanelAlignmentInput): Omit<AlignInput, 'live'> 
 
 function filterControlResponse(
   response: ControlMonitoringResponse | null,
-  panel: TimeseriesPanelSpec,
+  panel: TimeseriesPanelSpec
 ): ControlMonitoringResponse | null {
   if (response === null) return null
   return {
     ...response,
-    climate: response.climate.filter((series) =>
-      accepts(panel, 'climate', controlFamilyFromName('climate', series.name)),
+    climate: response.climate.filter(series =>
+      accepts(panel, 'climate', controlFamilyFromName('climate', series.name))
     ),
-    lights: response.lights.filter((series) =>
-      accepts(panel, 'climate', controlFamilyFromName('light', series.name)),
+    lights: response.lights.filter(series =>
+      accepts(panel, 'climate', controlFamilyFromName('light', series.name))
     ),
     devices: response.devices.filter(() => accepts(panel, 'device', 'device')),
-    pid: response.pid.filter(() => accepts(panel, 'pid', 'device') || accepts(panel, 'device', 'device')),
+    pid: response.pid.filter(
+      () => accepts(panel, 'pid', 'device') || accepts(panel, 'device', 'device')
+    ),
   }
 }
 
 function controlFamilyFromName(
   kind: 'climate' | 'light',
-  name: string,
+  name: string
 ): TimeseriesPanelSpec['families'][number] {
   if (kind === 'light') return 'light'
   const metric = metricFromName(name)
@@ -203,7 +223,7 @@ function controlFamilyFromName(
 function accepts(
   panel: TimeseriesPanelSpec,
   source: TimeseriesPanelSpec['sources'][number],
-  family: TimeseriesPanelSpec['families'][number],
+  family: TimeseriesPanelSpec['families'][number]
 ): boolean {
   return panel.sources.includes(source) && panel.families.includes(family)
 }

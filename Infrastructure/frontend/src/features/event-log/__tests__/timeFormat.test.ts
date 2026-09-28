@@ -1,8 +1,11 @@
 import { describe, expect, it, vi, afterEach } from 'vitest'
+
 import { formatRelativeTime, formatExactTime, formatLocalTime } from '../presentation/timeFormat'
 
 describe('formatRelativeTime', () => {
-  afterEach(() => { vi.useRealTimers() })
+  afterEach(() => {
+    vi.useRealTimers()
+  })
 
   it('shows "just now" for events within 5 seconds', () => {
     vi.useFakeTimers()

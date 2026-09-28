@@ -6,6 +6,7 @@
  * retains detailed, dismissible error alerts below it.
  */
 import { useState } from 'react'
+
 import type { Quality } from '../api'
 
 export interface MonitoringStatusProps {
@@ -39,19 +40,17 @@ function statusKind(props: MonitoringStatusBadgeProps): StatusKind {
   return 'normal'
 }
 
-export function MonitoringStatus({
-  errors,
-}: MonitoringStatusProps) {
+export function MonitoringStatus({ errors }: MonitoringStatusProps) {
   const [dismissed, setDismissed] = useState<Set<string>>(new Set())
-  const visibleErrors = errors.filter((err) => !dismissed.has(err))
+  const visibleErrors = errors.filter(err => !dismissed.has(err))
 
   const dismiss = (err: string): void => {
-    setDismissed((prev) => new Set(prev).add(err))
+    setDismissed(prev => new Set(prev).add(err))
   }
 
   return (
     <div className="mon-status">
-      {visibleErrors.map((err) => (
+      {visibleErrors.map(err => (
         <div key={err} role="alert" className="mon-banner mon-banner--error">
           <span className="mon-status__error-text">{err}</span>
           <button

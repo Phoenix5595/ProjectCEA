@@ -14,7 +14,10 @@ type TimestampInput = Pick<
 export const DEFAULT_MAX_POINTS = 5000
 
 /** Resolve the visible window from a fixed or live range relative to `now`. */
-export function windowBounds(range: AlignInput['range'], now: Date): { start: number; end: number } {
+export function windowBounds(
+  range: AlignInput['range'],
+  now: Date
+): { start: number; end: number } {
   if (range.kind === 'fixed') return { start: range.start.getTime(), end: range.end.getTime() }
   return {
     start: now.getTime() - range.duration,
@@ -27,7 +30,7 @@ export function collectTimestamps(
   input: TimestampInput,
   start: number,
   end: number,
-  now: number,
+  now: number
 ): number[] {
   const set = new Set<number>([start, end, now])
   for (const s of input.series) {
@@ -51,7 +54,7 @@ export function collectTimestamps(
     }
   }
   for (const p of input.photoperiod) set.add(p.timestamp.getTime())
-  return [...set].filter((t) => t >= start && t <= end).sort((a, b) => a - b)
+  return [...set].filter(t => t >= start && t <= end).sort((a, b) => a - b)
 }
 
 /** Deterministic uniform grid of exactly `maxPoints` slots from start to end. */

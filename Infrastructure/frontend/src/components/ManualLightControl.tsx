@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react'
+
 import { apiClient } from '../services/api'
+import type { Schedule } from '../types/schedule'
 import { extractErrorMessage } from '../utils/errors'
 import { logger } from '../utils/logger'
-import type { Schedule } from '../types/schedule'
 
 interface RawLightDevice {
   device_type?: string
@@ -25,7 +26,11 @@ interface LightDeviceDetails {
 
 type ActiveMode = 'auto' | 'off' | '5m' | '30m' | '1h' | '8h' | null
 
-export default function ManualLightControl({ location, cluster, compact = false }: ManualLightControlProps) {
+export default function ManualLightControl({
+  location,
+  cluster,
+  compact = false,
+}: ManualLightControlProps) {
   const [lightDetails, setLightDetails] = useState<LightDeviceDetails[]>([])
   const [loadingDetails, setLoadingDetails] = useState(true)
   const [activeTimer, setActiveTimer] = useState<number | null>(null) // minutes remaining, derived from polled manual_expires_at
@@ -34,38 +39,48 @@ export default function ManualLightControl({ location, cluster, compact = false 
   const [error, setError] = useState<string | null>(null)
   const [activeMode, setActiveMode] = useState<ActiveMode>(null)
 
- // Load device details on mount
- useEffect(() => {
- async function loadDeviceDetails() {
- setLoadingDetails(true)
- try {
- logger.debug('ManualLightControl: Fetching devices for', location, cluster)
- const devices = await apiClient.getDevicesForLocationClusterWithDetails(location, cluster)
- logger.debug('ManualLightControl: Raw devices received', devices)
- const allDevices = Object.entries(devices)
- logger.debug('ManualLightControl: All device entries', allDevices.map(([name, dev]) => ({ name, type: dev?.device_type })))
- const lights = (allDevices as [string, RawLightDevice][])
- .filter(([_, device]) => {
- const isLight = device?.device_type === 'light'
- logger.debug('ManualLightControl: Device', _, 'type:', device?.device_type, 'isLight:', isLight)
- return isLight
- })
- .map(([deviceName, device]) => ({
- device_name: deviceName,
- display_name: device.display_name,
- dimming_enabled: device.dimming_enabled || false
- }))
- logger.debug('ManualLightControl: Filtered lights result', lights)
- setLightDetails(lights)
- } catch (err) {
- logger.error('ManualLightControl: Error loading device details:', err)
- setLightDetails([])
- } finally {
- setLoadingDetails(false)
- }
- }
- loadDeviceDetails()
- }, [location, cluster])
+  // Load device details on mount
+  useEffect(() => {
+    async function loadDeviceDetails() {
+      setLoadingDetails(true)
+      try {
+        logger.debug('ManualLightControl: Fetching devices for', location, cluster)
+        const devices = await apiClient.getDevicesForLocationClusterWithDetails(location, cluster)
+        logger.debug('ManualLightControl: Raw devices received', devices)
+        const allDevices = Object.entries(devices)
+        logger.debug(
+          'ManualLightControl: All device entries',
+          allDevices.map(([name, dev]) => ({ name, type: dev?.device_type }))
+        )
+        const lights = (allDevices as [string, RawLightDevice][])
+          .filter(([_, device]) => {
+            const isLight = device?.device_type === 'light'
+            logger.debug(
+              'ManualLightControl: Device',
+              _,
+              'type:',
+              device?.device_type,
+              'isLight:',
+              isLight
+            )
+            return isLight
+          })
+          .map(([deviceName, device]) => ({
+            device_name: deviceName,
+            display_name: device.display_name,
+            dimming_enabled: device.dimming_enabled || false,
+          }))
+        logger.debug('ManualLightControl: Filtered lights result', lights)
+        setLightDetails(lights)
+      } catch (err) {
+        logger.error('ManualLightControl: Error loading device details:', err)
+        setLightDetails([])
+      } finally {
+        setLoadingDetails(false)
+      }
+    }
+    loadDeviceDetails()
+  }, [location, cluster])
 
   // Derive activeTimer from polled device data (manual_expires_at).
   // Backend owns expiry via auto-expiry sweep; frontend only reflects remaining time.
@@ -84,7 +99,8 @@ export default function ManualLightControl({ location, cluster, compact = false 
         // Earliest non-null expiry across lights in this zone drives the displayed timer.
         let earliest: number | null = null
         for (const light of lightDetails) {
-          const raw = (devices as Record<string, RawLightDevice>)[light.device_name]?.manual_expires_at
+          const raw = (devices as Record<string, RawLightDevice>)[light.device_name]
+            ?.manual_expires_at
           if (!raw) continue
           const expiresAt = Date.parse(raw)
           if (Number.isNaN(expiresAt)) continue
@@ -111,266 +127,313 @@ export default function ManualLightControl({ location, cluster, compact = false 
   }, [location, cluster, lightDetails])
 
   function dayTargetIntensityFromSchedules(schedules: Schedule[], deviceName: string): number {
-  const daySchedule = schedules.find(
-  s => s.device_name === deviceName &&
-  (s.mode === 'SUN' || s.mode === 'DAY') &&
-  s.enabled &&
-  s.target_intensity !== null &&
-  s.target_intensity !== undefined
- )
- if (daySchedule && daySchedule.target_intensity !== null && daySchedule.target_intensity !== undefined) {
- return daySchedule.target_intensity
- }
- return 100
- }
-
- async function turnOnLights(durationMinutes?: number) {
- setLoading(true)
- setError(null)
-
-  try {
-  // Save current mode as last default if not already in manual mode
-  if (!lastDefaultMode && lightDetails.length > 0) {
-  try {
-  const devices = await apiClient.getDevicesForLocationCluster(location, cluster)
-  const firstLight = lightDetails[0]
-  const lightDevice = devices.devices[firstLight.device_name]
-  if (lightDevice && lightDevice.mode) {
-  const currentMode = lightDevice.mode
-  if (currentMode === 'auto' || currentMode === 'scheduled') {
-  setLastDefaultMode(currentMode as 'auto' | 'scheduled')
-  }
-  }
-  } catch (err) {
-  logger.error('Error checking current mode:', err)
-  }
-  // Default to 'auto' if we can't determine
-  if (!lastDefaultMode) {
-  setLastDefaultMode('auto')
-  }
+    const daySchedule = schedules.find(
+      s =>
+        s.device_name === deviceName &&
+        (s.mode === 'SUN' || s.mode === 'DAY') &&
+        s.enabled &&
+        s.target_intensity !== null &&
+        s.target_intensity !== undefined
+    )
+    if (
+      daySchedule &&
+      daySchedule.target_intensity !== null &&
+      daySchedule.target_intensity !== undefined
+    ) {
+      return daySchedule.target_intensity
+    }
+    return 100
   }
 
-  // One schedule fetch for the zone; derive per-light day targets locally
-  let schedules: Schedule[] = []
-  try {
-  schedules = await apiClient.getSchedules(location, cluster)
-  } catch (err) {
-  logger.error('ManualLightControl: Error loading schedules for turn on:', err)
+  async function turnOnLights(durationMinutes?: number) {
+    setLoading(true)
+    setError(null)
+
+    try {
+      // Save current mode as last default if not already in manual mode
+      if (!lastDefaultMode && lightDetails.length > 0) {
+        try {
+          const devices = await apiClient.getDevicesForLocationCluster(location, cluster)
+          const firstLight = lightDetails[0]
+          const lightDevice = devices.devices[firstLight.device_name]
+          if (lightDevice && lightDevice.mode) {
+            const currentMode = lightDevice.mode
+            if (currentMode === 'auto' || currentMode === 'scheduled') {
+              setLastDefaultMode(currentMode as 'auto' | 'scheduled')
+            }
+          }
+        } catch (err) {
+          logger.error('Error checking current mode:', err)
+        }
+        // Default to 'auto' if we can't determine
+        if (!lastDefaultMode) {
+          setLastDefaultMode('auto')
+        }
+      }
+
+      // One schedule fetch for the zone; derive per-light day targets locally
+      let schedules: Schedule[] = []
+      try {
+        schedules = await apiClient.getSchedules(location, cluster)
+      } catch (err) {
+        logger.error('ManualLightControl: Error loading schedules for turn on:', err)
+      }
+
+      const durationSeconds = durationMinutes !== undefined ? durationMinutes * 60 : undefined
+
+      for (const light of lightDetails) {
+        try {
+          const dayTargetIntensity = dayTargetIntensityFromSchedules(schedules, light.device_name)
+
+          // Set intensity if dimming enabled
+          if (light.dimming_enabled) {
+            await apiClient.setLightIntensity(
+              location,
+              cluster,
+              light.device_name,
+              dayTargetIntensity
+            )
+          }
+
+          // Turn relay ON; backend owns the manual expiry timer via duration_seconds
+          await apiClient.controlDevice(
+            location,
+            cluster,
+            light.device_name,
+            1,
+            'Manual override',
+            durationSeconds
+          )
+
+          // Set to manual mode to override everything
+          await apiClient.setDeviceMode(location, cluster, light.device_name, 'manual')
+        } catch (err) {
+          logger.error(`Error controlling light ${light.device_name}:`, err)
+          setError(extractErrorMessage(err, `Failed to control ${light.device_name}`))
+        }
+      }
+
+      // Set active mode based on duration
+      const modeKey: ActiveMode =
+        durationMinutes === 5
+          ? '5m'
+          : durationMinutes === 30
+            ? '30m'
+            : durationMinutes === 60
+              ? '1h'
+              : durationMinutes === 480
+                ? '8h'
+                : null
+      setActiveMode(modeKey)
+
+      // Optimistic display; polling effect will reconcile from manual_expires_at
+      if (durationMinutes !== undefined) {
+        setActiveTimer(durationMinutes)
+      }
+    } catch (err) {
+      logger.error('Error turning on lights:', err)
+      setError(extractErrorMessage(err, 'Failed to turn on lights'))
+    } finally {
+      setLoading(false)
+    }
   }
 
-  const durationSeconds = durationMinutes !== undefined ? durationMinutes * 60 : undefined
+  async function turnOffLights() {
+    setLoading(true)
+    setError(null)
 
-  for (const light of lightDetails) {
-  try {
-  const dayTargetIntensity = dayTargetIntensityFromSchedules(schedules, light.device_name)
-  
-  // Set intensity if dimming enabled
-  if (light.dimming_enabled) {
-  await apiClient.setLightIntensity(location, cluster, light.device_name, dayTargetIntensity)
-  }
+    try {
+      // Backend clears manual_expires_at on the next sweep once state flips to off;
+      // polling effect will drop activeTimer when manual_expires_at is gone.
+      setActiveTimer(null)
 
-  // Turn relay ON; backend owns the manual expiry timer via duration_seconds
-  await apiClient.controlDevice(location, cluster, light.device_name, 1, 'Manual override', durationSeconds)
+      // Set active mode to 'off'
+      setActiveMode('off')
 
-  // Set to manual mode to override everything
-  await apiClient.setDeviceMode(location, cluster, light.device_name, 'manual')
-  } catch (err) {
-  logger.error(`Error controlling light ${light.device_name}:`, err)
-  setError(extractErrorMessage(err, `Failed to control ${light.device_name}`))
-  }
-  }
+      // Turn off all lights
+      for (const light of lightDetails) {
+        try {
+          // Turn relay OFF
+          await apiClient.controlDevice(location, cluster, light.device_name, 0, 'Manual override')
 
-  // Set active mode based on duration
-  const modeKey: ActiveMode = durationMinutes === 5 ? '5m' : 
-  durationMinutes === 30 ? '30m' : 
-  durationMinutes === 60 ? '1h' : 
-  durationMinutes === 480 ? '8h' : null
-  setActiveMode(modeKey)
-
-  // Optimistic display; polling effect will reconcile from manual_expires_at
-  if (durationMinutes !== undefined) {
-  setActiveTimer(durationMinutes)
-  }
-  } catch (err) {
-  logger.error('Error turning on lights:', err)
-  setError(extractErrorMessage(err, 'Failed to turn on lights'))
-  } finally {
-  setLoading(false)
-  }
-  }
-
- async function turnOffLights() {
- setLoading(true)
- setError(null)
-
-  try {
-  // Backend clears manual_expires_at on the next sweep once state flips to off;
-  // polling effect will drop activeTimer when manual_expires_at is gone.
-  setActiveTimer(null)
-
-  // Set active mode to 'off'
-  setActiveMode('off')
-
-  // Turn off all lights
-  for (const light of lightDetails) {
-  try {
-  // Turn relay OFF
-  await apiClient.controlDevice(location, cluster, light.device_name, 0, 'Manual override')
-
-  // Set to manual mode to keep it off until changed
-  await apiClient.setDeviceMode(location, cluster, light.device_name, 'manual')
-  } catch (err) {
-  logger.error(`Error controlling light ${light.device_name}:`, err)
-  setError(extractErrorMessage(err, `Failed to control ${light.device_name}`))
-  }
-  }
-  } catch (err) {
-  logger.error('Error turning off lights:', err)
-  setError(extractErrorMessage(err, 'Failed to turn off lights'))
-  } finally {
-  setLoading(false)
-  }
+          // Set to manual mode to keep it off until changed
+          await apiClient.setDeviceMode(location, cluster, light.device_name, 'manual')
+        } catch (err) {
+          logger.error(`Error controlling light ${light.device_name}:`, err)
+          setError(extractErrorMessage(err, `Failed to control ${light.device_name}`))
+        }
+      }
+    } catch (err) {
+      logger.error('Error turning off lights:', err)
+      setError(extractErrorMessage(err, 'Failed to turn off lights'))
+    } finally {
+      setLoading(false)
+    }
   }
 
   async function restoreMode(mode: 'auto' | 'scheduled') {
-  setLoading(true)
-  setError(null)
+    setLoading(true)
+    setError(null)
 
-  try {
-  // Backend auto-expiry sweep owns timer clearing; frontend reflects polled state.
-  setActiveTimer(null)
+    try {
+      // Backend auto-expiry sweep owns timer clearing; frontend reflects polled state.
+      setActiveTimer(null)
 
-  // Set active mode to 'auto' (schedule is now active)
-  setActiveMode('auto')
+      // Set active mode to 'auto' (schedule is now active)
+      setActiveMode('auto')
 
- let schedules: Schedule[] = []
- try {
- schedules = await apiClient.getSchedules(location, cluster)
- } catch (err) {
- logger.error('ManualLightControl: Error loading schedules for restore:', err)
- }
+      let schedules: Schedule[] = []
+      try {
+        schedules = await apiClient.getSchedules(location, cluster)
+      } catch (err) {
+        logger.error('ManualLightControl: Error loading schedules for restore:', err)
+      }
 
- // Restore all lights: turn ON relay, set to day target intensity, then set mode to auto/scheduled
- for (const light of lightDetails) {
- try {
- const dayTargetIntensity = dayTargetIntensityFromSchedules(schedules, light.device_name)
- 
- // Set intensity if dimming enabled (set to day target)
- if (light.dimming_enabled) {
- await apiClient.setLightIntensity(location, cluster, light.device_name, dayTargetIntensity)
- }
+      // Restore all lights: turn ON relay, set to day target intensity, then set mode to auto/scheduled
+      for (const light of lightDetails) {
+        try {
+          const dayTargetIntensity = dayTargetIntensityFromSchedules(schedules, light.device_name)
 
- // Turn relay ON (in case it was OFF)
- await apiClient.controlDevice(location, cluster, light.device_name, 1, 'Restoring to schedule')
+          // Set intensity if dimming enabled (set to day target)
+          if (light.dimming_enabled) {
+            await apiClient.setLightIntensity(
+              location,
+              cluster,
+              light.device_name,
+              dayTargetIntensity
+            )
+          }
 
- // Set to auto/scheduled mode (activates schedule)
- await apiClient.setDeviceMode(location, cluster, light.device_name, mode)
- } catch (err) {
- logger.error(`Error restoring mode for ${light.device_name}:`, err)
- setError(extractErrorMessage(err, `Failed to restore mode for ${light.device_name}`))
- }
- }
+          // Turn relay ON (in case it was OFF)
+          await apiClient.controlDevice(
+            location,
+            cluster,
+            light.device_name,
+            1,
+            'Restoring to schedule'
+          )
 
- setLastDefaultMode(null)
- } catch (err) {
- logger.error('Error restoring mode:', err)
- setError(extractErrorMessage(err, 'Failed to restore mode'))
- } finally {
- setLoading(false)
- }
- }
+          // Set to auto/scheduled mode (activates schedule)
+          await apiClient.setDeviceMode(location, cluster, light.device_name, mode)
+        } catch (err) {
+          logger.error(`Error restoring mode for ${light.device_name}:`, err)
+          setError(extractErrorMessage(err, `Failed to restore mode for ${light.device_name}`))
+        }
+      }
 
- // Always render the component, even if no lights found
- logger.debug('ManualLightControl RENDER:', { 
- location, 
- cluster, 
- lightDetailsCount: lightDetails.length, 
- loadingDetails,
- lightDetails 
- })
- 
- return (
- <div className={compact ? "flex h-full w-full min-h-0 flex-col justify-center gap-2 bg-surface-base/80 p-2 rounded-sm" : "mt-4 pt-4 border-t border-border-subtle bg-surface-base/80 p-3 rounded-sm w-full"}>
- {!compact && <div className="text-sm font-medium text-text-secondary mb-2">Manual Control</div>}
- {compact && <div className="text-xs font-medium text-text-secondary uppercase tracking-wider">Manual Override</div>}
- {loadingDetails && (
- <div className="text-xs text-text-muted mb-2">Loading lights...</div>
- )}
- {!loadingDetails && lightDetails.length === 0 && (
- <div className="text-xs text-status-danger mb-2 font-semibold">⚠️ No lights found in this zone (location: {location}, cluster: {cluster})</div>
- )}
- {!loadingDetails && lightDetails.length > 0 && (
- <div className="text-xs text-status-success mb-2 font-semibold">✓ Found {lightDetails.length} light(s): {lightDetails.map(l => l.device_name).join(', ')}</div>
- )}
- {error && (
- <div className="text-xs text-status-danger mb-2">{error}</div>
- )}
- {activeTimer !== null && (
- <div className="text-xs text-btn-primary-data mb-2">
- Timer: {activeTimer} min remaining
- </div>
- )}
- {!loadingDetails && lightDetails.length > 0 ? (
- <div className={compact ? "grid grid-cols-3 gap-2" : "flex flex-wrap gap-2"}>
- <button
- onClick={() => restoreMode(lastDefaultMode || 'auto')}
- disabled={loading}
-className={`px-3 py-1.5 text-sm font-medium bg-btn-primary-light text-text-default rounded hover:bg-btn-primary-hover disabled:opacity-50 disabled:cursor-not-allowed ${
- activeMode === 'auto' ? 'ring-2 ring-btn-primary-text ring-offset-2' : ''
- }`}
- >
- Auto
- </button>
- <button
- onClick={() => turnOffLights()}
- disabled={loading}
- className={`px-3 py-1.5 text-sm font-medium bg-surface-quinary text-text-default rounded hover:bg-surface-quaternary disabled:opacity-50 disabled:cursor-not-allowed ${
- activeMode === 'off' ? 'ring-2 ring-text-secondary ring-offset-2' : ''
- }`}
- >
- Off
- </button>
- <button
- onClick={() => turnOnLights(5)}
- disabled={loading}
- className={`px-3 py-1.5 text-sm font-medium bg-status-success-vivid text-text-default rounded hover:bg-status-success-vivid disabled:opacity-50 disabled:cursor-not-allowed ${
- activeMode === '5m' ? 'ring-2 ring-status-success ring-offset-2' : ''
- }`}
- >
- 5m
- </button>
- <button
- onClick={() => turnOnLights(30)}
- disabled={loading}
- className={`px-3 py-1.5 text-sm font-medium bg-status-success-vivid text-text-default rounded hover:bg-status-success-vivid disabled:opacity-50 disabled:cursor-not-allowed ${
- activeMode === '30m' ? 'ring-2 ring-status-success ring-offset-2' : ''
- }`}
- >
- 30m
- </button>
- <button
- onClick={() => turnOnLights(60)}
- disabled={loading}
- className={`px-3 py-1.5 text-sm font-medium bg-status-success-vivid text-text-default rounded hover:bg-status-success-vivid disabled:opacity-50 disabled:cursor-not-allowed ${
- activeMode === '1h' ? 'ring-2 ring-status-success ring-offset-2' : ''
- }`}
- >
- 1h
- </button>
- <button
- onClick={() => turnOnLights(480)}
- disabled={loading}
- className={`px-3 py-1.5 text-sm font-medium bg-status-success-vivid text-text-default rounded hover:bg-status-success-vivid disabled:opacity-50 disabled:cursor-not-allowed ${
- activeMode === '8h' ? 'ring-2 ring-status-success ring-offset-2' : ''
- }`}
- >
- 8h
- </button>
- </div>
- ) : !loadingDetails ? (
- <div className="text-xs text-orange-400 mb-2 italic">Buttons will appear when lights are detected</div>
- ) : null}
- </div>
- )
+      setLastDefaultMode(null)
+    } catch (err) {
+      logger.error('Error restoring mode:', err)
+      setError(extractErrorMessage(err, 'Failed to restore mode'))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // Always render the component, even if no lights found
+  if (import.meta.env.DEV) {
+    logger.debug('ManualLightControl RENDER:', {
+      location,
+      cluster,
+      lightDetailsCount: lightDetails.length,
+      loadingDetails,
+      lightDetails,
+    })
+  }
+
+  return (
+    <div
+      className={
+        compact
+          ? 'flex h-full w-full min-h-0 flex-col justify-center gap-2 bg-surface-base/80 p-2 rounded-sm'
+          : 'mt-4 pt-4 border-t border-border-subtle bg-surface-base/80 p-3 rounded-sm w-full'
+      }
+    >
+      {!compact && (
+        <div className="text-sm font-medium text-text-secondary mb-2">Manual Control</div>
+      )}
+      {compact && (
+        <div className="text-xs font-medium text-text-secondary uppercase tracking-wider">
+          Manual Override
+        </div>
+      )}
+      {loadingDetails && <div className="text-xs text-text-muted mb-2">Loading lights...</div>}
+      {!loadingDetails && lightDetails.length === 0 && (
+        <div className="text-xs text-status-danger mb-2 font-semibold">
+          ⚠️ No lights found in this zone (location: {location}, cluster: {cluster})
+        </div>
+      )}
+      {!loadingDetails && lightDetails.length > 0 && (
+        <div className="text-xs text-status-success mb-2 font-semibold">
+          ✓ Found {lightDetails.length} light(s): {lightDetails.map(l => l.device_name).join(', ')}
+        </div>
+      )}
+      {error && <div className="text-xs text-status-danger mb-2">{error}</div>}
+      {activeTimer !== null && (
+        <div className="text-xs text-btn-primary-data mb-2">Timer: {activeTimer} min remaining</div>
+      )}
+      {!loadingDetails && lightDetails.length > 0 ? (
+        <div className={compact ? 'grid grid-cols-3 gap-2' : 'flex flex-wrap gap-2'}>
+          <button
+            onClick={() => restoreMode(lastDefaultMode || 'auto')}
+            disabled={loading}
+            className={`px-3 py-1.5 text-sm font-medium bg-btn-primary-light text-text-default rounded hover:bg-btn-primary-hover disabled:opacity-50 disabled:cursor-not-allowed ${
+              activeMode === 'auto' ? 'ring-2 ring-btn-primary-text ring-offset-2' : ''
+            }`}
+          >
+            Auto
+          </button>
+          <button
+            onClick={() => turnOffLights()}
+            disabled={loading}
+            className={`px-3 py-1.5 text-sm font-medium bg-surface-quinary text-text-default rounded hover:bg-surface-quaternary disabled:opacity-50 disabled:cursor-not-allowed ${
+              activeMode === 'off' ? 'ring-2 ring-text-secondary ring-offset-2' : ''
+            }`}
+          >
+            Off
+          </button>
+          <button
+            onClick={() => turnOnLights(5)}
+            disabled={loading}
+            className={`px-3 py-1.5 text-sm font-medium bg-status-success-bg text-status-success-text rounded hover:bg-status-success-bg disabled:opacity-50 disabled:cursor-not-allowed ${
+              activeMode === '5m' ? 'ring-2 ring-status-success ring-offset-2' : ''
+            }`}
+          >
+            5m
+          </button>
+          <button
+            onClick={() => turnOnLights(30)}
+            disabled={loading}
+            className={`px-3 py-1.5 text-sm font-medium bg-status-success-bg text-status-success-text rounded hover:bg-status-success-bg disabled:opacity-50 disabled:cursor-not-allowed ${
+              activeMode === '30m' ? 'ring-2 ring-status-success ring-offset-2' : ''
+            }`}
+          >
+            30m
+          </button>
+          <button
+            onClick={() => turnOnLights(60)}
+            disabled={loading}
+            className={`px-3 py-1.5 text-sm font-medium bg-status-success-bg text-status-success-text rounded hover:bg-status-success-bg disabled:opacity-50 disabled:cursor-not-allowed ${
+              activeMode === '1h' ? 'ring-2 ring-status-success ring-offset-2' : ''
+            }`}
+          >
+            1h
+          </button>
+          <button
+            onClick={() => turnOnLights(480)}
+            disabled={loading}
+            className={`px-3 py-1.5 text-sm font-medium bg-status-success-bg text-status-success-text rounded hover:bg-status-success-bg disabled:opacity-50 disabled:cursor-not-allowed ${
+              activeMode === '8h' ? 'ring-2 ring-status-success ring-offset-2' : ''
+            }`}
+          >
+            8h
+          </button>
+        </div>
+      ) : !loadingDetails ? (
+        <div className="text-xs text-orange-400 mb-2 italic">
+          Buttons will appear when lights are detected
+        </div>
+      ) : null}
+    </div>
+  )
 }
-

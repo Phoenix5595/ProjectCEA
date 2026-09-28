@@ -8,10 +8,10 @@ export type ClimatePeriodsTableAdapter = {
 
 export function createClimatePeriodsTableAdapter(
   state: TimelineDraft,
-  editPeriods: (periods: readonly ClimatePeriod[]) => void,
+  editPeriods: (periods: readonly ClimatePeriod[]) => void
 ): ClimatePeriodsTableAdapter {
   return {
-    periods: state.draft.periods.map((period) => ({ ...period })),
+    periods: state.draft.periods.map(period => ({ ...period })),
     onChange: editPeriods,
   }
 }

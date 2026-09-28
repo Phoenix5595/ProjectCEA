@@ -7,7 +7,7 @@
  * `utcDate` parses it once into a `Date` at the boundary, so downstream
  * consumers never re-parse or re-normalize a timestamp.
  */
-import { z } from 'zod/v3'
+import { z } from 'zod'
 
 // ---------------------------------------------------------------------------
 // Enums
@@ -43,8 +43,8 @@ const UTC_ISO_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/
 export const utcDate = z
   .string()
   .regex(UTC_ISO_RE, 'timestamp must be UTC ISO 8601 with a trailing Z')
-  .transform((value) => new Date(value))
-  .refine((date) => !Number.isNaN(date.getTime()), 'timestamp is not a valid UTC date')
+  .transform(value => new Date(value))
+  .refine(date => !Number.isNaN(date.getTime()), 'timestamp is not a valid UTC date')
 export type UtcDate = z.infer<typeof utcDate>
 
 // ---------------------------------------------------------------------------

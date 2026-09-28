@@ -1,5 +1,6 @@
-import { describe, expect, it, vi } from 'vitest'
 import type uPlot from 'uplot'
+import { describe, expect, it, vi } from 'vitest'
+
 import { nowDividerPlugin } from '../nowDividerPlugin'
 import { photoperiodPlugin } from '../photoperiodPlugin'
 
@@ -16,10 +17,16 @@ function drawPlugin(plugin: uPlot.Plugin, context: CanvasRenderingContext2D): vo
 describe('live overlay plugins', () => {
   it('reads the current photoperiod intervals on every draw', () => {
     // Given: a live accessor whose interval data changes after chart creation.
-    let intervals: Array<{ start: number; end: number; phase: 'SUN' | 'MOON' }> = [{ start: 10, end: 20, phase: 'SUN' }]
+    let intervals: Array<{ start: number; end: number; phase: 'SUN' | 'MOON' }> = [
+      { start: 10, end: 20, phase: 'SUN' },
+    ]
     const plugin = photoperiodPlugin(() => intervals, { sunBg: '#ff0', moonBg: '#00f' })
     const fillRect = vi.fn()
-    const context = { fillRect, save: vi.fn(), restore: vi.fn() } as unknown as CanvasRenderingContext2D
+    const context = {
+      fillRect,
+      save: vi.fn(),
+      restore: vi.fn(),
+    } as unknown as CanvasRenderingContext2D
 
     // When: uPlot redraws after the rolling live frame advances.
     intervals = [{ start: 30, end: 40, phase: 'MOON' }]
@@ -33,7 +40,13 @@ describe('live overlay plugins', () => {
     // Given: the current live divider and a canvas context.
     const plugin = nowDividerPlugin(() => 50, '#fff')
     const context = {
-      save: vi.fn(), restore: vi.fn(), setLineDash: vi.fn(), beginPath: vi.fn(), moveTo: vi.fn(), lineTo: vi.fn(), stroke: vi.fn(),
+      save: vi.fn(),
+      restore: vi.fn(),
+      setLineDash: vi.fn(),
+      beginPath: vi.fn(),
+      moveTo: vi.fn(),
+      lineTo: vi.fn(),
+      stroke: vi.fn(),
     } as unknown as CanvasRenderingContext2D
 
     // When: uPlot draws the divider.

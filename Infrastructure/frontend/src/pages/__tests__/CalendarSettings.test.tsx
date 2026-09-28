@@ -23,6 +23,15 @@ describe('CalendarSettings', () => {
     mocks.apiClient.getFlowerCalendarModeTransitions.mockResolvedValue({ enabled: true })
   })
 
+  it('exposes accessible names for calendar connection fields', () => {
+    render(<CalendarSettings />)
+
+    expect(screen.getByLabelText('CalDAV base URL')).toBeInTheDocument()
+    expect(screen.getByLabelText('Username')).toBeInTheDocument()
+    expect(screen.getByLabelText('App password')).toBeInTheDocument()
+    expect(screen.getByLabelText('Target calendar URL')).toBeInTheDocument()
+  })
+
   it('persists disabling Flower calendar mode transitions', async () => {
     // Given: Flower calendar control is initially enabled.
     mocks.apiClient.updateFlowerCalendarModeTransitions.mockResolvedValue({ enabled: false })
@@ -30,7 +39,9 @@ describe('CalendarSettings', () => {
     render(<CalendarSettings />)
 
     // When: the operator turns the Flower-only control off.
-    const control = await screen.findByRole('checkbox', { name: 'Flower calendar mode transitions' })
+    const control = await screen.findByRole('checkbox', {
+      name: 'Flower calendar mode transitions',
+    })
     await user.click(control)
 
     // Then: the persisted API receives the disabled setting and the UI reflects it.
@@ -49,7 +60,9 @@ describe('CalendarSettings', () => {
     render(<CalendarSettings />)
 
     // When: the operator tries to disable the control.
-    const control = await screen.findByRole('checkbox', { name: 'Flower calendar mode transitions' })
+    const control = await screen.findByRole('checkbox', {
+      name: 'Flower calendar mode transitions',
+    })
     await user.click(control)
 
     // Then: the real API error is exposed and the saved state remains enabled.

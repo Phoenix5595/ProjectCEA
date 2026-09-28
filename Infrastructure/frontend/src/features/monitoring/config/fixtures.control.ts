@@ -92,13 +92,13 @@ export function controlRangeFixture(
   _room: string,
   start: string,
   end: string,
-  scenario: string | null = null,
+  scenario: string | null = null
 ): unknown {
   const base = controlBase(start, end)
   if (scenario === 'delayed-control-recovery') {
     return {
       ...base,
-      flush_health: base.flush_health.map((health) => ({
+      flush_health: base.flush_health.map(health => ({
         ...health,
         dropped_rows: 1,
         healthy: false,
@@ -124,13 +124,13 @@ export function controlTailFixture(
   room: string,
   start: string,
   end: string,
-  scenario: string | null = null,
+  scenario: string | null = null
 ): unknown {
   return controlRangeFixture(
     room,
     start,
     end,
-    scenario === 'delayed-control-recovery' ? null : scenario,
+    scenario === 'delayed-control-recovery' ? null : scenario
   )
 }
 
@@ -139,7 +139,7 @@ export function controlProjectionFixture(
   _room: string,
   start: string,
   end: string,
-  scenario: string | null = null,
+  scenario: string | null = null
 ): unknown {
   const base = controlBase(start, end)
   const partial = process.env.MONITORING_SCENARIO === 'flower-partial'
@@ -161,9 +161,8 @@ export function controlProjectionFixture(
     })),
   })
 
-  const secondIntervalValues = scenario === 'nullable-projection'
-    ? [24, null, 1.0, 850]
-    : [24, 26, 1.0, 850]
+  const secondIntervalValues =
+    scenario === 'nullable-projection' ? [24, null, 1.0, 850] : [24, 26, 1.0, 850]
 
   return {
     quality: 'estimated',

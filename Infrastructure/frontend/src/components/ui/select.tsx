@@ -1,5 +1,5 @@
-import { Check, ChevronDown, ChevronUp } from 'lucide-react'
 import * as SelectPrimitive from '@radix-ui/react-select'
+import { Check, ChevronDown, ChevronUp } from 'lucide-react'
 import { forwardRef, type ComponentProps } from 'react'
 
 import { cn } from '@/lib/utils'
@@ -19,7 +19,7 @@ const SelectTrigger = forwardRef<
       'flex w-full items-center justify-between gap-1 rounded border border-border-default bg-surface-secondary px-2 py-1 text-sm text-text-default transition-colors',
       'hover:bg-surface-tertiary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent-vivid disabled:cursor-not-allowed disabled:opacity-50',
       'data-[placeholder]:text-text-faint [&_svg]:shrink-0 [&_svg]:text-text-muted',
-      className,
+      className
     )}
     {...props}
   >
@@ -31,7 +31,10 @@ const SelectTrigger = forwardRef<
 ))
 SelectTrigger.displayName = 'SelectTrigger'
 
-function SelectScrollUpButton({ className, ...props }: ComponentProps<typeof SelectPrimitive.ScrollUpButton>) {
+function SelectScrollUpButton({
+  className,
+  ...props
+}: ComponentProps<typeof SelectPrimitive.ScrollUpButton>) {
   return (
     <SelectPrimitive.ScrollUpButton
       data-slot="select-scroll-up-button"
@@ -43,7 +46,10 @@ function SelectScrollUpButton({ className, ...props }: ComponentProps<typeof Sel
   )
 }
 
-function SelectScrollDownButton({ className, ...props }: ComponentProps<typeof SelectPrimitive.ScrollDownButton>) {
+function SelectScrollDownButton({
+  className,
+  ...props
+}: ComponentProps<typeof SelectPrimitive.ScrollDownButton>) {
   return (
     <SelectPrimitive.ScrollDownButton
       data-slot="select-scroll-down-button"
@@ -69,13 +75,17 @@ const SelectContent = forwardRef<
         'data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95',
         'data-[side=bottom]:slide-in-from-top-2 data-[side=top]:slide-in-from-bottom-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2',
         position === 'popper' && 'data-[side=bottom]:translate-y-1 data-[side=top]:-translate-y-1',
-        className,
+        className
       )}
       {...props}
     >
       <SelectScrollUpButton />
       <SelectPrimitive.Viewport
-        className={cn('p-1', position === 'popper' && 'h-[var(--radix-select-trigger-height)] w-full min-w-[var(--radix-select-trigger-width)]')}
+        className={cn(
+          'p-1',
+          position === 'popper' &&
+            'h-[var(--radix-select-trigger-height)] w-full min-w-[var(--radix-select-trigger-width)]'
+        )}
       >
         {children}
       </SelectPrimitive.Viewport>
@@ -89,7 +99,10 @@ function SelectLabel({ className, ...props }: ComponentProps<typeof SelectPrimit
   return (
     <SelectPrimitive.Label
       data-slot="select-label"
-      className={cn('px-2 py-1 text-xs font-medium uppercase tracking-wider text-text-muted', className)}
+      className={cn(
+        'px-2 py-1 text-xs font-medium uppercase tracking-wider text-text-muted',
+        className
+      )}
       {...props}
     />
   )
@@ -105,7 +118,7 @@ const SelectItem = forwardRef<
     className={cn(
       'relative flex w-full cursor-default select-none items-center gap-2 rounded-sm py-1 pl-2 pr-8 text-sm outline-none',
       'focus-visible:bg-surface-tertiary data-[highlighted]:bg-surface-tertiary data-[disabled]:pointer-events-none data-[disabled]:opacity-50',
-      className,
+      className
     )}
     {...props}
   >
@@ -119,7 +132,10 @@ const SelectItem = forwardRef<
 ))
 SelectItem.displayName = 'SelectItem'
 
-function SelectSeparator({ className, ...props }: ComponentProps<typeof SelectPrimitive.Separator>) {
+function SelectSeparator({
+  className,
+  ...props
+}: ComponentProps<typeof SelectPrimitive.Separator>) {
   return (
     <SelectPrimitive.Separator
       data-slot="select-separator"

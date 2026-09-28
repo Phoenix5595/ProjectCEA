@@ -8,6 +8,7 @@
  * Update" row uses the most recent live timestamp across both clusters.
  */
 import type { LiveSensorValue } from '../api'
+
 import { FAMILY_TO_UNIT, formatLastUpdate, formatValue } from './tables/tableFormat'
 import { baseLabelForAverage, familyForRow, ROW_TO_BASE } from './tables/tableManifest'
 
@@ -36,12 +37,12 @@ export function RoomAveragesTable({
   front,
   back,
 }: RoomAveragesTableProps) {
-  const frontBySensor = new Map(front.map((v) => [v.sensor, v]))
-  const backBySensor = new Map(back.map((v) => [v.sensor, v]))
+  const frontBySensor = new Map(front.map(v => [v.sensor, v]))
+  const backBySensor = new Map(back.map(v => [v.sensor, v]))
   const all = [...front, ...back]
   const lastUpdate = all.reduce<Date | null>(
     (acc, v) => (acc === null || v.timestamp > acc ? v.timestamp : acc),
-    null,
+    null
   )
   const lastUpdateDisplay = lastUpdate === null ? null : formatLastUpdate(lastUpdate)
 
@@ -67,7 +68,7 @@ export function RoomAveragesTable({
           </tr>
         </thead>
         <tbody>
-          {rows.map((row) => {
+          {rows.map(row => {
             if (row === 'Last Update') {
               return (
                 <tr key={row}>

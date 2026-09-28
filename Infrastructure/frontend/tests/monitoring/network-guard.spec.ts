@@ -14,7 +14,7 @@ const EXPECTED_FORBIDDEN = [
 
 test('aborts and records every forbidden fixture request', async ({ page, context }, testInfo) => {
   const aborted: string[] = []
-  await context.route('**/*', async (route) => {
+  await context.route('**/*', async route => {
     const url = route.request().url()
     if (url.includes('/grafana/') || describeViolation(url) !== null) {
       aborted.push(url)

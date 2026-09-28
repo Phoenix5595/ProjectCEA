@@ -15,7 +15,7 @@ import { fixtureUrl } from '../monitoring/fixtureUrl'
 
 function trackViolations(page: import('@playwright/test').Page): string[] {
   const violations: string[] = []
-  page.on('request', (req) => {
+  page.on('request', req => {
     const url = req.url()
     const violation = describeViolation(url)
     if (violation !== null) violations.push(`${violation}: ${url}`)
@@ -83,7 +83,7 @@ test('search filter narrows visible entries', async ({ page }, testInfo) => {
   expect(filteredCount).toBeLessThan(allCount)
 
   const entries = eventList.locator('[role="listitem"]')
-  for (let i = 0; i < await entries.count(); i++) {
+  for (let i = 0; i < (await entries.count()); i++) {
     const text = await entries.nth(i).textContent()
     expect(text!.toLowerCase()).toContain('relay')
   }

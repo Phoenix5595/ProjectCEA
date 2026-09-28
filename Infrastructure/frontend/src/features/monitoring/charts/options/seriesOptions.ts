@@ -1,5 +1,7 @@
 import uPlot from 'uplot'
+
 import type { AlignedData, AlignedSeries } from '../../data'
+
 import { resolveFamily, type ChartFamily } from './family'
 import { readToken } from './tokens'
 
@@ -49,7 +51,7 @@ export function seriesColor(series: AlignedSeries): string {
 function parseDash(value: string): number[] {
   return value
     .split(/\s+/)
-    .filter((part) => part.length > 0)
+    .filter(part => part.length > 0)
     .map(Number)
 }
 
@@ -67,7 +69,7 @@ function withAlpha(color: string, alpha: number): string {
 export function buildSeries(data: AlignedData): uPlot.Series[] {
   return [
     { label: 'Time' },
-    ...data.series.map((s) => {
+    ...data.series.map(s => {
       const family = resolveFamily(s)
       const target = s.source === 'climate' || s.source === 'light'
       const projected = target && s.origin === 'projected'
@@ -98,7 +100,9 @@ export function buildSeries(data: AlignedData): uPlot.Series[] {
         }
       }
       if (target) {
-        const dash = s.presentation?.dash ? [...s.presentation.dash] : parseDash(readToken('targetDash'))
+        const dash = s.presentation?.dash
+          ? [...s.presentation.dash]
+          : parseDash(readToken('targetDash'))
         if (dash[0] === 0) {
           // uPlot draws a zero-length dash (dot style) as nothing; give dots a
           // 1px dash with round caps so dot-style setpoint lanes stay visible.
