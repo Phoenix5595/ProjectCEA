@@ -23,11 +23,20 @@ vi.mock('../pages/FlowerSoil', () => ({
   },
 }))
 
-const LEGACY_REDIRECTS = [
+const LEGACY_REDIRECTS: ReadonlyArray<{
+  from: string
+  to: string
+  destinationText?: string
+}> = [
   { from: '/laboratory/climate', to: '/laboratory' },
   { from: '/laboratory/water', to: '/laboratory' },
   { from: '/laboratory/infrastructure', to: '/laboratory' },
-] as const
+  {
+    from: '/zone/Lab/main',
+    to: '/laboratory',
+    destinationText: 'Laboratory overview fixture',
+  },
+]
 
 beforeEach(() => {
   window.history.replaceState({}, '', '/')
@@ -43,6 +52,9 @@ describe('legacy frontend routes', () => {
       await waitFor(() => {
         expect(window.location.pathname).toBe(redirect.to)
       })
+      if (redirect.destinationText) {
+        expect(await screen.findByText(redirect.destinationText)).toBeInTheDocument()
+      }
     })
   }
 })
@@ -52,7 +64,7 @@ describe('sector navigation', () => {
     render(
       <MemoryRouter initialEntries={['/laboratory']}>
         <TopRibbon sector="laboratory" activeTab="overview" onTabChange={() => {}} />
-      </MemoryRouter>,
+      </MemoryRouter>
     )
 
     expect(screen.getByRole('link', { name: 'Overview' })).toBeInTheDocument()
@@ -76,7 +88,7 @@ describe('sector navigation', () => {
     render(
       <MemoryRouter initialEntries={['/flower/soil']}>
         <TopRibbon sector="flower" activeTab="soil" onTabChange={() => {}} />
-      </MemoryRouter>,
+      </MemoryRouter>
     )
 
     expect(screen.getByRole('link', { name: 'Monitoring' })).toBeInTheDocument()

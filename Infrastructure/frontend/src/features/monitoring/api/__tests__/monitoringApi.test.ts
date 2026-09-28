@@ -1,11 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { MonitoringApi } from '../monitoringApi'
+
 import {
   MonitoringAbortError,
   MonitoringNetworkError,
   MonitoringParseError,
   MonitoringTimeoutError,
 } from '../errors'
+import { MonitoringApi } from '../monitoringApi'
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -166,7 +167,6 @@ describe('monitoring api boundary', () => {
     expect(projection.quality).toBe('estimated')
     expect(projection.value[0].version.revision).toBe('8f8c3db')
     expect(projection.value[0].series[0].valid_from).toBeInstanceOf(Date)
-
   })
 
   it('uses unchanged Caddy monitoring paths', async () => {
@@ -177,21 +177,21 @@ describe('monitoring api boundary', () => {
     await api.sensorRange('Flower Room')
     expect(fetchMock).toHaveBeenLastCalledWith(
       expect.stringContaining('/api/sensors/monitoring/range/Flower%20Room'),
-      expect.any(Object),
+      expect.any(Object)
     )
 
     fetchMock.mockResolvedValueOnce(jsonResponse(controlPayload))
     await api.controlRange('Flower Room')
     expect(fetchMock).toHaveBeenLastCalledWith(
       expect.stringContaining('/api/monitoring/control/Flower%20Room/history'),
-      expect.any(Object),
+      expect.any(Object)
     )
 
     fetchMock.mockResolvedValueOnce(jsonResponse(controlProjectionPayload))
     await api.controlProjection('Flower Room')
     expect(fetchMock).toHaveBeenLastCalledWith(
       expect.stringContaining('/api/monitoring/control/Flower%20Room/projection'),
-      expect.any(Object),
+      expect.any(Object)
     )
   })
 
@@ -205,36 +205,36 @@ describe('monitoring api boundary', () => {
     await api.sensorRange('Flower Room', start, end, 2000)
     expect(fetchMock).toHaveBeenLastCalledWith(
       expect.stringContaining(
-        '/api/sensors/monitoring/range/Flower%20Room?start=2026-08-02T11%3A00%3A00.000Z&end=2026-08-02T12%3A00%3A00.000Z&max_points=2000',
+        '/api/sensors/monitoring/range/Flower%20Room?start=2026-08-02T11%3A00%3A00.000Z&end=2026-08-02T12%3A00%3A00.000Z&max_points=2000'
       ),
-      expect.any(Object),
+      expect.any(Object)
     )
 
     fetchMock.mockResolvedValueOnce(jsonResponse({ ...sensorRangePayload, series: [] }))
     await api.sensorStats('Flower Room', start, end, 2000)
     expect(fetchMock).toHaveBeenLastCalledWith(
       expect.stringContaining(
-        '/api/sensors/monitoring/stats/Flower%20Room?start=2026-08-02T11%3A00%3A00.000Z&end=2026-08-02T12%3A00%3A00.000Z&max_points=2000',
+        '/api/sensors/monitoring/stats/Flower%20Room?start=2026-08-02T11%3A00%3A00.000Z&end=2026-08-02T12%3A00%3A00.000Z&max_points=2000'
       ),
-      expect.any(Object),
+      expect.any(Object)
     )
 
     fetchMock.mockResolvedValueOnce(jsonResponse(controlPayload))
     await api.controlRange('Flower Room', start, end, 1000)
     expect(fetchMock).toHaveBeenLastCalledWith(
       expect.stringContaining(
-        '/api/monitoring/control/Flower%20Room/history?start=2026-08-02T11%3A00%3A00.000Z&end=2026-08-02T12%3A00%3A00.000Z&max_points=1000',
+        '/api/monitoring/control/Flower%20Room/history?start=2026-08-02T11%3A00%3A00.000Z&end=2026-08-02T12%3A00%3A00.000Z&max_points=1000'
       ),
-      expect.any(Object),
+      expect.any(Object)
     )
 
     fetchMock.mockResolvedValueOnce(jsonResponse(controlPayload))
     await api.controlTail('Flower Room', start, end)
     expect(fetchMock).toHaveBeenLastCalledWith(
       expect.stringContaining(
-        '/api/monitoring/control/Flower%20Room/tail?start=2026-08-02T11%3A00%3A00.000Z&end=2026-08-02T12%3A00%3A00.000Z&max_points=1000',
+        '/api/monitoring/control/Flower%20Room/tail?start=2026-08-02T11%3A00%3A00.000Z&end=2026-08-02T12%3A00%3A00.000Z&max_points=1000'
       ),
-      expect.any(Object),
+      expect.any(Object)
     )
   })
 
@@ -259,7 +259,7 @@ describe('monitoring api boundary', () => {
         series: [{ ...sensorRangePayload.series[0], point_count: 1, sample_count_total: 60 }],
         statistics: [{ ...sensorRangePayload.statistics[0], stddev_quality: 'approximate' }],
         ignored_by_existing_schema: true,
-      }),
+      })
     )
     const budgeted = await api.sensorRange('Flower Room')
     expect(budgeted.metadata.requested_max_points).toBe(1000)
@@ -269,7 +269,7 @@ describe('monitoring api boundary', () => {
     expect('ignored_by_existing_schema' in budgeted).toBe(false)
 
     fetchMock.mockResolvedValueOnce(
-      jsonResponse({ ...controlPayload, requested_max_points: 1000, interval_seconds: 600 }),
+      jsonResponse({ ...controlPayload, requested_max_points: 1000, interval_seconds: 600 })
     )
     const control = await api.controlRange('Flower Room')
     expect(control.requested_max_points).toBe(1000)
@@ -285,7 +285,7 @@ describe('monitoring api boundary', () => {
         ...controlPayload,
         requested_max_points: null,
         interval_seconds: null,
-      }),
+      })
     )
     const nullable = await api.controlRange('Flower Room')
     expect(nullable.requested_max_points).toBeNull()
@@ -309,7 +309,7 @@ describe('monitoring api boundary', () => {
 
     expect(fetchMock).toHaveBeenCalledWith(
       expect.stringContaining('scenario=backend-down&fixtureSession=test%2Fsession'),
-      expect.any(Object),
+      expect.any(Object)
     )
   })
 
@@ -321,7 +321,7 @@ describe('monitoring api boundary', () => {
       jsonResponse({
         ...sensorRangePayload,
         metadata: { ...sensorRangePayload.metadata, generated_at: '2026-08-02T12:00:00' },
-      }),
+      })
     )
     await expect(api.sensorRange('Flower Room')).rejects.toBeInstanceOf(MonitoringParseError)
 
@@ -334,10 +334,9 @@ describe('monitoring api boundary', () => {
             provenance: { origin: 'fabricated', quality: 'exact', is_aggregated: false },
           },
         ],
-      }),
+      })
     )
     await expect(api.controlRange('Flower Room')).rejects.toBeInstanceOf(MonitoringParseError)
-
 
     fetchMock.mockResolvedValueOnce(
       jsonResponse({
@@ -353,7 +352,7 @@ describe('monitoring api boundary', () => {
             ],
           },
         ],
-      }),
+      })
     )
     await expect(api.sensorRange('Flower Room')).rejects.toBeInstanceOf(MonitoringParseError)
   })
@@ -385,13 +384,13 @@ describe('monitoring api boundary', () => {
       (_url: RequestInfo | URL, init?: RequestInit) =>
         new Promise<Response>((_resolve, reject) => {
           init?.signal?.addEventListener('abort', () =>
-            reject(new DOMException('Aborted', 'AbortError')),
+            reject(new DOMException('Aborted', 'AbortError'))
           )
-        }),
+        })
     )
-    await expect(api.sensorRange('Flower Room', undefined, undefined, undefined, { timeoutMs: 5 })).rejects.toBeInstanceOf(
-      MonitoringTimeoutError,
-    )
+    await expect(
+      api.sensorRange('Flower Room', undefined, undefined, undefined, { timeoutMs: 5 })
+    ).rejects.toBeInstanceOf(MonitoringTimeoutError)
 
     fetchMock.mockRejectedValueOnce(new TypeError('Failed to fetch'))
     await expect(api.sensorRange('Flower Room')).rejects.toBeInstanceOf(MonitoringNetworkError)
@@ -408,12 +407,14 @@ describe('monitoring api boundary', () => {
         new Promise<Response>((_resolve, reject) => {
           networkSignal = init?.signal ?? undefined
           init?.signal?.addEventListener('abort', () =>
-            reject(new DOMException('Aborted', 'AbortError')),
+            reject(new DOMException('Aborted', 'AbortError'))
           )
-        }),
+        })
     )
 
-    const pending = api.sensorRange('Flower Room', undefined, undefined, undefined, { signal: controller.signal })
+    const pending = api.sensorRange('Flower Room', undefined, undefined, undefined, {
+      signal: controller.signal,
+    })
     expect(networkSignal).toBeDefined()
     controller.abort()
     expect(networkSignal?.aborted).toBe(true)
@@ -437,7 +438,7 @@ describe('monitoring api boundary', () => {
       api.sensorRange('Flower Room', undefined, undefined, undefined, {
         signal: controller.signal,
         timeoutMs: 1000,
-      }),
+      })
     ).rejects.toBeInstanceOf(MonitoringAbortError)
   })
 })

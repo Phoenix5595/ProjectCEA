@@ -7,14 +7,14 @@
  * bounds are preserved; families without one auto-range.
  */
 import type uPlot from 'uplot'
+
 import type { AlignedData } from '../../data'
+
 import { type ChartFamily, chartFamilyForUnit, resolveFamily } from './family'
 import { familyColor } from './seriesOptions'
 
 /** Hard visible bounds for families that always render inside a fixed window. */
-const RANGE_BOUNDS: Partial<
-  Record<ChartFamily, { min?: number; max?: number }>
-> = {
+const RANGE_BOUNDS: Partial<Record<ChartFamily, { min?: number; max?: number }>> = {
   temperature: {},
   rh: { max: 100 },
   device: { min: 0, max: 100 },
@@ -24,7 +24,6 @@ const RANGE_BOUNDS: Partial<
   ph: { min: 0, max: 14 },
 }
 
-
 /** uPlot's default tick pass stops at the largest clean value within
  *  [scaleMin, scaleMax]; when the ±5% headroom is unlabeled the axis visually
  *  stops at the data extreme. Snap the padded bounds outward to the next
@@ -32,23 +31,34 @@ const RANGE_BOUNDS: Partial<
 function snapPaddedBounds(lo: number, hi: number): [number, number] {
   const span = Math.max(hi - lo, 1e-9)
   const magnitude = 10 ** Math.floor(Math.log10(span / 4))
-  const step = magnitude * (span / 4 / magnitude <= 1 ? 1 : span / 4 / magnitude <= 2 ? 2 : span / 4 / magnitude <= 5 ? 5 : 10)
+  const step =
+    magnitude *
+    (span / 4 / magnitude <= 1
+      ? 1
+      : span / 4 / magnitude <= 2
+        ? 2
+        : span / 4 / magnitude <= 5
+          ? 5
+          : 10)
   return [Math.floor(lo / step) * step, Math.ceil(hi / step) * step]
 }
 
 function boundedRange(
   forcedMin?: number,
-  forcedMax?: number,
+  forcedMax?: number
 ): (_self: uPlot, initMin: number | undefined, initMax: number | undefined) => [number, number] {
   return (_self, initMin, initMax) => {
-    const observedMin = typeof initMin === 'number' && Number.isFinite(initMin) ? initMin : undefined
-    const observedMax = typeof initMax === 'number' && Number.isFinite(initMax) ? initMax : undefined
-    let lo = observedMin ?? (forcedMin ?? 0)
-    let hi = observedMax ?? (forcedMax ?? lo + 1)
+    const observedMin =
+      typeof initMin === 'number' && Number.isFinite(initMin) ? initMin : undefined
+    const observedMax =
+      typeof initMax === 'number' && Number.isFinite(initMax) ? initMax : undefined
+    let lo = observedMin ?? forcedMin ?? 0
+    let hi = observedMax ?? forcedMax ?? lo + 1
     if (observedMin !== undefined && observedMax !== undefined) {
-      const padding = observedMin === observedMax
-        ? Math.max(Math.abs(observedMin) * 0.05, 1)
-        : (observedMax - observedMin) * 0.05
+      const padding =
+        observedMin === observedMax
+          ? Math.max(Math.abs(observedMin) * 0.05, 1)
+          : (observedMax - observedMin) * 0.05
       lo -= padding
       hi += padding
     }
@@ -64,15 +74,15 @@ function boundedRange(
 
 function softBoundedRange(
   softMin?: number,
-  softMax?: number,
+  softMax?: number
 ): (_self: uPlot, initMin: number | undefined, initMax: number | undefined) => [number, number] {
   return (_self, initMin, initMax) => {
     const hasMin = typeof initMin === 'number' && Number.isFinite(initMin)
     const hasMax = typeof initMax === 'number' && Number.isFinite(initMax)
     const observedMin = hasMin ? initMin : undefined
     const observedMax = hasMax ? initMax : undefined
-    let lo = observedMin ?? (softMin ?? (observedMax !== undefined ? observedMax - 1 : 0))
-    let hi = observedMax ?? (softMax ?? lo + 1)
+    let lo = observedMin ?? softMin ?? (observedMax !== undefined ? observedMax - 1 : 0)
+    let hi = observedMax ?? softMax ?? lo + 1
     if (softMin !== undefined && lo > softMin) lo = softMin
     if (softMax !== undefined && hi < softMax) hi = softMax
     if (observedMin !== undefined && observedMax !== undefined) {
@@ -101,8 +111,14 @@ function familySoftBounds(data: AlignedData): Map<ChartFamily, SoftBounds> {
     const family = resolveFamily(s)
     const existing = bounds.get(family)
     const next: SoftBounds = {
-      softMin: p.softMin !== undefined ? Math.min(p.softMin, existing?.softMin ?? p.softMin) : existing?.softMin,
-      softMax: p.softMax !== undefined ? Math.max(p.softMax, existing?.softMax ?? p.softMax) : existing?.softMax,
+      softMin:
+        p.softMin !== undefined
+          ? Math.min(p.softMin, existing?.softMin ?? p.softMin)
+          : existing?.softMin,
+      softMax:
+        p.softMax !== undefined
+          ? Math.max(p.softMax, existing?.softMax ?? p.softMax)
+          : existing?.softMax,
     }
     bounds.set(family, next)
   }
@@ -122,9 +138,7 @@ export interface ChartScales {
 
 function readTokenXStroke(): string {
   if (typeof document === 'undefined') return 'rgba(200, 214, 194, 0.9)'
-  const value = getComputedStyle(document.documentElement)
-    .getPropertyValue('--text-muted')
-    .trim()
+  const value = getComputedStyle(document.documentElement).getPropertyValue('--text-muted').trim()
   return value === '' ? 'rgba(200, 214, 194, 0.9)' : value
 }
 
@@ -167,9 +181,10 @@ export function buildScales(data: AlignedData): ChartScales {
     }
     if (family === 'vpd') {
       const inner = scale.range as NonNullable<uPlot.Scale['range']>
-      const innerFn = typeof inner === 'function'
-        ? inner
-        : (_s: uPlot, a: number, b: number) => [a, b] as uPlot.Range.MinMax
+      const innerFn =
+        typeof inner === 'function'
+          ? inner
+          : (_s: uPlot, a: number, b: number) => [a, b] as uPlot.Range.MinMax
       scale.range = (self, dataMin, dataMax, scaleKey) => {
         const [lo, hi] = innerFn(self, dataMin, dataMax, scaleKey)
         return [lo === null ? null : Math.max(0, lo), hi === null ? null : Math.max(0, hi)]
@@ -177,9 +192,10 @@ export function buildScales(data: AlignedData): ChartScales {
     }
     if (family === 'rh') {
       const inner = scale.range as NonNullable<uPlot.Scale['range']>
-      const innerFn = typeof inner === 'function'
-        ? inner
-        : (_s: uPlot, a: number, b: number) => [a, b] as uPlot.Range.MinMax
+      const innerFn =
+        typeof inner === 'function'
+          ? inner
+          : (_s: uPlot, a: number, b: number) => [a, b] as uPlot.Range.MinMax
       scale.range = (self, dataMin, dataMax, scaleKey) => {
         const [lo, hi] = innerFn(self, dataMin, dataMax, scaleKey)
         const clampedLo = lo === null ? null : Math.max(0, lo)

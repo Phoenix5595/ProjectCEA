@@ -1,6 +1,9 @@
 import { useCallback, type ChangeEvent } from 'react'
+
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+
 import { SEVERITY_LABELS, type SeverityLevel } from '../presentation/severity'
+
 import type { EventLogView } from './EventGroupedView'
 
 export type FilterDimension = 'room' | 'category' | 'type' | 'severity'
@@ -35,9 +38,9 @@ interface EventFiltersProps {
 
 const SEVERITY_OPTIONS: ReadonlyArray<{ value: SeverityLevel | 'all'; label: string }> = [
   { value: 'all', label: 'All' },
-  ...(
-    Object.entries(SEVERITY_LABELS) as ReadonlyArray<[SeverityLevel, string]>
-  ).map(([value, label]) => ({ value, label })),
+  ...(Object.entries(SEVERITY_LABELS) as ReadonlyArray<[SeverityLevel, string]>).map(
+    ([value, label]) => ({ value, label })
+  ),
 ]
 
 function MultiSelectChip({
@@ -74,10 +77,10 @@ function toggleDimension(
   filters: FilterState,
   onChange: (next: FilterState) => void,
   key: 'rooms' | 'categories' | 'types',
-  value: string,
+  value: string
 ) {
   const current = filters[key]
-  const next = current.includes(value) ? current.filter((v) => v !== value) : [...current, value]
+  const next = current.includes(value) ? current.filter(v => v !== value) : [...current, value]
   onChange({ ...filters, [key]: next })
 }
 
@@ -100,7 +103,7 @@ function FilterCheckboxList({
   return (
     <div className="flex flex-col gap-1" role="group" aria-label={label}>
       <p className="text-11 font-bold uppercase tracking-wide text-text-secondary">{heading}</p>
-      {options.map((option) => (
+      {options.map(option => (
         <label
           key={option}
           className="flex items-center gap-2 px-1.5 py-0.5 text-xs text-text-default rounded-sm hover:bg-surface-secondary cursor-pointer"
@@ -145,7 +148,7 @@ function FiltersMenu({
     (event: ChangeEvent<HTMLInputElement>) => {
       onChange({ ...filters, search: event.target.value })
     },
-    [filters, onChange],
+    [filters, onChange]
   )
 
   const activeCount =
@@ -168,11 +171,7 @@ function FiltersMenu({
         {triggerLabel}
         {activeCount > 0 ? ` (${activeCount})` : ''}
       </PopoverTrigger>
-      <PopoverContent
-        align="start"
-        className="w-56 p-2"
-        aria-label="Event log filters"
-      >
+      <PopoverContent align="start" className="w-56 p-2" aria-label="Event log filters">
         <div className="flex flex-col gap-2 max-h-80 overflow-y-auto">
           <label className="text-11 font-bold uppercase tracking-wide text-text-secondary">
             Filter text
@@ -187,7 +186,7 @@ function FiltersMenu({
             />
           </label>
           <div className="flex gap-1" role="group" aria-label="Event log view">
-            {VIEW_OPTIONS.map((option) => (
+            {VIEW_OPTIONS.map(option => (
               <button
                 key={option.value}
                 type="button"
@@ -204,9 +203,11 @@ function FiltersMenu({
             ))}
           </div>
           <div className="flex flex-col gap-1" role="group" aria-label="Severity filter">
-            <p className="text-11 font-bold uppercase tracking-wide text-text-secondary">Severity</p>
+            <p className="text-11 font-bold uppercase tracking-wide text-text-secondary">
+              Severity
+            </p>
             <div className="flex flex-wrap gap-1">
-              {SEVERITY_OPTIONS.map((option) => (
+              {SEVERITY_OPTIONS.map(option => (
                 <button
                   key={option.value}
                   type="button"
@@ -228,25 +229,24 @@ function FiltersMenu({
             heading="Rooms"
             options={rooms}
             selected={filters.rooms}
-            onToggle={(value) => toggleDimension(filters, onChange, 'rooms', value)}
+            onToggle={value => toggleDimension(filters, onChange, 'rooms', value)}
           />
           <FilterCheckboxList
             label="Category filter"
             heading="Categories"
             options={categories}
             selected={filters.categories}
-            onToggle={(value) => toggleDimension(filters, onChange, 'categories', value)}
+            onToggle={value => toggleDimension(filters, onChange, 'categories', value)}
           />
           <FilterCheckboxList
             label="Event type filter"
             heading="Types"
             options={types}
             selected={filters.types}
-            onToggle={(value) => toggleDimension(filters, onChange, 'types', value)}
+            onToggle={value => toggleDimension(filters, onChange, 'types', value)}
           />
         </div>
       </PopoverContent>
-
     </Popover>
   )
 }
@@ -266,7 +266,7 @@ export function CompactFiltersTrigger({
   return (
     <FiltersMenu
       filters={filters}
-      rooms={rooms.filter((room) => !primaryRooms.includes(room))}
+      rooms={rooms.filter(room => !primaryRooms.includes(room))}
       categories={categories}
       types={types}
       view={view}
@@ -289,7 +289,7 @@ export function EventFilters({
   primaryRooms = [],
   hideCompactTrigger = false,
 }: EventFiltersProps) {
-  const extraRooms = rooms.filter((room) => !primaryRooms.includes(room))
+  const extraRooms = rooms.filter(room => !primaryRooms.includes(room))
 
   if (compact) {
     const activeCount =
@@ -301,7 +301,7 @@ export function EventFilters({
     return (
       <div className="flex flex-col gap-2" role="toolbar" aria-label="Event filters">
         <div className="flex flex-wrap items-center gap-1">
-          {primaryRooms.map((room) => (
+          {primaryRooms.map(room => (
             <MultiSelectChip
               key={room}
               label={room}
@@ -345,7 +345,7 @@ export function EventFilters({
     <div className="flex flex-col gap-2" role="toolbar" aria-label="Event filters">
       <div className="flex flex-wrap items-center gap-2">
         <div className="flex flex-wrap gap-1" role="group" aria-label="Event log view">
-          {VIEW_OPTIONS.map((option) => (
+          {VIEW_OPTIONS.map(option => (
             <button
               key={option.value}
               type="button"
@@ -362,7 +362,7 @@ export function EventFilters({
           ))}
         </div>
         <div className="flex flex-wrap gap-1" role="group" aria-label="Severity filter">
-          {SEVERITY_OPTIONS.map((option) => (
+          {SEVERITY_OPTIONS.map(option => (
             <button
               key={option.value}
               type="button"
@@ -398,7 +398,7 @@ export function EventFilters({
       {rooms.length > 0 && (
         <div className="flex flex-wrap items-center gap-1" role="group" aria-label="Room filter">
           <span className="text-xs text-text-default font-semibold">Rooms:</span>
-          {rooms.map((room) => (
+          {rooms.map(room => (
             <MultiSelectChip
               key={room}
               label={room}
@@ -438,25 +438,21 @@ function FilterDropdown({ filters, categories, types, onChange }: FilterDropdown
       >
         Categories &amp; types{activeCount > 0 ? ` (${activeCount})` : ''}
       </PopoverTrigger>
-      <PopoverContent
-        align="start"
-        className="w-56 p-2"
-        aria-label="Category and type filters"
-      >
+      <PopoverContent align="start" className="w-56 p-2" aria-label="Category and type filters">
         <div className="flex flex-col gap-2 max-h-64 overflow-y-auto">
           <FilterCheckboxList
             label="Category filter"
             heading="Categories"
             options={categories}
             selected={filters.categories}
-            onToggle={(value) => toggleDimension(filters, onChange, 'categories', value)}
+            onToggle={value => toggleDimension(filters, onChange, 'categories', value)}
           />
           <FilterCheckboxList
             label="Event type filter"
             heading="Types"
             options={types}
             selected={filters.types}
-            onToggle={(value) => toggleDimension(filters, onChange, 'types', value)}
+            onToggle={value => toggleDimension(filters, onChange, 'types', value)}
           />
         </div>
         {activeCount > 0 && (

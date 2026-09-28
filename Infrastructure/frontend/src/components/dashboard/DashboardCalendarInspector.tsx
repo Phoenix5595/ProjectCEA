@@ -1,18 +1,16 @@
 /** Dashboard-only calendar inspector: day summaries, event detail, manual create/edit. */
-import { useEffect, useMemo, useRef, useState } from 'react'
 import { format } from 'date-fns'
 import { fr } from 'date-fns/locale'
 import { toZonedTime } from 'date-fns-tz'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
-import { Dialog, DialogContent, DialogTitle } from '../ui/dialog'
+import { DASHBOARD_ROW_ZONES } from '../../config/zones'
 import { apiClient } from '../../services/api'
 import type {
   CalendarEventCreate,
   CalendarEventDto,
   CalendarEventUpdate,
 } from '../../types/calendar'
-import { DASHBOARD_ROW_ZONES } from '../../config/zones'
-import { CALENDAR_TZ } from '../../utils/flowerGrowPlan'
 import {
   buildCalendarDayMarkers,
   calendarDayKey,
@@ -20,6 +18,8 @@ import {
   calendarEventOccursOnDay,
   isGrowPlanPhase,
 } from '../../utils/calendarDayMarkers'
+import { CALENDAR_TZ } from '../../utils/flowerGrowPlan'
+import { Dialog, DialogContent, DialogTitle } from '../ui/dialog'
 
 export interface DashboardCalendarInspectorProps {
   events: CalendarEventDto[]
@@ -432,7 +432,7 @@ export default function DashboardCalendarInspector({
             <li key={ev.id}>
               <button
                 type="button"
-                className="w-full text-left text-xs bg-surface-base border border-border-default rounded-sm px-2 py-1.5 hover:bg-surface-secondary focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
+                className="w-full text-left text-xs bg-surface-base border border-border-default rounded-sm px-2 py-1.5 hover:bg-surface-secondary focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent-vivid"
                 onClick={event => openEventDetails(ev, { kind: 'day' }, event.currentTarget)}
               >
                 <span className="block font-semibold text-text-default truncate">{ev.title}</span>
@@ -487,7 +487,7 @@ export default function DashboardCalendarInspector({
         <li key={ev.id}>
           <button
             type="button"
-            className="w-full text-left text-xs bg-surface-base border border-border-default rounded-sm px-2 py-1.5 hover:bg-surface-secondary focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
+            className="w-full text-left text-xs bg-surface-base border border-border-default rounded-sm px-2 py-1.5 hover:bg-surface-secondary focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent-vivid"
             onClick={event => openEventDetails(ev, list, event.currentTarget)}
           >
             <span className="block font-semibold text-text-default break-words">{ev.title}</span>

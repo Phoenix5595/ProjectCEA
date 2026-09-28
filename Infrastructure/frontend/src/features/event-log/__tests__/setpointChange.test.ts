@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+
 import { formatSetpointFromTo } from '../presentation/setpointChange'
 
 describe('formatSetpointFromTo', () => {
@@ -10,7 +11,13 @@ describe('formatSetpointFromTo', () => {
     ['vpd', 0.75, 0.77, '0.8 kPa → 0.8 kPa'],
     ['co2', 800, 810, '800 ppm → 810 ppm'],
   ] as const)('renders %s values with correct units', (deviceType, previous, current, expected) => {
-    expect(formatSetpointFromTo({ device_type: deviceType, previous_setpoint: previous, effective_setpoint: current })).toBe(expected)
+    expect(
+      formatSetpointFromTo({
+        device_type: deviceType,
+        previous_setpoint: previous,
+        effective_setpoint: current,
+      })
+    ).toBe(expected)
   })
 
   it('returns nothing for legacy payloads without previous_setpoint', () => {
@@ -18,11 +25,23 @@ describe('formatSetpointFromTo', () => {
   })
 
   it('returns null for non-numeric values', () => {
-    expect(formatSetpointFromTo({ device_type: 'light', previous_setpoint: 'low', effective_setpoint: 0.4 })).toBeNull()
+    expect(
+      formatSetpointFromTo({
+        device_type: 'light',
+        previous_setpoint: 'low',
+        effective_setpoint: 0.4,
+      })
+    ).toBeNull()
     expect(formatSetpointFromTo({ previous_setpoint: 1, effective_setpoint: null })).toBeNull()
   })
 
   it('renders unknown device types with raw values', () => {
-    expect(formatSetpointFromTo({ device_type: 'humidifier', previous_setpoint: 60, effective_setpoint: 62 })).toBe('60 → 62')
+    expect(
+      formatSetpointFromTo({
+        device_type: 'humidifier',
+        previous_setpoint: 60,
+        effective_setpoint: 62,
+      })
+    ).toBe('60 → 62')
   })
 })

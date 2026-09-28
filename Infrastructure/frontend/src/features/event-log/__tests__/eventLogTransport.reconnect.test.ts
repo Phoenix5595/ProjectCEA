@@ -1,4 +1,6 @@
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest'
+
+import { globalEventLogStore } from '../state/eventLogStore'
 import {
   addConnectionRef,
   removeConnectionRef,
@@ -9,7 +11,6 @@ import {
   _setReconnectDelayForTesting,
 } from '../state/eventLogTransport'
 import { _resetSharedStoreForTesting } from '../state/useEventLog'
-import { globalEventLogStore } from '../state/eventLogStore'
 
 const mockFetch = vi.fn()
 
@@ -62,14 +63,15 @@ function mockHistoryPage(items: readonly ReturnType<typeof historyItem>[], hasMo
   return Promise.resolve({
     ok: true,
     status: 200,
-    json: () => Promise.resolve({
-      items,
-      newest_cursor: items[0]?.redis_id ?? null,
-      oldest_cursor: items.at(-1)?.redis_id ?? null,
-      earliest_cursor: items.at(-1)?.redis_id ?? null,
-      has_more: hasMore,
-      scan: { scanned: items.length, limit: 200 },
-    }),
+    json: () =>
+      Promise.resolve({
+        items,
+        newest_cursor: items[0]?.redis_id ?? null,
+        oldest_cursor: items.at(-1)?.redis_id ?? null,
+        earliest_cursor: items.at(-1)?.redis_id ?? null,
+        has_more: hasMore,
+        scan: { scanned: items.length, limit: 200 },
+      }),
   })
 }
 
@@ -123,7 +125,7 @@ describe('eventLogTransport reconnect behavior', () => {
               controller.close()
             },
           }),
-        }),
+        })
       )
       .mockImplementationOnce(() => mockFailingStreamResponse())
 
@@ -151,7 +153,7 @@ describe('eventLogTransport reconnect behavior', () => {
           body: new ReadableStream({
             async pull(controller) {
               while (!signals[0]?.aborted) {
-                await new Promise((resolve) => setTimeout(resolve, 10))
+                await new Promise(resolve => setTimeout(resolve, 10))
               }
               controller.close()
             },
@@ -175,9 +177,15 @@ describe('eventLogTransport reconnect behavior', () => {
   it('merges two overlapping older pages and stops requesting history when exhausted', async () => {
     // Given: the singleton has a bounded history window with more pages
     mockFetch
-      .mockImplementationOnce(() => mockHistoryPage([historyItem('5-0', 'five'), historyItem('4-0', 'four')], true))
-      .mockImplementationOnce(() => mockHistoryPage([historyItem('4-0', 'four'), historyItem('3-0', 'three')], true))
-      .mockImplementationOnce(() => mockHistoryPage([historyItem('3-0', 'three'), historyItem('2-0', 'two')], false))
+      .mockImplementationOnce(() =>
+        mockHistoryPage([historyItem('5-0', 'five'), historyItem('4-0', 'four')], true)
+      )
+      .mockImplementationOnce(() =>
+        mockHistoryPage([historyItem('4-0', 'four'), historyItem('3-0', 'three')], true)
+      )
+      .mockImplementationOnce(() =>
+        mockHistoryPage([historyItem('3-0', 'three'), historyItem('2-0', 'two')], false)
+      )
 
     // When: bootstrap then two older-page actions overlap at their cursor boundaries
     await import('../state/eventLogTransport').then(({ loadHistory }) => loadHistory())
@@ -190,16 +198,26 @@ describe('eventLogTransport reconnect behavior', () => {
     expect(mockFetch.mock.calls[1]?.[0]).toContain('before=4-0')
     expect(mockFetch.mock.calls[2]?.[0]).toContain('before=3-0')
     expect(mockFetch).toHaveBeenCalledTimes(fetchesBeforeExhaustion)
-    expect(globalEventLogStore.snapshot().entries.map((entry) => entry.redisId)).toEqual(['2-0', '3-0', '4-0', '5-0'])
+    expect(globalEventLogStore.snapshot().entries.map(entry => entry.redisId)).toEqual([
+      '2-0',
+      '3-0',
+      '4-0',
+      '5-0',
+    ])
   })
 
   it('does not reconnect after the final consumer unmounts during an active stream', async () => {
     // Given: one owner has an open stream request
     mockFetch
       .mockImplementationOnce(() => mockHistoryResponse())
-      .mockImplementationOnce((_url: unknown, init: RequestInit) => new Promise((_resolve, reject) => {
-        init.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')))
-      }))
+      .mockImplementationOnce(
+        (_url: unknown, init: RequestInit) =>
+          new Promise((_resolve, reject) => {
+            init.signal?.addEventListener('abort', () =>
+              reject(new DOMException('aborted', 'AbortError'))
+            )
+          })
+      )
     addConnectionRef()
     await vi.waitFor(() => expect(mockFetch).toHaveBeenCalledTimes(2))
 
@@ -232,20 +250,34 @@ describe('eventLogTransport reconnect behavior', () => {
 
   it('clears stale entries then performs one latest bootstrap and one tail after a 409 reset', async () => {
     // Given: retained stale data and a stream cursor reset response
-    globalEventLogStore.merge([{
-      redisId: '1-0', eventId: 'stale', type: 'system.started', category: 'system', severity: 'info', occurredAt: new Date(), payload: {}, entity: null, reasonText: null,
-    }])
+    globalEventLogStore.merge([
+      {
+        redisId: '1-0',
+        eventId: 'stale',
+        type: 'system.started',
+        category: 'system',
+        severity: 'info',
+        occurredAt: new Date(),
+        payload: {},
+        entity: null,
+        reasonText: null,
+      },
+    ])
     let staleStateWasCleared = false
     let transportCursorWasCleared = false
     mockFetch
       .mockImplementationOnce(() => mockHistoryPage([historyItem('5-0', 'old-bootstrap')], false))
-      .mockImplementationOnce(() => Promise.resolve({
-        ok: false,
-        status: 409,
-        json: () => Promise.resolve({ earliest_cursor: '6-0', latest_cursor: '9-0' }),
-      }))
+      .mockImplementationOnce(() =>
+        Promise.resolve({
+          ok: false,
+          status: 409,
+          json: () => Promise.resolve({ earliest_cursor: '6-0', latest_cursor: '9-0' }),
+        })
+      )
       .mockImplementationOnce(() => {
-        staleStateWasCleared = !globalEventLogStore.snapshot().entries.some((entry) => entry.eventId === 'stale')
+        staleStateWasCleared = !globalEventLogStore
+          .snapshot()
+          .entries.some(entry => entry.eventId === 'stale')
         transportCursorWasCleared = getLastCursor() === null
         return mockHistoryPage([historyItem('9-0', 'latest')], false)
       })
@@ -259,14 +291,17 @@ describe('eventLogTransport reconnect behavior', () => {
     expect(staleStateWasCleared).toBe(true)
     expect(transportCursorWasCleared).toBe(true)
     expect(mockFetch.mock.calls[3]?.[0]).toContain('after=9-0')
-    expect(globalEventLogStore.snapshot().entries.map((entry) => entry.eventId)).toEqual(['latest'])
+    expect(globalEventLogStore.snapshot().entries.map(entry => entry.eventId)).toEqual(['latest'])
   })
 
-  it.each([401, 403])('does not retry after an authentication failure with status %s', async (status) => {
-    mockFetch.mockImplementationOnce(() => Promise.resolve({ ok: false, status }))
-    addConnectionRef()
-    await vi.waitFor(() => expect(mockFetch).toHaveBeenCalledTimes(1))
-    vi.advanceTimersByTime(30_001)
-    expect(mockFetch).toHaveBeenCalledTimes(1)
-  })
+  it.each([401, 403])(
+    'does not retry after an authentication failure with status %s',
+    async status => {
+      mockFetch.mockImplementationOnce(() => Promise.resolve({ ok: false, status }))
+      addConnectionRef()
+      await vi.waitFor(() => expect(mockFetch).toHaveBeenCalledTimes(1))
+      vi.advanceTimersByTime(30_001)
+      expect(mockFetch).toHaveBeenCalledTimes(1)
+    }
+  )
 })

@@ -10,10 +10,14 @@
  */
 import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
+
 import '../features/monitoring/styles/monitoring.css'
 import { monitoringRequestContextFromSearchParams } from '../features/monitoring/api'
-import { flowerManifest } from '../features/monitoring/config'
-import { UPlotChart, type MonitoringPanelChartFeed, type UPlotChartHandle } from '../features/monitoring/charts'
+import {
+  UPlotChart,
+  type MonitoringPanelChartFeed,
+  type UPlotChartHandle,
+} from '../features/monitoring/charts'
 import { createMonitoringPanelChartFeed } from '../features/monitoring/charts/MonitoringChartFeed'
 import {
   ChartDataTable,
@@ -24,18 +28,19 @@ import {
   StatisticsTable,
   TimeRangeToolbar,
 } from '../features/monitoring/components'
+import { flowerManifest } from '../features/monitoring/config'
+import { createPanelAlignment } from '../features/monitoring/data'
 import { timeseriesPanels } from '../features/monitoring/pages/chartGroups'
 import { splitLiveByNode, tablePanel } from '../features/monitoring/pages/tablePanels'
-import { createPanelAlignment } from '../features/monitoring/data'
+import { useMonitoringRangeBudget } from '../features/monitoring/pages/useMonitoringRangeBudget'
 import {
   FLOWER_DEFAULT_DURATION_MS,
   useMonitoringStore,
 } from '../features/monitoring/pages/useMonitoringStore'
-import { useMonitoringRangeBudget } from '../features/monitoring/pages/useMonitoringRangeBudget'
 
 const ROOM = 'Flower Room'
-const FLOWER_SERIES_SPECS = flowerManifest.panels.flatMap((panel) =>
-  panel.kind === 'timeseries' ? panel.series : [],
+const FLOWER_SERIES_SPECS = flowerManifest.panels.flatMap(panel =>
+  panel.kind === 'timeseries' ? panel.series : []
 )
 
 const CHART_HEIGHT = { height: 320 }
@@ -51,7 +56,7 @@ function FlowerMonitoringInner() {
   const [searchParams] = useSearchParams()
   const requestContext = useMemo(
     () => monitoringRequestContextFromSearchParams(searchParams),
-    [searchParams],
+    [searchParams]
   )
   const { snapshot, store } = useMonitoringStore(ROOM, requestContext)
   const { reportBudget } = useMonitoringRangeBudget(store)
@@ -79,8 +84,9 @@ function FlowerMonitoringInner() {
   }, [store])
 
   useEffect(() => {
-    const unsubscribeClimate = chartFeeds.climate.connect(store, snapshot)
-    const unsubscribeDevice = chartFeeds.device.connect(store, snapshot)
+    const initialSnapshot = store.getSnapshot()
+    const unsubscribeClimate = chartFeeds.climate.connect(store, initialSnapshot)
+    const unsubscribeDevice = chartFeeds.device.connect(store, initialSnapshot)
     return () => {
       unsubscribeClimate()
       unsubscribeDevice()
@@ -95,9 +101,12 @@ function FlowerMonitoringInner() {
   const statsPanel = tablePanel(flowerManifest, 'flower-statistics')
   const { front, back } = splitLiveByNode(snapshot.data.live)
 
-  const zoomToRange = useCallback((range: { start: Date; end: Date }): void => {
-    store.setFixedRange(range.start, range.end)
-  }, [store])
+  const zoomToRange = useCallback(
+    (range: { start: Date; end: Date }): void => {
+      store.setFixedRange(range.start, range.end)
+    },
+    [store]
+  )
 
   const loading = snapshot.loading && snapshot.data.series.length === 0
 
@@ -106,14 +115,14 @@ function FlowerMonitoringInner() {
       <TimeRangeToolbar
         range={snapshot.range}
         isLive={snapshot.isLive}
-        onLive={(duration) => store.setLiveRange(duration)}
+        onLive={duration => store.setLiveRange(duration)}
         onFixedRange={(start, end) => store.setFixedRange(start, end)}
         onPause={() => store.pause()}
-         onResume={() => store.resume()}
-         onResetZoom={() => {
-           climateRef.current?.resetZoom()
-           deviceRef.current?.resetZoom()
-         }}
+        onResume={() => store.resume()}
+        onResetZoom={() => {
+          climateRef.current?.resetZoom()
+          deviceRef.current?.resetZoom()
+        }}
         defaultDuration={FLOWER_DEFAULT_DURATION_MS}
         monitoring={{
           errors: snapshot.errors,
@@ -136,98 +145,116 @@ function FlowerMonitoringInner() {
 
       <div className="mon-layout">
         <aside className="mon-side mon-side--compact">
-        <section className="mon-card" aria-label="Averages">
-          <MonitoringFreshness lastGoodAt={snapshot.lastGoodRangeAt} errorAt={snapshot.rangeErrorAt} />
-          {averagesPanel && (
-            <RoomAveragesTable
-              title="Averages"
-              showTitle={false}
-              firstColumnLabel="Average"
-              rows={averagesPanel.rows}
-              front={front}
-              back={back}
+          <section className="mon-card" aria-label="Averages">
+            <MonitoringFreshness
+              lastGoodAt={snapshot.lastGoodRangeAt}
+              errorAt={snapshot.rangeErrorAt}
             />
-          )}
-        </section>
-        <section className="mon-card" aria-label="Front Cluster">
-          <MonitoringFreshness lastGoodAt={snapshot.lastGoodRangeAt} errorAt={snapshot.rangeErrorAt} />
-          {frontPanel && (
-            <SensorValueTable
-              title="Front Cluster"
-              showTitle={false}
-              firstColumnLabel="Front"
-              rows={frontPanel.rows}
-              values={snapshot.data.live}
-              nodeSuffix="f"
+            {averagesPanel && (
+              <RoomAveragesTable
+                title="Averages"
+                showTitle={false}
+                firstColumnLabel="Average"
+                rows={averagesPanel.rows}
+                front={front}
+                back={back}
+              />
+            )}
+          </section>
+          <section className="mon-card" aria-label="Front Cluster">
+            <MonitoringFreshness
+              lastGoodAt={snapshot.lastGoodRangeAt}
+              errorAt={snapshot.rangeErrorAt}
             />
-          )}
-        </section>
-        <section className="mon-card" aria-label="Back Cluster">
-          <MonitoringFreshness lastGoodAt={snapshot.lastGoodRangeAt} errorAt={snapshot.rangeErrorAt} />
-          {backPanel && (
-            <SensorValueTable
-              title="Back Cluster"
-              showTitle={false}
-              firstColumnLabel="Back"
-              rows={backPanel.rows}
-              values={snapshot.data.live}
-              nodeSuffix="b"
+            {frontPanel && (
+              <SensorValueTable
+                title="Front Cluster"
+                showTitle={false}
+                firstColumnLabel="Front"
+                rows={frontPanel.rows}
+                values={snapshot.data.live}
+                nodeSuffix="f"
+              />
+            )}
+          </section>
+          <section className="mon-card" aria-label="Back Cluster">
+            <MonitoringFreshness
+              lastGoodAt={snapshot.lastGoodRangeAt}
+              errorAt={snapshot.rangeErrorAt}
             />
-          )}
-        </section>
+            {backPanel && (
+              <SensorValueTable
+                title="Back Cluster"
+                showTitle={false}
+                firstColumnLabel="Back"
+                rows={backPanel.rows}
+                values={snapshot.data.live}
+                nodeSuffix="b"
+              />
+            )}
+          </section>
         </aside>
 
         <div className="mon-main">
-      <section className="mon-card" aria-label="Flower climate conditions">
-        <h2 className="mon-card__title">Flower climate conditions</h2>
-        <MonitoringFreshness lastGoodAt={snapshot.lastGoodRangeAt} errorAt={snapshot.rangeErrorAt} />
-        {snapshot.data.series.length === 0 ? (
-          <div style={CLIMATE_CHART_HEIGHT} />
-        ) : (
-          <div style={CLIMATE_CHART_HEIGHT}>
-            <UPlotChart
-              ref={climateRef}
-              feed={chartFeeds.climate}
-              onZoom={zoomToRange}
-              onRequestBudgetChange={(budget) => reportBudget('climate', budget)}
-              title="Flower climate conditions"
-              description="Temperature, relative humidity and VPD over the selected time range. Toggle series with the sensor boxes, change the range with the toolbar, and open the table below for the underlying data."
+          <section className="mon-card" aria-label="Flower climate conditions">
+            <h2 className="mon-card__title">Flower climate conditions</h2>
+            <MonitoringFreshness
+              lastGoodAt={snapshot.lastGoodRangeAt}
+              errorAt={snapshot.rangeErrorAt}
             />
-          </div>
-        )}
-        <ChartDataTable title="Flower climate conditions" data={groups.climate} />
-      </section>
+            {snapshot.data.series.length === 0 ? (
+              <div style={CLIMATE_CHART_HEIGHT} />
+            ) : (
+              <div style={CLIMATE_CHART_HEIGHT}>
+                <UPlotChart
+                  ref={climateRef}
+                  feed={chartFeeds.climate}
+                  onZoom={zoomToRange}
+                  onRequestBudgetChange={budget => reportBudget('climate', budget)}
+                  title="Flower climate conditions"
+                  description="Temperature, relative humidity and VPD over the selected time range. Toggle series with the sensor boxes, change the range with the toolbar, and open the table below for the underlying data."
+                />
+              </div>
+            )}
+            <ChartDataTable title="Flower climate conditions" data={groups.climate} />
+          </section>
 
-      <section className="mon-card" aria-label="Flower atmosphere & equipment">
-        <h2 className="mon-card__title">Flower atmosphere &amp; equipment</h2>
-        <MonitoringFreshness lastGoodAt={snapshot.lastGoodRangeAt} errorAt={snapshot.rangeErrorAt} />
-        {snapshot.data.series.length === 0 ? (
-          <div style={CHART_HEIGHT} />
-        ) : (
-          <div style={CHART_HEIGHT}>
-            <UPlotChart
-              ref={deviceRef}
-              feed={chartFeeds.device}
-              onZoom={zoomToRange}
-              onRequestBudgetChange={(budget) => reportBudget('device', budget)}
-              title="Flower atmosphere & equipment"
-              description="CO2 and pressure over the selected time range. Toggle series with the sensor boxes, change the range with the toolbar, and open the table below for the underlying data."
+          <section className="mon-card" aria-label="Flower atmosphere & equipment">
+            <h2 className="mon-card__title">Flower atmosphere &amp; equipment</h2>
+            <MonitoringFreshness
+              lastGoodAt={snapshot.lastGoodRangeAt}
+              errorAt={snapshot.rangeErrorAt}
             />
-          </div>
-        )}
-        <ChartDataTable title="Flower atmosphere & equipment" data={groups.device} />
-      </section>
+            {snapshot.data.series.length === 0 ? (
+              <div style={CHART_HEIGHT} />
+            ) : (
+              <div style={CHART_HEIGHT}>
+                <UPlotChart
+                  ref={deviceRef}
+                  feed={chartFeeds.device}
+                  onZoom={zoomToRange}
+                  onRequestBudgetChange={budget => reportBudget('device', budget)}
+                  title="Flower atmosphere & equipment"
+                  description="CO2 and pressure over the selected time range. Toggle series with the sensor boxes, change the range with the toolbar, and open the table below for the underlying data."
+                />
+              </div>
+            )}
+            <ChartDataTable title="Flower atmosphere & equipment" data={groups.device} />
+          </section>
 
-      <section className="mon-card" aria-label="Statistics - All Available Sensors">
-        <MonitoringFreshness lastGoodAt={snapshot.lastGoodRangeAt} errorAt={snapshot.rangeErrorAt} />
-        {statsPanel && (
-          <StatisticsTable
-            title="Statistics - All Available Sensors"
-            rows={statsPanel.rows}
-            statistics={snapshot.data.statistics}
-          />
-        )}
-      </section>
+          <section className="mon-card" aria-label="Statistics - All Available Sensors">
+            <MonitoringFreshness
+              lastGoodAt={snapshot.lastGoodRangeAt}
+              errorAt={snapshot.rangeErrorAt}
+            />
+            {statsPanel && (
+              <StatisticsTable
+                title="Statistics - All Available Sensors"
+                rows={statsPanel.rows}
+                statistics={snapshot.data.statistics}
+              />
+            )}
+          </section>
         </div>
       </div>
     </div>

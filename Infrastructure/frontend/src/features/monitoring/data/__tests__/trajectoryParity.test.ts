@@ -1,11 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import type {
-  ClimateTimelineSeries,
-  ControlMonitoringResponse,
-  Origin,
-  Quality,
-} from '../../api'
+import type { ClimateTimelineSeries, ControlMonitoringResponse, Origin, Quality } from '../../api'
 import { alignSeries } from '../alignSeries'
 import type { AlignInput } from '../alignSeries.types'
 
@@ -19,7 +14,7 @@ function provenance(origin: Origin, quality: Quality) {
 
 function climateSeries(
   points: ClimateTimelineSeries['points'],
-  linear: ClimateTimelineSeries['linear'] = [],
+  linear: ClimateTimelineSeries['linear'] = []
 ): ClimateTimelineSeries {
   return {
     name: 'Heating Setpoint',
@@ -61,22 +56,22 @@ function point(timestamp: Date, value: number, origin: Origin, quality: Quality)
 describe('trajectory parity', () => {
   it('continues recorded scheduled history into the projected ramp', () => {
     const history = controlResponse([
-      climateSeries([
-        point(START, 22, 'recorded', 'exact'),
-        point(NOW, 23, 'recorded', 'exact'),
-      ]),
+      climateSeries([point(START, 22, 'recorded', 'exact'), point(NOW, 23, 'recorded', 'exact')]),
     ])
     const projection = controlResponse([
       {
-        ...climateSeries([], [
-          {
-            start: NOW,
-            end: END,
-            start_value: 23,
-            end_value: 25,
-            provenance: provenance('projected', 'estimated'),
-          },
-        ]),
+        ...climateSeries(
+          [],
+          [
+            {
+              start: NOW,
+              end: END,
+              start_value: 23,
+              end_value: 25,
+              provenance: provenance('projected', 'estimated'),
+            },
+          ]
+        ),
         provenance: provenance('projected', 'estimated'),
       },
     ])
@@ -92,8 +87,12 @@ describe('trajectory parity', () => {
     }
 
     const aligned = alignSeries(input)
-    const step = aligned.series.find((series) => series.metric === 'heating_setpoint' && series.role === 'step')
-    const ramp = aligned.series.find((series) => series.metric === 'heating_setpoint' && series.role === 'linear')
+    const step = aligned.series.find(
+      series => series.metric === 'heating_setpoint' && series.role === 'step'
+    )
+    const ramp = aligned.series.find(
+      series => series.metric === 'heating_setpoint' && series.role === 'linear'
+    )
     const startIndex = aligned.x.indexOf(START.getTime())
     const nowIndex = aligned.x.indexOf(NOW.getTime())
     const endIndex = aligned.x.indexOf(END.getTime())

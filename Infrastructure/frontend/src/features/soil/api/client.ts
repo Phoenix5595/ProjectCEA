@@ -8,9 +8,10 @@
  * payload (status, message, error_code) so panels can render it inline.
  */
 import { isAxiosError } from 'axios'
-import { z } from 'zod/v3'
+import { z } from 'zod'
 
 import { apiClient } from '../../../services/api'
+
 import {
   type AssignmentRequest,
   SensorRegistryList,
@@ -70,18 +71,15 @@ export const soilApi = {
     if (params.bus !== undefined) search.set('bus', params.bus)
     const query = search.toString()
     const response = await apiClient.backendClient.get(
-      `/api/sensors/registry${query ? `?${query}` : ''}`,
+      `/api/sensors/registry${query ? `?${query}` : ''}`
     )
     return SensorRegistryList.parse(response.data)
   },
 
-  async assign(
-    registryId: number,
-    body: AssignmentRequest,
-  ): Promise<SensorRegistryRecord> {
+  async assign(registryId: number, body: AssignmentRequest): Promise<SensorRegistryRecord> {
     const response = await apiClient.backendClient.put(
       `/api/sensors/registry/${registryId}/assignment`,
-      body,
+      body
     )
     return SensorRegistryRecord.parse(response.data)
   },

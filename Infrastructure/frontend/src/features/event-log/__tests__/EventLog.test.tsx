@@ -1,8 +1,10 @@
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent, { type UserEvent } from '@testing-library/user-event'
 import { afterEach, describe, expect, it } from 'vitest'
+
 import { EventLog } from '../components/EventLog'
 import { globalEventLogStore } from '../state/eventLogStore'
+
 import { makeEventEntry, makeEventEntryWith } from './testFactories'
 
 describe('EventLog', () => {

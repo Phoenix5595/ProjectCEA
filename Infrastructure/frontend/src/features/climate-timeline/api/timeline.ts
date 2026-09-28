@@ -1,7 +1,11 @@
 import axios from 'axios'
-import { z } from 'zod/v3'
-import type { ClimatePeriod } from '../../../types/climatePeriod'
+import { z } from 'zod'
+
 import type { ApiClientCore } from '../../../services/api'
+import type { ClimatePeriod } from '../../../types/climatePeriod'
+import type { TimelineSavedBaseline, TimelineWindow } from '../state/timelineDraft'
+
+import { RichTrajectoryEnvelope } from './contracts'
 import {
   TimelineConflictError,
   TimelineUnavailableError,
@@ -10,8 +14,6 @@ import {
   type TimelinePreviewRequest,
   type TimelinePublicationPort,
 } from './timelinePublicationPort'
-import { RichTrajectoryEnvelope } from './contracts'
-import type { TimelineSavedBaseline, TimelineWindow } from '../state/timelineDraft'
 
 const periodSchema = z.object({
   id: z.union([z.number().int(), z.string()]).optional(),
@@ -113,11 +115,11 @@ function requestPayload(
 async function fetchSavedBaseline(
   core: ApiClientCore,
   room: TimelineRoomForApi,
-  window: TimelineWindow,
+  window: TimelineWindow
 ): Promise<TimelineSavedBaseline> {
   const response = await core.automationClient.get(
     `/api/climate-timeline/${encodeURIComponent(room.location)}/${encodeURIComponent(room.cluster)}`,
-    { params: window },
+    { params: window }
   )
   return mapSavedResponse(room, savedResponseSchema.parse(response.data), window)
 }
@@ -170,7 +172,7 @@ export const timelineMethods = {
       return await fetchSavedBaseline(
         this,
         { location: request.location, cluster: request.cluster },
-        request.window,
+        request.window
       )
     } catch (error) {
       if (axios.isAxiosError(error) && error.response?.status === 409) {

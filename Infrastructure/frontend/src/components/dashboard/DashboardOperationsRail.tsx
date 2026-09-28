@@ -44,12 +44,7 @@ function WaterTankGraphic({
     ? `Water tank level ${level}%`
     : 'Water tank level: sensor not configured'
   const tank = (
-    <svg
-      viewBox="0 0 100 100"
-      className="absolute inset-0 size-full"
-      aria-hidden
-      focusable="false"
-    >
+    <svg viewBox="0 0 100 100" className="absolute inset-0 size-full" aria-hidden focusable="false">
       <path d="M46 13 V5 H64 V14" fill="none" stroke={outline} strokeWidth="1.8" />
       <path
         d="M15 20 Q48 3 81 20 Z"

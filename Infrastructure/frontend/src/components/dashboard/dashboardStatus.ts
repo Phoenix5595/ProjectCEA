@@ -1,7 +1,7 @@
-import type { Device } from '../../types/device'
-import type { ControlSnapshotResponse } from '../../services/api/devices'
-import type { SensorQuality, SensorSampleMeta, SensorSource } from '../../types/sensor'
 import type { SensorSeries } from '../../features/monitoring/api/contracts'
+import type { ControlSnapshotResponse } from '../../services/api/devices'
+import type { Device } from '../../types/device'
+import type { SensorQuality, SensorSampleMeta, SensorSource } from '../../types/sensor'
 import { SENSOR_STALE_AFTER_MS } from '../../types/sensor'
 
 export type ClimateMetric = 'temperature' | 'rh' | 'vpd' | 'co2'
@@ -204,8 +204,7 @@ export function deriveClusterSensorStatus(
     }
     if (
       newest == null ||
-      (meta.observedAtMs ?? meta.receivedAtMs) >
-        (newest.observedAtMs ?? newest.receivedAtMs)
+      (meta.observedAtMs ?? meta.receivedAtMs) > (newest.observedAtMs ?? newest.receivedAtMs)
     ) {
       newest = meta
     }

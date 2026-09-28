@@ -7,6 +7,7 @@
  * converter and re-exports the themed builder so the adapter keeps one import.
  */
 import uPlot from 'uplot'
+
 import type { AlignedData } from '../data'
 
 export { buildOptions } from './options/buildOptions'
@@ -16,8 +17,8 @@ export type { ChartCallbacks } from './options/buildOptions'
 export function toUPlotData(data: AlignedData): uPlot.AlignedData {
   return [
     data.x,
-    ...data.series.map((series) =>
-      series.quality === 'unavailable' ? series.y.map(() => null) : series.y,
+    ...data.series.map(series =>
+      series.quality === 'unavailable' ? series.y.map(() => null) : series.y
     ),
   ]
 }

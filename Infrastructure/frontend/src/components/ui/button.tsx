@@ -9,10 +9,11 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        primary: 'bg-btn-primary text-white hover:bg-btn-primary-hover',
-        accent: 'bg-accent-vivid text-surface-base hover:bg-accent-hover',
+        primary: 'bg-btn-primary text-btn-primary-text hover:bg-btn-primary-hover',
+        accent:
+          'bg-accent-vivid text-accent-vivid-foreground hover:bg-accent-hover hover:text-accent-hover-foreground',
         'accent-strong':
-          'bg-accent-active text-text-default hover:bg-accent-hover disabled:bg-surface-secondary disabled:text-text-faint disabled:opacity-100',
+          'bg-accent-active text-accent-active-foreground hover:bg-accent-hover hover:text-accent-hover-foreground disabled:bg-surface-secondary disabled:text-text-faint disabled:opacity-100',
         outline:
           'border border-border-default bg-transparent text-text-default hover:bg-surface-tertiary hover:border-border-emphasis',
         ghost: 'text-text-secondary hover:bg-surface-tertiary hover:text-text-default',
@@ -28,7 +29,7 @@ const buttonVariants = cva(
       variant: 'ghost',
       size: 'default',
     },
-  },
+  }
 )
 
 export interface ButtonProps extends ComponentProps<'button'>, VariantProps<typeof buttonVariants> {
@@ -46,7 +47,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
         {...props}
       />
     )
-  },
+  }
 )
 Button.displayName = 'Button'
 

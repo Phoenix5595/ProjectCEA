@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+
 import type { AlignedData } from '../../data'
 import { seriesKey } from '../../data/alignSeries.types'
 import { buildScales } from '../options/scales'
@@ -8,7 +9,7 @@ function makeData(): AlignedData {
   const families = ['temperature', 'rh', 'vpd', 'device', 'light', 'pressure', 'co2'] as const
   return {
     x: [1, 2],
-    series: families.map((family) => ({
+    series: families.map(family => ({
       key: seriesKey('sensor', family, 'mean'),
       label: family,
       kind: 'sensor',
@@ -37,9 +38,9 @@ describe('buildScales', () => {
   it('places temperature on the left and every other family on the right', () => {
     const { axes } = buildScales(makeData())
 
-    expect(axes.find((axis) => axis.scale === 'temperature')?.side).toBe(3)
+    expect(axes.find(axis => axis.scale === 'temperature')?.side).toBe(3)
     for (const family of ['rh', 'vpd', 'device', 'light', 'pressure', 'co2']) {
-      expect(axes.find((axis) => axis.scale === family)?.side).toBe(1)
+      expect(axes.find(axis => axis.scale === family)?.side).toBe(1)
     }
   })
 
@@ -48,7 +49,7 @@ describe('buildScales', () => {
     const wide = buildScales(makeData())
 
     for (const axes of [narrow.axes, wide.axes]) {
-      const familyAxes = axes.filter((axis) => axis.scale !== 'x')
+      const familyAxes = axes.filter(axis => axis.scale !== 'x')
       expect(familyAxes).toHaveLength(7)
       const dictatedSizes: Record<string, number> = { temperature: 40, vpd: 40 }
       for (const axis of familyAxes) {
@@ -77,12 +78,13 @@ describe('buildScales', () => {
     expect(Reflect.apply(rhRange, undefined, [undefined, 40, 96])).toEqual([20, 100])
     expect(Reflect.apply(deviceRange, undefined, [undefined, 15, 85])).toEqual([0, 100])
     expect(Reflect.apply(lightRange, undefined, [undefined, 25, 75])).toEqual([0, 100])
-    expect(Reflect.apply(pressureRange, undefined, [undefined, 1013, 1013.5])).toEqual([
-      1012,
-      1014,
-    ])
-    expect(Reflect.apply(requiredRange(scales.vpd?.range), undefined, [undefined, 21, 25])).toEqual([20, 26])
-    expect(Reflect.apply(requiredRange(scales.co2?.range), undefined, [undefined, 21, 25])).toEqual([20, 26])
+    expect(Reflect.apply(pressureRange, undefined, [undefined, 1013, 1013.5])).toEqual([1012, 1014])
+    expect(Reflect.apply(requiredRange(scales.vpd?.range), undefined, [undefined, 21, 25])).toEqual(
+      [20, 26]
+    )
+    expect(Reflect.apply(requiredRange(scales.co2?.range), undefined, [undefined, 21, 25])).toEqual(
+      [20, 26]
+    )
   })
 
   it('adds headroom and footroom for every populated family scale', () => {
@@ -97,24 +99,33 @@ describe('buildScales', () => {
       co2: [21, 25],
     } as const
 
-    for (const family of ['temperature', 'rh', 'vpd', 'device', 'light', 'pressure', 'co2'] as const) {
+    for (const family of [
+      'temperature',
+      'rh',
+      'vpd',
+      'device',
+      'light',
+      'pressure',
+      'co2',
+    ] as const) {
       const range = requiredRange(scales[family]?.range)
       const [min, max] = Reflect.apply(range, undefined, [undefined, ...observedExtrema[family]])
 
-      const expected = family === 'rh'
-        ? [20, 100]
-        : family === 'device' || family === 'light'
-          ? [0, 100]
-          : family === 'pressure'
-            ? [1012, 1014]
-            : [20, 26]
+      const expected =
+        family === 'rh'
+          ? [20, 100]
+          : family === 'device' || family === 'light'
+            ? [0, 100]
+            : family === 'pressure'
+              ? [1012, 1014]
+              : [20, 26]
       expect([min, max]).toEqual(expected)
     }
   })
 
   it('applies 5% margins to effective extrema across multiple series', () => {
     const data = makeData()
-    const temperature = data.series.find((series) => series.family === 'temperature')
+    const temperature = data.series.find(series => series.family === 'temperature')
     if (temperature === undefined) throw new Error('Temperature series is required')
     temperature.y = [20, null]
     data.series.push({
@@ -138,7 +149,7 @@ describe('buildScales', () => {
 
   it('adds headroom and footroom when data reaches soft, forced, or default bounds', () => {
     const data = makeData()
-    const temperature = data.series.find((series) => series.family === 'temperature')
+    const temperature = data.series.find(series => series.family === 'temperature')
     if (temperature === undefined) throw new Error('Temperature series is required')
     temperature.presentation = { softMin: 10, softMax: 35 }
 
@@ -170,7 +181,7 @@ describe('buildScales', () => {
 
   it('honors softMin/softMax for temperature without clipping legitimate values', () => {
     const data = makeData()
-    const temperature = data.series.find((series) => series.family === 'temperature')
+    const temperature = data.series.find(series => series.family === 'temperature')
     if (temperature === undefined) throw new Error('Temperature series is required')
 
     temperature.presentation = { softMin: 10, softMax: 35 }
@@ -194,7 +205,7 @@ describe('buildScales', () => {
 
   it('adds vertical headroom around finite extrema outside soft bounds', () => {
     const data = makeData()
-    const temperature = data.series.find((series) => series.family === 'temperature')
+    const temperature = data.series.find(series => series.family === 'temperature')
     if (temperature === undefined) throw new Error('Temperature series is required')
 
     temperature.presentation = { softMin: 10, softMax: 35 }
@@ -218,21 +229,21 @@ describe('buildScales', () => {
 
   it('draws actual VPD series with the required three-pixel width', () => {
     const data = makeData()
-    const vpd = data.series.find((series) => series.family === 'vpd')
+    const vpd = data.series.find(series => series.family === 'vpd')
     if (vpd === undefined) throw new Error('VPD series is required')
 
     vpd.presentation = { lineWidth: 3 }
-    expect(buildSeries(data).find((series) => series.label === 'vpd')?.width).toBe(3)
+    expect(buildSeries(data).find(series => series.label === 'vpd')?.width).toBe(3)
   })
 
   it('keeps dot-style setpoint lanes visible', () => {
     const data = makeData()
-    const vpd = data.series.find((series) => series.family === 'vpd')
+    const vpd = data.series.find(series => series.family === 'vpd')
     if (vpd === undefined) throw new Error('VPD series is required')
 
     vpd.presentation = { dash: [0, 5] }
     vpd.source = 'climate'
-    const dotLane = buildSeries(data).find((series) => series.label === 'vpd')
+    const dotLane = buildSeries(data).find(series => series.label === 'vpd')
     if (dotLane === undefined) throw new Error('VPD series is required')
     expect(dotLane.dash).toEqual([1, 5])
     expect(dotLane.cap).toBe('round')

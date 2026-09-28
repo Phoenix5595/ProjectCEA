@@ -1,10 +1,12 @@
-import { useState } from 'react'
 import { Menu, Monitor } from 'lucide-react'
+import { useState } from 'react'
+
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 
+import type { SystemStats } from '../../hooks/useSystemStatus'
 import { AppRibbon } from '../chrome/AppRibbon'
 import { RibbonMenuButton } from '../chrome/ribbonMenuButton'
-import type { SystemStats } from '../../hooks/useSystemStatus'
+
 import { getServiceStatusPresentation, type ServiceStatus } from './serviceStatusPresentation'
 
 const SERVICE_STATUS_DETAIL: Record<ServiceStatus, string> = {

@@ -3,7 +3,7 @@ import { useCallback, useRef } from 'react'
 import { requestBudget } from '../data'
 
 export function useRequestBudgetReporter(
-  onRequestBudgetChange?: (maxPoints: number) => void,
+  onRequestBudgetChange?: (maxPoints: number) => void
 ): (panelWidth: number) => void {
   const onRequestBudgetChangeRef = useRef(onRequestBudgetChange)
   onRequestBudgetChangeRef.current = onRequestBudgetChange

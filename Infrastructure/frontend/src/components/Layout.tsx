@@ -1,8 +1,10 @@
-import React, { useState } from 'react'
+import { useState, type FC } from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
+
+import { useControlActions } from '../contexts/ControlActionsContext'
+
 import Sidebar from './Sidebar'
 import TopRibbon, { Sector } from './TopRibbon'
-import { useControlActions } from '../contexts/ControlActionsContext'
 
 // Map pathname to sector
 const getSectorFromPath = (pathname: string): Sector | null => {
@@ -13,7 +15,7 @@ const getSectorFromPath = (pathname: string): Sector | null => {
   return null
 }
 
-const Layout: React.FC = () => {
+const Layout: FC = () => {
   const location = useLocation()
   const { actions } = useControlActions()
 

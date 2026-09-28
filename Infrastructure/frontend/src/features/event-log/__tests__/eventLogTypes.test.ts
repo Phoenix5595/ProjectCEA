@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+
 import { toEventLogEntry, type OperationalEvent } from '../state/eventLogTypes'
 
 const severities = ['info', 'warning', 'error', 'critical'] as const
@@ -61,7 +62,7 @@ describe('toEventLogEntry', () => {
     expect(entry.reasonText).toBeNull()
   })
 
-  it.each(severities)('preserves authoritative %s severity unchanged', (severity) => {
+  it.each(severities)('preserves authoritative %s severity unchanged', severity => {
     // Given: a relay failure envelope whose severity is authoritative
     const event = makeEvent(severity)
 

@@ -17,9 +17,9 @@ import type {
   SensorSeries,
   UnitFamily,
 } from '../api'
+import type { ChartFamily } from '../charts/options/family'
 import type { SeriesSpec } from '../config'
 import type { MonitoringRange } from '../state'
-import type { ChartFamily } from '../charts/options/family'
 
 /** Everything the alignment function needs to build the shared grid. */
 export interface AlignInput {
@@ -44,16 +44,7 @@ export type SeriesKind = 'sensor' | 'point' | 'step' | 'linear'
 export type SeriesSource = 'sensor' | 'climate' | 'light' | 'device' | 'pid'
 
 export type SeriesRole =
-  | 'mean'
-  | 'min'
-  | 'max'
-  | 'point'
-  | 'step'
-  | 'linear'
-  | 'band'
-  | 'state'
-  | 'duty'
-  | 'pid_output'
+  'mean' | 'min' | 'max' | 'point' | 'step' | 'linear' | 'band' | 'state' | 'duty' | 'pid_output'
 
 export type SeriesKey = string & { readonly __seriesKey: unique symbol }
 

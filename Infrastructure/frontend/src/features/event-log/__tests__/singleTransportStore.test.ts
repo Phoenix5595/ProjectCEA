@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+
 import { globalEventLogStore } from '../state/eventLogStore'
 import { _getSharedStoreForTesting } from '../state/useEventLog'
 

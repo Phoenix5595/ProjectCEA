@@ -1,14 +1,14 @@
-import { format } from 'date-fns';
-import { fr } from 'date-fns/locale';
+import { format } from 'date-fns'
+import { fr } from 'date-fns/locale'
 
-import type { CalendarEventDto } from '../../types/calendar';
-import { ROOM_CALENDAR_COLORS } from '../../types/calendar';
-import { truncateMarkerLabel } from '../../utils/calendarDayMarkers';
+import type { CalendarEventDto } from '../../types/calendar'
+import { ROOM_CALENDAR_COLORS } from '../../types/calendar'
+import { truncateMarkerLabel } from '../../utils/calendarDayMarkers'
 
 interface CalendarDayDetailProps {
-  date: Date;
-  events: CalendarEventDto[];
-  onClose: () => void;
+  date: Date
+  events: CalendarEventDto[]
+  onClose: () => void
 }
 
 export default function CalendarDayDetail({ date, events, onClose }: CalendarDayDetailProps) {
@@ -31,8 +31,8 @@ export default function CalendarDayDetail({ date, events, onClose }: CalendarDay
         <p className="text-sm text-text-muted">No events on this day</p>
       ) : (
         <ul className="space-y-1.5 max-h-44 overflow-y-auto">
-          {events.map((ev) => {
-            const roomClass = ROOM_CALENDAR_COLORS[ev.location] ?? 'bg-slate-500';
+          {events.map(ev => {
+            const roomClass = ROOM_CALENDAR_COLORS[ev.location] ?? 'bg-slate-500'
             return (
               <li
                 key={ev.id}
@@ -49,10 +49,10 @@ export default function CalendarDayDetail({ date, events, onClose }: CalendarDay
                   </span>
                 </span>
               </li>
-            );
+            )
           })}
         </ul>
       )}
     </div>
-  );
+  )
 }

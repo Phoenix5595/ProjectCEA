@@ -6,6 +6,7 @@
  * owns wall-time formatting and preflight validation used by the parent.
  */
 import { formatInTimeZone } from 'date-fns-tz'
+
 import {
   offsetLabel,
   parseWallInput,
@@ -69,12 +70,14 @@ export function AbsoluteRangeForm({
   applyDisabled,
 }: AbsoluteRangeFormProps) {
   return (
-    <div className={`mon-toolbar__absolute${error !== null ? ' mon-toolbar__absolute--invalid' : ''}`}>
+    <div
+      className={`mon-toolbar__absolute${error !== null ? ' mon-toolbar__absolute--invalid' : ''}`}
+    >
       <input
         type="datetime-local"
         aria-label="Range start"
         value={startInput}
-        onChange={(e) => onStartChange(e.target.value)}
+        onChange={e => onStartChange(e.target.value)}
         aria-invalid={error !== null}
         aria-describedby={error !== null ? errorId : undefined}
       />
@@ -85,18 +88,29 @@ export function AbsoluteRangeForm({
         type="datetime-local"
         aria-label="Range end"
         value={endInput}
-        onChange={(e) => onEndChange(e.target.value)}
+        onChange={e => onEndChange(e.target.value)}
         aria-invalid={error !== null}
         aria-describedby={error !== null ? errorId : undefined}
       />
-      <button type="button" onClick={onApply} disabled={applyDisabled} aria-label="Apply fixed range" title="Apply">
+      <button
+        type="button"
+        onClick={onApply}
+        disabled={applyDisabled}
+        aria-label="Apply fixed range"
+        title="Apply"
+      >
         ✓
       </button>
     </div>
   )
 }
 
-export function AbsoluteRangeFeedback({ error, fallFold, errorId, onFallFoldChoice }: AbsoluteRangeFeedbackProps) {
+export function AbsoluteRangeFeedback({
+  error,
+  fallFold,
+  errorId,
+  onFallFoldChoice,
+}: AbsoluteRangeFeedbackProps) {
   return (
     <div className="mon-toolbar__feedback">
       {fallFold !== null && fallFold.choice === null && (

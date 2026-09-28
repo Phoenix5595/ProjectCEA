@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useSyncExternalStore } from 'react'
+
 import { globalEventLogStore, type EventLogEntry, type EventLogPaging } from './eventLogStore'
 import {
   addConnectionRef,
@@ -53,7 +54,7 @@ export function useEventLog(options: UseEventLogOptions = {}): UseEventLogResult
       return lastSnapshotRef.current.filtered
     }
 
-    const filtered = sourceEntries.filter((entry) => {
+    const filtered = sourceEntries.filter(entry => {
       const room = entry.payload.room
       const entryCluster = entry.payload.cluster
       if (typeof room !== 'string' || room !== location) {
@@ -76,8 +77,8 @@ export function useEventLog(options: UseEventLogOptions = {}): UseEventLogResult
   }, [location, cluster])
 
   const entries = useSyncExternalStore(
-    (listener) => globalEventLogStore.subscribe(listener),
-    getSnapshot,
+    listener => globalEventLogStore.subscribe(listener),
+    getSnapshot
   )
 
   return {
@@ -93,8 +94,8 @@ export function useEventLogPagination(): Readonly<{
   loadOlder: () => Promise<void>
 }> {
   const paging = useSyncExternalStore(
-    (listener) => globalEventLogStore.subscribe(listener),
-    () => globalEventLogStore.snapshot().paging,
+    listener => globalEventLogStore.subscribe(listener),
+    () => globalEventLogStore.snapshot().paging
   )
   return { paging, loadOlder }
 }

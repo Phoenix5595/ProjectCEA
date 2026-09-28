@@ -1,6 +1,6 @@
 import { sensorUrlClustersFor } from '../../../config/clusterTopology'
 import { logger } from '../../../utils/logger'
-import { CONTROL_HISTORY_MAX_POINTS, MonitoringApi, SENSOR_RANGE_MAX_POINTS } from '../api'
+import { CONTROL_HISTORY_MAX_POINTS, MonitoringApi } from '../api'
 
 import {
   applyControl,
@@ -10,8 +10,12 @@ import {
   projectionExpired,
 } from './monitoringStore.control'
 import { downgradeQuality, iso, mergeLive } from './monitoringStore.merge'
-import { controlTailStart, isSourceRetryEligible, pollingEligibility } from './monitoringStore.pollingPolicy'
 import type { LiveRequest, PollerHooks } from './monitoringStore.poller.types'
+import {
+  controlTailStart,
+  isSourceRetryEligible,
+  pollingEligibility,
+} from './monitoringStore.pollingPolicy'
 
 export type { LiveRequest, PollerHooks } from './monitoringStore.poller.types'
 
@@ -29,7 +33,7 @@ export class MonitoringLivePoller {
   constructor(
     private readonly location: string,
     private readonly monitoringApi: MonitoringApi,
-    private readonly hooks: PollerHooks,
+    private readonly hooks: PollerHooks
   ) {
     this.lastSensorHistoryRefreshAt = hooks.now().getTime()
   }
@@ -51,7 +55,8 @@ export class MonitoringLivePoller {
     const outcome = state.sourceOutcomes.projection
     const failed = outcome?.status === 'failed'
     if (!projectionExpired(data, now) && !failed) return
-    const lastAttemptAt = this.lastProjectionAttemptAt ?? (outcome?.status === 'failed' ? outcome.errorAt : null)
+    const lastAttemptAt =
+      this.lastProjectionAttemptAt ?? (outcome?.status === 'failed' ? outcome.errorAt : null)
     if (!isSourceRetryEligible('projection', now, lastAttemptAt)) return
     const request = this.hooks.liveRequest()
     if (request === null) return
@@ -100,13 +105,14 @@ export class MonitoringLivePoller {
       this.liveInFlight.add(node)
       void this.monitoringApi
         .sensorLive(this.location, node)
-        .then((values) => {
+        .then(values => {
           if (!this.hooks.isActive() || this.hooks.isPaused()) return
           const data = this.hooks.read().data
           this.hooks.applyData({ ...data, live: mergeLive(data.live, values) })
         })
         .catch((err: unknown) => {
-          if (this.hooks.isActive() && !this.hooks.isPaused()) logger.warn('live sensor poll failed', err)
+          if (this.hooks.isActive() && !this.hooks.isPaused())
+            logger.warn('live sensor poll failed', err)
         })
         .finally(() => this.liveInFlight.delete(node))
     }
@@ -117,7 +123,11 @@ export class MonitoringLivePoller {
     if (
       state.range.kind !== 'live' ||
       this.sensorHistoryInFlight ||
-      !isSourceRetryEligible('sensor-history', this.hooks.now(), new Date(this.lastSensorHistoryRefreshAt))
+      !isSourceRetryEligible(
+        'sensor-history',
+        this.hooks.now(),
+        new Date(this.lastSensorHistoryRefreshAt)
+      )
     ) {
       return
     }
@@ -133,7 +143,7 @@ export class MonitoringLivePoller {
         this.location,
         iso(start),
         iso(now),
-        SENSOR_RANGE_MAX_POINTS,
+        this.hooks.getSensorRangeMaxPoints()
       )
       if (!this.hooks.isLiveRequestCurrent(request)) return
       const current = this.hooks.read()
@@ -173,11 +183,7 @@ export class MonitoringLivePoller {
       const now = this.hooks.now()
       const last = lastControlTimestamp(this.hooks.read().data)
       const start = controlTailStart(now, last)
-      const resp = await this.monitoringApi.controlTail(
-        this.location,
-        iso(start),
-        iso(now),
-      )
+      const resp = await this.monitoringApi.controlTail(this.location, iso(start), iso(now))
       if (!this.hooks.isLiveRequestCurrent(request)) return
       const previous = this.hooks.read()
       if (previous.data.controlHistory) {
@@ -210,12 +216,14 @@ export class MonitoringLivePoller {
     const now = this.hooks.now()
     if (this.controlRecoveryNotBefore !== null && now < this.controlRecoveryNotBefore) return
     const outcome = this.hooks.read().sourceOutcomes['control-history']
-    const lastAttemptAt = this.lastReconcileAt ?? (outcome?.status === 'failed' ? outcome.errorAt : null)
+    const lastAttemptAt =
+      this.lastReconcileAt ?? (outcome?.status === 'failed' ? outcome.errorAt : null)
     if (
       !this.hooks.isLiveRequestCurrent(request) ||
       this.reconciling ||
       !isSourceRetryEligible('control-history', now, lastAttemptAt)
-    ) return
+    )
+      return
     this.lastReconcileAt = now
     if (!this.hooks.isActive()) return
     this.reconciling = true
@@ -226,7 +234,7 @@ export class MonitoringLivePoller {
         this.location,
         iso(start),
         iso(end),
-        CONTROL_HISTORY_MAX_POINTS,
+        CONTROL_HISTORY_MAX_POINTS
       )
       if (!this.hooks.isLiveRequestCurrent(request)) return
       this.hooks.applyData(applyControlFresh(this.hooks.read().data, resp))

@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from 'react'
+
 import { apiClient } from '../services/api'
 import type { ControlSnapshotResponse } from '../services/api/devices'
 import type { DeviceRegistryEntry } from '../types/device'
@@ -54,7 +55,7 @@ function emit(): void {
 
 function deriveChannels(
   snapshot: ControlSnapshotResponse | null,
-  registry: DeviceRegistryEntry[],
+  registry: DeviceRegistryEntry[]
 ): ChannelInfo[] {
   const byChannel = new Map<number, DeviceRegistryEntry>()
   for (const entry of registry) {
@@ -107,7 +108,9 @@ function deriveChannels(
   })
 }
 
-function deriveRelayState(snapshot: ControlSnapshotResponse | null): RelayBoardStateResponse | null {
+function deriveRelayState(
+  snapshot: ControlSnapshotResponse | null
+): RelayBoardStateResponse | null {
   if (!snapshot) return null
 
   const relaysByChannel = new Map<number, (typeof snapshot.relays)[number]>()

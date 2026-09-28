@@ -16,12 +16,11 @@ const LEGACY_REDIRECTS = [
   { path: '/laboratory/climate', destination: '/laboratory' },
   { path: '/laboratory/water', destination: '/laboratory' },
   { path: '/laboratory/infrastructure', destination: '/laboratory' },
-  { path: '/flower/soil', destination: '/flower' },
 ] as const
 
 function trackViolations(page: import('@playwright/test').Page): string[] {
   const violations: string[] = []
-  page.on('request', (request) => {
+  page.on('request', request => {
     const url = request.url()
     if (url.includes('/grafana/')) violations.push(`grafana: ${url}`)
     const violation = describeViolation(url)
@@ -31,7 +30,9 @@ function trackViolations(page: import('@playwright/test').Page): string[] {
 }
 
 for (const nativePage of NATIVE_PAGES) {
-  test(`renders every canonical ${nativePage.manifest.room} panel natively`, async ({ page }, testInfo) => {
+  test(`renders every canonical ${nativePage.manifest.room} panel natively`, async ({
+    page,
+  }, testInfo) => {
     const violations = trackViolations(page)
     await page.goto(fixtureUrl(nativePage.path, testInfo))
 
@@ -45,8 +46,8 @@ for (const nativePage of NATIVE_PAGES) {
       }
       await expect(page.getByRole('heading', { name: panel.title })).toBeVisible()
       await expect(page.getByRole('img', { name: panel.title })).toBeVisible()
-      expect(panel.series.map((series) => series.name)).toHaveLength(
-        new Set(panel.series.map((series) => series.name)).size,
+      expect(panel.series.map(series => series.name)).toHaveLength(
+        new Set(panel.series.map(series => series.name)).size
       )
     }
 
@@ -55,9 +56,11 @@ for (const nativePage of NATIVE_PAGES) {
 }
 
 for (const legacyRedirect of LEGACY_REDIRECTS) {
-  test(`redirects ${legacyRedirect.path} to ${legacyRedirect.destination}`, async ({ page }, testInfo) => {
+  test(`redirects ${legacyRedirect.path} to ${legacyRedirect.destination}`, async ({
+    page,
+  }, testInfo) => {
     await page.goto(fixtureUrl(legacyRedirect.path, testInfo))
-    await page.waitForURL((url) => url.pathname === legacyRedirect.destination)
+    await page.waitForURL(url => url.pathname === legacyRedirect.destination)
 
     expect(new URL(page.url()).pathname).toBe(legacyRedirect.destination)
   })

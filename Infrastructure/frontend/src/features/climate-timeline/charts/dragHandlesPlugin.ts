@@ -1,7 +1,9 @@
 import type uPlot from 'uplot'
+
 import type { ClimatePeriod } from '../../../types/climatePeriod'
-import { timeToMinutes } from '../../../utils/timeMath'
 import { periodLengthMinutes } from '../../../utils/climatePeriodTimeline'
+import { timeToMinutes } from '../../../utils/timeMath'
+
 import {
   minutesOfDay,
   timeOfDayToInstant,
@@ -23,8 +25,18 @@ export interface DragHandlesCallbacks {
 }
 
 export type DragHandleSpec =
-  | { readonly kind: 'boundary'; readonly index: number; readonly edge: BoundaryEdge; readonly label: string }
-  | { readonly kind: 'value'; readonly index: number; readonly metric: ValueMetric; readonly label: string }
+  | {
+      readonly kind: 'boundary'
+      readonly index: number
+      readonly edge: BoundaryEdge
+      readonly label: string
+    }
+  | {
+      readonly kind: 'value'
+      readonly index: number
+      readonly metric: ValueMetric
+      readonly label: string
+    }
 
 const VALUE_SCALE: Record<ValueMetric, string> = {
   heating: 'temp',
@@ -40,7 +52,10 @@ const METRIC_LABEL: Record<ValueMetric, string> = {
   co2: 'CO₂ setpoint',
 }
 
-const VALUE_FIELD: Record<ValueMetric, 'heating_setpoint' | 'cooling_setpoint' | 'vpd_setpoint' | 'co2_setpoint'> = {
+const VALUE_FIELD: Record<
+  ValueMetric,
+  'heating_setpoint' | 'cooling_setpoint' | 'vpd_setpoint' | 'co2_setpoint'
+> = {
   heating: 'heating_setpoint',
   cooling: 'cooling_setpoint',
   vpd: 'vpd_setpoint',
@@ -50,10 +65,14 @@ const VALUE_FIELD: Record<ValueMetric, 'heating_setpoint' | 'cooling_setpoint' |
 const VALUE_METRICS: readonly ValueMetric[] = ['heating', 'cooling', 'vpd', 'co2']
 
 function gripsSignature(periods: readonly ClimatePeriod[]): string {
-  return periods.map((period, index) => {
-    const values = VALUE_METRICS.map((metric) => period[VALUE_FIELD[metric]] != null ? metric[0] : '').join('')
-    return `${index}:${values}`
-  }).join('|')
+  return periods
+    .map((period, index) => {
+      const values = VALUE_METRICS.map(metric =>
+        period[VALUE_FIELD[metric]] != null ? metric[0] : ''
+      ).join('')
+      return `${index}:${values}`
+    })
+    .join('|')
 }
 
 function handleSpecs(periods: readonly ClimatePeriod[]): DragHandleSpec[] {
@@ -64,7 +83,12 @@ function handleSpecs(periods: readonly ClimatePeriod[]): DragHandleSpec[] {
     specs.push({ kind: 'boundary', index, edge: 'end', label: `Adjust ${name} end` })
     for (const metric of VALUE_METRICS) {
       if (period[VALUE_FIELD[metric]] != null) {
-        specs.push({ kind: 'value', index, metric, label: `Adjust ${name} ${METRIC_LABEL[metric]}` })
+        specs.push({
+          kind: 'value',
+          index,
+          metric,
+          label: `Adjust ${name} ${METRIC_LABEL[metric]}`,
+        })
       }
     }
   })
@@ -92,7 +116,11 @@ function midMinute(period: ClimatePeriod): number {
 export function dragHandlesPlugin(callbacks: DragHandlesCallbacks): uPlot.Plugin {
   let container: HTMLDivElement | null = null
   let signature = ''
-  let activeDrag: { readonly spec: DragHandleSpec; onMove: (event: MouseEvent) => void; onUp: () => void } | null = null
+  let activeDrag: {
+    readonly spec: DragHandleSpec
+    onMove: (event: MouseEvent) => void
+    onUp: () => void
+  } | null = null
 
   const buildGrips = (u: uPlot): void => {
     if (container === null) return
@@ -127,8 +155,8 @@ export function dragHandlesPlugin(callbacks: DragHandlesCallbacks): uPlot.Plugin
         grip.style.height = '10px'
         grip.style.borderRadius = '5px'
       }
-      grip.addEventListener('mousedown', (event) => startDrag(event, spec, u))
-      grip.addEventListener('keydown', (event) => {
+      grip.addEventListener('mousedown', event => startDrag(event, spec, u))
+      grip.addEventListener('keydown', event => {
         if (spec.kind === 'boundary') {
           if (event.key === 'ArrowLeft') callbacks.commitBoundaryKey(spec.index, spec.edge, -5)
           if (event.key === 'ArrowRight') callbacks.commitBoundaryKey(spec.index, spec.edge, 5)
@@ -150,12 +178,17 @@ export function dragHandlesPlugin(callbacks: DragHandlesCallbacks): uPlot.Plugin
       const grip = child as HTMLElement
       const testId = grip.dataset.testid ?? ''
       const boundaryMatch = /^control-timeline-boundary-grip-(\d+)-(start|end)$/.exec(testId)
-      const valueMatch = /^control-timeline-value-grip-(\d+)-(heating|cooling|vpd|co2)$/.exec(testId)
+      const valueMatch = /^control-timeline-value-grip-(\d+)-(heating|cooling|vpd|co2)$/.exec(
+        testId
+      )
       if (boundaryMatch) {
         const period = periods[Number(boundaryMatch[1])]
         const edge = boundaryMatch[2] as BoundaryEdge
         if (!period) continue
-        const instant = timeOfDayToInstant(timeToMinutes(edge === 'start' ? period.start_time : period.end_time), window.start)
+        const instant = timeOfDayToInstant(
+          timeToMinutes(edge === 'start' ? period.start_time : period.end_time),
+          window.start
+        )
         if (instant > window.end) {
           grip.style.display = 'none'
           continue
@@ -212,7 +245,7 @@ export function dragHandlesPlugin(callbacks: DragHandlesCallbacks): uPlot.Plugin
 
   return {
     hooks: {
-      init: (u) => {
+      init: u => {
         container = document.createElement('div')
         container.style.position = 'absolute'
         container.style.inset = '0'
@@ -220,7 +253,7 @@ export function dragHandlesPlugin(callbacks: DragHandlesCallbacks): uPlot.Plugin
         u.root.appendChild(container)
         buildGrips(u)
       },
-      draw: (u) => {
+      draw: u => {
         buildGrips(u)
         positionGrips(u)
       },

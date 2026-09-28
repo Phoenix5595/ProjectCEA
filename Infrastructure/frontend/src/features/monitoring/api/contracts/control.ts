@@ -2,7 +2,9 @@
  * Control monitoring contracts mirroring the automation service
  * `/api/monitoring/control/{history,projection}` response shapes.
  */
-import { z } from 'zod/v3'
+import { z } from 'zod'
+
+import { RichTrajectoryEnvelope } from './rich'
 import {
   AggregationMetadata,
   FlushHealth,
@@ -15,7 +17,6 @@ import {
   TimelineProvenance,
   utcDate,
 } from './shared'
-import { RichTrajectoryEnvelope } from './rich'
 
 /** A scalar control value on the shared UTC monitoring grid. */
 export const TimelinePoint = z.object({

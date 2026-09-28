@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useState } from 'react'
 
-import { MonitoringApi } from '../features/monitoring/api/monitoringApi'
-import type { SensorSeries } from '../features/monitoring/api/contracts'
 import {
   buildTrendMetric,
   normalizeSensorSeries,
   type ClimateMetric,
   type TrendData,
 } from '../components/dashboard/dashboardStatus'
+import type { SensorSeries } from '../features/monitoring/api/contracts'
+import { MonitoringApi } from '../features/monitoring/api/monitoringApi'
 
 const TREND_LOCATIONS = ['Flower Room', 'Veg Room', 'Lab'] as const
 const TREND_WINDOW_MS = 60 * 60_000

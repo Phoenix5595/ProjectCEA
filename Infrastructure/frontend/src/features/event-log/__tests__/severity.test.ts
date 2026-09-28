@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+
 import { SEVERITY_LABELS, type SeverityLevel } from '../presentation/severity'
 
 describe('severity presentation', () => {

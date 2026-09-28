@@ -63,7 +63,7 @@ export function decimateSeries<T>(points: readonly T[], budget: number): T[] {
   const targetCount = Math.max(endpointCount, normalizedBudget)
   const interiorCount = valueCount - endpointCount
   const extraPoints = targetCount - endpointCount
-  const runBudgets = runs.map((run) => Math.min(run.length, 2))
+  const runBudgets = runs.map(run => Math.min(run.length, 2))
   let distributed = 0
 
   if (interiorCount > 0) {

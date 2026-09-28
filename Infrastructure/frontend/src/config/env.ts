@@ -23,9 +23,9 @@
  */
 
 function currentOrigin(port: number): string {
-  if (typeof window === 'undefined') return `http://localhost:${port}`;
-  const protocol = window.location.protocol === 'https:' ? 'https:' : 'http:';
-  return `${protocol}//${window.location.hostname}:${port}`;
+  if (typeof window === 'undefined') return `http://localhost:${port}`
+  const protocol = window.location.protocol === 'https:' ? 'https:' : 'http:'
+  return `${protocol}//${window.location.hostname}:${port}`
 }
 
 /**
@@ -34,48 +34,47 @@ function currentOrigin(port: number): string {
  * the Caddy URL, which is the cleanest option (same-origin, no CORS).
  */
 function caddyBase(): string {
-  const explicit = import.meta.env.VITE_API_BASE_URL;
-  if (explicit) return explicit.replace(/\/$/, '');
+  const explicit = import.meta.env.VITE_API_BASE_URL
+  if (explicit) return explicit.replace(/\/$/, '')
   if (typeof window !== 'undefined' && window.location.port === '8080') {
-    return window.location.origin; // same-origin: no CORS, no mixed-content.
+    return window.location.origin // same-origin: no CORS, no mixed-content.
   }
-  return currentOrigin(8080);
+  return currentOrigin(8080)
 }
 
-const CADDY_BASE = caddyBase();
+const CADDY_BASE = caddyBase()
 
 // Per-service overrides let an operator point one client at a direct port
 // (e.g. 8000) without a rebuild. Unset by default.
 export const BACKEND_API_URL =
-  import.meta.env.VITE_BACKEND_API_URL?.replace(/\/$/, '') ?? CADDY_BASE;
+  import.meta.env.VITE_BACKEND_API_URL?.replace(/\/$/, '') ?? CADDY_BASE
 export const AUTOMATION_API_URL =
-  import.meta.env.VITE_AUTOMATION_API_URL?.replace(/\/$/, '') ?? CADDY_BASE;
+  import.meta.env.VITE_AUTOMATION_API_URL?.replace(/\/$/, '') ?? CADDY_BASE
 export const WEATHER_API_URL =
-  import.meta.env.VITE_WEATHER_API_URL?.replace(/\/$/, '') ?? CADDY_BASE;
+  import.meta.env.VITE_WEATHER_API_URL?.replace(/\/$/, '') ?? CADDY_BASE
 
 export const MONITORING_API_URL =
-  import.meta.env.VITE_MONITORING_API_URL?.replace(/\/$/, '') ?? CADDY_BASE;
+  import.meta.env.VITE_MONITORING_API_URL?.replace(/\/$/, '') ?? CADDY_BASE
 
 /** Build the automation-service WebSocket URL (exact /ws). */
 export function buildWebSocketUrl(): string {
-  const explicit = import.meta.env.VITE_WEBSOCKET_URL;
-  if (explicit) return appendToken(explicit);
+  const explicit = import.meta.env.VITE_WEBSOCKET_URL
+  if (explicit) return appendToken(explicit)
 
   if (typeof window === 'undefined') {
-    return appendToken('ws://localhost:8080/ws');
+    return appendToken('ws://localhost:8080/ws')
   }
-  const wsProto = window.location.protocol === 'https:' ? 'wss' : 'ws';
-  const host = window.location.hostname;
-  const port = window.location.port === '8080' ? '8080' : '8080';
-  return appendToken(`${wsProto}://${host}:${port}/ws`);
+  const wsProto = window.location.protocol === 'https:' ? 'wss' : 'ws'
+  const host = window.location.hostname
+  const port = window.location.port === '8080' ? '8080' : '8080'
+  return appendToken(`${wsProto}://${host}:${port}/ws`)
 }
 
 /** Build-time API key. Never logged. */
-export const CEA_API_KEY: string =
-  (import.meta.env.VITE_CEA_API_KEY as string | undefined) ?? '';
+export const CEA_API_KEY: string = (import.meta.env.VITE_CEA_API_KEY as string | undefined) ?? ''
 
 function appendToken(url: string): string {
-  if (!CEA_API_KEY) return url;
-  const sep = url.includes('?') ? '&' : '?';
-  return `${url}${sep}token=${encodeURIComponent(CEA_API_KEY)}`;
+  if (!CEA_API_KEY) return url
+  const sep = url.includes('?') ? '&' : '?'
+  return `${url}${sep}token=${encodeURIComponent(CEA_API_KEY)}`
 }

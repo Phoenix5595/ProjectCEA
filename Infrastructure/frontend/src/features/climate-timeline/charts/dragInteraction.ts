@@ -1,6 +1,6 @@
 import type { ClimatePeriod } from '../../../types/climatePeriod'
-import { minutesToTime, timeToMinutes } from '../../../utils/timeMath'
 import { sampleMetricSeries } from '../../../utils/climatePeriodTimeline'
+import { minutesToTime, timeToMinutes } from '../../../utils/timeMath'
 
 export type ValueMetric = 'heating' | 'cooling' | 'vpd' | 'co2'
 export type BoundaryEdge = 'start' | 'end'
@@ -33,7 +33,14 @@ const METRIC_FIELD: Record<ValueMetric, keyof ClimatePeriod> = {
 export function rangeMessage(metric: ValueMetric): string {
   const range = PRODUCT_RANGES[metric]
   const unit = metric === 'co2' ? 'ppm' : metric === 'vpd' ? 'kPa' : '°C'
-  const label = metric === 'heating' ? 'Heating setpoint' : metric === 'cooling' ? 'Cooling setpoint' : metric === 'vpd' ? 'VPD setpoint' : 'CO₂ setpoint'
+  const label =
+    metric === 'heating'
+      ? 'Heating setpoint'
+      : metric === 'cooling'
+        ? 'Cooling setpoint'
+        : metric === 'vpd'
+          ? 'VPD setpoint'
+          : 'CO₂ setpoint'
   return `${label} must stay within ${range.min}–${range.max} ${unit}.`
 }
 
@@ -63,9 +70,15 @@ export function timeOfDayToInstant(minute: number, windowStartMs: number): numbe
   return instant < windowStartMs ? instant + 86_400_000 : instant
 }
 
-function sortedByStart(periods: readonly ClimatePeriod[]): Array<{ index: number; start: number; end: number }> {
+function sortedByStart(
+  periods: readonly ClimatePeriod[]
+): Array<{ index: number; start: number; end: number }> {
   return periods
-    .map((period, index) => ({ index, start: timeToMinutes(period.start_time), end: timeToMinutes(period.end_time) }))
+    .map((period, index) => ({
+      index,
+      start: timeToMinutes(period.start_time),
+      end: timeToMinutes(period.end_time),
+    }))
     .sort((left, right) => left.start - right.start)
 }
 
@@ -73,12 +86,12 @@ export function clampedBoundaryMinutes(
   periods: readonly ClimatePeriod[],
   index: number,
   edge: BoundaryEdge,
-  minutes: number,
+  minutes: number
 ): number {
   const snapped = snapMinutes(minutes)
   const bounded = Math.min(Math.max(snapped, 0), 1435)
   const order = sortedByStart(periods)
-  const position = order.findIndex((entry) => entry.index === index)
+  const position = order.findIndex(entry => entry.index === index)
   if (position === -1) return bounded
   if (edge === 'start') {
     const previous = position > 0 ? order[position - 1] : undefined
@@ -100,24 +113,24 @@ export function applyBoundary(
   periods: readonly ClimatePeriod[],
   index: number,
   edge: BoundaryEdge,
-  minutes: number,
+  minutes: number
 ): ClimatePeriod[] {
   const field = edge === 'start' ? 'start_time' : 'end_time'
-  return periods.map((period, periodIndex) => periodIndex === index
-    ? { ...period, [field]: minutesToTime(minutes) }
-    : period)
+  return periods.map((period, periodIndex) =>
+    periodIndex === index ? { ...period, [field]: minutesToTime(minutes) } : period
+  )
 }
 
 export function applyValue(
   periods: readonly ClimatePeriod[],
   index: number,
   metric: ValueMetric,
-  value: number,
+  value: number
 ): ClimatePeriod[] {
   const field = METRIC_FIELD[metric]
-  return periods.map((period, periodIndex) => periodIndex === index
-    ? { ...period, [field]: value }
-    : period)
+  return periods.map((period, periodIndex) =>
+    periodIndex === index ? { ...period, [field]: value } : period
+  )
 }
 
 export interface LocalScheduledSeries {
@@ -131,7 +144,7 @@ export interface LocalScheduledSeries {
  */
 export function buildLocalScheduledSeries(
   periods: readonly ClimatePeriod[],
-  window: { readonly start: Date; readonly end: Date },
+  window: { readonly start: Date; readonly end: Date }
 ): LocalScheduledSeries {
   const sampleTimes = envelopeMinuteGrid(window)
   const minuteSeries = new Map<ValueMetric, (number | null)[]>([
@@ -143,7 +156,10 @@ export function buildLocalScheduledSeries(
   const dayOrigin = Math.floor(window.start.getTime() / 86_400_000) * 86_400_000
   const series = new Map<ValueMetric, (number | null)[]>()
   for (const [metric, minuteValues] of minuteSeries) {
-    series.set(metric, sampleTimes.map((t) => minuteValues[minutesOfDayFromOrigin(t, dayOrigin)] ?? null))
+    series.set(
+      metric,
+      sampleTimes.map(t => minuteValues[minutesOfDayFromOrigin(t, dayOrigin)] ?? null)
+    )
   }
   return { sampleTimes, series }
 }
@@ -171,8 +187,8 @@ export interface RafCoalescer<T> {
  */
 export function createRafCoalescer<T>(
   commit: (value: T) => void,
-  schedule: (callback: () => void) => number = (callback) => window.requestAnimationFrame(callback),
-  cancelScheduled: (id: number) => void = (id) => window.cancelAnimationFrame(id),
+  schedule: (callback: () => void) => number = callback => window.requestAnimationFrame(callback),
+  cancelScheduled: (id: number) => void = id => window.cancelAnimationFrame(id)
 ): RafCoalescer<T> {
   let pending: { readonly value: T } | null = null
   let frame: number | null = null

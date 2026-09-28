@@ -6,7 +6,13 @@
  * recorded values win on collisions.
  */
 import type { ControlMonitoringResponse, Origin, Quality } from '../api'
-import type { NormControlSeries, NormDeviceSeries, NormLinear, NormPidSeries } from './alignSeries.types'
+
+import type {
+  NormControlSeries,
+  NormDeviceSeries,
+  NormLinear,
+  NormPidSeries,
+} from './alignSeries.types'
 
 export function metricFromName(name: string): string {
   return name
@@ -21,7 +27,7 @@ export function metricFromName(name: string): string {
 /** Merge recorded history and future projection control series by metric. */
 export function mergeControlSeries(
   history: ControlMonitoringResponse | null,
-  projection: ControlMonitoringResponse | null,
+  projection: ControlMonitoringResponse | null
 ): NormControlSeries[] {
   const byKey = new Map<string, NormControlSeries>()
   const add = (resp: ControlMonitoringResponse | null, kind: 'climate' | 'light'): void => {
@@ -45,7 +51,7 @@ export function mergeControlSeries(
 
 export function mergeDeviceSeries(
   history: ControlMonitoringResponse | null,
-  projection: ControlMonitoringResponse | null,
+  projection: ControlMonitoringResponse | null
 ): NormDeviceSeries[] {
   const byKey = new Map<string, NormDeviceSeries>()
   const add = (resp: ControlMonitoringResponse | null): void => {
@@ -65,7 +71,7 @@ export function mergeDeviceSeries(
 
 export function mergePidSeries(
   history: ControlMonitoringResponse | null,
-  projection: ControlMonitoringResponse | null,
+  projection: ControlMonitoringResponse | null
 ): NormPidSeries[] {
   const byKey = new Map<string, NormPidSeries>()
   const add = (resp: ControlMonitoringResponse | null): void => {
@@ -83,32 +89,37 @@ export function mergePidSeries(
   return [...byKey.values()]
 }
 
-type SharedTimeline = ControlMonitoringResponse['climate'][number] | ControlMonitoringResponse['lights'][number]
+type SharedTimeline =
+  ControlMonitoringResponse['climate'][number] | ControlMonitoringResponse['lights'][number]
 
 function normalizeControlSeries(
   s: SharedTimeline,
   metric: string,
-  kind: 'climate' | 'light',
+  kind: 'climate' | 'light'
 ): NormControlSeries {
   return {
     name: s.name,
     metric,
     kind,
     trajectoryKind: s.trajectory_kind ?? null,
-    points: canonicalizeTargetValues(s.points.map((p) => ({
-      t: p.timestamp.getTime(),
-      value: p.value,
-      origin: p.provenance.origin,
-      quality: p.provenance.quality,
-      isAggregated: p.provenance.is_aggregated,
-    }))),
-    steps: canonicalizeTargetValues(s.steps.map((st) => ({
-      t: st.timestamp.getTime(),
-      value: st.value,
-      origin: st.provenance.origin,
-      quality: st.provenance.quality,
-    }))),
-    linear: s.linear.map((ln) => ({
+    points: canonicalizeTargetValues(
+      s.points.map(p => ({
+        t: p.timestamp.getTime(),
+        value: p.value,
+        origin: p.provenance.origin,
+        quality: p.provenance.quality,
+        isAggregated: p.provenance.is_aggregated,
+      }))
+    ),
+    steps: canonicalizeTargetValues(
+      s.steps.map(st => ({
+        t: st.timestamp.getTime(),
+        value: st.value,
+        origin: st.provenance.origin,
+        quality: st.provenance.quality,
+      }))
+    ),
+    linear: s.linear.map(ln => ({
       start: ln.start.getTime(),
       end: ln.end.getTime(),
       startValue: ln.start_value,
@@ -132,15 +143,15 @@ function normalizeDeviceSeries(s: RawDeviceInput, metric: string): NormDeviceSer
   return {
     name: s.name,
     metric,
-    states: s.points.map((p) => ({
+    states: s.points.map(p => ({
       t: p.timestamp.getTime(),
       value: p.device_state,
       origin: s.provenance.origin,
       quality: s.provenance.quality,
     })),
     duties: s.points
-      .filter((p) => p.device_mode === 'AUTO' || p.device_mode === 'MANUAL')
-      .map((p) => ({
+      .filter(p => p.device_mode === 'AUTO' || p.device_mode === 'MANUAL')
+      .map(p => ({
         t: p.timestamp.getTime(),
         value: p.device_state,
         origin: s.provenance.origin,
@@ -153,7 +164,11 @@ function normalizeDeviceSeries(s: RawDeviceInput, metric: string): NormDeviceSer
   }
 }
 
-type RawPidPoint = { timestamp: Date; pid_output?: number | null; duty_cycle_percent?: number | null }
+type RawPidPoint = {
+  timestamp: Date
+  pid_output?: number | null
+  duty_cycle_percent?: number | null
+}
 
 type RawPidInput = {
   name: string
@@ -166,8 +181,8 @@ function normalizePidSeries(s: RawPidInput, metric: string): NormPidSeries {
     name: s.name,
     metric: `${metric}_pid`,
     pidOutputs: s.points
-      .filter((p) => p.pid_output !== null && p.pid_output !== undefined)
-      .map((p) => ({
+      .filter(p => p.pid_output !== null && p.pid_output !== undefined)
+      .map(p => ({
         t: p.timestamp.getTime(),
         value: p.pid_output ?? null,
         origin: s.provenance.origin,
@@ -175,8 +190,8 @@ function normalizePidSeries(s: RawPidInput, metric: string): NormPidSeries {
         isAggregated: s.provenance.is_aggregated,
       })),
     dutyCycles: s.points
-      .filter((p) => p.duty_cycle_percent !== null && p.duty_cycle_percent !== undefined)
-      .map((p) => ({
+      .filter(p => p.duty_cycle_percent !== null && p.duty_cycle_percent !== undefined)
+      .map(p => ({
         t: p.timestamp.getTime(),
         value: p.duty_cycle_percent ?? null,
         origin: s.provenance.origin,
@@ -190,8 +205,8 @@ function normalizePidSeries(s: RawPidInput, metric: string): NormPidSeries {
 }
 
 function mergeControl(a: NormControlSeries, b: NormControlSeries): NormControlSeries {
-  const points = mergeByTime(a.points, b.points, (p) => p.origin === 'recorded')
-  const steps = mergeByTime(a.steps, b.steps, (p) => p.origin === 'recorded')
+  const points = mergeByTime(a.points, b.points, p => p.origin === 'recorded')
+  const steps = mergeByTime(a.steps, b.steps, p => p.origin === 'recorded')
   if (a.metric.endsWith('_setpoint')) {
     const targetPoints = mergeTargetByTime(a.points, b.points)
     const targetSteps = mergeTargetByTime(a.steps, b.steps)
@@ -201,7 +216,7 @@ function mergeControl(a: NormControlSeries, b: NormControlSeries): NormControlSe
       points: [],
       steps: mergeTargetByTime(
         targetSteps,
-        targetPoints.map(({ t, value, origin, quality }) => ({ t, value, origin, quality })),
+        targetPoints.map(({ t, value, origin, quality }) => ({ t, value, origin, quality }))
       ),
       linear: mergeLinear(a.linear, b.linear),
     }
@@ -218,16 +233,16 @@ function mergeControl(a: NormControlSeries, b: NormControlSeries): NormControlSe
 function mergeDevice(a: NormDeviceSeries, b: NormDeviceSeries): NormDeviceSeries {
   return {
     ...a,
-    states: mergeByTime(a.states, b.states, (p) => p.origin === 'recorded'),
-    duties: mergeByTime(a.duties, b.duties, (p) => p.origin === 'recorded'),
+    states: mergeByTime(a.states, b.states, p => p.origin === 'recorded'),
+    duties: mergeByTime(a.duties, b.duties, p => p.origin === 'recorded'),
   }
 }
 
 function mergePid(a: NormPidSeries, b: NormPidSeries): NormPidSeries {
   return {
     ...a,
-    pidOutputs: mergeByTime(a.pidOutputs, b.pidOutputs, (p) => p.origin === 'recorded'),
-    dutyCycles: mergeByTime(a.dutyCycles, b.dutyCycles, (p) => p.origin === 'recorded'),
+    pidOutputs: mergeByTime(a.pidOutputs, b.pidOutputs, p => p.origin === 'recorded'),
+    dutyCycles: mergeByTime(a.dutyCycles, b.dutyCycles, p => p.origin === 'recorded'),
   }
 }
 
@@ -254,7 +269,7 @@ function canonicalizeTargetValues<T extends { t: number; value: number | null }>
 
 function mergeTargetByTime<T extends { t: number; value: number | null; origin: Origin }>(
   a: T[],
-  b: T[],
+  b: T[]
 ): T[] {
   const byTimestamp = new Map<number, T>()
   for (const value of [...a, ...b]) {

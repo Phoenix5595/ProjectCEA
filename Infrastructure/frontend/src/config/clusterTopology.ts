@@ -41,14 +41,14 @@
 
 export interface RoomTopology {
   /** Device cluster name; always `"main"` today. */
-  readonly deviceCluster: string;
+  readonly deviceCluster: string
   /**
    * Ordered list of *physical* sensor sub-cluster identifiers under
    * this room. `[]` for rooms with no physical sub-grouping (Veg /
    * Lab / Outside). `"main"` is **never** a member of this list —
    * see module docstring.
    */
-  readonly sensorSubclusters: readonly string[];
+  readonly sensorSubclusters: readonly string[]
 }
 
 /**
@@ -77,14 +77,14 @@ export const TOPOLOGY: Readonly<Record<string, RoomTopology>> = {
     deviceCluster: 'main',
     sensorSubclusters: [],
   },
-};
+}
 
 export function knownRooms(): readonly string[] {
-  return Object.keys(TOPOLOGY);
+  return Object.keys(TOPOLOGY)
 }
 
 export function deviceClusterFor(room: string): string {
-  return TOPOLOGY[room]?.deviceCluster ?? 'main';
+  return TOPOLOGY[room]?.deviceCluster ?? 'main'
 }
 
 /**
@@ -93,7 +93,7 @@ export function deviceClusterFor(room: string): string {
  * the URL slugs to fan out polling against `/api/sensors/...`.
  */
 export function sensorSubclustersFor(room: string): readonly string[] {
-  return TOPOLOGY[room]?.sensorSubclusters ?? [];
+  return TOPOLOGY[room]?.sensorSubclusters ?? []
 }
 
 /**
@@ -105,18 +105,18 @@ export function sensorSubclustersFor(room: string): readonly string[] {
  * Python module.
  */
 export function sensorUrlClustersFor(room: string): readonly string[] {
-  const t = TOPOLOGY[room];
-  if (!t) return ['main'];
-  return t.sensorSubclusters.length > 0 ? t.sensorSubclusters : [t.deviceCluster];
+  const t = TOPOLOGY[room]
+  if (!t) return ['main']
+  return t.sensorSubclusters.length > 0 ? t.sensorSubclusters : [t.deviceCluster]
 }
 
 /** @deprecated Prefer `sensorUrlClustersFor`. */
 export function sensorClustersFor(room: string): readonly string[] {
-  return sensorUrlClustersFor(room);
+  return sensorUrlClustersFor(room)
 }
 
 export function isDeviceCluster(room: string, cluster: string): boolean {
-  return TOPOLOGY[room]?.deviceCluster === cluster;
+  return TOPOLOGY[room]?.deviceCluster === cluster
 }
 
 /**
@@ -125,12 +125,12 @@ export function isDeviceCluster(room: string, cluster: string): boolean {
  * where `cluster === 'main'` is a valid sensor URL slug.
  */
 export function isSensorSubcluster(room: string, cluster: string): boolean {
-  return TOPOLOGY[room]?.sensorSubclusters.includes(cluster) ?? false;
+  return TOPOLOGY[room]?.sensorSubclusters.includes(cluster) ?? false
 }
 
 /** True if `cluster` is any valid sensor URL slug for `room`. */
 export function isSensorCluster(room: string, cluster: string): boolean {
-  return sensorUrlClustersFor(room).includes(cluster);
+  return sensorUrlClustersFor(room).includes(cluster)
 }
 
 export const CAN_LOCATION_SLUGS = ['front', 'back', 'main'] as const

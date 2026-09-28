@@ -2,13 +2,13 @@ import type { ThemeName } from '../../../contexts/ThemeContext'
 import type { TimeseriesPanelSpec, SeriesSpec } from '../config'
 import { alignSeries } from '../data'
 import type { AlignInput, AlignedData, AlignedSeries, PanelAlignment } from '../data'
-import type { MonitoringRange, StoreState } from '../state'
 import {
   beginMonitoringPerfTick,
   finishMonitoringPerfTick,
   measureMonitoringAlignment,
   PERFORMANCE_MARKS_ENABLED,
 } from '../perfMarks'
+import type { MonitoringRange, StoreState } from '../state'
 
 export interface MonitoringChartStructuralSnapshot {
   readonly revision: number
@@ -74,16 +74,15 @@ class ChartFeed implements MonitoringChartFeed {
     this.data = data
     const sameShape = sameSeriesShape(previous.series, data.series)
     const sameRange = previous.range === range
-    const nextViewportRevision = viewportRevision ?? (sameRange
-      ? previous.viewportRevision
-      : previous.viewportRevision + 1)
+    const nextViewportRevision =
+      viewportRevision ?? (sameRange ? previous.viewportRevision : previous.viewportRevision + 1)
     if (!sameShape) {
       this.structural = structuralSnapshot(
         data,
         range,
         previous.theme,
         previous.revision + 1,
-        nextViewportRevision,
+        nextViewportRevision
       )
     } else if (!sameRange || nextViewportRevision !== previous.viewportRevision) {
       // Mutate in place to preserve object identity when only range/viewport changes
@@ -104,7 +103,13 @@ class ChartFeed implements MonitoringChartFeed {
   setTheme(theme: ThemeName): void {
     const previous = this.structural
     if (previous.theme === theme) return
-    this.structural = structuralSnapshot(this.data, previous.range, theme, previous.revision + 1, previous.viewportRevision)
+    this.structural = structuralSnapshot(
+      this.data,
+      previous.range,
+      theme,
+      previous.revision + 1,
+      previous.viewportRevision
+    )
     this.emit()
   }
 
@@ -133,9 +138,10 @@ class PanelChartFeed extends ChartFeed implements MonitoringPanelChartFeed {
       const fulfilled = snapshot.fulfilledRange
       if (fulfilled === null) return
       const input = this.inputFor(snapshot)
-      const align = (): AlignedData => this.panel === undefined
-        ? alignSeries(input)
-        : this.alignment.align({ ...input, panel: this.panel })
+      const align = (): AlignedData =>
+        this.panel === undefined
+          ? alignSeries(input)
+          : this.alignment.align({ ...input, panel: this.panel })
       if (PERFORMANCE_MARKS_ENABLED) beginMonitoringPerfTick()
       const data = PERFORMANCE_MARKS_ENABLED ? measureMonitoringAlignment(align) : align()
       const fulfilledRevision = snapshot.fulfilledRange?.revision
@@ -166,12 +172,15 @@ class PanelChartFeed extends ChartFeed implements MonitoringPanelChartFeed {
   }
 }
 
-export function createMonitoringChartFeed(data: AlignedData, range: MonitoringRange): MonitoringChartFeed {
+export function createMonitoringChartFeed(
+  data: AlignedData,
+  range: MonitoringRange
+): MonitoringChartFeed {
   return new ChartFeed(data, range)
 }
 
 export function createMonitoringPanelChartFeed(
-  options: MonitoringPanelChartFeedOptions,
+  options: MonitoringPanelChartFeedOptions
 ): MonitoringPanelChartFeed {
   return new PanelChartFeed(options)
 }
@@ -181,13 +190,26 @@ function structuralSnapshot(
   range: MonitoringRange,
   theme: ThemeName | null,
   revision: number,
-  viewportRevision: number,
+  viewportRevision: number
 ): MonitoringChartStructuralSnapshot {
-  return { revision, range, viewportRevision, series: data.series, seriesCount: data.series.length, theme }
+  return {
+    revision,
+    range,
+    viewportRevision,
+    series: data.series,
+    seriesCount: data.series.length,
+    theme,
+  }
 }
 
-function sameSeriesShape(previous: readonly AlignedSeries[], next: readonly AlignedSeries[]): boolean {
-  return previous.length === next.length && previous.every((series, index) => series.key === next[index]?.key)
+function sameSeriesShape(
+  previous: readonly AlignedSeries[],
+  next: readonly AlignedSeries[]
+): boolean {
+  return (
+    previous.length === next.length &&
+    previous.every((series, index) => series.key === next[index]?.key)
+  )
 }
 
 function emptyData(): AlignedData {

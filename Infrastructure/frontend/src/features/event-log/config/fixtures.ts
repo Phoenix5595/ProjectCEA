@@ -58,7 +58,7 @@ function makeEvent(
   room: string,
   severity: 'info' | 'warning' | 'error' | 'critical',
   category: OperationalEvent['category'],
-  extraPayload: Record<string, unknown> = {},
+  extraPayload: Record<string, unknown> = {}
 ): OperationalEventItem {
   return {
     redis_id: `${BASE_TIME + index}-${index}`,
@@ -87,18 +87,35 @@ function makeEvent(
 }
 
 const FLOWER_EVENTS: OperationalEventItem[] = [
-  makeEvent(1, 'relay.state_changed', 'Flower Room', 'info', 'relay', { device_id: 'exhaust-fan', state: 'on' }),
-  makeEvent(2, 'sensor.degraded', 'Flower Room', 'warning', 'system', { device_id: 'dry-bulb-front' }),
-  makeEvent(3, 'system.failsafe_raised', 'Flower Room', 'critical', 'system', { reason: 'over-temperature' }),
-  makeEvent(4, 'mode.transitioned', 'Flower Room', 'info', 'control', { old_mode: 'veg', new_mode: 'flower' }),
+  makeEvent(1, 'relay.state_changed', 'Flower Room', 'info', 'relay', {
+    device_id: 'exhaust-fan',
+    state: 'on',
+  }),
+  makeEvent(2, 'sensor.degraded', 'Flower Room', 'warning', 'system', {
+    device_id: 'dry-bulb-front',
+  }),
+  makeEvent(3, 'system.failsafe_raised', 'Flower Room', 'critical', 'system', {
+    reason: 'over-temperature',
+  }),
+  makeEvent(4, 'mode.transitioned', 'Flower Room', 'info', 'control', {
+    old_mode: 'veg',
+    new_mode: 'flower',
+  }),
   makeEvent(5, 'config.updated', 'Flower Room', 'info', 'mutation', { setpoint: 25.5 }),
-  makeEvent(16, 'alarm.triggered', 'Flower Room', 'critical', 'alarm', { reason: 'temperature-high' }),
-  makeEvent(17, 'system.failsafe_raised', 'Flower Room', 'critical', 'system', { reason: 'humidity-critical' }),
+  makeEvent(16, 'alarm.triggered', 'Flower Room', 'critical', 'alarm', {
+    reason: 'temperature-high',
+  }),
+  makeEvent(17, 'system.failsafe_raised', 'Flower Room', 'critical', 'system', {
+    reason: 'humidity-critical',
+  }),
   makeEvent(18, 'alarm.triggered', 'Flower Room', 'critical', 'alarm', { reason: 'co2-high' }),
 ]
 
 const VEG_EVENTS: OperationalEventItem[] = [
-  makeEvent(6, 'relay.command_issued', 'Veg Room', 'info', 'relay', { device_id: 'circulation-fan', state: 'on' }),
+  makeEvent(6, 'relay.command_issued', 'Veg Room', 'info', 'relay', {
+    device_id: 'circulation-fan',
+    state: 'on',
+  }),
   makeEvent(7, 'device.timeout', 'Veg Room', 'warning', 'system', { device_id: 'soil-sensor-1' }),
   makeEvent(8, 'schedule.created', 'Veg Room', 'info', 'mutation', { mode_id: 'light-on' }),
   makeEvent(9, 'alarm.triggered', 'Veg Room', 'critical', 'alarm', { reason: 'humidity-low' }),
@@ -109,7 +126,10 @@ const LAB_EVENTS: OperationalEventItem[] = [
   makeEvent(11, 'pid.parameters_changed', 'Lab', 'info', 'mutation', { device_id: 'heater-1' }),
   makeEvent(12, 'light.intensity_changed', 'Lab', 'info', 'mutation', { intensity: 75 }),
   makeEvent(13, 'device.registered', 'Lab', 'info', 'mutation', { device_id: 'new-sensor' }),
-  makeEvent(14, 'notes.changed', 'Lab', 'info', 'mutation', { notes_changed: true, notes_length: 42 }),
+  makeEvent(14, 'notes.changed', 'Lab', 'info', 'mutation', {
+    notes_changed: true,
+    notes_length: 42,
+  }),
   makeEvent(15, 'calendar.synced', 'Lab', 'info', 'mutation', { url_hostname: 'cal.example.com' }),
 ]
 
@@ -121,7 +141,7 @@ const UNKNOWN_EVENT: OperationalEventItem = makeEvent(
   'Flower Room',
   'critical',
   'system',
-  { custom_field: 'test' },
+  { custom_field: 'test' }
 )
 
 const RELAY_COMMAND_FAILED_EVENT = makeEvent(
@@ -130,19 +150,19 @@ const RELAY_COMMAND_FAILED_EVENT = makeEvent(
   'Flower Room',
   'error',
   'relay',
-  { device_id: 'exhaust-fan', error_code: 'command-rejected' },
+  { device_id: 'exhaust-fan', error_code: 'command-rejected' }
 )
 
-const RETAINED_ALIAS_EVENT = makeEvent(
-  20,
-  'relay.state_changed',
-  'Flower Room',
-  'info',
-  'relay',
-  { device_id: 'exhaust-fan', state: 'on' },
-)
+const RETAINED_ALIAS_EVENT = makeEvent(20, 'relay.state_changed', 'Flower Room', 'info', 'relay', {
+  device_id: 'exhaust-fan',
+  state: 'on',
+})
 
-const EVENT_LABEL_EVENTS: OperationalEventItem[] = [RELAY_COMMAND_FAILED_EVENT, RETAINED_ALIAS_EVENT, UNKNOWN_EVENT]
+const EVENT_LABEL_EVENTS: OperationalEventItem[] = [
+  RELAY_COMMAND_FAILED_EVENT,
+  RETAINED_ALIAS_EVENT,
+  UNKNOWN_EVENT,
+]
 
 const CJK_EVENT: OperationalEventItem = {
   redis_id: `${BASE_TIME + 100}-100`,
@@ -196,42 +216,121 @@ const GROUPED_CONSOLE_EVENTS: OperationalEventItem[] = [
     duration_seconds: 3600,
     phase: 'sunset',
   }),
-  makeEvent(32, 'relay.state_changed', 'Flower Room', 'info', 'relay', { device_id: 'exhaust-fan', state: true }),
-  makeEvent(33, 'relay.state_changed', 'Flower Room', 'info', 'relay', { device_id: 'circulation-fan', state: false }),
-  makeEvent(34, 'manual_override.started', 'Flower Room', 'info', 'manual_override', { mode: 'MANUAL_OFF', duration_seconds: 300 }),
+  makeEvent(32, 'relay.state_changed', 'Flower Room', 'info', 'relay', {
+    device_id: 'exhaust-fan',
+    state: true,
+  }),
+  makeEvent(33, 'relay.state_changed', 'Flower Room', 'info', 'relay', {
+    device_id: 'circulation-fan',
+    state: false,
+  }),
+  makeEvent(34, 'manual_override.started', 'Flower Room', 'info', 'manual_override', {
+    mode: 'MANUAL_OFF',
+    duration_seconds: 300,
+  }),
   makeEvent(35, 'config.updated', 'Flower Room', 'info', 'mutation', { setpoint: 25.5 }),
-  makeEvent(36, 'alarm.triggered', 'Flower Room', 'critical', 'alarm', { reason: 'temperature-high' }),
-  makeEvent(37, 'sensor.degraded', 'Flower Room', 'warning', 'system', { device_id: 'dry-bulb-front' }),
-  makeEvent(38, 'relay.command_failed', 'Flower Room', 'error', 'relay', { device_id: 'exhaust-fan', error_code: 'command-rejected' }),
+  makeEvent(36, 'alarm.triggered', 'Flower Room', 'critical', 'alarm', {
+    reason: 'temperature-high',
+  }),
+  makeEvent(37, 'sensor.degraded', 'Flower Room', 'warning', 'system', {
+    device_id: 'dry-bulb-front',
+  }),
+  makeEvent(38, 'relay.command_failed', 'Flower Room', 'error', 'relay', {
+    device_id: 'exhaust-fan',
+    error_code: 'command-rejected',
+  }),
 ]
 
 export function eventHistoryFixture(scenario: string | null): OperationalEventHistory {
   if (scenario === 'empty') {
-    return { items: [], newest_cursor: null, oldest_cursor: null, earliest_cursor: null, has_more: false, scan: { scanned: 0, limit: 500 } }
+    return {
+      items: [],
+      newest_cursor: null,
+      oldest_cursor: null,
+      earliest_cursor: null,
+      has_more: false,
+      scan: { scanned: 0, limit: 500 },
+    }
   }
   if (scenario === 'flower-only') {
-    return { items: FLOWER_EVENTS, newest_cursor: FLOWER_EVENTS.at(-1)!.redis_id, oldest_cursor: FLOWER_EVENTS[0].redis_id, earliest_cursor: FLOWER_EVENTS[0].redis_id, has_more: false, scan: { scanned: FLOWER_EVENTS.length, limit: 500 } }
+    return {
+      items: FLOWER_EVENTS,
+      newest_cursor: FLOWER_EVENTS.at(-1)!.redis_id,
+      oldest_cursor: FLOWER_EVENTS[0].redis_id,
+      earliest_cursor: FLOWER_EVENTS[0].redis_id,
+      has_more: false,
+      scan: { scanned: FLOWER_EVENTS.length, limit: 500 },
+    }
   }
   if (scenario === 'veg-only') {
-    return { items: VEG_EVENTS, newest_cursor: VEG_EVENTS.at(-1)!.redis_id, oldest_cursor: VEG_EVENTS[0].redis_id, earliest_cursor: VEG_EVENTS[0].redis_id, has_more: false, scan: { scanned: VEG_EVENTS.length, limit: 500 } }
+    return {
+      items: VEG_EVENTS,
+      newest_cursor: VEG_EVENTS.at(-1)!.redis_id,
+      oldest_cursor: VEG_EVENTS[0].redis_id,
+      earliest_cursor: VEG_EVENTS[0].redis_id,
+      has_more: false,
+      scan: { scanned: VEG_EVENTS.length, limit: 500 },
+    }
   }
   if (scenario === 'lab-only') {
-    return { items: LAB_EVENTS, newest_cursor: LAB_EVENTS.at(-1)!.redis_id, oldest_cursor: LAB_EVENTS[0].redis_id, earliest_cursor: LAB_EVENTS[0].redis_id, has_more: false, scan: { scanned: LAB_EVENTS.length, limit: 500 } }
+    return {
+      items: LAB_EVENTS,
+      newest_cursor: LAB_EVENTS.at(-1)!.redis_id,
+      oldest_cursor: LAB_EVENTS[0].redis_id,
+      earliest_cursor: LAB_EVENTS[0].redis_id,
+      has_more: false,
+      scan: { scanned: LAB_EVENTS.length, limit: 500 },
+    }
   }
   if (scenario === 'unknown-event') {
-    return { items: [...FLOWER_EVENTS, UNKNOWN_EVENT], newest_cursor: UNKNOWN_EVENT.redis_id, oldest_cursor: FLOWER_EVENTS[0].redis_id, earliest_cursor: FLOWER_EVENTS[0].redis_id, has_more: false, scan: { scanned: FLOWER_EVENTS.length + 1, limit: 500 } }
+    return {
+      items: [...FLOWER_EVENTS, UNKNOWN_EVENT],
+      newest_cursor: UNKNOWN_EVENT.redis_id,
+      oldest_cursor: FLOWER_EVENTS[0].redis_id,
+      earliest_cursor: FLOWER_EVENTS[0].redis_id,
+      has_more: false,
+      scan: { scanned: FLOWER_EVENTS.length + 1, limit: 500 },
+    }
   }
   if (scenario === 'event-labels') {
-    return { items: EVENT_LABEL_EVENTS, newest_cursor: EVENT_LABEL_EVENTS.at(-1)!.redis_id, oldest_cursor: EVENT_LABEL_EVENTS[0].redis_id, earliest_cursor: EVENT_LABEL_EVENTS[0].redis_id, has_more: false, scan: { scanned: EVENT_LABEL_EVENTS.length, limit: 500 } }
+    return {
+      items: EVENT_LABEL_EVENTS,
+      newest_cursor: EVENT_LABEL_EVENTS.at(-1)!.redis_id,
+      oldest_cursor: EVENT_LABEL_EVENTS[0].redis_id,
+      earliest_cursor: EVENT_LABEL_EVENTS[0].redis_id,
+      has_more: false,
+      scan: { scanned: EVENT_LABEL_EVENTS.length, limit: 500 },
+    }
   }
   if (scenario === 'grouped-console') {
-    return { items: GROUPED_CONSOLE_EVENTS, newest_cursor: GROUPED_CONSOLE_EVENTS[0].redis_id, oldest_cursor: GROUPED_CONSOLE_EVENTS.at(-1)!.redis_id, earliest_cursor: GROUPED_CONSOLE_EVENTS.at(-1)!.redis_id, has_more: false, scan: { scanned: GROUPED_CONSOLE_EVENTS.length, limit: 500 } }
+    return {
+      items: GROUPED_CONSOLE_EVENTS,
+      newest_cursor: GROUPED_CONSOLE_EVENTS[0].redis_id,
+      oldest_cursor: GROUPED_CONSOLE_EVENTS.at(-1)!.redis_id,
+      earliest_cursor: GROUPED_CONSOLE_EVENTS.at(-1)!.redis_id,
+      has_more: false,
+      scan: { scanned: GROUPED_CONSOLE_EVENTS.length, limit: 500 },
+    }
   }
   if (scenario === 'cjk-payload') {
-    return { items: [...FLOWER_EVENTS, CJK_EVENT], newest_cursor: CJK_EVENT.redis_id, oldest_cursor: FLOWER_EVENTS[0].redis_id, earliest_cursor: FLOWER_EVENTS[0].redis_id, has_more: false, scan: { scanned: FLOWER_EVENTS.length + 1, limit: 500 } }
+    return {
+      items: [...FLOWER_EVENTS, CJK_EVENT],
+      newest_cursor: CJK_EVENT.redis_id,
+      oldest_cursor: FLOWER_EVENTS[0].redis_id,
+      earliest_cursor: FLOWER_EVENTS[0].redis_id,
+      has_more: false,
+      scan: { scanned: FLOWER_EVENTS.length + 1, limit: 500 },
+    }
   }
   if (scenario === 'cursor-trimmed') {
-    return { items: [], newest_cursor: null, oldest_cursor: null, earliest_cursor: `${BASE_TIME + 50}-50`, has_more: false, scan: { scanned: 0, limit: 500 } }
+    return {
+      items: [],
+      newest_cursor: null,
+      oldest_cursor: null,
+      earliest_cursor: `${BASE_TIME + 50}-50`,
+      has_more: false,
+      scan: { scanned: 0, limit: 500 },
+    }
   }
   return {
     items: ALL_EVENTS,
@@ -255,4 +354,13 @@ export function sseCursorFrame(cursor: string): string {
   return `id: ${cursor}\ndata: \n\n`
 }
 
-export { ALL_EVENTS, FLOWER_EVENTS, VEG_EVENTS, LAB_EVENTS, UNKNOWN_EVENT, CJK_EVENT, EVENT_LABEL_EVENTS, GROUPED_CONSOLE_EVENTS }
+export {
+  ALL_EVENTS,
+  FLOWER_EVENTS,
+  VEG_EVENTS,
+  LAB_EVENTS,
+  UNKNOWN_EVENT,
+  CJK_EVENT,
+  EVENT_LABEL_EVENTS,
+  GROUPED_CONSOLE_EVENTS,
+}

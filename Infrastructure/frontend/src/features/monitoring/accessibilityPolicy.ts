@@ -38,7 +38,7 @@ export class AccessibilityPolicyError extends Error {
  * unchanged when it is complete.
  */
 export function validateChartAccessibility(
-  contract: ChartAccessibilityContract,
+  contract: ChartAccessibilityContract
 ): ChartAccessibilityContract {
   const missing: string[] = []
   if (contract.accessibleName.trim() === '') missing.push('accessibleName')

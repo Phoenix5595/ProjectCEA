@@ -6,15 +6,11 @@
  * Device, sensor, and schedule methods are mixed in from services/api/*.
  */
 import axios, { AxiosInstance } from 'axios'
+
+import { AUTOMATION_API_URL, BACKEND_API_URL, CEA_API_KEY, WEATHER_API_URL } from '../config/env'
+import { timelineMethods } from '../features/climate-timeline/api/timeline'
+import type { TimelineApi } from '../features/climate-timeline/api/timeline'
 import type { components } from '../generated/api'
-import type { LightStatus, LightTargetSetResponse } from '../types/light'
-import type {
-  RoomMode,
-  FlowerSubmode,
-  RoomModeWithParams,
-  SetModeRequest,
-  UpdateParametersRequest,
-} from '../types/modes'
 import type {
   CalendarEventsResponse,
   CalendarEventCreate,
@@ -25,27 +21,32 @@ import type {
   FlowerGrowPlanRequest,
   ModeScheduleResponse,
 } from '../types/calendar'
-import { normalizeCalendarEvent } from '../utils/normalizeCalendarEvent'
+import type { LightStatus, LightTargetSetResponse } from '../types/light'
+import type {
+  RoomMode,
+  FlowerSubmode,
+  RoomModeWithParams,
+  SetModeRequest,
+  UpdateParametersRequest,
+} from '../types/modes'
 import type {
   SystemConfigResponse,
   ConfigUpdateRequest,
   ConfigUpdateResponse,
   RestartServiceResponse,
 } from '../types/systemConfig'
-import { AUTOMATION_API_URL, BACKEND_API_URL, CEA_API_KEY, WEATHER_API_URL } from '../config/env'
+import { normalizeCalendarEvent } from '../utils/normalizeCalendarEvent'
 
-import { deviceMethods } from './api/devices'
-import { sensorMethods } from './api/sensors'
-import { scheduleMethods } from './api/schedules'
-import { pidMethods } from './api/pid'
 import { alarmMethods } from './api/alarms'
-import { timelineMethods } from '../features/climate-timeline/api/timeline'
-import type { DeviceApi } from './api/devices'
-import type { SensorApi } from './api/sensors'
-import type { ScheduleApi } from './api/schedules'
-import type { PidApi } from './api/pid'
 import type { AlarmApi } from './api/alarms'
-import type { TimelineApi } from '../features/climate-timeline/api/timeline'
+import { deviceMethods } from './api/devices'
+import type { DeviceApi } from './api/devices'
+import { pidMethods } from './api/pid'
+import type { PidApi } from './api/pid'
+import { scheduleMethods } from './api/schedules'
+import type { ScheduleApi } from './api/schedules'
+import { sensorMethods } from './api/sensors'
+import type { SensorApi } from './api/sensors'
 
 type JsonObject = Record<string, unknown>
 

@@ -1,7 +1,9 @@
 import { test, expect } from '@playwright/test'
 import { fixtureUrl } from './fixtureUrl'
 
-test('monitoring desktop geometry matches the historical layout contract', async ({ page }, testInfo) => {
+test('monitoring desktop geometry matches the historical layout contract', async ({
+  page,
+}, testInfo) => {
   await page.goto(fixtureUrl('/flower/monitoring', testInfo))
   await expect(page.locator('.mon-layout')).toBeVisible()
 

@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
 import { globalEventLogStore } from '../state/eventLogStore'
 import {
   _setReconnectDelayForTesting,
@@ -39,14 +40,15 @@ function historyResponse(items: readonly ReturnType<typeof historyItem>[], hasMo
   return Promise.resolve({
     ok: true,
     status: 200,
-    json: () => Promise.resolve({
-      items,
-      newest_cursor: items[0]?.redis_id ?? null,
-      oldest_cursor: items.at(-1)?.redis_id ?? null,
-      earliest_cursor: items.at(-1)?.redis_id ?? null,
-      has_more: hasMore,
-      scan: { scanned: items.length, limit: 200 },
-    }),
+    json: () =>
+      Promise.resolve({
+        items,
+        newest_cursor: items[0]?.redis_id ?? null,
+        oldest_cursor: items.at(-1)?.redis_id ?? null,
+        earliest_cursor: items.at(-1)?.redis_id ?? null,
+        has_more: hasMore,
+        scan: { scanned: items.length, limit: 200 },
+      }),
   })
 }
 
@@ -80,7 +82,10 @@ describe('event log transport lifecycle', () => {
           status: 200,
           body: new ReadableStream({
             start(controller) {
-              const heartbeatTimer = setInterval(() => controller.enqueue(new TextEncoder().encode(': heartbeat\n\n')), 30_000)
+              const heartbeatTimer = setInterval(
+                () => controller.enqueue(new TextEncoder().encode(': heartbeat\n\n')),
+                30_000
+              )
               init.signal?.addEventListener('abort', () => {
                 clearInterval(heartbeatTimer)
                 controller.close()
@@ -104,12 +109,16 @@ describe('event log transport lifecycle', () => {
   it('replaces stale rows when an older history cursor is trimmed', async () => {
     // Given: a page cursor that Redis has trimmed between history requests
     mockFetch
-      .mockImplementationOnce(() => historyResponse([historyItem('5-0', 'five'), historyItem('4-0', 'four')], true))
-      .mockImplementationOnce(() => Promise.resolve({
-        ok: false,
-        status: 409,
-        json: () => Promise.resolve({ earliest_cursor: '8-0', latest_cursor: '10-0' }),
-      }))
+      .mockImplementationOnce(() =>
+        historyResponse([historyItem('5-0', 'five'), historyItem('4-0', 'four')], true)
+      )
+      .mockImplementationOnce(() =>
+        Promise.resolve({
+          ok: false,
+          status: 409,
+          json: () => Promise.resolve({ earliest_cursor: '8-0', latest_cursor: '10-0' }),
+        })
+      )
       .mockImplementationOnce(() => historyResponse([historyItem('10-0', 'ten')]))
     await loadHistory()
 
@@ -117,7 +126,7 @@ describe('event log transport lifecycle', () => {
     await loadOlder()
 
     // Then: the singleton atomically replaces stale rows with a fresh history window
-    expect(globalEventLogStore.snapshot().entries.map((entry) => entry.redisId)).toEqual(['10-0'])
+    expect(globalEventLogStore.snapshot().entries.map(entry => entry.redisId)).toEqual(['10-0'])
     expect(getLastCursor()).toBe('10-0')
     expect(globalEventLogStore.snapshot().paging.hasMore).toBe(false)
   })
@@ -126,24 +135,30 @@ describe('event log transport lifecycle', () => {
     // Given: a live stream and a retained older-page cursor that Redis trims
     let activeStreamWasAborted = false
     mockFetch
-      .mockImplementationOnce(() => historyResponse([historyItem('5-0', 'five'), historyItem('4-0', 'four')], true))
-      .mockImplementationOnce((_url: unknown, init: RequestInit) => Promise.resolve({
-        ok: true,
-        status: 200,
-        body: new ReadableStream({
-          start(controller) {
-            init.signal?.addEventListener('abort', () => {
-              activeStreamWasAborted = true
-              controller.close()
-            })
-          },
-        }),
-      }))
-      .mockImplementationOnce(() => Promise.resolve({
-        ok: false,
-        status: 409,
-        json: () => Promise.resolve({ earliest_cursor: '8-0', latest_cursor: '10-0' }),
-      }))
+      .mockImplementationOnce(() =>
+        historyResponse([historyItem('5-0', 'five'), historyItem('4-0', 'four')], true)
+      )
+      .mockImplementationOnce((_url: unknown, init: RequestInit) =>
+        Promise.resolve({
+          ok: true,
+          status: 200,
+          body: new ReadableStream({
+            start(controller) {
+              init.signal?.addEventListener('abort', () => {
+                activeStreamWasAborted = true
+                controller.close()
+              })
+            },
+          }),
+        })
+      )
+      .mockImplementationOnce(() =>
+        Promise.resolve({
+          ok: false,
+          status: 409,
+          json: () => Promise.resolve({ earliest_cursor: '8-0', latest_cursor: '10-0' }),
+        })
+      )
       .mockImplementationOnce(() => {
         expect(activeStreamWasAborted).toBe(true)
         return historyResponse([historyItem('10-0', 'ten')])
@@ -155,6 +170,6 @@ describe('event log transport lifecycle', () => {
     await loadOlder()
 
     // Then: no stale reader can merge while replacement history is in flight
-    expect(globalEventLogStore.snapshot().entries.map((entry) => entry.redisId)).toEqual(['10-0'])
+    expect(globalEventLogStore.snapshot().entries.map(entry => entry.redisId)).toEqual(['10-0'])
   })
 })

@@ -1,14 +1,36 @@
 const SAFE_FIELD_KEYS = new Set([
-  'device_id', 'state', 'room', 'cluster', 'setpoint', 'active',
-  'mode', 'mode_id', 'channel', 'board', 'pin', 'intensity',
-  'notes_changed', 'notes_length', 'old_mode', 'new_mode',
-  'crop_batch_id', 'url_hostname', 'displaced_id',
-  'previous_setpoint', 'effective_setpoint',
+  'device_id',
+  'state',
+  'room',
+  'cluster',
+  'setpoint',
+  'active',
+  'mode',
+  'mode_id',
+  'channel',
+  'board',
+  'pin',
+  'intensity',
+  'notes_changed',
+  'notes_length',
+  'old_mode',
+  'new_mode',
+  'crop_batch_id',
+  'url_hostname',
+  'displaced_id',
+  'previous_setpoint',
+  'effective_setpoint',
 ])
 
 const REDACTED_KEYS = new Set([
-  'password', 'secret', 'token', 'api_key', 'apikey',
-  'authorization', 'credential', 'private_key',
+  'password',
+  'secret',
+  'token',
+  'api_key',
+  'apikey',
+  'authorization',
+  'credential',
+  'private_key',
 ])
 
 export function extractSafeFields(payload: Record<string, unknown>): Record<string, unknown> {
@@ -24,7 +46,12 @@ const MAX_STRING_LENGTH = 100
 
 export function formatPayloadValue(value: unknown): string {
   if (value === null || value === undefined) return '--'
-  if (typeof value === 'string') return value.length > MAX_STRING_LENGTH ? `${value.slice(0, MAX_STRING_LENGTH)}...` : value
+  if (typeof value === 'string')
+    return value.length > MAX_STRING_LENGTH ? `${value.slice(0, MAX_STRING_LENGTH)}...` : value
   if (typeof value === 'number' || typeof value === 'boolean') return String(value)
-  try { return JSON.stringify(value) } catch { return '[unserializable]' }
+  try {
+    return JSON.stringify(value)
+  } catch {
+    return '[unserializable]'
+  }
 }

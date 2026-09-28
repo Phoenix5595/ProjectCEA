@@ -41,7 +41,7 @@ function canEntry(
   hardwareAddress: number,
   displayName: string,
   room: string,
-  location: string,
+  location: string
 ): Record<string, unknown> {
   return {
     registry_id: registryId,
@@ -58,7 +58,7 @@ function canEntry(
 function rs485Entry(
   registryId: number,
   hardwareAddress: number,
-  bed: string | null,
+  bed: string | null
 ): Record<string, unknown> {
   return {
     registry_id: registryId,
@@ -86,7 +86,7 @@ function soilRegistryFixture(_req: FixtureRequest, scenario: string | null): unk
   if (scenario === 'unassigned-after-mount') {
     records.push(rs485Entry(9, 231, null))
   }
-  const unassigned = records.filter((record) => record.status === 'unassigned')
+  const unassigned = records.filter(record => record.status === 'unassigned')
   return { records, unassigned_count: unassigned.length }
 }
 

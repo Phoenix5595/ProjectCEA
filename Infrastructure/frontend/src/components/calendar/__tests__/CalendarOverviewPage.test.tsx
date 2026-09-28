@@ -1,14 +1,15 @@
 import { render, screen, act } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import CalendarOverviewPage from '../CalendarOverviewPage'
-import type { EventLogEntry } from '../../../features/event-log/state/eventLogStore'
+
 import { makeEventEntryWith } from '../../../features/event-log/__tests__/testFactories'
+import type { EventLogEntry } from '../../../features/event-log/state/eventLogStore'
+import CalendarOverviewPage from '../CalendarOverviewPage'
 
 vi.mock('../../../services/api', () => ({
   apiClient: { getModeSchedule: vi.fn(() => Promise.resolve(null)) },
 }))
 
-vi.mock('../../../hooks/useCalendarEvents', async (importOriginal) => {
+vi.mock('../../../hooks/useCalendarEvents', async importOriginal => {
   const actual = await importOriginal<typeof import('../../../hooks/useCalendarEvents')>()
   return {
     ...actual,
@@ -17,8 +18,9 @@ vi.mock('../../../hooks/useCalendarEvents', async (importOriginal) => {
 })
 
 const entries: EventLogEntry[] = []
-vi.mock('../../../features/event-log/state/useEventLog', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../../features/event-log/state/useEventLog')>()
+vi.mock('../../../features/event-log/state/useEventLog', async importOriginal => {
+  const actual =
+    await importOriginal<typeof import('../../../features/event-log/state/useEventLog')>()
   return {
     ...actual,
     useEventLog: () => ({ entries, loading: false, refresh: () => {} }),
@@ -31,12 +33,12 @@ describe('CalendarOverviewPage event-log time ticking', () => {
     vi.setSystemTime(new Date('2026-09-02T12:05:00Z'))
     entries.length = 0
     entries.push(
-  makeEventEntryWith({
-    type: 'relay.state_changed',
-    category: 'relay',
-    occurredAt: new Date('2026-09-02T12:05:00Z'),
-  }),
-)
+      makeEventEntryWith({
+        type: 'relay.state_changed',
+        category: 'relay',
+        occurredAt: new Date('2026-09-02T12:05:00Z'),
+      })
+    )
   })
 
   afterEach(() => {

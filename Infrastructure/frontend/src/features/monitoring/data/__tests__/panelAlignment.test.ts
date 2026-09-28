@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest'
+
 import type { ClimateTimelineSeries, ControlMonitoringResponse, SensorSeries } from '../../api'
 import type { TimeseriesPanelSpec } from '../../config'
 import type { MonitoringRange } from '../../state'
 import { alignSeries, alignSeriesBase, applyLiveTail } from '../alignSeries'
-import { createPanelAlignment } from '../panelAlignment'
-import type { AlignInput } from '../alignSeries.types'
 import { windowBounds } from '../alignSeries.grid'
+import type { AlignInput } from '../alignSeries.types'
+import { createPanelAlignment } from '../panelAlignment'
 
 const START = new Date('2026-08-02T11:00:00.000Z')
 const NOW = new Date('2026-08-02T12:00:00.000Z')
@@ -34,13 +35,15 @@ function fixedRange(): MonitoringRange {
   return { kind: 'fixed', start: START, end: END }
 }
 
-function controls(points: Array<{ timestamp: Date; value: number | null }>): ControlMonitoringResponse {
+function controls(
+  points: Array<{ timestamp: Date; value: number | null }>
+): ControlMonitoringResponse {
   const climate: ClimateTimelineSeries = {
     name: 'Heating Setpoint',
     provenance: { origin: 'recorded', quality: 'exact', is_aggregated: false },
     projection: null,
     warnings: [],
-    points: points.map((point) => ({
+    points: points.map(point => ({
       timestamp: point.timestamp,
       value: point.value,
       nominal_value: point.value,
@@ -64,13 +67,15 @@ function controls(points: Array<{ timestamp: Date; value: number | null }>): Con
 }
 
 function input(overrides: Partial<AlignInput> = {}): AlignInput {
-  const series: SensorSeries[] = [{
-    sensor: 'dry_bulb',
-    node: 'front',
-    unit_family: 'celsius',
-    unit: '°C',
-    points: [{ timestamp: START, average: 24.5, minimum: 24.1, maximum: 24.9, sample_count: 1 }],
-  }]
+  const series: SensorSeries[] = [
+    {
+      sensor: 'dry_bulb',
+      node: 'front',
+      unit_family: 'celsius',
+      unit: '°C',
+      points: [{ timestamp: START, average: 24.5, minimum: 24.1, maximum: 24.9, sample_count: 1 }],
+    },
+  ]
   return {
     series,
     controlHistory: controls([{ timestamp: START, value: 22 }]),
@@ -128,12 +133,14 @@ describe('panel alignment', () => {
       live: [{ sensor: 'dry_bulb', value: 24.8, timestamp: liveNow }],
       now: liveNow,
     })
-    const mean = result.series.find((series) => series.metric === 'dry_bulb' && series.role === 'mean')
+    const mean = result.series.find(
+      series => series.metric === 'dry_bulb' && series.role === 'mean'
+    )
 
     expect(result.x).toContain(liveNow.getTime())
     expect(result.x.indexOf(liveNow.getTime())).toBeLessThan(result.x.indexOf(FUTURE.getTime()))
     expect(result.x).toEqual([...result.x].sort((left, right) => left - right))
-    expect(result.series.every((series) => series.y.length === result.x.length)).toBe(true)
+    expect(result.series.every(series => series.y.length === result.x.length)).toBe(true)
     expect(mean?.y[result.nowIndex]).toBe(24.8)
   })
 
@@ -156,8 +163,10 @@ describe('panel alignment', () => {
       live: [{ sensor: 'dry_bulb', value: 24.9, timestamp: secondNow }],
       now: secondNow,
     })
-    const mean = result.series.find((series) => series.metric === 'dry_bulb' && series.role === 'mean')
-    const heating = result.series.find((series) => series.metric === 'heating_setpoint')
+    const mean = result.series.find(
+      series => series.metric === 'dry_bulb' && series.role === 'mean'
+    )
+    const heating = result.series.find(series => series.metric === 'heating_setpoint')
 
     expect(result.x).toContain(firstNow.getTime())
     expect(result.x).toContain(secondNow.getTime())
@@ -198,7 +207,9 @@ describe('panel alignment', () => {
       })
     }
 
-    const mean = result.series.find((series) => series.metric === 'dry_bulb' && series.role === 'mean')
+    const mean = result.series.find(
+      series => series.metric === 'dry_bulb' && series.role === 'mean'
+    )
     expect(alignment.counts).toEqual({ baseAlignments: 121, liveTailUpdates: 120 })
     expect(mean?.y[result.nowIndex]).toBe(36)
   })
@@ -220,13 +231,15 @@ describe('panel alignment', () => {
       provenance: { origin: 'recorded', quality: 'exact', is_aggregated: false },
       projection: null,
       warnings: [],
-      points: [{
-        timestamp: START,
-        value: 600,
-        nominal_value: 600,
-        metric: 'co2_setpoint',
-        provenance: { origin: 'recorded', quality: 'exact', is_aggregated: false },
-      }],
+      points: [
+        {
+          timestamp: START,
+          value: 600,
+          nominal_value: 600,
+          metric: 'co2_setpoint',
+          provenance: { origin: 'recorded', quality: 'exact', is_aggregated: false },
+        },
+      ],
       steps: [],
       linear: [],
     }
@@ -239,13 +252,15 @@ describe('panel alignment', () => {
     }
 
     const co2Panel = createPanelAlignment().align({ ...source, panel: CO2_PANEL })
-    const co2Point = co2Panel.series.find((s) => s.metric === 'co2_setpoint')
+    const co2Point = co2Panel.series.find(s => s.metric === 'co2_setpoint')
     expect(co2Point).toBeDefined()
     expect(co2Point?.family).toBe('co2')
 
     const tempPanel = createPanelAlignment().align({ ...source, panel: CLIMATE_PANEL })
-    expect(tempPanel.series.some((s) => s.metric === 'co2_setpoint')).toBe(false)
-    const tempPoint = tempPanel.series.find((s) => s.family === 'temperature' && s.metric.includes('setpoint'))
+    expect(tempPanel.series.some(s => s.metric === 'co2_setpoint')).toBe(false)
+    const tempPoint = tempPanel.series.find(
+      s => s.family === 'temperature' && s.metric.includes('setpoint')
+    )
     expect(tempPoint).toBeUndefined()
   })
 
@@ -259,23 +274,33 @@ describe('panel alignment', () => {
           node: 'front',
           unit_family: 'hpa',
           unit: 'hPa',
-          points: [{ timestamp: unrelated, average: 1010, minimum: 1009, maximum: 1011, sample_count: 1 }],
+          points: [
+            { timestamp: unrelated, average: 1010, minimum: 1009, maximum: 1011, sample_count: 1 },
+          ],
         },
       ],
     })
     const filtered = createPanelAlignment().align({ ...source, panel: CLIMATE_PANEL })
     const dense = Array.from({ length: 20_100 }, (_, index) => ({
-      timestamp: new Date(START.getTime() + index * 1000), average: 24, minimum: 23, maximum: 25, sample_count: 1,
+      timestamp: new Date(START.getTime() + index * 1000),
+      average: 24,
+      minimum: 23,
+      maximum: 25,
+      sample_count: 1,
     }))
-    const legacyCapped = alignSeries(input({
-      series: [{ ...input().series[0], points: dense }],
-      range: { kind: 'fixed', start: START, end: new Date(START.getTime() + 20_100 * 1000) },
-    }))
-    const budgeted = alignSeries(input({
-      series: [{ ...input().series[0], points: dense }],
-      range: { kind: 'fixed', start: START, end: new Date(START.getTime() + 20_100 * 1000) },
-      maxPoints: 25_000,
-    }))
+    const legacyCapped = alignSeries(
+      input({
+        series: [{ ...input().series[0], points: dense }],
+        range: { kind: 'fixed', start: START, end: new Date(START.getTime() + 20_100 * 1000) },
+      })
+    )
+    const budgeted = alignSeries(
+      input({
+        series: [{ ...input().series[0], points: dense }],
+        range: { kind: 'fixed', start: START, end: new Date(START.getTime() + 20_100 * 1000) },
+        maxPoints: 25_000,
+      })
+    )
 
     expect(filtered.x).not.toContain(unrelated.getTime())
     expect(filtered.bands).toHaveLength(1)

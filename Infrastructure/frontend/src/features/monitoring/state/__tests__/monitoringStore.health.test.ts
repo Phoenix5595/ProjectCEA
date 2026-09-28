@@ -81,7 +81,7 @@ describe('monitoring source outcomes', () => {
         source: 'projection',
         message: 'request failed',
         errorAt: CONTROL_FAILURE,
-      },
+      }
     )
 
     expect(deriveActiveSourceErrors(outcomes)).toEqual([
@@ -99,7 +99,7 @@ describe('monitoring source outcomes', () => {
       {
         source: 'control-history',
         lastGoodAt: CONTROL_SUCCESS,
-      },
+      }
     )
 
     expect(deriveRangeFreshness(outcomes)).toEqual({
@@ -118,13 +118,13 @@ describe('monitoring source outcomes', () => {
         {
           source: 'control-history',
           lastGoodAt: CONTROL_SUCCESS,
-        },
+        }
       ),
       {
         source: 'projection',
         message: 'projection unavailable',
         errorAt: CONTROL_FAILURE,
-      },
+      }
     )
 
     expect(deriveActiveSourceErrors(outcomes)).toEqual([
@@ -151,19 +151,19 @@ describe('monitoring source outcomes', () => {
           {
             source: 'control-history',
             lastGoodAt: CONTROL_SUCCESS,
-          },
+          }
         ),
         {
           source: 'sensor-history',
           message: 'sensor unavailable',
           errorAt: SENSOR_FAILURE,
-        },
+        }
       ),
       {
         source: 'control-history',
         message: 'control unavailable',
         errorAt: CONTROL_FAILURE,
-      },
+      }
     )
 
     expect(deriveRangeFreshness(outcomes)).toEqual({

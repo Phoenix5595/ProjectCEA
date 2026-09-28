@@ -47,14 +47,21 @@ export class EventLogStore {
       changed = true
     }
     while (this.values.size > this.limit) {
-      const oldest = [...this.values.values()].sort((left, right) => left.redisId.localeCompare(right.redisId, undefined, { numeric: true }))[0]
+      const oldest = [...this.values.values()].sort((left, right) =>
+        left.redisId.localeCompare(right.redisId, undefined, { numeric: true })
+      )[0]
       if (oldest === undefined) return
       this.values.delete(oldest.eventId)
       this.eventIdsByRedisId.delete(oldest.redisId)
       changed = true
     }
     if (changed) {
-      this.currentSnapshot = { ...this.currentSnapshot, entries: [...this.values.values()].sort((left, right) => left.redisId.localeCompare(right.redisId, undefined, { numeric: true })) }
+      this.currentSnapshot = {
+        ...this.currentSnapshot,
+        entries: [...this.values.values()].sort((left, right) =>
+          left.redisId.localeCompare(right.redisId, undefined, { numeric: true })
+        ),
+      }
       this.notify()
     }
   }

@@ -1,8 +1,13 @@
 import { useMemo, useState, useEffect, useRef } from 'react'
+
+import { Input } from '@/components/ui/input'
+
 import type { ClimatePeriod } from '../types/climatePeriod'
 import { sampleMetricSeries, timeToMinutes } from '../utils/climatePeriodTimeline'
 import { minutesToTime } from '../utils/timeMath'
-import { Input } from '@/components/ui/input'
+
+const tempRange = { min: 15, max: 30 }
+const vpdRange = { min: 0.5, max: 2.0 }
 
 export interface ClimatePeriodTimelineProps {
   periods?: ClimatePeriod[]
@@ -33,11 +38,7 @@ function buildSegments(startMin: number, endMin: number): TimeSegment[] {
   ]
 }
 
-function buildPolylineSegments(
-  series: (number | null)[],
-  vmin: number,
-  vmax: number
-): string[] {
+function buildPolylineSegments(series: (number | null)[], vmin: number, vmax: number): string[] {
   const segments: string[][] = []
   let current: string[] = []
   const span = Math.max(vmax - vmin, 1e-6)
@@ -55,7 +56,7 @@ function buildPolylineSegments(
     current.push(`${x},${y}`)
   }
   if (current.length) segments.push(current)
-  return segments.map((s) => s.join(' '))
+  return segments.map(s => s.join(' '))
 }
 
 export default function ClimatePeriodTimeline({
@@ -189,7 +190,15 @@ export default function ClimatePeriodTimeline({
       window.removeEventListener('mousemove', handleMouseMove)
       window.removeEventListener('mouseup', handleMouseUp)
     }
-  }, [dragTarget, dragOffsetMinutes, dayStartMin, dayEndMin, lockedPhotoperiodHours, onDayStartChange, onDayEndChange])
+  }, [
+    dragTarget,
+    dragOffsetMinutes,
+    dayStartMin,
+    dayEndMin,
+    lockedPhotoperiodHours,
+    onDayStartChange,
+    onDayEndChange,
+  ])
 
   useEffect(() => {
     if (!showRampPopover && !showContextMenu) return
@@ -225,8 +234,7 @@ export default function ClimatePeriodTimeline({
   const sunColor = 'rgba(234, 179, 8, 0.45)'
   const moonColor = 'rgba(168, 85, 247, 0.35)'
 
-  const sunSegments =
-    dayStartMin === dayEndMin ? [] : buildSegments(dayStartMin, dayEndMin)
+  const sunSegments = dayStartMin === dayEndMin ? [] : buildSegments(dayStartMin, dayEndMin)
   const moonSegments =
     dayStartMin === dayEndMin
       ? [{ startMin: 0, endMin: 1440 }]
@@ -236,23 +244,20 @@ export default function ClimatePeriodTimeline({
   const coolSeries = useMemo(() => sampleMetricSeries(periods, 'cooling'), [periods])
   const vpdSeries = useMemo(() => sampleMetricSeries(periods, 'vpd'), [periods])
 
-  const tempRange = { min: 15, max: 30 }
-  const vpdRange = { min: 0.5, max: 2.0 }
-
   const heatPolylines = useMemo(() => {
     if (!tempRange) return []
     return buildPolylineSegments(heatSeries, tempRange.min, tempRange.max)
-  }, [heatSeries, tempRange])
+  }, [heatSeries])
 
   const coolPolylines = useMemo(() => {
     if (!tempRange) return []
     return buildPolylineSegments(coolSeries, tempRange.min, tempRange.max)
-  }, [coolSeries, tempRange])
+  }, [coolSeries])
 
   const vpdPolylines = useMemo(() => {
     if (!vpdRange) return []
     return buildPolylineSegments(vpdSeries, vpdRange.min, vpdRange.max)
-  }, [vpdSeries, vpdRange])
+  }, [vpdSeries])
 
   const tempScalePositions = [
     { value: 30, top: 0 },
@@ -323,7 +328,7 @@ export default function ClimatePeriodTimeline({
                     backgroundColor: moonColor,
                   }}
                   onMouseDown={handleBodyMouseDown}
-                  onContextMenu={(e) => {
+                  onContextMenu={e => {
                     e.preventDefault()
                     setNightStartInput(lightDayEnd)
                     setNightEndInput(lightDayStart)
@@ -372,7 +377,8 @@ export default function ClimatePeriodTimeline({
                       className="absolute left-0 top-0 h-full pointer-events-none"
                       style={{
                         width: `${(rampUpDuration / 1440) * 100}%`,
-                        background: 'linear-gradient(to right, rgba(234,179,8,0), rgba(234,179,8,0.45))',
+                        background:
+                          'linear-gradient(to right, rgba(234,179,8,0), rgba(234,179,8,0.45))',
                       }}
                     />
                   )}
@@ -382,7 +388,8 @@ export default function ClimatePeriodTimeline({
                       className="absolute right-0 top-0 h-full pointer-events-none"
                       style={{
                         width: `${(rampDownDuration / 1440) * 100}%`,
-                        background: 'linear-gradient(to left, rgba(234,179,8,0), rgba(234,179,8,0.45))',
+                        background:
+                          'linear-gradient(to left, rgba(234,179,8,0), rgba(234,179,8,0.45))',
                       }}
                     />
                   )}
@@ -528,8 +535,9 @@ export default function ClimatePeriodTimeline({
                   min={0}
                   max={180}
                   value={rampUpInput}
-                  onChange={(e) => setRampUpInput(parseInt(e.target.value) || 0)}
-                  className="h-6 px-1 py-0 text-center text-14 text-text-input no-spinner" />
+                  onChange={e => setRampUpInput(parseInt(e.target.value) || 0)}
+                  className="h-6 px-1 py-0 text-center text-14 text-text-input no-spinner"
+                />
               </div>
               <div className="flex flex-col gap-1">
                 <label className="text-12 text-text-muted">Ramp down (min)</label>
@@ -539,8 +547,9 @@ export default function ClimatePeriodTimeline({
                   min={0}
                   max={180}
                   value={rampDownInput}
-                  onChange={(e) => setRampDownInput(parseInt(e.target.value) || 0)}
-                  className="h-6 px-1 py-0 text-center text-14 text-text-input no-spinner" />
+                  onChange={e => setRampDownInput(parseInt(e.target.value) || 0)}
+                  className="h-6 px-1 py-0 text-center text-14 text-text-input no-spinner"
+                />
               </div>
               <button
                 onClick={() => {
@@ -548,7 +557,7 @@ export default function ClimatePeriodTimeline({
                   onRampDownChange?.(rampDownInput)
                   setShowRampPopover(false)
                 }}
-                className="mt-1 px-3 py-1 bg-btn-primary text-white rounded text-xs font-medium hover:opacity-90"
+                className="mt-1 px-3 py-1 bg-btn-primary text-btn-primary-text rounded text-xs font-medium hover:opacity-90"
               >
                 Done
               </button>
@@ -562,7 +571,7 @@ export default function ClimatePeriodTimeline({
                   aria-label="Night start time"
                   type="text"
                   value={nightStartInput}
-                  onChange={(e) => setNightStartInput(e.target.value)}
+                  onChange={e => setNightStartInput(e.target.value)}
                   placeholder="HH:MM"
                   className="w-full h-6 px-1 text-center bg-surface-secondary border border-border-default rounded text-14 text-text-input"
                 />
@@ -581,7 +590,7 @@ export default function ClimatePeriodTimeline({
                   }
                   setShowRampPopover(false)
                 }}
-                className="mt-1 px-3 py-1 bg-btn-primary text-white rounded text-xs font-medium hover:opacity-90"
+                className="mt-1 px-3 py-1 bg-btn-primary text-btn-primary-text rounded text-xs font-medium hover:opacity-90"
               >
                 Done
               </button>
@@ -595,7 +604,7 @@ export default function ClimatePeriodTimeline({
                   aria-label="Night end time"
                   type="text"
                   value={nightEndInput}
-                  onChange={(e) => setNightEndInput(e.target.value)}
+                  onChange={e => setNightEndInput(e.target.value)}
                   placeholder="HH:MM"
                   className="w-full h-6 px-1 text-center bg-surface-secondary border border-border-default rounded text-14 text-text-input"
                 />
@@ -614,7 +623,7 @@ export default function ClimatePeriodTimeline({
                   }
                   setShowRampPopover(false)
                 }}
-                className="mt-1 px-3 py-1 bg-btn-primary text-white rounded text-xs font-medium hover:opacity-90"
+                className="mt-1 px-3 py-1 bg-btn-primary text-btn-primary-text rounded text-xs font-medium hover:opacity-90"
               >
                 Done
               </button>

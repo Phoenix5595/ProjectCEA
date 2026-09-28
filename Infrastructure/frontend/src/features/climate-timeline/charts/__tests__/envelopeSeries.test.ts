@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+
 import { RichTrajectoryEnvelope } from '../../api/contracts'
 import type { RichTrajectoryEnvelope as Envelope } from '../../api/contracts'
 import {
@@ -17,7 +18,10 @@ const WINDOW = {
 }
 
 function segment(
-  overrides: Partial<Record<string, unknown>> & { metric?: string; kind?: 'scheduled' | 'effective' },
+  overrides: Partial<Record<string, unknown>> & {
+    metric?: string
+    kind?: 'scheduled' | 'effective'
+  }
 ): Record<string, unknown> {
   return {
     shape: 'step',
@@ -53,7 +57,6 @@ function envelope(segments: Record<string, unknown>[]): Envelope {
     warnings: [],
   }) as Envelope
 }
-
 
 describe('normalizeTimelineMetric', () => {
   it('accepts the four climate metrics and rejects light metrics', () => {
@@ -109,7 +112,12 @@ describe('buildEnvelopeSeries', () => {
   it('produces distinct series for scheduled and effective kinds', () => {
     const env = envelope([
       segment({ value: 22, start: '2026-01-01T00:00:00.000Z', end: '2026-01-01T01:00:00.000Z' }),
-      segment({ value: 21, trajectory_kind: 'effective', start: '2026-01-01T00:00:00.000Z', end: '2026-01-01T01:00:00.000Z' }),
+      segment({
+        value: 21,
+        trajectory_kind: 'effective',
+        start: '2026-01-01T00:00:00.000Z',
+        end: '2026-01-01T01:00:00.000Z',
+      }),
     ])
     const series = buildEnvelopeSeries(env, [Date.parse('2026-01-01T00:30:00.000Z')])
     expect(series.keys).toEqual(['heating_setpoint:scheduled', 'heating_setpoint:effective'])
@@ -126,7 +134,7 @@ describe('buildEnvelopeSeries', () => {
       segment({ metric: 'heating_setpoint', unit: 'C', value: 22 }),
     ])
     const groups = groupEnvelopeSegments(env)
-    expect(groups.map((group) => `${group.metric}:${group.kind}`)).toEqual([
+    expect(groups.map(group => `${group.metric}:${group.kind}`)).toEqual([
       'heating_setpoint:scheduled',
       'heating_setpoint:effective',
       'cooling_setpoint:scheduled',
@@ -166,12 +174,24 @@ describe('photoperiodIntervals', () => {
     const intervals = photoperiodIntervals(
       { dayStartTime: '06:00', nightStartTime: '18:00' },
       Date.parse('2026-01-01T00:00:00.000Z'),
-      Date.parse('2026-01-02T00:00:00.000Z'),
+      Date.parse('2026-01-02T00:00:00.000Z')
     )
     expect(intervals).toEqual([
-      { start: Date.parse('2026-01-01T00:00:00.000Z'), end: Date.parse('2026-01-01T06:00:00.000Z'), phase: 'MOON' },
-      { start: Date.parse('2026-01-01T06:00:00.000Z'), end: Date.parse('2026-01-01T18:00:00.000Z'), phase: 'SUN' },
-      { start: Date.parse('2026-01-01T18:00:00.000Z'), end: Date.parse('2026-01-02T00:00:00.000Z'), phase: 'MOON' },
+      {
+        start: Date.parse('2026-01-01T00:00:00.000Z'),
+        end: Date.parse('2026-01-01T06:00:00.000Z'),
+        phase: 'MOON',
+      },
+      {
+        start: Date.parse('2026-01-01T06:00:00.000Z'),
+        end: Date.parse('2026-01-01T18:00:00.000Z'),
+        phase: 'SUN',
+      },
+      {
+        start: Date.parse('2026-01-01T18:00:00.000Z'),
+        end: Date.parse('2026-01-02T00:00:00.000Z'),
+        phase: 'MOON',
+      },
     ])
   })
 
@@ -179,20 +199,33 @@ describe('photoperiodIntervals', () => {
     const intervals = photoperiodIntervals(
       { dayStartTime: '22:00', nightStartTime: '06:00' },
       Date.parse('2026-01-01T00:00:00.000Z'),
-      Date.parse('2026-01-02T00:00:00.000Z'),
+      Date.parse('2026-01-02T00:00:00.000Z')
     )
-    expect(intervals[0]).toEqual({ start: Date.parse('2026-01-01T00:00:00.000Z'), end: Date.parse('2026-01-01T06:00:00.000Z'), phase: 'SUN' })
-    expect(intervals.some((interval) => interval.phase === 'SUN' && interval.start === Date.parse('2026-01-01T22:00:00.000Z'))).toBe(true)
+    expect(intervals[0]).toEqual({
+      start: Date.parse('2026-01-01T00:00:00.000Z'),
+      end: Date.parse('2026-01-01T06:00:00.000Z'),
+      phase: 'SUN',
+    })
+    expect(
+      intervals.some(
+        interval =>
+          interval.phase === 'SUN' && interval.start === Date.parse('2026-01-01T22:00:00.000Z')
+      )
+    ).toBe(true)
   })
 
   it('renders the whole window as moon when day equals night', () => {
     const intervals = photoperiodIntervals(
       { dayStartTime: '06:00', nightStartTime: '06:00' },
       Date.parse('2026-01-01T00:00:00.000Z'),
-      Date.parse('2026-01-01T12:00:00.000Z'),
+      Date.parse('2026-01-01T12:00:00.000Z')
     )
     expect(intervals).toEqual([
-      { start: Date.parse('2026-01-01T00:00:00.000Z'), end: Date.parse('2026-01-01T12:00:00.000Z'), phase: 'MOON' },
+      {
+        start: Date.parse('2026-01-01T00:00:00.000Z'),
+        end: Date.parse('2026-01-01T12:00:00.000Z'),
+        phase: 'MOON',
+      },
     ])
   })
 })

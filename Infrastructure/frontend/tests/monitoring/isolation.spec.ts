@@ -1,7 +1,9 @@
 import { expect, test } from '@playwright/test'
 import { fixtureUrl } from './fixtureUrl'
 
-test('fixture sessions isolate transient backend recovery sequences', async ({ browser }, testInfo) => {
+test('fixture sessions isolate transient backend recovery sequences', async ({
+  browser,
+}, testInfo) => {
   const firstContext = await browser.newContext()
   const secondContext = await browser.newContext()
   const first = await firstContext.newPage()
@@ -12,14 +14,14 @@ test('fixture sessions isolate transient backend recovery sequences', async ({ b
 
   try {
     const fixtureRequests: string[] = []
-    first.on('request', (request) => {
+    first.on('request', request => {
       if (request.url().includes('/api/sensors/monitoring/')) fixtureRequests.push(request.url())
     })
     await first.goto(fixtureUrl('/flower/monitoring?scenario=backend-down', testInfo, 'first'))
     await expect(first.getByRole('alert').first()).toBeVisible()
-    expect(fixtureRequests.some((url) => url.includes(encodeURIComponent(firstSession)))).toBe(true)
+    expect(fixtureRequests.some(url => url.includes(encodeURIComponent(firstSession)))).toBe(true)
 
-    const recoveryStatuses = await first.evaluate(async (session) => {
+    const recoveryStatuses = await first.evaluate(async session => {
       const target = `/api/sensors/monitoring/range/Flower%20Room?scenario=backend-down&fixtureSession=${encodeURIComponent(session)}`
       const statuses: number[] = []
       for (let index = 0; index < 4; index += 1) statuses.push((await fetch(target)).status)
@@ -29,7 +31,7 @@ test('fixture sessions isolate transient backend recovery sequences', async ({ b
 
     await second.goto(fixtureUrl('/flower/monitoring?scenario=backend-down', testInfo, 'second'))
     await expect(second.getByRole('alert').first()).toBeVisible()
-    const secondStatus = await second.evaluate(async (session) => {
+    const secondStatus = await second.evaluate(async session => {
       const target = `/api/sensors/monitoring/range/Flower%20Room?scenario=backend-down&fixtureSession=${encodeURIComponent(session)}`
       return (await fetch(target)).status
     }, secondProbeSession)

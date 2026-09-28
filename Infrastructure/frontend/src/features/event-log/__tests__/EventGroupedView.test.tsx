@@ -1,6 +1,12 @@
 import { render } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
-import { EventGroupedView, buildGroups, withPreallocatedSlots } from '../components/EventGroupedView'
+
+import {
+  EventGroupedView,
+  buildGroups,
+  withPreallocatedSlots,
+} from '../components/EventGroupedView'
+
 import { makeEventEntry, makeEventEntryWith } from './testFactories'
 
 const NOW = new Date('2026-09-02T12:00:00Z')
@@ -24,17 +30,15 @@ describe('EventGroupedView compact sidebar mode', () => {
           reasonText: 'Failsafe raised',
           entity: { entityType: 'device', entityId: 'fan-0' },
         }),
-      ]),
+      ])
     )
     const compact = render(
-      <EventGroupedView groups={groups} now={NOW} onExpand={() => {}} compact />,
+      <EventGroupedView groups={groups} now={NOW} onExpand={() => {}} compact />
     )
     expect(compact.container.textContent).not.toContain('devices in the last 10 minutes')
     expect(compact.container.textContent).not.toContain('Failsafe raised')
 
-    const wide = render(
-      <EventGroupedView groups={groups} now={NOW} onExpand={() => {}} />,
-    )
+    const wide = render(<EventGroupedView groups={groups} now={NOW} onExpand={() => {}} />)
     expect(wide.container.textContent).toContain('devices in the last 10 minutes')
   })
 
@@ -52,29 +56,31 @@ describe('EventGroupedView compact sidebar mode', () => {
           occurredAt: new Date('2026-09-02T11:59:00Z'),
           reasonText: 'Older event reason',
         }),
-      ]),
+      ])
     )
 
     const compact = render(
-      <EventGroupedView groups={groups} now={NOW} onExpand={() => {}} compact />,
+      <EventGroupedView groups={groups} now={NOW} onExpand={() => {}} compact />
     )
 
     const relayCategory = compact.getByTestId('event-group-relay')
     expect(relayCategory).toHaveAttribute(
       'title',
-      `Latest event in this category — recorded reason: ${latestReason}`,
+      `Latest event in this category — recorded reason: ${latestReason}`
     )
     expect(relayCategory.getAttribute('title')).not.toContain('Older event reason')
   })
 
   it('keeps every pre-allocated category slot visible in compact mode', () => {
     const groups = withPreallocatedSlots(
-      buildGroups([makeEventEntry('1-0', 'relay.command_issued', 'relay')]),
+      buildGroups([makeEventEntry('1-0', 'relay.command_issued', 'relay')])
     )
     const compact = render(
-      <EventGroupedView groups={groups} now={NOW} onExpand={() => {}} compact />,
+      <EventGroupedView groups={groups} now={NOW} onExpand={() => {}} compact />
     )
     expect(compact.container.textContent).toContain('No recent events')
-    expect(compact.container.querySelectorAll('[data-testid^="event-group-"]').length).toBeGreaterThanOrEqual(8)
+    expect(
+      compact.container.querySelectorAll('[data-testid^="event-group-"]').length
+    ).toBeGreaterThanOrEqual(8)
   })
 })

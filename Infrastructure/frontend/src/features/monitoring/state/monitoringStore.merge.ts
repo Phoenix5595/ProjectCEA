@@ -32,7 +32,7 @@ export function sameRange(a: MonitoringRange, b: MonitoringRange): boolean {
 
 /** Extract the first projection metadata from a control response, if any. */
 export function extractProjection(
-  resp: ControlMonitoringResponse | null,
+  resp: ControlMonitoringResponse | null
 ): ProjectionMetadata | null {
   if (!resp) return null
   for (const series of [...resp.climate, ...resp.lights]) {
@@ -50,7 +50,7 @@ export function downgradeQuality(q: Quality): Quality {
 function mergePoints<T extends { timestamp: Date }>(
   existing: T[],
   incoming: T[],
-  key: (p: T) => string,
+  key: (p: T) => string
 ): T[] {
   const seen = new Set(existing.map(key))
   const out = existing.slice()
@@ -66,9 +66,9 @@ function mergePoints<T extends { timestamp: Date }>(
 
 function mergeSeriesByName<S extends { name: string; points: { timestamp: Date }[] }>(
   existing: S[],
-  incoming: S[],
+  incoming: S[]
 ): S[] {
-  const byName = new Map(existing.map((s) => [s.name, s]))
+  const byName = new Map(existing.map(s => [s.name, s]))
   for (const s of incoming) {
     const cur = byName.get(s.name)
     if (!cur) {
@@ -77,7 +77,7 @@ function mergeSeriesByName<S extends { name: string; points: { timestamp: Date }
     }
     byName.set(s.name, {
       ...cur,
-      points: mergePoints(cur.points, s.points, (p) => `${s.name}:${p.timestamp.getTime()}`),
+      points: mergePoints(cur.points, s.points, p => `${s.name}:${p.timestamp.getTime()}`),
     })
   }
   return [...byName.values()]
@@ -85,7 +85,7 @@ function mergeSeriesByName<S extends { name: string; points: { timestamp: Date }
 
 function mergeTargetValues<T extends { timestamp: Date; value: number | null }>(
   existing: T[],
-  incoming: T[],
+  incoming: T[]
 ): T[] {
   const byTimestamp = new Map<number, T>()
   for (const value of [...existing, ...incoming]) {
@@ -95,13 +95,19 @@ function mergeTargetValues<T extends { timestamp: Date; value: number | null }>(
       byTimestamp.set(timestamp, value)
     }
   }
-  return [...byTimestamp.values()].sort((left, right) => left.timestamp.getTime() - right.timestamp.getTime())
+  return [...byTimestamp.values()].sort(
+    (left, right) => left.timestamp.getTime() - right.timestamp.getTime()
+  )
 }
 
 function mergeTargetSeriesByName<
-  S extends { name: string; points: { timestamp: Date; value: number | null }[]; steps: { timestamp: Date; value: number | null }[] },
+  S extends {
+    name: string
+    points: { timestamp: Date; value: number | null }[]
+    steps: { timestamp: Date; value: number | null }[]
+  },
 >(existing: S[], incoming: S[]): S[] {
-  const byName = new Map(existing.map((series) => [series.name, series]))
+  const byName = new Map(existing.map(series => [series.name, series]))
   for (const series of incoming) {
     const current = byName.get(series.name)
     if (!current) {
@@ -120,7 +126,7 @@ function mergeTargetSeriesByName<
 /** Merge a tail page into accumulated control history, deduping by row id. */
 export function mergeControlHistory(
   existing: ControlMonitoringResponse,
-  incoming: ControlMonitoringResponse,
+  incoming: ControlMonitoringResponse
 ): ControlMonitoringResponse {
   return {
     ...incoming,
@@ -131,7 +137,7 @@ export function mergeControlHistory(
     photoperiod: mergePoints(
       existing.photoperiod,
       incoming.photoperiod,
-      (p) => `photoperiod:${p.timestamp.getTime()}`,
+      p => `photoperiod:${p.timestamp.getTime()}`
     ),
   }
 }
@@ -139,9 +145,9 @@ export function mergeControlHistory(
 /** Merge per-node live values into a single sensor-keyed snapshot. */
 export function mergeLive(
   existing: LiveSensorValue[],
-  incoming: LiveSensorValue[],
+  incoming: LiveSensorValue[]
 ): LiveSensorValue[] {
-  const bySensor = new Map(existing.map((v) => [v.sensor, v]))
+  const bySensor = new Map(existing.map(v => [v.sensor, v]))
   for (const v of incoming) bySensor.set(v.sensor, v)
   return [...bySensor.values()]
 }

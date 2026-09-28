@@ -9,13 +9,7 @@
 export type MonitoringServiceName = 'monitoring'
 
 export type MonitoringErrorKind =
-  | 'network'
-  | 'timeout'
-  | 'http'
-  | 'parse'
-  | 'validation'
-  | 'topology'
-  | 'aborted'
+  'network' | 'timeout' | 'http' | 'parse' | 'validation' | 'topology' | 'aborted'
 
 export class MonitoringApiError extends Error {
   readonly kind: MonitoringErrorKind

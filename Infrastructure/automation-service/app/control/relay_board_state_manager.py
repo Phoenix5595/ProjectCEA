@@ -214,9 +214,7 @@ class RelayBoardStateManager:
             )
         )
 
-    def _notify_observation(
-        self, channels: tuple[bool, ...] | None, observed_at: datetime
-    ) -> None:
+    def _notify_observation(self, channels: tuple[bool, ...] | None, observed_at: datetime) -> None:
         """Offer a sample-time fact without allowing the recorder to affect control."""
         if self._observation_callback is None:
             return

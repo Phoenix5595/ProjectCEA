@@ -1,13 +1,30 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
+
 import { EventFilters, type FilterState } from '../components/EventFilters'
 
 describe('EventFilters', () => {
-  const defaultFilters: FilterState = { severity: 'all', search: '', rooms: [], categories: [], types: [] }
+  const defaultFilters: FilterState = {
+    severity: 'all',
+    search: '',
+    rooms: [],
+    categories: [],
+    types: [],
+  }
 
   it('renders severity filter buttons', () => {
-    render(<EventFilters filters={defaultFilters} onChange={() => {}} view="grouped" onViewChange={() => {}} rooms={[]} categories={[]} types={[]} />)
+    render(
+      <EventFilters
+        filters={defaultFilters}
+        onChange={() => {}}
+        view="grouped"
+        onViewChange={() => {}}
+        rooms={[]}
+        categories={[]}
+        types={[]}
+      />
+    )
     expect(screen.getByRole('button', { name: 'All' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Critical' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Warning' })).toBeInTheDocument()
@@ -16,18 +33,48 @@ describe('EventFilters', () => {
   })
 
   it('marks the active severity filter as pressed', () => {
-    render(<EventFilters filters={{ ...defaultFilters, severity: 'critical' }} onChange={() => {}} view="grouped" onViewChange={() => {}} rooms={[]} categories={[]} types={[]} />)
+    render(
+      <EventFilters
+        filters={{ ...defaultFilters, severity: 'critical' }}
+        onChange={() => {}}
+        view="grouped"
+        onViewChange={() => {}}
+        rooms={[]}
+        categories={[]}
+        types={[]}
+      />
+    )
     expect(screen.getByRole('button', { name: 'Critical' })).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByRole('button', { name: 'All' })).toHaveAttribute('aria-pressed', 'false')
   })
 
   it('renders a search input with an accessible label', () => {
-    render(<EventFilters filters={defaultFilters} onChange={() => {}} view="grouped" onViewChange={() => {}} rooms={[]} categories={[]} types={[]} />)
+    render(
+      <EventFilters
+        filters={defaultFilters}
+        onChange={() => {}}
+        view="grouped"
+        onViewChange={() => {}}
+        rooms={[]}
+        categories={[]}
+        types={[]}
+      />
+    )
     expect(screen.getByRole('searchbox', { name: /filter events/i })).toBeInTheDocument()
   })
 
   it('shows the current search value', () => {
-    render(<EventFilters filters={{ ...defaultFilters, search: 'relay' }} onChange={() => {}} view="grouped" onViewChange={() => {}} rooms={[]} categories={[]} types={[]} />)
+    render(
+      <EventFilters
+        filters={{ ...defaultFilters, search: 'relay' }}
+        onChange={() => {}}
+        view="grouped"
+        onViewChange={() => {}}
+        rooms={[]}
+        categories={[]}
+        types={[]}
+      />
+    )
     expect(screen.getByRole('searchbox', { name: /filter events/i })).toHaveValue('relay')
   })
 
@@ -43,7 +90,7 @@ describe('EventFilters', () => {
         rooms={['Flower Room', 'Veg Room']}
         categories={[]}
         types={[]}
-      />,
+      />
     )
 
     await user.click(screen.getByRole('button', { name: 'Flower Room', pressed: false }))
@@ -62,7 +109,7 @@ describe('EventFilters', () => {
         rooms={[]}
         categories={['relay', 'mutation']}
         types={[]}
-      />,
+      />
     )
 
     // No inline category chips anymore — they live behind the dropdown trigger.
@@ -87,7 +134,7 @@ describe('EventFilters', () => {
         rooms={[]}
         categories={[]}
         types={['relay.state_changed', 'config.updated']}
-      />,
+      />
     )
 
     await user.click(screen.getByRole('button', { name: /Categories & types/ }))
@@ -107,7 +154,7 @@ describe('EventFilters', () => {
         rooms={[]}
         categories={['relay']}
         types={['config.updated']}
-      />,
+      />
     )
 
     await user.click(screen.getByRole('button', { name: 'Categories & types (1)' }))
@@ -120,7 +167,13 @@ describe('EventFilters', () => {
 })
 
 describe('EventFilters compact sidebar mode', () => {
-  const defaultFilters: FilterState = { severity: 'all', search: '', rooms: [], categories: [], types: [] }
+  const defaultFilters: FilterState = {
+    severity: 'all',
+    search: '',
+    rooms: [],
+    categories: [],
+    types: [],
+  }
 
   function renderCompact(overrides: { filters?: FilterState; rooms?: string[] } = {}) {
     return render(
@@ -134,7 +187,7 @@ describe('EventFilters compact sidebar mode', () => {
         types={['relay.state_changed']}
         compact
         primaryRooms={['Flower Room', 'Veg Room']}
-      />,
+      />
     )
   }
 
@@ -184,10 +237,16 @@ describe('EventFilters compact sidebar mode', () => {
         types={[]}
         compact
         primaryRooms={['Flower Room', 'Veg Room']}
-      />,
+      />
     )
     expect(screen.getByRole('button', { name: 'Filters (1)' })).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: /Clear all filters/ }))
-    expect(onChange).toHaveBeenCalledWith({ severity: 'all', search: '', rooms: [], categories: [], types: [] })
+    expect(onChange).toHaveBeenCalledWith({
+      severity: 'all',
+      search: '',
+      rooms: [],
+      categories: [],
+      types: [],
+    })
   })
 })

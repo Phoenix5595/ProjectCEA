@@ -1,9 +1,10 @@
-import { useRef, useEffect } from 'react'
+import type { DayButtonProps } from '@daypicker/react'
 import { format } from 'date-fns'
 import { fr } from 'date-fns/locale'
-import type { DayButtonProps } from 'react-day-picker'
+import { useRef, useEffect } from 'react'
 
 import { MARKER_LIMITS, noteMarkerLabel, truncateMarkerLabel } from '../../utils/calendarDayMarkers'
+
 import { useCalendarMarkers } from './CalendarMarkersContext'
 
 export function CalendarDayButton({

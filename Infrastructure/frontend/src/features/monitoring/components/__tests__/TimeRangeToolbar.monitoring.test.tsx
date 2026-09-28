@@ -1,6 +1,7 @@
-import { describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
+import { describe, expect, it, vi } from 'vitest'
+
 import { TimeRangeToolbar } from '../TimeRangeToolbar'
 
 describe('TimeRangeToolbar monitoring status', () => {
@@ -27,7 +28,7 @@ describe('TimeRangeToolbar monitoring status', () => {
             onRetry,
           }}
         />
-      </MemoryRouter>,
+      </MemoryRouter>
     )
 
     const toolbar = container.querySelector('.mon-toolbar')

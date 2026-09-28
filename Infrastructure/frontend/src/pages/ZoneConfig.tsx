@@ -470,7 +470,7 @@ export default function ZoneConfig({
   if (section === 'automation') {
     return (
       <div className="min-h-screen bg-surface-base p-1">
-        <div className="max-w-480 mx-auto flex min-h-0 flex-col gap-2">
+        <div className="max-w-full mx-auto flex min-h-0 flex-col gap-2">
           <RelayPidTimeline
             location={location}
             cluster={cluster}
@@ -500,7 +500,7 @@ export default function ZoneConfig({
 
   return (
     <div className="min-h-screen bg-surface-base p-1">
-      <div className="max-w-480 mx-auto h-[calc(100vh-1rem)] min-w-0 flex flex-col">
+      <div className="max-w-full mx-auto h-[calc(100vh-1rem)] min-w-0 flex flex-col">
         {params && (
           <div className="flex-1 flex flex-col gap-1 min-h-0">
             {roomMode &&
@@ -513,7 +513,7 @@ export default function ZoneConfig({
                   />
                 </div>
               ) : timelineBaseline ? null : (
-                <div className="w-full min-w-0 shrink-0 overflow-auto rounded-lg border border-status-warning-border bg-status-warning-bg/30 px-3 py-2 text-xs text-status-warning-text">
+                <div className="w-full min-w-0 shrink-0 overflow-auto rounded-lg border border-status-warning-vivid bg-status-warning-bg/30 px-3 py-2 text-xs text-status-warning-text">
                   Timeline unavailable — editing periods in the row below.
                 </div>
               ))}
@@ -553,7 +553,7 @@ export default function ZoneConfig({
               </div>
               <div className="shrink-0 min-w-0">
                 {!mcpConnected && (
-                  <div className="mb-1 rounded-sm border border-status-error-border/80 bg-status-error-bg/30 px-2 py-1 text-10 font-semibold text-status-error-text">
+                  <div className="mb-1 rounded-sm border border-status-danger-border/80 bg-status-danger-bg/30 px-2 py-1 text-10 font-semibold text-status-danger-text">
                     MCP23017 disconnected
                   </div>
                 )}

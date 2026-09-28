@@ -10,7 +10,12 @@ export function EventDetails({ payload, expanded }: EventDetailsProps) {
   const entries = Object.entries(safeFields)
 
   return (
-    <div hidden={!expanded} role="region" aria-label="Event details" className="mt-1 pl-6 border-l-2 border-border-subtle">
+    <div
+      hidden={!expanded}
+      role="region"
+      aria-label="Event details"
+      className="mt-1 pl-6 border-l-2 border-border-subtle"
+    >
       {entries.length === 0 ? (
         <p className="text-xs text-text-default italic">No safe details available</p>
       ) : (

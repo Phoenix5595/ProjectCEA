@@ -17,10 +17,10 @@ export function timeseriesPanels(manifest: MonitoringManifest): TimeseriesPanelS
 
 function filterToPanel(aligned: AlignedData, panel: TimeseriesPanelSpec): AlignedData {
   const series = aligned.series.filter(
-    (series) => panel.sources.includes(series.source) && panel.families.includes(series.family),
+    series => panel.sources.includes(series.source) && panel.families.includes(series.family)
   )
-  const keep = new Set(series.map((s) => s.key))
-  const bands = aligned.bands.filter((b) => keep.has(b.minKey) && keep.has(b.maxKey))
+  const keep = new Set(series.map(s => s.key))
+  const bands = aligned.bands.filter(b => keep.has(b.minKey) && keep.has(b.maxKey))
   return { ...aligned, series, bands }
 }
 

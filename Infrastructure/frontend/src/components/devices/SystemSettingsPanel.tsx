@@ -1,5 +1,9 @@
+import { isAxiosError } from 'axios'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
+
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
 
 import { apiClient } from '../../services/api'
 import type {
@@ -10,8 +14,6 @@ import type {
   SystemConfigResponse,
 } from '../../types/systemConfig'
 import { logger } from '../../utils/logger'
-import { Input } from '@/components/ui/input'
-import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 
 interface DraftHardware {
   i2c_bus: string
@@ -124,7 +126,10 @@ function strChanged(draftStr: string, original: string | null | undefined): bool
   return draftStr !== (original ?? '')
 }
 
-function buildUpdateRequest(draft: DraftState, original: SystemConfigResponse): ConfigUpdateRequest {
+function buildUpdateRequest(
+  draft: DraftState,
+  original: SystemConfigResponse
+): ConfigUpdateRequest {
   const update: ConfigUpdateRequest = {}
 
   const hw: ConfigUpdateRequest['hardware'] = {}
@@ -132,13 +137,18 @@ function buildUpdateRequest(draft: DraftState, original: SystemConfigResponse): 
     hw.i2c_bus = draft.hardware.i2c_bus.trim() === '' ? null : parseFloat(draft.hardware.i2c_bus)
   }
   if (numChanged(draft.hardware.mcp_i2c_bus, original.hardware.mcp_i2c_bus)) {
-    hw.mcp_i2c_bus = draft.hardware.mcp_i2c_bus.trim() === '' ? null : parseFloat(draft.hardware.mcp_i2c_bus)
+    hw.mcp_i2c_bus =
+      draft.hardware.mcp_i2c_bus.trim() === '' ? null : parseFloat(draft.hardware.mcp_i2c_bus)
   }
   if (numChanged(draft.hardware.dfr0971_i2c_bus, original.hardware.dfr0971_i2c_bus)) {
-    hw.dfr0971_i2c_bus = draft.hardware.dfr0971_i2c_bus.trim() === '' ? null : parseFloat(draft.hardware.dfr0971_i2c_bus)
+    hw.dfr0971_i2c_bus =
+      draft.hardware.dfr0971_i2c_bus.trim() === ''
+        ? null
+        : parseFloat(draft.hardware.dfr0971_i2c_bus)
   }
   if (numChanged(draft.hardware.i2c_address, original.hardware.i2c_address)) {
-    hw.i2c_address = draft.hardware.i2c_address.trim() === '' ? null : parseFloat(draft.hardware.i2c_address)
+    hw.i2c_address =
+      draft.hardware.i2c_address.trim() === '' ? null : parseFloat(draft.hardware.i2c_address)
   }
   if (boolChanged(draft.hardware.active_low, original.hardware.active_low)) {
     hw.active_low = draft.hardware.active_low
@@ -146,7 +156,8 @@ function buildUpdateRequest(draft: DraftState, original: SystemConfigResponse): 
   if (boolChanged(draft.hardware.require_mcp, original.hardware.require_mcp)) {
     hw.require_mcp = draft.hardware.require_mcp
   }
-  const boardsChanged = draft.hardware.dfr0971_boards.length !== (original.hardware.dfr0971_boards ?? []).length ||
+  const boardsChanged =
+    draft.hardware.dfr0971_boards.length !== (original.hardware.dfr0971_boards ?? []).length ||
     draft.hardware.dfr0971_boards.some((db, i) => {
       const ob = (original.hardware.dfr0971_boards ?? [])[i]
       if (!ob) return true
@@ -325,7 +336,10 @@ export default function SystemSettingsPanel() {
       return
     }
 
-    if (update.hardware?.active_low !== undefined && boolChanged(draft.hardware.active_low, config.hardware.active_low)) {
+    if (
+      update.hardware?.active_low !== undefined &&
+      boolChanged(draft.hardware.active_low, config.hardware.active_low)
+    ) {
       setPendingSave(update)
       setShowActiveLowModal(true)
       setActiveLowConfirmText('')
@@ -350,7 +364,8 @@ export default function SystemSettingsPanel() {
         tuning: {
           ...config.tuning,
           update_interval: update.tuning?.update_interval ?? config.tuning.update_interval,
-          last_good_hold_period: update.tuning?.last_good_hold_period ?? config.tuning.last_good_hold_period,
+          last_good_hold_period:
+            update.tuning?.last_good_hold_period ?? config.tuning.last_good_hold_period,
           binary_hysteresis: update.tuning?.binary_hysteresis ?? config.tuning.binary_hysteresis,
         },
         pid_limits: {
@@ -363,11 +378,12 @@ export default function SystemSettingsPanel() {
       setConfig(nextConfig)
       setDraft(configToDraft(nextConfig))
       toast.success('Saved.')
-    } catch (err: any) {
+    } catch (err: unknown) {
       logger.error('Failed to save config', err)
-      if (err.response?.status === 422) {
-        setInlineErrors({ general: err.response.data?.detail || 'Validation failed' })
-        toast.error(err.response.data?.detail || 'Validation failed')
+      if (isAxiosError<{ detail?: string }>(err) && err.response?.status === 422) {
+        const detail = err.response.data?.detail || 'Validation failed'
+        setInlineErrors({ general: detail })
+        toast.error(detail)
       } else {
         toast.error('Failed to save config')
       }
@@ -420,11 +436,17 @@ export default function SystemSettingsPanel() {
       if (!prev) return prev
       const next = structuredClone(prev)
       const parts = path.split('.')
-      let target: any = next
+      let target: Record<string, unknown> = next as unknown as Record<string, unknown>
       for (let i = 0; i < parts.length - 1; i++) {
-        target = target[parts[i]]
+        const key = parts[i]
+        if (key === undefined) return prev
+        const child = target[key]
+        if (typeof child !== 'object' || child === null) return prev
+        target = child as Record<string, unknown>
       }
-      target[parts[parts.length - 1]] = value
+      const key = parts[parts.length - 1]
+      if (key === undefined) return prev
+      target[key] = value
       return next
     })
     setInlineErrors(prev => {
@@ -453,7 +475,7 @@ export default function SystemSettingsPanel() {
           type="button"
           onClick={handleSave}
           disabled={!dirty || saving}
-          className="rounded bg-accent-vivid px-4 py-2 text-sm font-medium text-surface-base hover:bg-accent-data disabled:opacity-50 disabled:cursor-not-allowed"
+          className="rounded bg-accent-vivid px-4 py-2 text-sm font-medium text-accent-vivid-foreground hover:bg-accent-data disabled:opacity-50 disabled:cursor-not-allowed"
           data-testid="save-button"
         >
           {saving ? 'Saving...' : 'Save'}
@@ -488,7 +510,9 @@ export default function SystemSettingsPanel() {
 
       {/* Hardware Section */}
       <section className="rounded border border-border-subtle bg-surface-primary p-4">
-        <h3 className="mb-4 text-sm font-semibold uppercase tracking-wide text-text-muted">Hardware</h3>
+        <h3 className="mb-4 text-sm font-semibold uppercase tracking-wide text-text-muted">
+          Hardware
+        </h3>
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label className="mb-1 block text-xs text-text-secondary">I2C Bus</label>
@@ -588,7 +612,9 @@ export default function SystemSettingsPanel() {
 
       {/* Safety Limits Section */}
       <section className="rounded border border-border-subtle bg-surface-primary p-4">
-        <h3 className="mb-4 text-sm font-semibold uppercase tracking-wide text-text-muted">Safety Limits</h3>
+        <h3 className="mb-4 text-sm font-semibold uppercase tracking-wide text-text-muted">
+          Safety Limits
+        </h3>
         <div className="grid grid-cols-2 gap-4">
           {[
             { key: 'min_temperature', label: 'Min Temperature' },
@@ -605,7 +631,9 @@ export default function SystemSettingsPanel() {
                 value={draft.safety_limits[key as keyof DraftSafetyLimits]}
                 onChange={e => updateDraft(`safety_limits.${key}`, e.target.value)}
                 className={`w-full rounded border px-2 py-1 text-sm text-text-default ${
-                  inlineErrors[key] ? 'border-status-danger bg-status-danger/10' : 'border-border-default bg-surface-secondary'
+                  inlineErrors[key]
+                    ? 'border-status-danger bg-status-danger/10'
+                    : 'border-border-default bg-surface-secondary'
                 }`}
                 data-testid={key}
               />
@@ -619,7 +647,9 @@ export default function SystemSettingsPanel() {
 
       {/* Tuning Section */}
       <section className="rounded border border-border-subtle bg-surface-primary p-4">
-        <h3 className="mb-4 text-sm font-semibold uppercase tracking-wide text-text-muted">Tuning</h3>
+        <h3 className="mb-4 text-sm font-semibold uppercase tracking-wide text-text-muted">
+          Tuning
+        </h3>
         <div className="grid grid-cols-3 gap-4">
           <div>
             <label className="mb-1 block text-xs text-text-secondary">Update Interval (1-5s)</label>
@@ -656,8 +686,13 @@ export default function SystemSettingsPanel() {
         {/* PID Limits */}
         <div className="mt-4 space-y-4">
           {(['heater', 'fan', 'co2'] as const).map(deviceType => (
-            <div key={deviceType} className="rounded border border-border-subtle/50 bg-surface-secondary/50 p-3">
-              <h4 className="mb-2 text-xs font-medium uppercase text-text-muted">{deviceType} PID Limits</h4>
+            <div
+              key={deviceType}
+              className="rounded border border-border-subtle/50 bg-surface-secondary/50 p-3"
+            >
+              <h4 className="mb-2 text-xs font-medium uppercase text-text-muted">
+                {deviceType} PID Limits
+              </h4>
               <div className="grid grid-cols-3 gap-3">
                 {(['kp', 'ki', 'kd'] as const).map(param => (
                   <div key={param} className="grid grid-cols-2 gap-2">
@@ -666,10 +701,16 @@ export default function SystemSettingsPanel() {
                       <input
                         type="number"
                         step={0.1}
-                        value={draft.pid_limits[deviceType][`${param}_min` as keyof DraftPidLimitsPair]}
-                        onChange={e => updateDraft(`pid_limits.${deviceType}.${param}_min`, e.target.value)}
+                        value={
+                          draft.pid_limits[deviceType][`${param}_min` as keyof DraftPidLimitsPair]
+                        }
+                        onChange={e =>
+                          updateDraft(`pid_limits.${deviceType}.${param}_min`, e.target.value)
+                        }
                         className={`w-full rounded border px-1.5 py-1 text-xs text-text-default ${
-                          inlineErrors[`pid_${deviceType}_${param}_max`] ? 'border-status-danger' : 'border-border-default'
+                          inlineErrors[`pid_${deviceType}_${param}_max`]
+                            ? 'border-status-danger'
+                            : 'border-border-default'
                         } bg-surface-secondary`}
                         data-testid={`pid_${deviceType}_${param}_min`}
                       />
@@ -679,10 +720,16 @@ export default function SystemSettingsPanel() {
                       <input
                         type="number"
                         step={0.1}
-                        value={draft.pid_limits[deviceType][`${param}_max` as keyof DraftPidLimitsPair]}
-                        onChange={e => updateDraft(`pid_limits.${deviceType}.${param}_max`, e.target.value)}
+                        value={
+                          draft.pid_limits[deviceType][`${param}_max` as keyof DraftPidLimitsPair]
+                        }
+                        onChange={e =>
+                          updateDraft(`pid_limits.${deviceType}.${param}_max`, e.target.value)
+                        }
                         className={`w-full rounded border px-1.5 py-1 text-xs text-text-default ${
-                          inlineErrors[`pid_${deviceType}_${param}_max`] ? 'border-status-danger' : 'border-border-default'
+                          inlineErrors[`pid_${deviceType}_${param}_max`]
+                            ? 'border-status-danger'
+                            : 'border-border-default'
                         } bg-surface-secondary`}
                         data-testid={`pid_${deviceType}_${param}_max`}
                       />
@@ -691,13 +738,19 @@ export default function SystemSettingsPanel() {
                 ))}
               </div>
               {inlineErrors[`pid_${deviceType}_kp_max`] && (
-                <span className="mt-1 block text-xs text-status-danger">{inlineErrors[`pid_${deviceType}_kp_max`]}</span>
+                <span className="mt-1 block text-xs text-status-danger">
+                  {inlineErrors[`pid_${deviceType}_kp_max`]}
+                </span>
               )}
               {inlineErrors[`pid_${deviceType}_ki_max`] && (
-                <span className="mt-1 block text-xs text-status-danger">{inlineErrors[`pid_${deviceType}_ki_max`]}</span>
+                <span className="mt-1 block text-xs text-status-danger">
+                  {inlineErrors[`pid_${deviceType}_ki_max`]}
+                </span>
               )}
               {inlineErrors[`pid_${deviceType}_kd_max`] && (
-                <span className="mt-1 block text-xs text-status-danger">{inlineErrors[`pid_${deviceType}_kd_max`]}</span>
+                <span className="mt-1 block text-xs text-status-danger">
+                  {inlineErrors[`pid_${deviceType}_kd_max`]}
+                </span>
               )}
             </div>
           ))}
@@ -707,47 +760,58 @@ export default function SystemSettingsPanel() {
       {/* Active Low Confirmation Modal */}
       <Dialog
         open={showActiveLowModal}
-        onOpenChange={(o) => {
+        onOpenChange={o => {
           if (!o) {
             setShowActiveLowModal(false)
             setPendingSave(null)
           }
         }}
       >
-        <DialogContent className="w-full max-w-md rounded-lg border-border-emphasis bg-surface-primary p-6 shadow-xl" data-testid="active-low-modal">
-          <DialogTitle className="normal-case tracking-normal mb-3 text-lg font-semibold text-status-danger">WARNING</DialogTitle>
+        <DialogContent
+          className="w-full max-w-md rounded-lg border-border-emphasis bg-surface-primary p-6 shadow-xl"
+          data-testid="active-low-modal"
+        >
+          <DialogTitle className="normal-case tracking-normal mb-3 text-lg font-semibold text-status-danger">
+            WARNING
+          </DialogTitle>
           <DialogDescription className="mb-4 text-sm text-text-secondary">
-              Changing active_low inverts all 16 relays on next restart. The live driver keeps the OLD value until then — relays will NOT flip immediately. Heaters/lights/fans will toggle state only after the service restarts. Type the current value (&apos;true&apos;/&apos;false&apos;) to confirm.
+            Changing active_low inverts all 16 relays on next restart. The live driver keeps the OLD
+            value until then — relays will NOT flip immediately. Heaters/lights/fans will toggle
+            state only after the service restarts. Type the current value
+            (&apos;true&apos;/&apos;false&apos;) to confirm.
           </DialogDescription>
-            <input
-              type="text"
-              value={activeLowConfirmText}
-              onChange={e => setActiveLowConfirmText(e.target.value)}
-              placeholder={`Type ${String(config.hardware.active_low ?? false)} to confirm`}
-              className="mb-4 w-full rounded border border-border-default bg-surface-secondary px-3 py-2 text-sm text-text-default"
-              data-testid="active-low-confirm-input"
-            />
-            <div className="flex justify-end gap-3">
-              <button
-                type="button"
-                onClick={() => {
-                  setShowActiveLowModal(false)
-                  setPendingSave(null)
-                }}
-                className="rounded border border-border-default px-4 py-2 text-sm text-text-secondary hover:bg-surface-secondary"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleConfirmActiveLow}
-                disabled={activeLowConfirmText.trim().toLowerCase() !== String(config.hardware.active_low ?? false).toLowerCase()}
-                className="rounded bg-status-danger px-4 py-2 text-sm font-medium text-white hover:bg-red-600 disabled:opacity-50 disabled:cursor-not-allowed"
-                data-testid="active-low-confirm-button"
-              >
-                Confirm
-              </button>
-            </div>
+          <input
+            type="text"
+            value={activeLowConfirmText}
+            onChange={e => setActiveLowConfirmText(e.target.value)}
+            placeholder={`Type ${String(config.hardware.active_low ?? false)} to confirm`}
+            className="mb-4 w-full rounded border border-border-default bg-surface-secondary px-3 py-2 text-sm text-text-default"
+            data-testid="active-low-confirm-input"
+          />
+          <div className="flex justify-end gap-3">
+            <button
+              type="button"
+              onClick={() => {
+                setShowActiveLowModal(false)
+                setPendingSave(null)
+              }}
+              className="rounded border border-border-default px-4 py-2 text-sm text-text-secondary hover:bg-surface-secondary"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleConfirmActiveLow}
+              disabled={
+                activeLowConfirmText.trim().toLowerCase() !==
+                String(config.hardware.active_low ?? false).toLowerCase()
+              }
+              className="rounded bg-status-danger px-4 py-2 text-sm font-medium text-white hover:bg-red-600 disabled:opacity-50 disabled:cursor-not-allowed"
+              data-testid="active-low-confirm-button"
+            >
+              Confirm
+            </button>
+          </div>
         </DialogContent>
       </Dialog>
     </div>

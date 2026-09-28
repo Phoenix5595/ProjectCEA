@@ -10,8 +10,22 @@ export const RELAY_CHANNELS = Array.from({ length: RELAY_CHANNEL_COUNT }, (_, in
  * All user-facing R labels come from the backend's `physical_relay` field.
  */
 export const RELAY_TO_CHANNEL: Readonly<Record<number, number>> = {
-  1: 15, 2: 0, 3: 14, 4: 1, 5: 13, 6: 2, 7: 12, 8: 3,
-  9: 11, 10: 4, 11: 10, 12: 5, 13: 9, 14: 6, 15: 8, 16: 7,
+  1: 15,
+  2: 0,
+  3: 14,
+  4: 1,
+  5: 13,
+  6: 2,
+  7: 12,
+  8: 3,
+  9: 11,
+  10: 4,
+  11: 10,
+  12: 5,
+  13: 9,
+  14: 6,
+  15: 8,
+  16: 7,
 }
 
 export interface RelayAlarmView {
@@ -57,10 +71,10 @@ export function getReadableDeviceType(deviceType: string): string {
  * computes R labels from `channel + 1`.
  */
 export function buildRelayChannelViewModels(
-  snapshot: ControlSnapshotResponse | null,
+  snapshot: ControlSnapshotResponse | null
 ): RelayChannelViewModel[] {
   if (!snapshot) {
-    return RELAY_CHANNELS.map((channel) => emptyViewModel(channel))
+    return RELAY_CHANNELS.map(channel => emptyViewModel(channel))
   }
 
   const byChannel = new Map<number, ControlSnapshotResponse['relays'][number]>()
@@ -68,7 +82,7 @@ export function buildRelayChannelViewModels(
     byChannel.set(r.channel, r)
   }
 
-  return RELAY_CHANNELS.map((channel) => {
+  return RELAY_CHANNELS.map(channel => {
     const r = byChannel.get(channel)
     if (!r) return emptyViewModel(channel)
 
@@ -125,7 +139,7 @@ function emptyViewModel(channel: number): RelayChannelViewModel {
 }
 
 function pickDisplayName(
-  assignment: ControlSnapshotResponse['relays'][number]['assignment'],
+  assignment: ControlSnapshotResponse['relays'][number]['assignment']
 ): string | null {
   if (!assignment) return null
   return assignment.display_name || assignment.device_name
@@ -140,11 +154,11 @@ export interface RelayMatrixRow {
   rightChannel: RelayChannelViewModel
 }
 
-export function splitRelayByPhysicalLayout(
-  channels: RelayChannelViewModel[]
-): { rows: RelayMatrixRow[] } {
+export function splitRelayByPhysicalLayout(channels: RelayChannelViewModel[]): {
+  rows: RelayMatrixRow[]
+} {
   const byPhysical = new Map<number, RelayChannelViewModel>(
-    channels.map((vm) => [vm.physicalRelay, vm])
+    channels.map(vm => [vm.physicalRelay, vm])
   )
 
   const get = (relay: number): RelayChannelViewModel =>
@@ -161,10 +175,7 @@ export function splitRelayByPhysicalLayout(
   return { rows }
 }
 
-export function formatElapsedSince(
-  timestamp: string | null,
-  nowMs: number
-): string {
+export function formatElapsedSince(timestamp: string | null, nowMs: number): string {
   if (!timestamp) {
     return 'Unknown'
   }
@@ -211,4 +222,3 @@ export function formatCountdown(expiresAt: string | null, nowMs: number): string
   if (minutes > 0) return `${minutes}m ${seconds}s`
   return `${seconds}s`
 }
-

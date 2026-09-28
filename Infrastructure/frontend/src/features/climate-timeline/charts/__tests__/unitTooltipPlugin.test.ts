@@ -1,12 +1,13 @@
-import { describe, expect, it } from 'vitest'
 import type uPlot from 'uplot'
+import { describe, expect, it } from 'vitest'
+
+import type { EnvelopeSeriesKey } from '../envelopeSeries'
+import { timelineSeriesMeta } from '../timelineOptions'
 import {
   formatTooltipValue,
   unitTooltipPlugin,
   type TimelineTooltipState,
 } from '../unitTooltipPlugin'
-import { timelineSeriesMeta } from '../timelineOptions'
-import type { EnvelopeSeriesKey } from '../envelopeSeries'
 
 const KEYS = [
   'heating_setpoint:scheduled',

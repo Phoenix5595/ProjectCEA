@@ -80,13 +80,13 @@ export function createTimelineDraft(saved: TimelineSavedBaseline): TimelineDraft
 export function isTimelineDraftDirty(state: TimelineDraft): boolean {
   return !valuesMatch(
     { periods: state.saved.periods, photoperiod: state.saved.photoperiod },
-    state.draft,
+    state.draft
   )
 }
 
 export function updateTimelineDraftPeriods(
   state: TimelineDraft,
-  periods: readonly ClimatePeriod[],
+  periods: readonly ClimatePeriod[]
 ): TimelineDraft {
   return {
     ...state,
@@ -98,7 +98,7 @@ export function updateTimelineDraftPeriods(
 
 export function updateTimelineDraftPhotoperiod(
   state: TimelineDraft,
-  photoperiod: TimelinePhotoperiod,
+  photoperiod: TimelinePhotoperiod
 ): TimelineDraft {
   return {
     ...state,
@@ -134,7 +134,7 @@ export function applyTimelineDraft(saved: TimelineSavedBaseline): TimelineDraft 
 
 export function requestTimelineRoomSwitch(
   state: TimelineDraft,
-  nextSaved: TimelineSavedBaseline,
+  nextSaved: TimelineSavedBaseline
 ): TimelineRoomSwitch {
   if (isTimelineDraftDirty(state)) {
     return { kind: 'requires-discard', nextSaved }

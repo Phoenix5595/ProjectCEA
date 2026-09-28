@@ -1,11 +1,12 @@
-import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { act, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react'
 import type uPlot from 'uplot'
-import { ControlTimeline } from '../../components/ControlTimeline'
-import { useTimelineDraft } from '../../state/useTimelineDraft'
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
+
 import { RichTrajectoryEnvelope } from '../../api/contracts'
 import type { TimelinePublicationPort } from '../../api/timelinePublicationPort'
+import { ControlTimeline } from '../../components/ControlTimeline'
 import type { TimelineSavedBaseline } from '../../state/timelineDraft'
+import { useTimelineDraft } from '../../state/useTimelineDraft'
 
 const { MockUPlot, instances } = vi.hoisted(() => {
   const instances: MockUPlot[] = []
@@ -47,7 +48,11 @@ const { MockUPlot, instances } = vi.hoisted(() => {
       const merged: Record<string, unknown> = { ...(this.opts.hooks ?? {}) }
       for (const plugin of this.opts.plugins ?? []) {
         for (const [name, pluginHooks] of Object.entries(plugin.hooks ?? {})) {
-          const list = Array.isArray(merged[name]) ? merged[name] as unknown[] : merged[name] ? [merged[name]] : []
+          const list = Array.isArray(merged[name])
+            ? (merged[name] as unknown[])
+            : merged[name]
+              ? [merged[name]]
+              : []
           if (Array.isArray(pluginHooks)) list.push(...pluginHooks)
           else if (pluginHooks) list.push(pluginHooks)
           merged[name] = list
@@ -56,10 +61,12 @@ const { MockUPlot, instances } = vi.hoisted(() => {
       return merged
     }
     private fireInit(): void {
-      for (const hook of (this.mergedHooks().init as Array<(u: uPlot) => void> | undefined) ?? []) hook?.(this as unknown as uPlot)
+      for (const hook of (this.mergedHooks().init as Array<(u: uPlot) => void> | undefined) ?? [])
+        hook?.(this as unknown as uPlot)
     }
     private fireDraw(): void {
-      for (const hook of (this.mergedHooks().draw as Array<(u: uPlot) => void> | undefined) ?? []) hook?.(this as unknown as uPlot)
+      for (const hook of (this.mergedHooks().draw as Array<(u: uPlot) => void> | undefined) ?? [])
+        hook?.(this as unknown as uPlot)
     }
     valToPos(value: number, scaleKey: string, _canvasPx?: boolean): number {
       const scale = this.scales[scaleKey] ?? this.scales.temp
@@ -79,8 +86,6 @@ const { MockUPlot, instances } = vi.hoisted(() => {
 
 vi.mock('uplot', () => ({ default: MockUPlot }))
 
-
-
 const savedBaseline = (): TimelineSavedBaseline => ({
   room: { location: 'flower', cluster: 'main' },
   baseConfigRevision: 'config-1',
@@ -88,10 +93,35 @@ const savedBaseline = (): TimelineSavedBaseline => ({
   submodeId: null,
   window: { start: '2026-01-01T00:00:00.000Z', end: '2026-01-02T00:00:00.000Z', timezone: 'UTC' },
   periods: [
-    { period_name: 'Day', start_time: '06:00', end_time: '12:00', ramp_minutes: 0, heating_setpoint: 22, cooling_setpoint: 28, vpd_setpoint: 1.1, co2_setpoint: 900, details: '' },
-    { period_name: 'Night', start_time: '12:00', end_time: '22:00', ramp_minutes: 0, heating_setpoint: 18, cooling_setpoint: 24, vpd_setpoint: 0.8, co2_setpoint: 700, details: '' },
+    {
+      period_name: 'Day',
+      start_time: '06:00',
+      end_time: '12:00',
+      ramp_minutes: 0,
+      heating_setpoint: 22,
+      cooling_setpoint: 28,
+      vpd_setpoint: 1.1,
+      co2_setpoint: 900,
+      details: '',
+    },
+    {
+      period_name: 'Night',
+      start_time: '12:00',
+      end_time: '22:00',
+      ramp_minutes: 0,
+      heating_setpoint: 18,
+      cooling_setpoint: 24,
+      vpd_setpoint: 0.8,
+      co2_setpoint: 700,
+      details: '',
+    },
   ],
-  photoperiod: { dayStartTime: '06:00', nightStartTime: '18:00', rampUpMinutes: 0, rampDownMinutes: 0 },
+  photoperiod: {
+    dayStartTime: '06:00',
+    nightStartTime: '18:00',
+    rampUpMinutes: 0,
+    rampDownMinutes: 0,
+  },
   trajectory: envelopeFixture(),
 })
 
@@ -157,13 +187,22 @@ let animationFrames: Array<(timestamp: number) => void> = []
 beforeEach(() => {
   instances.length = 0
   animationFrames = []
-  Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, get: () => 800 })
-  Object.defineProperty(HTMLElement.prototype, 'clientHeight', { configurable: true, get: () => 400 })
-  vi.stubGlobal('ResizeObserver', class {
-    observe = vi.fn()
-    unobserve = vi.fn()
-    disconnect = vi.fn()
+  Object.defineProperty(HTMLElement.prototype, 'clientWidth', {
+    configurable: true,
+    get: () => 800,
   })
+  Object.defineProperty(HTMLElement.prototype, 'clientHeight', {
+    configurable: true,
+    get: () => 400,
+  })
+  vi.stubGlobal(
+    'ResizeObserver',
+    class {
+      observe = vi.fn()
+      unobserve = vi.fn()
+      disconnect = vi.fn()
+    }
+  )
   vi.stubGlobal('requestAnimationFrame', (callback: (timestamp: number) => void) => {
     animationFrames.push(callback)
     return animationFrames.length
@@ -176,10 +215,14 @@ afterEach(() => {
 })
 
 async function renderDailyEditor() {
-  const hook = renderHook(() => useTimelineDraft({ saved: savedBaseline(), publicationPort: port() }))
+  const hook = renderHook(() =>
+    useTimelineDraft({ saved: savedBaseline(), publicationPort: port() })
+  )
   const view = render(<ControlTimeline mode="expanded" controller={hook.result.current} />)
   fireEvent.click(screen.getByRole('button', { name: 'daily' }))
-  await waitFor(() => expect(screen.getByTestId('control-timeline-boundary-grip-0-start')).toBeInTheDocument())
+  await waitFor(() =>
+    expect(screen.getByTestId('control-timeline-boundary-grip-0-start')).toBeInTheDocument()
+  )
   return { hook, view }
 }
 
@@ -249,18 +292,24 @@ describe('drag editing on the uPlot timeline', () => {
 
   it('steps value and boundary grips from the keyboard', async () => {
     const { hook } = await renderDailyEditor()
-    fireEvent.keyDown(screen.getByTestId('control-timeline-value-grip-0-heating'), { key: 'ArrowUp' })
+    fireEvent.keyDown(screen.getByTestId('control-timeline-value-grip-0-heating'), {
+      key: 'ArrowUp',
+    })
     expect(hook.result.current.state.draft.periods[0]?.heating_setpoint).toBe(22.1)
 
     fireEvent.keyDown(screen.getByTestId('control-timeline-value-grip-0-co2'), { key: 'ArrowDown' })
     expect(hook.result.current.state.draft.periods[0]?.co2_setpoint).toBe(890)
 
-    fireEvent.keyDown(screen.getByTestId('control-timeline-boundary-grip-0-start'), { key: 'ArrowLeft' })
+    fireEvent.keyDown(screen.getByTestId('control-timeline-boundary-grip-0-start'), {
+      key: 'ArrowLeft',
+    })
     expect(hook.result.current.state.draft.periods[0]?.start_time).toBe('05:55')
   })
 
   it('renders grips in the daily default and clears them once rolling is selected', async () => {
-    const hook = renderHook(() => useTimelineDraft({ saved: savedBaseline(), publicationPort: port() }))
+    const hook = renderHook(() =>
+      useTimelineDraft({ saved: savedBaseline(), publicationPort: port() })
+    )
     const compact = render(<ControlTimeline mode="compact" controller={hook.result.current} />)
     expect(screen.queryByTestId('control-timeline-value-grip-0-heating')).not.toBeInTheDocument()
     compact.unmount()
@@ -269,26 +318,36 @@ describe('drag editing on the uPlot timeline', () => {
     const triggerDraw = () => {
       for (const instance of instances) {
         const mergedHooks = instance.mergedHooks()
-        for (const drawHook of (mergedHooks.draw as Array<(u: unknown) => void> | undefined) ?? []) {
+        for (const drawHook of (mergedHooks.draw as Array<(u: unknown) => void> | undefined) ??
+          []) {
           drawHook?.(instance)
         }
       }
     }
-    await waitFor(() => expect(screen.getByTestId('control-timeline-boundary-grip-0-start')).toBeInTheDocument())
+    await waitFor(() =>
+      expect(screen.getByTestId('control-timeline-boundary-grip-0-start')).toBeInTheDocument()
+    )
     triggerDraw()
 
     fireEvent.click(screen.getByRole('button', { name: 'rolling' }))
     triggerDraw()
-    await waitFor(() => expect(screen.queryByTestId('control-timeline-value-grip-0-heating')).not.toBeInTheDocument())
+    await waitFor(() =>
+      expect(screen.queryByTestId('control-timeline-value-grip-0-heating')).not.toBeInTheDocument()
+    )
     view.unmount()
   })
 
   it('exposes keyboard-accessible grips with aria labels and no effective-series grips', async () => {
     const { view } = await renderDailyEditor()
-    expect(screen.getByTestId('control-timeline-value-grip-0-heating')).toHaveAttribute('aria-label', 'Adjust Day heating setpoint')
+    expect(screen.getByTestId('control-timeline-value-grip-0-heating')).toHaveAttribute(
+      'aria-label',
+      'Adjust Day heating setpoint'
+    )
     const allGrips = Array.from(document.querySelectorAll('[data-testid*="-grip-"]'))
     expect(allGrips.length).toBe(12)
-    expect(allGrips.some((grip) => grip.getAttribute('data-testid')?.includes('effective'))).toBe(false)
+    expect(allGrips.some(grip => grip.getAttribute('data-testid')?.includes('effective'))).toBe(
+      false
+    )
     view.unmount()
   })
 })

@@ -94,7 +94,7 @@ export default function DfrBoardsPanel() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-        {DFR_BOARD_IDS.map((boardId) => {
+        {DFR_BOARD_IDS.map(boardId => {
           const board = boardsByKey.get(boardId)
           const isAvailable = board?.available ?? false
 
@@ -119,8 +119,8 @@ export default function DfrBoardsPanel() {
               </div>
 
               <div className="grid grid-cols-2 gap-2 flex-1 overflow-auto">
-                {DFR_CHANNELS.map((ch) => {
-                  const channelData = board?.channels.find((c) => c.channel === ch)
+                {DFR_CHANNELS.map(ch => {
+                  const channelData = board?.channels.find(c => c.channel === ch)
                   return (
                     <SlotRenderer
                       key={ch}
@@ -176,7 +176,7 @@ function SlotRenderer({
   const commandAcknowledged = channelData?.command_acknowledged ?? false
 
   const renameValue = assignment
-    ? (renameDraftByKey[key] ?? (assignment.display_name ?? assignment.device_name ?? ''))
+    ? (renameDraftByKey[key] ?? assignment.display_name ?? assignment.device_name ?? '')
     : ''
 
   return (
@@ -206,7 +206,7 @@ function SlotRenderer({
               className={`text-10 rounded-full px-1.5 py-0.5 border ${
                 commandAcknowledged
                   ? 'bg-status-success-bg/30 text-status-success-text border-status-success-border/60'
-                  : 'bg-status-warning-bg/30 text-status-warning-text border-status-warning-border/60'
+                  : 'bg-status-warning-bg/30 text-status-warning-text border-status-warning/60'
               }`}
             >
               {commandAcknowledged ? 'Ack' : 'Pending'}
@@ -217,16 +217,21 @@ function SlotRenderer({
           <div className="flex items-center gap-2">
             <input
               value={renameValue}
-              onChange={(e) =>
-                setRenameDraftByKey((prev) => ({ ...prev, [key]: e.target.value }))
-              }
+              onChange={e => setRenameDraftByKey(prev => ({ ...prev, [key]: e.target.value }))}
               disabled={!!workingKey}
               className="w-full rounded-sm border border-border-emphasis bg-surface-primary px-2 py-1 text-xs text-text-input focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-btn-primary-light disabled:opacity-50"
               placeholder="Light name"
             />
             <button
               type="button"
-              onClick={() => void saveRename(boardId, ch, assignment.device_id, assignment.display_name ?? assignment.device_name ?? '')}
+              onClick={() =>
+                void saveRename(
+                  boardId,
+                  ch,
+                  assignment.device_id,
+                  assignment.display_name ?? assignment.device_name ?? ''
+                )
+              }
               disabled={!!workingKey}
               className="rounded-md bg-btn-primary px-2 py-1 text-xs font-medium text-btn-primary-text hover:bg-btn-primary-hover disabled:opacity-50"
             >

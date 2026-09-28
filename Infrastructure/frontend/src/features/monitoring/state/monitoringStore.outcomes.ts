@@ -1,6 +1,16 @@
 import { MonitoringAbortError } from '../api'
-import type { MonitoringRangeSource, MonitoringSourceFailure, MonitoringSourceSuccess } from './monitoringStore.health'
-import { applySourceFailure, applySourceSuccess, deriveActiveSourceErrors, deriveRangeFreshness } from './monitoringStore.health'
+
+import type {
+  MonitoringRangeSource,
+  MonitoringSourceFailure,
+  MonitoringSourceSuccess,
+} from './monitoringStore.health'
+import {
+  applySourceFailure,
+  applySourceSuccess,
+  deriveActiveSourceErrors,
+  deriveRangeFreshness,
+} from './monitoringStore.health'
 import type { StoreState } from './monitoringStore.types'
 
 function errorMessage(reason: unknown): string {
@@ -9,7 +19,7 @@ function errorMessage(reason: unknown): string {
 
 export function applySourceSuccessToState(
   state: StoreState,
-  success: MonitoringSourceSuccess,
+  success: MonitoringSourceSuccess
 ): StoreState {
   const sourceOutcomes = applySourceSuccess(state.sourceOutcomes, success)
   return {
@@ -22,7 +32,7 @@ export function applySourceSuccessToState(
 
 export function applySourceFailureToState(
   state: StoreState,
-  failure: MonitoringSourceFailure,
+  failure: MonitoringSourceFailure
 ): StoreState {
   const sourceOutcomes = applySourceFailure(state.sourceOutcomes, failure)
   return {
@@ -37,7 +47,7 @@ export function applySettledSource<T>(
   state: StoreState,
   source: MonitoringRangeSource,
   result: PromiseSettledResult<T>,
-  completedAt: Date,
+  completedAt: Date
 ): { readonly state: StoreState; readonly value: T | null } {
   if (result.status === 'fulfilled') {
     return {

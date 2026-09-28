@@ -1,38 +1,79 @@
-import { fireEvent, render, screen } from '@testing-library/react'
-import { act, renderHook } from '@testing-library/react'
+import { fireEvent, render, screen, act, renderHook } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
-import { ControlTimeline } from '../components/ControlTimeline'
-import { TimelineEditor } from '../components/TimelineEditor'
+
 import { RichTrajectoryEnvelope } from '../api/contracts'
 import type { TimelinePublicationPort } from '../api/timelinePublicationPort'
-import { useTimelineDraft } from '../state/useTimelineDraft'
+import { ControlTimeline } from '../components/ControlTimeline'
+import { TimelineEditor } from '../components/TimelineEditor'
 import type { TimelineSavedBaseline } from '../state/timelineDraft'
+import { useTimelineDraft } from '../state/useTimelineDraft'
 
 const baseline = (): TimelineSavedBaseline => ({
   room: { location: 'flower', cluster: 'main' },
   baseConfigRevision: '0000007',
   modeId: 1,
   submodeId: null,
-  periods: [{
-    period_name: 'Day', start_time: '06:00', end_time: '18:00', ramp_minutes: 30,
-    heating_setpoint: 22, cooling_setpoint: 25, vpd_setpoint: 1.2, co2_setpoint: 900, details: 'saved',
-  }],
-  photoperiod: { dayStartTime: '06:00', nightStartTime: '18:00', rampUpMinutes: 20, rampDownMinutes: 20 },
-  window: { start: '2026-01-01T00:00:00.000Z', end: '2026-01-02T00:00:00.000Z', timezone: 'America/Toronto' },
+  periods: [
+    {
+      period_name: 'Day',
+      start_time: '06:00',
+      end_time: '18:00',
+      ramp_minutes: 30,
+      heating_setpoint: 22,
+      cooling_setpoint: 25,
+      vpd_setpoint: 1.2,
+      co2_setpoint: 900,
+      details: 'saved',
+    },
+  ],
+  photoperiod: {
+    dayStartTime: '06:00',
+    nightStartTime: '18:00',
+    rampUpMinutes: 20,
+    rampDownMinutes: 20,
+  },
+  window: {
+    start: '2026-01-01T00:00:00.000Z',
+    end: '2026-01-02T00:00:00.000Z',
+    timezone: 'America/Toronto',
+  },
 })
 
-const preview = (revision: number) => RichTrajectoryEnvelope.parse({
-  contract_version: 1,
-  room: 'Flower Room',
-  generated_at: '2026-01-01T00:00:00.000Z',
-  window: { start: '2026-01-01T00:00:00.000Z', end: '2026-01-02T00:00:00.000Z', timezone: 'America/Toronto' },
-  revision_scope: 'draft', base_config_revision: '0000007', draft_revision: String(revision),
-  segments: [{
-    shape: 'step', value: 22, start: '2026-01-01T00:00:00.000Z', end: '2026-01-02T00:00:00.000Z',
-    metric: 'temperature', unit: 'celsius', trajectory_kind: 'scheduled', quality: 'exact',
-    source: { mode: 'flower', submode: null, period: { period_id: 'day', label: 'Day' }, config_revision: '0000007', draft_revision: String(revision) },
-  }], assumptions: [], warnings: [],
-})
+const preview = (revision: number) =>
+  RichTrajectoryEnvelope.parse({
+    contract_version: 1,
+    room: 'Flower Room',
+    generated_at: '2026-01-01T00:00:00.000Z',
+    window: {
+      start: '2026-01-01T00:00:00.000Z',
+      end: '2026-01-02T00:00:00.000Z',
+      timezone: 'America/Toronto',
+    },
+    revision_scope: 'draft',
+    base_config_revision: '0000007',
+    draft_revision: String(revision),
+    segments: [
+      {
+        shape: 'step',
+        value: 22,
+        start: '2026-01-01T00:00:00.000Z',
+        end: '2026-01-02T00:00:00.000Z',
+        metric: 'temperature',
+        unit: 'celsius',
+        trajectory_kind: 'scheduled',
+        quality: 'exact',
+        source: {
+          mode: 'flower',
+          submode: null,
+          period: { period_id: 'day', label: 'Day' },
+          config_revision: '0000007',
+          draft_revision: String(revision),
+        },
+      },
+    ],
+    assumptions: [],
+    warnings: [],
+  })
 
 function savedTrajectory(warnings: readonly Record<string, unknown>[] = []) {
   const draft = preview(0)
@@ -48,7 +89,7 @@ function savedTrajectory(warnings: readonly Record<string, unknown>[] = []) {
     revision_scope: 'saved',
     base_config_revision: draft.base_config_revision,
     draft_revision: null,
-    segments: draft.segments.map((segment) => ({
+    segments: draft.segments.map(segment => ({
       ...segment,
       start: segment.start.toISOString(),
       end: segment.end.toISOString(),
@@ -69,15 +110,21 @@ const skippedWarning = {
 
 function port(): TimelinePublicationPort {
   return {
-    preview: async (request) => preview(request.draftRevision),
-    apply: async (request) => ({ room: request.room, baseConfigRevision: '0000008', ...request.values }),
+    preview: async request => preview(request.draftRevision),
+    apply: async request => ({
+      room: request.room,
+      baseConfigRevision: '0000008',
+      ...request.values,
+    }),
   }
 }
 
 describe('ControlTimeline', () => {
   it('keeps compact pointer input read-only', () => {
     // Given: a saved timeline rendered in compact mode.
-    const { result } = renderHook(() => useTimelineDraft({ saved: baseline(), publicationPort: port() }))
+    const { result } = renderHook(() =>
+      useTimelineDraft({ saved: baseline(), publicationPort: port() })
+    )
     render(<ControlTimeline mode="compact" controller={result.current} />)
 
     // When: the operator presses the compact plot.
@@ -149,7 +196,9 @@ describe('ControlTimeline', () => {
 
   it('synchronizes an expanded keyboard boundary edit with the table adapter', () => {
     // Given: the expanded editor and the existing table share one draft controller.
-    const { result } = renderHook(() => useTimelineDraft({ saved: baseline(), publicationPort: port() }))
+    const { result } = renderHook(() =>
+      useTimelineDraft({ saved: baseline(), publicationPort: port() })
+    )
     render(<ControlTimeline mode="expanded" controller={result.current} />)
 
     // When: the scheduled start handle receives one five-minute keyboard step.
@@ -161,9 +210,15 @@ describe('ControlTimeline', () => {
 
   it('shows review changes and discard restores saved values', async () => {
     // Given: an expanded editor with a dirty draft.
-    const { result } = renderHook(() => useTimelineDraft({ saved: baseline(), publicationPort: port() }))
+    const { result } = renderHook(() =>
+      useTimelineDraft({ saved: baseline(), publicationPort: port() })
+    )
     const view = render(<ControlTimeline mode="expanded" controller={result.current} />)
-    act(() => result.current.editPeriods([{ ...result.current.state.draft.periods[0], heating_setpoint: 23.5 }]))
+    act(() =>
+      result.current.editPeriods([
+        { ...result.current.state.draft.periods[0], heating_setpoint: 23.5 },
+      ])
+    )
     view.rerender(<ControlTimeline mode="expanded" controller={result.current} />)
 
     // When: the operator reviews, then cancels the draft.
@@ -180,7 +235,9 @@ describe('ControlTimeline', () => {
   it('renders the compact timeline visual without embedding the periods table', () => {
     // Given: the product editor is mounted in its default compact state.
     // The permanent ClimatePeriodsTable lives on the ZoneConfig row beneath it.
-    const { result } = renderHook(() => useTimelineDraft({ saved: baseline(), publicationPort: port() }))
+    const { result } = renderHook(() =>
+      useTimelineDraft({ saved: baseline(), publicationPort: port() })
+    )
     render(<TimelineEditor controller={result.current} />)
 
     // When: the operator inspects the control page.
@@ -194,20 +251,38 @@ describe('ControlTimeline', () => {
   it('ignores late preview callbacks after discard and room switch', async () => {
     let resolvePreview: ((value: ReturnType<typeof preview>) => void) | undefined
     const deferredPort: TimelinePublicationPort = {
-      preview: () => new Promise((resolve) => { resolvePreview = resolve }),
+      preview: () =>
+        new Promise(resolve => {
+          resolvePreview = resolve
+        }),
       apply: async () => baseline(),
     }
-    const { result } = renderHook(() => useTimelineDraft({ saved: baseline(), publicationPort: deferredPort }))
+    const { result } = renderHook(() =>
+      useTimelineDraft({ saved: baseline(), publicationPort: deferredPort })
+    )
     let review: Promise<void> | undefined
-    act(() => { review = result.current.review() })
+    act(() => {
+      review = result.current.review()
+    })
     act(() => result.current.discard())
-    await act(async () => { resolvePreview?.(preview(0)) })
+    await act(async () => {
+      resolvePreview?.(preview(0))
+    })
     await review
     expect(result.current.preview).toEqual({ kind: 'idle' })
 
-    act(() => { review = result.current.review() })
-    act(() => result.current.confirmRoomSwitch({ ...baseline(), room: { location: 'vegetation', cluster: 'main' } }))
-    await act(async () => { resolvePreview?.(preview(0)) })
+    act(() => {
+      review = result.current.review()
+    })
+    act(() =>
+      result.current.confirmRoomSwitch({
+        ...baseline(),
+        room: { location: 'vegetation', cluster: 'main' },
+      })
+    )
+    await act(async () => {
+      resolvePreview?.(preview(0))
+    })
     await review
     expect(result.current.preview).toEqual({ kind: 'idle' })
     expect(result.current.state.saved.room.location).toBe('vegetation')

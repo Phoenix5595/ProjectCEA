@@ -11,6 +11,7 @@ import type {
   ProjectionPublicationResponse,
   PhotoperiodTimelinePoint,
 } from '../api'
+
 import { mergeControlHistory } from './monitoringStore.merge'
 import { projectionTimeline } from './monitoringStore.projection'
 import type { StoreData } from './monitoringStore.types'
@@ -20,7 +21,7 @@ export function applyInitial(
   sensorRange: MonitoringResponse,
   sensorStats: MonitoringResponse,
   controlRange: ControlMonitoringResponse,
-  projection: ProjectionPublicationResponse,
+  projection: ProjectionPublicationResponse
 ): StoreData {
   const proj = projectionTimeline(projection)
   return {
@@ -50,7 +51,7 @@ export function applyInitialPartial(
   existing: StoreData,
   sensorRange: MonitoringResponse | null,
   controlRange: ControlMonitoringResponse | null,
-  projection: ProjectionPublicationResponse | null,
+  projection: ProjectionPublicationResponse | null
 ): StoreData {
   const proj = projection ? projectionTimeline(projection) : null
   const history = controlRange ?? existing.controlHistory
@@ -60,7 +61,10 @@ export function applyInitialPartial(
     live: existing.live,
     controlHistory: history,
     projectionHistory: proj ? proj.history : existing.projectionHistory,
-    photoperiod: mergePhotoperiod(history?.photoperiod ?? [], proj?.history?.photoperiod ?? existing.projectionHistory?.photoperiod ?? []),
+    photoperiod: mergePhotoperiod(
+      history?.photoperiod ?? [],
+      proj?.history?.photoperiod ?? existing.projectionHistory?.photoperiod ?? []
+    ),
     cursors: controlRange?.cursors ?? existing.cursors,
     projectionRevision: proj ? proj.revision : existing.projectionRevision,
     projectionVersion: proj ? proj.version : existing.projectionVersion,
@@ -102,7 +106,7 @@ export function applyControlFresh(data: StoreData, resp: ControlMonitoringRespon
 /** Install a projection response only when its revision/fingerprint changed. */
 export function applyProjection(
   data: StoreData,
-  resp: ProjectionPublicationResponse,
+  resp: ProjectionPublicationResponse
 ): { data: StoreData; changed: boolean } {
   const proj = projectionTimeline(resp)
   const changed =
@@ -114,7 +118,10 @@ export function applyProjection(
     data: {
       ...data,
       projectionHistory: proj.history,
-      photoperiod: mergePhotoperiod(data.controlHistory?.photoperiod ?? [], proj.history?.photoperiod ?? []),
+      photoperiod: mergePhotoperiod(
+        data.controlHistory?.photoperiod ?? [],
+        proj.history?.photoperiod ?? []
+      ),
       projectionRevision: proj.revision,
       projectionVersion: proj.version,
       anchorFingerprint: null,
@@ -127,11 +134,13 @@ export function applyProjection(
 
 function mergePhotoperiod(
   recorded: PhotoperiodTimelinePoint[],
-  projected: PhotoperiodTimelinePoint[],
+  projected: PhotoperiodTimelinePoint[]
 ): PhotoperiodTimelinePoint[] {
-  const byTimestamp = new Map(projected.map((point) => [point.timestamp.getTime(), point]))
+  const byTimestamp = new Map(projected.map(point => [point.timestamp.getTime(), point]))
   for (const point of recorded) byTimestamp.set(point.timestamp.getTime(), point)
-  return [...byTimestamp.values()].sort((left, right) => left.timestamp.getTime() - right.timestamp.getTime())
+  return [...byTimestamp.values()].sort(
+    (left, right) => left.timestamp.getTime() - right.timestamp.getTime()
+  )
 }
 
 /** True when wall-clock has passed the projection anchor validity deadline. */

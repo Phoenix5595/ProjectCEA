@@ -75,14 +75,7 @@ const FALLBACK_VISUAL: CategoryVisual = {
 }
 
 export type EventCategoryName =
-  | 'relay'
-  | 'manual_override'
-  | 'ramp'
-  | 'control'
-  | 'mutation'
-  | 'alarm'
-  | 'system'
-  | 'sensor'
+  'relay' | 'manual_override' | 'ramp' | 'control' | 'mutation' | 'alarm' | 'system' | 'sensor'
 
 export const EVENT_CATEGORY_LABELS: Record<EventCategoryName, string> = Object.fromEntries(
   Object.entries(CATEGORY_VISUALS).map(([category, visual]) => [category, visual.label])

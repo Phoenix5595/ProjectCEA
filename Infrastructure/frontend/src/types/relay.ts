@@ -42,4 +42,3 @@ export interface RelayBoardStateResponse {
   modes: (string | null)[]
   override_expires_at: (string | null)[]
 }
-

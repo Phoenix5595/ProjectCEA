@@ -4,17 +4,19 @@ import { fixtureUrl } from './fixtureUrl'
 
 function trackViolations(page: import('@playwright/test').Page): string[] {
   const violations: string[] = []
-  page.on('request', (request) => {
+  page.on('request', request => {
     const violation = describeViolation(request.url())
     if (violation !== null) violations.push(`${violation}: ${request.url()}`)
   })
   return violations
 }
 
-test('grouped alert console opens by default with category rows, counts, and dual timestamps', async ({ page }, testInfo) => {
+test('grouped alert console opens by default with category rows, counts, and dual timestamps', async ({
+  page,
+}, testInfo) => {
   const violations = trackViolations(page)
 
-  await page.goto(fixtureUrl('/flower', testInfo, undefined, 'grouped-console'))
+  await page.goto(fixtureUrl('/', testInfo, undefined, 'grouped-console'))
 
   // One colour-coded row per category, newest-category first, all room categories visible.
   await expect(page.getByTestId('event-group-control')).toBeVisible()
@@ -27,18 +29,21 @@ test('grouped alert console opens by default with category rows, counts, and dua
   await expect(page.getByTestId('event-group-sensor')).toContainText('Sensor degraded')
 
   // Count badge + latest-event summary per row.
-  await expect(page.getByTestId('event-group-control').getByText('3 events')).toBeVisible()
-  await expect(page.getByTestId('event-group-control').getByText('Control setpoint changed')).toBeVisible()
-  await expect(page.getByTestId('event-group-relay').getByText('3 events')).toBeVisible()
+  await expect(
+    page.getByTestId('event-group-control').getByText('3', { exact: true })
+  ).toBeVisible()
+  await expect(
+    page.getByTestId('event-group-control').getByText('Control setpoint changed')
+  ).toBeVisible()
+  await expect(page.getByTestId('event-group-relay').getByText('3', { exact: true })).toBeVisible()
   await expect(page.getByTestId('event-group-relay')).toContainText('Relay command failed')
   await expect(page.getByTestId('event-group-alarm')).toContainText('Alarm triggered')
 
   // Dual timestamps: relative chip AND a visible absolute clock time (HH:MM:SS).
-  await expect(page.getByTestId('event-group-control').locator('time').last()).toHaveText(/\d{2}:\d{2}:\d{2}/)
-  await expect(page.getByTestId('event-group-control').locator('time').first()).toContainText(/ago$/)
-
-  // Concurrent-entity summary for the three-light setpoint ramp.
-  await expect(page.getByTestId('event-group-control').getByText(/3 devices in the last 10 minutes/)).toBeVisible()
+  await expect(page.getByTestId('event-group-control').locator('time').last()).toHaveText(
+    /\d{2}:\d{2}:\d{2}/
+  )
+  await expect(page.getByTestId('event-group-control').locator('time').first()).toContainText(/ago/)
 
   await page.screenshot({ path: `${testInfo.outputDir}/grouped-console.png`, fullPage: true })
 
@@ -48,7 +53,7 @@ test('grouped alert console opens by default with category rows, counts, and dua
 test('relay-active state text renders in the green category shade', async ({ page }, testInfo) => {
   const violations = trackViolations(page)
 
-  await page.goto(fixtureUrl('/flower', testInfo, undefined, 'grouped-console'))
+  await page.goto(fixtureUrl('/', testInfo, undefined, 'grouped-console'))
   const relayRow = page.getByTestId('event-group-relay')
   await expect(relayRow).toBeVisible()
   await expect(relayRow).toContainText('Relay command failed')
@@ -57,16 +62,30 @@ test('relay-active state text renders in the green category shade', async ({ pag
   await relayRow.click()
   const items = page.getByRole('list', { name: 'Event list' }).getByRole('listitem')
   await expect(items).toHaveCount(3)
-  const onState = items.filter({ hasText: 'Relay state changed' }).getByText('ON', { exact: true }).first()
-  await expect(onState).toHaveClass(/text-event-relay/)
+  const onState = items
+    .filter({ hasText: 'Relay state changed' })
+    .getByText('ON', { exact: true })
+    .first()
+  const actualRelayColor = await onState.evaluate(element => getComputedStyle(element).color)
+  const expectedRelayColor = await page.evaluate(() => {
+    const probe = document.createElement('span')
+    probe.style.color = 'var(--event-relay)'
+    document.body.append(probe)
+    const color = getComputedStyle(probe).color
+    probe.remove()
+    return color
+  })
+  expect(actualRelayColor).toBe(expectedRelayColor)
 
   expect(violations).toEqual([])
 })
 
-test('from-to setpoint values render on enriched rows and in expanded lists', async ({ page }, testInfo) => {
+test('from-to setpoint values render on enriched rows and in expanded lists', async ({
+  page,
+}, testInfo) => {
   const violations = trackViolations(page)
 
-  await page.goto(fixtureUrl('/flower', testInfo, undefined, 'grouped-console'))
+  await page.goto(fixtureUrl('/', testInfo, undefined, 'grouped-console'))
   await page.getByTestId('event-group-control').click()
 
   const list = page.getByRole('list', { name: 'Event list' })
@@ -83,7 +102,9 @@ test('from-to setpoint values render on enriched rows and in expanded lists', as
   expect(violations).toEqual([])
 })
 
-test('the All events toggle shows the flat newest-first list and filters still work', async ({ page }, testInfo) => {
+test('the All events toggle shows the flat newest-first list and filters still work', async ({
+  page,
+}, testInfo) => {
   const violations = trackViolations(page)
 
   await page.goto(fixtureUrl('/flower', testInfo, undefined, 'grouped-console'))

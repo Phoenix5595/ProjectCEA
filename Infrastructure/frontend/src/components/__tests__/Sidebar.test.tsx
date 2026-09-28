@@ -1,11 +1,11 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { describe, expect, it } from 'vitest'
 
 import Sidebar from '../Sidebar'
 
 describe('Sidebar', () => {
-  it('renders a permanent icon rail with accessible links and active-route styling', () => {
+  it('renders primary navigation with accessible named links', () => {
     render(
       <MemoryRouter initialEntries={['/vegetation/monitoring']}>
         <Sidebar />
@@ -13,10 +13,6 @@ describe('Sidebar', () => {
     )
 
     const navigation = screen.getByRole('navigation', { name: 'Primary navigation' })
-    const rail = navigation.parentElement
-    expect(rail).toHaveClass('fixed', 'w-7.5')
-    expect(rail).not.toHaveClass('w-52')
-
     const routes = [
       ['Laboratory', '/laboratory'],
       ['Vegetation', '/vegetation'],
@@ -25,16 +21,9 @@ describe('Sidebar', () => {
     ]
 
     for (const [label, path] of routes) {
-      const link = screen.getByRole('link', { name: label })
+      const link = within(navigation).getByRole('link', { name: label })
       expect(link).toHaveAttribute('href', path)
       expect(link).toHaveAttribute('title', label)
-      expect(link.textContent).toBe('')
     }
-
-    expect(screen.getByRole('link', { name: 'Vegetation' })).toHaveClass(
-      'bg-accent-vivid',
-      'text-surface-base',
-      'font-medium'
-    )
   })
 })

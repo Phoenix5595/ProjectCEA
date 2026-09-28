@@ -1,10 +1,11 @@
-import type { RichTrajectoryEnvelope } from './contracts'
 import type {
   TimelineOwnedValues,
   TimelineRoom,
   TimelineSavedBaseline,
   TimelineWindow,
 } from '../state/timelineDraft'
+
+import type { RichTrajectoryEnvelope } from './contracts'
 
 export type TimelinePreviewRequest = {
   readonly room: TimelineRoom

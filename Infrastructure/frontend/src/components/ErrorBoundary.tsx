@@ -37,14 +37,14 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
       return (
         <div
           role="alert"
-          className="flex flex-col items-center justify-center min-h-screen p-8 gap-4 text-center bg-background text-foreground"
+          className="flex flex-col items-center justify-center min-h-screen p-8 gap-4 text-center bg-surface-base text-text-default"
         >
           <h1 className="text-2xl font-semibold">Something went wrong</h1>
           <p className="text-text-muted max-w-lg break-words">{message}</p>
           <button
             type="button"
             onClick={this.handleReload}
-            className="px-4 py-2 rounded-md bg-primary text-primary-foreground hover:opacity-90 transition"
+            className="px-4 py-2 rounded-md bg-btn-primary text-btn-primary-text hover:opacity-90 transition"
           >
             Reload application
           </button>

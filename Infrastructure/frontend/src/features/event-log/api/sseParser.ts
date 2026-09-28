@@ -18,8 +18,10 @@ export async function* parseSse(body: ReadableStream<Uint8Array>): AsyncGenerato
         const line = buffer.slice(0, index).replace(/\r$/, '')
         buffer = buffer.slice(index + 1)
         if (line === '') {
-          if (id !== null || event !== 'message' || data.length > 0) yield { id, event, data: data.join('\n') }
-          else if (comment.length > 0) yield { id: null, event: 'comment', data: comment.join('\n') }
+          if (id !== null || event !== 'message' || data.length > 0)
+            yield { id, event, data: data.join('\n') }
+          else if (comment.length > 0)
+            yield { id: null, event: 'comment', data: comment.join('\n') }
           id = null
           event = 'message'
           data = []

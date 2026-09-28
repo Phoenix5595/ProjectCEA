@@ -1,6 +1,6 @@
 import { render } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { _resetSharedStoreForTesting, useEventLog } from '../state/useEventLog'
+
 import { globalEventLogStore } from '../state/eventLogStore'
 import {
   resetTransportState,
@@ -8,6 +8,7 @@ import {
   getAbortController,
   _setReconnectDelayForTesting,
 } from '../state/eventLogTransport'
+import { _resetSharedStoreForTesting, useEventLog } from '../state/useEventLog'
 
 const mockFetch = vi.fn()
 
@@ -24,7 +25,10 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-function mockHistoryResponse(items: Array<{ redis_id: string; event: object }> = [], hasMore = false) {
+function mockHistoryResponse(
+  items: Array<{ redis_id: string; event: object }> = [],
+  hasMore = false
+) {
   return Promise.resolve({
     ok: true,
     status: 200,
@@ -124,7 +128,12 @@ describe('useEventLog transport contract', () => {
           event_type: 'relay.state_changed',
           correlation_id: null,
           causation_id: null,
-          entity: { entity_type: 'relay', entity_id: 'relay-1', location: 'Flower Room', cluster: 'main' },
+          entity: {
+            entity_type: 'relay',
+            entity_id: 'relay-1',
+            location: 'Flower Room',
+            cluster: 'main',
+          },
           actor: null,
           reason_code: null,
           reason_text: null,
@@ -167,7 +176,7 @@ describe('useEventLog transport contract', () => {
     expect(snapshot.entries[0].redisId).toBe('1-0')
     expect(snapshot.entries[1].redisId).toBe('2-0')
 
-    const calls = mockFetch.mock.calls.filter((call) => {
+    const calls = mockFetch.mock.calls.filter(call => {
       const url = call[0] as string
       return url.includes('/api/events/stream')
     })
@@ -194,7 +203,7 @@ describe('useEventLog transport contract', () => {
       expect(mockFetch.mock.calls.length).toBeGreaterThanOrEqual(3)
     })
 
-    const eventApiCalls = mockFetch.mock.calls.filter((call) => {
+    const eventApiCalls = mockFetch.mock.calls.filter(call => {
       const url = call[0] as string
       return url.includes('/api/events/history') || url.includes('/api/events/stream')
     })

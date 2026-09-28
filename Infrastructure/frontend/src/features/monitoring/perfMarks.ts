@@ -119,7 +119,10 @@ function pendingTick(): PendingTick | undefined {
   return activeTickId === undefined ? undefined : perfState().pending.get(activeTickId)
 }
 
-function duration<T>(name: string, callback: () => T): { readonly result: T; readonly measured: number } {
+function duration<T>(
+  name: string,
+  callback: () => T
+): { readonly result: T; readonly measured: number } {
   const start = `${name}:start`
   const end = `${name}:end`
   performance.mark(start)
@@ -213,7 +216,8 @@ export function finishMonitoringPerfTick(sourceTimestamp: number | undefined): v
     const paint = `monitoring:tick:${tickId}:paint`
     performance.mark(paint)
     performance.measure(`monitoring:tick:${tickId}:commit`, start, paint)
-    const commitMs = performance.getEntriesByName(`monitoring:tick:${tickId}:commit`).at(-1)?.duration ?? 0
+    const commitMs =
+      performance.getEntriesByName(`monitoring:tick:${tickId}:commit`).at(-1)?.duration ?? 0
     const observedAt = sourceTimestamp ?? performance.timeOrigin + paintAt
     current.samples.push({
       tickIndex: tickId,
@@ -246,7 +250,8 @@ export function finishMonitoringRequest(startedAt: number): void {
 }
 
 export function injectMonitoringAlignmentDelay(): void {
-  if (!window.location.search.includes('scenario=performance-delay') || ALIGNMENT_DELAY_MS <= 0) return
+  if (!window.location.search.includes('scenario=performance-delay') || ALIGNMENT_DELAY_MS <= 0)
+    return
   const until = performance.now() + ALIGNMENT_DELAY_MS
   while (performance.now() < until) {
     continue

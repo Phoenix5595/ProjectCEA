@@ -1,10 +1,13 @@
-import { z } from 'zod/v3'
+import { z } from 'zod'
 
 const utcDate = z
   .string()
-  .regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/, 'timestamp must be UTC ISO 8601 with a trailing Z')
-  .transform((value) => new Date(value))
-  .refine((value) => !Number.isNaN(value.getTime()), 'timestamp is not a valid UTC date')
+  .regex(
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/,
+    'timestamp must be UTC ISO 8601 with a trailing Z'
+  )
+  .transform(value => new Date(value))
+  .refine(value => !Number.isNaN(value.getTime()), 'timestamp is not a valid UTC date')
 
 const finiteNumber = z.number().finite()
 
@@ -14,7 +17,7 @@ const UtcWindow = z
     end: utcDate,
     timezone: z.string().min(1),
   })
-  .refine((window) => window.end > window.start, 'window end must be later than window start')
+  .refine(window => window.end > window.start, 'window end must be later than window start')
 
 const PeriodIdentity = z.object({
   period_id: z.string().min(1),
@@ -61,22 +64,30 @@ const TrajectorySegment = z
     LinearTrajectorySegment,
     UnavailableTrajectorySegment,
   ])
-  .refine((segment) => segment.end > segment.start, 'segment end must be later than segment start')
+  .refine(segment => segment.end > segment.start, 'segment end must be later than segment start')
 
-const TimelineWarning = z.object({
-  code: z.string().min(1),
-  detail: z.string().min(1),
-  reason: z.string().min(1).optional(),
-  start: utcDate.optional(),
-  end: utcDate.optional(),
-}).superRefine((warning, context) => {
-  if ((warning.start === undefined) !== (warning.end === undefined)) {
-    context.addIssue({ code: z.ZodIssueCode.custom, message: 'warning interval requires start and end' })
-  }
-  if (warning.start !== undefined && warning.end !== undefined && warning.end <= warning.start) {
-    context.addIssue({ code: z.ZodIssueCode.custom, message: 'warning end must be later than warning start' })
-  }
-})
+const TimelineWarning = z
+  .object({
+    code: z.string().min(1),
+    detail: z.string().min(1),
+    reason: z.string().min(1).optional(),
+    start: utcDate.optional(),
+    end: utcDate.optional(),
+  })
+  .superRefine((warning, context) => {
+    if ((warning.start === undefined) !== (warning.end === undefined)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'warning interval requires start and end',
+      })
+    }
+    if (warning.start !== undefined && warning.end !== undefined && warning.end <= warning.start) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'warning end must be later than warning start',
+      })
+    }
+  })
 
 const EnvelopeBase = z.object({
   contract_version: z.literal(1),

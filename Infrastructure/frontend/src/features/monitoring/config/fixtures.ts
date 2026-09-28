@@ -29,8 +29,14 @@ export function parseRange(url: string): { start: string; end: string } {
 function pointsInRange(
   start: string,
   end: string,
-  values: number[],
-): Array<{ timestamp: string; average: number; minimum: number; maximum: number; sample_count: number }> {
+  values: number[]
+): Array<{
+  timestamp: string
+  average: number
+  minimum: number
+  maximum: number
+  sample_count: number
+}> {
   const s = new Date(start).getTime()
   const e = new Date(end).getTime()
   const n = Math.max(2, values.length)
@@ -53,7 +59,7 @@ function sensorSeries(
   unit: string,
   start: string,
   end: string,
-  values: number[],
+  values: number[]
 ) {
   return {
     sensor,
@@ -90,35 +96,92 @@ function mean(values: number[]): number {
 
 function fixtureValues(values: number[], scenario: string | null): number[] {
   if (scenario !== 'large-x') return values
-  return Array.from({ length: 5100 }, (_value, index) => values[index % values.length] + index / 50_000)
+  return Array.from(
+    { length: 5100 },
+    (_value, index) => values[index % values.length] + index / 50_000
+  )
 }
 
 /** Canonical sensor series per room (Flower splits front/back; Veg is unsplit). */
 function roomSensors(room: string): RoomSensor[] {
   if (room === 'Veg Room') {
     return [
-      { sensor: 'dry_bulb_v', node: 'main', unitFamily: 'celsius', unit: '°C', values: [24.5, 24.8] },
-      { sensor: 'wet_bulb_v', node: 'main', unitFamily: 'celsius', unit: '°C', values: [19.8, 20.1] },
+      {
+        sensor: 'dry_bulb_v',
+        node: 'main',
+        unitFamily: 'celsius',
+        unit: '°C',
+        values: [24.5, 24.8],
+      },
+      {
+        sensor: 'wet_bulb_v',
+        node: 'main',
+        unitFamily: 'celsius',
+        unit: '°C',
+        values: [19.8, 20.1],
+      },
       { sensor: 'rh_v', node: 'main', unitFamily: 'percent', unit: '%', values: [62, 61] },
       { sensor: 'vpd_v', node: 'main', unitFamily: 'kpa', unit: ' kPa', values: [1.1, 1.2] },
       { sensor: 'co2_v', node: 'main', unitFamily: 'ppm', unit: ' ppm', values: [620, 615] },
-      { sensor: 'pressure_v', node: 'main', unitFamily: 'hpa', unit: ' hPa', values: [1013.2, 1013.1] },
-      { sensor: 'secondary_temp_v', node: 'main', unitFamily: 'celsius', unit: '°C', values: [23.1, 23.4] },
-      { sensor: 'secondary_rh_v', node: 'main', unitFamily: 'percent', unit: '%', values: [60, 59] },
-      { sensor: 'water_level_v', node: 'main', unitFamily: 'mm', unit: ' mm', values: [45.0, 44.8] },
+      {
+        sensor: 'pressure_v',
+        node: 'main',
+        unitFamily: 'hpa',
+        unit: ' hPa',
+        values: [1013.2, 1013.1],
+      },
+      {
+        sensor: 'secondary_temp_v',
+        node: 'main',
+        unitFamily: 'celsius',
+        unit: '°C',
+        values: [23.1, 23.4],
+      },
+      {
+        sensor: 'secondary_rh_v',
+        node: 'main',
+        unitFamily: 'percent',
+        unit: '%',
+        values: [60, 59],
+      },
+      {
+        sensor: 'water_level_v',
+        node: 'main',
+        unitFamily: 'mm',
+        unit: ' mm',
+        values: [45.0, 44.8],
+      },
     ]
   }
   return [
-    { sensor: 'dry_bulb_f', node: 'front', unitFamily: 'celsius', unit: '°C', values: [24.5, 24.8] },
+    {
+      sensor: 'dry_bulb_f',
+      node: 'front',
+      unitFamily: 'celsius',
+      unit: '°C',
+      values: [24.5, 24.8],
+    },
     { sensor: 'dry_bulb_b', node: 'back', unitFamily: 'celsius', unit: '°C', values: [25.1, 25.4] },
-    { sensor: 'wet_bulb_f', node: 'front', unitFamily: 'celsius', unit: '°C', values: [19.8, 20.1] },
+    {
+      sensor: 'wet_bulb_f',
+      node: 'front',
+      unitFamily: 'celsius',
+      unit: '°C',
+      values: [19.8, 20.1],
+    },
     { sensor: 'wet_bulb_b', node: 'back', unitFamily: 'celsius', unit: '°C', values: [20.3, 20.6] },
     { sensor: 'rh_f', node: 'front', unitFamily: 'percent', unit: '%', values: [62, 61] },
     { sensor: 'rh_b', node: 'back', unitFamily: 'percent', unit: '%', values: [58, 57] },
     { sensor: 'vpd_f', node: 'front', unitFamily: 'kpa', unit: ' kPa', values: [1.1, 1.2] },
     { sensor: 'vpd_b', node: 'back', unitFamily: 'kpa', unit: ' kPa', values: [1.3, 1.4] },
     { sensor: 'co2_b', node: 'back', unitFamily: 'ppm', unit: ' ppm', values: [620, 615] },
-    { sensor: 'pressure_b', node: 'back', unitFamily: 'hpa', unit: ' hPa', values: [1013.2, 1013.1] },
+    {
+      sensor: 'pressure_b',
+      node: 'back',
+      unitFamily: 'hpa',
+      unit: ' hPa',
+      values: [1013.2, 1013.1],
+    },
   ]
 }
 
@@ -131,7 +194,7 @@ export function sensorRangeFixture(
   room: string,
   start: string,
   end: string,
-  _scenario: string | null = null,
+  _scenario: string | null = null
 ): unknown {
   const sensors = roomSensors(room)
   return {
@@ -141,14 +204,14 @@ export function sensorRangeFixture(
       range: { start, end },
       room: { room, nodes: roomNodes(room) },
     },
-    series: sensors.map((s) => {
+    series: sensors.map(s => {
       const values =
         _scenario === 'extreme-y' && s.sensor === 'dry_bulb_f'
           ? [24.5, 9, 36, 24.8]
           : fixtureValues(s.values, _scenario)
       return sensorSeries(s.sensor, s.node, s.unitFamily, s.unit, start, end, values)
     }),
-    statistics: sensors.map((s) => statisticsFor(s.sensor, s.node, mean(s.values))),
+    statistics: sensors.map(s => statisticsFor(s.sensor, s.node, mean(s.values))),
   }
 }
 
@@ -156,9 +219,12 @@ export function sensorRangeFixture(
 export function sensorLiveFixture(
   node: string,
   scenario: string | null = null,
-  sequence = 0,
+  sequence = 0
 ): unknown {
-  if ((process.env.MONITORING_SCENARIO === 'flower-partial' || scenario === 'flower-partial') && node === 'front') {
+  if (
+    (process.env.MONITORING_SCENARIO === 'flower-partial' || scenario === 'flower-partial') &&
+    node === 'front'
+  ) {
     return []
   }
   if (scenario === 'live-update' && sequence >= 6 && sequence <= 7) return []
@@ -172,11 +238,12 @@ export function sensorLiveFixture(
     ['pressure', 1013.2],
     ['water_level', 45.0],
   ]
-  const timestamp = scenario === 'stale-live'
-    ? '2026-01-01T00:00:00.000Z'
-    : scenario === 'live-update'
-      ? new Date(LIVE_FIXTURE_EPOCH + sequence * 1000).toISOString()
-      : T0
+  const timestamp =
+    scenario === 'stale-live'
+      ? '2026-01-01T00:00:00.000Z'
+      : scenario === 'live-update'
+        ? new Date(LIVE_FIXTURE_EPOCH + sequence * 1000).toISOString()
+        : T0
   const valueOffset = scenario === 'live-update' ? sequence / 10 : 0
   return base.map(([name, value]) => ({
     sensor: `${name}_${suffix}`,
@@ -190,7 +257,7 @@ export function sensorStatsFixture(
   room: string,
   start: string,
   end: string,
-  _scenario: string | null = null,
+  _scenario: string | null = null
 ): unknown {
   const sensors = roomSensors(room)
   return {
@@ -201,7 +268,7 @@ export function sensorStatsFixture(
       room: { room, nodes: roomNodes(room) },
     },
     series: [],
-    statistics: sensors.map((s) => statisticsFor(s.sensor, s.node, mean(s.values))),
+    statistics: sensors.map(s => statisticsFor(s.sensor, s.node, mean(s.values))),
   }
 }
 
@@ -209,7 +276,7 @@ export {
   controlProjectionFixture,
   controlRangeFixture,
   controlTailFixture,
-} from './fixtures.control'
+} from './fixtures.control.ts'
 
 /** Grafana placeholder body for the fixture origin's `/grafana/*` paths. */
 export function grafanaPlaceholder(): Record<string, unknown> {

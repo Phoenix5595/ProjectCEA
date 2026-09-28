@@ -8,6 +8,7 @@
  * forward and linear ramps are sampled at each slot.
  */
 import type { PhotoperiodTimelinePoint, SensorSeries } from '../api'
+
 import type {
   NormControlSeries,
   NormLinear,
@@ -28,13 +29,13 @@ export function alignSensor(
   x: number[],
   start: number,
   end: number,
-  aggregated: boolean,
+  aggregated: boolean
 ): SensorBuckets {
   const mean: (number | null)[] = new Array(x.length).fill(null)
   const min: (number | null)[] = new Array(x.length).fill(null)
   const max: (number | null)[] = new Array(x.length).fill(null)
   if (!aggregated) {
-    const byT = new Map(s.points.map((p) => [p.timestamp.getTime(), p]))
+    const byT = new Map(s.points.map(p => [p.timestamp.getTime(), p]))
     for (let i = 0; i < x.length; i++) {
       const p = byT.get(x[i])
       if (p) {
@@ -74,20 +75,18 @@ export function alignControlPoints(
   x: number[],
   start: number,
   end: number,
-  aggregated: boolean,
+  aggregated: boolean
 ): (number | null)[] {
   const y: (number | null)[] = new Array(x.length).fill(null)
   if (!aggregated) {
-    const byT = new Map(cs.points.map((p) => [p.t, p]))
+    const byT = new Map(cs.points.map(p => [p.t, p]))
     for (let i = 0; i < x.length; i++) {
       const p = byT.get(x[i])
       if (p) y[i] = p.value
     }
     return y
   }
-  const buckets = new Array(x.length)
-    .fill(null)
-    .map(() => ({ count: 0, sum: 0 }))
+  const buckets = new Array(x.length).fill(null).map(() => ({ count: 0, sum: 0 }))
   for (const p of cs.points) {
     if (p.value === null) continue
     if (p.t < start || p.t > end) continue
@@ -108,7 +107,7 @@ export function alignSteps(
   x: number[],
   _start: number,
   _end: number,
-  _aggregated: boolean,
+  _aggregated: boolean
 ): (number | null)[] {
   const y: (number | null)[] = new Array(x.length).fill(null)
   const sorted = [...steps].sort((a, b) => a.t - b.t)
@@ -126,7 +125,7 @@ export function alignDeviceStates(
   x: number[],
   start: number,
   end: number,
-  aggregated: boolean,
+  aggregated: boolean
 ): (number | null)[] {
   return alignSteps(steps, x, start, end, aggregated)
 }
@@ -136,14 +135,25 @@ export function alignPid(
   x: number[],
   start: number,
   end: number,
-  aggregated: boolean,
+  aggregated: boolean
 ): (number | null)[] {
   return alignControlPoints(
-    { points, metric: '', name: '', kind: 'climate', trajectoryKind: null, steps: [], linear: [], seriesOrigin: 'recorded', seriesQuality: 'exact', seriesIsAggregated: false },
+    {
+      points,
+      metric: '',
+      name: '',
+      kind: 'climate',
+      trajectoryKind: null,
+      steps: [],
+      linear: [],
+      seriesOrigin: 'recorded',
+      seriesQuality: 'exact',
+      seriesIsAggregated: false,
+    },
     x,
     start,
     end,
-    aggregated,
+    aggregated
   )
 }
 
@@ -153,7 +163,7 @@ export function alignLinear(
   x: number[],
   _start: number,
   _end: number,
-  _aggregated: boolean,
+  _aggregated: boolean
 ): (number | null)[] {
   const y: (number | null)[] = new Array(x.length).fill(null)
   for (let i = 0; i < x.length; i++) {
@@ -172,7 +182,7 @@ export function alignLinear(
 export function alignPhotoperiod(
   photoperiod: PhotoperiodTimelinePoint[],
   start: number,
-  end: number,
+  end: number
 ): PhotoperiodInterval[] {
   const sorted = [...photoperiod].sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime())
   const intervals: PhotoperiodInterval[] = []

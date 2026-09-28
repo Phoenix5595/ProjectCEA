@@ -13,7 +13,7 @@ import { fixtureUrl } from './fixtureUrl'
 
 function trackViolations(page: import('@playwright/test').Page): string[] {
   const violations: string[] = []
-  page.on('request', (req) => {
+  page.on('request', req => {
     const url = req.url()
     if (url.includes('/grafana/')) violations.push(`grafana: ${url}`)
     const violation = describeViolation(url)
@@ -28,14 +28,12 @@ test('veg monitoring renders natively', async ({ page }, testInfo) => {
   await page.goto(fixtureUrl('/vegetation/monitoring', testInfo))
 
   await expect(page.getByRole('button', { name: 'Reset Zoom' })).toBeVisible()
-  await expect(
-    page.getByRole('heading', { name: 'Veg climate conditions' }),
-  ).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Veg climate conditions' })).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Veg atmosphere & equipment' })).toBeVisible()
 
   await expect(page.getByRole('table', { name: 'Sensor Values' })).toBeVisible()
   await expect(
-    page.getByRole('table', { name: 'Statistics - All Available Sensors' }),
+    page.getByRole('table', { name: 'Statistics - All Available Sensors' })
   ).toBeVisible()
 
   expect(violations).toEqual([])

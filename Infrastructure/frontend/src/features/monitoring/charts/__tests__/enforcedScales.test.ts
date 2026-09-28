@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+
 import type { AlignedData } from '../../data'
 import { seriesKey } from '../../data/alignSeries.types'
 
@@ -32,9 +33,9 @@ describe('uPlot honors enforced range functions', () => {
     const { buildScales } = await import('../options/scales')
 
     const { scales, axes } = buildScales(makeTemperatureData())
-    expect(axes.find((a) => a.scale === 'temperature')?.side).toBe(3)
+    expect(axes.find(a => a.scale === 'temperature')?.side).toBe(3)
 
-    expect(axes.find((axis) => axis.scale === 'temperature')?.side).toBe(3)
+    expect(axes.find(axis => axis.scale === 'temperature')?.side).toBe(3)
     const range = scales.temperature?.range
     if (typeof range !== 'function') throw new Error('Temperature range is required')
     expect(Reflect.apply(range, undefined, [undefined, 22, 25])).toEqual([21, 26])

@@ -28,8 +28,8 @@ import {
   sensorRangeFixture,
   sensorStatsFixture,
   wsFixtureMessage,
-} from './src/features/monitoring/config/fixtures'
-import { SOIL_FIXTURE_ROUTES } from './src/features/soil/config/soilFixtures'
+} from './src/features/monitoring/config/fixtures.ts'
+import { SOIL_FIXTURE_ROUTES } from './src/features/soil/config/soilFixtures.ts'
 import {
   eventHistoryFixture,
   sseFrameForEntry,
@@ -41,14 +41,14 @@ import {
   LAB_EVENTS,
   CJK_EVENT,
   GROUPED_CONSOLE_EVENTS,
-} from './src/features/event-log/config/fixtures'
-import { FIXTURE_PORT, FIXTURE_WS_ORIGIN } from './src/features/monitoring/config/originGuard'
+} from './src/features/event-log/config/fixtures.ts'
+import { FIXTURE_PORT, FIXTURE_WS_ORIGIN } from './src/features/monitoring/config/originGuard.ts'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const DIST_DIR = path.resolve(HERE, 'dist')
 
 const CSP =
-  `default-src 'self'; connect-src 'self' ${FIXTURE_WS_ORIGIN}; ` +
+  `default-src 'self'; script-src 'self'; connect-src 'self' ${FIXTURE_WS_ORIGIN}; ` +
   "frame-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'"
 
 interface FixtureRoute {
@@ -782,7 +782,7 @@ const FIXTURE_ROUTES: FixtureRoute[] = [
   },
   {
     re: /^\/api\/room-modes\/active\/[^/]+\/[^/]+$/,
-    handler: (req) => {
+    handler: req => {
       const parts = new URL(req.url ?? '', 'http://fixture.invalid').pathname
         .split('/')
         .filter(Boolean)
@@ -921,10 +921,26 @@ const FIXTURE_ROUTES: FixtureRoute[] = [
       if (scenario !== 'dashboard-layout' && scenario !== 'disconnect') {
         const now = new Date().toISOString()
         return {
-          temperature: { data: [{ time: now, timestamp: now, value: 24.5 }], unit: '°C', sensor_name: 'temperature' },
-          humidity: { data: [{ time: now, timestamp: now, value: 65 }], unit: '%', sensor_name: 'humidity' },
-          co2: { data: [{ time: now, timestamp: now, value: 850 }], unit: 'ppm', sensor_name: 'co2' },
-          vpd: { data: [{ time: now, timestamp: now, value: 1.2 }], unit: 'kPa', sensor_name: 'vpd' },
+          temperature: {
+            data: [{ time: now, timestamp: now, value: 24.5 }],
+            unit: '°C',
+            sensor_name: 'temperature',
+          },
+          humidity: {
+            data: [{ time: now, timestamp: now, value: 65 }],
+            unit: '%',
+            sensor_name: 'humidity',
+          },
+          co2: {
+            data: [{ time: now, timestamp: now, value: 850 }],
+            unit: 'ppm',
+            sensor_name: 'co2',
+          },
+          vpd: {
+            data: [{ time: now, timestamp: now, value: 1.2 }],
+            unit: 'kPa',
+            sensor_name: 'vpd',
+          },
         }
       }
       // Dashboard fixtures model stale front readings and live back readings.
@@ -932,20 +948,80 @@ const FIXTURE_ROUTES: FixtureRoute[] = [
       const now = new Date().toISOString()
       if (cluster === 'back') {
         return {
-          dry_bulb_b: { sensor_type: 'dry_bulb_b', location, cluster, unit: '°C', data: [{ timestamp: now, value: 20.02 }] },
-          wet_bulb_b: { sensor_type: 'wet_bulb_b', location, cluster, unit: '°C', data: [{ timestamp: now, value: 20.29 }] },
-          rh_b: { sensor_type: 'rh_b', location, cluster, unit: '%', data: [{ timestamp: now, value: 92.98 }] },
-          vpd_b: { sensor_type: 'vpd_b', location, cluster, unit: 'kPa', data: [{ timestamp: now, value: 0.12 }] },
-          co2_b: { sensor_type: 'co2_b', location, cluster, unit: 'ppm', data: [{ timestamp: '2026-01-15T14:46:05.213000', value: 400.0 }] },
+          dry_bulb_b: {
+            sensor_type: 'dry_bulb_b',
+            location,
+            cluster,
+            unit: '°C',
+            data: [{ timestamp: now, value: 20.02 }],
+          },
+          wet_bulb_b: {
+            sensor_type: 'wet_bulb_b',
+            location,
+            cluster,
+            unit: '°C',
+            data: [{ timestamp: now, value: 20.29 }],
+          },
+          rh_b: {
+            sensor_type: 'rh_b',
+            location,
+            cluster,
+            unit: '%',
+            data: [{ timestamp: now, value: 92.98 }],
+          },
+          vpd_b: {
+            sensor_type: 'vpd_b',
+            location,
+            cluster,
+            unit: 'kPa',
+            data: [{ timestamp: now, value: 0.12 }],
+          },
+          co2_b: {
+            sensor_type: 'co2_b',
+            location,
+            cluster,
+            unit: 'ppm',
+            data: [{ timestamp: '2026-01-15T14:46:05.213000', value: 400.0 }],
+          },
         }
       }
       const stale = '2026-01-26T18:14:12'
       return {
-        dry_bulb_f: { sensor_type: 'dry_bulb_f', location, cluster, unit: '°C', data: [{ timestamp: stale, value: 16.75 }] },
-        wet_bulb_f: { sensor_type: 'wet_bulb_f', location, cluster, unit: '°C', data: [{ timestamp: stale, value: 16.71 }] },
-        rh_f: { sensor_type: 'rh_f', location, cluster, unit: '%', data: [{ timestamp: stale, value: 48.0 }] },
-        co2_f: { sensor_type: 'co2_f', location, cluster, unit: 'ppm', data: [{ timestamp: stale, value: 400.0 }] },
-        vpd_f: { sensor_type: 'vpd_f', location, cluster, unit: 'kPa', data: [{ timestamp: stale, value: 0.6 }] },
+        dry_bulb_f: {
+          sensor_type: 'dry_bulb_f',
+          location,
+          cluster,
+          unit: '°C',
+          data: [{ timestamp: stale, value: 16.75 }],
+        },
+        wet_bulb_f: {
+          sensor_type: 'wet_bulb_f',
+          location,
+          cluster,
+          unit: '°C',
+          data: [{ timestamp: stale, value: 16.71 }],
+        },
+        rh_f: {
+          sensor_type: 'rh_f',
+          location,
+          cluster,
+          unit: '%',
+          data: [{ timestamp: stale, value: 48.0 }],
+        },
+        co2_f: {
+          sensor_type: 'co2_f',
+          location,
+          cluster,
+          unit: 'ppm',
+          data: [{ timestamp: stale, value: 400.0 }],
+        },
+        vpd_f: {
+          sensor_type: 'vpd_f',
+          location,
+          cluster,
+          unit: 'kPa',
+          data: [{ timestamp: stale, value: 0.6 }],
+        },
       }
     },
   },
@@ -977,10 +1053,10 @@ const FIXTURE_ROUTES: FixtureRoute[] = [
       'Flower Room_main_humidity': 65,
       'Veg Room_main_temperature': 23.8,
       'Veg Room_main_humidity': 68,
-      'Lab_main_temperature': 22.1,
-      'Lab_main_humidity': 55,
-      'Lab_main_lab_temp': 24.6,
-      'Lab_main_water_temperature': 19.5,
+      Lab_main_temperature: 22.1,
+      Lab_main_humidity: 55,
+      Lab_main_lab_temp: 24.6,
+      Lab_main_water_temperature: 19.5,
       'Flower Room_main_heating_setpoint': 24,
       'Flower Room_main_cooling_setpoint': 27,
       'Flower Room_main_co2_setpoint': 900,
@@ -1029,7 +1105,7 @@ const FIXTURE_ROUTES: FixtureRoute[] = [
   },
   {
     re: /^\/api\/calendar\/events$/,
-    handler: (req) => {
+    handler: req => {
       const method = req.method ?? 'GET'
       const today = new Date()
       const plus = (n: number): string => {
@@ -1038,7 +1114,9 @@ const FIXTURE_ROUTES: FixtureRoute[] = [
         return d.toISOString().slice(0, 10)
       }
       if (method === 'POST') {
-        const body = (typeof req.body === 'string' ? JSON.parse(req.body || '{}') : req.body ?? {}) as Record<string, unknown>
+        const body = (
+          typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body ?? {})
+        ) as Record<string, unknown>
         return {
           id: 99,
           source: 'manual',
@@ -1054,7 +1132,9 @@ const FIXTURE_ROUTES: FixtureRoute[] = [
         }
       }
       if (method === 'PATCH') {
-        const body = (typeof req.body === 'string' ? JSON.parse(req.body || '{}') : req.body ?? {}) as Record<string, unknown>
+        const body = (
+          typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body ?? {})
+        ) as Record<string, unknown>
         return {
           id: 11,
           source: 'manual',
@@ -1145,8 +1225,10 @@ const FIXTURE_ROUTES: FixtureRoute[] = [
   },
   {
     re: /^\/api\/calendar\/events\/\d+$/,
-    handler: (req) => {
-      const body = (typeof req.body === 'string' ? JSON.parse(req.body || '{}') : req.body ?? {}) as Record<string, unknown>
+    handler: req => {
+      const body = (
+        typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body ?? {})
+      ) as Record<string, unknown>
       return {
         id: 11,
         source: 'manual',
@@ -1539,7 +1621,10 @@ function monitoringPreviewPlugin(): Plugin {
         for (const route of FIXTURE_ROUTES) {
           if (route.re.test(pathname)) {
             res.setHeader('Content-Type', 'application/json')
-            const handlerBody = route.handler({ url: req.url, method: req.method, body: requestBody }, scenario)
+            const handlerBody = route.handler(
+              { url: req.url, method: req.method, body: requestBody },
+              scenario
+            )
             const body = JSON.stringify(handlerBody)
             if (scenario === 'bed-capacity-conflict' && pathname.endsWith('/assignment')) {
               res.statusCode = 409

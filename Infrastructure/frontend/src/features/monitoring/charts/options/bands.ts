@@ -1,5 +1,7 @@
 import uPlot from 'uplot'
+
 import type { AlignedData, SeriesKey } from '../../data'
+
 import { readToken } from './tokens'
 
 export function buildBands(data: AlignedData): uPlot.Band[] {

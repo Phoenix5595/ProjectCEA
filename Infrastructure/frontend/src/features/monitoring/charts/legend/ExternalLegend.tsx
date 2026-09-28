@@ -42,9 +42,12 @@ export function ExternalLegend({ entries }: ExternalLegendProps) {
           </tr>
         </thead>
         <tbody>
-          {entries.map((entry) => (
+          {entries.map(entry => (
             <tr key={entry.key}>
-              <td>{entry.label}{entry.projected ? ' (Projected)' : ''}</td>
+              <td>
+                {entry.label}
+                {entry.projected ? ' (Projected)' : ''}
+              </td>
               <td>{entry.visible ? 'Yes' : 'No'}</td>
             </tr>
           ))}

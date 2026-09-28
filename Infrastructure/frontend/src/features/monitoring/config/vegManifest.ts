@@ -65,7 +65,8 @@ export const vegManifest: MonitoringManifest = {
           axisPlacement: 'right',
           softMax: 100,
           decimals: 1,
-          color: '#fade2a',},
+          color: '#fade2a',
+        },
         {
           name: 'vpd_v',
           displayName: 'VPD (kPa)',
@@ -73,7 +74,8 @@ export const vegManifest: MonitoringManifest = {
           axisPlacement: 'auto',
           decimals: 2,
           color: '#2f7fe0',
-          lineWidth: 3,},
+          lineWidth: 3,
+        },
         {
           name: 'Heating Setpoint - Main',
           displayName: 'Heating Setpoint',
@@ -128,7 +130,7 @@ export const vegManifest: MonitoringManifest = {
           lineWidth: 2,
           lineInterpolation: 'stepBefore',
         },
-                {
+        {
           name: 'DAY Period Overlay',
           displayName: 'DAY Period Overlay',
           unit: 'percent',

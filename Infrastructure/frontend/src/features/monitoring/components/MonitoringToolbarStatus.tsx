@@ -1,13 +1,11 @@
-import type { ToolbarMonitoring } from './TimeRangeToolbar.monitoring'
 import { MonitoringStatus } from './MonitoringStatus'
+import type { ToolbarMonitoring } from './TimeRangeToolbar.monitoring'
 
 interface MonitoringToolbarStatusProps {
   readonly monitoring: ToolbarMonitoring
 }
 
-export function MonitoringToolbarStatus({
-  monitoring,
-}: MonitoringToolbarStatusProps) {
+export function MonitoringToolbarStatus({ monitoring }: MonitoringToolbarStatusProps) {
   return (
     <div className="mon-status">
       <div className="mon-status__summary">
@@ -20,7 +18,9 @@ export function MonitoringToolbarStatus({
       </div>
       <div className="mon-status__actions">
         {monitoring.onRetry !== undefined && (
-          <button type="button" onClick={monitoring.onRetry}>Retry</button>
+          <button type="button" onClick={monitoring.onRetry}>
+            Retry
+          </button>
         )}
       </div>
       <MonitoringStatus errors={monitoring.errors} />

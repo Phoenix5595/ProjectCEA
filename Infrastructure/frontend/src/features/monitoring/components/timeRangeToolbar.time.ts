@@ -119,7 +119,7 @@ export function resolveWallTime(c: WallComponents): WallTimeResult {
 /** Resolve a wall time, applying an explicit fall-fold choice when ambiguous. */
 export function resolveWallTimeWithChoice(
   c: WallComponents,
-  choice: FallFoldChoice | null,
+  choice: FallFoldChoice | null
 ): WallTimeResult {
   const res = resolveWallTime(c)
   if (res.kind !== 'ambiguous' || choice === null) return res
@@ -146,8 +146,7 @@ export function durationToLabel(duration: number): string | null {
 }
 
 export type ToolbarRange =
-  | { kind: 'live'; duration: number }
-  | { kind: 'fixed'; start: Date; end: Date }
+  { kind: 'live'; duration: number } | { kind: 'fixed'; start: Date; end: Date }
 
 /** Serialize a range to a URL search-param string. */
 export function serializeRange(range: ToolbarRange): string {
@@ -159,9 +158,7 @@ export function serializeRange(range: ToolbarRange): string {
 }
 
 export type ParsedUrlRange =
-  | { kind: 'live'; duration: number }
-  | { kind: 'fixed'; start: Date; end: Date }
-  | { kind: 'none' }
+  { kind: 'live'; duration: number } | { kind: 'fixed'; start: Date; end: Date } | { kind: 'none' }
 
 /** Parse URL search params into a range, or 'none' when absent/invalid. */
 export function parseUrlRange(params: URLSearchParams): ParsedUrlRange {
@@ -170,7 +167,7 @@ export function parseUrlRange(params: URLSearchParams): ParsedUrlRange {
     const m = /^live-(.+)$/.exec(rangeParam)
     if (m !== null) {
       const label = m[1]
-      const byLabel = PRESETS.find((p) => p.label === label)
+      const byLabel = PRESETS.find(p => p.label === label)
       if (byLabel !== undefined) return { kind: 'live', duration: byLabel.duration }
       const ms = Number(label)
       if (Number.isFinite(ms) && ms > 0) return { kind: 'live', duration: ms }
