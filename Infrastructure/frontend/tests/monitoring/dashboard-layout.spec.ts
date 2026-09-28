@@ -468,13 +468,35 @@ test('dashboard fits both supported desktop viewports without overflow', async (
   expect(metrics.boxes.inspectorTrack!.width).toBeGreaterThanOrEqual(
     viewport!.width >= 1600 ? 16 * 16 : 12 * 16
   )
-  const centerTrackRatio = metrics.boxes.upper!.height / metrics.boxes.rooms!.height
-  expect(centerTrackRatio).toBeCloseTo(viewport!.width >= 1600 ? 55 / 45 : 52 / 48, 1)
+  const centerGap = await page
+    .locator('.dashboard-center')
+    .evaluate(element => Number.parseFloat(getComputedStyle(element).rowGap))
+  expect(
+    Math.abs(
+      metrics.boxes.upper!.height +
+        centerGap +
+        metrics.boxes.rooms!.height -
+        metrics.boxes.center!.height
+    )
+  ).toBeLessThanOrEqual(1)
+  expect(
+    Math.abs(metrics.boxes.calendarTrack!.height - metrics.boxes.upper!.height)
+  ).toBeLessThanOrEqual(1)
+  expect(
+    Math.abs(metrics.boxes.calendar!.height - metrics.boxes.calendarTrack!.height)
+  ).toBeLessThanOrEqual(1)
   expect(metrics.boxes.rooms!.top).toBeGreaterThanOrEqual(metrics.boxes.upper!.bottom - 1)
   expect(metrics.boxes.rooms!.left).toBeGreaterThanOrEqual(metrics.boxes.center!.left - 1)
   expect(metrics.boxes.rooms!.right).toBeLessThanOrEqual(metrics.boxes.center!.right + 1)
   expect(metrics.boxes.rooms!.width).toBeGreaterThanOrEqual(metrics.boxes.center!.width - 1)
-  expect(metrics.boxes.rooms!.height).toBeGreaterThanOrEqual(metrics.boxes.center!.height * 0.38)
+  const roomBoxes = await Promise.all([flowerRow, vegRow, labRow].map(row => row.boundingBox()))
+  expect(roomBoxes.every(box => box !== null)).toBe(true)
+  const roomGap = await page
+    .locator('.dashboard-room-rows')
+    .evaluate(element => Number.parseFloat(getComputedStyle(element).rowGap))
+  const contentSizedRoomRows =
+    roomBoxes.reduce((height, box) => height + box!.height, 0) + roomGap * (roomBoxes.length - 1)
+  expect(Math.abs(metrics.boxes.rooms!.height - contentSizedRoomRows)).toBeLessThanOrEqual(1)
   expect(metrics.boxes.events!.bottom).toBeLessThanOrEqual(metrics.boxes.water!.top + 1)
   expect(metrics.boxes.events!.left).toBeGreaterThanOrEqual(metrics.boxes.rail!.left - 1)
   expect(metrics.boxes.events!.right).toBeLessThanOrEqual(metrics.boxes.rail!.right + 1)
@@ -495,10 +517,6 @@ test('dashboard fits both supported desktop viewports without overflow', async (
     metrics.railOverflow!.clientWidth + 1
   )
 
-  const roomBoxes = await Promise.all([flowerRow, vegRow, labRow].map(row => row.boundingBox()))
-  expect(roomBoxes.every(box => box !== null)).toBe(true)
-  expect(roomBoxes[0]!.height / roomBoxes[1]!.height).toBeCloseTo(1.5, 1)
-  expect(roomBoxes[2]!.height / roomBoxes[1]!.height).toBeCloseTo(0.55, 1)
   for (let first = 0; first < roomBoxes.length; first += 1) {
     const current = roomBoxes[first]!
     expect(current.x).toBeGreaterThanOrEqual(metrics.boxes.center!.left - 1)
@@ -541,9 +559,11 @@ test('dashboard fits both supported desktop viewports without overflow', async (
   const september = await calendarGeometry(page)
   expect(september.tableBottomGap).toBeGreaterThanOrEqual(-1)
   expect(september.tableBottomGap).toBeLessThan(12)
-  expect(
-    Math.max(...september.weekHeights) - Math.min(...september.weekHeights)
-  ).toBeLessThanOrEqual(2.2)
+  const shortestWeek = Math.min(...september.weekHeights)
+  expect(shortestWeek).toBeGreaterThan(0)
+  expect((Math.max(...september.weekHeights) - shortestWeek) / shortestWeek).toBeLessThanOrEqual(
+    0.03
+  )
   await expect(page.locator('.rdp-day_button[aria-label*="4 tasks"]')).toHaveCount(1)
 
   const septemberTenth = page.locator('.rdp-day_button[aria-label*="10 septembre 2026"]')
