@@ -920,6 +920,7 @@ body {
     min-height: 0;
   }
 
+  /* Room rows stay content-sized; the calendar and inspector use remaining height. */
   .dashboard-center {
     display: grid;
     grid-template-rows: minmax(0, 1fr) auto;
@@ -960,6 +961,8 @@ body {
   .dashboard-room-rows {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto auto;
+    align-content: start;
     gap: 0.5rem;
     min-width: 0;
   }
@@ -1004,17 +1007,9 @@ body {
     grid-template-columns: minmax(0, 1fr) 17rem;
   }
 
-  .dashboard-center {
-    grid-template-rows: minmax(0, 55fr) minmax(0, 45fr);
-  }
-
   .dashboard-upper {
     grid-template-columns: minmax(0, 4fr) minmax(16rem, 1fr);
     grid-template-rows: minmax(0, 1fr);
-  }
-
-  .dashboard-room-rows {
-    grid-template-rows: minmax(0, 1.5fr) minmax(0, 1fr) minmax(0, 0.55fr);
   }
 
   .dashboard-inspector__overview {
@@ -1032,17 +1027,9 @@ body {
     grid-template-columns: minmax(0, 1fr) 16rem;
   }
 
-  .dashboard-center {
-    grid-template-rows: minmax(0, 52fr) minmax(0, 48fr);
-  }
-
   .dashboard-upper {
     grid-template-columns: minmax(0, 4fr) minmax(12rem, 1fr);
     grid-template-rows: minmax(0, 1fr);
-  }
-
-  .dashboard-room-rows {
-    grid-template-rows: minmax(0, 1.5fr) minmax(0, 1fr) minmax(0, 0.55fr);
   }
 }
 
