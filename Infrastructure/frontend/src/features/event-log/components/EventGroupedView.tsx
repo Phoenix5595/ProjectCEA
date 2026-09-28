@@ -47,12 +47,11 @@ export const DISPLAY_BUCKET_ORDER: readonly string[] = [
 
 export function withPreallocatedSlots(groups: CategoryGroup[]): CategoryGroup[] {
   const filled = new Map(groups.map(group => [group.category, group]))
-  const known = new Set(DISPLAY_BUCKET_ORDER)
   const slots = DISPLAY_BUCKET_ORDER.map<CategoryGroup>(category => {
     const group = filled.get(category)
     return group ?? { category, count: 0, latest: null, entities: [] }
   })
-  const extra = groups.filter(group => !known.has(group.category))
+  const extra = groups.filter(group => !DISPLAY_BUCKET_ORDER.includes(group.category))
   return [...slots, ...extra]
 }
 
@@ -95,7 +94,8 @@ function EventCategoryChip({ category, compact = false }: { category: string; co
   const visual = categoryTheme(category)
   return (
     <span
-      className={`${compact ? 'min-w-0 max-w-full break-words' : 'shrink-0'} inline-flex items-center px-2 py-0.5 text-10 font-bold uppercase tracking-wider border ${visual.chip}`}
+      title={visual.label}
+      className={`${compact ? 'min-w-0 max-w-full truncate' : 'shrink-0'} inline-flex items-center px-2 py-0.5 text-10 font-bold uppercase tracking-wider border ${visual.chip}`}
     >
       {visual.label}
     </span>
@@ -151,7 +151,7 @@ const EventCategoryRow = memo(function EventCategoryRow({
         <div
           data-testid={`event-group-${group.category}`}
           aria-disabled="true"
-          className={`flex min-w-0 flex-col gap-0.5 px-2 py-1.5 text-left border border-border-subtle rounded-sm bg-surface-secondary opacity-60 ${visual.border}`}
+          className={`flex min-h-0 min-w-0 flex-col gap-0.5 overflow-hidden px-2 py-1.5 text-left border border-border-subtle rounded-sm bg-surface-secondary opacity-60 ${visual.border}`}
         >
           <div className="flex min-w-0 items-start gap-1.5">
             <EventCategoryChip category={group.category} compact />
@@ -164,14 +164,16 @@ const EventCategoryRow = memo(function EventCategoryRow({
       )
     }
     const display = getEventDisplay(group.latest.type)
+    const reasonTooltip = eventReasonTooltip(group.latest.reasonText, 'latest')
+    const rowTitle = reasonTooltip ? `${display.label} — ${reasonTooltip}` : display.label
     return (
       <button
         type="button"
         data-testid={`event-group-${group.category}`}
         aria-expanded={false}
         onClick={() => onExpand(group.category)}
-        title={eventReasonTooltip(group.latest.reasonText, 'latest')}
-        className={`flex min-w-0 flex-col gap-1 px-2 py-1.5 text-left border border-border-subtle rounded-sm bg-surface-secondary hover:bg-surface-tertiary transition-colors ${visual.border}`}
+        title={rowTitle}
+        className={`flex min-h-0 min-w-0 flex-col gap-1 overflow-hidden px-2 py-1.5 text-left border border-border-subtle rounded-sm bg-surface-secondary hover:bg-surface-tertiary transition-colors ${visual.border}`}
       >
         <div className="flex min-w-0 items-start gap-1.5">
           <div className="flex min-w-0 flex-1 items-start gap-1.5">
@@ -192,7 +194,7 @@ const EventCategoryRow = memo(function EventCategoryRow({
         </div>
         <div className="flex min-w-0 items-start gap-1.5">
           <EventRoomIndicator room={group.latest.payload.room} />
-          <div className="min-w-0 flex-1 break-words text-xs text-text-default font-semibold">
+          <div className="min-w-0 flex-1 break-words line-clamp-2 text-xs text-text-default font-semibold">
             {display.label}
           </div>
           <EventSeverityBadge severity={group.latest.severity} />
@@ -275,15 +277,20 @@ export function EventGroupedView({
   /** Sidebar mode: one compact row per category, no height cap, no reflow. */
   compact?: boolean
 }) {
+  const visibleGroups =
+    compact && groups.length > DISPLAY_BUCKET_ORDER.length
+      ? groups.slice(0, DISPLAY_BUCKET_ORDER.length)
+      : groups
+
   return (
     <div
       role="group"
       aria-label="Grouped alert console"
       className={`grid min-h-0 gap-1 bg-surface-base border border-border-subtle rounded-sm ${
-        compact ? 'flex-1 grid-rows-[repeat(8,minmax(min-content,1fr))]' : 'max-h-150 overflow-auto'
+        compact ? 'flex-1 grid-rows-[repeat(8,minmax(0,1fr))]' : 'max-h-150 overflow-auto'
       } ${compact ? '' : groupedGridClass()}`}
     >
-      {groups.map(group => (
+      {visibleGroups.map(group => (
         <EventCategoryRow
           key={group.category}
           group={group}
