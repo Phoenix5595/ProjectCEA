@@ -64,23 +64,24 @@ describe('EventGroupedView compact sidebar mode', () => {
     )
 
     const relayCategory = compact.getByTestId('event-group-relay')
-    expect(relayCategory).toHaveAttribute(
-      'title',
-      `Latest event in this category — recorded reason: ${latestReason}`
-    )
+    const title = relayCategory.getAttribute('title') ?? ''
+    expect(title).toContain('Relay state changed')
+    expect(title).toContain(`Latest event in this category — recorded reason: ${latestReason}`)
     expect(relayCategory.getAttribute('title')).not.toContain('Older event reason')
   })
 
-  it('keeps every pre-allocated category slot visible in compact mode', () => {
+  it('renders exactly eight canonical category slots in compact mode', () => {
     const groups = withPreallocatedSlots(
-      buildGroups([makeEventEntry('1-0', 'relay.command_issued', 'relay')])
+      buildGroups([
+        makeEventEntry('1-0', 'relay.command_issued', 'relay'),
+        makeEventEntry('2-0', 'custom.rare_event', 'rare_event'),
+      ])
     )
     const compact = render(
       <EventGroupedView groups={groups} now={NOW} onExpand={() => {}} compact />
     )
     expect(compact.container.textContent).toContain('No recent events')
-    expect(
-      compact.container.querySelectorAll('[data-testid^="event-group-"]').length
-    ).toBeGreaterThanOrEqual(8)
+    expect(compact.container.querySelectorAll('[data-testid^="event-group-"]')).toHaveLength(8)
+    expect(compact.queryByTestId('event-group-rare_event')).not.toBeInTheDocument()
   })
 })

@@ -326,8 +326,7 @@ describe('EventLog', () => {
     expect(emptySensor).toHaveTextContent('No recent events')
     expect(within(screen.getByTestId('event-group-relay')).getByText('1 event')).toBeInTheDocument()
   })
-
-  it('renders the fallback row for an unknown garbage category', () => {
+  it('keeps unknown category rows available in the full-width grouped view', () => {
     const entries = [makeEventEntry('1-0', 'custom.thing', 'nonsense_category')]
     render(
       <EventLog entries={entries} now={new Date('2026-09-02T12:00:00Z')} initialView="grouped" />
@@ -394,51 +393,23 @@ describe('EventLog', () => {
     expect(screen.getByRole('button', { name: 'Next events page' })).toBeDisabled()
   })
 
-  it('pages categories, resets on view/category changes, and keeps the ninth category reachable', async () => {
+  it('keeps compact category overview fixed at eight and exposes unknown categories in All events', async () => {
     const entries = [
-      ...Array.from({ length: 50 }, (_, index) =>
-        makeEventEntry(`${index + 1}-0`, 'relay.state_changed', 'relay')
-      ),
-      makeEventEntry('51-0', 'custom.rare_event', 'rare_event'),
+      makeEventEntry('1-0', 'relay.state_changed', 'relay'),
+      makeEventEntry('2-0', 'custom.rare_event', 'rare_event'),
     ]
     const user = userEvent.setup()
-    render(<EventLog entries={entries} now={new Date('2026-09-02T12:00:00Z')} compact />)
-
-    expect(screen.getByTestId('event-groups-page-status')).toHaveTextContent(
-      'Groups 1 of 2 · 9 categories'
-    )
-    await user.click(screen.getByTestId('event-group-relay'))
-    expect(screen.getByTestId('event-events-page-status')).toHaveTextContent(
-      'Page 1 of 10 · 50 events'
-    )
-    await user.click(screen.getByRole('button', { name: 'Next events page' }))
-    expect(screen.getByTestId('event-events-page-status')).toHaveTextContent(
-      'Page 2 of 10 · 50 events'
+    const { container } = render(
+      <EventLog entries={entries} now={new Date('2026-09-02T12:00:00Z')} compact />
     )
 
-    await user.click(screen.getByTestId('event-group-collapse'))
-    expect(screen.getByTestId('event-groups-page-status')).toHaveTextContent(
-      'Groups 1 of 2 · 9 categories'
-    )
-    await user.click(screen.getByRole('button', { name: 'Next category page' }))
-    expect(screen.getByTestId('event-group-rare_event')).toBeInTheDocument()
+    expect(container.querySelectorAll('[data-testid^="event-group-"]')).toHaveLength(8)
+    expect(screen.queryByTestId('event-groups-page-status')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /category page/i })).not.toBeInTheDocument()
 
     await selectCompactView(user, 'All events')
     expect(screen.getByTestId('event-events-page-status')).toHaveTextContent(
-      'Page 1 of 11 · 51 events'
-    )
-    await user.click(screen.getByRole('button', { name: 'Next events page' }))
-    expect(screen.getByTestId('event-events-page-status')).toHaveTextContent(
-      'Page 2 of 11 · 51 events'
-    )
-    await selectCompactView(user, 'Alerts')
-    expect(screen.getByTestId('event-groups-page-status')).toHaveTextContent(
-      'Groups 1 of 2 · 9 categories'
-    )
-    await user.click(screen.getByRole('button', { name: 'Next category page' }))
-    await user.click(screen.getByTestId('event-group-rare_event'))
-    expect(screen.getByTestId('event-events-page-status')).toHaveTextContent(
-      'Page 1 of 1 · 1 event'
+      'Page 1 of 1 · 2 events'
     )
     expect(screen.getByText('Custom rare event')).toBeInTheDocument()
   })

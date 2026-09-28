@@ -20,7 +20,6 @@ import {
 import { EventRow } from './EventRow'
 
 const COMPACT_EVENT_PAGE_SIZE = 5
-const COMPACT_GROUP_PAGE_SIZE = 8
 
 interface EventLogProps {
   entries: readonly EventLogEntry[]
@@ -148,8 +147,7 @@ export function EventLog({
   const showFlatList = view === 'flat' || expandedCategory !== null
   const listEntries = expandedCategory !== null ? expandedListView : ordered
   const listPageCount = Math.max(1, Math.ceil(listEntries.length / COMPACT_EVENT_PAGE_SIZE))
-  const groupPageCount = Math.max(1, Math.ceil(groups.length / COMPACT_GROUP_PAGE_SIZE))
-  const activePageCount = compact ? (showFlatList ? listPageCount : groupPageCount) : 1
+  const activePageCount = compact && showFlatList ? listPageCount : 1
   const currentPage = Math.min(page, activePageCount)
 
   useEffect(() => {
@@ -162,12 +160,6 @@ export function EventLog({
         currentPage * COMPACT_EVENT_PAGE_SIZE
       )
     : listEntries
-  const visibleGroups = compact
-    ? groups.slice(
-        (currentPage - 1) * COMPACT_GROUP_PAGE_SIZE,
-        currentPage * COMPACT_GROUP_PAGE_SIZE
-      )
-    : groups
   const detailSourceParts = detailEntry === null ? [] : sourcePartsFor(detailEntry)
   const detailDisplay = detailEntry === null ? null : getEventDisplay(detailEntry.type)
 
@@ -279,39 +271,7 @@ export function EventLog({
         </div>
       ) : compact ? (
         <div className="flex min-h-0 flex-col gap-2">
-          <EventGroupedView groups={visibleGroups} now={now} onExpand={handleExpand} compact />
-          <div className="flex items-center justify-between gap-2 text-11 text-text-default">
-            <p
-              role="status"
-              data-testid="event-groups-page-status"
-              aria-live="polite"
-              className="tabular-nums"
-            >
-              Groups {currentPage} of {groupPageCount} · {groups.length} categories
-            </p>
-            <div className="flex shrink-0 gap-1">
-              <button
-                type="button"
-                aria-label="Previous category page"
-                data-testid="event-groups-previous-page"
-                disabled={currentPage === 1}
-                onClick={() => setPage(currentPage - 1)}
-                className="border border-border-subtle px-2 py-1 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                Previous
-              </button>
-              <button
-                type="button"
-                aria-label="Next category page"
-                data-testid="event-groups-next-page"
-                disabled={currentPage === groupPageCount}
-                onClick={() => setPage(currentPage + 1)}
-                className="border border-border-subtle px-2 py-1 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                Next
-              </button>
-            </div>
-          </div>
+          <EventGroupedView groups={groups} now={now} onExpand={handleExpand} compact />
         </div>
       ) : (
         <EventGroupedView groups={groups} now={now} onExpand={handleExpand} />

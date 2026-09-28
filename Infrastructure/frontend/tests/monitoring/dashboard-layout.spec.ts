@@ -11,6 +11,10 @@ const LONG_NOTE = Array.from(
   (_, index) =>
     `Calibration pass ${index + 1}: confirm the intake screen is clear, compare the probe with the reference meter, and record the observed room conditions before adjusting any equipment.`
 ).join('\n')
+const LONG_GROUP_EVENT_TYPE =
+  'system.greenhouse_humidity_stayed_below_the_requested_target_for_several_consecutive_measurements_and_needs_operator_review'
+const LONG_GROUP_EVENT_LABEL =
+  'System greenhouse humidity stayed below the requested target for several consecutive measurements and needs operator review'
 
 const CALENDAR_ITEMS = [
   {
@@ -118,7 +122,7 @@ function eventHistoryWithFiftyRows() {
         event_id: `dashboard-layout-${index}`,
         occurred_at: new Date(nowMs - index * 60_000).toISOString(),
         category: 'system',
-        event_type: 'system.dashboard_layout_fixture',
+        event_type: index === 0 ? LONG_GROUP_EVENT_TYPE : 'system.dashboard_layout_fixture',
         reason_text: isLast ? 'DASHBOARD_LAYOUT_LAST_ROW' : `Dashboard fixture event ${index + 1}`,
         entity: {
           entity_type: 'service',
@@ -131,32 +135,13 @@ function eventHistoryWithFiftyRows() {
     }
   })
 
-  const ninthCategory = {
-    redis_id: `${nowMs - 60_000_000}-dashboard-ninth`,
-    event: {
-      ...template.event,
-      event_id: 'dashboard-layout-ninth-category',
-      occurred_at: new Date(nowMs - 60_000_000).toISOString(),
-      category: 'dashboard_ninth_category',
-      event_type: 'dashboard.ninth_category_fixture',
-      reason_text: 'DASHBOARD_NINTH_CATEGORY',
-      entity: {
-        entity_type: 'service',
-        entity_id: 'dashboard-ninth-category',
-        location: 'Lab',
-        cluster: 'main',
-      },
-      payload: { room: 'Lab', cluster: 'main' },
-    },
-  }
-
   return {
-    items: [...items, ninthCategory],
+    items,
     newest_cursor: items[0]!.redis_id,
-    oldest_cursor: ninthCategory.redis_id,
-    earliest_cursor: ninthCategory.redis_id,
+    oldest_cursor: items.at(-1)!.redis_id,
+    earliest_cursor: items.at(-1)!.redis_id,
     has_more: false,
-    scan: { scanned: items.length + 1, limit: 500 },
+    scan: { scanned: items.length, limit: 500 },
   }
 }
 async function calendarGeometry(page: Page) {
@@ -342,6 +327,24 @@ test('dashboard fits both supported desktop viewports without overflow', async (
   await expect(labRow).toBeInViewport()
   await expect(page.locator('.dashboard-water-panel [role="img"]')).toBeInViewport()
   await expect(page.locator('button[aria-label="Open mothernode status"]')).toBeInViewport()
+  const longSystemGroup = page.getByTestId('event-group-system')
+  await expect(longSystemGroup.getByText(LONG_GROUP_EVENT_LABEL, { exact: true })).toBeVisible()
+  expect(await longSystemGroup.getAttribute('title')).toContain(LONG_GROUP_EVENT_LABEL)
+  const groupGrid = page.getByRole('group', { name: 'Grouped alert console' })
+  const groupRows = await groupGrid.locator('[data-testid^="event-group-"]').evaluateAll(elements =>
+    elements.map(element => {
+      const rect = element.getBoundingClientRect()
+      return { top: rect.top, bottom: rect.bottom }
+    })
+  )
+  expect(groupRows).toHaveLength(8)
+  for (let index = 1; index < groupRows.length; index += 1) {
+    expect(groupRows[index]!.top).toBeGreaterThanOrEqual(groupRows[index - 1]!.bottom - 1)
+  }
+  await page.screenshot({
+    path: testInfo.outputPath('dashboard-grouped-event-log.png'),
+    fullPage: true,
+  })
 
   const metrics = await page.evaluate(() => {
     const box = (selector: string) => {
@@ -595,8 +598,9 @@ test('dashboard fits both supported desktop viewports without overflow', async (
   await expect(page.getByRole('dialog')).not.toBeVisible()
   await expect(newEventButton).toBeFocused()
 
-  const groupedStatus = page.getByTestId('event-groups-page-status')
-  await expect(groupedStatus).toHaveText('Groups 1 of 2 · 9 categories')
+  await expect(page.locator('[data-testid^="event-group-"]')).toHaveCount(8)
+  await expect(page.getByTestId('event-groups-page-status')).toHaveCount(0)
+  await expect(page.getByRole('button', { name: /category page/i })).toHaveCount(0)
   await page.getByTestId('event-group-system').click()
   const eventStatus = page.getByTestId('event-events-page-status')
   await expect(eventStatus).toHaveText('Page 1 of 10 · 50 events')
@@ -623,17 +627,13 @@ test('dashboard fits both supported desktop viewports without overflow', async (
   await expect(sentinelRow.getByTestId('event-detail-opener')).toBeFocused()
 
   await page.getByTestId('event-group-collapse').click()
-  await expect(groupedStatus).toHaveText('Groups 1 of 2 · 9 categories')
-  await page.getByRole('button', { name: 'Next category page' }).click()
-  await expect(groupedStatus).toHaveText('Groups 2 of 2 · 9 categories')
-  await expect(page.getByTestId('event-group-dashboard_ninth_category')).toBeVisible()
-  await page.getByRole('button', { name: 'Previous category page' }).click()
-
+  await expect(page.locator('[data-testid^="event-group-"]')).toHaveCount(8)
+  await expect(page.getByRole('button', { name: /category page/i })).toHaveCount(0)
   if (!(await page.getByRole('button', { name: 'All events' }).isVisible())) {
     await page.getByRole('button', { name: /^Filters/ }).click()
   }
   await page.getByRole('button', { name: 'All events' }).click()
-  await expect(eventStatus).toHaveText('Page 1 of 11 · 51 events')
+  await expect(eventStatus).toHaveText('Page 1 of 10 · 50 events')
 
   const filterSearch = page.getByRole('searchbox', { name: 'Filter events' })
   if (!(await filterSearch.isVisible())) {
@@ -642,7 +642,7 @@ test('dashboard fits both supported desktop viewports without overflow', async (
   await filterSearch.fill('dashboard-layout-49')
   await expect(eventStatus).toHaveText('Page 1 of 1 · 1 event')
   await filterSearch.fill('')
-  await expect(eventStatus).toHaveText('Page 1 of 11 · 51 events')
+  await expect(eventStatus).toHaveText('Page 1 of 10 · 50 events')
   await page.keyboard.press('Escape')
 
   const finalMetrics = await page.evaluate(() => ({
