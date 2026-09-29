@@ -7,7 +7,7 @@ from datetime import datetime
 from fastapi import APIRouter, HTTPException
 
 from app.models import LiveSensorValue, LiveSnapshotResponse
-from app.redis_client import get_all_sensor_timestamps, get_all_sensor_values
+from app.redis_client import _read_sensor_snapshot
 from shared.infra_logging import get_logger
 
 logger = get_logger(__name__)
@@ -122,11 +122,11 @@ async def build_live_snapshot(
     Raises:
         HTTPException: If Redis is unavailable
     """
-    # Get all sensor values from Redis (single query)
-    sensor_values = await get_all_sensor_values()
+    # Read one bounded Redis snapshot with each value paired to its own timestamp.
+    sensor_snapshot = await _read_sensor_snapshot()
 
-    if sensor_values is None or len(sensor_values) == 0:
-        # Check if Redis is available
+    if not sensor_snapshot:
+        # Check whether Redis is available; an empty snapshot is valid when connected.
         from app.redis_client import get_redis_client
 
         client = await get_redis_client()
@@ -134,12 +134,6 @@ async def build_live_snapshot(
             raise HTTPException(
                 status_code=503, detail="Redis unavailable. Live sensor data cannot be retrieved."
             )
-        # Redis is available but no data
-        sensor_values = {}
-
-    # Get all timestamps in batch (single query)
-    sensor_names = list(sensor_values.keys())
-    timestamps_ms = await get_all_sensor_timestamps(sensor_names)
 
     # Use current time as snapshot timestamp (consistent across all sensors)
     snapshot_ts = int(datetime.now().timestamp())
@@ -148,9 +142,8 @@ async def build_live_snapshot(
     # Build sensor value objects
     live_values: dict[str, LiveSensorValue] = {}
 
-    for sensor_name, value in sensor_values.items():
-        # Get timestamp
-        ts_ms = timestamps_ms.get(sensor_name)
+    for sensor_name, record in sensor_snapshot.items():
+        _, _, _, value, ts_ms = record
         if ts_ms:
             sensor_ts = ts_ms / 1000.0  # Convert to seconds
             age_seconds = snapshot_ts - sensor_ts

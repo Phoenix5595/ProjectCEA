@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime
 
-from app.redis_client import get_all_sensor_timestamps, get_all_sensor_values
+from app.redis_client import _read_sensor_snapshot
 from app.websocket import websocket_manager
 from shared.infra_logging import get_logger
 
@@ -82,10 +82,10 @@ async def broadcast_latest_sensor_data():
 
     while True:
         try:
-            # Get all sensor values from Redis
-            sensor_values = await get_all_sensor_values()
+            # Read values with their matching qualified timestamps.
+            sensor_snapshot = await _read_sensor_snapshot()
 
-            if not sensor_values:
+            if not sensor_snapshot:
                 # No data in Redis, might be starting up
                 consecutive_errors += 1
                 if consecutive_errors < 5:
@@ -94,10 +94,8 @@ async def broadcast_latest_sensor_data():
                 continue
 
             consecutive_errors = 0  # Reset on success
-            timestamps_ms = await get_all_sensor_timestamps(list(sensor_values.keys()))
-
             # Broadcast each sensor value
-            for sensor_name, value in sensor_values.items():
+            for sensor_name, record in sensor_snapshot.items():
                 try:
                     # Get location/cluster from sensor name
                     location, cluster = sensor_location_map.get(sensor_name, (None, None))
@@ -105,7 +103,7 @@ async def broadcast_latest_sensor_data():
                         continue  # Skip unknown sensors
 
                     # Get timestamp
-                    ts_ms = timestamps_ms.get(sensor_name)
+                    _, _, _, value, ts_ms = record
                     timestamp = datetime.fromtimestamp(ts_ms / 1000.0) if ts_ms else datetime.now()
 
                     # Determine unit

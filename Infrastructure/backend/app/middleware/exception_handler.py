@@ -6,12 +6,10 @@ Adapted from automation-service pattern.
 
 from __future__ import annotations
 
-import traceback
 from typing import Any
 
-from fastapi import HTTPException, Request
+from fastapi import Request
 from fastapi.responses import JSONResponse
-from pydantic import ValidationError
 
 from shared.infra_logging import get_logger
 
@@ -113,82 +111,6 @@ async def api_error_handler(request: Request, exc: APIError) -> JSONResponse:
             message=exc.message,
             error_code=exc.error_code,
             details=exc.details,
-            request_path=request.url.path,
-        ),
-    )
-
-
-async def global_api_exception_handler(request: Request, exc: Exception) -> JSONResponse:
-    """Catch-all exception handler for unhandled errors.
-
-    Handles ``ValidationError`` (Pydantic), ``APIError``, ``HTTPException``,
-    and unexpected ``Exception``, returning a consistent JSON response for
-    each category.
-
-    Intended to replace the ad-hoc ``@app.exception_handler(Exception)``
-    in ``main.py`` with a structured format.  Currently registered as a
-    drop-in for the existing handler so existing behaviour is preserved
-    while adding the structured ``error`` envelope.
-    """
-    # --- Pydantic validation errors -------------------------------------------
-    if isinstance(exc, ValidationError):
-        details: dict[str, str] = {}
-        for error in exc.errors():
-            loc = ".".join(str(part) for part in error["loc"])
-            details[loc] = error["msg"]
-
-        logger.warning(
-            f"Validation error on {request.method} {request.url.path}: {exc}",
-            extra={"errors": exc.errors()},
-        )
-
-        return JSONResponse(
-            status_code=422,
-            content=_build_error_response(
-                status_code=422,
-                message="Request validation failed",
-                error_code="VALIDATION_ERROR",
-                details=details,
-                request_path=request.url.path,
-            ),
-        )
-
-    # --- Custom API errors ----------------------------------------------------
-    if isinstance(exc, APIError):
-        logger.warning(
-            f"API error on {request.method} {request.url.path}: {exc.message}",
-            extra={"error_code": exc.error_code, "details": exc.details},
-        )
-
-        return JSONResponse(
-            status_code=exc.status_code,
-            content=_build_error_response(
-                status_code=exc.status_code,
-                message=exc.message,
-                error_code=exc.error_code,
-                details=exc.details,
-                request_path=request.url.path,
-            ),
-        )
-
-    # --- FastAPI HTTPException (let FastAPI handle with its default format) ---
-    if isinstance(exc, HTTPException):
-        raise
-
-    # --- Unexpected errors ----------------------------------------------------
-    tb = traceback.format_exc()
-    logger.error(
-        f"Unhandled exception on {request.method} {request.url.path}: {exc}\n{tb}",
-        exc_info=True,
-    )
-
-    return JSONResponse(
-        status_code=500,
-        content=_build_error_response(
-            status_code=500,
-            message="Internal server error",
-            error_code="INTERNAL_ERROR",
-            details={"type": type(exc).__name__},
             request_path=request.url.path,
         ),
     )

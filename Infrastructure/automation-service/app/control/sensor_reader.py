@@ -1,4 +1,4 @@
-"""Sensor Reader - Handles reading sensor values from Redis."""
+"""Sensor reader for current database measurements."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ logger = get_logger(__name__)
 
 
 class SensorReader:
-    """Reads and validates sensor values from Redis."""
+    """Reads configured current sensor values from the database."""
 
     def __init__(self, database: Any, state: Any):
         """Initialize sensor reader.
@@ -35,17 +35,10 @@ class SensorReader:
         Returns:
             Dict mapping sensor names to values
         """
-        sensor_values: dict[str, float | None] = {}
-
         location_sensors = sensor_mapping.get(location, {})
         cluster_sensors = location_sensors.get(cluster, {})
-
-        for _sensor_type, sensor_name in cluster_sensors.items():
-            if sensor_name:
-                value = await self.database.sensor_repo.get_sensor_value(sensor_name)
-                sensor_values[sensor_name] = value
-
-        return sensor_values
+        sensor_names = [name for name in cluster_sensors.values() if name]
+        return await self.database.sensor_repo.get_sensor_values_batch(sensor_names)
 
     def get_sensor_for_setpoint_type(
         self, location: str, cluster: str, setpoint_type: str, sensor_mapping: dict[str, Any]

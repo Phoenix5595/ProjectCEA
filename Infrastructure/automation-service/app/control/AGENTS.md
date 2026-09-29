@@ -25,7 +25,7 @@ control/
 ├── pid_controller_manager.py      # PID lifecycle
 ├── vpd_controller.py              # VPD calculation
 ├── vpd_cascade_controller.py      # VPD-driven actuator selection
-├── sensor_reader.py               # Redis state reads
+├── sensor_reader.py               # Batched latest-measurement DB reads
 ├── setpoint_manager.py            # Effective setpoint authority
 └── runtime_device_registry.py     # Immutable snapshot publisher
 ```

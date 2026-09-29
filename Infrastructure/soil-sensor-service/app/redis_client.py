@@ -17,6 +17,8 @@ from shared.redis_client import (
 from shared.redis_keys import (
     SENSOR_RAW_MAXLEN,
     SENSOR_RAW_STREAM,
+    SENSOR_UPDATE_CHANNEL,
+    SENSOR_UPDATE_SOIL_CHANNEL,
     SOIL_SENSOR_CURRENT_TTL_SEC,
     sensor_full,
     sensor_full_ts,
@@ -78,66 +80,6 @@ class RedisClient:
         self._stream_pool = None
         self.redis_enabled = False
 
-    async def publish_sensor_update(
-        self,
-        sensor_name: str,
-        value: float,
-        unit: str,
-        bed_name: str | None,
-        location: str = "Flower Room",
-    ) -> bool:
-        """
-        Publish sensor update to Redis channels and store in state.
-
-        Args:
-            sensor_name: Full sensor name (e.g., "soil_sensor_front_bed_temperature")
-            value: Sensor value
-            unit: Unit of measurement
-            bed_name: Assigned bed name, or None while unassigned
-            location: Location/room name
-
-        Returns:
-            True if successful, False otherwise
-        """
-        if not self.redis_enabled:
-            return False
-
-        try:
-            timestamp = datetime.now()
-            timestamp_ms = int(timestamp.timestamp() * 1000)
-
-            # Create message
-            message = {
-                "sensor_name": sensor_name,
-                "value": value,
-                "unit": unit,
-                "timestamp": timestamp.isoformat(),
-                "location": location,
-                "bed": bed_name,
-            }
-
-            # Publish to channels
-            assert self.redis_client is not None, (
-                "redis_client must be connected when redis_enabled is True"
-            )
-            await self.redis_client.publish("sensor:update", json.dumps(message))
-            await self.redis_client.publish("sensor:update:soil", json.dumps(message))
-
-            # Store topology-qualified state with the soil-source freshness TTL.
-            # Soil sensors are currently scoped to main.
-            cluster = "main"
-            full_key = sensor_full(location, cluster, sensor_name)
-            full_ts_key = sensor_full_ts(location, cluster, sensor_name)
-
-            pipe = self.redis_client.pipeline()
-            pipe.setex(full_key, SOIL_SENSOR_CURRENT_TTL_SEC, str(value))
-            pipe.setex(full_ts_key, SOIL_SENSOR_CURRENT_TTL_SEC, str(timestamp_ms))
-            await pipe.execute()
-
-            return True
-        except Exception as e:
-            logger.warning(f"Error publishing to Redis: {e}")
-            return False
 
     async def write_to_stream(
         self,
@@ -192,7 +134,7 @@ class RedisClient:
         location: str = "Flower Room",
     ) -> bool:
         """
-        Publish all sensor readings for a soil sensor.
+        Publish all sensor readings for a soil sensor in one pipeline.
 
         Args:
             sensor_base_name: Base sensor name (e.g., "soil_sensor_front_bed")
@@ -206,15 +148,46 @@ class RedisClient:
             True if all published successfully, False otherwise
         """
         units = {"temperature": "°C", "humidity": "%", "ec": "µS/cm", "ph": "pH"}
+        if not any(sensor_type in units for sensor_type in readings):
+            return True
+        if not self.redis_enabled or self.redis_client is None:
+            return False
 
-        success = True
-        for sensor_type, value in readings.items():
-            if sensor_type in units:
+        try:
+            pipeline = self.redis_client.pipeline(transaction=True)
+            for sensor_type, value in readings.items():
+                unit = units.get(sensor_type)
+                if unit is None:
+                    continue
+
                 sensor_name = f"{sensor_base_name}_{sensor_type}"
-                result = await self.publish_sensor_update(
-                    sensor_name, value, units[sensor_type], bed_name, location
-                )
-                if not result:
-                    success = False
+                timestamp = datetime.now()
+                timestamp_ms = int(timestamp.timestamp() * 1000)
+                message = {
+                    "sensor_name": sensor_name,
+                    "value": value,
+                    "unit": unit,
+                    "timestamp": timestamp.isoformat(),
+                    "location": location,
+                    "bed": bed_name,
+                }
+                pipeline.publish(SENSOR_UPDATE_CHANNEL, json.dumps(message))
+                pipeline.publish(SENSOR_UPDATE_SOIL_CHANNEL, json.dumps(message))
 
-        return success
+                cluster = "main"
+                pipeline.setex(
+                    sensor_full(location, cluster, sensor_name),
+                    SOIL_SENSOR_CURRENT_TTL_SEC,
+                    str(value),
+                )
+                pipeline.setex(
+                    sensor_full_ts(location, cluster, sensor_name),
+                    SOIL_SENSOR_CURRENT_TTL_SEC,
+                    str(timestamp_ms),
+                )
+
+            await pipeline.execute()
+            return True
+        except Exception as exc:
+            logger.warning("Error publishing soil sample to Redis: %s", exc)
+            return False
