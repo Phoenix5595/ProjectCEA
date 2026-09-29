@@ -15,6 +15,7 @@ import psycopg2.extras
 import redis
 import redis.exceptions
 
+from app.sensor_registry import AssignmentCache, MetadataWorker, SensorAssignment
 from shared.db_batch_writer import BatchQueue
 from shared.db_credentials import load_postgres_password
 from shared.infra_logging import get_logger
@@ -25,7 +26,6 @@ from shared.redis_keys import (
     sensor_full,
     sensor_full_ts,
 )
-from app.sensor_registry import AssignmentCache, MetadataWorker, SensorAssignment
 
 logger = get_logger(__name__)
 
@@ -202,7 +202,9 @@ class DataWriter:
         """Create observed metric channels instead of silently dropping them."""
         for device_id, names in by_device.items():
             for sensor_name in names:
-                unit, data_type = CHANNEL_SPECS.get(channel_base(sensor_name) or "", ("", "unknown"))
+                unit, data_type = CHANNEL_SPECS.get(
+                    channel_base(sensor_name) or "", ("", "unknown")
+                )
                 cursor.execute(
                     """
                     INSERT INTO sensor (device_id, name, unit, data_type)
@@ -304,9 +306,8 @@ class DataWriter:
         Returns:
             True if connection is healthy or reconnection succeeded, False otherwise
         """
-        if not self.db_conn:
-            if not self.connect_db():
-                return False
+        if not self.db_conn and not self.connect_db():
+            return False
 
         # Check connection health before write (handles reconnection)
         try:
@@ -368,9 +369,8 @@ class DataWriter:
         Returns:
             True if successful, False otherwise
         """
-        if not self.redis_enabled:
-            if not self.connect_redis():
-                return False
+        if not self.redis_enabled and not self.connect_redis():
+            return False
 
         try:
             timestamp_ms = int(datetime.now().timestamp() * 1000)
@@ -432,9 +432,8 @@ class DataWriter:
         assignment: SensorAssignment | None = None,
     ) -> bool:
         # When DB was lost, try reconnect once so recovery does not require service restart
-        if not self.db_enabled:
-            if not self.connect_db():
-                return False
+        if not self.db_enabled and not self.connect_db():
+            return False
         item = DBWriteItem(
             decoded=decoded,
             raw_data=raw_data,
@@ -462,116 +461,6 @@ class DataWriter:
             "pending": stats["in_queue"],
         }
 
-    def write_to_db(
-        self,
-        decoded: dict[str, Any],
-        raw_data: str,
-        sensors: list[tuple[str, float, str]],
-        timestamp: datetime,
-    ) -> bool:
-        """Write decoded data to TimescaleDB measurement table.
-
-        Args:
-            decoded: Decoded CAN frame data
-            raw_data: Raw hex data string
-            sensors: List of (sensor_name, value, unit) tuples
-            timestamp: Timestamp for the data
-
-        Returns:
-            True if successful, False otherwise
-        """
-        if not self.db_enabled:
-            if not self.connect_db():
-                return False
-
-        # Check connection health before write (handles reconnection)
-        if not self._check_db_connection():
-            return False
-
-        if not sensors:
-            return True
-
-        conn = self.db_conn
-        if conn is None:
-            return False
-
-        try:
-            cursor = conn.cursor()
-            node_id = decoded.get("node_id")
-
-            if not node_id:
-                logger.warning("Missing node_id, skipping measurement write")
-                return False
-
-            # Get device_id from node_id (use cache to avoid repeated queries)
-            device_name = f"Node {node_id}"
-            if device_name not in self.device_cache:
-                cursor.execute(
-                    """
-                    SELECT device_id FROM device WHERE name = %s
-                """,
-                    (device_name,),
-                )
-                device_row = cursor.fetchone()
-                if not device_row:
-                    logger.warning(f"Device not found: {device_name}, skipping measurement write")
-                    return False
-                self.device_cache[device_name] = device_row[0]
-            device_id = self.device_cache[device_name]
-
-            # Insert measurements for each sensor (use cache to avoid repeated queries)
-            measurements = []
-            for sensor_name, value, _unit in sensors:
-                cache_key = (device_id, sensor_name)
-                if cache_key not in self.sensor_cache:
-                    cursor.execute(
-                        """
-                        SELECT sensor_id FROM sensor
-                        WHERE device_id = %s AND name = %s
-                    """,
-                        (device_id, sensor_name),
-                    )
-                    sensor_row = cursor.fetchone()
-                    if not sensor_row:
-                        logger.debug(
-                            f"Sensor not found: {sensor_name} (device: {device_id}), skipping"
-                        )
-                        continue
-                    self.sensor_cache[cache_key] = sensor_row[0]
-                sensor_id = self.sensor_cache[cache_key]
-
-                measurements.append((timestamp, sensor_id, value, None))  # status is None for now
-
-            if not measurements:
-                return True
-
-            # Batch insert measurements (autocommit handles commit automatically)
-            # Use larger page_size for better performance
-            psycopg2.extras.execute_batch(
-                cursor,
-                """
-                INSERT INTO measurement (time, sensor_id, value, status)
-                VALUES (%s, %s, %s, %s)
-                ON CONFLICT (time, sensor_id) DO UPDATE
-                SET value = EXCLUDED.value, status = EXCLUDED.status
-                """,
-                measurements,
-                page_size=500,  # Larger batch for faster inserts
-            )
-
-            # No need to commit - autocommit is enabled
-            return True
-
-        except psycopg2.OperationalError as e:
-            logger.error(f"TimescaleDB connection error: {e}")
-            self.db_conn = None
-            self.db_enabled = False
-            return False
-        except Exception as e:
-            logger.error(f"Error writing to TimescaleDB: {e}")
-            # With autocommit, no rollback needed
-            return False
-
     def write_to_redis_state(
         self,
         location: str,
@@ -591,9 +480,8 @@ class DataWriter:
         Returns:
             True if successful, False otherwise
         """
-        if not self.redis_enabled:
-            if not self.connect_redis():
-                return False
+        if not self.redis_enabled and not self.connect_redis():
+            return False
 
         if not sensors:
             return True
@@ -687,9 +575,8 @@ class DataWriter:
     def close(self):
         """Close all connections and stop flush thread."""
         self._metadata_worker.stop()
-        # BatchQueue.stop() drains remaining items and invokes the flush
-        # callback one last time before joining the worker thread.
-        self._batch_queue.stop(drain_timeout_sec=2.0)
+        # Stop returns after any active flush and the final queue drain.
+        self._batch_queue.stop()
         stats = self.get_stats()
         logger.info(
             f"DB batch stats: queued={stats['queued']}, flushed={stats['flushed']}, dropped={stats['dropped']}"

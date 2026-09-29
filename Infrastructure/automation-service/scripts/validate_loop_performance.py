@@ -1,5 +1,4 @@
 import asyncio
-from datetime import datetime
 import os
 import sys
 import time
@@ -17,6 +16,7 @@ from app.control.control_engine import ControlEngine
 from app.control.decision_event_policy import DecisionEventPolicy
 from app.control.performance_monitor import get_performance_monitor
 from app.control.relay_manager import RelayManager
+from app.control.runtime_device_snapshot import RuntimeDeviceSnapshot
 from app.control.scheduler import Scheduler
 from app.database import DatabaseManager
 from app.hardware.mcp23017 import MCP23017Driver
@@ -55,6 +55,14 @@ class _FakeSMBus:
         return
 
 
+class _FakeRuntimeDeviceRegistry:
+    def __init__(self, snapshot: RuntimeDeviceSnapshot) -> None:
+        self.snapshot = snapshot
+
+    def subscribe(self, consumer) -> None:
+        consumer(self.snapshot)
+
+
 async def run_load_test():
     print("Starting 1Hz Control Loop Load Test (Simulated 10 minutes)...")
 
@@ -62,13 +70,56 @@ async def run_load_test():
     # is replaced with _FakeSMBus via unittest.mock.patch below.
     config = ConfigLoader("Infrastructure/automation-service/automation_config.yaml")
     config._config["control"]["update_interval"] = 1
+    device_hierarchy = {
+        "Flower Room": {
+            "main": {
+                "heater_f_1": {
+                    "device_id": 101,
+                    "device_type": "heating",
+                    "control_mode": "auto",
+                    "channel": 1,
+                }
+            }
+        }
+    }
+    snapshot = RuntimeDeviceSnapshot.create(
+        version=1,
+        hierarchy=device_hierarchy,
+        mode_parameters={
+            ("Flower Room", "main"): {
+                "mode_id": 1,
+                "day_start": "06:00",
+                "night_start": "18:00",
+                "ramp_up": 0,
+                "ramp_down": 0,
+            }
+        },
+        light_intensities={},
+        light_programs=[],
+    )
+    runtime_device_registry = _FakeRuntimeDeviceRegistry(snapshot)
+    config._runtime_device_registry = runtime_device_registry
 
-    db = DatabaseManager()
+    db = DatabaseManager(
+        db_config={
+            "host": "127.0.0.1",
+            "database": "monitoring_test_unused",
+            "user": "test",
+            "password": "unused",
+        }
+    )
     db._db_connected = True
 
-    # Mock repositories to avoid needing real DB
+    # Mock repositories to avoid needing real DB.
     db._sensor_repo = MagicMock()
-    db._sensor_repo.get_sensor_value = AsyncMock(return_value=25.0)
+    sensor_values = {
+        sensor_name: 25.0
+        for clusters in config.get_sensor_mapping().values()
+        for cluster_sensors in clusters.values()
+        for sensor_name in cluster_sensors.values()
+        if sensor_name
+    }
+    db._sensor_repo.get_sensor_values_batch = AsyncMock(return_value=sensor_values)
 
     db._climate_periods_repo = MagicMock()
     db._climate_periods_repo.get_active_period = AsyncMock(
@@ -120,21 +171,30 @@ async def run_load_test():
     )
     db._schedule_repo.get_schedules = AsyncMock(return_value=[])
 
+    db._room_mode_repo = MagicMock()
+    db._room_mode_repo.get_active_mode = AsyncMock(
+        return_value={"mode_name": "flower", "mode_id": 1}
+    )
     db._device_repo = MagicMock()
     db._device_repo.set_device_state = AsyncMock()
 
     db._control_action_repo = MagicMock()
     db._control_action_repo.log_control_action = AsyncMock()
     db._control_action_repo.log_automation_state = AsyncMock()
+    db._control_action_repo.log_automation_state_batch = AsyncMock()
 
     db._pid_repo = MagicMock()
     db._pid_repo.get_pid_parameters = AsyncMock(return_value={"kp": 10, "ki": 0.1, "kd": 0})
+    db._pid_repo.get_pid_control_mode = AsyncMock(
+        return_value={"control_mode": "on_off", "hysteresis_high": 1.0, "hysteresis_low": 0.5}
+    )
 
     # Mock Redis client
     redis_client = MagicMock()
-    redis_client.redis_enabled = True
+    redis_client.redis_enabled = False
     redis_client.read_last_good_value = MagicMock(return_value={"value": 25.0})
     redis_client.check_last_good_age = MagicMock(return_value=(True, 1.0))
+    redis_client.redis_client = None
     db._automation_redis = redis_client
 
     with patch("smbus2.SMBus", new=_FakeSMBus):
@@ -143,8 +203,8 @@ async def run_load_test():
             i2c_address=config.get("hardware.i2c_address", 0x27),
             active_low=config.get("hardware.active_low", True),
         )
-    interlock_manager = InterlockManager(config.get_devices(), config.get_interlocks())
-    relay_manager = RelayManager(mcp_driver, config.get_devices(), interlock_manager)
+    interlock_manager = InterlockManager(runtime_device_registry, config.get_interlocks())
+    relay_manager = RelayManager(mcp_driver, runtime_device_registry, interlock_manager)
 
     # Add missing method that DeviceController expects
     relay_manager.set_channel_state = AsyncMock(return_value=True)
@@ -160,9 +220,11 @@ async def run_load_test():
         config=config,
         scheduler=scheduler,
         rules_engine=rules_engine,
-        alarm_manager=alarm_manager,
+        runtime_device_registry=runtime_device_registry,
         event_policy=event_policy,
+        alarm_manager=alarm_manager,
     )
+    engine._ramps_restored = True
 
     monitor = get_performance_monitor()
     monitor.reset()
@@ -178,8 +240,8 @@ async def run_load_test():
 
         try:
             await engine.run_control_loop()
-        except Exception as e:
-            print(f"  iter {i}: {type(e).__name__}: {e}")
+        except Exception as exc:
+            raise RuntimeError(f"fake control tick {i} failed") from exc
 
         execution_time = time.perf_counter() - start_time
         total_execution_time += execution_time
@@ -205,22 +267,11 @@ async def run_load_test():
     print(f"P99 Execution Time: {loop_stats.get('p99', 0) * 1000:.2f}ms")
     print(f"Ticks > 2.0s: {slow_ticks}")
 
-    # Document findings
-    notepad_dir = ".sisyphus/notepads/MASTER-CONSOLIDATION-PLAN"
-    os.makedirs(notepad_dir, exist_ok=True)
-    with open(os.path.join(notepad_dir, "learnings.md"), "a") as f:
-        f.write(
-            f"\n## Control Loop Performance Validation ({datetime.now().strftime('%Y-%m-%d %H:%M:%S')})\n"
-        )
-        f.write(f"- Iterations: {iterations}\n")
-        f.write(f"- Avg Tick Execution: {loop_stats.get('average', 0) * 1000:.2f}ms\n")
-        f.write(f"- Max Tick Execution: {loop_stats.get('max', 0) * 1000:.2f}ms\n")
-        f.write(f"- P95 Tick Execution: {loop_stats.get('p95', 0) * 1000:.2f}ms\n")
-        f.write(f"- Ticks > 2.0s: {slow_ticks}\n")
-        if slow_ticks == 0 and loop_stats.get("p95", 0) < 1.5:
-            f.write("- Result: PASS - Control loop maintains 1Hz performance targets.\n")
-        else:
-            f.write("- Result: FAIL - Performance degradation detected.\n")
+    sensor_batch_reads = db._sensor_repo.get_sensor_values_batch.call_count
+    print(f"Sensor batch reads: {sensor_batch_reads} ({iterations} ticks; one configured room)")
+    print(f"Mean wall-clock tick time: {total_execution_time / iterations * 1000:.2f}ms")
+    if sensor_batch_reads != iterations:
+        raise RuntimeError(f"expected one sensor batch per tick, observed {sensor_batch_reads}")
 
 
 if __name__ == "__main__":

@@ -1,6 +1,6 @@
 # Backend Service
 
-Sensor data API on port 8000. Serves live values from Redis, historical data from TimescaleDB, native monitoring envelopes, and real-time WebSocket streams.
+Sensor data API on port 8000. Serves live values from Redis, historical data from TimescaleDB, and real-time WebSocket streams.
 
 ## Route groups
 
@@ -11,9 +11,7 @@ Sensor data API on port 8000. Serves live values from Redis, historical data fro
 | `/api/live/all` | `routes/live.py` | All current sensor values |
 | `/api/config/locations` | `routes/config.py` | Available locations |
 | `/ws/{location}` | `websocket.py` | Real-time sensor stream |
-| `/api/sensors/monitoring/range/{location}` | `routes/sensor_monitoring.py` | Historical envelopes for Flower/Veg |
-| `/api/sensors/monitoring/live/{location}/{node}` | `routes/sensor_monitoring.py` | Current monitoring node values |
-| `/api/sensors/monitoring/stats/{location}` | `routes/sensor_monitoring.py` | Exact statistics without series |
+| `/api/sensors/monitoring/*` | monitoring-service `:8005` | Native monitoring data; separate read-only process and pool |
 
 ## Topology validation
 
@@ -33,10 +31,10 @@ The backend historical endpoint uses its own ladder in `app/repositories/sensor_
 
 Grafana uses the separate `get_sensor_data_optimized` ladder in `Infrastructure/database/grafana_performance_migration.sql`. Do not conflate the two consumers.
 
-## Monitoring models
+## Native monitoring ownership
 
-`app/monitoring_models.py` defines strict Pydantic contracts: `MonitoringRange`, `SeriesPoint`, `SensorStatistics`, `MonitoringResponse`, and `compute_tier()`. The monitoring feature supports only `Flower Room` and `Veg Room`.
+`monitoring-service :8005` owns range, publication, and control monitoring APIs. The backend does not register a monitoring router; see `Infrastructure/monitoring-service/AGENTS.md`.
 
 ## Tests
 
-Focused backend tests live in `app/tests/monitoring/` and cover models, series, statistics, and routes. Run them with the local gate in `ARCHITECTURE.md`.
+Backend tests live in `app/tests/` and use fake Redis or guarded disposable fixtures. Native monitoring tests live in `Infrastructure/monitoring-service/tests/`.

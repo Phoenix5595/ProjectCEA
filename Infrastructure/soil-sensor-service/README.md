@@ -69,6 +69,8 @@ RS485 Modbus RTU
         -> Redis state keys (sensor:*) and channels (sensor:update:soil)
 ```
 
+For each Modbus sample, the service batches its supported readings' current-value and timestamp keys and both update notifications in one existing-client transaction. The raw telemetry stream write and TimescaleDB writes remain separate.
+
 ## Troubleshooting
 
 - Permission denied: confirm the user is in `dialout` and re-logged in.

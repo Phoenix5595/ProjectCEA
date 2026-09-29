@@ -31,7 +31,6 @@ from app.control.relay_manager import RelayManager
 from app.control.runtime_device_registry import RuntimeDeviceRegistry
 from app.control.runtime_device_snapshot import RuntimeDeviceSnapshot
 from app.control.scheduler import LOCAL_TZ, Scheduler
-from app.control.sensor_data_manager import SensorDataManager
 from app.control.sensor_reader import SensorReader
 from app.control.setpoint_calculator import SetpointCalculator
 from app.control.setpoint_manager import SetpointManager
@@ -108,7 +107,6 @@ class ControlEngine:
         self._current_observer_failures = 0
 
         # Initialize extracted components
-        self.sensor_data_manager = SensorDataManager(database)
         self.pid_controller_manager = PIDControllerManager(database, event_policy=event_policy)
         control_cfg = config.get_control_config() if config is not None else {}
         self.device_controller = DeviceController(

@@ -53,6 +53,10 @@ ESP32 fullV6 nodes (CAN 250 kbps)
         -> TimescaleDB (batched every 50 messages or 100 ms)
 ```
 
+## Graceful shutdown
+
+On graceful shutdown, the DB batch worker finishes its active write and drains the remaining queue before the service closes the database connection. A stuck flush can exceed the service manager's stop timeout; forced termination can still lose queued measurements.
+
 ## Node mapping
 
 | Node ID | Location | Cluster |

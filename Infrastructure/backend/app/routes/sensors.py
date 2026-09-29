@@ -8,11 +8,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 
 from app.middleware.exception_handler import ValidationAPIError
 from app.models import DataPoint, SensorDataResponse
-from app.redis_client import (
-    get_all_sensor_timestamps,
-    get_all_sensor_values,
-    get_sensor_value,
-)
+from app.redis_client import _read_sensor_snapshot
 from app.redis_stream_reader import RedisStreamReader
 from app.stream_processor import all_entries_qualified, process_stream_entries_to_sensor_data
 from shared.cluster_topology import (
@@ -261,13 +257,13 @@ async def get_live_sensor_data(
     sensor_types = await sensor_repo.get_live_sensors(location, cluster)
 
     response = {}
-    timestamps_ms = await get_all_sensor_timestamps(sensor_types)
+    sensor_snapshot = await _read_sensor_snapshot()
 
-    # Read from Redis for each sensor
+    # Keep the validated configured sensor list and response shape.
     for sensor_type in sensor_types:
-        value = await get_sensor_value(sensor_type)
-        if value is not None:
-            ts_ms = timestamps_ms.get(sensor_type)
+        record = sensor_snapshot.get(sensor_type)
+        if record is not None:
+            _, _, _, value, ts_ms = record
             timestamp = datetime.fromtimestamp(ts_ms / 1000.0) if ts_ms else datetime.now()
 
             # Determine unit based on sensor type
@@ -311,10 +307,9 @@ async def get_all_live_sensor_data():
     """
     get_logger(__name__)
 
-    # Get all sensor values from Redis
-    sensor_values = await get_all_sensor_values()
-
-    if not sensor_values:
+    # Get all current sensor values from Redis with their timestamps.
+    sensor_snapshot = await _read_sensor_snapshot()
+    if not sensor_snapshot:
         return []
 
     # Unit mapping
@@ -328,11 +323,9 @@ async def get_all_live_sensor_data():
         "water_level": "mm",
     }
 
-    timestamps_ms = await get_all_sensor_timestamps(list(sensor_values.keys()))
     result = []
-    for sensor_name, value in sensor_values.items():
-        # Get timestamp
-        ts_ms = timestamps_ms.get(sensor_name)
+    for sensor_name, record in sensor_snapshot.items():
+        _, _, _, value, ts_ms = record
         timestamp = datetime.fromtimestamp(ts_ms / 1000.0) if ts_ms else datetime.now()
 
         # Determine unit

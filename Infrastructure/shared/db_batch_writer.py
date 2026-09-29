@@ -152,26 +152,13 @@ class BatchQueue:
             f"max_queue={self._q.maxsize})"
         )
 
-    def stop(self, drain_timeout_sec: float = 5.0) -> None:
-        """Signal the worker to stop, drain remaining items, and join.
-
-        ``drain_timeout_sec`` bounds the total time spent draining so
-        shutdown can't hang on a slow DB. Items still in the queue after
-        the timeout are dropped (and counted).
-        """
+    def stop(self) -> None:
+        """Stop the worker and wait for its active and queued flushes to finish."""
         self._stop_event.set()
         thread = self._thread
         if thread is None:
             return
-        thread.join(timeout=drain_timeout_sec)
-        if thread.is_alive():
-            logger.warning(
-                f"BatchQueue[{self._name}] flush thread did not join within "
-                f"{drain_timeout_sec}s; {self._q.qsize()} items in queue will be dropped"
-            )
-        # Count anything still in the queue as dropped on shutdown.
-        with self._counter_lock:
-            self._dropped_count += self._q.qsize()
+        thread.join()
 
     # ------------------------------------------------------------------
     # Producer API
@@ -217,8 +204,6 @@ class BatchQueue:
                 time.sleep(self._flush_interval_sec)
 
         # Final drain on shutdown: pull everything remaining and flush.
-        # We do NOT honor drain_timeout_sec here — that's the caller's
-        # concern (handled in stop() via thread.join timeout).
         tail: list[Any] = []
         while True:
             try:
