@@ -43,6 +43,12 @@ import {
   GROUPED_CONSOLE_EVENTS,
 } from './src/features/event-log/config/fixtures.ts'
 import { FIXTURE_PORT, FIXTURE_WS_ORIGIN } from './src/features/monitoring/config/originGuard.ts'
+import {
+  DASHBOARD_DEVICES,
+  DASHBOARD_LIGHT_INTENSITIES,
+  dashboardDeviceDetails,
+  dashboardControlSnapshotFixture,
+} from './tests/monitoring/dashboardDeviceFixtures.ts'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const DIST_DIR = path.resolve(HERE, 'dist')
@@ -850,40 +856,7 @@ const FIXTURE_ROUTES: FixtureRoute[] = [
   },
   {
     re: /^\/api\/devices$/,
-    handler: () => [
-      {
-        location: 'Flower Room',
-        cluster: 'main',
-        device_name: 'exhaust-fan',
-        state: 1,
-        mode: 'auto',
-        channel: 1,
-      },
-      {
-        location: 'Flower Room',
-        cluster: 'main',
-        device_name: 'circulation-fan',
-        state: 1,
-        mode: 'auto',
-        channel: 2,
-      },
-      {
-        location: 'Veg Room',
-        cluster: 'main',
-        device_name: 'circulation-fan',
-        state: 1,
-        mode: 'auto',
-        channel: 3,
-      },
-      {
-        location: 'Lab',
-        cluster: 'main',
-        device_name: 'heater-1',
-        state: 0,
-        mode: 'auto',
-        channel: 4,
-      },
-    ],
+    handler: () => DASHBOARD_DEVICES,
   },
   {
     re: /^\/api\/devices\/([^/]+)\/([^/]+)$/,
@@ -893,22 +866,7 @@ const FIXTURE_ROUTES: FixtureRoute[] = [
       return {
         location,
         cluster,
-        devices: {
-          'exhaust-fan': {
-            device_type: 'fan',
-            display_name: 'Exhaust Fan',
-            mode: 'auto',
-            state: 1,
-            channel: 1,
-          },
-          'circulation-fan': {
-            device_type: 'fan',
-            display_name: 'Circulation Fan',
-            mode: 'auto',
-            state: 1,
-            channel: 2,
-          },
-        },
+        devices: dashboardDeviceDetails(location, cluster),
       }
     },
   },
@@ -918,33 +876,22 @@ const FIXTURE_ROUTES: FixtureRoute[] = [
       const parts = (req.url ?? '').split('/').filter(Boolean)
       const location = decodeURIComponent(parts[2] ?? '')
       const cluster = decodeURIComponent(parts[3] ?? '')
-      if (scenario !== 'dashboard-layout' && scenario !== 'disconnect') {
+      if (
+        location !== 'Flower Room' ||
+        (scenario !== 'dashboard-layout' && scenario !== 'disconnect')
+      ) {
         const now = new Date().toISOString()
-        return {
-          temperature: {
-            data: [{ time: now, timestamp: now, value: 24.5 }],
-            unit: '°C',
-            sensor_name: 'temperature',
-          },
-          humidity: {
-            data: [{ time: now, timestamp: now, value: 65 }],
-            unit: '%',
-            sensor_name: 'humidity',
-          },
-          co2: {
-            data: [{ time: now, timestamp: now, value: 850 }],
-            unit: 'ppm',
-            sensor_name: 'co2',
-          },
-          vpd: {
-            data: [{ time: now, timestamp: now, value: 1.2 }],
-            unit: 'kPa',
-            sensor_name: 'vpd',
-          },
-        }
+        const suffix = location === 'Flower Room' ? (cluster === 'front' ? '_f' : '_b') : '_v'
+        const readings: Array<[string, number, string]> = location === 'Lab'
+          ? [['lab_temp', 24.6, '°C'], ['water_temperature', 19.5, '°C']]
+          : [[`dry_bulb${suffix}`, 24.5, '°C'], [`rh${suffix}`, 65, '%'],
+            [`co2${suffix}`, 850, 'ppm'], [`vpd${suffix}`, 1.2, 'kPa']]
+        return Object.fromEntries(readings.map(([sensor, value, unit]) => [
+          sensor,
+          { data: [{ time: now, timestamp: now, value }], unit, sensor_type: sensor, location, cluster },
+        ]))
       }
       // Dashboard fixtures model stale front readings and live back readings.
-      if (location !== 'Flower Room') return {}
       const now = new Date().toISOString()
       if (cluster === 'back') {
         return {
@@ -1028,50 +975,34 @@ const FIXTURE_ROUTES: FixtureRoute[] = [
   {
     re: /^\/api\/sensors\/live\/all$/,
     handler: () => [
-      {
-        sensor: 'Flower Room_main_temperature',
-        value: 24.5,
-        time: new Date().toISOString(),
-        unit: '°C',
-      },
-      { sensor: 'Flower Room_main_humidity', value: 65, time: new Date().toISOString(), unit: '%' },
-      {
-        sensor: 'Veg Room_main_temperature',
-        value: 23.8,
-        time: new Date().toISOString(),
-        unit: '°C',
-      },
-      { sensor: 'Veg Room_main_humidity', value: 68, time: new Date().toISOString(), unit: '%' },
-      { sensor: 'Lab_main_temperature', value: 22.1, time: new Date().toISOString(), unit: '°C' },
-      { sensor: 'Lab_main_humidity', value: 55, time: new Date().toISOString(), unit: '%' },
+      { sensor: 'Flower Room_front_dry_bulb_f', value: 24.5, time: new Date().toISOString(), unit: '°C' },
+      { sensor: 'Flower Room_back_dry_bulb_b', value: 24.5, time: new Date().toISOString(), unit: '°C' },
+      { sensor: 'Veg Room_main_dry_bulb_v', value: 23.8, time: new Date().toISOString(), unit: '°C' },
+      { sensor: 'Lab_main_lab_temp', value: 24.6, time: new Date().toISOString(), unit: '°C' },
+      { sensor: 'Lab_main_water_temperature', value: 19.5, time: new Date().toISOString(), unit: '°C' },
     ],
   },
   {
     re: /^\/api\/sensor-data$/,
-    handler: () => ({
-      'Flower Room_main_temperature': 24.5,
-      'Flower Room_main_humidity': 65,
-      'Veg Room_main_temperature': 23.8,
-      'Veg Room_main_humidity': 68,
-      Lab_main_temperature: 22.1,
-      Lab_main_humidity: 55,
-      Lab_main_lab_temp: 24.6,
-      Lab_main_water_temperature: 19.5,
-      'Flower Room_main_heating_setpoint': 24,
-      'Flower Room_main_cooling_setpoint': 27,
-      'Flower Room_main_co2_setpoint': 900,
-      'Flower Room_main_vpd_setpoint': 0.95,
-      'Veg Room_main_heating_setpoint': 22,
-      'Veg Room_main_cooling_setpoint': 26,
-      'Veg Room_main_co2_setpoint': 800,
-      'Veg Room_main_vpd_setpoint': 0.9,
-      'Flower Room_main_light_1_intensity': 55,
-      'Flower Room_main_light_2_intensity': 48,
-      'Flower Room_main_light_3_intensity': 60,
-      'Veg Room_main_light_1_intensity': 40,
-      'Veg Room_main_light_2_intensity': 35,
-      'Veg Room_main_light_3_intensity': 42,
-    }),
+    handler: req => {
+      const values: Record<string, number> = {
+        Lab_main_lab_temp: 24.6,
+        Lab_main_water_temperature: 19.5,
+        'Flower Room_main_heating_setpoint': 24,
+        'Flower Room_main_cooling_setpoint': 27,
+        'Flower Room_main_co2_setpoint': 900,
+        'Flower Room_main_vpd_setpoint': 0.95,
+        'Veg Room_main_heating_setpoint': 22,
+        'Veg Room_main_cooling_setpoint': 26,
+        'Veg Room_main_co2_setpoint': 800,
+        'Veg Room_main_vpd_setpoint': 0.9,
+        ...DASHBOARD_LIGHT_INTENSITIES,
+      }
+      const body = JSON.parse(req.body ?? '{}') as { keys?: string[] }
+      return Object.fromEntries(
+        (body.keys ?? []).filter(key => key in values).map(key => [key, values[key]])
+      )
+    },
   },
   {
     re: /^\/api\/status$/,
@@ -1263,37 +1194,12 @@ const FIXTURE_ROUTES: FixtureRoute[] = [
     handler: (_req, scenario) =>
       scenario === 'relay-pid-timeline'
         ? relayTimelineSnapshotFixture()
-        : {
-            generated_at: new Date().toISOString(),
-            sampled_at: new Date().toISOString(),
-            freshness: 'FRESH',
-            registry_version: 1,
-            stale_since: null,
-            dfr_boards: [],
-            relays: Array.from({ length: 16 }, (_, channel) => ({
-              alarm: null,
-              assignment: null,
-              changed_at: null,
-              channel,
-              command_expires_at: null,
-              command_mode: 'scheduled',
-              desired_state: null,
-              last_command_succeeded: null,
-              observed_state: false,
-              physical_relay: channel + 1,
-              pin_label: `GPA${channel}`,
-              prior_command_mode: null,
-              recovery_pending: false,
-              stale: false,
-              syncing: false,
-            })),
-            hardware_alarms: [],
-          },
+        : dashboardControlSnapshotFixture(),
   },
   {
     re: /^\/api\/devices\/registry$/,
     handler: (_req, scenario) =>
-      scenario === 'relay-pid-timeline' ? relayTimelineRegistryFixture() : [],
+      scenario === 'relay-pid-timeline' ? relayTimelineRegistryFixture() : DASHBOARD_DEVICES,
   },
 ]
 
@@ -1347,7 +1253,8 @@ function monitoringPreviewPlugin(): Plugin {
               /^\/api\/pid\/(?:parameters|mode)\//.test(pathname) ||
               /^\/api\/calendar\/events/.test(pathname))) ||
           (req.method === 'PATCH' && /^\/api\/calendar\/events/.test(pathname))
-        const requestBody = isFixtureMutation ? await readRequestBody(req) : undefined
+        const isSensorBulkRead = req.method === 'POST' && pathname === '/api/sensor-data'
+        const requestBody = isFixtureMutation || isSensorBulkRead ? await readRequestBody(req) : undefined
         const scenario = scenarioFrom(req.url ?? '') ?? scenarioFrom(req.headers.referer ?? '')
         const fixtureSession =
           new URLSearchParams((req.url ?? '').split('?')[1] ?? '').get('fixtureSession') ??

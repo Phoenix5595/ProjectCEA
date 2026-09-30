@@ -124,17 +124,23 @@ def _deep_diff(current: Any, previous: Any, path: str = "") -> list[str]:
     return changes
 
 
-def _compute_pending_changes(config: ConfigLoader) -> list[str]:
-    """Compute list of field paths that differ between current config and sidecar."""
-    with open(config.config_path) as f:
-        raw = yaml.safe_load(f) or {}
-    current_subset = _extract_restart_subset(raw)
-    sidecar = _read_sidecar(config)
+def _pending_changes_from_inputs(
+    raw: dict[str, Any],
+    sidecar: dict[str, Any] | None,
+) -> list[str]:
+    """Compare the restart-required subset against the already-read sidecar."""
     if sidecar is None:
         # No sidecar or old format — assume clean state
         return []
     previous_subset = sidecar.get("subset", {})
-    return _deep_diff(current_subset, previous_subset)
+    return _deep_diff(_extract_restart_subset(raw), previous_subset)
+
+
+def _compute_pending_changes(config: ConfigLoader) -> list[str]:
+    """Compute list of field paths that differ between current config and sidecar."""
+    with open(config.config_path) as f:
+        raw = yaml.safe_load(f) or {}
+    return _pending_changes_from_inputs(raw, _read_sidecar(config))
 
 
 def _merge_update(raw: dict[str, Any], update: ConfigUpdateRequest) -> dict[str, Any]:
@@ -172,7 +178,7 @@ async def get_system_config(config: ConfigLoader = Depends(get_config)) -> dict[
     control = raw.get("control", {})
     current_hash = _compute_restart_hash(raw)
     sidecar = _read_sidecar(config)
-    pending_changes = _compute_pending_changes(config)
+    pending_changes = _pending_changes_from_inputs(raw, sidecar)
 
     return {
         "hardware": hardware,
@@ -251,33 +257,42 @@ async def restart_service(
     context: MutationRequestContext = Depends(get_mutation_request_context),
     sink: OperationalEventSink = Depends(get_mutation_event_sink),
 ) -> dict[str, Any]:
-    """Write restart-hash sidecar, schedule systemctl restart, return 202."""
+    """Write restart-hash sidecar, then schedule one deferred systemctl restart."""
+    probe_cmd = [
+        "sudo",
+        "-n",
+        "-l",
+        "--",
+        "systemctl",
+        "restart",
+        "automation-service.service",
+    ]
     cmd = ["sudo", "-n", "systemctl", "restart", "automation-service.service"]
 
-    # Probe sudo
+    # Authorize only when sudo -l lists the restart command; this never executes
+    # the restart itself.
     try:
-        result = subprocess.run(cmd, capture_output=True, timeout=5)
-        if result.returncode != 0:
-            probe = subprocess.run(
-                ["sudo", "-n", "systemctl", "is-active", "automation-service.service"],
-                capture_output=True,
-                timeout=5,
-            )
-            if probe.returncode != 0 and b"a password is required" in probe.stderr.lower():
-                raise HTTPException(
-                    status_code=HTTP_403_FORBIDDEN,
-                    detail=f"sudo probe failed: {' '.join(cmd)}",
-                )
+        result = subprocess.run(
+            probe_cmd,
+            capture_output=True,
+            timeout=5,
+            check=False,
+        )
     except FileNotFoundError:
         raise HTTPException(
             status_code=HTTP_403_FORBIDDEN,
-            detail=f"sudo probe failed: {' '.join(cmd)}",
+            detail=f"sudo probe failed: {' '.join(probe_cmd)}",
         ) from None
     except subprocess.TimeoutExpired:
         raise HTTPException(
             status_code=HTTP_403_FORBIDDEN,
-            detail=f"sudo probe failed: {' '.join(cmd)}",
+            detail=f"sudo probe failed: {' '.join(probe_cmd)}",
         ) from None
+    if result.returncode != 0:
+        raise HTTPException(
+            status_code=HTTP_403_FORBIDDEN,
+            detail=f"sudo probe failed: {' '.join(probe_cmd)}",
+        )
 
     with open(config.config_path) as f:
         raw = yaml.safe_load(f) or {}
@@ -299,14 +314,13 @@ async def restart_service(
         context,
     )
 
-    asyncio.get_event_loop().call_later(
-        1.0,
-        lambda: subprocess.Popen(
-            cmd,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        ),
-    )
+    def deferred_restart() -> None:
+        try:
+            subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except OSError:
+            logger.exception("Failed to spawn systemctl restart")
+
+    asyncio.get_event_loop().call_later(1.0, deferred_restart)
 
     return {
         "status": "restarting",

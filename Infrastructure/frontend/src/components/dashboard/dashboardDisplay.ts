@@ -43,10 +43,10 @@ function getSensorKey(
  * back), older shapes use unsuffixed names. Look up every plausible key.
  */
 const CLIMATE_KEY_CANDIDATES: Record<'temp' | 'rh' | 'co2' | 'vpd', string[]> = {
-  temp: ['dry_bulb_f', 'dry_bulb_b', 'dry_bulb', 'temperature_sensor', 'lab_temp'],
-  rh: ['rh_f', 'rh_b', 'relative_humidity', 'rh'],
-  co2: ['co2_f', 'co2_b', 'co2'],
-  vpd: ['vpd_f', 'vpd_b', 'vpd'],
+  temp: ['dry_bulb_f', 'dry_bulb_b', 'dry_bulb_v', 'dry_bulb', 'temperature_sensor', 'lab_temp'],
+  rh: ['rh_f', 'rh_b', 'rh_v', 'relative_humidity', 'rh'],
+  co2: ['co2_f', 'co2_b', 'co2_v', 'co2'],
+  vpd: ['vpd_f', 'vpd_b', 'vpd_v', 'vpd'],
 }
 
 function getClimateKey(

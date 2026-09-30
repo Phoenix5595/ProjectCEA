@@ -106,5 +106,125 @@ class BatchQueueShutdownTests(unittest.TestCase):
         self.assertEqual(stats["in_queue"], 0)
 
 
+class FakeClock:
+    """Scripted time module: independent monotonic/wall ticks per read."""
+
+    def __init__(
+        self,
+        monotonic_ticks: list[float],
+        wall_ticks: list[float],
+        reads: list[tuple[str, float]],
+    ) -> None:
+        self._monotonic_ticks = list(monotonic_ticks)
+        self._wall_ticks = list(wall_ticks)
+        self._reads = reads
+
+    def monotonic(self) -> float:
+        value = self._monotonic_ticks.pop(0) if self._monotonic_ticks else 1.0
+        self._reads.append(("monotonic", value))
+        return value
+
+    def time(self) -> float:
+        value = self._wall_ticks.pop(0) if self._wall_ticks else 1.0
+        self._reads.append(("time", value))
+        return value
+
+
+class BatchQueueDeadlineTests(unittest.TestCase):
+    """Deadline semantics of BatchQueue._drain_up_to_threshold (step 5).
+
+    The module-level ``time`` object is replaced by a scripted fake clock
+    (restored in a finally), so no test sleeps and no wall-clock race exists.
+    """
+
+    def setUp(self) -> None:
+        import shared.db_batch_writer as mod
+
+        self._mod = mod
+        self._saved_time = mod.time
+
+    def tearDown(self) -> None:
+        self._mod.time = self._saved_time
+
+    def _run_drain(
+        self,
+        monotonic_ticks: list[float],
+        wall_ticks: list[float],
+        items_to_preload: list[str],
+    ) -> tuple[list[str], list[tuple[str, float]]]:
+        import queue as queue_mod
+
+        reads: list[tuple[str, float]] = []
+        q: queue_mod.Queue[str] = queue_mod.Queue()
+        for item in items_to_preload:
+            q.put(item)
+        drain = BatchQueue.__new__(BatchQueue)
+        drain._q = q
+        drain._flush_threshold = 5
+        drain._flush_interval_sec = 0.1
+        self._mod.time = FakeClock(monotonic_ticks, wall_ticks, reads)
+        try:
+            return list(drain._drain_up_to_threshold()), reads
+        finally:
+            self._mod.time = self._saved_time
+
+    def test_scripted_monotonic_progression_keeps_loop_open(self) -> None:
+        # Given: interval 0.1, monotonic 0.00 -> 0.04 (remaining 0.06) and a
+        # far-past-budget read afterwards; threshold never reached.
+        items, _reads = self._run_drain(
+            monotonic_ticks=[0.0, 0.04, 0.04, 1.0],
+            wall_ticks=[1_000_000.0] * 4,
+            items_to_preload=["a", "b"],
+        )
+        # Then: the loop keeps waiting past 0.04 and drains both items.
+        self.assertEqual(items, ["a", "b"])
+
+    def test_wall_clock_jump_does_not_change_timeout_decision(self) -> None:
+        # Given: wall clock jumps forward 9s between the start read and the
+        # post-get read (pre-edit time.time() expired early and dropped items).
+        items, reads = self._run_drain(
+            monotonic_ticks=[0.0, 0.0, 1.0],
+            wall_ticks=[1_000.0, 1_009.0, 1_000.0],
+            items_to_preload=["early"],
+        )
+        # Then: the monotonic deadline ignores the wall jump and keeps waiting
+        # (the item IS drained), and the decision used monotonic reads only.
+        self.assertEqual(items, ["early"])
+        self.assertTrue(all(kind == "monotonic" for kind, _value in reads))
+
+    def test_wall_clock_backward_jump_does_not_extend_budget(self) -> None:
+        # Given: wall clock jumps backward between reads (pre-edit time.time()
+        # inflated remaining by +5s and could wait far beyond the interval).
+        items, reads = self._run_drain(
+            monotonic_ticks=[0.0, 0.0, 1.0],
+            wall_ticks=[1_000.0, 995.0, 1_000.0],
+            items_to_preload=["only"],
+        )
+        # Then: the drain decision is the same monotonic behavior; the wall
+        # ticks are never consulted for the deadline.
+        self.assertEqual(items, ["only"])
+        self.assertTrue(all(kind == "monotonic" for kind, _value in reads))
+
+    def test_empty_queue_exits_at_first_past_budget_read(self) -> None:
+        # Given: nothing queued; monotonic reads start 0.0 then past budget.
+        items, _reads = self._run_drain(
+            monotonic_ticks=[0.0, 1.0],
+            wall_ticks=[1_000.0, 1_000.0],
+            items_to_preload=[],
+        )
+        # Then: no items and one timed get attempt that raised Empty.
+        self.assertEqual(items, [])
+
+    def test_threshold_exit_drains_only_threshold_items(self) -> None:
+        # Given: queue preloaded above the threshold; reads stay in-budget.
+        items, _reads = self._run_drain(
+            monotonic_ticks=[0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            wall_ticks=[1_000.0] * 6,
+            items_to_preload=["a", "b", "c", "d", "e", "f"],
+        )
+        # Then: exactly threshold items drain in one pass.
+        self.assertEqual(items, ["a", "b", "c", "d", "e"])
+
+
 if __name__ == "__main__":
     _ = unittest.main()

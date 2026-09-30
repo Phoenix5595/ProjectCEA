@@ -93,7 +93,10 @@ export function useWebSocket({
       const key = `${message.location}_${message.cluster}_${sensorKey}`
       const receivedAtMs = Date.now()
       const numericValue = Number(message.value)
-      const invalid = !Number.isFinite(numericValue)
+      // A missing or non-finite payload (null/undefined/NaN) is an invalid
+      // observation, not a numeric 0 sample: publish metadata only and keep
+      // the last good numeric reading.
+      const invalid = message.value == null || !Number.isFinite(numericValue)
 
       setSensorMeta(prev => ({
         ...prev,

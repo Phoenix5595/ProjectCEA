@@ -20,13 +20,6 @@ vi.mock('../../hooks/useSensorPolling', () => ({
     flowerClusterWarnings: [],
     loading: false,
   }),
-  deriveZoneSensorStatus: vi.fn(() => ({
-    quality: 'missing',
-    newestObservedAtMs: null,
-    ageMs: null,
-    source: null,
-    error: null,
-  })),
 }))
 vi.mock('../../hooks/useDashboardLiveData', () => ({
   useDashboardLiveData: () => ({

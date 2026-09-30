@@ -3,21 +3,19 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+import logging
 
 from fastapi import APIRouter, HTTPException, Query, Request
 
 from app.middleware.exception_handler import ValidationAPIError
 from app.models import DataPoint, SensorDataResponse
 from app.redis_client import _read_sensor_snapshot
-from app.redis_stream_reader import RedisStreamReader
-from app.stream_processor import all_entries_qualified, process_stream_entries_to_sensor_data
 from shared.cluster_topology import (
     ClusterMismatchError,
     UnknownRoomError,
     assert_sensor_cluster,
 )
 from shared.infra_logging import get_logger
-from shared.redis_keys import SENSOR_RAW_STREAM
 
 router = APIRouter(prefix="/api/sensors", tags=["sensors"])
 
@@ -91,15 +89,20 @@ async def get_sensor_data(
 
     sensor_repo = get_sensor_repository()
 
-    # Debug: Log raw query parameters
-    query_params = dict(request.query_params)
-    print(f"\n{'=' * 80}")
-    logger.debug(f"API ENDPOINT CALLED: /api/sensors/{location}/{cluster}")
-    logger.debug(f"API: Raw query params: {query_params}")
-    logger.debug(
-        f"API: Parsed parameters - start_time: {start_time} (type: {type(start_time)}), end_time: {end_time} (type: {type(end_time)}), time_range: {time_range}"
-    )
-    print(f"{'=' * 80}\n")
+    # Direct reference: no eager dict copy. Datetime fallback lookups
+    # below stay unconditional.
+    query_params = request.query_params
+    if logger.isEnabledFor(logging.DEBUG):
+        logger.debug(f"API ENDPOINT CALLED: /api/sensors/{location}/{cluster}")
+        logger.debug(f"API: Raw query params: {query_params}")
+        logger.debug(
+            "API: Parsed parameters - start_time: %s (type: %s), end_time: %s (type: %s), time_range: %s",
+            start_time,
+            type(start_time),
+            end_time,
+            type(end_time),
+            time_range,
+        )
 
     # Try to parse datetime from query string if FastAPI didn't parse it
     if start_time is None and "start_time" in query_params:
@@ -139,75 +142,20 @@ async def get_sensor_data(
         f"API: Fetching sensor data for {location}/{cluster} from {start_time} to {end_time}"
     )
 
-    # Calculate duration to determine if we should check stream first
-    duration_seconds = (end_time - start_time).total_seconds()
-    duration_hours = duration_seconds / 3600
+    # DB-authoritative history: every resolved window (explicit or preset)
+    # is served by exactly one repository call — the previous recent-window
+    # Redis Stream branch could return only a partial stream snapshot and
+    # silently dropped DB points at the window edges.
+    sensor_data = await sensor_repo.get_sensor_data(location, cluster, start_time, end_time)
 
-    # Check Redis Stream first for recent queries (within last 6 hours)
-    # Stream has ~100,000 messages which covers roughly last day
-    sensor_data: dict[str, list[DataPoint]] = {}
-    use_stream = duration_hours <= 6  # Check stream for queries within 6 hours
-
-    if use_stream:
-        try:
-            # Async-context-managed: connect + close guaranteed, no stale
-            # connection leak on exception. Per-request connection for now
-            # (Phase 4 may pool these).
-            async with RedisStreamReader(stream_name=SENSOR_RAW_STREAM) as stream_reader:
-                if stream_reader.client is None:
-                    # connect() failed inside __aenter__ — fall through to DB.
-                    use_stream = False
-                else:
-                    logger.debug(
-                        f"API: Checking Redis Stream for recent data (time range: {duration_hours:.2f} hours)"
-                    )
-                    stream_entries = await stream_reader.read_by_time_range(
-                        start_time=start_time,
-                        end_time=end_time,
-                        sensor_type="can",  # Only CAN sensors for this endpoint
-                        max_count=20000,
-                    )
-
-                    if stream_entries:
-                        logger.debug(f"API: Found {len(stream_entries)} entries in Redis Stream")
-                        if not all_entries_qualified(stream_entries):
-                            # Any legacy/unqualified CAN entry in the interval
-                            # could mix locations or hide reassignment, so the
-                            # stream result is bypassed entirely and the
-                            # database (metadata-consistent) path is used.
-                            logger.debug(
-                                "API: Unqualified CAN stream entries in range; "
-                                "bypassing stream and querying TimescaleDB"
-                            )
-                            use_stream = False
-                        else:
-                            stream_sensor_data = process_stream_entries_to_sensor_data(
-                                stream_entries, location, cluster
-                            )
-
-                            if stream_sensor_data:
-                                logger.debug(
-                                    f"API: Processed {len(stream_sensor_data)} sensor types from Stream"
-                                )
-                                sensor_data = stream_sensor_data
-                                total_points = sum(len(points) for points in sensor_data.values())
-                                if total_points > 0:
-                                    logger.debug(
-                                        f"API: Using data from Redis Stream ({total_points} total data points)"
-                                    )
-                                    use_stream = True
-        except Exception as e:
-            logger.warning(f"Error reading from Redis Stream: {e}, falling back to database")
-            use_stream = False
-
-    # If stream didn't provide data or time range is too old, query database
-    if not sensor_data or not use_stream:
-        logger.debug("API: Querying TimescaleDB for sensor data")
-        sensor_data = await sensor_repo.get_sensor_data(location, cluster, start_time, end_time)
-
-    logger.debug(f"API: Retrieved {len(sensor_data)} sensor types: {list(sensor_data.keys())}")
-    for sensor_type, data_points in sensor_data.items():
-        logger.debug(f"API: {sensor_type}: {len(data_points)} data points")
+    if logger.isEnabledFor(logging.DEBUG):
+        logger.debug(
+            "API: Retrieved %d sensor types: %s",
+            len(sensor_data),
+            list(sensor_data.keys()),
+        )
+        for sensor_type, data_points in sensor_data.items():
+            logger.debug(f"API: {sensor_type}: {len(data_points)} data points")
 
     # Convert to response format
     response = {}
@@ -223,7 +171,8 @@ async def get_sensor_data(
             unit=data_points[0].unit if data_points else "",
         )
 
-    logger.debug(f"API: Returning {len(response)} sensors in response")
+    if logger.isEnabledFor(logging.DEBUG):
+        logger.debug(f"API: Returning {len(response)} sensors in response")
     return response
 
 

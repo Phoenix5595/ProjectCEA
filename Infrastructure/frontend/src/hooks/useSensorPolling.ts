@@ -11,12 +11,14 @@ import {
 import { apiClient } from '../services/api'
 import type { Device } from '../types/device'
 import {
-  SENSOR_STALE_AFTER_MS,
   type SensorSampleMeta,
   type ZoneSensorStatus,
 } from '../types/sensor'
 import { logger } from '../utils/logger'
 import { parseLiveSnapshot } from '../utils/sensorLive'
+import { projectZoneSensorStatus, summarizeZoneSensors, type ZoneSensorSummary } from './zoneSensorSummary'
+
+
 export interface UseSensorPollingOptions {
   interval?: number
 }
@@ -64,52 +66,6 @@ async function loadLightDisplayNamesMap(): Promise<Record<string, string>> {
   )
   return Object.fromEntries(pairs.flat())
 }
-export function deriveZoneSensorStatus(
-  location: string,
-  cluster: string,
-  sensorMeta: Record<string, SensorSampleMeta>,
-  error: string | null,
-  nowMs: number
-): ZoneSensorStatus {
-  const prefix = `${location}_${cluster}_`
-  const entries = Object.entries(sensorMeta)
-    .filter(([key]) => key.startsWith(prefix))
-    .map(([, value]) => value)
-  const invalidEntries = entries.filter(entry => entry.invalid)
-  const validEntries = entries.filter(entry => !entry.invalid)
-
-  if (validEntries.length === 0) {
-    return {
-      quality: invalidEntries.length > 0 ? 'bad' : 'missing',
-      newestObservedAtMs: null,
-      ageMs: null,
-      source: entries[0]?.source ?? null,
-      error,
-    }
-  }
-
-  const newestEntry = validEntries.reduce((newest, entry) => {
-    const newestTime = newest.observedAtMs ?? newest.receivedAtMs
-    const entryTime = entry.observedAtMs ?? entry.receivedAtMs
-    return entryTime > newestTime ? entry : newest
-  })
-  const newestObservedAtMs = validEntries.reduce<number | null>(
-    (newest, entry) =>
-      entry.observedAtMs != null && (newest == null || entry.observedAtMs > newest)
-        ? entry.observedAtMs
-        : newest,
-    null
-  )
-  const ageMs = Math.max(0, nowMs - (newestEntry.observedAtMs ?? newestEntry.receivedAtMs))
-
-  return {
-    quality: ageMs > SENSOR_STALE_AFTER_MS ? 'stale' : 'live',
-    newestObservedAtMs,
-    ageMs,
-    source: newestEntry.source,
-    error,
-  }
-}
 
 /**
  * Hook for polling sensor data and device state for the dashboard.
@@ -132,12 +88,14 @@ export function useSensorPolling({
 
   const loadInitialData = useCallback(async () => {
     const pollZones = getDashboardPollZones()
-    const bulkKeys = buildDashboardBulkSensorKeys(pollZones)
     try {
-      const [devicesData, setpointData, nameMap] = await Promise.all([
-        apiClient.getAllDevices().catch(() => []),
+      const devicesRequest = apiClient.getAllDevices().catch(() => [])
+      const namesRequest = loadLightDisplayNamesMap()
+      const devicesData = await devicesRequest
+      const bulkKeys = buildDashboardBulkSensorKeys(pollZones, devicesData)
+      const [setpointData, nameMap] = await Promise.all([
         apiClient.getSensorDataBulk(bulkKeys).catch(() => ({})),
-        loadLightDisplayNamesMap(),
+        namesRequest,
       ])
 
       if (devicesData) setDevices(devicesData)
@@ -187,9 +145,9 @@ export function useSensorPolling({
           }
         })
 
-        const prefixes = new Set(successful.map(zone => `${zone.location}_${zone.cluster}_`))
+        const successfulPrefixes = successful.map(zone => `${zone.location}_${zone.cluster}_`)
         const removedLiveKeys = [...liveKeysRef.current].filter(key =>
-          [...prefixes].some(prefix => key.startsWith(prefix))
+          successfulPrefixes.some(prefix => key.startsWith(prefix))
         )
         for (const key of removedLiveKeys) liveKeysRef.current.delete(key)
 
@@ -286,6 +244,20 @@ export function useSensorPolling({
     return () => clearInterval(warningInterval)
   }, [])
 
+  // Per-configured-zone summaries depend only on the meta record; the status
+  // projection runs whenever a status clock tick, zone error change, or new
+  // metadata arrives so ages stay fresh without re-deriving the summaries.
+  const zoneSummaries: Record<string, ZoneSensorSummary> = useMemo(
+    () =>
+      Object.fromEntries(
+        getSensorPollZones().map(zone => {
+          const key = `${zone.location}:${zone.cluster}`
+          return [key, summarizeZoneSensors(`${zone.location}_${zone.cluster}_`, sensorMeta)]
+        })
+      ),
+    [sensorMeta]
+  )
+
   const zoneStatus = useMemo(
     () =>
       Object.fromEntries(
@@ -293,17 +265,15 @@ export function useSensorPolling({
           const key = `${zone.location}:${zone.cluster}`
           return [
             key,
-            deriveZoneSensorStatus(
-              zone.location,
-              zone.cluster,
-              sensorMeta,
+            projectZoneSensorStatus(
+              zoneSummaries[key],
               zoneErrors[key] ?? null,
               statusNowMs
             ),
           ]
         })
       ),
-    [sensorMeta, statusNowMs, zoneErrors]
+    [zoneSummaries, statusNowMs, zoneErrors]
   )
 
   return {
