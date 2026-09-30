@@ -50,3 +50,23 @@ def get_sensor_registry_repository() -> SensorRegistryRepository:
     if _sensor_registry_repository is None:
         _sensor_registry_repository = SensorRegistryRepository(db_manager=get_db_manager())
     return _sensor_registry_repository
+
+
+async def close_database_resources() -> None:
+    """Lifespan shutdown adapter: close the existing DB manager if any.
+
+    Closes only a manager that was already created (no getter-based
+    shutdown initialization) and clears the cached manager and repository
+    globals in ``finally`` so a later ``get_db_manager()`` on a fresh loop
+    constructs a new manager instead of reusing the closed one. Unrelated
+    config dependencies are not touched.
+    """
+    global _db_manager, _sensor_repository, _sensor_registry_repository
+    try:
+        manager = _db_manager
+        if manager is not None:
+            await manager.close()
+    finally:
+        _db_manager = None
+        _sensor_repository = None
+        _sensor_registry_repository = None

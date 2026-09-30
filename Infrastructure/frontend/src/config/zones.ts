@@ -10,6 +10,8 @@
  * not need a coordinated rename.
  */
 
+import type { Device } from '../types/device'
+
 import {
   deviceClusterFor,
   knownRooms,
@@ -131,7 +133,7 @@ export function getFlowerDualClimateLayers(): FlowerClimateLayer[] {
 }
 
 /** Redis bulk keys for dashboard setpoints / light intensities for all poll zones. */
-export function buildDashboardBulkSensorKeys(zones: Zone[]): string[] {
+export function buildDashboardBulkSensorKeys(zones: Zone[], devices: readonly Device[]): string[] {
   const keys = new Set<string>()
   for (const z of zones) {
     const p = `${z.location}_${z.cluster}_`
@@ -144,8 +146,14 @@ export function buildDashboardBulkSensorKeys(zones: Zone[]): string[] {
     keys.add(`${p}cooling_setpoint`)
     keys.add(`${p}co2_setpoint`)
     keys.add(`${p}vpd_setpoint`)
-    for (let i = 1; i <= 3; i++) {
-      keys.add(`${p}light_${i}_intensity`)
+    for (const device of devices) {
+      if (
+        device.location === z.location &&
+        device.cluster === z.cluster &&
+        device.device_name.startsWith('light_')
+      ) {
+        keys.add(`${p}${device.device_name}_intensity`)
+      }
     }
   }
   return [...keys]

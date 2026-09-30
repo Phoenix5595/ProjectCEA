@@ -73,15 +73,16 @@ const METRIC_ALIASES: Record<ClimateMetric, string[]> = {
   temperature: [
     'dry_bulb_f',
     'dry_bulb_b',
+    'dry_bulb_v',
     'dry_bulb',
     'temperature_sensor',
     'lab_temp',
     'temperature',
     'temp',
   ],
-  rh: ['rh_f', 'rh_b', 'relative_humidity', 'rh', 'humidity'],
-  vpd: ['vpd_f', 'vpd_b', 'vpd'],
-  co2: ['co2_f', 'co2_b', 'co2'],
+  rh: ['rh_f', 'rh_b', 'rh_v', 'relative_humidity', 'rh', 'humidity'],
+  vpd: ['vpd_f', 'vpd_b', 'vpd_v', 'vpd'],
+  co2: ['co2_f', 'co2_b', 'co2_v', 'co2'],
 }
 
 const METRIC_LABELS: Record<ClimateMetric, { label: string; unit: string }> = {

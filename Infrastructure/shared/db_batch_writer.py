@@ -221,9 +221,9 @@ class BatchQueue:
         """Pull items from the queue until we have ``flush_threshold`` items
         or ``flush_interval_sec`` elapses, whichever comes first."""
         items: list[Any] = []
-        start_ts = time.time()
+        start_ts = time.monotonic()
         while len(items) < self._flush_threshold:
-            remaining = self._flush_interval_sec - (time.time() - start_ts)
+            remaining = self._flush_interval_sec - (time.monotonic() - start_ts)
             if remaining <= 0:
                 break
             try:

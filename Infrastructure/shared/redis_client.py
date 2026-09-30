@@ -46,6 +46,7 @@ third-party ``redis`` package. Same flat-module convention as
 
 from __future__ import annotations
 
+import asyncio
 import os
 from typing import Any
 
@@ -203,9 +204,53 @@ async def create_async_client(
         retry_on_timeout=retry_on_timeout,
         health_check_interval=health_check_interval,
     )
-    client: _async_redis.Redis = _async_redis.Redis(connection_pool=pool)
-    if ping:
-        await client.ping()
+    # ``None`` until construction succeeds: a constructor failure must
+    # reclaim the constructed pool (and client, if it was built) instead
+    # of leaking it.
+    client: _async_redis.Redis | None = None
+    init_error: BaseException | None = None
+    try:
+        client = _async_redis.Redis(connection_pool=pool)
+        if ping:
+            await client.ping()
+    except BaseException as exc:
+        # Constructor or initial ping failed (including caller
+        # cancellation): reclaim whatever was constructed so nothing
+        # leaks. The bounded cleanup task is awaited shielded; if the
+        # caller is repeatedly cancelled during the shield wait we keep
+        # waiting for the SAME bounded task until it finishes, then
+        # re-raise the original initialization exception.
+        init_error = exc
+
+        async def _reclaim() -> None:
+            try:
+                await asyncio.wait_for(close_async(client, pool, name=name), timeout=5.0)
+            except TimeoutError:
+                logger.warning("%s cleanup timed out after failed init", name)
+            except asyncio.CancelledError:
+                raise
+            except Exception as cleanup_exc:
+                logger.warning("%s cleanup failed after init error: %s", name, cleanup_exc)
+
+        cleanup_task = asyncio.ensure_future(_reclaim())
+        while True:
+            try:
+                await asyncio.shield(cleanup_task)
+                break
+            except asyncio.CancelledError:
+                if cleanup_task.done():
+                    # The cancellation came from the cleanup task itself
+                    # (it was cancelled rather than completing): log and
+                    # move on to the original error instead of busy-looping.
+                    if cleanup_task.cancelled():
+                        logger.warning("%s cleanup task was cancelled before finishing", name)
+                    break
+                # Caller cancelled during the shield wait: keep waiting
+                # for the same bounded task, then re-raise below.
+                continue
+        if init_error is not None:
+            raise init_error
+    assert client is not None, "success path always has a constructed client"
     resolved_url = url or redis_url_from_env()
     logger.info(
         f"Connected to Redis ({name}) at {resolved_url} "

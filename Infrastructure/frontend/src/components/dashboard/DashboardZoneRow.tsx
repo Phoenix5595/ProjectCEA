@@ -31,7 +31,7 @@ export interface DashboardZoneRowProps {
   sensorData: Record<string, number>
   statusDevices?: Record<
     string,
-    Record<string, { intensity?: number; load_percent?: number }>
+    Record<string, Record<string, { intensity?: number; load_percent?: number }>>
   > | null
   icon: ReactNode
   lightDisplayNames?: Record<string, string>
@@ -47,11 +47,11 @@ export interface DashboardZoneRowProps {
 
 const LIGHT_DISPLAY_NAMES: Record<string, Record<string, string>> = {
   'Veg Room': {
-    light_1: 'Eyefinity Top',
-    light_2: 'Ridgetop Bottom Right',
-    light_3: 'Ridgetop Bottom Left',
+    light_v_1: 'Eyefinity Top',
+    light_v_2: 'Ridgetop Bottom Right',
+    light_v_3: 'Ridgetop Bottom Left',
   },
-  'Flower Room': { light_1: 'Chilled Front', light_2: 'Apache', light_3: 'Chilled Back' },
+  'Flower Room': { light_f_1: 'Chilled Front', light_f_2: 'Apache', light_f_3: 'Chilled Back' },
   Lab: {},
 }
 
@@ -288,20 +288,57 @@ export const DashboardZoneRow = memo(function DashboardZoneRow({
         ? `Database-backed active grow mode is ${activeModeLabel}.`
         : 'Database-backed active grow mode has not been reported yet.'
   const transitionText = isLab ? '' : formatTransitionCountdown(nextTransition?.at ?? null, now)
-  const trendKeys = trendMetrics(location, trendData)
-  const deviceStateCounts = roomDevices.reduce(
-    (counts, device) => {
-      if (device.state === 1) counts.on += 1
-      else if (device.state === 0) counts.off += 1
-      else counts.unknown += 1
-      return counts
-    },
-    { on: 0, off: 0, unknown: 0 }
-  )
-  const deviceStatus = statusDevices as
-    | Record<string, Record<string, Record<string, { intensity?: number; load_percent?: number }>>>
-    | null
-    | undefined
+  const trendKeys = isLab ? [] : trendMetrics(location, trendData)
+  const deviceStatus = statusDevices
+  const lightReadouts = lightDevices.map(device => {
+    const deviceName = device.device_name
+    const name =
+      lightDisplayNames?.[`${location}_${cluster}_${deviceName}`] ??
+      LIGHT_DISPLAY_NAMES[location]?.[deviceName] ??
+      deviceName
+    const intensity =
+      deviceStatus?.[location]?.[cluster]?.[deviceName]?.intensity ??
+      sensorData[`${location}_${cluster}_${deviceName}_intensity`]
+    return (
+      <div key={deviceName} className="flex items-center justify-between gap-1 text-10">
+        <span className="text-text-secondary truncate flex-1 min-w-0" title={name}>
+          {name}
+        </span>
+        <span
+          className="text-accent-data font-mono tabular-nums shrink-0 cursor-help"
+          title="Reported dimmer intensity, in percent."
+        >
+          {intensity != null ? `${Number(intensity).toFixed(0)}%` : '--'}
+        </span>
+        <span
+          className="shrink-0 cursor-help"
+          title={`Reported light state: ${device.state === 1 ? 'ON' : device.state === 0 ? 'OFF' : 'unknown'}.`}
+        >
+          {device.state === 1 ? '☀️' : device.state === 0 ? '🌙' : '?'}
+        </span>
+      </div>
+    )
+  })
+  const labSensorStatus = sensorStatuses[cluster]
+  const labReadout = isLab ? (
+    <div
+      role="group"
+      aria-label="Lab sensor readings"
+      className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-10 font-mono tabular-nums"
+    >
+      <span title="Lab ambient temperature">T {renderTemperature(location, cluster, sensorData)}</span>
+      <span title="Water temperature">
+        Water {getSensorDisplay(sensorData, `${setpointPrefix}water_temperature`, '°C')}
+      </span>
+      {labSensorStatus && (
+        <span className="text-text-muted" title={qualityTooltip(labSensorStatus)}>
+          {qualityLabel(labSensorStatus)}
+          {labSensorStatus.newestAgeMs != null &&
+            ` · ${Math.floor(labSensorStatus.newestAgeMs / 1000)}s`}
+        </span>
+      )}
+    </div>
+  ) : null
 
   return (
     <Link
@@ -484,7 +521,7 @@ export const DashboardZoneRow = memo(function DashboardZoneRow({
                   />
                 )
               )
-            ) : (
+            ) : isLab ? labReadout : (
               <ClimateMini
                 label="Climate"
                 location={location}
@@ -498,7 +535,6 @@ export const DashboardZoneRow = memo(function DashboardZoneRow({
                     cluster,
                   }
                 }
-                compact={isLab}
               />
             )}
           </div>
@@ -530,7 +566,7 @@ export const DashboardZoneRow = memo(function DashboardZoneRow({
             )}
           </>
 
-          {lightDevices.length > 0 && (
+          {!isLab && (
             <div className="shrink-0 bg-surface-secondary rounded-sm p-1.5 min-w-[8rem] max-w-[14rem]">
               <div
                 className="text-10 text-text-muted mb-0.5 cursor-help"
@@ -539,48 +575,12 @@ export const DashboardZoneRow = memo(function DashboardZoneRow({
                 Lights
               </div>
               <div className="flex flex-col gap-0.5">
-                {lightDevices.map(device => {
-                  const deviceName = device.device_name || ''
-                  const name =
-                    lightDisplayNames?.[`${location}_${cluster}_${deviceName}`] ??
-                    LIGHT_DISPLAY_NAMES[location]?.[deviceName] ??
-                    deviceName
-                  const intensityKey = `${location}_${cluster}_${deviceName}_intensity`
-                  const intensity =
-                    sensorData[intensityKey] ??
-                    deviceStatus?.[location]?.[cluster]?.[deviceName]?.intensity
-                  return (
-                    <div
-                      key={deviceName}
-                      className="flex items-center justify-between gap-1 text-10"
-                    >
-                      <span className="text-text-secondary truncate flex-1 min-w-0" title={name}>
-                        {name}
-                      </span>
-                      <span
-                        className="text-accent-data font-mono tabular-nums shrink-0 cursor-help"
-                        title="Reported dimmer intensity, in percent."
-                      >
-                        {intensity != null ? `${Number(intensity).toFixed(0)}%` : '--'}
-                      </span>
-                      <span
-                        className="shrink-0 cursor-help"
-                        title={
-                          device.state === 1
-                            ? 'Reported light state: ON.'
-                            : 'Reported light state: OFF.'
-                        }
-                      >
-                        {device.state === 1 ? '☀️' : '🌙'}
-                      </span>
-                    </div>
-                  )
-                })}
+                {lightReadouts.length > 0 ? lightReadouts : <span role="status">Light data unavailable</span>}
               </div>
             </div>
           )}
 
-          {nonLightDevices.length > 0 && (
+          {!isLab && nonLightDevices.length > 0 && (
             <div className="shrink-0 bg-surface-secondary rounded-sm p-1.5 min-w-[7rem] max-w-[10rem]">
               <div
                 className="text-10 text-text-muted mb-0.5 cursor-help"
@@ -805,7 +805,7 @@ export const DashboardZoneRow = memo(function DashboardZoneRow({
                   />
                 )
               )
-            ) : (
+            ) : isLab ? labReadout : (
               <ClimateMini
                 label="Climate"
                 location={location}
@@ -849,14 +849,29 @@ export const DashboardZoneRow = memo(function DashboardZoneRow({
             </div>
           )}
 
-          <div
-            className="dashboard-zone-row__device-summary hidden min-w-0 text-10 bg-surface-secondary rounded-sm p-1.5 font-mono tabular-nums break-words [overflow-wrap:anywhere]"
-            role="group"
-            aria-label="Registered device states"
-          >
-            {deviceStateCounts.on} ON · {deviceStateCounts.off} OFF · {deviceStateCounts.unknown}{' '}
-            unknown
-          </div>
+          {!isLab && (
+            <div
+              className="dashboard-zone-row__device-summary hidden min-w-0 text-10 bg-surface-secondary rounded-sm p-1.5 font-mono tabular-nums"
+              role="group"
+              aria-label="Room outputs"
+            >
+              <div className="min-w-0 flex flex-col gap-0.5">
+                <div className="font-semibold text-text-muted">Lights</div>
+                {lightReadouts.length > 0 ? lightReadouts : <span role="status">Light data unavailable</span>}
+                {nonLightDevices.length > 0 && (
+                  <div className="flex min-w-0 flex-col gap-0.5 border-t border-border-subtle pt-0.5">
+                    <span className="font-semibold text-text-muted">Devices</span>
+                    {nonLightDevices.map(device => (
+                      <div key={device.device_name} className="flex min-w-0 justify-between gap-1">
+                        <span className="truncate" title={device.device_name}>{device.device_name}</span>
+                        <span>{device.state === 1 ? 'ON' : device.state === 0 ? 'OFF' : 'unknown'}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
           <div className="dashboard-zone-row__narrow-trends min-w-0 flex flex-wrap gap-1">
             {trendKeys.map(({ cluster: trendCluster, metric }) => (

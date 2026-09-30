@@ -62,9 +62,13 @@ class WebSocketManager:
         payload = message.model_dump(mode="json")
         payload["sensor"] = sensor_type
         message_json = json.dumps(payload)
-        disconnected = set()
+        # Snapshot recipients before any send await: membership may change
+        # while sends are in flight; a removed member still gets an
+        # attempted send while joiners wait for the next broadcast.
+        recipients = tuple(self.active_connections.get(location, ()))
+        disconnected: set[WebSocket] = set()
 
-        for connection in self.active_connections[location]:
+        for connection in recipients:
             try:
                 await connection.send_text(message_json)
             except Exception:
@@ -87,14 +91,25 @@ class WebSocketManager:
         """
         message_json = json.dumps(payload, default=str)
 
+        # Snapshot every (location, recipients) pair up front — across all
+        # target locations — before any send await. Membership or the
+        # location map may change during the awaits; a removed member may
+        # still receive this event while joiners wait for the next one.
         if location in ("unknown", "all"):
-            target_locations = list(self.active_connections.keys())
+            targets = [
+                (loc, tuple(recipients))
+                for loc, recipients in list(self.active_connections.items())
+            ]
         else:
-            target_locations = [location] if location in self.active_connections else []
+            targets = [
+                (loc, tuple(recipients))
+                for loc, recipients in list(self.active_connections.items())
+                if loc == location
+            ]
 
-        for loc in target_locations:
+        for loc, recipients in targets:
             disconnected: set[WebSocket] = set()
-            for connection in self.active_connections.get(loc, set()):
+            for connection in recipients:
                 try:
                     await connection.send_text(message_json)
                 except Exception:

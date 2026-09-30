@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 import redis.asyncio as redis
 
 from shared.infra_logging import get_logger
@@ -14,6 +16,46 @@ _redis_pool: redis.ConnectionPool | None = None
 _redis_client: redis.Redis | None = None
 _SensorSnapshotRecord = tuple[str, str, str, float, int | None]
 
+# One lazily created, loop-owned lock serializes client creation and
+# teardown. ``_redis_loop`` records the loop the lock was created on so
+# sequential fully-shut-down test loops can replace the pair, while a
+# live second loop cannot steal resources from the owner loop.
+_redis_lock: asyncio.Lock | None = None
+_redis_lock_loop: asyncio.AbstractEventLoop | None = None
+
+
+def _get_redis_lock() -> asyncio.Lock:
+    """Return the module lock, bound to the running loop.
+
+    Reuses the lock on the owning loop. A different loop may replace it
+    only when the old loop is closed, no resource reference remains and
+    the lock is unlocked. Otherwise live callers on another loop raise.
+    """
+    global _redis_lock, _redis_lock_loop
+
+    loop = asyncio.get_running_loop()
+    if _redis_lock is not None and _redis_lock_loop is loop:
+        return _redis_lock
+
+    if (
+        _redis_lock is not None
+        and _redis_lock_loop is not loop
+        and (_redis_lock_loop is None or _redis_lock_loop.is_closed())
+        and _redis_client is None
+        and _redis_pool is None
+        and not _redis_lock.locked()
+    ):
+        _redis_lock = asyncio.Lock()
+        _redis_lock_loop = loop
+        return _redis_lock
+
+    if _redis_lock is None:
+        _redis_lock = asyncio.Lock()
+        _redis_lock_loop = loop
+        return _redis_lock
+
+    raise RuntimeError("Backend Redis resources belong to another event loop")
+
 
 async def get_redis_client() -> redis.Redis | None:
     """Get or create Redis client connection.
@@ -22,24 +64,35 @@ async def get_redis_client() -> redis.Redis | None:
     continue contract — callers no-op when Redis is unavailable so the
     historical/DB path still serves). ``create_async_client`` itself
     raises ``redis.exceptions.ConnectionError`` which we catch here.
+
+    Creation and teardown are serialized by one module lock; client and
+    pool are published together only after a successful connect, and
+    cancellation propagates (publishing nothing).
     """
     global _redis_client, _redis_pool
 
-    if _redis_client is not None:
-        return _redis_client
+    async with _get_redis_lock():
+        if _redis_client is not None:
+            return _redis_client
 
-    try:
-        _redis_client, _redis_pool = await create_async_client(
-            decode_responses=True,
-            max_connections=10,
-            name="backend-redis",
-        )
+        try:
+            client, pool = await create_async_client(
+                decode_responses=True,
+                max_connections=10,
+                name="backend-redis",
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logger.warning(
+                f"Failed to connect to Redis: {e}. Live sensor data will not be available."
+            )
+            _redis_client = None
+            _redis_pool = None
+            return None
+        _redis_client = client
+        _redis_pool = pool
         return _redis_client
-    except Exception as e:
-        logger.warning(f"Failed to connect to Redis: {e}. Live sensor data will not be available.")
-        _redis_client = None
-        _redis_pool = None
-        return None
 
 
 async def _read_sensor_snapshot() -> dict[str, _SensorSnapshotRecord]:
@@ -72,15 +125,31 @@ async def _read_sensor_snapshot() -> dict[str, _SensorSnapshotRecord]:
         if not candidates:
             return {}
 
-        values = await client.mget([key for key, _, _, _ in candidates])
-        timestamp_keys = [
-            sensor_full_ts(location, cluster, sensor_name)
-            for _, location, cluster, sensor_name in candidates
-        ]
-        timestamps = await client.mget(timestamp_keys)
+        # One paired read: interleave each candidate's value key with its
+        # timestamp key into a single MGET (at most 2 * 5000 = 10000 keys).
+        # A strict cardinality check replaces the cross-call zip; a torn or
+        # truncated reply enters the existing warning/empty-snapshot path.
+        keys: list[str] = []
+        for key, ts_location, ts_cluster, ts_name in candidates:
+            keys.append(key)
+            keys.append(sensor_full_ts(ts_location, ts_cluster, ts_name))
+        results = await client.mget(keys)
+
+        expected = 2 * len(candidates)
+        if len(results) != expected:
+            logger.warning(
+                "Redis sensor snapshot MGET returned %d results for %d candidates"
+                " (expected %d); using empty snapshot",
+                len(results),
+                len(candidates),
+                expected,
+            )
+            return {}
 
         snapshot: dict[str, _SensorSnapshotRecord] = {}
-        for candidate, raw_value, raw_timestamp in zip(candidates, values, timestamps, strict=True):
+        for candidate, raw_value, raw_timestamp in zip(
+            candidates, results[0::2], results[1::2], strict=True
+        ):
             _, location, cluster, sensor_name = candidate
             try:
                 value = float(raw_value)
@@ -119,8 +188,19 @@ async def _read_sensor_snapshot() -> dict[str, _SensorSnapshotRecord]:
 
 
 async def close_redis_client():
-    """Close Redis client connection (best-effort, SIGTERM-safe)."""
+    """Close Redis client connection (best-effort, SIGTERM-safe).
+
+    Serialized with creation on the same lock; both globals are detached
+    before the shared ``close_async`` teardown so no concurrent getter can
+    observe a closed client.
+    """
     global _redis_client, _redis_pool
-    await close_async(_redis_client, _redis_pool, name="backend-redis")
-    _redis_client = None
-    _redis_pool = None
+
+    async with _get_redis_lock():
+        client = _redis_client
+        pool = _redis_pool
+        _redis_client = None
+        _redis_pool = None
+        if client is None and pool is None:
+            return
+        await close_async(client, pool, name="backend-redis")

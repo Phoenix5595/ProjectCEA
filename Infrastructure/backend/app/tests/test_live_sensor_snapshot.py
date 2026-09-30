@@ -7,6 +7,7 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 from app import background_tasks, redis_client
+from app.redis_client import _read_sensor_snapshot
 from app.routes import live, sensors
 from shared.redis_keys import sensor_full, sensor_full_ts
 
@@ -158,6 +159,58 @@ class LiveSensorSnapshotTests(unittest.IsolatedAsyncioTestCase):
             caught.exception.detail,
             "Redis unavailable. Live sensor data cannot be retrieved.",
         )
+
+
+class PairedSnapshotReadTests(unittest.IsolatedAsyncioTestCase):
+    """Qualified pairing, unavailable values and malformed bulk replies."""
+
+    def patch_client(self, client):
+        async def fake_get():
+            return client
+
+        return patch.object(redis_client, "get_redis_client", new=fake_get)
+
+    async def test_snapshot_filters_missing_values_and_preserves_unknown_timestamps(self) -> None:
+        client = FakeRedis()
+        client.add_sensor("Veg Room", "main", "dry_bulb_v", "21.5", "1700000000000")
+        client.add_sensor("Veg Room", "main", "rh_v", "60", "invalid")
+        client.add_sensor("Veg Room", "main", "vpd_v", "0", None)
+        client.add_sensor("Veg Room", "main", "bad_value", "invalid", "1700000005000")
+        missing_key = client.add_sensor(
+            "Veg Room", "main", "missing_value", "unused", "1700000005000"
+        )
+        client.values[missing_key] = None
+
+        with self.patch_client(client):
+            snapshot = await _read_sensor_snapshot()
+
+        self.assertEqual(
+            snapshot,
+            {
+                "dry_bulb_v": ("Veg Room", "main", "dry_bulb_v", 21.5, 1700000000000),
+                "rh_v": ("Veg Room", "main", "rh_v", 60.0, None),
+                "vpd_v": ("Veg Room", "main", "vpd_v", 0.0, None),
+            },
+        )
+
+    async def test_malformed_mget_cardinality_returns_empty_snapshot(self) -> None:
+        client = FakeRedis()
+        client.add_sensor("Veg Room", "main", "dry_bulb_v", "21.5", "1700000000000")
+
+        class TornReplyClient(FakeRedis):
+            async def mget(self, keys: list[str]) -> list[str | None]:
+                _ = keys
+                # torn/truncated reply: fewer results than interleaved keys
+                return ["21.5"]
+
+        torn = TornReplyClient()
+        torn.values = dict(client.values)
+        torn.keys = list(client.keys)
+
+        with self.patch_client(torn):
+            snapshot = await _read_sensor_snapshot()
+
+        self.assertEqual(snapshot, {}, "cardinality mismatch -> existing empty path")
 
 
 if __name__ == "__main__":

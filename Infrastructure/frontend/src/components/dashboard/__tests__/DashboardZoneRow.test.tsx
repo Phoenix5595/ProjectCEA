@@ -5,6 +5,10 @@ import { describe, expect, it } from 'vitest'
 import type { Device } from '../../../types/device'
 import { buildTrendMetric, type RoomSensorStatus, type TrendData } from '../dashboardStatus'
 import { DashboardZoneRow } from '../DashboardZoneRow'
+import {
+  DASHBOARD_DEVICES,
+  DASHBOARD_LIGHT_INTENSITIES,
+} from '../../../../tests/monitoring/dashboardDeviceFixtures'
 
 const missingMainStatuses: Record<string, RoomSensorStatus> = {
   main: { quality: 'missing', newestAgeMs: null, source: null, cluster: 'main' },
@@ -29,7 +33,9 @@ function renderWithRouter(ui: React.ReactElement) {
   const result = render(<MemoryRouter>{ui}</MemoryRouter>)
   const wide = (index = 0) =>
     within(result.container.querySelectorAll<HTMLElement>('.dashboard-zone-row__wide')[index])
-  return { ...result, wide }
+  const narrow = (index = 0) =>
+    within(result.container.querySelectorAll<HTMLElement>('.dashboard-zone-row__narrow')[index])
+  return { ...result, wide, narrow }
 }
 
 describe('DashboardZoneRow', () => {
@@ -126,40 +132,29 @@ describe('DashboardZoneRow', () => {
     expect(wide().getByText('Devices')).toBeInTheDocument()
     expect(wide().getByText('fan_1')).toBeInTheDocument()
   })
-  it('counts registered device states without treating unknown states as OFF', () => {
-    const devices = [
-      makeDevice({ device_name: 'light_on', state: 1 }),
-      makeDevice({ device_name: 'fan_off', state: 0 }),
-      makeDevice({ device_name: 'pump_missing', state: undefined as unknown as number }),
-      makeDevice({ device_name: 'relay_unrecognized', state: 2 }),
-    ]
-    renderWithRouter(
+  it('keeps named light outputs and distinguishes unknown state from OFF in compact rows', () => {
+    const devices = DASHBOARD_DEVICES.filter(device => device.location === 'Veg Room')
+      .map((device, index) => ({
+        ...device,
+        state: index === 2 ? undefined as unknown as number : index === 1 ? 0 : 1,
+      }))
+    const { narrow } = renderWithRouter(
       <DashboardZoneRow
         location="Veg Room"
         cluster="main"
         devices={devices}
-        sensorData={{}}
+        sensorData={{ 'Veg Room_main_light_v_1_intensity': 80, 'Veg Room_main_light_v_2_intensity': 0 }}
         icon="🌱"
         sensorStatuses={missingMainStatuses}
       />
     )
-
-    expect(screen.getByText('1 ON · 1 OFF · 2 unknown')).toBeInTheDocument()
+    expect(narrow().getByText('Eyefinity Top')).toBeInTheDocument()
+    expect(narrow().getByText('80%')).toBeInTheDocument()
+    expect(narrow().getByText('Ridgetop Bottom Right').parentElement).toHaveTextContent('0%')
+    expect(narrow().getByText('Ridgetop Bottom Left').parentElement).toHaveTextContent('--')
+    expect(narrow().getByTitle('Reported light state: unknown.')).toHaveTextContent('?')
   })
 
-  it('does not render recent on/off section', () => {
-    renderWithRouter(
-      <DashboardZoneRow
-        location="Veg Room"
-        cluster="main"
-        devices={[]}
-        sensorData={{}}
-        icon="🌱"
-        sensorStatuses={missingMainStatuses}
-      />
-    )
-    expect(screen.queryByText('Recent on/off')).not.toBeInTheDocument()
-  })
 
   it('renders as a link to zone page', () => {
     const { container } = renderWithRouter(
@@ -381,56 +376,40 @@ describe('DashboardZoneRow', () => {
 
     const lab = screen.getByRole('link', { name: /Lab/ })
     expect(lab).toHaveAttribute('href', '/zone/Lab/main')
-    expect(lab).toHaveTextContent('0 ON · 0 OFF · 0 unknown')
     expect(lab).not.toHaveTextContent(
       /Mode:|No scheduled transition|TEMP IN BAND|AUTO|Setpoints|Lab lights/
     )
   })
 
-  it('keeps live Lab readings, device states, freshness, and trend text', () => {
-    const sensorStatuses: Record<string, RoomSensorStatus> = {
-      main: { quality: 'live', newestAgeMs: 3_000, source: 'poll', cluster: 'main' },
-    }
-    const nowMs = Date.parse('2026-09-23T16:00:00Z')
-    const trendData: TrendData = {
-      main: {
-        temperature: buildTrendMetric('temperature', [
-          { timestampMs: nowMs - 60 * 60_000, value: 20 },
-          { timestampMs: nowMs, value: 21 },
-        ]),
-      },
-    }
+  it('keeps Lab limited to passive temperature readings and freshness', () => {
     renderWithRouter(
       <DashboardZoneRow
         location="Lab"
         cluster="main"
-        devices={[makeDevice({ location: 'Lab', device_name: 'fan_1', state: 1 })]}
-        sensorData={{
-          Lab_main_dry_bulb: 21,
-          Lab_main_relative_humidity: 55,
-          Lab_main_co2: 900,
-          Lab_main_vpd: 1.2,
-        }}
+        devices={DASHBOARD_DEVICES}
+        sensorData={{ Lab_main_lab_temp: 24.6, Lab_main_water_temperature: 19.5 }}
         icon="🧪"
-        sensorStatuses={sensorStatuses}
-        trendData={trendData}
-        now={new Date(nowMs)}
+        sensorStatuses={{
+          main: { quality: 'live', newestAgeMs: 3_000, source: 'poll', cluster: 'main' },
+        }}
+        trendData={{
+          main: {
+            temperature: buildTrendMetric('temperature', [
+              { timestampMs: 0, value: 23 },
+              { timestampMs: 60_000, value: 24.6 },
+            ]),
+          },
+        }}
       />
     )
-
     const lab = screen.getByRole('link', { name: /Lab/ })
-    expect(lab).toHaveAttribute('href', '/zone/Lab/main')
-    expect(lab).toHaveTextContent('Climate LIVE · 3s · POLL')
-    expect(lab).toHaveTextContent('21.00°C')
-    expect(lab).toHaveTextContent('55.00%')
-    expect(lab).toHaveTextContent('900 ppm')
-    expect(lab).toHaveTextContent('1.20 kPa')
-    expect(lab).toHaveTextContent('fan_1')
-    expect(lab).toHaveTextContent('1 ON · 0 OFF · 0 unknown')
-    expect(lab).toHaveTextContent('Temperature')
-    expect(lab).toHaveTextContent('Δ10m +1.00 °C')
-    expect(lab.querySelector('[title*="trailing 60-minute sensor history"]')).toBeInTheDocument()
-    expect(lab).not.toHaveTextContent(/Mode:|Decision|AUTO|Setpoints/)
+    for (const readings of within(lab).getAllByRole('group', { name: 'Lab sensor readings' })) {
+      expect(readings).toHaveTextContent('T 24.60°C')
+      expect(readings).toHaveTextContent('Water 19.50°C')
+      expect(readings).toHaveTextContent('LIVE · 3s')
+    }
+    expect(lab).not.toHaveTextContent(/Mode:|Decision|AUTO|Setpoints|Lights|CO₂|VPD|RH|Δ10m/)
+    expect(lab.querySelector('[title*="trailing 60-minute sensor history"]')).not.toBeInTheDocument()
   })
 
   it('humanizes unknown active mode and submode names', () => {
@@ -500,5 +479,65 @@ describe('DashboardZoneRow', () => {
     expect(
       container.querySelector('[title*="trailing 60-minute sensor history"]')
     ).toBeInTheDocument()
+  })
+
+  it('retains all six real grow-room light names and their percentages in both row variants', () => {
+    const { wide, narrow } = renderWithRouter(
+      <>
+        <DashboardZoneRow location="Flower Room" cluster="main" devices={DASHBOARD_DEVICES}
+          sensorData={DASHBOARD_LIGHT_INTENSITIES} icon="🌸"
+          sensorStatuses={missingFlowerStatuses} />
+        <DashboardZoneRow location="Veg Room" cluster="main" devices={DASHBOARD_DEVICES}
+          sensorData={DASHBOARD_LIGHT_INTENSITIES} icon="🌱"
+          sensorStatuses={missingMainStatuses} />
+      </>
+    )
+    for (const variant of [wide, narrow]) {
+      for (const name of ['Chilled Front', 'Apache', 'Chilled Back']) {
+        expect(variant(0).getByText(name).parentElement).toHaveTextContent('0%')
+      }
+      expect(variant(1).getByText('Eyefinity Top').parentElement).toHaveTextContent('80%')
+      expect(variant(1).getByText('Ridgetop Bottom Right').parentElement).toHaveTextContent('40%')
+      expect(variant(1).getByText('Ridgetop Bottom Left').parentElement).toHaveTextContent('40%')
+    }
+  })
+
+  it('uses the newer status intensity instead of a retained bulk snapshot, including zero', () => {
+    const { wide, narrow } = renderWithRouter(
+      <DashboardZoneRow location="Veg Room" cluster="main" devices={[DASHBOARD_DEVICES[3]]}
+        sensorData={{ 'Veg Room_main_light_v_1_intensity': 80 }}
+        statusDevices={{ 'Veg Room': { main: { light_v_1: { intensity: 0 } } } }}
+        icon="🌱" sensorStatuses={missingMainStatuses} />
+    )
+    expect(wide().getByText('Eyefinity Top').parentElement).toHaveTextContent('0%')
+    expect(narrow().getByText('Eyefinity Top').parentElement).toHaveTextContent('0%')
+  })
+
+  it('displays the configured Veg canopy sensor names rather than empty climate fields', () => {
+    const { wide } = renderWithRouter(
+      <DashboardZoneRow location="Veg Room" cluster="main" devices={[]}
+        sensorData={{ 'Veg Room_main_dry_bulb_v': 27.4,
+          'Veg Room_main_rh_v': 70, 'Veg Room_main_co2_v': 1100, 'Veg Room_main_vpd_v': 1.3 }}
+        icon="🌱" sensorStatuses={missingMainStatuses} />
+    )
+    expect(wide().getByText('27.40°C')).toBeInTheDocument()
+    expect(wide().getByText('70.00%')).toBeInTheDocument()
+    expect(wide().getByText('1100 ppm')).toBeInTheDocument()
+    expect(wide().getByText('1.30 kPa')).toBeInTheDocument()
+  })
+
+  it('keeps the Lights section visible in both grow-room rows while device data is absent', () => {
+    const { wide, narrow } = renderWithRouter(
+      <>
+        <DashboardZoneRow location="Flower Room" cluster="main" devices={[]} sensorData={{}} icon="🌸" sensorStatuses={missingFlowerStatuses} />
+        <DashboardZoneRow location="Veg Room" cluster="main" devices={[]} sensorData={{}} icon="🌱" sensorStatuses={missingMainStatuses} />
+      </>
+    )
+    for (const variant of [wide, narrow]) {
+      expect(variant(0).getByText('Lights')).toBeInTheDocument()
+      expect(variant(0).getByRole('status')).toBeInTheDocument()
+      expect(variant(1).getByText('Lights')).toBeInTheDocument()
+      expect(variant(1).getByRole('status')).toBeInTheDocument()
+    }
   })
 })

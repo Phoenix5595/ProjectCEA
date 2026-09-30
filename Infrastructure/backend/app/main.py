@@ -11,6 +11,7 @@ import logging
 from pathlib import Path
 import signal
 import sys
+from typing import Any
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
@@ -80,62 +81,73 @@ sys.excepthook = handle_exception
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Startup and shutdown events."""
+    """Startup and shutdown events.
+
+    Optional task/consumer references are initialized before startup so
+    the enclosing ``finally`` can always run complete cleanup in a fixed
+    order (broadcast task -> shutdown monitor -> config consumer -> live
+    Redis -> database), regardless of whether startup partially failed.
+    Each teardown failure is logged and cannot skip later owners or mask
+    the original exception.
+    """
     global shutdown_reason, background_task
+
+    # Optional references exist before any await, so cleanup is total.
+    broadcast_task: asyncio.Task[None] | None = None
+    shutdown_monitor: asyncio.Task[None] | None = None
+    config_consumer: Any = None
 
     # Setup signal handlers in the lifespan context
     setup_signal_handlers()
 
     # Startup: Start background tasks
     try:
-        from app.background_tasks import broadcast_latest_sensor_data
-        from app.events.consumer import ConfigEventConsumer
+        try:
+            from app.background_tasks import broadcast_latest_sensor_data
+            from app.events.consumer import ConfigEventConsumer
 
-        background_task = asyncio.create_task(broadcast_latest_sensor_data())
-        logger.info("Background broadcast task started")
+            broadcast_task = asyncio.create_task(broadcast_latest_sensor_data())
+            background_task = broadcast_task
+            logger.info("Background broadcast task started")
 
-        config_consumer = ConfigEventConsumer()
-        await config_consumer.start()
-        logger.info("Config event consumer started")
+            config_consumer = ConfigEventConsumer()
+            await config_consumer.start()
+            logger.info("Config event consumer started")
 
-        # Monitor shutdown event
-        async def monitor_shutdown():
-            """Monitor for shutdown signals."""
-            await shutdown_event.wait()
-            logger.info(f"Shutdown event triggered (reason: {shutdown_reason})")
+            # Monitor shutdown event
+            async def monitor_shutdown():
+                """Monitor for shutdown signals."""
+                await shutdown_event.wait()
+                logger.info(f"Shutdown event triggered (reason: {shutdown_reason})")
 
-        shutdown_monitor = asyncio.create_task(monitor_shutdown())
+            shutdown_monitor = asyncio.create_task(monitor_shutdown())
 
-    except Exception as e:
-        logger.error(f"Error starting background tasks: {e}", exc_info=True)
-        shutdown_reason = f"Startup error: {type(e).__name__}"
-        raise
+        except Exception as e:
+            logger.error(f"Error starting background tasks: {e}", exc_info=True)
+            shutdown_reason = f"Startup error: {type(e).__name__}"
+            raise
 
-    notify_started("backend-service", logger)
+        notify_started("backend-service", logger)
 
-    try:
-        yield
-    except Exception as e:
-        shutdown_reason = f"Lifespan error: {type(e).__name__}: {str(e)}"
-        logger.error(f"Error in lifespan context: {e}", exc_info=True)
-        raise
+        try:
+            yield
+        except Exception as e:
+            shutdown_reason = f"Lifespan error: {type(e).__name__}: {str(e)}"
+            logger.error(f"Error in lifespan context: {e}", exc_info=True)
+            raise
     finally:
         notify_stopping("backend-service", logger)
         # Shutdown: Cancel background tasks
         logger.info(f"Shutting down (reason: {shutdown_reason})")
-        logger.info(
-            f"Shutdown context: background_task={background_task is not None}, "
-            f"task_done={background_task.done() if background_task else 'N/A'}"
-        )
 
-        # Cancel background broadcast task
-        if background_task:
+        # 1) Cancel background broadcast task (current five-second budget).
+        if broadcast_task is not None:
             try:
-                if not background_task.done():
+                if not broadcast_task.done():
                     logger.info("Cancelling background task...")
-                    background_task.cancel()
+                    broadcast_task.cancel()
                     try:
-                        await asyncio.wait_for(background_task, timeout=5.0)
+                        await asyncio.wait_for(broadcast_task, timeout=5.0)
                         logger.info("Background task cancelled successfully")
                     except TimeoutError:
                         logger.warning("Background task did not cancel within 5 second timeout")
@@ -151,19 +163,44 @@ async def lifespan(app: FastAPI):
             except Exception as e:
                 logger.error(f"Error during background task shutdown: {e}", exc_info=True)
 
-        if "shutdown_monitor" in locals():
+        # 2) Cancel and await the shutdown monitor.
+        if shutdown_monitor is not None:
             try:
                 shutdown_monitor.cancel()
-                logger.debug("Shutdown monitor cancelled")
+                try:
+                    await shutdown_monitor
+                except asyncio.CancelledError:
+                    logger.debug("Shutdown monitor cancelled")
             except Exception as e:
                 logger.warning(f"Error cancelling shutdown monitor: {e}")
 
-        if "config_consumer" in locals():
+        # 3) Stop the constructed config consumer even if start() failed.
+        if config_consumer is not None:
             try:
                 await config_consumer.stop()
                 logger.info("Config event consumer stopped")
             except Exception as e:
                 logger.warning(f"Error stopping config event consumer: {e}")
+
+        # 4) Close live Redis (only a live client teardown; creates nothing).
+        try:
+            from app.redis_client import close_redis_client
+
+            await close_redis_client()
+        except Exception as e:
+            logger.warning(f"Error closing backend Redis during shutdown: {e}")
+
+        # 5) Close database dependencies (only an existing manager; no init).
+        try:
+            from app.dependencies import close_database_resources
+
+            await close_database_resources()
+        except Exception as e:
+            logger.warning(f"Error closing database resources during shutdown: {e}")
+
+        # Detach global task references after cleanup.
+        background_task = None
+        broadcast_task = None
 
         logger.info(f"Shutdown complete (final reason: {shutdown_reason})")
 

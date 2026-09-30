@@ -1028,8 +1028,13 @@ body {
   }
 
   .dashboard-upper {
-    grid-template-columns: minmax(0, 4fr) minmax(12rem, 1fr);
-    grid-template-rows: minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) auto;
+  }
+
+  .dashboard-inspector-slot {
+    max-height: 14rem;
+    overflow: auto;
   }
 }
 
