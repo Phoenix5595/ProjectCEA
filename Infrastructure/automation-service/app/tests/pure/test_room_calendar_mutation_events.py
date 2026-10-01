@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import date
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 from uuid import UUID
 
 from fastapi import FastAPI, HTTPException
@@ -137,6 +139,114 @@ async def test_room_mode_emits_only_for_a_changed_persisted_transition(
         assert sink.events[0].payload.changes[0].key == "mode_name"
         assert sink.events[0].payload.changes[0].before == "veg"
         assert sink.events[0].payload.changes[0].after == "flower"
+
+
+@pytest.mark.asyncio
+async def test_sleep_switch_shuts_down_flower_lights_without_changing_veg(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given: the six current grow lights and a persisted Veg -> Sleep transition.
+    bindings = {
+        "Flower Room": {
+            "light_f_1": (2, 0),
+            "light_f_2": (1, 1),
+            "light_f_3": (2, 1),
+        },
+        "Veg Room": {
+            "light_v_1": (0, 0),
+            "light_v_2": (0, 1),
+            "light_v_3": (1, 0),
+        },
+    }
+    devices = {
+        location: {
+            "main": {
+                name: {
+                    "device_type": "light",
+                    "dimming_enabled": True,
+                    "dimming_board_id": board,
+                    "dimming_channel": channel,
+                }
+                for name, (board, channel) in lights.items()
+            }
+        }
+        for location, lights in bindings.items()
+    }
+    relay_states = {
+        (location, "main", name): 1 for location, lights in bindings.items() for name in lights
+    }
+    intensities = {
+        (board, channel): 50 for lights in bindings.values() for board, channel in lights.values()
+    }
+
+    async def set_relay_state(location: str, cluster: str, name: str, state: int):
+        await asyncio.sleep(0)
+        relay_states[(location, cluster, name)] = state
+        return True, None
+
+    def set_intensity(board: int, channel: int, intensity: int) -> bool:
+        intensities[(board, channel)] = intensity
+        return True
+
+    database = SimpleNamespace(
+        room_mode_repo=SimpleNamespace(
+            get_mode_by_name=_mode_by_name,
+            get_active_mode=AsyncMock(return_value={"mode_name": "sleep", "mode_id": 2}),
+            get_room_modes=AsyncMock(
+                return_value=[{"id": 2, "name": "sleep", "is_constant": True}]
+            ),
+            get_mode_parameters=AsyncMock(return_value=None),
+        )
+    )
+    monkeypatch.setattr(
+        room_modes,
+        "ModeTransitionService",
+        lambda database: _ModeTransitionService(
+            database,
+            {
+                "success": True,
+                "old_mode": {"mode_name": "veg", "submode_name": None},
+                "new_mode": {"mode_name": "sleep", "submode_name": None},
+            },
+        ),
+    )
+    monkeypatch.setattr(room_modes, "broadcast_mode_update", AsyncMock())
+    app = FastAPI()
+    app.include_router(room_modes.router)
+    app.dependency_overrides[room_modes.get_database] = lambda: database
+    app.dependency_overrides[room_modes.get_config] = lambda: SimpleNamespace(
+        get_devices=AsyncMock(return_value=devices)
+    )
+    app.dependency_overrides[room_modes.get_relay_manager] = lambda: SimpleNamespace(
+        set_device_state=set_relay_state
+    )
+    app.dependency_overrides[room_modes.get_dfr0971_manager] = lambda: SimpleNamespace(
+        set_intensity=set_intensity
+    )
+    app.dependency_overrides[room_modes.get_mutation_request_context] = (
+        lambda: MutationRequestContext.create()
+    )
+    app.dependency_overrides[room_modes.get_mutation_event_sink] = lambda: _RecordingSink()
+
+    # When: a client requests Sleep through the real route with isolated adapters.
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/api/room-modes/room/Flower%20Room/main/mode", json={"mode_name": "sleep"}
+        )
+
+    # Then: the response succeeds, all Flower lights are off, and Veg stays untouched.
+    assert response.status_code == 200, response.text
+    assert response.json()["mode_name"] == "sleep"
+    assert relay_states == {
+        (location, "main", name): 0 if location == "Flower Room" else 1
+        for location, lights in bindings.items()
+        for name in lights
+    }
+    assert intensities == {
+        (board, channel): 0 if location == "Flower Room" else 50
+        for location, lights in bindings.items()
+        for board, channel in lights.values()
+    }
 
 
 @pytest.mark.asyncio
