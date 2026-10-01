@@ -89,6 +89,7 @@ async def _force_lights_off_for_moon_authority_mode(
     dfr0971_manager,
     database: DatabaseManager,
 ) -> None:
+    """Await async relay commands; only synchronous dimmer I/O belongs in a worker thread."""
     for src_cluster, device_name, device_info in await _iter_configured_light_devices(
         config, location, cluster
     ):
@@ -116,8 +117,8 @@ async def _force_lights_off_for_moon_authority_mode(
                     location, src_cluster, device_name, 0.0, 0.0, board_id, dimming_channel
                 )
 
-        success, reason = await asyncio.to_thread(
-            relay_manager.set_device_state, location, src_cluster, device_name, 0
+        success, reason = await relay_manager.set_device_state(
+            location, src_cluster, device_name, 0
         )
         if not success:
             logger.warning(
