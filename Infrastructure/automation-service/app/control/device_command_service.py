@@ -180,7 +180,9 @@ class DeviceCommandService:
                         state=1,
                         next_state=DeviceCommandState(
                             mode="timed_on",
-                            prior_mode=previous.mode,
+                            prior_mode=previous.prior_mode
+                            if previous.mode == "timed_on"
+                            else previous.mode,
                             expires_at=expiry,
                         ),
                         reason=reason,

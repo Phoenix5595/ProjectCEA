@@ -220,7 +220,11 @@ class DeviceController(
         # Check device-specific control mode
         device_mode = device_info.get("control_mode", "auto")
 
-        if device_mode == "manual":
+        light_decision = context.get("light_decision")
+        if (
+            device_mode == "manual"
+            and getattr(light_decision, "authority", None) != "manual_override"
+        ):
             return "manual", None
 
         # Get setpoint based on device type

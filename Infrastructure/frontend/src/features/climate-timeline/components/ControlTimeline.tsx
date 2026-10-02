@@ -503,11 +503,6 @@ export function ControlTimeline({
             No climate periods configured; setpoints are unset.
           </p>
         )}
-        {forcedMoonPhase && (
-          <p className="text-10 text-text-subtle">
-            This mode forces 24h MOON; stored photoperiod times and ramps are inactive.
-          </p>
-        )}
 
         {isExpanded && (
           <div className="flex flex-wrap gap-1" data-testid="control-timeline-boundaries">
@@ -525,11 +520,6 @@ export function ControlTimeline({
             {timelineWarningLabel(warning)}
           </p>
         ))}
-        {genericWarnings.length === 0 && !skippedWarning && (
-          <p className="text-10 text-text-subtle">
-            Saved schedule authority; no runtime assumptions reported.
-          </p>
-        )}
         {editError && (
           <p role="alert" className="text-10 text-status-danger-text">
             {editError}
