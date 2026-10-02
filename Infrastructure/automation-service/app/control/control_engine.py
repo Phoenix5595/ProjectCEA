@@ -133,6 +133,7 @@ class ControlEngine:
             scheduler,
             pid_controller_manager=self.pid_controller_manager,
             vpd_cascade_controller=self.vpd_cascade_controller,
+            device_command_service=device_command_service,
         )
 
         # StateManager for fast in-memory state access (<1ms reads)

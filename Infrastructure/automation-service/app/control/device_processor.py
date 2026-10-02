@@ -8,6 +8,7 @@ import time as _time
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from app.control.device_command_service import DeviceCommandService
 from app.control.device_control_context import build_initial_control_context
 from app.control.device_controller import DeviceController
 from app.control.hardware_batch import HardwareBatchExecutor
@@ -22,6 +23,7 @@ from app.control.vpd_cascade_controller import (
 )
 from app.database import DatabaseManager
 from app.hardware.dfr0971 import DFR0971Manager
+from app.repositories.light_target_intensity import MINIMUM_NORMAL_TARGET_INTENSITY
 from shared.infra_logging import get_logger
 
 logger = get_logger(__name__)
@@ -55,6 +57,7 @@ class DeviceProcessor:
         scheduler: Scheduler | None = None,
         pid_controller_manager: PIDControllerManager | None = None,
         vpd_cascade_controller: VPDCascadeController | None = None,
+        device_command_service: DeviceCommandService | None = None,
     ):
         """Initialize device processor.
 
@@ -72,6 +75,7 @@ class DeviceProcessor:
         self.scheduler = scheduler
         self.pid_controller_manager = pid_controller_manager
         self.vpd_cascade_controller = vpd_cascade_controller
+        self.device_command_service = device_command_service
         self.light_authority_resolver = LightAuthorityResolver()
         # Throttle "no schedule" warning to once per 5 min per device (avoid log spam / CPU)
         self._last_no_schedule_log: dict[tuple[str, str, str], float] = {}
@@ -360,6 +364,7 @@ class DeviceProcessor:
         is_sun: bool,
         failsafe_active: bool,
     ) -> LightDecision:
+        """Resolve command-owned timed/manual authority ahead of the scheduled light phase."""
         scheduled_percent = 0.0
         nominal_percent: float | None = None
         ramp_progress: float | None = None
@@ -400,6 +405,15 @@ class DeviceProcessor:
         authority_device_info["_location"] = location
         authority_device_info["_cluster"] = cluster
         authority_device_info["_device_name"] = device_name
+        if self.device_command_service is not None and device_info.get("channel") is not None:
+            command = self.device_command_service.get_command_state(location, cluster, device_name)
+            if command.mode == "timed_on":
+                authority_device_info["manual_override_percent"] = MINIMUM_NORMAL_TARGET_INTENSITY
+                authority_device_info["manual_override_until"] = command.expires_at
+            elif command.mode == "manual_off":
+                authority_device_info["manual_override_percent"] = 0.0
+                authority_device_info["manual_override_until"] = None
+                authority_device_info["manual_override_ttl_seconds"] = None
         return self.light_authority_resolver.resolve(
             current_time=current_time,
             device_info=authority_device_info,

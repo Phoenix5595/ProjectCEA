@@ -1,15 +1,12 @@
 import { useState, useEffect } from 'react'
 
 import { apiClient } from '../services/api'
-import type { Schedule } from '../types/schedule'
 import { extractErrorMessage } from '../utils/errors'
 import { logger } from '../utils/logger'
 
 interface RawLightDevice {
   device_type?: string
   display_name?: string
-  dimming_enabled?: boolean
-  manual_expires_at?: string | null
 }
 
 interface ManualLightControlProps {
@@ -21,7 +18,6 @@ interface ManualLightControlProps {
 interface LightDeviceDetails {
   device_name: string
   display_name?: string
-  dimming_enabled: boolean
 }
 
 type ActiveMode = 'auto' | 'off' | '5m' | '30m' | '1h' | '8h' | null
@@ -33,8 +29,7 @@ export default function ManualLightControl({
 }: ManualLightControlProps) {
   const [lightDetails, setLightDetails] = useState<LightDeviceDetails[]>([])
   const [loadingDetails, setLoadingDetails] = useState(true)
-  const [activeTimer, setActiveTimer] = useState<number | null>(null) // minutes remaining, derived from polled manual_expires_at
-  const [lastDefaultMode, setLastDefaultMode] = useState<'auto' | 'scheduled' | null>(null)
+  const [activeTimer, setActiveTimer] = useState<number | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [activeMode, setActiveMode] = useState<ActiveMode>(null)
@@ -68,7 +63,6 @@ export default function ManualLightControl({
           .map(([deviceName, device]) => ({
             device_name: deviceName,
             display_name: device.display_name,
-            dimming_enabled: device.dimming_enabled || false,
           }))
         logger.debug('ManualLightControl: Filtered lights result', lights)
         setLightDetails(lights)
@@ -82,8 +76,7 @@ export default function ManualLightControl({
     loadDeviceDetails()
   }, [location, cluster])
 
-  // Derive activeTimer from polled device data (manual_expires_at).
-  // Backend owns expiry via auto-expiry sweep; frontend only reflects remaining time.
+  // Keep the existing 5s timer refresh, using the command owner's expiry projection.
   useEffect(() => {
     if (lightDetails.length === 0) {
       setActiveTimer(null)
@@ -94,26 +87,39 @@ export default function ManualLightControl({
 
     async function refreshExpiry() {
       try {
-        const devices = await apiClient.getDevicesForLocationClusterWithDetails(location, cluster)
+        const snapshot = await apiClient.getControlSnapshot()
         if (cancelled) return
-        // Earliest non-null expiry across lights in this zone drives the displayed timer.
         let earliest: number | null = null
-        for (const light of lightDetails) {
-          const raw = (devices as Record<string, RawLightDevice>)[light.device_name]
-            ?.manual_expires_at
+        let hasAutomatic = false
+        let hasManualOff = false
+        for (const relay of snapshot.relays) {
+          const assignment = relay.assignment
+          if (
+            assignment?.location !== location ||
+            assignment.cluster !== cluster ||
+            assignment.device_type !== 'light'
+          ) {
+            continue
+          }
+          hasAutomatic ||= relay.command_mode === 'auto' || relay.command_mode === 'scheduled'
+          hasManualOff ||= relay.command_mode === 'manual_off'
+          const raw = relay.command_expires_at
           if (!raw) continue
           const expiresAt = Date.parse(raw)
           if (Number.isNaN(expiresAt)) continue
           const remainingMs = expiresAt - Date.now()
           if (remainingMs <= 0) continue
           const remainingMin = Math.ceil(remainingMs / 60000)
-          if (earliest === null || remainingMin < earliest) {
-            earliest = remainingMin
-          }
+          if (earliest === null || remainingMin < earliest) earliest = remainingMin
         }
         setActiveTimer(earliest)
+        if (earliest === null) {
+          setActiveMode(
+            hasAutomatic && !hasManualOff ? 'auto' : hasManualOff && !hasAutomatic ? 'off' : null
+          )
+        }
       } catch (err) {
-        logger.error('ManualLightControl: Error polling manual_expires_at:', err)
+        logger.error('ManualLightControl: Error polling command expiry:', err)
       }
     }
 
@@ -126,87 +132,20 @@ export default function ManualLightControl({
     }
   }, [location, cluster, lightDetails])
 
-  function dayTargetIntensityFromSchedules(schedules: Schedule[], deviceName: string): number {
-    const daySchedule = schedules.find(
-      s =>
-        s.device_name === deviceName &&
-        (s.mode === 'SUN' || s.mode === 'DAY') &&
-        s.enabled &&
-        s.target_intensity !== null &&
-        s.target_intensity !== undefined
-    )
-    if (
-      daySchedule &&
-      daySchedule.target_intensity !== null &&
-      daySchedule.target_intensity !== undefined
-    ) {
-      return daySchedule.target_intensity
-    }
-    return 100
-  }
-
-  async function turnOnLights(durationMinutes?: number) {
+  async function turnOnLights(durationMinutes: number) {
     setLoading(true)
     setError(null)
 
     try {
-      // Save current mode as last default if not already in manual mode
-      if (!lastDefaultMode && lightDetails.length > 0) {
-        try {
-          const devices = await apiClient.getDevicesForLocationCluster(location, cluster)
-          const firstLight = lightDetails[0]
-          const lightDevice = devices.devices[firstLight.device_name]
-          if (lightDevice && lightDevice.mode) {
-            const currentMode = lightDevice.mode
-            if (currentMode === 'auto' || currentMode === 'scheduled') {
-              setLastDefaultMode(currentMode as 'auto' | 'scheduled')
-            }
-          }
-        } catch (err) {
-          logger.error('Error checking current mode:', err)
-        }
-        // Default to 'auto' if we can't determine
-        if (!lastDefaultMode) {
-          setLastDefaultMode('auto')
-        }
-      }
-
-      // One schedule fetch for the zone; derive per-light day targets locally
-      let schedules: Schedule[] = []
-      try {
-        schedules = await apiClient.getSchedules(location, cluster)
-      } catch (err) {
-        logger.error('ManualLightControl: Error loading schedules for turn on:', err)
-      }
-
-      const durationSeconds = durationMinutes !== undefined ? durationMinutes * 60 : undefined
+      const durationSeconds = durationMinutes * 60
 
       for (const light of lightDetails) {
         try {
-          const dayTargetIntensity = dayTargetIntensityFromSchedules(schedules, light.device_name)
-
-          // Set intensity if dimming enabled
-          if (light.dimming_enabled) {
-            await apiClient.setLightIntensity(
-              location,
-              cluster,
-              light.device_name,
-              dayTargetIntensity
-            )
-          }
-
-          // Turn relay ON; backend owns the manual expiry timer via duration_seconds
-          await apiClient.controlDevice(
-            location,
-            cluster,
-            light.device_name,
-            1,
-            'Manual override',
-            durationSeconds
-          )
-
-          // Set to manual mode to override everything
-          await apiClient.setDeviceMode(location, cluster, light.device_name, 'manual')
+          await apiClient.commandDevice(location, cluster, light.device_name, {
+            action: 'TIMED_ON',
+            duration_seconds: durationSeconds,
+            reason: 'Manual light timer',
+          })
         } catch (err) {
           logger.error(`Error controlling light ${light.device_name}:`, err)
           setError(extractErrorMessage(err, `Failed to control ${light.device_name}`))
@@ -226,10 +165,7 @@ export default function ManualLightControl({
                 : null
       setActiveMode(modeKey)
 
-      // Optimistic display; polling effect will reconcile from manual_expires_at
-      if (durationMinutes !== undefined) {
-        setActiveTimer(durationMinutes)
-      }
+      setActiveTimer(durationMinutes)
     } catch (err) {
       logger.error('Error turning on lights:', err)
       setError(extractErrorMessage(err, 'Failed to turn on lights'))
@@ -243,8 +179,6 @@ export default function ManualLightControl({
     setError(null)
 
     try {
-      // Backend clears manual_expires_at on the next sweep once state flips to off;
-      // polling effect will drop activeTimer when manual_expires_at is gone.
       setActiveTimer(null)
 
       // Set active mode to 'off'
@@ -253,11 +187,10 @@ export default function ManualLightControl({
       // Turn off all lights
       for (const light of lightDetails) {
         try {
-          // Turn relay OFF
-          await apiClient.controlDevice(location, cluster, light.device_name, 0, 'Manual override')
-
-          // Set to manual mode to keep it off until changed
-          await apiClient.setDeviceMode(location, cluster, light.device_name, 'manual')
+          await apiClient.commandDevice(location, cluster, light.device_name, {
+            action: 'MANUAL_OFF',
+            reason: 'Manual light OFF',
+          })
         } catch (err) {
           logger.error(`Error controlling light ${light.device_name}:`, err)
           setError(extractErrorMessage(err, `Failed to control ${light.device_name}`))
@@ -271,57 +204,27 @@ export default function ManualLightControl({
     }
   }
 
-  async function restoreMode(mode: 'auto' | 'scheduled') {
+  async function restoreMode() {
     setLoading(true)
     setError(null)
 
     try {
-      // Backend auto-expiry sweep owns timer clearing; frontend reflects polled state.
       setActiveTimer(null)
 
       // Set active mode to 'auto' (schedule is now active)
       setActiveMode('auto')
 
-      let schedules: Schedule[] = []
-      try {
-        schedules = await apiClient.getSchedules(location, cluster)
-      } catch (err) {
-        logger.error('ManualLightControl: Error loading schedules for restore:', err)
-      }
-
-      // Restore all lights: turn ON relay, set to day target intensity, then set mode to auto/scheduled
       for (const light of lightDetails) {
         try {
-          const dayTargetIntensity = dayTargetIntensityFromSchedules(schedules, light.device_name)
-
-          // Set intensity if dimming enabled (set to day target)
-          if (light.dimming_enabled) {
-            await apiClient.setLightIntensity(
-              location,
-              cluster,
-              light.device_name,
-              dayTargetIntensity
-            )
-          }
-
-          // Turn relay ON (in case it was OFF)
-          await apiClient.controlDevice(
-            location,
-            cluster,
-            light.device_name,
-            1,
-            'Restoring to schedule'
-          )
-
-          // Set to auto/scheduled mode (activates schedule)
-          await apiClient.setDeviceMode(location, cluster, light.device_name, mode)
+          await apiClient.commandDevice(location, cluster, light.device_name, {
+            action: 'AUTO',
+            reason: 'Manual light control released',
+          })
         } catch (err) {
           logger.error(`Error restoring mode for ${light.device_name}:`, err)
           setError(extractErrorMessage(err, `Failed to restore mode for ${light.device_name}`))
         }
       }
-
-      setLastDefaultMode(null)
     } catch (err) {
       logger.error('Error restoring mode:', err)
       setError(extractErrorMessage(err, 'Failed to restore mode'))
@@ -375,7 +278,7 @@ export default function ManualLightControl({
       {!loadingDetails && lightDetails.length > 0 ? (
         <div className={compact ? 'grid grid-cols-3 gap-2' : 'flex flex-wrap gap-2'}>
           <button
-            onClick={() => restoreMode(lastDefaultMode || 'auto')}
+            onClick={restoreMode}
             disabled={loading}
             className={`px-3 py-1.5 text-sm font-medium bg-btn-primary-light text-text-default rounded hover:bg-btn-primary-hover disabled:opacity-50 disabled:cursor-not-allowed ${
               activeMode === 'auto' ? 'ring-2 ring-btn-primary-text ring-offset-2' : ''

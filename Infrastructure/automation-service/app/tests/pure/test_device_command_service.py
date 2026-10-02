@@ -188,6 +188,25 @@ async def test_timer_expiry_restores_captured_prior_mode_without_database_state(
 
 
 @pytest.mark.asyncio
+async def test_replacing_a_live_timer_restores_the_original_authority_at_expiry() -> None:
+    # Given: an AUTO device with a live timed command.
+    service, clock, _relay, _history, _redis_client = _service()
+    await service.initialize_startup()
+    await service.execute("Veg Room", "main", "heater_veg_1", TimedOnCommand(duration_seconds=300))
+    clock.now += timedelta(seconds=30)
+
+    # When: another timer replaces it, then reaches its own expiry.
+    await service.execute("Veg Room", "main", "heater_veg_1", TimedOnCommand(duration_seconds=300))
+    clock.now += timedelta(seconds=300)
+    await service.expire_commands()
+
+    # Then: expiry restores AUTO, not an unbounded timed-on state.
+    state = service.get_command_state("Veg Room", "main", "heater_veg_1")
+    assert state.mode == "auto"
+    assert state.expires_at is None
+
+
+@pytest.mark.asyncio
 async def test_startup_returns_all_assigned_identities_to_auto_and_clears_exact_raw_keys() -> None:
     # Given: a service with assigned identities and an isolated Redis fake.
     service, _clock, _relay, _history, redis_client = _service()
