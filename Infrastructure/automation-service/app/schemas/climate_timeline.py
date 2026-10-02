@@ -230,14 +230,12 @@ class TimelinePreviewResponse(ClimateTimelineModel):
 
 
 class TimelineSavedResponse(ClimateTimelineModel):
-    """Saved timeline values and the saved rich trajectory for one window."""
+    """Saved photoperiod and trajectory; an empty climate schedule remains readable."""
 
     config_revision: str = Field(min_length=1)
     mode_id: int
     submode_id: int | None = None
-    periods: Annotated[tuple[TimelinePeriodDraft, ...], BeforeValidator(tuple)] = Field(
-        min_length=1
-    )
+    periods: Annotated[tuple[TimelinePeriodDraft, ...], BeforeValidator(tuple)]
     photoperiod: TimelinePhotoperiodDraft
     trajectory: RichTrajectoryEnvelope | None = None
 

@@ -43,6 +43,7 @@ export type ControlTimelineProps = {
   readonly onExpand?: () => void
   readonly onCollapse?: () => void
   readonly lockedPhotoperiodHours?: number | null
+  readonly forcedMoonPhase?: boolean
 }
 
 function changedPeriods(
@@ -96,6 +97,7 @@ export function ControlTimeline({
   onExpand,
   onCollapse,
   lockedPhotoperiodHours = null,
+  forcedMoonPhase = false,
 }: ControlTimelineProps) {
   const [editError, setEditError] = useState<string | null>(null)
   const [windowMode, setWindowMode] = useState<'daily' | 'rolling'>('daily')
@@ -166,8 +168,8 @@ export function ControlTimeline({
     state.status.kind,
   ])
   const chart = useMemo(() => {
-    if (localMode) {
-      const local = buildLocalScheduledSeries(draftPeriods, {
+    if (localMode || !envelope) {
+      const local = buildLocalScheduledSeries(localMode ? draftPeriods : [], {
         start: new Date(windowStartMs),
         end: new Date(windowEndMs),
       })
@@ -182,7 +184,6 @@ export function ControlTimeline({
         meta: timelineSeriesMeta(keys),
       }
     }
-    if (!envelope) return null
     const sampleTimes = envelopeSampleTimes({
       start: new Date(windowStartMs),
       end: new Date(windowEndMs),
@@ -198,9 +199,13 @@ export function ControlTimeline({
     }
   }, [envelope, localMode, draftPeriods, windowStartMs, windowEndMs])
 
+  // Runtime mode authority overrides stored clocks without rewriting the saved photoperiod.
   const bands = useMemo(
-    () => photoperiodIntervals(state.draft.photoperiod, windowStartMs, windowEndMs),
-    [state.draft.photoperiod, windowStartMs, windowEndMs]
+    () =>
+      forcedMoonPhase
+        ? [{ start: windowStartMs, end: windowEndMs, phase: 'MOON' as const }]
+        : photoperiodIntervals(state.draft.photoperiod, windowStartMs, windowEndMs),
+    [forcedMoonPhase, state.draft.photoperiod, windowStartMs, windowEndMs]
   )
 
   const nowX =
@@ -423,6 +428,7 @@ export function ControlTimeline({
           <span className="border border-border-default px-1 text-10 text-accent-data">
             {isExpanded ? 'EDITABLE' : 'READ ONLY'}
           </span>
+          {forcedMoonPhase && <span className="text-10">MOON · 24h</span>}
         </div>
         <div className="flex items-center gap-1">
           {isExpanded && onCollapse && (
@@ -452,22 +458,16 @@ export function ControlTimeline({
           data-testid="control-timeline-plot"
           className={`relative min-w-0 border border-border-default bg-surface-base ${isExpanded ? 'h-[60vh]' : 'h-64'}`}
         >
-          {chart ? (
-            <TimelineUPlot
-              data={chart.data}
-              meta={chart.meta}
-              windowMs={{ start: windowStartMs, end: windowEndMs }}
-              photoperiod={bands}
-              nowX={nowX}
-              revision={dataRevision.current}
-              plugins={[labelsPlugin, dragHandles]}
-              ariaLabel={`Climate control timeline plot, ${chart.meta.map(entry => entry.label).join(', ')}`}
-            />
-          ) : (
-            <div className="flex h-full items-center justify-center text-10 text-text-subtle uppercase">
-              No trajectory envelope available
-            </div>
-          )}
+          <TimelineUPlot
+            data={chart.data}
+            meta={chart.meta}
+            windowMs={{ start: windowStartMs, end: windowEndMs }}
+            photoperiod={bands}
+            nowX={nowX}
+            revision={dataRevision.current}
+            plugins={[labelsPlugin, dragHandles]}
+            ariaLabel={`Climate control timeline plot, ${chart.meta.map(entry => entry.label).join(', ')}`}
+          />
           <div className="pointer-events-none absolute inset-0 z-10">
             {skippedWarning !== undefined && envelope !== undefined && (
               <TimelineWarningOverlay warning={skippedWarning} window={envelope.window} />
@@ -498,6 +498,16 @@ export function ControlTimeline({
             </span>
           )}
         </div>
+        {state.draft.periods.length === 0 && (
+          <p className="text-10 text-text-subtle">
+            No climate periods configured; setpoints are unset.
+          </p>
+        )}
+        {forcedMoonPhase && (
+          <p className="text-10 text-text-subtle">
+            This mode forces 24h MOON; stored photoperiod times and ramps are inactive.
+          </p>
+        )}
 
         {isExpanded && (
           <div className="flex flex-wrap gap-1" data-testid="control-timeline-boundaries">
@@ -539,6 +549,7 @@ export function ControlTimeline({
                 <input
                   aria-label={label}
                   value={state.draft.photoperiod[field]}
+                  disabled={forcedMoonPhase}
                   onChange={event => changePhotoperiod(field, event.target.value)}
                   className="border border-border-default bg-surface-secondary px-1 py-0.5 text-text-input"
                 />
@@ -557,6 +568,7 @@ export function ControlTimeline({
                   type="number"
                   min={0}
                   value={state.draft.photoperiod[field]}
+                  disabled={forcedMoonPhase}
                   onChange={event =>
                     controller.editPhotoperiod({
                       ...state.draft.photoperiod,

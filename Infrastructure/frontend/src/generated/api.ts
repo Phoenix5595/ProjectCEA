@@ -435,7 +435,7 @@ export interface paths {
         put?: never;
         /**
          * Restart Service
-         * @description Write restart-hash sidecar, schedule systemctl restart, return 202.
+         * @description Write restart-hash sidecar, then schedule one deferred systemctl restart.
          */
         post: operations["post_api_config_restart"];
         delete?: never;
@@ -3426,7 +3426,7 @@ export interface components {
         };
         /**
          * TimelineSavedResponse
-         * @description Saved timeline values and the saved rich trajectory for one window.
+         * @description Saved photoperiod and trajectory; an empty climate schedule remains readable.
          */
         TimelineSavedResponse: {
             /** Config Revision */

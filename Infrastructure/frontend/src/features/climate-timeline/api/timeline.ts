@@ -39,9 +39,9 @@ const savedResponseSchema = z.object({
   config_revision: z.string().min(1),
   mode_id: z.number().int(),
   submode_id: z.number().int().nullable(),
-  periods: z.array(periodSchema).min(1),
+  periods: z.array(periodSchema),
   photoperiod: photoperiodSchema,
-  trajectory: RichTrajectoryEnvelope.optional(),
+  trajectory: RichTrajectoryEnvelope.nullish(),
 })
 
 const previewResponseSchema = z.object({
@@ -157,7 +157,7 @@ function mapSavedResponse(
       rampDownMinutes: response.photoperiod.ramp_down_minutes,
     },
     window,
-    trajectory: response.trajectory,
+    trajectory: response.trajectory ?? undefined,
   }
 }
 

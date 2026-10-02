@@ -152,6 +152,13 @@ export default function ZoneConfig({
 
   const [roomMode, setRoomMode] = useState<RoomModeWithParams | null>(null)
   const [climatePeriods, setClimatePeriods] = useState<ClimatePeriod[]>([])
+  const displayedClimatePeriods = useMemo(
+    () =>
+      roomMode && isCanonicalConstantMode(roomMode.mode_name) && climatePeriods.length === 0
+        ? [createConstantPeriod(roomMode.mode_name)]
+        : climatePeriods,
+    [climatePeriods, roomMode]
+  )
   const [timelineBaseline, setTimelineBaseline] = useState<TimelineSavedBaseline | null>(null)
   const [loading, setLoading] = useState(section === 'control')
   const [saving, setSaving] = useState(false)
@@ -510,6 +517,7 @@ export default function ZoneConfig({
                     key={`${location}-${cluster}-${timelineBaseline.baseConfigRevision}-${roomMode.mode_id ?? 'unknown'}-${roomMode.submode_id ?? 'none'}`}
                     controller={timelineController}
                     lockedPhotoperiodHours={lockedPhotoperiod}
+                    forcedMoonPhase={isConstant}
                   />
                 </div>
               ) : timelineBaseline ? null : (
@@ -518,38 +526,37 @@ export default function ZoneConfig({
                 </div>
               ))}
 
-            {/* Climate Periods + Relay Matrix row (owner layout) */}
+            {/* Keep the climate section; constant modes replace only the light-control panel. */}
             <div className="flex gap-1">
               <div className="flex-1 flex flex-col gap-1 h-full overflow-hidden">
-                {!isConstant ? (
-                  <>
-                    <div className="bg-surface-primary rounded-lg border border-border-subtle p-1 flex-[56] overflow-auto">
-                      {timelineBaseline && timelineReady ? (
-                        <ClimatePeriodsTable
-                          {...createClimatePeriodsTableAdapter(
-                            timelineController.state,
-                            timelineController.editPeriods
-                          )}
-                        />
-                      ) : (
-                        <ClimatePeriodsTable
-                          periods={climatePeriods}
-                          onChange={setClimatePeriods}
-                        />
+                <div className="bg-surface-primary rounded-lg border border-border-subtle p-1 flex-[56] min-h-[112px] overflow-auto">
+                  {!isConstant && timelineBaseline && timelineReady ? (
+                    <ClimatePeriodsTable
+                      {...createClimatePeriodsTableAdapter(
+                        timelineController.state,
+                        timelineController.editPeriods
                       )}
-                    </div>
-                    <div className="flex-[44] overflow-auto">
-                      <LightIntensity
-                        ref={lightIntensityRef}
-                        location={location}
-                        cluster={cluster}
-                        compact={true}
-                      />
-                    </div>
-                  </>
-                ) : (
-                  <ManualLightControl location={location} cluster={cluster} compact={true} />
-                )}
+                    />
+                  ) : (
+                    <ClimatePeriodsTable
+                      periods={displayedClimatePeriods}
+                      onChange={setClimatePeriods}
+                      constantMode={isConstant}
+                    />
+                  )}
+                </div>
+                <div className="flex-[44] overflow-auto">
+                  {isConstant ? (
+                    <ManualLightControl location={location} cluster={cluster} compact={true} />
+                  ) : (
+                    <LightIntensity
+                      ref={lightIntensityRef}
+                      location={location}
+                      cluster={cluster}
+                      compact={true}
+                    />
+                  )}
+                </div>
               </div>
               <div className="shrink-0 min-w-0">
                 {!mcpConnected && (
