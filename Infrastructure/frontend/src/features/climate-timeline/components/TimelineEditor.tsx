@@ -7,9 +7,14 @@ import { ControlTimeline } from './ControlTimeline'
 export type TimelineEditorProps = {
   readonly controller: TimelineDraftController
   readonly lockedPhotoperiodHours?: number | null
+  readonly forcedMoonPhase?: boolean
 }
 
-export function TimelineEditor({ controller, lockedPhotoperiodHours = null }: TimelineEditorProps) {
+export function TimelineEditor({
+  controller,
+  lockedPhotoperiodHours = null,
+  forcedMoonPhase = false,
+}: TimelineEditorProps) {
   const [expanded, setExpanded] = useState(false)
 
   return (
@@ -19,6 +24,7 @@ export function TimelineEditor({ controller, lockedPhotoperiodHours = null }: Ti
       onExpand={() => setExpanded(true)}
       onCollapse={() => setExpanded(false)}
       lockedPhotoperiodHours={lockedPhotoperiodHours}
+      forcedMoonPhase={forcedMoonPhase}
     />
   )
 }

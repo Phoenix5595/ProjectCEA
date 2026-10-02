@@ -39,15 +39,18 @@ interface ClimatePeriodsTableProps {
   periods: ClimatePeriod[]
   onChange: (periods: ClimatePeriod[]) => void
   validationErrors?: string[]
+  /** Constant modes expose one full-day section, not an editable daily schedule. */
+  constantMode?: boolean
 }
 
 export default function ClimatePeriodsTable({
   periods,
   onChange,
   validationErrors = [],
+  constantMode = false,
 }: ClimatePeriodsTableProps) {
   const addPeriod = () => {
-    if (periods.length >= 7) return
+    if (periods.length >= (constantMode ? 1 : 7)) return
     const newPeriod: ClimatePeriod = {
       period_name: `Period ${periods.length + 1}`,
       start_time: '00:00',
@@ -89,7 +92,7 @@ export default function ClimatePeriodsTable({
           <button
             type="button"
             onClick={addPeriod}
-            disabled={periods.length >= 7}
+            disabled={periods.length >= (constantMode ? 1 : 7)}
             className="px-3 py-1 text-xs font-medium rounded-md bg-accent-vivid text-accent-vivid-foreground hover:bg-accent-data disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             + Add Period
@@ -169,6 +172,7 @@ export default function ClimatePeriodsTable({
                       pattern="[0-9]{2}:[0-9]{2}"
                       placeholder="HH:MM"
                       value={period.start_time}
+                      disabled={constantMode}
                       onChange={e => updatePeriod(index, 'start_time', e.target.value)}
                       onBlur={e => {
                         const normalized = normalizeTypedTimeText(e.target.value)
@@ -191,6 +195,7 @@ export default function ClimatePeriodsTable({
                       pattern="[0-9]{2}:[0-9]{2}"
                       placeholder="HH:MM"
                       value={period.end_time}
+                      disabled={constantMode}
                       onChange={e => updatePeriod(index, 'end_time', e.target.value)}
                       onBlur={e => {
                         const normalized = normalizeTypedTimeText(e.target.value)
@@ -210,6 +215,7 @@ export default function ClimatePeriodsTable({
                     min="0"
                     max="240"
                     value={period.ramp_minutes}
+                    disabled={constantMode}
                     onChange={e =>
                       updatePeriod(index, 'ramp_minutes', parseInt(e.target.value) || 0)
                     }
