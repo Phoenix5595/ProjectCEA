@@ -1379,8 +1379,9 @@ body {
   }
 }
 
-/* Full-HD control content is slightly reduced; persistent navigation stays full-size. */
-@media (width: 1920px) and (height: 1080px) {
+/* Short desktop control pages need more content per viewport; browsers report
+ the page area (e.g. Firefox side tabs), not their outer window or screen. */
+@media (min-width: 1280px) and (max-height: 1080px) {
   .control-page-content {
     zoom: 0.95;
   }
