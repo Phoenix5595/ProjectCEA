@@ -1341,7 +1341,6 @@ body {
 @media (min-width: 768px) {
   .dashboard-event-log-panel [aria-label='Grouped alert console'] > * {
     min-width: 0;
-    min-height: 0;
     overflow-wrap: anywhere;
   }
 

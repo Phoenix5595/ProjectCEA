@@ -4,6 +4,10 @@ import type { Page } from '@playwright/test'
 import { eventHistoryFixture } from '../../src/features/event-log/config/fixtures'
 import { FIXTURE_ORIGIN, FIXTURE_WS_ORIGIN } from '../../src/features/monitoring/config/originGuard'
 import { fixtureUrl } from './fixtureUrl'
+import {
+  EVENT_BUCKET_ORDERS,
+  type EventBucketCount,
+} from '../../src/features/event-log/presentation/categoryTheme'
 
 const FIXED_NOW = new Date('2026-08-15T12:00:00.000Z')
 const LONG_NOTE = Array.from(
@@ -170,6 +174,8 @@ test('dashboard fits both supported desktop viewports without overflow', async (
     Boolean(process.env.BASE_URL),
     'This layout regression requires the isolated fixture preview'
   )
+  // Device is slow and the flow is long; the 30s default clips at 1280x1440.
+  test.setTimeout(120_000)
 
   const viewport = page.viewportSize()
   expect(viewport).not.toBeNull()
@@ -180,6 +186,11 @@ test('dashboard fits both supported desktop viewports without overflow', async (
   expect(expectedViewports[testInfo.project.name as keyof typeof expectedViewports]).toBeDefined()
   expect(viewport).toEqual(
     expectedViewports[testInfo.project.name as keyof typeof expectedViewports]
+  )
+  // Window height selects the right-rail bucket policy, not the screen size.
+  const expectedBucketCount: EventBucketCount = viewport!.height >= 1440 ? 8 : 6
+  const expectedBucketIds = EVENT_BUCKET_ORDERS[expectedBucketCount].map(
+    category => `event-group-${category}`
   )
 
   const blockedHttp: string[] = []
@@ -342,10 +353,15 @@ test('dashboard fits both supported desktop viewports without overflow', async (
   const groupRows = await groupGrid.locator('[data-testid^="event-group-"]').evaluateAll(elements =>
     elements.map(element => {
       const rect = element.getBoundingClientRect()
-      return { top: rect.top, bottom: rect.bottom }
+      return {
+        testid: element.getAttribute('data-testid'),
+        top: rect.top,
+        bottom: rect.bottom,
+      }
     })
   )
-  expect(groupRows).toHaveLength(6)
+  expect(groupRows).toHaveLength(expectedBucketCount)
+  expect(groupRows.map(row => row.testid)).toEqual(expectedBucketIds)
   for (let index = 1; index < groupRows.length; index += 1) {
     expect(groupRows[index]!.top).toBeGreaterThanOrEqual(groupRows[index - 1]!.bottom - 1)
   }
@@ -403,7 +419,7 @@ test('dashboard fits both supported desktop viewports without overflow', async (
     return { problems, cardCount: cards.length }
   })
   expect(bandAudit).not.toBeNull()
-  expect(bandAudit!.cardCount).toBe(6)
+  expect(bandAudit!.cardCount).toBe(expectedBucketCount)
   expect(bandAudit!.problems).toEqual([])
   await page.screenshot({
     path: testInfo.outputPath('dashboard-grouped-event-log.png'),
@@ -683,7 +699,14 @@ test('dashboard fits both supported desktop viewports without overflow', async (
   await expect(page.getByRole('dialog')).not.toBeVisible()
   await expect(newEventButton).toBeFocused()
 
-  await expect(page.locator('[data-testid^="event-group-"]')).toHaveCount(6)
+  await expect(page.locator('[data-testid^="event-group-"]')).toHaveCount(expectedBucketCount)
+  await expect
+    .poll(() =>
+      page
+        .locator('[data-testid^="event-group-"]')
+        .evaluateAll(elements => elements.map(element => element.getAttribute('data-testid')))
+    )
+    .toEqual(expectedBucketIds)
   await expect(page.getByTestId('event-groups-page-status')).toHaveCount(0)
   await expect(page.getByRole('button', { name: /category page/i })).toHaveCount(0)
   await page.getByTestId('event-group-system').click()
@@ -705,15 +728,25 @@ test('dashboard fits both supported desktop viewports without overflow', async (
   await expect(eventDetail).toContainText('service dashboard-layout-49')
   await expect(eventDetail).toContainText('07:11:00')
   await expect(eventDetail).toContainText('Category: System (system)')
+  // Viewport-scoped shot: a fullPage capture rescales device metrics, which a
+  // real browser reports as a window-height transition the console honours by
+  // clearing its inline detail; the detail itself is what must be captured.
   await page.screenshot({
     path: testInfo.outputPath('dashboard-event-detail.png'),
-    fullPage: true,
+    fullPage: false,
   })
   await eventDetail.getByRole('button', { name: 'Close event details' }).click()
   await expect(sentinelRow.getByTestId('event-detail-opener')).toBeFocused()
 
   await page.getByTestId('event-group-collapse').click()
-  await expect(page.locator('[data-testid^="event-group-"]')).toHaveCount(6)
+  await expect(page.locator('[data-testid^="event-group-"]')).toHaveCount(expectedBucketCount)
+  await expect
+    .poll(() =>
+      page
+        .locator('[data-testid^="event-group-"]')
+        .evaluateAll(elements => elements.map(element => element.getAttribute('data-testid')))
+    )
+    .toEqual(expectedBucketIds)
   await expect(page.getByRole('button', { name: /category page/i })).toHaveCount(0)
   if (!(await page.getByRole('button', { name: 'All events' }).isVisible())) {
     await page.getByRole('button', { name: /^Filters/ }).click()

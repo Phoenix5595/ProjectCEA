@@ -541,3 +541,210 @@ describe('EventLog', () => {
     await waitFor(() => expect(document.activeElement).toBe(openButton))
   })
 })
+
+describe('EventLog bucket policies', () => {
+  afterEach(() => {
+    globalEventLogStore.reset()
+  })
+
+  const NOW = () => new Date('2026-09-02T12:00:00Z')
+
+  const CONFLICT_ENTRIES = [
+    makeEventEntry('1-0', 'system.failsafe_raised', 'system', {}, 'critical'),
+    makeEventEntry('2-0', 'ramp.started', 'ramp', { device_id: 'heater-2' }),
+    makeEventEntry('3-0', 'config.updated', 'mutation'),
+    makeEventEntry('4-0', 'control.setpoint_changed', 'control', { device_id: 'heater-1' }),
+  ]
+
+  async function selectCompactView(user: UserEvent, label: 'Alerts' | 'All events') {
+    const name = new RegExp(`^${label}$`)
+    if (!screen.queryByRole('button', { name })) {
+      await user.click(screen.getByRole('button', { name: 'Filters' }))
+    }
+    await user.click(screen.getByRole('button', { name }))
+  }
+
+  // Compact filter UI: the 'Filters' disclosure panel exposes the raw-category
+  // checkboxes directly (no nested dropdown). Open it only when the target
+  // checkbox is not already visible, so repeated selections keep the panel.
+  async function chooseFilter(user: UserEvent, category: string) {
+    if (!screen.queryByRole('checkbox', { name: category })) {
+      await user.click(screen.getByRole('button', { name: 'Filters' }))
+    }
+    await user.click(screen.getByRole('checkbox', { name: category }))
+  }
+
+  it('keeps every raw category reachable when the eight-bucket policy is active', async () => {
+    const user = userEvent.setup()
+    render(
+      <EventLog entries={CONFLICT_ENTRIES} now={NOW()} compact bucketCount={8} />
+    )
+
+    // Then: each raw category owns exactly one populated card.
+    const controlRow = screen.getByTestId('event-group-control')
+    expect(within(controlRow).getByText('Control setpoint changed')).toBeInTheDocument()
+    expect(within(controlRow).getByText('1', { exact: true })).toBeInTheDocument()
+    const rampRow = screen.getByTestId('event-group-ramp')
+    expect(within(rampRow).getByText('Ramp started')).toBeInTheDocument()
+    const mutationRow = screen.getByTestId('event-group-mutation')
+    expect(within(mutationRow).getByText('Configuration updated')).toBeInTheDocument()
+    const systemRow = screen.getByTestId('event-group-system')
+    expect(within(systemRow).getByText('Failsafe raised')).toBeInTheDocument()
+
+    // Expansion and collapse remain per raw category.
+    await user.click(controlRow)
+    let rows = screen.getAllByRole('listitem')
+    expect(rows).toHaveLength(1)
+    expect(within(rows[0]).getByText('Control setpoint changed')).toBeInTheDocument()
+    await user.click(screen.getByTestId('event-group-collapse'))
+
+    await user.click(screen.getByTestId('event-group-ramp'))
+    rows = screen.getAllByRole('listitem')
+    expect(rows).toHaveLength(1)
+    expect(within(rows[0]).getByText('Ramp started')).toBeInTheDocument()
+    await user.click(screen.getByTestId('event-group-collapse'))
+
+    await user.click(screen.getByTestId('event-group-mutation'))
+    rows = screen.getAllByRole('listitem')
+    expect(rows).toHaveLength(1)
+    expect(within(rows[0]).getByText('Configuration updated')).toBeInTheDocument()
+    await user.click(screen.getByTestId('event-group-collapse'))
+
+    await user.click(screen.getByTestId('event-group-system'))
+    rows = screen.getAllByRole('listitem')
+    expect(rows).toHaveLength(1)
+    expect(within(rows[0]).getByText('Failsafe raised')).toBeInTheDocument()
+    await user.click(screen.getByTestId('event-group-collapse'))
+
+    // Raw filters still select only the original backend category.
+    await selectCompactView(user, 'All events')
+    expect(screen.getAllByRole('listitem')).toHaveLength(4)
+
+    await chooseFilter(user, 'ramp')
+    expect(screen.getByTestId('event-events-page-status')).toHaveTextContent(
+      'Page 1 of 1 · 1 event'
+    )
+    expect(screen.getByText('Ramp started')).toBeInTheDocument()
+    expect(screen.queryByText('Control setpoint changed')).not.toBeInTheDocument()
+
+    // Uncheck ramp again, then select only the mutation original.
+    await user.click(screen.getByRole('checkbox', { name: 'ramp' }))
+    await user.click(screen.getByRole('checkbox', { name: 'mutation' }))
+    expect(screen.getByTestId('event-events-page-status')).toHaveTextContent(
+      'Page 1 of 1 · 1 event'
+    )
+    expect(screen.getByText('Configuration updated')).toBeInTheDocument()
+    expect(screen.queryByText('Ramp started')).not.toBeInTheDocument()
+  })
+
+  it('returns to the merged six-bucket overview from an expanded ramp with an open detail', async () => {
+    const user = userEvent.setup()
+    const { rerender } = render(
+      <EventLog entries={CONFLICT_ENTRIES} now={NOW()} compact bucketCount={8} />
+    )
+
+    // When: ramp is expanded with its inline detail open and a raw filter active.
+    await user.click(screen.getByTestId('event-group-ramp'))
+    await user.click(screen.getByTestId('event-detail-opener'))
+    expect(
+      screen.getByRole('region', { name: 'Selected event details' })
+    ).toBeInTheDocument()
+    await chooseFilter(user, 'ramp')
+
+    rerender(<EventLog entries={CONFLICT_ENTRIES} now={NOW()} compact bucketCount={6} />)
+
+    // Then: the grouped overview returns under the merged policy, the detail
+    // is gone, and the surviving raw filter keeps Control populated ONLY from
+    // ramp originals.
+    expect(screen.queryByRole('listitem')).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('region', { name: 'Selected event details' })
+    ).not.toBeInTheDocument()
+    const controlRow = screen.getByTestId('event-group-control')
+    expect(within(controlRow).getByText('Ramp started')).toBeInTheDocument()
+    expect(within(controlRow).getByText('1', { exact: true })).toBeInTheDocument()
+    expect(within(controlRow).queryByText('Control setpoint changed')).not.toBeInTheDocument()
+    // System shows zero events: the mutation original is filtered out.
+    expect(screen.getByTestId('event-group-system')).toHaveTextContent('No recent events')
+  })
+
+  it('returns to the split eight-bucket overview from an expanded merged Control', async () => {
+    const user = userEvent.setup()
+    const { rerender } = render(
+      <EventLog entries={CONFLICT_ENTRIES} now={NOW()} compact bucketCount={6} />
+    )
+
+    // When: the merged Control bucket is expanded, then the policy widens.
+    await user.click(screen.getByTestId('event-group-control'))
+    expect(screen.getAllByRole('listitem')).toHaveLength(2)
+    rerender(<EventLog entries={CONFLICT_ENTRIES} now={NOW()} compact bucketCount={8} />)
+
+    // Then: the grouped overview returns and every raw category is split out
+    // again — not a silently narrowed flat list.
+    expect(screen.queryByRole('listitem')).not.toBeInTheDocument()
+    expect(screen.getByTestId('event-group-control')).toBeInTheDocument()
+    expect(screen.getByTestId('event-group-ramp')).toBeInTheDocument()
+    expect(screen.getByTestId('event-group-mutation')).toBeInTheDocument()
+    expect(within(screen.getByTestId('event-group-control')).getByText('Control setpoint changed'))
+      .toBeInTheDocument()
+    expect(within(screen.getByTestId('event-group-ramp')).getByText('Ramp started')).toBeInTheDocument()
+  })
+
+  it('resets paging and detail when the count changes inside All events', async () => {
+    const entries = Array.from({ length: 12 }, (_, index) =>
+      makeEventEntry(`${index + 1}-0`, 'relay.state_changed', 'relay', { device_id: `fan-${index}` })
+    )
+    const user = userEvent.setup()
+    const { rerender } = render(
+      <EventLog entries={entries} now={NOW()} compact bucketCount={6} />
+    )
+    await selectCompactView(user, 'All events')
+    await user.click(screen.getByRole('button', { name: 'Next events page' }))
+    expect(screen.getByTestId('event-events-page-status')).toHaveTextContent(
+      'Page 2 of 3 · 12 events'
+    )
+    await user.click(screen.getAllByTestId('event-detail-opener')[0])
+    expect(
+      screen.getByRole('region', { name: 'Selected event details' })
+    ).toBeInTheDocument()
+
+    rerender(<EventLog entries={entries} now={NOW()} compact bucketCount={8} />)
+
+    // Then: same view and filters, back on page one, detail gone, rows intact.
+    expect(screen.getByTestId('event-events-page-status')).toHaveTextContent(
+      'Page 1 of 3 · 12 events'
+    )
+    expect(
+      screen.queryByRole('region', { name: 'Selected event details' })
+    ).not.toBeInTheDocument()
+    expect(screen.getAllByRole('listitem')).toHaveLength(5)
+  })
+
+  it('preserves paging, expansion, and detail across a same-policy re-render', async () => {
+    const entries = Array.from({ length: 12 }, (_, index) =>
+      makeEventEntry(`${index + 1}-0`, 'relay.state_changed', 'relay', { device_id: `fan-${index}` })
+    )
+    const user = userEvent.setup()
+    const view = <EventLog entries={entries} now={NOW()} compact bucketCount={8} />
+    const { rerender } = render(view)
+    await selectCompactView(user, 'All events')
+    await user.click(screen.getByRole('button', { name: 'Next events page' }))
+    expect(screen.getByTestId('event-events-page-status')).toHaveTextContent(
+      'Page 2 of 3 · 12 events'
+    )
+    await user.click(screen.getAllByTestId('event-detail-opener')[0])
+    expect(
+      screen.getByRole('region', { name: 'Selected event details' })
+    ).toBeInTheDocument()
+
+    rerender(view)
+
+    // Then: an eight→eight re-render is a policy no-op; nothing resets.
+    expect(screen.getByTestId('event-events-page-status')).toHaveTextContent(
+      'Page 2 of 3 · 12 events'
+    )
+    expect(
+      screen.getByRole('region', { name: 'Selected event details' })
+    ).toBeInTheDocument()
+  })
+})
