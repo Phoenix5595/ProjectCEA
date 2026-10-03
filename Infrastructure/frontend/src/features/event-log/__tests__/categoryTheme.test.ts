@@ -3,8 +3,12 @@ import { describe, it, expect } from 'vitest'
 import {
   categoryTheme,
   displayCategoryOf,
+  EVENT_BUCKET_ORDERS,
   EVENT_CATEGORY_LABELS,
+  type EventBucketCount,
 } from '../presentation/categoryTheme'
+
+const BUCKET_COUNTS: readonly EventBucketCount[] = [6, 8]
 
 const CATEGORIES = [
   'relay',
@@ -18,27 +22,70 @@ const CATEGORIES = [
 ] as const
 
 describe('display category split', () => {
-  it('funnels sensor/device health events into the Sensors bucket', () => {
-    expect(displayCategoryOf({ category: 'system', type: 'sensor.degraded' })).toBe('sensor')
-    expect(displayCategoryOf({ category: 'system', type: 'device.timeout' })).toBe('sensor')
+  it.each(BUCKET_COUNTS)(
+    'funnels sensor/device health events into the Sensors bucket in the %d-bucket policy',
+    bucketCount => {
+      expect(displayCategoryOf({ category: 'system', type: 'sensor.degraded' }, bucketCount)).toBe(
+        'sensor'
+      )
+      expect(displayCategoryOf({ category: 'system', type: 'device.timeout' }, bucketCount)).toBe(
+        'sensor'
+      )
+    }
+  )
+
+  it('keeps platform events in the System bucket in both policies', () => {
+    for (const bucketCount of BUCKET_COUNTS) {
+      expect(displayCategoryOf({ category: 'system', type: 'system.failsafe_raised' }, bucketCount)).toBe(
+        'system'
+      )
+      expect(displayCategoryOf({ category: 'system', type: 'transport.degraded' }, bucketCount)).toBe(
+        'system'
+      )
+    }
   })
 
-  it('keeps platform events in the System bucket', () => {
-    expect(displayCategoryOf({ category: 'system', type: 'system.failsafe_raised' })).toBe('system')
-    expect(displayCategoryOf({ category: 'system', type: 'transport.degraded' })).toBe('system')
+  it('merges raw ramp into Control and raw mutation into System in the six-bucket policy', () => {
+    expect(displayCategoryOf({ category: 'ramp', type: 'ramp.started' }, 6)).toBe('control')
+    expect(displayCategoryOf({ category: 'mutation', type: 'config.updated' }, 6)).toBe('system')
   })
 
-  it('merges raw ramp into Control and raw mutation into System', () => {
-    expect(displayCategoryOf({ category: 'ramp', type: 'ramp.started' })).toBe('control')
-    expect(displayCategoryOf({ category: 'mutation', type: 'config.updated' })).toBe('system')
+  it('keeps Ramp and Mutation as their own buckets in the eight-bucket policy', () => {
+    expect(displayCategoryOf({ category: 'ramp', type: 'ramp.started' }, 8)).toBe('ramp')
+    expect(displayCategoryOf({ category: 'mutation', type: 'config.updated' }, 8)).toBe('mutation')
   })
 
-  it('passes all other categories through untouched', () => {
-    expect(displayCategoryOf({ category: 'relay', type: 'relay.commanded' })).toBe('relay')
-    expect(displayCategoryOf({ category: 'control', type: 'control.setpoint_changed' })).toBe(
-      'control'
-    )
-    expect(displayCategoryOf({ category: 'nonsense', type: 'x.y' })).toBe('nonsense')
+  it('exposes exactly the two canonical slot orders', () => {
+    expect(EVENT_BUCKET_ORDERS[6]).toEqual([
+      'relay',
+      'sensor',
+      'control',
+      'manual_override',
+      'alarm',
+      'system',
+    ])
+    expect(EVENT_BUCKET_ORDERS[8]).toEqual([
+      'relay',
+      'sensor',
+      'ramp',
+      'control',
+      'manual_override',
+      'mutation',
+      'alarm',
+      'system',
+    ])
+  })
+
+  it('passes all other categories through untouched in both policies', () => {
+    for (const bucketCount of BUCKET_COUNTS) {
+      expect(displayCategoryOf({ category: 'relay', type: 'relay.commanded' }, bucketCount)).toBe(
+        'relay'
+      )
+      expect(
+        displayCategoryOf({ category: 'control', type: 'control.setpoint_changed' }, bucketCount)
+      ).toBe('control')
+      expect(displayCategoryOf({ category: 'nonsense', type: 'x.y' }, bucketCount)).toBe('nonsense')
+    }
   })
 })
 

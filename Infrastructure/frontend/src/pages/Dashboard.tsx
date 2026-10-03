@@ -28,6 +28,7 @@ import { useActiveAlarms } from '../hooks/useActiveAlarms'
 import { useCalendarEvents } from '../hooks/useCalendarEvents'
 import { useControlSnapshot } from '../hooks/useControlSnapshot'
 import { useDashboardLiveData } from '../hooks/useDashboardLiveData'
+import { useDashboardEventBucketCount } from '../hooks/useDashboardEventBucketCount'
 import { getDashboardMode, useDashboardScheduleContext } from '../hooks/useDashboardScheduleContext'
 import { useDashboardTrends } from '../hooks/useDashboardTrends'
 import { useSystemStatus } from '../hooks/useSystemStatus'
@@ -65,6 +66,8 @@ export default function Dashboard() {
   const alarms = useActiveAlarms()
   const { systemStats, statusDevices, degraded } = useSystemStatus()
   const { entries: eventLogEntries } = useEventLog()
+  // Window height selects the right-rail event console policy (6 vs 8 buckets).
+  const eventBucketCount = useDashboardEventBucketCount()
 
   const [weatherData, setWeatherData] = useState<WeatherData | null>(null)
   const [wizardOpen, setWizardOpen] = useState(false)
@@ -310,6 +313,7 @@ export default function Dashboard() {
                 entries={eventLogEntries}
                 now={now}
                 compact
+                bucketCount={eventBucketCount}
                 primaryRooms={ROOM_MAP_ZONES.map(zone => zone.location)}
               />
             </div>

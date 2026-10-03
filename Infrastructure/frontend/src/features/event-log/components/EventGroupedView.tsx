@@ -1,6 +1,11 @@
 import { memo } from 'react'
 
-import { displayCategoryOf, categoryTheme } from '../presentation/categoryTheme'
+import {
+  EVENT_BUCKET_ORDERS,
+  type EventBucketCount,
+  displayCategoryOf,
+  categoryTheme,
+} from '../presentation/categoryTheme'
 import { getEventDisplay } from '../presentation/eventRegistry'
 import { sourcePartsFor } from '../presentation/eventSourceParts'
 import { SEVERITY_LABELS, type SeverityLevel } from '../presentation/severity'
@@ -33,30 +38,27 @@ interface CategoryBag {
   samples: Array<{ happenedAt: number; entity: string }>
 }
 
-/** Six presentation buckets: relay, sensor, control (merged ramp), manual_override, alarm, system (merged mutation). Every bucket occupies its slot so the layout never reflows as events arrive. */
-export const DISPLAY_BUCKET_ORDER: readonly string[] = [
-  'relay',
-  'sensor',
-  'control',
-  'manual_override',
-  'alarm',
-  'system',
-]
-
-export function withPreallocatedSlots(groups: CategoryGroup[]): CategoryGroup[] {
+export function withPreallocatedSlots(
+  groups: CategoryGroup[],
+  bucketCount: EventBucketCount
+): CategoryGroup[] {
+  const order = EVENT_BUCKET_ORDERS[bucketCount]
   const filled = new Map(groups.map(group => [group.category, group]))
-  const slots = DISPLAY_BUCKET_ORDER.map<CategoryGroup>(category => {
+  const slots = order.map<CategoryGroup>(category => {
     const group = filled.get(category)
     return group ?? { category, count: 0, latest: null, entities: [] }
   })
-  const extra = groups.filter(group => !DISPLAY_BUCKET_ORDER.includes(group.category))
+  const extra = groups.filter(group => !order.includes(group.category))
   return [...slots, ...extra]
 }
 
-export function buildGroups(orderedNewestFirst: readonly EventLogEntry[]): CategoryGroup[] {
+export function buildGroups(
+  orderedNewestFirst: readonly EventLogEntry[],
+  bucketCount: EventBucketCount
+): CategoryGroup[] {
   const bags = new Map<string, CategoryBag>()
   for (const entry of orderedNewestFirst) {
-    const bucket = displayCategoryOf(entry)
+    const bucket = displayCategoryOf(entry, bucketCount)
     const entity = entry.entity?.entityId ?? entry.type
     let bag = bags.get(bucket)
     if (bag === undefined) {
@@ -269,24 +271,30 @@ export function EventGroupedView({
   now,
   onExpand,
   compact = false,
+  bucketCount,
 }: {
   groups: readonly CategoryGroup[]
   now: Date
   onExpand: (category: string) => void
   /** Sidebar mode: three content-sized bands (header, latest event, metadata). */
   compact?: boolean
+  /** Height-adaptive bucket policy driving slot order and compact slicing. */
+  bucketCount: EventBucketCount
 }) {
+  const order = EVENT_BUCKET_ORDERS[bucketCount]
   const visibleGroups =
-    compact && groups.length > DISPLAY_BUCKET_ORDER.length
-      ? groups.slice(0, DISPLAY_BUCKET_ORDER.length)
-      : groups
+    compact && groups.length > order.length ? groups.slice(0, order.length) : groups
 
   return (
     <div
       role="group"
       aria-label="Grouped alert console"
       className={`grid min-w-0 gap-1 bg-surface-base border border-border-subtle rounded-sm ${
-        compact ? 'grid-rows-[repeat(6,minmax(min-content,1fr))]' : ''
+        compact
+          ? bucketCount === 8
+            ? 'grid-rows-[repeat(8,minmax(min-content,1fr))]'
+            : 'grid-rows-[repeat(6,minmax(min-content,1fr))]'
+          : ''
       } ${compact ? '' : groupedGridClass()}`}
     >
       {visibleGroups.map(group => (

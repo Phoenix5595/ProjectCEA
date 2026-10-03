@@ -89,19 +89,33 @@ export function categoryTheme(category: string): CategoryVisual {
  * Presentation bucket for an entry: same as the backend category, except the
  * `system` category is displayed split — sensor/device health events land in
  * the orange "Sensors" bucket while platform events stay slate "System".
- * Raw `ramp` events merge into the "Control" bucket and raw `mutation`
- * events merge into "System" so the dashboard renders six grouped cards.
- * Filtering keeps working on the raw backend category.
+ * The six-bucket console merges raw `ramp` events into "Control" and raw
+ * `mutation` events into "System"; the eight-bucket console keeps every raw
+ * category in its own bucket. Filtering keeps working on the raw backend
+ * category.
  */
-export function displayCategoryOf(entry: { category: string; type: string }): string {
+export type EventBucketCount = 6 | 8
+
+/** Canonical slot order per policy; every bucket occupies its slot so the layout never reflows. */
+export const EVENT_BUCKET_ORDERS: Readonly<Record<EventBucketCount, readonly string[]>> = {
+  6: ['relay', 'sensor', 'control', 'manual_override', 'alarm', 'system'],
+  8: ['relay', 'sensor', 'ramp', 'control', 'manual_override', 'mutation', 'alarm', 'system'],
+}
+
+export function displayCategoryOf(
+  entry: { category: string; type: string },
+  bucketCount: EventBucketCount
+): string {
   if (
     entry.category === 'system' &&
     (entry.type.startsWith('sensor.') || entry.type.startsWith('device.'))
   ) {
     return 'sensor'
   }
-  if (entry.category === 'ramp') return 'control'
-  if (entry.category === 'mutation') return 'system'
+  if (bucketCount === 6) {
+    if (entry.category === 'ramp') return 'control'
+    if (entry.category === 'mutation') return 'system'
+  }
   return entry.category
 }
 

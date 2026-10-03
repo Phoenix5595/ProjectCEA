@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback, useEffect, useRef, type KeyboardEvent } from 'react'
 
-import { categoryTheme, displayCategoryOf } from '../presentation/categoryTheme'
+import { categoryTheme, displayCategoryOf, type EventBucketCount } from '../presentation/categoryTheme'
 import { getEventDisplay } from '../presentation/eventRegistry'
 import { sourcePartsFor } from '../presentation/eventSourceParts'
 import { SEVERITY_LABELS } from '../presentation/severity'
@@ -28,6 +28,8 @@ interface EventLogProps {
   initialView?: EventLogView
   /** Rooms always rendered as chips in compact mode. */
   primaryRooms?: readonly string[]
+  /** Height-adaptive dashboard bucket policy; defaults to the standing six buckets. */
+  bucketCount?: EventBucketCount
 }
 
 export function EventLog({
@@ -36,6 +38,7 @@ export function EventLog({
   compact = false,
   initialView,
   primaryRooms,
+  bucketCount = 6,
 }: EventLogProps) {
   // The dense dashboard keeps its compact grouped console; full-width room logs open as a readable list.
   const [view, setView] = useState<EventLogView>(initialView ?? (compact ? 'grouped' : 'flat'))
@@ -79,7 +82,17 @@ export function EventLog({
   useEffect(() => {
     setDetailEntry(null)
     detailOpenerRef.current = null
-  }, [compact, view, expandedCategory, filters, entries])
+  }, [compact, view, expandedCategory, filters, entries, bucketCount])
+
+  // A bucket-count transition redefines category meaning: the open category,
+  // paging position and inline detail must not represent the old policy.
+  // Filters and the selected view survive; a same-policy re-render is a no-op.
+  useEffect(() => {
+    setExpandedCategory(null)
+    setPage(1)
+    setDetailEntry(null)
+    detailOpenerRef.current = null
+  }, [bucketCount])
 
   // Newly selected details move focus to their inline heading.
   useEffect(() => {
@@ -153,16 +166,16 @@ export function EventLog({
   const groups = useMemo(
     () =>
       view === 'grouped' && expandedCategory === null
-        ? withPreallocatedSlots(buildGroups(ordered))
+        ? withPreallocatedSlots(buildGroups(ordered, bucketCount), bucketCount)
         : [],
-    [view, expandedCategory, ordered]
+    [view, expandedCategory, ordered, bucketCount]
   )
   const expandedListView = useMemo(
     () =>
       expandedCategory === null
         ? []
-        : ordered.filter(entry => displayCategoryOf(entry) === expandedCategory),
-    [ordered, expandedCategory]
+        : ordered.filter(entry => displayCategoryOf(entry, bucketCount) === expandedCategory),
+    [ordered, expandedCategory, bucketCount]
   )
 
   const handleViewChange = useCallback((next: EventLogView) => {
@@ -285,10 +298,21 @@ export function EventLog({
         </div>
       ) : compact ? (
         <div className="flex min-w-0 flex-col gap-2">
-          <EventGroupedView groups={groups} now={now} onExpand={handleExpand} compact />
+          <EventGroupedView
+            groups={groups}
+            now={now}
+            onExpand={handleExpand}
+            bucketCount={bucketCount}
+            compact
+          />
         </div>
       ) : (
-        <EventGroupedView groups={groups} now={now} onExpand={handleExpand} />
+        <EventGroupedView
+          groups={groups}
+          now={now}
+          onExpand={handleExpand}
+          bucketCount={bucketCount}
+        />
       )}
       {compact && detailEntry !== null && detailDisplay !== null && detailCategoryTheme !== null && (
         <section
