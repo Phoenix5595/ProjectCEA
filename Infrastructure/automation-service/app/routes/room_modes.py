@@ -34,6 +34,7 @@ from app.schemas.room_modes import (
 from app.services.mode_transition_service import ModeTransitionService
 from shared.infra_logging import get_logger
 from shared.room_light_authority import is_moon_authority_mode
+from shared.room_mode_policy import validate_room_mode_choice
 
 from .websocket import broadcast_mode_update
 
@@ -236,6 +237,10 @@ async def set_room_mode(
     sink: OperationalEventSink = Depends(get_mutation_event_sink),
 ):
     ensure_configured_cluster({}, location, cluster)
+    try:
+        validate_room_mode_choice(location, request.mode_name, request.submode_name)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
     total_start = time.perf_counter()
 
     # Resolve IDs for the new transition service
