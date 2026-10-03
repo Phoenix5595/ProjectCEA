@@ -18,23 +18,30 @@ test('grouped alert console opens by default with category rows, counts, and dua
 
   await page.goto(fixtureUrl('/', testInfo, undefined, 'grouped-console'))
 
-  // One colour-coded row per category, newest-category first, all room categories visible.
+  // One card per presentation bucket: raw ramp merges into Control and raw
+  // mutation into System, so six cards render.
   await expect(page.getByTestId('event-group-control')).toBeVisible()
-  await expect(page.getByTestId('event-group-ramp')).toBeVisible()
   await expect(page.getByTestId('event-group-relay')).toBeVisible()
   await expect(page.getByTestId('event-group-manual_override')).toBeVisible()
-  await expect(page.getByTestId('event-group-mutation')).toBeVisible()
   await expect(page.getByTestId('event-group-alarm')).toBeVisible()
   await expect(page.getByTestId('event-group-sensor')).toBeVisible()
+  await expect(page.getByTestId('event-group-system')).toBeVisible()
   await expect(page.getByTestId('event-group-sensor')).toContainText('Sensor degraded')
 
-  // Count badge + latest-event summary per row.
+  // Normal short-label fixture: the dashboard fits the viewport without page
+  // scroll (no component scrolling involved).
+  const viewportFit = await page.evaluate(() => ({
+    doc: document.documentElement.scrollHeight,
+    client: document.documentElement.clientHeight,
+  }))
+  expect(viewportFit.doc).toBeLessThanOrEqual(viewportFit.client + 1)
+
+  // Count badge + latest-event summary per row; Control merges 3 setpoint
+  // changes with the newer ramp.started event.
   await expect(
-    page.getByTestId('event-group-control').getByText('3', { exact: true })
+    page.getByTestId('event-group-control').getByText('4', { exact: true })
   ).toBeVisible()
-  await expect(
-    page.getByTestId('event-group-control').getByText('Control setpoint changed')
-  ).toBeVisible()
+  await expect(page.getByTestId('event-group-control').getByText('Ramp started')).toBeVisible()
   await expect(page.getByTestId('event-group-relay').getByText('3', { exact: true })).toBeVisible()
   await expect(page.getByTestId('event-group-relay')).toContainText('Relay command failed')
   await expect(page.getByTestId('event-group-alarm')).toContainText('Alarm triggered')
@@ -91,9 +98,11 @@ test('from-to setpoint values render on enriched rows and in expanded lists', as
   const list = page.getByRole('list', { name: 'Event list' })
   await expect(list).toBeVisible()
   const items = list.getByRole('listitem')
-  await expect(items).toHaveCount(3)
-  await expect(items.first()).toContainText('44.2% → 43.8%')
-  await expect(items.nth(1)).toContainText('44.4% → 44.2%')
+  await expect(items).toHaveCount(4)
+  await expect(items.first()).toContainText('Ramp started')
+  await expect(items.nth(1)).toContainText('44.2% → 43.8%')
+  await expect(items.nth(2)).toContainText('44.4% → 44.2%')
+  await expect(items.nth(3)).toContainText('44.6% → 44.4%')
 
   // The collapsed state is one control away.
   await page.getByTestId('event-group-collapse').click()

@@ -70,7 +70,7 @@ describe('EventGroupedView compact sidebar mode', () => {
     expect(relayCategory.getAttribute('title')).not.toContain('Older event reason')
   })
 
-  it('renders exactly eight canonical category slots in compact mode', () => {
+  it('renders exactly six canonical category slots in compact mode', () => {
     const groups = withPreallocatedSlots(
       buildGroups([
         makeEventEntry('1-0', 'relay.command_issued', 'relay'),
@@ -81,7 +81,7 @@ describe('EventGroupedView compact sidebar mode', () => {
       <EventGroupedView groups={groups} now={NOW} onExpand={() => {}} compact />
     )
     expect(compact.container.textContent).toContain('No recent events')
-    expect(compact.container.querySelectorAll('[data-testid^="event-group-"]')).toHaveLength(8)
+    expect(compact.container.querySelectorAll('[data-testid^="event-group-"]')).toHaveLength(6)
     expect(compact.queryByTestId('event-group-rare_event')).not.toBeInTheDocument()
   })
 })

@@ -31,18 +31,18 @@ export function EventTimestamps({
 }): ReactNode {
   const absolute = formatAbsolute(occurredAt, now)
   return (
-    <div className="flex flex-col items-end">
+    <div className="flex min-w-0 flex-col items-end [text-align:right]">
       <time
         dateTime={occurredAt.toISOString()}
         title={formatExactTime(occurredAt)}
-        className="shrink-0 text-11 text-text-default tabular-nums"
+        className="min-w-0 break-words text-11 text-text-default tabular-nums"
       >
         {formatRelativeTime(occurredAt, now)}
       </time>
       <time
         dateTime={occurredAt.toISOString()}
         aria-label={`Absolute time: ${absolute}`}
-        className="shrink-0 text-10 text-text-secondary tabular-nums"
+        className="min-w-0 break-words text-10 text-text-secondary tabular-nums"
       >
         {absolute}
       </time>
@@ -72,7 +72,7 @@ export function EventRoomIndicator({ room }: { room: unknown }): ReactNode | nul
 export function EventSourceLine({ parts }: { parts: readonly SourcePart[] }): ReactNode | null {
   if (parts.length === 0) return null
   return (
-    <div className="text-11 text-text-default truncate">
+    <div className="min-w-0 break-words text-11 text-text-default">
       {parts.map((part, index) => (
         <span key={`${part.text}-${index}`} className={part.className} title={part.title}>
           {part.text}

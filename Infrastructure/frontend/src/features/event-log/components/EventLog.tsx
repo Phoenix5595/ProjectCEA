@@ -1,6 +1,4 @@
-import { useState, useMemo, useCallback, useEffect, useRef } from 'react'
-
-import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
+import { useState, useMemo, useCallback, useEffect, useRef, type KeyboardEvent } from 'react'
 
 import { categoryTheme, displayCategoryOf } from '../presentation/categoryTheme'
 import { getEventDisplay } from '../presentation/eventRegistry'
@@ -9,7 +7,7 @@ import { SEVERITY_LABELS } from '../presentation/severity'
 import type { EventLogEntry } from '../state/eventLogStore'
 
 import { EventDetails } from './EventDetails'
-import { EventFilters, CompactFiltersTrigger, type FilterState } from './EventFilters'
+import { EventFilters, type FilterState } from './EventFilters'
 import { EventTimestamps, EventRoomIndicator } from './EventFragments'
 import {
   EventGroupedView,
@@ -24,7 +22,7 @@ const COMPACT_EVENT_PAGE_SIZE = 5
 interface EventLogProps {
   entries: readonly EventLogEntry[]
   now: Date
-  /** Sidebar mode: compact filter row (rooms + Filters submenu) and compact groups. */
+  /** Sidebar mode: compact filter row (rooms + Filters disclosure) and compact groups. */
   compact?: boolean
   /** Initial presentation mode; full-width logs default to flat, dense logs to grouped. */
   initialView?: EventLogView
@@ -45,6 +43,7 @@ export function EventLog({
   const [page, setPage] = useState(1)
   const [detailEntry, setDetailEntry] = useState<EventLogEntry | null>(null)
   const detailOpenerRef = useRef<HTMLElement | null>(null)
+  const detailHeadingRef = useRef<HTMLHeadingElement>(null)
   const [filters, setFilters] = useState<FilterState>({
     severity: 'all',
     search: '',
@@ -63,11 +62,39 @@ export function EventLog({
     setPage(1)
   }, [])
 
+  const closeDetail = useCallback(() => {
+    setDetailEntry(null)
+    const opener = detailOpenerRef.current
+    if (opener?.isConnected) opener.focus()
+    detailOpenerRef.current = null
+  }, [])
+
   const handleOpenDetail = useCallback((entry: EventLogEntry) => {
     detailOpenerRef.current =
       document.activeElement instanceof HTMLElement ? document.activeElement : null
     setDetailEntry(entry)
   }, [])
+
+  // A stale detail must not survive a context change that removes its row.
+  useEffect(() => {
+    setDetailEntry(null)
+    detailOpenerRef.current = null
+  }, [compact, view, expandedCategory, filters, entries])
+
+  // Newly selected details move focus to their inline heading.
+  useEffect(() => {
+    if (detailEntry !== null) detailHeadingRef.current?.focus()
+  }, [detailEntry])
+
+  const handleDetailKeyDown = useCallback(
+    (event: KeyboardEvent<Element>) => {
+      if (event.key === 'Escape') {
+        event.stopPropagation()
+        closeDetail()
+      }
+    },
+    [closeDetail]
+  )
 
   const rooms = useMemo(
     () =>
@@ -162,6 +189,7 @@ export function EventLog({
     : listEntries
   const detailSourceParts = detailEntry === null ? [] : sourcePartsFor(detailEntry)
   const detailDisplay = detailEntry === null ? null : getEventDisplay(detailEntry.type)
+  const detailCategoryTheme = detailEntry === null ? null : categoryTheme(detailEntry.category)
 
   return (
     <section aria-labelledby="event-log-heading" className="flex flex-col gap-2 @container">
@@ -172,22 +200,9 @@ export function EventLog({
         >
           Event Log
         </h2>
-        {compact ? (
-          <CompactFiltersTrigger
-            filters={filters}
-            onChange={handleFilterChange}
-            rooms={rooms}
-            categories={categories}
-            types={types}
-            view={view}
-            onViewChange={handleViewChange}
-            primaryRooms={primaryRooms}
-          />
-        ) : (
-          <span className="text-11 text-text-default tabular-nums">
-            {filtered.length} event{filtered.length === 1 ? '' : 's'}
-          </span>
-        )}
+        <span className="text-11 text-text-default tabular-nums">
+          {filtered.length} event{filtered.length === 1 ? '' : 's'}
+        </span>
       </div>
       <EventFilters
         filters={filters}
@@ -199,7 +214,6 @@ export function EventLog({
         onViewChange={handleViewChange}
         compact={compact}
         primaryRooms={primaryRooms}
-        hideCompactTrigger={compact}
       />
       {filtered.length === 0 ? (
         <p className="text-xs text-text-default italic px-3 py-4 text-center">No events yet</p>
@@ -222,7 +236,7 @@ export function EventLog({
           <ul
             role="list"
             aria-label="Event list"
-            className={`flex flex-col gap-px bg-border-subtle border border-border-subtle ${compact ? '' : 'overflow-auto max-h-150'}`}
+            className="flex flex-col gap-px bg-border-subtle border border-border-subtle"
           >
             {visibleEntries.map(entry => (
               <EventRow
@@ -270,69 +284,79 @@ export function EventLog({
           )}
         </div>
       ) : compact ? (
-        <div className="flex min-h-0 flex-col gap-2">
+        <div className="flex min-w-0 flex-col gap-2">
           <EventGroupedView groups={groups} now={now} onExpand={handleExpand} compact />
         </div>
       ) : (
         <EventGroupedView groups={groups} now={now} onExpand={handleExpand} />
       )}
-      <Dialog
-        open={compact && detailEntry !== null}
-        onOpenChange={open => {
-          if (!open) setDetailEntry(null)
-        }}
-      >
-        {detailEntry !== null && detailDisplay !== null && compact && (
-          <DialogContent
-            className="w-[calc(100vw-2rem)] max-w-2xl max-h-[80vh] overflow-y-auto overscroll-contain bg-surface-primary"
-            onCloseAutoFocus={event => {
-              const opener = detailOpenerRef.current
-              if (opener?.isConnected) {
-                event.preventDefault()
-                opener.focus()
-              }
-              detailOpenerRef.current = null
-            }}
-          >
-            <DialogTitle>Event details — {detailDisplay.label}</DialogTitle>
-            <DialogDescription className="mb-3">{detailEntry.type}</DialogDescription>
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <div className="flex items-center gap-1.5 text-sm font-semibold">
-                  <EventRoomIndicator room={detailEntry.payload.room} />
-                  <span className="break-words">{detailDisplay.label}</span>
-                </div>
-                <p className="break-words font-mono text-11 text-text-default">
-                  {detailEntry.type}
-                </p>
-                <p className="text-11 font-semibold text-text-secondary">
-                  Severity: {SEVERITY_LABELS[detailEntry.severity]}
-                </p>
+      {compact && detailEntry !== null && detailDisplay !== null && detailCategoryTheme !== null && (
+        <section
+          aria-label="Selected event details"
+          data-testid="event-inline-detail"
+          onKeyDown={handleDetailKeyDown}
+          className="mt-2 flex flex-col gap-2 border border-border-subtle rounded-sm bg-surface-secondary p-3"
+        >
+          <div className="flex min-w-0 items-start justify-between gap-2">
+            <h3
+              ref={detailHeadingRef}
+              tabIndex={-1}
+              className="min-w-0 break-words text-sm font-bold uppercase tracking-wider text-text-default outline-none"
+            >
+              Event details — {detailDisplay.label}
+            </h3>
+            <button
+              type="button"
+              data-testid="event-detail-close"
+              onClick={closeDetail}
+              className="shrink-0 px-2 py-1 text-xs font-semibold border bg-surface-secondary border-border-subtle text-text-default hover:border-border-default"
+            >
+              Close event details
+            </button>
+          </div>
+          <p className="min-w-0 break-words font-mono text-11 text-text-default">
+            {detailEntry.type}
+          </p>
+          <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
+            <div className="min-w-0">
+              <div className="flex min-w-0 flex-wrap items-center gap-1.5 text-sm font-semibold">
+                <EventRoomIndicator room={detailEntry.payload.room} />
+                <span className="min-w-0 break-words">
+                  {detailDisplay.label}
+                </span>
               </div>
-              <EventTimestamps occurredAt={detailEntry.occurredAt} now={now} />
-            </div>
-            {detailSourceParts.length > 0 && (
-              <p className="mt-3 break-words text-11 text-text-default">
-                {detailSourceParts.map((part, index) => (
-                  <span key={`${part.text}-${index}`} className={part.className} title={part.title}>
-                    {index > 0 && ' · '}
-                    {part.text}
-                  </span>
-                ))}
+              <p className="text-11 font-semibold text-text-secondary">
+                Category: {detailCategoryTheme.label} ({detailEntry.category})
               </p>
-            )}
-            {detailEntry.reasonText !== null && (
-              <div className="mt-3 border-t border-border-subtle pt-2">
-                <p className="text-11 font-semibold text-text-secondary">Recorded reason</p>
-                <p className="whitespace-pre-wrap break-words text-sm text-text-default">
-                  {detailEntry.reasonText}
-                </p>
-              </div>
-            )}
+              <p className="text-11 font-semibold text-text-secondary">
+                Severity: {SEVERITY_LABELS[detailEntry.severity]}
+              </p>
+            </div>
+            <EventTimestamps occurredAt={detailEntry.occurredAt} now={now} />
+          </div>
+          {detailSourceParts.length > 0 && (
+            <p className="min-w-0 break-words text-11 text-text-default">
+              {detailSourceParts.map((part, index) => (
+                <span key={`${part.text}-${index}`} className={part.className} title={part.title}>
+                  {index > 0 && ' · '}
+                  {part.text}
+                </span>
+              ))}
+            </p>
+          )}
+          {detailEntry.reasonText !== null && (
+            <div className="border-t border-border-subtle pt-2">
+              <p className="text-11 font-semibold text-text-secondary">Recorded reason</p>
+              <p className="min-w-0 whitespace-pre-wrap break-words text-sm text-text-default">
+                {detailEntry.reasonText}
+              </p>
+            </div>
+          )}
+          <div className="pl-0 [&>div]:mt-0 [&>div]:pl-0">
             <EventDetails payload={detailEntry.payload} expanded />
-          </DialogContent>
-        )}
-      </Dialog>
+          </div>
+        </section>
+      )}
     </section>
   )
 }

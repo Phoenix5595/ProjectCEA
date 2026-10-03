@@ -89,6 +89,8 @@ export function categoryTheme(category: string): CategoryVisual {
  * Presentation bucket for an entry: same as the backend category, except the
  * `system` category is displayed split — sensor/device health events land in
  * the orange "Sensors" bucket while platform events stay slate "System".
+ * Raw `ramp` events merge into the "Control" bucket and raw `mutation`
+ * events merge into "System" so the dashboard renders six grouped cards.
  * Filtering keeps working on the raw backend category.
  */
 export function displayCategoryOf(entry: { category: string; type: string }): string {
@@ -98,6 +100,8 @@ export function displayCategoryOf(entry: { category: string; type: string }): st
   ) {
     return 'sensor'
   }
+  if (entry.category === 'ramp') return 'control'
+  if (entry.category === 'mutation') return 'system'
   return entry.category
 }
 
