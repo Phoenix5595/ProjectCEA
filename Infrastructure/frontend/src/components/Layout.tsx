@@ -24,6 +24,7 @@ const Layout: FC = () => {
   // Determine sector from current path
   const sector = getSectorFromPath(location.pathname)
   const showTopRibbon = sector !== null
+  const isControlPage = location.pathname.endsWith('/control')
 
   return (
     <div className="min-h-screen bg-surface-base">
@@ -48,7 +49,7 @@ const Layout: FC = () => {
         )}
 
         {/* Page Content — dashboard is full-bleed so top/bottom ribbons align with sidebar chrome */}
-        <main className="p-0">
+        <main className={isControlPage ? 'p-0 control-page-content' : 'p-0'}>
           <Outlet />
         </main>
       </div>
