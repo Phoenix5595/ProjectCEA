@@ -1378,3 +1378,10 @@ body {
     min-height: 0;
   }
 }
+
+/* Full-HD control content is slightly reduced; persistent navigation stays full-size. */
+@media (width: 1920px) and (height: 1080px) {
+  .control-page-content {
+    zoom: 0.95;
+  }
+}
