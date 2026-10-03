@@ -72,7 +72,8 @@ npx vitest run src/features/event-log/__tests__
 - Run fixture or browser tests against production hosts/ports.
 - Use native `EventSource` or query-string API keys for the operational event stream.
 - Drive any control action from an event-log consumer.
+- Never introduce scrolling inside a component, card, panel, list, dialog, or popover. This is nonnegotiable: fit and wrap content in normal document flow; use pagination or disclosure for bounded collections. When content exceeds the viewport, only the page/document may scroll. Never hide overflow, clamp text, or shrink essential information to disguise a layout failure.
 
 ---
 
-*Last updated: 2026-09-03*
+*Last updated: 2026-10-03*

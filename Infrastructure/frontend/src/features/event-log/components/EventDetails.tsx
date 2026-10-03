@@ -19,11 +19,15 @@ export function EventDetails({ payload, expanded }: EventDetailsProps) {
       {entries.length === 0 ? (
         <p className="text-xs text-text-default italic">No safe details available</p>
       ) : (
-        <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-xs">
+        <dl className="@2xl:grid @2xl:grid-cols-[auto_minmax(0,1fr)] @2xl:gap-x-3 @2xl:gap-y-0.5 flex min-w-0 flex-col gap-y-0.5 text-xs">
           {entries.map(([key, value]) => (
             <div key={key} className="contents">
-              <dt className="text-text-default font-semibold">{key}</dt>
-              <dd className="text-text-default font-mono">{formatPayloadValue(value)}</dd>
+              <dt className="@2xl:contents min-w-0 break-words text-text-default font-semibold">
+                {key}
+              </dt>
+              <dd className="min-w-0 break-words text-text-default font-mono">
+                {formatPayloadValue(value)}
+              </dd>
             </div>
           ))}
         </dl>

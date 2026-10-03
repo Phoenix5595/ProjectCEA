@@ -185,8 +185,9 @@ describe('EventLog', () => {
     )
 
     // Then: grouped rows come newest-category-first with counts and latest labels.
+    // Raw mutation merges into the System presentation bucket.
     expect(screen.getByTestId('event-group-relay')).toBeInTheDocument()
-    expect(screen.getByTestId('event-group-mutation')).toBeInTheDocument()
+    expect(screen.getByTestId('event-group-system')).toBeInTheDocument()
     expect(
       within(screen.getByTestId('event-group-relay')).getByText('Relay command issued')
     ).toBeInTheDocument()
@@ -194,13 +195,13 @@ describe('EventLog', () => {
       within(screen.getByTestId('event-group-relay')).getByText('2 events')
     ).toBeInTheDocument()
     expect(
-      within(screen.getByTestId('event-group-mutation')).getByText('1 event')
+      within(screen.getByTestId('event-group-system')).getByText('1 event')
     ).toBeInTheDocument()
     expect(screen.queryByRole('listitem')).not.toBeInTheDocument()
   })
 
   it('shows the concurrent-entity summary for a multi-device ramp category', () => {
-    // Given: three distinct devices with events of one category inside the window.
+    // Given: three distinct devices with ramp events inside the window.
     const base = new Date('2026-09-02T12:00:00Z')
     const entries = ['light_v_1', 'light_v_2', 'light_v_3'].map((entityId, index) => ({
       ...makeEventEntry(`${index + 1}-0`, 'ramp.started', 'ramp', { ramp_type: 'light' }, 'info'),
@@ -211,8 +212,9 @@ describe('EventLog', () => {
       <EventLog entries={entries} now={new Date('2026-09-02T12:00:05Z')} initialView="grouped" />
     )
 
-    // Then: one grouped row summarises all three devices in its context line.
-    const row = screen.getByTestId('event-group-ramp')
+    // Then: the raw ramp category lands in the Control bucket and summarises
+    // all three devices in its context line.
+    const row = screen.getByTestId('event-group-control')
     expect(within(row).getByText(/3 devices in the last 10 minutes/)).toBeInTheDocument()
     expect(within(row).getByText(/light_v_1, light_v_2, light_v_3/)).toBeInTheDocument()
   })
@@ -253,14 +255,14 @@ describe('EventLog', () => {
     render(
       <EventLog entries={entries} now={new Date('2026-09-02T12:00:00Z')} initialView="grouped" />
     )
-    await user.click(screen.getByTestId('event-group-mutation'))
+    await user.click(screen.getByTestId('event-group-system'))
 
     // When: the flat view is selected.
     await user.click(screen.getByRole('button', { name: 'All events' }))
 
     // Then: the full newest-first list is shown and the category row is gone.
     expect(screen.getAllByRole('listitem')).toHaveLength(2)
-    expect(screen.queryByTestId('event-group-mutation')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('event-group-system')).not.toBeInTheDocument()
   })
 
   it('applies the severity filter in the grouped view', async () => {
@@ -298,27 +300,17 @@ describe('EventLog', () => {
     )
   })
 
-  it('pre-allocates the fixed 2x4 grid with muted slots for empty buckets', () => {
+  it('pre-allocates the six canonical buckets with muted slots for empty ones', () => {
     // Given: a single relay event.
     const entries = [makeEventEntry('1-0', 'relay.state_changed', 'relay')]
     render(
       <EventLog entries={entries} now={new Date('2026-09-02T12:00:00Z')} initialView="grouped" />
     )
 
-    // Then: two columns always, all 8 canonical buckets present, and the
-    // seven empty buckets reserve their slot as non-interactive placeholders.
+    // Then: six canonical buckets on the compact grid, and the five
+    // empty buckets reserve their slot as non-interactive placeholders.
     const grid = screen.getByRole('group', { name: 'Grouped alert console' })
-    expect(grid.className).toContain('@2xl:grid-cols-2')
-    for (const testid of [
-      'relay',
-      'sensor',
-      'ramp',
-      'control',
-      'manual_override',
-      'mutation',
-      'alarm',
-      'system',
-    ]) {
+    for (const testid of ['relay', 'sensor', 'control', 'manual_override', 'alarm', 'system']) {
       expect(grid.querySelector(`[data-testid="event-group-${testid}"]`)).not.toBeNull()
     }
     const emptySensor = screen.getByTestId('event-group-sensor')
@@ -393,7 +385,7 @@ describe('EventLog', () => {
     expect(screen.getByRole('button', { name: 'Next events page' })).toBeDisabled()
   })
 
-  it('keeps compact category overview fixed at eight and exposes unknown categories in All events', async () => {
+  it('keeps compact category overview fixed at six and exposes unknown categories in All events', async () => {
     const entries = [
       makeEventEntry('1-0', 'relay.state_changed', 'relay'),
       makeEventEntry('2-0', 'custom.rare_event', 'rare_event'),
@@ -403,7 +395,7 @@ describe('EventLog', () => {
       <EventLog entries={entries} now={new Date('2026-09-02T12:00:00Z')} compact />
     )
 
-    expect(container.querySelectorAll('[data-testid^="event-group-"]')).toHaveLength(8)
+    expect(container.querySelectorAll('[data-testid^="event-group-"]')).toHaveLength(6)
     expect(screen.queryByTestId('event-groups-page-status')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /category page/i })).not.toBeInTheDocument()
 
@@ -412,6 +404,43 @@ describe('EventLog', () => {
       'Page 1 of 1 · 2 events'
     )
     expect(screen.getByText('Custom rare event')).toBeInTheDocument()
+  })
+
+  it('merges control/ramp and system/mutation while keeping both originals reachable', async () => {
+    const user = userEvent.setup()
+    const entries = [
+      makeEventEntry('1-0', 'control.setpoint_changed', 'control', { device_id: 'heater-1' }),
+      makeEventEntry('2-0', 'config.updated', 'mutation'),
+      makeEventEntry('3-0', 'ramp.started', 'ramp', { device_id: 'heater-2' }),
+      makeEventEntry('4-0', 'system.failsafe_raised', 'system', {}, 'critical'),
+    ]
+    render(<EventLog entries={entries} now={new Date('2026-09-02T12:00:00Z')} compact />)
+
+    // Then: one card each for the merged buckets, with combined counts.
+    const controlRow = screen.getByTestId('event-group-control')
+    expect(within(controlRow).getByText('2', { exact: true })).toBeInTheDocument()
+    expect(within(controlRow).getByText('Ramp started')).toBeInTheDocument()
+    const systemRow = screen.getByTestId('event-group-system')
+    expect(within(systemRow).getByText('2', { exact: true })).toBeInTheDocument()
+    expect(within(systemRow).getByText('Failsafe raised')).toBeInTheDocument()
+
+    // When: the Control bucket expands, both original categories are listed newest-first.
+    await user.click(controlRow)
+    const rows = screen.getAllByRole('listitem')
+    expect(rows).toHaveLength(2)
+    expect(within(rows[0]).getByText('Ramp started')).toBeInTheDocument()
+    expect(within(rows[1]).getByText('Control setpoint changed')).toBeInTheDocument()
+
+    // When: a raw-category filter keeps only the ramp original.
+
+    await user.click(screen.getByRole('button', { name: 'Filters' }))
+
+    await user.click(screen.getByRole('checkbox', { name: 'ramp' }))
+    expect(screen.getByTestId('event-events-page-status')).toHaveTextContent(
+      'Page 1 of 1 · 1 event'
+    )
+    expect(screen.getByText('Ramp started')).toBeInTheDocument()
+    expect(screen.queryByText('Control setpoint changed')).not.toBeInTheDocument()
   })
 
   it('resets compact paging after filters and clamps when live entries shrink', async () => {
@@ -468,7 +497,7 @@ describe('EventLog', () => {
     expect(screen.getByRole('button', { name: 'Next events page' })).toBeDisabled()
   })
 
-  it('opens compact detail in a focus-restoring dialog without expanding the row', async () => {
+  it('opens compact detail in the inline region with focus restore and no row expansion', async () => {
     const reason = 'PID output crossed the relay threshold'
     const entry = makeEventEntryWith({
       type: 'relay.commanded',
@@ -496,14 +525,17 @@ describe('EventLog', () => {
     const row = screen.getByRole('listitem')
     await user.click(openButton)
 
-    const dialog = screen.getByRole('dialog', { name: /Event details — Relay commanded/ })
-    expect(dialog).toHaveTextContent(reason)
-    expect(dialog).toHaveTextContent('Device heater-1')
-    expect(dialog).toHaveTextContent('5m ago')
-    expect(within(dialog).getByRole('region', { name: 'Event details' })).toHaveTextContent(
+    const detail = screen.getByRole('region', { name: 'Selected event details' })
+    expect(detail).toHaveTextContent('Event details — Relay commanded')
+    expect(detail).toHaveTextContent(reason)
+    expect(detail).toHaveTextContent('Device heater-1')
+    expect(detail).toHaveTextContent('5m ago')
+    expect(detail).toHaveTextContent('Category: Relay (relay)')
+    expect(within(detail).getByRole('region', { name: 'Event details' })).toHaveTextContent(
       'heater-1'
     )
     expect(within(row).queryByRole('region', { name: 'Event details' })).not.toBeInTheDocument()
+    expect(document.activeElement).toHaveTextContent('Event details — Relay commanded')
 
     await user.keyboard('{Escape}')
     await waitFor(() => expect(document.activeElement).toBe(openButton))

@@ -28,8 +28,16 @@ describe('display category split', () => {
     expect(displayCategoryOf({ category: 'system', type: 'transport.degraded' })).toBe('system')
   })
 
+  it('merges raw ramp into Control and raw mutation into System', () => {
+    expect(displayCategoryOf({ category: 'ramp', type: 'ramp.started' })).toBe('control')
+    expect(displayCategoryOf({ category: 'mutation', type: 'config.updated' })).toBe('system')
+  })
+
   it('passes all other categories through untouched', () => {
     expect(displayCategoryOf({ category: 'relay', type: 'relay.commanded' })).toBe('relay')
+    expect(displayCategoryOf({ category: 'control', type: 'control.setpoint_changed' })).toBe(
+      'control'
+    )
     expect(displayCategoryOf({ category: 'nonsense', type: 'x.y' })).toBe('nonsense')
   })
 })

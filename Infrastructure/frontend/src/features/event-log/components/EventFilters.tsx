@@ -1,6 +1,13 @@
-import { useCallback, type ChangeEvent } from 'react'
-
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type ReactNode,
+} from 'react'
 
 import { SEVERITY_LABELS, type SeverityLevel } from '../presentation/severity'
 
@@ -27,13 +34,11 @@ interface EventFiltersProps {
   /**
    * Sidebar mode: only the primary rooms render as buttons; every other
    * control (view, severity, search, extra rooms, categories, types) folds
-   * into a single Filters submenu.
+   * into a single inline Filters disclosure.
    */
   compact?: boolean
   /** Rooms always shown as chips in compact mode (e.g. Flower Room, Veg Room). */
   primaryRooms?: readonly string[]
-  /** Move the compact Filters trigger into the Event Log heading. */
-  hideCompactTrigger?: boolean
 }
 
 const SEVERITY_OPTIONS: ReadonlyArray<{ value: SeverityLevel | 'all'; label: string }> = [
@@ -133,7 +138,45 @@ interface FiltersMenuProps {
   triggerLabel: string
 }
 
-/** One submenu holding every non-room filter control. */
+interface DisclosurePanelProps {
+  id: string
+  label: string
+  onKeyDown: (event: ReactKeyboardEvent<HTMLDivElement>) => void
+  children: ReactNode
+  wide?: boolean
+}
+
+/** Inline collapsible panel: document flow, wraps at toolbar width, unmounts when closed. */
+function DisclosurePanel({ id, label, onKeyDown, children, wide = false }: DisclosurePanelProps) {
+  return (
+    <div
+      id={id}
+      role="group"
+      aria-label={label}
+      onKeyDown={onKeyDown}
+      className={`flex flex-col gap-2 p-2 border border-border-subtle bg-surface-secondary rounded-sm ${wide ? 'w-full min-w-0' : ''}`}
+    >
+      {children}
+    </div>
+  )
+}
+
+function useDisclosure() {
+  const [open, setOpen] = useState(false)
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const panelId = useId()
+  const toggle = useCallback(() => setOpen(current => !current), [])
+  const collapse = useCallback(() => {
+    triggerRef.current?.focus()
+    setOpen(false)
+  }, [])
+  return { open, panelId, triggerRef, toggle, collapse }
+}
+
+/**
+ * Inline collapsible disclosure holding every non-room filter control. Closed
+ * panels unmount; Escape collapses and returns focus to the trigger.
+ */
 function FiltersMenu({
   filters,
   rooms,
@@ -144,11 +187,23 @@ function FiltersMenu({
   onChange,
   triggerLabel,
 }: FiltersMenuProps) {
+  const { open, panelId, triggerRef, toggle, collapse } = useDisclosure()
+
   const handleSearchChange = useCallback(
     (event: ChangeEvent<HTMLInputElement>) => {
       onChange({ ...filters, search: event.target.value })
     },
     [filters, onChange]
+  )
+
+  const handlePanelKeyDown = useCallback(
+    (event: ReactKeyboardEvent<HTMLDivElement>) => {
+      if (event.key === 'Escape') {
+        event.stopPropagation()
+        collapse()
+      }
+    },
+    [collapse]
   )
 
   const activeCount =
@@ -159,9 +214,13 @@ function FiltersMenu({
     (filters.search.trim() ? 1 : 0)
 
   return (
-    <Popover>
-      <PopoverTrigger
+    <div className="w-full min-w-0">
+      <button
+        ref={triggerRef}
         type="button"
+        aria-expanded={open}
+        aria-controls={open ? panelId : undefined}
+        onClick={toggle}
         className={`px-2 py-1 text-xs font-semibold border transition-colors whitespace-nowrap ${
           activeCount > 0
             ? 'bg-surface-tertiary text-text-default border-border-emphasis'
@@ -170,10 +229,10 @@ function FiltersMenu({
       >
         {triggerLabel}
         {activeCount > 0 ? ` (${activeCount})` : ''}
-      </PopoverTrigger>
-      <PopoverContent align="start" className="w-56 p-2" aria-label="Event log filters">
-        <div className="flex flex-col gap-2 max-h-80 overflow-y-auto">
-          <label className="text-11 font-bold uppercase tracking-wide text-text-secondary">
+      </button>
+      {open && (
+        <DisclosurePanel id={panelId} label="Event log filters" onKeyDown={handlePanelKeyDown} wide>
+          <label className="w-full min-w-0 text-11 font-bold uppercase tracking-wide text-text-secondary">
             Filter text
             <input
               type="search"
@@ -185,7 +244,7 @@ function FiltersMenu({
               className="mt-0.5 w-full px-2 py-1 text-xs bg-surface-secondary border border-border-subtle text-text-default placeholder-text-secondary focus-visible:outline-none focus-visible:border-border-emphasis font-normal"
             />
           </label>
-          <div className="flex gap-1" role="group" aria-label="Event log view">
+          <div className="flex flex-wrap gap-1" role="group" aria-label="Event log view">
             {VIEW_OPTIONS.map(option => (
               <button
                 key={option.value}
@@ -245,38 +304,11 @@ function FiltersMenu({
             selected={filters.types}
             onToggle={value => toggleDimension(filters, onChange, 'types', value)}
           />
-        </div>
-      </PopoverContent>
-    </Popover>
+        </DisclosurePanel>
+      )}
+    </div>
   )
 }
-export function CompactFiltersTrigger({
-  filters,
-  onChange,
-  rooms,
-  categories,
-  types,
-  view,
-  onViewChange,
-  primaryRooms = [],
-  triggerLabel = 'Filters',
-}: Omit<EventFiltersProps, 'compact' | 'hideCompactTrigger'> & {
-  triggerLabel?: string
-}) {
-  return (
-    <FiltersMenu
-      filters={filters}
-      rooms={rooms.filter(room => !primaryRooms.includes(room))}
-      categories={categories}
-      types={types}
-      view={view}
-      onViewChange={onViewChange}
-      onChange={onChange}
-      triggerLabel={triggerLabel}
-    />
-  )
-}
-
 export function EventFilters({
   filters,
   onChange,
@@ -287,7 +319,6 @@ export function EventFilters({
   onViewChange,
   compact = false,
   primaryRooms = [],
-  hideCompactTrigger = false,
 }: EventFiltersProps) {
   const extraRooms = rooms.filter(room => !primaryRooms.includes(room))
 
@@ -309,8 +340,7 @@ export function EventFilters({
               onClick={() => toggleDimension(filters, onChange, 'rooms', room)}
             />
           ))}
-          {!hideCompactTrigger && (
-            <FiltersMenu
+          <FiltersMenu
               filters={filters}
               rooms={extraRooms}
               categories={categories}
@@ -319,8 +349,7 @@ export function EventFilters({
               onViewChange={onViewChange}
               onChange={onChange}
               triggerLabel="Filters"
-            />
-          )}
+          />
         </div>
         {activeCount > 0 && (
           <button
@@ -412,6 +441,7 @@ export function EventFilters({
   )
 }
 
+
 interface FilterDropdownProps {
   filters: FilterState
   categories: readonly string[]
@@ -419,27 +449,54 @@ interface FilterDropdownProps {
   onChange: (next: FilterState) => void
 }
 
+/** Inline collapsible disclosure for the categories/types checkboxes. */
 function FilterDropdown({ filters, categories, types, onChange }: FilterDropdownProps) {
+  const { open, panelId, triggerRef, toggle, collapse } = useDisclosure()
+  const setOpen = useCallback((next: boolean) => {
+    if (!next) collapse()
+  }, [collapse])
   const activeCount = filters.categories.length + filters.types.length
+
+  useEffect(() => {
+    if (activeCount === 0) setOpen(false)
+  }, [activeCount, setOpen])
 
   const clear = useCallback(() => {
     onChange({ ...filters, categories: [], types: [] })
   }, [filters, onChange])
 
+  const handlePanelKeyDown = useCallback(
+    (event: ReactKeyboardEvent<HTMLDivElement>) => {
+      if (event.key === 'Escape') {
+        event.stopPropagation()
+        collapse()
+      }
+    },
+    [collapse]
+  )
+
   return (
-    <Popover>
-      <PopoverTrigger
+    <div className="flex flex-col min-w-0">
+      <button
+        ref={triggerRef}
         type="button"
-        className={`px-2 py-1 text-xs font-semibold border transition-colors whitespace-nowrap ${
+        aria-expanded={open}
+        aria-controls={open ? panelId : undefined}
+        onClick={toggle}
+        className={`self-start px-2 py-1 text-xs font-semibold border transition-colors whitespace-nowrap ${
           activeCount > 0
             ? 'bg-surface-tertiary text-text-default border-border-emphasis'
             : 'bg-surface-secondary text-text-default border-border-subtle hover:text-text-default hover:border-border-default'
         }`}
       >
         Categories &amp; types{activeCount > 0 ? ` (${activeCount})` : ''}
-      </PopoverTrigger>
-      <PopoverContent align="start" className="w-56 p-2" aria-label="Category and type filters">
-        <div className="flex flex-col gap-2 max-h-64 overflow-y-auto">
+      </button>
+      {open && (
+        <DisclosurePanel
+          id={panelId}
+          label="Category and type filters"
+          onKeyDown={handlePanelKeyDown}
+        >
           <FilterCheckboxList
             label="Category filter"
             heading="Categories"
@@ -454,17 +511,17 @@ function FilterDropdown({ filters, categories, types, onChange }: FilterDropdown
             selected={filters.types}
             onToggle={value => toggleDimension(filters, onChange, 'types', value)}
           />
-        </div>
-        {activeCount > 0 && (
-          <button
-            type="button"
-            onClick={clear}
-            className="mt-2 px-2 py-1 text-xs font-semibold border bg-surface-secondary border-border-subtle text-text-default hover:border-border-default"
-          >
-            Clear
-          </button>
-        )}
-      </PopoverContent>
-    </Popover>
+          {activeCount > 0 && (
+            <button
+              type="button"
+              onClick={clear}
+              className="self-start px-2 py-1 text-xs font-semibold border bg-surface-secondary border-border-subtle text-text-default hover:border-border-default"
+            >
+              Clear
+            </button>
+          )}
+        </DisclosurePanel>
+      )}
+    </div>
   )
 }

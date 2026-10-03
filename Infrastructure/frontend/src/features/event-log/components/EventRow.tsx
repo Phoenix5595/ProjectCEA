@@ -18,7 +18,7 @@ interface EventRowProps {
   entry: EventLogEntry
   now: Date
   formatAbsolute?: (date: Date, now: Date) => string
-  /** Compact dashboard rows open full details in their owning EventLog dialog. */
+  /** Compact dashboard rows open the inline detail region owned by EventLog. */
   onOpenDetail?: (entry: EventLogEntry) => void
 }
 
@@ -79,10 +79,10 @@ export function EventRow({
           {SEVERITY_LABELS[severity]}
         </span>
         <div className="flex-1 min-w-0">
-          <div className="flex items-baseline justify-between gap-2">
+          <div className="flex min-w-0 flex-wrap items-baseline justify-between gap-2">
             <span className="flex min-w-0 items-center gap-1.5">
               <EventRoomIndicator room={entry.payload.room} />
-              <span className="text-sm text-text-default font-semibold truncate">
+              <span className="min-w-0 break-words text-sm text-text-default font-semibold">
                 {display.label}
               </span>
             </span>
@@ -92,11 +92,11 @@ export function EventRow({
               formatAbsolute={formatAbsolute}
             />
           </div>
-          <div className="text-11 text-text-default font-mono truncate">{entry.type}</div>
+          <div className="min-w-0 break-words text-11 text-text-default font-mono">{entry.type}</div>
           {sourceParts.length > 0 && <EventSourceLine parts={sourceParts} />}
           {entry.reasonText !== null && (
             <div
-              className="text-11 text-text-default italic truncate"
+              className="min-w-0 break-words text-11 text-text-default italic"
               title={eventReasonTooltip(entry.reasonText, 'event')}
             >
               {entry.reasonText}

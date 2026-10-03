@@ -33,14 +33,12 @@ interface CategoryBag {
   samples: Array<{ happenedAt: number; entity: string }>
 }
 
-/** Fixed 2x4 grid: every bucket always occupies its slot so the layout never reflows as events arrive. Row-major pairs: (relay, sensor), (ramp, control), (manual_override, mutation), (alarm, system). */
+/** Six presentation buckets: relay, sensor, control (merged ramp), manual_override, alarm, system (merged mutation). Every bucket occupies its slot so the layout never reflows as events arrive. */
 export const DISPLAY_BUCKET_ORDER: readonly string[] = [
   'relay',
   'sensor',
-  'ramp',
   'control',
   'manual_override',
-  'mutation',
   'alarm',
   'system',
 ]
@@ -90,12 +88,12 @@ export function groupedGridClass(): string {
   return '@2xl:grid-cols-2'
 }
 
-function EventCategoryChip({ category, compact = false }: { category: string; compact?: boolean }) {
+function EventCategoryChip({ category }: { category: string }) {
   const visual = categoryTheme(category)
   return (
     <span
       title={visual.label}
-      className={`${compact ? 'min-w-0 max-w-full truncate' : 'shrink-0'} inline-flex items-center px-2 py-0.5 text-10 font-bold uppercase tracking-wider border ${visual.chip}`}
+      className={`shrink-0 inline-flex items-center px-2 py-0.5 text-10 font-bold uppercase tracking-wider border ${visual.chip}`}
     >
       {visual.label}
     </span>
@@ -139,22 +137,23 @@ const EventCategoryRow = memo(function EventCategoryRow({
   group: CategoryGroup
   now: Date
   onExpand: (category: string) => void
-  /** Sidebar mode: header + latest title only, so every category fits. */
+  /** Sidebar mode: three content-sized bands (header, latest event, metadata). */
   compact?: boolean
 }) {
   const visual = categoryTheme(group.category)
 
   if (compact) {
-    // Dashboard rows keep the category/count/time and latest label/severity in two content-safe bands.
+    // Compact card bands: (1) chip left / count right; (2) room + full latest
+    // label; (3) severity left / timestamp pair right. Nothing truncates.
     if (group.latest === null || group.count === 0) {
       return (
         <div
           data-testid={`event-group-${group.category}`}
           aria-disabled="true"
-          className={`flex min-h-0 min-w-0 flex-col gap-0.5 overflow-hidden px-2 py-1.5 text-left border border-border-subtle rounded-sm bg-surface-secondary opacity-60 ${visual.border}`}
+          className={`flex min-h-[88px] min-w-0 flex-col gap-1 px-2 py-1.5 text-left border border-border-subtle rounded-sm bg-surface-secondary opacity-60 ${visual.border}`}
         >
-          <div className="flex min-w-0 items-start gap-1.5">
-            <EventCategoryChip category={group.category} compact />
+          <div className="flex min-w-0 items-center justify-between gap-2">
+            <EventCategoryChip category={group.category} />
             <span className="shrink-0 text-11 font-bold text-text-default tabular-nums">0</span>
           </div>
           <div className="min-w-0 break-words text-xs text-text-default font-semibold">
@@ -173,31 +172,31 @@ const EventCategoryRow = memo(function EventCategoryRow({
         aria-expanded={false}
         onClick={() => onExpand(group.category)}
         title={rowTitle}
-        className={`flex min-h-0 min-w-0 flex-col gap-1 overflow-hidden px-2 py-1.5 text-left border border-border-subtle rounded-sm bg-surface-secondary hover:bg-surface-tertiary transition-colors ${visual.border}`}
+        className={`flex min-h-[88px] min-w-0 flex-col gap-1 px-2 py-1.5 text-left border border-border-subtle rounded-sm bg-surface-secondary hover:bg-surface-tertiary transition-colors ${visual.border}`}
       >
-        <div className="flex min-w-0 items-start gap-1.5">
-          <div className="flex min-w-0 flex-1 items-start gap-1.5">
-            <EventCategoryChip category={group.category} compact />
-            <span className="shrink-0 text-11 font-bold text-text-default tabular-nums">
-              {group.count}
-            </span>
-          </div>
+        <div className="flex min-w-0 items-center justify-between gap-2">
+          <EventCategoryChip category={group.category} />
+          <span className="shrink-0 text-11 font-bold text-text-default tabular-nums">
+            {group.count}
+          </span>
+        </div>
+        <div className="flex min-w-0 items-start gap-1.5 text-xs text-text-default font-semibold">
+          <EventRoomIndicator room={group.latest.payload.room} />
+          <span className="min-w-0 flex-1 break-words text-left">
+            {display.label}
+          </span>
+        </div>
+        <div className="flex min-w-0 items-end justify-between gap-2">
+          <EventSeverityBadge severity={group.latest.severity} />
           <time
             dateTime={group.latest.occurredAt.toISOString()}
             title={formatExactTime(group.latest.occurredAt)}
-            className="min-w-0 max-w-[45%] text-right text-10 text-text-secondary tabular-nums leading-tight break-words"
+            className="min-w-0 text-right text-10 text-text-secondary tabular-nums leading-tight break-words"
             aria-label={`${formatRelativeTime(group.latest.occurredAt, now)} — absolute time: ${formatLocalTime(group.latest.occurredAt, now)}`}
           >
-            <span className="block">{formatRelativeTime(group.latest.occurredAt, now)}</span>
+            <span className="block text-11 text-text-default">{formatRelativeTime(group.latest.occurredAt, now)}</span>
             <span className="block">{formatLocalTime(group.latest.occurredAt, now)}</span>
           </time>
-        </div>
-        <div className="flex min-w-0 items-start gap-1.5">
-          <EventRoomIndicator room={group.latest.payload.room} />
-          <div className="min-w-0 flex-1 break-words line-clamp-2 text-xs text-text-default font-semibold">
-            {display.label}
-          </div>
-          <EventSeverityBadge severity={group.latest.severity} />
         </div>
       </button>
     )
@@ -209,13 +208,13 @@ const EventCategoryRow = memo(function EventCategoryRow({
       <div
         data-testid={`event-group-${group.category}`}
         aria-disabled="true"
-        className={`flex min-h-0 flex-col gap-1 overflow-hidden px-3 py-2 text-left border border-border-subtle rounded-sm bg-surface-secondary opacity-50 ${visual.border}`}
+        className={`flex min-w-0 flex-col gap-1 px-3 py-2 text-left border border-border-subtle rounded-sm bg-surface-secondary opacity-50 ${visual.border}`}
       >
         <div className="flex items-center gap-2 min-w-0">
           <EventCategoryChip category={group.category} />
           <EventCountBadge label={visual.label} count={0} />
         </div>
-        <div className="text-sm text-text-default font-semibold truncate">No recent events</div>
+        <div className="min-w-0 break-words text-sm text-text-default font-semibold">No recent events</div>
       </div>
     )
   }
@@ -230,7 +229,7 @@ const EventCategoryRow = memo(function EventCategoryRow({
       data-testid={`event-group-${group.category}`}
       aria-expanded={false}
       onClick={() => onExpand(group.category)}
-      className={`flex min-h-0 flex-col gap-1 overflow-hidden px-3 py-2 text-left border border-border-subtle rounded-sm bg-surface-secondary hover:bg-surface-tertiary transition-colors ${visual.border}`}
+      className={`flex min-w-0 flex-col gap-1 px-3 py-2 text-left border border-border-subtle rounded-sm bg-surface-secondary hover:bg-surface-tertiary transition-colors ${visual.border}`}
     >
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0">
@@ -239,7 +238,7 @@ const EventCategoryRow = memo(function EventCategoryRow({
         </div>
         <EventTimestamps occurredAt={group.latest.occurredAt} now={now} />
       </div>
-      <div className="flex items-center gap-1.5 text-sm text-text-default font-semibold truncate">
+      <div className="flex min-w-0 flex-wrap items-center gap-1.5 text-sm text-text-default font-semibold">
         {display.label}
         <EventSeverityBadge severity={group.latest.severity} />
       </div>
@@ -248,14 +247,14 @@ const EventCategoryRow = memo(function EventCategoryRow({
           {sourceParts.length > 0 && <EventSourceLine parts={sourceParts} />}
           {group.latest.reasonText !== null && (
             <div
-              className="text-11 text-text-default italic truncate"
+              className="min-w-0 break-words text-11 text-text-default italic"
               title={eventReasonTooltip(group.latest.reasonText, 'latest')}
             >
               {group.latest.reasonText}
             </div>
           )}
           {entityCount > 1 && (
-            <div className="text-11 text-text-secondary truncate">
+            <div className="min-w-0 break-words text-11 text-text-secondary">
               {entityCount} devices in the last 10 minutes: {group.entities.join(', ')}
             </div>
           )}
@@ -274,7 +273,7 @@ export function EventGroupedView({
   groups: readonly CategoryGroup[]
   now: Date
   onExpand: (category: string) => void
-  /** Sidebar mode: one compact row per category, no height cap, no reflow. */
+  /** Sidebar mode: three content-sized bands (header, latest event, metadata). */
   compact?: boolean
 }) {
   const visibleGroups =
@@ -286,8 +285,8 @@ export function EventGroupedView({
     <div
       role="group"
       aria-label="Grouped alert console"
-      className={`grid min-h-0 gap-1 bg-surface-base border border-border-subtle rounded-sm ${
-        compact ? 'flex-1 grid-rows-[repeat(8,minmax(0,1fr))]' : 'max-h-150 overflow-auto'
+      className={`grid min-w-0 gap-1 bg-surface-base border border-border-subtle rounded-sm ${
+        compact ? 'grid-rows-[repeat(6,minmax(min-content,1fr))]' : ''
       } ${compact ? '' : groupedGridClass()}`}
     >
       {visibleGroups.map(group => (
