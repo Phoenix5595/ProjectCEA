@@ -31,12 +31,12 @@ function state(): TimelineTooltipState {
   }
 }
 
-function harness() {
+function harness(getState: () => TimelineTooltipState = state) {
   const over = document.createElement('div')
   Object.defineProperty(over, 'clientWidth', { value: 1440 })
   Object.defineProperty(over, 'clientHeight', { value: 400 })
   document.body.appendChild(over)
-  const plugin = unitTooltipPlugin(state)
+  const plugin = unitTooltipPlugin(getState)
   const u = {
     over,
     cursor: { left: -1, top: -1, idx: null },
@@ -61,6 +61,19 @@ describe('formatTooltipValue', () => {
 })
 
 describe('unitTooltipPlugin', () => {
+  it('collapses equal scheduled/effective values without merging distinct metrics', () => {
+    const { tooltip, setCursor } = harness(() => ({
+      data: [[0], [25], [25], [25], [1], [800]],
+      meta: timelineSeriesMeta(KEYS),
+    }))
+    setCursor(400, 200, 0)
+
+    const text = tooltip.textContent ?? ''
+    expect(text.match(/25\.0 °C/g)).toHaveLength(2)
+    expect(text).toContain('1.00 kPa')
+    expect(text).toContain('800 ppm')
+  })
+
   it('lists non-null series values with units at the cursor', () => {
     const { tooltip, setCursor } = harness()
     setCursor(400, 200, 0)

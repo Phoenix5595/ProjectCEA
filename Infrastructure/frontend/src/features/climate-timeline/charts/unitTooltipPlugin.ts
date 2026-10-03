@@ -18,11 +18,12 @@ const TOOLTIP_PADDING_PX = 12
 const EDGE_MARGIN_PX = 4
 
 /**
- * Hover tooltip listing every series value at the cursor with its family unit.
+ * Hover values with units; matching scheduled/effective values share one metric row.
  * The units left the axes; they live here, next to the values they qualify.
  */
 export function unitTooltipPlugin(getState: () => TimelineTooltipState): uPlot.Plugin {
   let tooltip: HTMLDivElement | null = null
+  const shownValues = new Map<string, number>()
 
   const hide = (): void => {
     if (tooltip !== null) tooltip.style.display = 'none'
@@ -39,10 +40,13 @@ export function unitTooltipPlugin(getState: () => TimelineTooltipState): uPlot.P
     }
     const { data, meta } = getState()
     const lines: string[] = []
+    shownValues.clear()
     for (let seriesIndex = 1; seriesIndex < data.length; seriesIndex += 1) {
       const value = data[seriesIndex]?.[idx]
       const entry = meta[seriesIndex - 1]
       if (value == null || !Number.isFinite(value) || entry === undefined) continue
+      if (shownValues.get(entry.metric) === value) continue
+      shownValues.set(entry.metric, value)
       lines.push(
         `<span style="color:${entry.stroke}">●</span> ${formatTooltipValue(entry.scale, value)}`
       )

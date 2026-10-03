@@ -121,7 +121,7 @@ async def test_room_mode_emits_only_for_a_changed_persisted_transition(
 
     # When: the mode route completes the transition.
     await room_modes.set_room_mode(
-        "Veg Room",
+        "Flower Room",
         "main",
         SetModeRequest(mode_name="flower", submode_name="bulk"),
         database,
@@ -271,7 +271,7 @@ async def test_room_mode_emits_nothing_when_transition_persistence_fails(
     # When: the route translates the failure response.
     with pytest.raises(HTTPException):
         await room_modes.set_room_mode(
-            "Veg Room",
+            "Flower Room",
             "main",
             SetModeRequest(mode_name="flower"),
             database,

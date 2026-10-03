@@ -59,6 +59,9 @@ const sectorDefaultNames: Record<Sector, string> = {
   devices: 'Device Configuration',
 }
 
+const ROOM_MODES = ['veg', 'flower', 'drying', 'sleep'] as const
+const VEG_ROOM_MODES = ['veg'] as const
+
 const TopRibbon: FC<TopRibbonProps> = ({
   sector,
   activeTab,
@@ -74,6 +77,7 @@ const TopRibbon: FC<TopRibbonProps> = ({
 }) => {
   const location = useLocation()
   const tabs = sectorTabs[sector]
+  const roomModes = sector === 'vegetation' ? VEG_ROOM_MODES : ROOM_MODES
 
   const currentPath = location.pathname
   const activeTabFromPath = tabs.find(tab => {
@@ -127,7 +131,7 @@ const TopRibbon: FC<TopRibbonProps> = ({
           {currentMode && onModeChange && (
             <>
               <div className="flex gap-1">
-                {['veg', 'flower', 'drying', 'sleep'].map(mode => (
+                {roomModes.map(mode => (
                   <button
                     key={mode}
                     onClick={() => onModeChange(mode)}
@@ -141,7 +145,7 @@ const TopRibbon: FC<TopRibbonProps> = ({
                   </button>
                 ))}
               </div>
-              {currentMode.mode_name === 'flower' && (
+              {sector !== 'vegetation' && currentMode.mode_name === 'flower' && (
                 <div className="flex gap-1 ml-2">
                   {['stretch', 'bulk', 'ripen'].map(sub => (
                     <button

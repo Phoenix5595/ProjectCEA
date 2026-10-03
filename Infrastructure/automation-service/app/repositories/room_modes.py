@@ -4,6 +4,8 @@ from datetime import time as dt_time
 import time
 from typing import TYPE_CHECKING, Any, cast
 
+from shared.room_mode_policy import validate_room_mode_choice
+
 from .base import BaseRepository, logger
 
 if TYPE_CHECKING:
@@ -146,7 +148,8 @@ class RoomModeRepository(BaseRepository):
     async def set_active_mode(
         self, location: str, cluster: str, mode_name: str, submode_name: str | None = None
     ) -> bool:
-        """Set active mode for location/cluster."""
+        """Set active mode, rejecting disallowed room choices before persistence."""
+        validate_room_mode_choice(location, mode_name, submode_name)
         try:
             async with self.pool.acquire() as conn_raw:
                 conn: Connection = cast("Connection", conn_raw)
@@ -354,7 +357,11 @@ class RoomModeRepository(BaseRepository):
 
         Returns:
             Dict with new active mode data, or None if mode not found
+
+        Raises:
+            ValueError: The room does not permit the requested mode/submode choice.
         """
+        validate_room_mode_choice(location, new_mode, new_submode)
         start_time = time.perf_counter()
         try:
             async with self.pool.acquire() as conn_raw:
