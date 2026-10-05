@@ -11,6 +11,7 @@ import { useCallback, useRef, useSyncExternalStore } from 'react'
 
 import { MonitoringApi } from '../api'
 import type { MonitoringRequestContext } from '../api'
+import { apiClient } from '../../../services/api'
 import { MonitoringStore } from '../state'
 import type { StoreState } from '../state'
 
@@ -32,6 +33,7 @@ export function useMonitoringStore(
   if (storeRef.current === null) {
     storeRef.current = new MonitoringStore(location, new MonitoringApi(requestContextRef.current), {
       now: () => new Date(),
+      loadDeviceRegistry: () => apiClient.getDeviceRegistry(),
     })
   }
   const store = storeRef.current

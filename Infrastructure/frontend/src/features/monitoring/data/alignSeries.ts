@@ -19,10 +19,17 @@ import {
   nodeFromSensor,
   presentationFromSpec,
 } from './alignSeries.builder'
-import { mergeControlSeries, mergeDeviceSeries, mergePidSeries } from './alignSeries.control'
+import {
+  mergeControlSeries,
+  mergeDeviceSeries,
+  mergeLightSeries,
+  mergePidSeries,
+} from './alignSeries.control'
 import { collectTimestamps, coarsenedGrid, indexOfNow, windowBounds } from './alignSeries.grid'
 import { alignPhotoperiod, alignSensor } from './alignSeries.series'
 import type { AlignInput, AlignedBand, AlignedData, AlignedSeries } from './alignSeries.types'
+import { seriesKey } from './alignSeries.types'
+import { composeLightTrajectory, lightValueAt } from './lightTrajectory'
 import { MAX_BUDGET } from './pointBudget'
 
 export interface BaseAlignment {
@@ -72,6 +79,61 @@ export function alignSeriesBase(input: BaseAlignInput): BaseAlignment {
   for (const cs of mergeControlSeries(input.controlHistory, input.projectionHistory)) {
     const presentation = presentationFromSpec(findSpec(input.seriesSpecs, cs.name))
     series.push(...buildControlSeries(cs, x, start, end, aggregated, presentation))
+  }
+
+  const recordedEnd = input.controlHistory?.range.end.getTime() ?? Number.NEGATIVE_INFINITY
+  const projectedEnd = input.projectionHistory?.range.end.getTime() ?? Number.NEGATIVE_INFINITY
+  for (const light of mergeLightSeries(input.controlHistory, input.projectionHistory)) {
+    const trajectory = composeLightTrajectory(
+      light.history,
+      light.projection,
+      recordedEnd,
+      projectedEnd
+    )
+    if (trajectory.length === 0) continue
+    const hasRecordedFiniteCoverage = trajectory.some(
+      segment =>
+        segment.origin === 'recorded' &&
+        segment.startValue !== null &&
+        segment.endValue !== null
+    )
+    const origin =
+      hasRecordedFiniteCoverage || light.projection === undefined
+        ? (light.history?.seriesOrigin ?? 'recorded')
+        : 'projected'
+    const quality = hasRecordedFiniteCoverage
+      ? 'exact'
+      : (light.projection?.seriesQuality ??
+        trajectory[0]?.quality ??
+        light.history?.seriesQuality ??
+        'unavailable')
+    const displayName = input.lightRegistry
+      ?.find(registry => registry.device_name === light.deviceName)
+      ?.display_name?.trim()
+    const label = `${displayName || light.deviceName} - Intensity`
+    const basePresentation = presentationFromSpec(findSpec(input.seriesSpecs, light.deviceName))
+    const presentation =
+      basePresentation === undefined ? undefined : Object.freeze({ ...basePresentation, label })
+    series.push({
+      key: seriesKey('light', light.deviceName, 'linear'),
+      label,
+      kind: 'linear',
+      source: 'light',
+      metric: light.deviceName,
+      family: 'light',
+      role: 'linear',
+      y: x.map(timestamp => lightValueAt(trajectory, timestamp)),
+      origin,
+      quality,
+      isAggregated:
+        aggregated ||
+        (light.history?.seriesIsAggregated ?? false) ||
+        (light.projection?.seriesIsAggregated ?? false),
+      unit: '%',
+      unitFamily: 'percent',
+      lightTrajectory: trajectory,
+      ...(presentation === undefined ? {} : { presentation }),
+    })
   }
 
   for (const ds of mergeDeviceSeries(input.controlHistory, input.projectionHistory)) {
@@ -141,9 +203,14 @@ export function applyLiveTail(
   )
   const series = data.series.map(aligned => {
     const retained = droppedOldest ? aligned.y.slice(1) : aligned.y
-    const heldValue = aligned.kind === 'step' ? (retained[tailIndex - 1] ?? null) : null
+    const insertedValue =
+      aligned.lightTrajectory !== undefined
+        ? lightValueAt(aligned.lightTrajectory, nowMs)
+        : aligned.kind === 'step'
+          ? (retained[tailIndex - 1] ?? null)
+          : null
     const y = inserted
-      ? [...retained.slice(0, tailIndex), heldValue, ...retained.slice(tailIndex)]
+      ? [...retained.slice(0, tailIndex), insertedValue, ...retained.slice(tailIndex)]
       : retained.slice()
     const liveValue = aligned.source === 'sensor' ? valuesBySensor.get(aligned.metric) : undefined
     if (liveValue !== undefined) y[tailIndex] = liveValue

@@ -1,10 +1,8 @@
 /**
  * Monitoring browser harness availability + route-guard tests.
  *
- * Full Playwright browser coverage is added in later todos. This Vitest suite
- * verifies that the harness is available (the preview and Playwright configs
- * exist) and that the exact-origin route guard rejects every production
- * port/host while allowing only the configured test fixture origin.
+ * This Vitest suite verifies that the guarded harness is available and that
+ * production origins are rejected; interactive coverage lives in Playwright.
  */
 import { existsSync } from 'node:fs'
 import path from 'node:path'

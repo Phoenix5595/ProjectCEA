@@ -210,7 +210,26 @@ describe('projectionTimeline', () => {
             },
             reason: 'not available',
           },
+          {
+            shape: 'linear',
+            start: NOW,
+            end: FUTURE,
+            metric: 'light.intensity.light_f_1',
+            unit: '%',
+            trajectory_kind: 'effective',
+            quality: 'estimated',
+            source: {
+              mode: 'DAY',
+              submode: null,
+              period: { period_id: 'day', label: 'Day' },
+              config_revision: '8f8c3db',
+              draft_revision: null,
+            },
+            start_value: 40,
+            end_value: 80,
+          },
         ],
+
       },
     })
 
@@ -218,6 +237,12 @@ describe('projectionTimeline', () => {
     const scheduled = result.history?.climate.find(series => series.trajectory_kind === 'scheduled')
     expect(scheduled?.linear[0]?.start_value).toBe(22)
     expect(scheduled?.warnings[0]?.code).toBe('sample')
+    expect(result.history?.lights).toHaveLength(1)
+    expect(result.history?.lights[0]).toMatchObject({
+      name: 'light_f_1',
+      metric: 'light_f_1',
+      trajectory_kind: 'effective',
+    })
     const effective = result.history?.climate.find(series => series.trajectory_kind === 'effective')
     expect(effective?.steps[0]?.value).toBeNull()
 
@@ -268,4 +293,33 @@ describe('projectionTimeline', () => {
     })
     expect(result.history).toBeNull()
   })
+  it('canonicalizes basic light publication identifiers to device names', () => {
+    const result = projectionTimeline({
+      quality: 'estimated',
+      value: [
+        {
+          version: { contract_version: 1, config_version: 7, revision: '8f8c3db' },
+          generated_at: NOW,
+          valid_from: NOW,
+          valid_until: FUTURE,
+          series: [
+            {
+              series_id: { value: 'light.intensity.light_f_1' },
+              value: 40,
+              quality: 'estimated',
+              valid_from: NOW,
+              valid_until: FUTURE,
+            },
+          ],
+        },
+      ],
+    })
+
+    expect(result.history?.lights).toHaveLength(1)
+    expect(result.history?.lights[0]).toMatchObject({
+      name: 'light_f_1',
+      metric: 'light_f_1',
+    })
+  })
+
 })

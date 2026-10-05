@@ -1,11 +1,29 @@
 import { describe, expect, it } from 'vitest'
 
-import type { ClimateTimelineSeries, ControlMonitoringResponse, SensorSeries } from '../../api'
+import type {
+  ClimateTimelineSeries,
+  ControlMonitoringResponse,
+  DeviceTimelineSeries,
+  LightTimelineSeries,
+  PidTimelineSeries,
+  SensorSeries,
+} from '../../api'
+import { flowerManifest, vegManifest } from '../../config'
+
 import type { TimeseriesPanelSpec } from '../../config'
 import type { MonitoringRange } from '../../state'
 import { alignSeries, alignSeriesBase, applyLiveTail } from '../alignSeries'
 import { windowBounds } from '../alignSeries.grid'
-import type { AlignInput } from '../alignSeries.types'
+import { seriesKey } from '../alignSeries.types'
+import type {
+  AlignInput,
+  AlignedData,
+  AlignedSeries,
+  SeriesKind,
+  SeriesRole,
+} from '../alignSeries.types'
+import { splitChartGroups } from '../../pages/chartGroups'
+import { lightValueAt } from '../lightTrajectory'
 import { createPanelAlignment } from '../panelAlignment'
 
 const START = new Date('2026-08-02T11:00:00.000Z')
@@ -307,4 +325,238 @@ describe('panel alignment', () => {
     expect(legacyCapped.x.length).toBeLessThanOrEqual(20_000)
     expect(budgeted.x.length).toBeGreaterThan(20_000)
   })
+  it('keeps explicit climate setpoints out of both room equipment panels', () => {
+    const history = controls([{ timestamp: START, value: 22 }])
+    const heating = history.climate[0]
+    if (heating === undefined) throw new Error('heating fixture is required')
+    heating.name = 'heating'
+    const source = input({ controlHistory: history })
+
+    for (const room of [
+      { manifest: flowerManifest, equipmentId: 'flower-systems', climateId: 'flower-climate' },
+      { manifest: vegManifest, equipmentId: 'veg-systems', climateId: 'veg-climate' },
+    ]) {
+      const equipmentPanel = room.manifest.panels.find(
+        (panel): panel is TimeseriesPanelSpec =>
+          panel.kind === 'timeseries' && panel.id === room.equipmentId
+      )
+      const climatePanel = room.manifest.panels.find(
+        (panel): panel is TimeseriesPanelSpec =>
+          panel.kind === 'timeseries' && panel.id === room.climateId
+      )
+      if (equipmentPanel === undefined || climatePanel === undefined) {
+        throw new Error('room climate and equipment panels are required')
+      }
+
+      const equipment = createPanelAlignment().align({ ...source, panel: equipmentPanel })
+      expect(equipment.series.some(series => series.source === 'climate')).toBe(false)
+
+      const climate = createPanelAlignment().align({ ...source, panel: climatePanel })
+      const target = climate.series.find(series => series.metric === 'heating_setpoint')
+      expect(target?.y[climate.x.indexOf(START.getTime())]).toBe(22)
+    }
+  })
+
+  it('suppresses light state/PID overlays but keeps non-light equipment measurements', () => {
+    const provenance = { origin: 'recorded' as const, quality: 'exact' as const, is_aggregated: false }
+    const projectedProvenance = {
+      origin: 'projected' as const,
+      quality: 'estimated' as const,
+      is_aggregated: false,
+    }
+    const unavailableProvenance = { ...projectedProvenance, quality: 'unavailable' as const }
+    const device = (deviceName: string): DeviceTimelineSeries => ({
+      name: deviceName,
+      provenance,
+      warnings: [],
+      points: [
+        {
+          timestamp: START,
+          provenance,
+          device_name: deviceName,
+          device_state: 1,
+          device_mode: 'AUTO',
+          control_reason: 'schedule',
+        },
+      ],
+    })
+    const pid = (deviceName: string): PidTimelineSeries => ({
+      name: deviceName,
+      provenance,
+      warnings: [],
+      points: [
+        {
+          timestamp: START,
+          provenance,
+          device_name: deviceName,
+          pid_output: 15,
+          duty_cycle_percent: 40,
+        },
+      ],
+    })
+
+    const history = controls([])
+    history.range = { start: START, end: NOW }
+    history.lights = [
+      {
+        name: 'light_f_1',
+        metric: 'light_f_1',
+        provenance,
+        warnings: [],
+        points: [
+          {
+            timestamp: START,
+            value: 40,
+            nominal_value: 40,
+            device_name: 'light_f_1',
+            provenance,
+          },
+        ],
+        steps: [],
+        linear: [],
+      },
+    ]
+    history.devices = [device('light_f_1'), device('light_f_2'), device('heater_f_1')]
+    history.pid = [pid('light_f_1'), pid('light_f_2'), pid('heater_f_1')]
+    const projection = controls([])
+    projection.range = { start: NOW, end: END }
+    const rampEnd = new Date(FUTURE.getTime() + 30_000)
+    const gapStart = new Date(rampEnd.getTime() + 30_000)
+    const effectiveLight: LightTimelineSeries = {
+      name: 'Effective projection',
+      metric: 'light.intensity.light_f_1',
+      trajectory_kind: 'effective',
+      provenance: projectedProvenance,
+      warnings: [],
+      points: [],
+      steps: [
+        { timestamp: NOW, value: 40, provenance: projectedProvenance },
+        { timestamp: gapStart, value: null, provenance: unavailableProvenance },
+        {
+          timestamp: new Date(gapStart.getTime() + 30_000),
+          value: 0,
+          provenance: projectedProvenance,
+        },
+      ],
+      linear: [
+        {
+          start: FUTURE,
+          end: rampEnd,
+          start_value: 40,
+          end_value: 80,
+          provenance: projectedProvenance,
+        },
+      ],
+    }
+    const scheduledLight: LightTimelineSeries = {
+      ...effectiveLight,
+      name: 'Scheduled projection',
+      metric: 'light_f_1',
+      trajectory_kind: 'scheduled',
+      steps: [{ timestamp: NOW, value: 95, provenance: projectedProvenance }],
+      linear: [],
+    }
+    projection.lights = [effectiveLight, scheduledLight]
+    const equipmentPanel = flowerManifest.panels.find(
+      (panel): panel is TimeseriesPanelSpec =>
+        panel.kind === 'timeseries' && panel.id === 'flower-systems'
+    )
+    if (equipmentPanel === undefined) throw new Error('Flower equipment panel is required')
+
+    const aligned = createPanelAlignment().align({
+      ...input({
+        controlHistory: history,
+        projectionHistory: projection,
+        lightRegistry: [
+          { device_name: 'light_f_1', display_name: 'Chilled Front QA', per_room_index: 1 },
+          { device_name: 'light_f_2', display_name: 'Renamed', per_room_index: 2 },
+        ],
+      }),
+      panel: equipmentPanel,
+    })
+
+    const intensities = aligned.series.filter(series => series.source === 'light')
+    expect(intensities.map(series => series.key)).toEqual([
+      seriesKey('light', 'light_f_1', 'linear'),
+    ])
+    const intensity = intensities[0]
+    expect(intensity?.label).toBe('Chilled Front QA - Intensity')
+    expect(lightValueAt(intensity?.lightTrajectory ?? [], NOW.getTime())).toBe(40)
+    expect(lightValueAt(intensity?.lightTrajectory ?? [], FUTURE.getTime() + 15_000)).toBe(60)
+    expect(lightValueAt(intensity?.lightTrajectory ?? [], gapStart.getTime() + 10_000)).toBeNull()
+
+    expect(aligned.series.some(series => series.source === 'device' && series.metric === 'light_f_1')).toBe(
+      false
+    )
+    expect(aligned.series.some(series => series.source === 'device' && series.metric === 'light_f_2')).toBe(
+      false
+    )
+    expect(aligned.series.some(series => series.source === 'pid' && series.metric === 'light_f_1')).toBe(
+      false
+    )
+    expect(aligned.series.some(series => series.source === 'pid' && series.metric === 'light_f_2')).toBe(
+      false
+    )
+    expect(aligned.series.some(series => series.source === 'device' && series.metric === 'heater_f_1')).toBe(
+      true
+    )
+    expect(
+      aligned.series.some(
+        series =>
+          series.source === 'pid' && series.metric === 'heater_f_1_pid' && series.role === 'pid_output'
+      )
+    ).toBe(true)
+    expect(
+      aligned.series.some(
+        series => series.source === 'pid' && series.metric === 'heater_f_1_pid' && series.role === 'duty'
+      )
+    ).toBe(true)
+    expect(aligned.series.some(series => series.source === 'device' && series.role === 'duty')).toBe(false)
+  })
+
+  it('filters light state/PID overlays in the chart-group fallback', () => {
+    const makeSeries = (
+      source: 'light' | 'device' | 'pid',
+      metric: string,
+      kind: SeriesKind,
+      role: SeriesRole
+    ): AlignedSeries => ({
+      key: seriesKey(source, metric, role),
+      label: metric,
+      kind,
+      source,
+      metric,
+      family: source === 'light' ? 'light' : 'device',
+      role,
+      y: [],
+      origin: 'recorded',
+      quality: 'exact',
+      isAggregated: false,
+    })
+    const aligned: AlignedData = {
+      x: [],
+      series: [
+        makeSeries('light', 'light_f_1', 'linear', 'linear'),
+        makeSeries('device', 'light_f_1', 'step', 'state'),
+        makeSeries('pid', 'light_f_2_pid', 'point', 'duty'),
+        makeSeries('device', 'heater_f_1', 'step', 'state'),
+        makeSeries('pid', 'heater_f_1_pid', 'point', 'pid_output'),
+      ],
+      bands: [],
+      photoperiod: [],
+      nowIndex: -1,
+      aggregated: false,
+    }
+
+    const groups = splitChartGroups(flowerManifest, aligned, [
+      { device_name: 'light_f_2', display_name: null, per_room_index: 2 },
+    ])
+
+    expect(groups.device.series.map(series => series.key)).toEqual([
+      seriesKey('light', 'light_f_1', 'linear'),
+      seriesKey('device', 'heater_f_1', 'state'),
+      seriesKey('pid', 'heater_f_1_pid', 'pid_output'),
+    ])
+  })
+
 })
