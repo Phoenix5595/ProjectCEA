@@ -39,6 +39,7 @@ class _Registry:
                 }
             },
             mode_parameters={},
+            active_modes={},
             light_intensities={},
             light_programs=[],
         )

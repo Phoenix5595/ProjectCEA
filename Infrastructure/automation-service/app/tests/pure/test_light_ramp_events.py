@@ -132,6 +132,7 @@ def _snapshot(target_intensity: float | str, *, ramp_down: int = 0) -> RuntimeDe
                 "ramp_down": ramp_down,
             }
         },
+        active_modes={},
         light_intensities={(42, 1): target_intensity},
         light_programs=[],
     )

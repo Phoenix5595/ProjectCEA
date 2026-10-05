@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Any
 
 from fastapi import FastAPI
@@ -11,6 +12,7 @@ from app.container import ServiceContainer
 from app.hardware.safe_outputs import SafeOutputError
 from app.models.device_registry import LightDevice
 from app.repositories.devices.projection import RegistryProjection
+from app.repositories.room_modes import ActiveModeProjection
 
 
 class _FakeRedis:
@@ -112,8 +114,11 @@ class _FakeControlActionRepository:
 
 
 class _FakeRoomModeRepository:
-    async def get_active_mode(self, _location: str, _cluster: str) -> None:
-        return None
+    async def get_active_mode_projection(
+        self, room_clusters: Sequence[tuple[str, str]], conn: Any | None = None
+    ) -> ActiveModeProjection:
+        del room_clusters, conn
+        return ActiveModeProjection(active_modes={}, mode_parameters={})
 
 
 class _FakeConnection:

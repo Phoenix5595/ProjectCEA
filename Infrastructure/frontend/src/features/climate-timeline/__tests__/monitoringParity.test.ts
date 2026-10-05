@@ -58,7 +58,7 @@ const fixtureEnvelope = (): TrajectoryEnvelope =>
     base_config_revision: 'config-7',
     draft_revision: null,
     segments: [
-      scheduledSegment({}),
+      scheduledSegment({ start: WINDOW.start, end: '2026-01-01T02:00:00.000Z' }),
       scheduledSegment({
         shape: 'linear',
         start_value: 22,
@@ -82,7 +82,7 @@ const fixtureEnvelope = (): TrajectoryEnvelope =>
         shape: 'step',
         value: 19,
         start: '2026-01-01T03:30:00.000Z',
-        end: '2026-01-01T04:00:00.000Z',
+        end: WINDOW.end,
       }),
       scheduledSegment({ trajectory_kind: 'effective', value: 21 }),
       scheduledSegment({
@@ -100,14 +100,14 @@ const fixtureEnvelope = (): TrajectoryEnvelope =>
         shape: 'step',
         value: 26,
         start: '2026-01-01T01:00:00.000Z',
-        end: '2026-01-01T02:00:00.000Z',
+        end: WINDOW.end,
       }),
       scheduledSegment({
         metric: 'vpd_setpoint',
         unit: 'kPa',
         value: 1.1,
         start: WINDOW.start,
-        end: '2026-01-01T05:00:00.000Z',
+        end: WINDOW.end,
       }),
       scheduledSegment({
         metric: 'co2_setpoint',

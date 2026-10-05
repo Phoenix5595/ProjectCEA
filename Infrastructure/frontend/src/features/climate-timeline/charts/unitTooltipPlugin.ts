@@ -1,10 +1,15 @@
 import type uPlot from 'uplot'
 
-import { UNIT_LABELS, type TimelineScale, type TimelineSeriesMeta } from './timelineOptions'
+import { CURRENT_MARKER_DIAMETER_PX, UNIT_LABELS, type TimelineScale, type TimelineSeriesMeta } from './timelineOptions'
+import type { TimelineSampleQualities } from './timelineSources'
 
 export type TimelineTooltipState = {
   readonly data: uPlot.AlignedData
   readonly meta: readonly TimelineSeriesMeta[]
+  /** Per-series sample quality at the cursor, keyed by series key. */
+  readonly qualities?: TimelineSampleQualities
+  /** Window-start instant (epoch ms) used to render sample timestamps. */
+  readonly windowStartMs?: number
 }
 
 /** Render one series value with its family unit, e.g. "23.5 °C". */
@@ -14,16 +19,44 @@ export function formatTooltipValue(scale: TimelineScale, value: number): string 
   return `${value.toFixed(1)} ${UNIT_LABELS.temp}`
 }
 
+/** Render one sample's observation timestamp from its window-minute x value. */
+export function formatTooltipTimestamp(
+  windowStartMs: number,
+  minute: number
+): string {
+  const instant = new Date(windowStartMs + minute * 60_000)
+  const hours = String(instant.getUTCHours()).padStart(2, '0')
+  const minutesText = String(instant.getUTCMinutes()).padStart(2, '0')
+  return `${hours}:${minutesText}:${String(instant.getUTCSeconds()).padStart(2, '0')}.${String(instant.getUTCMilliseconds()).padStart(3, '0')} UTC`
+}
+
+/** One provenance line fragment: role and quality, never color alone. */
+export function tooltipProvenanceLabel(
+  entry: Pick<TimelineSeriesMeta, 'role' | 'kind' | 'label'>,
+  quality: string | null
+): string {
+  const qualityText =
+    quality === 'exact' || quality === 'estimated' || quality === 'unavailable'
+      ? ` · ${quality}`
+      : ''
+  return `${entry.label} · ${entry.role}${qualityText}`
+}
+
 const TOOLTIP_PADDING_PX = 12
+const HTML_ENTITIES: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }
+const escapeTooltipText = (value: string) => value.replace(/[&<>"']/g, character => HTML_ENTITIES[character]!)
 const EDGE_MARGIN_PX = 4
 
 /**
- * Hover values with units; matching scheduled/effective values share one metric row.
- * The units left the axes; they live here, next to the values they qualify.
+ * Hover values with units, authority role, and per-sample quality. A row
+ * renders its label plus `role · quality` provenance so tooltip readers can
+ * distinguish observation, estimated running forecast, saved hypothetical and
+ * draft without relying on color.
  */
 export function unitTooltipPlugin(getState: () => TimelineTooltipState): uPlot.Plugin {
   let tooltip: HTMLDivElement | null = null
-  const shownValues = new Map<string, number>()
+  let indexedData: uPlot.AlignedData | null = null
+  const currentIndices: number[] = []
 
   const hide = (): void => {
     if (tooltip !== null) tooltip.style.display = 'none'
@@ -38,17 +71,44 @@ export function unitTooltipPlugin(getState: () => TimelineTooltipState): uPlot.P
       hide()
       return
     }
-    const { data, meta } = getState()
+    const { data, meta, qualities, windowStartMs } = getState()
+    if (indexedData !== data) {
+      indexedData = data
+      currentIndices.length = data.length
+      currentIndices.fill(-1)
+      for (let seriesIndex = 1; seriesIndex < data.length; seriesIndex += 1) {
+        if (meta[seriesIndex - 1]?.role === 'active-current') {
+          currentIndices[seriesIndex] = data[seriesIndex]?.findIndex(value => value != null && Number.isFinite(value)) ?? -1
+        }
+      }
+    }
     const lines: string[] = []
-    shownValues.clear()
+    if (windowStartMs !== undefined && data[0] !== undefined) {
+      const minute = data[0]?.[idx]
+      if (minute != null && Number.isFinite(minute)) {
+        lines.push(
+          `<span style="color:#94a3b8">${formatTooltipTimestamp(windowStartMs, minute)}</span>`
+        )
+      }
+    }
     for (let seriesIndex = 1; seriesIndex < data.length; seriesIndex += 1) {
-      const value = data[seriesIndex]?.[idx]
       const entry = meta[seriesIndex - 1]
-      if (value == null || !Number.isFinite(value) || entry === undefined) continue
-      if (shownValues.get(entry.metric) === value) continue
-      shownValues.set(entry.metric, value)
+      if (entry === undefined) continue
+      let sampleIndex = idx
+      if (entry.role === 'active-current') {
+        sampleIndex = currentIndices[seriesIndex] ?? -1
+        if (sampleIndex < 0) continue
+        const minute = data[0]?.[sampleIndex]
+        if (minute == null || Math.abs(plot.valToPos(minute, 'x') - left) > CURRENT_MARKER_DIAMETER_PX / 2) continue
+      }
+      const value = data[seriesIndex]?.[sampleIndex]
+      if (value == null || !Number.isFinite(value)) continue
+      const quality = qualities?.get(entry.key)?.[sampleIndex] ?? null
+      const timestamp = entry.role === 'active-current' && windowStartMs !== undefined
+        ? ` · ${formatTooltipTimestamp(windowStartMs, data[0]![sampleIndex]!)}`
+        : ''
       lines.push(
-        `<span style="color:${entry.stroke}">●</span> ${formatTooltipValue(entry.scale, value)}`
+        `<span style="color:${entry.stroke}">●</span> ${formatTooltipValue(entry.scale, value)} — ${escapeTooltipText(tooltipProvenanceLabel(entry, quality) + timestamp)}`
       )
     }
     if (lines.length === 0) {

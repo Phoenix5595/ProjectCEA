@@ -1,13 +1,18 @@
 import axios from 'axios'
 import { describe, expect, it, vi } from 'vitest'
 
-import { RichTrajectoryEnvelope } from '../contracts'
 import { timelineMethods, type TimelineSavedRequest } from '../timeline'
-import { TimelineUnavailableError, type TimelineApplyRequest } from '../timelinePublicationPort'
+import {
+  TimelineConflictError,
+  TimelineUnavailableError,
+  type TimelineApplyRequest,
+} from '../timelinePublicationPort'
 
 const request: TimelineSavedRequest = {
   location: 'Veg Room',
   cluster: 'main',
+  modeId: 17,
+  submodeId: 3,
   window: {
     start: '2026-01-01T00:00:00.000Z',
     end: '2026-01-02T00:00:00.000Z',
@@ -59,42 +64,6 @@ describe('timelineMethods.getSaved', () => {
   })
 })
 
-function savedEnvelopeFixture() {
-  return RichTrajectoryEnvelope.parse({
-    contract_version: 1,
-    room: 'Veg Room',
-    generated_at: '2026-01-01T00:00:00.000Z',
-    window: {
-      start: '2026-01-01T00:00:00.000Z',
-      end: '2026-01-02T00:00:00.000Z',
-      timezone: 'UTC',
-    },
-    revision_scope: 'saved',
-    base_config_revision: 'config-2',
-    draft_revision: null,
-    segments: [
-      {
-        shape: 'step',
-        value: 24,
-        start: '2026-01-01T00:00:00.000Z',
-        end: '2026-01-01T01:00:00.000Z',
-        metric: 'temperature',
-        unit: 'celsius',
-        trajectory_kind: 'scheduled',
-        quality: 'exact',
-        source: {
-          mode: 'veg',
-          submode: null,
-          period: { period_id: 'day', label: 'Day' },
-          config_revision: 'config-2',
-          draft_revision: null,
-        },
-      },
-    ],
-    assumptions: [],
-    warnings: [],
-  })
-}
 
 /** Raw wire payload as the backend would emit it (ISO strings, not Date objects). */
 function savedResponsePayload() {
@@ -102,6 +71,7 @@ function savedResponsePayload() {
     config_revision: 'config-2',
     mode_id: 17,
     submode_id: 3,
+    parameters_configured: true,
     periods: [
       {
         period_name: 'Day',
@@ -144,8 +114,8 @@ function savedResponsePayload() {
           trajectory_kind: 'scheduled',
           quality: 'exact',
           source: {
-            mode: 'veg',
-            submode: null,
+            mode: '17',
+            submode: '3',
             period: { period_id: 'day', label: 'Day' },
             config_revision: 'config-2',
             draft_revision: null,
@@ -162,7 +132,11 @@ function applyResponsePayload() {
   const payload = savedResponsePayload()
   const { trajectory: _trajectory, ...applyResponse } = payload
   void _trajectory
-  return { request_id: 'apply-1', ...applyResponse }
+  return {
+    request_id: 'apply-1',
+    notification_warning: null,
+    ...applyResponse,
+  }
 }
 
 function stubClient() {
@@ -214,55 +188,105 @@ const applyRequest: TimelineApplyRequest = {
   },
 }
 
-describe('timelineMethods.getSaved window round-trip', () => {
-  it('maps the requested window into the saved baseline', async () => {
-    // Given: the saved endpoint echoes a full aggregate for the requested window.
-    const { core, get } = stubClient()
-    get.mockResolvedValue({ data: savedResponsePayload() })
 
-    // When: the saved timeline is requested.
-    const baseline = await timelineMethods.getSaved.call(core, request)
+describe('timelineMethods.preview', () => {
+  it('converts a stale expected revision 409 into the typed conflict error', async () => {
+    // Given: the preview endpoint reports the documented revision conflict.
+    const { core, post } = stubClient()
+    post.mockRejectedValue(
+      axiosFailure(409, { code: 'timeline_revision_conflict', detail: 'stale' })
+    )
 
-    // Then: the baseline carries that exact window so previews reuse it.
-    expect(get).toHaveBeenCalledWith('/api/climate-timeline/Veg%20Room/main', {
-      params: request.window,
+    // When: the draft is reviewed.
+    const result = timelineMethods.preview.call(core, {
+      room: { location: 'Veg Room', cluster: 'main' },
+      requestId: 'preview-1',
+      expectedConfigRevision: 'config-1',
+      draftRevision: 3,
+      modeId: 17,
+      submodeId: 3,
+      window: request.window,
+      values: {
+        periods: [
+          {
+            period_name: 'Day',
+            start_time: '06:00',
+            end_time: '18:00',
+            ramp_minutes: 30,
+            heating_setpoint: 22,
+            cooling_setpoint: 25,
+            vpd_setpoint: 1.2,
+            co2_setpoint: 900,
+            details: 'saved',
+          },
+        ],
+        photoperiod: {
+          dayStartTime: '06:00',
+          nightStartTime: '18:00',
+          rampUpMinutes: 20,
+          rampDownMinutes: 20,
+        },
+      },
     })
-    expect(baseline.window).toEqual(request.window)
-    expect(baseline.trajectory).toEqual(savedEnvelopeFixture())
+
+    // Then: the review boundary reports a typed conflict, mirroring Apply.
+    await expect(result).rejects.toBeInstanceOf(TimelineConflictError)
   })
 })
 
 describe('timelineMethods.apply saved snapshot refresh', () => {
-  it('returns the refetched saved baseline with its envelope for the previewed window', async () => {
-    // Given: a committed apply whose response carries no envelope.
+  it('does not adopt authority that changed after the save committed', async () => {
     const { core, get, post } = stubClient()
-    post.mockResolvedValue({ data: applyResponsePayload() })
-    get.mockResolvedValue({ data: savedResponsePayload() })
-
-    // When: the draft is applied.
-    const baseline = await timelineMethods.apply.call(core, applyRequest)
-
-    // Then: the baseline is the authoritative saved snapshot over the same window.
-    expect(get).toHaveBeenCalledWith('/api/climate-timeline/Veg%20Room/main', {
-      params: request.window,
+    post.mockResolvedValue({
+      data: { ...applyResponsePayload(), notification_warning: 'configuration_notification_failed' },
     })
-    expect(baseline.baseConfigRevision).toBe('config-2')
-    expect(baseline.window).toEqual(request.window)
-    expect(baseline.trajectory).toEqual(savedEnvelopeFixture())
+    const newer = savedResponsePayload()
+    newer.config_revision = 'config-3'
+    newer.photoperiod.day_start_time = '09:00'
+    newer.trajectory.base_config_revision = 'config-3'
+    newer.trajectory.segments[0].source.config_revision = 'config-3'
+    get.mockResolvedValue({ data: newer })
+
+    const outcome = await timelineMethods.apply.call(core, applyRequest)
+
+    expect(outcome.baseline.baseConfigRevision).toBe('config-2')
+    expect(outcome.baseline.photoperiod.dayStartTime).toBe('06:00')
+    expect(outcome.baseline.trajectory).toBeUndefined()
+    expect(outcome.warning).toBe(
+      'configuration_notification_failed; saved_authority_changed_after_commit'
+    )
   })
 
-  it('degrades to the commit-only baseline when the saved refresh fails after a commit', async () => {
+  it('degrades to the commit-only baseline with a refresh warning when the saved read fails', async () => {
     // Given: the apply commit succeeds but the follow-up saved read fails.
     const { core, get, post } = stubClient()
     post.mockResolvedValue({ data: applyResponsePayload() })
     get.mockRejectedValue(new Error('saved read failed'))
 
     // When: the draft is applied.
-    const baseline = await timelineMethods.apply.call(core, applyRequest)
+    const outcome = await timelineMethods.apply.call(core, applyRequest)
 
     // Then: the committed save still surfaces with the previewed window and no envelope.
-    expect(baseline.baseConfigRevision).toBe('config-2')
-    expect(baseline.window).toEqual(request.window)
-    expect(baseline.trajectory).toBeUndefined()
+    expect(outcome.baseline.baseConfigRevision).toBe('config-2')
+    expect(outcome.baseline.window).toEqual(request.window)
+    expect(outcome.baseline.trajectory).toBeUndefined()
+    expect(outcome.warning).toBe('saved_projection_refresh_failed')
   })
+})
+
+describe('exact profile authority validation', () => {
+  it.each(['profile', 'window', 'segment'] as const)(
+    'rejects a mismatched %s instead of showing another profile',
+    async mismatch => {
+      const { core, get } = stubClient()
+      const response = savedResponsePayload()
+      if (mismatch === 'profile') response.submode_id = 8
+      if (mismatch === 'window') response.trajectory.window.end = '2026-01-03T00:00:00.000Z'
+      if (mismatch === 'segment') response.trajectory.segments[0].source.mode = '99'
+      get.mockResolvedValue({ data: response })
+      await expect(timelineMethods.getSaved.call(core, request)).rejects.toMatchObject({
+        name: 'TimelinePreviewIdentityError',
+      })
+    }
+  )
 })

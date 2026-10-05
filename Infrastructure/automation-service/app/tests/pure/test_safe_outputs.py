@@ -101,6 +101,7 @@ def test_zero_unassigned_dfr_outputs_skips_assigned_snapshot_slot() -> None:
             }
         },
         mode_parameters={},
+        active_modes={},
         light_intensities={},
         light_programs=[],
     )

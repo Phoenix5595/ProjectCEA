@@ -1,13 +1,12 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
-import type uPlot from 'uplot'
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 
+import { Popover, PopoverContent, PopoverTrigger } from '../../../components/ui/popover'
 import type { ClimatePeriod } from '../../../types/climatePeriod'
 import { timeToMinutes, minutesToTime } from '../../../utils/timeMath'
 import { dragHandlesPlugin } from '../charts/dragHandlesPlugin'
 import {
   applyBoundary,
   applyValue,
-  buildLocalScheduledSeries,
   clampedBoundaryMinutes,
   createRafCoalescer,
   isValueInRange,
@@ -18,9 +17,7 @@ import {
   type ValueMetric,
 } from '../charts/dragInteraction'
 import {
-  buildEnvelopeSeries,
   displayWindowFor,
-  envelopeSampleTimes,
   photoperiodIntervals,
 } from '../charts/envelopeSeries'
 import {
@@ -28,9 +25,13 @@ import {
   periodLabelsPlugin,
   type PeriodLabelSegment,
 } from '../charts/periodLabelsPlugin'
-import { timelineSeriesMeta } from '../charts/timelineOptions'
+import { buildTimelineSources } from '../charts/timelineSources'
+import type { ActiveClimateProjectionState } from '../state/useActiveClimateProjection'
 import { TimelineUPlot } from '../charts/TimelineUPlot'
-import type { TimelinePhotoperiod } from '../state/timelineDraft'
+import type {
+  TimelinePhotoperiod,
+  TimelineWindow,
+} from '../state/timelineDraft'
 import type { TimelineDraftController, TimelinePreviewState } from '../state/useTimelineDraft'
 
 import { TimelineWarningOverlay, timelineWarningLabel } from './TimelineWarningOverlay'
@@ -40,10 +41,19 @@ type TimelineMode = 'compact' | 'expanded'
 export type ControlTimelineProps = {
   readonly mode: TimelineMode
   readonly controller: TimelineDraftController
+  readonly selectedLabel?: string
+  readonly activeLabel?: string | null
+  readonly operationalProjection?: ActiveClimateProjectionState
+  readonly profileDetails?: ReactNode
+  readonly profileWarning?: boolean
+  readonly constantMode?: boolean
+  readonly editingEnabled?: boolean
   readonly onExpand?: () => void
   readonly onCollapse?: () => void
   readonly lockedPhotoperiodHours?: number | null
   readonly forcedMoonPhase?: boolean
+  /** Daily/rolling display-window change; invalidates review, keeps draft. */
+  readonly onWindowChange?: (window: TimelineWindow) => void
 }
 
 function changedPeriods(
@@ -75,9 +85,7 @@ function previewMessage(preview: TimelinePreviewState): string {
     case 'loading':
       return `Reviewing draft ${preview.draftRevision}`
     case 'ready':
-      return preview.source === 'preview'
-        ? `Reviewed draft ${preview.draftRevision}`
-        : 'Saved trajectory refreshed'
+      return `Reviewed draft ${preview.draftRevision}`
     case 'failed':
       return `Review failed for draft ${preview.draftRevision}`
     default:
@@ -94,14 +102,23 @@ function assertNever(value: never): never {
 export function ControlTimeline({
   mode,
   controller,
+  selectedLabel = 'profile',
+  activeLabel = null,
+  operationalProjection,
+  profileDetails,
+  profileWarning = false,
+  constantMode = false,
+  editingEnabled = true,
   onExpand,
   onCollapse,
   lockedPhotoperiodHours = null,
   forcedMoonPhase = false,
+  onWindowChange,
 }: ControlTimelineProps) {
   const [editError, setEditError] = useState<string | null>(null)
   const [windowMode, setWindowMode] = useState<'daily' | 'rolling'>('daily')
   const [dragActive, setDragActive] = useState(false)
+  const [warningPage, setWarningPage] = useState(0)
   const [nowMs, setNowMs] = useState(() => Date.now())
   const { state, preview } = controller
   const isExpanded = mode === 'expanded'
@@ -114,9 +131,13 @@ export function ControlTimeline({
   windowModeRef.current = windowMode
   const isExpandedRef = useRef(isExpanded)
   isExpandedRef.current = isExpanded
+  const constantModeRef = useRef(constantMode)
+  constantModeRef.current = constantMode
+  const editingEnabledRef = useRef(editingEnabled && state.saved.baseConfigRevision.length > 0)
+  editingEnabledRef.current = editingEnabled && state.saved.baseConfigRevision.length > 0
 
   useEffect(() => {
-    const interval = setInterval(() => setNowMs(Date.now()), 30_000)
+    const interval = setInterval(() => setNowMs(Date.now()), 1_000)
     return () => clearInterval(interval)
   }, [])
 
@@ -127,25 +148,64 @@ export function ControlTimeline({
     ],
     [state.saved, state.draft]
   )
-  const envelope = preview.kind === 'ready' ? preview.value : state.saved.trajectory
-  const warnings = envelope?.warnings ?? []
-  const skippedWarning = warnings.find(warning => warning.code === 'calendar.transition_skipped')
-  const genericWarnings = warnings.filter(warning => warning.code !== 'calendar.transition_skipped')
+  const operationalWarnings = operationalProjection?.trajectory?.warnings ?? []
 
   const nowBucket = Math.floor(nowMs / 30_000)
-  const displayWindow = useMemo(() => displayWindowFor(windowMode, nowMs), [windowMode, nowMs])
+  const displayWindow = useMemo(() => displayWindowFor(windowMode, nowBucket * 30_000), [windowMode, nowBucket])
   const windowStartMs = displayWindow.start
   const windowEndMs = displayWindow.end
 
   const editorDirty = changes.length > 0
-  const previewMatchesDraft =
-    preview.kind === 'ready' && preview.draftRevision === state.draftRevision
-  const localMode = dragActive || (isExpanded && editorDirty && !previewMatchesDraft)
-  const dragEnabled = isExpanded && windowMode === 'daily'
+  const requestedWindow = { start: new Date(windowStartMs).toISOString(), end: new Date(windowEndMs).toISOString(), timezone: state.saved.window?.timezone ?? 'UTC' }
+  const windowMatches = (window: TimelineWindow) => Date.parse(window.start) === windowStartMs &&
+    Date.parse(window.end) === windowEndMs && window.timezone === requestedWindow.timezone
+  const publishedWindowRef = useRef('')
+  useEffect(() => {
+    const key = `${state.saved.room.location}:${state.saved.room.cluster}:${windowStartMs}:${windowEndMs}:${requestedWindow.timezone}`
+    if (publishedWindowRef.current === key) return
+    publishedWindowRef.current = key
+    if (state.saved.window != null && Date.parse(state.saved.window.start) === windowStartMs &&
+      Date.parse(state.saved.window.end) === windowEndMs && state.saved.window.timezone === requestedWindow.timezone) return
+    controllerRef.current.setWindow(requestedWindow)
+    onWindowChange?.(requestedWindow)
+  }, [state.saved.room.location, state.saved.room.cluster, windowStartMs, windowEndMs, requestedWindow.timezone,
+    state.saved.window, onWindowChange])
+  const previewMatchesDraft = preview.kind === 'ready' &&
+    preview.draftRevision === state.draftRevision && preview.result.draftRevision === state.draftRevision &&
+    preview.request.draftRevision === state.draftRevision &&
+    preview.request.room.location === state.saved.room.location && preview.request.room.cluster === state.saved.room.cluster &&
+    preview.request.expectedConfigRevision === state.saved.baseConfigRevision &&
+    preview.result.expectedConfigRevision === state.saved.baseConfigRevision &&
+    preview.request.modeId === state.saved.modeId && preview.result.modeId === state.saved.modeId &&
+    preview.request.submodeId === (state.saved.submodeId ?? null) && preview.result.submodeId === (state.saved.submodeId ?? null) &&
+    preview.request.requestId === preview.result.requestId && windowMatches(preview.request.window) &&
+    windowMatches(preview.result.window) && JSON.stringify(preview.request.values) === JSON.stringify(state.draft) &&
+    (preview.result.trajectory == null || (preview.result.trajectory.room === state.saved.room.location &&
+      preview.result.trajectory.base_config_revision === state.saved.baseConfigRevision &&
+      preview.result.trajectory.draft_revision === String(state.draftRevision) &&
+      preview.result.trajectory.window.start.getTime() === windowStartMs &&
+      preview.result.trajectory.window.end.getTime() === windowEndMs &&
+      preview.result.trajectory.window.timezone === requestedWindow.timezone &&
+      preview.result.trajectory.segments.every(segment => segment.source.mode === String(state.saved.modeId) &&
+        segment.source.submode === (state.saved.submodeId == null ? null : String(state.saved.submodeId)))))
+  const envelope = previewMatchesDraft && preview.kind === 'ready' ? preview.result.trajectory : null
+  const savedEnvelope = state.saved.trajectory != null &&
+    state.saved.trajectory.room === state.saved.room.location &&
+    state.saved.trajectory.revision_scope === 'saved' &&
+    state.saved.trajectory.base_config_revision === state.saved.baseConfigRevision &&
+    state.saved.trajectory.window.start.getTime() === windowStartMs &&
+    state.saved.trajectory.window.end.getTime() === windowEndMs &&
+    state.saved.trajectory.window.timezone === requestedWindow.timezone ? state.saved.trajectory : null
+  const warnings = (envelope ?? savedEnvelope)?.warnings ?? []
+  const detailWarnings = [...warnings, ...operationalWarnings].filter(warning => warning.code !== 'calendar.transition_skipped')
+  const warningPages = Math.max(1, Math.ceil(detailWarnings.length / 4))
+  const visibleWarningPage = Math.min(warningPage, warningPages - 1)
+  const localMode = dragActive || !previewMatchesDraft
+  const dragEnabled = editingEnabled && state.saved.baseConfigRevision.length > 0 && isExpanded && (constantMode || windowMode === 'daily')
   const lastAutoPreviewRevisionRef = useRef<number | null>(null)
 
   useEffect(() => {
-    if (!isExpanded) return
+    if (!isExpanded || !editingEnabled || !state.saved.baseConfigRevision) return
     if (!editorDirty) {
       lastAutoPreviewRevisionRef.current = null
       return
@@ -166,46 +226,33 @@ export function ControlTimeline({
     previewMatchesDraft,
     state.draftRevision,
     state.status.kind,
+    editingEnabled,
+    state.saved.baseConfigRevision,
   ])
-  const chart = useMemo(() => {
-    if (localMode || !envelope) {
-      const local = buildLocalScheduledSeries(localMode ? draftPeriods : [], {
-        start: new Date(windowStartMs),
-        end: new Date(windowEndMs),
-      })
-      const metrics: readonly ValueMetric[] = ['heating', 'cooling', 'vpd', 'co2']
-      const keys = metrics.map(metric => `${metric}_setpoint:scheduled` as const)
-      const windowMinutes = local.sampleTimes.map(t => (t - windowStartMs) / 60_000)
-      return {
-        data: [
-          windowMinutes,
-          ...metrics.map(metric => [...(local.series.get(metric) ?? [])]),
-        ] as uPlot.AlignedData,
-        meta: timelineSeriesMeta(keys),
-      }
-    }
-    const sampleTimes = envelopeSampleTimes({
-      start: new Date(windowStartMs),
-      end: new Date(windowEndMs),
-    })
-    const built = buildEnvelopeSeries(envelope, sampleTimes)
-    const windowMinutes = sampleTimes.map(t => (t - windowStartMs) / 60_000)
-    return {
-      data: [
-        windowMinutes,
-        ...built.keys.map(key => [...(built.series.get(key) ?? [])]),
-      ] as uPlot.AlignedData,
-      meta: timelineSeriesMeta(built.keys),
-    }
-  }, [envelope, localMode, draftPeriods, windowStartMs, windowEndMs])
+  const chart = useMemo(() => buildTimelineSources({
+    location: state.saved.room.location,
+    cluster: state.saved.room.cluster,
+    window: { start: windowStartMs, end: windowEndMs },
+    // Publications can arrive after the last one-second display tick.
+    now: Date.now(),
+    current: operationalProjection?.current ?? null,
+    future: operationalProjection?.future ?? [],
+    saved: savedEnvelope,
+    localSaved: savedEnvelope == null && state.saved.baseConfigRevision ? state.saved.periods : null,
+    draft: localMode ? null : envelope,
+    localDraft: localMode && state.saved.baseConfigRevision ? draftPeriods : null,
+    selectedLabel,
+    activeLabel,
+  }), [state.saved.room.location, state.saved.room.cluster, windowStartMs, windowEndMs, nowMs,
+    operationalProjection, state.saved.baseConfigRevision, state.saved.periods, savedEnvelope, envelope, localMode, draftPeriods, selectedLabel, activeLabel])
 
-  // Runtime mode authority overrides stored clocks without rewriting the saved photoperiod.
+  // Selected draft bands remain hypothetical; live phase is separately named.
   const bands = useMemo(
-    () =>
+    () => !state.saved.baseConfigRevision ? [] :
       forcedMoonPhase
         ? [{ start: windowStartMs, end: windowEndMs, phase: 'MOON' as const }]
         : photoperiodIntervals(state.draft.photoperiod, windowStartMs, windowEndMs),
-    [forcedMoonPhase, state.draft.photoperiod, windowStartMs, windowEndMs]
+    [forcedMoonPhase, state.saved.baseConfigRevision, state.draft.photoperiod, windowStartMs, windowEndMs]
   )
 
   const nowX =
@@ -219,15 +266,17 @@ export function ControlTimeline({
   const dataRevision = useRef(0)
   const revisionInputsRef = useRef<{
     envelope: typeof envelope
+    chart: typeof chart
     bands: typeof bands
     nowBucket: number
     labelSegments: typeof labelSegments
     draftPeriods: typeof draftPeriods
     dragEnabled: boolean
-  }>({ envelope, bands, nowBucket: 0, labelSegments, draftPeriods, dragEnabled })
+  }>({ envelope, chart, bands, nowBucket: 0, labelSegments, draftPeriods, dragEnabled })
   const revisionInputs = revisionInputsRef.current
   if (
     revisionInputs.envelope !== envelope ||
+    revisionInputs.chart !== chart ||
     revisionInputs.bands !== bands ||
     revisionInputs.nowBucket !== nowBucket ||
     revisionInputs.labelSegments !== labelSegments ||
@@ -236,6 +285,7 @@ export function ControlTimeline({
   ) {
     revisionInputsRef.current = {
       envelope,
+      chart,
       bands,
       nowBucket,
       labelSegments,
@@ -285,7 +335,8 @@ export function ControlTimeline({
       dragHandlesPlugin({
         getPeriods: () => draftPeriodsRef.current,
         getWindow: () => ({ start: windowStartMs, end: windowEndMs }),
-        isDragEnabled: () => isExpandedRef.current && windowModeRef.current === 'daily',
+        isDragEnabled: () => editingEnabledRef.current && isExpandedRef.current && (constantModeRef.current || windowModeRef.current === 'daily'),
+        isBoundaryEnabled: () => !constantModeRef.current,
         onDragStart: () => setDragActive(true),
         onDragEnd: () => {
           boundaryCoalescerRef.current?.flush()
@@ -392,6 +443,7 @@ export function ControlTimeline({
 
   const renderHandle = (index: number, edge: 'start' | 'end') => (
     <button
+      disabled={constantMode || !editingEnabled || !state.saved.baseConfigRevision}
       type="button"
       data-testid={`control-timeline-handle-${index}-${edge}`}
       aria-label={`Adjust ${state.draft.periods[index]?.period_name ?? `period ${index + 1}`} ${edge}`}
@@ -429,8 +481,58 @@ export function ControlTimeline({
             {isExpanded ? 'EDITABLE' : 'READ ONLY'}
           </span>
           {forcedMoonPhase && <span className="text-10">MOON · 24h</span>}
+          <span
+            data-testid="control-timeline-clock-label"
+            className="text-10 text-text-subtle"
+          >
+            Chart times UTC · Schedule times America/Toronto
+          </span>
         </div>
         <div className="flex items-center gap-1">
+          <Popover>
+            <PopoverTrigger asChild>
+              <button type="button" aria-label="Timeline sources" data-testid="control-timeline-details"
+                className="border border-border-default px-2 py-1 text-10 text-text-subtle hover:bg-surface-secondary">
+                Current · Forecast · Saved · Draft{profileWarning || detailWarnings.length > 0 ? ' · !' : ''}
+              </button>
+            </PopoverTrigger>
+            <PopoverContent align="end" className="w-[36rem] max-w-[calc(100vw-2rem)] space-y-2 p-3 text-xs break-words"
+              aria-label="Timeline source and profile details">
+              <div className="flex flex-wrap gap-2 text-10 text-text-subtle">
+                <span>Current effective · observation marker</span>
+                <span>Running forecast (estimated) · dashed</span>
+                <span>Saved {selectedLabel}{!state.saved.baseConfigRevision ? ' (unavailable)' :
+                  `${activeLabel === selectedLabel ? '' : ' (not active)'}${savedEnvelope == null ? ' (local estimate)' : ''}`} · solid</span>
+                <span>Draft {selectedLabel} ({!state.saved.baseConfigRevision ? 'unavailable' : localMode ? 'local estimate' : 'preview'}) · dotted</span>
+              </div>
+              <p className="text-10 text-text-subtle" aria-live="polite">
+                {chart.meta.some((entry, index) => entry.role === 'active-current' && chart.data[index + 1]?.some(value => value != null))
+                  ? 'Current effective · fresh completed tick' : 'Current effective unavailable'}
+                {' · '}{chart.meta.some((entry, index) => entry.role === 'active-future' && chart.data[index + 1]?.some(value => value != null))
+                  ? 'Running forecast available (estimated)' : 'Running projection unavailable / updating'}
+                {operationalProjection?.current?.photoperiod != null &&
+                  operationalProjection.current.photoperiod.quality !== 'unavailable' &&
+                  operationalProjection.current.photoperiod.observed_at.getTime() <= Date.now() &&
+                  Date.now() < operationalProjection.current.photoperiod.valid_until.getTime() &&
+                  ` · Live photoperiod ${operationalProjection.current.photoperiod.phase}`}
+              </p>
+              {profileDetails}
+              {detailWarnings.slice(visibleWarningPage * 4, (visibleWarningPage + 1) * 4).map((warning, index) => (
+                <p key={`timeline-generic-warning-${visibleWarningPage}-${index}`} className="text-10 text-status-warning-text">
+                  {timelineWarningLabel(warning)}
+                </p>
+              ))}
+              {warningPages > 1 && (
+                <div className="flex items-center gap-2">
+                  <button type="button" disabled={visibleWarningPage === 0} onClick={() => setWarningPage(visibleWarningPage - 1)}
+                    className="border border-border-default px-2 py-1 disabled:opacity-40">Previous warnings</button>
+                  <span>Warnings {visibleWarningPage + 1} / {warningPages}</span>
+                  <button type="button" disabled={visibleWarningPage === warningPages - 1} onClick={() => setWarningPage(visibleWarningPage + 1)}
+                    className="border border-border-default px-2 py-1 disabled:opacity-40">Next warnings</button>
+                </div>
+              )}
+            </PopoverContent>
+          </Popover>
           {isExpanded && onCollapse && (
             <button
               type="button"
@@ -453,7 +555,7 @@ export function ControlTimeline({
         </div>
       </header>
 
-      <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-auto p-2">
+      <div className="flex min-h-0 flex-1 flex-col gap-1 p-2">
         <div
           data-testid="control-timeline-plot"
           className={`relative min-w-0 border border-border-default bg-surface-base ${isExpanded ? 'h-[60vh]' : 'h-64'}`}
@@ -461,6 +563,7 @@ export function ControlTimeline({
           <TimelineUPlot
             data={chart.data}
             meta={chart.meta}
+            qualities={chart.qualities}
             windowMs={{ start: windowStartMs, end: windowEndMs }}
             photoperiod={bands}
             nowX={nowX}
@@ -469,8 +572,11 @@ export function ControlTimeline({
             ariaLabel={`Climate control timeline plot, ${chart.meta.map(entry => entry.label).join(', ')}`}
           />
           <div className="pointer-events-none absolute inset-0 z-10">
-            {skippedWarning !== undefined && envelope !== undefined && (
-              <TimelineWarningOverlay warning={skippedWarning} window={envelope.window} />
+            {warnings.filter(warning => warning.code === 'calendar.transition_skipped').map((warning, index) =>
+              <TimelineWarningOverlay key={`selected-${index}`} warning={warning} window={{ start: new Date(windowStartMs), end: new Date(windowEndMs) }} />
+            )}
+            {operationalWarnings.filter(warning => warning.code === 'calendar.transition_skipped').map((warning, index) =>
+              <TimelineWarningOverlay key={`running-${index}`} warning={warning} window={{ start: new Date(windowStartMs), end: new Date(windowEndMs) }} />
             )}
           </div>
           <span className="sr-only" data-testid="control-timeline-period-legend">
@@ -489,12 +595,11 @@ export function ControlTimeline({
               Local draft estimate
             </span>
           )}
-          {localMode && !dragActive && (
+          {localMode && !dragActive && state.saved.baseConfigRevision && (
             <span
-              data-testid="control-timeline-effective-stale"
               className="pointer-events-none absolute right-1 top-1 z-20 border border-status-warning-border bg-surface-primary/80 px-1 text-9 font-bold uppercase text-status-warning-text"
             >
-              Effective stale — preview pending
+              Local draft estimate{preview.kind === 'failed' ? ' — review failed' : preview.kind === 'loading' ? ' — preview pending' : ''}
             </span>
           )}
         </div>
@@ -515,11 +620,6 @@ export function ControlTimeline({
           </div>
         )}
 
-        {genericWarnings.map((warning, index) => (
-          <p key={`timeline-generic-warning-${index}`} className="text-10 text-status-warning-text">
-            {timelineWarningLabel(warning)}
-          </p>
-        ))}
         {editError && (
           <p role="alert" className="text-10 text-status-danger-text">
             {editError}
@@ -539,7 +639,7 @@ export function ControlTimeline({
                 <input
                   aria-label={label}
                   value={state.draft.photoperiod[field]}
-                  disabled={forcedMoonPhase}
+                  disabled={constantMode || forcedMoonPhase || !editingEnabled || !state.saved.baseConfigRevision}
                   onChange={event => changePhotoperiod(field, event.target.value)}
                   className="border border-border-default bg-surface-secondary px-1 py-0.5 text-text-input"
                 />
@@ -558,7 +658,7 @@ export function ControlTimeline({
                   type="number"
                   min={0}
                   value={state.draft.photoperiod[field]}
-                  disabled={forcedMoonPhase}
+                  disabled={constantMode || forcedMoonPhase || !editingEnabled || !state.saved.baseConfigRevision}
                   onChange={event =>
                     controller.editPhotoperiod({
                       ...state.draft.photoperiod,
@@ -584,7 +684,7 @@ export function ControlTimeline({
             <button
               type="button"
               onClick={() => void controller.review()}
-              disabled={!changes.length || preview.kind === 'loading'}
+              disabled={!editingEnabled || !state.saved.baseConfigRevision || (!changes.length && state.saved.parametersConfigured) || preview.kind === 'loading'}
               className="ml-auto border border-accent-data px-2 py-1 text-10 font-bold uppercase text-accent-data disabled:cursor-not-allowed disabled:opacity-40"
             >
               Review
@@ -592,7 +692,7 @@ export function ControlTimeline({
             <button
               type="button"
               onClick={() => void controller.apply()}
-              disabled={state.status.kind !== 'reviewed' || preview.kind !== 'ready'}
+              disabled={!editingEnabled || !state.saved.baseConfigRevision || state.status.kind !== 'reviewed' || !previewMatchesDraft}
               className="border border-status-success px-2 py-1 text-10 font-bold uppercase text-status-success disabled:cursor-not-allowed disabled:opacity-40"
             >
               Apply
@@ -600,7 +700,7 @@ export function ControlTimeline({
             <button
               type="button"
               onClick={controller.discard}
-              disabled={!changes.length}
+              disabled={!editingEnabled || !changes.length}
               className="border border-border-default px-2 py-1 text-10 font-bold uppercase text-text-muted disabled:cursor-not-allowed disabled:opacity-40"
             >
               Discard

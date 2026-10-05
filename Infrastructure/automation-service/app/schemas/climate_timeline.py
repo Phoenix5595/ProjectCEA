@@ -226,7 +226,10 @@ class TimelinePreviewResponse(ClimateTimelineModel):
     request_id: str = Field(min_length=1)
     expected_config_revision: str = Field(min_length=1)
     draft_revision: int = Field(ge=0)
-    trajectory: RichTrajectoryEnvelope
+    mode_id: int
+    submode_id: int | None = None
+    window: UtcWindow
+    trajectory: RichTrajectoryEnvelope | None = None
 
 
 class TimelineSavedResponse(ClimateTimelineModel):
@@ -238,6 +241,7 @@ class TimelineSavedResponse(ClimateTimelineModel):
     periods: Annotated[tuple[TimelinePeriodDraft, ...], BeforeValidator(tuple)]
     photoperiod: TimelinePhotoperiodDraft
     trajectory: RichTrajectoryEnvelope | None = None
+    parameters_configured: bool
 
 
 class TimelineApplyRequest(ClimateTimelineModel):
@@ -265,3 +269,5 @@ class TimelineApplyResponse(ClimateTimelineModel):
         min_length=1
     )
     photoperiod: TimelinePhotoperiodDraft
+    parameters_configured: Literal[True]
+    notification_warning: str | None = None

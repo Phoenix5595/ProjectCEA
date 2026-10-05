@@ -8,8 +8,9 @@ latest-before-timestamp queries against the raw monitoring hypertables.
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Mapping, Sequence
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from typing import Any, Final
+from zoneinfo import ZoneInfo
 
 from app.monitoring_publication.current import CurrentPublicationPublisher
 from app.monitoring_publication.projection import (
@@ -20,6 +21,7 @@ from app.monitoring_publication.rich import project_saved_trajectory
 from app.monitoring_publication.workers import MonitoringPublicationWorkers
 from app.redis.monitoring import RedisCurrentPublicationWriter
 from app.repositories.climate_timeline_snapshot import (
+    ClimateProfileConfiguration,
     ClimateScheduleConfiguration,
     ClimateScheduleSnapshotBuilder,
 )
@@ -29,7 +31,11 @@ from app.repositories.monitoring_snapshot_builder import (
     MonitoringSnapshotRequest,
     VersionSnapshotRepository,
 )
-from app.repositories.monitoring_snapshot_types import RuntimeSnapshotVersion
+from app.repositories.monitoring_snapshot_types import (
+    FrozenRow,
+    RuntimeSnapshotVersion,
+    frozen,
+)
 from app.services.calendar_mode_scheduler import CalendarModeScheduler
 from app.services.future_projection import project_future_intervals
 
@@ -37,6 +43,29 @@ _PUBLICATION_ROOMS: Final[tuple[tuple[str, str], ...]] = (
     ("Flower Room", "main"),
     ("Veg Room", "main"),
 )
+
+LOCAL_TZ = ZoneInfo("America/Toronto")
+
+
+def _auto_flag(value: Any) -> bool:
+    """Mirror the repository's ``(metadata->>'auto_mode_transition')::boolean``."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() not in {"false", "f", "no", "0"}
+    return value is not False
+
+
+def _phase_order(value: Any) -> int | None:
+    """The metadata phase order as the repository's ``::int`` cast reads it."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str) and value.strip().lstrip("-").isdigit():
+        return int(value.strip())
+    return None
+
 
 _SETPOINT_PREDECESSOR_COLUMNS = (
     "timestamp, location, cluster, device_name, mode, "
@@ -47,6 +76,47 @@ _SETPOINT_PREDECESSOR_COLUMNS = (
     "ramp_progress_heating, ramp_progress_cooling, ramp_progress_humidity, "
     "ramp_progress_co2, ramp_progress_vpd, ramp_progress_light"
 )
+
+_PROFILE_REVISION_QUERY = "SELECT COALESCE(MAX(version_id), 0) FROM config_versions"
+
+
+async def _read_parameters_row(
+    connection: Any, location: str, cluster: str, mode_id: int, submode_id: int | None
+) -> Any:
+    """The exact mode_parameters row for one profile identity on a given connection."""
+    return await connection.fetchrow(
+        "SELECT * FROM mode_parameters WHERE location = $1 AND cluster = $2 "
+        "AND mode_id = $3 AND submode_id IS NOT DISTINCT FROM $4",
+        location,
+        cluster,
+        mode_id,
+        submode_id,
+    )
+
+
+def _revision_text(version_id: Any) -> str:
+    if not isinstance(version_id, int) or isinstance(version_id, bool) or version_id < 0:
+        raise RuntimeError("profile configuration revision is unavailable")
+    return f"{version_id:07x}"
+
+
+def _initial_parameters(identity: Mapping[str, Any]) -> dict[str, Any]:
+    """Unsaved photoperiod defaults for a profile without a stored parameter row."""
+    day_start = time(17, 0)
+    night_start = time(11, 0)
+    photoperiod_hours = identity.get("photoperiod_hours")
+    if identity.get("mode_name") in {"sleep", "drying"}:
+        day_start = night_start = time(0, 0)
+    elif isinstance(photoperiod_hours, int) and photoperiod_hours > 0:
+        night_start = time((17 + photoperiod_hours) % 24, 0)
+    return {
+        "day_start_time": day_start,
+        "night_start_time": night_start,
+        "light_ramp_up_minutes": 15,
+        "light_ramp_down_minutes": 15,
+        "main_light_intensity": 100,
+        "supplemental_light_intensity": 0,
+    }
 
 
 def _qualified(columns: str, prefix: str) -> str:
@@ -74,7 +144,15 @@ class ModeSnapshotSource:
 
 
 class CalendarSnapshotSource:
-    """Read calendar events plus the expected mode application for each day."""
+    """Read calendar events plus the expected mode application for each day.
+
+    Target dates are Toronto local dates while the projection window is emitted
+    UTC. Each event row merges its metadata keys to the top level and carries
+    the destination identity resolved through the read-only scheduler
+    expectation source (``get_expected_transition``), so the pure projection
+    consumes exactly the configured transitions the runtime applies, including
+    the enabled and opt-out flags. Names are never turned into invented IDs.
+    """
 
     def __init__(self, calendar_repo: Any, scheduler: CalendarModeScheduler) -> None:
         self._calendar = calendar_repo
@@ -83,10 +161,59 @@ class CalendarSnapshotSource:
     async def read_calendar_events(
         self, location: str, cluster: str, start: datetime, end: datetime
     ) -> Sequence[Mapping[str, Any]]:
+        first_day = start.astimezone(LOCAL_TZ).date()
+        final_day = end.astimezone(LOCAL_TZ).date()
         events, _ = await self._calendar.list_events(
-            start.date(), end.date(), location=location, limit=500
+            first_day, final_day, location=location, limit=500
         )
-        return [event for event in events if event.get("cluster") == cluster]
+        room_events = [event for event in events if event.get("cluster") == cluster]
+        resolved: dict[Any, Mapping[str, Any]] = {}
+        configured: dict[tuple[str, str | None], bool] = {}
+        day = first_day
+        while day <= final_day:
+            transition = await self._scheduler.get_expected_transition(location, cluster, day)
+            if transition is not None and isinstance(transition.get("event_id"), int):
+                row: dict[str, Any] = {
+                    key: transition[key]
+                    for key in ("target_mode_id", "target_submode_id")
+                    if key in transition
+                }
+                if "target_mode_id" in row:
+                    mode_name = transition.get("target_mode_name")
+                    submode_name = transition.get("target_submode_name")
+                    names = (
+                        mode_name if isinstance(mode_name, str) else "",
+                        submode_name if isinstance(submode_name, str) else None,
+                    )
+                    if names not in configured:
+                        configured[names] = await self._scheduler.is_profile_configured(
+                            location, cluster, names[0], names[1]
+                        )
+                    row["destination_configured"] = configured[names]
+                resolved[transition["event_id"]] = row
+            day += timedelta(days=1)
+        return [self._event_row(event, resolved.get(event.get("id"))) for event in room_events]
+
+    def _event_row(
+        self, event: Mapping[str, Any], resolved: Mapping[str, Any] | None
+    ) -> dict[str, Any]:
+        row = dict(event)
+        metadata = self._metadata(event.get("metadata"))
+        row["auto_mode_transition"] = _auto_flag(metadata.get("auto_mode_transition"))
+        row["phase_order"] = _phase_order(metadata.get("phase_order"))
+        row["target_mode_name"] = metadata.get("target_mode_name")
+        row["target_submode_name"] = metadata.get("target_submode_name")
+        if resolved:
+            row.update(dict(resolved))
+        return row
+
+    def _metadata(self, value: Any) -> dict[str, Any]:
+        parse = getattr(self._calendar, "parse_metadata", None)
+        try:
+            parsed = parse(value) if callable(parse) else None
+        except Exception:
+            return {}
+        return parsed if isinstance(parsed, dict) else {}
 
     async def read_calendar_applications(
         self, location: str, cluster: str, start: datetime, end: datetime
@@ -137,18 +264,39 @@ class SavedTrajectorySnapshotSource:
             location, cluster, mode_id, submode_id
         )
         async with self._pool.acquire() as connection:
-            parameters = await connection.fetchrow(
-                "SELECT * FROM mode_parameters WHERE location = $1 AND cluster = $2 "
-                "AND mode_id = $3 AND submode_id IS NOT DISTINCT FROM $4",
-                location,
-                cluster,
-                mode_id,
-                submode_id,
+            parameters = await _read_parameters_row(
+                connection, location, cluster, mode_id, submode_id
             )
         return (
             None
             if parameters is None
             else ClimateScheduleConfiguration.from_rows(dict(parameters), periods)
+        )
+
+    async def read_profile(
+        self, location: str, cluster: str, mode_id: int, submode_id: int | None
+    ) -> ClimateProfileConfiguration:
+        """Read one exact profile aggregate on one read-only repeatable-read transaction."""
+        async with (
+            self._pool.acquire() as connection,
+            connection.transaction(isolation="repeatable_read", readonly=True),
+        ):
+            identity = await self._room_modes.get_profile_identity_on_connection(
+                connection, location, mode_id, submode_id
+            )
+            parameters = await _read_parameters_row(
+                connection, location, cluster, mode_id, submode_id
+            )
+            periods = await self._climate_periods.get_periods_for_room_mode(
+                location, cluster, mode_id, submode_id, conn=connection
+            )
+            version_id = await connection.fetchval(_PROFILE_REVISION_QUERY)
+        stored = dict(parameters) if parameters is not None else _initial_parameters(identity)
+        return ClimateProfileConfiguration(
+            frozen(identity) or FrozenRow(()),
+            ClimateScheduleConfiguration.from_rows(stored, periods),
+            _revision_text(version_id),
+            parameters is not None,
         )
 
 

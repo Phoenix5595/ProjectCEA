@@ -10,6 +10,7 @@ import {
   FlushHealth,
   MonitoringRange,
   MonitoringWarning,
+  PersistenceCursor,
   Phase,
   ProjectionMetadata,
   Quality,
@@ -168,6 +169,75 @@ export const FutureProjection = z.object({
   series: z.array(ProjectionSeriesPoint),
 })
 export type FutureProjection = z.infer<typeof FutureProjection>
+
+/** One observed current fact mirroring `shared.monitoring_contracts.CurrentSeriesPoint`. */
+export const CurrentSeriesPoint = z.object({
+  series_id: z.object({ value: z.string().min(1) }),
+  observed_at: utcDate,
+  valid_until: utcDate,
+  value: z.number().nullable(),
+  quality: Quality,
+})
+export type CurrentSeriesPoint = z.infer<typeof CurrentSeriesPoint>
+
+/** Resolved photoperiod phase with quality, mirroring the shared contract. */
+export const PhotoperiodPublication = z
+  .object({
+    observed_at: utcDate,
+    valid_until: utcDate,
+    phase: Phase,
+    quality: Quality,
+  })
+  .superRefine((value, ctx) => {
+    if (value.phase === 'UNKNOWN') {
+      if (value.quality !== 'unavailable') {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'unknown photoperiod must be unavailable',
+        })
+      }
+    } else if (value.quality === 'unavailable') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'known photoperiod must be exact or estimated',
+      })
+    }
+  })
+export type PhotoperiodPublication = z.infer<typeof PhotoperiodPublication>
+
+/** Fresh completed-tick control facts for one room, plus its publication version. */
+export const CurrentSnapshot = z
+  .object({
+    version: PublicationVersion,
+    observed_at: utcDate,
+    valid_until: utcDate,
+    series: z.array(CurrentSeriesPoint),
+    photoperiod: PhotoperiodPublication.nullable(),
+    persistence: PersistenceCursor,
+  })
+  .superRefine((value, ctx) => {
+    if (value.valid_until.getTime() < value.observed_at.getTime()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'valid_until must not precede observed_at',
+      })
+    }
+    const ids = new Set(value.series.map(point => point.series_id.value))
+    if (ids.size !== value.series.length) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'current snapshot series identifiers must be unique',
+      })
+    }
+  })
+export type CurrentSnapshot = z.infer<typeof CurrentSnapshot>
+
+/** Read-only route response for the fresh current publication. */
+export const CurrentPublicationResponse = z.object({
+  quality: Quality,
+  value: CurrentSnapshot.nullable(),
+})
+export type CurrentPublicationResponse = z.infer<typeof CurrentPublicationResponse>
 
 /** Read-only route response for canonical future projections. */
 export const ProjectionPublicationResponse = z.object({

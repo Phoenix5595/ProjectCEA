@@ -15,6 +15,57 @@ def _parse_time(t: str) -> datetime_time:
     return datetime.strptime(t, "%H:%M").time()
 
 
+def _period_minute(value: Any) -> int | None:
+    """Minutes-of-day for a TIME column value or 'HH:MM'/'HH:MM:SS' text."""
+    if isinstance(value, datetime_time):
+        return value.hour * 60 + value.minute
+    if isinstance(value, str):
+        parts = value.strip().split(":")
+        if len(parts) < 2 or len(parts) > 3:
+            return None
+        try:
+            hour = int(parts[0])
+            minute = int(parts[1])
+        except ValueError:
+            return None
+        if not (0 <= hour <= 23 and 0 <= minute <= 59):
+            return None
+        return hour * 60 + minute
+    return None
+
+
+def _hhmm(minute: int) -> str:
+    """Render a minute-of-day (or 1440 day end) as HH:MM."""
+    return f"{minute // 60:02d}:{minute % 60:02d}"
+
+
+def _coverage_gaps(period_times: list[tuple[int, int, str]]) -> list[str]:
+    """Uncovered minute runs for sorted (start, end, name) periods.
+
+    An equal start/end period is all-day; a wrapping period covers past
+    midnight into the next local day.
+    """
+    covered = bytearray(1440)
+    for start, end, _name in period_times:
+        finish = end + 1440 if end <= start else end
+        for minute in range(start, finish):
+            covered[minute % 1440] = 1
+
+    gaps: list[str] = []
+    minute = 0
+    while minute < 1440:
+        if covered[minute]:
+            minute += 1
+            continue
+        run_start = minute
+        while minute < 1440 and not covered[minute]:
+            minute += 1
+        gaps.append(
+            f"Coverage gap: {_hhmm(run_start)}-{_hhmm(minute)} is not covered by any period"
+        )
+    return gaps
+
+
 class ClimatePeriodRepository(BaseRepository):
     """Repository for climate period operations."""
 
@@ -22,9 +73,20 @@ class ClimatePeriodRepository(BaseRepository):
         super().__init__(pool)
 
     async def get_periods(
-        self, location: str, cluster: str, mode_id: int | None = None, submode_id: int | None = None
+        self,
+        location: str,
+        cluster: str,
+        mode_id: int | None = None,
+        submode_id: int | None = None,
+        conn: Any | None = None,
     ) -> list[dict[str, Any]]:
-        """Get all climate periods for a location/cluster."""
+        """Get climate periods for a location/cluster slice; ``conn`` propagates failures.
+
+        With ``mode_id`` the slice is exact: ``submode_id IS NOT DISTINCT FROM``
+        the requested submode, so a NULL submode selects only the NULL-base
+        profile instead of every submode of that mode. Without ``mode_id`` the
+        read stays the broad whole-room legacy view.
+        """
         query = """
             SELECT id, location, cluster, mode_id, submode_id, period_name,
                    start_time, end_time, ramp_minutes,
@@ -36,13 +98,14 @@ class ClimatePeriodRepository(BaseRepository):
         params: list[Any] = [location, cluster]
 
         if mode_id is not None:
-            query += " AND mode_id = $3"
-            params.append(mode_id)
-            if submode_id is not None:
-                query += " AND submode_id = $4"
-                params.append(submode_id)
+            query += " AND mode_id = $3 AND submode_id IS NOT DISTINCT FROM $4"
+            params.extend([mode_id, submode_id])
 
         query += " ORDER BY start_time"
+
+        if conn is not None:
+            rows = await conn.fetch(query, *params)
+            return [dict(row) for row in rows]
 
         try:
             async with self.pool.acquire() as conn:
@@ -53,9 +116,18 @@ class ClimatePeriodRepository(BaseRepository):
             return []
 
     async def get_periods_for_room_mode(
-        self, location: str, cluster: str, mode_id: int, submode_id: int | None
+        self,
+        location: str,
+        cluster: str,
+        mode_id: int,
+        submode_id: int | None,
+        conn: Any | None = None,
     ) -> list[dict[str, Any]]:
-        """Periods for one (mode_id, submode_id) slice, NULL-safe on submode (veg / legacy)."""
+        """Periods for one (mode_id, submode_id) slice, NULL-safe on submode (veg / legacy).
+
+        ``conn`` reuses a caller-owned connection so the read joins the
+        caller's transaction; its SQL failures propagate instead of becoming [].
+        """
         query = """
             SELECT id, location, cluster, mode_id, submode_id, period_name,
                    start_time, end_time, ramp_minutes,
@@ -67,9 +139,12 @@ class ClimatePeriodRepository(BaseRepository):
               AND submode_id IS NOT DISTINCT FROM $4
             ORDER BY start_time
         """
+        if conn is not None:
+            rows = await conn.fetch(query, location, cluster, mode_id, submode_id)
+            return [dict(row) for row in rows]
         try:
-            async with self.pool.acquire() as conn:
-                rows = await conn.fetch(query, location, cluster, mode_id, submode_id)
+            async with self.pool.acquire() as connection:
+                rows = await connection.fetch(query, location, cluster, mode_id, submode_id)
                 return [dict(row) for row in rows]
         except Exception as e:
             logger.error(f"Failed to get climate periods for room mode: {e}")
@@ -90,8 +165,9 @@ class ClimatePeriodRepository(BaseRepository):
         details: str | None = None,
         mode_id: int | None = None,
         submode_id: int | None = None,
+        conn: Any | None = None,
     ) -> dict[str, Any] | None:
-        """Save (insert or update) a climate period."""
+        """Save (insert or update) a climate period; ``conn`` propagates failures."""
         query = """
             INSERT INTO climate_periods (
                 location, cluster, mode_id, submode_id, period_name,
@@ -112,6 +188,27 @@ class ClimatePeriodRepository(BaseRepository):
                 updated_at = NOW()
             RETURNING id, location, cluster, period_name, start_time, end_time
         """
+        if conn is not None:
+            row = await conn.fetchrow(
+                query,
+                location,
+                cluster,
+                mode_id,
+                submode_id,
+                period_name,
+                _parse_time(start_time),
+                _parse_time(end_time),
+                ramp_minutes,
+                heating_setpoint,
+                cooling_setpoint,
+                vpd_setpoint,
+                co2_setpoint,
+                details,
+            )
+            logger.info(
+                f"save_period result: row={'exists' if row else 'None'}, location={location}, cluster={cluster}, period={period_name}"
+            )
+            return dict(row) if row else None
         try:
             async with self.pool.acquire() as conn:
                 row = await conn.fetchrow(
@@ -150,19 +247,30 @@ class ClimatePeriodRepository(BaseRepository):
             return False
 
     async def delete_periods(
-        self, location: str, cluster: str, mode_id: int | None = None, submode_id: int | None = None
+        self,
+        location: str,
+        cluster: str,
+        mode_id: int | None = None,
+        submode_id: int | None = None,
+        conn: Any | None = None,
     ) -> bool:
-        """Delete all periods for a location/cluster."""
+        """Delete periods for a location/cluster slice; ``conn`` propagates failures.
+
+        With ``mode_id`` the delete is exact for the requested identity
+        (``submode_id IS NOT DISTINCT FROM``), so a supplied mode with a NULL
+        submode never removes sibling submode rows. Without ``mode_id`` the
+        delete stays the broad whole-room legacy replacement.
+        """
         query = "DELETE FROM climate_periods WHERE location = $1 AND cluster = $2"
         params: list[Any] = [location, cluster]
 
         if mode_id is not None:
-            query += " AND mode_id = $3"
-            params.append(mode_id)
-            if submode_id is not None:
-                query += " AND submode_id = $4"
-                params.append(submode_id)
+            query += " AND mode_id = $3 AND submode_id IS NOT DISTINCT FROM $4"
+            params.extend([mode_id, submode_id])
 
+        if conn is not None:
+            await conn.execute(query, *params)
+            return True
         try:
             async with self.pool.acquire() as conn:
                 await conn.execute(query, *params)
@@ -224,7 +332,12 @@ class ClimatePeriodRepository(BaseRepository):
             return None
 
     def validate_24h_coverage(self, periods: list[dict[str, Any]]) -> tuple[bool, list[str]]:
-        """Validate that periods cover exactly 24h with no overlaps."""
+        """Validate that periods cover the whole 24h day with no gaps or overlaps.
+
+        ``start_time``/``end_time`` may be ``HH:MM`` text or ``datetime.time``
+        values read back from the TIME columns; equal start/end means an
+        all-day period. The maximum of 7 periods is preserved.
+        """
         errors: list[str] = []
 
         if not periods:
@@ -237,35 +350,28 @@ class ClimatePeriodRepository(BaseRepository):
 
         for p in periods:
             name = p.get("period_name", "Unnamed")
-            start = p.get("start_time", "")
-            end = p.get("end_time", "")
+            start_raw = p.get("start_time")
+            end_raw = p.get("end_time")
 
-            if not start or not end:
+            if start_raw is None or start_raw == "" or end_raw is None or end_raw == "":
                 errors.append(f"Missing start or end time in period '{name}'")
                 continue
 
-            try:
-                start_parts = start.split(":")
-                end_parts = end.split(":")
-                start_mins = int(start_parts[0]) * 60 + int(start_parts[1])
-                end_mins = int(end_parts[0]) * 60 + int(end_parts[1])
-            except (ValueError, IndexError):
-                errors.append(f"Invalid time format in period '{name}': {start} - {end}")
+            start = _period_minute(start_raw)
+            end = _period_minute(end_raw)
+            if start is None or end is None:
+                errors.append(f"Invalid time format in period '{name}': {start_raw} - {end_raw}")
                 continue
 
             ramp = p.get("ramp_minutes", 0) or 0
             if ramp > 0:
-                duration = (
-                    end_mins - start_mins
-                    if end_mins > start_mins
-                    else (1440 - start_mins + end_mins)
-                )
+                duration = end - start if end > start else (1440 - start + end)
                 if ramp > duration:
                     errors.append(
                         f"ramp_minutes ({ramp}) exceeds period duration ({duration} min) in period '{name}'"
                     )
 
-            period_times.append((start_mins, end_mins, name))
+            period_times.append((start, end, name))
 
         if errors:
             return False, errors
@@ -293,5 +399,8 @@ class ClimatePeriodRepository(BaseRepository):
                     break
             if errors:
                 break
+
+        if not errors:
+            errors.extend(_coverage_gaps(period_times))
 
         return len(errors) == 0, errors

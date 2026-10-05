@@ -5,8 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
 import math
-import re
-from typing import Protocol, TypeAlias
+from typing import Any, Protocol, TypeAlias
 
 from shared.monitoring_contracts import (
     ConfigVersion,
@@ -20,13 +19,15 @@ from shared.monitoring_contracts import (
     PublicationVersion,
     Quality,
     SemanticSeriesId,
+    monitoring_room_series_prefix,
+    normalize_monitoring_segment,
 )
 
 RoomKey: TypeAlias = tuple[str, str]
 DeviceKey: TypeAlias = tuple[str, str, str]
 NumericValue: TypeAlias = int | float
 CURRENT_FACT_FRESHNESS = timedelta(seconds=5)
-_SEGMENT = re.compile(r"[^a-z0-9]+")
+_RAMP_METRICS: tuple[str, ...] = ("heating", "cooling", "vpd", "co2")
 
 
 class ControlTickObserver(Protocol):
@@ -45,14 +46,23 @@ def build_current_snapshot(
     photoperiod_phases: Mapping[RoomKey, PhotoperiodPhase],
     runtime_snapshot_version: int,
     observed_at: datetime,
+    active_profiles: Mapping[RoomKey, Mapping[str, Any]],
+    ramp_remaining_seconds: Mapping[RoomKey, Mapping[str, NumericValue]],
 ) -> CurrentSnapshot | None:
-    """Build one immutable snapshot exclusively from values already in process memory."""
+    """Build one immutable snapshot exclusively from values already in process memory.
+
+    ``active_profiles`` carries the captured tick identity per room; a
+    nonempty metadata-only CurrentSnapshot is valid for all-NULL constant
+    profiles. Neither valid profile facts nor numeric setpoint facts produce
+    an empty snapshot instead. No fake numeric climate targets are added.
+    """
     if (
         runtime_snapshot_version < 1
         or observed_at.tzinfo is None
-        or not effective_setpoints
         or len(f"{runtime_snapshot_version:x}") > 64
     ):
+        return None
+    if not effective_setpoints and not active_profiles:
         return None
 
     observed = observed_at.astimezone(UTC)
@@ -60,17 +70,29 @@ def build_current_snapshot(
     series: list[CurrentSeriesPoint] = []
     series_ids: set[str] = set()
     phases: set[PhotoperiodPhase] = set()
-    setpoint_count = 0
+    valid_rooms = 0
 
-    for room_key, values in sorted(effective_setpoints.items()):
+    profile_rooms = active_profiles
+    ramp_rooms = ramp_remaining_seconds
+    room_keys: set[RoomKey] = set(effective_setpoints) | set(profile_rooms)
+    for room_key in sorted(room_keys):
         room = _room_identifier(room_key)
         phase = photoperiod_phases.get(room_key)
         if room is None or phase is None:
-            return None
-        phases.add(phase)
-        for name, value in sorted(values.items()):
+            continue
+        values = effective_setpoints.get(room_key)
+        profile = profile_rooms.get(room_key, {})
+        ramps = ramp_rooms.get(room_key, {})
+
+        room_series_start = len(series)
+        has_profile_identity = False
+        has_numeric_target = False
+        for name, value in sorted((values or {}).items()):
+            normalized_name = normalize_monitoring_segment(name)
+            if normalized_name is None:
+                continue
             point = _point(
-                f"{room}.setpoint.{_segment_identifier(name)}",
+                f"{room}.setpoint.{normalized_name}",
                 value,
                 observed,
                 valid_until,
@@ -78,18 +100,76 @@ def build_current_snapshot(
             )
             if point is not None:
                 series.append(point)
-                setpoint_count += 1
+                if normalized_name.startswith(("effective_", "nominal_")):
+                    has_numeric_target = True
 
-    if setpoint_count == 0:
+        mode_id = profile.get("mode_id")
+        submode_id = profile.get("submode_id")
+        valid_mode_id = isinstance(mode_id, int) and not isinstance(mode_id, bool) and mode_id > 0
+        valid_submode_id = submode_id is None or (
+            isinstance(submode_id, int) and not isinstance(submode_id, bool) and submode_id > 0
+        )
+        if valid_mode_id and valid_submode_id:
+            point = _point(
+                f"{room}.setpoint.profile_mode_id",
+                mode_id,
+                observed,
+                valid_until,
+                series_ids,
+            )
+            if point is not None:
+                series.append(point)
+                has_profile_identity = True
+                # NULL base profiles omit the submode fact; a known mode with
+                # an absent submode fact means its base profile.
+                if isinstance(submode_id, int):
+                    point = _point(
+                        f"{room}.setpoint.profile_submode_id",
+                        submode_id,
+                        observed,
+                        valid_until,
+                        series_ids,
+                    )
+                    if point is not None:
+                        series.append(point)
+
+        for metric in _RAMP_METRICS:
+            if metric not in ramps:
+                continue
+            normalized_metric = normalize_monitoring_segment(metric)
+            if normalized_metric is None:
+                continue
+            point = _point(
+                f"{room}.setpoint.ramp_remaining_seconds_{normalized_metric}",
+                ramps[metric],
+                observed,
+                valid_until,
+                series_ids,
+            )
+            if point is not None:
+                series.append(point)
+
+        if not has_profile_identity and not has_numeric_target:
+            for point in series[room_series_start:]:
+                series_ids.discard(point.series_id.value)
+            del series[room_series_start:]
+            continue
+        valid_rooms += 1
+        phases.add(phase)
+
+    if valid_rooms == 0:
         return None
 
     for device_key, values in sorted(automation_context.items()):
         device = _device_identifier(device_key)
         if device is None:
-            return None
+            continue
         for name, value in sorted(values.items()):
+            normalized_name = normalize_monitoring_segment(name)
+            if normalized_name is None:
+                continue
             point = _point(
-                f"{device}.automation.{_segment_identifier(name)}",
+                f"{device}.automation.{normalized_name}",
                 value,
                 observed,
                 valid_until,
@@ -101,7 +181,7 @@ def build_current_snapshot(
     for device_key, state in sorted(relay_states.items()):
         device = _device_identifier(device_key)
         if device is None:
-            return None
+            continue
         point = _point(f"{device}.relay_state", state, observed, valid_until, series_ids)
         if point is not None:
             series.append(point)
@@ -156,24 +236,12 @@ def _photoperiod(
 
 
 def _room_identifier(room_key: RoomKey) -> str | None:
-    location, cluster = room_key
-    location_segment = _segment_identifier(location)
-    cluster_segment = _segment_identifier(cluster)
-    if location_segment is None or cluster_segment is None:
-        return None
-    return f"{location_segment}.{cluster_segment}"
+    return monitoring_room_series_prefix(room_key[0], room_key[1])
 
 
 def _device_identifier(device_key: DeviceKey) -> str | None:
     room = _room_identifier(device_key[:2])
-    device_segment = _segment_identifier(device_key[2])
+    device_segment = normalize_monitoring_segment(device_key[2])
     if room is None or device_segment is None:
         return None
     return f"{room}.device.{device_segment}"
-
-
-def _segment_identifier(value: str) -> str | None:
-    normalized = _SEGMENT.sub("_", value.lower()).strip("_")
-    if not normalized:
-        return None
-    return f"v_{normalized}" if normalized[0].isdigit() else normalized

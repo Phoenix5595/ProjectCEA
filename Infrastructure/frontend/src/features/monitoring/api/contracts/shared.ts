@@ -106,3 +106,43 @@ export const FlushHealth = z.object({
   healthy: z.boolean(),
 })
 export type FlushHealth = z.infer<typeof FlushHealth>
+
+/** Publication persistence pipeline state for one room. */
+export const PersistenceState = z.enum(['pending', 'persisted', 'failed'])
+export type PersistenceState = z.infer<typeof PersistenceState>
+
+/** Persistence cursor mirroring `shared.monitoring_contracts.PersistenceCursor`. */
+export const PersistenceCursor = z
+  .object({
+    state: PersistenceState,
+    cursor: z.string().min(1).nullable().optional(),
+    persisted_at: utcDate.nullable().optional(),
+    error: z.string().min(1).nullable().optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.state === 'persisted') {
+      if (value.cursor == null || value.persisted_at == null || value.error != null) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'persisted cursor requires cursor and persisted_at without error',
+        })
+      }
+    }
+    if (value.state === 'pending') {
+      if (value.cursor != null || value.persisted_at != null || value.error != null) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'pending cursor must not carry persistence details',
+        })
+      }
+    }
+    if (value.state === 'failed') {
+      if (value.cursor != null || value.persisted_at != null || value.error == null) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'failed cursor requires error without persisted details',
+        })
+      }
+    }
+  })
+export type PersistenceCursor = z.infer<typeof PersistenceCursor>

@@ -1,5 +1,7 @@
 import { z } from 'zod'
 
+import { TimelineWarning } from '../../../climate-timeline/api/contracts'
+
 import { Quality, utcDate } from './shared'
 
 const PeriodIdentity = z.object({ period_id: z.string().min(1), label: z.string().min(1) }).strict()
@@ -49,7 +51,6 @@ export const TrajectorySegment = z.discriminatedUnion('shape', [
 ])
 export type TrajectorySegment = z.infer<typeof TrajectorySegment>
 
-const TimelineWarning = z.object({ code: z.string().min(1), detail: z.string().min(1) }).strict()
 
 export const RichTrajectoryEnvelope = z
   .object({

@@ -38,10 +38,12 @@ from app.repositories.monitoring_snapshot_sources import build_monitoring_public
 from app.repositories.relay_observations import RelayObservationRepository
 from app.routes.operational_events import OperationalEventRouteReader
 from app.services.device_registry_service import DeviceRegistryService
+from app.services.mode_transition_service import ModeTransitionService
 from app.services.photoperiod_history_logger import (
     DatabasePhotoperiodHistoryStore,
     PhotoperiodHistoryLogger,
 )
+from app.services.room_schedule_service import RoomScheduleService
 from shared.infra_logging import get_logger
 from shared.redis_client import close_async, create_async_client
 from shared.redis_keys import OPERATIONAL_EVENTS_STREAM
@@ -131,6 +133,10 @@ class ServiceContainer:
 
         # Background tasks
         self.background_tasks: BackgroundTasks | None = None
+
+        # Activation/schedule owner services
+        self.room_schedule_service: RoomScheduleService | None = None
+        self.mode_transition_service: ModeTransitionService | None = None
 
         # State tracking
         self._initialized = False
@@ -357,6 +363,15 @@ class ServiceContainer:
             )
 
             # 10. Initialize background tasks (control loop max 5s, non-negotiable)
+            self.room_schedule_service = RoomScheduleService(self.database, self.config)
+            self.mode_transition_service = ModeTransitionService(
+                self.database,
+                self.room_schedule_service,
+                self.runtime_device_registry,
+                self.scheduler,
+            )
+            logger.info("Activation and room schedule services initialized")
+
             update_interval = self.config.get_update_interval()
             self.background_tasks = BackgroundTasks(
                 control_engine=self.control_engine,
@@ -364,6 +379,7 @@ class ServiceContainer:
                 update_interval=update_interval,
                 alarm_manager=self.alarm_manager,
                 event_sink=self.operational_event_sink,
+                mode_transition_service=self.mode_transition_service,
             )
             logger.info("Background tasks initialized")
 
@@ -615,6 +631,18 @@ class ServiceContainer:
         if not self.photoperiod_history_logger:
             raise RuntimeError("Photoperiod history logger not initialized")
         return self.photoperiod_history_logger
+
+    def get_mode_transition_service(self) -> ModeTransitionService:
+        """Get the activation owner shared by routes and background tasks."""
+        if not self.mode_transition_service:
+            raise RuntimeError("Mode transition service not initialized")
+        return self.mode_transition_service
+
+    def get_room_schedule_service(self) -> RoomScheduleService:
+        """Get the internal room schedule mutation owner."""
+        if not self.room_schedule_service:
+            raise RuntimeError("Room schedule service not initialized")
+        return self.room_schedule_service
 
     def get_monitoring_publication_workers(self) -> MonitoringPublicationWorkers | None:
         """Get optional non-control monitoring publication workers."""

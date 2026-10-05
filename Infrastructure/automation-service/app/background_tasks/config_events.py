@@ -85,7 +85,17 @@ class ConfigEventsMixin:
                             await state.delete(f"schedule:{event.location}:{event.cluster}")
 
                     if event.event_type == ConfigEventType.MODE_CHANGED:
-                        await self._reload_runtime_snapshot()
+                        registry = self.control_engine.runtime_device_registry
+                        event_version = (event.data or {}).get("runtime_snapshot_version")
+                        refreshed = (
+                            (event.data or {}).get("runtime_refreshed") is True
+                            and isinstance(event_version, int)
+                            and not isinstance(event_version, bool)
+                            and registry is not None
+                            and registry.snapshot.version >= event_version
+                        )
+                        if not refreshed:
+                            await self._reload_runtime_snapshot()
 
                         # Invalidate mode cache in StateManager
                         state = getattr(self.control_engine, "_state", None)

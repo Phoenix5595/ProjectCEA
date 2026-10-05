@@ -20,10 +20,15 @@ class PeriodInput(BaseModel):
 
 
 class PeriodsSaveRequest(BaseModel):
-    """Request model for saving climate periods."""
+    """Request model for saving climate periods.
+
+    ``mode_id`` omitted keeps the broad whole-room legacy replacement; a
+    supplied ``mode_id`` with a NULL ``submode_id`` replaces only the exact
+    NULL-base profile slice.
+    """
 
     periods: list[PeriodInput]
-    mode_id: int
+    mode_id: int | None = None
     submode_id: int | None = None
 
 

@@ -211,6 +211,7 @@ def test_db_failure_does_not_change_control_transition_capture() -> None:
             version=3,
             hierarchy={},
             mode_parameters={},
+            active_modes={},
             light_intensities={},
             light_programs=[],
         ),

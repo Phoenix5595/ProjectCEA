@@ -82,6 +82,24 @@ class ClimateScheduleSnapshot:
 
 
 @dataclass(frozen=True, slots=True)
+class ClimateProfileConfiguration:
+    """One exact profile aggregate read for inspection, independent of active authority."""
+
+    mode: FrozenRow
+    configuration: ClimateScheduleConfiguration
+    config_revision: str
+    parameters_configured: bool
+
+
+@dataclass(frozen=True, slots=True)
+class ProfileTimelineSnapshot:
+    """Exact-profile schedule snapshot paired with the aggregate that produced it."""
+
+    schedule: ClimateScheduleSnapshot
+    profile: ClimateProfileConfiguration
+
+
+@dataclass(frozen=True, slots=True)
 class ClimateScheduleDraft:
     """Validated in-memory fields that overlay one saved mode/submode configuration."""
 
@@ -121,6 +139,10 @@ class ClimateScheduleSnapshotSource(Protocol):
         self, location: str, cluster: str, mode_id: int, submode_id: int | None
     ) -> ClimateScheduleConfiguration | None: ...
 
+    async def read_profile(
+        self, location: str, cluster: str, mode_id: int, submode_id: int | None
+    ) -> ClimateProfileConfiguration: ...
+
 
 class ClimateScheduleSnapshotBuilder:
     """Gather immutable saved schedules and copy them for non-persisting previews."""
@@ -149,6 +171,27 @@ class ClimateScheduleSnapshotBuilder:
                 for schedule_slice in saved.slices
             ),
         )
+
+    async def build_profile(
+        self,
+        location: str,
+        cluster: str,
+        mode_id: int,
+        submode_id: int | None,
+        window: TimelineWindow,
+    ) -> ProfileTimelineSnapshot:
+        """Build exact-profile authority for each intersecting Toronto calendar day."""
+        profile = await self._source.read_profile(location, cluster, mode_id, submode_id)
+        schedule = ClimateSchedule(
+            profile.mode,
+            profile.configuration.parameters,
+            profile.configuration.periods,
+        )
+        slices: list[ClimateScheduleSlice] = []
+        for local_day in _intersecting_local_days(window):
+            start, end = _local_day_window(local_day, window)
+            slices.append(ClimateScheduleSlice(start, end, schedule))
+        return ProfileTimelineSnapshot(ClimateScheduleSnapshot(window, tuple(slices)), profile)
 
     async def _build_slice(
         self,
@@ -255,7 +298,14 @@ def _overlay(
         return schedule
     if schedule.mode.get("submode_id") != draft.submode_id:
         return schedule
-    parameters = frozen({**dict(schedule.parameters), **dict(draft.photoperiod)})
+    photoperiod = dict(draft.photoperiod)
+    for draft_key, stored_key in (
+        ("ramp_up_minutes", "light_ramp_up_minutes"),
+        ("ramp_down_minutes", "light_ramp_down_minutes"),
+    ):
+        if draft_key in photoperiod:
+            photoperiod[stored_key] = photoperiod.pop(draft_key)
+    parameters = frozen({**dict(schedule.parameters), **photoperiod})
     if parameters is None:
         return schedule
     return ClimateSchedule(schedule.mode, parameters, draft.periods)

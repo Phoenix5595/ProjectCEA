@@ -11,7 +11,6 @@ import pytest
 from app.events.mutation_context import MutationRequestContext
 from app.repositories.room_modes import RoomModeRepository
 from app.routes import room_modes
-from app.routes.schedules import room as room_schedule
 from app.services.mode_transition_service import ModeTransitionService
 
 
@@ -52,20 +51,24 @@ def _app(database):
 async def test_veg_room_api_rejects_non_veg_modes_before_persistence(payload):
     pool: Any = _BlockedPool()
     database = SimpleNamespace(room_mode_repo=RoomModeRepository(pool), pool=pool)
-    async with AsyncClient(
-        transport=ASGITransport(app=_app(database)), base_url="http://test"
-    ) as client:
+    app = _app(database)
+    app.dependency_overrides[room_modes.get_mode_transition_service] = lambda: None
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post("/api/room-modes/room/Veg%20Room/main/mode", json=payload)
     assert response.status_code == 400
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("setter", ["set_active_mode", "set_mode_with_transaction"])
+@pytest.mark.parametrize("setter", ["set_active_mode", "set_mode_on_connection"])
 async def test_veg_room_persistence_rejects_disallowed_mode_even_without_http(setter):
-    pool: Any = _BlockedPool()
+    pool: Any = _Pool()
     repository = RoomModeRepository(pool)
     with pytest.raises(ValueError):
-        await getattr(repository, setter)("Veg Room", "main", "sleep")
+        if setter == "set_active_mode":
+            await repository.set_active_mode("Veg Room", "main", "sleep")
+        else:
+            await repository.set_mode_on_connection(_Connection(pool), "Veg Room", "main", 4, None)
+    assert pool.writes == []
 
 
 class _Connection:
@@ -95,7 +98,10 @@ class _Connection:
                 None,
             )
         if "FROM mode_parameters" in query:
-            return None
+            return {
+                "day_start_time": "17:00", "night_start_time": "11:00",
+                "light_ramp_up_minutes": 15, "light_ramp_down_minutes": 15,
+            }
         raise AssertionError(f"Unexpected read: {query}")
 
     async def fetch(self, query, *args):
@@ -106,6 +112,8 @@ class _Connection:
         raise AssertionError(f"Unexpected read: {query}")
 
     async def execute(self, query, *args):
+        if "pg_advisory_xact_lock" in query:
+            return "SELECT 1"
         self.pool.writes.append(query)
         if "INSERT INTO room_active_mode" in query:
             location, cluster, mode_id, submode_id = args
@@ -126,10 +134,10 @@ class _Connection:
 class _Pool:
     def __init__(self, mode="veg", location="Veg Room"):
         self.modes = [
-            {"id": 1, "name": "veg", "is_constant": False},
-            {"id": 2, "name": "flower", "is_constant": False},
-            {"id": 3, "name": "drying", "is_constant": True},
-            {"id": 4, "name": "sleep", "is_constant": True},
+            {"id": 1, "name": "veg", "is_constant": False, "photoperiod_hours": 18},
+            {"id": 2, "name": "flower", "is_constant": False, "photoperiod_hours": 12},
+            {"id": 3, "name": "drying", "is_constant": True, "photoperiod_hours": 0},
+            {"id": 4, "name": "sleep", "is_constant": True, "photoperiod_hours": 0},
         ]
         mode_id = next(item["id"] for item in self.modes if item["name"] == mode)
         self.active = {
@@ -146,12 +154,33 @@ class _Pool:
         return _Connection(self)
 
 
-class _OfflineTransition(ModeTransitionService):
-    async def _trigger_scheduler_refresh(self, location, cluster):
-        return None
+class _Registry:
+    """In-memory mutate boundary invoking the mutation inside the pool transaction."""
 
-    def _clear_light_ramp_state(self, location, cluster):
-        return None
+    def __init__(self, pool: _Pool) -> None:
+        self._pool = pool
+        self.snapshot = SimpleNamespace(version=9)
+
+    async def mutate(self, mutation):
+        async with self._pool.acquire() as connection, connection.transaction():
+            return await mutation(connection)
+
+
+class _ScheduleService:
+    """Behavioral fake for the two activation seam methods."""
+
+    def __init__(self) -> None:
+        self.synced: list[tuple[int, Any]] = []
+
+    async def sync_on_connection(
+        self, _conn: Any, _location: str, _cluster: str, mode_id: int, submode_id: Any,
+        *, parameters: Any = None,
+    ) -> dict[str, int]:
+        self.synced.append((mode_id, submode_id))
+        return {"schedules_created": 2, "devices_configured": 3}
+
+    async def merged_scheduler_schedules(self) -> list[dict[str, Any]]:
+        return []
 
 
 class _RecordingSink:
@@ -162,20 +191,25 @@ class _RecordingSink:
 @pytest.mark.asyncio
 async def test_veg_room_can_return_from_legacy_invalid_mode_to_veg(monkeypatch):
     pool: Any = _Pool(mode="sleep")
-    database: Any = SimpleNamespace(pool=pool, room_mode_repo=RoomModeRepository(pool))
-    monkeypatch.setattr(room_modes, "ModeTransitionService", _OfflineTransition)
-    monkeypatch.setattr(room_modes, "broadcast_mode_update", AsyncMock())
-    monkeypatch.setattr(
-        room_schedule, "sync_room_schedule_from_mode_parameters", AsyncMock(return_value={})
+    database: Any = SimpleNamespace(
+        pool=pool,
+        room_mode_repo=RoomModeRepository(pool),
+        config_repo=SimpleNamespace(log_config_version=AsyncMock(return_value=5)),
     )
+    transition = ModeTransitionService(database, _ScheduleService(), _Registry(pool), None)
+    monkeypatch.setattr(room_modes, "broadcast_mode_update", AsyncMock())
     app = _app(database)
+    app.dependency_overrides[room_modes.get_mode_transition_service] = lambda: transition
     app.dependency_overrides[room_modes.get_mutation_event_sink] = lambda: _RecordingSink()
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post(
             "/api/room-modes/room/Veg%20Room/main/mode", json={"mode_name": "veg"}
         )
     assert response.status_code == 200, response.text
-    assert response.json()["mode_name"] == "veg"
+    body = response.json()
+    assert body["mode_name"] == "veg"
+    assert body["config_revision"] == "0000005"
+    assert body["runtime_ready"] is True
     assert pool.active["mode_name"] == "veg"
     assert pool.active["submode_id"] is None
 
@@ -183,11 +217,11 @@ async def test_veg_room_can_return_from_legacy_invalid_mode_to_veg(monkeypatch):
 @pytest.mark.asyncio
 async def test_transition_service_cannot_activate_sleep_for_veg_room():
     pool: Any = _Pool()
-    database: Any = SimpleNamespace(pool=pool)
-    result = await _OfflineTransition(database).execute_mode_transition(
-        "Veg Room", "main", 4, None, "system"
-    )
+    database: Any = SimpleNamespace(pool=pool, config_repo=SimpleNamespace())
+    transition = ModeTransitionService(database, _ScheduleService(), _Registry(pool), None)
+    result = await transition.execute_mode_transition("Veg Room", "main", 4, None, "system")
     assert result["success"] is False
+    assert result["error_code"] == "invalid_profile_identity"
     assert pool.active["mode_name"] == "veg"
     assert pool.writes == []
 
