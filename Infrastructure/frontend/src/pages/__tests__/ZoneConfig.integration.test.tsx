@@ -139,6 +139,40 @@ beforeEach(() => {
 })
 
 describe('ZoneConfig profile preparation consumers', () => {
+  it('returns to the configured Flower submode instead of opening a NULL profile', async () => {
+    render(<ZoneConfig location="Flower Room" cluster="main" />)
+    expect(await heatInput()).toHaveValue(22)
+    await inspect('drying')
+    expect(await heatInput()).toHaveValue(18)
+    await inspect('flower')
+    expect(await heatInput()).toHaveValue(22)
+    expect(mocks.active.get('Flower Room')).toEqual({ modeId: 2, submodeId: 11 })
+    expect(mocks.profiles.get(key('Flower Room', 2, null))?.periods[0]?.heating_setpoint).toBe(21)
+    expect(mocks.mutations).toEqual([])
+  })
+
+  it('keeps the inspected Flower submode and draft when its parent chip is selected', async () => {
+    render(<ZoneConfig location="Flower Room" cluster="main" />)
+    await heatInput()
+    await inspect('flower', 'stretch')
+    const heat = await heatInput()
+    fireEvent.change(heat, { target: { value: '23' } })
+    await inspect('flower')
+    expect(heat).toHaveValue(23)
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(mocks.active.get('Flower Room')).toEqual({ modeId: 2, submodeId: 11 })
+  })
+
+  it('selects the first catalogue Flower submode when no Flower profile is configured', async () => {
+    mocks.active.set('Flower Room', { modeId: 4, submodeId: null })
+    render(<ZoneConfig location="Flower Room" cluster="main" />)
+    await heatInput()
+    await inspect('flower')
+    expect(await heatInput()).toHaveValue(20)
+    expect(mocks.active.get('Flower Room')).toEqual({ modeId: 4, submodeId: null })
+    expect(mocks.mutations).toEqual([])
+  })
+
   it('keeps canonical Veg time editing despite a contradictory constant flag', async () => {
     mocks.apiClient.getRoomModes.mockResolvedValue(modes.map(mode => mode.id === 1 ? { ...mode, is_constant: true } : mode))
     render(<ZoneConfig location="Veg Room" cluster="main" />)

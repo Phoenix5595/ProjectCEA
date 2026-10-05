@@ -84,6 +84,7 @@ npx vitest run src/features/event-log/__tests__
 - On the control page, live light panels are mutually exclusive: running Veg/Flower shows intensity sliders; running Sleep/Drying shows manual override and no sliders. Merely inspecting an inactive profile never changes the live panel.
 - Keep chart source/status details in the header's non-scrolling popover, not added rows that enlarge the chart. Save feedback uses a marker inside the existing Save button; full warnings remain available in that popover.
 - Activation-button text stays compact so the unchanged ribbon fits both desktop viewports. Preserve the full save-before-activate and confirmation wording in its accessible name, tooltip, and source-details popover; do not shorten the actual workflow.
+- Flower submode choices come only from the catalogue: Stretch, Bulk and Ripen. Never synthesize a “Base” choice from a NULL submode ID. Selecting Flower retains the inspected, running or configured catalogue submode, then falls back to the first catalogue option; it never selects a new NULL profile. Keep existing NULL records readable without inventing a submode label or modifying stored data.
 
 ---
 

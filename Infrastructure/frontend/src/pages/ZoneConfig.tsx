@@ -134,7 +134,7 @@ function sameProfile(left: ModeProfileIdentity | null, right: ModeProfileIdentit
 function profileLabel(profile: ModeProfileIdentity | null): string {
   if (!profile) return 'Unconfirmed'
   const mode = profile.modeName.charAt(0).toUpperCase() + profile.modeName.slice(1)
-  if (profile.submodeName === null) return profile.modeName.toLowerCase() === 'flower' ? `${mode}/Base` : mode
+  if (profile.submodeName === null) return mode
   return `${mode}/${profile.submodeName.charAt(0).toUpperCase()}${profile.submodeName.slice(1)}`
 }
 
@@ -550,6 +550,14 @@ export default function ZoneConfig({
   }, [loadSelectedProfile])
   const handleSelectProfile = useCallback((modeName: string, submodeName?: string) => {
     if (operationRef.current !== null || catalogueLoading) return
+    if (modeName.toLowerCase() === 'flower' && submodeName === undefined) {
+      const options = submodeOptionsFor(catalogue, modeName)
+      const preferred = options.find(option => sameProfile(option, selectedRef.current)) ??
+        options.find(option => sameProfile(option, liveRef.current.runningActiveProfile)) ??
+        options.find(option => sameProfile(option, configuredRef.current)) ?? options[0]
+      if (!preferred?.submodeName) return
+      submodeName = preferred.submodeName
+    }
     const identity = resolveSelectedProfileIdentity(modeName, submodeName ?? null, catalogue)
     if (!identity || sameProfile(identity, selectedRef.current)) return
     if (isTimelineDraftEdited(controllerRef.current.state)) setPendingSelection(identity)
