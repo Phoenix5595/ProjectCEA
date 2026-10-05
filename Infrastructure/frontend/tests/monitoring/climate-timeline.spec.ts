@@ -296,6 +296,11 @@ async function selectDrying(page: Page, savedValue = '18') {
 
 test('browses exact inactive mode and submode without mutating running authority', async ({ page }, info) => {
   const violations = await openPreparation(page, info)
+  await expect(page.getByRole('button', { name: 'Select Flower Base profile', exact: true })).toHaveCount(0)
+  await selectDrying(page)
+  await page.getByRole('button', { name: 'Select Flower profile', exact: true }).click()
+  await expect(heat(page)).toHaveValue('22')
+  await expect(page.getByRole('button', { name: 'Select Flower Bulk profile', exact: true })).toHaveAttribute('data-profile-state', 'selected-active')
   await selectDrying(page)
   await expect(page.getByRole('button', { name: 'Select Flower profile', exact: true })).toHaveAttribute('data-profile-state', 'active')
   await expect(page.getByRole('button', { name: 'Select Flower Bulk profile', exact: true })).toHaveAttribute('data-profile-state', 'active')
@@ -309,6 +314,9 @@ test('browses exact inactive mode and submode without mutating running authority
   await page.getByRole('button', { name: 'Select Flower Stretch profile', exact: true }).click()
   await expect(heat(page)).toHaveValue('24')
   await expect(page.getByRole('button', { name: 'Select Flower Bulk profile', exact: true })).toHaveAttribute('data-profile-state', 'active')
+  await expect(page.getByRole('button', { name: 'Select Flower Stretch profile', exact: true })).toHaveAttribute('data-profile-state', 'selected')
+  await page.getByRole('button', { name: 'Select Flower profile', exact: true }).click()
+  await expect(heat(page)).toHaveValue('24')
   await expect(page.getByRole('button', { name: 'Select Flower Stretch profile', exact: true })).toHaveAttribute('data-profile-state', 'selected')
   const state = await fixtureState(page)
   expect(state.active).toEqual({ mode_id: 2, submode_id: 11 })

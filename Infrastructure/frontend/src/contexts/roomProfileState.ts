@@ -79,7 +79,7 @@ export function modeOptionsFor(catalogue: ModeCatalogue, vegetationOnly: boolean
     .map(mode => ({ modeId: mode.id, submodeId: null, modeName: mode.name, submodeName: null }))
 }
 
-/** Submode chip options for the currently relevant grow mode. */
+/** Catalogue-backed submode chip options for the relevant grow mode. */
 export function submodeOptionsFor(
   catalogue: ModeCatalogue,
   modeName: string | null | undefined
@@ -92,10 +92,7 @@ export function submodeOptionsFor(
   const extras = catalogue.submodes.filter(
     mode => !CANONICAL_SUBMODE_ORDER.some(name => mode.name.toLowerCase() === name)
   )
-  return [
-    { modeId: flower.id, submodeId: null, modeName: flower.name, submodeName: null },
-    ...[...ordered, ...extras].map(submode => ({
-      modeId: flower.id, submodeId: submode.id, modeName: flower.name, submodeName: submode.name,
-    })),
-  ]
+  return [...ordered, ...extras].map(submode => ({
+    modeId: flower.id, submodeId: submode.id, modeName: flower.name, submodeName: submode.name,
+  }))
 }

@@ -82,7 +82,6 @@ const sectorDefaultNames: Record<Sector, string> = {
 }
 
 function displayModeName(name: string, table: Record<string, string>): string {
-  if (name === '') return 'Base'
   const key = name.toLowerCase()
   return table[key] ?? name.charAt(0).toUpperCase() + name.slice(1)
 }
@@ -236,22 +235,26 @@ const TopRibbon: FC<TopRibbonProps> = ({
               ))}
               {submodeOptions != null && submodeOptions.length > 0 && (
                 <div className="flex gap-1 ml-1 border-l border-border-subtle pl-1">
-                  {submodeOptions.map(candidate => (
-                    <button
-                      key={candidate.submodeId ?? 'base'}
-                      type="button"
-                      aria-pressed={sameProfile(selectedProfile, candidate)}
-                      data-profile-state={chipState(candidate, false, selectedProfile, activeProfile)}
-                      aria-label={`Select Flower ${displayModeName(candidate.submodeName ?? '', SUBMODE_DISPLAY_NAMES)} profile`}
-                      disabled={savePending || selectionLoading}
-                      onClick={() => onSelectProfile(candidate.modeName, candidate.submodeName ?? undefined)}
-                      className={`px-2 py-0.5 text-xs font-bold rounded border transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${chipClass(
-                        chipState(candidate, false, selectedProfile, activeProfile)
-                      )}`}
-                    >
-                      {displayModeName(candidate.submodeName ?? '', SUBMODE_DISPLAY_NAMES)}
-                    </button>
-                  ))}
+                  {submodeOptions.map(candidate => {
+                    const { submodeId, submodeName } = candidate
+                    if (submodeId === null || submodeName === null) return null
+                    return (
+                      <button
+                        key={submodeId}
+                        type="button"
+                        aria-pressed={sameProfile(selectedProfile, candidate)}
+                        data-profile-state={chipState(candidate, false, selectedProfile, activeProfile)}
+                        aria-label={`Select Flower ${displayModeName(submodeName, SUBMODE_DISPLAY_NAMES)} profile`}
+                        disabled={savePending || selectionLoading}
+                        onClick={() => onSelectProfile(candidate.modeName, submodeName)}
+                        className={`px-2 py-0.5 text-xs font-bold rounded border transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${chipClass(
+                          chipState(candidate, false, selectedProfile, activeProfile)
+                        )}`}
+                      >
+                        {displayModeName(submodeName, SUBMODE_DISPLAY_NAMES)}
+                      </button>
+                    )
+                  })}
                 </div>
               )}
             </div>
