@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
-from datetime import UTC, datetime
+from collections.abc import Awaitable, Callable, Mapping
+from dataclasses import dataclass, replace
+from datetime import UTC, datetime, timedelta
 from typing import Final, Protocol
 
 import anyio
@@ -17,22 +17,29 @@ from shared.monitoring_contracts import (
     FutureProjection,
     MonitoringPublication,
     PublicationVersion,
+    monitoring_room_series_prefix,
     validate_projection_timeline,
 )
 
 from ..repositories.climate_timeline_snapshot import ClimateScheduleSnapshot, TimelineWindow
 from ..repositories.monitoring_snapshot_builder import MonitoringSnapshotRequest
-from ..repositories.monitoring_snapshot_types import MonitoringSnapshot
+from ..repositories.monitoring_snapshot_types import FrozenRow, MonitoringSnapshot, frozen
 from ..schemas.climate_timeline import (
     RichTrajectoryEnvelope,
     TimelineWarning,
     UnavailableTrajectorySegment,
 )
 from ..schemas.monitoring_models import RuntimeSnapshotVersion
-from ..services.future_projection import project_future_intervals
+from ..services.climate_projection import profile_targets_at
+from ..services.future_projection import (
+    project_future_intervals,
+    snapshot_publication_version,
+    unavailable_future_intervals,
+)
 
 _DEFAULT_REDIS_TIMEOUT_SECONDS: Final = 1.0
 MAX_RICH_TRAJECTORY_SEGMENTS: Final = 4096
+_RAMP_METRICS: Final = ("heating", "cooling", "vpd", "co2")
 
 
 @dataclass(frozen=True, slots=True)
@@ -162,6 +169,173 @@ class ProjectionPublicationDependencies:
     redis_timeout_seconds: float = _DEFAULT_REDIS_TIMEOUT_SECONDS
 
 
+@dataclass(frozen=True, slots=True)
+class RoomCurrentFacts:
+    """Fresh RAM-derived ramp authority for one room's executing profile.
+
+    ``mode_id``/``submode_id`` are the tick-captured profile identity; the
+    numeric maps carry nominal targets, effective values, and ramp remaining
+    seconds as published current facts.
+    """
+
+    observed_at: datetime
+    valid_until: datetime
+    mode_id: int | None
+    submode_id: int | None
+    nominal: Mapping[str, float]
+    effective: Mapping[str, float]
+    remaining: Mapping[str, float]
+
+    def fresh(self, now: datetime) -> bool:
+        """Whether the facts still cover ``now`` inside their published validity."""
+        return self.observed_at <= now < self.valid_until
+
+    def signature(self) -> tuple[object, ...] | None:
+        """Countdown-stable internal live-anchor signature; None without identity.
+
+        Ramp ends round to milliseconds so a ticking countdown does not change
+        the signature; an ended or absent ramp carries no end epoch, and the
+        tracked flag distinguishes an absent ramp fact from a finished one.
+        """
+        if self.mode_id is None:
+            return None
+        return (
+            self.mode_id,
+            self.submode_id,
+            tuple(
+                (
+                    metric,
+                    self.nominal.get(metric),
+                    (
+                        _epoch_ms(self.observed_at + timedelta(seconds=self.remaining[metric]))
+                        if self.remaining.get(metric, 0.0) > 0
+                        else None
+                    ),
+                    self.remaining.get(metric, 0.0) > 0,
+                    metric in self.remaining,
+                )
+                for metric in sorted(self.nominal)
+            ),
+        )
+
+
+def _epoch_ms(instant: datetime) -> int:
+    return round(instant.timestamp() * 1000)
+
+
+def _room_current_facts(
+    current: CurrentSnapshot, location: str, cluster: str
+) -> RoomCurrentFacts | None:
+    """Extract one room's RAM ramp facts from a published current snapshot."""
+    prefix = monitoring_room_series_prefix(location, cluster)
+    if prefix is None:
+        return None
+    room_prefix = f"{prefix}.setpoint."
+    mode_id: int | None = None
+    submode_id: int | None = None
+    nominal: dict[str, float] = {}
+    effective: dict[str, float] = {}
+    remaining: dict[str, float] = {}
+    for point in current.series:
+        series = point.series_id.value
+        if not series.startswith(room_prefix):
+            continue
+        value = point.value
+        if isinstance(value, bool) or not isinstance(value, int | float):
+            continue
+        suffix = series.removeprefix(room_prefix)
+        if suffix == "profile_mode_id":
+            mode_id = int(value)
+        elif suffix == "profile_submode_id":
+            submode_id = int(value)
+        elif suffix.startswith("nominal_") and suffix.endswith("_setpoint"):
+            metric = suffix.removeprefix("nominal_").removesuffix("_setpoint")
+            if metric in _RAMP_METRICS:
+                nominal[metric] = float(value)
+        elif suffix.startswith("effective_") and suffix.endswith("_setpoint"):
+            metric = suffix.removeprefix("effective_").removesuffix("_setpoint")
+            if metric in _RAMP_METRICS:
+                effective[metric] = float(value)
+        elif suffix.startswith("ramp_remaining_seconds_"):
+            metric = suffix.removeprefix("ramp_remaining_seconds_")
+            if metric in _RAMP_METRICS:
+                remaining[metric] = float(value)
+    if mode_id is None and not nominal and not remaining:
+        return None
+    return RoomCurrentFacts(
+        observed_at=current.observed_at,
+        valid_until=current.valid_until,
+        mode_id=mode_id,
+        submode_id=submode_id,
+        nominal=nominal,
+        effective=effective,
+        remaining=remaining,
+    )
+
+
+def _active_identity(active: Mapping[str, object] | None) -> tuple[int | None, int | None]:
+    if active is None:
+        return (None, None)
+    mode_id = active.get("mode_id")
+    submode_id = active.get("submode_id")
+    return (
+        mode_id if isinstance(mode_id, int) and not isinstance(mode_id, bool) else None,
+        submode_id if isinstance(submode_id, int) and not isinstance(submode_id, bool) else None,
+    )
+
+
+def _overlay_anchors(
+    facts: RoomCurrentFacts | None, snapshot: MonitoringSnapshot, now: datetime
+) -> tuple[FrozenRow, ...] | None:
+    """Fresh compatible RAM anchors; ``()`` when unconfirmable; None on conflict.
+
+    Overlaying requires the emitted profile IDs to equal the snapshot's active
+    mode and every current nominal target to agree with the exact current
+    profile target. Any contradiction makes the whole future unavailable.
+    """
+    if facts is None or not facts.fresh(now):
+        return ()
+    active = snapshot.active_mode
+    if facts.mode_id is not None and (
+        active is None or (facts.mode_id, facts.submode_id) != _active_identity(active)
+    ):
+        return None
+    targets = profile_targets_at(snapshot, now)
+    for metric, nominal in facts.nominal.items():
+        if targets.get(metric) != nominal:
+            return None
+    return tuple(
+        row for row in (_anchor_row(facts, metric) for metric in _RAMP_METRICS) if row is not None
+    )
+
+
+def _anchor_row(facts: RoomCurrentFacts, metric: str) -> FrozenRow | None:
+    """One compatible anchor row from actual current facts, or None without facts."""
+    if metric not in facts.nominal:
+        return None
+    remaining = facts.remaining.get(metric)
+    if remaining is not None and remaining > 0:
+        if metric not in facts.effective:
+            return None
+        start_value, duration = facts.effective[metric], remaining / 60
+    elif remaining is not None:
+        # No active ramp: hold the actual nominal for the executing period.
+        start_value, duration = facts.nominal[metric], 0.0
+    else:
+        return None
+    return frozen(
+        {
+            "setpoint_type": metric,
+            "start_value": start_value,
+            "target_value": facts.nominal[metric],
+            "start_time": facts.observed_at,
+            "duration_minutes": duration,
+            "mode_id": facts.mode_id,
+            "submode_id": facts.submode_id,
+        }
+    )
+
+
 class ProjectionPublicationAction:
     """Rebuild a room timeline only when its current version or expiry requires it."""
 
@@ -172,6 +346,7 @@ class ProjectionPublicationAction:
         self._cluster: str = cluster
         self._dependencies: ProjectionPublicationDependencies = dependencies
         self._last_good: tuple[FutureProjection, ...] | None = None
+        self._last_good_signature: tuple[object, ...] | None = None
         self._last_good_rich: RichTrajectoryEnvelope | None = None
         self._generation: int = 0
 
@@ -181,9 +356,36 @@ class ProjectionPublicationAction:
         return self._last_good
 
     @property
+    def last_good_signature(self) -> tuple[object, ...] | None:
+        """Expose the live-anchor signature of the last successful publish."""
+        return self._last_good_signature
+
+    @property
     def last_good_rich(self) -> RichTrajectoryEnvelope | None:
         """Expose the latest complete rich saved trajectory without I/O."""
         return self._last_good_rich
+
+    def _publication_superseded(
+        self,
+        expected_version: PublicationVersion,
+        signature: tuple[object, ...] | None,
+        generation: int,
+    ) -> bool:
+        """Whether a newer current authority invalidates the projections just built.
+
+        The fence retains the room, the generation, the full publication version,
+        the live-anchor signature (profile IDs, nominal targets, ramp end epoch,
+        active flag), and current freshness, while a compatible tick whose only
+        change is the observation countdown never aborts publication.
+        """
+        latest = self._dependencies.current_snapshot()
+        if generation != self._generation or latest is None:
+            return True
+        if latest.version != expected_version:
+            return True
+        latest_facts = _room_current_facts(latest, self._location, self._cluster)
+        latest_signature = latest_facts.signature() if latest_facts is not None else None
+        return latest_signature != signature
 
     async def publish(self) -> bool | None:
         """Build, validate, and atomically replace only a complete compatible future tuple."""
@@ -195,10 +397,15 @@ class ProjectionPublicationAction:
         rich_revision = None
         if self._dependencies.rich_config_revision is not None:
             rich_revision = await self._dependencies.rich_config_revision()
+        facts = _room_current_facts(current, self._location, self._cluster)
+        signature = facts.signature() if facts is not None else None
         if _timeline_is_current(self._last_good, current.version, now) and (
-            self._last_good_rich is None
-            or rich_revision is None
-            or self._last_good_rich.base_config_revision == rich_revision
+            self._last_good_signature == signature
+            and (
+                self._last_good_rich is None
+                or rich_revision is None
+                or self._last_good_rich.base_config_revision == rich_revision
+            )
         ):
             return None
         self._generation += 1
@@ -211,7 +418,14 @@ class ProjectionPublicationAction:
                 runtime_snapshot_version=RuntimeSnapshotVersion(int(current.version.revision, 16)),
             )
         )
-        projections = self._dependencies.projector(snapshot)
+        anchors = _overlay_anchors(facts, snapshot, now)
+        if anchors is None:
+            # Conflicting current authority keeps actual current facts and
+            # publishes an honestly unavailable future instead.
+            version = snapshot_publication_version(snapshot)
+            projections = () if version is None else unavailable_future_intervals(snapshot, version)
+        else:
+            projections = self._dependencies.projector(replace(snapshot, ramp_anchors=anchors))
         if rich_revision is not None:
             config_version = ConfigVersion(int(rich_revision, 16))
             projections = tuple(
@@ -252,10 +466,7 @@ class ProjectionPublicationAction:
             rich = _bounded_rich_trajectory(rich)
             if rich_revision is not None:
                 rich = _with_config_revision(rich, rich_revision)
-        if (
-            generation != self._generation
-            or self._dependencies.current_snapshot() != observed_current
-        ):
+        if self._publication_superseded(observed_current.version, signature, generation):
             return None
         published = False
         with anyio.move_on_after(self._dependencies.redis_timeout_seconds) as scope:
@@ -281,10 +492,7 @@ class ProjectionPublicationAction:
             rich_writer = self._dependencies.rich_writer
             if rich_writer is None:
                 return False
-            if (
-                generation != self._generation
-                or self._dependencies.current_snapshot() != observed_current
-            ):
+            if self._publication_superseded(observed_current.version, signature, generation):
                 return None
             written = await anyio.to_thread.run_sync(
                 rich_writer.write_rich_trajectory,
@@ -295,6 +503,7 @@ class ProjectionPublicationAction:
             if not written:
                 return False
         self._last_good = projections
+        self._last_good_signature = signature
         self._last_good_rich = rich
         return True
 

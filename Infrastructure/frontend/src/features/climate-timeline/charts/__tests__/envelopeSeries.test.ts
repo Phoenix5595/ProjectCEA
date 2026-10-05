@@ -87,10 +87,10 @@ describe('buildEnvelopeSeries', () => {
       Date.parse('2026-01-01T11:00:00.000Z'),
     ])
     const heating = series.series.get('heating_setpoint:scheduled')
-    expect(heating).toEqual([22, 21, 20, null])
+    expect(heating).toEqual([22, 21, null, null])
   })
 
-  it('holds step segments forward and never bridges an unavailable gap', () => {
+  it('samples step values only inside their intervals and never bridges an unavailable gap', () => {
     const env = envelope([
       segment({ value: 22, start: '2026-01-01T00:00:00.000Z', end: '2026-01-01T01:00:00.000Z' }),
       segment({
@@ -107,6 +107,28 @@ describe('buildEnvelopeSeries', () => {
       Date.parse('2026-01-01T02:30:00.000Z'),
     ])
     expect(series.series.get('heating_setpoint:scheduled')).toEqual([22, null, 24])
+  })
+
+  it('lets the new segment win at a shared boundary', () => {
+    const env = envelope([
+      segment({ value: 22, start: '2026-01-01T00:00:00.000Z', end: '2026-01-01T01:00:00.000Z' }),
+      segment({ value: 24, start: '2026-01-01T01:00:00.000Z', end: '2026-01-01T02:00:00.000Z' }),
+      segment({
+        shape: 'linear',
+        start_value: 24,
+        end_value: 26,
+        start: '2026-01-01T02:00:00.000Z',
+        end: '2026-01-01T02:10:00.000Z',
+      }),
+    ])
+    const series = buildEnvelopeSeries(env, [
+      Date.parse('2026-01-01T00:59:00.000Z'),
+      Date.parse('2026-01-01T01:00:00.000Z'),
+      Date.parse('2026-01-01T02:00:00.000Z'),
+      Date.parse('2026-01-01T02:05:00.000Z'),
+      Date.parse('2026-01-01T02:10:00.000Z'),
+    ])
+    expect(series.series.get('heating_setpoint:scheduled')).toEqual([22, 24, 24, 25, null])
   })
 
   it('produces distinct series for scheduled and effective kinds', () => {
@@ -144,16 +166,17 @@ describe('buildEnvelopeSeries', () => {
     expect(buildEnvelopeSeries(env, [0]).units.get('co2_setpoint')).toBe('ppm')
   })
 
-  it('returns null before the first segment and holds the last step forward after it', () => {
+  it('returns null before the first segment and after the last segment ends', () => {
     const env = envelope([
       segment({ start: '2026-01-01T05:00:00.000Z', end: '2026-01-01T06:00:00.000Z' }),
     ])
     const series = buildEnvelopeSeries(env, [
       Date.parse('2026-01-01T04:00:00.000Z'),
       Date.parse('2026-01-01T05:30:00.000Z'),
+      Date.parse('2026-01-01T06:00:00.000Z'),
       Date.parse('2026-01-01T07:00:00.000Z'),
     ])
-    expect(series.series.get('heating_setpoint:scheduled')).toEqual([null, 22, 22])
+    expect(series.series.get('heating_setpoint:scheduled')).toEqual([null, 22, null, null])
   })
 })
 
@@ -170,7 +193,7 @@ describe('envelopeSampleTimes', () => {
 })
 
 describe('photoperiodIntervals', () => {
-  it('splits the window into moon and sun bands around the photoperiod times', () => {
+  it('splits the window into moon and sun bands around the stored Toronto clocks (EST winter)', () => {
     const intervals = photoperiodIntervals(
       { dayStartTime: '06:00', nightStartTime: '18:00' },
       Date.parse('2026-01-01T00:00:00.000Z'),
@@ -179,39 +202,70 @@ describe('photoperiodIntervals', () => {
     expect(intervals).toEqual([
       {
         start: Date.parse('2026-01-01T00:00:00.000Z'),
-        end: Date.parse('2026-01-01T06:00:00.000Z'),
+        end: Date.parse('2026-01-01T11:00:00.000Z'),
         phase: 'MOON',
       },
       {
-        start: Date.parse('2026-01-01T06:00:00.000Z'),
-        end: Date.parse('2026-01-01T18:00:00.000Z'),
+        start: Date.parse('2026-01-01T11:00:00.000Z'),
+        end: Date.parse('2026-01-01T23:00:00.000Z'),
         phase: 'SUN',
       },
       {
-        start: Date.parse('2026-01-01T18:00:00.000Z'),
+        start: Date.parse('2026-01-01T23:00:00.000Z'),
         end: Date.parse('2026-01-02T00:00:00.000Z'),
         phase: 'MOON',
       },
     ])
   })
 
-  it('wraps a night that crosses midnight', () => {
+  it('resolves the same stored clocks to EDT instants in summer', () => {
+    const intervals = photoperiodIntervals(
+      { dayStartTime: '06:00', nightStartTime: '18:00' },
+      Date.parse('2026-07-01T00:00:00.000Z'),
+      Date.parse('2026-07-02T00:00:00.000Z')
+    )
+    expect(intervals).toEqual([
+      {
+        start: Date.parse('2026-07-01T00:00:00.000Z'),
+        end: Date.parse('2026-07-01T10:00:00.000Z'),
+        phase: 'MOON',
+      },
+      {
+        start: Date.parse('2026-07-01T10:00:00.000Z'),
+        end: Date.parse('2026-07-01T22:00:00.000Z'),
+        phase: 'SUN',
+      },
+      {
+        start: Date.parse('2026-07-01T22:00:00.000Z'),
+        end: Date.parse('2026-07-02T00:00:00.000Z'),
+        phase: 'MOON',
+      },
+    ])
+  })
+
+  it('wraps a night period that crosses Toronto midnight onto the window start', () => {
     const intervals = photoperiodIntervals(
       { dayStartTime: '22:00', nightStartTime: '06:00' },
       Date.parse('2026-01-01T00:00:00.000Z'),
       Date.parse('2026-01-02T00:00:00.000Z')
     )
-    expect(intervals[0]).toEqual({
-      start: Date.parse('2026-01-01T00:00:00.000Z'),
-      end: Date.parse('2026-01-01T06:00:00.000Z'),
-      phase: 'SUN',
-    })
-    expect(
-      intervals.some(
-        interval =>
-          interval.phase === 'SUN' && interval.start === Date.parse('2026-01-01T22:00:00.000Z')
-      )
-    ).toBe(true)
+    expect(intervals).toEqual([
+      {
+        start: Date.parse('2026-01-01T00:00:00.000Z'),
+        end: Date.parse('2026-01-01T03:00:00.000Z'),
+        phase: 'MOON',
+      },
+      {
+        start: Date.parse('2026-01-01T03:00:00.000Z'),
+        end: Date.parse('2026-01-01T11:00:00.000Z'),
+        phase: 'SUN',
+      },
+      {
+        start: Date.parse('2026-01-01T11:00:00.000Z'),
+        end: Date.parse('2026-01-02T00:00:00.000Z'),
+        phase: 'MOON',
+      },
+    ])
   })
 
   it('renders the whole window as moon when day equals night', () => {
@@ -224,6 +278,56 @@ describe('photoperiodIntervals', () => {
       {
         start: Date.parse('2026-01-01T00:00:00.000Z'),
         end: Date.parse('2026-01-01T12:00:00.000Z'),
+        phase: 'MOON',
+      },
+    ])
+  })
+
+  it('places the day band at the forward-shifted clock on a spring-gap date', () => {
+    const intervals = photoperiodIntervals(
+      { dayStartTime: '02:30', nightStartTime: '12:00' },
+      Date.parse('2026-03-08T00:00:00.000Z'),
+      Date.parse('2026-03-09T00:00:00.000Z')
+    )
+    expect(intervals).toEqual([
+      {
+        start: Date.parse('2026-03-08T00:00:00.000Z'),
+        end: Date.parse('2026-03-08T07:30:00.000Z'),
+        phase: 'MOON',
+      },
+      {
+        start: Date.parse('2026-03-08T07:30:00.000Z'),
+        end: Date.parse('2026-03-08T16:00:00.000Z'),
+        phase: 'SUN',
+      },
+      {
+        start: Date.parse('2026-03-08T16:00:00.000Z'),
+        end: Date.parse('2026-03-09T00:00:00.000Z'),
+        phase: 'MOON',
+      },
+    ])
+  })
+
+  it('places the day band at the first EDT occurrence on a fall-fold date', () => {
+    const intervals = photoperiodIntervals(
+      { dayStartTime: '01:30', nightStartTime: '12:00' },
+      Date.parse('2026-11-01T00:00:00.000Z'),
+      Date.parse('2026-11-02T00:00:00.000Z')
+    )
+    expect(intervals).toEqual([
+      {
+        start: Date.parse('2026-11-01T00:00:00.000Z'),
+        end: Date.parse('2026-11-01T05:30:00.000Z'),
+        phase: 'MOON',
+      },
+      {
+        start: Date.parse('2026-11-01T05:30:00.000Z'),
+        end: Date.parse('2026-11-01T17:00:00.000Z'),
+        phase: 'SUN',
+      },
+      {
+        start: Date.parse('2026-11-01T17:00:00.000Z'),
+        end: Date.parse('2026-11-02T00:00:00.000Z'),
         phase: 'MOON',
       },
     ])

@@ -4,10 +4,10 @@ import type { ClimatePeriod } from '../../../types/climatePeriod'
 import { periodLengthMinutes } from '../../../utils/climatePeriodTimeline'
 import { timeToMinutes } from '../../../utils/timeMath'
 
+import { scheduleClockMinutes } from './scheduleClock'
 import {
-  minutesOfDay,
-  timeOfDayToInstant,
   VALUE_SNAP,
+  timeOfDayToInstant,
   type BoundaryEdge,
   type ValueMetric,
 } from './dragInteraction'
@@ -16,6 +16,7 @@ export interface DragHandlesCallbacks {
   readonly getPeriods: () => readonly ClimatePeriod[]
   readonly getWindow: () => { readonly start: number; readonly end: number }
   readonly isDragEnabled: () => boolean
+  readonly isBoundaryEnabled?: () => boolean
   readonly onDragStart: () => void
   readonly onDragEnd: () => void
   readonly pushBoundary: (index: number, edge: BoundaryEdge, rawMinutes: number) => void
@@ -125,7 +126,7 @@ export function dragHandlesPlugin(callbacks: DragHandlesCallbacks): uPlot.Plugin
   const buildGrips = (u: uPlot): void => {
     if (container === null) return
     const periods = callbacks.getPeriods()
-    const nextSignature = gripsSignature(periods)
+    const nextSignature = `${gripsSignature(periods)}:${callbacks.isBoundaryEnabled?.() ?? true}`
     const enabled = callbacks.isDragEnabled()
     if (!enabled) {
       if (container.childElementCount > 0) container.replaceChildren()
@@ -136,6 +137,7 @@ export function dragHandlesPlugin(callbacks: DragHandlesCallbacks): uPlot.Plugin
     signature = nextSignature
     container.replaceChildren()
     for (const spec of handleSpecs(periods)) {
+      if (spec.kind === 'boundary' && callbacks.isBoundaryEnabled?.() === false) continue
       const grip = document.createElement('button')
       grip.type = 'button'
       grip.dataset.testid = testIdFor(spec)
@@ -189,7 +191,7 @@ export function dragHandlesPlugin(callbacks: DragHandlesCallbacks): uPlot.Plugin
           timeToMinutes(edge === 'start' ? period.start_time : period.end_time),
           window.start
         )
-        if (instant > window.end) {
+        if (instant === null || instant > window.end) {
           grip.style.display = 'none'
           continue
         }
@@ -202,7 +204,7 @@ export function dragHandlesPlugin(callbacks: DragHandlesCallbacks): uPlot.Plugin
         const value = period[VALUE_FIELD[metric]]
         if (value == null) continue
         const instant = timeOfDayToInstant(midMinute(period), window.start)
-        if (instant > window.end) {
+        if (instant === null || instant > window.end) {
           grip.style.display = 'none'
           continue
         }
@@ -224,7 +226,7 @@ export function dragHandlesPlugin(callbacks: DragHandlesCallbacks): uPlot.Plugin
         const window = callbacks.getWindow()
         const minutesSinceWindowStart = u.posToVal(xCanvas, 'x')
         const instantAtPointer = window.start + minutesSinceWindowStart * 60_000
-        callbacks.pushBoundary(spec.index, spec.edge, minutesOfDay(instantAtPointer))
+        callbacks.pushBoundary(spec.index, spec.edge, scheduleClockMinutes(instantAtPointer))
         return
       }
       if (spec.metric === undefined) return

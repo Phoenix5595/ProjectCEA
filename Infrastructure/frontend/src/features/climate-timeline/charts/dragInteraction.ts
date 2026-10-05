@@ -1,6 +1,12 @@
 import type { ClimatePeriod } from '../../../types/climatePeriod'
-import { sampleMetricSeries } from '../../../utils/climatePeriodTimeline'
+import { rampSkipThreshold } from '../../../utils/climatePeriodTimeline'
 import { minutesToTime, timeToMinutes } from '../../../utils/timeMath'
+import {
+  scheduleClockInstant,
+  scheduleOccurrences,
+  scheduleLocalDates,
+  scheduleNextLocalDate,
+} from './scheduleClock'
 
 export type ValueMetric = 'heating' | 'cooling' | 'vpd' | 'co2'
 export type BoundaryEdge = 'start' | 'end'
@@ -23,7 +29,10 @@ export const VALUE_SNAP: Record<ValueMetric, number> = {
   co2: 10,
 }
 
-const METRIC_FIELD: Record<ValueMetric, keyof ClimatePeriod> = {
+const METRIC_FIELD: Record<
+  ValueMetric,
+  'heating_setpoint' | 'cooling_setpoint' | 'vpd_setpoint' | 'co2_setpoint'
+> = {
   heating: 'heating_setpoint',
   cooling: 'cooling_setpoint',
   vpd: 'vpd_setpoint',
@@ -58,16 +67,23 @@ export function isValueInRange(metric: ValueMetric, value: number): boolean {
   return value >= range.min && value <= range.max
 }
 
-/** UTC minutes-of-day of an instant — the shared daily time base of the draft. */
-export function minutesOfDay(instantMs: number): number {
-  return Math.floor(instantMs / 60_000) % DAY_WINDOW_MINUTES
-}
-
-/** First instant at or after windowStart whose UTC time-of-day equals the given minute. */
-export function timeOfDayToInstant(minute: number, windowStartMs: number): number {
-  const dayOrigin = Math.floor(windowStartMs / 86_400_000) * 86_400_000
-  const instant = dayOrigin + minute * 60_000
-  return instant < windowStartMs ? instant + 86_400_000 : instant
+/**
+ * First instant at or after windowStart whose Toronto schedule clock equals
+ * the given minute (the window-start local date's occurrence, or the next
+ * local date when that one is earlier). DST folds resolve to the first
+ * occurrence and spring gaps to the forward-shifted clock, per the shared
+ * recurring resolver; null means the clock does not resolve — never a UTC
+ * fallback.
+ */
+export function timeOfDayToInstant(minute: number, windowStartMs: number): number | null {
+  const clamped =
+    ((Math.floor(minute) % DAY_WINDOW_MINUTES) + DAY_WINDOW_MINUTES) % DAY_WINDOW_MINUTES
+  const [first] = scheduleOccurrences(
+    windowStartMs,
+    windowStartMs + 36 * 3_600_000,
+    minutesToTime(clamped)
+  )
+  return first === undefined ? null : first
 }
 
 function sortedByStart(
@@ -134,31 +150,119 @@ export function applyValue(
 }
 
 export interface LocalScheduledSeries {
-  readonly sampleTimes: number[]
+  readonly sampleTimes: readonly number[]
   readonly series: ReadonlyMap<ValueMetric, (number | null)[]>
 }
 
+interface LocalOccurrence {
+  readonly periodIndex: number
+  readonly predecessorIndex: number
+  readonly startMs: number
+  readonly endMs: number
+}
+
+const LOCAL_METRICS: readonly ValueMetric[] = ['heating', 'cooling', 'vpd', 'co2']
+
 /**
- * Transient drag-time rendering: sample the scheduled draft locally per minute
- * (same ramp math as the table's `sampleMetricSeries`) over the envelope window.
+ * Resolved absolute occurrences of the draft's stored Toronto clocks across
+ * the window's local dates (including the preceding date so overnight and
+ * all-day periods open the window). Equal start/end clocks are all-day
+ * occurrences running to the same clock on the next local date. Each
+ * occurrence carries its cyclic predecessor period (same profile) for ramp
+ * seeding.
+ */
+function localScheduleOccurrences(
+  periods: readonly ClimatePeriod[],
+  startMs: number,
+  endMs: number
+): LocalOccurrence[] {
+  const order = periods
+    .map((period, index) => ({ index, startMin: timeToMinutes(period.start_time) }))
+    .sort((left, right) => left.startMin - right.startMin)
+  const occurrences: LocalOccurrence[] = []
+  for (const localDate of scheduleLocalDates(startMs, endMs)) {
+    for (let position = 0; position < order.length; position += 1) {
+      const entry = order[position]
+      const period = periods[entry.index]
+      const occurrenceStart = scheduleClockInstant(localDate, period.start_time)
+      if (occurrenceStart === null) continue
+      const endMin = timeToMinutes(period.end_time)
+      const endDate =
+        entry.startMin >= endMin ? scheduleNextLocalDate(localDate) : localDate
+      const occurrenceEnd = endDate === null ? null : scheduleClockInstant(endDate, period.end_time)
+      if (occurrenceEnd === null || occurrenceEnd <= occurrenceStart) continue
+      // The window is the clip authority: an occurrence never renders at the
+      // window end, while a ramp started before the window keeps its true
+      // origin for elapsed minutes.
+      const clippedEnd = Math.min(occurrenceEnd, endMs)
+      if (clippedEnd <= occurrenceStart) continue
+      const predecessor = order[(position - 1 + order.length) % order.length]
+      occurrences.push({
+        periodIndex: entry.index,
+        predecessorIndex: predecessor.index,
+        startMs: occurrenceStart,
+        endMs: clippedEnd,
+      })
+    }
+  }
+  return occurrences.sort((left, right) => left.startMs - right.startMs)
+}
+
+/**
+ * Backend scheduled-segment parity at one instant: the containing occurrence's
+ * value is its nominal target, ramped from the cyclic predecessor's value over
+ * the configured ramp measured in absolute minutes from the resolved
+ * (fold-first / gap-forward) start. A NULL target stays null, a missing
+ * predecessor target steps to the nominal, a delta strictly below the shared
+ * ramp-skip threshold steps (equality still ramps), and instants outside every
+ * occurrence — including the window end — are null.
+ */
+function localScheduledValueAt(
+  periods: readonly ClimatePeriod[],
+  occurrences: readonly LocalOccurrence[],
+  metric: ValueMetric,
+  t: number
+): number | null {
+  let active: LocalOccurrence | null = null
+  for (const occurrence of occurrences) {
+    if (occurrence.startMs <= t && t < occurrence.endMs) active = occurrence
+  }
+  if (active === null) return null
+  const period = periods[active.periodIndex]
+  if (period === undefined) return null
+  const target = period[METRIC_FIELD[metric]]
+  if (target == null) return null
+  const rampMs = Math.max(0, period.ramp_minutes) * 60_000
+  const rampEnd = active.startMs + rampMs
+  if (rampMs <= 0 || t >= rampEnd) return target
+  const predecessor = periods[active.predecessorIndex]
+  const initial = predecessor?.[METRIC_FIELD[metric]] ?? target
+  if (Math.abs(initial - target) < rampSkipThreshold(metric)) return target
+  return initial + (target - initial) * ((t - active.startMs) / rampMs)
+}
+
+/**
+ * Transient drag-time rendering: evaluate the scheduled draft locally per
+ * minute over the envelope window, matching the server's scheduled-segment
+ * construction (resolved Toronto occurrence clocks, absolute ramp elapsed
+ * minutes, cyclic same-profile predecessor, skip thresholds) rather than the
+ * wall-minute table used by the periods table preview.
  */
 export function buildLocalScheduledSeries(
   periods: readonly ClimatePeriod[],
-  window: { readonly start: Date; readonly end: Date }
+  window: { readonly start: Date; readonly end: Date },
+  sampleTimes: readonly number[] = envelopeMinuteGrid(window)
 ): LocalScheduledSeries {
-  const sampleTimes = envelopeMinuteGrid(window)
-  const minuteSeries = new Map<ValueMetric, (number | null)[]>([
-    ['heating', sampleMetricSeries([...periods], 'heating')],
-    ['cooling', sampleMetricSeries([...periods], 'cooling')],
-    ['vpd', sampleMetricSeries([...periods], 'vpd')],
-    ['co2', sampleMetricSeries([...periods], 'co2')],
-  ])
-  const dayOrigin = Math.floor(window.start.getTime() / 86_400_000) * 86_400_000
+  const occurrences = localScheduleOccurrences(
+    periods,
+    window.start.getTime(),
+    window.end.getTime()
+  )
   const series = new Map<ValueMetric, (number | null)[]>()
-  for (const [metric, minuteValues] of minuteSeries) {
+  for (const metric of LOCAL_METRICS) {
     series.set(
       metric,
-      sampleTimes.map(t => minuteValues[minutesOfDayFromOrigin(t, dayOrigin)] ?? null)
+      sampleTimes.map(t => localScheduledValueAt(periods, occurrences, metric, t))
     )
   }
   return { sampleTimes, series }
@@ -169,10 +273,6 @@ function envelopeMinuteGrid(window: { readonly start: Date; readonly end: Date }
   for (let t = window.start.getTime(); t < window.end.getTime(); t += 60_000) times.push(t)
   times.push(window.end.getTime())
   return times
-}
-
-function minutesOfDayFromOrigin(instantMs: number, dayOriginMs: number): number {
-  return Math.floor((instantMs - dayOriginMs) / 60_000) % DAY_WINDOW_MINUTES
 }
 
 export interface RafCoalescer<T> {

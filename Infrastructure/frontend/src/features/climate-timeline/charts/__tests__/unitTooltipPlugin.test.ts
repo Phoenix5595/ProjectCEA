@@ -2,7 +2,8 @@ import type uPlot from 'uplot'
 import { describe, expect, it } from 'vitest'
 
 import type { EnvelopeSeriesKey } from '../envelopeSeries'
-import { timelineSeriesMeta } from '../timelineOptions'
+import { timelineSeriesMeta, type TimelineSeriesKey } from '../timelineOptions'
+import type { TimelineSampleQuality } from '../timelineSources'
 import {
   formatTooltipValue,
   unitTooltipPlugin,
@@ -27,7 +28,7 @@ function state(): TimelineTooltipState {
       [1.02, null, 0.98, 1.1],
       [810, 795, null, 820],
     ],
-    meta: timelineSeriesMeta(KEYS),
+    meta: timelineSeriesMeta(KEYS, 'selected-saved', 'Saved Flower · '),
   }
 }
 
@@ -39,6 +40,7 @@ function harness(getState: () => TimelineTooltipState = state) {
   const plugin = unitTooltipPlugin(getState)
   const u = {
     over,
+    valToPos: (value: number) => value * 400,
     cursor: { left: -1, top: -1, idx: null },
   } as unknown as uPlot
   const init = plugin.hooks.init as (plot: uPlot) => void
@@ -61,15 +63,64 @@ describe('formatTooltipValue', () => {
 })
 
 describe('unitTooltipPlugin', () => {
-  it('collapses equal scheduled/effective values without merging distinct metrics', () => {
+  it('keeps equal current/draft values separate and exposes cursor-specific quality plus the observation timestamp', () => {
+    const current = timelineSeriesMeta(['heating_setpoint:effective'], 'active-current', 'Current effective · ')
+    const draft = timelineSeriesMeta(['heating_setpoint:scheduled'], 'selected-draft', 'Draft Drying · ')
+    const { tooltip, setCursor } = harness(() => ({
+      data: [[0.25, 1], [22, null], [22, 19]],
+      meta: [...current, ...draft],
+      windowStartMs: Date.parse('2026-01-01T12:00:00.000Z'),
+      qualities: new Map<TimelineSeriesKey, readonly TimelineSampleQuality[]>([
+        [current[0]!.key, ['exact', 'unavailable'] as const],
+        [draft[0]!.key, ['exact', 'estimated'] as const],
+      ]),
+    }))
+    setCursor(100, 200, 0)
+    expect(tooltip.textContent?.match(/22\.0 °C/g)).toHaveLength(2)
+    expect(tooltip.textContent).toContain('active-current · exact')
+    expect(tooltip.textContent).toContain('selected-draft · exact')
+    expect(tooltip.textContent).toContain('12:00:15.000 UTC')
+    setCursor(400, 200, 1)
+    expect(tooltip.textContent).not.toContain('active-current')
+    expect(tooltip.textContent).toContain('selected-draft · estimated')
+  })
+
+  it('finds a nearby sparse observation without bridging forecast gaps or carrying expired facts', () => {
+    const meta = [
+      ...timelineSeriesMeta(['heating_setpoint:effective'], 'active-current', 'Current effective · '),
+      ...timelineSeriesMeta(['heating_setpoint:effective'], 'active-future', 'Running forecast · '),
+      ...timelineSeriesMeta(['heating_setpoint:scheduled'], 'selected-saved', 'Saved Drying · '),
+    ]
+    let snapshot: TimelineTooltipState = {
+      data: [[0.249983333333, 0.25, 1], [null, 22, null], [null, 24, null], [18, 18, 18]],
+      meta,
+      windowStartMs: Date.parse('2026-01-01T12:00:00.000Z'),
+      qualities: new Map([[meta[0]!.key, ['unavailable', 'exact', 'unavailable'] as const]]),
+    }
+    const { tooltip, setCursor } = harness(() => snapshot)
+    setCursor(99.99, 200, 0)
+    expect(tooltip.textContent).toContain('22.0 °C')
+    expect(tooltip.textContent).toContain('active-current · exact · 12:00:15.000 UTC')
+    expect(tooltip.textContent).not.toContain('active-future')
+    expect(tooltip.textContent).toContain('18.0 °C')
+    setCursor(104, 200, 1)
+    expect(tooltip.textContent).not.toContain('active-current')
+    expect(tooltip.textContent).toContain('24.0 °C')
+    snapshot = { ...snapshot, data: [snapshot.data[0], [null, null, null], snapshot.data[2], snapshot.data[3]] }
+    setCursor(99.99, 200, 0)
+    expect(tooltip.textContent).not.toContain('active-current')
+    expect(tooltip.textContent).toContain('18.0 °C')
+  })
+
+  it('retains distinct authority and kind provenance even when values coincide', () => {
     const { tooltip, setCursor } = harness(() => ({
       data: [[0], [25], [25], [25], [1], [800]],
-      meta: timelineSeriesMeta(KEYS),
+      meta: timelineSeriesMeta(KEYS, 'selected-saved', 'Saved Flower · '),
     }))
     setCursor(400, 200, 0)
 
     const text = tooltip.textContent ?? ''
-    expect(text.match(/25\.0 °C/g)).toHaveLength(2)
+    expect(text.match(/25\.0 °C/g)).toHaveLength(3)
     expect(text).toContain('1.00 kPa')
     expect(text).toContain('800 ppm')
   })

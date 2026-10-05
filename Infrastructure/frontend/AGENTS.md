@@ -72,7 +72,18 @@ npx vitest run src/features/event-log/__tests__
 - Run fixture or browser tests against production hosts/ports.
 - Use native `EventSource` or query-string API keys for the operational event stream.
 - Drive any control action from an event-log consumer.
-- Never introduce scrolling inside a component, card, panel, list, dialog, or popover. This is nonnegotiable: fit and wrap content in normal document flow; use pagination or disclosure for bounded collections. When content exceeds the viewport, only the page/document may scroll. Never hide overflow, clamp text, or shrink essential information to disguise a layout failure.
+
+## Non-negotiable layout, sizing and scrolling policy
+
+- **Preserve existing layout and component sizes. Internal content may change only within that geometry.**
+- **Ask the owner before changing any layout or component size. Never assume permission to redesign, grow, or shrink components.**
+- **NEVER introduce scrolling inside a component, card, panel, list, dialog, or popover. No exceptions.**
+- Only the page/document may scroll. Content MUST fit within the existing component size without internal scrolling; if it cannot, ask before choosing a layout or sizing tradeoff.
+- NEVER use `overflow: auto` / `overflow: scroll` (including axis-specific variants) on component containers.
+- NEVER hide overflow, clamp text, or shrink essential information to disguise a layout failure.
+- On the control page, live light panels are mutually exclusive: running Veg/Flower shows intensity sliders; running Sleep/Drying shows manual override and no sliders. Merely inspecting an inactive profile never changes the live panel.
+- Keep chart source/status details in the header's non-scrolling popover, not added rows that enlarge the chart. Save feedback uses a marker inside the existing Save button; full warnings remain available in that popover.
+- Activation-button text stays compact so the unchanged ribbon fits both desktop viewports. Preserve the full save-before-activate and confirmation wording in its accessible name, tooltip, and source-details popover; do not shorten the actual workflow.
 
 ---
 

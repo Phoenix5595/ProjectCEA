@@ -94,6 +94,14 @@ async def run_load_test():
                 "ramp_down": 0,
             }
         },
+        active_modes={
+            ("Flower Room", "main"): {
+                "mode_id": 1,
+                "submode_id": None,
+                "mode_name": "veg",
+                "submode_name": None,
+            }
+        },
         light_intensities={},
         light_programs=[],
     )

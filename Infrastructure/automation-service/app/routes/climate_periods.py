@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import time as datetime_time
 import hashlib
 import json
 from typing import Any
@@ -19,6 +20,7 @@ from app.events.mutation_dependencies import get_mutation_event_sink, get_mutati
 from app.events.mutation_diff import safe_allowlisted_diff
 from app.events.operational_models import EntityContext
 from app.events.operational_ports import OperationalEventSink
+from app.repositories.climate_timeline_apply import _TIMELINE_APPLY_LOCK
 from app.schemas.climate_periods import PeriodsSaveRequest
 from app.services.climate_timeline_apply import SavedTimelineConfigurationInvalidator
 
@@ -36,12 +38,39 @@ _PERIOD_EVENT_FIELDS = (
 )
 
 
+def _canonical_digest_value(value: Any) -> Any:
+    """JSON-safe digest value; TIME columns read back as datetime.time."""
+    if isinstance(value, datetime_time):
+        return value.strftime("%H:%M")
+    return value
+
+
 def _periods_digest(periods: list[dict[str, Any]]) -> str:
     canonical_periods = [
-        {field: period.get(field) for field in _PERIOD_EVENT_FIELDS} for period in periods
+        {field: _canonical_digest_value(period.get(field)) for field in _PERIOD_EVENT_FIELDS}
+        for period in periods
     ]
     canonical = json.dumps(canonical_periods, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(canonical.encode()).hexdigest()
+
+
+def _affected_period_identities(
+    previous: list[dict[str, Any]], request: PeriodsSaveRequest
+) -> list[tuple[int, int | None]]:
+    """Prior row identities plus the replacement identity for cache invalidation.
+
+    Prior identities are captured before the scoped delete, so an identity
+    whose rows all disappear is still invalidated even when no period remains.
+    NULL-mode rows have no exact-profile cache key and are skipped.
+    """
+    identities: set[tuple[int, int | None]] = {
+        (row["mode_id"], row.get("submode_id"))
+        for row in previous
+        if isinstance(row.get("mode_id"), int)
+    }
+    if request.mode_id is not None:
+        identities.add((request.mode_id, request.submode_id))
+    return sorted(identities, key=lambda pair: (pair[0], pair[1] if pair[1] is not None else -1))
 
 
 def get_database() -> DatabaseManager:
@@ -88,7 +117,13 @@ async def save_climate_periods(
     context: MutationRequestContext = Depends(get_mutation_request_context),
     sink: OperationalEventSink = Depends(get_mutation_event_sink),
 ) -> dict[str, Any]:
-    """Save climate periods for a location/cluster."""
+    """Save climate periods for a location/cluster.
+
+    The previous read, scoped delete, replacement inserts and the one
+    configuration revision share one transaction under the timeline advisory
+    lock. A missing or false delete/insert/version result aborts without
+    leaving a partial replacement.
+    """
     valid, errors = database.climate_periods_repo.validate_24h_coverage(
         [p.model_dump() for p in request.periods]
     )
@@ -96,48 +131,61 @@ async def save_climate_periods(
     if not valid:
         raise HTTPException(status_code=400, detail={"errors": errors})
 
-    if request.mode_id is None:
-        previous = await database.climate_periods_repo.get_periods(location, cluster)
-    else:
-        previous = await database.climate_periods_repo.get_periods_for_room_mode(
-            location, cluster, request.mode_id, request.submode_id
-        )
+    try:
+        pool = await database._get_pool()
+        async with pool.acquire() as connection, connection.transaction():
+            _ = await connection.execute("SELECT pg_advisory_xact_lock($1)", _TIMELINE_APPLY_LOCK)
+            previous = await database.climate_periods_repo.get_periods(
+                location, cluster, request.mode_id, request.submode_id, conn=connection
+            )
 
-    await database.climate_periods_repo.delete_periods(
-        location, cluster, request.mode_id, request.submode_id
-    )
+            deleted = await database.climate_periods_repo.delete_periods(
+                location, cluster, request.mode_id, request.submode_id, conn=connection
+            )
+            if not deleted:
+                raise RuntimeError("climate periods delete reported no persisted change")
 
-    saved = []
-    for p in request.periods:
-        result = await database.climate_periods_repo.save_period(
-            location=location,
-            cluster=cluster,
-            period_name=p.period_name,
-            start_time=p.start_time,
-            end_time=p.end_time,
-            ramp_minutes=p.ramp_minutes,
-            heating_setpoint=p.heating_setpoint,
-            cooling_setpoint=p.cooling_setpoint,
-            vpd_setpoint=p.vpd_setpoint,
-            co2_setpoint=p.co2_setpoint,
-            details=p.details,
-            mode_id=request.mode_id,
-            submode_id=request.submode_id,
-        )
-        if result:
-            saved.append(result)
-        else:
-            raise HTTPException(status_code=500, detail="Failed to save climate period")
+            saved = []
+            for p in request.periods:
+                result = await database.climate_periods_repo.save_period(
+                    location=location,
+                    cluster=cluster,
+                    period_name=p.period_name,
+                    start_time=p.start_time,
+                    end_time=p.end_time,
+                    ramp_minutes=p.ramp_minutes,
+                    heating_setpoint=p.heating_setpoint,
+                    cooling_setpoint=p.cooling_setpoint,
+                    vpd_setpoint=p.vpd_setpoint,
+                    co2_setpoint=p.co2_setpoint,
+                    details=p.details,
+                    mode_id=request.mode_id,
+                    submode_id=request.submode_id,
+                    conn=connection,
+                )
+                if result:
+                    saved.append(result)
+                else:
+                    raise RuntimeError("Failed to save climate period")
 
-    version_id = await database.config_repo.log_config_version(
-        config_type="climate_timeline",
-        location=location,
-        cluster=cluster,
-        changes={"periods_digest": _periods_digest([p.model_dump() for p in request.periods])},
-    )
-    if version_id is None:
-        raise HTTPException(status_code=500, detail="Failed to record climate period revision")
-    await SavedTimelineConfigurationInvalidator().invalidate(location, cluster, f"{version_id:07x}")
+            version_id = await database.config_repo.log_config_version(
+                config_type="climate_timeline",
+                location=location,
+                cluster=cluster,
+                changes={
+                    "periods_digest": _periods_digest([p.model_dump() for p in request.periods])
+                },
+                conn=connection,
+            )
+            if version_id is None:
+                raise RuntimeError("failed to record a climate period revision")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database transaction failed: {str(e)}") from e
+
+    affected_identities = _affected_period_identities(previous, request)
+    warning = await SavedTimelineConfigurationInvalidator(
+        database, affected_identities=affected_identities
+    ).invalidate(location, cluster, f"{version_id:07x}", request.mode_id, request.submode_id)
 
     emit_persisted_mutation(
         sink,
@@ -160,7 +208,7 @@ async def save_climate_periods(
         context,
     )
 
-    return {"saved": len(saved), "periods": saved}
+    return {"saved": len(saved), "periods": saved, "notification_warning": warning}
 
 
 @router.get("/{location}/{cluster}/validate")

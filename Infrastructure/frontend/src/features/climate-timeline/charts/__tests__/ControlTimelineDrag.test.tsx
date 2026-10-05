@@ -5,8 +5,10 @@ import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { RichTrajectoryEnvelope } from '../../api/contracts'
 import type { TimelinePublicationPort } from '../../api/timelinePublicationPort'
 import { ControlTimeline } from '../../components/ControlTimeline'
+import { scheduleClockMinutes } from '../scheduleClock'
 import type { TimelineSavedBaseline } from '../../state/timelineDraft'
 import { useTimelineDraft } from '../../state/useTimelineDraft'
+import { authorityCurrent, authorityEnvelope, authorityFuture, authorityNow, authorityPeriod } from '../../__tests__/timelineAuthorityFixtures'
 
 const { MockUPlot, instances } = vi.hoisted(() => {
   const instances: MockUPlot[] = []
@@ -87,10 +89,11 @@ const { MockUPlot, instances } = vi.hoisted(() => {
 vi.mock('uplot', () => ({ default: MockUPlot }))
 
 const savedBaseline = (): TimelineSavedBaseline => ({
-  room: { location: 'flower', cluster: 'main' },
+  room: { location: 'Flower Room', cluster: 'main' },
   baseConfigRevision: 'config-1',
   modeId: 1,
   submodeId: null,
+  parametersConfigured: true,
   window: { start: '2026-01-01T00:00:00.000Z', end: '2026-01-02T00:00:00.000Z', timezone: 'UTC' },
   periods: [
     {
@@ -156,7 +159,7 @@ function scheduledStep(metric: string, value: number) {
     trajectory_kind: 'scheduled',
     quality: 'exact',
     source: {
-      mode: 'flower',
+      mode: '1',
       submode: null,
       period: { period_id: 'p1', label: 'Day' },
       config_revision: 'config-1',
@@ -170,7 +173,7 @@ function port(): TimelinePublicationPort {
     preview: async () => {
       throw new Error('preview not expected in drag tests')
     },
-    apply: async () => savedBaseline(),
+    apply: async () => ({ baseline: savedBaseline(), warning: null }),
   }
 }
 
@@ -178,13 +181,18 @@ function valueY(value: number): number {
   return 400 - ((value - 10) / 25) * 400
 }
 
-function timeX(minuteOfDay: number): number {
-  return (minuteOfDay / 1440) * 800
+/** Canvas x of the instant whose Toronto schedule clock reads `scheduleMinute` in the current UTC daily window. */
+function timeX(scheduleMinute: number): number {
+  const windowStart = Math.floor(Date.now() / 86_400_000) * 86_400_000
+  const windowMinute = (scheduleMinute - scheduleClockMinutes(windowStart) + 1440) % 1440
+  return (windowMinute / 1440) * 800
 }
 
 let animationFrames: Array<(timestamp: number) => void> = []
 
 beforeEach(() => {
+  vi.useFakeTimers({ toFake: ['Date'] })
+  vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'))
   instances.length = 0
   animationFrames = []
   Object.defineProperty(HTMLElement.prototype, 'clientWidth', {
@@ -212,6 +220,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllGlobals()
+  vi.useRealTimers()
 })
 
 async function renderDailyEditor() {
@@ -234,6 +243,35 @@ function flushFrame(): void {
 }
 
 describe('drag editing on the uPlot timeline', () => {
+  it('keeps 22 current, 24 future and 18 saved visible while dragging the only editable all-day draft to 19', async () => {
+    vi.setSystemTime(new Date(authorityNow))
+    const hook = renderHook(() => useTimelineDraft({
+      saved: { ...savedBaseline(), modeId: 4, baseConfigRevision: '0000025',
+        periods: [{ ...authorityPeriod, heating_setpoint: 18 }], trajectory: authorityEnvelope() },
+      publicationPort: port(),
+    }))
+    const operational = { current: authorityCurrent(), future: [authorityFuture()], trajectory: null,
+      currentError: null, projectionError: null, refresh: vi.fn(async () => {}) }
+    const view = render(<ControlTimeline mode="expanded" controller={hook.result.current}
+      operationalProjection={operational} selectedLabel="Drying" activeLabel="Flower / Bulk" constantMode />)
+    expect(screen.queryByTestId('control-timeline-boundary-grip-0-start')).not.toBeInTheDocument()
+    const grip = screen.getByTestId('control-timeline-value-grip-0-heating')
+    fireEvent.mouseDown(grip, { clientY: valueY(18) })
+    fireEvent.mouseMove(window, { clientY: valueY(19) })
+    flushFrame()
+    view.rerender(<ControlTimeline mode="expanded" controller={hook.result.current}
+      operationalProjection={operational} selectedLabel="Drying" activeLabel="Flower / Bulk" constantMode />)
+    const plot = instances.at(-1)!
+    for (const [label, value] of [['Current effective', 22], ['Running forecast (estimated)', 24], ['Saved Drying', 18], ['Draft Drying', 19]] as const) {
+      const index = plot.opts.series.findIndex(series => String(series.label).startsWith(label) && String(series.label).includes('Heating'))
+      expect(plot.data[index]).toContain(value)
+    }
+    expect(screen.getByTestId('control-timeline-local-estimate')).toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: 'Day start' })).toBeDisabled()
+    fireEvent.mouseUp(window)
+    view.unmount()
+  })
+
   it('coalesces a 60-frame value drag burst into exactly one editPeriods commit per frame', async () => {
     const { hook } = await renderDailyEditor()
     const grip = screen.getByTestId('control-timeline-value-grip-0-heating')

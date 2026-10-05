@@ -77,6 +77,7 @@ def make_snapshot(
         version=version,
         hierarchy=hierarchy,
         mode_parameters={},
+        active_modes={},
         light_intensities={},
         light_programs=[],
     )

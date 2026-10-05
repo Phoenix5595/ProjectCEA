@@ -21,6 +21,7 @@ def test_recreated_light_mid_ramp_uses_remaining_schedule_time_for_ten_percent_t
                 "ramp_down": 0,
             }
         },
+        active_modes={},
         light_intensities={(42, 1): 10.0},
         light_programs=[],
     )

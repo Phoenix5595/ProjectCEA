@@ -15,6 +15,7 @@ import {
   type TimelineWindowMs,
 } from './timelineOptions'
 import { unitTooltipPlugin } from './unitTooltipPlugin'
+import type { TimelineSampleQualities } from './timelineSources'
 
 export interface TimelineUPlotProps {
   readonly data: uPlot.AlignedData
@@ -25,6 +26,8 @@ export interface TimelineUPlotProps {
   readonly revision: number
   readonly plugins?: readonly uPlot.Plugin[]
   readonly ariaLabel: string
+  /** Per-sample series quality keyed by series key, for tooltip provenance. */
+  readonly qualities?: TimelineSampleQualities
 }
 
 export function TimelineUPlot({
@@ -36,6 +39,7 @@ export function TimelineUPlot({
   revision,
   plugins = [],
   ariaLabel,
+  qualities,
 }: TimelineUPlotProps) {
   const frameRef = useRef<HTMLDivElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -51,6 +55,8 @@ export function TimelineUPlot({
   metaRef.current = meta
   const dataRef = useRef(data)
   dataRef.current = data
+  const qualitiesRef = useRef(qualities)
+  qualitiesRef.current = qualities
 
   const pluginsRef = useRef(plugins)
   pluginsRef.current = plugins
@@ -85,7 +91,12 @@ export function TimelineUPlot({
     const basePlugins: uPlot.Plugin[] = [
       timelinePhotoperiodPlugin(() => photoperiodRef.current, windowStartMs),
       timelineNowDividerPlugin(() => nowXRef.current, windowStartMs),
-      unitTooltipPlugin(() => ({ data: dataRef.current, meta: metaRef.current })),
+      unitTooltipPlugin(() => ({
+        data: dataRef.current,
+        meta: metaRef.current,
+        qualities: qualitiesRef.current,
+        windowStartMs,
+      })),
       ...pluginsRef.current,
     ]
 

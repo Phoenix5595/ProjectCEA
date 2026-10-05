@@ -66,7 +66,7 @@ const TrajectorySegment = z
   ])
   .refine(segment => segment.end > segment.start, 'segment end must be later than segment start')
 
-const TimelineWarning = z
+export const TimelineWarning = z
   .object({
     code: z.string().min(1),
     detail: z.string().min(1),

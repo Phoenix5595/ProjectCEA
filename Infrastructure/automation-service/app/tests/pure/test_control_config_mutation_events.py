@@ -1,13 +1,16 @@
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 from pathlib import Path
 from threading import RLock
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 from uuid import UUID
 
 from fastapi import HTTPException
 import pytest
 
+from app.events import ConfigChangeEvent
 from app.events.mutation_context import MutationRequestContext
 from app.events.operational_models import OperationalEvent
 from app.routes import pid, system_config
@@ -15,6 +18,8 @@ from app.routes.climate_periods import save_climate_periods
 from app.schemas.climate_periods import PeriodInput, PeriodsSaveRequest
 from app.schemas.pid import PIDModeUpdate, PIDParameterUpdate
 from app.schemas.system_config import ConfigUpdateRequest, TuningGroup
+from app.services import climate_timeline_apply as climate_apply_module
+from shared.redis_keys import climate_period_cache_key
 
 
 class _RecordingSink:
@@ -32,7 +37,20 @@ class _ClimatePeriodsRepository:
     def validate_24h_coverage(self, _periods: list[dict[str, object]]) -> tuple[bool, list[str]]:
         return True, []
 
-    async def get_periods_for_room_mode(self, *_args: object) -> list[dict[str, object]]:
+    async def get_periods(
+        self,
+        _location: str,
+        _cluster: str,
+        mode_id: int | None = None,
+        submode_id: int | None = None,
+        conn: object = None,
+    ) -> list[dict[str, object]]:
+        """Exact-NULL-safe slice read: mode+NULL submode selects only the base profile."""
+        del conn
+        if mode_id is None:
+            return []
+        if mode_id != 1:
+            return []
         return [
             {
                 "period_name": "day",
@@ -46,7 +64,7 @@ class _ClimatePeriodsRepository:
             }
         ]
 
-    async def delete_periods(self, *_args: object) -> bool:
+    async def delete_periods(self, *_args: object, **_kwargs: object) -> bool:
         return True
 
     async def save_period(self, **_kwargs: object) -> dict[str, object]:
@@ -58,18 +76,81 @@ class _ConfigRepository:
         return 1
 
 
+class _RecordingInvalidationState:
+    def __init__(self) -> None:
+        self.deletes: list[str] = []
+
+    async def delete(self, key: str, skip_redis: bool = False) -> bool:
+        del skip_redis
+        self.deletes.append(key)
+        return True
+
+
+class _RecordingEventBus:
+    def __init__(self) -> None:
+        self.events: list[ConfigChangeEvent] = []
+
+    async def publish(self, event: ConfigChangeEvent) -> bool:
+        self.events.append(event)
+        return True
+
+
+def _recording_notification_boundaries(
+    monkeypatch: pytest.MonkeyPatch,
+) -> tuple[_RecordingInvalidationState, _RecordingEventBus]:
+    """Route the post-commit invalidator and event bus to recording fakes."""
+    state_manager = _RecordingInvalidationState()
+    event_bus = _RecordingEventBus()
+    monkeypatch.setattr(climate_apply_module, "get_state_manager", lambda: state_manager)
+    monkeypatch.setattr(climate_apply_module, "get_event_bus", lambda: event_bus)
+    return state_manager, event_bus
+
+
+class _PeriodsConnection:
+    """asyncpg-shaped transaction connection recording the advisory lock."""
+
+    def __init__(self) -> None:
+        self.locks: list[tuple[str, tuple[object, ...]]] = []
+
+    async def execute(self, query: str, *args: object) -> str:
+        self.locks.append((query, args))
+        return "SELECT 1"
+
+    @asynccontextmanager
+    async def transaction(self):
+        yield
+
+
+class _PeriodsPool:
+    def __init__(self) -> None:
+        self.connection = _PeriodsConnection()
+
+    @asynccontextmanager
+    async def acquire(self):
+        yield self.connection
+
+
 @pytest.mark.asyncio
-async def test_climate_replacement_with_equal_count_emits_content_change() -> None:
+async def test_climate_replacement_with_equal_count_emits_content_change(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     # Given: one persisted period whose replacement changes only a setpoint.
     repository = _ClimatePeriodsRepository({"period_name": "day", "heating_setpoint": 21.0})
+    state_manager, event_bus = _recording_notification_boundaries(monkeypatch)
     database = SimpleNamespace(
         climate_periods_repo=repository,
         config_repo=_ConfigRepository(),
+        room_mode_repo=SimpleNamespace(
+            get_active_mode=AsyncMock(
+                return_value={"mode_id": 1, "submode_id": None, "mode_name": "veg"}
+            )
+        ),
+        _get_pool=AsyncMock(return_value=_PeriodsPool()),
     )
     sink = _RecordingSink()
 
     # When: the replacement commits with the same number of rows.
-    await save_climate_periods(
+    response = await save_climate_periods(
         "Veg Room",
         "main",
         PeriodsSaveRequest(
@@ -91,8 +172,13 @@ async def test_climate_replacement_with_equal_count_emits_content_change() -> No
         sink,
     )
 
-    # Then: the event describes the committed content change rather than only row count.
+    # Then: the event describes the committed content change rather than only row count,
+    # and the exact active profile keys invalidate after the commit.
     assert [change.key for change in sink.events[0].payload.changes] == ["periods_digest"]
+    assert response["notification_warning"] is None
+    assert climate_period_cache_key("Veg Room", "main", 1, None) in state_manager.deletes
+    assert climate_period_cache_key("Veg Room", "main", 2, None) not in state_manager.deletes
+    assert any(key.startswith("schedules:") for key in state_manager.deletes)
 
 
 class _PidRepository:

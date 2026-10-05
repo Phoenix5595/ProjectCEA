@@ -2,6 +2,8 @@ import type uPlot from 'uplot'
 
 import { timeToMinutes } from '../../../utils/timeMath'
 
+import { scheduleClockInstant, scheduleLocalDates, scheduleNextLocalDate } from './scheduleClock'
+
 import { readTimelineToken } from './tokens'
 
 export const LABEL_FONT = '10px "JetBrains Mono", ui-monospace, monospace'
@@ -22,10 +24,20 @@ export interface LaidOutLabel {
   readonly endMs: number
 }
 
-const DAY_MS = 86_400_000
 const MINUTE_MS = 60_000
 
-/** Expand time-of-day periods into non-overlapping absolute segments across the window. */
+/**
+ * Expand time-of-day periods into non-overlapping absolute segments across the
+ * window. Periods are Toronto wall clocks, so each occurrence resolves through
+ * the schedule clock on Toronto local dates — including the date preceding the
+ * window start, so a night begun the previous day still opens the window. An
+ * overnight period is one continuous segment from its start clock to its end
+ * clock on the next local date; an equal start/end clock is an all-day
+ * occurrence running to the same clock on the next local date (the canonical
+ * constant all-day row). A segment that does not resolve (spring gap) is
+ * skipped, clipped segments below one minute are dropped, and contiguous
+ * same-name extents merge so an all-day constant profile reads as one label.
+ */
 export function periodLabelSegments(
   periods: readonly {
     readonly period_name: string
@@ -36,36 +48,37 @@ export function periodLabelSegments(
   windowEndMs: number
 ): PeriodLabelSegment[] {
   if (windowEndMs <= windowStartMs) return []
-  const origin = new Date(windowStartMs)
-  const dayOrigin = Date.UTC(origin.getUTCFullYear(), origin.getUTCMonth(), origin.getUTCDate())
+  const dates = scheduleLocalDates(windowStartMs, windowEndMs)
   const segments: PeriodLabelSegment[] = []
-  const firstDay = 0
-  const lastDay = Math.ceil((windowEndMs - dayOrigin) / DAY_MS)
-  for (let dayOffset = firstDay; dayOffset <= lastDay; dayOffset += 1) {
+  for (const localDate of dates) {
     for (const period of periods) {
       const startMin = timeToMinutes(period.start_time)
       const endMin = timeToMinutes(period.end_time)
-      const pieces: Array<[number, number]> =
-        startMin < endMin
-          ? [[startMin, endMin]]
-          : startMin > endMin
-            ? [
-                [startMin, 1440],
-                [0, endMin],
-              ]
-            : []
-      for (const [fromMin, toMin] of pieces) {
-        const startMs = dayOrigin + dayOffset * DAY_MS + fromMin * MINUTE_MS
-        const endMs = dayOrigin + dayOffset * DAY_MS + toMin * MINUTE_MS
-        const clippedStart = Math.max(startMs, windowStartMs)
-        const clippedEnd = Math.min(endMs, windowEndMs)
-        if (clippedEnd - clippedStart >= MINUTE_MS) {
-          segments.push({ text: period.period_name, startMs: clippedStart, endMs: clippedEnd })
-        }
+      const spansMidnight = startMin >= endMin
+      const startMs = scheduleClockInstant(localDate, period.start_time)
+      if (startMs === null) continue
+      const endDate = spansMidnight ? scheduleNextLocalDate(localDate) : localDate
+      if (endDate === null) continue
+      const endMs = scheduleClockInstant(endDate, period.end_time)
+      if (endMs === null) continue
+      const clippedStart = Math.max(startMs, windowStartMs)
+      const clippedEnd = Math.min(endMs, windowEndMs)
+      if (clippedEnd - clippedStart >= MINUTE_MS) {
+        segments.push({ text: period.period_name, startMs: clippedStart, endMs: clippedEnd })
       }
     }
   }
-  return segments.sort((left, right) => left.startMs - right.startMs)
+  segments.sort((left, right) => left.startMs - right.startMs)
+  const merged: PeriodLabelSegment[] = []
+  for (const segment of segments) {
+    const previous = merged[merged.length - 1]
+    if (previous && previous.text === segment.text && previous.endMs === segment.startMs) {
+      merged[merged.length - 1] = { ...previous, endMs: Math.max(previous.endMs, segment.endMs) }
+      continue
+    }
+    merged.push(segment)
+  }
+  return merged
 }
 
 /**

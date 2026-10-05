@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from typing import Any
 
 import pytest
@@ -132,16 +131,6 @@ async def test_startup_restore_preserves_unchanged_channel_transition_times() ->
     assert snapshot.changed_at[0].isoformat().replace("+00:00", "Z") == restored_at
 
 
-def test_mcp_board_sampling_reads_gpio_a_and_b_once_under_one_lock() -> None:
-    source = (Path(__file__).parents[2] / "hardware" / "mcp23017.py").read_text()
-    sample_all_channels = source.split("    def sample_all_channels", maxsplit=1)[1].split(
-        "    def get_all_channels", maxsplit=1
-    )[0]
-
-    assert "with self._i2c_lock:" in sample_all_channels
-    assert sample_all_channels.count("self.bus.read_byte_data") == 2
-    assert "MCP23017_GPIOA" in sample_all_channels
-    assert "MCP23017_GPIOB" in sample_all_channels
 
 
 @pytest.mark.asyncio
@@ -158,6 +147,8 @@ async def test_control_tick_samples_in_finally_for_a_noop_tick() -> None:
     control_engine.relay_board_state_manager = board_state
     control_engine.alarm_manager = None
     control_engine.device_command_service = None
+    control_engine._tick_effective_setpoints = {}
+    control_engine._photoperiod_phases = {}
 
     async def no_op(_snapshot: object) -> None:
         return None

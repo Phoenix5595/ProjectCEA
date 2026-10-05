@@ -31,6 +31,8 @@ export type TimelineSavedBaseline = TimelineOwnedValues & {
   readonly submodeId?: number | null
   readonly window?: TimelineWindow
   readonly trajectory?: RichTrajectoryEnvelope
+  /** False when the response supplied unsaved initial photoperiod defaults. */
+  readonly parametersConfigured: boolean
 }
 
 export type TimelineDraftStatus =
@@ -40,6 +42,8 @@ export type TimelineDraftStatus =
 
 export type TimelineDraft = {
   readonly saved: TimelineSavedBaseline
+  /** Initial editable values; unsaved initialization is not a user edit. */
+  readonly initial: TimelineOwnedValues
   readonly draft: TimelineOwnedValues
   readonly draftRevision: number
   readonly status: TimelineDraftStatus
@@ -61,17 +65,25 @@ function copyValues(values: TimelineOwnedValues): TimelineOwnedValues {
 }
 
 function valuesMatch(left: TimelineOwnedValues, right: TimelineOwnedValues): boolean {
-  return JSON.stringify(left) === JSON.stringify(right)
+  const owned = (values: TimelineOwnedValues) => ({
+    ...values,
+    periods: values.periods.map(period => ({ ...period, id: undefined })),
+  })
+  return JSON.stringify(owned(left)) === JSON.stringify(owned(right))
 }
 
-export function createTimelineDraft(saved: TimelineSavedBaseline): TimelineDraft {
+export function createTimelineDraft(
+  saved: TimelineSavedBaseline,
+  initial: TimelineOwnedValues = saved
+): TimelineDraft {
   return {
     saved: {
       ...saved,
       room: { ...saved.room },
       ...copyValues(saved),
     },
-    draft: copyValues(saved),
+    initial: copyValues(initial),
+    draft: copyValues(initial),
     draftRevision: 0,
     status: { kind: 'editing' },
   }
@@ -82,6 +94,10 @@ export function isTimelineDraftDirty(state: TimelineDraft): boolean {
     { periods: state.saved.periods, photoperiod: state.saved.photoperiod },
     state.draft
   )
+}
+
+export function isTimelineDraftEdited(state: TimelineDraft): boolean {
+  return !valuesMatch(state.initial, state.draft)
 }
 
 export function updateTimelineDraftPeriods(
@@ -118,7 +134,7 @@ export function reviewTimelineDraft(state: TimelineDraft): TimelineDraft {
 export function discardTimelineDraft(state: TimelineDraft): TimelineDraft {
   return {
     ...state,
-    draft: copyValues(state.saved),
+    draft: copyValues(state.initial),
     draftRevision: state.draftRevision + 1,
     status: { kind: 'editing' },
   }
@@ -136,8 +152,74 @@ export function requestTimelineRoomSwitch(
   state: TimelineDraft,
   nextSaved: TimelineSavedBaseline
 ): TimelineRoomSwitch {
-  if (isTimelineDraftDirty(state)) {
+  if (isTimelineDraftEdited(state)) {
     return { kind: 'requires-discard', nextSaved }
   }
   return { kind: 'switched', state: createTimelineDraft(nextSaved) }
+}
+
+/**
+ * True when the editable values match the persisted authority, so a save has
+ * nothing to commit. Unconfigured parameters and a locally initialized
+ * constant row are not persisted and still need Save.
+ */
+export function isTimelineDraftPersisted(state: TimelineDraft): boolean {
+  return !isTimelineDraftDirty(state) && state.saved.parametersConfigured
+}
+
+/**
+ * Late successful commit: the server kept the reviewed values while newer
+ * local edits happened. Re-anchor only the saved authority; the newer draft
+ * is never marked saved by this.
+ */
+export function reanchorTimelineSavedBaseline(
+  state: TimelineDraft,
+  baseline: TimelineSavedBaseline
+): TimelineDraft {
+  return {
+    ...state,
+    saved: { ...baseline, room: { ...baseline.room }, ...copyValues(baseline) },
+    initial: copyValues(baseline),
+    status: { kind: 'editing' },
+  }
+}
+
+export type TimelineWindowReadResult =
+  | { readonly kind: 'same-revision'; readonly state: TimelineDraft }
+  | { readonly kind: 'rebased'; readonly state: TimelineDraft }
+  | { readonly kind: 'conflict'; readonly state: TimelineDraft }
+
+/**
+ * Map one same-profile window read onto the current draft. An equal saved
+ * revision updates only window/trajectory metadata (an absent envelope never
+ * stretches from the old window); a different revision replaces the complete
+ * baseline only when the draft is clean, and otherwise keeps every draft
+ * value and the old expected revision while marking the conflict.
+ */
+export function applyTimelineWindowRead(
+  state: TimelineDraft,
+  baseline: TimelineSavedBaseline,
+  initial: TimelineOwnedValues = baseline
+): TimelineWindowReadResult {
+  if (baseline.baseConfigRevision === state.saved.baseConfigRevision) {
+    return {
+      kind: 'same-revision',
+      state: {
+        ...state,
+        saved: {
+          ...state.saved,
+          window: baseline.window,
+          trajectory: baseline.trajectory ?? undefined,
+        },
+      },
+    }
+  }
+  if (!isTimelineDraftEdited(state)) {
+    return { kind: 'rebased', state: createTimelineDraft(baseline, initial) }
+  }
+  const conflicted = markTimelineDraftConflict(state)
+  return {
+    kind: 'conflict',
+    state: { ...conflicted, saved: { ...conflicted.saved, window: baseline.window } },
+  }
 }

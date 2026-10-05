@@ -26,6 +26,66 @@ from shared.infra_logging import get_logger
 logger = get_logger(__name__)
 
 
+async def _persist_target_intensity(
+    database: DatabaseManager,
+    location: str,
+    cluster: str,
+    device_id: int,
+    device_name: str,
+    target_intensity: float,
+    expected_mode_id: int | None,
+) -> tuple[int, str, float | None]:
+    """Commit a guarded target before callers notify or wait for runtime publication."""
+    targets = database.light_target_intensity_repo
+    if expected_mode_id is not None:
+        pool = database.pool
+        if pool is None:
+            raise RuntimeError("Database pool is not initialized")
+        async with pool.acquire() as conn, conn.transaction():
+            active = await conn.fetchrow(
+                """SELECT arm.mode_id, rm.name AS mode_name
+                       FROM room_active_mode arm
+                       JOIN room_modes rm ON rm.id = arm.mode_id
+                       WHERE arm.location = $1 AND arm.cluster = $2
+                       FOR UPDATE OF arm""",
+                location,
+                cluster,
+            )
+            if active is None or active["mode_id"] != expected_mode_id:
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "code": "light_target_mode_changed",
+                        "message": "The active mode changed; discard stale light edits.",
+                    },
+                )
+            mode_id = active["mode_id"]
+            mode_name = str(active["mode_name"])
+            prior_target = await targets.get_intensity(device_id, mode_id, conn=conn)
+            ok = await targets.set_intensity(device_id, mode_id, target_intensity, conn=conn)
+            if not ok:
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Failed to set light target intensity for {device_name}",
+                )
+        return mode_id, mode_name, prior_target
+
+    # Unguarded legacy callers retain their live-active lookup and Veg fallback.
+    active = await database.room_mode_repo.get_active_mode(location, cluster)
+    mode_name = str(active.get("mode_name", "veg")) if active else "veg"
+    mode_info = await database.room_mode_repo.get_mode_by_name(mode_name)
+    if not mode_info:
+        raise HTTPException(status_code=404, detail=f"Mode '{mode_name}' not found")
+    mode_id = mode_info["id"]
+    prior_target = await targets.get_intensity(device_id, mode_id)
+    if not await targets.set_intensity(device_id, mode_id, target_intensity):
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to set light target intensity for {device_name}",
+        )
+    return mode_id, mode_name, prior_target
+
+
 async def _sync_scheduler_light_intensities(
     database: DatabaseManager,
     scheduler: Any | None,
@@ -102,25 +162,15 @@ async def set_target_intensity(
     if device_id is None:
         raise HTTPException(status_code=404, detail=f"Device {device_name} not found in registry")
 
-    # Get active mode (fallback veg)
-    active_mode = await database.room_mode_repo.get_active_mode(location, cluster)
-    mode_name = str(active_mode.get("mode_name", "veg")) if active_mode else "veg"
-
-    mode_info = await database.room_mode_repo.get_mode_by_name(mode_name)
-    if not mode_info:
-        raise HTTPException(status_code=404, detail=f"Mode '{mode_name}' not found")
-    mode_id = mode_info["id"]
-    prior_target = await database.light_target_intensity_repo.get_intensity(device_id, mode_id)
-
-    # Write to light_target_intensity
-    ok = await database.light_target_intensity_repo.set_intensity(
-        device_id, mode_id, target_intensity
+    mode_id, mode_name, prior_target = await _persist_target_intensity(
+        database,
+        location,
+        cluster,
+        device_id,
+        device_name,
+        target_intensity,
+        control.expected_mode_id,
     )
-    if not ok:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to set light target intensity for {device_name}",
-        )
 
     emit_persisted_mutation(
         sink,
@@ -199,25 +249,15 @@ async def update_light_intensity(
     cluster = light.cluster
     device_name = light.device_name
 
-    # Get active mode (fallback veg)
-    active_mode = await database.room_mode_repo.get_active_mode(location, cluster)
-    mode_name = str(active_mode.get("mode_name", "veg")) if active_mode else "veg"
-
-    mode_info = await database.room_mode_repo.get_mode_by_name(mode_name)
-    if not mode_info:
-        raise HTTPException(status_code=404, detail=f"Mode '{mode_name}' not found")
-    mode_id = mode_info["id"]
-    prior_target = await database.light_target_intensity_repo.get_intensity(device_id, mode_id)
-
-    # Write to light_target_intensity
-    ok = await database.light_target_intensity_repo.set_intensity(
-        device_id, mode_id, target_intensity
+    mode_id, mode_name, prior_target = await _persist_target_intensity(
+        database,
+        location,
+        cluster,
+        device_id,
+        device_name,
+        target_intensity,
+        control.expected_mode_id,
     )
-    if not ok:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to set light target intensity for {device_name}",
-        )
 
     emit_persisted_mutation(
         sink,

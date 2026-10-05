@@ -66,6 +66,7 @@ class _CalendarWorker(CalendarMixin):
     def __init__(self, database: DatabaseManager, event_sink: _RecordingSink) -> None:
         self.database = database
         self.operational_event_sink = event_sink
+        self.mode_transition_service = None
         self._calendar_scheduler = None
         self._last_calendar_mode_tick = 0.0
         self._calendar_mode_interval = 0.0

@@ -215,6 +215,22 @@ def schedule_doc_room_light_schedule(location: str, cluster: str) -> str:
     return f"schedules:loc:{location}:cluster:{cluster}:room_light_schedule"
 
 
+def climate_period_cache_key(
+    location: str, cluster: str, mode_id: int | None, submode_id: int | None = None
+) -> str:
+    """Exact-profile climate period resolver cache key.
+
+    ``cache:climate_period:{location}:{cluster}:mode:{mode_id}:submode:{submode
+    _id-or-none}`` — invalidation deletes one key per affected identity; a
+    ``None`` submode spells the literal ``none`` so NULL-base profiles always
+    map to one key.
+    """
+    return (
+        f"cache:climate_period:{location}:{cluster}"
+        f":mode:{mode_id}:submode:{'none' if submode_id is None else submode_id}"
+    )
+
+
 # Legacy singular schedule keys (cea:schedule:*). Retained so a grep
 # across the codebase always lands here. Do not use for new code.
 

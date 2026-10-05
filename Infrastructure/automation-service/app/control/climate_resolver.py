@@ -2,16 +2,43 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 from app.control.scheduler import LOCAL_TZ
 from shared.infra_logging import get_logger
+from shared.redis_keys import climate_period_cache_key
 
 if TYPE_CHECKING:
     from app.state import StateManager
 
 logger = get_logger(__name__)
+
+
+def _captured_profile_identity(
+    active_profile: Mapping[str, Any] | None,
+) -> tuple[int | None, int | None]:
+    """Extract the exact captured (mode_id, submode_id), or unknown (None, None).
+
+    A malformed identity is unknown — never coerced into the NULL base
+    profile, which would make an unactivated prepared profile a broad
+    fallback.
+    """
+    if active_profile is None:
+        return None, None
+    mode_id = active_profile.get("mode_id")
+    submode_id = active_profile.get("submode_id")
+    if not isinstance(mode_id, int):
+        return None, None
+    if submode_id is not None and not isinstance(submode_id, int):
+        return None, None
+    return mode_id, submode_id
+
+
+def _normalized_hhmm(value: Any) -> str:
+    """Normalize a stored clock value to its HH:MM form."""
+    return str(value)[:5]
 
 
 class ClimatePeriodResolver:
@@ -39,21 +66,26 @@ class ClimatePeriodResolver:
         cluster: str,
         current_time: datetime,
         database: Any,
+        *,
+        active_profile: Mapping[str, Any] | None,
     ) -> dict[str, Any]:
-        """Get active period and effective setpoints.
+        """Get active period and effective setpoints for one captured tick identity.
 
-        Cache-aside pattern: check StateManager first, populate on miss.
-        Caches: light schedule (30s), room mode (via StateManager default 300s),
-        active climate period (30s).
+        The active profile is the captured tick identity from the installed
+        registry snapshot. Unknown identity means no climate lookup and no
+        cache reuse; an unactivated prepared profile is never a broad fallback.
         """
-        # Wall clock for climate_periods lookup — align with control loop ``current_time``.
         if current_time.tzinfo is None:
             toronto_time = current_time.replace(tzinfo=LOCAL_TZ)
         else:
             toronto_time = current_time.astimezone(LOCAL_TZ)
         time_str = toronto_time.strftime("%H:%M")
 
-        active_period = await self._get_cached_climate_period(database, location, cluster, time_str)
+        mode_id, submode_id = _captured_profile_identity(active_profile)
+
+        active_period = await self._get_cached_climate_period(
+            database, location, cluster, time_str, active_profile=active_profile
+        )
 
         light_schedule = await self._get_cached_light_schedule(database, location, cluster)
         current_period_name: str = (
@@ -73,6 +105,16 @@ class ClimatePeriodResolver:
                 "humidity": None,  # VPD cascade derives humidity
                 "ramp_in_duration": ramp_minutes,
                 "period_start_time": active_period.get("start_time"),
+                # Exact captured-profile identity for ramp retarget decisions;
+                # the row's own IDs are replacement-row columns and must never
+                # substitute the captured authority.
+                "climate_identity": (
+                    mode_id,
+                    submode_id,
+                    active_period.get("period_name"),
+                    _normalized_hhmm(active_period.get("start_time")),
+                    _normalized_hhmm(active_period.get("end_time")),
+                ),
             }
 
             logger.debug(
@@ -119,28 +161,29 @@ class ClimatePeriodResolver:
         location: str,
         cluster: str,
         time_str: str,
+        *,
+        active_profile: Mapping[str, Any] | None,
     ) -> dict[str, Any] | None:
-        """Get active climate period from cache or database (30s TTL)."""
-        mode_id = None
-        submode_id = None
-        try:
-            active_mode = await database.room_mode_repo.get_active_mode(location, cluster)
-            if active_mode:
-                mode_id = active_mode.get("mode_id")
-                submode_id = active_mode.get("submode_id")
-        except Exception as e:
-            logger.error(
-                f"Failed to get active mode for climate period {location}/{cluster}: {e}",
-                exc_info=True,
-            )
+        """Get the exact-profile climate period from cache or database (30s TTL).
 
-        cache_key = f"cache:climate_period:{location}:{cluster}:{time_str}"
-        cached_period: dict[str, Any] | None = None
-        if self._state and mode_id is not None:
-            cached_period = await self._state.get(cache_key)
-            if cached_period is not None:
+        One cache entry per (location, cluster, mode_id, submode_id) profile
+        key; the entry itself is exactly ``{time_str, period}`` because the
+        key already carries the profile identity, so a cached value is only
+        reused for the matching minute of the same profile.
+        """
+        mode_id, submode_id = _captured_profile_identity(active_profile)
+        if mode_id is None:
+            # Unknown captured identity: no climate lookup or cache reuse.
+            return None
+
+        cache_key = climate_period_cache_key(location, cluster, mode_id, submode_id)
+        cached_entry: dict[str, Any] | None = None
+        if self._state:
+            cached_entry = await self._state.get(cache_key)
+            if cached_entry is not None and cached_entry.get("time_str") == time_str:
                 logger.debug(f"Cache hit for climate period: {location}/{cluster}/{time_str}")
-                return cached_period
+                return cached_entry.get("period")
+            # Minute mismatch falls through to a fresh lookup.
 
         try:
             active_period = await database.climate_periods_repo.get_active_period(
@@ -151,7 +194,11 @@ class ClimatePeriodResolver:
             return None
 
         if self._state and active_period is not None:
-            await self._state.set(cache_key, active_period, ttl=self._CLIMATE_PERIOD_TTL)
+            await self._state.set(
+                cache_key,
+                {"time_str": time_str, "period": active_period},
+                ttl=self._CLIMATE_PERIOD_TTL,
+            )
 
         return active_period
 

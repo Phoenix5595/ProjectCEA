@@ -20,9 +20,26 @@ export type TimelinePreviewRequest = {
 
 export type TimelineApplyRequest = TimelinePreviewRequest
 
+/** Validated preview result: the server echoes the exact reviewed identity. */
+export type TimelinePreviewResult = {
+  readonly requestId: string
+  readonly expectedConfigRevision: string
+  readonly draftRevision: number
+  readonly modeId: number
+  readonly submodeId: number | null
+  readonly window: TimelineWindow
+  readonly trajectory: RichTrajectoryEnvelope | null
+}
+
+/** One committed timeline save plus any post-commit refresh warning. */
+export type TimelineApplyOutcome = {
+  readonly baseline: TimelineSavedBaseline
+  readonly warning: string | null
+}
+
 export interface TimelinePublicationPort {
-  preview(request: TimelinePreviewRequest): Promise<RichTrajectoryEnvelope>
-  apply(request: TimelineApplyRequest): Promise<TimelineSavedBaseline>
+  preview(request: TimelinePreviewRequest): Promise<TimelinePreviewResult>
+  apply(request: TimelineApplyRequest): Promise<TimelineApplyOutcome>
 }
 
 export class TimelineConflictError extends Error {
