@@ -123,6 +123,56 @@ function mergeTargetSeriesByName<
   return [...byName.values()]
 }
 
+function mergeLightSeriesByIdentity(
+  existing: ControlMonitoringResponse['lights'],
+  incoming: ControlMonitoringResponse['lights']
+): ControlMonitoringResponse['lights'] {
+  const byKey = new Map<string, ControlMonitoringResponse['lights'][number]>()
+  for (const series of [...existing, ...incoming]) {
+    const deviceName = canonicalLightDeviceName(series)
+    const trajectoryKind = series.trajectory_kind ?? null
+    const key = `${deviceName}:${trajectoryKind ?? ''}`
+    const current = byKey.get(key)
+    if (current === undefined) {
+      byKey.set(key, { ...series, name: deviceName, metric: deviceName })
+      continue
+    }
+    byKey.set(key, {
+      ...current,
+      name: deviceName,
+      metric: deviceName,
+      trajectory_kind: trajectoryKind,
+      points: mergeTargetValues(current.points, series.points),
+      steps: mergeTargetValues(current.steps, series.steps),
+      linear: mergeLinearSegments(current.linear, series.linear),
+    })
+  }
+  return [...byKey.values()]
+}
+
+function canonicalLightDeviceName(
+  series: ControlMonitoringResponse['lights'][number]
+): string {
+  const point = series.points[0]
+  if (point !== undefined) return point.device_name
+  const metric = series.metric ?? series.name
+  const prefix = 'light.intensity.'
+  return metric.startsWith(prefix) ? metric.slice(prefix.length) : metric
+}
+
+function mergeLinearSegments<T extends { start: Date; end: Date }>(
+  existing: T[],
+  incoming: T[]
+): T[] {
+  const byInterval = new Map<string, T>()
+  for (const segment of [...existing, ...incoming]) {
+    const key = `${segment.start.getTime()}:${segment.end.getTime()}`
+    if (!byInterval.has(key)) byInterval.set(key, segment)
+  }
+  return [...byInterval.values()].sort((left, right) => left.start.getTime() - right.start.getTime())
+}
+
+
 /** Merge a tail page into accumulated control history, deduping by row id. */
 export function mergeControlHistory(
   existing: ControlMonitoringResponse,
@@ -131,7 +181,7 @@ export function mergeControlHistory(
   return {
     ...incoming,
     climate: mergeTargetSeriesByName(existing.climate, incoming.climate),
-    lights: mergeTargetSeriesByName(existing.lights, incoming.lights),
+    lights: mergeLightSeriesByIdentity(existing.lights, incoming.lights),
     devices: mergeSeriesByName(existing.devices, incoming.devices),
     pid: mergeSeriesByName(existing.pid, incoming.pid),
     photoperiod: mergePoints(

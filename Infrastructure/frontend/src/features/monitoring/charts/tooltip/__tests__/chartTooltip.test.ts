@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
 
-import { formatTooltipValue, valueAtCursor } from '../chartTooltip'
+import type uPlot from 'uplot'
+import type { AlignedData, AlignedSeries, LightTrajectorySegment } from '../../../data'
+import { seriesKey } from '../../../data/alignSeries.types'
+import { formatTooltipValue, tooltipPlugin, valueAtCursor } from '../chartTooltip'
 
 describe('valueAtCursor', () => {
   it('interpolates a linear series between finite samples', () => {
@@ -75,6 +78,97 @@ describe('valueAtCursor', () => {
     // Then: neither side extrapolates a value
     expect(beforeFirst).toBeNull()
     expect(afterLast).toBeNull()
+  })
+})
+
+describe('light trajectory tooltip', () => {
+  it('reads current step, ramp, gap, label, and provenance after a feed update', () => {
+    const key = seriesKey('light', 'light_f_1', 'linear')
+    const segments: readonly LightTrajectorySegment[] = [
+      {
+        start: 0,
+        end: 10,
+        shape: 'step',
+        startValue: 40,
+        endValue: 40,
+        origin: 'recorded',
+        quality: 'exact',
+      },
+      {
+        start: 10,
+        end: 20,
+        shape: 'linear',
+        startValue: 40,
+        endValue: 80,
+        origin: 'projected',
+        quality: 'estimated',
+      },
+      {
+        start: 20,
+        end: 30,
+        shape: 'step',
+        startValue: null,
+        endValue: null,
+        origin: 'projected',
+        quality: 'unavailable',
+      },
+    ]
+    const initial: AlignedSeries = {
+      key,
+      label: 'light_f_1 - Intensity',
+      kind: 'linear',
+      source: 'light',
+      metric: 'light_f_1',
+      family: 'light',
+      role: 'linear',
+      y: [40, 40, null, null],
+      origin: 'recorded',
+      quality: 'exact',
+      isAggregated: false,
+      unit: '%',
+      presentation: { color: 'yellow', decimals: 0 },
+      lightTrajectory: [segments[0]!],
+    }
+    const asData = (series: AlignedSeries): AlignedData => ({
+      x: [0, 10, 20, 30],
+      series: [series],
+      bands: [],
+      photoperiod: [],
+      nowIndex: 0,
+      aggregated: false,
+    })
+    let currentData = asData(initial)
+    const plugin = tooltipPlugin([initial], { bg: 'white', border: 'black', text: 'black' }, () =>
+      currentData
+    )
+    const root = document.createElement('div')
+    const plotState = {
+      root,
+      cursor: { left: 5, top: 5 },
+      data: [[0, 10, 20, 30], [40, 40, null, null]],
+      series: [{}, { show: true }],
+      posToVal: (value: number) => value,
+    }
+    const plot = plotState as unknown as uPlot
+    const readyHooks = plugin.hooks?.ready
+    const ready = Array.isArray(readyHooks) ? readyHooks[0] : readyHooks
+    const cursorHooks = plugin.hooks?.setCursor
+    const setCursor = Array.isArray(cursorHooks) ? cursorHooks[0] : cursorHooks
+    if (ready === undefined || setCursor === undefined) {
+      throw new Error('tooltip ready and cursor hooks are required')
+    }
+    ready(plot)
+    currentData = asData({ ...initial, label: 'Chilled Front QA - Intensity', lightTrajectory: segments })
+
+    const at = (time: number): string => {
+      plotState.cursor.left = time
+      setCursor(plot)
+      return root.querySelector('.mon-tooltip')?.textContent ?? ''
+    }
+
+    expect(at(5)).toContain('Chilled Front QA - Intensity 40 % recorded/exact')
+    expect(at(15)).toContain('Chilled Front QA - Intensity 60 % projected/estimated')
+    expect(at(25)).toContain('Chilled Front QA - Intensity — projected/unavailable')
   })
 })
 

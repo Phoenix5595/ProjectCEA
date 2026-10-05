@@ -1,4 +1,5 @@
 import { CONTROL_HISTORY_MAX_POINTS, MonitoringApi, SENSOR_RANGE_MAX_POINTS } from '../api'
+import { logger } from '../../../utils/logger'
 
 import { applyInitialPartial } from './monitoringStore.control'
 import {
@@ -29,6 +30,11 @@ export class MonitoringStore {
   private readonly listeners = new Set<() => void>()
   private readonly pollIntervalMs: number
   private readonly now: () => Date
+  private readonly loadDeviceRegistry: MonitoringStoreOptions['loadDeviceRegistry']
+  private activationGeneration = 0
+  private registryLoadingGeneration: number | null = null
+  private registryLoadedGeneration: number | null = null
+  private registryLoadFailed = false
   private readonly poller: MonitoringLivePoller
   private timerId: ReturnType<typeof setInterval> | null = null
   private subscriberCount = 0
@@ -50,6 +56,7 @@ export class MonitoringStore {
   ) {
     this.pollIntervalMs = options.pollIntervalMs ?? DEFAULT_POLL_MS
     this.now = options.now ?? (() => new Date())
+    this.loadDeviceRegistry = options.loadDeviceRegistry
     this.state = this.initialState()
     this.poller = new MonitoringLivePoller(location, monitoringApi, {
       read: () => this.state,
@@ -86,6 +93,8 @@ export class MonitoringStore {
     this.subscriberCount += 1
     if (this.subscriberCount === 1) {
       this.active = true
+      const generation = ++this.activationGeneration
+      this.loadDeviceRegistryForActivation(generation)
       void this.loadRangeIfChanged()
       this.startTimer()
     }
@@ -94,6 +103,7 @@ export class MonitoringStore {
       this.subscriberCount -= 1
       if (this.subscriberCount === 0) {
         this.active = false
+        this.activationGeneration += 1
         this.stopTimer()
         this.rangeSequence += 1
         this.abortRangeLoad()
@@ -142,6 +152,58 @@ export class MonitoringStore {
     this.rangeSequence += 1
     this.abortRangeLoad()
     void this.loadRangeIfChanged({ force: true })
+    if (this.active && this.registryLoadFailed) {
+      this.loadDeviceRegistryForActivation(this.activationGeneration)
+    }
+  }
+
+  private loadDeviceRegistryForActivation(generation: number): void {
+    const load = this.loadDeviceRegistry
+    if (
+      load === undefined ||
+      !this.active ||
+      this.activationGeneration !== generation ||
+      this.registryLoadingGeneration === generation ||
+      this.registryLoadedGeneration === generation
+    ) {
+      return
+    }
+    this.registryLoadFailed = false
+    this.registryLoadingGeneration = generation
+    void Promise.resolve()
+      .then(() =>
+        this.active && this.activationGeneration === generation ? load() : null
+      )
+      .then(entries => {
+        if (
+          entries === null ||
+          !this.active ||
+          this.activationGeneration !== generation
+        ) {
+          return
+        }
+        const lightRegistry = entries
+          .filter(
+            entry => entry.location === this.location && entry.device_type === 'light'
+          )
+          .map(({ device_name, display_name, per_room_index }) => ({
+            device_name,
+            display_name,
+            per_room_index,
+          }))
+        this.registryLoadedGeneration = generation
+        this.setState({ data: { ...this.state.data, lightRegistry } })
+      })
+      .catch(error => {
+        if (!this.active || this.activationGeneration !== generation) return
+        this.registryLoadFailed = true
+        logger.warn('device registry load failed', error)
+      })
+      .finally(() => {
+        if (this.registryLoadingGeneration === generation) {
+          this.registryLoadingGeneration = null
+        }
+      })
   }
 
   private initialState(): StoreState {

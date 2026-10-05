@@ -6,7 +6,7 @@ import type { ControlMonitoringResponse, LiveSensorValue } from '../api'
 import type { TimeseriesPanelSpec } from '../config'
 
 import { alignSeriesBase, applyLiveTail } from './alignSeries'
-import { familyForUnit } from './alignSeries.builder'
+import { controlFamily, familyForUnit } from './alignSeries.builder'
 import { metricFromName } from './alignSeries.control'
 import type { AlignInput, AlignedData } from './alignSeries.types'
 
@@ -23,6 +23,7 @@ interface BaseKey {
   readonly series: AlignInput['series']
   readonly controlHistory: AlignInput['controlHistory']
   readonly projectionHistory: AlignInput['projectionHistory']
+  readonly lightRegistry: AlignInput['lightRegistry']
   readonly photoperiod: AlignInput['photoperiod']
   readonly range: AlignInput['range']
   readonly now: number
@@ -91,6 +92,7 @@ function baseKeyFor(input: PanelAlignmentInput): BaseKey {
     controlHistory: input.controlHistory,
     projectionHistory: input.projectionHistory,
     photoperiod: input.photoperiod,
+    lightRegistry: input.lightRegistry,
     range: input.range,
     now: input.now.getTime(),
     maxPoints: input.maxPoints,
@@ -108,6 +110,7 @@ function sameBaseKey(previous: BaseKey | null, next: BaseKey): boolean {
     previous.range === next.range &&
     previous.now === next.now &&
     previous.maxPoints === next.maxPoints &&
+    previous.lightRegistry === next.lightRegistry &&
     previous.panel === next.panel
   )
 }
@@ -164,60 +167,68 @@ function replayLiveSnapshots(
 
 function filterPanelInput(input: PanelAlignmentInput): Omit<AlignInput, 'live'> {
   const { panel } = input
+  const lightIds = lightIdentities(input)
   return {
     series: input.series.filter(series =>
       accepts(panel, 'sensor', familyForUnit(series.unit_family))
     ),
-    controlHistory: filterControlResponse(input.controlHistory, panel),
-    projectionHistory: filterControlResponse(input.projectionHistory, panel),
+    controlHistory: filterControlResponse(input.controlHistory, panel, lightIds),
+    projectionHistory: filterControlResponse(input.projectionHistory, panel, lightIds),
     photoperiod: input.photoperiod,
     range: input.range,
     now: input.now,
     maxPoints: input.maxPoints,
     seriesSpecs: panel.series,
     scaleDefaults: panel.defaults,
+    lightRegistry: input.lightRegistry,
   }
 }
 
 function filterControlResponse(
   response: ControlMonitoringResponse | null,
-  panel: TimeseriesPanelSpec
+  panel: TimeseriesPanelSpec,
+  lightIds: ReadonlySet<string>
 ): ControlMonitoringResponse | null {
   if (response === null) return null
   return {
     ...response,
-    climate: response.climate.filter(series =>
-      accepts(panel, 'climate', controlFamilyFromName('climate', series.name))
+    climate: response.climate.filter(series => {
+      const metric = series.metric ?? series.points[0]?.metric ?? metricFromName(series.name)
+      return accepts(panel, 'climate', controlFamily({ kind: 'climate', metric }))
+    }),
+    lights: response.lights.filter(() => accepts(panel, 'light', 'light')),
+    devices: response.devices.filter(
+      series =>
+        accepts(panel, 'device', 'device') &&
+        !lightIds.has(series.points[0]?.device_name ?? series.name)
     ),
-    lights: response.lights.filter(series =>
-      accepts(panel, 'climate', controlFamilyFromName('light', series.name))
-    ),
-    devices: response.devices.filter(() => accepts(panel, 'device', 'device')),
-    pid: response.pid.filter(
-      () => accepts(panel, 'pid', 'device') || accepts(panel, 'device', 'device')
-    ),
+    pid: response.pid.filter(series => {
+      const accepted = accepts(panel, 'pid', 'device') || accepts(panel, 'device', 'device')
+      if (!accepted) return false
+      const name = series.points[0]?.device_name ?? series.name
+      const deviceName = name.endsWith('_pid') ? name.slice(0, -4) : name
+      return !lightIds.has(deviceName)
+    }),
   }
 }
 
-function controlFamilyFromName(
-  kind: 'climate' | 'light',
-  name: string
-): TimeseriesPanelSpec['families'][number] {
-  if (kind === 'light') return 'light'
-  const metric = metricFromName(name)
-  if (metric.includes('setpoint')) {
-    if (metric.includes('co2')) return 'co2'
-    if (metric.includes('vpd')) return 'vpd'
-    if (metric.includes('humid')) return 'rh'
-    return 'temperature'
+
+function lightIdentities(input: PanelAlignmentInput): Set<string> {
+  const identities = new Set(input.lightRegistry?.map(device => device.device_name) ?? [])
+  for (const response of [input.controlHistory, input.projectionHistory]) {
+    if (response === null) continue
+    for (const series of response.lights) {
+      const point = series.points[0]
+      const metric = series.metric
+      const deviceName =
+        point?.device_name ??
+        (metric?.startsWith('light.intensity.')
+          ? metric.slice('light.intensity.'.length)
+          : (metric ?? series.name))
+      if (deviceName.length > 0) identities.add(deviceName)
+    }
   }
-  if (metric.includes('light')) return 'light'
-  if (metric.includes('vpd')) return 'vpd'
-  if (metric.includes('co2')) return 'co2'
-  if (metric.includes('rh') || metric.includes('humid')) return 'rh'
-  if (metric.includes('pressure')) return 'pressure'
-  if (metric.includes('temp')) return 'temperature'
-  return 'device'
+  return identities
 }
 
 function accepts(
