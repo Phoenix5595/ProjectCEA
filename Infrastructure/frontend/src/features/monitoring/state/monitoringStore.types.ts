@@ -17,6 +17,7 @@ import type {
   SensorStatistics,
   SourceCursor,
 } from '../api'
+import type { DeviceRegistryEntry } from '../../../types/device'
 
 import type { MonitoringSourceOutcomes } from './monitoringStore.health'
 
@@ -58,6 +59,10 @@ export interface StoreData {
   anchorValidUntil: Date | null
   runtimeSnapshotVersion: number | null
   flushHealth: FlushHealth[]
+  lightRegistry?: readonly Pick<
+    DeviceRegistryEntry,
+    'device_name' | 'display_name' | 'per_room_index'
+  >[]
 }
 
 /** The complete externally-visible store snapshot. */
@@ -79,4 +84,5 @@ export interface StoreState {
 export interface MonitoringStoreOptions {
   pollIntervalMs?: number
   now?: () => Date
+  loadDeviceRegistry?: () => Promise<DeviceRegistryEntry[]>
 }

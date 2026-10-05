@@ -24,30 +24,116 @@ export function metricFromName(name: string): string {
     .replace(/^_+|_+$/g, '')
 }
 
-/** Merge recorded history and future projection control series by metric. */
+const LIGHT_INTENSITY_PREFIX = 'light.intensity.'
+
+export function canonicalLightDeviceName(metricOrName: string): string {
+  return metricOrName.startsWith(LIGHT_INTENSITY_PREFIX)
+    ? metricOrName.slice(LIGHT_INTENSITY_PREFIX.length)
+    : metricOrName
+}
+
+
+/** Merge only climate targets; light trajectories retain separate provenance sources. */
 export function mergeControlSeries(
   history: ControlMonitoringResponse | null,
   projection: ControlMonitoringResponse | null
 ): NormControlSeries[] {
   const byKey = new Map<string, NormControlSeries>()
-  const add = (resp: ControlMonitoringResponse | null, kind: 'climate' | 'light'): void => {
-    if (!resp) return
-    const list = kind === 'climate' ? resp.climate : resp.lights
-    for (const s of list) {
-      const metric = s.metric ?? metricFromName(s.name)
-      const norm = normalizeControlSeries(s, metric, kind)
-      const trajectoryKind = norm.trajectoryKind === 'effective' ? 'effective' : 'scheduled'
-      const key = `${kind}:${metric}:${trajectoryKind}`
-      const cur = byKey.get(key)
-      byKey.set(key, cur ? mergeControl(cur, norm) : norm)
+  for (const response of [history, projection]) {
+    if (response === null) continue
+    for (const series of response.climate) {
+      const metric =
+        series.metric ?? series.points[0]?.metric ?? metricFromName(series.name)
+      const normalized = normalizeControlSeries(series, metric, 'climate')
+      const trajectoryKind =
+        normalized.trajectoryKind === 'effective' ? 'effective' : 'scheduled'
+      const key = `climate:${metric}:${trajectoryKind}`
+      const current = byKey.get(key)
+      byKey.set(key, current ? mergeControl(current, normalized) : normalized)
     }
   }
-  add(history, 'climate')
-  add(history, 'light')
-  add(projection, 'climate')
-  add(projection, 'light')
   return [...byKey.values()]
 }
+
+/** Keep recorded and selected projected representations separate per physical light. */
+export function mergeLightSeries(
+  history: ControlMonitoringResponse | null,
+  projection: ControlMonitoringResponse | null
+): {
+  deviceName: string
+  history?: NormControlSeries
+  projection?: NormControlSeries
+}[] {
+  const recorded = normalizeLightResponse(history)
+  const projected = normalizeLightResponse(projection)
+  const deviceNames = [
+    ...new Set([...recorded.keys(), ...projected.keys()]),
+  ].sort()
+  return deviceNames.map(deviceName => {
+    const historySeries = selectLightTrajectory(recorded.get(deviceName))
+    const projectionSeries = selectLightTrajectory(projected.get(deviceName))
+    return {
+      deviceName,
+      ...(historySeries === undefined ? {} : { history: historySeries }),
+      ...(projectionSeries === undefined ? {} : { projection: projectionSeries }),
+    }
+  })
+}
+
+type LightTrajectoryKinds = Map<NormControlSeries['trajectoryKind'], NormControlSeries>
+
+function normalizeLightResponse(
+  response: ControlMonitoringResponse | null
+): Map<string, LightTrajectoryKinds> {
+  const byDevice = new Map<string, LightTrajectoryKinds>()
+  if (response === null) return byDevice
+  for (const series of response.lights) {
+    const deviceName =
+      series.points[0]?.device_name ??
+      canonicalLightDeviceName(series.metric ?? series.name)
+    if (deviceName.length === 0) continue
+    const normalized = {
+      ...normalizeControlSeries(series, deviceName, 'light'),
+      name: deviceName,
+      metric: deviceName,
+    }
+    let trajectories = byDevice.get(deviceName)
+    if (trajectories === undefined) {
+      trajectories = new Map()
+      byDevice.set(deviceName, trajectories)
+    }
+    const current = trajectories.get(normalized.trajectoryKind)
+    trajectories.set(
+      normalized.trajectoryKind,
+      current === undefined ? normalized : mergeLightControl(current, normalized)
+    )
+  }
+  return byDevice
+}
+
+function selectLightTrajectory(
+  trajectories: LightTrajectoryKinds | undefined
+): NormControlSeries | undefined {
+  return (
+    trajectories?.get('effective') ??
+    trajectories?.get('scheduled') ??
+    trajectories?.get(null)
+  )
+}
+
+function mergeLightControl(
+  existing: NormControlSeries,
+  incoming: NormControlSeries
+): NormControlSeries {
+  return {
+    ...existing,
+    points: mergeTargetByTime(existing.points, incoming.points),
+    steps: mergeTargetByTime(existing.steps, incoming.steps),
+    linear: mergeLinear(existing.linear, incoming.linear),
+  }
+}
+
+/** Merge recorded history and future projection device state series by metric. */
 
 export function mergeDeviceSeries(
   history: ControlMonitoringResponse | null,
@@ -136,7 +222,7 @@ function normalizeControlSeries(
 type RawDeviceInput = {
   name: string
   provenance: { origin: Origin; quality: Quality; is_aggregated: boolean }
-  points: { timestamp: Date; device_state: number; device_mode: string }[]
+  points: { timestamp: Date; device_state: number }[]
 }
 
 function normalizeDeviceSeries(s: RawDeviceInput, metric: string): NormDeviceSeries {
@@ -149,15 +235,6 @@ function normalizeDeviceSeries(s: RawDeviceInput, metric: string): NormDeviceSer
       origin: s.provenance.origin,
       quality: s.provenance.quality,
     })),
-    duties: s.points
-      .filter(p => p.device_mode === 'AUTO' || p.device_mode === 'MANUAL')
-      .map(p => ({
-        t: p.timestamp.getTime(),
-        value: p.device_state,
-        origin: s.provenance.origin,
-        quality: s.provenance.quality,
-        isAggregated: s.provenance.is_aggregated,
-      })),
     seriesOrigin: s.provenance.origin,
     seriesQuality: s.provenance.quality,
     seriesIsAggregated: s.provenance.is_aggregated,
@@ -234,7 +311,6 @@ function mergeDevice(a: NormDeviceSeries, b: NormDeviceSeries): NormDeviceSeries
   return {
     ...a,
     states: mergeByTime(a.states, b.states, p => p.origin === 'recorded'),
-    duties: mergeByTime(a.duties, b.duties, p => p.origin === 'recorded'),
   }
 }
 

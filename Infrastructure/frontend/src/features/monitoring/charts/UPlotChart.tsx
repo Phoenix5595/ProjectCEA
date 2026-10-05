@@ -226,7 +226,8 @@ export const UPlotChart = memo(
                 ? current.x[current.nowIndex]
                 : null
             },
-            () => feed.getData().photoperiod
+            () => feed.getData().photoperiod,
+            () => feed.getData()
           ),
           PERFORMANCE_MARKS_ENABLED
             ? measureMonitoringConversion(() => toUPlotData(data))
