@@ -54,7 +54,7 @@ export function familyForUnit(unitFamily: UnitFamily): ChartFamily {
   }
 }
 
-export function controlFamily(cs: NormControlSeries): ChartFamily {
+export function controlFamily(cs: Pick<NormControlSeries, 'kind' | 'metric'>): ChartFamily {
   if (cs.kind === 'light') return 'light'
   const m = cs.metric
   if (m.includes('setpoint')) {
@@ -298,25 +298,6 @@ export function buildDeviceSeries(
       presentation,
     }),
   ]
-  if (ds.duties.length > 0) {
-    out.push(
-      mkSeries({
-        key: seriesKey('device', ds.metric, 'duty'),
-        label: `${ds.name} - Duty Cycle`,
-        kind: 'point',
-        metric: ds.metric,
-        role: 'duty',
-        family,
-        y: alignPid(ds.duties, x, start, end, aggregated),
-        origin: ds.seriesOrigin,
-        quality: ds.seriesQuality,
-        isAggregated: isAgg,
-        unit: '%',
-        unitFamily: 'percent',
-        presentation,
-      })
-    )
-  }
   return out
 }
 
@@ -406,18 +387,7 @@ function mkSeries(input: MkSeriesInput): AlignedSeries {
     unitFamily,
     presentation,
   } = input
-  let source: SeriesSource
-  if (kind === 'sensor') {
-    source = 'sensor'
-  } else if (role === 'state') {
-    source = 'device'
-  } else if (role === 'pid_output') {
-    source = 'pid'
-  } else if (role === 'duty') {
-    source = metric.includes('pid') ? 'pid' : 'device'
-  } else {
-    source = 'climate'
-  }
+  const source = key.slice(0, key.indexOf(':')) as SeriesSource
   const s: AlignedSeries = {
     key,
     label: presentation?.label ?? label,

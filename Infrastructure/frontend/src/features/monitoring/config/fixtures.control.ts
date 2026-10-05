@@ -6,6 +6,8 @@
  * native monitoring pages render recorded/projected control history.
  */
 
+import { equipmentHistoryFixture, equipmentProjectionFixture } from './fixtures.equipment'
+
 const T0 = '2026-08-02T12:00:00.000Z'
 
 function provenance(origin: string, quality: string) {
@@ -89,12 +91,15 @@ function controlBase(start: string, end: string): ControlFixture {
 
 /** One atomic historical range and per-source tail high-water marks. */
 export function controlRangeFixture(
-  _room: string,
+  room: string,
   start: string,
   end: string,
   scenario: string | null = null
 ): unknown {
   const base = controlBase(start, end)
+  if (scenario === 'equipment-history') {
+    return { ...base, ...equipmentHistoryFixture(room, start, end) }
+  }
   if (scenario === 'delayed-control-recovery') {
     return {
       ...base,
@@ -126,6 +131,8 @@ export function controlTailFixture(
   end: string,
   scenario: string | null = null
 ): unknown {
+  if (scenario === 'equipment-history') return controlBase(start, end)
+
   return controlRangeFixture(
     room,
     start,
@@ -136,11 +143,14 @@ export function controlTailFixture(
 
 /** Future-only climate, light, and photoperiod projections. */
 export function controlProjectionFixture(
-  _room: string,
+  room: string,
   start: string,
   end: string,
   scenario: string | null = null
 ): unknown {
+  if (scenario === 'equipment-history') {
+    return equipmentProjectionFixture(room, start, end)
+  }
   const base = controlBase(start, end)
   const partial = process.env.MONITORING_SCENARIO === 'flower-partial'
   const missing = scenario === 'missing-projection'

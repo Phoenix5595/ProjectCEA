@@ -25,6 +25,9 @@ const PROJECTED = {
   is_aggregated: false,
 }
 
+const LIGHT_INTENSITY_PREFIX = 'light.intensity.'
+
+
 const CLIMATE_SERIES = new Map<string, { readonly name: string; readonly metric: string }>([
   ['climate.heating_setpoint_target', { name: 'Heating Setpoint', metric: 'heating_setpoint' }],
   ['climate.cooling_setpoint_target', { name: 'Cooling Setpoint', metric: 'cooling_setpoint' }],
@@ -109,14 +112,16 @@ export function richProjectionTimeline(trajectory: RichTrajectoryEnvelope): Proj
       appendRichPhotoperiod(segment, photoperiod)
       continue
     }
-    const key = `${segment.metric}:${segment.trajectory_kind}`
-    const name = `${displayMetric(segment.metric)} (${segment.trajectory_kind})`
     if (segment.metric.startsWith('light')) {
+      const deviceName = canonicalLightMetric(segment.metric)
+      const key = `${deviceName}:${segment.trajectory_kind}`
       const series =
-        lights.get(key) ?? richLightSeries(segment.metric, name, segment.trajectory_kind, warnings)
+        lights.get(key) ?? richLightSeries(deviceName, segment.trajectory_kind, warnings)
       appendRichSegment(series, segment)
       lights.set(key, series)
     } else {
+      const key = `${segment.metric}:${segment.trajectory_kind}`
+      const name = `${displayMetric(segment.metric)} (${segment.trajectory_kind})`
       const series =
         climate.get(key) ??
         richClimateSeries(richMetric(segment.metric), name, segment.trajectory_kind, warnings)
@@ -298,8 +303,8 @@ function appendInterval(
       climate.set(climateDefinition.metric, series)
       continue
     }
-    const lightName = point.series_id.value.startsWith('light.intensity.')
-      ? point.series_id.value.slice('light.intensity.'.length)
+    const lightName = point.series_id.value.startsWith(LIGHT_INTENSITY_PREFIX)
+      ? point.series_id.value.slice(LIGHT_INTENSITY_PREFIX.length)
       : null
     if (lightName) {
       const series = lights.get(lightName) ?? lightSeries(lightName)
@@ -344,15 +349,20 @@ function richClimateSeries(
   }
 }
 
+function canonicalLightMetric(metric: string): string {
+  return metric.startsWith(LIGHT_INTENSITY_PREFIX)
+    ? metric.slice(LIGHT_INTENSITY_PREFIX.length)
+    : metric
+}
+
 function richLightSeries(
-  metric: string,
-  name: string,
+  deviceName: string,
   trajectoryKind: 'scheduled' | 'effective',
   warnings: { code: string; detail: string }[]
 ): LightTimelineSeries {
   return {
-    name,
-    metric,
+    name: deviceName,
+    metric: deviceName,
     trajectory_kind: trajectoryKind,
     provenance: PROJECTED,
     warnings,
@@ -368,7 +378,8 @@ function climateSeries(name: string): ClimateTimelineSeries {
 
 function lightSeries(deviceName: string): LightTimelineSeries {
   return {
-    name: `Light ${deviceName}`,
+    name: deviceName,
+    metric: deviceName,
     provenance: PROJECTED,
     warnings: [],
     points: [],

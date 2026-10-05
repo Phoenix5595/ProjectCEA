@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from 'vitest'
 
+import type { ControlMonitoringResponse, LightTimelineSeries } from '../../api'
+import { flowerManifest } from '../../config'
+import { isSeriesHidden, toggleSeries } from '../seriesVisibility'
+import type { TimeseriesPanelSpec } from '../../config'
 import type { AlignedData } from '../../data'
 import { seriesKey } from '../../data/alignSeries.types'
 import { createPanelAlignment } from '../../data/panelAlignment'
@@ -197,6 +201,23 @@ describe('MonitoringChartFeed', () => {
     expect(listener).toHaveBeenCalledTimes(1)
   })
 
+  it('bumps structural revision when a stable series key receives a new label', () => {
+    const range: MonitoringRange = { kind: 'live', duration: 3_600_000 }
+    const feed = createMonitoringChartFeed(makeData(22), range)
+    const previous = feed.getStructuralSnapshot()
+    const next = makeData(22)
+    next.series[0]!.label = 'Renamed Light - Intensity'
+
+    feed.publish(next, range)
+
+    const current = feed.getStructuralSnapshot()
+    expect(current).not.toBe(previous)
+    expect(current.revision).toBe(previous.revision + 1)
+    expect(current.series[0]?.key).toBe(previous.series[0]?.key)
+    expect(current.series[0]?.label).toBe('Renamed Light - Intensity')
+    expect(feed.getData().series[0]?.y).toEqual([20, 21, 22])
+  })
+
   it('publishes a requested range only after its history fulfillment', () => {
     // Given: a chart showing a previously fulfilled live viewport.
     const liveRange = { kind: 'live', duration: 3_600_000 } as const
@@ -318,4 +339,82 @@ describe('MonitoringChartFeed', () => {
     expect(feed.getStructuralSnapshot().range).toBe(newestRange)
     expect(feed.getStructuralSnapshot().viewportRevision).toBe(2)
   })
+  it('publishes registry-backed light labels on the actual aligned series without losing data', () => {
+    const range: MonitoringRange = { kind: 'fixed', start: new Date(0), end: new Date(60) }
+    const fulfilled = { range, start: range.start, end: range.end, revision: 1 }
+    const provenance = { origin: 'recorded' as const, quality: 'exact' as const, is_aggregated: false }
+    const light: LightTimelineSeries = {
+      name: 'light_f_1',
+      metric: 'light_f_1',
+      provenance,
+      warnings: [],
+      points: [
+        {
+          timestamp: new Date(0),
+          value: 40,
+          nominal_value: 40,
+          device_name: 'light_f_1',
+          provenance,
+        },
+      ],
+      steps: [],
+      linear: [],
+    }
+    const controlHistory: ControlMonitoringResponse = {
+      range: { start: new Date(0), end: new Date(60) },
+      runtime_snapshot_version: 1,
+      cursors: [],
+      flush_health: [],
+      climate: [],
+      lights: [light],
+      devices: [],
+      pid: [],
+      photoperiod: [],
+    }
+    const initial = stateFor(range, fulfilled, 20)
+    initial.data = { ...initial.data, controlHistory }
+    const source = sourceFor(initial)
+    const equipmentPanel = flowerManifest.panels.find(
+      (panel): panel is TimeseriesPanelSpec =>
+        panel.kind === 'timeseries' && panel.id === 'flower-systems'
+    )
+    if (equipmentPanel === undefined) throw new Error('Flower equipment panel is required')
+    const feed = createMonitoringPanelChartFeed({
+      alignment: createPanelAlignment(),
+      panel: equipmentPanel,
+      seriesSpecs: equipmentPanel.series,
+    })
+    const disconnect = feed.connect(source.source, initial)
+    const first = feed.getData()
+    const previousStructural = feed.getStructuralSnapshot()
+    const previousLight = first.series[0]
+    if (previousLight === undefined) throw new Error('recorded light series is required')
+    const lightKey = previousLight.key
+    const previouslyHidden = isSeriesHidden(lightKey)
+    if (!previouslyHidden) toggleSeries(lightKey)
+
+    source.emit({
+      ...initial,
+      data: {
+        ...initial.data,
+        lightRegistry: [
+          { device_name: 'light_f_1', display_name: '  Chilled Front QA ', per_room_index: 1 },
+        ],
+      },
+    })
+
+    const updated = feed.getData()
+    const currentLight = updated.series[0]
+    expect(updated.series).toHaveLength(1)
+    expect(currentLight?.key).toBe(previousLight.key)
+    expect(currentLight?.label).toBe('Chilled Front QA - Intensity')
+    expect(currentLight?.y).toEqual(previousLight.y)
+    expect(updated.series[0]?.y[updated.x.indexOf(0)]).toBe(40)
+    expect(feed.getStructuralSnapshot()).not.toBe(previousStructural)
+    expect(feed.getStructuralSnapshot().seriesCount).toBe(1)
+    expect(isSeriesHidden(lightKey)).toBe(true)
+    if (!previouslyHidden) toggleSeries(lightKey)
+    disconnect()
+  })
+
 })

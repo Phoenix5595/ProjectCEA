@@ -32,10 +32,12 @@ export function buildOptions(
   height: number,
   callbacks: ChartCallbacks,
   getNowX?: () => number | null,
-  getPhotoperiod?: () => ReadonlyArray<AlignedData['photoperiod'][number]>
+  getPhotoperiod?: () => ReadonlyArray<AlignedData['photoperiod'][number]>,
+  getData?: () => AlignedData
 ): uPlot.Options {
   const { scales, axes } = buildScales(data)
-  const series = buildSeries(data)
+  const currentData = getData ?? (() => data)
+  const series = buildSeries(data, currentData)
   const bands = buildBands(data)
 
   const initialNowX =
@@ -46,11 +48,15 @@ export function buildOptions(
       sunBg: readToken('sunBg'),
       moonBg: readToken('moonBg'),
     }),
-    tooltipPlugin(data.series, {
-      bg: readToken('tooltipBg'),
-      border: readToken('tooltipBorder'),
-      text: readToken('tooltipText'),
-    }),
+    tooltipPlugin(
+      data.series,
+      {
+        bg: readToken('tooltipBg'),
+        border: readToken('tooltipBorder'),
+        text: readToken('tooltipText'),
+      },
+      currentData
+    ),
   ]
   plugins.push(nowDividerPlugin(getNowX ?? (() => initialNowX), readToken('focusRing')))
 
