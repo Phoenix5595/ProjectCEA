@@ -23,11 +23,17 @@ from shared.monitoring_contracts import (
 
 from ..repositories.climate_timeline_snapshot import ClimateScheduleSnapshot, TimelineWindow
 from ..repositories.monitoring_snapshot_builder import MonitoringSnapshotRequest
-from ..repositories.monitoring_snapshot_types import FrozenRow, MonitoringSnapshot, frozen
+from ..repositories.monitoring_snapshot_types import (
+    FrozenRow,
+    MonitoringRange,
+    MonitoringSnapshot,
+    frozen,
+)
 from ..schemas.climate_timeline import (
     RichTrajectoryEnvelope,
     TimelineWarning,
     UnavailableTrajectorySegment,
+    UtcWindow,
 )
 from ..schemas.monitoring_models import RuntimeSnapshotVersion
 from ..services.climate_projection import profile_targets_at
@@ -36,6 +42,7 @@ from ..services.future_projection import (
     snapshot_publication_version,
     unavailable_future_intervals,
 )
+from ..services.light_trajectory import LightTrajectorySegments
 
 _DEFAULT_REDIS_TIMEOUT_SECONDS: Final = 1.0
 MAX_RICH_TRAJECTORY_SEGMENTS: Final = 4096
@@ -146,6 +153,12 @@ class RichTrajectoryProjector(Protocol):
     def __call__(self, snapshot: ClimateScheduleSnapshot) -> RichTrajectoryEnvelope | None: ...
 
 
+class LightTrajectoryProjector(Protocol):
+    """Convert one frozen authority snapshot into canonical light forecast segments."""
+
+    def __call__(self, snapshot: MonitoringSnapshot) -> LightTrajectorySegments: ...
+
+
 class AsyncRichSnapshotBuilder(Protocol):
     async def build_saved(
         self, location: str, cluster: str, window: TimelineWindow
@@ -165,6 +178,7 @@ class ProjectionPublicationDependencies:
     complete_writer: CompletePublicationWriter | None = None
     rich_config_revision: Callable[[], Awaitable[str]] | None = None
     rich_snapshot_builder: AsyncRichSnapshotBuilder | None = None
+    light_projector: LightTrajectoryProjector | None = None
     now: Callable[[], datetime] = lambda: datetime.now(UTC)
     redis_timeout_seconds: float = _DEFAULT_REDIS_TIMEOUT_SECONDS
 
@@ -455,6 +469,18 @@ class ProjectionPublicationAction:
             self._cluster,
             now,
         )
+        light = (
+            None
+            if self._dependencies.light_projector is None
+            else self._dependencies.light_projector(snapshot)
+        )
+        if light is not None and light.segments:
+            try:
+                rich = _with_light_segments(rich, light, self._location, snapshot.range)
+            except ValidationError:
+                # Do not replace a canonical publication with a lower-fidelity
+                # fallback when its components disagree about authority.
+                return False
         if rich is not None:
             if not _matches_rich_identity(
                 rich,
@@ -541,6 +567,44 @@ def _validate_projection(
         )
     if projection.valid_until <= request.observed_at:
         raise ProjectionPublicationError("projection factory returned an expired projection")
+
+
+def _with_light_segments(
+    trajectory: RichTrajectoryEnvelope | None,
+    light: LightTrajectorySegments,
+    room: str,
+    window_range: MonitoringRange,
+) -> RichTrajectoryEnvelope:
+    """Rebuild one validated envelope carrying canonical light forecast segments.
+
+    Construction validates the shared config revision, so climate and light
+    segments can only persist together while their authority is compatible.
+    A light-only forecast keeps the saved revision scope and the snapshot's
+    own 24-hour coverage window.
+    """
+    if trajectory is not None:
+        return RichTrajectoryEnvelope(
+            contract_version=trajectory.contract_version,
+            room=trajectory.room,
+            generated_at=trajectory.generated_at,
+            window=trajectory.window,
+            revision_scope=trajectory.revision_scope,
+            base_config_revision=trajectory.base_config_revision,
+            draft_revision=trajectory.draft_revision,
+            segments=(*trajectory.segments, *light.segments),
+            assumptions=trajectory.assumptions,
+            warnings=(*trajectory.warnings, *light.warnings),
+        )
+    return RichTrajectoryEnvelope(
+        contract_version=1,
+        room=room,
+        generated_at=window_range.start,
+        window=UtcWindow(start=window_range.start, end=window_range.end, timezone="UTC"),
+        revision_scope="saved",
+        base_config_revision=light.segments[0].source.config_revision,
+        segments=light.segments,
+        warnings=light.warnings,
+    )
 
 
 def _matches_rich_identity(

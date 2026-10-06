@@ -322,4 +322,125 @@ describe('projectionTimeline', () => {
     })
   })
 
+  it('does not invent missing canonical light forecasts from an accompanying basic payload', () => {
+    const result = projectionTimeline({
+      quality: 'estimated',
+      value: [
+        {
+          version: { contract_version: 1, config_version: 7, revision: '8f8c3db' },
+          generated_at: NOW,
+          valid_from: NOW,
+          valid_until: FUTURE,
+          series: [
+            {
+              series_id: { value: 'light.intensity.light_f_1' },
+              value: 40,
+              quality: 'estimated',
+              valid_from: NOW,
+              valid_until: FUTURE,
+            },
+          ],
+        },
+      ],
+      trajectory: {
+        contract_version: 1,
+        room: 'Flower Room',
+        generated_at: NOW,
+        window: { start: NOW, end: FUTURE, timezone: 'UTC' },
+        revision_scope: 'saved',
+        base_config_revision: '8f8c3db',
+        draft_revision: null,
+        assumptions: [],
+        warnings: [],
+        segments: [
+          {
+            shape: 'step',
+            start: NOW,
+            end: FUTURE,
+            metric: 'heating',
+            unit: 'C',
+            trajectory_kind: 'effective',
+            quality: 'estimated',
+            source: {
+              mode: 'DAY',
+              submode: null,
+              period: { period_id: 'day', label: 'Day' },
+              config_revision: '8f8c3db',
+              draft_revision: null,
+            },
+            value: 22,
+          },
+        ],
+      },
+    })
+
+    expect(result.history?.climate).toHaveLength(1)
+    expect(result.history?.lights).toHaveLength(0)
+  })
+
+
+  it('keeps saved rich light segments over same-device basic forecasts', () => {
+    const result = projectionTimeline({
+      quality: 'estimated',
+      value: [
+        {
+          version: { contract_version: 1, config_version: 7, revision: '8f8c3db' },
+          generated_at: NOW,
+          valid_from: NOW,
+          valid_until: FUTURE,
+          series: [
+            {
+              series_id: { value: 'light.intensity.light_f_1' },
+              value: 95,
+              quality: 'estimated',
+              valid_from: NOW,
+              valid_until: FUTURE,
+            },
+          ],
+        },
+      ],
+      trajectory: {
+        contract_version: 1,
+        room: 'Flower Room',
+        generated_at: NOW,
+        window: { start: NOW, end: FUTURE, timezone: 'UTC' },
+        revision_scope: 'saved',
+        base_config_revision: '8f8c3db',
+        draft_revision: null,
+        assumptions: [],
+        warnings: [],
+        segments: [
+          {
+            shape: 'linear',
+            start: NOW,
+            end: FUTURE,
+            metric: 'light.intensity.light_f_1',
+            unit: '%',
+            trajectory_kind: 'effective',
+            quality: 'estimated',
+            source: {
+              mode: 'DAY',
+              submode: null,
+              period: { period_id: 'day', label: 'Day' },
+              config_revision: '8f8c3db',
+              draft_revision: null,
+            },
+            start_value: 40,
+            end_value: 80,
+          },
+        ],
+      },
+    })
+
+    expect(result.history?.lights).toHaveLength(1)
+    expect(result.history?.lights[0]).toMatchObject({
+      name: 'light_f_1',
+      trajectory_kind: 'effective',
+    })
+    expect(result.history?.lights[0]?.linear[0]).toMatchObject({
+      start_value: 40,
+      end_value: 80,
+    })
+    expect(result.history?.lights[0]?.steps).toHaveLength(1) // trailing validity marker only
+  })
 })

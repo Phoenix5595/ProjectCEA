@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import type { AlignedData } from '../../data'
 import { seriesKey } from '../../data/alignSeries.types'
 import { buildScales } from '../options/scales'
-import { buildSeries } from '../options/seriesOptions'
+import { buildSeries, seriesColor } from '../options/seriesOptions'
 
 function makeData(): AlignedData {
   const families = ['temperature', 'rh', 'vpd', 'device', 'light', 'pressure', 'co2'] as const
@@ -227,7 +227,7 @@ describe('buildScales', () => {
     expect(Reflect.apply(range, undefined, [undefined, 21, 25])).toEqual([15, 25.2])
   })
 
-  it('draws recorded light intensity solid without changing target and forecast styling', () => {
+  it('draws recorded light intensity solid and leaves forecast dashes to the light renderer', () => {
     const data = makeData()
     const light = data.series.find(series => series.family === 'light')
     if (light === undefined) throw new Error('Light intensity series is required')
@@ -238,7 +238,10 @@ describe('buildScales', () => {
     expect(recorded?.dash ?? []).toEqual([])
     light.origin = 'projected'
     const projected = buildSeries(data).find(series => series.label === 'light')
-    expect(projected?.dash).toEqual([1, 5])
+    // Whole-series dash/alpha is never applied to a light trace: the light
+    // renderer strokes only its projected subpath with the dotted pattern.
+    expect(projected?.dash ?? []).toEqual([])
+    expect(projected?.stroke).toBe(seriesColor(light))
   })
 
   it('draws actual VPD series with the required three-pixel width', () => {

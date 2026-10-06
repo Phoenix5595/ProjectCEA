@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from typing import final
 
@@ -7,6 +8,7 @@ import pytest
 
 from monitoring_service.control_models import ControlHistoryRange
 from monitoring_service.control_repository import ControlHistoryRepository
+from monitoring_service.control_timeline_budget import ONE_DAC_CODE_PERCENT
 
 NOW = datetime(2026, 8, 24, 12, tzinfo=UTC)
 
@@ -38,6 +40,7 @@ def _setpoint_row(
         "ramp_progress_light": None,
     }
 
+
 def _light_row(
     timestamp: datetime,
     device_name: str,
@@ -54,7 +57,6 @@ def _light_row(
         ramp_progress_light=ramp_progress,
     )
     return row
-
 
 
 @final
@@ -107,6 +109,7 @@ class DenseControlDatabase:
             ]
         return []
 
+
 @final
 class LightTimelineDatabase:
     def __init__(self, rows: list[dict[str, str | float | datetime | None]]) -> None:
@@ -118,7 +121,6 @@ class LightTimelineDatabase:
         if "FROM effective_setpoints" in query:
             return self.rows
         return []
-
 
 
 @final
@@ -218,7 +220,7 @@ async def test_budgeted_history_uses_aggregated_last_value_sources_for_long_wind
 
     # Then: the last-value rows and their aggregated provenance survive the budget path.
     assert "monitoring_effective_setpoints_5min" in database.queries[0]
-    assert "monitoring_automation_state_5min" in database.queries[1]
+    assert any("monitoring_automation_state_5min" in query for query in database.queries)
     assert response.climate[0].provenance.is_aggregated is True
     assert response.climate[0].steps[0].value == 21.0
     assert response.devices[0].provenance.is_aggregated is True
@@ -241,6 +243,7 @@ async def test_budgeted_history_keeps_unavailable_setpoint_gaps_unbridged() -> N
         (NOW + timedelta(minutes=2), 22.0),
     ]
     assert steps[1].provenance.quality == "unavailable"
+
 
 @pytest.mark.anyio
 async def test_budgeted_light_history_keeps_one_mode_aware_timeline_and_gap() -> None:
@@ -273,7 +276,243 @@ async def test_budgeted_light_history_keeps_one_mode_aware_timeline_and_gap() ->
         (timestamps[4], None),
         (timestamps[5], 0.0),
     ]
-    assert [
-        (ramp.start, ramp.end, ramp.start_value, ramp.end_value)
-        for ramp in light.linear
-    ] == [(timestamps[2], timestamps[3], 80.0, 100.0)]
+    assert [(ramp.start, ramp.end, ramp.start_value, ramp.end_value) for ramp in light.linear] == [
+        (timestamps[2], timestamps[3], 80.0, 100.0)
+    ]
+
+
+@final
+class RawLightSetpointDatabase:
+    """Serves raw per-device light rows to the dedicated light query only."""
+
+    def __init__(self, rows: list[dict[str, str | float | datetime | None]]) -> None:
+        self.rows = rows
+
+    async def fetch(
+        self, query: str, *_: str | int | float | datetime
+    ) -> list[dict[str, str | float | datetime | None]]:
+        if "ramp_progress_light" in query:
+            return self.rows
+        return []
+
+
+def _raw_light_row(
+    timestamp: datetime,
+    device_name: str,
+    value: float | None,
+    ramp_progress: float | None = None,
+) -> dict[str, str | float | datetime | None]:
+    return {
+        "timestamp": timestamp,
+        "mode": "SUN",
+        "device_name": device_name,
+        "effective_light_intensity": value,
+        "nominal_light_intensity": 0.0 if value is None else value,
+        "ramp_progress_light": ramp_progress,
+    }
+
+
+def _chain_value_at(
+    linear: Sequence[tuple[datetime, datetime, float, float]], timestamp: datetime
+) -> float | None:
+    """Interpolate one recorded sample against the emitted ramp chain."""
+    for start, end, start_value, end_value in linear:
+        if start <= timestamp <= end:
+            if end == start:
+                return start_value
+            fraction = (timestamp - start) / (end - start)
+            return start_value + fraction * (end_value - start_value)
+    return None
+
+
+@pytest.mark.anyio
+async def test_light_ramp_geometry_survives_every_supported_range_selection() -> None:
+    # Given: one recorded ramp with held levels on both sides, one sample per minute.
+    start = datetime(2026, 10, 5, 5, tzinfo=UTC)
+    ramp_values = [
+        round(14.9678 + index * 1.42 + ((index * 37) % 17) / 100.0, 6) for index in range(60)
+    ]
+    rows = (
+        [
+            _raw_light_row(start + timedelta(minutes=minute), "light_f_1", 0.0)
+            for minute in (0, 1, 2)
+        ]
+        + [
+            _raw_light_row(
+                start + timedelta(minutes=3 + index),
+                "light_f_1",
+                ramp_values[index],
+                ramp_progress=index / 59,
+            )
+            for index in range(60)
+        ]
+        + [
+            _raw_light_row(start + timedelta(minutes=63 + minute), "light_f_1", ramp_values[-1])
+            for minute in (0, 1)
+        ]
+    )
+    repository = ControlHistoryRepository(RawLightSetpointDatabase(rows))
+
+    # When: the same ramp is read through every budgeted range selection.
+    chains = []
+    for minutes in (70, 12 * 60, 24 * 60, 7 * 24 * 60):
+        response = await repository.read(
+            "Flower Room",
+            ControlHistoryRange(start=start, end=start + timedelta(minutes=minutes)),
+            max_points=1000,
+        )
+        light = response.lights[0]
+        chains.append(
+            [(ramp.start, ramp.end, ramp.start_value, ramp.end_value) for ramp in light.linear]
+        )
+        assert light.points == ()
+        assert [(step.timestamp, step.value) for step in light.steps] == [
+            (start, 0.0),
+            (start + timedelta(minutes=63), ramp_values[-1]),
+            (start + timedelta(minutes=65), None),
+        ]
+
+    # Then: every range reports the identical ramp chain anchored on the same samples.
+    assert chains[0] == chains[1] == chains[2] == chains[3]
+    chain = chains[0]
+    assert (chain[0][0], chain[0][2]) == (start + timedelta(minutes=3), 14.9678)
+    assert (chain[-1][1], chain[-1][3]) == (
+        start + timedelta(minutes=62),
+        ramp_values[-1],
+    )
+    tolerance = ONE_DAC_CODE_PERCENT + 1e-9
+    for index, value in enumerate(ramp_values):
+        emitted = _chain_value_at(chain, start + timedelta(minutes=3 + index))
+        assert emitted is not None
+        assert abs(emitted - value) <= tolerance
+
+
+@pytest.mark.anyio
+async def test_light_restart_dip_stays_visible_at_short_and_long_ranges() -> None:
+    # Given: the real restart pattern: rising ramp, downward reset, resumed rise.
+    start = datetime(2026, 10, 5, 21, tzinfo=UTC)
+    values = [11.9, 12.4, 12.846687, 12.0, 12.049181, 12.6, 13.2, 13.8]
+    rows = [
+        _raw_light_row(
+            start + timedelta(minutes=index),
+            "light_f_1",
+            value,
+            ramp_progress=index / (len(values) - 1),
+        )
+        for index, value in enumerate(values)
+    ]
+    repository = ControlHistoryRepository(RawLightSetpointDatabase(rows))
+
+    # When: the dip is read through a short and a long budgeted range.
+    for minutes in (8, 7 * 24 * 60):
+        response = await repository.read(
+            "Flower Room",
+            ControlHistoryRange(start=start, end=start + timedelta(minutes=minutes)),
+            max_points=1000,
+        )
+        tuples = [
+            (ramp.start, ramp.end, ramp.start_value, ramp.end_value)
+            for ramp in response.lights[0].linear
+        ]
+
+        # Then: the reset and the resumed rise keep their exact sampled vertices.
+        assert (
+            start + timedelta(minutes=2),
+            start + timedelta(minutes=3),
+            12.846687,
+            12.0,
+        ) in tuples
+        assert (
+            start + timedelta(minutes=3),
+            start + timedelta(minutes=4),
+            12.0,
+            12.049181,
+        ) in tuples
+        tolerance = ONE_DAC_CODE_PERCENT + 1e-9
+        for index, value in enumerate(values):
+            emitted = _chain_value_at(tuples, start + timedelta(minutes=index))
+            assert emitted is not None
+            assert abs(emitted - value) <= tolerance
+
+
+@pytest.mark.anyio
+async def test_light_budget_pressure_preserves_boundaries_and_reports_approximation() -> None:
+    # Given: holds, a ramp whose every sample deviates beyond one DAC code, a gap, and OFF.
+    start = NOW
+    zigzag = [20.0 + (index % 2) * 4.0 for index in range(20)]
+    rows = (
+        [_raw_light_row(start + timedelta(minutes=minute), "light_f_1", 40.0) for minute in (0, 1)]
+        + [
+            _raw_light_row(
+                start + timedelta(minutes=2 + index),
+                "light_f_1",
+                zigzag[index],
+                ramp_progress=index / 19,
+            )
+            for index in range(20)
+        ]
+        + [
+            _raw_light_row(start + timedelta(minutes=22), "light_f_1", 60.0),
+            _raw_light_row(start + timedelta(minutes=23), "light_f_1", 60.0),
+            _raw_light_row(start + timedelta(minutes=24), "light_f_1", None),
+            _raw_light_row(start + timedelta(minutes=25), "light_f_1", 0.0),
+        ]
+    )
+    repository = ControlHistoryRepository(RawLightSetpointDatabase(rows))
+
+    # When: an impossibly small semantic budget is applied to the whole series.
+    response = await repository.read(
+        "Flower Room",
+        ControlHistoryRange(start=start, end=start + timedelta(minutes=26)),
+        max_points=10,
+    )
+    light = response.lights[0]
+    tuples = [(ramp.start, ramp.end, ramp.start_value, ramp.end_value) for ramp in light.linear]
+
+    # Then: mandatory boundaries stay exact and the ramp keeps its real deviations.
+    assert light.points == ()
+    assert [(step.timestamp, step.value) for step in light.steps] == [
+        (start, 40.0),
+        (start + timedelta(minutes=22), 60.0),
+        (start + timedelta(minutes=24), None),
+        (start + timedelta(minutes=25), 0.0),
+    ]
+    assert len(tuples) > 1
+    tolerance = ONE_DAC_CODE_PERCENT + 1e-9
+    for index, value in enumerate(zigzag):
+        emitted = _chain_value_at(tuples, start + timedelta(minutes=2 + index))
+        assert emitted is not None
+        assert abs(emitted - value) <= tolerance
+    assert len(light.steps) + 2 * len(light.linear) > 10
+    assert light.provenance.is_aggregated is True
+
+
+@pytest.mark.anyio
+async def test_light_missing_rows_never_gain_fabricated_samples() -> None:
+    # Given: samples around a silent outage followed by an OFF sample.
+    start = NOW
+    rows = [
+        _raw_light_row(start, "light_f_1", 40.0),
+        _raw_light_row(start + timedelta(minutes=1), "light_f_1", 40.0),
+        _raw_light_row(start + timedelta(minutes=10), "light_f_1", 80.0),
+        _raw_light_row(start + timedelta(minutes=11), "light_f_1", 0.0),
+    ]
+    repository = ControlHistoryRepository(RawLightSetpointDatabase(rows))
+
+    # When: the outage window is read with a budget.
+    response = await repository.read(
+        "Flower Room",
+        ControlHistoryRange(start=start, end=start + timedelta(minutes=12)),
+        max_points=10,
+    )
+
+    # Then: observed values survive, but expired coverage cannot span the outage.
+    light = response.lights[0]
+    assert light.points == ()
+    assert [(step.timestamp, step.value) for step in light.steps] == [
+        (start, 40.0),
+        (start + timedelta(minutes=2), None),
+        (start + timedelta(minutes=10), 80.0),
+        (start + timedelta(minutes=11), 0.0),
+    ]
+    assert light.linear == ()

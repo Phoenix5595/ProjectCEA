@@ -94,7 +94,7 @@ describe('light trajectory composition', () => {
       linear: [ramp(20, 30, 40, 80)],
     })
 
-    const trajectory = composeLightTrajectory(history, projection, 10, 60)
+    const trajectory = composeLightTrajectory(history, projection, 10, 60, 10)
 
     expect(
       trajectory.map(({ start, end, shape }) => ({ start, end, shape }))
@@ -128,7 +128,7 @@ describe('light trajectory composition', () => {
       steps: [step(10, 40)],
     })
 
-    const trajectory = composeLightTrajectory(history, projection, 15, 60)
+    const trajectory = composeLightTrajectory(history, projection, 15, 60, 15)
 
     expect([10, 12, 15].map(time => lightValueAt(trajectory, time))).toEqual([35, 35, 40])
     expect(lightSegmentAt(trajectory, 12)?.origin).toBe('recorded')
@@ -143,7 +143,7 @@ describe('light trajectory composition', () => {
       steps: [step(10, 75)],
     })
 
-    const trajectory = composeLightTrajectory(history, projection, 15, 30)
+    const trajectory = composeLightTrajectory(history, projection, 15, 30, 15)
 
     expect([10, 14, 15, 29, 30].map(time => lightValueAt(trajectory, time))).toEqual([
       null,
@@ -156,7 +156,7 @@ describe('light trajectory composition', () => {
 
   it('does not extend a recorded hold beyond its response without a projection', () => {
     const history = normalized({ points: [point(0, 40)] })
-    const trajectory = composeLightTrajectory(history, undefined, 10, 0)
+    const trajectory = composeLightTrajectory(history, undefined, 10, 0, 10)
 
     expect(lightValueAt(trajectory, 9)).toBe(40)
     expect(lightValueAt(trajectory, 10)).toBeNull()
@@ -171,7 +171,7 @@ describe('light trajectory composition', () => {
       linear: [ramp(0, 10, 20, 80)],
     })
 
-    const trajectory = composeLightTrajectory(undefined, projection, 0, 20)
+    const trajectory = composeLightTrajectory(undefined, projection, 0, 20, 0)
 
     expect(lightValueAt(trajectory, 9)).toBe(74)
     expect(lightValueAt(trajectory, 10)).toBeNull()
@@ -185,14 +185,135 @@ describe('light trajectory composition', () => {
       linear: [ramp(10, 10, 20, 60)],
     })
 
-    const trajectory = composeLightTrajectory(undefined, projection, 0, 20)
+    const trajectory = composeLightTrajectory(undefined, projection, 0, 20, 0)
 
     expect(trajectory).toMatchObject([
       { start: 10, end: 20, shape: 'step', startValue: 60, endValue: 60 },
     ])
     expect(lightValueAt(trajectory, 10)).toBe(60)
     expect(lightValueAt(trajectory, 20)).toBeNull()
-    expect(composeLightTrajectory(undefined, undefined, 20, 20)).toEqual([])
+    expect(composeLightTrajectory(undefined, undefined, 20, 20, 20)).toEqual([])
+  })
+
+  it('splits a projected ramp crossing Now at the interpolated seam value', () => {
+    const history = normalized({ points: [point(0, 20), point(10, 35)] })
+    const projection = normalized({
+      seriesOrigin: 'projected',
+      seriesQuality: 'estimated',
+      linear: [ramp(10, 30, 20, 80)],
+    })
+
+    const trajectory = composeLightTrajectory(history, projection, 15, 30, 15)
+
+    expect(trajectory).toEqual([
+      {
+        start: 0,
+        end: 10,
+        shape: 'step',
+        startValue: 20,
+        endValue: 20,
+        origin: 'recorded',
+        quality: 'exact',
+      },
+      {
+        start: 10,
+        end: 15,
+        shape: 'step',
+        startValue: 35,
+        endValue: 35,
+        origin: 'recorded',
+        quality: 'exact',
+      },
+      {
+        start: 15,
+        end: 30,
+        shape: 'linear',
+        startValue: 35,
+        endValue: 80,
+        origin: 'projected',
+        quality: 'estimated',
+      },
+    ])
+    expect(lightValueAt(trajectory, 15)).toBe(35)
+  })
+
+  it('never fills a missing historical interval with forecast coverage', () => {
+    const history = normalized({ points: [point(0, 40), point(10, null)] })
+    const projection = normalized({
+      seriesOrigin: 'projected',
+      seriesQuality: 'estimated',
+      steps: [step(25, 90)],
+      linear: [ramp(5, 25, 40, 90)],
+    })
+
+    const trajectory = composeLightTrajectory(history, projection, 20, 30, 20)
+
+    expect(trajectory).toEqual([
+      {
+        start: 0,
+        end: 10,
+        shape: 'step',
+        startValue: 40,
+        endValue: 40,
+        origin: 'recorded',
+        quality: 'exact',
+      },
+      {
+        start: 10,
+        end: 20,
+        shape: 'step',
+        startValue: null,
+        endValue: null,
+        origin: 'recorded',
+        quality: 'exact',
+      },
+      {
+        start: 20,
+        end: 25,
+        shape: 'linear',
+        startValue: 77.5,
+        endValue: 90,
+        origin: 'projected',
+        quality: 'estimated',
+      },
+      {
+        start: 25,
+        end: 30,
+        shape: 'step',
+        startValue: 90,
+        endValue: 90,
+        origin: 'projected',
+        quality: 'estimated',
+      },
+    ])
+    expect(lightValueAt(trajectory, 12)).toBeNull()
+    expect(lightValueAt(trajectory, 18)).toBeNull()
+  })
+
+  it('drops forecast coverage whose validity ended before Now', () => {
+    const projection = normalized({
+      seriesOrigin: 'projected',
+      seriesQuality: 'estimated',
+      steps: [step(10, 40)],
+    })
+
+    expect(composeLightTrajectory(undefined, projection, 0, 12, 20)).toEqual([])
+  })
+
+  it('does not extend recorded holds or nulls into a requested future window', () => {
+    const history = normalized({ points: [point(0, 35), point(8, null)] })
+    const projection = normalized({
+      seriesOrigin: 'projected',
+      seriesQuality: 'estimated',
+      linear: [ramp(10, 30, 35, 70)],
+    })
+    const trajectory = composeLightTrajectory(history, projection, 30, 30, 10)
+
+    expect(lightValueAt(trajectory, 5)).toBe(35)
+    expect(lightValueAt(trajectory, 9)).toBeNull()
+    expect(lightValueAt(trajectory, 10)).toBe(35)
+    expect(lightValueAt(trajectory, 20)).toBe(52.5)
+    expect(lightSegmentAt(trajectory, 20)?.origin).toBe('projected')
   })
 })
 
@@ -264,5 +385,28 @@ describe('light trajectory identity merging', () => {
     expect(merged[0]?.history?.steps).toMatchObject([
       { t: 10, value: 45, origin: 'recorded', quality: 'exact' },
     ])
+  })
+
+  it('keeps equal-valued lights as separate device identities', () => {
+    const equalValue = (name: string): LightTimelineSeries =>
+      projectedLight(name, `light.intensity.${name}`, 'effective', [
+        {
+          timestamp: new Date(10),
+          value: 40,
+          provenance: { origin: 'projected', quality: 'estimated', is_aggregated: false },
+        },
+      ])
+
+    const merged = mergeLightSeries(
+      null,
+      response([equalValue('light_f_1'), equalValue('light_f_2'), equalValue('light_f_3')])
+    )
+
+    expect(merged.map(entry => entry.deviceName)).toEqual([
+      'light_f_1',
+      'light_f_2',
+      'light_f_3',
+    ])
+    expect(merged.every(entry => entry.projection?.steps[0]?.value === 40)).toBe(true)
   })
 })

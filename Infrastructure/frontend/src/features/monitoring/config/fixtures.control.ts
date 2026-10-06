@@ -7,6 +7,7 @@
  */
 
 import { equipmentHistoryFixture, equipmentProjectionFixture } from './fixtures.equipment'
+import { lightRangeHistoryFixture, lightRangeProjectionFixture } from './fixtures.lightRange'
 
 const T0 = '2026-08-02T12:00:00.000Z'
 
@@ -100,6 +101,9 @@ export function controlRangeFixture(
   if (scenario === 'equipment-history') {
     return { ...base, ...equipmentHistoryFixture(room, start, end) }
   }
+  if (scenario === 'light-range-fidelity') {
+    return { ...base, ...lightRangeHistoryFixture(room, start, end) }
+  }
   if (scenario === 'delayed-control-recovery') {
     return {
       ...base,
@@ -131,7 +135,9 @@ export function controlTailFixture(
   end: string,
   scenario: string | null = null
 ): unknown {
-  if (scenario === 'equipment-history') return controlBase(start, end)
+  if (scenario === 'equipment-history' || scenario === 'light-range-fidelity') {
+    return controlBase(start, end)
+  }
 
   return controlRangeFixture(
     room,
@@ -150,6 +156,9 @@ export function controlProjectionFixture(
 ): unknown {
   if (scenario === 'equipment-history') {
     return equipmentProjectionFixture(room, start, end)
+  }
+  if (scenario === 'light-range-fidelity') {
+    return lightRangeProjectionFixture(room)
   }
   const base = controlBase(start, end)
   const partial = process.env.MONITORING_SCENARIO === 'flower-partial'

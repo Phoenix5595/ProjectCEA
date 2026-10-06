@@ -98,6 +98,9 @@ class ControlHistoryRepository:
             setpoint_rows = await self._database.fetch(
                 sources.setpoints_sql, location, history_range.start, history_range.end
             )
+            light_rows = await self._database.fetch(
+                sources.light_sql, location, history_range.start, history_range.end
+            )
             state_rows = await self._database.fetch(
                 sources.state_sql, location, history_range.start, history_range.end
             )
@@ -107,6 +110,7 @@ class ControlHistoryRepository:
             return build_control_history_envelope(
                 history_range,
                 setpoint_rows,
+                light_rows,
                 state_rows,
                 photoperiod_rows,
                 sources.setpoints_are_aggregated,
@@ -117,7 +121,6 @@ class ControlHistoryRepository:
                     max_points,
                 ),
             )
-
 
 
 @final
@@ -147,9 +150,7 @@ class RelayTimelineRepository:
                 if cursor_state is None:
                     watermark_rows = await self._database.fetch(RELAY_WATERMARK_SQL)
                     watermark = (
-                        _integer_value(watermark_rows[0].get("watermark"))
-                        if watermark_rows
-                        else 0
+                        _integer_value(watermark_rows[0].get("watermark")) if watermark_rows else 0
                     )
                 else:
                     watermark = cursor_state.watermark
@@ -175,9 +176,7 @@ class RelayTimelineRepository:
                         limit + 1,
                     )
                 has_more = len(page_rows) > limit
-                transitions = tuple(
-                    _relay_transition(row) for row in page_rows[:limit]
-                )
+                transitions = tuple(_relay_transition(row) for row in page_rows[:limit])
 
                 if cursor_state is None:
                     heartbeat_rows = await self._database.fetch(
@@ -199,9 +198,7 @@ class RelayTimelineRepository:
                         watermark,
                         location,
                     )
-                    channel_anchors = tuple(
-                        _relay_transition(row) for row in channel_anchor_rows
-                    )
+                    channel_anchors = tuple(_relay_transition(row) for row in channel_anchor_rows)
                     prior_heartbeats = [
                         row
                         for row in heartbeat_rows
@@ -211,18 +208,17 @@ class RelayTimelineRepository:
                     anchors = channel_anchors
                     if prior_heartbeats:
                         anchors += (_relay_transition(prior_heartbeats[-1]),)
-                    load, load_truncated = await self._read_load(
-                        location, history_range, watermark
+                    load, load_truncated = await self._read_load(location, history_range, watermark)
+                    last_heartbeat_at = _latest_heartbeat_at(heartbeat_rows, history_range.end)
+                    coverage_complete = (
+                        coverage_from_rows(
+                            heartbeat_rows,
+                            coverage_rows[0] if coverage_rows else None,
+                            channel_anchors,
+                            history_range,
+                        )
+                        and not load_truncated
                     )
-                    last_heartbeat_at = _latest_heartbeat_at(
-                        heartbeat_rows, history_range.end
-                    )
-                    coverage_complete = coverage_from_rows(
-                        heartbeat_rows,
-                        coverage_rows[0] if coverage_rows else None,
-                        channel_anchors,
-                        history_range,
-                    ) and not load_truncated
                 else:
                     anchors = ()
                     load = ()
@@ -333,6 +329,7 @@ def _latest_heartbeat_at(
         if isinstance(row.get("observed_at"), datetime) and row["observed_at"] < end
     ]
     return max(observed) if observed else None
+
 
 @final
 class ControlPublicationRepository:
@@ -453,7 +450,6 @@ class RuntimeControlReads:
             raise RuntimeError("monitoring database resource is unavailable")
         return await ControlHistoryRepository(database).read(location, history_range, max_points)
 
-
     async def relay_timeline(
         self,
         location: str,
@@ -465,9 +461,7 @@ class RuntimeControlReads:
         database = self._resources.database
         if database is None:
             raise RuntimeError("monitoring database resource is unavailable")
-        return await RelayTimelineRepository(database).read(
-            location, history_range, limit, cursor
-        )
+        return await RelayTimelineRepository(database).read(location, history_range, limit, cursor)
 
     async def publications(self, location: str) -> ControlPublicationResponse:
         """Read shared publications only when the service Redis client is available."""

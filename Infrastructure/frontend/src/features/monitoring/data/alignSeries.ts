@@ -88,7 +88,8 @@ export function alignSeriesBase(input: BaseAlignInput): BaseAlignment {
       light.history,
       light.projection,
       recordedEnd,
-      projectedEnd
+      projectedEnd,
+      now
     )
     if (trajectory.length === 0) continue
     const hasRecordedFiniteCoverage = trajectory.some(

@@ -28,8 +28,10 @@ interface PlotSnapshot {
     readonly overlayLeft: number
     readonly bboxLeft: number | null
     readonly valPosition: number
+    readonly millisecondsPerPixel: number
   } | null
   readonly cursorTime: number | null
+  readonly lightCoverage: { readonly recorded: number; readonly future: number } | null
 }
 
 const ROOMS: readonly EquipmentRoom[] = [
@@ -73,8 +75,13 @@ function fixtureRegistry(room: EquipmentRoom) {
   }))
 }
 
-async function plotSnapshot(section: Locator, timestamp: number | null = null): Promise<PlotSnapshot | null> {
-  return section.locator('.mon-chart__frame').evaluate((frame, requestedTime) => {
+async function plotSnapshot(
+  section: Locator,
+  timestamp: number | null = null,
+  strokeProbe: { label: string; value: number; now: number; duration: number } | null = null
+): Promise<PlotSnapshot | null> {
+  return section.locator('.mon-chart__frame').evaluate((frame, requested) => {
+    const requestedTime = requested.timestamp
     const isObject = (value: unknown): value is object =>
       typeof value === 'object' && value !== null
     const get = (value: object, key: PropertyKey): unknown => Reflect.get(value, key)
@@ -131,7 +138,9 @@ async function plotSnapshot(section: Locator, timestamp: number | null = null): 
       if (typeof valToPos === 'function' && overlay !== null) {
         const overlayRect = overlay.getBoundingClientRect()
         const valPosition = valToPos.call(plot, requestedTime, 'x')
-        if (typeof valPosition === 'number') {
+        const nextMinutePosition = valToPos.call(plot, requestedTime + 60_000, 'x')
+        if (typeof valPosition === 'number' && typeof nextMinutePosition === 'number' &&
+            nextMinutePosition !== valPosition) {
           mouse = {
             x: overlayRect.left + valPosition,
             y: overlayRect.top + overlayRect.height / 2,
@@ -139,6 +148,7 @@ async function plotSnapshot(section: Locator, timestamp: number | null = null): 
             overlayLeft: overlayRect.left,
             bboxLeft: typeof bboxLeft === 'number' ? bboxLeft : null,
             valPosition,
+            millisecondsPerPixel: 60_000 / Math.abs(nextMinutePosition - valPosition),
           }
         }
       }
@@ -152,8 +162,60 @@ async function plotSnapshot(section: Locator, timestamp: number | null = null): 
         ? posToVal.call(plot, cursorLeft, 'x')
         : null
 
-    return { series: renderedSeries, mouse, cursorTime }
-  }, timestamp)
+    let lightCoverage: PlotSnapshot['lightCoverage'] = null
+    if (requested.strokeProbe !== null) {
+      const probe = requested.strokeProbe
+      const entryIndex = series.findIndex((entry: unknown) =>
+        isObject(entry) && get(entry, 'label') === probe.label
+      )
+      const entry: unknown = series[entryIndex]
+      const ctx = get(plot, 'ctx')
+      const valToPos = get(plot, 'valToPos')
+      if (entryIndex > 0 && isObject(entry) && ctx instanceof CanvasRenderingContext2D &&
+          typeof valToPos === 'function') {
+        const rawStroke = get(entry, 'stroke')
+        const stroke: unknown = typeof rawStroke === 'function'
+          ? rawStroke.call(plot, plot, entryIndex)
+          : rawStroke
+        if (typeof stroke === 'string') {
+          const colorCanvas = document.createElement('canvas')
+          colorCanvas.width = colorCanvas.height = 1
+          const colorContext = colorCanvas.getContext('2d')!
+          colorContext.fillStyle = stroke
+          colorContext.fillRect(0, 0, 1, 1)
+          const color = colorContext.getImageData(0, 0, 1, 1).data
+          const y = Math.round(valToPos.call(plot, probe.value, 'light', true))
+          const coverage = (from: number, until: number): number => {
+            const left = Math.max(0, Math.ceil(valToPos.call(plot, from, 'x', true)))
+            const right = Math.min(ctx.canvas.width, Math.floor(valToPos.call(plot, until, 'x', true)))
+            const width = right - left
+            if (width < 2 || y < 4 || y + 4 >= ctx.canvas.height) return 0
+            const image = ctx.getImageData(left, y - 4, width, 9).data
+            let occupied = 0
+            for (let x = 0; x < width; x += 1) {
+              for (let row = 0; row < 9; row += 1) {
+                const offset = (row * width + x) * 4
+                if (image[offset + 3]! > 90 &&
+                    Math.abs(image[offset]! - color[0]!) < 35 &&
+                    Math.abs(image[offset + 1]! - color[1]!) < 35 &&
+                    Math.abs(image[offset + 2]! - color[2]!) < 35) {
+                  occupied += 1
+                  break
+                }
+              }
+            }
+            return occupied / width
+          }
+          lightCoverage = {
+            recorded: coverage(probe.now - probe.duration / 4, probe.now - probe.duration / 8),
+            future: coverage(probe.now + probe.duration / 36, probe.now + probe.duration / 18),
+          }
+        }
+      }
+    }
+
+    return { series: renderedSeries, mouse, cursorTime, lightCoverage }
+  }, { timestamp, strokeProbe })
 }
 
 async function hoverAt(
@@ -172,7 +234,7 @@ async function hoverAt(
   expect(
     Math.abs(after.cursorTime - timestamp),
     `cursor ${after.cursorTime} missed ${timestamp}: ${JSON.stringify(before.mouse)}`
-  ).toBeLessThan(30_000)
+  ).toBeLessThan(Math.max(30_000, before.mouse.millisecondsPerPixel))
   const tooltip = section.locator('.mon-tooltip')
   await expect(tooltip).toBeVisible()
   const expectedText = typeof expected === 'string' ? expected : expected(after.cursorTime)
@@ -366,3 +428,58 @@ test('Veg equipment graph uses one registry-labeled intensity trace per light', 
 ) => {
   await equipmentHistoryScenario(page, testInfo, ROOMS[1]!)
 })
+
+for (const room of ROOMS) {
+  test(`${room.room} keeps recorded ramp shape across ranges and dots only future light coverage`, async (
+    { page },
+    testInfo
+  ) => {
+    test.setTimeout(120_000)
+    const violations = trackViolations(page)
+    const now = Date.parse('2026-10-06T16:00:00.000Z')
+    await page.clock.setFixedTime(new Date(now))
+    await page.goto(fixtureUrl(room.path, testInfo, undefined, 'light-range-fidelity'))
+    const equipment = page.locator(`section[aria-label="${room.equipmentLabel}"]`)
+    await expect(equipment).toBeVisible()
+    const lights = DASHBOARD_DEVICES.filter(device =>
+      device.location === room.room && device.device_type === 'light'
+    )
+    const primary = `${lights[0]!.display_name} - Intensity`
+    const constant = `${lights[1]!.display_name} - Intensity`
+    const presets = page.getByRole('group', { name: 'Time range presets' })
+    for (const [label, duration] of [
+      ['1h', 3_600_000],
+      ['12h', 12 * 3_600_000],
+      ['24h', 24 * 3_600_000],
+      ['7d', 7 * 24 * 3_600_000],
+    ] as const) {
+      await presets.getByRole('button', { name: label, exact: true }).click()
+      await expect.poll(async () => {
+        const snapshot = await plotSnapshot(equipment)
+        return snapshot?.series.filter(series => series.scale === 'light').map(series => series.label)
+      }).toEqual(lights.map(light => `${light.display_name} - Intensity`))
+      await equipment.scrollIntoViewIfNeeded()
+      await hoverAt(page, equipment, now - 45 * 60_000, cursorTime => {
+        const value = 10 + (cursorTime - (now - 55 * 60_000)) / (20 * 60_000) * 30
+        return `${primary} ${value.toFixed(1)} % recorded/exact`
+      })
+      await hoverAt(page, equipment, now - 15.5 * 60_000, `${primary} — recorded/unavailable`)
+      await hoverAt(page, equipment, now + duration / 36, cursorTime => {
+        const value = cursorTime <= now + 60 * 60_000
+          ? 70 + (cursorTime - now) / (60 * 60_000) * 20
+          : cursorTime < now + 120 * 60_000 ? 90 : 0
+        return `${primary} ${value.toFixed(1)} % projected/estimated`
+      })
+      await page.mouse.move(0, 0)
+      await expect.poll(async () =>
+        (await plotSnapshot(equipment, null, { label: constant, value: 25, now, duration }))?.lightCoverage
+      ).not.toBeNull()
+      const snapshot = await plotSnapshot(equipment, null, { label: constant, value: 25, now, duration })
+      expect(snapshot!.lightCoverage!.recorded).toBeGreaterThan(0.85)
+      expect(snapshot!.lightCoverage!.future).toBeGreaterThan(0.05)
+      expect(snapshot!.lightCoverage!.future).toBeLessThan(0.80)
+      await equipment.screenshot({ path: testInfo.outputPath(`light-range-${label}.png`) })
+    }
+    expect(violations).toEqual([])
+  })
+}

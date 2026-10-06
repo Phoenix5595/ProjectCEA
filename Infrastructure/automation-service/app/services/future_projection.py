@@ -20,7 +20,7 @@ from shared.monitoring_contracts import (
 )
 
 from .climate_projection import project_climate_timelines
-from .light_projection import LightProjection, project_lights
+from .light_projection import LightProjection, light_series_id, project_lights
 
 MAX_PROJECTION_INTERVALS: Final = 256
 _CLIMATE_SERIES: Final = {
@@ -129,8 +129,8 @@ def _light_point(
     end: datetime,
 ) -> ProjectionSeriesPoint:
     if snapshot.active_mode is None or not _has_light_target(snapshot, name):
-        return _unavailable(_light_series_id(name), start, end)
-    return _point(_light_series_id(name), value, start, end)
+        return _unavailable(light_series_id(name), start, end)
+    return _point(light_series_id(name), value, start, end)
 
 
 def _has_light_target(snapshot: MonitoringSnapshot, name: str) -> bool:
@@ -184,16 +184,10 @@ def unavailable_future_intervals(
     )
 
 
-def _light_series_id(name: str) -> str:
-    """Translate the existing device name to the dotted-lowercase contract namespace."""
-    token = "".join(character if character.isalnum() else "_" for character in name.lower())
-    return f"light.intensity.{token}"
-
-
 def _light_series_ids(snapshot: MonitoringSnapshot) -> tuple[str, ...]:
     """Return only contract-safe identifiers for configured light names."""
     return tuple(
-        _light_series_id(name)
+        light_series_id(name)
         for light in snapshot.expected_lights
         if isinstance(name := light.get("device_name"), str)
     )

@@ -1,14 +1,23 @@
 import type { LightTrajectorySegment, NormControlSeries, NormLinear } from './alignSeries.types'
 
-/** Compose one physical light's recorded coverage and selected projected path. */
+/**
+ * Compose one physical light's recorded coverage and selected projected path.
+ *
+ * `recordedEnd` is the known end of recorded coverage and `projectedEnd` the
+ * forecast validity boundary. `now` confines projected coverage strictly to the
+ * future side of the actual Now instant: a forecast never fills a missing
+ * historical interval, never draws outside its validity window, and a ramp
+ * crossing Now splits at Now with the interpolated projected value.
+ */
 export function composeLightTrajectory(
   history: NormControlSeries | undefined,
   projection: NormControlSeries | undefined,
   recordedEnd: number,
-  projectedEnd: number
+  projectedEnd: number,
+  now: number
 ): readonly LightTrajectorySegment[] {
-  const recorded = sourceTrajectory(history, recordedEnd)
-  const projected = sourceTrajectory(projection, projectedEnd)
+  const recorded = sourceTrajectory(history, Math.min(recordedEnd, now), Number.NEGATIVE_INFINITY)
+  const projected = sourceTrajectory(projection, projectedEnd, now)
   if (recorded.length === 0 && projected.length === 0) return []
 
   const boundaries = new Set<number>()
@@ -22,6 +31,10 @@ export function composeLightTrajectory(
     const start = ordered[index]
     const end = ordered[index + 1]
     if (start === undefined || end === undefined || end <= start) continue
+    // Recorded facts win wherever both authorities cover the interval. The
+    // projected timeline starts no earlier than `now`, so it can never
+    // backfill a historical gap ahead of it; an explicit recorded null keeps
+    // its own coverage unavailable instead of becoming forecast-filled.
     const source = lightSegmentAt(recorded, start) ?? lightSegmentAt(projected, start)
     if (source !== undefined) output.push(sliceSegment(source, start, end))
   }
@@ -67,7 +80,8 @@ interface LightChange {
 
 function sourceTrajectory(
   series: NormControlSeries | undefined,
-  coverageEnd: number
+  coverageEnd: number,
+  coverageStart: number
 ): LightTrajectorySegment[] {
   if (series === undefined || !Number.isFinite(coverageEnd)) return []
 
@@ -179,7 +193,25 @@ function sourceTrajectory(
       })
     }
   }
-  return output
+  // `held` carries state built across the whole source timeline, so the
+  // coverage-start clip runs on the finished output: intervals before it are
+  // dropped and a crossing ramp is re-sliced with its interpolated value.
+  return coverageStart === Number.NEGATIVE_INFINITY
+    ? output
+    : sliceFromCoverageStart(output, coverageStart)
+}
+
+/** Confine built segments to `[coverageStart, …)`, splitting the first crossing segment. */
+function sliceFromCoverageStart(
+  segments: LightTrajectorySegment[],
+  coverageStart: number
+): LightTrajectorySegment[] {
+  const index = segments.findIndex(segment => segment.end > coverageStart)
+  const head = segments[index]
+  if (index < 0 || head === undefined) return []
+  const start = Math.max(head.start, coverageStart)
+  const slicedHead = start === head.start ? head : sliceSegment(head, start, head.end)
+  return [slicedHead, ...segments.slice(index + 1)]
 }
 
 function rampValueAt(ramp: NormLinear, timestamp: number): number {

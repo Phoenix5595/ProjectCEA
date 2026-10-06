@@ -2,8 +2,9 @@
  * Assembles the full themed uPlot options for the monitoring chart.
  *
  * Wires the family series, per-family scales/axes, min/max bands, and the
- * photoperiod / now-divider / tooltip plugins into one `uPlot.Options`, while
- * preserving the adapter's `ms: 1`, `tzDate`, and `setScale`/`setSeries` hooks.
+ * photoperiod / now-divider / tooltip / dotted-light-projection plugins into
+ * one `uPlot.Options`, while preserving the adapter's `ms: 1`, `tzDate`, and
+ * `setScale`/`setSeries` hooks.
  */
 import uPlot from 'uplot'
 
@@ -14,6 +15,7 @@ import { tooltipPlugin } from '../tooltip/chartTooltip'
 
 import { buildBands } from './bands'
 import { buildScales } from './scales'
+import { lightProjectedStrokePlugin } from './lightTrajectoryPaths'
 import { buildSeries } from './seriesOptions'
 import { readToken } from './tokens'
 
@@ -57,6 +59,9 @@ export function buildOptions(
       },
       currentData
     ),
+    // Strokes each light series' projected subpath dotted after uPlot strokes
+    // the solid recorded geometry, on the same logical series.
+    lightProjectedStrokePlugin(currentData),
   ]
   plugins.push(nowDividerPlugin(getNowX ?? (() => initialNowX), readToken('focusRing')))
 

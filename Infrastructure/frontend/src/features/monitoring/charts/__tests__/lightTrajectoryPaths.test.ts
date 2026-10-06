@@ -3,7 +3,10 @@ import type uPlot from 'uplot'
 
 import type { AlignedData, AlignedSeries, LightTrajectorySegment } from '../../data'
 import { seriesKey } from '../../data/alignSeries.types'
-import { lightTrajectoryPaths } from '../options/lightTrajectoryPaths'
+import {
+  lightTrajectoryPaths,
+  lightTrajectorySubpaths,
+} from '../options/lightTrajectoryPaths'
 
 class RecordingPath2D {
   readonly commands: string[] = []
@@ -15,6 +18,11 @@ class RecordingPath2D {
   lineTo(x: number, y: number): void {
     this.commands.push(`L${x},${y}`)
   }
+}
+
+/** Read back the recorded drawing commands of a (stubbed) Path2D. */
+function commandsOf(path: Path2D | null): string[] {
+  return (path as unknown as RecordingPath2D | null)?.commands ?? []
 }
 
 function lightSeries(segments: readonly LightTrajectorySegment[]): AlignedSeries {
@@ -45,119 +53,144 @@ function alignedData(series: AlignedSeries): AlignedData {
   }
 }
 
-describe('light trajectory paths', () => {
-  it('draws horizontal steps, vertical changes, ramp slopes, and separated gaps from current data', () => {
-    const recordings: RecordingPath2D[] = []
-    class Path2DRecorder extends RecordingPath2D {
-      constructor() {
-        super()
-        recordings.push(this)
-      }
+function recordingPlot(): { plot: uPlot; paths: RecordingPath2D[] } {
+  const paths: RecordingPath2D[] = []
+  class Path2DRecorder extends RecordingPath2D {
+    constructor() {
+      super()
+      paths.push(this)
     }
-    vi.stubGlobal('Path2D', Path2DRecorder)
-    try {
-      const key = seriesKey('light', 'light_f_1', 'linear')
-      const segments: readonly LightTrajectorySegment[] = [
-        {
-          start: 0,
-          end: 10,
-          shape: 'step',
-          startValue: 40,
-          endValue: 40,
-          origin: 'recorded',
-          quality: 'exact',
-        },
-        {
-          start: 10,
-          end: 20,
-          shape: 'step',
-          startValue: 0,
-          endValue: 0,
-          origin: 'projected',
-          quality: 'estimated',
-        },
-        {
-          start: 20,
-          end: 30,
-          shape: 'linear',
-          startValue: 0,
-          endValue: 100,
-          origin: 'projected',
-          quality: 'estimated',
-        },
-        {
-          start: 30,
-          end: 40,
-          shape: 'step',
-          startValue: null,
-          endValue: null,
-          origin: 'projected',
-          quality: 'unavailable',
-        },
-        {
-          start: 40,
-          end: 50,
-          shape: 'step',
-          startValue: 5,
-          endValue: 5,
-          origin: 'projected',
-          quality: 'estimated',
-        },
-      ]
-      let data = alignedData(lightSeries(segments))
-      const buildPath = lightTrajectoryPaths(key, () => data)
-      const plot = {
-        series: [{}, { scale: 'light' }],
-        valToPos: (value: number) => value,
-      } as unknown as uPlot
-      const draw = (): RecordingPath2D => {
-        const paths = buildPath(plot, 1, 0, 5)
-        if (paths === null || paths.stroke === undefined) throw new Error('light path is required')
-        return paths.stroke as unknown as RecordingPath2D
-      }
+  }
+  vi.stubGlobal('Path2D', Path2DRecorder)
+  const plot = {
+    series: [{}, { scale: 'light' }],
+    valToPos: (value: number) => value,
+  } as unknown as uPlot
+  return { plot, paths }
+}
 
-      expect(draw().commands).toEqual([
-        'M0,40',
-        'L10,40',
-        'L10,0',
-        'L20,0',
+function recorded(start: number, end: number, value: number): LightTrajectorySegment {
+  return {
+    start,
+    end,
+    shape: 'step',
+    startValue: value,
+    endValue: value,
+    origin: 'recorded',
+    quality: 'exact',
+  }
+}
+
+function projectedStep(
+  start: number,
+  end: number,
+  value: number | null,
+  quality: LightTrajectorySegment['quality'] = 'estimated'
+): LightTrajectorySegment {
+  return {
+    start,
+    end,
+    shape: 'step',
+    startValue: value,
+    endValue: value,
+    origin: 'projected',
+    quality,
+  }
+}
+
+function projectedRamp(
+  start: number,
+  end: number,
+  startValue: number,
+  endValue: number
+): LightTrajectorySegment {
+  return {
+    start,
+    end,
+    shape: 'linear',
+    startValue,
+    endValue,
+    origin: 'projected',
+    quality: 'estimated',
+  }
+}
+
+describe('light trajectory subpath split', () => {
+  it('keeps recorded coverage solid and projected coverage in its own subpath', () => {
+    const segments = [
+      recorded(0, 10, 40),
+      projectedStep(10, 20, 40),
+      projectedRamp(20, 30, 40, 100),
+      projectedStep(30, 40, null, 'unavailable'),
+      projectedStep(40, 50, 5),
+    ]
+    const { plot, paths } = recordingPlot()
+    try {
+      const subpaths = lightTrajectorySubpaths(segments, plot, 'light')
+      expect(commandsOf(subpaths.solid)).toEqual(['M0,40', 'L10,40'])
+      expect(commandsOf(subpaths.projected)).toEqual([
+        'M10,40',
+        'L20,40',
         'L30,100',
         'M40,5',
         'L50,5',
       ])
+      expect(paths).toHaveLength(2)
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
 
-      data = alignedData(
-        lightSeries([
-          {
-            start: 0,
-            end: 10,
-            shape: 'step',
-            startValue: 25,
-            endValue: 25,
-            origin: 'projected',
-            quality: 'estimated',
-          },
-        ])
-      )
-      expect(draw().commands).toEqual(['M0,25', 'L10,25'])
+  it('does not invent a connector across the recorded-to-projected seam', () => {
+    const segments = [recorded(0, 10, 35), projectedStep(10, 20, 40)]
+    const { plot } = recordingPlot()
+    try {
+      const subpaths = lightTrajectorySubpaths(segments, plot, 'light')
+      // The solid path ends at the last recorded value; the dotted path starts
+      // at its own projected value even when both meet at the same instant.
+      expect(commandsOf(subpaths.solid)).toEqual(['M0,35', 'L10,35'])
+      expect(commandsOf(subpaths.projected)).toEqual(['M10,40', 'L20,40'])
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
 
-      data = alignedData(
-        lightSeries([
-          {
-            start: 0,
-            end: 10,
-            shape: 'step',
-            startValue: null,
-            endValue: null,
-            origin: 'projected',
-            quality: 'unavailable',
-          },
-        ])
-      )
-      expect(buildPath(plot, 1, 0, 1)).toBeNull()
-      expect(recordings).toHaveLength(2)
+  it('breaks both subpaths at unavailable coverage', () => {
+    const segments = [
+      recorded(0, 10, 25),
+      projectedStep(10, 20, null, 'unavailable'),
+      projectedStep(20, 30, 10),
+    ]
+    const { plot } = recordingPlot()
+    try {
+      const subpaths = lightTrajectorySubpaths(segments, plot, 'light')
+      expect(commandsOf(subpaths.solid)).toEqual(['M0,25', 'L10,25'])
+      expect(commandsOf(subpaths.projected)).toEqual(['M20,10', 'L30,10'])
+      expect(
+        lightTrajectorySubpaths([projectedStep(0, 10, null, 'unavailable')], plot, 'light')
+      ).toEqual({ solid: null, projected: null })
     } finally {
       vi.unstubAllGlobals()
     }
   })
 })
+
+describe('light trajectory paths builder', () => {
+  it('strokes the recorded subpath from current data and returns null without one', () => {
+    const { plot } = recordingPlot()
+    try {
+      const key = seriesKey('light', 'light_f_1', 'linear')
+      let data = alignedData(lightSeries([recorded(0, 10, 40), projectedStep(10, 20, 40)]))
+      const buildPath = lightTrajectoryPaths(key, () => data)
+      const stroke = buildPath(plot, 1, 0, 5)?.stroke
+      if (stroke instanceof Map) throw new Error('Expected one canonical light path')
+      expect(commandsOf(stroke ?? null)).toEqual(['M0,40', 'L10,40'])
+
+      data = alignedData(lightSeries([projectedStep(0, 10, 25)]))
+      expect(buildPath(plot, 1, 0, 1)).toBeNull()
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+})
+
