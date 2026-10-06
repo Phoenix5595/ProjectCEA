@@ -231,6 +231,24 @@ test('dashboard fits both supported desktop viewports without overflow', async (
       await route.fulfill({ json: [] })
       return
     }
+    // Own this geometry scenario's modes instead of inheriting the shared
+    // profile fixture defaults, which change independently of dashboard QA.
+    if (method === 'GET' && url.pathname.startsWith('/api/room-modes/active/')) {
+      const location = decodeURIComponent(url.pathname.split('/')[4]!)
+      await route.fulfill({
+        json: {
+          location,
+          cluster: 'main',
+          mode_id: location === 'Flower Room' ? 4 : 1,
+          mode_name: location === 'Flower Room' ? 'sleep' : 'veg',
+          submode_id: null,
+          submode_name: null,
+          is_constant: true,
+          parameters: {},
+        },
+      })
+      return
+    }
     if (method === 'GET' && url.pathname === '/api/status') {
       const health = url.searchParams.get('health') === 'true'
       await route.fulfill({
