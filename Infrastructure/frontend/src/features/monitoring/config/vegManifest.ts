@@ -154,7 +154,7 @@ export const vegManifest: MonitoringManifest = {
       kind: 'timeseries',
       id: 'veg-systems',
       title: 'Veg atmosphere & equipment',
-      sources: ['sensor', 'climate', 'light', 'device', 'pid'],
+      sources: ['sensor', 'light', 'device', 'pid'],
       families: ['pressure', 'device', 'light'],
       defaults: { unit: 'ppm' },
       series: [
@@ -177,7 +177,7 @@ export const vegManifest: MonitoringManifest = {
           color: 'gray',
         },
         {
-          name: 'light_1 - Intensity',
+          name: 'light_v_1',
           displayName: 'Eyefinity Top - Intensity',
           unit: 'percent',
           axisPlacement: 'right',
@@ -186,7 +186,7 @@ export const vegManifest: MonitoringManifest = {
           color: 'yellow',
         },
         {
-          name: 'light_2 - Intensity',
+          name: 'light_v_2',
           displayName: 'Ridgetop Bottom Right - Intensity',
           unit: 'percent',
           axisPlacement: 'hidden',
@@ -195,7 +195,7 @@ export const vegManifest: MonitoringManifest = {
           color: 'orange',
         },
         {
-          name: 'light_3 - Intensity',
+          name: 'light_v_3',
           displayName: 'Ridgetop Bottom Left - Intensity',
           unit: 'percent',
           axisPlacement: 'hidden',

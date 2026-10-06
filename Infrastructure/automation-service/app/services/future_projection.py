@@ -32,20 +32,27 @@ _CLIMATE_SERIES: Final = {
 _PHOTOPERIOD_SERIES: Final = "light.photoperiod"
 
 
-def project_future_intervals(snapshot: MonitoringSnapshot) -> tuple[FutureProjection, ...]:
-    """Adapt pure climate/light schedules to complete versioned intervals without I/O."""
+def snapshot_publication_version(snapshot: MonitoringSnapshot) -> PublicationVersion | None:
+    """The publication version a projector derives from one snapshot, or None."""
     if snapshot.config_version is None:
-        return ()
-    version = PublicationVersion(
+        return None
+    return PublicationVersion(
         contract_version=1,
         config_version=snapshot.config_version,
         revision=ProjectionRevision(snapshot.projection_revision),
     )
+
+
+def project_future_intervals(snapshot: MonitoringSnapshot) -> tuple[FutureProjection, ...]:
+    """Adapt pure climate/light schedules to complete versioned intervals without I/O."""
+    version = snapshot_publication_version(snapshot)
+    if version is None:
+        return ()
     climate = project_climate_timelines(snapshot, lambda: snapshot.range.start)
     lights = project_lights(snapshot, now=snapshot.range.start)
     boundaries = _boundaries(snapshot, climate, lights)
     if len(boundaries) - 1 > MAX_PROJECTION_INTERVALS:
-        return _unavailable_timeline(snapshot, version)
+        return unavailable_future_intervals(snapshot, version)
     projections = tuple(
         FutureProjection(
             version=version,
@@ -158,9 +165,10 @@ def _unavailable(series_id: str, start: datetime, end: datetime) -> ProjectionSe
     )
 
 
-def _unavailable_timeline(
+def unavailable_future_intervals(
     snapshot: MonitoringSnapshot, version: PublicationVersion
 ) -> tuple[FutureProjection, ...]:
+    """One honest full-window unavailable projection tuple for every emitted series."""
     series_ids = (*_CLIMATE_SERIES.values(), _PHOTOPERIOD_SERIES, *_light_series_ids(snapshot))
     return (
         FutureProjection(

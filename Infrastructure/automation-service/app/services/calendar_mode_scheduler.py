@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, date, datetime
-from typing import Any, NotRequired, TypedDict
+from typing import TYPE_CHECKING, Any, NotRequired, TypedDict
 from zoneinfo import ZoneInfo
 
 from app.database import DatabaseManager
@@ -19,10 +19,12 @@ from app.events.operational_models import (
     SystemPayload,
 )
 from app.events.operational_ports import OperationalEventSink
-from app.services.mode_transition_service import ModeTransitionService
 from shared.infra_logging import get_logger
 
 from ..repositories.calendar import CalendarRepository
+
+if TYPE_CHECKING:
+    from app.services.mode_transition_service import ModeTransitionService
 
 logger = get_logger(__name__)
 LOCAL_TZ = ZoneInfo("America/Toronto")
@@ -42,10 +44,16 @@ class CalendarTransition(TypedDict):
 
 
 class CalendarModeScheduler:
-    def __init__(self, db: DatabaseManager, event_sink: OperationalEventSink | None = None) -> None:
+    def __init__(
+        self,
+        db: DatabaseManager,
+        event_sink: OperationalEventSink | None = None,
+        *,
+        transition_service: ModeTransitionService | None = None,
+    ) -> None:
         self._db = db
-        self._transition = ModeTransitionService(db)
         self._event_sink = event_sink
+        self._transition_service = transition_service
         self._skipped_transitions: set[tuple[int, date]] = set()
 
     def _today(self) -> date:
@@ -135,22 +143,17 @@ class CalendarModeScheduler:
 
         try:
             # mode_transition_history.triggered_by CHECK allows api|schedule|system only
-            await self._transition.execute_mode_transition(
+            if self._transition_service is None:
+                raise RuntimeError(
+                    "CalendarModeScheduler requires an injected transition service "
+                    "to apply calendar modes"
+                )
+            applied = await self._transition_service.execute_mode_transition(
                 "Flower Room",
                 "main",
                 mode_id,
                 submode_id,
                 "system",
-            )
-            if event_id:
-                await self._db.calendar_repo.record_mode_application(
-                    event_id, on_date, mode_id, submode_id, triggered_by
-                )
-            logger.info(
-                "Calendar mode applied: Flower Room -> %s/%s (%s)",
-                mode_name,
-                submode_name,
-                triggered_by,
             )
         except Exception as e:
             logger.error(
@@ -158,6 +161,25 @@ class CalendarModeScheduler:
                 e,
                 extra={"mode_name": mode_name, "submode_name": submode_name},
             )
+            return
+        if not applied.get("success"):
+            # A returned failed transition did not commit; record nothing and not "applied".
+            logger.error(
+                "Calendar mode transition did not commit: %s",
+                applied.get("message"),
+                extra={"mode_name": mode_name, "submode_name": submode_name},
+            )
+            return
+        if event_id:
+            await self._db.calendar_repo.record_mode_application(
+                event_id, on_date, mode_id, submode_id, triggered_by
+            )
+        logger.info(
+            "Calendar mode applied: Flower Room -> %s/%s (%s)",
+            mode_name,
+            submode_name,
+            triggered_by,
+        )
 
     async def get_expected_transition(
         self, location: str, cluster: str, on_date: date
@@ -202,6 +224,21 @@ class CalendarModeScheduler:
             "target_mode_id": mode_row["id"],
             "target_submode_id": submode["id"],
         }
+
+    async def is_profile_configured(
+        self, location: str, cluster: str, mode_name: str, submode_name: str | None
+    ) -> bool:
+        """Read saved destination parameters without activating or inventing defaults."""
+        if not mode_name:
+            return False
+        try:
+            parameters = await self._db.room_mode_repo.get_mode_parameters(
+                location, cluster, mode_name, submode_name
+            )
+        except Exception:
+            logger.exception("Cannot read calendar destination configuration")
+            return False
+        return parameters is not None
 
     def _emit_transition_skipped(
         self,

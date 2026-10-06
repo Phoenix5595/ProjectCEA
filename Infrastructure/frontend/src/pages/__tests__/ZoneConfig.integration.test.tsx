@@ -1,329 +1,275 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { forwardRef } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { RichTrajectoryEnvelope } from '../../features/climate-timeline/api/contracts'
-import {
-  TimelineConflictError,
-  TimelineUnavailableError,
-} from '../../features/climate-timeline/api/timelinePublicationPort'
+import type { ControlActions } from '../../contexts/ControlActionsContext'
+import type { TimelineSavedRequest } from '../../features/climate-timeline/api/timeline'
+import { TimelineConflictError, TimelineUnavailableError, type TimelinePreviewRequest } from '../../features/climate-timeline/api/timelinePublicationPort'
+import type { TimelineSavedBaseline } from '../../features/climate-timeline/state/timelineDraft'
 import ZoneConfig from '../ZoneConfig'
 
 const mocks = vi.hoisted(() => ({
   apiClient: {
-    getRoomModeWithParams: vi.fn(),
-    getClimatePeriods: vi.fn(),
-    getSaved: vi.fn(),
-    updateRoomParameters: vi.fn(),
-    saveRoomSchedule: vi.fn(),
-    saveClimatePeriods: vi.fn(),
-    preview: vi.fn(),
-    apply: vi.fn(),
+    getRoomModes: vi.fn(), getFlowerSubmodes: vi.fn(), getActiveRoomMode: vi.fn(),
+    getClimatePeriods: vi.fn(), getSaved: vi.fn(), getConfiguration: vi.fn(),
+    preview: vi.fn(), apply: vi.fn(), setRoomMode: vi.fn(),
   },
-  setActions: vi.fn(),
+  actions: {} as ControlActions,
+  profiles: new Map<string, TimelineSavedBaseline>(),
+  active: new Map<string, { modeId: number; submodeId: number | null }>(),
+  cursor: 37,
+  mutations: [] as Array<{ kind: 'apply' | 'activate'; modeId: number; revision: string }>,
 }))
-
 vi.mock('react-router-dom', () => ({ useParams: () => ({}) }))
 vi.mock('../../services/api', () => ({ apiClient: mocks.apiClient }))
-vi.mock('../../contexts/ControlActionsContext', () => ({
-  useControlActions: () => ({ setActions: mocks.setActions }),
-}))
-vi.mock('../../hooks/useControlSnapshot', () => ({
-  useControlSnapshot: () => ({ snapshot: null, registry: [], mcpConnected: false, loading: false }),
-}))
-vi.mock('../../components/LightIntensity', () => ({
-  default: forwardRef(function MockLightIntensity() {
-    return <div data-testid="light-intensity" />
-  }),
-}))
-vi.mock('../../components/ClimatePeriodTimeline', () => ({
-  default: ({ className }: { className?: string }) => (
-    <div data-testid="legacy-climate-period-timeline" className={className} />
-  ),
-}))
-vi.mock('../../components/ManualLightControl', () => ({
-  default: () => <div data-testid="manual-light-control" />,
-}))
-vi.mock('../../features/relay-timeline/RelayPidTimeline', () => ({
-  RelayPidTimeline: () => <div data-testid="relay-pid-timeline" />,
-}))
-vi.mock('../../components/PIDTuningPanel', () => ({
-  default: () => <div data-testid="pid-tuning-panel" />,
-}))
-vi.mock('../../components/VerticalNotesBlock', () => ({
-  default: () => <div data-testid="notes-block" />,
-}))
-vi.mock('../../components/devices/RelayChannelMatrix', () => ({
-  default: () => <div data-testid="relay-matrix" />,
-}))
-const mode = (modeName: string, isConstant: boolean) => ({
-  location: 'Veg Room',
-  cluster: 'main',
-  mode_name: modeName,
-  mode_id: 1,
-  submode_id: null,
-  is_constant: isConstant,
-  parameters: {
-    day_start_time: '06:00',
-    night_start_time: '18:00',
-    light_ramp_up_minutes: 20,
-    light_ramp_down_minutes: 20,
-    main_light_intensity: 80,
-    supplemental_light_intensity: 10,
-  },
-})
+vi.mock('../../contexts/ControlActionsContext', () => ({ useControlActions: () => ({ setActions: registerActions }) }))
+function registerActions(actions: ControlActions) { mocks.actions = actions }
+vi.mock('../../hooks/useControlSnapshot', () => ({ useControlSnapshot: () => ({
+  snapshot: null, registry: [], mcpConnected: false, loading: false, registryVersion: null,
+}) }))
+vi.mock('../../components/LightIntensity', () => ({ default: forwardRef(function FixtureLight() { return <div /> }) }))
+vi.mock('../../components/ManualLightControl', () => ({ default: () => <div data-testid="manual-safety-controls" /> }))
+vi.mock('../../components/VerticalNotesBlock', () => ({ default: () => <div /> }))
+vi.mock('../../components/devices/RelayChannelMatrix', () => ({ default: () => <div data-testid="relay-safety-controls" /> }))
 
-const periods = [
-  {
-    period_name: 'Day cycle',
-    start_time: '06:00',
-    end_time: '18:00',
-    ramp_minutes: 30,
-    heating_setpoint: 24,
-    cooling_setpoint: 28,
-    vpd_setpoint: 1.1,
-    co2_setpoint: 900,
-    details: 'Fixture schedule',
-  },
+const modes = [
+  { id: 1, name: 'veg', is_constant: false, photoperiod_hours: 18 },
+  { id: 2, name: 'flower', is_constant: false, photoperiod_hours: 12 },
+  { id: 3, name: 'drying', is_constant: true, photoperiod_hours: 0 },
+  { id: 4, name: 'sleep', is_constant: true, photoperiod_hours: 0 },
 ]
-
-const saved = {
-  room: { location: 'Veg Room', cluster: 'main' },
-  baseConfigRevision: 'config-1',
-  modeId: 1,
-  submodeId: null,
-  periods,
-  photoperiod: {
-    dayStartTime: '06:00',
-    nightStartTime: '18:00',
-    rampUpMinutes: 20,
-    rampDownMinutes: 20,
-  },
-  window: {
-    start: '2026-01-01T00:00:00.000Z',
-    end: '2026-01-02T00:00:00.000Z',
-    timezone: 'America/Toronto',
-  },
+const submodes = [{ id: 10, name: 'stretch' }, { id: 11, name: 'bulk' }, { id: 12, name: 'ripen' }]
+const periods = [
+  { period_name: 'Day cycle', start_time: '06:00', end_time: '18:00', ramp_minutes: 30,
+    heating_setpoint: 24, cooling_setpoint: 28, vpd_setpoint: 1.1, co2_setpoint: 900, details: 'saved day' },
+  { period_name: 'Night cycle', start_time: '18:00', end_time: '06:00', ramp_minutes: 15,
+    heating_setpoint: 19, cooling_setpoint: 24, vpd_setpoint: 0.8, co2_setpoint: 600, details: 'saved night' },
+]
+const photoperiod = { dayStartTime: '06:00', nightStartTime: '18:00', rampUpMinutes: 20, rampDownMinutes: 20 }
+const key = (location: string, modeId: number, submodeId: number | null) => `${location}|${modeId}|${submodeId ?? 'none'}`
+const revision = () => mocks.cursor.toString(16).padStart(7, '0')
+function readProfile(request: TimelineSavedRequest): TimelineSavedBaseline {
+  const stored = mocks.profiles.get(key(request.location, request.modeId, request.submodeId))
+  return {
+    ...stored,
+    room: { location: request.location, cluster: request.cluster },
+    modeId: request.modeId, submodeId: request.submodeId, baseConfigRevision: revision(),
+    parametersConfigured: stored?.parametersConfigured ?? false,
+    periods: structuredClone(stored?.periods ?? []),
+    photoperiod: stored?.photoperiod ?? { dayStartTime: '00:00', nightStartTime: '00:00', rampUpMinutes: 15, rampDownMinutes: 15 },
+    window: request.window,
+  }
+}
+function seed(location: string, modeId: number, submodeId: number | null, heat: number) {
+  mocks.profiles.set(key(location, modeId, submodeId), {
+    room: { location, cluster: 'main' }, modeId, submodeId, baseConfigRevision: revision(), parametersConfigured: true,
+    periods: modeId === 3 ? [{ ...periods[0]!, period_name: 'Drying', start_time: '00:00', end_time: '00:00', ramp_minutes: 0, heating_setpoint: heat }]
+      : periods.map((period, index) => ({ ...period, heating_setpoint: index === 0 ? heat : period.heating_setpoint })),
+    photoperiod: modeId === 3 ? { dayStartTime: '00:00', nightStartTime: '00:00', rampUpMinutes: 15, rampDownMinutes: 15 } : photoperiod,
+  })
+}
+async function heatInput() {
+  const table = screen.getByRole('table')
+  return (await within(table).findAllByPlaceholderText('°C'))[0]!
+}
+async function runSave() { await act(async () => { await mocks.actions.onSave?.() }) }
+async function inspect(mode: string, submode?: string) {
+  await act(async () => { mocks.actions.onSelectProfile?.(mode, submode) })
+  await waitFor(() => expect(mocks.actions.selectionLoading).toBe(false))
 }
 
-const draftEnvelope = (draftRevision: number) =>
-  RichTrajectoryEnvelope.parse({
-    contract_version: 1,
-    room: 'Veg Room',
-    generated_at: '2026-01-01T00:00:00.000Z',
-    window: {
-      start: '2026-01-01T00:00:00.000Z',
-      end: '2026-01-02T00:00:00.000Z',
-      timezone: 'America/Toronto',
-    },
-    revision_scope: 'draft',
-    base_config_revision: 'config-1',
-    draft_revision: `draft-${draftRevision}`,
-    segments: [
-      {
-        shape: 'step',
-        value: 22,
-        start: '2026-01-01T00:00:00.000Z',
-        end: '2026-01-02T00:00:00.000Z',
-        metric: 'temperature',
-        unit: 'celsius',
-        trajectory_kind: 'scheduled',
-        quality: 'exact',
-        source: {
-          mode: 'veg',
-          submode: null,
-          period: { period_id: 'day', label: 'Day cycle' },
-          config_revision: 'config-1',
-          draft_revision: `draft-${draftRevision}`,
-        },
-      },
-    ],
-    assumptions: [],
-    warnings: [],
+beforeEach(() => {
+  vi.resetAllMocks()
+  mocks.actions = {}
+  mocks.profiles.clear()
+  mocks.cursor = 37
+  mocks.mutations = []
+  mocks.active = new Map([
+    ['Veg Room', { modeId: 1, submodeId: null }],
+    ['Flower Room', { modeId: 2, submodeId: 11 }],
+  ])
+  seed('Veg Room', 1, null, 24)
+  seed('Flower Room', 2, null, 21)
+  seed('Flower Room', 2, 10, 20)
+  seed('Flower Room', 2, 11, 22)
+  seed('Flower Room', 3, null, 18)
+  mocks.apiClient.getRoomModes.mockResolvedValue(modes)
+  mocks.apiClient.getFlowerSubmodes.mockResolvedValue(submodes)
+  mocks.apiClient.getActiveRoomMode.mockImplementation(async (location: string, cluster: string) => {
+    const active = mocks.active.get(location)!
+    return { location, cluster, mode_id: active.modeId, submode_id: active.submodeId,
+      mode_name: modes.find(mode => mode.id === active.modeId)!.name,
+      submode_name: submodes.find(mode => mode.id === active.submodeId)?.name ?? null }
   })
-
-describe('ZoneConfig timeline classification integration', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-    mocks.apiClient.getClimatePeriods.mockResolvedValue(periods)
-    mocks.apiClient.getSaved.mockResolvedValue(saved)
-    mocks.apiClient.updateRoomParameters.mockImplementation(async () => mode('veg', true))
-    mocks.apiClient.preview.mockImplementation(async (request: { draftRevision: number }) =>
-      draftEnvelope(request.draftRevision)
-    )
-    mocks.apiClient.apply.mockImplementation(
-      async (request: {
-        room: { location: string; cluster: string }
-        values: { periods: typeof periods; photoperiod: unknown }
-      }) => ({
-        room: request.room,
-        baseConfigRevision: 'config-2',
-        periods: request.values.periods,
-        photoperiod: request.values.photoperiod,
-      })
-    )
+  mocks.apiClient.getSaved.mockImplementation(async (request: TimelineSavedRequest) => readProfile(request))
+  mocks.apiClient.getConfiguration.mockImplementation(async (request: TimelineSavedRequest) => readProfile(request))
+  mocks.apiClient.getClimatePeriods.mockResolvedValue(periods)
+  mocks.apiClient.preview.mockImplementation(async (request: TimelinePreviewRequest) => {
+    if (request.expectedConfigRevision !== revision()) throw new TimelineConflictError()
+    return { requestId: request.requestId, expectedConfigRevision: request.expectedConfigRevision,
+      draftRevision: request.draftRevision, modeId: request.modeId, submodeId: request.submodeId,
+      window: request.window, trajectory: null }
   })
-  it('mounts the relay timeline and PID tuning panel on the automation section', () => {
-    render(<ZoneConfig location="Veg Room" cluster="main" section="automation" />)
-
-    expect(screen.getByTestId('relay-pid-timeline')).toBeInTheDocument()
-    expect(screen.getByTestId('pid-tuning-panel')).toBeInTheDocument()
+  mocks.apiClient.apply.mockImplementation(async (request: TimelinePreviewRequest) => {
+    if (request.expectedConfigRevision !== revision()) throw new TimelineConflictError()
+    mocks.cursor++
+    const baseline: TimelineSavedBaseline = { ...structuredClone(request.values), room: request.room,
+      modeId: request.modeId, submodeId: request.submodeId, baseConfigRevision: revision(), parametersConfigured: true, window: request.window }
+    mocks.profiles.set(key(request.room.location, request.modeId, request.submodeId), baseline)
+    mocks.mutations.push({ kind: 'apply', modeId: request.modeId, revision: revision() })
+    return { baseline, warning: null }
   })
-
-  it('renders the saved timeline editor despite is_constant=true', async () => {
-    // Given: the API reports a Veg mode with a contradictory constant flag.
-    mocks.apiClient.getRoomModeWithParams.mockResolvedValue(mode('veg', true))
-
-    // When: the ZoneConfig control surface loads.
-    const rendered = render(<ZoneConfig location="Veg Room" cluster="main" />)
-
-    // Then: canonical Veg behavior uses the saved timeline editor path.
-    expect(
-      await screen.findByRole('region', { name: 'Climate control timeline' })
-    ).toBeInTheDocument()
-    expect(screen.getByText('READ ONLY')).toBeInTheDocument()
-    expect(await screen.findByRole('table')).toBeInTheDocument()
-    expect(screen.getByTestId('light-intensity')).toBeInTheDocument()
-    expect(screen.getByTestId('relay-matrix')).toBeInTheDocument()
-    expect(
-      rendered.container.querySelector('[data-testid="legacy-climate-period-timeline"]')
-    ).not.toBeInTheDocument()
-    expect(mocks.apiClient.getSaved).toHaveBeenCalledOnce()
+  mocks.apiClient.setRoomMode.mockImplementation(async (location: string, cluster: string, request: {
+    mode_name: string; submode_name?: string; expected_config_revision: string
+  }) => {
+    if (request.expected_config_revision !== revision()) throw new TimelineConflictError()
+    const modeId = modes.find(mode => mode.name === request.mode_name)!.id
+    const submodeId = submodes.find(mode => mode.name === request.submode_name)?.id ?? null
+    mocks.cursor++
+    mocks.active.set(location, { modeId, submodeId })
+    mocks.mutations.push({ kind: 'activate', modeId, revision: revision() })
+    const photo = mocks.profiles.get(key(location, modeId, submodeId))!.photoperiod
+    return { location, cluster, mode_id: modeId, submode_id: submodeId, mode_name: request.mode_name,
+      submode_name: request.submode_name ?? null, is_constant: modeId >= 3, parameters: {
+        day_start_time: photo.dayStartTime, night_start_time: photo.nightStartTime,
+        light_ramp_up_minutes: photo.rampUpMinutes, light_ramp_down_minutes: photo.rampDownMinutes,
+        main_light_intensity: 100, supplemental_light_intensity: 0,
+      }, config_revision: revision(), runtime_ready: true }
   })
+})
 
-  it('renders the saved timeline editor for constant Sleep too', async () => {
-    // Given: the API reports Sleep with a contradictory scheduled flag and no periods.
-    mocks.apiClient.getRoomModeWithParams.mockResolvedValue(mode('sleep', false))
-    mocks.apiClient.getClimatePeriods.mockResolvedValue([])
-
-    // When: the ZoneConfig control surface loads.
-    render(<ZoneConfig location="Veg Room" cluster="main" />)
-
-    // Then: the saved timeline still loads and renders for the 24h constant mode.
-    expect(
-      await screen.findByRole('region', { name: 'Climate control timeline' })
-    ).toBeInTheDocument()
-    expect(screen.getByText('READ ONLY')).toBeInTheDocument()
-    expect(mocks.apiClient.getSaved).toHaveBeenCalledOnce()
-    expect(screen.queryByText('Constant mode - no timeline')).not.toBeInTheDocument()
-  })
-
-  it('surfaces timeline_unavailable while retaining the fallback periods UI', async () => {
-    // Given: room mode and legacy periods load, but the saved timeline is unavailable.
-    mocks.apiClient.getRoomModeWithParams.mockResolvedValue(mode('flower', false))
-    mocks.apiClient.getSaved.mockRejectedValue(
-      new TimelineUnavailableError('saved schedule authority is unavailable')
-    )
-
-    // When: the ZoneConfig control surface loads.
+describe('ZoneConfig profile preparation consumers', () => {
+  it('returns to the configured Flower submode instead of opening a NULL profile', async () => {
     render(<ZoneConfig location="Flower Room" cluster="main" />)
-
-    // Then: the fallback table remains usable and the unavailable authority is exposed.
-    expect(await screen.findByRole('table')).toBeInTheDocument()
-    expect(screen.queryByTestId('legacy-climate-period-timeline')).not.toBeInTheDocument()
-    await waitFor(() =>
-      expect(mocks.setActions.mock.calls.at(-1)?.[0]).toMatchObject({
-        saveError: 'saved schedule authority is unavailable',
-      })
-    )
+    expect(await heatInput()).toHaveValue(22)
+    await inspect('drying')
+    expect(await heatInput()).toHaveValue(18)
+    await inspect('flower')
+    expect(await heatInput()).toHaveValue(22)
+    expect(mocks.active.get('Flower Room')).toEqual({ modeId: 2, submodeId: 11 })
+    expect(mocks.profiles.get(key('Flower Room', 2, null))?.periods[0]?.heating_setpoint).toBe(21)
+    expect(mocks.mutations).toEqual([])
   })
 
-  it('surfaces non-recoverable saved timeline failures', async () => {
-    // Given: the saved timeline request fails with an ordinary server error.
-    mocks.apiClient.getRoomModeWithParams.mockResolvedValue(mode('flower', false))
-    mocks.apiClient.getSaved.mockRejectedValue(new Error('HTTP 500'))
-
-    // When: the ZoneConfig control surface loads.
+  it('keeps the inspected Flower submode and draft when its parent chip is selected', async () => {
     render(<ZoneConfig location="Flower Room" cluster="main" />)
-
-    // Then: the normal UI remains rendered and the failure is exposed to actions.
-    await screen.findByRole('table')
-    await waitFor(() =>
-      expect(mocks.setActions.mock.calls.at(-1)?.[0]).toMatchObject({
-        saveError: 'HTTP 500',
-      })
-    )
+    await heatInput()
+    await inspect('flower', 'stretch')
+    const heat = await heatInput()
+    fireEvent.change(heat, { target: { value: '23' } })
+    await inspect('flower')
+    expect(heat).toHaveValue(23)
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(mocks.active.get('Flower Room')).toEqual({ modeId: 2, submodeId: 11 })
   })
 
-  it('persists a dirty table edit through review and apply when the header Save runs', async () => {
-    // Given: a timeline-backed room and its saved baseline.
-    mocks.apiClient.getRoomModeWithParams.mockResolvedValue(mode('veg', true))
+  it('selects the first catalogue Flower submode when no Flower profile is configured', async () => {
+    mocks.active.set('Flower Room', { modeId: 4, submodeId: null })
+    render(<ZoneConfig location="Flower Room" cluster="main" />)
+    await heatInput()
+    await inspect('flower')
+    expect(await heatInput()).toHaveValue(20)
+    expect(mocks.active.get('Flower Room')).toEqual({ modeId: 4, submodeId: null })
+    expect(mocks.mutations).toEqual([])
+  })
+
+  it('keeps canonical Veg time editing despite a contradictory constant flag', async () => {
+    mocks.apiClient.getRoomModes.mockResolvedValue(modes.map(mode => mode.id === 1 ? { ...mode, is_constant: true } : mode))
     render(<ZoneConfig location="Veg Room" cluster="main" />)
-    await screen.findByRole('region', { name: 'Climate control timeline' })
-    const table = await screen.findByRole('table')
-
-    // When: the operator edits the heating setpoint in the table, then invokes the header Save.
-    const heatInput = within(table).getAllByPlaceholderText('°C')[0]
-    fireEvent.change(heatInput, { target: { value: '23.5' } })
-    const actions = mocks.setActions.mock.calls.at(-1)?.[0] as { onSave: () => Promise<void> }
-    await actSave(actions.onSave)
-
-    // Then: room parameters are saved and the draft reaches the apply endpoint.
-    expect(mocks.apiClient.updateRoomParameters).toHaveBeenCalledOnce()
-    expect(mocks.apiClient.preview).toHaveBeenCalledOnce()
-    expect(mocks.apiClient.apply).toHaveBeenCalledOnce()
-    const applyRequest = mocks.apiClient.apply.mock.calls[0]?.[0] as {
-      values: { periods: Array<{ heating_setpoint: number | null }> }
-    }
-    expect(applyRequest.values.periods[0]?.heating_setpoint).toBe(23.5)
-    expect(mocks.setActions.mock.calls.at(-1)?.[0]).toMatchObject({ saveError: null })
-
-    // And: the applied baseline flows back into the table cell (draft → table direction).
-    await waitFor(() =>
-      expect(within(screen.getByRole('table')).getAllByPlaceholderText('°C')[0]).toHaveValue(23.5)
-    )
+    const heat = await heatInput()
+    expect(heat).toHaveValue(24)
+    expect(within(screen.getByRole('table')).getAllByPlaceholderText('HH:MM')[0]).toBeEnabled()
+    fireEvent.change(heat, { target: { value: '23.5' } })
+    await runSave()
+    expect(mocks.profiles.get(key('Veg Room', 1, null))?.periods[0]?.heating_setpoint).toBe(23.5)
   })
 
-  it('keeps the draft and surfaces the conflict when header Save apply receives a 409', async () => {
-    // Given: a timeline-backed room whose apply endpoint answers with a revision conflict.
-    mocks.apiClient.getRoomModeWithParams.mockResolvedValue(mode('veg', true))
+  it('initializes unconfigured canonical Sleep without read-side persistence and saves its value-only all-day row', async () => {
+    mocks.active.set('Flower Room', { modeId: 4, submodeId: null })
+    mocks.apiClient.getRoomModes.mockResolvedValue(modes.map(mode => mode.id === 4 ? { ...mode, is_constant: false } : mode))
+    render(<ZoneConfig location="Flower Room" cluster="main" />)
+    const heat = await heatInput()
+    expect(heat).toHaveValue(null)
+    expect(mocks.profiles.has(key('Flower Room', 4, null))).toBe(false)
+    for (const clock of within(screen.getByRole('table')).getAllByPlaceholderText('HH:MM')) expect(clock).toBeDisabled()
+    fireEvent.change(heat, { target: { value: '21' } })
+    await runSave()
+    const stored = mocks.profiles.get(key('Flower Room', 4, null))!
+    expect(stored.parametersConfigured).toBe(true)
+    expect(stored.periods.map(period => [period.start_time, period.end_time, period.heating_setpoint])).toEqual([['00:00', '00:00', 21]])
+  })
+
+  it('can save through the configuration-only path when the selected trajectory is unavailable', async () => {
+    mocks.apiClient.getSaved.mockRejectedValue(new TimelineUnavailableError('projection unavailable'))
+    render(<ZoneConfig location="Veg Room" cluster="main" />)
+    const heat = await heatInput()
+    fireEvent.change(heat, { target: { value: '23.5' } })
+    await runSave()
+    expect(mocks.profiles.get(key('Veg Room', 1, null))?.periods[0]?.heating_setpoint).toBe(23.5)
+  })
+
+  it('keeps legacy editing and safety controls usable but forbids persistence without profile metadata', async () => {
+    mocks.apiClient.getSaved.mockRejectedValue(new Error('metadata unavailable'))
+    mocks.apiClient.getConfiguration.mockRejectedValue(new Error('metadata unavailable'))
+    render(<ZoneConfig location="Veg Room" cluster="main" />)
+    const heat = await heatInput()
+    fireEvent.change(heat, { target: { value: '20' } })
+    expect(heat).toHaveValue(20)
+    expect(screen.getByTestId('relay-safety-controls')).toBeInTheDocument()
+    await runSave()
+    expect(mocks.mutations).toEqual([])
+    expect(mocks.profiles.get(key('Veg Room', 1, null))?.periods[0]?.heating_setpoint).toBe(24)
+  })
+
+  it('does not commit when edits revert to the persisted values', async () => {
+    render(<ZoneConfig location="Veg Room" cluster="main" />)
+    const heat = await heatInput()
+    fireEvent.change(heat, { target: { value: '23' } })
+    fireEvent.change(heat, { target: { value: '24' } })
+    await runSave()
+    expect(mocks.cursor).toBe(37)
+    expect(mocks.mutations).toEqual([])
+  })
+
+  it('preserves a conflicting draft while the persisted profile and active identity remain unchanged', async () => {
     mocks.apiClient.apply.mockRejectedValue(new TimelineConflictError())
     render(<ZoneConfig location="Veg Room" cluster="main" />)
-    await screen.findByRole('region', { name: 'Climate control timeline' })
-    const table = await screen.findByRole('table')
-
-    // When: the operator edits a setpoint and saves through the header.
-    fireEvent.change(within(table).getAllByPlaceholderText('°C')[0], { target: { value: '23.5' } })
-    const actions = mocks.setActions.mock.calls.at(-1)?.[0] as { onSave: () => Promise<void> }
-    await actSave(actions.onSave)
-
-    // Then: the table edit is preserved for another review/apply cycle and the failure is visible.
-    expect(within(screen.getByRole('table')).getAllByPlaceholderText('°C')[0]).toHaveValue(23.5)
-    expect(mocks.apiClient.preview).toHaveBeenCalledOnce()
-    await waitFor(() =>
-      expect(mocks.setActions.mock.calls.at(-1)?.[0]).toMatchObject({
-        saveError: expect.stringMatching(/conflict/i),
-      })
-    )
+    const heat = await heatInput()
+    fireEvent.change(heat, { target: { value: '23.5' } })
+    await runSave()
+    expect(heat).toHaveValue(23.5)
+    expect(mocks.actions.canSave).toBe(false)
+    expect(mocks.profiles.get(key('Veg Room', 1, null))?.periods[0]?.heating_setpoint).toBe(24)
+    expect(mocks.active.get('Veg Room')).toEqual({ modeId: 1, submodeId: null })
   })
 
-  it('keeps the legacy direct save when the timeline is unavailable', async () => {
-    // Given: the saved timeline is unavailable so the page falls back to legacy table state.
-    mocks.apiClient.getRoomModeWithParams.mockResolvedValue(mode('flower', false))
-    mocks.apiClient.getSaved.mockRejectedValue(
-      new TimelineUnavailableError('saved schedule authority is unavailable')
-    )
+  it('saves an inactive slice without activation, then activates only after its next dirty save commits', async () => {
     render(<ZoneConfig location="Flower Room" cluster="main" />)
-    const table = await screen.findByRole('table')
+    await heatInput()
+    await inspect('drying')
+    const heat = await heatInput()
+    fireEvent.change(heat, { target: { value: '19' } })
+    await runSave()
+    expect(mocks.profiles.get(key('Flower Room', 3, null))?.periods[0]?.heating_setpoint).toBe(19)
+    expect(mocks.profiles.get(key('Flower Room', 2, 11))?.periods[0]?.heating_setpoint).toBe(22)
+    expect(mocks.active.get('Flower Room')).toEqual({ modeId: 2, submodeId: 11 })
+    fireEvent.change(heat, { target: { value: '20' } })
+    await act(async () => { await mocks.actions.onActivateSelected?.() })
+    expect(mocks.mutations.map(mutation => mutation.kind)).toEqual(['apply', 'apply', 'activate'])
+    expect(mocks.profiles.get(key('Flower Room', 3, null))?.periods[0]?.heating_setpoint).toBe(20)
+    expect(mocks.active.get('Flower Room')).toEqual({ modeId: 3, submodeId: null })
+  })
 
-    // When: the operator edits the table and saves through the header.
-    fireEvent.change(within(table).getAllByPlaceholderText('°C')[0], { target: { value: '23.5' } })
-    const actions = mocks.setActions.mock.calls.at(-1)?.[0] as { onSave: () => Promise<void> }
-    await actSave(actions.onSave)
-
-    // Then: the legacy periods endpoint carries the edit without any preview/apply traffic.
-    expect(mocks.apiClient.saveClimatePeriods).toHaveBeenCalledOnce()
-    const savedPeriods = mocks.apiClient.saveClimatePeriods.mock.calls[0]?.[2] as Array<{
-      heating_setpoint: number | null
-    }>
-    expect(savedPeriods[0]?.heating_setpoint).toBe(23.5)
-    expect(mocks.apiClient.preview).not.toHaveBeenCalled()
-    expect(mocks.apiClient.apply).not.toHaveBeenCalled()
+  it('never activates after a failed review and retains the inactive preparation', async () => {
+    render(<ZoneConfig location="Flower Room" cluster="main" />)
+    await heatInput()
+    await inspect('drying')
+    const heat = await heatInput()
+    fireEvent.change(heat, { target: { value: '19' } })
+    mocks.apiClient.preview.mockRejectedValue(new TimelineConflictError())
+    await act(async () => { await mocks.actions.onActivateSelected?.() })
+    expect(heat).toHaveValue(19)
+    expect(mocks.mutations).toEqual([])
+    expect(mocks.active.get('Flower Room')).toEqual({ modeId: 2, submodeId: 11 })
   })
 })
-
-async function actSave(onSave: () => Promise<void>): Promise<void> {
-  await waitFor(async () => {
-    await onSave()
-  })
-}

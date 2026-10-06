@@ -36,7 +36,7 @@ function isAllDayPeriod(period: ClimatePeriod): boolean {
 }
 
 interface ClimatePeriodsTableProps {
-  periods: ClimatePeriod[]
+  periods: readonly ClimatePeriod[]
   onChange: (periods: ClimatePeriod[]) => void
   validationErrors?: string[]
   /** Constant modes expose one full-day section, not an editable daily schedule. */
@@ -111,7 +111,7 @@ export default function ClimatePeriodsTable({
         </div>
       )}
 
-      <div className="overflow-x-auto">
+      <div>
         <table className="min-w-[780px] w-full text-xs">
           <thead>
             <tr className="border-b border-border-default">

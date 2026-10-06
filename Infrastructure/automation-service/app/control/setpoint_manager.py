@@ -6,6 +6,7 @@ from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any, cast
 
+from app.control.ramp_policy import DEFAULT_RAMP_SKIP_THRESHOLD, RAMP_SKIP_THRESHOLDS
 from app.control.scheduler import LOCAL_TZ
 from shared.infra_logging import LoggingContext, get_logger
 
@@ -69,15 +70,6 @@ class RampState:
 
 class RampManager:
     """Manages ramp transitions for setpoint changes."""
-
-    # Setpoint-type aware skip thresholds - ramps are skipped if delta is below these
-    SKIP_THRESHOLDS: dict[str, float] = {
-        "heating": 0.1,  # °C - temperature precision
-        "cooling": 0.1,  # °C - temperature precision
-        "vpd": 0.01,  # kPa - VPD precision (2 decimal places)
-        "co2": 10.0,  # ppm - CO2 precision
-        "humidity": 1.0,  # % - humidity precision
-    }
 
     _redis: AutomationRedisClient | None
 
@@ -239,7 +231,7 @@ class RampManager:
             current_time: Current timestamp
         """
         ramp_key = self._make_key(location, cluster, setpoint_type)
-        threshold = self.SKIP_THRESHOLDS.get(setpoint_type, 0.1)
+        threshold = RAMP_SKIP_THRESHOLDS.get(setpoint_type, DEFAULT_RAMP_SKIP_THRESHOLD)
         delta = abs(target_value - start_value)
 
         previous_ramp = self.active_ramps.get(ramp_key)
@@ -518,6 +510,9 @@ class SetpointManager:
         self._redis = redis_client
         self.ramp_manager = RampManager(redis_client, event_sink)
         self._state = state_manager  # type: ignore
+        # Captured-profile ramp retarget authority per room.
+        self._profile_identity: dict[tuple[str, str], Any] = {}
+        self._profile_nominal: dict[tuple[str, str], dict[str, float | None]] = {}
 
     async def compute_effective_setpoints(
         self,
@@ -553,13 +548,30 @@ class SetpointManager:
             # Store nominal values
             self._store_nominal_values(result, nominal_values)
 
+            # Captured-profile identity: same-label profile/submode changes
+            # or changed targets retarget; an unchanged set preserves ramps.
+            room_key = (location, cluster)
+            climate_identity = setpoint_data.get("climate_identity")
+            prior_identity = self._profile_identity.get(room_key)
+            prior_nominal = self._profile_nominal.get(room_key)
+            identity_changed = (
+                prior_identity is not None
+                and climate_identity is not None
+                and prior_identity != climate_identity
+            )
+            targets_changed = prior_nominal is not None and prior_nominal != nominal_values
+            restored_contradiction = self._restored_ramp_contradiction(
+                location, cluster, nominal_values, current_time
+            )
+
             # Check for period transitions that require ramping
             period_changed = self._detect_mode_change(current_period, previous_period)
 
-            if period_changed:
-                # CRITICAL: Clear ALL stale ramps when period changes to prevent sawtoothing.
-                # Snapshot the live interpolated values first so the replacement
-                # ramps resume from where the schedule actually was.
+            if period_changed or identity_changed or targets_changed or restored_contradiction:
+                # CRITICAL: Clear ALL stale ramps when the authority changes to
+                # prevent sawtoothing. Snapshot the live interpolated values
+                # first so the replacement ramps resume from where the
+                # schedule actually was.
                 in_flight = self.ramp_manager.current_ramp_values(location, cluster, current_time)
                 self.ramp_manager.clear_ramps_for_room(location, cluster)
 
@@ -576,6 +588,7 @@ class SetpointManager:
                         previous_period,
                         in_flight,
                         setpoint_data.get("period_start_time"),
+                        prior_requested=prior_nominal,
                     )
                 else:
                     self._apply_nominal_values(result, nominal_values)
@@ -585,6 +598,11 @@ class SetpointManager:
             else:
                 # No ramping needed, use nominal values directly
                 self._apply_nominal_values(result, nominal_values)
+
+            # Track the authority consumed for this computation.
+            if climate_identity is not None:
+                self._profile_identity[room_key] = climate_identity
+            self._profile_nominal[room_key] = nominal_values
 
             return result
 
@@ -634,6 +652,34 @@ class SetpointManager:
             return False
         return current_period != previous_period
 
+    def _restored_ramp_contradiction(
+        self,
+        location: str,
+        cluster: str,
+        nominal_values: Mapping[str, float | None],
+        current_time: datetime,
+    ) -> bool:
+        """True when a restored ramp targets a nominal that has since changed.
+
+        A restored ramp whose target contradicts the current nominal must
+        retarget instead of continuing toward the stale target.
+        """
+        for setpoint_type, nominal_value in nominal_values.items():
+            if nominal_value is None:
+                continue
+            ramp = self.ramp_manager.active_ramps.get(
+                self.ramp_manager._make_key(location, cluster, setpoint_type)
+            )
+            if (
+                ramp is None
+                or not getattr(ramp, "restored", False)
+                or ramp.is_complete(current_time)
+            ):
+                continue
+            if ramp.target_value != nominal_value:
+                return True
+        return False
+
     async def _handle_mode_transition_ramp(
         self,
         location: str,
@@ -647,13 +693,23 @@ class SetpointManager:
         previous_period: str | None = None,
         in_flight: Mapping[str, float] | None = None,
         period_start_time: str | None = None,
+        *,
+        prior_requested: Mapping[str, float | None] | None = None,
     ) -> None:
-        """Handle ramp transitions when period changes."""
+        """Handle ramp transitions when the schedule authority changes.
+
+        With in-flight values the replacement starts at the observation time
+        with only the remaining duration to the scheduled deadline: no value
+        jump and no extension past that deadline. Without in-flight values the
+        late-observation policy anchors at the scheduled boundary with the
+        configured duration.
+        """
         if current_period is None:
             return
 
         anchor = self._scheduled_boundary(current_time, period_start_time)
-        if current_time - anchor >= timedelta(minutes=ramp_in_duration):
+        deadline = anchor + timedelta(minutes=ramp_in_duration)
+        if current_time >= deadline:
             # The scheduled ramp window already elapsed (e.g. an outage spanned
             # the transition): the schedule already reached the target.
             logger.info(
@@ -663,12 +719,14 @@ class SetpointManager:
             self._apply_nominal_values(result, nominal_values)
             return
 
+        remaining_minutes = max(0.0, (deadline - current_time).total_seconds() / 60.0)
+
         logger.debug(
             f"RAMP DEBUG: {location}/{cluster} - period_changed=True, current_period={current_period}"
         )
 
-        # Determine ramp start values based on the interrupted ramp, the
-        # previous period, then sensors.
+        # Determine ramp start values based on the interrupted ramp, the last
+        # requested prior-profile values, the previous period, then sensors.
         ramp_starts = await self._calculate_ramp_start_values(
             location,
             cluster,
@@ -677,6 +735,7 @@ class SetpointManager:
             sensor_values,
             previous_period,
             in_flight,
+            prior_requested=prior_requested,
         )
 
         # Start ramps for each setpoint type
@@ -687,14 +746,21 @@ class SetpointManager:
             start_value = ramp_starts.get(setpoint_type)
 
             if nominal_value is not None and start_value is not None:
+                if in_flight:
+                    # Resume at the live value toward the original deadline.
+                    duration_minutes = remaining_minutes
+                    ramp_time = current_time
+                else:
+                    duration_minutes = ramp_in_duration
+                    ramp_time = anchor
                 self.ramp_manager.start_ramp(
                     location,
                     cluster,
                     setpoint_type,
                     start_value,
                     nominal_value,
-                    ramp_in_duration,
-                    anchor,
+                    duration_minutes,
+                    ramp_time,
                 )
                 ramps_started.append(setpoint_type)
             elif nominal_value is None:
@@ -761,12 +827,15 @@ class SetpointManager:
         sensor_values: Mapping[str, float | None] | None,
         previous_period: str | None = None,
         in_flight: Mapping[str, float] | None = None,
+        *,
+        prior_requested: Mapping[str, float | None] | None = None,
     ) -> dict[str, float | None]:
         """Calculate starting values for ramps based on previous period.
 
-        An interrupted ramp resumes from its live interpolated value. Otherwise
-        the climate_periods table supplies the previous period's setpoints as the
-        ramp starting point, falling back to sensor values or nominal values.
+        An interrupted ramp resumes from its live interpolated value. The last
+        requested prior-profile values take precedence over a climate_periods
+        lookup by a shared period label, because the label match may belong to
+        another profile's parameters.
         """
         ramp_starts: dict[str, float | None] = {}
         if in_flight:
@@ -788,8 +857,26 @@ class SetpointManager:
                 if ramp_starts.get(setpoint_type) is None:
                     ramp_starts[setpoint_type] = value
 
+        # Prefer last known requested values for the prior profile over a DB
+        # lookup by a shared period label; the label match may belong to
+        # another profile's parameters.
+        if prior_requested is not None:
+            _fill_missing(
+                {
+                    "heating": prior_requested.get("heating"),
+                    "cooling": prior_requested.get("cooling"),
+                    "humidity": prior_requested.get("humidity"),
+                    "co2": prior_requested.get("co2"),
+                    "vpd": prior_requested.get("vpd"),
+                }
+            )
+            logger.info(
+                f"RAMP: Prior-profile requested ramp starts for {location}/{cluster}: {ramp_starts}"
+            )
+            return ramp_starts
+
         # If we know the previous period name, look it up in climate_periods table
-        if previous_period:
+        if previous_period and self.database is not None:
             logger.debug(
                 f"RAMP: {previous_period} -> {current_period}, fetching {previous_period} period as start"
             )

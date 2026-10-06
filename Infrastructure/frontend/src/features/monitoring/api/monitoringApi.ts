@@ -6,6 +6,7 @@ import { buildQuery, MonitoringClient } from './client'
 import type { MonitoringRequestContext, MonitoringRequestOptions } from './client'
 import {
   ControlMonitoringResponse,
+  CurrentPublicationResponse,
   LiveSensorValue,
   MonitoringResponse,
   ProjectionPublicationResponse,
@@ -98,6 +99,15 @@ export class MonitoringApi {
   ): Promise<ProjectionPublicationResponse> {
     const path = `/api/monitoring/control/${encodeURIComponent(location)}/projection`
     return this.client.get(path, ProjectionPublicationResponse, options)
+  }
+
+  /** Fresh current publication for one room; read-only paired-version route. */
+  controlCurrent(
+    location: string,
+    options?: MonitoringRequestOptions
+  ): Promise<CurrentPublicationResponse> {
+    const path = `/api/monitoring/control/${encodeURIComponent(location)}/current`
+    return this.client.get(path, CurrentPublicationResponse, options)
   }
   relayTimeline(
     location: string,

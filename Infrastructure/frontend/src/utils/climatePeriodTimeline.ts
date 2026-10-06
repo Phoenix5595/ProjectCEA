@@ -38,10 +38,24 @@ export function sortPeriodsByStart(periods: ClimatePeriod[]): ClimatePeriod[] {
 }
 
 function lerp(a: number | null, b: number | null, t: number): number | null {
-  if (b == null && a == null) return null
-  if (b == null) return a
+  if (b == null) return null
   if (a == null) return b
   return a + (b - a) * t
+}
+
+/** Ramp-skip thresholds mirroring the shared backend ramp policy (`ramp_policy.py`). */
+const RAMP_SKIP_THRESHOLDS: Record<string, number> = {
+  heating: 0.1,
+  cooling: 0.1,
+  vpd: 0.01,
+  co2: 10,
+  humidity: 1,
+}
+
+const DEFAULT_RAMP_SKIP_THRESHOLD = 0.1
+
+export function rampSkipThreshold(metric: string): number {
+  return RAMP_SKIP_THRESHOLDS[metric] ?? DEFAULT_RAMP_SKIP_THRESHOLD
 }
 
 export type SetpointMetric = 'heating' | 'cooling' | 'vpd' | 'co2'
@@ -92,8 +106,15 @@ export function sampleMetricSeries(
     if (ramp <= 0 || offset >= ramp) {
       out[m] = nominal
     } else {
-      const t = ramp > 0 ? offset / ramp : 1
-      out[m] = lerp(prevVal, nominal, t)
+      const initial = prevVal ?? nominal
+      // Backend parity: a delta strictly below the skip threshold steps to the
+      // nominal target instead of ramping (equality still ramps).
+      if (initial != null && Math.abs(initial - (nominal ?? initial)) < rampSkipThreshold(metric)) {
+        out[m] = nominal
+      } else {
+        const t = ramp > 0 ? offset / ramp : 1
+        out[m] = lerp(prevVal, nominal, t)
+      }
     }
   }
 

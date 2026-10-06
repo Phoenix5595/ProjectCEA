@@ -20,6 +20,8 @@ import type {
 import type { ChartFamily } from '../charts/options/family'
 import type { SeriesSpec } from '../config'
 import type { MonitoringRange } from '../state'
+import type { DeviceRegistryEntry } from '../../../types/device'
+
 
 /** Everything the alignment function needs to build the shared grid. */
 export interface AlignInput {
@@ -36,6 +38,11 @@ export interface AlignInput {
   seriesSpecs?: SeriesSpec[]
   /** Panel-level default soft bounds applied when no series explicitly declares one. */
   scaleDefaults?: { unit?: UnitFamily; softMin?: number; softMax?: number }
+  /** Room-filtered device identities used to suppress light state/PID overlays. */
+  lightRegistry?: readonly Pick<
+    DeviceRegistryEntry,
+    'device_name' | 'display_name' | 'per_room_index'
+  >[]
 }
 
 /** How a series should be drawn by the uPlot adapter. */
@@ -73,6 +80,17 @@ export type MutableSeriesPresentation = {
   -readonly [K in keyof SeriesPresentation]?: SeriesPresentation[K]
 }
 
+/** Piecewise light intensity coverage over half-open epoch-millisecond intervals. */
+export interface LightTrajectorySegment {
+  readonly start: number
+  readonly end: number
+  readonly shape: 'step' | 'linear'
+  readonly startValue: number | null
+  readonly endValue: number | null
+  readonly origin: Origin
+  readonly quality: Quality
+}
+
 /** One y array aligned to the shared x axis. */
 export interface AlignedSeries {
   key: SeriesKey
@@ -92,6 +110,8 @@ export interface AlignedSeries {
   unitFamily?: UnitFamily
   /** Canonical presentation metadata, attached when manifest specs are supplied. */
   presentation?: SeriesPresentation
+  /** Exact light segments used for rendering and cursor evaluation. */
+  lightTrajectory?: readonly LightTrajectorySegment[]
 }
 
 /** A min/max envelope pair referencing two emitted series keys. */
@@ -167,7 +187,6 @@ export interface NormDeviceSeries {
   name: string
   metric: string
   states: NormStep[]
-  duties: NormPoint[]
   seriesOrigin: Origin
   seriesQuality: Quality
   seriesIsAggregated: boolean

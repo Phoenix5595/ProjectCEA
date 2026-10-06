@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, cast
+from typing import Any, cast
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from app.config import ConfigLoader
 from app.database import DatabaseManager
 from app.events.mutation_context import (
     MutationRequestContext,
@@ -19,15 +18,17 @@ from app.events.mutation_diff import safe_allowlisted_diff
 from app.events.operational_models import EntityContext
 from app.events.operational_ports import OperationalEventSink
 from app.schemas.schedules import RoomScheduleCreate
+from app.services.room_schedule_service import (
+    ActiveModeMissingError,
+    ProfileNotConfiguredError,
+    RoomScheduleService,
+    validate_room_schedule_times,
+)
 from shared.infra_logging import get_logger
 
 from .base import (
-    get_config,
     get_database,
 )
-
-if TYPE_CHECKING:
-    from asyncpg import Connection
 
 logger = get_logger(__name__)
 
@@ -43,51 +44,125 @@ def _to_hhmm(value: Any) -> str:
     return s[:5] if len(s) >= 5 else "06:00"
 
 
+def get_room_schedule_service() -> RoomScheduleService:
+    """Provide the transaction-owning room schedule service."""
+    from app.main import container
+
+    return container.get_room_schedule_service()
+
+
+async def _commit_room_schedule_boundary(
+    location: str,
+    cluster: str,
+    schedule: RoomScheduleCreate,
+    result: dict[str, Any],
+    context: MutationRequestContext,
+    sink: OperationalEventSink,
+) -> dict[str, Any]:
+    """Emit the committed mutation, broadcast, and shape the HTTP response.
+
+    The service owns the transaction and the config-event/cache boundary; this
+    boundary owns only HTTP-facing notices and returns a truthful warning.
+    """
+    emit_persisted_mutation(
+        sink,
+        PersistedMutation(
+            operation="update",
+            entity=EntityContext(
+                entity_type="room_schedule",
+                entity_id=f"{location}:{cluster}",
+                location=location,
+                cluster=cluster,
+            ),
+            changes=safe_allowlisted_diff(
+                _room_schedule_values(result.get("prior_parameters")),
+                {
+                    "day_start_time": schedule.day_start_time,
+                    "night_start_time": schedule.night_start_time,
+                    "light_ramp_up_minutes": schedule.ramp_up_duration or 30,
+                    "light_ramp_down_minutes": schedule.ramp_down_duration or 15,
+                },
+                frozenset(
+                    {
+                        "day_start_time",
+                        "night_start_time",
+                        "light_ramp_up_minutes",
+                        "light_ramp_down_minutes",
+                    }
+                ),
+            ),
+        ),
+        context,
+    )
+    try:
+        from app.routes.websocket import broadcast_room_schedule_update
+
+        await broadcast_room_schedule_update(
+            location,
+            cluster,
+            {
+                "day_start_time": schedule.day_start_time,
+                "day_end_time": schedule.day_end_time,
+                "night_start_time": schedule.night_start_time,
+                "night_end_time": schedule.night_end_time,
+                "ramp_up_duration": schedule.ramp_up_duration,
+                "ramp_down_duration": schedule.ramp_down_duration,
+            },
+        )
+    except Exception as e:  # noqa: BLE001 - broadcast is best-effort
+        logger.warning(f"Failed to broadcast room schedule update: {e}")
+    response: dict[str, Any] = {
+        "success": True,
+        "location": location,
+        "cluster": cluster,
+        "schedules_created": result.get("schedules_created", 0),
+        "devices_configured": result.get("devices_configured", 0),
+    }
+    warning = result.get("warning")
+    if warning:
+        response["warning"] = warning
+    return response
+
+
 @router.post("/api/room-schedule/sync-all-from-mode-parameters")
 @emits_operational_mutation
 async def sync_all_room_schedules_from_mode_parameters(
-    database: DatabaseManager = Depends(get_database),
-    config: ConfigLoader = Depends(get_config),
+    service: RoomScheduleService = Depends(get_room_schedule_service),
     context: MutationRequestContext = Depends(get_mutation_request_context),
     sink: OperationalEventSink = Depends(get_mutation_event_sink),
 ) -> dict[str, Any]:
-    devices = await config.get_devices()
+    """Synchronize every configured room through the shared service."""
+    outcomes = await service.sync_all()
     results: list[dict[str, Any]] = []
-    for location, clusters in (devices or {}).items():
-        if not isinstance(clusters, dict):
-            continue
-        for cluster in clusters:
-            try:
-                out = await sync_room_schedule_from_mode_parameters(
-                    location, cluster, database, config, context, sink
-                )
-                results.append(
-                    {
-                        "location": location,
-                        "cluster": cluster,
-                        "success": True,
-                        "schedules_created": out.get("schedules_created", 0),
-                        "devices_configured": out.get("devices_configured", 0),
-                    }
-                )
-            except HTTPException as e:
-                results.append(
-                    {
-                        "location": location,
-                        "cluster": cluster,
-                        "success": False,
-                        "error": e.detail,
-                    }
-                )
-            except Exception as e:
-                results.append(
-                    {
-                        "location": location,
-                        "cluster": cluster,
-                        "success": False,
-                        "error": str(e),
-                    }
-                )
+    for outcome in outcomes:
+        if outcome.get("success"):
+            response = await _commit_room_schedule_boundary(
+                str(outcome["location"]),
+                str(outcome["cluster"]),
+                cast("RoomScheduleCreate", outcome["schedule"]),
+                outcome,
+                context,
+                sink,
+            )
+            entry: dict[str, Any] = {
+                "location": outcome["location"],
+                "cluster": outcome["cluster"],
+                "success": True,
+                "schedules_created": response["schedules_created"],
+                "devices_configured": response["devices_configured"],
+            }
+            if outcome.get("warning"):
+                entry["warning"] = outcome["warning"]
+            results.append(entry)
+        else:
+            results.append(
+                {
+                    "location": outcome["location"],
+                    "cluster": outcome["cluster"],
+                    "success": False,
+                    "error": outcome.get("error"),
+                }
+            )
     return {"synced": results}
 
 
@@ -153,307 +228,66 @@ async def save_room_schedule(
     location: str,
     cluster: str,
     schedule: RoomScheduleCreate,
-    database: DatabaseManager = Depends(get_database),
-    config: ConfigLoader = Depends(get_config),
+    service: RoomScheduleService = Depends(get_room_schedule_service),
     context: MutationRequestContext = Depends(get_mutation_request_context),
     sink: OperationalEventSink = Depends(get_mutation_event_sink),
 ) -> dict[str, Any]:
+    """Replace the room's non-light schedules from the requested bounds."""
     try:
-        from datetime import time as dt_time
+        validate_room_schedule_times(schedule)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
-        day_start_parts = schedule.day_start_time.split(":")
-        day_end_parts = schedule.day_end_time.split(":")
-        night_start_parts = schedule.night_start_time.split(":")
-        night_end_parts = schedule.night_end_time.split(":")
-
-        dt_time(int(day_start_parts[0]), int(day_start_parts[1]))
-        dt_time(int(day_end_parts[0]), int(day_end_parts[1]))
-        dt_time(int(night_start_parts[0]), int(night_start_parts[1]))
-        dt_time(int(night_end_parts[0]), int(night_end_parts[1]))
-    except (ValueError, IndexError) as e:
-        raise HTTPException(
-            status_code=400, detail=f"Invalid time format. Use HH:MM format. Error: {e}"
-        ) from e
-
-    if schedule.ramp_up_duration is not None and schedule.ramp_up_duration < 0:
-        raise HTTPException(status_code=400, detail="ramp_up_duration must be >= 0")
-    if schedule.ramp_down_duration is not None and schedule.ramp_down_duration < 0:
-        raise HTTPException(status_code=400, detail="ramp_down_duration must be >= 0")
-
-    if schedule.day_end_time != schedule.night_start_time:
-        raise HTTPException(
-            status_code=400,
-            detail=f"day_end_time ({schedule.day_end_time}) must equal night_start_time ({schedule.night_start_time})",
-        )
-    if schedule.day_start_time != schedule.night_end_time:
-        raise HTTPException(
-            status_code=400,
-            detail=f"day_start_time ({schedule.day_start_time}) must equal night_end_time ({schedule.night_end_time})",
-        )
-
-    devices = await config.get_devices()
-    room_devices = devices.get(location, {}).get(cluster, {})
-
+    room_devices = await service.get_room_devices(location, cluster)
     if not room_devices:
         raise HTTPException(status_code=404, detail=f"No devices found for {location}/{cluster}")
 
-    existing_schedules = await database.schedule_repo.get_schedules(location, cluster)
-    schedule_ids_to_delete = [
-        s["id"]
-        for s in existing_schedules
-        if s.get("id") and s.get("device_name") not in ["room_schedule", "climate"]
-    ]
-
-    pool = await database._get_pool()
-    schedules_created = 0
-
-    # Resolve active mode for mode_parameters update
-    active_mode = await database.room_mode_repo.get_active_mode(location, cluster)
-    mode_name = str(active_mode.get("mode_name", "veg")) if active_mode else "veg"
-    submode_name = active_mode.get("submode_name") if active_mode else None
-    prior_parameters = await database.room_mode_repo.get_mode_parameters(
-        location, cluster, mode_name, submode_name
-    )
-
     try:
-        async with pool.acquire() as conn, conn.transaction():
-            if schedule_ids_to_delete:
-                room_schedule_ids = await conn.fetch(
-                    """
-                    SELECT id FROM schedules
-                    WHERE location = $1 AND cluster = $2 AND device_name = 'room_schedule'
-                """,
-                    location,
-                    cluster,
-                )
-                room_schedule_id_set = {r["id"] for r in room_schedule_ids}
-                filtered_ids = [
-                    sid for sid in schedule_ids_to_delete if sid not in room_schedule_id_set
-                ]
-
-                if filtered_ids:
-                    await database.schedule_repo.delete_schedules_bulk(
-                        filtered_ids, cast("Connection", conn)
-                    )
-                    logger.info(
-                        f"Deleted {len(filtered_ids)} existing schedules for {location}/{cluster}"
-                    )
-
-            for device_name, device_info in room_devices.items():
-                device_type = device_info.get("device_type", "")
-                display_name = device_info.get("display_name", device_name)
-
-                # Only create DAY/NIGHT rows for non-light devices
-                if device_type == "light":
-                    continue
-
-                day_schedule_id = await database.schedule_repo.create_schedule(
-                    name=f"{display_name} - Day",
-                    location=location,
-                    cluster=cluster,
-                    device_name=device_name,
-                    start_time=schedule.day_start_time,
-                    end_time=schedule.day_end_time,
-                    day_of_week=None,
-                    enabled=True,
-                    mode="DAY",
-                    target_intensity=None,
-                    ramp_up_duration=None,
-                    ramp_down_duration=None,
-                    conn=cast(Any, conn),
-                )
-                if day_schedule_id:
-                    schedules_created += 1
-                else:
-                    raise RuntimeError(f"Failed to create day schedule for {device_name}")
-
-                night_schedule_id = await database.schedule_repo.create_schedule(
-                    name=f"{display_name} - Night",
-                    location=location,
-                    cluster=cluster,
-                    device_name=device_name,
-                    start_time=schedule.night_start_time,
-                    end_time=schedule.night_end_time,
-                    day_of_week=None,
-                    enabled=True,
-                    mode="NIGHT",
-                    target_intensity=None,
-                    ramp_up_duration=None,
-                    ramp_down_duration=None,
-                    conn=cast(Any, conn),
-                )
-                if night_schedule_id:
-                    schedules_created += 1
-                else:
-                    raise RuntimeError(f"Failed to create night schedule for {device_name}")
-
-            # Update mode_parameters directly with photoperiod times and ramp durations
-            current_params = prior_parameters or {}
-            merged_params = {
-                **current_params,
-                "day_start_time": schedule.day_start_time,
-                "night_start_time": schedule.night_start_time,
-                "light_ramp_up_minutes": schedule.ramp_up_duration or 30,
-                "light_ramp_down_minutes": schedule.ramp_down_duration or 15,
-            }
-            await database.room_mode_repo.save_mode_parameters(
-                location, cluster, mode_name, submode_name, merged_params
-            )
-
-            logger.info(
-                f"Successfully created {schedules_created} non-light schedules for {location}/{cluster} in transaction"
-            )
+        result = await service.save(location, cluster, schedule)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
         logger.error(f"Error saving room schedule for {location}/{cluster}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Database transaction failed: {str(e)}") from e
+    return await _commit_room_schedule_boundary(location, cluster, schedule, result, context, sink)
 
-    # Publish MODE_CHANGED event AFTER transaction commits so consumers read committed data
+
+async def sync_room_schedule_from_mode_parameters(
+    location: str,
+    cluster: str,
+    service: RoomScheduleService,
+    context: MutationRequestContext,
+    sink: OperationalEventSink,
+) -> dict[str, Any]:
+    """Derive the active profile's bounds in the service and commit them.
+
+    Derivation and persistence are owned by ``RoomScheduleService``; this
+    boundary translates errors to HTTP and emits the committed notices.
+    """
     try:
-        from app.events import ConfigChangeEvent, ConfigEventType, get_event_bus
-
-        event_bus = get_event_bus()
-        event = ConfigChangeEvent(
-            event_type=ConfigEventType.MODE_CHANGED,
-            location=location,
-            cluster=cluster,
-            config_type="mode_parameters",
-            data={
-                "action": "room_schedule_saved",
-                "schedules_created": schedules_created,
-                "day_start_time": schedule.day_start_time,
-                "night_start_time": schedule.night_start_time,
-                "ramp_up_duration": schedule.ramp_up_duration,
-                "ramp_down_duration": schedule.ramp_down_duration,
-            },
-        )
-        await event_bus.publish(event)
-        logger.info(
-            f"Published MODE_CHANGED event for {location}/{cluster} after transaction commit"
-        )
-
-        # Invalidate cache
-        from app.state import get_state_manager
-
-        state = get_state_manager()
-        await state.delete(f"schedules:loc:{location}:cluster:{cluster}")
-        await state.delete(f"schedules:loc:{location}:cluster:{cluster}:climate")
-        await state.delete("schedules:all")
+        result = await service.sync_one(location, cluster)
+    except (ActiveModeMissingError, ProfileNotConfiguredError) as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
-        logger.warning(f"Failed to publish mode event or invalidate cache: {e}")
-
-    await database.config_repo.log_config_version(
-        config_type="room_schedule",
-        author="system",
-        comment=f"Room schedule updated for {location}/{cluster}",
-        location=location,
-        cluster=cluster,
-        changes={
-            "day_start_time": schedule.day_start_time,
-            "day_end_time": schedule.day_end_time,
-            "night_start_time": schedule.night_start_time,
-            "night_end_time": schedule.night_end_time,
-            "ramp_up_duration": schedule.ramp_up_duration,
-            "ramp_down_duration": schedule.ramp_down_duration,
-            "schedules_created": schedules_created,
-            "devices_configured": len(room_devices),
-        },
+        logger.error(f"Error syncing room schedule for {location}/{cluster}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Database transaction failed: {str(e)}") from e
+    return await _commit_room_schedule_boundary(
+        location, cluster, cast("RoomScheduleCreate", result["schedule"]), result, context, sink
     )
-
-    emit_persisted_mutation(
-        sink,
-        PersistedMutation(
-            operation="update",
-            entity=EntityContext(
-                entity_type="room_schedule",
-                entity_id=f"{location}:{cluster}",
-                location=location,
-                cluster=cluster,
-            ),
-            changes=safe_allowlisted_diff(
-                _room_schedule_values(prior_parameters),
-                {
-                    "day_start_time": schedule.day_start_time,
-                    "night_start_time": schedule.night_start_time,
-                    "light_ramp_up_minutes": schedule.ramp_up_duration or 30,
-                    "light_ramp_down_minutes": schedule.ramp_down_duration or 15,
-                },
-                frozenset(
-                    {
-                        "day_start_time",
-                        "night_start_time",
-                        "light_ramp_up_minutes",
-                        "light_ramp_down_minutes",
-                    }
-                ),
-            ),
-        ),
-        context,
-    )
-
-    try:
-        from app.routes.websocket import broadcast_room_schedule_update
-
-        await broadcast_room_schedule_update(
-            location,
-            cluster,
-            {
-                "day_start_time": schedule.day_start_time,
-                "day_end_time": schedule.day_end_time,
-                "night_start_time": schedule.night_start_time,
-                "night_end_time": schedule.night_end_time,
-                "ramp_up_duration": schedule.ramp_up_duration,
-                "ramp_down_duration": schedule.ramp_down_duration,
-            },
-        )
-    except Exception as e:
-        logger.warning(f"Failed to broadcast room schedule update: {e}")
-
-    return {
-        "success": True,
-        "location": location,
-        "cluster": cluster,
-        "schedules_created": schedules_created,
-        "devices_configured": len(room_devices),
-    }
 
 
 @router.post("/api/room-schedule/{location}/{cluster}/sync-from-mode-parameters")
 @emits_operational_mutation
-async def sync_room_schedule_from_mode_parameters(
+async def sync_room_schedule(
     location: str,
     cluster: str,
-    database: DatabaseManager = Depends(get_database),
-    config: ConfigLoader = Depends(get_config),
+    service: RoomScheduleService = Depends(get_room_schedule_service),
     context: MutationRequestContext = Depends(get_mutation_request_context),
     sink: OperationalEventSink = Depends(get_mutation_event_sink),
 ) -> dict[str, Any]:
-    active = await database.room_mode_repo.get_active_mode(location, cluster)
-    if not active:
-        raise HTTPException(
-            status_code=404,
-            detail=f"No active mode for {location}/{cluster}. Set mode first.",
-        )
-    mode_name = active.get("mode_name", "veg")
-    submode_name = active.get("submode_name")
-    params = await database.room_mode_repo.get_mode_parameters(
-        location, cluster, mode_name, submode_name
-    )
-    if not params:
-        raise HTTPException(
-            status_code=404,
-            detail=f"No mode parameters for {location}/{cluster} mode={mode_name}",
-        )
-    day_start = _to_hhmm(params.get("day_start_time"))
-    night_start = _to_hhmm(params.get("night_start_time"))
-    schedule = RoomScheduleCreate(
-        day_start_time=day_start,
-        day_end_time=night_start,
-        night_start_time=night_start,
-        night_end_time=day_start,
-        ramp_up_duration=params.get("light_ramp_up_minutes"),
-        ramp_down_duration=params.get("light_ramp_down_minutes"),
-    )
-    return await save_room_schedule(location, cluster, schedule, database, config, context, sink)
+    return await sync_room_schedule_from_mode_parameters(location, cluster, service, context, sink)
 
 
 def _room_schedule_values(parameters: dict[str, Any] | None) -> dict[str, str | int | None]:

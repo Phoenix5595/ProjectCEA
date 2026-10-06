@@ -38,6 +38,24 @@ def _setpoint_row(
         "ramp_progress_light": None,
     }
 
+def _light_row(
+    timestamp: datetime,
+    device_name: str,
+    mode: str,
+    value: float | None,
+    ramp_progress: float | None = None,
+) -> dict[str, str | float | datetime | None]:
+    row = _setpoint_row(timestamp, 20.0, None)
+    row.update(
+        mode=mode,
+        device_name=device_name,
+        effective_light_intensity=value,
+        nominal_light_intensity=value,
+        ramp_progress_light=ramp_progress,
+    )
+    return row
+
+
 
 @final
 class DenseControlDatabase:
@@ -88,6 +106,19 @@ class DenseControlDatabase:
                 for index in range(4)
             ]
         return []
+
+@final
+class LightTimelineDatabase:
+    def __init__(self, rows: list[dict[str, str | float | datetime | None]]) -> None:
+        self.rows = rows
+
+    async def fetch(
+        self, query: str, *_: str | int | float | datetime
+    ) -> list[dict[str, str | float | datetime | None]]:
+        if "FROM effective_setpoints" in query:
+            return self.rows
+        return []
+
 
 
 @final
@@ -210,3 +241,39 @@ async def test_budgeted_history_keeps_unavailable_setpoint_gaps_unbridged() -> N
         (NOW + timedelta(minutes=2), 22.0),
     ]
     assert steps[1].provenance.quality == "unavailable"
+
+@pytest.mark.anyio
+async def test_budgeted_light_history_keeps_one_mode_aware_timeline_and_gap() -> None:
+    # Given: a light switches modes, ramps, becomes unavailable, then turns off.
+    timestamps = [NOW + timedelta(minutes=index) for index in range(6)]
+    rows = [
+        _light_row(timestamps[0], "light_f_1", "day", 40.0),
+        _light_row(timestamps[1], "light_f_1", "night", 0.0),
+        _light_row(timestamps[2], "light_f_1", "day", 80.0, 0.0),
+        _light_row(timestamps[3], "light_f_1", "day", 100.0, 1.0),
+        _light_row(timestamps[4], "light_f_1", "night", None),
+        _light_row(timestamps[5], "light_f_1", "day", 0.0),
+    ]
+    repository = ControlHistoryRepository(LightTimelineDatabase(rows))
+
+    # When: history is budgeted through the real repository path.
+    response = await repository.read(
+        "Flower Room",
+        ControlHistoryRange(start=NOW, end=NOW + timedelta(minutes=6)),
+        max_points=10,
+    )
+
+    # Then: mode transitions, ramp endpoints, and the explicit null gap survive once.
+    assert [series.name for series in response.lights] == ["light_f_1"]
+    light = response.lights[0]
+    assert light.points == ()
+    assert [(step.timestamp, step.value) for step in light.steps] == [
+        (timestamps[0], 40.0),
+        (timestamps[1], 0.0),
+        (timestamps[4], None),
+        (timestamps[5], 0.0),
+    ]
+    assert [
+        (ramp.start, ramp.end, ramp.start_value, ramp.end_value)
+        for ramp in light.linear
+    ] == [(timestamps[2], timestamps[3], 80.0, 100.0)]

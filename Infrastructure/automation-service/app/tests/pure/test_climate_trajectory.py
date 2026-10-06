@@ -18,10 +18,13 @@ from app.services.climate_trajectory import (
 )
 
 
-def _source(period_id: str) -> SegmentSource:
+def _source(
+    period_id: str, *, mode: str = "flower", submode: str | None = None
+) -> SegmentSource:
     return SegmentSource.model_validate(
         {
-            "mode": "flower",
+            "mode": mode,
+            "submode": submode,
             "period": {"period_id": period_id, "label": f"Period {period_id}"},
             "config_revision": "revision",
         }
@@ -33,10 +36,13 @@ def _request(
     *,
     overrides: tuple[RuntimeOverride, ...] = (),
     photoperiod_boundaries: tuple[datetime, ...] = (),
+    window_start: datetime | None = None,
+    window_end: datetime | None = None,
 ) -> TrajectoryRequest:
-    start = datetime(2026, 1, 1, tzinfo=UTC)
+    start = window_start or datetime(2026, 1, 1, tzinfo=UTC)
+    end = window_end or start + timedelta(hours=2)
     return TrajectoryRequest(
-        window=UtcWindow(start=start, end=start + timedelta(hours=2), timezone="America/Toronto"),
+        window=UtcWindow(start=start, end=end, timezone="America/Toronto"),
         periods=periods,
         overrides=overrides,
         photoperiod_boundaries=photoperiod_boundaries,
@@ -49,10 +55,20 @@ def _period(
     end: datetime,
     target: float | None,
     ramp_minutes: float = 0,
+    *,
+    source: SegmentSource | None = None,
+    ramp_start: datetime | None = None,
+    previous_targets: tuple[MetricTarget, ...] = (),
 ) -> ClimatePeriodTrajectory:
     targets = () if target is None else (MetricTarget(metric="heating", unit="C", value=target),)
     return ClimatePeriodTrajectory(
-        start=start, end=end, source=_source(period_id), targets=targets, ramp_minutes=ramp_minutes
+        start=start,
+        end=end,
+        source=_source(period_id) if source is None else source,
+        targets=targets,
+        ramp_minutes=ramp_minutes,
+        ramp_start=ramp_start,
+        previous_targets=previous_targets,
     )
 
 
@@ -187,8 +203,8 @@ def test_runtime_override_expiry_and_indefinite_assumption_preserve_input() -> N
     assert request.overrides == overrides
 
 
-def test_gap_between_periods_still_ramps_from_prior_value() -> None:
-    # Given: two configured periods separated by an unconfigured half-hour.
+def test_coverage_gap_breaks_prior_known_ramp_seed() -> None:
+    # Given: two same-profile periods separated by an unconfigured half-hour.
     start = datetime(2026, 1, 1, tzinfo=UTC)
     request = _request(
         (
@@ -204,18 +220,14 @@ def test_gap_between_periods_still_ramps_from_prior_value() -> None:
         if segment.trajectory_kind == "scheduled"
     ]
 
-    # Then: the gap stays explicitly unavailable while the day period ramps
-    # from the schedule's last known value instead of stepping.
+    # Then: the gap stays unavailable and a stale pre-gap value cannot seed the later ramp.
     gap = next(
         segment for segment in scheduled if isinstance(segment, UnavailableTrajectorySegment)
     )
+    day = next(segment for segment in scheduled if segment.source.period.period_id == "day")
     assert (gap.start, gap.end) == (start + timedelta(minutes=30), start + timedelta(hours=1))
-    ramp = next(segment for segment in scheduled if isinstance(segment, LinearTrajectorySegment))
-    assert (ramp.start, ramp.start_value, ramp.end_value) == (
-        start + timedelta(hours=1),
-        22.0,
-        20.0,
-    )
+    assert isinstance(day, StepTrajectorySegment)
+    assert day.value == 20.0
 
 
 def test_unknown_prior_metric_steps_instead_of_ramping() -> None:
@@ -241,15 +253,52 @@ def test_unknown_prior_metric_steps_instead_of_ramping() -> None:
     assert step.value == 20.0
 
 
-def test_truncated_ramp_carries_partial_value_across_gap() -> None:
-    # Given: a ramp cut short by its period end, an unconfigured gap, then a
-    # replacement period with its own ramp.
+def test_missing_metric_period_clears_a_stale_same_profile_ramp_seed() -> None:
+    # Given: a known metric, an unavailable metric period, then a ramped target with no predecessor.
+    start = datetime(2026, 1, 1, tzinfo=UTC)
+    request = _request(
+        (
+            _period("known", start, start + timedelta(minutes=30), 22.0),
+            _period("unset", start + timedelta(minutes=30), start + timedelta(hours=1), None),
+            _period("day", start + timedelta(hours=1), start + timedelta(hours=2), 20.0, 30),
+        )
+    )
+
+    # When: the scheduled projection is evaluated.
+    scheduled = tuple(
+        segment
+        for segment in project_trajectories(request).segments
+        if segment.trajectory_kind == "scheduled"
+    )
+
+    # Then: NULL remains a gap and the post-gap target steps instead of reusing 22 C.
+    unavailable = next(
+        segment
+        for segment in scheduled
+        if isinstance(segment, UnavailableTrajectorySegment)
+        and segment.source.period.period_id == "unset"
+    )
+    day = next(segment for segment in scheduled if segment.source.period.period_id == "day")
+    assert unavailable.reason == "setpoint is unavailable"
+    assert isinstance(day, StepTrajectorySegment)
+    assert day.value == 20.0
+
+
+def test_gap_after_truncated_ramp_uses_profile_predecessor_seed() -> None:
+    # Given: a ramp cut short, a gap, then a new period with its same-profile predecessor target.
     start = datetime(2026, 1, 1, tzinfo=UTC)
     request = _request(
         (
             _period("night", start, start + timedelta(minutes=30), 22),
             _period("dawn", start + timedelta(minutes=30), start + timedelta(minutes=45), 20, 30),
-            _period("day", start + timedelta(hours=1), start + timedelta(hours=2), 24, 30),
+            _period(
+                "day",
+                start + timedelta(hours=1),
+                start + timedelta(hours=2),
+                24,
+                30,
+                previous_targets=(MetricTarget("heating", "C", 20.0),),
+            ),
         )
     )
 
@@ -260,11 +309,138 @@ def test_truncated_ramp_carries_partial_value_across_gap() -> None:
         if segment.trajectory_kind == "scheduled"
     ]
 
-    # Then: the replacement ramps from the interrupted ramp's value at its
-    # boundary (21) rather than stepping from either endpoint value.
+    # Then: the stale in-flight value 21 C is discarded in favor of the configured 20 C seed.
     replacement = next(
         segment
         for segment in scheduled
         if isinstance(segment, LinearTrajectorySegment) and segment.source.period.period_id == "day"
     )
-    assert (replacement.start_value, replacement.end_value) == (21.0, 24.0)
+    assert (replacement.start_value, replacement.end_value) == (20.0, 24.0)
+
+
+def test_clipped_mid_ramp_matches_sampling_the_full_recurrence() -> None:
+    # Given: a two-hour ramp whose recurrence began before the clipped request window.
+    origin = datetime(2026, 1, 1, tzinfo=UTC)
+    predecessor = (MetricTarget("heating", "C", 20.0),)
+    full_period = _period(
+        "day",
+        origin,
+        origin + timedelta(hours=2),
+        24.0,
+        120,
+        ramp_start=origin,
+        previous_targets=predecessor,
+    )
+    full = _request(
+        (full_period,), window_start=origin, window_end=origin + timedelta(hours=2)
+    )
+    full_ramp = next(
+        segment
+        for segment in project_trajectories(full).segments
+        if isinstance(segment, LinearTrajectorySegment)
+        and segment.trajectory_kind == "scheduled"
+    )
+
+    # When: the same recurrence is evaluated only from thirty to ninety minutes after its origin.
+    clipped_start, clipped_end = origin + timedelta(minutes=30), origin + timedelta(minutes=90)
+    clipped_period = _period(
+        "day",
+        clipped_start,
+        clipped_end,
+        24.0,
+        120,
+        ramp_start=origin,
+        previous_targets=predecessor,
+    )
+    clipped = _request(
+        (clipped_period,), window_start=clipped_start, window_end=clipped_end
+    )
+    clipped_ramp = next(
+        segment
+        for segment in project_trajectories(clipped).segments
+        if isinstance(segment, LinearTrajectorySegment)
+        and segment.trajectory_kind == "scheduled"
+    )
+
+    # Then: clipping preserves the full-window values at both UTC endpoints.
+    assert (clipped_ramp.start_value, clipped_ramp.end_value) == (
+        21.0,
+        23.0,
+    )
+    assert (clipped_ramp.start, clipped_ramp.end) == (clipped_start, clipped_end)
+    assert (full_ramp.start_value, full_ramp.end_value) == (20.0, 24.0)
+
+
+def test_ramp_threshold_skips_only_values_strictly_below_threshold() -> None:
+    # Given: changes just below, exactly at, and just above the heating threshold.
+    start = datetime(2026, 1, 1, tzinfo=UTC)
+    for delta, should_ramp in ((0.099, False), (0.1, True), (0.101, True)):
+        request = _request(
+            (
+                _period("night", start, start + timedelta(minutes=30), 20.0),
+                _period(
+                    "day",
+                    start + timedelta(minutes=30),
+                    start + timedelta(hours=2),
+                    20.0 + delta,
+                    10,
+                ),
+            )
+        )
+
+        # When: the shared ramp policy evaluates each change.
+        day = next(
+            segment
+            for segment in project_trajectories(request).segments
+            if segment.trajectory_kind == "scheduled"
+            and segment.source.period.period_id == "day"
+        )
+
+        # Then: equality and larger changes ramp, while only the smaller change steps.
+        assert isinstance(day, LinearTrajectorySegment) == should_ramp
+        assert isinstance(day, StepTrajectorySegment) == (not should_ramp)
+
+
+def test_previous_targets_never_carry_across_mode_or_submode_identity() -> None:
+    # Given: a prior value under one exact profile followed by a ramped period under another.
+    start = datetime(2026, 1, 1, tzinfo=UTC)
+    for destination in (
+        _source("new-mode", mode="2", submode="1"),
+        _source("new-submode", mode="1", submode="2"),
+    ):
+        request = _request(
+            (
+                _period(
+                    "night",
+                    start,
+                    start + timedelta(minutes=30),
+                    20.0,
+                    source=_source("night", mode="1", submode="1"),
+                ),
+                _period(
+                    destination.period.period_id,
+                    start + timedelta(minutes=30),
+                    start + timedelta(hours=2),
+                    24.0,
+                    30,
+                    source=destination,
+                ),
+            )
+        )
+
+        # When: schedules change mode identity or only submode identity.
+        scheduled = tuple(
+            segment
+            for segment in project_trajectories(request).segments
+            if segment.trajectory_kind == "scheduled"
+        )
+        destination_segments = tuple(
+            segment
+            for segment in scheduled
+            if segment.source.period.period_id == destination.period.period_id
+        )
+
+        # Then: the destination has no invented start value from the prior profile.
+        assert len(destination_segments) == 1
+        assert isinstance(destination_segments[0], StepTrajectorySegment)
+        assert destination_segments[0].value == 24.0

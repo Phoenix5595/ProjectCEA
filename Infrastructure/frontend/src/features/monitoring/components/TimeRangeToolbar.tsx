@@ -24,14 +24,17 @@ import {
   type FallFoldState,
 } from './TimeRangeToolbar.inputs'
 import {
+  parseWallInput,
+  resolveWallTimeWithChoice,
+  type FallFoldChoice,
+} from '../../../utils/torontoWallTime'
+
+import {
   PRESETS,
   offsetLabel,
   parseUrlRange,
-  parseWallInput,
-  resolveWallTimeWithChoice,
   serializeRange,
   validateRange,
-  type FallFoldChoice,
 } from './timeRangeToolbar.time'
 
 export interface TimeRangeToolbarProps {

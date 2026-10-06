@@ -19,13 +19,15 @@ class MetricTarget:
 
 @dataclass(frozen=True, slots=True)
 class ClimatePeriodTrajectory:
-    """One resolved saved climate period over an absolute UTC interval."""
+    """One clipped UTC profile interval with its original ramp and same-profile seed."""
 
     start: datetime
     end: datetime
     source: SegmentSource
     targets: tuple[MetricTarget, ...]
     ramp_minutes: float = 0.0
+    ramp_start: datetime | None = None
+    previous_targets: tuple[MetricTarget, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

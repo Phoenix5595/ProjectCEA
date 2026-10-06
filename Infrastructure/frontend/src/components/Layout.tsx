@@ -43,8 +43,19 @@ const Layout: FC = () => {
             saving={actions.saving}
             saveSuccess={actions.saveSuccess}
             saveError={actions.saveError}
-            currentMode={actions.currentMode}
-            onModeChange={actions.onModeChange}
+            saveWarning={actions.saveWarning}
+            activeProfile={actions.activeProfile}
+            configuredProfile={actions.configuredProfile}
+            selectedProfile={actions.selectedProfile}
+            modeOptions={actions.modeOptions}
+            submodeOptions={actions.submodeOptions}
+            onSelectProfile={actions.onSelectProfile}
+            onActivateSelected={actions.onActivateSelected}
+            activationPending={actions.activationPending}
+            selectionLoading={actions.selectionLoading}
+            canActivate={actions.canActivate}
+            canSave={actions.canSave}
+            activationLabel={actions.activationLabel}
           />
         )}
 

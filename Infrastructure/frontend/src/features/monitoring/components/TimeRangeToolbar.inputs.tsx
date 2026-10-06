@@ -8,13 +8,13 @@
 import { formatInTimeZone } from 'date-fns-tz'
 
 import {
-  offsetLabel,
   parseWallInput,
   resolveWallTimeWithChoice,
   TORONTO_TZ,
-  validateRange,
   type FallFoldChoice,
-} from './timeRangeToolbar.time'
+} from '../../../utils/torontoWallTime'
+
+import { offsetLabel, validateRange } from './timeRangeToolbar.time'
 
 export function formatWallInput(value: Date): string {
   return formatInTimeZone(value, TORONTO_TZ, "yyyy-MM-dd'T'HH:mm")

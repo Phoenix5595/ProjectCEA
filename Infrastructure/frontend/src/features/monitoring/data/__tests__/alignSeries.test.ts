@@ -12,14 +12,17 @@ import type {
   ClimateTimelineSeries,
   ControlMonitoringResponse,
   DeviceTimelineSeries,
+  LightTimelineSeries,
   Origin,
   PidTimelineSeries,
   SensorSeries,
 } from '../../api'
 import type { MonitoringRange } from '../../state'
-import { alignSeries } from '../alignSeries'
+import { alignSeries, alignSeriesBase, applyLiveTail } from '../alignSeries'
 import { mergeControlSeries } from '../alignSeries.control'
+import { seriesKey } from '../alignSeries.types'
 import type { AlignInput } from '../alignSeries.types'
+import { lightValueAt } from '../lightTrajectory'
 
 const START = new Date('2026-08-02T11:00:00.000Z')
 const END = new Date('2026-08-02T13:00:00.000Z')
@@ -408,7 +411,7 @@ describe('alignSeries', () => {
     expect(merged[0]?.linear[0]?.startValue).toBe(23)
   })
 
-  it('normalizes device state, duty, and PID output as explicit semantic series', () => {
+  it('normalizes device state and preserves true PID output and duty series', () => {
     const t0 = new Date('2026-08-02T11:00:00.000Z')
     const t1 = new Date('2026-08-02T11:30:00.000Z')
     const t2 = new Date('2026-08-02T12:00:00.000Z')
@@ -485,11 +488,9 @@ describe('alignSeries', () => {
     const out = alignSeries(input)
 
     const state = out.series.find(s => s.source === 'device' && s.role === 'state')
-    const duty = out.series.find(s => s.source === 'device' && s.role === 'duty')
     const pidOutput = out.series.find(s => s.source === 'pid' && s.role === 'pid_output')
     const pidDuty = out.series.find(s => s.source === 'pid' && s.role === 'duty')
     expect(state).toBeDefined()
-    expect(duty).toBeDefined()
     expect(pidOutput).toBeDefined()
     expect(pidDuty).toBeDefined()
 
@@ -497,8 +498,6 @@ describe('alignSeries', () => {
     const i2 = out.x.indexOf(t2.getTime())
     expect(state?.y[i0]).toBe(0)
     expect(state?.y[i2]).toBe(1)
-    expect(duty?.y[i0]).toBe(0)
-    expect(duty?.y[i2]).toBe(1)
     expect(pidOutput?.y[i0]).toBe(0)
     expect(pidOutput?.y[i2]).toBe(50)
     expect(pidDuty?.y[i0]).toBe(0)
@@ -583,4 +582,139 @@ describe('alignSeries', () => {
     expect(out.aggregated).toBe(false)
     expect(last).toBe(END.getTime())
   })
+  it('keeps a six-hour recorded OFF interval flat until the next intensity step', () => {
+    const offAt = START
+    const onAt = new Date(offAt.getTime() + 6 * 60 * 60 * 1000)
+    const end = new Date(onAt.getTime() + 60 * 60 * 1000)
+    const recorded = { origin: 'recorded' as const, quality: 'exact' as const, is_aggregated: true }
+    const history = controlResponse([], {
+      range: { start: offAt, end },
+      lights: [{
+        name: 'light_f_1', metric: 'light_f_1', provenance: recorded, warnings: [],
+        points: [], linear: [],
+        steps: [
+          { timestamp: offAt, value: 0, provenance: recorded },
+          { timestamp: onAt, value: 10, provenance: recorded },
+        ],
+      }],
+    })
+    const output = alignSeries({
+      series: [], live: [], controlHistory: history, projectionHistory: null, photoperiod: [],
+      range: fixedRange(offAt, end), now: onAt, maxPoints: 2,
+    })
+    const light = output.series.find(series => series.source === 'light')
+    expect(light?.kind).toBe('step')
+    expect([
+      offAt.getTime(), offAt.getTime() + 3 * 60 * 60 * 1000, onAt.getTime() - 1,
+      onAt.getTime(), onAt.getTime() + 10 * 60 * 1000, end.getTime(),
+    ].map(time => lightValueAt(light?.lightTrajectory ?? [], time))).toEqual([0, 0, 0, 10, 10, null])
+  })
+
+  it('keeps one exact light trajectory when the aligned grid is coarsened and extended live', () => {
+    const t0 = START.getTime()
+    const at = (offset: number): Date => new Date(t0 + offset)
+    const recorded = {
+      origin: 'recorded' as const,
+      quality: 'exact' as const,
+      is_aggregated: false,
+    }
+    const projected = {
+      origin: 'projected' as const,
+      quality: 'estimated' as const,
+      is_aggregated: false,
+    }
+    const unavailable = { ...projected, quality: 'unavailable' as const }
+    const historyLight: LightTimelineSeries = {
+      name: 'light_f_1',
+      metric: 'light_f_1',
+      provenance: recorded,
+      warnings: [],
+      points: [
+        {
+          timestamp: at(0),
+          value: 40,
+          nominal_value: 40,
+          device_name: 'light_f_1',
+          provenance: recorded,
+        },
+      ],
+      steps: [],
+      linear: [],
+    }
+    const projectedLight: LightTimelineSeries = {
+      name: 'light_f_1',
+      metric: 'light.intensity.light_f_1',
+      trajectory_kind: 'effective',
+      provenance: projected,
+      warnings: [],
+      points: [],
+      steps: [
+        { timestamp: at(10), value: 40, provenance: projected },
+        { timestamp: at(40), value: null, provenance: unavailable },
+        { timestamp: at(50), value: 0, provenance: projected },
+      ],
+      linear: [
+        {
+          start: at(20),
+          end: at(30),
+          start_value: 40,
+          end_value: 80,
+          provenance: projected,
+        },
+      ],
+    }
+    const history = controlResponse([], {
+      range: { start: at(0), end: at(10) },
+      lights: [historyLight],
+    })
+    const projection = controlResponse([], {
+      range: { start: at(10), end: at(60) },
+      lights: [projectedLight],
+    })
+    const input: AlignInput = {
+      series: [],
+      controlHistory: history,
+      projectionHistory: projection,
+      photoperiod: [],
+      live: [],
+      range: fixedRange(at(0), at(60)),
+      now: at(15),
+      maxPoints: 2,
+    }
+
+    const aligned = alignSeries(input)
+    const lights = aligned.series.filter(series => series.source === 'light')
+    const light = lights[0]
+
+    expect(aligned.aggregated).toBe(true)
+    expect(aligned.x).toHaveLength(2)
+    expect(lights.map(series => series.key)).toEqual([
+      seriesKey('light', 'light_f_1', 'linear'),
+    ])
+    expect(light?.lightTrajectory).toHaveLength(6)
+    expect(light?.label).toBe('light_f_1 - Intensity')
+    expect(
+      [15, 25, 35, 45, 55, 60].map(time =>
+        lightValueAt(light?.lightTrajectory ?? [], t0 + time)
+      )
+    ).toEqual([40, 60, 80, null, 0, null])
+
+    const liveBase = alignSeriesBase({
+      ...input,
+      range: { kind: 'live', duration: 60 },
+      now: at(10),
+      maxPoints: 100,
+    })
+    const liveNow = at(15)
+    const liveTail = applyLiveTail(
+      liveBase,
+      [{ sensor: 'unused_sensor', timestamp: liveNow, value: 1 }],
+      liveNow
+    )
+    const liveLight = liveTail.series.find(series => series.key === seriesKey('light', 'light_f_1', 'linear'))
+
+    expect(liveTail.x[liveTail.nowIndex]).toBe(liveNow.getTime())
+    expect(liveLight?.y[liveTail.nowIndex]).toBe(40)
+  })
+
 })

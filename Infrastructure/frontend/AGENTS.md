@@ -34,6 +34,15 @@ Native monitoring dashboards live at `/flower/monitoring` and `/vegetation/monit
 - Room overview integration: `CalendarOverviewPage.tsx` (and the wrappers for Flower, Vegetation, Laboratory) mount the same shared log with a fixed room filter.
 - Climate timeline feature: `src/features/climate-timeline/` owns the shared draft controller (`state/`), the table↔timeline adapter (`adapters/`), and the uPlot chart mount + plugins (`charts/`: pure envelope→series transforms, period labels, drag handles). ZoneConfig hoists the draft controller; header Save routes dirty drafts through review→apply. Series colors are `--tl-*` tokens; series transforms keep monitoring parity (`__tests__/monitoringParity.test.ts`); drag commits coalesce through rAF.
 
+## Monitoring light-chart semantics
+
+- Keep one canonical intensity trajectory per physical light. Tooltip rows deduplicate by series key, never by label or intensity; different lights at the same intensity remain separate.
+- Recorded light intensity uses solid lines. Projected-only series retain forecast styling and projected/estimated provenance.
+- Recorded light values are effective setpoints, not independently measured dimmer feedback. Preserve that distinction when describing the chart.
+- Steps hold their value until the next transition: an OFF interval stays at 0%, then jumps to the next intensity. Interpolate only explicitly declared linear segments; preserve null gaps and half-open coverage boundaries.
+- Pure-step light trajectories are classified as `step`; use native stepped paths when explicit trajectory topology is unavailable. Keep genuine linear ramps in the canonical trajectory.
+- Equipment-chart regression coverage lives in `tests/monitoring/equipment.spec.ts`; exercise Flower and Veg at 1920x1080 and 1280x1440 using the guarded loopback fixture only.
+
 ## Local Commands
 
 ```bash
@@ -72,8 +81,20 @@ npx vitest run src/features/event-log/__tests__
 - Run fixture or browser tests against production hosts/ports.
 - Use native `EventSource` or query-string API keys for the operational event stream.
 - Drive any control action from an event-log consumer.
-- Never introduce scrolling inside a component, card, panel, list, dialog, or popover. This is nonnegotiable: fit and wrap content in normal document flow; use pagination or disclosure for bounded collections. When content exceeds the viewport, only the page/document may scroll. Never hide overflow, clamp text, or shrink essential information to disguise a layout failure.
+
+## Non-negotiable layout, sizing and scrolling policy
+
+- **Preserve existing layout and component sizes. Internal content may change only within that geometry.**
+- **Ask the owner before changing any layout or component size. Never assume permission to redesign, grow, or shrink components.**
+- **NEVER introduce scrolling inside a component, card, panel, list, dialog, or popover. No exceptions.**
+- Only the page/document may scroll. Content MUST fit within the existing component size without internal scrolling; if it cannot, ask before choosing a layout or sizing tradeoff.
+- NEVER use `overflow: auto` / `overflow: scroll` (including axis-specific variants) on component containers.
+- NEVER hide overflow, clamp text, or shrink essential information to disguise a layout failure.
+- On the control page, live light panels are mutually exclusive: running Veg/Flower shows intensity sliders; running Sleep/Drying shows manual override and no sliders. Merely inspecting an inactive profile never changes the live panel.
+- Keep chart source/status details in the header's non-scrolling popover, not added rows that enlarge the chart. Save feedback uses a marker inside the existing Save button; full warnings remain available in that popover.
+- Activation-button text stays compact so the unchanged ribbon fits both desktop viewports. Preserve the full save-before-activate and confirmation wording in its accessible name, tooltip, and source-details popover; do not shorten the actual workflow.
+- Flower submode choices come only from the catalogue: Stretch, Bulk and Ripen. Never synthesize a “Base” choice from a NULL submode ID. Selecting Flower retains the inspected, running or configured catalogue submode, then falls back to the first catalogue option; it never selects a new NULL profile. Keep existing NULL records readable without inventing a submode label or modifying stored data.
 
 ---
 
-*Last updated: 2026-10-03*
+*Last updated: 2026-10-06*

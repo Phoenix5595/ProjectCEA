@@ -28,7 +28,9 @@ from app.repositories.climate_timeline_snapshot import (
     TimelineWindow,
 )
 from app.repositories.monitoring_snapshot_sources import SavedTrajectorySnapshotSource
+from app.repositories.room_modes import InvalidProfileIdentityError, ProfileNotFoundError
 from app.routes.climate_periods import get_database
+from app.routes.schedules.room import get_room_schedule_service
 from app.schemas.climate_timeline import (
     TimelineApplyRequest,
     TimelineApplyResponse,
@@ -44,6 +46,7 @@ from app.services.climate_timeline_apply import (
 )
 from app.services.climate_timeline_preview import (
     ClimateTimelinePreviewService,
+    TimelinePreviewRevisionConflictError,
     TimelinePreviewUnavailableError,
     TimelinePreviewValidationError,
 )
@@ -82,7 +85,12 @@ def get_apply_service(
     if database.pool is None:
         raise RuntimeError("database pool is unavailable")
     return ClimateTimelineApplyService(
-        TimelineApplyRepository(database.pool), SavedTimelineConfigurationInvalidator()
+        TimelineApplyRepository(
+            database.pool,
+            database.room_mode_repo,
+            get_room_schedule_service(),
+        ),
+        SavedTimelineConfigurationInvalidator(database),
     )
 
 
@@ -122,6 +130,104 @@ async def get_saved_climate_timeline(
         ) from error
 
 
+def _profile_window(start: str, end: str, timezone_name: str) -> TimelineWindow:
+    """Parse the exact-profile request window; shared by both profile GET routes."""
+    start_time = datetime.fromisoformat(start.replace("Z", "+00:00"))
+    end_time = datetime.fromisoformat(end.replace("Z", "+00:00"))
+    if start_time.tzinfo is None or end_time.tzinfo is None or end_time <= start_time:
+        raise ValueError("invalid profile timeline window")
+    return TimelineWindow(start_time.astimezone(UTC), end_time.astimezone(UTC), timezone_name)
+
+
+def _profile_identity_error(
+    error: ProfileNotFoundError | InvalidProfileIdentityError,
+) -> HTTPException:
+    """Translate exact-profile identity failures into their route status codes."""
+    if isinstance(error, ProfileNotFoundError):
+        return HTTPException(
+            status_code=404,
+            detail={"code": "profile_not_found", "detail": str(error)},
+        )
+    return HTTPException(
+        status_code=422,
+        detail={"code": "invalid_profile_identity", "detail": str(error)},
+    )
+
+
+@router.get("/{location}/{cluster}/profile", response_model=TimelineSavedResponse)
+async def get_profile_climate_timeline(
+    location: str,
+    cluster: str,
+    service: Annotated[ClimateTimelinePreviewService, Depends(get_preview_service)],
+    mode_id: Annotated[int, Query(gt=0)],
+    start: Annotated[str, Query(min_length=1)],
+    end: Annotated[str, Query(min_length=1)],
+    timezone: Annotated[str, Query(min_length=1)],
+    submode_id: Annotated[int | None, Query()] = None,
+) -> TimelineSavedResponse:
+    """Read the exact selected saved profile and its pure profile trajectory."""
+    try:
+        assert_device_cluster(location, cluster)
+        window = _profile_window(start, end, timezone)
+    except UnknownRoomError as error:
+        raise HTTPException(status_code=404, detail="unknown timeline room") from error
+    except ClusterMismatchError as error:
+        raise HTTPException(
+            status_code=400, detail={"code": "unauthorized_room", "hint": error.hint}
+        ) from error
+    except ValueError as error:
+        raise HTTPException(
+            status_code=422, detail={"code": "invalid_profile_window", "detail": str(error)}
+        ) from error
+    try:
+        return await service.profile_response(
+            location, cluster, window, mode_id, submode_id, include_trajectory=True
+        )
+    except (ProfileNotFoundError, InvalidProfileIdentityError) as error:
+        raise _profile_identity_error(error) from error
+    except TimelinePreviewUnavailableError as error:
+        raise HTTPException(
+            status_code=409, detail={"code": "timeline_unavailable", "detail": error.detail}
+        ) from error
+
+
+@router.get("/{location}/{cluster}/configuration", response_model=TimelineSavedResponse)
+async def get_profile_climate_configuration(
+    location: str,
+    cluster: str,
+    service: Annotated[ClimateTimelinePreviewService, Depends(get_preview_service)],
+    mode_id: Annotated[int, Query(gt=0)],
+    start: Annotated[str, Query(min_length=1)],
+    end: Annotated[str, Query(min_length=1)],
+    timezone: Annotated[str, Query(min_length=1)],
+    submode_id: Annotated[int | None, Query()] = None,
+) -> TimelineSavedResponse:
+    """Read the exact selected saved profile aggregate without invoking a projector."""
+    try:
+        assert_device_cluster(location, cluster)
+        window = _profile_window(start, end, timezone)
+    except UnknownRoomError as error:
+        raise HTTPException(status_code=404, detail="unknown timeline room") from error
+    except ClusterMismatchError as error:
+        raise HTTPException(
+            status_code=400, detail={"code": "unauthorized_room", "hint": error.hint}
+        ) from error
+    except ValueError as error:
+        raise HTTPException(
+            status_code=422, detail={"code": "invalid_profile_window", "detail": str(error)}
+        ) from error
+    try:
+        return await service.profile_response(
+            location, cluster, window, mode_id, submode_id, include_trajectory=False
+        )
+    except (ProfileNotFoundError, InvalidProfileIdentityError) as error:
+        raise _profile_identity_error(error) from error
+    except TimelinePreviewUnavailableError as error:
+        raise HTTPException(
+            status_code=409, detail={"code": "timeline_unavailable", "detail": error.detail}
+        ) from error
+
+
 @router.post("/{location}/{cluster}/preview", response_model=TimelinePreviewResponse)
 async def preview_climate_timeline(
     location: str,
@@ -140,9 +246,20 @@ async def preview_climate_timeline(
         ) from error
     try:
         return await service.preview(location, cluster, request)
+    except (ProfileNotFoundError, InvalidProfileIdentityError) as error:
+        raise _profile_identity_error(error) from error
     except TimelinePreviewValidationError as error:
         raise HTTPException(
             status_code=422, detail={"code": error.code, "errors": error.errors}
+        ) from error
+    except TimelinePreviewRevisionConflictError as error:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "timeline_revision_conflict",
+                "expected_config_revision": error.expected,
+                "current_config_revision": error.current,
+            },
         ) from error
     except TimelinePreviewUnavailableError as error:
         raise HTTPException(
@@ -171,6 +288,8 @@ async def apply_climate_timeline(
         ) from error
     try:
         response = await service.apply(location, cluster, request)
+    except (ProfileNotFoundError, InvalidProfileIdentityError) as error:
+        raise _profile_identity_error(error) from error
     except TimelineApplyValidationError as error:
         raise HTTPException(
             status_code=422,

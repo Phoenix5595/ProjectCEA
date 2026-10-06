@@ -11,6 +11,7 @@ import anyio
 from app.monitoring_publication.rich import project_saved_trajectory
 from app.repositories.climate_periods import ClimatePeriodRepository
 from app.repositories.climate_timeline_snapshot import (
+    ClimateSchedule,
     ClimateScheduleDraft,
     ClimateScheduleSnapshot,
     ClimateScheduleSnapshotBuilder,
@@ -23,6 +24,7 @@ from app.schemas.climate_timeline import (
     TimelinePreviewRequest,
     TimelinePreviewResponse,
     TimelineSavedResponse,
+    UtcWindow,
 )
 
 
@@ -39,6 +41,14 @@ class TimelinePreviewUnavailableError(Exception):
     """Saved authority cannot produce a finite draft trajectory."""
 
     detail: str
+
+
+@dataclass(frozen=True, slots=True)
+class TimelinePreviewRevisionConflictError(Exception):
+    """The reviewed draft was built against a configuration revision that changed."""
+
+    expected: str
+    current: str
 
 
 class SavedTrajectoryReader(Protocol):
@@ -79,17 +89,9 @@ class ClimateTimelinePreviewService:
         submode_id = schedule.mode.get("submode_id")
         if not isinstance(mode_id, int) or not (isinstance(submode_id, int) or submode_id is None):
             raise TimelinePreviewUnavailableError("saved mode identity is unavailable")
-        parameters = dict(schedule.parameters)
         try:
-            periods = tuple(_period_response(dict(period)) for period in schedule.periods)
-            photoperiod = TimelinePhotoperiodDraft.model_validate(
-                {
-                    "day_start_time": _time_text(parameters["day_start_time"]),
-                    "night_start_time": _time_text(parameters["night_start_time"]),
-                    "ramp_up_minutes": int(parameters["light_ramp_up_minutes"]),
-                    "ramp_down_minutes": int(parameters["light_ramp_down_minutes"]),
-                },
-                strict=False,
+            response = _response_from_schedule(
+                schedule, config_revision, mode_id, submode_id, parameters_configured=True
             )
         except (KeyError, TypeError, ValueError) as error:
             raise TimelinePreviewUnavailableError(
@@ -106,21 +108,66 @@ class ClimateTimelinePreviewService:
                 trajectory = None
         if trajectory is None:
             trajectory = project_saved_trajectory(snapshot, location, config_revision)
-        return TimelineSavedResponse(
-            config_revision=config_revision,
-            mode_id=mode_id,
-            submode_id=submode_id,
-            periods=periods,
-            photoperiod=photoperiod,
-            trajectory=trajectory,
+        return response.model_copy(update={"trajectory": trajectory})
+
+    async def profile_response(
+        self,
+        location: str,
+        cluster: str,
+        window: TimelineWindow,
+        mode_id: int,
+        submode_id: int | None,
+        *,
+        include_trajectory: bool,
+    ) -> TimelineSavedResponse:
+        """Return the exact selected profile aggregate for inspection, without activation."""
+        profile_snapshot = await self.snapshot_builder.build_profile(
+            location, cluster, mode_id, submode_id, window
         )
+        profile = profile_snapshot.profile
+        schedule = next(
+            (
+                schedule_slice.schedule
+                for schedule_slice in profile_snapshot.schedule.slices
+                if schedule_slice.schedule is not None
+            ),
+            None,
+        )
+        if schedule is None:
+            raise TimelinePreviewUnavailableError("saved schedule authority is unavailable")
+        try:
+            response = _response_from_schedule(
+                schedule,
+                profile.config_revision,
+                mode_id,
+                submode_id,
+                parameters_configured=profile.parameters_configured,
+            )
+        except (KeyError, TypeError, ValueError) as error:
+            raise TimelinePreviewUnavailableError(
+                "saved photoperiod authority is unavailable"
+            ) from error
+        if not include_trajectory:
+            return response.model_copy(update={"trajectory": None})
+        trajectory = project_saved_trajectory(
+            profile_snapshot.schedule, location, profile.config_revision
+        )
+        return response.model_copy(update={"trajectory": trajectory})
 
     async def preview(
         self, location: str, cluster: str, request: TimelinePreviewRequest
     ) -> TimelinePreviewResponse:
         """Validate and evaluate one complete draft without writing any authority."""
         _validate_periods(request)
-        saved = await self.saved(location, cluster, request)
+        window = _timeline_window(request)
+        profile_snapshot = await self.snapshot_builder.build_profile(
+            location, cluster, request.mode_id, request.submode_id, window
+        )
+        profile = profile_snapshot.profile
+        if profile.config_revision != request.expected_config_revision:
+            raise TimelinePreviewRevisionConflictError(
+                request.expected_config_revision, profile.config_revision
+            )
         draft = ClimateScheduleDraft.from_rows(
             mode_id=request.mode_id,
             submode_id=request.submode_id,
@@ -128,21 +175,29 @@ class ClimateTimelinePreviewService:
             photoperiod=request.photoperiod.model_dump(),
         )
         projected = project_saved_trajectory(
-            self.snapshot_builder.preview(saved, draft), location, request.expected_config_revision
+            self.snapshot_builder.preview(profile_snapshot.schedule, draft),
+            location,
+            request.expected_config_revision,
         )
-        if projected is None:
-            raise TimelinePreviewUnavailableError("saved schedule authority is unavailable")
         return TimelinePreviewResponse(
             request_id=request.request_id,
             expected_config_revision=request.expected_config_revision,
             draft_revision=request.draft_revision,
-            trajectory=_draft_trajectory(projected, request),
+            mode_id=request.mode_id,
+            submode_id=request.submode_id,
+            window=UtcWindow(start=window.start, end=window.end, timezone=request.window.timezone),
+            trajectory=_draft_trajectory(projected, request) if projected is not None else None,
         )
 
 
 def _timeline_window(request: TimelinePreviewRequest) -> TimelineWindow:
-    start = datetime.fromisoformat(request.window.start.replace("Z", "+00:00"))
-    end = datetime.fromisoformat(request.window.end.replace("Z", "+00:00"))
+    try:
+        start = datetime.fromisoformat(request.window.start.replace("Z", "+00:00"))
+        end = datetime.fromisoformat(request.window.end.replace("Z", "+00:00"))
+    except ValueError as error:
+        raise TimelinePreviewValidationError(
+            "invalid_preview_window", ("preview window timestamps must be valid ISO instants",)
+        ) from error
     if start.tzinfo is None or end.tzinfo is None:
         raise TimelinePreviewValidationError(
             "invalid_preview_window", ("preview window timestamps must be timezone-aware",)
@@ -173,6 +228,37 @@ def _matches_saved_identity(
 
 def _time_text(value: Any) -> str:
     return str(value)[:5]
+
+
+def _response_from_schedule(
+    schedule: ClimateSchedule,
+    config_revision: str,
+    mode_id: int,
+    submode_id: int | None,
+    *,
+    parameters_configured: bool,
+) -> TimelineSavedResponse:
+    """Assemble one saved/profile response from an exact schedule aggregate."""
+    parameters = dict(schedule.parameters)
+    periods = tuple(_period_response(dict(period)) for period in schedule.periods)
+    photoperiod = TimelinePhotoperiodDraft.model_validate(
+        {
+            "day_start_time": _time_text(parameters["day_start_time"]),
+            "night_start_time": _time_text(parameters["night_start_time"]),
+            "ramp_up_minutes": int(parameters["light_ramp_up_minutes"]),
+            "ramp_down_minutes": int(parameters["light_ramp_down_minutes"]),
+        },
+        strict=False,
+    )
+    return TimelineSavedResponse(
+        config_revision=config_revision,
+        mode_id=mode_id,
+        submode_id=submode_id,
+        periods=periods,
+        photoperiod=photoperiod,
+        trajectory=None,
+        parameters_configured=parameters_configured,
+    )
 
 
 def _period_response(row: dict[str, Any]) -> TimelinePeriodDraft:

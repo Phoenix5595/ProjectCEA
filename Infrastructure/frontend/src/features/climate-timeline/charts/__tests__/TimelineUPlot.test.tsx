@@ -49,20 +49,24 @@ let frameHeight = 400
 
 const meta: TimelineSeriesMeta[] = [
   {
-    key: 'heating_setpoint:scheduled',
+    key: 'selected-saved:heating_setpoint:scheduled',
     label: 'Heating (scheduled)',
     metric: 'heating_setpoint',
     scale: 'temp',
     stroke: '#ea580c',
     dash: [],
+    role: 'selected-saved',
+    kind: 'scheduled',
   },
   {
-    key: 'heating_setpoint:effective',
-    label: 'Heating (effective)',
+    key: 'active-future:heating_setpoint:effective',
+    label: 'Running forecast Heating (effective)',
     metric: 'heating_setpoint',
     scale: 'temp',
     stroke: '#ea580c',
     dash: [6, 4],
+    role: 'active-future',
+    kind: 'effective',
   },
 ]
 
@@ -133,11 +137,10 @@ describe('TimelineUPlot mount', () => {
     expect(scaleKeys).toEqual(expect.arrayContaining(['temp', 'vpd', 'co2']))
     expect(plot.opts.series).toHaveLength(3)
     expect(plot.opts.series[1]).toMatchObject({
-      label: 'Heating (scheduled)',
       scale: 'temp',
       spanGaps: false,
     })
-    expect(plot.opts.series[2]).toMatchObject({ label: 'Heating (effective)', dash: [6, 4] })
+    expect(plot.opts.series[2]).toMatchObject({ dash: [6, 4], spanGaps: false })
 
     const pluginCount = plot.opts.plugins?.length ?? 0
     expect(pluginCount).toBeGreaterThanOrEqual(2)

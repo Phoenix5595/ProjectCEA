@@ -84,10 +84,8 @@ def build_control_history_envelope(
             for metric, points in sorted(climate_builders.items())
         ),
         lights=tuple(
-            LightTimelineSeriesOut(
-                name=f"Light {device}", provenance=provenance, points=tuple(points)
-            )
-            for (device, _mode), points in sorted(lights.items())
+            LightTimelineSeriesOut(name=device, provenance=provenance, points=tuple(points))
+            for device, points in sorted(lights.items())
         ),
         devices=devices,
         pid=pid,
@@ -103,10 +101,12 @@ def _build_target_timelines(
     preserve_gaps: bool,
 ) -> tuple[
     dict[str, list[ClimateTimelinePointOut]],
-    dict[tuple[str, str], list[LightTimelinePointOut]],
+    dict[str, list[LightTimelinePointOut]],
 ]:
     climate: dict[str, list[ClimateTimelinePointOut]] = {}
-    lights: dict[tuple[str, str], list[LightTimelinePointOut]] = {}
+    lights: dict[str, list[LightTimelinePointOut]] = {}
+    if not rows:
+        return climate, lights
 
     climate_rows: dict[str, dict[datetime, list[ControlRecord]]] = {}
     for row in rows:
@@ -147,33 +147,45 @@ def _build_target_timelines(
                     )
                 )
 
+    light_rows: dict[str, dict[datetime, list[ControlRecord]]] = {}
     for row in rows:
         device_name = row["device_name"]
-        effective_light = row["effective_light_intensity"]
-        if device_name is not None:
-            device = str(device_name)
-            mode = _optional_string(row["mode"])
-            key = (device, mode or "")
-            if effective_light is not None:
-                lights.setdefault(key, []).append(
+        if device_name is None:
+            continue
+        device = str(device_name)
+        timestamp = _timestamp(row, "timestamp")
+        light_rows.setdefault(device, {}).setdefault(timestamp, []).append(row)
+
+    for device, timestamps in sorted(light_rows.items()):
+        for timestamp, siblings in sorted(timestamps.items()):
+            selected_row: ControlRecord | None = None
+            effective: float | None = None
+            for row in siblings:
+                candidate = _finite_float(row["effective_light_intensity"])
+                if candidate is not None:
+                    selected_row = row
+                    effective = candidate
+                    break
+            if selected_row is not None:
+                lights.setdefault(device, []).append(
                     LightTimelinePointOut(
-                        timestamp=_timestamp(row, "timestamp"),
-                        value=_required_float(effective_light),
+                        timestamp=timestamp,
+                        value=effective,
                         provenance=provenance,
                         device_name=device,
-                        nominal_value=_optional_float(row["nominal_light_intensity"]),
-                        ramp_progress=_optional_float(row["ramp_progress_light"]),
-                        mode=mode,
+                        nominal_value=_optional_float(selected_row["nominal_light_intensity"]),
+                        ramp_progress=_optional_float(selected_row["ramp_progress_light"]),
+                        mode=_optional_string(selected_row["mode"]),
                     )
                 )
-            elif preserve_gaps and key in lights:
-                lights[key].append(
+            elif preserve_gaps and device in lights:
+                lights[device].append(
                     LightTimelinePointOut(
-                        timestamp=_timestamp(row, "timestamp"),
+                        timestamp=timestamp,
                         value=None,
                         provenance=unavailable_provenance,
                         device_name=device,
-                        mode=mode,
+                        mode=_optional_string(siblings[0]["mode"]),
                     )
                 )
     return climate, lights

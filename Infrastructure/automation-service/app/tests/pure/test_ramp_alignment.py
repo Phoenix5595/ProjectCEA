@@ -13,7 +13,7 @@ from typing import Any
 
 import pytest
 
-from app.control.setpoint_manager import SetpointManager
+from app.control.setpoint_manager import RampState, SetpointManager
 from app.control.scheduler import LOCAL_TZ
 
 
@@ -90,6 +90,93 @@ async def test_transition_anchor_is_the_scheduled_boundary() -> None:
 
 
 @pytest.mark.asyncio
+async def test_same_label_profile_change_retargets_with_original_deadline() -> None:
+    # Given: an in-flight 20→24 ramp halfway at 22; both profiles label "Day".
+    manager = _manager()
+    identity_old = (2, 1, "Day", "06:00", "18:00")
+    started = datetime(2026, 9, 20, 9, 0, tzinfo=LOCAL_TZ)
+    now = started + timedelta(minutes=15)
+    manager.ramp_manager.start_ramp("Veg Room", "main", "heating", 20.0, 24.0, 30.0, started)
+    await manager.compute_effective_setpoints(
+        "Veg Room",
+        "main",
+        now,
+        "Day",
+        {
+            "heating_setpoint": 24.0,
+            "ramp_in_duration": 30,
+            "period_start_time": "09:00",
+            "climate_identity": identity_old,
+        },
+    )
+
+    # When: the same-label profile switches and the new target is 30.
+    result = await manager.compute_effective_setpoints(
+        "Veg Room",
+        "main",
+        now,
+        "Day",
+        {
+            "heating_setpoint": 30.0,
+            "ramp_in_duration": 30,
+            "period_start_time": "09:00",
+            "climate_identity": (2, 2, "Day", "06:00", "18:00"),
+        },
+    )
+
+    # Then: continuity is immediate (22) toward the new 30, and the original
+    # scheduled deadline is retained instead of extending the ramp.
+    assert result["effective_heating_setpoint"] == pytest.approx(22.0)
+    assert result["nominal_heating_setpoint"] == 30.0
+    ramp = manager.ramp_manager.active_ramps[("Veg Room", "main", "heating")]
+    assert ramp.start_value == pytest.approx(22.0)
+    assert ramp.target_value == pytest.approx(30.0)
+    assert ramp.end_time == started + timedelta(minutes=30)
+
+
+@pytest.mark.asyncio
+async def test_equal_target_noop_save_does_not_restart_ramp() -> None:
+    # Given: an in-flight ramp toward the already configured nominal.
+    manager = _manager()
+    started = datetime(2026, 9, 20, 9, 0, tzinfo=LOCAL_TZ)
+    now = started + timedelta(minutes=15)
+    manager.ramp_manager.start_ramp("Veg Room", "main", "heating", 20.0, 24.0, 30.0, started)
+    await manager.compute_effective_setpoints(
+        "Veg Room",
+        "main",
+        now,
+        "Day",
+        {
+            "heating_setpoint": 24.0,
+            "ramp_in_duration": 30,
+            "period_start_time": "09:00",
+            "climate_identity": (2, 1, "Day", "06:00", "18:00"),
+        },
+    )
+    ramp_before = manager.ramp_manager.active_ramps[("Veg Room", "main", "heating")]
+
+    # When: a no-op save re-sends the same identity and target.
+    result = await manager.compute_effective_setpoints(
+        "Veg Room",
+        "main",
+        now,
+        "Day",
+        {
+            "heating_setpoint": 24.0,
+            "ramp_in_duration": 30,
+            "period_start_time": "09:00",
+            "climate_identity": (2, 1, "Day", "06:00", "18:00"),
+        },
+    )
+
+    # Then: the same ramp object continues; no restart happened.
+    assert (
+        manager.ramp_manager.active_ramps[("Veg Room", "main", "heating")] is ramp_before
+    )
+    assert result["effective_heating_setpoint"] == pytest.approx(22.0)
+
+
+@pytest.mark.asyncio
 async def test_outage_past_the_ramp_window_applies_nominal_directly() -> None:
     # Given: the service resumes forty-four minutes after a thirty-minute ramp
     # was scheduled to begin.
@@ -139,3 +226,26 @@ async def test_boundary_before_midnight_wraps_to_the_previous_day() -> None:
     # Then: the two-hour-old boundary is past the ramp window: nominal applies.
     assert result["effective_heating_setpoint"] == 20.0
     assert not manager.ramp_manager.has_active_ramps("Veg Room", "main")
+
+
+@pytest.mark.asyncio
+async def test_restored_ramp_retargets_even_a_small_nominal_correction() -> None:
+    manager = _manager()
+    started = datetime(2026, 9, 20, 9, 0, tzinfo=LOCAL_TZ)
+    now = started + timedelta(minutes=15)
+    manager.ramp_manager.active_ramps[("Veg Room", "main", "heating")] = RampState(
+        "heating", 20.0, 24.0, 30.0, started, restored=True
+    )
+    result = await manager.compute_effective_setpoints(
+        "Veg Room", "main", now, "Day",
+        {
+            "heating_setpoint": 24.05,
+            "ramp_in_duration": 30,
+            "period_start_time": "09:00",
+            "climate_identity": (1, None, "Day", "09:00", "18:00"),
+        },
+    )
+    ramp = manager.ramp_manager.active_ramps[("Veg Room", "main", "heating")]
+    assert result["effective_heating_setpoint"] == pytest.approx(22.0)
+    assert ramp.target_value == 24.05
+    assert ramp.end_time == started + timedelta(minutes=30)

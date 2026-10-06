@@ -13,6 +13,7 @@ DeviceKey: TypeAlias = tuple[str, str, str]
 DeviceHierarchy: TypeAlias = dict[str, dict[str, dict[str, dict[str, Any]]]]
 DeviceInfo: TypeAlias = Mapping[str, Any]
 ModeParameters: TypeAlias = Mapping[tuple[str, str], Mapping[str, Any]]
+ActiveModes: TypeAlias = Mapping[tuple[str, str], Mapping[str, Any]]
 LightIntensityProjection: TypeAlias = Mapping[tuple[int, int], float]
 LightProgramProjection: TypeAlias = tuple[Mapping[str, Any], ...]
 
@@ -38,6 +39,7 @@ class RuntimeDeviceSnapshot:
     by_channel: Mapping[int, DeviceKey]
     device_info: Mapping[DeviceKey, DeviceInfo]
     mode_parameters: ModeParameters
+    active_modes: ActiveModes
     light_intensities: LightIntensityProjection
     light_programs: LightProgramProjection
     light_programs_by_room: Mapping[tuple[str, str], LightProgramProjection]
@@ -49,6 +51,7 @@ class RuntimeDeviceSnapshot:
         version: int,
         hierarchy: dict[str, dict[str, dict[str, dict[str, Any]]]],
         mode_parameters: dict[tuple[str, str], dict[str, Any]],
+        active_modes: dict[tuple[str, str], dict[str, Any]],
         light_intensities: dict[tuple[int, int], float],
         light_programs: list[dict[str, Any]],
     ) -> RuntimeDeviceSnapshot:
@@ -89,6 +92,7 @@ class RuntimeDeviceSnapshot:
             by_channel=MappingProxyType(by_channel),
             device_info=MappingProxyType(device_info),
             mode_parameters=_freeze(mode_parameters),
+            active_modes=_freeze(active_modes),
             light_intensities=MappingProxyType(dict(light_intensities)),
             light_programs=frozen_programs,
             light_programs_by_room=MappingProxyType(

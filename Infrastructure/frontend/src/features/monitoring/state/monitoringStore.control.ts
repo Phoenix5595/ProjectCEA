@@ -74,6 +74,9 @@ export function applyInitialPartial(
     runtimeSnapshotVersion:
       controlRange?.runtime_snapshot_version ?? existing.runtimeSnapshotVersion,
     flushHealth: controlRange?.flush_health ?? existing.flushHealth,
+    ...(existing.lightRegistry === undefined
+      ? {}
+      : { lightRegistry: existing.lightRegistry }),
   }
 }
 

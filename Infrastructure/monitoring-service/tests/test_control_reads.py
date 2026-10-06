@@ -42,6 +42,27 @@ from shared.redis_keys import (
 
 NOW = datetime(2026, 8, 20, 12, tzinfo=UTC)
 
+def _light_history_row(
+    timestamp: datetime,
+    device_name: str | None,
+    mode: str,
+    value: float | None,
+) -> dict[str, str | float | datetime | None]:
+    row: dict[str, str | float | datetime | None] = {
+        "timestamp": timestamp,
+        "mode": mode,
+        "device_name": device_name,
+        "effective_light_intensity": value,
+        "nominal_light_intensity": value,
+        "ramp_progress_light": None,
+    }
+    for metric in ("heating", "cooling", "humidity", "co2", "vpd"):
+        row[f"effective_{metric}_setpoint"] = None
+        row[f"nominal_{metric}_setpoint"] = None
+        row[f"ramp_progress_{metric}"] = None
+    return row
+
+
 
 def _shared_current(valid_until: datetime) -> CurrentSnapshot:
     return CurrentSnapshot(
@@ -155,6 +176,19 @@ class FakeDatabase:
         return []
 
 
+
+@final
+class LightTimelineDatabase:
+    def __init__(self, rows: list[dict[str, str | float | datetime | None]]) -> None:
+        self.rows = rows
+
+    async def fetch(
+        self, query: str, *_: str | int | float | datetime
+    ) -> list[dict[str, str | float | datetime | None]]:
+        if "FROM effective_setpoints" in query:
+            return self.rows
+        return []
+
 @final
 class FakeRedis:
     def __init__(self, values: list[str | None]) -> None:
@@ -261,6 +295,41 @@ async def test_history_builds_timelines_from_committed_read_models() -> None:
     assert response.pid[0].points[0].duty_cycle_percent == 40.0
     assert response.photoperiod[0].phase == "SUN"
     assert database.queries == sorted(database.queries, key=len) or True
+
+@pytest.mark.anyio
+async def test_history_canonicalizes_each_light_by_device_and_timestamp() -> None:
+    # Given: mode transitions, a null/finite sibling pair, and conflicting finite siblings.
+    start = NOW - timedelta(minutes=5)
+    rows = [
+        _light_history_row(start, "light_f_1", "day", 40.0),
+        _light_history_row(start, "light_f_2", "day", 20.0),
+        _light_history_row(start + timedelta(minutes=2), "light_f_1", "day", 80.0),
+        _light_history_row(start + timedelta(minutes=1), "light_f_1", "night", 0.0),
+        _light_history_row(start + timedelta(minutes=3), "light_f_1", "day", None),
+        _light_history_row(start + timedelta(minutes=3), "light_f_1", "day", 75.0),
+        _light_history_row(start + timedelta(minutes=4), "light_f_1", "day", 60.0),
+        _light_history_row(start + timedelta(minutes=4), "light_f_1", "night", 70.0),
+        _light_history_row(start + timedelta(minutes=4), None, "day", 99.0),
+    ]
+    repository = ControlHistoryRepository(LightTimelineDatabase(rows))
+
+    # When: the raw control history is read without point budgeting.
+    response = await repository.read(
+        "Flower Room",
+        ControlHistoryRange(start=start, end=NOW),
+    )
+
+    # Then: each physical light has one chronological identity and one fact per timestamp.
+    assert [series.name for series in response.lights] == ["light_f_1", "light_f_2"]
+    light = response.lights[0]
+    assert [(point.timestamp, point.value, point.mode) for point in light.points] == [
+        (start, 40.0, "day"),
+        (start + timedelta(minutes=1), 0.0, "night"),
+        (start + timedelta(minutes=2), 80.0, "day"),
+        (start + timedelta(minutes=3), 75.0, "day"),
+        (start + timedelta(minutes=4), 60.0, "day"),
+    ]
+    assert len(response.lights[1].points) == 1
 
 
 @pytest.mark.anyio

@@ -76,6 +76,8 @@ class Scheduler(
         # --- Installed projections (replaced only as one complete snapshot) ---
         # {(location, cluster): {mode_id, day_start, night_start, ramp_up, ramp_down}}
         self._installed_mode_params: Mapping[tuple[str, str], Mapping[str, Any]] = {}
+        # {(location, cluster): {mode_id, submode_id, mode_name, submode_name}}
+        self._installed_active_modes: Mapping[tuple[str, str], Mapping[str, Any]] = {}
         # {(device_id, mode_id): target_intensity}
         self._installed_light_intensities: Mapping[tuple[int, int], float] = {}
         # All enabled programs (raw list from repo)
@@ -180,12 +182,25 @@ class Scheduler(
         """Install every scheduler projection from one immutable snapshot version."""
         self._ready = False
         self._installed_mode_params = snapshot.mode_parameters
+        self._installed_active_modes = snapshot.active_modes
         self._installed_light_intensities = snapshot.light_intensities
         self._installed_light_programs = snapshot.light_programs
         self._installed_light_programs_by_room = snapshot.light_programs_by_room
         self._installed_device_lookup = snapshot.device_info
         self._ready = True
         logger.info("Installed scheduler snapshot version=%s", snapshot.version)
+
+    def clear_room_light_ramps(self, location: str, cluster: str) -> None:
+        """Clear every light ramp state tuple keyed for one room."""
+        keys_to_delete = [
+            key for key in self._light_ramp_state if key[0] == location and key[1] == cluster
+        ]
+        for key in keys_to_delete:
+            self._light_ramp_state.pop(key, None)
+        if keys_to_delete:
+            logger.info(
+                f"Cleared {len(keys_to_delete)} light ramp state entries for {location}/{cluster}"
+            )
 
     def bind_snapshot(self, snapshot: RuntimeDeviceSnapshot) -> Token[RuntimeDeviceSnapshot | None]:
         """Bind the control tick's snapshot so scheduling cannot cross versions."""
@@ -200,6 +215,12 @@ class Scheduler(
         """Expose the tick-local or latest complete photoperiod projection."""
         snapshot = self._active_snapshot.get()
         return snapshot.mode_parameters if snapshot is not None else self._installed_mode_params
+
+    @property
+    def active_modes(self) -> Mapping[tuple[str, str], Mapping[str, Any]]:
+        """Expose the tick-local or latest complete active identity projection."""
+        snapshot = self._active_snapshot.get()
+        return snapshot.active_modes if snapshot is not None else self._installed_active_modes
 
     @property
     def _light_intensities(self) -> Mapping[tuple[int, int], float]:

@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 from .base import BaseRepository, logger
 
 if TYPE_CHECKING:
-    from asyncpg import Pool
+    from asyncpg import Connection, Pool
 
 
 MINIMUM_NORMAL_TARGET_INTENSITY = 10.0
@@ -25,22 +25,25 @@ class LightTargetIntensityRepository(BaseRepository):
     def __init__(self, pool: Pool | None = None) -> None:
         super().__init__(pool)
 
-    async def get_intensity(self, device_id: int, mode_id: int) -> float | None:
-        """Get the target intensity for a specific device and mode."""
+    async def get_intensity(
+        self, device_id: int, mode_id: int, conn: Connection | None = None
+    ) -> float | None:
+        """Read a target; caller-owned connection failures propagate."""
+        if conn is not None:
+            row = await conn.fetchrow(
+                """SELECT target_intensity
+                   FROM light_target_intensity
+                   WHERE device_id = $1 AND mode_id = $2""",
+                device_id,
+                mode_id,
+            )
+            return float(row["target_intensity"]) if row is not None else None
         try:
-            async with self.pool.acquire() as conn:
-                row = await conn.fetchrow(
-                    """SELECT target_intensity
-                       FROM light_target_intensity
-                       WHERE device_id = $1 AND mode_id = $2""",
-                    device_id,
-                    mode_id,
-                )
-                if row:
-                    return float(row["target_intensity"])
+            async with self.pool.acquire() as connection:
+                return await self.get_intensity(device_id, mode_id, conn=connection)
         except Exception as e:
             logger.error(f"Failed to get light target intensity for {device_id}/{mode_id}: {e}")
-        return None
+            return None
 
     async def get_intensities_for_room(
         self, location: str, cluster: str, mode_id: int
@@ -67,21 +70,31 @@ class LightTargetIntensityRepository(BaseRepository):
             )
             return {}
 
-    async def set_intensity(self, device_id: int, mode_id: int, target_intensity: float) -> bool:
-        """Set or update the target intensity for a specific device and mode."""
+    async def set_intensity(
+        self,
+        device_id: int,
+        mode_id: int,
+        target_intensity: float,
+        conn: Connection | None = None,
+    ) -> bool:
+        """Write a target without acquiring or notifying on a supplied connection."""
+        if conn is not None:
+            await conn.execute(
+                """INSERT INTO light_target_intensity (device_id, mode_id, target_intensity, updated_at)
+                   VALUES ($1, $2, $3, NOW())
+                   ON CONFLICT (device_id, mode_id)
+                   DO UPDATE SET target_intensity = EXCLUDED.target_intensity,
+                                 updated_at = NOW()""",
+                device_id,
+                mode_id,
+                target_intensity,
+            )
+            return True
         try:
-            async with self.pool.acquire() as conn:
-                await conn.execute(
-                    """INSERT INTO light_target_intensity (device_id, mode_id, target_intensity, updated_at)
-                       VALUES ($1, $2, $3, NOW())
-                       ON CONFLICT (device_id, mode_id)
-                       DO UPDATE SET target_intensity = EXCLUDED.target_intensity,
-                                     updated_at = NOW()""",
-                    device_id,
-                    mode_id,
-                    target_intensity,
+            async with self.pool.acquire() as connection:
+                return await self.set_intensity(
+                    device_id, mode_id, target_intensity, conn=connection
                 )
-                return True
         except Exception as e:
             logger.error(f"Failed to set light target intensity for {device_id}/{mode_id}: {e}")
             return False

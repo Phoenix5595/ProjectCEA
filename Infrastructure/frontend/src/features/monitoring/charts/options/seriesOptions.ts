@@ -1,6 +1,7 @@
 import uPlot from 'uplot'
 
 import type { AlignedData, AlignedSeries } from '../../data'
+import { lightTrajectoryPaths } from './lightTrajectoryPaths'
 
 import { resolveFamily, type ChartFamily } from './family'
 import { readToken } from './tokens'
@@ -66,7 +67,8 @@ function withAlpha(color: string, alpha: number): string {
 }
 
 /** Build the full uPlot series array (index 0 is the time axis). */
-export function buildSeries(data: AlignedData): uPlot.Series[] {
+export function buildSeries(data: AlignedData, getData?: () => AlignedData): uPlot.Series[] {
+  const getCurrentData = getData ?? (() => data)
   return [
     { label: 'Time' },
     ...data.series.map(s => {
@@ -84,6 +86,13 @@ export function buildSeries(data: AlignedData): uPlot.Series[] {
         stroke: color,
         width: s.presentation?.lineWidth ?? (target ? 2 : 1.5),
       }
+      if (s.source === 'light' && s.lightTrajectory !== undefined) {
+        series.paths = lightTrajectoryPaths(s.key, getCurrentData)
+      } else if (s.kind === 'step') {
+        const stepped = uPlot.paths.stepped
+        if (stepped === undefined) throw new Error('uPlot stepped path renderer is unavailable')
+        series.paths = stepped({ align: 1 })
+      }
       if (isEnvelopeSeries(s)) {
         series.width = 0
       }
@@ -99,7 +108,7 @@ export function buildSeries(data: AlignedData): uPlot.Series[] {
           series.dash = dash
         }
       }
-      if (target) {
+      if (target && (s.source !== 'light' || projected)) {
         const dash = s.presentation?.dash
           ? [...s.presentation.dash]
           : parseDash(readToken('targetDash'))

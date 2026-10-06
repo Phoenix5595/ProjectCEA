@@ -12,11 +12,15 @@ export interface ControlSnapshotStoreState {
   channels: ChannelInfo[]
   relayState: RelayBoardStateResponse | null
   mcpConnected: boolean
+  /** Latest installed registry counter; null until a snapshot has arrived. */
+  registryVersion: number | null
   loading: boolean
   error: string | null
 }
 
 export interface UseControlSnapshotReturn extends ControlSnapshotStoreState {
+  /** Latest installed registry counter; null until a snapshot has arrived. */
+  registryVersion: number | null
   refresh: () => Promise<void>
   refreshNow: () => Promise<void>
 }
@@ -37,6 +41,7 @@ const INITIAL_STATE: ControlSnapshotStoreState = {
   })),
   relayState: null,
   mcpConnected: false,
+  registryVersion: null,
   loading: true,
   error: null,
 }
@@ -164,6 +169,9 @@ async function doFetch(): Promise<void> {
         channels,
         relayState,
         mcpConnected,
+        registryVersion: Number.isSafeInteger(snapshot.registry_version)
+          ? snapshot.registry_version
+          : null,
         loading: false,
         error: null,
       }
