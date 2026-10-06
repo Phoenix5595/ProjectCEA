@@ -66,6 +66,22 @@ class SetModeRequest(BaseModel):
     mode_name: str
     submode_name: str | None = None
     coordinate_clusters: bool = True  # When True, switch all clusters in location together
+    expected_config_revision: str | None = None  # Optional 409 guard for coordinate-less activation
+
+
+class ModeActivationResponse(RoomModeWithParams):
+    """Committed activation response with runtime readiness and revision metadata."""
+
+    config_revision: str
+    runtime_ready: bool
+    warning: str | None = None
+
+
+class ModeParametersUpdateResponse(RoomModeWithParams):
+    """Committed parameter update with one revision and any notification warning."""
+
+    config_revision: str
+    notification_warning: str | None = None
 
 
 class UpdateParametersRequest(BaseModel):

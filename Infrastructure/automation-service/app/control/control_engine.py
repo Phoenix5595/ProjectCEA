@@ -8,6 +8,7 @@ from collections.abc import Coroutine
 from datetime import UTC, datetime
 import inspect
 import json
+import math
 from typing import Any
 
 from app.alarm_manager import AlarmManager
@@ -179,6 +180,7 @@ class ControlEngine:
         #   'ramp_progress_cooling': float or None
         # }
         self._effective_setpoints: dict[tuple[str, str], dict[str, Any]] = {}
+        self._tick_effective_setpoints: dict[tuple[str, str], dict[str, Any]] = {}
 
         # Light effective setpoint logging interval (seconds per device).
         # With 1s control tick and 6 dimmers (3 DFR0971 boards × 2 channels):
@@ -217,9 +219,14 @@ class ControlEngine:
         if len(stats_list) > self._max_stats_history:
             stats_list.pop(0)
 
-    async def _get_active_room_mode(self, location: str, cluster: str) -> dict[str, Any] | None:
-        """Read one active-mode row for both authority and observation provenance."""
-        return await self.database.room_mode_repo.get_active_mode(location, cluster)
+    def _get_active_room_mode(
+        self, location: str, cluster: str, snapshot: RuntimeDeviceSnapshot
+    ) -> dict[str, Any] | None:
+        """Read one active identity from the immutable snapshot captured for this tick."""
+        view = snapshot.active_modes.get((location, cluster))
+        if view is None:
+            return None
+        return {"location": location, "cluster": cluster, **dict(view)}
 
     def _enqueue_final_photoperiod_phase(
         self,
@@ -249,24 +256,64 @@ class ControlEngine:
             force=force,
         )
 
-    def _build_current_snapshot(self, snapshot: RuntimeDeviceSnapshot) -> CurrentSnapshot | None:
-        """Capture current facts from the completed tick without reading external state."""
+    def _ramp_remaining_seconds_at(
+        self, observed_at: datetime
+    ) -> dict[tuple[str, str], dict[str, float]]:
+        """Capture RAM ramp deadlines for known nominal targets at one observation instant."""
+        ramp_manager = getattr(self.setpoint_manager, "ramp_manager", None)
+        active_ramps = getattr(ramp_manager, "active_ramps", None)
+        if active_ramps is None:
+            return {}
+
+        metrics = ("heating", "cooling", "vpd", "co2")
+        remaining_by_room: dict[tuple[str, str], dict[str, float]] = {}
+        active_ramp_keys: set[tuple[str, str, str]] = set()
+        for ramp_key, ramp in active_ramps.items():
+            if ramp_key[2] not in metrics or ramp.is_complete(observed_at):
+                continue
+            active_ramp_keys.add(ramp_key)
+            remaining = (ramp.end_time - observed_at).total_seconds()
+            if math.isfinite(remaining) and remaining > 0:
+                room_key = (ramp_key[0], ramp_key[1])
+                remaining_by_room.setdefault(room_key, {})[ramp_key[2]] = remaining
+
+        for room_key, setpoints in self._tick_effective_setpoints.items():
+            for metric in metrics:
+                nominal = setpoints.get(f"nominal_{metric}_setpoint")
+                if (
+                    isinstance(nominal, bool)
+                    or not isinstance(nominal, int | float)
+                    or not math.isfinite(nominal)
+                ):
+                    continue
+                if (*room_key, metric) not in active_ramp_keys:
+                    remaining_by_room.setdefault(room_key, {})[metric] = 0.0
+        return remaining_by_room
+
+    def _build_current_snapshot(
+        self, snapshot: RuntimeDeviceSnapshot, observed_at: datetime
+    ) -> CurrentSnapshot | None:
+        """Capture facts consumed by the completed tick without reading external state."""
         return build_current_snapshot(
-            effective_setpoints=self._effective_setpoints,
+            effective_setpoints=self._tick_effective_setpoints,
             automation_context=self._automation_context,
             relay_states=self.relay_manager.get_all_states(),
             photoperiod_phases=self._photoperiod_phases,
             runtime_snapshot_version=snapshot.version,
-            observed_at=datetime.now(UTC),
+            observed_at=observed_at,
+            active_profiles=snapshot.active_modes,
+            ramp_remaining_seconds=self._ramp_remaining_seconds_at(observed_at),
         )
 
-    def _offer_current_snapshot(self, snapshot: RuntimeDeviceSnapshot) -> None:
+    def _offer_current_snapshot(
+        self, snapshot: RuntimeDeviceSnapshot, observed_at: datetime
+    ) -> None:
         """Keep observer faults outside the control loop's success domain."""
         observer = self.control_tick_observer
         if observer is None:
             return
         try:
-            current = self._build_current_snapshot(snapshot)
+            current = self._build_current_snapshot(snapshot, observed_at)
             if current is None:
                 return
             offered = observer.offer(current)
@@ -340,10 +387,14 @@ class ControlEngine:
         snapshot = self.runtime_device_registry.snapshot
         snapshot_token = self.relay_manager.bind_snapshot(snapshot)
         scheduler_snapshot_token = self.scheduler.bind_snapshot(snapshot)
+        self._tick_effective_setpoints.clear()
+        self._photoperiod_phases.clear()
         try:
             await self.relay_manager.retry_unresolved()
             await self._run_control_loop_with_snapshot(snapshot)
         finally:
+            self._tick_effective_setpoints.clear()
+            self._photoperiod_phases.clear()
             if self.relay_board_state_manager is not None:
                 await self.relay_board_state_manager.sample()
                 if self.alarm_manager is not None:
@@ -355,6 +406,8 @@ class ControlEngine:
 
     async def _run_control_loop_with_snapshot(self, snapshot: RuntimeDeviceSnapshot) -> None:
         """Run one tick against the snapshot reference captured at entry."""
+        self._tick_effective_setpoints.clear()
+        self._photoperiod_phases.clear()
         if not self._ramps_restored:
             await self._restore_ramps_on_startup()
             self._ramps_restored = True
@@ -401,8 +454,13 @@ class ControlEngine:
                     self._record_performance_stat("sensor_reading_time", sensor_time)
 
                 # Pipeline Step 2: Resolve climate period
+                active_profile = self._get_active_room_mode(location, cluster, snapshot)
                 period_data = await self.climate_resolver.resolve_period(
-                    location, cluster, current_time, self.database
+                    location,
+                    cluster,
+                    current_time,
+                    self.database,
+                    active_profile=active_profile,
                 )
 
                 active_period = period_data["active_period"]
@@ -446,6 +504,7 @@ class ControlEngine:
 
                         # Store in context
                         self._effective_setpoints[(location, cluster)] = effective_data
+                        self._tick_effective_setpoints[(location, cluster)] = effective_data
 
                         # Log to database
                         await self._log_effective_setpoints(
@@ -461,7 +520,7 @@ class ControlEngine:
                 # Calculate is_sun for light control
                 is_sun = self.climate_resolver.calculate_is_sun(current_time, location, cluster)
                 room_key = (location, cluster)
-                active_mode = await self._get_active_room_mode(location, cluster)
+                active_mode = self._get_active_room_mode(location, cluster, snapshot)
                 moon_authority_active = is_moon_authority_mode((active_mode or {}).get("mode_name"))
                 was_moon_authority_active = room_key in self._moon_authority_forced_moon
                 if moon_authority_active:
@@ -476,10 +535,9 @@ class ControlEngine:
                 elif was_moon_authority_active:
                     self._moon_authority_forced_moon.remove(room_key)
 
-                if self.control_tick_observer is not None:
-                    self._photoperiod_phases[room_key] = (
-                        PhotoperiodPhase.SUN if is_sun else PhotoperiodPhase.MOON
-                    )
+                self._photoperiod_phases[room_key] = (
+                    PhotoperiodPhase.SUN if is_sun else PhotoperiodPhase.MOON
+                )
 
                 if moon_authority_active or was_moon_authority_active:
                     phase = Phase.MOON if not is_sun else Phase.SUN
@@ -527,7 +585,7 @@ class ControlEngine:
 
         # Log automation state for all devices
         await self._log_automation_state(snapshot)
-        self._offer_current_snapshot(snapshot)
+        self._offer_current_snapshot(snapshot, current_time.astimezone(UTC))
 
         # Record performance statistics
         if self._profiling_enabled and loop_start_time:

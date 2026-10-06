@@ -4,11 +4,6 @@ import { apiClient } from '../services/api'
 import { extractErrorMessage } from '../utils/errors'
 import { logger } from '../utils/logger'
 
-interface RawLightDevice {
-  device_type?: string
-  display_name?: string
-}
-
 interface ManualLightControlProps {
   location: string
   cluster: string
@@ -34,46 +29,26 @@ export default function ManualLightControl({
   const [error, setError] = useState<string | null>(null)
   const [activeMode, setActiveMode] = useState<ActiveMode>(null)
 
-  // Load device details on mount
   useEffect(() => {
+    let cancelled = false
+    setLoadingDetails(true)
+    setLightDetails([])
+    setError(null)
     async function loadDeviceDetails() {
-      setLoadingDetails(true)
       try {
-        logger.debug('ManualLightControl: Fetching devices for', location, cluster)
-        const devices = await apiClient.getDevicesForLocationClusterWithDetails(location, cluster)
-        logger.debug('ManualLightControl: Raw devices received', devices)
-        const allDevices = Object.entries(devices)
-        logger.debug(
-          'ManualLightControl: All device entries',
-          allDevices.map(([name, dev]) => ({ name, type: dev?.device_type }))
-        )
-        const lights = (allDevices as [string, RawLightDevice][])
-          .filter(([_, device]) => {
-            const isLight = device?.device_type === 'light'
-            logger.debug(
-              'ManualLightControl: Device',
-              _,
-              'type:',
-              device?.device_type,
-              'isLight:',
-              isLight
-            )
-            return isLight
-          })
-          .map(([deviceName, device]) => ({
-            device_name: deviceName,
-            display_name: device.display_name,
-          }))
-        logger.debug('ManualLightControl: Filtered lights result', lights)
-        setLightDetails(lights)
+        const lights = await apiClient.getLightsForZone(location, cluster)
+        if (!cancelled) setLightDetails(lights)
       } catch (err) {
-        logger.error('ManualLightControl: Error loading device details:', err)
-        setLightDetails([])
+        if (!cancelled) {
+          logger.error('ManualLightControl: Error loading light inventory:', err)
+          setError(extractErrorMessage(err, 'Failed to load light inventory'))
+        }
       } finally {
-        setLoadingDetails(false)
+        if (!cancelled) setLoadingDetails(false)
       }
     }
-    loadDeviceDetails()
+    void loadDeviceDetails()
+    return () => { cancelled = true }
   }, [location, cluster])
 
   // Keep the existing 5s timer refresh, using the command owner's expiry projection.
@@ -261,14 +236,14 @@ export default function ManualLightControl({
         </div>
       )}
       {loadingDetails && <div className="text-xs text-text-muted mb-2">Loading lights...</div>}
-      {!loadingDetails && lightDetails.length === 0 && (
+      {!loadingDetails && !error && lightDetails.length === 0 && (
         <div className="text-xs text-status-danger mb-2 font-semibold">
           ⚠️ No lights found in this zone (location: {location}, cluster: {cluster})
         </div>
       )}
       {!loadingDetails && lightDetails.length > 0 && (
         <div className="text-xs text-status-success mb-2 font-semibold">
-          ✓ Found {lightDetails.length} light(s): {lightDetails.map(l => l.device_name).join(', ')}
+          ✓ Found {lightDetails.length} light(s): {lightDetails.map(light => light.display_name || light.device_name).join(', ')}
         </div>
       )}
       {error && <div className="text-xs text-status-danger mb-2">{error}</div>}

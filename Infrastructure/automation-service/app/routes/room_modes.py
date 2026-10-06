@@ -22,16 +22,23 @@ from app.events.mutation_dependencies import get_mutation_event_sink, get_mutati
 from app.events.mutation_diff import safe_allowlisted_diff
 from app.events.operational_models import EntityContext, JsonValue
 from app.events.operational_ports import OperationalEventSink
+from app.repositories.climate_timeline_apply import _TIMELINE_APPLY_LOCK
 from app.schemas.room_modes import (
     ActiveModeResponse,
     FlowerSubmode,
+    ModeActivationResponse,
     ModeParameters,
+    ModeParametersUpdateResponse,
     RoomMode,
     RoomModeWithParams,
     SetModeRequest,
     UpdateParametersRequest,
 )
-from app.services.mode_transition_service import ModeTransitionService
+from app.services.climate_timeline_apply import SavedTimelineConfigurationInvalidator
+from app.services.mode_transition_service import (
+    ACTIVATION_REVISION_CONFLICT,
+    ModeTransitionService,
+)
 from shared.infra_logging import get_logger
 from shared.room_light_authority import is_moon_authority_mode
 from shared.room_mode_policy import validate_room_mode_choice
@@ -64,6 +71,24 @@ def get_dfr0971_manager():
     from app.main import container
 
     return container.get_dfr0971_manager()
+
+
+def get_mode_transition_service() -> ModeTransitionService:
+    from app.main import container
+
+    return container.get_mode_transition_service()
+
+
+def _normalize_clock_text(text: str) -> str:
+    """Canonical zero-padded HH:MM for request clock strings ('6:30', '18:00:00')."""
+    parts = text.strip().split(":")
+    if len(parts) < 2 or len(parts) > 3:
+        raise ValueError(f"invalid clock text: {text!r}")
+    hour = int(parts[0])
+    minute = int(parts[1])
+    if not (0 <= hour <= 23 and 0 <= minute <= 59):
+        raise ValueError(f"invalid clock text: {text!r}")
+    return f"{hour:02d}:{minute:02d}"
 
 
 async def _iter_configured_light_devices(
@@ -223,7 +248,7 @@ async def get_room_mode_with_params(
     )
 
 
-@router.post("/room/{location}/{cluster}/mode", response_model=RoomModeWithParams)
+@router.post("/room/{location}/{cluster}/mode", response_model=ModeActivationResponse)
 @emits_operational_mutation
 async def set_room_mode(
     location: str,
@@ -235,6 +260,7 @@ async def set_room_mode(
     dfr0971_manager=Depends(get_dfr0971_manager),
     context: MutationRequestContext = Depends(get_mutation_request_context),
     sink: OperationalEventSink = Depends(get_mutation_event_sink),
+    transition_service: ModeTransitionService = Depends(get_mode_transition_service),
 ):
     ensure_configured_cluster({}, location, cluster)
     try:
@@ -243,7 +269,7 @@ async def set_room_mode(
         raise HTTPException(status_code=400, detail=str(error)) from error
     total_start = time.perf_counter()
 
-    # Resolve IDs for the new transition service
+    # Resolve IDs for the transition service
     mode_info = await db.room_mode_repo.get_mode_by_name(request.mode_name)
     if not mode_info:
         raise HTTPException(status_code=400, detail=f"Mode '{request.mode_name}' not found")
@@ -259,20 +285,28 @@ async def set_room_mode(
             )
         submode_id = submode_info["id"]
 
-    transition_service = ModeTransitionService(db)
-
     start = time.perf_counter()
     result_data = await transition_service.execute_mode_transition(
-        location=location,
-        cluster=cluster,
-        new_mode_id=mode_id,
-        new_submode_id=submode_id,
-        triggered_by="api",
+        location,
+        cluster,
+        mode_id,
+        submode_id,
+        "api",
+        expected_config_revision=request.expected_config_revision,
     )
     transaction_time = (time.perf_counter() - start) * 1000
     logger.info(f"MODE_SWITCH_TIMING: transition service took {transaction_time:.2f}ms")
 
     if not result_data.get("success"):
+        if result_data.get("error_code") == ACTIVATION_REVISION_CONFLICT:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": ACTIVATION_REVISION_CONFLICT,
+                    "message": result_data.get("message")
+                    or f"Failed to set mode '{request.mode_name}'",
+                },
+            )
         raise HTTPException(
             status_code=400,
             detail=result_data.get("message") or f"Failed to set mode '{request.mode_name}'",
@@ -304,10 +338,42 @@ async def set_room_mode(
             location, cluster, config, relay_manager, dfr0971_manager, db
         )
 
-    start = time.perf_counter()
-    result = await get_room_mode_with_params(location, cluster, db=db, config=config)
-    logger.info(
-        f"MODE_SWITCH_TIMING: get_room_mode_with_params took {(time.perf_counter() - start) * 1000:.2f}ms"
+    # The registry already installed one complete snapshot; assemble the
+    # response from the committed identity and the exact parameters read for
+    # synchronization instead of rereading the mode catalogue.
+    identity = dict(result_data.get("identity") or {})
+    parameters = result_data.get("parameters")
+    if parameters:
+        formatted = ModeParameters(
+            **{
+                key: str(value)[:5] if key in {"day_start_time", "night_start_time"} else value
+                for key, value in dict(parameters).items()
+                if key
+                not in {
+                    "id",
+                    "location",
+                    "cluster",
+                    "mode_id",
+                    "submode_id",
+                    "created_at",
+                    "updated_at",
+                }
+            }
+        )
+    else:
+        formatted = ModeParameters()
+    result = ModeActivationResponse(
+        location=location,
+        cluster=cluster,
+        mode_name=str(identity.get("mode_name") or request.mode_name),
+        submode_name=identity.get("submode_name"),
+        mode_id=identity.get("mode_id"),
+        submode_id=identity.get("submode_id"),
+        is_constant=bool(identity.get("is_constant") or False),
+        parameters=formatted,
+        config_revision=str(result_data.get("config_revision") or ""),
+        runtime_ready=bool(result_data.get("runtime_ready", True)),
+        warning=result_data.get("warning"),
     )
 
     total_time = (time.perf_counter() - total_start) * 1000
@@ -322,7 +388,7 @@ async def set_room_mode(
     return result
 
 
-@router.put("/room/{location}/{cluster}/parameters", response_model=RoomModeWithParams)
+@router.put("/room/{location}/{cluster}/parameters", response_model=ModeParametersUpdateResponse)
 @emits_operational_mutation
 async def update_room_parameters(
     location: str,
@@ -334,42 +400,110 @@ async def update_room_parameters(
     sink: OperationalEventSink = Depends(get_mutation_event_sink),
 ):
     ensure_configured_cluster({}, location, cluster)
-    active = await db.room_mode_repo.get_active_mode(location, cluster)
-    if not active:
-        mode_name = "flower" if "flower" in location.lower() else "veg"
-        submode_name = "bulk" if mode_name == "flower" else None
-        await db.room_mode_repo.set_active_mode(location, cluster, mode_name, submode_name)
-    else:
-        mode_name = active["mode_name"]
-        submode_name = active.get("submode_name")
 
-    current_params = await db.room_mode_repo.get_mode_parameters(
-        location, cluster, mode_name, submode_name
+    pool = await db._get_pool()
+    try:
+        async with pool.acquire() as connection, connection.transaction():
+            # Shared timeline discipline: advisory lock, then the active row
+            # lock, before any parameter read/merge/write.
+            _ = await connection.execute("SELECT pg_advisory_xact_lock($1)", _TIMELINE_APPLY_LOCK)
+            locked = await connection.fetchrow(
+                "SELECT mode_id, submode_id FROM room_active_mode "
+                "WHERE location = $1 AND cluster = $2 FOR UPDATE",
+                location,
+                cluster,
+            )
+            if locked is not None:
+                active = await db.room_mode_repo.get_active_mode(location, cluster, conn=connection)
+            else:
+                # Preserve the missing-active default creation inside this transaction.
+                mode_name = "flower" if "flower" in location.lower() else "veg"
+                submode_name = "bulk" if mode_name == "flower" else None
+                created = await db.room_mode_repo.set_active_mode(
+                    location, cluster, mode_name, submode_name, conn=connection
+                )
+                if not created:
+                    raise RuntimeError("Failed to create the default active room mode")
+                # Read the persisted numeric identity back on this connection:
+                # the created row is real authority, never a fabricated None.
+                active = await db.room_mode_repo.get_active_mode(location, cluster, conn=connection)
+            if active is None or not isinstance(active.get("mode_id"), int):
+                raise RuntimeError("No resolvable active room mode for parameter update")
+            identity = await db.room_mode_repo.get_profile_identity_on_connection(
+                connection, location, active["mode_id"], active["submode_id"]
+            )
+            mode_name = str(identity["mode_name"])
+            submode_name = identity["submode_name"]
+
+            current_params = await db.room_mode_repo.get_mode_parameters(
+                location, cluster, mode_name, submode_name, conn=connection
+            )
+            if not current_params:
+                current_params = ModeParameters().model_dump()
+
+            updates = request.model_dump(exclude_none=True)
+
+            # Model time normalization: stored and echoed clocks are canonical
+            # zero-padded HH:MM, never the raw request text.
+            for clock_field in ("day_start_time", "night_start_time"):
+                if clock_field in updates:
+                    updates[clock_field] = _normalize_clock_text(str(updates[clock_field]))
+
+            # Deprecation warnings for legacy light intensity fields
+            if "main_light_intensity" in updates:
+                logger.warning(
+                    "DEPRECATED: main_light_intensity in update_room_parameters is deprecated. "
+                    "Use PUT /api/lights/{device_id}/intensity or POST /api/lights/{loc}/{cluster}/{device}/target instead."
+                )
+            if "supplemental_light_intensity" in updates:
+                logger.warning(
+                    "DEPRECATED: supplemental_light_intensity in update_room_parameters is deprecated. "
+                    "Use PUT /api/lights/{device_id}/intensity or POST /api/lights/{loc}/{cluster}/{device}/target instead."
+                )
+
+            merged_params = {**current_params, **updates}
+
+            saved = await db.room_mode_repo.save_mode_parameters(
+                location, cluster, mode_name, submode_name, merged_params, conn=connection
+            )
+            if not saved:
+                raise RuntimeError("Failed to save mode parameters")
+
+            revision_id = await db.config_repo.log_config_version(
+                config_type="mode_parameters",
+                author="system",
+                comment=f"Updated room parameters for {location}/{cluster}",
+                location=location,
+                cluster=cluster,
+                changes={"updated": sorted(updates)},
+                conn=connection,
+            )
+            if revision_id is None:
+                raise RuntimeError("Failed to log mode parameters revision")
+
+            # Sync light ramp times to existing light schedules on this connection
+            if "light_ramp_up_minutes" in updates or "light_ramp_down_minutes" in updates:
+                light_ramp_up = merged_params.get("light_ramp_up_minutes", 15)
+                light_ramp_down = merged_params.get("light_ramp_down_minutes", 15)
+                await db.schedule_repo.update_light_schedule_ramp_times(
+                    location, cluster, light_ramp_up, light_ramp_down, conn=connection
+                )
+                logger.info(
+                    f"Synced light ramp times to schedules: {location}/{cluster} "
+                    f"ramp_up={light_ramp_up}min, ramp_down={light_ramp_down}min"
+                )
+    except HTTPException:
+        raise
+    # Commit succeeded: post-commit notification scope below; failures never
+    # imply a rollback of the persisted parameters.
+
+    warning = await SavedTimelineConfigurationInvalidator(db).invalidate(
+        location,
+        cluster,
+        f"{revision_id:07x}",
+        identity["mode_id"],
+        identity["submode_id"],
     )
-    if not current_params:
-        current_params = ModeParameters().model_dump()
-
-    updates = request.model_dump(exclude_none=True)
-
-    # Deprecation warnings for legacy light intensity fields
-    if "main_light_intensity" in updates:
-        logger.warning(
-            "DEPRECATED: main_light_intensity in update_room_parameters is deprecated. "
-            "Use PUT /api/lights/{device_id}/intensity or POST /api/lights/{loc}/{cluster}/{device}/target instead."
-        )
-    if "supplemental_light_intensity" in updates:
-        logger.warning(
-            "DEPRECATED: supplemental_light_intensity in update_room_parameters is deprecated. "
-            "Use PUT /api/lights/{device_id}/intensity or POST /api/lights/{loc}/{cluster}/{device}/target instead."
-        )
-
-    merged_params = {**current_params, **updates}
-
-    saved = await db.room_mode_repo.save_mode_parameters(
-        location, cluster, mode_name, submode_name, merged_params
-    )
-    if not saved:
-        raise HTTPException(status_code=500, detail="Failed to save mode parameters")
 
     emit_persisted_mutation(
         sink,
@@ -390,20 +524,10 @@ async def update_room_parameters(
         context,
     )
 
-    # Sync light ramp times to existing light schedules if they were updated
+    # Publish config change event for immediate scheduler update when ramps changed
     if "light_ramp_up_minutes" in updates or "light_ramp_down_minutes" in updates:
         light_ramp_up = merged_params.get("light_ramp_up_minutes", 15)
         light_ramp_down = merged_params.get("light_ramp_down_minutes", 15)
-
-        await db.schedule_repo.update_light_schedule_ramp_times(
-            location, cluster, light_ramp_up, light_ramp_down
-        )
-        logger.info(
-            f"Synced light ramp times to schedules: {location}/{cluster} "
-            f"ramp_up={light_ramp_up}min, ramp_down={light_ramp_down}min"
-        )
-
-        # Publish config change event for immediate scheduler update
         event_bus = get_event_bus()
         event = ConfigChangeEvent(
             event_type=ConfigEventType.RAMP_TIMES_CHANGED,
@@ -421,7 +545,27 @@ async def update_room_parameters(
             )
 
     logger.info(f"Parameters updated: {location}/{cluster} mode={mode_name}")
-    return await get_room_mode_with_params(location, cluster, db=db, config=config)
+
+    # The exact committed identity (including is_constant) was already read on
+    # the transaction connection; no catalogue re-read can contradict it.
+    return ModeParametersUpdateResponse(
+        location=location,
+        cluster=cluster,
+        mode_name=mode_name,
+        submode_name=submode_name,
+        mode_id=identity["mode_id"],
+        submode_id=identity["submode_id"],
+        is_constant=bool(identity["is_constant"]),
+        parameters=ModeParameters(
+            **{
+                key: value
+                for key, value in merged_params.items()
+                if key in ModeParameters.model_fields
+            }
+        ),
+        config_revision=f"{revision_id:07x}",
+        notification_warning=warning,
+    )
 
 
 def _mode_event_values(mode: object) -> dict[str, JsonValue]:

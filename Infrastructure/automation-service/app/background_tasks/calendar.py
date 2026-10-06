@@ -23,7 +23,9 @@ class CalendarMixin:
         try:
             if self._calendar_scheduler is None:
                 self._calendar_scheduler = CalendarModeScheduler(
-                    self.database, self.operational_event_sink
+                    self.database,
+                    self.operational_event_sink,
+                    transition_service=self.mode_transition_service,
                 )
             await self._calendar_scheduler.run_tick()
         except Exception as e:

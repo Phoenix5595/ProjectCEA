@@ -1,5 +1,6 @@
 import { isMinuteInPeriod, timeToMinutes } from '../../../utils/climatePeriodTimeline'
 import type { RichTrajectoryEnvelope } from '../api/contracts'
+import { scheduleClockMinutes, scheduleOccurrences } from './scheduleClock'
 
 export type TrajectoryKind = 'scheduled' | 'effective'
 export type EnvelopeSeriesKey = `${string}:${TrajectoryKind}`
@@ -26,6 +27,7 @@ export function normalizeTimelineMetric(metric: string): string | null {
 
 interface NormStep {
   readonly t: number
+  readonly end: number
   readonly value: number | null
 }
 
@@ -100,7 +102,11 @@ export function groupEnvelopeSegments(envelope: RichTrajectoryEnvelope): MetricG
       linear: [],
     }
     if (segment.shape === 'step') {
-      group.steps.push({ t: segment.start.getTime(), value: segment.value })
+      group.steps.push({
+        t: segment.start.getTime(),
+        end: segment.end.getTime(),
+        value: segment.value,
+      })
     } else if (segment.shape === 'linear') {
       group.linear.push({
         start: segment.start.getTime(),
@@ -109,7 +115,11 @@ export function groupEnvelopeSegments(envelope: RichTrajectoryEnvelope): MetricG
         endValue: segment.end_value,
       })
     } else {
-      group.steps.push({ t: segment.start.getTime(), value: null })
+      group.steps.push({
+        t: segment.start.getTime(),
+        end: segment.end.getTime(),
+        value: null,
+      })
     }
     groups.set(key, group)
   }
@@ -123,19 +133,30 @@ export function groupEnvelopeSegments(envelope: RichTrajectoryEnvelope): MetricG
   return result
 }
 
+/**
+ * Sample the envelope's declared segment intervals at one instant. Every
+ * segment covers the half-open interval `[start, end)`: a value holds only
+ * until its own end — never past coverage — and at a shared boundary the new
+ * (later-starting) segment wins. Gaps between segments and instants outside
+ * every interval yield null.
+ */
 function sampleGroup(group: MetricGroup, t: number): number | null {
-  for (const ln of group.linear) {
-    if (t >= ln.start && t <= ln.end) {
-      const frac = ln.end === ln.start ? 0 : (t - ln.start) / (ln.end - ln.start)
-      return ln.startValue + frac * (ln.endValue - ln.startValue)
-    }
-  }
+  let bestStart = -Infinity
   let value: number | null = null
   for (const step of group.steps) {
-    if (step.t <= t) value = step.value
-    else break
+    if (step.t <= t && t < step.end && step.t > bestStart) {
+      bestStart = step.t
+      value = step.value
+    }
   }
-  return value
+  for (const ln of group.linear) {
+    if (ln.start <= t && t < ln.end && ln.start > bestStart) {
+      bestStart = ln.start
+      const frac = ln.end === ln.start ? 0 : (t - ln.start) / (ln.end - ln.start)
+      value = ln.startValue + frac * (ln.endValue - ln.startValue)
+    }
+  }
+  return bestStart === -Infinity ? null : value
 }
 
 export function buildEnvelopeSeries(
@@ -173,8 +194,15 @@ export interface TimelinePhotoperiodInterval {
 }
 
 const DAY_MS = 86_400_000
-const MINUTE_MS = 60_000
 
+/**
+ * Split the window into sun/moon bands from the stored Toronto wall clocks.
+ * Occurrences resolve through the schedule clock (fold → first occurrence,
+ * spring gap → forward-shifted clock), including the local date preceding the
+ * window start so a night that began the previous Toronto day still opens the
+ * window correctly. An equal day and night clock renders the whole window as
+ * MOON.
+ */
 export function photoperiodIntervals(
   photoperiod: TimelinePhotoperiodInput,
   windowStartMs: number,
@@ -187,29 +215,13 @@ export function photoperiodIntervals(
     return [{ start: windowStartMs, end: windowEndMs, phase: 'MOON' }]
   }
 
-  const windowStart = new Date(windowStartMs)
-  const dayOrigin = Date.UTC(
-    windowStart.getUTCFullYear(),
-    windowStart.getUTCMonth(),
-    windowStart.getUTCDate()
-  )
-  const boundaries: number[] = []
-  for (
-    let dayOffset = -1;
-    dayOffset <= Math.ceil((windowEndMs - dayOrigin) / DAY_MS);
-    dayOffset += 1
-  ) {
-    for (const boundaryMinute of [dayStart, nightStart]) {
-      const candidate = dayOrigin + dayOffset * DAY_MS + boundaryMinute * MINUTE_MS
-      if (candidate > windowStartMs && candidate < windowEndMs) boundaries.push(candidate)
-    }
-  }
-  boundaries.sort((left, right) => left - right)
+  const boundaries = [
+    ...scheduleOccurrences(windowStartMs, windowEndMs, photoperiod.dayStartTime),
+    ...scheduleOccurrences(windowStartMs, windowEndMs, photoperiod.nightStartTime),
+  ].sort((left, right) => left - right)
 
-  const phaseAt = (t: number): 'SUN' | 'MOON' => {
-    const minuteOfDay = Math.floor((t - dayOrigin) / MINUTE_MS) % 1440
-    return isMinuteInPeriod(minuteOfDay, dayStart, nightStart) ? 'SUN' : 'MOON'
-  }
+  const phaseAt = (t: number): 'SUN' | 'MOON' =>
+    isMinuteInPeriod(scheduleClockMinutes(t), dayStart, nightStart) ? 'SUN' : 'MOON'
 
   const intervals: TimelinePhotoperiodInterval[] = []
   let cursor = windowStartMs

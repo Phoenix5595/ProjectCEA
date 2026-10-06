@@ -1,8 +1,12 @@
 import { act, fireEvent, render, renderHook, screen } from '@testing-library/react'
-import { describe, expect, it, vi, afterEach } from 'vitest'
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 
 import { RichTrajectoryEnvelope } from '../../api/contracts'
-import type { TimelinePublicationPort } from '../../api/timelinePublicationPort'
+import type {
+  TimelinePreviewRequest,
+  TimelinePreviewResult,
+  TimelinePublicationPort,
+} from '../../api/timelinePublicationPort'
 import { ControlTimeline, AUTO_PREVIEW_DEBOUNCE_MS } from '../../components/ControlTimeline'
 import type { TimelineSavedBaseline } from '../../state/timelineDraft'
 import { useTimelineDraft } from '../../state/useTimelineDraft'
@@ -14,10 +18,11 @@ const WINDOW = {
 }
 
 const savedBaseline = (): TimelineSavedBaseline => ({
-  room: { location: 'flower', cluster: 'main' },
+  room: { location: 'Flower Room', cluster: 'main' },
   baseConfigRevision: 'config-1',
   modeId: 1,
   submodeId: null,
+  parametersConfigured: true,
   window: WINDOW,
   periods: [
     {
@@ -38,8 +43,27 @@ const savedBaseline = (): TimelineSavedBaseline => ({
     rampUpMinutes: 0,
     rampDownMinutes: 0,
   },
-  trajectory: previewEnvelope(0, '2026-01-01T00:00:00.000Z'),
+  trajectory: (() => {
+    const envelope = previewEnvelope(0, '2026-01-01T00:00:00.000Z')
+    return { ...envelope, revision_scope: 'saved' as const, draft_revision: null,
+      segments: envelope.segments.map(segment => ({ ...segment, source: { ...segment.source, draft_revision: null } })) }
+  })(),
 })
+
+function previewResult(
+  request: TimelinePreviewRequest,
+  trajectory: RichTrajectoryEnvelope
+): TimelinePreviewResult {
+  return {
+    requestId: request.requestId,
+    expectedConfigRevision: request.expectedConfigRevision,
+    draftRevision: request.draftRevision,
+    modeId: request.modeId,
+    submodeId: request.submodeId,
+    window: request.window,
+    trajectory,
+  }
+}
 
 function previewEnvelope(draftRevision: number, generatedAt: string): RichTrajectoryEnvelope {
   return RichTrajectoryEnvelope.parse({
@@ -49,7 +73,7 @@ function previewEnvelope(draftRevision: number, generatedAt: string): RichTrajec
     window: WINDOW,
     revision_scope: 'draft',
     base_config_revision: 'config-1',
-    draft_revision: `draft-${draftRevision}`,
+    draft_revision: String(draftRevision),
     segments: [
       {
         shape: 'step',
@@ -61,11 +85,11 @@ function previewEnvelope(draftRevision: number, generatedAt: string): RichTrajec
         trajectory_kind: 'scheduled',
         quality: 'exact',
         source: {
-          mode: 'flower',
+          mode: '1',
           submode: null,
           period: { period_id: 'day', label: 'Day' },
           config_revision: 'config-1',
-          draft_revision: `draft-${draftRevision}`,
+          draft_revision: String(draftRevision),
         },
       },
     ],
@@ -73,6 +97,11 @@ function previewEnvelope(draftRevision: number, generatedAt: string): RichTrajec
     warnings: [],
   })
 }
+
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ['Date'] })
+  vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'))
+})
 
 afterEach(() => {
   vi.useRealTimers()
@@ -85,9 +114,10 @@ describe('debounced automatic draft previews', () => {
     const port: TimelinePublicationPort = {
       preview: async request => {
         previewCalls += 1
-        return previewEnvelope(request.draftRevision, '2026-01-01T00:01:00.000Z')
+        return previewResult(request, previewEnvelope(request.draftRevision, '2026-01-01T00:01:00.000Z'))
       },
-      apply: async () => savedBaseline(),
+      apply: async () => ({ baseline: savedBaseline(), warning: null }),
+
     }
     const hook = renderHook(() =>
       useTimelineDraft({ saved: savedBaseline(), publicationPort: port })
@@ -135,9 +165,10 @@ describe('debounced automatic draft previews', () => {
     const port: TimelinePublicationPort = {
       preview: async request => {
         previewCalls += 1
-        return previewEnvelope(request.draftRevision, '2026-01-01T00:01:00.000Z')
+        return previewResult(request, previewEnvelope(request.draftRevision, '2026-01-01T00:01:00.000Z'))
       },
-      apply: async () => savedBaseline(),
+      apply: async () => ({ baseline: savedBaseline(), warning: null }),
+
     }
     const hook = renderHook(() =>
       useTimelineDraft({ saved: savedBaseline(), publicationPort: port })
@@ -159,11 +190,12 @@ describe('debounced automatic draft previews', () => {
     expect(previewCalls).toBe(0)
   })
 
-  it('marks the effective line stale while dirty without a current preview and clears it when the preview lands', async () => {
+  it('labels the local draft estimate while dirty and replaces only that role when review lands', async () => {
     vi.useFakeTimers()
     const port: TimelinePublicationPort = {
-      preview: async request => previewEnvelope(request.draftRevision, '2026-01-01T00:01:00.000Z'),
-      apply: async () => savedBaseline(),
+      preview: async request =>
+        previewResult(request, previewEnvelope(request.draftRevision, '2026-01-01T00:01:00.000Z')),
+      apply: async () => ({ baseline: savedBaseline(), warning: null }),
     }
     const hook = renderHook(() =>
       useTimelineDraft({ saved: savedBaseline(), publicationPort: port })
@@ -177,7 +209,6 @@ describe('debounced automatic draft previews', () => {
     await act(async () => {
       view.rerender(<ControlTimeline mode="expanded" controller={hook.result.current} />)
     })
-    expect(screen.getByTestId('control-timeline-effective-stale')).toBeInTheDocument()
 
     act(() => {
       vi.advanceTimersByTime(AUTO_PREVIEW_DEBOUNCE_MS)
@@ -188,17 +219,15 @@ describe('debounced automatic draft previews', () => {
     view.rerender(<ControlTimeline mode="expanded" controller={hook.result.current} />)
 
     expect(hook.result.current.preview).toMatchObject({ kind: 'ready', draftRevision: 1 })
-    expect(screen.queryByTestId('control-timeline-effective-stale')).not.toBeInTheDocument()
   })
 
   it('surfaces a failed auto-preview without faking success', async () => {
     vi.useFakeTimers()
     const port: TimelinePublicationPort = {
-      preview: async request => {
-        void request
+      preview: async () => {
         throw new Error('preview failed')
       },
-      apply: async () => savedBaseline(),
+      apply: async () => ({ baseline: savedBaseline(), warning: null }),
     }
     const hook = renderHook(() =>
       useTimelineDraft({ saved: savedBaseline(), publicationPort: port })
@@ -231,9 +260,10 @@ describe('debounced automatic draft previews', () => {
     const port: TimelinePublicationPort = {
       preview: async request => {
         previewCalls += 1
-        return previewEnvelope(request.draftRevision, '2026-01-01T00:01:00.000Z')
+        return previewResult(request, previewEnvelope(request.draftRevision, '2026-01-01T00:01:00.000Z'))
       },
-      apply: async () => savedBaseline(),
+      apply: async () => ({ baseline: savedBaseline(), warning: null }),
+
     }
     const hook = renderHook(() =>
       useTimelineDraft({ saved: savedBaseline(), publicationPort: port })

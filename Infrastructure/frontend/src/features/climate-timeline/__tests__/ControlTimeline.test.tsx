@@ -1,18 +1,23 @@
 import { fireEvent, render, screen, act, renderHook } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 
 import { RichTrajectoryEnvelope } from '../api/contracts'
-import type { TimelinePublicationPort } from '../api/timelinePublicationPort'
+import type {
+  TimelinePreviewRequest,
+  TimelinePreviewResult,
+  TimelinePublicationPort,
+} from '../api/timelinePublicationPort'
 import { ControlTimeline } from '../components/ControlTimeline'
 import { TimelineEditor } from '../components/TimelineEditor'
 import type { TimelineSavedBaseline } from '../state/timelineDraft'
 import { useTimelineDraft } from '../state/useTimelineDraft'
 
 const baseline = (): TimelineSavedBaseline => ({
-  room: { location: 'flower', cluster: 'main' },
+  room: { location: 'Flower Room', cluster: 'main' },
   baseConfigRevision: '0000007',
   modeId: 1,
   submodeId: null,
+  parametersConfigured: true,
   periods: [
     {
       period_name: 'Day',
@@ -58,12 +63,12 @@ const preview = (revision: number) =>
         value: 22,
         start: '2026-01-01T00:00:00.000Z',
         end: '2026-01-02T00:00:00.000Z',
-        metric: 'temperature',
+        metric: 'heating_setpoint',
         unit: 'celsius',
         trajectory_kind: 'scheduled',
         quality: 'exact',
         source: {
-          mode: 'flower',
+          mode: '1',
           submode: null,
           period: { period_id: 'day', label: 'Day' },
           config_revision: '0000007',
@@ -74,6 +79,17 @@ const preview = (revision: number) =>
     assumptions: [],
     warnings: [],
   })
+function previewResult(request: TimelinePreviewRequest): TimelinePreviewResult {
+  return {
+    requestId: request.requestId,
+    expectedConfigRevision: request.expectedConfigRevision,
+    draftRevision: request.draftRevision,
+    modeId: request.modeId,
+    submodeId: request.submodeId,
+    window: request.window,
+    trajectory: preview(request.draftRevision),
+  }
+}
 
 function savedTrajectory(warnings: readonly Record<string, unknown>[] = []) {
   const draft = preview(0)
@@ -110,14 +126,26 @@ const skippedWarning = {
 
 function port(): TimelinePublicationPort {
   return {
-    preview: async request => preview(request.draftRevision),
+    preview: async request => previewResult(request),
     apply: async request => ({
-      room: request.room,
-      baseConfigRevision: '0000008',
-      ...request.values,
+      baseline: {
+        room: request.room,
+        baseConfigRevision: '0000008',
+        modeId: request.modeId,
+        submodeId: request.submodeId,
+        parametersConfigured: true,
+        ...request.values,
+      },
+      warning: null,
     }),
   }
 }
+
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ['Date'] })
+  vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'))
+})
+afterEach(() => vi.useRealTimers())
 
 describe('ControlTimeline', () => {
   it('keeps compact pointer input read-only', () => {
@@ -188,10 +216,40 @@ describe('ControlTimeline', () => {
 
     // When: the compact timeline renders that envelope.
     render(<ControlTimeline mode="compact" controller={result.current} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Timeline sources' }))
 
     // Then: the warning remains safe and generic, with no calendar-specific band.
     expect(screen.queryByTestId('calendar-transition-skipped-overlay')).not.toBeInTheDocument()
     expect(screen.getByText('Timeline warning: A future warning detail')).toBeInTheDocument()
+  })
+
+  it('keeps every warning reachable when a bounded details page fills up', () => {
+    const saved = {
+      ...baseline(),
+      trajectory: savedTrajectory(Array.from({ length: 50 }, (_, index) => ({
+        code: 'future.warning', detail: `Unconfigured destination ${index + 1}`,
+      }))),
+    }
+    const { result } = renderHook(() => useTimelineDraft({ saved, publicationPort: port() }))
+    render(<ControlTimeline mode="compact" controller={result.current} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Timeline sources' }))
+    expect(screen.getByRole('button', { name: 'Previous warnings' })).toBeDisabled()
+    const observed = new Set<string>()
+    for (let page = 0; page < 50; page += 1) {
+      for (const item of screen.getAllByText(/Unconfigured destination \d+/)) {
+        const detail = item.textContent?.match(/Unconfigured destination \d+/)?.[0]
+        if (detail) observed.add(detail)
+      }
+      const next = screen.getByRole('button', { name: 'Next warnings' })
+      if (next.hasAttribute('disabled')) break
+      fireEvent.click(next)
+    }
+    expect([...observed].sort()).toEqual(
+      Array.from({ length: 50 }, (_, index) => `Unconfigured destination ${index + 1}`).sort()
+    )
+    expect(screen.getByRole('button', { name: 'Next warnings' })).toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Previous warnings' }))
+    expect(screen.queryByText(/Unconfigured destination 50$/)).not.toBeInTheDocument()
   })
 
   it('synchronizes an expanded keyboard boundary edit with the table adapter', () => {
@@ -249,24 +307,25 @@ describe('ControlTimeline', () => {
   })
 
   it('ignores late preview callbacks after discard and room switch', async () => {
-    let resolvePreview: ((value: ReturnType<typeof preview>) => void) | undefined
+    let resolvePreview: (() => void) | undefined
     const deferredPort: TimelinePublicationPort = {
-      preview: () =>
-        new Promise(resolve => {
-          resolvePreview = resolve
-        }),
-      apply: async () => baseline(),
+      preview: request => {
+        const { promise, resolve } = Promise.withResolvers<TimelinePreviewResult>()
+        resolvePreview = () => resolve(previewResult(request))
+        return promise
+      },
+      apply: async () => ({ baseline: baseline(), warning: null }),
     }
     const { result } = renderHook(() =>
       useTimelineDraft({ saved: baseline(), publicationPort: deferredPort })
     )
-    let review: Promise<void> | undefined
+    let review: Promise<unknown> | undefined
     act(() => {
       review = result.current.review()
     })
     act(() => result.current.discard())
     await act(async () => {
-      resolvePreview?.(preview(0))
+      resolvePreview?.()
     })
     await review
     expect(result.current.preview).toEqual({ kind: 'idle' })
@@ -281,7 +340,7 @@ describe('ControlTimeline', () => {
       })
     )
     await act(async () => {
-      resolvePreview?.(preview(0))
+      resolvePreview?.()
     })
     await review
     expect(result.current.preview).toEqual({ kind: 'idle' })

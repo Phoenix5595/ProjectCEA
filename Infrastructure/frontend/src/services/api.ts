@@ -26,6 +26,8 @@ import type {
   RoomMode,
   FlowerSubmode,
   RoomModeWithParams,
+  ModeActivationResponse,
+  ModeParametersUpdateResponse,
   SetModeRequest,
   UpdateParametersRequest,
 } from '../types/modes'
@@ -233,12 +235,16 @@ class ApiClient implements ApiClientCore {
     location: string,
     cluster: string,
     deviceName: string,
-    intensity: number
+    intensity: number,
+    options?: { expectedModeId?: number }
   ): Promise<LightTargetSetResponse> {
     const response = await this.automationClient.post(
       `/api/lights/${location}/${cluster}/${deviceName}/target`,
       {
         target_intensity: intensity,
+        ...(options?.expectedModeId != null
+          ? { expected_mode_id: options.expectedModeId }
+          : {}),
       }
     )
     return response.data
@@ -246,10 +252,14 @@ class ApiClient implements ApiClientCore {
 
   async updateLightIntensity(
     deviceId: number,
-    intensity: number
+    intensity: number,
+    options?: { expectedModeId?: number }
   ): Promise<{ success: boolean; device_id: number; target_intensity: number }> {
     const response = await this.automationClient.put(`/api/lights/${deviceId}/intensity`, {
       target_intensity: intensity,
+      ...(options?.expectedModeId != null
+        ? { expected_mode_id: options.expectedModeId }
+        : {}),
     })
     return response.data
   }
@@ -319,7 +329,7 @@ class ApiClient implements ApiClientCore {
     location: string,
     cluster: string,
     request: SetModeRequest
-  ): Promise<RoomModeWithParams> {
+  ): Promise<ModeActivationResponse> {
     const response = await this.automationClient.post(
       `/api/room-modes/room/${location}/${cluster}/mode`,
       request
@@ -331,7 +341,7 @@ class ApiClient implements ApiClientCore {
     location: string,
     cluster: string,
     params: UpdateParametersRequest
-  ): Promise<RoomModeWithParams> {
+  ): Promise<ModeParametersUpdateResponse> {
     const response = await this.automationClient.put(
       `/api/room-modes/room/${location}/${cluster}/parameters`,
       params

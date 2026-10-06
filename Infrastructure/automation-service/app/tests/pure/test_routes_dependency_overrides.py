@@ -52,6 +52,9 @@ class _FakeContainer:
     def get_relay_board_state_manager(self) -> _FakeService:
         return _FakeService()
 
+    def get_mode_transition_service(self) -> _FakeService:
+        return _FakeService()
+
     def get_automation_redis(self) -> _FakeService:
         return _FakeService()
 

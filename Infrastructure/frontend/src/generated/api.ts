@@ -288,6 +288,11 @@ export interface paths {
         /**
          * Save Climate Periods
          * @description Save climate periods for a location/cluster.
+         *
+         *     The previous read, scoped delete, replacement inserts and the one
+         *     configuration revision share one transaction under the timeline advisory
+         *     lock. A missing or false delete/insert/version result aborts without
+         *     leaving a partial replacement.
          */
         post: operations["post_api_climate-periods_{location}_{cluster}"];
         /**
@@ -380,6 +385,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/climate-timeline/{location}/{cluster}/configuration": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Profile Climate Configuration
+         * @description Read the exact selected saved profile aggregate without invoking a projector.
+         */
+        get: operations["get_api_climate-timeline_{location}_{cluster}_configuration"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/climate-timeline/{location}/{cluster}/preview": {
         parameters: {
             query?: never;
@@ -394,6 +419,26 @@ export interface paths {
          * @description Evaluate a validated complete draft without persistence or publication.
          */
         post: operations["post_api_climate-timeline_{location}_{cluster}_preview"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/climate-timeline/{location}/{cluster}/profile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Profile Climate Timeline
+         * @description Read the exact selected saved profile and its pure profile trajectory.
+         */
+        get: operations["get_api_climate-timeline_{location}_{cluster}_profile"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1537,7 +1582,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Sync All Room Schedules From Mode Parameters */
+        /**
+         * Sync All Room Schedules From Mode Parameters
+         * @description Synchronize every configured room through the shared service.
+         */
         post: operations["post_api_room-schedule_sync-all-from-mode-parameters"];
         delete?: never;
         options?: never;
@@ -1558,7 +1606,10 @@ export interface paths {
          */
         get: operations["get_api_room-schedule_{location}_{cluster}"];
         put?: never;
-        /** Save Room Schedule */
+        /**
+         * Save Room Schedule
+         * @description Replace the room's non-light schedules from the requested bounds.
+         */
         post: operations["post_api_room-schedule_{location}_{cluster}"];
         delete?: never;
         options?: never;
@@ -1575,7 +1626,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Sync Room Schedule From Mode Parameters */
+        /** Sync Room Schedule */
         post: operations["post_api_room-schedule_{location}_{cluster}_sync-from-mode-parameters"];
         delete?: never;
         options?: never;
@@ -2531,6 +2582,11 @@ export interface components {
          * @description Request model for updating light target intensity by device_id.
          */
         LightIntensityUpdate: {
+            /**
+             * Expected Mode Id
+             * @description Active mode captured with staged edits. A mismatch returns 409 light_target_mode_changed without reading or writing targets; omit for legacy live-active behavior.
+             */
+            expected_mode_id?: number | null;
             /** Target Intensity */
             target_intensity: number;
         };
@@ -2605,6 +2661,36 @@ export interface components {
             mode: string;
         };
         /**
+         * ModeActivationResponse
+         * @description Committed activation response with runtime readiness and revision metadata.
+         */
+        ModeActivationResponse: {
+            /** Cluster */
+            cluster: string;
+            /** Config Revision */
+            config_revision: string;
+            /**
+             * Is Constant
+             * @default false
+             */
+            is_constant: boolean;
+            /** Location */
+            location: string;
+            /** Mode Id */
+            mode_id?: number | null;
+            /** Mode Name */
+            mode_name: string;
+            parameters: components["schemas"]["ModeParameters"];
+            /** Runtime Ready */
+            runtime_ready: boolean;
+            /** Submode Id */
+            submode_id?: number | null;
+            /** Submode Name */
+            submode_name?: string | null;
+            /** Warning */
+            warning?: string | null;
+        };
+        /**
          * ModeParameters
          * @description Full mode parameters for room mode configuration (photoperiod/light only).
          */
@@ -2639,6 +2725,34 @@ export interface components {
              * @default 0
              */
             supplemental_light_intensity: number;
+        };
+        /**
+         * ModeParametersUpdateResponse
+         * @description Committed parameter update with one revision and any notification warning.
+         */
+        ModeParametersUpdateResponse: {
+            /** Cluster */
+            cluster: string;
+            /** Config Revision */
+            config_revision: string;
+            /**
+             * Is Constant
+             * @default false
+             */
+            is_constant: boolean;
+            /** Location */
+            location: string;
+            /** Mode Id */
+            mode_id?: number | null;
+            /** Mode Name */
+            mode_name: string;
+            /** Notification Warning */
+            notification_warning?: string | null;
+            parameters: components["schemas"]["ModeParameters"];
+            /** Submode Id */
+            submode_id?: number | null;
+            /** Submode Name */
+            submode_name?: string | null;
         };
         /** ModeUpdate */
         ModeUpdate: {
@@ -2812,10 +2926,14 @@ export interface components {
         /**
          * PeriodsSaveRequest
          * @description Request model for saving climate periods.
+         *
+         *     ``mode_id`` omitted keeps the broad whole-room legacy replacement; a
+         *     supplied ``mode_id`` with a NULL ``submode_id`` replaces only the exact
+         *     NULL-base profile slice.
          */
         PeriodsSaveRequest: {
             /** Mode Id */
-            mode_id: number;
+            mode_id?: number | null;
             /** Periods */
             periods: components["schemas"]["PeriodInput"][];
             /** Submode Id */
@@ -3188,6 +3306,8 @@ export interface components {
              * @default true
              */
             coordinate_clusters: boolean;
+            /** Expected Config Revision */
+            expected_config_revision?: string | null;
             /** Mode Name */
             mode_name: string;
             /** Submode Name */
@@ -3279,6 +3399,11 @@ export interface components {
          * @description Request model for setting target light intensity.
          */
         TargetIntensityControl: {
+            /**
+             * Expected Mode Id
+             * @description Active mode captured with staged edits. A mismatch returns 409 light_target_mode_changed without reading or writing targets; omit for legacy live-active behavior.
+             */
+            expected_mode_id?: number | null;
             /** Target Intensity */
             target_intensity: number;
         };
@@ -3328,6 +3453,13 @@ export interface components {
             config_revision: string;
             /** Mode Id */
             mode_id: number;
+            /** Notification Warning */
+            notification_warning?: string | null;
+            /**
+             * Parameters Configured
+             * @constant
+             */
+            parameters_configured: true;
             /** Periods */
             periods: components["schemas"]["TimelinePeriodDraft"][];
             photoperiod: components["schemas"]["TimelinePhotoperiodDraft"];
@@ -3408,9 +3540,14 @@ export interface components {
             draft_revision: number;
             /** Expected Config Revision */
             expected_config_revision: string;
+            /** Mode Id */
+            mode_id: number;
             /** Request Id */
             request_id: string;
-            trajectory: components["schemas"]["RichTrajectoryEnvelope"];
+            /** Submode Id */
+            submode_id?: number | null;
+            trajectory?: components["schemas"]["RichTrajectoryEnvelope"] | null;
+            window: components["schemas"]["UtcWindow"];
         };
         /**
          * TimelinePreviewWindow
@@ -3433,6 +3570,8 @@ export interface components {
             config_revision: string;
             /** Mode Id */
             mode_id: number;
+            /** Parameters Configured */
+            parameters_configured: boolean;
             /** Periods */
             periods: components["schemas"]["TimelinePeriodDraft"][];
             photoperiod: components["schemas"]["TimelinePhotoperiodDraft"];
@@ -4388,6 +4527,44 @@ export interface operations {
             };
         };
     };
+    "get_api_climate-timeline_{location}_{cluster}_configuration": {
+        parameters: {
+            query: {
+                mode_id: number;
+                start: string;
+                end: string;
+                timezone: string;
+                submode_id?: number | null;
+            };
+            header?: never;
+            path: {
+                location: string;
+                cluster: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TimelineSavedResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     "post_api_climate-timeline_{location}_{cluster}_preview": {
         parameters: {
             query?: never;
@@ -4411,6 +4588,44 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TimelinePreviewResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    "get_api_climate-timeline_{location}_{cluster}_profile": {
+        parameters: {
+            query: {
+                mode_id: number;
+                start: string;
+                end: string;
+                timezone: string;
+                submode_id?: number | null;
+            };
+            header?: never;
+            path: {
+                location: string;
+                cluster: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TimelineSavedResponse"];
                 };
             };
             /** @description Validation Error */
@@ -6191,7 +6406,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["RoomModeWithParams"];
+                    "application/json": components["schemas"]["ModeActivationResponse"];
                 };
             };
             /** @description Validation Error */
@@ -6227,7 +6442,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["RoomModeWithParams"];
+                    "application/json": components["schemas"]["ModeParametersUpdateResponse"];
                 };
             };
             /** @description Validation Error */

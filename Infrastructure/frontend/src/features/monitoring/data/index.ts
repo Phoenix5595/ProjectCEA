@@ -5,6 +5,7 @@
  * the uPlot adapter (Todo 22) and tables (Todo 25) import from a single module.
  */
 export { alignSeries, alignSeriesBase, applyLiveTail } from './alignSeries'
+export { composeLightTrajectory, lightSegmentAt, lightValueAt } from './lightTrajectory'
 export { createPanelAlignment } from './panelAlignment'
 export { decimateSeries, panelBudget, requestBudget } from './pointBudget'
 export type {
@@ -14,6 +15,7 @@ export type {
   AlignedSeries,
   MutableSeriesPresentation,
   PhotoperiodInterval,
+  LightTrajectorySegment,
   SeriesKey,
   SeriesKind,
   SeriesPresentation,

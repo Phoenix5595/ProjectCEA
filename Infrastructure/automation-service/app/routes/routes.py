@@ -140,6 +140,11 @@ def setup_dependency_overrides(app: FastAPI, container) -> None:
 
     app.dependency_overrides[calendar.get_database] = container.get_database
 
+    # Override the activation owner in the room-modes module
+    app.dependency_overrides[room_modes.get_mode_transition_service] = (
+        container.get_mode_transition_service
+    )
+
     app.dependency_overrides[get_mutation_event_sink] = container.get_operational_event_sink
     app.dependency_overrides[operational_events.get_operational_event_reader] = (
         container.get_operational_event_reader

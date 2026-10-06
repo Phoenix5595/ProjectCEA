@@ -169,30 +169,34 @@ describe('monitoring api boundary', () => {
     expect(projection.value[0].series[0].valid_from).toBeInstanceOf(Date)
   })
 
-  it('uses unchanged Caddy monitoring paths', async () => {
-    const fetchMock = vi.mocked(fetch)
+  it('keeps usable running forecasts and interval-scoped calendar warnings together', async () => {
+    const warning = {
+      code: 'calendar.transition_skipped', detail: 'Destination profile was skipped',
+      reason: 'unknown_mode', start: '2026-08-02T12:00:00.000Z', end: '2026-08-02T13:00:00.000Z',
+    }
+    const trajectory = {
+      contract_version: 1, room: 'Flower Room', generated_at: warning.start,
+      window: { start: warning.start, end: warning.end, timezone: 'UTC' },
+      revision_scope: 'saved', base_config_revision: '0000007', draft_revision: null,
+      assumptions: [], warnings: [warning],
+      segments: [{
+        shape: 'step', value: 22, start: warning.start, end: warning.end,
+        metric: 'heating', unit: 'C', trajectory_kind: 'scheduled', quality: 'exact',
+        source: { mode: '2', submode: '11', config_revision: '0000007', draft_revision: null,
+          period: { period_id: 'day', label: 'Day' } },
+      }],
+    }
+    vi.mocked(fetch).mockResolvedValueOnce(jsonResponse({ ...controlProjectionPayload, trajectory }))
     const api = new MonitoringApi()
-
-    fetchMock.mockResolvedValueOnce(jsonResponse(sensorRangePayload))
-    await api.sensorRange('Flower Room')
-    expect(fetchMock).toHaveBeenLastCalledWith(
-      expect.stringContaining('/api/sensors/monitoring/range/Flower%20Room'),
-      expect.any(Object)
-    )
-
-    fetchMock.mockResolvedValueOnce(jsonResponse(controlPayload))
-    await api.controlRange('Flower Room')
-    expect(fetchMock).toHaveBeenLastCalledWith(
-      expect.stringContaining('/api/monitoring/control/Flower%20Room/history'),
-      expect.any(Object)
-    )
-
-    fetchMock.mockResolvedValueOnce(jsonResponse(controlProjectionPayload))
-    await api.controlProjection('Flower Room')
-    expect(fetchMock).toHaveBeenLastCalledWith(
-      expect.stringContaining('/api/monitoring/control/Flower%20Room/projection'),
-      expect.any(Object)
-    )
+    const result = await api.controlProjection('Flower Room')
+    expect(result.value[0]?.series[0]?.value).toBe(22)
+    expect(result.trajectory?.warnings[0]).toMatchObject({
+      reason: 'unknown_mode', start: new Date(warning.start), end: new Date(warning.end),
+    })
+    vi.mocked(fetch).mockResolvedValueOnce(jsonResponse({
+      ...controlProjectionPayload, trajectory: { ...trajectory, warnings: [{ ...warning, end: undefined }] },
+    }))
+    await expect(api.controlProjection('Flower Room')).rejects.toBeInstanceOf(MonitoringParseError)
   })
 
   it('serializes optional point budgets for supported range routes', async () => {

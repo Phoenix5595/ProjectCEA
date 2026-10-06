@@ -34,9 +34,19 @@ export interface RoomModeWithParams {
   parameters: ModeParameters
 }
 
+/** Resolved mode/submode identity pair used for selection and running state. */
+export type ModeProfileIdentity = {
+  readonly modeId: number
+  readonly submodeId: number | null
+  readonly modeName: string
+  readonly submodeName: string | null
+}
+
 export interface SetModeRequest {
   mode_name: string
   submode_name?: string
+  /** Optional 409 guard: the activation applies only from this config revision. */
+  expected_config_revision?: string
 }
 
 export interface UpdateParametersRequest {
@@ -46,6 +56,22 @@ export interface UpdateParametersRequest {
   light_ramp_down_minutes?: number
   main_light_intensity?: number
   supplemental_light_intensity?: number
+}
+
+/** Committed activation response: ModeActivationResponse + runtime metadata. */
+export interface ModeActivationResponse extends RoomModeWithParams {
+  /** Config revision the activation was committed with. */
+  config_revision: string
+  /** True when the runtime registry accepted the new snapshot install. */
+  runtime_ready: boolean
+  /** Explicit post-commit refresh warning; never implies a rollback. */
+  warning?: string | null
+}
+
+/** Committed direct parameter update: ModeParametersUpdateResponse. */
+export interface ModeParametersUpdateResponse extends RoomModeWithParams {
+  config_revision: string
+  notification_warning?: string | null
 }
 
 export const MODE_DISPLAY_NAMES: Record<string, string> = {

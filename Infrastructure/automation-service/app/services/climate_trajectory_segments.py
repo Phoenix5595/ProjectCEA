@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from typing import Literal
 
+from app.control.ramp_policy import DEFAULT_RAMP_SKIP_THRESHOLD, RAMP_SKIP_THRESHOLDS
 from app.schemas.climate_timeline import (
     LinearTrajectorySegment,
     SegmentSource,
@@ -22,52 +23,105 @@ def scheduled_segments(request: TrajectoryRequest, metric: str) -> tuple[Traject
     segments: list[TrajectorySegment] = []
     cursor = request.window.start
     previous_value: float | None = None
+    previous_profile: tuple[str, str | None] | None = None
+    previous_occurrence: tuple[object, ...] | None = None
+    previous_ramp_initial: float | None = None
     source = request.periods[0].source
+    threshold = RAMP_SKIP_THRESHOLDS.get(metric, DEFAULT_RAMP_SKIP_THRESHOLD)
     for period in sorted(request.periods, key=lambda item: item.start):
         start = max(period.start.astimezone(UTC), cursor)
         end = min(period.end.astimezone(UTC), request.window.end)
         if end <= start:
             continue
+        profile = _profile_identity(period.source)
+        if profile != previous_profile:
+            previous_value = None
+            previous_occurrence = None
+            previous_ramp_initial = None
         if cursor < start:
             segments.append(
                 unavailable(cursor, start, metric, unit, source, "schedule coverage is unavailable")
             )
+            previous_value = None
+            previous_occurrence = None
+            previous_ramp_initial = None
         target = target_for(period, metric)
         if target is None:
             segments.append(
                 unavailable(start, end, metric, unit, period.source, "setpoint is unavailable")
             )
-            previous_value, cursor = None, end
+            cursor, source, previous_profile = end, period.source, profile
+            previous_value = None
+            previous_occurrence = None
+            previous_ramp_initial = None
             continue
-        # The ramp at a period start transitions from the schedule's last known
-        # value, even across a coverage gap: a gap is a reporting hole, not a
-        # reset of the prior setpoint. Unknown prior values step instead.
-        initial = previous_value if previous_value is not None else target.value
-        ramp_end = min(start + timedelta(minutes=period.ramp_minutes), end)
-        if initial != target.value and ramp_end > start:
+
+        origin = (period.ramp_start or period.start).astimezone(UTC)
+        ramp_end = origin + timedelta(minutes=period.ramp_minutes)
+        occurrence = (
+            profile,
+            period.source.period.period_id,
+            period.source.config_revision,
+            origin,
+            target.metric,
+            target.unit,
+            target.value,
+        )
+        continuing = previous_occurrence == occurrence and cursor == start
+        if continuing and previous_ramp_initial is not None:
+            initial = previous_ramp_initial
+        elif origin == start and previous_value is not None:
+            initial = previous_value
+        else:
+            predecessor = _previous_target_for(period, metric)
+            initial = target.value if predecessor is None else predecessor.value
+
+        should_ramp = (
+            period.ramp_minutes > 0
+            and start < ramp_end
+            and abs(initial - target.value) >= threshold
+        )
+        if should_ramp:
+            if continuing and previous_value is not None:
+                start_value = previous_value
+            elif origin < start:
+                start_value = interpolate(initial, target.value, origin, ramp_end, start)
+            else:
+                start_value = initial
+            visible_end = min(ramp_end, end)
+            end_value = interpolate(start_value, target.value, start, ramp_end, visible_end)
             segments.append(
                 linear(
-                    start, ramp_end, metric, unit, period.source, "scheduled", initial, target.value
+                    start,
+                    visible_end,
+                    metric,
+                    unit,
+                    period.source,
+                    "scheduled",
+                    start_value,
+                    end_value,
                 )
             )
-            final = interpolate(
-                initial,
-                target.value,
-                start,
-                start + timedelta(minutes=period.ramp_minutes),
-                ramp_end,
-            )
-            if ramp_end < end:
+            final = end_value
+            if visible_end < end:
                 segments.append(
-                    step(ramp_end, end, metric, unit, period.source, "scheduled", target.value)
+                    step(visible_end, end, metric, unit, period.source, "scheduled", target.value)
                 )
                 final = target.value
+            if ramp_end > end:
+                previous_occurrence = occurrence
+                previous_ramp_initial = initial
+            else:
+                previous_occurrence = None
+                previous_ramp_initial = None
         else:
             segments.append(
                 step(start, end, metric, unit, period.source, "scheduled", target.value)
             )
             final = target.value
-        previous_value, cursor, source = final, end, period.source
+            previous_occurrence = None
+            previous_ramp_initial = None
+        previous_value, cursor, source, previous_profile = final, end, period.source, profile
     if cursor < request.window.end:
         segments.append(
             unavailable(
@@ -79,6 +133,14 @@ def scheduled_segments(request: TrajectoryRequest, metric: str) -> tuple[Traject
         for segment in segments
         for start, end in split_at_boundaries(segment, request.photoperiod_boundaries)
     )
+
+
+def _profile_identity(source: SegmentSource) -> tuple[str, str | None]:
+    return source.mode, source.submode
+
+
+def _previous_target_for(period: ClimatePeriodTrajectory, metric: str) -> MetricTarget | None:
+    return next((target for target in period.previous_targets if target.metric == metric), None)
 
 
 def target_for(period: ClimatePeriodTrajectory, metric: str) -> MetricTarget | None:

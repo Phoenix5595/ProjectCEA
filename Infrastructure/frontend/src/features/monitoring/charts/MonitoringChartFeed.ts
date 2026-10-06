@@ -208,7 +208,10 @@ function sameSeriesShape(
 ): boolean {
   return (
     previous.length === next.length &&
-    previous.every((series, index) => series.key === next[index]?.key)
+    previous.every(
+      (series, index) =>
+        series.key === next[index]?.key && series.label === next[index]?.label
+    )
   )
 }
 

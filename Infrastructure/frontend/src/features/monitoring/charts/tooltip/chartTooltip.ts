@@ -7,7 +7,14 @@
  */
 import uPlot from 'uplot'
 
-import type { AlignedSeries, SeriesKind, SeriesPresentation } from '../../data'
+import type {
+  AlignedData,
+  AlignedSeries,
+  SeriesKey,
+  SeriesKind,
+  SeriesPresentation,
+} from '../../data'
+import { lightSegmentAt, lightValueAt } from '../../data'
 import { isEnvelopeSeries, seriesColor } from '../options/seriesOptions'
 
 export interface TooltipColors {
@@ -17,14 +24,8 @@ export interface TooltipColors {
 }
 
 interface TooltipSeries {
+  key: SeriesKey
   index: number
-  label: string
-  unit?: string
-  color: string
-  origin: string
-  quality: string
-  kind: SeriesKind
-  presentation?: SeriesPresentation
 }
 
 function finiteValue(value: number | null | undefined): number | null {
@@ -83,21 +84,22 @@ export function formatTooltipValue(
 }
 
 /** Build a uPlot plugin that renders a value/provenance cursor tooltip. */
-export function tooltipPlugin(series: AlignedSeries[], colors: TooltipColors): uPlot.Plugin {
+export function tooltipPlugin(
+  series: AlignedSeries[],
+  colors: TooltipColors,
+  getData?: () => AlignedData
+): uPlot.Plugin {
   let el: HTMLDivElement | null = null
 
+  const seenKeys = new Set<SeriesKey>()
   const meta: TooltipSeries[] = series
-    .map((s, i) => ({
-      index: i + 1,
-      label: s.label,
-      unit: s.unit,
-      color: seriesColor(s),
-      origin: s.origin,
-      quality: s.quality,
-      kind: s.kind,
-      presentation: s.presentation,
-    }))
-    .filter(s => !isEnvelopeSeries(series[s.index - 1]))
+    .map((item, index) => ({ key: item.key, index: index + 1 }))
+    .filter(item => {
+      const candidate = series[item.index - 1]
+      if (candidate === undefined || isEnvelopeSeries(candidate) || seenKeys.has(item.key)) return false
+      seenKeys.add(item.key)
+      return true
+    })
 
   return {
     hooks: {
@@ -134,18 +136,29 @@ export function tooltipPlugin(series: AlignedSeries[], colors: TooltipColors): u
         }
         const cursorTime = u.posToVal(cursorLeft, 'x')
         el.textContent = ''
-        for (const s of meta) {
-          if (u.series[s.index].show === false) continue
-          const value = valueAtCursor(s.kind, xValues, u.data[s.index] ?? [], cursorTime)
+        const currentSeries = getData?.().series ?? series
+        for (const item of meta) {
+          const current = currentSeries.find(candidate => candidate.key === item.key)
+          if (current === undefined || u.series[item.index]?.show === false) continue
+          const segment =
+            current.lightTrajectory === undefined
+              ? undefined
+              : lightSegmentAt(current.lightTrajectory, cursorTime)
+          const value =
+            current.lightTrajectory === undefined
+              ? valueAtCursor(current.kind, xValues, u.data[item.index] ?? [], cursorTime)
+              : lightValueAt(current.lightTrajectory, cursorTime)
           const row = document.createElement('div')
           const swatch = document.createElement('span')
-          swatch.style.color = s.color
-          swatch.textContent = s.label
+          swatch.style.color = seriesColor(current)
+          swatch.textContent = current.label
           row.appendChild(swatch)
-          const text = formatTooltipValue(value, s.presentation, s.unit)
+          const text = formatTooltipValue(value, current.presentation, current.unit)
           row.appendChild(document.createTextNode(text))
           const prov = document.createElement('em')
-          prov.textContent = ` ${s.origin}/${s.quality}`
+          prov.textContent = ` ${segment?.origin ?? current.origin}/${
+            segment?.quality ?? current.quality
+          }`
           row.appendChild(prov)
           el.appendChild(row)
         }

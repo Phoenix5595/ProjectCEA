@@ -362,7 +362,12 @@ class _Database:
 
 def _snapshot(version: int) -> RuntimeDeviceSnapshot:
     return RuntimeDeviceSnapshot.create(
-        version=version, hierarchy={}, mode_parameters={}, light_intensities={}, light_programs=[]
+        version=version,
+        hierarchy={},
+        mode_parameters={},
+        active_modes={},
+        light_intensities={},
+        light_programs=[],
     )
 
 

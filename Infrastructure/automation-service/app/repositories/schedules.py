@@ -64,9 +64,45 @@ class ScheduleRepository(BaseRepository):
         await bus.publish(event)
 
     async def get_schedules(
-        self, location: str | None = None, cluster: str | None = None
+        self,
+        location: str | None = None,
+        cluster: str | None = None,
+        conn: Connection | None = None,
     ) -> list[dict[str, Any]]:
-        """Get schedules, optionally filtered by location/cluster with cache-aside."""
+        """Get schedules, optionally filtered by location/cluster with cache-aside.
+
+        With ``conn`` the read joins the caller's transaction and bypasses the
+        Redis cache so never-installed rows are not cached pre-commit.
+        """
+        if conn is not None:
+            if location and cluster:
+                rows = await conn.fetch(
+                    """SELECT id, name, location, cluster, device_name, start_time, end_time,
+                              day_of_week, enabled, mode, target_intensity, ramp_up_duration,
+                              ramp_down_duration, updated_at
+                       FROM schedules
+                       WHERE location = $1 AND cluster = $2
+                       ORDER BY start_time""",
+                    location,
+                    cluster,
+                )
+            elif location:
+                rows = await conn.fetch(
+                    """SELECT id, name, location, cluster, device_name, start_time, end_time,
+                              day_of_week, enabled, mode, target_intensity, ramp_up_duration,
+                              ramp_down_duration, updated_at
+                       FROM schedules WHERE location = $1 ORDER BY start_time""",
+                    location,
+                )
+            else:
+                rows = await conn.fetch(
+                    """SELECT id, name, location, cluster, device_name, start_time, end_time,
+                              day_of_week, enabled, mode, target_intensity, ramp_up_duration,
+                              ramp_down_duration, updated_at
+                       FROM schedules ORDER BY start_time"""
+                )
+            return [dict(row) for row in rows]
+
         state = get_state_manager()
         cache_key = self._cache_key_schedules(location, cluster)
         try:
@@ -267,6 +303,8 @@ class ScheduleRepository(BaseRepository):
 
             return schedule_id
         except Exception as e:
+            if conn is not None:
+                raise
             logger.error(f"Failed to create schedule: {e}")
             return None
 
@@ -388,7 +426,7 @@ class ScheduleRepository(BaseRepository):
             else:
                 async with self.pool.acquire() as new_conn:
                     deleted = await do_delete(cast("Connection", new_conn))
-            if deleted:
+            if deleted and not conn:
                 await self._publish_schedule_changed(
                     location=None,
                     cluster=None,
@@ -397,6 +435,8 @@ class ScheduleRepository(BaseRepository):
                 )
             return deleted
         except Exception as e:
+            if conn is not None:
+                raise
             logger.error(f"Failed to delete schedules: {e}")
             return 0
 
@@ -495,12 +535,15 @@ class ScheduleRepository(BaseRepository):
         cluster: str,
         ramp_up_minutes: int,
         ramp_down_minutes: int,
+        conn: Connection | None = None,
     ) -> int:
-        """Update ramp times for all DAY light schedules and room_schedule in a location/cluster."""
-        try:
-            async with self.pool.acquire() as conn:
-                result = await conn.execute(
-                    """
+        """Update ramp times for all DAY light schedules and room_schedule in a location/cluster.
+
+        ``conn`` joins the caller's transaction and propagates SQL failures;
+        its notifications are deferred to the owning post-commit boundary.
+        Standalone calls retain the existing cache invalidation and event.
+        """
+        query = """
                     UPDATE schedules
                     SET ramp_up_duration = $3, ramp_down_duration = $4
                     WHERE location = $1 AND cluster = $2
@@ -508,7 +551,22 @@ class ScheduleRepository(BaseRepository):
                         device_name LIKE 'light%' AND mode IN ('SUN', 'DAY')
                         OR device_name = 'room_schedule'
                     )
-                    """,
+                """
+        if conn is not None:
+            result = await conn.execute(
+                query,
+                location,
+                cluster,
+                ramp_up_minutes,
+                ramp_down_minutes,
+            )
+            count = int(result.split()[-1])
+            logger.info(f"Updated {count} light schedules ramp times for {location}/{cluster}")
+            return count
+        try:
+            async with self.pool.acquire() as conn:
+                result = await conn.execute(
+                    query,
                     location,
                     cluster,
                     ramp_up_minutes,

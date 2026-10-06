@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
+import re
 from typing import ClassVar, Literal, NewType, Self
 
 from pydantic import (
@@ -242,6 +243,31 @@ class MonitoringPublication(MonitoringContract):
             )
         validate_projection_timeline(self.future)
         return self
+
+
+_MONITORING_SEGMENT_PATTERN = re.compile(r"[^a-z0-9]+")
+
+
+def normalize_monitoring_segment(value: str) -> str | None:
+    """Normalize one monitoring identifier segment.
+
+    Lowercase; replace runs of non-``[a-z0-9]`` characters with underscore;
+    trim leading/trailing underscores; prefix digit-leading results with
+    ``v_``; empty results are invalid.
+    """
+    normalized = _MONITORING_SEGMENT_PATTERN.sub("_", value.lower()).strip("_")
+    if not normalized:
+        return None
+    return f"v_{normalized}" if normalized[0].isdigit() else normalized
+
+
+def monitoring_room_series_prefix(location: str, cluster: str) -> str | None:
+    """Compose the ``{location}.{cluster}`` series prefix or None when invalid."""
+    location_segment = normalize_monitoring_segment(location)
+    cluster_segment = normalize_monitoring_segment(cluster)
+    if location_segment is None or cluster_segment is None:
+        return None
+    return f"{location_segment}.{cluster_segment}"
 
 
 def validate_projection_timeline(

@@ -10,6 +10,7 @@ from app.control.control_engine import ControlEngine
 from app.database import DatabaseManager
 from app.events.operational_ports import OperationalEventSink
 from app.services.calendar_mode_scheduler import CalendarModeScheduler
+from app.services.mode_transition_service import ModeTransitionService
 from shared.infra_logging import get_logger
 
 from .auto_persist import AutoPersistMixin
@@ -51,6 +52,8 @@ class BackgroundTasks(
         update_interval: int = 1,
         alarm_manager: AlarmManager | None = None,
         event_sink: OperationalEventSink | None = None,
+        *,
+        mode_transition_service: ModeTransitionService,
     ):
         """Initialize background tasks.
 
@@ -59,11 +62,14 @@ class BackgroundTasks(
             database: Database manager instance
             update_interval: Control loop interval in seconds (1–5, clamped)
             alarm_manager: Optional alarm manager instance
+            mode_transition_service: Required activation owner shared by the
+                calendar catch-up and periodic application paths
         """
         self.control_engine = control_engine
         self.database = database
         self.alarm_manager = alarm_manager
         self.operational_event_sink = event_sink
+        self.mode_transition_service = mode_transition_service
         self.update_interval = max(1, min(CONTROL_LOOP_INTERVAL_MAX, int(update_interval)))
         self._running = False
         self._task: asyncio.Task | None = None
@@ -112,7 +118,11 @@ class BackgroundTasks(
             # Gate remains unset; control loop will block until data is loaded
 
         try:
-            scheduler = CalendarModeScheduler(self.database, self.operational_event_sink)
+            scheduler = CalendarModeScheduler(
+                self.database,
+                self.operational_event_sink,
+                transition_service=self.mode_transition_service,
+            )
             await scheduler.run_catchup()
         except Exception as e:
             logger.warning("Calendar mode catch-up failed: %s", e)

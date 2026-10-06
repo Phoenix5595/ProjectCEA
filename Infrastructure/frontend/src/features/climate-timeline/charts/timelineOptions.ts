@@ -1,20 +1,42 @@
-import type uPlot from 'uplot'
+import uPlot from 'uplot'
 
 import type { EnvelopeSeriesKey } from './envelopeSeries'
 import { readTimelineToken, type TimelineTokenName } from './tokens'
 
 export type TimelineScale = 'temp' | 'vpd' | 'co2'
 
+/**
+ * Chart authority roles. Series keys are role-prefixed so the same metric can
+ * appear under different authorities at once:
+ *
+ * - `active-current` — fresh observed fact from the completed tick (points).
+ * - `active-future` — canonical running forecast, estimated (dashed).
+ * - `selected-saved` — hypothetical saved schedule of the inspected profile.
+ * - `selected-draft` — reviewed or local-estimate draft of the inspected
+ *   profile; the only editable role.
+ */
+export type TimelineSeriesRole = 'active-current' | 'active-future' | 'selected-saved' | 'selected-draft'
+
+/** Role-prefixed series key: `${TimelineSeriesRole}:${EnvelopeSeriesKey}`. */
+export type TimelineSeriesKey = `${TimelineSeriesRole}:${EnvelopeSeriesKey}`
+
 export interface TimelineSeriesMeta {
-  readonly key: EnvelopeSeriesKey
+  readonly key: TimelineSeriesKey
   readonly label: string
   readonly metric: string
   readonly scale: TimelineScale
   readonly stroke: string
   readonly dash: readonly number[]
+  /** Chart authority role of this series. */
+  readonly role: TimelineSeriesRole
+  /** Rich trajectory kind; authority is independently encoded by role. */
+  readonly kind: 'scheduled' | 'effective'
 }
 
 export const EFFECTIVE_DASH = [6, 4] as const
+export const CURRENT_MARKER_DIAMETER_PX = 6
+/** Selected-draft curve: dotted so it never reads as an actual fact. */
+export const DRAFT_DASH = [2, 3] as const
 
 const METRIC_LABELS: Record<string, string> = {
   heating_setpoint: 'Heating',
@@ -55,18 +77,24 @@ export function timelineScaleForMetric(metric: string): TimelineScale {
   return 'temp'
 }
 
-export function timelineSeriesMeta(keys: readonly EnvelopeSeriesKey[]): TimelineSeriesMeta[] {
+export function timelineSeriesMeta(
+  keys: readonly EnvelopeSeriesKey[],
+  role: TimelineSeriesRole,
+  labelPrefix: string
+): TimelineSeriesMeta[] {
   return keys.map(key => {
     const separator = key.lastIndexOf(':')
     const metric = key.slice(0, separator)
-    const kind = key.slice(separator + 1)
+    const kind = key.slice(separator + 1) as TimelineSeriesMeta['kind']
     return {
-      key,
+      key: `${role}:${key}` as TimelineSeriesKey,
       metric,
-      label: `${METRIC_LABELS[metric] ?? metric} (${kind})`,
+      label: `${labelPrefix}${METRIC_LABELS[metric] ?? metric} (${kind})`,
       scale: timelineScaleForMetric(metric),
       stroke: readTimelineToken(METRIC_TOKENS[metric] ?? 'heating'),
-      dash: kind === 'effective' ? EFFECTIVE_DASH : [],
+      dash: role === 'active-future' ? EFFECTIVE_DASH : role === 'selected-draft' ? DRAFT_DASH : [],
+      role,
+      kind,
     }
   })
 }
@@ -166,14 +194,15 @@ export function buildTimelineOptions(
     ...meta.map(entry => ({
       label: entry.label,
       stroke: entry.stroke,
-      width: 1,
+      width: entry.role === 'active-current' ? 0 : 1,
       dash: [...entry.dash],
       scale: entry.scale,
       spanGaps: false,
-      points: { show: false },
+      points: { show: entry.role === 'active-current', size: CURRENT_MARKER_DIAMETER_PX },
     })),
   ]
 
+  const cursorPosition: [number, number] = [0, 0]
   return {
     width,
     height,
@@ -182,7 +211,16 @@ export function buildTimelineOptions(
     series,
     plugins,
     legend: { show: false },
-    cursor: { points: { show: false } },
+    cursor: {
+      points: { show: false },
+      move: (self, left, top) => {
+        // The existing desktop zoom changes screen pixels, not canvas coordinates.
+        const rect = self.rect
+        cursorPosition[0] = left * self.bbox.width / (rect.width * uPlot.pxRatio)
+        cursorPosition[1] = top * self.bbox.height / (rect.height * uPlot.pxRatio)
+        return cursorPosition
+      },
+    },
     hooks: (() => {
       const assembled: NonNullable<uPlot.Options['hooks']> = {}
       if (hooks.onSetScale) {
