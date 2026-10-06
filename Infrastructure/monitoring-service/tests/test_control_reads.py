@@ -18,6 +18,13 @@ from monitoring_service.control_repository import (
     ControlPublicationRepository,
     _publication_keys,
 )
+from monitoring_service.control_history_queries import (
+    _LIGHT_SETPOINTS_SQL,
+    _RAW_SETPOINTS_SQL,
+    _SETPOINTS_1MIN_SQL,
+    _SETPOINTS_5MIN_SQL,
+    select_control_history_sources,
+)
 from monitoring_service.main import create_app
 from shared.monitoring_contracts import (
     ConfigVersion,
@@ -42,6 +49,7 @@ from shared.redis_keys import (
 
 NOW = datetime(2026, 8, 20, 12, tzinfo=UTC)
 
+
 def _light_history_row(
     timestamp: datetime,
     device_name: str | None,
@@ -61,7 +69,6 @@ def _light_history_row(
         row[f"nominal_{metric}_setpoint"] = None
         row[f"ramp_progress_{metric}"] = None
     return row
-
 
 
 def _shared_current(valid_until: datetime) -> CurrentSnapshot:
@@ -176,7 +183,6 @@ class FakeDatabase:
         return []
 
 
-
 @final
 class LightTimelineDatabase:
     def __init__(self, rows: list[dict[str, str | float | datetime | None]]) -> None:
@@ -188,6 +194,7 @@ class LightTimelineDatabase:
         if "FROM effective_setpoints" in query:
             return self.rows
         return []
+
 
 @final
 class FakeRedis:
@@ -296,6 +303,7 @@ async def test_history_builds_timelines_from_committed_read_models() -> None:
     assert response.photoperiod[0].phase == "SUN"
     assert database.queries == sorted(database.queries, key=len) or True
 
+
 @pytest.mark.anyio
 async def test_history_canonicalizes_each_light_by_device_and_timestamp() -> None:
     # Given: mode transitions, a null/finite sibling pair, and conflicting finite siblings.
@@ -343,9 +351,43 @@ async def test_history_queries_are_window_bounded_per_location() -> None:
     await repository.read("Veg Room", history_range)
 
     # Then: every query binds location plus the exact half-open bounds.
-    assert len(database.queries) == 3
     for query in database.queries:
         assert "$1" in query and "$2" in query and "$3" in query
+
+
+def test_light_history_source_is_independent_of_range_selection() -> None:
+    # Given: every budgeted and unbudgeted range selection the read path supports.
+    selections = (
+        (ControlHistoryRange(start=NOW, end=NOW + timedelta(minutes=70)), 1000),
+        (ControlHistoryRange(start=NOW, end=NOW + timedelta(hours=12)), 1000),
+        (ControlHistoryRange(start=NOW, end=NOW + timedelta(days=1)), 1000),
+        (ControlHistoryRange(start=NOW, end=NOW + timedelta(days=7)), 1000),
+        (ControlHistoryRange(start=NOW, end=NOW + timedelta(hours=1)), None),
+    )
+
+    # When: sources are selected for each window.
+    sources = [
+        select_control_history_sources(history_range, max_points)
+        for history_range, max_points in selections
+    ]
+
+    # Then: lights always read one raw per-device source while the climate ladder is unchanged.
+    assert all(source.light_sql == _LIGHT_SETPOINTS_SQL for source in sources)
+    assert all("monitoring_effective_setpoints_" not in source.light_sql for source in sources)
+    assert [source.setpoints_sql for source in sources] == [
+        _RAW_SETPOINTS_SQL,
+        _SETPOINTS_1MIN_SQL,
+        _SETPOINTS_5MIN_SQL,
+        _SETPOINTS_5MIN_SQL,
+        _RAW_SETPOINTS_SQL,
+    ]
+    assert [source.setpoints_are_aggregated for source in sources] == [
+        False,
+        True,
+        True,
+        True,
+        False,
+    ]
 
 
 @pytest.mark.anyio

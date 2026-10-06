@@ -108,7 +108,11 @@ export function buildSeries(data: AlignedData, getData?: () => AlignedData): uPl
           series.dash = dash
         }
       }
-      if (target && (s.source !== 'light' || projected)) {
+      // Climate targets keep the token dash and projected alpha. The light
+      // renderer owns per-segment styling (solid recorded, dotted projected)
+      // so light traces never take a whole-series dash or projected alpha;
+      // the dotted pattern is the only forecast marker on a mixed light trace.
+      if (target && s.source !== 'light') {
         const dash = s.presentation?.dash
           ? [...s.presentation.dash]
           : parseDash(readToken('targetDash'))
@@ -120,10 +124,10 @@ export function buildSeries(data: AlignedData, getData?: () => AlignedData): uPl
         } else {
           series.dash = dash
         }
-      }
-      if (projected) {
-        const opacity = parseFloat(readToken('targetProjectedOpacity'))
-        series.stroke = withAlpha(color, Number.isFinite(opacity) ? opacity : 0.5)
+        if (projected) {
+          const opacity = parseFloat(readToken('targetProjectedOpacity'))
+          series.stroke = withAlpha(color, Number.isFinite(opacity) ? opacity : 0.5)
+        }
       }
       return series
     }),

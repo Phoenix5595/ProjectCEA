@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from datetime import datetime, time, timedelta
+from dataclasses import dataclass
+from datetime import UTC, date, datetime, time, timedelta
+from math import floor
 from typing import Final
 from zoneinfo import ZoneInfo
 
@@ -13,6 +15,27 @@ from shared.room_light_authority import is_moon_authority_mode
 
 LOCAL_TZ: Final = ZoneInfo("America/Toronto")
 MINIMUM_LIGHT_INTENSITY: Final = 10.0
+# Gate-boundary arithmetic tolerance in seconds; seconds-scale cycle formulas
+# and microsecond sampling windows stay far below one cycle second.
+_GATE_EPSILON_SECONDS: Final = 1e-9
+
+
+@dataclass(frozen=True, slots=True)
+class CycleWindow:
+    """One wrapped light-program occurrence window that can gate on/off cycles."""
+
+    start: datetime
+    end: datetime
+    on_seconds: float
+    off_seconds: float
+
+
+@dataclass(frozen=True, slots=True)
+class SegmentBoundaryPlan:
+    """Ordered canonical boundaries plus every clipped cycle-occurrence window."""
+
+    boundaries: tuple[datetime, ...]
+    cycle_windows: tuple[CycleWindow, ...]
 
 
 def evaluate_intensity(
@@ -64,6 +87,168 @@ def cycle_change_count(snapshot: MonitoringSnapshot) -> int:
         for p in snapshot.light_programs
         if bool(p.get("cycle_enabled"))
     )
+
+
+def segment_boundary_plan(
+    snapshot: MonitoringSnapshot,
+    light: Mapping[str, object],
+    start: datetime,
+    end: datetime,
+) -> SegmentBoundaryPlan:
+    """Ordered boundaries and cycle windows partitioning ``[start, end)``.
+
+    Every instant where the scheduler rule can change value or shape is a
+    boundary: local midnights (program ownership rolls), photoperiod day
+    windows and their ramp ends, and each program occurrence window. Cycle
+    gate instants are reported as windows so callers can budget them instead of
+    materializing an unbounded list.
+    """
+    if is_moon_authority_mode(_value(snapshot.active_mode, "mode_name")):
+        return SegmentBoundaryPlan((start.astimezone(UTC), end.astimezone(UTC)), ())
+    instants: set[datetime] = {start.astimezone(UTC), end.astimezone(UTC)}
+    cycles: list[CycleWindow] = []
+    device_id = light.get("device_id")
+    mode_id = _int_or_none(_value(snapshot.active_mode, "mode_id"))
+    local_day = start.astimezone(LOCAL_TZ).date() - timedelta(days=1)
+    final_local_day = end.astimezone(LOCAL_TZ).date()
+    while local_day <= final_local_day:
+        _add_boundary(instants, datetime.combine(local_day, time.min, LOCAL_TZ), start, end)
+        if snapshot.mode_parameters is not None:
+            parameters = snapshot.mode_parameters
+            day_time, night_time = _schedule_times(parameters)
+            day_start, day_end = _window(
+                datetime.combine(local_day, day_time, LOCAL_TZ), day_time, night_time
+            )
+            up = _number(parameters, "light_ramp_up_minutes", _number(parameters, "ramp_up", 0))
+            down = _number(
+                parameters, "light_ramp_down_minutes", _number(parameters, "ramp_down", 0)
+            )
+            for instant in (
+                day_start,
+                day_start + timedelta(minutes=up) if up > 0 else day_start,
+                day_end - timedelta(minutes=down) if down > 0 else day_end,
+                day_end,
+            ):
+                _add_boundary(instants, instant, start, end)
+        for program in snapshot.light_programs:
+            if _program_mismatch(program, device_id, mode_id):
+                continue
+            occurrence = _occurrence_window(program, local_day)
+            if occurrence is None:
+                continue
+            occurrence_start, occurrence_end = occurrence
+            _add_boundary(instants, occurrence_start, start, end)
+            _add_boundary(instants, occurrence_end, start, end)
+            if bool(program.get("cycle_enabled")):
+                on = _number(program, "cycle_on_seconds", 0)
+                off = _number(program, "cycle_off_seconds", 0)
+                if on > 0 and off > 0:
+                    # Both phases must alternate; ``off == 0`` degrades to a
+                    # constant target hold with no gate instants at all.
+                    cycles.append(
+                        CycleWindow(
+                            start=occurrence_start,
+                            end=occurrence_end,
+                            on_seconds=on,
+                            off_seconds=off,
+                        )
+                    )
+        local_day += timedelta(days=1)
+    return SegmentBoundaryPlan(tuple(sorted(instants)), tuple(cycles))
+
+
+def phase_boundary_plan(
+    snapshot: MonitoringSnapshot, start: datetime, end: datetime
+) -> tuple[datetime, ...]:
+    """Ordered boundaries where the room SUN/MOON phase can change."""
+    instants: set[datetime] = {start.astimezone(UTC), end.astimezone(UTC)}
+    local_day = start.astimezone(LOCAL_TZ).date() - timedelta(days=1)
+    final_local_day = end.astimezone(LOCAL_TZ).date()
+    while local_day <= final_local_day:
+        _add_boundary(instants, datetime.combine(local_day, time.min, LOCAL_TZ), start, end)
+        if snapshot.mode_parameters is not None:
+            day_time, night_time = _schedule_times(snapshot.mode_parameters)
+            for offset in (0, 1):
+                anchor = local_day + timedelta(days=offset)
+                _add_boundary(instants, datetime.combine(anchor, day_time, LOCAL_TZ), start, end)
+                _add_boundary(instants, datetime.combine(anchor, night_time, LOCAL_TZ), start, end)
+        local_day += timedelta(days=1)
+    return tuple(sorted(instants))
+
+
+def matched_program(
+    snapshot: MonitoringSnapshot, light: Mapping[str, object], instant: datetime
+) -> Mapping[str, object] | None:
+    """The scheduler-parity program matching one light at ``instant``."""
+    return _matching(snapshot, light, instant)
+
+
+def cycle_gate_count(window: CycleWindow, *, start: datetime, end: datetime) -> int:
+    """Gate instants strictly inside ``[start, end)`` for one cycle window, in O(1).
+
+    Mirrors the ``_cycle`` modulo formula exactly: flips at
+    ``start + k * period`` and ``start + k * period + on`` for ``k >= 0``. An
+    interior flip exactly on the clipped begin edge is counted (the value
+    changes at that boundary); the end edge is owned by the following interval.
+    """
+    span_pair = _clipped_span(window, start, end)
+    if span_pair is None:
+        return 0
+    begin, finish = span_pair
+    period = window.on_seconds + window.off_seconds
+    if window.on_seconds <= 0 or window.off_seconds <= 0 or period <= 0:
+        # A missing phase never alternates, so no gate can change the value.
+        return 0
+    prefix = (begin - window.start).total_seconds()
+    span = (finish - window.start).total_seconds()
+    # Strict interior parity: gates sitting exactly on the end edge belong to
+    # the next interval's boundary and are already occurrence boundaries.
+    return (
+        _periodic_count(span, period)
+        - _periodic_count(prefix, period)
+        + _periodic_count(span - window.on_seconds, period)
+        - _periodic_count(prefix - window.on_seconds, period)
+    )
+
+
+def cycle_gates(window: CycleWindow, *, start: datetime, end: datetime) -> tuple[datetime, ...]:
+    """Materialize the ordered cycle gate instants inside ``[start, end)``.
+
+    Callers budget with :func:`cycle_gate_count` first so the materialized list
+    stays bounded by the accepted forecast segment budget.
+    """
+    span_pair = _clipped_span(window, start, end)
+    if span_pair is None:
+        return ()
+    begin, finish = span_pair
+    period = window.on_seconds + window.off_seconds
+    if window.on_seconds <= 0 or window.off_seconds <= 0 or period <= 0:
+        # A missing phase never alternates, so no gate can change the value.
+        return ()
+    prefix = (begin - window.start).total_seconds()
+    span = (finish - window.start).total_seconds()
+    # The modulo pattern alternates a ``target`` hold for ``on`` seconds and an
+    # ``off`` hold; enumerate both families with chronological cursors so a
+    # degenerate zero-length phase cannot stall the alternation.
+    hold_cursor = _first_k(prefix, period, 0.0)
+    off_cursor = _first_k(prefix, period, window.on_seconds)
+    gates: list[datetime] = []
+    while True:
+        hold = hold_cursor * period
+        off = off_cursor * period + window.on_seconds
+        hold_live = hold < span - _GATE_EPSILON_SECONDS
+        off_live = off < span - _GATE_EPSILON_SECONDS
+        if not hold_live and not off_live:
+            break
+        if hold_live and (not off_live or hold < off):
+            hold_cursor += 1
+            candidate = hold
+        else:
+            off_cursor += 1
+            candidate = off
+        if candidate > prefix - _GATE_EPSILON_SECONDS:
+            gates.append(window.start + timedelta(seconds=candidate))
+    return tuple(gates)
 
 
 def _ramp(
@@ -267,3 +452,72 @@ def _time(value: object | None) -> time:
 
 def _quality_rank(quality: Quality) -> int:
     return {Quality.EXACT: 2, Quality.ESTIMATED: 1, Quality.UNAVAILABLE: 0}[quality]
+
+
+def _int_or_none(value: object | None) -> int | None:
+    """Integer for row identity comparisons; booleans stay excluded."""
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    return value
+
+
+def _add_boundary(
+    instants: set[datetime], instant: datetime, start: datetime, end: datetime
+) -> None:
+    """Record one in-range aware-UTC boundary candidate for the plan."""
+    clipped = instant if instant.tzinfo is None else instant.astimezone(UTC)
+    if start <= clipped < end:
+        instants.add(clipped)
+
+
+def _occurrence_window(
+    program: Mapping[str, object], local_day: date
+) -> tuple[datetime, datetime] | None:
+    """One program occurrence window on ``local_day``; None when it never matches.
+
+    Mirrors ``_matching`` plus ``_window`` semantics: a zero-length window never
+    matches and ``end < start`` wraps to the following day.
+    """
+    start_time, end_time = _program_times(program)
+    if start_time == end_time:
+        return None
+    start_at = datetime.combine(local_day, start_time, LOCAL_TZ)
+    end_at = datetime.combine(
+        local_day + timedelta(days=1) if end_time < start_time else local_day,
+        end_time,
+        LOCAL_TZ,
+    )
+    return start_at.astimezone(UTC), end_at.astimezone(UTC)
+
+
+def _program_mismatch(
+    program: Mapping[str, object], device_id: object | None, mode_id: int | None
+) -> bool:
+    """Whether a program can never match this light's device or active profile."""
+    program_device = program.get("device_id")
+    if device_id is not None and program_device is not None and program_device != device_id:
+        return True
+    program_mode = _int_or_none(program.get("mode_id"))
+    return mode_id is not None and program_mode is not None and program_mode != mode_id
+
+
+def _clipped_span(
+    window: CycleWindow, start: datetime, end: datetime
+) -> tuple[datetime, datetime] | None:
+    """The intersection of one cycle window with ``[start, end)``, or None."""
+    begin = max(window.start.astimezone(UTC), start.astimezone(UTC))
+    finish = min(window.end.astimezone(UTC), end.astimezone(UTC))
+    return None if finish <= begin else (begin, finish)
+
+
+def _periodic_count(limit: float, period: float) -> int:
+    """Count ``k >= 0`` with ``k * period`` strictly below ``limit``."""
+    if limit <= _GATE_EPSILON_SECONDS:
+        return 0
+    return int((limit - _GATE_EPSILON_SECONDS) // period) + 1
+
+
+def _first_k(prefix: float, period: float, offset: float) -> int:
+    """First ``k >= 0`` with ``k * period + offset`` above ``prefix`` minus epsilon."""
+    position = (prefix - offset - _GATE_EPSILON_SECONDS) / period
+    return max(0, floor(position) + 1)

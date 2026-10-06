@@ -25,6 +25,12 @@ LOCAL_TZ: Final = ZoneInfo("America/Toronto")
 DISPLAY_GRID_POINTS: Final = 1_008
 
 
+def light_series_id(name: str) -> str:
+    """Translate a physical light name to the dotted-lowercase contract namespace."""
+    token = "".join(character if character.isalnum() else "_" for character in name.lower())
+    return f"light.intensity.{token}"
+
+
 @dataclass(frozen=True, slots=True)
 class PhotoperiodInterval:
     """One half-open UTC room photoperiod interval with immutable provenance."""

@@ -600,7 +600,7 @@ describe('alignSeries', () => {
     })
     const output = alignSeries({
       series: [], live: [], controlHistory: history, projectionHistory: null, photoperiod: [],
-      range: fixedRange(offAt, end), now: onAt, maxPoints: 2,
+      range: fixedRange(offAt, end), now: end, maxPoints: 2,
     })
     const light = output.series.find(series => series.source === 'light')
     expect(light?.kind).toBe('step')

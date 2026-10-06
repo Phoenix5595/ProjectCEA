@@ -13,10 +13,31 @@ SELECT timestamp, mode,
        effective_cooling_setpoint, nominal_cooling_setpoint, ramp_progress_cooling,
        effective_humidity_setpoint, nominal_humidity_setpoint, ramp_progress_humidity,
        effective_co2_setpoint, nominal_co2_setpoint, ramp_progress_co2,
-       effective_vpd_setpoint, nominal_vpd_setpoint, ramp_progress_vpd,
-       device_name, effective_light_intensity, nominal_light_intensity, ramp_progress_light
+       effective_vpd_setpoint, nominal_vpd_setpoint, ramp_progress_vpd
 FROM effective_setpoints
 WHERE location = $1 AND timestamp >= $2 AND timestamp < $3
+ORDER BY timestamp
+"""
+
+# Recorded light facts always read the raw per-device setpoint rows. The CAGG
+# read models keep only the last light sample per bucket and null the ramp
+# progress, so selecting lights through them erases ramp semantics whenever the
+# selected range changes; the light-only filter keeps the read bounded without
+# touching the climate and automation-state aggregate ladders.
+_LIGHT_SETPOINTS_SQL = """
+SELECT samples.timestamp, samples.mode, samples.device_name,
+       samples.effective_light_intensity, samples.nominal_light_intensity,
+       samples.ramp_progress_light
+FROM effective_setpoints AS samples
+JOIN (
+    SELECT DISTINCT device_name
+    FROM effective_setpoints
+    WHERE location = $1 AND timestamp >= $2 AND timestamp < $3
+      AND device_name IS NOT NULL
+      AND (effective_light_intensity IS NOT NULL OR nominal_light_intensity IS NOT NULL
+           OR ramp_progress_light IS NOT NULL)
+) AS recorded_lights USING (device_name)
+WHERE samples.location = $1 AND samples.timestamp >= $2 AND samples.timestamp < $3
 ORDER BY timestamp
 """
 
@@ -31,9 +52,7 @@ NULL::double precision AS nominal_humidity_setpoint, NULL::double precision AS r
 effective_co2_setpoint_last AS effective_co2_setpoint,
 NULL::double precision AS nominal_co2_setpoint, NULL::double precision AS ramp_progress_co2,
 effective_vpd_setpoint_last AS effective_vpd_setpoint,
-NULL::double precision AS nominal_vpd_setpoint, NULL::double precision AS ramp_progress_vpd,
-device_name, effective_light_intensity_last AS effective_light_intensity,
-NULL::double precision AS nominal_light_intensity, NULL::double precision AS ramp_progress_light
+NULL::double precision AS nominal_vpd_setpoint, NULL::double precision AS ramp_progress_vpd
 """
 
 _SETPOINTS_1MIN_SQL = f"""
@@ -82,6 +101,7 @@ class ControlHistorySources:
     """Read-only sources selected for a control history request."""
 
     setpoints_sql: str
+    light_sql: str
     state_sql: str
     setpoints_are_aggregated: bool
     source_interval_seconds: int
@@ -90,12 +110,26 @@ class ControlHistorySources:
 def select_control_history_sources(
     history_range: ControlHistoryRange, max_points: int | None
 ) -> ControlHistorySources:
-    """Choose existing control read models; unbudgeted reads retain their legacy sources."""
+    """Choose existing control read models; unbudgeted reads retain their legacy sources.
+
+    The climate and automation-state ladders are range-dependent as before.
+    Lights always read the raw per-device setpoint source because range-dependent
+    aggregate selection is what erased recorded ramp semantics through the CAGG
+    null nominal/ramp fields.
+    """
     if max_points is None:
-        return ControlHistorySources(_RAW_SETPOINTS_SQL, _STATE_1MIN_SQL, False, 60)
+        return ControlHistorySources(
+            _RAW_SETPOINTS_SQL, _LIGHT_SETPOINTS_SQL, _STATE_1MIN_SQL, False, 60
+        )
     duration = history_range.end - history_range.start
     if duration >= timedelta(days=1):
-        return ControlHistorySources(_SETPOINTS_5MIN_SQL, _STATE_5MIN_SQL, True, 300)
+        return ControlHistorySources(
+            _SETPOINTS_5MIN_SQL, _LIGHT_SETPOINTS_SQL, _STATE_5MIN_SQL, True, 300
+        )
     if duration >= timedelta(hours=2):
-        return ControlHistorySources(_SETPOINTS_1MIN_SQL, _STATE_1MIN_SQL, True, 60)
-    return ControlHistorySources(_RAW_SETPOINTS_SQL, _STATE_1MIN_SQL, False, 60)
+        return ControlHistorySources(
+            _SETPOINTS_1MIN_SQL, _LIGHT_SETPOINTS_SQL, _STATE_1MIN_SQL, True, 60
+        )
+    return ControlHistorySources(
+        _RAW_SETPOINTS_SQL, _LIGHT_SETPOINTS_SQL, _STATE_1MIN_SQL, False, 60
+    )

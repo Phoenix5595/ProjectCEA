@@ -16,6 +16,7 @@ from app.schemas.monitoring_models import (
     Quality,
     TimelineProvenance,
 )
+from shared.room_light_authority import is_moon_authority_mode
 
 LOCAL_TZ = ZoneInfo("America/Toronto")
 _METRICS = ("heating", "cooling", "vpd", "co2")
@@ -82,7 +83,7 @@ def _point(
     now: datetime,
     index: Mapping[tuple[int | None, int | None], tuple[FrozenRow, ...]],
 ) -> ClimateTimelinePoint:
-    mode = _mode_at(snapshot, instant)
+    mode = mode_identity_at(snapshot, instant)
     periods = index.get(mode, ()) if mode is not None else ()
     period = _period_at(periods, instant)
     target = _number(period, _FIELDS[metric]) if period is not None else None
@@ -147,7 +148,9 @@ def _authoritative_identities(
     day = start.astimezone(LOCAL_TZ).date()
     final_day = end.astimezone(LOCAL_TZ).date()
     while day <= final_day:
-        identity = _mode_at(snapshot, datetime.combine(day, time(12, 0), LOCAL_TZ).astimezone(UTC))
+        identity = mode_identity_at(
+            snapshot, datetime.combine(day, time(12, 0), LOCAL_TZ).astimezone(UTC)
+        )
         if identity is not None:
             identities.add(identity)
         day += timedelta(days=1)
@@ -247,9 +250,14 @@ def _period_index(
     }
 
 
-def _mode_at(
+def mode_identity_at(
     snapshot: MonitoringSnapshot, instant: datetime
 ) -> tuple[int | None, int | None] | None:
+    """The (mode_id, submode_id) profile identity this snapshot applies at ``instant``.
+
+    Flower-room calendar transitions only activate destinations with persisted
+    mode parameters; a finished plan falls back to vegetative growth.
+    """
     if snapshot.active_mode is None:
         return None
     active = _mode_identity(snapshot.active_mode)
@@ -276,6 +284,29 @@ def _mode_at(
     ):
         return (_veg_mode_id(snapshot.calendar_events), None)
     return active
+
+
+def known_moon_destination_day(snapshot: MonitoringSnapshot, day: date) -> bool:
+    """Whether this local day switches Flower room lighting authority to a moon mode.
+
+    Moon-authority destinations (drying/sleep) carry complete frozen light
+    authority from the mode name alone, so their days stay forecastable;
+    every other future identity has no frozen light inputs.
+    """
+    if snapshot.active_mode is None or snapshot.location != "Flower Room":
+        return False
+    event = _event_for(snapshot.calendar_events, day)
+    if event is None:
+        return False
+    target = (_int(event, "target_mode_id"), _int(event, "target_submode_id"))
+    if (
+        target[0] is None
+        or target == _mode_identity(snapshot.active_mode)
+        or event.get("destination_configured") is not True
+    ):
+        return False
+    name = event.get("target_mode_name")
+    return isinstance(name, str) and is_moon_authority_mode(name)
 
 
 def _event_for(events: tuple[FrozenRow, ...], day: date) -> FrozenRow | None:

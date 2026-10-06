@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from datetime import datetime
+from datetime import datetime, timedelta
 from math import isfinite
 
 import asyncpg
@@ -25,6 +25,10 @@ from shared.monitoring_contracts import Quality
 
 ControlRecordValue = str | float | int | datetime | None
 ControlRecord = Mapping[str, ControlRecordValue] | asyncpg.Record
+
+# Current light logging is nominally 10s. Allow six intervals for scheduling
+# and flush jitter, then stop claiming recorded coverage across a silent outage.
+_LIGHT_COVERAGE_MAX_AGE = timedelta(seconds=60)
 
 
 _CLIMATE_FIELDS: tuple[tuple[str, str, str, str], ...] = (
@@ -54,6 +58,7 @@ _CLIMATE_FIELDS: tuple[tuple[str, str, str, str], ...] = (
 def build_control_history_envelope(
     history_range: ControlHistoryRange,
     setpoint_rows: Sequence[ControlRecord],
+    light_rows: Sequence[ControlRecord],
     state_rows: Sequence[ControlRecord],
     photoperiod_rows: Sequence[ControlRecord],
     setpoints_are_aggregated: bool,
@@ -69,8 +74,24 @@ def build_control_history_envelope(
     aggregate_provenance = TimelineProvenanceModel(
         origin="recorded", quality=Quality.EXACT, is_aggregated=True
     )
-    climate_builders, lights = _build_target_timelines(
+    # Lights always come from the raw per-device source, so their provenance is
+    # exact and never aggregated at read time; the budget reduction reports its
+    # own approximation separately.
+    light_provenance = TimelineProvenanceModel(
+        origin="recorded", quality=Quality.EXACT, is_aggregated=False
+    )
+    light_unavailable_provenance = TimelineProvenanceModel(
+        origin="recorded", quality=Quality.UNAVAILABLE, is_aggregated=False
+    )
+    climate_builders = _build_climate_timelines(
         setpoint_rows, provenance, unavailable_provenance, max_points is not None
+    )
+    lights = _build_light_timelines(
+        light_rows,
+        light_provenance,
+        light_unavailable_provenance,
+        max_points is not None,
+        history_range.end,
     )
     devices, pid = _build_device_timelines(state_rows, aggregate_provenance)
     photoperiod, snapshot_versions = _build_photoperiod(photoperiod_rows, aggregate_provenance)
@@ -84,7 +105,7 @@ def build_control_history_envelope(
             for metric, points in sorted(climate_builders.items())
         ),
         lights=tuple(
-            LightTimelineSeriesOut(name=device, provenance=provenance, points=tuple(points))
+            LightTimelineSeriesOut(name=device, provenance=light_provenance, points=tuple(points))
             for device, points in sorted(lights.items())
         ),
         devices=devices,
@@ -94,19 +115,15 @@ def build_control_history_envelope(
     return envelope if max_points is None else budget_control_history(envelope, max_points)
 
 
-def _build_target_timelines(
+def _build_climate_timelines(
     rows: Sequence[ControlRecord],
     provenance: TimelineProvenanceModel,
     unavailable_provenance: TimelineProvenanceModel,
     preserve_gaps: bool,
-) -> tuple[
-    dict[str, list[ClimateTimelinePointOut]],
-    dict[str, list[LightTimelinePointOut]],
-]:
+) -> dict[str, list[ClimateTimelinePointOut]]:
     climate: dict[str, list[ClimateTimelinePointOut]] = {}
-    lights: dict[str, list[LightTimelinePointOut]] = {}
     if not rows:
-        return climate, lights
+        return climate
 
     climate_rows: dict[str, dict[datetime, list[ControlRecord]]] = {}
     for row in rows:
@@ -146,6 +163,19 @@ def _build_target_timelines(
                         mode=_optional_string(siblings[0]["mode"]),
                     )
                 )
+    return climate
+
+
+def _build_light_timelines(
+    rows: Sequence[ControlRecord],
+    provenance: TimelineProvenanceModel,
+    unavailable_provenance: TimelineProvenanceModel,
+    preserve_gaps: bool,
+    coverage_end: datetime,
+) -> dict[str, list[LightTimelinePointOut]]:
+    lights: dict[str, list[LightTimelinePointOut]] = {}
+    if not rows:
+        return lights
 
     light_rows: dict[str, dict[datetime, list[ControlRecord]]] = {}
     for row in rows:
@@ -158,6 +188,18 @@ def _build_target_timelines(
 
     for device, timestamps in sorted(light_rows.items()):
         for timestamp, siblings in sorted(timestamps.items()):
+            points = lights.get(device)
+            if preserve_gaps and points and points[-1].value is not None:
+                expires_at = points[-1].timestamp + _LIGHT_COVERAGE_MAX_AGE
+                if timestamp > expires_at:
+                    points.append(
+                        LightTimelinePointOut(
+                            timestamp=expires_at,
+                            value=None,
+                            provenance=unavailable_provenance,
+                            device_name=device,
+                        )
+                    )
             selected_row: ControlRecord | None = None
             effective: float | None = None
             for row in siblings:
@@ -188,7 +230,19 @@ def _build_target_timelines(
                         mode=_optional_string(siblings[0]["mode"]),
                     )
                 )
-    return climate, lights
+        points = lights.get(device)
+        if preserve_gaps and points and points[-1].value is not None:
+            expires_at = points[-1].timestamp + _LIGHT_COVERAGE_MAX_AGE
+            if coverage_end > expires_at:
+                points.append(
+                    LightTimelinePointOut(
+                        timestamp=expires_at,
+                        value=None,
+                        provenance=unavailable_provenance,
+                        device_name=device,
+                    )
+                )
+    return lights
 
 
 def _build_device_timelines(

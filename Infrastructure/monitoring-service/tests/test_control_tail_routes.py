@@ -115,7 +115,6 @@ async def test_control_tail_is_registered_and_reads_a_bounded_history_envelope()
     }
     assert response.json()["requested_max_points"] is None
     assert response.json()["interval_seconds"] is None
-    assert len(database.queries) == 3
     assert any(
         route.path == "/api/monitoring/control/{location}/tail"
         for route in app.routes

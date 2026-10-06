@@ -43,9 +43,20 @@ export class ProjectionAuthorityError extends Error {
 }
 
 export function projectionTimeline(publication: ProjectionPublicationResponse): ProjectionTimeline {
-  if (publication.trajectory?.revision_scope === 'saved') {
-    return richProjectionTimeline(publication.trajectory)
+  const trajectory = publication.trajectory
+  if (trajectory?.revision_scope === 'saved') {
+    // The complete rich publication owns both climate and light forecasts.
+    // Missing canonical light coverage is not filled from a basic payload.
+    return richProjectionTimeline(trajectory)
   }
+  return intervalProjectionTimeline(publication)
+}
+
+
+/** Canonical conversion of the basic interval-only future publication. */
+function intervalProjectionTimeline(
+  publication: ProjectionPublicationResponse
+): ProjectionTimeline {
   if (publication.quality !== 'estimated' || publication.value.length === 0) {
     return {
       history: null,

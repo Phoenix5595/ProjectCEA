@@ -38,6 +38,7 @@ from app.repositories.monitoring_snapshot_types import (
 )
 from app.services.calendar_mode_scheduler import CalendarModeScheduler
 from app.services.future_projection import project_future_intervals
+from app.services.light_trajectory import project_light_segments
 
 _PUBLICATION_ROOMS: Final[tuple[tuple[str, str], ...]] = (
     ("Flower Room", "main"),
@@ -546,6 +547,9 @@ def build_monitoring_publication_workers(
                 rich_snapshot_builder=rich_snapshot_builder,
                 rich_projector=lambda snapshot, room=location: project_saved_trajectory(
                     snapshot, room, f"{registry.snapshot.version:07x}"
+                ),
+                light_projector=lambda snapshot: project_light_segments(
+                    snapshot, f"{registry.snapshot.version:07x}"
                 ),
                 rich_writer=writer,
                 complete_writer=writer,
