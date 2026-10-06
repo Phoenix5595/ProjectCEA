@@ -16,6 +16,7 @@ interface PlotSeries {
   readonly label: string
   readonly scale: string
   readonly visible: boolean
+  readonly dash: readonly number[]
 }
 
 interface PlotSnapshot {
@@ -108,13 +109,15 @@ async function plotSnapshot(section: Locator, timestamp: number | null = null): 
     const bbox = get(plot, 'bbox')
     if (!Array.isArray(series) || !Array.isArray(data) || !isObject(root)) return null
     const renderedSeries = series.slice(1).map((entry: unknown) => {
-      if (!isObject(entry)) return { label: '', scale: '', visible: false }
+      if (!isObject(entry)) return { label: '', scale: '', visible: false, dash: [] }
       const label = get(entry, 'label')
       const scale = get(entry, 'scale')
+      const dash = get(entry, 'dash')
       return {
         label: typeof label === 'string' ? label : '',
         scale: typeof scale === 'string' ? scale : '',
         visible: get(entry, 'show') !== false,
+        dash: Array.isArray(dash) ? dash.filter((value): value is number => typeof value === 'number') : [],
       }
     })
 
@@ -304,11 +307,24 @@ async function equipmentHistoryScenario(
           series => series.scale === 'light' && series.label.endsWith(' - Intensity')
         ) ?? []).sort((left, right) => left.label.localeCompare(right.label))
       })
-      .toEqual(expectedIntensityLabels.map(label => ({ label, scale: 'light', visible: true })))
+      .toEqual(expectedIntensityLabels.map(label => ({ label, scale: 'light', visible: true, dash: [] })))
 
     await equipment.scrollIntoViewIfNeeded()
     await page.getByRole('button', { name: 'Pause', exact: true }).click()
     await equipment.screenshot({ path: testInfo.outputPath('equipment-panel.png'), animations: 'disabled' })
+    const tooltipRows = equipment.locator('.mon-tooltip > div')
+    const historyStart = Date.parse((await historyResponse.json()).range.start)
+    const historyEnd = Date.parse((await historyResponse.json()).range.end)
+    await hoverAt(
+      page, equipment, historyStart + (historyEnd - historyStart) * 0.30,
+      `${displayName(room, budgetedName, '')} - Intensity 0.0 % recorded/exact`
+    )
+    await expect(tooltipRows.filter({ hasText: `${displayName(room, budgetedName, '')} - Intensity` })).toHaveCount(1)
+    await hoverAt(
+      page, equipment, historyStart + (historyEnd - historyStart) * 0.41,
+      `${displayName(room, budgetedName, '')} - Intensity 10.0 % recorded/exact`
+    )
+    await expect(tooltipRows.filter({ hasText: `${displayName(room, budgetedName, '')} - Intensity` })).toHaveCount(1)
 
     const projectionStart = Date.parse(projection.trajectory.window.start)
     await hoverAt(page, equipment, projectionStart + 30_000, `${displayName(room, budgetedName, '')} - Intensity 40.0 % projected/estimated`)

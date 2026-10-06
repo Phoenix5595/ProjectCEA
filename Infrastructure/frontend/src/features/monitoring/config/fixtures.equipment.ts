@@ -83,6 +83,7 @@ export function equipmentHistoryFixture(room: string, start: string, end: string
         steps: [
           { timestamp: start, value: 40, provenance: recorded() },
           { timestamp: at(start, end, 0.18), value: 0, provenance: recorded() },
+          { timestamp: at(start, end, 0.40), value: 10, provenance: recorded() },
           { timestamp: at(start, end, 0.72), value: null, provenance: recorded('unavailable') },
           { timestamp: at(start, end, 0.86), value: 0, provenance: recorded() },
         ],

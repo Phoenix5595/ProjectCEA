@@ -88,6 +88,10 @@ export function buildSeries(data: AlignedData, getData?: () => AlignedData): uPl
       }
       if (s.source === 'light' && s.lightTrajectory !== undefined) {
         series.paths = lightTrajectoryPaths(s.key, getCurrentData)
+      } else if (s.kind === 'step') {
+        const stepped = uPlot.paths.stepped
+        if (stepped === undefined) throw new Error('uPlot stepped path renderer is unavailable')
+        series.paths = stepped({ align: 1 })
       }
       if (isEnvelopeSeries(s)) {
         series.width = 0
@@ -104,7 +108,7 @@ export function buildSeries(data: AlignedData, getData?: () => AlignedData): uPl
           series.dash = dash
         }
       }
-      if (target) {
+      if (target && (s.source !== 'light' || projected)) {
         const dash = s.presentation?.dash
           ? [...s.presentation.dash]
           : parseDash(readToken('targetDash'))

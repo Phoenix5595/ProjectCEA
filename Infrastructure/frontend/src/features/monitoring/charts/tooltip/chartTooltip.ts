@@ -91,11 +91,14 @@ export function tooltipPlugin(
 ): uPlot.Plugin {
   let el: HTMLDivElement | null = null
 
+  const seenKeys = new Set<SeriesKey>()
   const meta: TooltipSeries[] = series
     .map((item, index) => ({ key: item.key, index: index + 1 }))
     .filter(item => {
       const candidate = series[item.index - 1]
-      return candidate !== undefined && !isEnvelopeSeries(candidate)
+      if (candidate === undefined || isEnvelopeSeries(candidate) || seenKeys.has(item.key)) return false
+      seenKeys.add(item.key)
+      return true
     })
 
   return {

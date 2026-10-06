@@ -82,6 +82,37 @@ describe('valueAtCursor', () => {
 })
 
 describe('light trajectory tooltip', () => {
+  it('lists each canonical light once while retaining different lights at the same intensity', () => {
+    const light: AlignedSeries = {
+      key: seriesKey('light', 'light_f_1', 'linear'), label: 'Chilled Front - Intensity',
+      kind: 'linear', source: 'light', metric: 'light_f_1', family: 'light', role: 'linear',
+      y: [0, 10], origin: 'recorded', quality: 'exact', isAggregated: false, unit: '%',
+      lightTrajectory: [
+        { start: 0, end: 100, shape: 'step', startValue: 0, endValue: 0, origin: 'recorded', quality: 'exact' },
+      ],
+    }
+    const other = { ...light, key: seriesKey('light', 'light_f_2', 'linear'), metric: 'light_f_2', label: 'Apache - Intensity' }
+    const series = [light, { ...light }, { ...light }, other]
+    const plugin = tooltipPlugin(series, { bg: 'white', border: 'black', text: 'black' })
+    const root = document.createElement('div')
+    const plot = {
+      root, cursor: { left: 50, top: 5 }, data: [[0, 100], ...series.map(item => item.y)],
+      series: [{}, ...series.map(() => ({ show: true }))], posToVal: (value: number) => value,
+    } as unknown as uPlot
+    const readyHooks = plugin.hooks?.ready
+    const ready = Array.isArray(readyHooks) ? readyHooks[0] : readyHooks
+    const cursorHooks = plugin.hooks?.setCursor
+    const cursor = Array.isArray(cursorHooks) ? cursorHooks[0] : cursorHooks
+    if (!ready || !cursor) throw new Error('Tooltip hooks are required')
+    ready(plot)
+    cursor(plot)
+    const rows = [...root.querySelectorAll('.mon-tooltip > div')].map(row => row.textContent)
+    expect(rows).toEqual([
+      'Chilled Front - Intensity 0.0 % recorded/exact',
+      'Apache - Intensity 0.0 % recorded/exact',
+    ])
+  })
+
   it('reads current step, ramp, gap, label, and provenance after a feed update', () => {
     const key = seriesKey('light', 'light_f_1', 'linear')
     const segments: readonly LightTrajectorySegment[] = [

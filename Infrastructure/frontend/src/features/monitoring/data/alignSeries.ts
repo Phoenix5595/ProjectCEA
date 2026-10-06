@@ -117,7 +117,7 @@ export function alignSeriesBase(input: BaseAlignInput): BaseAlignment {
     series.push({
       key: seriesKey('light', light.deviceName, 'linear'),
       label,
-      kind: 'linear',
+      kind: trajectory.some(segment => segment.shape === 'linear') ? 'linear' : 'step',
       source: 'light',
       metric: light.deviceName,
       family: 'light',
