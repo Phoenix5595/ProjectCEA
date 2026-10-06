@@ -582,6 +582,34 @@ describe('alignSeries', () => {
     expect(out.aggregated).toBe(false)
     expect(last).toBe(END.getTime())
   })
+  it('keeps a six-hour recorded OFF interval flat until the next intensity step', () => {
+    const offAt = START
+    const onAt = new Date(offAt.getTime() + 6 * 60 * 60 * 1000)
+    const end = new Date(onAt.getTime() + 60 * 60 * 1000)
+    const recorded = { origin: 'recorded' as const, quality: 'exact' as const, is_aggregated: true }
+    const history = controlResponse([], {
+      range: { start: offAt, end },
+      lights: [{
+        name: 'light_f_1', metric: 'light_f_1', provenance: recorded, warnings: [],
+        points: [], linear: [],
+        steps: [
+          { timestamp: offAt, value: 0, provenance: recorded },
+          { timestamp: onAt, value: 10, provenance: recorded },
+        ],
+      }],
+    })
+    const output = alignSeries({
+      series: [], live: [], controlHistory: history, projectionHistory: null, photoperiod: [],
+      range: fixedRange(offAt, end), now: onAt, maxPoints: 2,
+    })
+    const light = output.series.find(series => series.source === 'light')
+    expect(light?.kind).toBe('step')
+    expect([
+      offAt.getTime(), offAt.getTime() + 3 * 60 * 60 * 1000, onAt.getTime() - 1,
+      onAt.getTime(), onAt.getTime() + 10 * 60 * 1000, end.getTime(),
+    ].map(time => lightValueAt(light?.lightTrajectory ?? [], time))).toEqual([0, 0, 0, 10, 10, null])
+  })
+
   it('keeps one exact light trajectory when the aligned grid is coarsened and extended live', () => {
     const t0 = START.getTime()
     const at = (offset: number): Date => new Date(t0 + offset)

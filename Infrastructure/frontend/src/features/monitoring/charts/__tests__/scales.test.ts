@@ -227,6 +227,20 @@ describe('buildScales', () => {
     expect(Reflect.apply(range, undefined, [undefined, 21, 25])).toEqual([15, 25.2])
   })
 
+  it('draws recorded light intensity solid without changing target and forecast styling', () => {
+    const data = makeData()
+    const light = data.series.find(series => series.family === 'light')
+    if (light === undefined) throw new Error('Light intensity series is required')
+    light.source = 'light'
+    light.kind = 'linear'
+    light.presentation = { dash: [0, 5] }
+    const recorded = buildSeries(data).find(series => series.label === 'light')
+    expect(recorded?.dash ?? []).toEqual([])
+    light.origin = 'projected'
+    const projected = buildSeries(data).find(series => series.label === 'light')
+    expect(projected?.dash).toEqual([1, 5])
+  })
+
   it('draws actual VPD series with the required three-pixel width', () => {
     const data = makeData()
     const vpd = data.series.find(series => series.family === 'vpd')
