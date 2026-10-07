@@ -151,9 +151,9 @@ run_package_command() {
 }
 
 restart_services() {
-  sudo systemctl daemon-reload
+  sudo systemctl daemon-reload || return
   while IFS= read -r unit; do
-    sudo systemctl restart "$unit"
+    sudo systemctl restart "$unit" || return
   done < <(python3 "$SERVICE_LIST" --list-deploy-managed-units)
 }
 
@@ -202,9 +202,9 @@ rollback_previous() {
     log_event "rollback_auto_fail" "no_previous_release_or_missing_dir"
     return 1
   fi
-  sudo ln -sfn "$PREVIOUS_RELEASE" "$CURRENT_SYMLINK"
+  sudo ln -sfn "$PREVIOUS_RELEASE" "$CURRENT_SYMLINK" || return
   log_event "rollback_auto_symlink" "reverted_to_previous"
-  restart_services
+  restart_services || return
   log_event "rollback_auto_done" "services_restarted_after_revert"
   return 0
 }
@@ -215,7 +215,12 @@ sudo mkdir -p "$DEPLOY_STATE_DIR"
 # no candidate exists. The known stale last_good_release_id must not be trusted
 # without checking the live symlink.
 if [[ -n "$PREVIOUS_RELEASE" ]]; then
-  python3 "$STATE_HELPER" reconcile "$STATE_JSON" "$PREVIOUS_RELEASE" >/dev/null || true
+  if [[ ! -d "$PREVIOUS_RELEASE/Infrastructure" ]]; then
+    log_event "deploy_blocked" "previous_release_missing"
+    echo "[deploy] current release is missing; restore a valid release before deploying" >&2
+    exit 1
+  fi
+  python3 "$STATE_HELPER" reconcile "$STATE_JSON" "$PREVIOUS_RELEASE" >/dev/null
 fi
 
 # Never overwrite a live candidate with another deploy.
@@ -300,12 +305,34 @@ if [[ "$DEPLOY_SKIP_STAGING" != "1" ]]; then
   "$SOURCE/Infrastructure/scripts/install-sudoers.sh"
 fi
 
+# This check applies to both freshly built and externally pre-staged releases.
+# DEPLOY_SKIP_STAGING skips preparation, never validation of the switch target.
+for required_file in \
+  Infrastructure/services.yaml \
+  Infrastructure/can-processor-service/setup_can.sh \
+  Infrastructure/frontend/package.json \
+  Infrastructure/frontend/dist/index.html; do
+  if [[ ! -s "$TARGET/$required_file" ]]; then
+    log_event "deploy_blocked" "staged_release_incomplete:$required_file"
+    echo "[deploy] incomplete staged release: $TARGET/$required_file" >&2
+    exit 1
+  fi
+done
+
 echo "[5/7] Switching symlink..."
 sudo mkdir -p "$RELEASES"
 sudo ln -sfn "$TARGET" "$CURRENT_SYMLINK"
 
 echo "[6/7] Restarting services..."
-restart_services
+if ! restart_services; then
+  rollback_previous || true
+  python3 "$STATE_HELPER" clear-candidate "$STATE_JSON" >/dev/null || true
+  export CANDIDATE_RELEASE_ID="$RELEASE_ID"
+  export CANDIDATE_RELEASE_PATH="$TARGET"
+  log_event "candidate-rejected" "service_restart_failed"
+  echo "[deploy] service restart failed; previous release restored when possible" >&2
+  exit 1
+fi
 
 echo "[7/7] Health checks..."
 set +e
@@ -353,7 +380,7 @@ export CANDIDATE_RELEASE_PATH="$TARGET"
 log_event "candidate-active" "health_checks_passed"
 
 echo "Cleaning old releases..."
-python3 "$STATE_HELPER" cleanup "$RELEASES" "$STATE_JSON" "$MAX_RELEASES" | xargs -r sudo rm -rf
+python3 "$STATE_HELPER" cleanup "$RELEASES" "$STATE_JSON" "$MAX_RELEASES" "$CURRENT_SYMLINK" | xargs -r sudo rm -rf
 
 echo ""
 echo "=== Deploy complete: $RELEASE_ID (candidate) ==="

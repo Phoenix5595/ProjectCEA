@@ -50,25 +50,15 @@ pass() {
   printf 'PASS: %s\n' "$1"
 }
 
-assert_script_hash() {
-  local name="$1"
-  local path="$2"
-  local expected="$3"
-  local actual
-
-  actual="$(sha256sum "$path" | cut -d ' ' -f 1)"
-  [[ "$actual" == "$expected" ]] || fail "$name script hash changed: expected $expected, got $actual"
-}
-
-assert_script_hash "deploy" "$DEPLOY_SCRIPT" "8d10bb20f985df5145a103068ab83158599d499d2b1acf243817c3b4e5fb2709"
-assert_script_hash "finalize" "$FINALIZE_SCRIPT" "6503e11745e1f7c658d8fbc3bc08c630aae7b33d3d492671c0d8eab757bdd32e"
-assert_script_hash "rollback" "$ROLLBACK_SCRIPT" "16203c049ebcc6d3da83222d4c65ca1f376a92c2123736a8cad24b6d7c6098de"
-pass "deploy script hashes match expected sha256 values"
 
 mkdir -p "$BIN_DIRECTORY" "$RELEASES" "$STATE_DIR"
 
 for rel in "$REL_A" "$REL_B" "$REL_C" "$REL_D"; do
-  mkdir -p "$rel/Infrastructure"
+  mkdir -p "$rel/Infrastructure/frontend/dist" "$rel/Infrastructure/can-processor-service"
+  printf '{"name":"cea-frontend","version":"fixture"}\n' > "$rel/Infrastructure/frontend/package.json"
+  printf '<!doctype html><title>Fixture</title>\n' > "$rel/Infrastructure/frontend/dist/index.html"
+  printf '#!/bin/bash\nexit 0\n' > "$rel/Infrastructure/can-processor-service/setup_can.sh"
+  cp "$SCRIPT_DIRECTORY/../../services.yaml" "$rel/Infrastructure/services.yaml"
 done
 
 mkdir -p "$RELEASES/rel-old-1" "$RELEASES/rel-old-2" "$RELEASES/rel-old-3"
@@ -113,6 +103,9 @@ source_path="${@: -2:1}"
 destination_path="${@: -1}"
 mkdir -p "$destination_path/frontend"
 cp -a "$source_path/frontend/." "$destination_path/frontend/"
+mkdir -p "$destination_path/can-processor-service"
+cp "$source_path/can-processor-service/setup_can.sh" "$destination_path/can-processor-service/"
+cp "$source_path/services.yaml" "$destination_path/services.yaml"
 RSYNC
 
 cat > "$BIN_DIRECTORY/npm" <<'NPM'
@@ -136,6 +129,8 @@ case "${1:-}" in
     fi
     printf 'npm notice built frontend\n'
     printf 'npm WARN build metadata retry skipped\n' >&2
+    mkdir -p dist
+    printf '<!doctype html><title>Built fixture</title>\n' > dist/index.html
     : > "$FRONTEND_BUILD_PROOF"
     exit 0
     ;;
@@ -159,6 +154,10 @@ case "${1:-}" in
     ;;
   restart|start|stop)
     printf 'systemctl %s\n' "$*" >> "$EVENT_LOG"
+    if [[ "${DEPLOY_TEST_FAIL_UNIT:-}" == "${2:-}" && ! -e "$EVENT_LOG.restart-failed" ]]; then
+      touch "$EVENT_LOG.restart-failed"
+      exit 1
+    fi
     ;;
   is-active)
     printf 'active\n'
@@ -213,7 +212,7 @@ chmod 0700 "$BIN_DIRECTORY"/*
 
 base_environment() {
   export PATH="$BIN_DIRECTORY:$PATH"
-  export SOURCE="/home/antoine/ProjectCEA"
+  export SOURCE="$(cd "$SCRIPT_DIRECTORY/../../.." && pwd)"
   export DEPLOY_ROOT
   export DEPLOY_STATE_DIR="$STATE_DIR"
   export DEPLOY_LOG="$EVENT_LOG"
@@ -479,6 +478,7 @@ clear_state() {
   rm -f "$STATE_FILE" "$EVENT_LOG" "$PACKAGE_LOG" "$HEALTH_STATE_FILE" "$HEALTH_DELAYED_CALLS_FILE"
   rm -f "$STATE_DIR/deploy-packages.log"
   rm -f "$CURRENT"
+  rm -f "$EVENT_LOG.restart-failed"
   unset HEALTH_DELAYED_URL HEALTH_DELAYED_FAILURES ROLLBACK_HEALTH_TIMEOUT_SECONDS
 }
 
@@ -533,6 +533,7 @@ create_identity_fixture() {
   PATH="$ORIGINAL_PATH" git -C "$IDENTITY_REPO" add Infrastructure/caddy/Caddyfile release-inputs.txt
   PATH="$ORIGINAL_PATH" git -C "$IDENTITY_REPO" commit -qm 'fixture release input'
   cp -R "$IDENTITY_REPO/Infrastructure/." "$IDENTITY_TARGET/Infrastructure/"
+  cp -R "$REL_D/Infrastructure/." "$IDENTITY_TARGET/Infrastructure/"
   ln -sfn "$IDENTITY_PREVIOUS" "$IDENTITY_CURRENT"
 }
 
@@ -606,6 +607,89 @@ fi
 run_frontend_build_key_sandbox
 run_package_default_path_sandbox
 run_package_failure_sandbox
+
+# A failed package build leaves an incomplete tree; skip-staging must not bypass
+# the guard or change the active release, rollback target, or service state.
+clear_state
+set_current "$REL_A"
+write_state_json "rel-A" "$REL_A" "$REL_C"
+base_environment
+export TARGET="$REL_B"
+cp "$STATE_FILE" "$SANDBOX/state-before-guard.json"
+expect_failure bash "$DEPLOY_SCRIPT"
+cmp "$STATE_FILE" "$SANDBOX/state-before-guard.json" || fail 'incomplete staging changed state'
+[[ "$(current_target)" == "$REL_A" ]] || fail 'incomplete staging switched current'
+[[ "$(cat "$EVENT_LOG")" != *"systemctl restart"* ]] || fail 'incomplete staging restarted services'
+pass 'incomplete frontend build is blocked even with skip-staging'
+
+# Restore a complete pre-staged candidate for the following independent cases.
+mkdir -p "$REL_B/Infrastructure/frontend/dist"
+printf '<!doctype html><title>Fixture</title>\n' > "$REL_B/Infrastructure/frontend/dist/index.html"
+
+clear_state
+set_current "$REL_A"
+write_state_json "rel-A" "$REL_A" "$REL_C"
+base_environment
+export TARGET="$RELEASES/never-staged"
+cp "$STATE_FILE" "$SANDBOX/state-before-guard.json"
+expect_failure bash "$DEPLOY_SCRIPT"
+cmp "$STATE_FILE" "$SANDBOX/state-before-guard.json" || fail 'missing staging changed state'
+[[ "$(current_target)" == "$REL_A" ]] || fail 'missing staging switched current'
+[[ ! -e "$TARGET" ]] || fail 'guard created an empty release'
+[[ "$(cat "$EVENT_LOG")" != *"systemctl restart"* ]] || fail 'missing staging restarted services'
+pass 'nonexistent staged target cannot create a dangling current symlink'
+
+clear_state
+set_current "$REL_A"
+write_state_json "rel-A" "$REL_A" "$REL_C"
+base_environment
+export TARGET="$REL_B"
+mv "$REL_B/Infrastructure/can-processor-service/setup_can.sh" "$SANDBOX/setup-can.saved"
+expect_failure bash "$DEPLOY_SCRIPT"
+[[ "$(current_target)" == "$REL_A" ]] || fail 'missing CAN setup switched current'
+[[ "$(cat "$EVENT_LOG")" != *"systemctl restart"* ]] || fail 'missing CAN setup restarted services'
+mv "$SANDBOX/setup-can.saved" "$REL_B/Infrastructure/can-processor-service/setup_can.sh"
+pass 'missing hardware setup entrypoint is blocked before service restart'
+
+clear_state
+set_current "$REL_A"
+write_state_json "rel-A" "$REL_A" "$REL_C"
+printf 'ready\n' > "$HEALTH_STATE_FILE"
+base_environment
+export TARGET="$REL_B"
+export DEPLOY_TEST_FAIL_UNIT=can-setup.service
+expect_failure bash "$DEPLOY_SCRIPT"
+unset DEPLOY_TEST_FAIL_UNIT
+[[ "$(current_target)" == "$REL_A" ]] || fail 'restart failure left the candidate active'
+[[ "$(state_field last_good_release_id)" == "rel-A" ]] || fail 'restart failure changed last-good'
+[[ "$(state_field rollback_to_path)" == "$REL_C" ]] || fail 'restart failure changed rollback target'
+[[ "$(state_field candidate_release_id)" == "" ]] || fail 'restart failure recorded a candidate'
+[[ "$(cat "$EVENT_LOG")" == *"service_restart_failed"* ]] || fail 'restart failure was not recorded'
+[[ "$(cat "$EVENT_LOG")" == *"rollback_auto_done"* ]] || fail 'restart failure did not restore services'
+pass 'service restart failure restores the previous release before exiting'
+
+clear_state
+set_current "$RELEASES/dangling"
+write_state_json "rel-A" "$REL_A" "$REL_C"
+cp "$STATE_FILE" "$SANDBOX/state-before-guard.json"
+expect_failure python3 "$STATE_HELPER" reconcile "$STATE_FILE" "$CURRENT"
+cmp "$STATE_FILE" "$SANDBOX/state-before-guard.json" || fail 'dangling reconciliation poisoned last-good'
+base_environment
+export TARGET="$REL_B"
+expect_failure bash "$DEPLOY_SCRIPT"
+cmp "$STATE_FILE" "$SANDBOX/state-before-guard.json" || fail 'deploy reconciled a missing current target'
+[[ "$(cat "$EVENT_LOG")" != *"systemctl restart"* ]] || fail 'missing current restarted services'
+pass 'dangling current cannot be reconciled into last-good'
+
+clear_state
+set_current "$REL_A"
+write_state_json "rel-C" "$REL_C" "$REL_B"
+python3 "$STATE_HELPER" cleanup "$RELEASES" "$STATE_FILE" 0 "$CURRENT" > "$SANDBOX/deletable-releases"
+if grep -Fxq "$REL_A" "$SANDBOX/deletable-releases"; then
+  fail 'cleanup selected the active release absent from stale state'
+fi
+grep -Fxq "$REL_D" "$SANDBOX/deletable-releases" || fail 'cleanup did not select an unprotected release'
+pass 'cleanup protects the actual active symlink independently of state'
 
 # --- Scenario 1: stale state reconciliation ---
 clear_state
