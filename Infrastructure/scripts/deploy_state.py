@@ -91,6 +91,9 @@ def cmd_reconcile(argv: list[str]) -> int:
     if state.get("candidate_release_id"):
         print("candidate_exists")
         return 0
+    if not (pathlib.Path(current) / "Infrastructure").is_dir():
+        print("invalid_current_release", file=sys.stderr)
+        return 2
     last_good_path = state.get("last_good_release_path")
     if isinstance(last_good_path, str) and _resolve(last_good_path) == current:
         print("ok")
@@ -200,7 +203,13 @@ def cmd_has_candidate(argv: list[str]) -> int:
 
 
 def cmd_cleanup(argv: list[str]) -> int:
-    """Print release directories that are safe to delete, newest first."""
+    """Print deletable releases, protecting the active symlink independently of state."""
+    if len(argv) != 4:
+        print(
+            "cleanup requires releases, state, retention count, and current symlink",
+            file=sys.stderr,
+        )
+        return 2
     releases_dir = pathlib.Path(argv[0])
     state_path = pathlib.Path(argv[1])
     max_releases = int(argv[2])
@@ -211,6 +220,7 @@ def cmd_cleanup(argv: list[str]) -> int:
         state.get("rollback_to_path"),
     }
     protected = {_resolve(str(p)) for p in protected if isinstance(p, str)}
+    protected.add(_resolve(argv[3]))
     if not releases_dir.exists():
         return 0
     entries = sorted(
