@@ -33,6 +33,8 @@ Local verification runs the automation pure tests against fakes for database, Re
 - Moon-authority modes (`drying`, `sleep`) force scheduled lights to 0%, DFR intensities to 0%, and light relays OFF on entry and every tick. Manual light controls remain available.
 - Authority order: safety interlocks > manual override > schedule automation.
 - Relay/dimmer sequencing: intensity > 0 uses relay ON then dimmer set; intensity = 0 uses dimmer 0 then relay OFF.
+- Historical room phase recording is non-blocking and changes-only: one first SUN/MOON observation and real phase changes use `monitoring_room_photoperiod.source = 'photoperiod_transition'`. Time elapsed, profile metadata changes, and same-phase restarts do not create phase heartbeats.
+- Sparse startup, shutdown, control-failure, and lost-record/recovery boundaries are stored separately in `monitoring_photoperiod_coverage`. Failed transactions retain their ordered bounded batch; repeatable-read restart seeding and conditional inserts prevent duplicate phase rows after ambiguous commits.
 
 ## VPD Control
 

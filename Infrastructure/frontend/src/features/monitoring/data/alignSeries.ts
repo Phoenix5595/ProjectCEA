@@ -26,7 +26,7 @@ import {
   mergePidSeries,
 } from './alignSeries.control'
 import { collectTimestamps, coarsenedGrid, indexOfNow, windowBounds } from './alignSeries.grid'
-import { alignPhotoperiod, alignSensor } from './alignSeries.series'
+import { alignSensor, composePhotoperiod } from './alignSeries.series'
 import type { AlignInput, AlignedBand, AlignedData, AlignedSeries } from './alignSeries.types'
 import { seriesKey } from './alignSeries.types'
 import { composeLightTrajectory, lightValueAt } from './lightTrajectory'
@@ -83,6 +83,8 @@ export function alignSeriesBase(input: BaseAlignInput): BaseAlignment {
 
   const recordedEnd = input.controlHistory?.range.end.getTime() ?? Number.NEGATIVE_INFINITY
   const projectedEnd = input.projectionHistory?.range.end.getTime() ?? Number.NEGATIVE_INFINITY
+  const projectedStart =
+    input.projectionHistory?.range.start.getTime() ?? Number.POSITIVE_INFINITY
   for (const light of mergeLightSeries(input.controlHistory, input.projectionHistory)) {
     const trajectory = composeLightTrajectory(
       light.history,
@@ -152,7 +154,16 @@ export function alignSeriesBase(input: BaseAlignInput): BaseAlignment {
       x,
       series,
       bands,
-      photoperiod: alignPhotoperiod(input.photoperiod, start, end),
+      photoperiod: composePhotoperiod(
+        input.photoperiod,
+        input.projectionHistory?.photoperiod ?? [],
+        recordedEnd,
+        projectedStart,
+        projectedEnd,
+        start,
+        end,
+        now
+      ),
       nowIndex: indexOfNow(x, now),
       aggregated,
       scaleDefaults: input.scaleDefaults,

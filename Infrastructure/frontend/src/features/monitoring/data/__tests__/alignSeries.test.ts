@@ -14,12 +14,14 @@ import type {
   DeviceTimelineSeries,
   LightTimelineSeries,
   Origin,
+  PhotoperiodTimelinePoint,
   PidTimelineSeries,
   SensorSeries,
 } from '../../api'
 import type { MonitoringRange } from '../../state'
 import { alignSeries, alignSeriesBase, applyLiveTail } from '../alignSeries'
 import { mergeControlSeries } from '../alignSeries.control'
+import { composePhotoperiod } from '../alignSeries.series'
 import { seriesKey } from '../alignSeries.types'
 import type { AlignInput } from '../alignSeries.types'
 import { lightValueAt } from '../lightTrajectory'
@@ -715,6 +717,196 @@ describe('alignSeries', () => {
 
     expect(liveTail.x[liveTail.nowIndex]).toBe(liveNow.getTime())
     expect(liveLight?.y[liveTail.nowIndex]).toBe(40)
+  })
+
+  describe('photoperiod composition', () => {
+    const time = (value: string): number => Date.parse(value)
+    const point = (
+      timestamp: string,
+      phase: PhotoperiodTimelinePoint['phase'],
+      origin: Origin = 'recorded'
+    ): PhotoperiodTimelinePoint => ({
+      timestamp: new Date(timestamp),
+      phase,
+      provenance: {
+        origin,
+        quality:
+          phase === 'UNKNOWN' ? 'unavailable' : origin === 'recorded' ? 'exact' : 'estimated',
+        is_aggregated: false,
+      },
+    })
+    const interval = (
+      start: string,
+      end: string,
+      phase: PhotoperiodTimelinePoint['phase']
+    ) => ({ start: time(start), end: time(end), phase })
+
+    it('uses a recorded predecessor in an old fixed range, not a retained future publication', () => {
+      const history = controlResponse([], {
+        range: {
+          start: new Date('2026-08-20T08:00:00.000Z'),
+          end: new Date('2026-08-20T11:00:00.000Z'),
+        },
+        photoperiod: [
+          point('2026-08-20T08:00:00.000Z', 'SUN'),
+          point('2026-08-20T09:30:00.000Z', 'MOON'),
+        ],
+      })
+      const projection = controlResponse([], {
+        range: {
+          start: new Date('2026-08-20T12:00:00.000Z'),
+          end: new Date('2026-08-20T13:00:00.000Z'),
+        },
+        photoperiod: [point('2026-08-20T12:00:00.000Z', 'SUN', 'projected')],
+      })
+
+      const output = alignSeries({
+        series: [],
+        controlHistory: history,
+        projectionHistory: projection,
+        photoperiod: history.photoperiod,
+        live: [],
+        range: fixedRange(
+          new Date('2026-08-20T09:00:00.000Z'),
+          new Date('2026-08-20T10:00:00.000Z')
+        ),
+        now: new Date('2026-08-20T12:00:00.000Z'),
+      })
+
+      expect(output.photoperiod).toEqual([
+        interval('2026-08-20T09:00:00.000Z', '2026-08-20T09:30:00.000Z', 'SUN'),
+        interval('2026-08-20T09:30:00.000Z', '2026-08-20T10:00:00.000Z', 'MOON'),
+      ])
+    })
+
+    it('preserves an explicit recorded UNKNOWN span between known phases', () => {
+      expect(
+        composePhotoperiod(
+          [
+            point('2026-08-20T08:00:00.000Z', 'SUN'),
+            point('2026-08-20T10:00:00.000Z', 'UNKNOWN'),
+            point('2026-08-20T11:00:00.000Z', 'MOON'),
+          ],
+          [],
+          time('2026-08-20T13:00:00.000Z'),
+          Number.POSITIVE_INFINITY,
+          Number.NEGATIVE_INFINITY,
+          time('2026-08-20T09:00:00.000Z'),
+          time('2026-08-20T12:00:00.000Z'),
+          time('2026-08-20T12:30:00.000Z')
+        )
+      ).toEqual([
+        interval('2026-08-20T09:00:00.000Z', '2026-08-20T10:00:00.000Z', 'SUN'),
+        interval('2026-08-20T10:00:00.000Z', '2026-08-20T11:00:00.000Z', 'UNKNOWN'),
+        interval('2026-08-20T11:00:00.000Z', '2026-08-20T12:00:00.000Z', 'MOON'),
+      ])
+    })
+
+    it('keeps a future-only publication inside its own window and leaves gaps UNKNOWN', () => {
+      expect(
+        composePhotoperiod(
+          [],
+          [
+            point('2026-08-20T12:15:00.000Z', 'SUN', 'projected'),
+            point('2026-08-20T12:45:00.000Z', 'MOON', 'projected'),
+          ],
+          Number.NEGATIVE_INFINITY,
+          time('2026-08-20T12:30:00.000Z'),
+          time('2026-08-20T13:30:00.000Z'),
+          time('2026-08-20T11:00:00.000Z'),
+          time('2026-08-20T14:00:00.000Z'),
+          time('2026-08-20T12:00:00.000Z')
+        )
+      ).toEqual([
+        interval('2026-08-20T11:00:00.000Z', '2026-08-20T12:45:00.000Z', 'UNKNOWN'),
+        interval('2026-08-20T12:45:00.000Z', '2026-08-20T13:30:00.000Z', 'MOON'),
+        interval('2026-08-20T13:30:00.000Z', '2026-08-20T14:00:00.000Z', 'UNKNOWN'),
+      ])
+    })
+
+    it('joins recorded history to projected phase at Now without changing absolute boundaries', () => {
+      expect(
+        composePhotoperiod(
+          [
+            point('2026-08-20T08:00:00.000Z', 'SUN'),
+            point('2026-08-20T11:30:00.000Z', 'MOON'),
+          ],
+          [
+            point('2026-08-20T11:45:00.000Z', 'SUN', 'projected'),
+            point('2026-08-20T12:45:00.000Z', 'MOON', 'projected'),
+          ],
+          time('2026-08-20T13:00:00.000Z'),
+          time('2026-08-20T11:45:00.000Z'),
+          time('2026-08-20T13:30:00.000Z'),
+          time('2026-08-20T09:00:00.000Z'),
+          time('2026-08-20T14:00:00.000Z'),
+          time('2026-08-20T12:00:00.000Z')
+        )
+      ).toEqual([
+        interval('2026-08-20T09:00:00.000Z', '2026-08-20T11:30:00.000Z', 'SUN'),
+        interval('2026-08-20T11:30:00.000Z', '2026-08-20T12:00:00.000Z', 'MOON'),
+        interval('2026-08-20T12:00:00.000Z', '2026-08-20T12:45:00.000Z', 'SUN'),
+        interval('2026-08-20T12:45:00.000Z', '2026-08-20T13:30:00.000Z', 'MOON'),
+        interval('2026-08-20T13:30:00.000Z', '2026-08-20T14:00:00.000Z', 'UNKNOWN'),
+      ])
+    })
+
+    it('coalesces adjacent same-phase intervals at the recorded/projected boundary', () => {
+      expect(
+        composePhotoperiod(
+          [point('2026-08-20T08:00:00.000Z', 'SUN')],
+          [point('2026-08-20T11:45:00.000Z', 'SUN', 'projected')],
+          time('2026-08-20T13:00:00.000Z'),
+          time('2026-08-20T11:45:00.000Z'),
+          time('2026-08-20T13:30:00.000Z'),
+          time('2026-08-20T09:00:00.000Z'),
+          time('2026-08-20T14:00:00.000Z'),
+          time('2026-08-20T12:00:00.000Z')
+        )
+      ).toEqual([
+        interval('2026-08-20T09:00:00.000Z', '2026-08-20T13:30:00.000Z', 'SUN'),
+        interval('2026-08-20T13:30:00.000Z', '2026-08-20T14:00:00.000Z', 'UNKNOWN'),
+      ])
+    })
+
+    it('does not let an expired projection fill a recorded UNKNOWN or past gap', () => {
+      expect(
+        composePhotoperiod(
+          [
+            point('2026-08-20T08:00:00.000Z', 'MOON'),
+            point('2026-08-20T10:30:00.000Z', 'UNKNOWN'),
+          ],
+          [point('2026-08-20T09:30:00.000Z', 'SUN', 'projected')],
+          time('2026-08-20T11:00:00.000Z'),
+          time('2026-08-20T08:30:00.000Z'),
+          time('2026-08-20T10:00:00.000Z'),
+          time('2026-08-20T09:00:00.000Z'),
+          time('2026-08-20T14:00:00.000Z'),
+          time('2026-08-20T12:00:00.000Z')
+        )
+      ).toEqual([
+        interval('2026-08-20T09:00:00.000Z', '2026-08-20T10:30:00.000Z', 'MOON'),
+        interval('2026-08-20T10:30:00.000Z', '2026-08-20T14:00:00.000Z', 'UNKNOWN'),
+      ])
+    })
+
+    it('does not emit a phase transition at the exclusive window end', () => {
+      expect(
+        composePhotoperiod(
+          [
+            point('2026-08-20T08:00:00.000Z', 'SUN'),
+            point('2026-08-20T10:00:00.000Z', 'MOON'),
+          ],
+          [],
+          time('2026-08-20T11:00:00.000Z'),
+          Number.POSITIVE_INFINITY,
+          Number.NEGATIVE_INFINITY,
+          time('2026-08-20T09:00:00.000Z'),
+          time('2026-08-20T10:00:00.000Z'),
+          time('2026-08-20T12:00:00.000Z')
+        )
+      ).toEqual([interval('2026-08-20T09:00:00.000Z', '2026-08-20T10:00:00.000Z', 'SUN')])
+    })
   })
 
 })

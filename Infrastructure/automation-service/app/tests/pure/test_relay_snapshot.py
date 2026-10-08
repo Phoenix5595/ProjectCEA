@@ -147,6 +147,7 @@ async def test_control_tick_samples_in_finally_for_a_noop_tick() -> None:
     control_engine.relay_board_state_manager = board_state
     control_engine.alarm_manager = None
     control_engine.device_command_service = None
+    control_engine.photoperiod_observation_sink = None
     control_engine._tick_effective_setpoints = {}
     control_engine._photoperiod_phases = {}
 
