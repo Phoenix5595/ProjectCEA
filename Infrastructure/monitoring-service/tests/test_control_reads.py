@@ -4,6 +4,7 @@ import json
 from datetime import UTC, datetime, timedelta
 from typing import final
 
+import asyncpg
 import pytest
 import httpx
 from fastapi.routing import APIRoute
@@ -12,6 +13,8 @@ from monitoring_service.control_models import (
     ControlHistoryRange,
     ControlHistoryEnvelope,
     ControlPublicationResponse,
+    CurrentPublicationResponse,
+    ProjectionPublicationResponse,
 )
 from monitoring_service.control_repository import (
     ControlHistoryRepository,
@@ -26,6 +29,7 @@ from monitoring_service.control_history_queries import (
     select_control_history_sources,
 )
 from monitoring_service.main import create_app
+from monitoring_service.sensor_models import MonitoringUnavailableError
 from shared.monitoring_contracts import (
     ConfigVersion,
     CurrentSeriesPoint,
@@ -123,7 +127,7 @@ def anyio_backend() -> str:
 
 @final
 class FakeDatabase:
-    """Routes the repository's three timeline queries to fixture rows."""
+    """Routes the repository's read-model queries to fixture rows."""
 
     def __init__(self) -> None:
         self.queries: list[str] = []
@@ -132,7 +136,35 @@ class FakeDatabase:
         self, query: str, *arguments: str | int | float | datetime
     ) -> list[dict[str, str | float | int | datetime | None]]:
         self.queries.append(query)
+        if "monitoring_photoperiod_coverage" in query:
+            return [
+                {
+                    "id": 7,
+                    "observed_at": NOW - timedelta(minutes=30),
+                    "location": "Veg Room",
+                    "cluster": "main",
+                    "state": "available",
+                    "reason": "initial",
+                    "runtime_snapshot_version": 2,
+                }
+            ]
+        if "monitoring_room_photoperiod" in query:
+            return [
+                {
+                    "id": 6,
+                    "observed_at": NOW - timedelta(minutes=30),
+                    "location": "Veg Room",
+                    "cluster": "main",
+                    "phase": "SUN",
+                    "mode_id": 3,
+                    "submode_id": None,
+                    "runtime_snapshot_version": 2,
+                    "source": "photoperiod_transition",
+                }
+            ]
         if "FROM effective_setpoints" in query:
+            if len(arguments) == 2:
+                return []
             return [
                 {
                     "timestamp": NOW - timedelta(seconds=5),
@@ -168,16 +200,6 @@ class FakeDatabase:
                     "control_reason_last": "schedule",
                     "pid_output_last": None,
                     "duty_cycle_percent_last": 40.0,
-                }
-            ]
-        if "monitoring_room_photoperiod" in query:
-            return [
-                {
-                    "observed_at": NOW - timedelta(minutes=30),
-                    "phase": "SUN",
-                    "mode_id": 3,
-                    "submode_id": None,
-                    "runtime_snapshot_version": 2,
                 }
             ]
         return []
@@ -340,19 +362,270 @@ async def test_history_canonicalizes_each_light_by_device_and_timestamp() -> Non
     assert len(response.lights[1].points) == 1
 
 
+@final
+class WindowedControlDatabase:
+    """Serves every control-history family strictly from its bound window."""
+
+    def __init__(
+        self,
+        *,
+        light_rows: list[dict[str, str | float | datetime | None]],
+        photoperiod_rows: list[dict[str, str | int | datetime | None]],
+        coverage_rows: list[dict[str, str | int | datetime | None]],
+    ) -> None:
+        self.light_rows = light_rows
+        self.photoperiod_rows = photoperiod_rows
+        self.coverage_rows = coverage_rows
+
+    async def fetch(
+        self, query: str, *arguments: str | int | float | datetime
+    ) -> list[dict[str, str | float | int | datetime | None]]:
+        if "monitoring_photoperiod_coverage" in query:
+            return self._bound(self.coverage_rows, arguments)
+        if "monitoring_room_photoperiod" in query:
+            return self._bound(self.photoperiod_rows, arguments)
+        if "effective_setpoints" in query:
+            if len(arguments) == 2:
+                _, predecessor_start = arguments
+                assert isinstance(predecessor_start, datetime)
+                return [
+                    row
+                    for row in self.light_rows
+                    if isinstance(row["timestamp"], datetime)
+                    and predecessor_start - timedelta(seconds=60)
+                    <= row["timestamp"]
+                    < predecessor_start
+                ]
+            _, start, end = arguments
+            return [
+                row
+                for row in self.light_rows
+                if isinstance(row["timestamp"], datetime)
+                and start <= row["timestamp"] < end
+                and row.get("device_name") is not None
+                and any(
+                    row.get(column) is not None
+                    for column in (
+                        "effective_light_intensity",
+                        "nominal_light_intensity",
+                        "ramp_progress_light",
+                    )
+                )
+            ]
+        return []
+
+    @staticmethod
+    def _bound(
+        rows: list[dict[str, str | int | datetime | None]],
+        arguments: tuple[str | int | float | datetime, ...],
+    ) -> list[dict[str, str | int | datetime | None]]:
+        _, start, end = arguments
+        carried = [row for row in rows if row["observed_at"] < start]
+        in_range = [row for row in rows if row["observed_at"] >= start]
+        half_open = [
+            row
+            for row in in_range
+            if isinstance(row["observed_at"], datetime) and row["observed_at"] < end
+        ]
+        return (carried[-1:] if carried else []) + half_open
+
+
+def _transition_fixture(
+    observed_at: datetime,
+    phase: str,
+    *,
+    id_: int = 4,
+    source: str = "photoperiod_transition",
+) -> dict[str, str | int | datetime | None]:
+    return {
+        "id": id_,
+        "observed_at": observed_at,
+        "location": "Veg Room",
+        "cluster": "main",
+        "phase": phase,
+        "mode_id": 3,
+        "submode_id": None,
+        "runtime_snapshot_version": 2,
+        "source": source,
+    }
+
+
+def _coverage_fixture(
+    observed_at: datetime,
+    state: str,
+    *,
+    id_: int = 9,
+) -> dict[str, str | int | datetime | None]:
+    return {
+        "id": id_,
+        "observed_at": observed_at,
+        "location": "Veg Room",
+        "cluster": "main",
+        "state": state,
+        "reason": "started",
+        "runtime_snapshot_version": 2,
+    }
+
+
 @pytest.mark.anyio
-async def test_history_queries_are_window_bounded_per_location() -> None:
-    # Given: a one-minute history window.
-    database = FakeDatabase()
+async def test_history_clamps_light_bounds_but_carries_photoperiod_in() -> None:
+    # Given: a pre-start per-device light row only inside the predecessor minute,
+    # plus a committed transition state predating the half-open window.
+    start = NOW - timedelta(minutes=5)
+    pre_light = _light_history_row(start - timedelta(seconds=10), "light_f_1", "day", 40.0)
+    in_light = _light_history_row(start + timedelta(minutes=1), "light_f_1", "day", 80.0)
+    database = WindowedControlDatabase(
+        light_rows=[pre_light, in_light],
+        photoperiod_rows=[
+            _transition_fixture(start - timedelta(seconds=30), "SUN")
+        ],
+        coverage_rows=[_coverage_fixture(start - timedelta(minutes=10), "available")],
+    )
     repository = ControlHistoryRepository(database)
-    history_range = ControlHistoryRange(start=NOW - timedelta(minutes=1), end=NOW)
 
-    # When: the repository reads the window.
-    await repository.read("Veg Room", history_range)
+    # When: history is read for the five-minute window.
+    response = await repository.read(
+        "Veg Room", ControlHistoryRange(start=start, end=start + timedelta(minutes=5))
+    )
 
-    # Then: every query binds location plus the exact half-open bounds.
-    for query in database.queries:
-        assert "$1" in query and "$2" in query and "$3" in query
+    # Then: the pre-start light sample never leaks into the light series while
+    # the committed phase carries in as the exact start anchor.
+    assert [series.name for series in response.lights] == ["light_f_1"]
+    lights = response.lights[0]
+    assert [(point.timestamp, point.value) for point in lights.points] == [
+        (start + timedelta(minutes=1), 80.0)
+    ]
+    assert response.photoperiod[0].phase == "SUN"
+    assert response.photoperiod[0].timestamp == start
+    assert response.photoperiod[0].provenance.origin == "recorded"
+    assert response.photoperiod[0].provenance.quality == "exact"
+
+
+@pytest.mark.anyio
+async def test_legacy_predecessor_beyond_sixty_seconds_cannot_carry_in() -> None:
+    # Given: the only predecessor is an old dedicated sample recorded 70 seconds
+    # before start.
+    # When: history is read for the window.
+    # Then: no expired sample ever supports the start anchor.
+    start = NOW - timedelta(minutes=5)
+    database = WindowedControlDatabase(
+        light_rows=[],
+        photoperiod_rows=[
+            _transition_fixture(
+                start - timedelta(seconds=70), "MOON", id_=12, source="photoperiod"
+            )
+        ],
+        coverage_rows=[],
+    )
+    repository = ControlHistoryRepository(database)
+
+    response = await repository.read(
+        "Veg Room", ControlHistoryRange(start=start, end=start + timedelta(minutes=5))
+    )
+
+    assert [(point.phase, point.timestamp) for point in response.photoperiod] == [
+        ("UNKNOWN", start)
+    ]
+
+
+@pytest.mark.anyio
+async def test_overlapping_history_windows_keep_absolute_transition_instants() -> None:
+    # Given: one committed MOON carry-in predecessor plus one in-range SUN
+    # transition read through two overlapping windows.
+    # When: each window is read through the same repository path.
+    # Then: both agree on the absolute transition instant without duplicates.
+    start = NOW - timedelta(minutes=5)
+    transition_at = start + timedelta(minutes=2)
+    database = WindowedControlDatabase(
+        light_rows=[],
+        photoperiod_rows=[
+            _transition_fixture(start - timedelta(seconds=30), "MOON", id_=11),
+            _transition_fixture(transition_at, "SUN", id_=12),
+        ],
+        coverage_rows=[_coverage_fixture(start - timedelta(minutes=10), "available")],
+    )
+    repository = ControlHistoryRepository(database)
+
+    first = await repository.read(
+        "Veg Room", ControlHistoryRange(start=start, end=start + timedelta(minutes=5))
+    )
+    second = await repository.read(
+        "Veg Room",
+        ControlHistoryRange(
+            start=start + timedelta(minutes=1), end=start + timedelta(minutes=6)
+        ),
+    )
+
+    assert [point.phase for point in first.photoperiod] == ["MOON", "SUN"]
+    assert [point.phase for point in second.photoperiod] == ["MOON", "SUN"]
+    first_instants = [point.timestamp for point in first.photoperiod]
+    second_instants = [point.timestamp for point in second.photoperiod]
+    assert first_instants == [start, transition_at]
+    assert second_instants == [start + timedelta(minutes=1), transition_at]
+
+
+@final
+class MissingCoverageTableDatabase:
+    """Raises the real missing-relation failure on every fetch attempt."""
+
+    async def fetch(
+        self, query: str, *arguments: str | int | float | datetime
+    ) -> list[dict[str, str | int | float | datetime | None]]:
+        if "monitoring_photoperiod_coverage" in query:
+            raise asyncpg.UndefinedTableError("monitoring_photoperiod_coverage missing")
+        raise asyncpg.PostgresError("unrelated failure")
+
+
+@final
+class RepositoryControlReads:
+    """Serves history only through the shared repository read path."""
+
+    def __init__(self, repository: ControlHistoryRepository) -> None:
+        self._repository = repository
+
+    async def history(
+        self, location: str, history_range: ControlHistoryRange, max_points: int | None = None
+    ) -> ControlHistoryEnvelope:
+        return await self._repository.read(location, history_range, max_points)
+
+    async def publications(self, location: str) -> ControlPublicationResponse:
+        del location
+        return ControlPublicationResponse(
+            current=CurrentPublicationResponse(quality=Quality.UNAVAILABLE, value=None),
+            projection=ProjectionPublicationResponse(quality=Quality.UNAVAILABLE),
+        )
+
+
+@pytest.mark.anyio
+async def test_missing_photoperiod_coverage_table_is_a_schema_prerequisite_failure() -> None:
+    # Given: a database whose photoperiod coverage relation does not exist yet.
+    # When: the repository reads the control history window.
+    # Then: an explicit unavailable error outranks any silent fallback.
+    repository = ControlHistoryRepository(MissingCoverageTableDatabase())
+
+    with pytest.raises(MonitoringUnavailableError):
+        await repository.read(
+            "Veg Room", ControlHistoryRange(start=NOW - timedelta(minutes=5), end=NOW)
+        )
+
+
+@pytest.mark.anyio
+async def test_history_route_serves_unavailable_when_coverage_table_is_missing() -> None:
+    # Given: the same missing-relation database behind the real history path.
+    repository = ControlHistoryRepository(MissingCoverageTableDatabase())
+    app = create_app(control_reads=RepositoryControlReads(repository))
+
+    # When: a client requests recorded history.
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        response = await client.get(
+            "/api/monitoring/control/Veg%20Room/history",
+            params={"start": "2026-08-20T11:55:00Z", "end": "2026-08-20T12:00:00Z"},
+        )
+
+    # Then: the read never falls back to current schedules.
+    assert response.status_code == 503
 
 
 def test_light_history_source_is_independent_of_range_selection() -> None:

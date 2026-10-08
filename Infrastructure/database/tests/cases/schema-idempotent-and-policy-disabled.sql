@@ -71,6 +71,16 @@ BEGIN
     IF EXISTS (SELECT 1 FROM monitoring_room_photoperiod) THEN
         RAISE EXCEPTION 'photoperiod history must start empty';
     END IF;
+    IF EXISTS (SELECT 1 FROM monitoring_photoperiod_coverage) THEN
+        RAISE EXCEPTION 'photoperiod coverage must start empty without backfill';
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_indexes
+        WHERE schemaname = 'public'
+          AND indexname = 'monitoring_photoperiod_coverage_room_time_idx'
+    ) THEN
+        RAISE EXCEPTION 'photoperiod coverage predecessor index is missing';
+    END IF;
 END
 $case$;
 

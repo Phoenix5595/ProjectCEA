@@ -122,6 +122,75 @@ async def test_control_tail_is_registered_and_reads_a_bounded_history_envelope()
     )
 
 
+@final
+class PhotoperiodTailDatabase:
+    """Serves the photoperiod families with one carry-in predecessor each."""
+
+    async def fetch(
+        self, query: str, *arguments: str | int | float | datetime
+    ) -> list[dict[str, str | int | float | datetime | None]]:
+        if "monitoring_photoperiod_coverage" in query:
+            return [
+                {
+                    "id": 3,
+                    "observed_at": datetime(2026, 8, 20, 10, tzinfo=UTC),
+                    "location": "Veg Room",
+                    "cluster": "main",
+                    "state": "available",
+                    "reason": "started",
+                    "runtime_snapshot_version": 2,
+                }
+            ]
+        if "monitoring_room_photoperiod" in query:
+            return [
+                {
+                    "id": 2,
+                    "observed_at": datetime(2026, 8, 20, 9, tzinfo=UTC),
+                    "location": "Veg Room",
+                    "cluster": "main",
+                    "phase": "MOON",
+                    "mode_id": 3,
+                    "submode_id": None,
+                    "runtime_snapshot_version": 2,
+                    "source": "photoperiod_transition",
+                }
+            ]
+        return []
+
+
+@pytest.mark.anyio
+async def test_control_tail_and_history_agree_on_photoperiod_carry_in() -> None:
+    # Given: one committed coverage/transition predecessor from before the window.
+    app = create_app(control_reads=FakeControlReads(PhotoperiodTailDatabase()))
+
+    # When: the shared history and tail read paths cover the same window.
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        history = await client.get(
+            "/api/monitoring/control/Veg%20Room/history",
+            params={"start": "2026-08-20T11:00:00Z", "end": "2026-08-20T12:00:00Z"},
+        )
+        tail = await client.get(
+            "/api/monitoring/control/Veg%20Room/tail",
+            params={"start": "2026-08-20T11:00:00Z", "end": "2026-08-20T12:00:00Z"},
+        )
+
+    # Then: both responses carry the identical held phase anchor at start.
+    assert history.status_code == tail.status_code == 200
+    assert tail.json()["photoperiod"] == [
+        {
+            "timestamp": "2026-08-20T11:00:00Z",
+            "phase": "MOON",
+            "provenance": {"origin": "recorded", "quality": "exact", "is_aggregated": False},
+            "mode_id": 3,
+            "submode_id": None,
+            "runtime_snapshot_version": 2,
+        }
+    ]
+    assert history.json()["photoperiod"] == tail.json()["photoperiod"]
+
+
 @pytest.mark.anyio
 async def test_control_tail_thins_series_when_max_points_is_supplied() -> None:
     # Given: a tail source with more raw setpoint observations than the requested budget.

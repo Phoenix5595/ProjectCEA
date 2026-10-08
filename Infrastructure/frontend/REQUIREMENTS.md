@@ -75,6 +75,11 @@ Climate periods are keyed by `(location, cluster, mode_id, submode_id)`. Fetch t
 
 Native monitoring pages at `/flower/monitoring` and `/vegetation/monitoring` replace Grafana iframes. Visual and accessibility contracts live in `DESIGN.md`. Browser tests must not contact production endpoints; fixture origin and route guard assertions enforce this.
 
+- Historical photoperiod points remain separate from `projectionHistory`. Forecast refreshes cannot recolor the past; tail history replaces only its own half-open overlap and preserves phase/provenance/metadata boundaries.
+- Historical background coverage ends at the earlier of Now and the history response end. Forecast bands apply only inside their publication window at or after Now. Missing evidence, recording gaps, and expired publications remain UNKNOWN and unpainted.
+- SUN bands use fixed `rgba(251, 191, 36, 0.12)` and MOON bands fixed `rgba(129, 140, 248, 0.12)` under the series, independent of theme. Their exact-time rectangles are clipped to the plot bbox; chart and panel geometry is unchanged.
+- `tests/monitoring/photoperiod.spec.ts` exercises absolute historical fixtures, toolbar-applied ranges, zoom, the Now seam, and actual canvases under all six themes at 1920x1080 and 1280x1440 on the guarded loopback preview.
+
 ## Validation
 
 Local verification gates are:

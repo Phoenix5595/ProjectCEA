@@ -184,6 +184,20 @@ export function alignPhotoperiod(
   start: number,
   end: number
 ): PhotoperiodInterval[] {
+  return alignPhotoperiodWithPredecessorFloor(
+    photoperiod,
+    start,
+    end,
+    Number.NEGATIVE_INFINITY
+  )
+}
+
+function alignPhotoperiodWithPredecessorFloor(
+  photoperiod: PhotoperiodTimelinePoint[],
+  start: number,
+  end: number,
+  predecessorFloor: number
+): PhotoperiodInterval[] {
   const sorted = [...photoperiod].sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime())
   const intervals: PhotoperiodInterval[] = []
   let curPhase: 'SUN' | 'MOON' | 'UNKNOWN' | null = null
@@ -197,10 +211,11 @@ export function alignPhotoperiod(
   for (const p of sorted) {
     const t = p.timestamp.getTime()
     if (t < start) {
-      curPhase = p.phase
+      if (t >= predecessorFloor) curPhase = p.phase
       continue
     }
-    if (t > end) break
+    // A point at `end` belongs to the next half-open window, not this one.
+    if (t >= end) break
     if (curPhase === null) {
       if (t > start) {
         pushInterval('UNKNOWN', start, t)
@@ -220,6 +235,74 @@ export function alignPhotoperiod(
     pushInterval(curPhase, curStart, end)
   }
   return intervals
+}
+
+/**
+ * Compose historical phase evidence and the independent future publication
+ * over the visible half-open window. Historical evidence stops at Now and its
+ * response end; projected evidence starts no earlier than Now and is confined
+ * to its publication window. Unsupported spans remain explicitly UNKNOWN.
+ */
+export function composePhotoperiod(
+  recorded: PhotoperiodTimelinePoint[],
+  projected: PhotoperiodTimelinePoint[],
+  recordedEnd: number,
+  projectedStart: number,
+  projectedEnd: number,
+  start: number,
+  end: number,
+  now: number
+): PhotoperiodInterval[] {
+  if (end <= start) return []
+
+  const output: PhotoperiodInterval[] = []
+  let cursor = start
+  const appendOutput = (interval: PhotoperiodInterval): void => {
+    const previous = output[output.length - 1]
+    if (
+      previous !== undefined &&
+      previous.end === interval.start &&
+      previous.phase === interval.phase
+    ) {
+      previous.end = interval.end
+    } else {
+      output.push(interval)
+    }
+  }
+  const appendSource = (source: PhotoperiodInterval[]): void => {
+    for (const interval of source) {
+      if (interval.end <= cursor || interval.start >= end) continue
+      const intervalStart = Math.max(cursor, interval.start)
+      const intervalEnd = Math.min(end, interval.end)
+      if (intervalStart > cursor) {
+        appendOutput({ start: cursor, end: intervalStart, phase: 'UNKNOWN' })
+      }
+      if (intervalEnd <= intervalStart) continue
+      appendOutput({ start: intervalStart, end: intervalEnd, phase: interval.phase })
+      cursor = intervalEnd
+    }
+  }
+
+  const historyEnd = Math.min(end, now, recordedEnd)
+  if (start < historyEnd) appendSource(alignPhotoperiod(recorded, start, historyEnd))
+
+  const projectionFrom = Math.max(start, now, projectedStart)
+  const projectionTo = Math.min(end, projectedEnd)
+  if (projectionFrom < projectionTo) {
+    // A predecessor may seed the projected span only if it is within this
+    // publication's own half-open window.
+    appendSource(
+      alignPhotoperiodWithPredecessorFloor(
+        projected,
+        projectionFrom,
+        projectionTo,
+        projectedStart
+      )
+    )
+  }
+
+  if (cursor < end) appendOutput({ start: cursor, end, phase: 'UNKNOWN' })
+  return output
 }
 
 /** Largest index whose x value is <= `t` (bucket containing `t`). */

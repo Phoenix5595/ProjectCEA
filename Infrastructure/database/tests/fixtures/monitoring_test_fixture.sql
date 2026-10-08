@@ -69,6 +69,18 @@ CREATE TABLE effective_setpoints (
     effective_humidity_setpoint DOUBLE PRECISION,
     effective_co2_setpoint DOUBLE PRECISION,
     effective_vpd_setpoint DOUBLE PRECISION,
+    nominal_heating_setpoint DOUBLE PRECISION,
+    ramp_progress_heating DOUBLE PRECISION,
+    nominal_cooling_setpoint DOUBLE PRECISION,
+    ramp_progress_cooling DOUBLE PRECISION,
+    nominal_humidity_setpoint DOUBLE PRECISION,
+    ramp_progress_humidity DOUBLE PRECISION,
+    nominal_co2_setpoint DOUBLE PRECISION,
+    ramp_progress_co2 DOUBLE PRECISION,
+    nominal_vpd_setpoint DOUBLE PRECISION,
+    ramp_progress_vpd DOUBLE PRECISION,
+    nominal_light_intensity DOUBLE PRECISION,
+    ramp_progress_light DOUBLE PRECISION,
     effective_light_intensity DOUBLE PRECISION
 );
 

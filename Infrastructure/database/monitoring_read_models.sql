@@ -329,6 +329,24 @@ CREATE INDEX IF NOT EXISTS monitoring_room_photoperiod_room_time_idx
 CREATE INDEX IF NOT EXISTS monitoring_room_photoperiod_snapshot_idx
     ON monitoring_room_photoperiod (runtime_snapshot_version);
 
+-- Sparse recorder availability is independent of phase transitions. Existing
+-- source='photoperiod' rows remain bounded legacy observations, not transitions.
+CREATE TABLE IF NOT EXISTS monitoring_photoperiod_coverage (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    observed_at TIMESTAMPTZ NOT NULL,
+    location TEXT NOT NULL,
+    cluster TEXT NOT NULL,
+    state TEXT NOT NULL CHECK (state IN ('available', 'unavailable')),
+    reason TEXT NOT NULL CHECK (reason IN (
+        'initial', 'started', 'stopped', 'control_failure',
+        'recording_gap', 'recovered', 'unclean_restart'
+    )),
+    runtime_snapshot_version BIGINT NOT NULL CHECK (runtime_snapshot_version >= 0),
+    UNIQUE (location, cluster, observed_at, state)
+);
+CREATE INDEX IF NOT EXISTS monitoring_photoperiod_coverage_room_time_idx
+    ON monitoring_photoperiod_coverage (location, cluster, observed_at DESC, id DESC);
+
 CREATE TABLE IF NOT EXISTS monitoring_cagg_backfill_marker (
     cagg_name TEXT PRIMARY KEY,
     covered_through TIMESTAMPTZ NOT NULL,
@@ -504,6 +522,17 @@ BEGIN
         ARRAY[
             'bigint', 'timestamp with time zone', 'text', 'text', 'text',
             'integer', 'integer', 'bigint', 'text'
+        ]
+    );
+    PERFORM monitoring_assert_relation_columns(
+        'monitoring_photoperiod_coverage',
+        ARRAY[
+            'id', 'observed_at', 'location', 'cluster', 'state', 'reason',
+            'runtime_snapshot_version'
+        ],
+        ARRAY[
+            'bigint', 'timestamp with time zone', 'text', 'text', 'text', 'text',
+            'bigint'
         ]
     );
     PERFORM monitoring_assert_relation_columns(

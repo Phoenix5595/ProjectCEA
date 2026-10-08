@@ -23,21 +23,24 @@ ORDER BY timestamp
 # read models keep only the last light sample per bucket and null the ramp
 # progress, so selecting lights through them erases ramp semantics whenever the
 # selected range changes; the light-only filter keeps the read bounded without
-# touching the climate and automation-state aggregate ladders.
+# touching the climate and automation-state aggregate ladders. Photoperiod
+# history reads the canonical main cluster only.
 _LIGHT_SETPOINTS_SQL = """
-SELECT samples.timestamp, samples.mode, samples.device_name,
+SELECT samples.timestamp, samples.cluster, samples.mode, samples.device_name,
        samples.effective_light_intensity, samples.nominal_light_intensity,
        samples.ramp_progress_light
 FROM effective_setpoints AS samples
 JOIN (
     SELECT DISTINCT device_name
     FROM effective_setpoints
-    WHERE location = $1 AND timestamp >= $2 AND timestamp < $3
+    WHERE location = $1 AND cluster = 'main'
+      AND timestamp >= $2 AND timestamp < $3
       AND device_name IS NOT NULL
       AND (effective_light_intensity IS NOT NULL OR nominal_light_intensity IS NOT NULL
            OR ramp_progress_light IS NOT NULL)
 ) AS recorded_lights USING (device_name)
-WHERE samples.location = $1 AND samples.timestamp >= $2 AND samples.timestamp < $3
+WHERE samples.location = $1 AND samples.cluster = 'main'
+  AND samples.timestamp >= $2 AND samples.timestamp < $3
 ORDER BY timestamp
 """
 
@@ -89,10 +92,73 @@ ORDER BY device_name, bucket
 """
 
 PHOTOPERIOD_SQL = """
-SELECT observed_at, phase, mode_id, submode_id, runtime_snapshot_version
-FROM monitoring_room_photoperiod
-WHERE location = $1 AND observed_at >= $2 AND observed_at < $3
-ORDER BY observed_at
+WITH scoped AS (
+    SELECT id, observed_at, phase, mode_id, submode_id, runtime_snapshot_version, source
+    FROM monitoring_room_photoperiod
+    WHERE location = $1 AND cluster = 'main'
+), in_range AS (
+    SELECT id, observed_at, phase, mode_id, submode_id, runtime_snapshot_version, source
+    FROM scoped
+    WHERE observed_at >= $2 AND observed_at < $3
+), predecessor AS (
+    SELECT DISTINCT ON (source)
+           id, observed_at, phase, mode_id, submode_id, runtime_snapshot_version, source
+    FROM scoped
+    WHERE observed_at < $2
+      AND source IN ('photoperiod_transition', 'photoperiod')
+      AND (
+          source = 'photoperiod_transition'
+          OR observed_at >= $2::timestamptz - interval '60 seconds'
+      )
+    ORDER BY source, observed_at DESC, id DESC
+)
+SELECT id, observed_at, phase, mode_id, submode_id, runtime_snapshot_version, source
+FROM in_range
+UNION ALL
+SELECT id, observed_at, phase, mode_id, submode_id, runtime_snapshot_version, source
+FROM predecessor
+ORDER BY observed_at, id
+"""
+
+# Sparse recorder availability bounds how long a committed transition may hold.
+PHOTOPERIOD_COVERAGE_SQL = """
+WITH in_range AS (
+    SELECT id, observed_at, location, cluster, state, reason, runtime_snapshot_version
+    FROM monitoring_photoperiod_coverage
+    WHERE location = $1 AND cluster = 'main'
+      AND observed_at >= $2 AND observed_at < $3
+), predecessor AS (
+    SELECT id, observed_at, location, cluster, state, reason, runtime_snapshot_version
+    FROM monitoring_photoperiod_coverage
+    WHERE location = $1 AND cluster = 'main'
+      AND observed_at < $2
+    ORDER BY observed_at DESC, id DESC
+    LIMIT 1
+)
+SELECT id, observed_at, location, cluster, state, reason, runtime_snapshot_version
+FROM in_range
+UNION ALL
+SELECT id, observed_at, location, cluster, state, reason, runtime_snapshot_version
+FROM predecessor
+ORDER BY observed_at, id
+"""
+
+# Retained per-device light fact minutes remain the only bounded predecessor
+# evidence for spans predating the transition stream. The complete bounded
+# minute is read so tied duplicate or conflicting rows cannot hide behind a
+# single-row limit.
+PHOTOPERIOD_LIGHT_PREDECESSORS_SQL = """
+SELECT timestamp, cluster, device_name, mode,
+       effective_light_intensity, nominal_light_intensity, ramp_progress_light
+FROM effective_setpoints
+WHERE location = $1
+  AND cluster = 'main'
+  AND timestamp >= $2::timestamptz - interval '60 seconds'
+  AND timestamp < $2::timestamptz
+  AND device_name IS NOT NULL
+  AND (effective_light_intensity IS NOT NULL OR nominal_light_intensity IS NOT NULL
+       OR ramp_progress_light IS NOT NULL)
+ORDER BY timestamp
 """
 
 
