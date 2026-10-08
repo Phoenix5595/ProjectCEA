@@ -50,6 +50,9 @@ export interface StoreData {
   live: LiveSensorValue[]
   controlHistory: ControlMonitoringResponse | null
   projectionHistory: ControlMonitoringResponse | null
+  /** Recorded historical room-photoperiod points only; the projection
+   * publication's own phase list stays in `projectionHistory` and is composed
+   * at alignment time, so a projection refresh never recolors the past. */
   photoperiod: PhotoperiodTimelinePoint[]
   cursors: SourceCursor[]
   projectionRevision: string | null

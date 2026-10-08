@@ -18,6 +18,33 @@ and Redis; `automation-service` remains the sole control and hardware authority.
   `MINIMUM_RANGE`). These are separate validators serving different purposes;
   neither is being changed by the plan.
 
+### Historical photoperiod evidence
+
+Room photoperiod reads use the canonical device cluster `main`. New
+`photoperiod_transition` rows carry phase indefinitely only inside explicit
+`monitoring_photoperiod_coverage` availability. Startup does not claim coverage
+before its first observation; unclosed restarts conservatively invalidate the
+interval from the last confirmed phase/availability boundary.
+
+Legacy `source='photoperiod'` room observations and raw per-light SUN/MOON
+setpoints support only their next 60 seconds, truncated by newer observations.
+Agreeing latest historical devices can recover phase as `derived/estimated`;
+conflicts, invalid light facts, expiry, and unsupported spans remain
+`UNKNOWN/unavailable`. SUN at zero intensity remains SUN. Historical identity
+comes from retained facts, not today's device registry or timing configuration.
+
+History and tail share the same half-open read path, including predecessor
+evidence and an explicit state anchor at the requested start. Point budgets
+never remove phase, provenance, or UNKNOWN boundaries. Monitoring performs no
+backfill or writes, and missing required coverage schema is an unavailable read,
+not permission to extrapolate today's schedule.
+
+The coverage schema is defined by `../database/monitoring_read_models.sql`.
+Applying it to production requires separate owner authorization before rollout;
+the implementation's schema and writer/HTTP smoke run only in the guarded
+`monitoring_test_*` harness.
+
+
 ## Configuration
 
 | Variable | Purpose |

@@ -96,14 +96,30 @@ class DenseControlDatabase:
                 }
                 for index in range(12)
             ]
+        if "monitoring_photoperiod_coverage" in query:
+            return [
+                {
+                    "id": 50,
+                    "observed_at": NOW,
+                    "location": "Veg Room",
+                    "cluster": "main",
+                    "state": "available",
+                    "reason": "initial",
+                    "runtime_snapshot_version": 2,
+                }
+            ]
         if "monitoring_room_photoperiod" in query:
             return [
                 {
+                    "id": 40 + index,
                     "observed_at": NOW + timedelta(minutes=index),
+                    "location": "Veg Room",
+                    "cluster": "main",
                     "phase": "SUN" if index < 2 else "MOON",
                     "mode_id": 3,
                     "submode_id": None,
                     "runtime_snapshot_version": 2,
+                    "source": "photoperiod_transition",
                 }
                 for index in range(4)
             ]

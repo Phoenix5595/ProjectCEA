@@ -38,12 +38,10 @@ Required tokens are listed in `src/features/monitoring/designTokens.ts` (`REQUIR
 | `--mon-target-projected-opacity` | Opacity for projected segments              |
 | `--mon-target-dash`              | Dash pattern for recorded/projected targets |
 
-### Sun/moon and interaction
+### Interaction
 
 | Token                                                              | Meaning                        |
 | ------------------------------------------------------------------ | ------------------------------ |
-| `--mon-sun-bg`                                                     | DAY background interval fill   |
-| `--mon-moon-bg`                                                    | NIGHT background interval fill |
 | `--mon-focus-ring`                                                 | Keyboard focus ring color      |
 | `--mon-tooltip-bg` / `--mon-tooltip-border` / `--mon-tooltip-text` | Tooltip colors                 |
 | `--mon-stale` / `--mon-error`                                      | Provenance and error colors    |
@@ -63,7 +61,7 @@ Required tokens are listed in `src/features/monitoring/designTokens.ts` (`REQUIR
 
 ## Overlays
 
-- Sun/moon are plot-wide background intervals, not y-series or legend items.
+- Sun/moon are plot-wide background intervals with fixed semantic fills that never follow the active theme; they are not y-series or legend items.
 - Recorded and projected effective targets are dotted lines. Projected segments use lower opacity and a "Projected" legend suffix.
 - A visible "now" divider separates recorded history from projection.
 

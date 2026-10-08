@@ -87,8 +87,6 @@
   --mon-target-projected: #fbbf24;
   --mon-target-projected-opacity: 0.5;
   --mon-target-dash: 4 4;
-  --mon-sun-bg: rgba(251, 191, 36, 0.08);
-  --mon-moon-bg: rgba(59, 130, 246, 0.08);
   --mon-focus-ring: #60a5fa;
   --mon-tooltip-bg: #1a1a1a;
   --mon-tooltip-border: #404040;
@@ -228,8 +226,6 @@
   --mon-target-projected: #fbbf24;
   --mon-target-projected-opacity: 0.5;
   --mon-target-dash: 4 4;
-  --mon-sun-bg: rgba(251, 191, 36, 0.08);
-  --mon-moon-bg: rgba(59, 130, 246, 0.08);
   --mon-focus-ring: #67e8f9;
   --mon-tooltip-bg: #363a44;
   --mon-tooltip-border: #6b7280;
@@ -368,8 +364,6 @@
   --mon-target-projected: #d4a574;
   --mon-target-projected-opacity: 0.5;
   --mon-target-dash: 4 4;
-  --mon-sun-bg: rgba(212, 165, 116, 0.08);
-  --mon-moon-bg: rgba(66, 153, 225, 0.08);
   --mon-focus-ring: #67e8f9;
   --mon-tooltip-bg: #242826;
   --mon-tooltip-border: #4d5c46;
@@ -508,8 +502,6 @@
   --mon-target-projected: #fbbf24;
   --mon-target-projected-opacity: 0.5;
   --mon-target-dash: 4 4;
-  --mon-sun-bg: rgba(251, 191, 36, 0.08);
-  --mon-moon-bg: rgba(99, 102, 241, 0.08);
   --mon-focus-ring: #67e8f9;
   --mon-tooltip-bg: #1a1a3e;
   --mon-tooltip-border: #475569;
@@ -648,8 +640,6 @@
   --mon-target-projected: #fbbf24;
   --mon-target-projected-opacity: 0.5;
   --mon-target-dash: 4 4;
-  --mon-sun-bg: rgba(251, 191, 36, 0.08);
-  --mon-moon-bg: rgba(96, 165, 250, 0.08);
   --mon-focus-ring: #60a5fa;
   --mon-tooltip-bg: #141419;
   --mon-tooltip-border: #3a3a4f;
@@ -841,8 +831,6 @@
   --mon-target-projected: #c0dd55;
   --mon-target-projected-opacity: 0.5;
   --mon-target-dash: 4 4;
-  --mon-sun-bg: rgba(192, 221, 85, 0.08);
-  --mon-moon-bg: rgba(0, 153, 145, 0.08);
   --mon-focus-ring: #00fff2;
   --mon-tooltip-bg: #181e15;
   --mon-tooltip-border: #5e7953;

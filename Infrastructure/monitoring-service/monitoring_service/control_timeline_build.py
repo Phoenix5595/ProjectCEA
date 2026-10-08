@@ -1,34 +1,29 @@
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
-from datetime import datetime, timedelta
+from collections.abc import Sequence
+from datetime import datetime
+from itertools import chain
 from math import isfinite
-
-import asyncpg
 
 from monitoring_service.control_models import (
     ClimateTimelinePointOut,
     ClimateTimelineSeriesOut,
     ControlHistoryEnvelope,
     ControlHistoryRange,
+    ControlRecord,
+    ControlRecordValue,
     DeviceTimelinePointOut,
     DeviceTimelineSeriesOut,
     LightTimelinePointOut,
     LightTimelineSeriesOut,
-    PhotoperiodTimelinePointOut,
     PidTimelinePointOut,
     PidTimelineSeriesOut,
+    SAMPLE_SUPPORTED_SPAN,
     TimelineProvenanceModel,
 )
 from monitoring_service.control_timeline_budget import budget_control_history
+from monitoring_service.photoperiod_history import build_photoperiod_history
 from shared.monitoring_contracts import Quality
-
-ControlRecordValue = str | float | int | datetime | None
-ControlRecord = Mapping[str, ControlRecordValue] | asyncpg.Record
-
-# Current light logging is nominally 10s. Allow six intervals for scheduling
-# and flush jitter, then stop claiming recorded coverage across a silent outage.
-_LIGHT_COVERAGE_MAX_AGE = timedelta(seconds=60)
 
 
 _CLIMATE_FIELDS: tuple[tuple[str, str, str, str], ...] = (
@@ -64,6 +59,9 @@ def build_control_history_envelope(
     setpoints_are_aggregated: bool,
     max_points: int | None,
     interval_seconds: int | None,
+    *,
+    photoperiod_coverage_rows: Sequence[ControlRecord],
+    photoperiod_light_predecessors: Sequence[ControlRecord],
 ) -> ControlHistoryEnvelope:
     provenance = TimelineProvenanceModel(
         origin="recorded", quality=Quality.EXACT, is_aggregated=setpoints_are_aggregated
@@ -94,7 +92,12 @@ def build_control_history_envelope(
         history_range.end,
     )
     devices, pid = _build_device_timelines(state_rows, aggregate_provenance)
-    photoperiod, snapshot_versions = _build_photoperiod(photoperiod_rows, aggregate_provenance)
+    photoperiod, snapshot_versions = build_photoperiod_history(
+        history_range,
+        photoperiod_rows,
+        photoperiod_coverage_rows,
+        chain(photoperiod_light_predecessors, light_rows),
+    )
     envelope = ControlHistoryEnvelope(
         range=history_range,
         runtime_snapshot_version=max(snapshot_versions, default=0),
@@ -190,7 +193,7 @@ def _build_light_timelines(
         for timestamp, siblings in sorted(timestamps.items()):
             points = lights.get(device)
             if preserve_gaps and points and points[-1].value is not None:
-                expires_at = points[-1].timestamp + _LIGHT_COVERAGE_MAX_AGE
+                expires_at = points[-1].timestamp + SAMPLE_SUPPORTED_SPAN
                 if timestamp > expires_at:
                     points.append(
                         LightTimelinePointOut(
@@ -232,7 +235,7 @@ def _build_light_timelines(
                 )
         points = lights.get(device)
         if preserve_gaps and points and points[-1].value is not None:
-            expires_at = points[-1].timestamp + _LIGHT_COVERAGE_MAX_AGE
+            expires_at = points[-1].timestamp + SAMPLE_SUPPORTED_SPAN
             if coverage_end > expires_at:
                 points.append(
                     LightTimelinePointOut(
@@ -281,29 +284,6 @@ def _build_device_timelines(
             for name, points in sorted(pid.items())
         ),
     )
-
-
-def _build_photoperiod(
-    rows: Sequence[ControlRecord], provenance: TimelineProvenanceModel
-) -> tuple[tuple[PhotoperiodTimelinePointOut, ...], list[int]]:
-    points: list[PhotoperiodTimelinePointOut] = []
-    versions: list[int] = []
-    for row in rows:
-        version = _optional_int(row["runtime_snapshot_version"])
-        if version is not None:
-            versions.append(version)
-        phase = str(row["phase"])
-        points.append(
-            PhotoperiodTimelinePointOut(
-                timestamp=_timestamp(row, "observed_at"),
-                provenance=provenance,
-                phase=phase if phase in ("SUN", "MOON", "UNKNOWN") else "UNKNOWN",
-                mode_id=_optional_int(row["mode_id"]),
-                submode_id=_optional_int(row["submode_id"]),
-                runtime_snapshot_version=version,
-            )
-        )
-    return tuple(points), versions
 
 
 def _timestamp(row: ControlRecord, key: str) -> datetime:

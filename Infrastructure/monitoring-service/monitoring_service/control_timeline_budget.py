@@ -263,11 +263,20 @@ def _limit_transitions(
 def _collapse_photoperiod(
     points: tuple[PhotoperiodTimelinePointOut, ...],
 ) -> tuple[PhotoperiodTimelinePointOut, ...]:
+    """Collapse adjacent identical spans without losing provenance shifts.
+
+    Phase and unknown boundaries are all mandatory: the collapse only merges
+    neighbours whose phase, provenance, and profile metadata agree, so an
+    adjacent SUN derived span never merges into a SUN recorded span.
+    """
     return _limit_transitions(
         points,
         len(points),
         lambda point: (
             point.phase,
+            point.provenance.origin,
+            point.provenance.quality,
+            point.provenance.is_aggregated,
             point.mode_id,
             point.submode_id,
             point.runtime_snapshot_version,
