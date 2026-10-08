@@ -46,10 +46,7 @@ export function buildOptions(
     data.nowIndex >= 0 && data.nowIndex < data.x.length ? data.x[data.nowIndex] : null
 
   const plugins: uPlot.Plugin[] = [
-    photoperiodPlugin(getPhotoperiod ?? (() => data.photoperiod), {
-      sunBg: readToken('sunBg'),
-      moonBg: readToken('moonBg'),
-    }),
+    photoperiodPlugin(getPhotoperiod ?? (() => data.photoperiod)),
     tooltipPlugin(
       data.series,
       {

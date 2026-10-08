@@ -55,8 +55,15 @@ class FrozenMonitoringModel(BaseModel):
 class PhotoperiodObservationSink(Protocol):
     """Non-blocking append capability for exact room photoperiod observations."""
 
-    def enqueue_final_phase(
-        self, observation: PhotoperiodObservation, *, force: bool = False
+    def enqueue_final_phase(self, observation: PhotoperiodObservation) -> None: ...
+
+    def mark_unavailable(
+        self,
+        *,
+        location: str,
+        cluster: str,
+        observed_at: datetime,
+        runtime_snapshot_version: RuntimeSnapshotVersion,
     ) -> None: ...
 
 

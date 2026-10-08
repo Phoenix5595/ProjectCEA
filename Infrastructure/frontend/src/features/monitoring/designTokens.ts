@@ -28,7 +28,6 @@ export const MONITORING_THEMES = [
  * style the min/max band around the sensor mean. Recorded/projected tokens
  * distinguish historical effective targets from simulated future ones
  * (projected uses the same family color at lower opacity with a dash).
- * Sun/moon tokens paint the plot-wide photoperiod background intervals.
  * Focus/tooltip/stale/error tokens cover interaction and provenance states.
  */
 export const REQUIRED_MONITORING_TOKENS = [
@@ -51,9 +50,6 @@ export const REQUIRED_MONITORING_TOKENS = [
   '--mon-target-projected',
   '--mon-target-projected-opacity',
   '--mon-target-dash',
-  // Sun/moon overlays
-  '--mon-sun-bg',
-  '--mon-moon-bg',
   // Focus / tooltip / stale / error states
   '--mon-focus-ring',
   '--mon-tooltip-bg',

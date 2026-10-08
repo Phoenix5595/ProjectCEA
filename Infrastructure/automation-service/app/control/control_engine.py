@@ -106,6 +106,8 @@ class ControlEngine:
         self.control_tick_observer = control_tick_observer
         self.decision_event_policy = event_policy
         self._current_observer_failures = 0
+        # Successful-tick room keys for comparing snapshot spills between attempts.
+        self._last_tick_rooms: set[tuple[str, str]] | None = None
 
         # Initialize extracted components
         self.pid_controller_manager = PIDControllerManager(database, event_policy=event_policy)
@@ -237,7 +239,6 @@ class ControlEngine:
         phase: Phase,
         snapshot: RuntimeDeviceSnapshot,
         observed_at: datetime,
-        force: bool,
     ) -> None:
         """Offer an exact phase to history without delaying the control decision."""
         sink = self.photoperiod_observation_sink
@@ -252,9 +253,62 @@ class ControlEngine:
                 mode_id=(active_mode or {}).get("mode_id"),
                 submode_id=(active_mode or {}).get("submode_id"),
                 runtime_snapshot_version=RuntimeSnapshotVersion(snapshot.version),
-            ),
-            force=force,
+            )
         )
+
+    def _mark_snapshot_rooms_unavailable(self, snapshot: RuntimeDeviceSnapshot) -> None:
+        """Mark every room of the failed tick's snapshot unavailable for recording."""
+        sink = self.photoperiod_observation_sink
+        if sink is None:
+            return
+        for room_key in self._snapshot_room_keys(snapshot):
+            self._safe_mark_unavailable(sink, room_key, snapshot.version)
+
+    def _mark_removed_rooms_unavailable(self, snapshot: RuntimeDeviceSnapshot) -> None:
+        """Mark rooms absent from this successful tick compared with the prior one."""
+        sink = self.photoperiod_observation_sink
+        if sink is None:
+            return
+        current = set(self._snapshot_room_keys(snapshot))
+        previous = self._last_tick_rooms
+        self._last_tick_rooms = current
+        if previous is None:
+            return
+        for room_key in sorted(previous - current):
+            self._safe_mark_unavailable(sink, room_key, snapshot.version)
+
+    @staticmethod
+    def _snapshot_room_keys(
+        snapshot: RuntimeDeviceSnapshot,
+    ) -> list[tuple[str, str]]:
+        """List the location/cluster pairs the snapshot resolves."""
+        return [
+            (location, cluster)
+            for location, clusters in snapshot.hierarchy.items()
+            for cluster in clusters
+        ]
+
+    def _safe_mark_unavailable(
+        self,
+        sink: PhotoperiodObservationSink,
+        room_key: tuple[str, str],
+        version: int,
+    ) -> None:
+        """Keep history-marking faults outside the control tick's success domain."""
+        try:
+            sink.mark_unavailable(
+                location=room_key[0],
+                cluster=room_key[1],
+                observed_at=datetime.now(UTC),
+                runtime_snapshot_version=RuntimeSnapshotVersion(version),
+            )
+        except Exception as error:
+            logger.warning(
+                "Photoperiod coverage could not be marked unavailable for %s/%s: %s",
+                room_key[0],
+                room_key[1],
+                error,
+            )
 
     def _ramp_remaining_seconds_at(
         self, observed_at: datetime
@@ -392,6 +446,12 @@ class ControlEngine:
         try:
             await self.relay_manager.retry_unresolved()
             await self._run_control_loop_with_snapshot(snapshot)
+            self._mark_removed_rooms_unavailable(snapshot)
+        except Exception:
+            # Before the existing failure handling, every snapshot room loses its
+            # resolved-phase offer, so history records the outage explicitly.
+            self._mark_snapshot_rooms_unavailable(snapshot)
+            raise
         finally:
             self._tick_effective_setpoints.clear()
             self._photoperiod_phases.clear()
@@ -539,17 +599,17 @@ class ControlEngine:
                     PhotoperiodPhase.SUN if is_sun else PhotoperiodPhase.MOON
                 )
 
-                if moon_authority_active or was_moon_authority_active:
-                    phase = Phase.MOON if not is_sun else Phase.SUN
-                    self._enqueue_final_photoperiod_phase(
-                        location=location,
-                        cluster=cluster,
-                        active_mode=active_mode,
-                        phase=phase,
-                        snapshot=snapshot,
-                        observed_at=current_time,
-                        force=moon_authority_active != was_moon_authority_active,
-                    )
+                # Every resolved room phase is offered to history after the
+                # Sleep/Drying authority override, outside the moon-authority
+                # conditional. The sink deduplicates unchanged phases itself.
+                self._enqueue_final_photoperiod_phase(
+                    location=location,
+                    cluster=cluster,
+                    active_mode=active_mode,
+                    phase=Phase.SUN if is_sun else Phase.MOON,
+                    snapshot=snapshot,
+                    observed_at=current_time,
+                )
 
                 # 6. Process devices (using extracted component)
                 await self.device_processor.process_devices(

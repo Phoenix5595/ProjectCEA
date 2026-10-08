@@ -1,5 +1,46 @@
 \set ON_ERROR_STOP on
 
+\ir ../../monitoring_read_models.sql
+
+INSERT INTO monitoring_photoperiod_coverage
+    (observed_at, location, cluster, state, reason, runtime_snapshot_version)
+VALUES ('2026-01-01T00:00:00Z', 'Flower Room', 'main', 'available', 'initial', 1)
+ON CONFLICT DO NOTHING;
+\ir ../../monitoring_read_models.sql
+INSERT INTO monitoring_photoperiod_coverage
+    (observed_at, location, cluster, state, reason, runtime_snapshot_version)
+VALUES ('2026-01-01T00:00:00Z', 'Flower Room', 'main', 'available', 'initial', 1)
+ON CONFLICT DO NOTHING;
+
+DO $coverage$
+BEGIN
+    IF (SELECT count(*) FROM monitoring_photoperiod_coverage) <> 1 THEN
+        RAISE EXCEPTION 'coverage definition or retry rewrote availability history';
+    END IF;
+    BEGIN
+        INSERT INTO monitoring_photoperiod_coverage
+            (observed_at, location, cluster, state, reason, runtime_snapshot_version)
+        VALUES ('2026-01-01T00:01:00Z', 'Flower Room', 'main', 'invalid', 'initial', 1);
+        RAISE EXCEPTION 'invalid coverage state was accepted';
+    EXCEPTION WHEN check_violation THEN NULL;
+    END;
+    BEGIN
+        INSERT INTO monitoring_photoperiod_coverage
+            (observed_at, location, cluster, state, reason, runtime_snapshot_version)
+        VALUES ('2026-01-01T00:01:00Z', 'Flower Room', 'main', 'unavailable', 'heartbeat', 1);
+        RAISE EXCEPTION 'invalid coverage reason was accepted';
+    EXCEPTION WHEN check_violation THEN NULL;
+    END;
+    BEGIN
+        INSERT INTO monitoring_photoperiod_coverage
+            (observed_at, location, cluster, state, reason, runtime_snapshot_version)
+        VALUES ('2026-01-01T00:01:00Z', 'Flower Room', 'main', 'unavailable', 'stopped', -1);
+        RAISE EXCEPTION 'negative coverage snapshot version was accepted';
+    EXCEPTION WHEN check_violation THEN NULL;
+    END;
+END
+$coverage$;
+
 DO $case$
 DECLARE
     winning_intensity DOUBLE PRECISION;

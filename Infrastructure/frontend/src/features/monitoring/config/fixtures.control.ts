@@ -7,6 +7,10 @@
  */
 
 import { equipmentHistoryFixture, equipmentProjectionFixture } from './fixtures.equipment'
+import {
+  historicalPhotoperiodHistory,
+  historicalPhotoperiodProjection,
+} from './fixtures.historicalPhotoperiod'
 import { lightRangeHistoryFixture, lightRangeProjectionFixture } from './fixtures.lightRange'
 
 const T0 = '2026-08-02T12:00:00.000Z'
@@ -101,6 +105,9 @@ export function controlRangeFixture(
   if (scenario === 'equipment-history') {
     return { ...base, ...equipmentHistoryFixture(room, start, end) }
   }
+  if (scenario === 'historical-photoperiod') {
+    return { ...base, photoperiod: historicalPhotoperiodHistory(start, end) }
+  }
   if (scenario === 'light-range-fidelity') {
     return { ...base, ...lightRangeHistoryFixture(room, start, end) }
   }
@@ -156,6 +163,9 @@ export function controlProjectionFixture(
 ): unknown {
   if (scenario === 'equipment-history') {
     return equipmentProjectionFixture(room, start, end)
+  }
+  if (scenario === 'historical-photoperiod') {
+    return historicalPhotoperiodProjection()
   }
   if (scenario === 'light-range-fidelity') {
     return lightRangeProjectionFixture(room)

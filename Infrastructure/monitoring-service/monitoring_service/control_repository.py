@@ -13,6 +13,8 @@ from pydantic import ValidationError
 from monitoring_service.database import ReadOnlyDatabase
 from monitoring_service.redis_resources import RedisReadClient
 from monitoring_service.control_history_queries import (
+    PHOTOPERIOD_COVERAGE_SQL,
+    PHOTOPERIOD_LIGHT_PREDECESSORS_SQL,
     PHOTOPERIOD_SQL,
     select_control_history_sources,
 )
@@ -94,33 +96,52 @@ class ControlHistoryRepository:
     ) -> ControlHistoryEnvelope:
         """Return climate, light, device, PID, and photoperiod timelines for the window."""
         sources = select_control_history_sources(history_range, max_points)
-        async with request_observation():
-            setpoint_rows = await self._database.fetch(
-                sources.setpoints_sql, location, history_range.start, history_range.end
-            )
-            light_rows = await self._database.fetch(
-                sources.light_sql, location, history_range.start, history_range.end
-            )
-            state_rows = await self._database.fetch(
-                sources.state_sql, location, history_range.start, history_range.end
-            )
-            photoperiod_rows = await self._database.fetch(
-                PHOTOPERIOD_SQL, location, history_range.start, history_range.end
-            )
-            return build_control_history_envelope(
-                history_range,
-                setpoint_rows,
-                light_rows,
-                state_rows,
-                photoperiod_rows,
-                sources.setpoints_are_aggregated,
-                max_points,
-                derive_interval_seconds(
-                    history_range.end - history_range.start,
-                    sources.source_interval_seconds,
+        try:
+            async with request_observation():
+                setpoint_rows = await self._database.fetch(
+                    sources.setpoints_sql, location, history_range.start, history_range.end
+                )
+                light_rows = await self._database.fetch(
+                    sources.light_sql, location, history_range.start, history_range.end
+                )
+                state_rows = await self._database.fetch(
+                    sources.state_sql, location, history_range.start, history_range.end
+                )
+                photoperiod_rows = await self._database.fetch(
+                    PHOTOPERIOD_SQL, location, history_range.start, history_range.end
+                )
+                photoperiod_coverage_rows = await self._database.fetch(
+                    PHOTOPERIOD_COVERAGE_SQL, location, history_range.start, history_range.end
+                )
+                photoperiod_light_predecessors = await self._database.fetch(
+                    PHOTOPERIOD_LIGHT_PREDECESSORS_SQL, location, history_range.start
+                )
+                return build_control_history_envelope(
+                    history_range,
+                    setpoint_rows,
+                    light_rows,
+                    state_rows,
+                    photoperiod_rows,
+                    sources.setpoints_are_aggregated,
                     max_points,
-                ),
-            )
+                    derive_interval_seconds(
+                        history_range.end - history_range.start,
+                        sources.source_interval_seconds,
+                        max_points,
+                    ),
+                    photoperiod_coverage_rows=photoperiod_coverage_rows,
+                    photoperiod_light_predecessors=photoperiod_light_predecessors,
+                )
+        except MonitoringUnavailableError:
+            raise
+        except (
+            asyncpg.PostgresError,
+            ConnectionError,
+            OSError,
+            RuntimeError,
+            TimeoutError,
+        ) as exc:
+            raise MonitoringUnavailableError("control history database is unavailable") from exc
 
 
 @final

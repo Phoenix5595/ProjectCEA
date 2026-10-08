@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
-from typing import ClassVar, Literal, Self
+from typing import ClassVar, Final, Literal, Self
 from uuid import UUID
 
+import asyncpg
 from pydantic import (
     AwareDatetime,
     BaseModel,
@@ -18,6 +20,14 @@ from pydantic import (
 
 from shared.monitoring_contracts import CurrentSnapshot, FutureProjection, Quality
 from monitoring_service.rich_trajectory_models import RichTrajectoryEnvelope
+
+ControlRecordValue = str | float | int | datetime | None
+ControlRecord = Mapping[str, ControlRecordValue] | asyncpg.Record
+
+# Current light logging is nominally 10s. Allow six intervals for scheduling
+# and flush jitter, then stop claiming recorded coverage across a silent
+# outage; legacy dedicated room samples reuse the same bounded support span.
+SAMPLE_SUPPORTED_SPAN: Final[timedelta] = timedelta(seconds=60)
 
 
 class ControlReadModel(BaseModel):

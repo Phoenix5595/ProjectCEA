@@ -3,14 +3,17 @@
  *
  * These functions are side-effect free so the store class stays focused on
  * coordination. Every consumed row is deduped by an immutable source + row id
- * (series name + timestamp, or `photoperiod` + timestamp) so overlapping tail
- * pages never append duplicate points and stale rows never overwrite newer
- * ones. Aggregate resolution is preserved: points are merged as-is and never
- * re-bucketed, so raw and aggregated buckets are never mixed.
+ * (series name + timestamp) so overlapping tail pages never append duplicate
+ * points and stale rows never overwrite newer ones. Aggregate resolution is
+ * preserved: points are merged as-is and never re-bucketed, so raw and
+ * aggregated buckets are never mixed. `photoperiod` is treated as recorded
+ * history: its incoming response replaces the existing resident points inside
+ * its own half-open range instead of merging by bare timestamp.
  */
 import type {
   ControlMonitoringResponse,
   LiveSensorValue,
+  PhotoperiodTimelinePoint,
   ProjectionMetadata,
   Quality,
 } from '../api'
@@ -184,12 +187,64 @@ export function mergeControlHistory(
     lights: mergeLightSeriesByIdentity(existing.lights, incoming.lights),
     devices: mergeSeriesByName(existing.devices, incoming.devices),
     pid: mergeSeriesByName(existing.pid, incoming.pid),
-    photoperiod: mergePoints(
+    photoperiod: mergeHistoricalPhotoperiod(
       existing.photoperiod,
       incoming.photoperiod,
-      p => `photoperiod:${p.timestamp.getTime()}`
+      incoming.range.start.getTime(),
+      incoming.range.end.getTime()
     ),
   }
+}
+
+function photoperiodSignature(point: PhotoperiodTimelinePoint): string {
+  return [
+    point.phase,
+    point.provenance.origin,
+    point.provenance.quality,
+    String(point.provenance.is_aggregated),
+    point.mode_id ?? null,
+    point.submode_id ?? null,
+    point.runtime_snapshot_version ?? null,
+  ].join('|')
+}
+
+/**
+ * Merge recorded photoperiod history. The incoming response replaces the
+ * existing points inside its own half-open range `[start, end)` and points
+ * outside that range are preserved verbatim, so newly committed evidence
+ * replaces an earlier placeholder inside the response window while the rest of
+ * the resident timeline stays untouched. Adjacent points whose full
+ * signature (phase + provenance + metadata) agrees are collapsed so a repeated
+ * synthetic carry-in anchor cannot inflate the resident timeline.
+ */
+function mergeHistoricalPhotoperiod(
+  existing: PhotoperiodTimelinePoint[],
+  incoming: PhotoperiodTimelinePoint[],
+  start: number,
+  end: number
+): PhotoperiodTimelinePoint[] {
+  const outside: PhotoperiodTimelinePoint[] = []
+  for (const point of existing) {
+    const timestamp = point.timestamp.getTime()
+    if (timestamp < start || timestamp >= end) outside.push(point)
+  }
+  const inside = new Map<number, PhotoperiodTimelinePoint>()
+  for (const point of incoming) {
+    const timestamp = point.timestamp.getTime()
+    if (timestamp >= start && timestamp < end) inside.set(timestamp, point)
+  }
+  const merged: PhotoperiodTimelinePoint[] = [...outside, ...inside.values()].sort(
+    (left, right) => left.timestamp.getTime() - right.timestamp.getTime()
+  )
+  const collapsed: PhotoperiodTimelinePoint[] = []
+  for (const point of merged) {
+    const previous = collapsed[collapsed.length - 1]
+    if (previous !== undefined && photoperiodSignature(previous) === photoperiodSignature(point)) {
+      continue
+    }
+    collapsed.push(point)
+  }
+  return collapsed
 }
 
 /** Merge per-node live values into a single sensor-keyed snapshot. */

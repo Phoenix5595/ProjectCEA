@@ -9,7 +9,6 @@ import type {
   ControlMonitoringResponse,
   MonitoringResponse,
   ProjectionPublicationResponse,
-  PhotoperiodTimelinePoint,
 } from '../api'
 
 import { mergeControlHistory } from './monitoringStore.merge'
@@ -30,7 +29,7 @@ export function applyInitial(
     live: [],
     controlHistory: controlRange,
     projectionHistory: proj.history,
-    photoperiod: mergePhotoperiod(controlRange.photoperiod, proj.history?.photoperiod ?? []),
+    photoperiod: controlRange.photoperiod,
     cursors: controlRange.cursors,
     projectionRevision: proj.revision,
     projectionVersion: proj.version,
@@ -61,10 +60,7 @@ export function applyInitialPartial(
     live: existing.live,
     controlHistory: history,
     projectionHistory: proj ? proj.history : existing.projectionHistory,
-    photoperiod: mergePhotoperiod(
-      history?.photoperiod ?? [],
-      proj?.history?.photoperiod ?? existing.projectionHistory?.photoperiod ?? []
-    ),
+    photoperiod: controlRange?.photoperiod ?? existing.photoperiod,
     cursors: controlRange?.cursors ?? existing.cursors,
     projectionRevision: proj ? proj.revision : existing.projectionRevision,
     projectionVersion: proj ? proj.version : existing.projectionVersion,
@@ -87,7 +83,7 @@ export function applyControl(data: StoreData, resp: ControlMonitoringResponse): 
   return {
     ...data,
     controlHistory: merged,
-    photoperiod: mergePhotoperiod(merged.photoperiod, data.projectionHistory?.photoperiod ?? []),
+    photoperiod: merged.photoperiod,
     cursors: resp.cursors,
     runtimeSnapshotVersion: resp.runtime_snapshot_version,
     flushHealth: resp.flush_health,
@@ -99,7 +95,7 @@ export function applyControlFresh(data: StoreData, resp: ControlMonitoringRespon
   return {
     ...data,
     controlHistory: resp,
-    photoperiod: mergePhotoperiod(resp.photoperiod, data.projectionHistory?.photoperiod ?? []),
+    photoperiod: resp.photoperiod,
     cursors: resp.cursors,
     runtimeSnapshotVersion: resp.runtime_snapshot_version,
     flushHealth: resp.flush_health,
@@ -121,10 +117,6 @@ export function applyProjection(
     data: {
       ...data,
       projectionHistory: proj.history,
-      photoperiod: mergePhotoperiod(
-        data.controlHistory?.photoperiod ?? [],
-        proj.history?.photoperiod ?? []
-      ),
       projectionRevision: proj.revision,
       projectionVersion: proj.version,
       anchorFingerprint: null,
@@ -133,17 +125,6 @@ export function applyProjection(
     },
     changed: true,
   }
-}
-
-function mergePhotoperiod(
-  recorded: PhotoperiodTimelinePoint[],
-  projected: PhotoperiodTimelinePoint[]
-): PhotoperiodTimelinePoint[] {
-  const byTimestamp = new Map(projected.map(point => [point.timestamp.getTime(), point]))
-  for (const point of recorded) byTimestamp.set(point.timestamp.getTime(), point)
-  return [...byTimestamp.values()].sort(
-    (left, right) => left.timestamp.getTime() - right.timestamp.getTime()
-  )
 }
 
 /** True when wall-clock has passed the projection anchor validity deadline. */
