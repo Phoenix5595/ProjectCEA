@@ -43,7 +43,7 @@ Sensor display names in Grafana follow frontend mappings; backend sensor keys re
 - Dashboard QA in this pass uses exactly 1920×1080 and 1280×1440. The 960px redesign is deferred; no mobile-web layout guarantee or phone QA project is supported. A separate mobile app does not exist yet.
 - At both supported dashboard QA sizes the page fits one viewport without document or in-panel scrolling or overlapping panels. Long lists and notes remain reachable through paging or transient detail dialogs; dialogs/popovers may scroll as overlays.
 - The dashboard calendar always renders six complete weeks, keeps 44px minimum day-button targets, and exposes task, note, and phase counts in each date's accessible name.
-- The compact dashboard Event Log always shows all eight canonical category groups; categories are not paginated. Flat and expanded event lists show five newest-first events per page with visible status and event-list controls.
+- The compact dashboard Event Log shows eight canonical category groups at viewport heights ≥ 1300 CSS px and six below 1300 CSS px, updating on resize. The six-group view merges Ramp into Control and Mutation into System without dropping events; raw-category filters remain available. Categories are not paginated. Flat and expanded event lists show five newest-first events per page with visible status and event-list controls.
 - Detail payloads, long inspector notes, and forms remain available in accessible dialogs. Full-width room logs retain their existing inline-detail behavior and do not use dashboard pagination.
 
 ## Zone Configuration

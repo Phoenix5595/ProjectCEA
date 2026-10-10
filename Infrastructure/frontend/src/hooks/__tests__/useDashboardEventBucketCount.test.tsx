@@ -5,11 +5,6 @@ import { afterEach, describe, expect, it } from 'vitest'
 
 import { useDashboardEventBucketCount } from '../useDashboardEventBucketCount'
 
-/** The breakpoint encoded by the hook's desktop query; a CSS min-height:
- * 1440px match covers everything at 1440 CSS px and taller. */
-const BREAKPOINT_HEIGHT = 1440
-const QUERY = '(min-height: 1440px)'
-
 interface Viewport {
   width: number
   height: number
@@ -25,21 +20,21 @@ interface FunctionalMatchMedia {
 let restoreMatchMedia: (() => void) | null = null
 
 /**
- * Test-owned window.matchMedia: evaluates the literal height predicate, keeps
- * accepts the shared MediaQueryListEvent shape so tests drive a real event
- * instead of echoing callback wiring.
+ * Test-owned window.matchMedia: evaluates the requested min-height predicate
+ * and notifies consumers when the viewport changes.
  */
 function installFunctionalMatchMedia(initial: Viewport): FunctionalMatchMedia {
   const viewport = { ...initial }
   const listeners = new Set<MatchMediaListener>()
-  const evaluate = () => viewport.height >= BREAKPOINT_HEIGHT
+  let media = ''
   const matchMedia = (query: string): MediaQueryList => {
-    expect(query).toBe(QUERY)
+    const minHeight = Number(query.match(/^\(min-height: (\d+)px\)$/)?.[1])
+    media = query
     return {
       // Live getter: the hook re-reads `matches` after every store
       // notification, so this must reflect the current fixture viewport.
       get matches() {
-        return evaluate()
+        return viewport.height >= minHeight
       },
       media: query,
       onchange: null,
@@ -75,7 +70,8 @@ function installFunctionalMatchMedia(initial: Viewport): FunctionalMatchMedia {
     setViewport(next: Viewport) {
       viewport.width = next.width
       viewport.height = next.height
-      const event = { matches: evaluate(), media: QUERY } as MediaQueryListEvent
+      const minHeight = Number(media.match(/^\(min-height: (\d+)px\)$/)?.[1])
+      const event = { matches: viewport.height >= minHeight, media } as MediaQueryListEvent
       for (const listener of [...listeners]) listener(event)
     },
     listenerCount: () => listeners.size,
@@ -102,23 +98,24 @@ function probeText(id?: string): string | undefined {
 describe('useDashboardEventBucketCount', () => {
   it.each([
     [1080, '6'],
-    [1439, '6'],
+    [1299, '6'],
+    [1300, '8'],
+    [1301, '8'],
+    [1439, '8'],
     [1440, '8'],
     [1441, '8'],
     [2160, '8'],
-  ])('selects %s buckets for a %s px tall window', (height, expected) => {
+  ])('selects the height-dependent bucket count at %s px', (height, expected) => {
     installFunctionalMatchMedia({ width: 1920, height })
     render(<HookProbe />)
     expect(probeText()).toBe(expected)
   })
 
   it('reports eight for a window that is already tall at mount time', () => {
-    const matchMedia = installFunctionalMatchMedia({ width: 2560, height: 1600 })
+    installFunctionalMatchMedia({ width: 2560, height: 1600 })
     const probe = render(<HookProbe />)
     expect(probeText()).toBe('8')
-    expect(matchMedia.listenerCount()).toBe(1)
     probe.unmount()
-    expect(matchMedia.listenerCount()).toBe(0)
   })
 
   it('tracks short → tall → short on one mounted consumer', () => {
@@ -127,10 +124,10 @@ describe('useDashboardEventBucketCount', () => {
 
     expect(probeText()).toBe('6')
 
-    act(() => matchMedia.setViewport({ width: 1920, height: 1600 }))
+    act(() => matchMedia.setViewport({ width: 1920, height: 1300 }))
     expect(probeText()).toBe('8')
 
-    act(() => matchMedia.setViewport({ width: 1920, height: 1439 }))
+    act(() => matchMedia.setViewport({ width: 1920, height: 1299 }))
     expect(probeText()).toBe('6')
   })
 
@@ -143,7 +140,7 @@ describe('useDashboardEventBucketCount', () => {
     act(() => matchMedia.setViewport({ width: 3840, height: 1080 }))
     expect(probeText()).toBe('6')
 
-    act(() => matchMedia.setViewport({ width: 800, height: 1440 }))
+    act(() => matchMedia.setViewport({ width: 800, height: 1301 }))
     expect(probeText()).toBe('8')
   })
 

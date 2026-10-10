@@ -20,7 +20,7 @@ test('grouped alert console opens by default, reacts to window height, and keeps
 }, testInfo) => {
   const violations = trackViolations(page)
 
-  const bucketCountOf = (height: number): EventBucketCount => (height >= 1440 ? 8 : 6)
+  const bucketCountOf = (height: number): EventBucketCount => (height >= 1300 ? 8 : 6)
   const initialViewport = page.viewportSize()!
   const initialPolicy = bucketCountOf(initialViewport.height)
   const otherViewport =
@@ -198,7 +198,7 @@ test('from-to setpoint values render on enriched rows and in expanded lists', as
   page,
 }, testInfo) => {
   const violations = trackViolations(page)
-  const policy: EventBucketCount = page.viewportSize()!.height >= 1440 ? 8 : 6
+  const policy: EventBucketCount = page.viewportSize()!.height >= 1300 ? 8 : 6
 
   await page.goto(fixtureUrl('/', testInfo, undefined, 'grouped-console'))
   await page.getByTestId('event-group-control').click()

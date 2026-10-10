@@ -2,12 +2,12 @@ import { useCallback, useMemo, useSyncExternalStore } from 'react'
 
 import type { EventBucketCount } from '../features/event-log/presentation/categoryTheme'
 
-/** Window-height breakpoint: eight buckets only for windows ≥ 1440 CSS px tall. */
-const DASHBOARD_EVENT_BUCKET_QUERY = '(min-height: 1440px)'
+/** Window-height breakpoint: eight buckets for windows ≥ 1300 CSS px tall. */
+const DASHBOARD_EVENT_BUCKET_QUERY = '(min-height: 1300px)'
 
 /**
  * Height-adaptive dashboard bucket policy, selected by window height (not
- * screen size and not width): 1440 CSS px and taller windows show the
+ * screen size and not width): 1300 CSS px and taller windows show the
  * eight-bucket grouped console, shorter windows keep the standing six.
  * Client-only desktop UI: when `window`/`window.matchMedia` is absent the
  * deterministic server snapshot is six.

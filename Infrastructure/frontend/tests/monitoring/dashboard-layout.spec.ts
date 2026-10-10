@@ -188,7 +188,7 @@ test('dashboard fits both supported desktop viewports without overflow', async (
     expectedViewports[testInfo.project.name as keyof typeof expectedViewports]
   )
   // Window height selects the right-rail bucket policy, not the screen size.
-  const expectedBucketCount: EventBucketCount = viewport!.height >= 1440 ? 8 : 6
+  const expectedBucketCount: EventBucketCount = viewport!.height >= 1300 ? 8 : 6
   const expectedBucketIds = EVENT_BUCKET_ORDERS[expectedBucketCount].map(
     category => `event-group-${category}`
   )
