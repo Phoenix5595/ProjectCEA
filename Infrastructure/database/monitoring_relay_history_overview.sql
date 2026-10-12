@@ -1325,12 +1325,19 @@ BEGIN
                         covered_through = EXCLUDED.covered_through;
                 -- Verified empty coverage, not a multi-day build claim.
                 v_claim_from := NULL;
-            ELSE
+            ELSIF v_claim_from + INTERVAL '24 hours' <=
+                  date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' THEN
                 v_claim_through := v_claim_from + INTERVAL '24 hours';
                 UPDATE public.monitoring_relay_overview_progress
                    SET claimed_from = v_claim_from, claimed_through = v_claim_through,
                        dirty_during_claim_from = NULL
                  WHERE id;
+            ELSE
+                -- Leave the unfinished UTC day to the exact bounded raw tail.
+                -- Heartbeats inside it must not dirty materialized future time.
+                v_claim_from := NULL;
+                v_cvg_from := v_prior.covered_from;
+                v_cvg_through := v_prior.covered_through;
             END IF;
         ELSE
             -- A separate daily refresh may have finished after the last build.
