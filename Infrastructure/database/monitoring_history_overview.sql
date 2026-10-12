@@ -35,11 +35,14 @@
 --     `_requested_percent`: a raw REAL fraction counts iff finite and
 --     0 <= pid_output <= 1, contributing pid_output::DOUBLE PRECISION * 100
 --     stored as NUMERIC; invalid/NULL values are never requested samples.
---   * One-bucket refresh policies per aggregate, created PAUSED
+--   * One-bucket transactions per aggregate refresh policy, created PAUSED
 --     (scheduled => false) with max_runtime 60 seconds, max_retries 0,
---     buckets_per_batch 1, max_batches_per_execution 1,
---     refresh_newest_first false. Hourly sources refresh every five minutes,
---     daily sources hourly. start_offset NULL keeps every invalidated bucket
+--     buckets_per_batch 1. Hourly policies finish pending batches within that
+--     runtime cap (max_batches_per_execution 0): a one-batch execution limit
+--     otherwise revisits retained history before reaching newly recorded hours.
+--     Daily policies keep max_batches_per_execution 1. Oldest-first hourly
+--     policies run every five minutes; daily policies run hourly.
+--     start_offset NULL keeps every invalidated bucket
 --     eligible (no bounded-lifetime truncation) and end_offset equals the
 --     source width one bucket summarizes, so a refresh never materializes the
 --     current partial bucket: hourly buckets complete roughly two hours after
@@ -786,7 +789,8 @@ BEGIN
                OR jsonb_typeof(job_config -> 'refresh_newest_first') <> 'boolean'
                OR (job_config ->> 'end_offset')::INTERVAL IS DISTINCT FROM policy_spec.end_offset
                OR (job_config ->> 'buckets_per_batch')::INTEGER IS DISTINCT FROM 1
-               OR (job_config ->> 'max_batches_per_execution')::INTEGER IS DISTINCT FROM 1
+               OR (job_config ->> 'max_batches_per_execution')::INTEGER IS DISTINCT FROM
+                  (CASE WHEN policy_spec.end_offset = INTERVAL '1 hour' THEN 0 ELSE 1 END)
                OR (job_config -> 'refresh_newest_first') IS DISTINCT FROM 'false'::JSONB
                OR job_config ? 'include_tiered_data'
                OR job_config ? 'compress_after_refresh' THEN
@@ -799,7 +803,8 @@ BEGIN
                 end_offset => policy_spec.end_offset,
                 schedule_interval => policy_spec.schedule_interval,
                 buckets_per_batch => 1,
-                max_batches_per_execution => 1,
+                max_batches_per_execution =>
+                    (CASE WHEN policy_spec.end_offset = INTERVAL '1 hour' THEN 0 ELSE 1 END),
                 refresh_newest_first => FALSE,
                 if_not_exists => FALSE)
             INTO new_job_id;
@@ -818,7 +823,7 @@ END
 $overview_policy_setup$;
 
 -- ------------------------------------------------------------------ §10.5: ongoing bounded verified refresh checkpoints
--- Each native PAUSED one-bucket refresh policy (§10) advances its own
+-- Each native PAUSED one-bucket-transaction refresh policy (§10) advances its
 -- hourly/daily materialization; the supervised backfill flow (re)seeds the
 -- coverage rows in public.monitoring_overview_coverage for all six models.
 -- This procedure is the ONLY ongoing advancing writer for those six model
