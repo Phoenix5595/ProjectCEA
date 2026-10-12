@@ -15,14 +15,7 @@ import type { MonitoringRange } from '../../state'
 import { alignSeries, alignSeriesBase, applyLiveTail } from '../alignSeries'
 import { windowBounds } from '../alignSeries.grid'
 import { seriesKey } from '../alignSeries.types'
-import type {
-  AlignInput,
-  AlignedData,
-  AlignedSeries,
-  SeriesKind,
-  SeriesRole,
-} from '../alignSeries.types'
-import { splitChartGroups } from '../../pages/chartGroups'
+import type { AlignInput } from '../alignSeries.types'
 import { lightValueAt } from '../lightTrajectory'
 import { createPanelAlignment } from '../panelAlignment'
 
@@ -325,12 +318,16 @@ describe('panel alignment', () => {
     expect(legacyCapped.x.length).toBeLessThanOrEqual(20_000)
     expect(budgeted.x.length).toBeGreaterThan(20_000)
   })
-  it('keeps explicit climate setpoints out of both room equipment panels', () => {
+  it('keeps recorded climate targets out of both room panels but retains sensors', () => {
     const history = controls([{ timestamp: START, value: 22 }])
     const heating = history.climate[0]
     if (heating === undefined) throw new Error('heating fixture is required')
     heating.name = 'heating'
     const source = input({ controlHistory: history })
+    source.series.push({
+      sensor: 'co2', node: 'main', unit_family: 'ppm', unit: 'ppm',
+      points: [{ timestamp: START, average: 620, minimum: 615, maximum: 625, sample_count: 3 }],
+    })
 
     for (const room of [
       { manifest: flowerManifest, equipmentId: 'flower-systems', climateId: 'flower-climate' },
@@ -349,15 +346,19 @@ describe('panel alignment', () => {
       }
 
       const equipment = createPanelAlignment().align({ ...source, panel: equipmentPanel })
-      expect(equipment.series.some(series => series.source === 'climate')).toBe(false)
-
       const climate = createPanelAlignment().align({ ...source, panel: climatePanel })
-      const target = climate.series.find(series => series.metric === 'heating_setpoint')
-      expect(target?.y[climate.x.indexOf(START.getTime())]).toBe(22)
+      for (const aligned of [equipment, climate]) {
+        expect(aligned.series.some(series => series.source === 'climate')).toBe(false)
+      }
+      // Environmental sensors stay: the denial is scoped to automation targets.
+      expect(climate.series.find(series => series.metric === 'dry_bulb')).toBeDefined()
+      const co2 = equipment.series.find(series => series.source === 'sensor' && series.metric === 'co2' && series.role === 'mean')
+      expect(co2?.family).toBe('co2')
+      expect(co2?.y[equipment.x.indexOf(START.getTime())]).toBe(620)
     }
   })
 
-  it('suppresses light state/PID overlays but keeps non-light equipment measurements', () => {
+  it('keeps light trajectories and registry labels while a full mixed room payload emits no automation curves', () => {
     const provenance = { origin: 'recorded' as const, quality: 'exact' as const, is_aggregated: false }
     const projectedProvenance = {
       origin: 'projected' as const,
@@ -395,7 +396,7 @@ describe('panel alignment', () => {
       ],
     })
 
-    const history = controls([])
+    const history = controls([]) // A full mixed payload: the lights scope would reject it.
     history.range = { start: START, end: NOW }
     history.lights = [
       {
@@ -475,6 +476,11 @@ describe('panel alignment', () => {
       panel: equipmentPanel,
     })
 
+    // Room Monitoring/Historical graph inputs stay sensor + light only.
+    expect(aligned.series.some(series => series.source === 'device')).toBe(false)
+    expect(aligned.series.some(series => series.source === 'pid')).toBe(false)
+    expect(aligned.series.some(series => series.source === 'climate')).toBe(false)
+
     const intensities = aligned.series.filter(series => series.source === 'light')
     expect(intensities.map(series => series.key)).toEqual([
       seriesKey('light', 'light_f_1', 'linear'),
@@ -484,79 +490,5 @@ describe('panel alignment', () => {
     expect(lightValueAt(intensity?.lightTrajectory ?? [], NOW.getTime())).toBe(40)
     expect(lightValueAt(intensity?.lightTrajectory ?? [], FUTURE.getTime() + 15_000)).toBe(60)
     expect(lightValueAt(intensity?.lightTrajectory ?? [], gapStart.getTime() + 10_000)).toBeNull()
-
-    expect(aligned.series.some(series => series.source === 'device' && series.metric === 'light_f_1')).toBe(
-      false
-    )
-    expect(aligned.series.some(series => series.source === 'device' && series.metric === 'light_f_2')).toBe(
-      false
-    )
-    expect(aligned.series.some(series => series.source === 'pid' && series.metric === 'light_f_1')).toBe(
-      false
-    )
-    expect(aligned.series.some(series => series.source === 'pid' && series.metric === 'light_f_2')).toBe(
-      false
-    )
-    expect(aligned.series.some(series => series.source === 'device' && series.metric === 'heater_f_1')).toBe(
-      true
-    )
-    expect(
-      aligned.series.some(
-        series =>
-          series.source === 'pid' && series.metric === 'heater_f_1_pid' && series.role === 'pid_output'
-      )
-    ).toBe(true)
-    expect(
-      aligned.series.some(
-        series => series.source === 'pid' && series.metric === 'heater_f_1_pid' && series.role === 'duty'
-      )
-    ).toBe(true)
-    expect(aligned.series.some(series => series.source === 'device' && series.role === 'duty')).toBe(false)
   })
-
-  it('filters light state/PID overlays in the chart-group fallback', () => {
-    const makeSeries = (
-      source: 'light' | 'device' | 'pid',
-      metric: string,
-      kind: SeriesKind,
-      role: SeriesRole
-    ): AlignedSeries => ({
-      key: seriesKey(source, metric, role),
-      label: metric,
-      kind,
-      source,
-      metric,
-      family: source === 'light' ? 'light' : 'device',
-      role,
-      y: [],
-      origin: 'recorded',
-      quality: 'exact',
-      isAggregated: false,
-    })
-    const aligned: AlignedData = {
-      x: [],
-      series: [
-        makeSeries('light', 'light_f_1', 'linear', 'linear'),
-        makeSeries('device', 'light_f_1', 'step', 'state'),
-        makeSeries('pid', 'light_f_2_pid', 'point', 'duty'),
-        makeSeries('device', 'heater_f_1', 'step', 'state'),
-        makeSeries('pid', 'heater_f_1_pid', 'point', 'pid_output'),
-      ],
-      bands: [],
-      photoperiod: [],
-      nowIndex: -1,
-      aggregated: false,
-    }
-
-    const groups = splitChartGroups(flowerManifest, aligned, [
-      { device_name: 'light_f_2', display_name: null, per_room_index: 2 },
-    ])
-
-    expect(groups.device.series.map(series => series.key)).toEqual([
-      seriesKey('light', 'light_f_1', 'linear'),
-      seriesKey('device', 'heater_f_1', 'state'),
-      seriesKey('pid', 'heater_f_1_pid', 'pid_output'),
-    ])
-  })
-
 })

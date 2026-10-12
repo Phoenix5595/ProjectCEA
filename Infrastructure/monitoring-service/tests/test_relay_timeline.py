@@ -11,6 +11,7 @@ from monitoring_service.control_models import (
     ControlHistoryEnvelope,
     ControlHistoryRange,
     ControlPublicationResponse,
+    ControlReadScope,
     RelayTimelineRange,
     RelayTimelineResponse,
 )
@@ -302,6 +303,16 @@ class FakeRelayDatabase:
             value = sample.get("pid_output")
             if aggregated and sample.get("pid_output_count", 1) == 0:
                 value = None
+            # The existing aggregates keep min/max over every non-null recorded
+            # fraction. A one-sample bucket has min = max = the retained value;
+            # multi-sample or invalid buckets must set the extrema explicitly.
+            if aggregated:
+                sample_count = sample.get("pid_output_count", 1)
+                extrema_default = value if sample_count == 1 else None
+                extrema_low = sample.get("pid_output_min", extrema_default)
+                extrema_high = sample.get("pid_output_max", extrema_default)
+            else:
+                extrema_low = extrema_high = None
             associated.append(
                 {
                     "id": sample.get("id", len(associated) + 1),
@@ -309,6 +320,8 @@ class FakeRelayDatabase:
                     "device_name": sample["device_name"],
                     "device_id": next(iter(owners)) if owner_count == 1 else None,
                     "pid_output": value if owner_count == 1 else None,
+                    "pid_output_min": extrema_low if owner_count == 1 else None,
+                    "pid_output_max": extrema_high if owner_count == 1 else None,
                     "owner_count": owner_count,
                 }
             )
@@ -335,6 +348,7 @@ class FakeControlReads:
         location: str,
         history_range: ControlHistoryRange,
         max_points: int | None = None,
+        scope: ControlReadScope = "all",
     ) -> ControlHistoryEnvelope:
         raise AssertionError("history is not part of this test")
 
@@ -448,8 +462,14 @@ async def test_raw_pid_output_is_percent_and_owner_changes_do_not_leak_predecess
         (202, 100.0),
     ]
     assert all(row["aggregated"] is False for row in load)
+    # Every raw point is one recorded sample, so its valid extrema are itself;
+    # the null gap and invalid-fraction rows carry no invented bounds.
+    assert all(
+        row["requested_min_percent"] == row["requested_percent"]
+        and row["requested_max_percent"] == row["requested_percent"]
+        for row in load
+    )
     assert response.json()["coverage_complete"] is False
-    assert "LEAD(observed_at)" in RELAY_RAW_PID_LOAD_SQL
 
 
 @pytest.mark.anyio
@@ -532,6 +552,8 @@ async def test_coarse_pid_load_does_not_replace_exact_physical_transitions() -> 
     assert response.load[0].aggregated is True
     assert response.load[0].interval_seconds == 60
     assert response.load[0].requested_percent == 50.0
+    assert response.load[0].requested_min_percent == 50.0
+    assert response.load[0].requested_max_percent == 50.0
     assert any("monitoring_automation_state_1min" in query for query in database.queries)
 
 
@@ -555,7 +577,123 @@ async def test_24_hour_range_uses_five_minute_output_aggregates_only() -> None:
     assert response.load[0].aggregated is True
     assert response.load[0].interval_seconds == 300
     assert response.load[0].requested_percent == 25.0
+    assert response.load[0].requested_min_percent == 25.0
+    assert response.load[0].requested_max_percent == 25.0
     assert any("monitoring_automation_state_5min" in query for query in database.queries)
+
+
+@pytest.mark.anyio
+async def test_coarse_pid_extrema_cover_valid_bucket_extremes() -> None:
+    # Given: a bucket whose every recorded requested fraction stays valid, with
+    # a retained last value between the bucket's true low and high.
+    end = START + timedelta(hours=2)
+    database = _healthy_database(duration=timedelta(hours=2), off_at=timedelta(minutes=30))
+    database.aggregate_samples = [
+        {
+            "timestamp": START + timedelta(minutes=1),
+            "device_name": "heater-a",
+            "pid_output": 0.7,
+            "pid_output_count": 3,
+            "pid_output_min": 0.25,
+            "pid_output_max": 0.9,
+        }
+    ]
+    repository = RelayTimelineRepository(database)
+
+    response = await repository.read(
+        "Flower Room", RelayTimelineRange(start=START, end=end), limit=2000
+    )
+
+    assert response.load[0].requested_percent == 70.0
+    assert response.load[0].requested_min_percent == 25.0
+    assert response.load[0].requested_max_percent == 90.0
+
+
+@pytest.mark.anyio
+async def test_coarse_pid_extrema_stay_null_when_bounds_leave_valid_range() -> None:
+    # Given: buckets whose aggregate min/max prove an out-of-range recorded
+    # fraction (negative, over-unity, and non-finite). Extrema cannot be proven
+    # valid, and a clamped bound would fabricate an in-range extremum.
+    end = START + timedelta(hours=2)
+    database = _healthy_database(duration=timedelta(hours=2), off_at=timedelta(minutes=30))
+    database.aggregate_samples = [
+        {
+            "timestamp": START + timedelta(minutes=1),
+            "device_name": "heater-a",
+            "pid_output": 0.5,
+            "pid_output_count": 2,
+            "pid_output_min": -0.25,
+            "pid_output_max": 0.5,
+        },
+        {
+            "timestamp": START + timedelta(minutes=2),
+            "device_name": "heater-a",
+            "pid_output": 0.5,
+            "pid_output_count": 2,
+            "pid_output_min": 0.25,
+            "pid_output_max": 1.5,
+        },
+        {
+            "timestamp": START + timedelta(minutes=3),
+            "device_name": "heater-a",
+            "pid_output": 0.5,
+            "pid_output_count": 2,
+            "pid_output_min": float("nan"),
+            "pid_output_max": 0.5,
+        },
+    ]
+    repository = RelayTimelineRepository(database)
+
+    response = await repository.read(
+        "Flower Room", RelayTimelineRange(start=START, end=end), limit=2000
+    )
+
+    assert [
+        (point.requested_percent, point.requested_min_percent, point.requested_max_percent)
+        for point in response.load
+    ] == [
+        (50.0, None, None),
+        (50.0, None, None),
+        (50.0, None, None),
+    ]
+
+
+@pytest.mark.anyio
+async def test_coarse_pid_extrema_stay_null_when_ownership_is_ambiguous() -> None:
+    # Given: two channels currently assigned to the same device identity.
+    end = START + timedelta(hours=2)
+    database = _healthy_database(duration=timedelta(hours=2), off_at=timedelta(minutes=30))
+    database.observations.append(
+        _observation(
+            max(int(row["observation_id"]) for row in database.observations) + 1,
+            START,
+            reason="assignment_changed",
+            channel=1,
+            observed_state=True,
+            device_id=202,
+            device_name="heater-a",
+            device_type="heating",
+        )
+    )
+    database.observations.sort(key=lambda row: (row["observed_at"], row["observation_id"]))
+    database.aggregate_samples = [
+        {
+            "timestamp": START + timedelta(minutes=1),
+            "device_name": "heater-a",
+            "pid_output": 0.5,
+            "pid_output_count": 1,
+        }
+    ]
+    repository = RelayTimelineRepository(database)
+
+    response = await repository.read(
+        "Flower Room", RelayTimelineRange(start=START, end=end), limit=2000
+    )
+
+    assert len(response.load) == 1
+    assert response.load[0].requested_percent is None
+    assert response.load[0].requested_min_percent is None
+    assert response.load[0].requested_max_percent is None
 
 
 @pytest.mark.anyio
@@ -647,6 +785,11 @@ def test_raw_pid_downsampling_keeps_extrema_and_null_gap_edges() -> None:
     assert points[0].timestamp == START
     assert points[-1].timestamp == START + timedelta(seconds=2_504)
     assert {point.requested_percent for point in points} >= {0.0, 100.0}
+    assert all(
+        point.requested_min_percent == point.requested_percent
+        and point.requested_max_percent == point.requested_percent
+        for point in points
+    )
     null_times = {
         point.timestamp for point in points if point.requested_percent is None
     }

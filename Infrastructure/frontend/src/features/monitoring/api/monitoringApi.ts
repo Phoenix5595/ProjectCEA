@@ -5,12 +5,13 @@ import { RelayTimelineResponse } from '../../relay-timeline/contracts'
 import { buildQuery, MonitoringClient } from './client'
 import type { MonitoringRequestContext, MonitoringRequestOptions } from './client'
 import {
-  ControlMonitoringResponse,
+  controlMonitoringContract,
   CurrentPublicationResponse,
   LiveSensorValue,
   MonitoringResponse,
   ProjectionPublicationResponse,
 } from './contracts'
+import type { ControlReadScope, ControlMonitoringResponse } from './contracts'
 
 /** Interim shared chart budget; T19 will tune panel-specific budgets. */
 export const SENSOR_RANGE_MAX_POINTS = 2000
@@ -19,11 +20,24 @@ export const SENSOR_RANGE_MAX_POINTS = 2000
 export const CONTROL_HISTORY_MAX_POINTS = 1000
 
 export class MonitoringApi {
-  constructor(requestContext?: MonitoringRequestContext, client?: MonitoringClient) {
+  /**
+   * `controlScope` selects the backend read scope for recorded control
+   * history/tail: room Monitoring/Historical readers pass `lights` (query
+   * `scope=lights`, non-light families rejected) while the `all` default —
+   * used by Automation and generic callers — keeps the full-history request
+   * and contract unchanged.
+   */
+  constructor(
+    requestContext?: MonitoringRequestContext,
+    client?: MonitoringClient,
+    controlScope: ControlReadScope = 'all'
+  ) {
     this.client = client ?? new MonitoringClient(requestContext)
+    this.controlScope = controlScope
   }
 
   private readonly client: MonitoringClient
+  private readonly controlScope: ControlReadScope
 
   sensorRange(
     location: string,
@@ -75,8 +89,10 @@ export class MonitoringApi {
       start,
       end,
       max_points: maxPoints?.toString(),
+      // Scope selection stays explicitly typed; `all` relies on the backend default.
+      scope: this.controlScope === 'lights' ? 'lights' : undefined,
     })}`
-    return this.client.get(path, ControlMonitoringResponse, options)
+    return this.client.get(path, controlMonitoringContract(this.controlScope), options)
   }
 
   controlTail(
@@ -89,8 +105,9 @@ export class MonitoringApi {
       start,
       end,
       max_points: CONTROL_HISTORY_MAX_POINTS.toString(),
+      scope: this.controlScope === 'lights' ? 'lights' : undefined,
     })}`
-    return this.client.get(path, ControlMonitoringResponse, options)
+    return this.client.get(path, controlMonitoringContract(this.controlScope), options)
   }
 
   controlProjection(

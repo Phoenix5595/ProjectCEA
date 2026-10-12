@@ -78,7 +78,9 @@ export function alignSeriesBase(input: BaseAlignInput): BaseAlignment {
 
   for (const cs of mergeControlSeries(input.controlHistory, input.projectionHistory)) {
     const presentation = presentationFromSpec(findSpec(input.seriesSpecs, cs.name))
-    series.push(...buildControlSeries(cs, x, start, end, aggregated, presentation))
+    const built = buildControlSeries(cs, x, start, end, aggregated, presentation)
+    series.push(...built.series)
+    bands.push(...built.bands)
   }
 
   const recordedEnd = input.controlHistory?.range.end.getTime() ?? Number.NEGATIVE_INFINITY
@@ -146,7 +148,9 @@ export function alignSeriesBase(input: BaseAlignInput): BaseAlignment {
 
   for (const ps of mergePidSeries(input.controlHistory, input.projectionHistory)) {
     const presentation = presentationFromSpec(findSpec(input.seriesSpecs, ps.name))
-    series.push(...buildPidSeries(ps, x, start, end, aggregated, presentation))
+    const built = buildPidSeries(ps, x, start, end, aggregated, presentation)
+    series.push(...built.series)
+    bands.push(...built.bands)
   }
 
   return {

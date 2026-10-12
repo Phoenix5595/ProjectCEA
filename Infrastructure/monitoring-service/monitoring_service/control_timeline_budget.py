@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
+from math import isfinite
 from typing import Final, TypeVar
 
 from monitoring_service.control_models import (
@@ -11,6 +12,7 @@ from monitoring_service.control_models import (
     LightTimelinePointOut,
     LightTimelineSeriesOut,
     PhotoperiodTimelinePointOut,
+    PidTimelinePointOut,
     PidTimelineSeriesOut,
     TimelineLinearOut,
     TimelineStepOut,
@@ -25,6 +27,22 @@ ONE_DAC_CODE_PERCENT: Final[float] = 100.0 / 4095.0
 _TargetPoint = ClimateTimelinePointOut
 _Point = TypeVar("_Point")
 _Signature = TypeVar("_Signature")
+
+
+def merge_minimum(current: float | None, *candidates: float | None) -> float | None:
+    """Merge represented minima; unknown (null) minima never fabricate a value.
+
+    A non-finite recorded value is an invalid sample rather than an extremum,
+    so it is treated as unknown instead of widening or corrupting the pair.
+    """
+    values = [value for value in (current, *candidates) if value is not None and isfinite(value)]
+    return min(values) if values else None
+
+
+def merge_maximum(current: float | None, *candidates: float | None) -> float | None:
+    """Merge represented maxima; unknown (null) maxima never fabricate a value."""
+    values = [value for value in (current, *candidates) if value is not None and isfinite(value)]
+    return max(values) if values else None
 
 
 def budget_control_history(
@@ -81,17 +99,29 @@ def _budget_light(series: LightTimelineSeriesOut, budget: int) -> LightTimelineS
             if not steps or steps[-1].value is not None:
                 steps.append(
                     TimelineStepOut(
-                        timestamp=point.timestamp, value=None, provenance=point.provenance
+                        timestamp=point.timestamp,
+                        value=None,
+                        provenance=point.provenance,
+                        minimum=point.minimum,
+                        maximum=point.maximum,
                     )
                 )
+            else:
+                steps[-1] = _widen_step_extrema(steps[-1], (point,))
         elif point.ramp_progress is None:
             flush_run()
             if not steps or steps[-1].value != point.value:
                 steps.append(
                     TimelineStepOut(
-                        timestamp=point.timestamp, value=point.value, provenance=point.provenance
+                        timestamp=point.timestamp,
+                        value=point.value,
+                        provenance=point.provenance,
+                        minimum=point.minimum,
+                        maximum=point.maximum,
                     )
                 )
+            else:
+                steps[-1] = _widen_step_extrema(steps[-1], (point,))
         else:
             run.append(point)
     flush_run()
@@ -187,18 +217,30 @@ def _budget_targets(
             if not steps or steps[-1].value is not None:
                 steps.append(
                     TimelineStepOut(
-                        timestamp=point.timestamp, value=None, provenance=point.provenance
+                        timestamp=point.timestamp,
+                        value=None,
+                        provenance=point.provenance,
+                        minimum=point.minimum,
+                        maximum=point.maximum,
                     )
                 )
+            else:
+                steps[-1] = _widen_step_extrema(steps[-1], (point,))
             index += 1
             continue
         if point.ramp_progress is None:
             if not steps or steps[-1].value != point.value:
                 steps.append(
                     TimelineStepOut(
-                        timestamp=point.timestamp, value=point.value, provenance=point.provenance
+                        timestamp=point.timestamp,
+                        value=point.value,
+                        provenance=point.provenance,
+                        minimum=point.minimum,
+                        maximum=point.maximum,
                     )
                 )
+            else:
+                steps[-1] = _widen_step_extrema(steps[-1], (point,))
             index += 1
             continue
         ramp_start = point
@@ -216,7 +258,24 @@ def _budget_targets(
             )
         )
     step_budget = max(0, budget - 2 * len(linear))
-    return (), _limit_transitions(steps, step_budget, lambda point: point.value), tuple(linear)
+    reduced_steps = _limit_transitions(
+        steps, step_budget, lambda point: point.value, _widen_step_extrema
+    )
+    return (), reduced_steps, tuple(linear)
+
+
+def _widen_step_extrema(
+    kept: TimelineStepOut, replaced: Sequence[TimelineStepOut]
+) -> TimelineStepOut:
+    """Fold the extrema of collapsed same-value steps into the retained step."""
+    if not replaced:
+        return kept
+    return kept.model_copy(
+        update={
+            "minimum": merge_minimum(kept.minimum, *(step.minimum for step in replaced)),
+            "maximum": merge_maximum(kept.maximum, *(step.maximum for step in replaced)),
+        }
+    )
 
 
 def _budget_devices(series: DeviceTimelineSeriesOut, budget: int) -> DeviceTimelineSeriesOut:
@@ -234,30 +293,87 @@ def _budget_devices(series: DeviceTimelineSeriesOut, budget: int) -> DeviceTimel
 def _budget_pid(series: PidTimelineSeriesOut, budget: int) -> PidTimelineSeriesOut:
     return series.model_copy(
         update={
-            "points": _limit_transitions(
-                series.points, budget, lambda point: (point.pid_output, point.duty_cycle_percent)
-            )
+            "points": _limit_transitions(series.points, budget, _pid_signature, _widen_pid_extrema)
+        }
+    )
+
+
+def _pid_signature(point: PidTimelinePointOut) -> tuple[float | None, float | None]:
+    return (point.pid_output, point.duty_cycle_percent)
+
+
+def _widen_pid_extrema(
+    kept: PidTimelinePointOut, replaced: Sequence[PidTimelinePointOut]
+) -> PidTimelinePointOut:
+    """Fold the recorded extrema of replaced points into the retained point."""
+    if not replaced:
+        return kept
+    return kept.model_copy(
+        update={
+            "pid_output_min": merge_minimum(
+                kept.pid_output_min, *(point.pid_output_min for point in replaced)
+            ),
+            "pid_output_max": merge_maximum(
+                kept.pid_output_max, *(point.pid_output_max for point in replaced)
+            ),
+            "duty_cycle_percent_min": merge_minimum(
+                kept.duty_cycle_percent_min,
+                *(point.duty_cycle_percent_min for point in replaced),
+            ),
+            "duty_cycle_percent_max": merge_maximum(
+                kept.duty_cycle_percent_max,
+                *(point.duty_cycle_percent_max for point in replaced),
+            ),
         }
     )
 
 
 def _limit_transitions(
-    points: Sequence[_Point], budget: int, signature: Callable[[_Point], _Signature]
+    points: Sequence[_Point],
+    budget: int,
+    signature: Callable[[_Point], _Signature],
+    widener: Callable[[_Point, Sequence[_Point]], _Point] | None = None,
 ) -> tuple[_Point, ...]:
+    """Retain transition points and, with a widener, preserve span extrema.
+
+    Every collapsed or downsampled span is represented by its first kept
+    transition. Without a widener the historical selection applies unchanged;
+    with one, each kept point absorbs the recorded extrema of every original
+    point its span replaces, so reduction never discards peaks or troughs.
+    """
     if budget == 0:
         return ()
-    changes = [
-        point
+    change_indices = [
+        index
         for index, point in enumerate(points)
         if index == 0 or signature(point) != signature(points[index - 1])
     ]
-    if len(changes) <= budget:
-        return tuple(changes)
-    if budget == 1:
-        return (changes[0],)
-    return tuple(
-        changes[round(index * (len(changes) - 1) / (budget - 1))] for index in range(budget)
-    )
+    if widener is None:
+        changes = [points[index] for index in change_indices]
+        if len(changes) <= budget:
+            return tuple(changes)
+        if budget == 1:
+            return (changes[0],)
+        return tuple(
+            changes[round(index * (len(changes) - 1) / (budget - 1))] for index in range(budget)
+        )
+    if not change_indices:
+        return ()
+    if len(change_indices) <= budget:
+        retained = change_indices
+    elif budget == 1:
+        retained = [change_indices[0]]
+    else:
+        retained = [
+            change_indices[round(position * (len(change_indices) - 1) / (budget - 1))]
+            for position in range(budget)
+        ]
+    selected: list[_Point] = []
+    for position, index in enumerate(retained):
+        span_end = retained[position + 1] if position + 1 < len(retained) else len(points)
+        replaced = points[index + 1 : span_end]
+        selected.append(widener(points[index], replaced) if replaced else points[index])
+    return tuple(selected)
 
 
 def _collapse_photoperiod(

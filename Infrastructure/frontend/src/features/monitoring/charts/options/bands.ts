@@ -15,6 +15,8 @@ export function buildBands(data: AlignedData): uPlot.Band[] {
     if (minIdx === undefined || maxIdx === undefined) continue
     bands.push({
       series: [minIdx, maxIdx],
+      // The first boundary is the minimum: fill upward toward the maximum.
+      dir: 1,
       fill: readToken('envelopeFill'),
     })
   }

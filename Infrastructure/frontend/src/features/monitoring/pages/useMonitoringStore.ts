@@ -31,10 +31,18 @@ export function useMonitoringStore(
   const storeRef = useRef<MonitoringStore | null>(null)
   const requestContextRef = useRef(requestContext)
   if (storeRef.current === null) {
-    storeRef.current = new MonitoringStore(location, new MonitoringApi(requestContextRef.current), {
-      now: () => new Date(),
-      loadDeviceRegistry: () => apiClient.getDeviceRegistry(),
-    })
+    // Room Monitoring/Historical reads are lights-scoped: only recorded light
+    // intensity/trajectory plus light-related photoperiod metadata, with a
+    // rejecting contract still validating the envelope. The registry load is
+    // retained for the delayed canonical display names of the room lights.
+    storeRef.current = new MonitoringStore(
+      location,
+      new MonitoringApi(requestContextRef.current, undefined, 'lights'),
+      {
+        now: () => new Date(),
+        loadDeviceRegistry: () => apiClient.getDeviceRegistry(),
+      }
+    )
   }
   const store = storeRef.current
   const subscribe = useCallback((listener: () => void) => store.subscribe(listener), [store])

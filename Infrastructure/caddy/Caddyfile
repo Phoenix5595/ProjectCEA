@@ -53,7 +53,7 @@
 	# decoded path regex forbids slash and percent in each room/node segment.
 	@monitoring_sensor_read {
 		method GET
-		path_regexp monitoring_sensor_read ^/api/sensors/monitoring/(?:range|stats)/[^/%]+$|^/api/sensors/monitoring/live/[^/%]+/[^/%]+$
+		path_regexp monitoring_sensor_read ^/api/sensors/monitoring/(?:range|stats|overview)/[^/%]+$|^/api/sensors/monitoring/live/[^/%]+/[^/%]+$
 	}
 	handle @monitoring_sensor_read {
 		request_header -X-API-Key
@@ -64,7 +64,7 @@
 
 	@monitoring_control_read {
 		method GET
-		path_regexp monitoring_control_read ^/api/monitoring/control/[^/%]+/(?:history|current|projection|tail|relay-timeline)$
+		path_regexp monitoring_control_read ^/api/monitoring/control/[^/%]+/(?:history|current|projection|tail|relay-timeline|overview)$
 	}
 	handle @monitoring_control_read {
 		request_header -X-API-Key

@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import date
+from dataclasses import dataclass
+from datetime import date, datetime
 import json
 from typing import Any
 import uuid
@@ -12,6 +13,7 @@ import asyncpg
 
 from app.calendar.flower_grow_plan import (
     FLOWER_PHASE_TYPES,
+    GROW_PLAN_PHASE_TYPES,
     FlowerGrowPlanInput,
     build_flower_grow_plan,
     phase_to_metadata,
@@ -22,6 +24,34 @@ LOCAL_TZ = ZoneInfo("America/Toronto")
 
 DEFAULT_LIMIT = 500
 MAX_LIMIT = 2000
+
+
+_CURRENT_RUN_SQL = (
+    "SELECT grow_plan_id, MIN(start_date) AS run_start, "
+    "MAX(COALESCE(end_date, start_date)) AS run_end "
+    "FROM calendar_event "
+    "WHERE deleted_at IS NULL "
+    "AND location = $1 "
+    "AND grow_plan_id IS NOT NULL "
+    "AND event_type = ANY($2::text[]) "
+    "GROUP BY grow_plan_id "
+    "HAVING MIN(start_date) <= $3 "
+    "AND MAX(COALESCE(end_date, start_date)) >= $3 "
+    "ORDER BY run_start, grow_plan_id "
+    "LIMIT 2"
+)
+
+
+class GrowPlanCurrentRunAmbiguousError(Exception):
+    """Multiple canonical grow-plan groups span today in the same room."""
+
+
+@dataclass(frozen=True, slots=True)
+class GrowPlanCurrentRun:
+    location: str
+    grow_plan_id: uuid.UUID
+    start_date: date
+    end_date: date
 
 
 class CalendarRepository(BaseRepository):
@@ -468,6 +498,36 @@ class CalendarRepository(BaseRepository):
         except Exception as e:
             logger.error(f"Failed to get last ended plan end for {location}: {e}")
             return None
+
+    async def get_current_run(
+        self, location: str, today: date | None = None
+    ) -> GrowPlanCurrentRun | None:
+        """Resolve a canonical room plan spanning Toronto today, including phase gaps.
+
+        Only non-deleted phases with an authoritative top-level plan ID define
+        the full room extent. Missing plans return None; ambiguity and database
+        errors must not become a guessed run or a fake empty result.
+        """
+        span_day = today if today is not None else datetime.now(tz=LOCAL_TZ).date()
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                _CURRENT_RUN_SQL, location, sorted(GROW_PLAN_PHASE_TYPES), span_day
+            )
+        if len(rows) > 1:
+            ids = ", ".join(str(row["grow_plan_id"]) for row in rows)
+            raise GrowPlanCurrentRunAmbiguousError(
+                f"{location} has at least 2 distinct grow plans spanning "
+                f"{span_day.isoformat()}: {ids}"
+            )
+        if not rows:
+            return None
+        row = rows[0]
+        return GrowPlanCurrentRun(
+            location=location,
+            grow_plan_id=row["grow_plan_id"],
+            start_date=row["run_start"],
+            end_date=row["run_end"],
+        )
 
     async def record_mode_application(
         self,

@@ -38,7 +38,7 @@ export interface AlignInput {
   seriesSpecs?: SeriesSpec[]
   /** Panel-level default soft bounds applied when no series explicitly declares one. */
   scaleDefaults?: { unit?: UnitFamily; softMin?: number; softMax?: number }
-  /** Room-filtered device identities used to suppress light state/PID overlays. */
+  /** Room-filtered device identities supplying canonical light display names. */
   lightRegistry?: readonly Pick<
     DeviceRegistryEntry,
     'device_name' | 'display_name' | 'per_room_index'
@@ -106,6 +106,8 @@ export interface AlignedSeries {
   origin: Origin
   quality: Quality
   isAggregated: boolean
+  /** Overview summaries must not bridge empty historical buckets. */
+  preserveGaps?: boolean
   unit?: string
   unitFamily?: UnitFamily
   /** Canonical presentation metadata, attached when manifest specs are supplied. */
@@ -140,6 +142,8 @@ export interface AlignedData {
   aggregated: boolean
   /** Panel-level default soft bounds applied when no series explicitly declares one. */
   scaleDefaults?: { unit?: UnitFamily; softMin?: number; softMax?: number }
+  /** Exact UTC bucket bounds, aligned one-to-one with overview x midpoints. */
+  overview?: { readonly buckets: readonly { start: number; end: number }[] }
 }
 
 // ---------------------------------------------------------------------------
@@ -152,6 +156,11 @@ export interface NormPoint {
   origin: Origin
   quality: Quality
   isAggregated: boolean
+  /** Recorded extrema of the samples a source-aggregated point represents. A
+   * retained mean/last is never an extremum, so the fields stay null when the
+   * source does not prove them for this bucket. */
+  minimum?: number | null
+  maximum?: number | null
 }
 
 export interface NormStep {
@@ -159,6 +168,11 @@ export interface NormStep {
   value: number | null
   origin: Origin
   quality: Quality
+  /** Whether the step's source buckets are aggregates; see NormPoint. */
+  isAggregated?: boolean
+  /** Recorded extrema of the samples the step represents; see NormPoint. */
+  minimum?: number | null
+  maximum?: number | null
 }
 
 export interface NormLinear {

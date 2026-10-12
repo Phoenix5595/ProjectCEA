@@ -54,6 +54,14 @@ export interface RequestedOutputSegment {
   readonly requestedPercent: number
   readonly aggregated: boolean
   readonly intervalSeconds: number
+  /**
+   * Recorded bucket extrema behind an aggregated segment (0..100, min <= max).
+   * A missing side stays null/undefined so an unknown range never renders as a
+   * fabricated zero-height band; raw segments repeat requestedPercent on both
+   * sides and are drawn as their exact single output instead.
+   */
+  readonly requestedMinPercent?: number | null
+  readonly requestedMaxPercent?: number | null
 }
 export interface RequestedOutputAt {
   readonly segment: RequestedOutputSegment
@@ -470,6 +478,8 @@ export function buildRequestedOutputSegments(input: {
       requestedPercent: point.requested_percent,
       aggregated: point.aggregated,
       intervalSeconds: point.interval_seconds,
+      requestedMinPercent: point.requested_min_percent,
+      requestedMaxPercent: point.requested_max_percent,
     })
   }
 

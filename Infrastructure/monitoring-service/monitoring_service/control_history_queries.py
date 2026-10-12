@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import timedelta
 
-from monitoring_service.control_models import ControlHistoryRange
+from monitoring_service.control_models import ControlHistoryRange, ControlReadScope
 
 _RAW_SETPOINTS_SQL = """
 SELECT timestamp, mode,
@@ -47,14 +47,24 @@ ORDER BY timestamp
 _CAGG_SETPOINT_COLUMNS = """
 bucket AS timestamp, mode,
 effective_heating_setpoint_last AS effective_heating_setpoint,
+effective_heating_setpoint_min::double precision AS effective_heating_setpoint_min,
+effective_heating_setpoint_max::double precision AS effective_heating_setpoint_max,
 NULL::double precision AS nominal_heating_setpoint, NULL::double precision AS ramp_progress_heating,
 effective_cooling_setpoint_last AS effective_cooling_setpoint,
+effective_cooling_setpoint_min::double precision AS effective_cooling_setpoint_min,
+effective_cooling_setpoint_max::double precision AS effective_cooling_setpoint_max,
 NULL::double precision AS nominal_cooling_setpoint, NULL::double precision AS ramp_progress_cooling,
 effective_humidity_setpoint_last AS effective_humidity_setpoint,
+effective_humidity_setpoint_min::double precision AS effective_humidity_setpoint_min,
+effective_humidity_setpoint_max::double precision AS effective_humidity_setpoint_max,
 NULL::double precision AS nominal_humidity_setpoint, NULL::double precision AS ramp_progress_humidity,
 effective_co2_setpoint_last AS effective_co2_setpoint,
+effective_co2_setpoint_min::double precision AS effective_co2_setpoint_min,
+effective_co2_setpoint_max::double precision AS effective_co2_setpoint_max,
 NULL::double precision AS nominal_co2_setpoint, NULL::double precision AS ramp_progress_co2,
 effective_vpd_setpoint_last AS effective_vpd_setpoint,
+effective_vpd_setpoint_min::double precision AS effective_vpd_setpoint_min,
+effective_vpd_setpoint_max::double precision AS effective_vpd_setpoint_max,
 NULL::double precision AS nominal_vpd_setpoint, NULL::double precision AS ramp_progress_vpd
 """
 
@@ -74,7 +84,8 @@ ORDER BY timestamp
 
 _STATE_COLUMNS = """
 bucket, device_name, device_state_last, device_mode_last, control_reason_last,
-pid_output_last, duty_cycle_percent_last
+pid_output_last, duty_cycle_percent_last,
+pid_output_min, pid_output_max, duty_cycle_percent_min, duty_cycle_percent_max
 """
 
 _STATE_1MIN_SQL = f"""
@@ -164,25 +175,39 @@ ORDER BY timestamp
 
 @dataclass(frozen=True, slots=True)
 class ControlHistorySources:
-    """Read-only sources selected for a control history request."""
+    """Read-only sources selected for a control history request.
 
-    setpoints_sql: str
+    ``setpoints_sql`` and ``state_sql`` are ``None`` when the requested scope
+    excludes climate and automation-state facts; the light source always stays
+    the raw per-device recorded setpoint rows.
+    """
+
+    setpoints_sql: str | None
     light_sql: str
-    state_sql: str
+    state_sql: str | None
     setpoints_are_aggregated: bool
     source_interval_seconds: int
 
 
 def select_control_history_sources(
-    history_range: ControlHistoryRange, max_points: int | None
+    history_range: ControlHistoryRange,
+    max_points: int | None,
+    scope: ControlReadScope = "all",
 ) -> ControlHistorySources:
     """Choose existing control read models; unbudgeted reads retain their legacy sources.
 
-    The climate and automation-state ladders are range-dependent as before.
-    Lights always read the raw per-device setpoint source because range-dependent
-    aggregate selection is what erased recorded ramp semantics through the CAGG
-    null nominal/ramp fields.
+    A ``lights`` scope selects only the raw per-device light source: the
+    climate and automation-state ladders are never queried. Recorded effective
+    light intensities remain readable when those derived models are unavailable;
+    they are setpoints, not independently measured dimmer feedback. The default
+    ``all`` scope retains the existing climate and automation-state ladders.
+
+    Lights always read the raw per-device setpoint source because
+    range-dependent aggregate selection is what erased recorded ramp semantics
+    through the CAGG null nominal/ramp fields.
     """
+    if scope == "lights":
+        return ControlHistorySources(None, _LIGHT_SETPOINTS_SQL, None, False, 60)
     if max_points is None:
         return ControlHistorySources(
             _RAW_SETPOINTS_SQL, _LIGHT_SETPOINTS_SQL, _STATE_1MIN_SQL, False, 60

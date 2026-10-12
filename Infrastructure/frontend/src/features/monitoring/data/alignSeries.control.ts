@@ -195,6 +195,8 @@ function normalizeControlSeries(
         origin: p.provenance.origin,
         quality: p.provenance.quality,
         isAggregated: p.provenance.is_aggregated,
+        minimum: p.minimum,
+        maximum: p.maximum,
       }))
     ),
     steps: canonicalizeTargetValues(
@@ -203,6 +205,9 @@ function normalizeControlSeries(
         value: st.value,
         origin: st.provenance.origin,
         quality: st.provenance.quality,
+        isAggregated: st.provenance.is_aggregated,
+        minimum: st.minimum,
+        maximum: st.maximum,
       }))
     ),
     linear: s.linear.map(ln => ({
@@ -245,6 +250,10 @@ type RawPidPoint = {
   timestamp: Date
   pid_output?: number | null
   duty_cycle_percent?: number | null
+  pid_output_min?: number | null
+  pid_output_max?: number | null
+  duty_cycle_percent_min?: number | null
+  duty_cycle_percent_max?: number | null
 }
 
 type RawPidInput = {
@@ -265,6 +274,8 @@ function normalizePidSeries(s: RawPidInput, metric: string): NormPidSeries {
         origin: s.provenance.origin,
         quality: s.provenance.quality,
         isAggregated: s.provenance.is_aggregated,
+        minimum: p.pid_output_min,
+        maximum: p.pid_output_max,
       })),
     dutyCycles: s.points
       .filter(p => p.duty_cycle_percent !== null && p.duty_cycle_percent !== undefined)
@@ -291,9 +302,20 @@ function mergeControl(a: NormControlSeries, b: NormControlSeries): NormControlSe
       ...a,
       trajectoryKind: a.trajectoryKind ?? b.trajectoryKind,
       points: [],
+      // Collapsed target steps still stand for the samples the source buckets
+      // represented, so their recorded extrema survive the point-to-step
+      // merge and the step envelope stays honest.
       steps: mergeTargetByTime(
         targetSteps,
-        targetPoints.map(({ t, value, origin, quality }) => ({ t, value, origin, quality }))
+        targetPoints.map(point => ({
+          t: point.t,
+          value: point.value,
+          origin: point.origin,
+          quality: point.quality,
+          isAggregated: point.isAggregated,
+          minimum: point.minimum,
+          maximum: point.maximum,
+        }))
       ),
       linear: mergeLinear(a.linear, b.linear),
     }

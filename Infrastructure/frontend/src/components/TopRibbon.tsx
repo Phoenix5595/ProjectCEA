@@ -6,6 +6,7 @@ import { Link, useLocation } from 'react-router-dom'
 import { MODE_DISPLAY_NAMES, SUBMODE_DISPLAY_NAMES, type ModeProfileIdentity } from '../types/modes'
 
 import { AppRibbon } from './chrome/AppRibbon'
+import { parseUrlRange, MAX_RANGE_MS, withSerializedRange } from '@/features/monitoring/components'
 
 export type Sector = 'laboratory' | 'vegetation' | 'flower' | 'devices'
 
@@ -54,12 +55,14 @@ const sectorTabs: Record<Sector, Tab[]> = {
   vegetation: [
     { id: 'overview', label: 'Overview', path: '/vegetation' },
     { id: 'monitoring', label: 'Monitoring', path: '/vegetation/monitoring' },
+    { id: 'historical', label: 'Historical', path: '/vegetation/historical' },
     { id: 'control', label: 'Control', path: '/vegetation/control' },
     { id: 'automation', label: 'Automation', path: '/vegetation/automation' },
   ],
   flower: [
     { id: 'overview', label: 'Overview', path: '/flower' },
     { id: 'monitoring', label: 'Monitoring', path: '/flower/monitoring' },
+    { id: 'historical', label: 'Historical', path: '/flower/historical' },
     { id: 'soil', label: 'Soil', path: '/flower/soil' },
     { id: 'control', label: 'Control', path: '/flower/control' },
     { id: 'automation', label: 'Automation', path: '/flower/automation' },
@@ -153,6 +156,18 @@ const TopRibbon: FC<TopRibbonProps> = ({
   activationLabel = 'Activate',
 }) => {
   const location = useLocation()
+  const historicalParams = new URLSearchParams(location.search)
+  const historicalRange = parseUrlRange(historicalParams, null)
+  const historicalEnd = new Date()
+  const historicalSearch =
+    historicalRange.kind === 'fixed' &&
+    historicalRange.end.getTime() - historicalRange.start.getTime() > MAX_RANGE_MS
+      ? historicalParams
+      : withSerializedRange(historicalParams, {
+          kind: 'fixed',
+          start: new Date(historicalEnd.getTime() - 31 * 24 * 60 * 60 * 1000),
+          end: historicalEnd,
+        })
   const tabs = sectorTabs[sector]
 
   const currentPath = location.pathname
@@ -191,7 +206,7 @@ const TopRibbon: FC<TopRibbonProps> = ({
             return (
               <Link
                 key={tab.id}
-                to={tab.path}
+                to={tab.id === 'historical' ? `${tab.path}?${historicalSearch}` : tab.path}
                 onClick={() => onTabChange(tab.id)}
                 className={`
                   px-1.5 py-1 text-sm font-medium whitespace-nowrap

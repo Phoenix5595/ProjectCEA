@@ -13,10 +13,18 @@ from monitoring_service.control_models import (
     ControlHistoryEnvelope,
     ControlHistoryRange,
     ControlPublicationResponse,
+    ControlReadScope,
 )
+from monitoring_service.history_overview_models import (
+    HistoryOverviewControlResponse,
+    HistoryOverviewMetadata,
+    HistoryOverviewRange,
+)
+from monitoring_service.history_buckets import choose_history_bucket
 from monitoring_service.main import create_app
 from monitoring_service.sensor_models import (
     MonitoringRange,
+    MonitoringValidationError,
     Node,
     SensorSeries,
     SensorStatistics,
@@ -78,13 +86,22 @@ class FakeSensorReads:
         del room, node
         return ()
 
+    async def overview(
+        self, room: str, history_range: HistoryOverviewRange, max_points: int = 600
+    ) -> HistoryOverviewSensorResponse:
+        raise AssertionError("sensor overview is outside this contract test")
+
 
 @final
 class FakeControlReads:
     async def history(
-        self, location: str, history_range: ControlHistoryRange, max_points: int | None = None
+        self,
+        location: str,
+        history_range: ControlHistoryRange,
+        max_points: int | None = None,
+        scope: ControlReadScope = "all",
     ) -> ControlHistoryEnvelope:
-        del location
+        del location, scope
         return ControlHistoryEnvelope(
             range=history_range,
             runtime_snapshot_version=1,
@@ -92,6 +109,28 @@ class FakeControlReads:
             interval_seconds=derive_interval_seconds(
                 history_range.end - history_range.start, 1, max_points
             ),
+        )
+
+    async def overview(
+        self,
+        location: str,
+        history_range: HistoryOverviewRange,
+        max_points: int = 600,
+        scope: ControlReadScope = "all",
+    ) -> HistoryOverviewControlResponse:
+        del location, scope
+        return HistoryOverviewControlResponse(
+            metadata=HistoryOverviewMetadata(
+                generated_at=NOW,
+                range=history_range,
+                room=resolve_room_metadata("Veg Room"),
+                requested_max_points=max_points,
+                bucket=choose_history_bucket(history_range.start, history_range.end, max_points),
+                source_coverage="ready",
+            ),
+            lights=(),
+            requested_pid=(),
+            relays=(),
         )
 
     async def publications(self, location: str) -> ControlPublicationResponse:

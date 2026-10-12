@@ -217,3 +217,56 @@ describe('formatTooltipValue', () => {
     expect(gap).toBe(' —')
   })
 })
+
+describe('overview bucket tooltip', () => {
+  it('uses half-open calendar bounds rather than interpolating sampled averages across months', () => {
+    const boundaries = [
+      Date.UTC(2025, 0, 1), Date.UTC(2025, 1, 1),
+      Date.UTC(2025, 2, 1), Date.UTC(2025, 3, 1),
+    ]
+    const buckets = boundaries.slice(0, -1).map((start, index) => ({
+      start, end: boundaries[index + 1],
+    }))
+    const series: AlignedSeries = {
+      key: seriesKey('light', 'light_f_1', 'mean'),
+      label: 'Recorded sampled intensity',
+      kind: 'linear', source: 'light', metric: 'light_f_1', family: 'light',
+      role: 'mean', y: [10, 90, null], origin: 'derived', quality: 'exact',
+      isAggregated: true, preserveGaps: true, unit: '%', presentation: { decimals: 0 },
+    }
+    const data: AlignedData = {
+      x: buckets.map(bucket => (bucket.start + bucket.end) / 2),
+      series: [series], bands: [], photoperiod: [], nowIndex: -1,
+      aggregated: true, overview: { buckets },
+    }
+    let instant = Date.UTC(2025, 0, 31, 23)
+    const root = document.createElement('div')
+    const plot = {
+      root, cursor: { left: 5, top: 5 }, data: [data.x, series.y],
+      series: [{}, { show: true }], posToVal: () => instant,
+    } as unknown as uPlot
+    const plugin = tooltipPlugin([series], { bg: 'white', border: 'black', text: 'black' }, () => data)
+    const ready = plugin.hooks?.ready
+    const cursor = plugin.hooks?.setCursor
+    const onReady = Array.isArray(ready) ? ready[0] : ready
+    const onCursor = Array.isArray(cursor) ? cursor[0] : cursor
+    if (onReady === undefined || onCursor === undefined) throw new Error('Missing tooltip hooks')
+    onReady(plot)
+    onCursor(plot)
+    const tooltip = root.querySelector<HTMLDivElement>('.mon-tooltip')!
+    expect(tooltip.textContent).toContain('10 %')
+    expect(tooltip.textContent).toContain(new Date(boundaries[0]).toISOString())
+    expect(tooltip.textContent).toContain(new Date(boundaries[1]).toISOString())
+    instant = boundaries[1]
+    onCursor(plot)
+    expect(tooltip.textContent).toContain('90 %')
+    expect(tooltip.textContent).toContain(new Date(boundaries[2]).toISOString())
+    instant = boundaries[2]
+    onCursor(plot)
+    expect(tooltip.textContent).toContain('unavailable')
+    expect(tooltip.textContent).not.toContain('90 %')
+    instant = boundaries[3]
+    onCursor(plot)
+    expect(tooltip.style.display).toBe('none')
+  })
+})

@@ -12,8 +12,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Serve Frontend
-         * @description Serve frontend index.html.
+         * Root
+         * @description Root endpoint.
          */
         get: operations["get_"];
         put?: never;
@@ -86,6 +86,26 @@ export interface paths {
          *         Success status
          */
         post: operations["post_api_alarms_{location}_{cluster}_{alarm_name}_acknowledge"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/calendar/current-run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Current Run
+         * @description Read the room's current calendar span without consulting sensor history.
+         */
+        get: operations["get_api_calendar_current-run"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1702,54 +1722,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/favicon.ico": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Favicon Ico
-         * @description Serve favicon.ico (browser default request).
-         */
-        get: operations["get_favicon.ico"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        /**
-         * Favicon Ico
-         * @description Serve favicon.ico (browser default request).
-         */
-        head: operations["head_favicon.ico"];
-        patch?: never;
-        trace?: never;
-    };
-    "/favicon.png": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Favicon Png
-         * @description Serve favicon.png.
-         */
-        get: operations["get_favicon.png"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        /**
-         * Favicon Png
-         * @description Serve favicon.png.
-         */
-        head: operations["head_favicon.png"];
-        patch?: never;
-        trace?: never;
-    };
     "/health": {
         parameters: {
             query?: never;
@@ -1769,30 +1741,6 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/logo.png": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Logo
-         * @description Serve logo.png favicon.
-         */
-        get: operations["get_logo.png"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        /**
-         * Logo
-         * @description Serve logo.png favicon.
-         */
-        head: operations["head_logo.png"];
         patch?: never;
         trace?: never;
     };
@@ -1820,26 +1768,6 @@ export interface paths {
          *     ``check_redis_async_client``.
          */
         get: operations["get_ready"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/{path}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Serve Frontend Routes
-         * @description Serve frontend routes (SPA fallback).
-         */
-        get: operations["get_{path}"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1968,6 +1896,29 @@ export interface components {
              * @default Manual control released
              */
             reason: string;
+        };
+        /**
+         * CalendarCurrentRunResponse
+         * @description Full room span of the unique canonical plan containing Toronto today.
+         */
+        CalendarCurrentRunResponse: {
+            /**
+             * End Date
+             * Format: date
+             */
+            end_date: string;
+            /**
+             * Grow Plan Id
+             * Format: uuid
+             */
+            grow_plan_id: string;
+            /** Location */
+            location: string;
+            /**
+             * Start Date
+             * Format: date
+             */
+            start_date: string;
         };
         /** CalendarEventCreate */
         CalendarEventCreate: {
@@ -3796,6 +3747,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AlarmAcknowledgeResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    "get_api_calendar_current-run": {
+        parameters: {
+            query: {
+                location: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CalendarCurrentRunResponse"] | null;
                 };
             };
             /** @description Validation Error */
@@ -6759,86 +6741,6 @@ export interface operations {
             };
         };
     };
-    "get_favicon.ico": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-        };
-    };
-    "head_favicon.ico": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-        };
-    };
-    "get_favicon.png": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-        };
-    };
-    "head_favicon.png": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-        };
-    };
     get_health: {
         parameters: {
             query?: never;
@@ -6859,46 +6761,6 @@ export interface operations {
             };
         };
     };
-    "get_logo.png": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-        };
-    };
-    "head_logo.png": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-        };
-    };
     get_ready: {
         parameters: {
             query?: never;
@@ -6915,37 +6777,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
-                };
-            };
-        };
-    };
-    "get_{path}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                path: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

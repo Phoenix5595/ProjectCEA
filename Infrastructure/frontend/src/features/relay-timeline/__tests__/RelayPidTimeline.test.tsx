@@ -9,6 +9,39 @@ import { RelayPidTimeline } from '../RelayPidTimeline'
 import type { RelayTimelineChartHandle, RelayTimelineChartProps } from '../RelayTimelineChart'
 
 const mocks = vi.hoisted(() => ({ relayTimeline: vi.fn() }))
+const overviewMocks = vi.hoisted(() => ({
+  props: [] as Array<{
+    room: string
+    range: { start: Date; end: Date }
+    controlOnly?: boolean
+    onDetail: (start: Date, end: Date) => void
+  }>,
+  nextDetail: {
+    start: new Date('2026-07-23T00:00:00.000Z'),
+    end: new Date('2026-07-26T00:00:00.000Z'),
+  },
+}))
+
+vi.mock('../../history-overview', () => ({
+  HistoryOverviewView: (props: {
+    room: string
+    range: { start: Date; end: Date }
+    controlOnly?: boolean
+    onDetail: (start: Date, end: Date) => void
+  }) => {
+    overviewMocks.props.push(props)
+    return (
+      <div data-testid="history-overview-view">
+        <button
+          type="button"
+          onClick={() => props.onDetail(overviewMocks.nextDetail.start, overviewMocks.nextDetail.end)}
+        >
+          Open detail range
+        </button>
+      </div>
+    )
+  },
+}))
 
 vi.mock('../../monitoring/api', () => ({
   MonitoringApi: class {
@@ -29,7 +62,7 @@ vi.mock('../RelayTimelineChart', async () => {
               <div key={lane.key} data-testid={`lane-${lane.deviceType}`}>
                 <span>{lane.label}</span>
                 <span>
-                  {lane.preview ? 'example only; no hardware' : `relay ${lane.physicalRelay}`}
+                  relay {lane.physicalRelay}
                 </span>
                 <span>
                   {lane.requestedOutput.map(segment => segment.requestedPercent).join(',')}
@@ -195,14 +228,12 @@ function timelinePage(start: string, end: string, watermark = 42) {
 function renderTimeline(
   snapshot: ControlSnapshotResponse | null,
   registry: DeviceRegistryEntry[] = [heater, light],
-  snapshotLoading = false
+  snapshotLoading = false,
+  initialEntry =
+    '/vegetation/automation?scenario=relay-pid-timeline&fixtureSession=timeline-test'
 ) {
   return render(
-    <MemoryRouter
-      initialEntries={[
-        '/vegetation/automation?scenario=relay-pid-timeline&fixtureSession=timeline-test',
-      ]}
-    >
+    <MemoryRouter initialEntries={[initialEntry]}>
       <RelayPidTimeline
         location="Veg Room"
         cluster="main"
@@ -225,6 +256,11 @@ function deferred<T>() {
 describe('RelayPidTimeline integration', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    overviewMocks.props.length = 0
+    overviewMocks.nextDetail = {
+      start: new Date('2026-07-23T00:00:00.000Z'),
+      end: new Date('2026-07-26T00:00:00.000Z'),
+    }
     mocks.relayTimeline.mockImplementation(async (_location: string, start: string, end: string) =>
       timelinePage(start, end)
     )
@@ -325,48 +361,7 @@ describe('RelayPidTimeline integration', () => {
     expect(within(latestOutput).queryByText('75%')).not.toBeInTheDocument()
   })
 
-  it('shows an explicitly synthetic example lane when assignments are absent', async () => {
-    renderTimeline(controlSnapshot(new Date().toISOString()), [])
 
-    expect(
-      await screen.findByText(/No assigned non-light relays are available/)
-    ).toBeInTheDocument()
-    const disableButton = screen.getByRole('button', { name: 'Disable beta synthetic example' })
-    expect(disableButton).toHaveAttribute('aria-pressed', 'true')
-    const preview = screen.getByRole('group', { name: 'Illustrative relay timeline preview' })
-    const previewChart = within(preview).getByTestId('relay-timeline-chart')
-    expect(within(previewChart).getByTestId('lane-heating')).toHaveTextContent('Heating relay')
-    expect(within(previewChart).getByText('example only; no hardware')).toBeInTheDocument()
-    expect(within(previewChart).getByText('25,50,75,35')).toBeInTheDocument()
-    expect(
-      within(preview).getByText(/Example requested PID output at the range end/)
-    ).toHaveTextContent('35%')
-    expect(
-      within(preview).getByText(
-        /not assigned hardware, a relay observation, or recorded PID output/
-      )
-    ).toBeInTheDocument()
-
-    fireEvent.click(disableButton)
-    expect(
-      screen.queryByRole('group', { name: 'Illustrative relay timeline preview' })
-    ).not.toBeInTheDocument()
-    const enableButton = screen.getByRole('button', { name: 'Enable beta synthetic example' })
-    expect(enableButton).toHaveAttribute('aria-pressed', 'false')
-    fireEvent.click(enableButton)
-    expect(
-      screen.getByRole('group', { name: 'Illustrative relay timeline preview' })
-    ).toBeInTheDocument()
-  })
-
-  it('does not show the example lane while assignments are still loading', () => {
-    renderTimeline(null, [], true)
-
-    expect(screen.getByText(/Loading current relay assignments/)).toBeInTheDocument()
-    expect(
-      screen.queryByRole('group', { name: 'Illustrative relay timeline preview' })
-    ).not.toBeInTheDocument()
-  })
 
   it('refreshes the requested live preset range and ignores a stale response after range change', async () => {
     const firstRequest = deferred<RelayTimelineResponse>()

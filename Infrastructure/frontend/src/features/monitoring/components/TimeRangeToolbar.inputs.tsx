@@ -14,13 +14,22 @@ import {
   type FallFoldChoice,
 } from '../../../utils/torontoWallTime'
 
-import { offsetLabel, validateRange } from './timeRangeToolbar.time'
+import { MAX_RANGE_MS, offsetLabel, validateRange, type MaxRangeCap } from './timeRangeToolbar.time'
 
 export function formatWallInput(value: Date): string {
   return formatInTimeZone(value, TORONTO_TZ, "yyyy-MM-dd'T'HH:mm")
 }
 
-export function fixedInputError(startInput: string, endInput: string): string | null {
+/**
+ * Preflight-validate the raw wall-time inputs against the toolbar's fixed
+ * range cap. Ambiguous fold times pass here and are resolved explicitly by the
+ * parent before submission.
+ */
+export function fixedInputError(
+  startInput: string,
+  endInput: string,
+  maxRangeMs: MaxRangeCap = MAX_RANGE_MS
+): string | null {
   const startComps = parseWallInput(startInput)
   const endComps = parseWallInput(endInput)
   if (startComps === null || endComps === null) return 'Enter both a start and an end time'
@@ -31,7 +40,7 @@ export function fixedInputError(startInput: string, endInput: string): string | 
     return 'That time does not exist in Toronto (spring-forward gap)'
   }
   if (start.kind === 'ambiguous' || end.kind === 'ambiguous') return null
-  return validateRange(start.utc, end.utc)
+  return validateRange(start.utc, end.utc, maxRangeMs)
 }
 
 export interface FallFoldState {

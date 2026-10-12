@@ -83,6 +83,20 @@ export function formatTooltipValue(
   return ` ${value.toFixed(decimals)}${unit !== undefined ? ` ${unit}` : ''}`
 }
 
+function overviewBucketIndex(
+  buckets: NonNullable<AlignedData['overview']>['buckets'],
+  instant: number
+): number {
+  let lo = 0
+  let hi = buckets.length
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1
+    if (buckets[mid].end <= instant) lo = mid + 1
+    else hi = mid
+  }
+  return lo < buckets.length && buckets[lo].start <= instant ? lo : -1
+}
+
 /** Build a uPlot plugin that renders a value/provenance cursor tooltip. */
 export function tooltipPlugin(
   series: AlignedSeries[],
@@ -92,11 +106,12 @@ export function tooltipPlugin(
   let el: HTMLDivElement | null = null
 
   const seenKeys = new Set<SeriesKey>()
+  const overview = getData?.().overview !== undefined
   const meta: TooltipSeries[] = series
     .map((item, index) => ({ key: item.key, index: index + 1 }))
     .filter(item => {
       const candidate = series[item.index - 1]
-      if (candidate === undefined || isEnvelopeSeries(candidate) || seenKeys.has(item.key)) return false
+      if (candidate === undefined || (!overview && isEnvelopeSeries(candidate)) || seenKeys.has(item.key)) return false
       seenKeys.add(item.key)
       return true
     })
@@ -136,16 +151,28 @@ export function tooltipPlugin(
         }
         const cursorTime = u.posToVal(cursorLeft, 'x')
         el.textContent = ''
-        const currentSeries = getData?.().series ?? series
+        const currentData = getData?.()
+        const currentSeries = currentData?.series ?? series
+        const buckets = currentData?.overview?.buckets
+        const bucketIndex = buckets === undefined ? -1 : overviewBucketIndex(buckets, cursorTime)
+        if (buckets !== undefined) {
+          if (bucketIndex < 0) {
+            el.style.display = 'none'
+            return
+          }
+          const bucket = buckets[bucketIndex]
+          const heading = document.createElement('div')
+          heading.textContent = `UTC bucket: ${new Date(bucket.start).toISOString()} – ${new Date(bucket.end).toISOString()} (end exclusive)`
+          el.appendChild(heading)
+        }
         for (const item of meta) {
           const current = currentSeries.find(candidate => candidate.key === item.key)
           if (current === undefined || u.series[item.index]?.show === false) continue
-          const segment =
-            current.lightTrajectory === undefined
-              ? undefined
-              : lightSegmentAt(current.lightTrajectory, cursorTime)
-          const value =
-            current.lightTrajectory === undefined
+          const segment = buckets !== undefined || current.lightTrajectory === undefined
+            ? undefined : lightSegmentAt(current.lightTrajectory, cursorTime)
+          const value = buckets !== undefined
+            ? finiteValue(current.y[bucketIndex])
+            : current.lightTrajectory === undefined
               ? valueAtCursor(current.kind, xValues, u.data[item.index] ?? [], cursorTime)
               : lightValueAt(current.lightTrajectory, cursorTime)
           const row = document.createElement('div')
@@ -157,7 +184,8 @@ export function tooltipPlugin(
           row.appendChild(document.createTextNode(text))
           const prov = document.createElement('em')
           prov.textContent = ` ${segment?.origin ?? current.origin}/${
-            segment?.quality ?? current.quality
+            buckets !== undefined && value === null ? 'unavailable'
+              : segment?.quality ?? current.quality
           }`
           row.appendChild(prov)
           el.appendChild(row)

@@ -6,19 +6,36 @@
  * the toolbar, both chart regions, and the canonical tables render, and that no
  * iframe or Grafana URL appears anywhere in the page.
  */
-import { act, render, screen, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { forwardRef } from 'react'
-import { MemoryRouter } from 'react-router-dom'
+import { createMemoryRouter, MemoryRouter, RouterProvider } from 'react-router-dom'
 import type uPlot from 'uplot'
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 
 import { ThemeProvider } from '../../../../contexts/ThemeContext'
 import VegetationMonitoring from '../../../../pages/VegetationMonitoring'
 
-const { budgetReporters, pageRenderCount, snapshot, store } = vi.hoisted(() => {
+const {
+  budgetReporters,
+  pageRenderCount,
+  snapshot,
+  store,
+  overviewViewProps,
+  overviewSelection,
+} = vi.hoisted(() => {
   const t = new Date('2026-08-02T12:00:00.000Z')
   const budgetReporters: Array<(budget: number) => void> = []
   const pageRenderCount = { current: 0 }
+  const overviewViewProps: Array<{
+    room: string
+    range: { start: Date; end: Date }
+    onDetail: (start: Date, end: Date) => void
+    historicalDrillDown?: boolean
+  }> = []
+  const overviewSelection = {
+    start: new Date('2026-07-23T00:00:00.000Z'),
+    end: new Date('2026-07-26T00:00:00.000Z'),
+  }
   const store = {
     getSnapshot: () => snapshot,
     setLiveRange: vi.fn(),
@@ -88,8 +105,36 @@ const { budgetReporters, pageRenderCount, snapshot, store } = vi.hoisted(() => {
     reconciling: false,
     errors: [],
   }
-  return { budgetReporters, pageRenderCount, snapshot, store }
+  return { budgetReporters, pageRenderCount, snapshot, store, overviewViewProps, overviewSelection }
 })
+vi.mock('../../../history-overview', async importOriginal => {
+  const actual = await importOriginal<typeof import('../../../history-overview')>()
+  return {
+    ...actual,
+    HistoryOverviewView: (props: {
+      room: string
+      range: { start: Date; end: Date }
+      onDetail: (start: Date, end: Date) => void
+      historicalDrillDown?: boolean
+    }) => {
+      overviewViewProps.push(props)
+      return (
+        <div data-testid="history-overview-view">
+          <button
+            type="button"
+            onClick={() => props.onDetail(overviewSelection.start, overviewSelection.end)}
+          >
+            Open detailed range
+          </button>
+        </div>
+      )
+    },
+  }
+})
+
+const { getCalendarCurrentRun } = vi.hoisted(() => ({ getCalendarCurrentRun: vi.fn() }))
+
+vi.mock('../../../../services/api', () => ({ apiClient: { getCalendarCurrentRun } }))
 
 vi.mock('../useMonitoringStore', () => ({
   VEG_DEFAULT_DURATION_MS: 3600_000,
@@ -152,11 +197,16 @@ class MockResizeObserver {
 beforeEach(() => {
   instances.length = 0
   budgetReporters.length = 0
+  overviewViewProps.length = 0
   pageRenderCount.current = 0
   MockResizeObserver.instances.length = 0
+  store.setLiveRange.mockClear()
+  store.setFixedRange.mockClear()
   store.setRangeBudget.mockClear()
   store.sensorRange.mockClear()
   store.controlRange.mockClear()
+  getCalendarCurrentRun.mockReset()
+  getCalendarCurrentRun.mockResolvedValue(null)
   vi.stubGlobal('ResizeObserver', MockResizeObserver)
 })
 
@@ -165,14 +215,35 @@ afterEach(() => {
   vi.unstubAllEnvs()
 })
 
-function renderPage() {
+function renderPage(initialEntry = '/') {
   return render(
-    <MemoryRouter>
+    <MemoryRouter initialEntries={[initialEntry]}>
       <ThemeProvider>
         <VegetationMonitoring />
       </ThemeProvider>
     </MemoryRouter>
   )
+}
+
+/**
+ * Route-aware harness: navigating between the Historical and regular
+ * Monitoring paths remounts the page the same way the app router does, so the
+ * URL a handoff writes is what the next surface parses.
+ */
+function renderRouted(initialEntry: string) {
+  const router = createMemoryRouter(
+    [
+      { path: '/vegetation/monitoring', element: <VegetationMonitoring /> },
+      { path: '/vegetation/historical', element: <VegetationMonitoring /> },
+    ],
+    { initialEntries: [initialEntry] }
+  )
+  render(
+    <ThemeProvider>
+      <RouterProvider router={router} />
+    </ThemeProvider>
+  )
+  return router
 }
 
 describe('VegetationMonitoring page', () => {
@@ -257,5 +328,114 @@ describe('VegetationMonitoring page', () => {
       .map(element => element.style.height)
       .filter(height => height === '780px' || height === '320px')
     expect(chartSlots).toEqual(['780px', '320px'])
+  })
+  it('routes an initial long fixed URL to overview before mounting the detailed store', () => {
+    renderPage('/?start=2026-07-01T00:00:00.000Z&end=2026-08-01T00:00:00.000Z')
+
+    expect(screen.getByTestId('history-overview-view')).toBeInTheDocument()
+    expect(screen.getByText('FIXED')).toBeInTheDocument()
+    expect(pageRenderCount.current).toBe(0)
+    expect(store.setLiveRange).not.toHaveBeenCalled()
+    expect(store.setFixedRange).not.toHaveBeenCalled()
+    expect(screen.queryByRole('heading', { name: 'Veg climate conditions' })).toBeNull()
+    const view = overviewViewProps[0]
+    expect(view?.room).toBe('Veg Room')
+    expect(view?.range.start.toISOString()).toBe('2026-07-01T00:00:00.000Z')
+    expect(view?.range.end.toISOString()).toBe('2026-08-01T00:00:00.000Z')
+  })
+
+  it('keeps exactly seven days detailed and switches to overview at seven days plus one millisecond', () => {
+    const exact = renderPage('/?start=2026-07-15T10:00:00.000Z&end=2026-07-22T10:00:00.000Z')
+    expect(pageRenderCount.current).toBeGreaterThan(0)
+    expect(overviewViewProps).toHaveLength(0)
+    exact.unmount()
+
+    pageRenderCount.current = 0
+    store.setFixedRange.mockClear()
+    const plusOne = renderPage(
+      '/?start=2026-07-15T10:00:00.000Z&end=2026-07-22T10:00:00.001Z'
+    )
+    expect(screen.getByTestId('history-overview-view')).toBeInTheDocument()
+    expect(pageRenderCount.current).toBe(0)
+    expect(store.setFixedRange).not.toHaveBeenCalled()
+    plusOne.unmount()
+  })
+
+  it('hands overview detail selections to the detailed store and Now returns to live', () => {
+    const overview = renderPage(
+      '/?start=2026-07-01T00:00:00.000Z&end=2026-08-01T00:00:00.000Z'
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Open detailed range' }))
+    expect(pageRenderCount.current).toBeGreaterThan(0)
+    expect(store.setFixedRange).toHaveBeenCalledWith(
+      new Date('2026-07-23T00:00:00.000Z'),
+      new Date('2026-07-26T00:00:00.000Z')
+    )
+    overview.unmount()
+
+    const longView = renderPage(
+      '/?start=2026-07-01T00:00:00.000Z&end=2026-08-01T00:00:00.000Z'
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Now' }))
+    expect(store.setLiveRange).toHaveBeenCalledWith(3600_000)
+    longView.unmount()
+  })
+})
+
+describe('VegetationMonitoring historical route', () => {
+  it('swaps to the historical presets and loads the Veg Room current run', async () => {
+    renderRouted('/vegetation/historical?start=2026-07-01T00:00:00.000Z&end=2026-08-01T00:00:00.000Z')
+
+    for (const label of ['5 days', '7 days', '2 weeks', '1 month', '3 months', 'Current run']) {
+      expect(screen.getByRole('button', { name: label })).toBeTruthy()
+    }
+    expect(screen.queryByRole('button', { name: 'Now' })).toBeNull()
+    expect(overviewViewProps.at(-1)?.historicalDrillDown).toBe(true)
+
+    await waitFor(() =>
+      expect(getCalendarCurrentRun).toHaveBeenCalledWith(
+        'Veg Room',
+        expect.objectContaining({ signal: expect.any(AbortSignal) })
+      )
+    )
+  })
+
+  it('routes the five-day preset to Veg regular Monitoring with the fixture query preserved', () => {
+    const router = renderRouted(
+      '/vegetation/historical?start=2026-07-16T10:00:00.000Z&end=2026-07-22T10:00:00.000Z&scenario=absent&fixtureSession=veg-1'
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: '5 days' }))
+
+    expect(router.state.location.pathname).toBe('/vegetation/monitoring')
+    const params = new URLSearchParams(router.state.location.search)
+    expect(params.get('scenario')).toBe('absent')
+    expect(params.get('fixtureSession')).toBe('veg-1')
+    const start = new Date(params.get('start') ?? '')
+    const end = new Date(params.get('end') ?? '')
+    expect(end.getTime() - start.getTime()).toBe(5 * 24 * 3600_000)
+    expect(store.setFixedRange).toHaveBeenLastCalledWith(start, end)
+  })
+
+  it('snaps a short historical overview selection to seven days and stays Historical', () => {
+    const router = renderRouted(
+      '/vegetation/historical?start=2026-07-01T00:00:00.000Z&end=2026-08-01T00:00:00.000Z'
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open detailed range' }))
+
+    expect(router.state.location.pathname).toBe('/vegetation/historical')
+    expect(store.setFixedRange).toHaveBeenLastCalledWith(
+      new Date('2026-07-21T00:00:00.000Z'),
+      new Date('2026-07-28T00:00:00.000Z')
+    )
+  })
+
+  it('never fetches the calendar from the regular Monitoring route', () => {
+    renderPage('/')
+
+    expect(screen.getByRole('button', { name: 'Now' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Current run' })).toBeNull()
+    expect(getCalendarCurrentRun).not.toHaveBeenCalled()
   })
 })

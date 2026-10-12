@@ -167,13 +167,12 @@ function replayLiveSnapshots(
 
 function filterPanelInput(input: PanelAlignmentInput): Omit<AlignInput, 'live'> {
   const { panel } = input
-  const lightIds = lightIdentities(input)
   return {
     series: input.series.filter(series =>
       accepts(panel, 'sensor', familyForUnit(series.unit_family))
     ),
-    controlHistory: filterControlResponse(input.controlHistory, panel, lightIds),
-    projectionHistory: filterControlResponse(input.projectionHistory, panel, lightIds),
+    controlHistory: filterControlResponse(input.controlHistory, panel),
+    projectionHistory: filterControlResponse(input.projectionHistory, panel),
     photoperiod: input.photoperiod,
     range: input.range,
     now: input.now,
@@ -184,10 +183,14 @@ function filterPanelInput(input: PanelAlignmentInput): Omit<AlignInput, 'live'> 
   }
 }
 
+/**
+ * Prune one control response to the families a panel accepts before
+ * alignment, so rejected automation families are never normalized into
+ * curves only to be dropped afterwards.
+ */
 function filterControlResponse(
   response: ControlMonitoringResponse | null,
-  panel: TimeseriesPanelSpec,
-  lightIds: ReadonlySet<string>
+  panel: TimeseriesPanelSpec
 ): ControlMonitoringResponse | null {
   if (response === null) return null
   return {
@@ -196,39 +199,10 @@ function filterControlResponse(
       const metric = series.metric ?? series.points[0]?.metric ?? metricFromName(series.name)
       return accepts(panel, 'climate', controlFamily({ kind: 'climate', metric }))
     }),
-    lights: response.lights.filter(() => accepts(panel, 'light', 'light')),
-    devices: response.devices.filter(
-      series =>
-        accepts(panel, 'device', 'device') &&
-        !lightIds.has(series.points[0]?.device_name ?? series.name)
-    ),
-    pid: response.pid.filter(series => {
-      const accepted = accepts(panel, 'pid', 'device') || accepts(panel, 'device', 'device')
-      if (!accepted) return false
-      const name = series.points[0]?.device_name ?? series.name
-      const deviceName = name.endsWith('_pid') ? name.slice(0, -4) : name
-      return !lightIds.has(deviceName)
-    }),
+    lights: accepts(panel, 'light', 'light') ? response.lights : [],
+    devices: accepts(panel, 'device', 'device') ? response.devices : [],
+    pid: accepts(panel, 'pid', 'device') || accepts(panel, 'device', 'device') ? response.pid : [],
   }
-}
-
-
-function lightIdentities(input: PanelAlignmentInput): Set<string> {
-  const identities = new Set(input.lightRegistry?.map(device => device.device_name) ?? [])
-  for (const response of [input.controlHistory, input.projectionHistory]) {
-    if (response === null) continue
-    for (const series of response.lights) {
-      const point = series.points[0]
-      const metric = series.metric
-      const deviceName =
-        point?.device_name ??
-        (metric?.startsWith('light.intensity.')
-          ? metric.slice('light.intensity.'.length)
-          : (metric ?? series.name))
-      if (deviceName.length > 0) identities.add(deviceName)
-    }
-  }
-  return identities
 }
 
 function accepts(

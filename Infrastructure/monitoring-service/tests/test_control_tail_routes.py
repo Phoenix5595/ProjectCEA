@@ -11,6 +11,7 @@ from monitoring_service.control_models import (
     ControlHistoryEnvelope,
     ControlHistoryRange,
     ControlPublicationResponse,
+    ControlReadScope,
     CurrentPublicationResponse,
     ProjectionPublicationResponse,
 )
@@ -77,11 +78,17 @@ class DenseTailDatabase:
 class FakeControlReads:
     def __init__(self, database: ControlHistoryDatabase) -> None:
         self._repository = ControlHistoryRepository(database)
+        self.scopes: list[ControlReadScope] = []
 
     async def history(
-        self, location: str, history_range: ControlHistoryRange, max_points: int | None = None
+        self,
+        location: str,
+        history_range: ControlHistoryRange,
+        max_points: int | None = None,
+        scope: ControlReadScope = "all",
     ) -> ControlHistoryEnvelope:
-        return await self._repository.read(location, history_range, max_points)
+        self.scopes.append(scope)
+        return await self._repository.read(location, history_range, max_points, scope)
 
     async def publications(self, location: str) -> ControlPublicationResponse:
         del location
@@ -95,7 +102,8 @@ class FakeControlReads:
 async def test_control_tail_is_registered_and_reads_a_bounded_history_envelope() -> None:
     # Given: canonical control reads backed by a fake read-only database.
     database = FakeDatabase()
-    app = create_app(control_reads=FakeControlReads(database))
+    reads = FakeControlReads(database)
+    app = create_app(control_reads=reads)
 
     # When: the live poller requests a bounded Veg Room tail window.
     async with httpx.AsyncClient(
@@ -115,6 +123,7 @@ async def test_control_tail_is_registered_and_reads_a_bounded_history_envelope()
     }
     assert response.json()["requested_max_points"] is None
     assert response.json()["interval_seconds"] is None
+    assert reads.scopes == ["all"]  # Tail omission keeps the full automation scope.
     assert any(
         route.path == "/api/monitoring/control/{location}/tail"
         for route in app.routes
@@ -271,3 +280,60 @@ async def test_control_tail_rejects_inverted_windows_as_client_error() -> None:
 
     # Then: the request is a client error, not an unhandled server failure.
     assert response.status_code == 400
+
+
+@final
+class LightTailDatabase:
+    """Serves recorded light facts and refuses any other control source."""
+
+    async def fetch(
+        self, query: str, *_: str | int | float | datetime
+    ) -> list[dict[str, str | float | datetime | None]]:
+        if "effective_light_intensity" in query:
+            return [
+                {
+                    "timestamp": datetime(2026, 8, 20, 11, 30, tzinfo=UTC),
+                    "mode": "day",
+                    "device_name": "light_f_1",
+                    "effective_light_intensity": 65.0,
+                    "nominal_light_intensity": 65.0,
+                    "ramp_progress_light": None,
+                }
+            ]
+        if "monitoring_room_photoperiod" in query:
+            return []
+        if "monitoring_photoperiod_coverage" in query:
+            return []
+        if "FROM effective_setpoints" in query:
+            return []  # the 60-second light predecessor window is empty
+        raise AssertionError("a lights-only tail must not query climate or automation sources")
+
+
+@pytest.mark.anyio
+async def test_control_tail_serves_a_lights_scope_without_querying_other_sources() -> None:
+    # Given: a live poller source that serves only recorded light facts.
+    database = LightTailDatabase()
+    reads = FakeControlReads(database)
+    app = create_app(control_reads=reads)
+
+    # When: the tail is requested with a lights scope.
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        lights = await client.get(
+            "/api/monitoring/control/Veg%20Room/tail",
+            params={
+                "start": "2026-08-20T11:00:00Z",
+                "end": "2026-08-20T12:00:00Z",
+                "scope": "lights",
+            },
+        )
+
+    # Then: the poller receives truthful light facts while every non-light series stays empty.
+    assert lights.status_code == 200
+    assert reads.scopes == ["lights"]
+    lights_payload = lights.json()
+    assert lights_payload["climate"] == []
+    assert lights_payload["devices"] == []
+    assert lights_payload["pid"] == []
+    assert [series["name"] for series in lights_payload["lights"]] == ["light_f_1"]

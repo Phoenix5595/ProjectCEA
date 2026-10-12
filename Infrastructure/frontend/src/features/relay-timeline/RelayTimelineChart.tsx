@@ -88,6 +88,79 @@ function localTimestamp(instant: number): string {
   return new Date(instant).toLocaleString(undefined, { timeZone: 'America/Toronto' })
 }
 
+/**
+ * Trace one symmetric requested-output bulge for the segment's per-edge
+ * amplitudes. The primary curve and the aggregate min/max envelope reuse the
+ * exact same geometry: percent -> half-height amplitude around the lane
+ * center on both sides.
+ */
+function traceRequestedBulge(
+  context: CanvasRenderingContext2D,
+  left: number,
+  right: number,
+  centerY: number,
+  startAmplitude: number,
+  endAmplitude: number
+): void {
+  const controlOffset = (right - left) / 3
+  context.moveTo(left, centerY)
+  context.lineTo(left, centerY - startAmplitude)
+  context.bezierCurveTo(
+    left + controlOffset,
+    centerY - startAmplitude,
+    right - controlOffset,
+    centerY - endAmplitude,
+    right,
+    centerY - endAmplitude
+  )
+  context.lineTo(right, centerY + endAmplitude)
+  context.bezierCurveTo(
+    right - controlOffset,
+    centerY + endAmplitude,
+    left + controlOffset,
+    centerY + startAmplitude,
+    left,
+    centerY + startAmplitude
+  )
+  context.closePath()
+}
+
+/**
+ * The recorded min/max the segment's aggregated bucket stands for, proven by
+ * the source contract (both sides finite and ordered). Raw segments are drawn
+ * as their exact single output, so only aggregated segments ever return a
+ * range; unknown parts of an aggregated bucket stay null instead of
+ * collapsing to a fabricated zero.
+ */
+function aggregatedBucketExtrema(segment: RequestedOutputSegment): {
+  min: number
+  max: number
+} | null {
+  if (!segment.aggregated) return null
+  const min = segment.requestedMinPercent
+  const max = segment.requestedMaxPercent
+  if (
+    min !== null &&
+    min !== undefined &&
+    Number.isFinite(min) &&
+    max !== null &&
+    max !== undefined &&
+    Number.isFinite(max) &&
+    min <= max
+  ) {
+    return { min, max }
+  }
+  return null
+}
+
+/** Tooltip text for the selected segment's bucket extrema. */
+function requestedRangeText(segment: RequestedOutputSegment): string | null {
+  if (!segment.aggregated) return null
+  const extrema = aggregatedBucketExtrema(segment)
+  if (extrema === null) return 'Bucket range unavailable'
+  return `Bucket range ${extrema.min.toFixed(1)}–${extrema.max.toFixed(1)}%`
+}
+
 function drawLaneTimeline(plot: uPlot, lanes: readonly RelayTimelineChartLane[]): void {
   if (lanes.length === 0) return
   const { ctx, bbox } = plot
@@ -154,6 +227,34 @@ function drawLaneTimeline(plot: uPlot, lanes: readonly RelayTimelineChartLane[])
       const right = xPosition(visibleEnd)
       if (right <= left) continue
 
+      // Subordinate min/max envelope behind the primary requested output for
+      // genuinely aggregated buckets, drawn with the same percent-to-amplitude
+      // geometry between the recorded bucket bounds. An unknown bound leaves
+      // this ring out entirely rather than faking equality. It renders even
+      // when the retained percent is zero, because the recorded range is real.
+      const extrema = aggregatedBucketExtrema(output)
+      if (extrema !== null && extrema.min < extrema.max) {
+        ctx.fillStyle = 'rgba(56, 189, 248, 0.18)'
+        ctx.beginPath()
+        traceRequestedBulge(
+          ctx,
+          left,
+          right,
+          centerY,
+          maxAmplitude * (extrema.max / 100),
+          maxAmplitude * (extrema.max / 100)
+        )
+        traceRequestedBulge(
+          ctx,
+          left,
+          right,
+          centerY,
+          maxAmplitude * (extrema.min / 100),
+          maxAmplitude * (extrema.min / 100)
+        )
+        ctx.fill('evenodd')
+      }
+
       const startPercent =
         requestedOutputAt(outputs, visibleStart)?.percent ?? output.requestedPercent
       const endPercent =
@@ -162,29 +263,10 @@ function drawLaneTimeline(plot: uPlot, lanes: readonly RelayTimelineChartLane[])
       if (startPercent <= 0 && endPercent <= 0) continue
       const startAmplitude = maxAmplitude * (startPercent / 100)
       const endAmplitude = maxAmplitude * (endPercent / 100)
-      const controlOffset = (right - left) / 3
+
       ctx.fillStyle = output.aggregated ? 'rgba(56, 189, 248, 0.62)' : 'rgba(14, 165, 233, 0.72)'
       ctx.beginPath()
-      ctx.moveTo(left, centerY)
-      ctx.lineTo(left, centerY - startAmplitude)
-      ctx.bezierCurveTo(
-        left + controlOffset,
-        centerY - startAmplitude,
-        right - controlOffset,
-        centerY - endAmplitude,
-        right,
-        centerY - endAmplitude
-      )
-      ctx.lineTo(right, centerY + endAmplitude)
-      ctx.bezierCurveTo(
-        right - controlOffset,
-        centerY + endAmplitude,
-        left + controlOffset,
-        centerY + startAmplitude,
-        left,
-        centerY + startAmplitude
-      )
-      ctx.closePath()
+      traceRequestedBulge(ctx, left, right, centerY, startAmplitude, endAmplitude)
       ctx.fill()
     }
 
@@ -491,7 +573,7 @@ export const RelayTimelineChart = forwardRef<RelayTimelineChartHandle, RelayTime
           <span className="text-xs text-text-muted">
             {lanes.some(lane => lane.preview)
               ? 'Illustrative synthetic preview; no relay observations are being shown.'
-              : 'Smooth symmetric curve interpolates requested PID samples; gaps remain broken. Output is not measured load.'}
+              : 'Smooth symmetric curve interpolates requested PID samples; gaps remain broken. Aggregated buckets also show their recorded min/max range. Output is not measured load.'}
           </span>
         </div>
 
@@ -599,6 +681,11 @@ export const RelayTimelineChart = forwardRef<RelayTimelineChartHandle, RelayTime
                       <span className="block font-semibold">
                         {selectedOutput.percent.toFixed(1)}%
                       </span>
+                      {requestedRangeText(selectedOutput.segment) !== null && (
+                        <span className="block text-text-muted">
+                          {requestedRangeText(selectedOutput.segment)}
+                        </span>
+                      )}
                       <span className="block text-text-muted">
                         {selectedOutput.interpolated ? 'Smoothed' : 'Sample'} ·{' '}
                         {selectedLane.preview

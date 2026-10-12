@@ -73,12 +73,19 @@ Climate periods are keyed by `(location, cluster, mode_id, submode_id)`. Fetch t
 
 ## Monitoring
 
-Native monitoring pages at `/flower/monitoring` and `/vegetation/monitoring` replace Grafana iframes. Visual and accessibility contracts live in `DESIGN.md`. Browser tests must not contact production endpoints; fixture origin and route guard assertions enforce this.
+Native room Monitoring and Historical pages (`/flower/monitoring`, `/flower/historical`, `/vegetation/monitoring`, `/vegetation/historical`) replace Grafana iframes. Visual and accessibility contracts live in `DESIGN.md`. Browser QA must use the guarded loopback fixture preview and must not contact production endpoints.
 
 - Historical photoperiod points remain separate from `projectionHistory`. Forecast refreshes cannot recolor the past; tail history replaces only its own half-open overlap and preserves phase/provenance/metadata boundaries.
 - Historical background coverage ends at the earlier of Now and the history response end. Forecast bands apply only inside their publication window at or after Now. Missing evidence, recording gaps, and expired publications remain UNKNOWN and unpainted.
 - SUN bands use fixed `rgba(251, 191, 36, 0.12)` and MOON bands fixed `rgba(129, 140, 248, 0.12)` under the series, independent of theme. Their exact-time rectangles are clipped to the plot bbox; chart and panel geometry is unchanged.
 - `tests/monitoring/photoperiod.spec.ts` exercises absolute historical fixtures, toolbar-applied ranges, zoom, the Now seam, and actual canvases under all six themes at 1920x1080 and 1280x1440 on the guarded loopback preview.
+- Both room views render environmental sensors and per-device light intensity only. Relay/device state, requested PID, duty and non-light automation tracking belong to Automation; Monitoring control history/tail/overview requests use `scope=lights`.
+- Historical presets are 5 days (return to regular Monitoring), 7 days (Historical detail), 2 weeks, one Toronto calendar month, three Toronto calendar months, and Current run. Current run uses the unique canonical calendar phase-group span for the room containing Toronto today, starts at local midnight, and ends at Now; absence/ambiguity never falls back to a guessed range.
+- Historical drag selection below seven days first snaps to a seven-day Historical window. A further short selection from that window switches to regular Monitoring with the selected range, subject to the existing five-minute floor.
+- Long-view buckets are the finest whole-hour width from 1–12 hours that fits the actual intersecting bucket count, including clipped edges. The UI explicitly requests 1000 points for the lowest supported plot width; the backend's generic default remains 600. Never widen beyond 12 hours or modify detailed sensor/Automation bucket policies to satisfy a long-view budget.
+- Min/max envelopes and sensor statistic-table extrema remain available, including shorter bucketed ranges. Raw light ramp/step geometry and unknown gaps are preserved rather than averaged. The statistics table beneath the graphs is sensor-only.
+- Keep the established 780px climate and 320px atmosphere/light chart regions. Their wrappers provide plot geometry and pointer interaction, not internal scrolling; only the room document may scroll.
+- Deployment requires verified Historical source coverage, not just service `/ready`. This release must not enable calendar compaction, raw deletion, age compression or Nextcloud/archive export.
 
 ## Validation
 

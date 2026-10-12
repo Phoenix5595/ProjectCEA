@@ -1,6 +1,6 @@
 # CEA Monitoring Service
 
-Read-only monitoring API foundation. It owns monitoring reads from TimescaleDB
+Read-only Monitoring and Historical APIs. They own reads from TimescaleDB
 and Redis; `automation-service` remains the sole control and hardware authority.
 
 ## Service contract
@@ -44,6 +44,30 @@ Applying it to production requires separate owner authorization before rollout;
 the implementation's schema and writer/HTTP smoke run only in the guarded
 `monitoring_test_*` harness.
 
+
+## Historical overview reads
+
+- `GET /api/sensors/monitoring/overview/{location}` and
+  `GET /api/monitoring/control/{location}/overview` merge recorded sufficient
+  statistics with exact clipped edges. Graph buckets are the finest fitting
+  whole-hour width from 1–12 hours; intersecting edge buckets count against
+  `max_points` (10–1000, generic default 600). An unfit budget returns 400,
+  never a wider bucket or whole-history raw fallback.
+- Room Monitoring/Historical uses `scope=lights` on control history, tail and
+  overview reads. This reads light intensity and its photoperiod evidence,
+  leaving climate-target, device and PID groups empty. Default `all` remains
+  available for Automation and generic consumers.
+- Coverage, native invalidations/watermarks and rebuild faults gate the actual
+  sources used by the request. Missing, dirty or unverified source history
+  returns 503; `/ready` alone is not Historical readiness proof.
+- The additive sources and stopped operator jobs are prepared by
+  `../database/monitoring_history_overview.sql` and its relay include, separately
+  from deployment. Production preparation/backfill/job activation requires
+  owner authorization, a protected backup and targeted disposable native proof
+  of idempotency, raw/index preservation, parity, writer compatibility and recovery.
+- Raw history, existing indexes and pre-existing aggregates remain intact.
+  Calendar closure/compaction, age compression, ZIP/Nextcloud export and the
+  planned `sj_cea` rename are not part of this release.
 
 ## Configuration
 

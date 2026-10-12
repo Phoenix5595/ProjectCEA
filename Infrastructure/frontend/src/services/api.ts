@@ -12,6 +12,7 @@ import { timelineMethods } from '../features/climate-timeline/api/timeline'
 import type { TimelineApi } from '../features/climate-timeline/api/timeline'
 import type { components } from '../generated/api'
 import type {
+  CalendarCurrentRunResponse,
   CalendarEventsResponse,
   CalendarEventCreate,
   CalendarEventDto,
@@ -242,9 +243,7 @@ class ApiClient implements ApiClientCore {
       `/api/lights/${location}/${cluster}/${deviceName}/target`,
       {
         target_intensity: intensity,
-        ...(options?.expectedModeId != null
-          ? { expected_mode_id: options.expectedModeId }
-          : {}),
+        ...(options?.expectedModeId != null ? { expected_mode_id: options.expectedModeId } : {}),
       }
     )
     return response.data
@@ -257,9 +256,7 @@ class ApiClient implements ApiClientCore {
   ): Promise<{ success: boolean; device_id: number; target_intensity: number }> {
     const response = await this.automationClient.put(`/api/lights/${deviceId}/intensity`, {
       target_intensity: intensity,
-      ...(options?.expectedModeId != null
-        ? { expected_mode_id: options.expectedModeId }
-        : {}),
+      ...(options?.expectedModeId != null ? { expected_mode_id: options.expectedModeId } : {}),
     })
     return response.data
   }
@@ -379,6 +376,25 @@ class ApiClient implements ApiClientCore {
     if (location) params.location = location
     if (cursor) params.cursor = cursor
     const response = await this.automationClient.get('/api/calendar/events', { params })
+    return response.data
+  }
+
+  async getCalendarCurrentRun(
+    location: string,
+    options?: { signal?: AbortSignal; scenario?: string; fixtureSession?: string }
+  ): Promise<CalendarCurrentRunResponse | null> {
+    const params: Record<string, string> = { location }
+    if (options?.scenario !== undefined) params.scenario = options.scenario
+    if (options?.fixtureSession !== undefined) {
+      params.fixtureSession = options.fixtureSession
+    }
+    const response = await this.automationClient.get<CalendarCurrentRunResponse | null>(
+      '/api/calendar/current-run',
+      {
+        params,
+        ...(options?.signal !== undefined ? { signal: options.signal } : {}),
+      }
+    )
     return response.data
   }
 

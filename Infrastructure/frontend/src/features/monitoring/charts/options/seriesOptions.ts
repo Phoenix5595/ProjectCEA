@@ -81,8 +81,8 @@ export function buildSeries(data: AlignedData, getData?: () => AlignedData): uPl
         scale: family,
         // Sensor samples land on a coarse shared grid far apart; without gap
         // bridging each sample is an isolated single-point path (invisible).
-        spanGaps: s.source === 'sensor',
-        points: { show: false },
+        spanGaps: s.source === 'sensor' && s.preserveGaps !== true,
+        points: s.preserveGaps === true ? { show: true, size: 2 } : { show: false },
         stroke: color,
         width: s.presentation?.lineWidth ?? (target ? 2 : 1.5),
       }

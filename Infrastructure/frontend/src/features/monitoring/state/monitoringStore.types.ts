@@ -62,6 +62,7 @@ export interface StoreData {
   anchorValidUntil: Date | null
   runtimeSnapshotVersion: number | null
   flushHealth: FlushHealth[]
+  /** Delayed canonical display names of the room lights (labeling only). */
   lightRegistry?: readonly Pick<
     DeviceRegistryEntry,
     'device_name' | 'display_name' | 'per_room_index'

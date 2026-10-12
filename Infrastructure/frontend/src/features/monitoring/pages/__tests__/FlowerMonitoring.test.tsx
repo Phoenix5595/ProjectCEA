@@ -6,19 +6,44 @@
  * toolbar, both chart regions, and the canonical tables render, and that no
  * iframe or Grafana URL appears anywhere in the page.
  */
-import { act, render, screen, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { forwardRef } from 'react'
-import { MemoryRouter } from 'react-router-dom'
+import { createMemoryRouter, MemoryRouter, RouterProvider } from 'react-router-dom'
 import type uPlot from 'uplot'
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 
 import { ThemeProvider } from '../../../../contexts/ThemeContext'
 import FlowerMonitoring from '../../../../pages/FlowerMonitoring'
+import { torontoDateString, torontoMidnightUtc } from '../../../../utils/torontoWallTime'
 
-const { budgetReporters, pageRenderCount, snapshot, store } = vi.hoisted(() => {
+const {
+  budgetReporters,
+  pageRenderCount,
+  snapshot,
+  store,
+  overviewViewProps,
+  overviewSelection,
+  overviewWideSelection,
+  zoomReporters,
+} = vi.hoisted(() => {
   const t = new Date('2026-08-02T12:00:00.000Z')
   const budgetReporters: Array<(budget: number) => void> = []
+  const zoomReporters: Array<(range: { start: Date; end: Date }) => void> = []
   const pageRenderCount = { current: 0 }
+  const overviewViewProps: Array<{
+    room: string
+    range: { start: Date; end: Date }
+    onDetail: (start: Date, end: Date) => void
+    historicalDrillDown?: boolean
+  }> = []
+  const overviewSelection = {
+    start: new Date('2026-07-23T00:00:00.000Z'),
+    end: new Date('2026-07-26T00:00:00.000Z'),
+  }
+  const overviewWideSelection = {
+    start: new Date('2026-07-02T00:00:00.000Z'),
+    end: new Date('2026-07-25T00:00:00.000Z'),
+  }
   const store = {
     getSnapshot: () => snapshot,
     setLiveRange: vi.fn(),
@@ -88,7 +113,51 @@ const { budgetReporters, pageRenderCount, snapshot, store } = vi.hoisted(() => {
     reconciling: false,
     errors: [],
   }
-  return { budgetReporters, pageRenderCount, snapshot, store }
+  return {
+    budgetReporters,
+    pageRenderCount,
+    snapshot,
+    store,
+    overviewViewProps,
+    overviewSelection,
+    overviewWideSelection,
+    zoomReporters,
+  }
+})
+
+const { getCalendarCurrentRun } = vi.hoisted(() => ({ getCalendarCurrentRun: vi.fn() }))
+
+vi.mock('../../../../services/api', () => ({ apiClient: { getCalendarCurrentRun } }))
+
+vi.mock('../../../history-overview', async importOriginal => {
+  const actual = await importOriginal<typeof import('../../../history-overview')>()
+  return {
+    ...actual,
+    HistoryOverviewView: (props: {
+      room: string
+      range: { start: Date; end: Date }
+      onDetail: (start: Date, end: Date) => void
+      historicalDrillDown?: boolean
+    }) => {
+      overviewViewProps.push(props)
+      return (
+        <div data-testid="history-overview-view">
+          <button
+            type="button"
+            onClick={() => props.onDetail(overviewSelection.start, overviewSelection.end)}
+          >
+            Open detailed range
+          </button>
+          <button
+            type="button"
+            onClick={() => props.onDetail(overviewWideSelection.start, overviewWideSelection.end)}
+          >
+            Open wide history range
+          </button>
+        </div>
+      )
+    },
+  }
 })
 
 vi.mock('../useMonitoringStore', () => ({
@@ -104,10 +173,17 @@ vi.mock('../../charts', async importOriginal => {
   return {
     ...actual,
     UPlotChart: forwardRef(function MockUPlotChart(
-      { onRequestBudgetChange }: { readonly onRequestBudgetChange?: (budget: number) => void },
+      {
+        onRequestBudgetChange,
+        onZoom,
+      }: {
+        readonly onRequestBudgetChange?: (budget: number) => void
+        readonly onZoom?: (range: { start: Date; end: Date }) => void
+      },
       _ref
     ) {
       if (onRequestBudgetChange) budgetReporters.push(onRequestBudgetChange)
+      if (onZoom) zoomReporters.push(onZoom)
       return <div />
     }),
   }
@@ -149,14 +225,23 @@ class MockResizeObserver {
   }
 }
 
+const INITIAL_SENSOR_SERIES = structuredClone(snapshot.data.series)
+
 beforeEach(() => {
   instances.length = 0
   budgetReporters.length = 0
+  zoomReporters.length = 0
+  overviewViewProps.length = 0
   pageRenderCount.current = 0
+  snapshot.data.series = structuredClone(INITIAL_SENSOR_SERIES)
   MockResizeObserver.instances.length = 0
+  store.setLiveRange.mockClear()
+  store.setFixedRange.mockClear()
   store.setRangeBudget.mockClear()
   store.sensorRange.mockClear()
   store.controlRange.mockClear()
+  getCalendarCurrentRun.mockReset()
+  getCalendarCurrentRun.mockResolvedValue(null)
   vi.stubGlobal('ResizeObserver', MockResizeObserver)
 })
 
@@ -165,14 +250,35 @@ afterEach(() => {
   vi.unstubAllEnvs()
 })
 
-function renderPage() {
+function renderPage(initialEntry = '/') {
   return render(
-    <MemoryRouter>
+    <MemoryRouter initialEntries={[initialEntry]}>
       <ThemeProvider>
         <FlowerMonitoring />
       </ThemeProvider>
     </MemoryRouter>
   )
+}
+
+/**
+ * Route-aware harness: navigating between the Historical and regular
+ * Monitoring paths remounts the page the same way the app router does, so the
+ * URL a handoff writes is what the next surface parses.
+ */
+function renderRouted(initialEntry: string) {
+  const router = createMemoryRouter(
+    [
+      { path: '/flower/monitoring', element: <FlowerMonitoring /> },
+      { path: '/flower/historical', element: <FlowerMonitoring /> },
+    ],
+    { initialEntries: [initialEntry] }
+  )
+  render(
+    <ThemeProvider>
+      <RouterProvider router={router} />
+    </ThemeProvider>
+  )
+  return router
 }
 
 describe('FlowerMonitoring page', () => {
@@ -259,5 +365,245 @@ describe('FlowerMonitoring page', () => {
       .map(element => element.style.height)
       .filter(height => height === '780px' || height === '320px')
     expect(chartSlots).toEqual(['780px', '320px'])
+  })
+  it('routes an initial long fixed URL to overview before mounting the detailed store', () => {
+    renderPage('/?start=2026-07-01T00:00:00.000Z&end=2026-08-01T00:00:00.000Z')
+
+    expect(screen.getByTestId('history-overview-view')).toBeInTheDocument()
+    expect(screen.getByText('FIXED')).toBeInTheDocument()
+    expect(pageRenderCount.current).toBe(0)
+    expect(store.setLiveRange).not.toHaveBeenCalled()
+    expect(store.setFixedRange).not.toHaveBeenCalled()
+    expect(screen.queryByRole('heading', { name: 'Flower climate conditions' })).toBeNull()
+    const view = overviewViewProps[0]
+    expect(view?.room).toBe('Flower Room')
+    expect(view?.range.start.toISOString()).toBe('2026-07-01T00:00:00.000Z')
+    expect(view?.range.end.toISOString()).toBe('2026-08-01T00:00:00.000Z')
+  })
+
+  it('keeps exactly seven days detailed and switches to overview at seven days plus one millisecond', () => {
+    const exact = renderPage('/?start=2026-07-15T10:00:00.000Z&end=2026-07-22T10:00:00.000Z')
+    expect(pageRenderCount.current).toBeGreaterThan(0)
+    expect(overviewViewProps).toHaveLength(0)
+    exact.unmount()
+
+    pageRenderCount.current = 0
+    store.setFixedRange.mockClear()
+    const plusOne = renderPage(
+      '/?start=2026-07-15T10:00:00.000Z&end=2026-07-22T10:00:00.001Z'
+    )
+    expect(screen.getByTestId('history-overview-view')).toBeInTheDocument()
+    expect(pageRenderCount.current).toBe(0)
+    expect(store.setFixedRange).not.toHaveBeenCalled()
+    plusOne.unmount()
+  })
+
+  it('hands an overview detail selection to the detailed reader', () => {
+    const overview = renderPage(
+      '/?start=2026-07-01T00:00:00.000Z&end=2026-08-01T00:00:00.000Z'
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Open detailed range' }))
+
+    expect(pageRenderCount.current).toBeGreaterThan(0)
+    expect(store.setFixedRange).toHaveBeenCalledWith(
+      new Date('2026-07-23T00:00:00.000Z'),
+      new Date('2026-07-26T00:00:00.000Z')
+    )
+    overview.unmount()
+  })
+
+  it('Now returns the overview to the detailed live default', () => {
+    const overview = renderPage(
+      '/?start=2026-07-01T00:00:00.000Z&end=2026-08-01T00:00:00.000Z'
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Now' }))
+    expect(store.setLiveRange).toHaveBeenCalledWith(3 * 3600_000)
+    overview.unmount()
+  })
+})
+
+describe('FlowerMonitoring historical route', () => {
+  it('swaps to the historical presets and loads the room current run', async () => {
+    renderRouted('/flower/historical?start=2026-07-01T00:00:00.000Z&end=2026-08-01T00:00:00.000Z')
+
+    expect(screen.getByTestId('history-overview-view')).toBeInTheDocument()
+    for (const label of ['5 days', '7 days', '2 weeks', '1 month', '3 months', 'Current run']) {
+      expect(screen.getByRole('button', { name: label })).toBeTruthy()
+    }
+    expect(screen.queryByRole('button', { name: 'Now' })).toBeNull()
+    expect(screen.queryByRole('button', { name: '1h' })).toBeNull()
+
+    expect(overviewViewProps.at(-1)?.historicalDrillDown).toBe(true)
+    await waitFor(() =>
+      expect(getCalendarCurrentRun).toHaveBeenCalledWith(
+        'Flower Room',
+        expect.objectContaining({ signal: expect.any(AbortSignal) })
+      )
+    )
+  })
+
+  it('keeps the regular Monitoring route on the live presets and never fetches the calendar', () => {
+    renderPage('/')
+
+    expect(screen.getByRole('button', { name: '1h' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Now' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Current run' })).toBeNull()
+    expect(getCalendarCurrentRun).not.toHaveBeenCalled()
+  })
+
+  it('keeps the regular overview drill-down in detail mode', () => {
+    renderPage('/?start=2026-07-01T00:00:00.000Z&end=2026-08-01T00:00:00.000Z')
+
+    expect(overviewViewProps.at(-1)?.historicalDrillDown).toBe(false)
+    expect(getCalendarCurrentRun).not.toHaveBeenCalled()
+  })
+
+  it('keeps the seven-day preset on the Historical detailed reader', () => {
+    const router = renderRouted(
+      '/flower/historical?start=2026-07-16T10:00:00.000Z&end=2026-07-22T10:00:00.000Z'
+    )
+    expect(pageRenderCount.current).toBeGreaterThan(0)
+
+    const before = Date.now()
+    fireEvent.click(screen.getByRole('button', { name: '7 days' }))
+
+    expect(router.state.location.pathname).toBe('/flower/historical')
+    const [start, end] = store.setFixedRange.mock.calls.at(-1) ?? []
+    expect(end.getTime() - start.getTime()).toBe(7 * 24 * 3600_000)
+    expect(end.getTime()).toBeGreaterThanOrEqual(before)
+    expect(end.getTime()).toBeLessThanOrEqual(Date.now())
+  })
+
+  it('switches the Historical page to the overview for the two-week preset', () => {
+    renderRouted('/flower/historical?start=2026-07-16T10:00:00.000Z&end=2026-07-22T10:00:00.000Z')
+
+    fireEvent.click(screen.getByRole('button', { name: '2 weeks' }))
+
+    expect(screen.getByTestId('history-overview-view')).toBeInTheDocument()
+    const view = overviewViewProps.at(-1)
+    expect((view?.range.end.getTime() ?? 0) - (view?.range.start.getTime() ?? 0)).toBe(
+      14 * 24 * 3600_000
+    )
+  })
+
+  it('routes the five-day preset to regular Monitoring with the fixture query preserved', () => {
+    const router = renderRouted(
+      '/flower/historical?start=2026-07-16T10:00:00.000Z&end=2026-07-22T10:00:00.000Z&scenario=no-current&fixtureSession=hist-7'
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: '5 days' }))
+
+    expect(router.state.location.pathname).toBe('/flower/monitoring')
+    const params = new URLSearchParams(router.state.location.search)
+    expect(params.get('scenario')).toBe('no-current')
+    expect(params.get('fixtureSession')).toBe('hist-7')
+    const start = new Date(params.get('start') ?? '')
+    const end = new Date(params.get('end') ?? '')
+    expect(end.getTime() - start.getTime()).toBe(5 * 24 * 3600_000)
+    // The remounted regular Monitoring page parses the URL into the detailed store.
+    expect(store.setFixedRange).toHaveBeenLastCalledWith(start, end)
+  })
+
+  it('hands a sub-five-day absolute Historical range to regular Monitoring exactly', () => {
+    const router = renderRouted(
+      '/flower/historical?start=2026-07-15T00:00:00.000Z&end=2026-07-22T00:00:00.000Z&fixtureSession=hist-2'
+    )
+
+    fireEvent.change(screen.getByLabelText('Range start'), {
+      target: { value: '2026-07-20T10:00' },
+    })
+    fireEvent.change(screen.getByLabelText('Range end'), { target: { value: '2026-07-20T12:00' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Apply fixed range' }))
+
+    expect(router.state.location.pathname).toBe('/flower/monitoring')
+    const params = new URLSearchParams(router.state.location.search)
+    // The exact two-hour range is preserved — never stretched to five days.
+    expect(params.get('start')).toBe('2026-07-20T14:00:00.000Z')
+    expect(params.get('end')).toBe('2026-07-20T16:00:00.000Z')
+    expect(params.get('fixtureSession')).toBe('hist-2')
+  })
+
+  it('keeps a wide overview selection on the Historical page with its actual span', () => {
+    const router = renderRouted(
+      '/flower/historical?start=2026-07-01T00:00:00.000Z&end=2026-08-01T00:00:00.000Z'
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open wide history range' }))
+
+    expect(router.state.location.pathname).toBe('/flower/historical')
+    const view = overviewViewProps.at(-1)
+    expect(view?.range.start.toISOString()).toBe('2026-07-02T00:00:00.000Z')
+    expect(view?.range.end.toISOString()).toBe('2026-07-25T00:00:00.000Z')
+  })
+
+  it('snaps a short overview selection to exactly seven days and stays Historical', () => {
+    const router = renderRouted(
+      '/flower/historical?start=2026-07-01T00:00:00.000Z&end=2026-08-01T00:00:00.000Z'
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open detailed range' }))
+
+    expect(router.state.location.pathname).toBe('/flower/historical')
+    expect(store.setFixedRange).toHaveBeenLastCalledWith(
+      new Date('2026-07-21T00:00:00.000Z'),
+      new Date('2026-07-28T00:00:00.000Z')
+    )
+    expect(pageRenderCount.current).toBeGreaterThan(0)
+  })
+
+  it('hands a sub-seven-day selection from the seven-day reader to regular Monitoring', () => {
+    const router = renderRouted(
+      '/flower/historical?start=2026-07-15T10:00:00.000Z&end=2026-07-22T10:00:00.000Z&fixtureSession=hist-9'
+    )
+    expect(pageRenderCount.current).toBeGreaterThan(0)
+
+    act(() => {
+      zoomReporters.at(-1)?.({
+        start: new Date('2026-07-16T00:00:00.000Z'),
+        end: new Date('2026-07-22T00:00:00.000Z'),
+      })
+    })
+
+    expect(router.state.location.pathname).toBe('/flower/monitoring')
+    const params = new URLSearchParams(router.state.location.search)
+    expect(params.get('start')).toBe('2026-07-16T00:00:00.000Z')
+    expect(params.get('end')).toBe('2026-07-22T00:00:00.000Z')
+    expect(params.get('fixtureSession')).toBe('hist-9')
+    expect(store.setFixedRange).toHaveBeenLastCalledWith(
+      new Date('2026-07-16T00:00:00.000Z'),
+      new Date('2026-07-22T00:00:00.000Z')
+    )
+  })
+
+  it('disables the Current run action with the honest reason when the calendar has no run', async () => {
+    renderRouted('/flower/historical?start=2026-07-16T10:00:00.000Z&end=2026-07-22T10:00:00.000Z')
+
+    const button = screen.getByRole('button', { name: 'Current run' })
+    await waitFor(() =>
+      expect(button).toHaveAttribute(
+        'title',
+        'No active current run in the Flower Room calendar'
+      )
+    )
+    expect(button).toBeDisabled()
+  })
+
+  it('applies the unique current run from Toronto-midnight calendar start to now', async () => {
+    const startDate = torontoDateString(Date.now() - 10 * 24 * 3600_000)
+    getCalendarCurrentRun.mockResolvedValue({
+      location: 'Flower Room',
+      grow_plan_id: 'plan-1',
+      start_date: startDate,
+      end_date: '2026-12-31',
+    })
+    renderRouted('/flower/historical?start=2026-07-16T10:00:00.000Z&end=2026-07-22T10:00:00.000Z')
+
+    const button = screen.getByRole('button', { name: 'Current run' })
+    await waitFor(() => expect(button).toBeEnabled())
+    fireEvent.click(button)
+
+    const view = overviewViewProps.at(-1)
+    expect(view?.range.start.toISOString()).toBe(torontoMidnightUtc(startDate)?.toISOString())
+    expect(Math.abs((view?.range.end.getTime() ?? 0) - Date.now())).toBeLessThan(10_000)
   })
 })

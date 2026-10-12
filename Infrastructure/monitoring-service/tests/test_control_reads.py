@@ -13,12 +13,14 @@ from monitoring_service.control_models import (
     ControlHistoryRange,
     ControlHistoryEnvelope,
     ControlPublicationResponse,
+    ControlReadScope,
     CurrentPublicationResponse,
     ProjectionPublicationResponse,
 )
 from monitoring_service.control_repository import (
     ControlHistoryRepository,
     ControlPublicationRepository,
+    RelayTimelineRepository,
     _publication_keys,
 )
 from monitoring_service.control_history_queries import (
@@ -28,8 +30,14 @@ from monitoring_service.control_history_queries import (
     _SETPOINTS_5MIN_SQL,
     select_control_history_sources,
 )
+from monitoring_service.history_buckets import choose_history_bucket
+from monitoring_service.history_overview_models import (
+    HistoryOverviewControlResponse,
+    HistoryOverviewMetadata,
+    HistoryOverviewRange,
+)
 from monitoring_service.main import create_app
-from monitoring_service.sensor_models import MonitoringUnavailableError
+from monitoring_service.sensor_models import MonitoringUnavailableError, resolve_room_metadata
 from shared.monitoring_contracts import (
     ConfigVersion,
     CurrentSeriesPoint,
@@ -190,16 +198,20 @@ class FakeDatabase:
                     "ramp_progress_light": None,
                 }
             ]
-        if "monitoring_automation_state_1min" in query:
+        if "monitoring_automation_state" in query:
             return [
                 {
-                    "bucket": NOW - timedelta(seconds=10),
+                    "bucket": NOW - timedelta(seconds=5),
                     "device_name": "light_f_1",
                     "device_state_last": 1,
                     "device_mode_last": "auto",
                     "control_reason_last": "schedule",
                     "pid_output_last": None,
                     "duty_cycle_percent_last": 40.0,
+                    "pid_output_min": None,
+                    "pid_output_max": None,
+                    "duty_cycle_percent_min": 30.0,
+                    "duty_cycle_percent_max": 55.0,
                 }
             ]
         return []
@@ -233,17 +245,53 @@ class FakeRedis:
 class FakeControlReads:
     def __init__(self, publication_values: list[str | None] | None = None) -> None:
         self._publication_values = publication_values or [_current(7), _future_timeline()]
+        self.history_scopes: list[ControlReadScope] = []
+        self.overview_scopes: list[ControlReadScope] = []
 
     async def history(
-        self, location: str, history_range: ControlHistoryRange, max_points: int | None = None
+        self,
+        location: str,
+        history_range: ControlHistoryRange,
+        max_points: int | None = None,
+        scope: ControlReadScope = "all",
     ) -> ControlHistoryEnvelope:
         del location, max_points
+        self.history_scopes.append(scope)
         return ControlHistoryEnvelope(range=history_range, runtime_snapshot_version=0)
+
+    async def overview(
+        self,
+        location: str,
+        history_range: HistoryOverviewRange,
+        max_points: int = 600,
+        scope: ControlReadScope = "all",
+    ) -> HistoryOverviewControlResponse:
+        del location
+        self.overview_scopes.append(scope)
+        return _empty_control_overview(history_range, max_points)
 
     async def publications(self, location: str) -> ControlPublicationResponse:
         return await ControlPublicationRepository(
             FakeRedis(self._publication_values), clock=lambda: NOW
         ).read(location)
+
+
+def _empty_control_overview(
+    history_range: HistoryOverviewRange, max_points: int
+) -> HistoryOverviewControlResponse:
+    return HistoryOverviewControlResponse(
+        metadata=HistoryOverviewMetadata(
+            generated_at=NOW,
+            range=history_range,
+            room=resolve_room_metadata("Veg Room"),
+            requested_max_points=max_points,
+            bucket=choose_history_bucket(history_range.start, history_range.end, max_points),
+            source_coverage="ready",
+        ),
+        lights=(),
+        requested_pid=(),
+        relays=(),
+    )
 
 
 def _current(version: int) -> str:
@@ -319,11 +367,18 @@ async def test_history_builds_timelines_from_committed_read_models() -> None:
     assert climate.name == "heating_setpoint"
     assert climate.points[0].value == 22.0
     assert climate.points[0].metric == "heating_setpoint"
+    # Raw points are single samples: the genuine extremum pair is the sample itself.
+    assert climate.points[0].minimum == 22.0
+    assert climate.points[0].maximum == 22.0
     assert response.devices[0].name == "light_f_1"
     assert response.devices[0].points[0].device_state == 1.0
-    assert response.pid[0].points[0].duty_cycle_percent == 40.0
+    pid_point = response.pid[0].points[0]
+    assert pid_point.duty_cycle_percent == 40.0
+    assert pid_point.pid_output_min is None
+    assert pid_point.pid_output_max is None
+    assert pid_point.duty_cycle_percent_min == 30.0
+    assert pid_point.duty_cycle_percent_max == 55.0
     assert response.photoperiod[0].phase == "SUN"
-    assert database.queries == sorted(database.queries, key=len) or True
 
 
 @pytest.mark.anyio
@@ -360,6 +415,168 @@ async def test_history_canonicalizes_each_light_by_device_and_timestamp() -> Non
         (start + timedelta(minutes=4), 60.0, "day"),
     ]
     assert len(response.lights[1].points) == 1
+
+
+def test_lights_scope_selection_excludes_climate_and_automation_sources() -> None:
+    # Given: every budgeted and unbudgeted range selection under a lights scope.
+    selections = (
+        (ControlHistoryRange(start=NOW, end=NOW + timedelta(minutes=70)), 1000),
+        (ControlHistoryRange(start=NOW, end=NOW + timedelta(days=7)), 1000),
+        (ControlHistoryRange(start=NOW, end=NOW + timedelta(hours=1)), None),
+    )
+
+    # When: sources are selected for each window.
+    sources = [
+        select_control_history_sources(history_range, max_points, "lights")
+        for history_range, max_points in selections
+    ]
+
+    # Then: only the raw light source stays selected, never a climate or automation ladder.
+    assert all(source.light_sql == _LIGHT_SETPOINTS_SQL for source in sources)
+    assert all(source.setpoints_sql is None for source in sources)
+    assert all(source.state_sql is None for source in sources)
+    assert all(source.setpoints_are_aggregated is False for source in sources)
+
+
+@final
+class MissingAutomationSourcesDatabase:
+    """Serves recorded light facts and fails climate/automation-state reads."""
+
+    def __init__(self) -> None:
+        self.queries: list[str] = []
+
+    async def fetch(
+        self, query: str, *arguments: str | int | float | datetime
+    ) -> list[dict[str, str | float | datetime | None]]:
+        self.queries.append(query)
+        if "monitoring_photoperiod_coverage" in query or "monitoring_room_photoperiod" in query:
+            return await FakeDatabase().fetch(query, *arguments)
+        if "effective_light_intensity" in query:
+            if len(arguments) == 2:
+                return []
+            return [_light_history_row(NOW - timedelta(seconds=5), "light_f_1", "day", 42.0)]
+        raise RuntimeError("climate or automation-state read model is unavailable")
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("max_points", (None, 1000))
+async def test_lights_scope_history_succeeds_without_automation_sources(
+    max_points: int | None,
+) -> None:
+    # Given: a room whose climate and automation read models are unavailable while
+    # the light-family photoperiod coverage and predecessor reads still answer.
+    database = MissingAutomationSourcesDatabase()
+    repository = ControlHistoryRepository(database)
+    history_range = ControlHistoryRange(start=NOW - timedelta(minutes=5), end=NOW)
+
+    # When: the lights scope reads the recorded window.
+    response = await repository.read("Veg Room", history_range, max_points, "lights")
+
+    # Then: recorded light intensity and photoperiod facts stay truthful while
+    # every non-light timeline is empty rather than fabricated.
+    assert response.runtime_snapshot_version == 2
+    assert [series.name for series in response.lights] == ["light_f_1"]
+    light = response.lights[0]
+    recorded_values = [point.value for point in light.points] or [
+        step.value for step in light.steps
+    ]
+    assert recorded_values == [42.0]
+    assert response.photoperiod[0].phase == "SUN"
+    assert response.climate == ()
+    assert response.devices == ()
+    assert response.pid == ()
+
+
+@pytest.mark.anyio
+async def test_all_scope_history_fails_when_its_automation_state_source_fails() -> None:
+    repository = ControlHistoryRepository(MissingAutomationSourcesDatabase())
+    app = create_app(control_reads=RepositoryControlReads(repository))
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        response = await client.get(
+            "/api/monitoring/control/Veg%20Room/history",
+            params={"start": "2026-08-20T11:55:00Z", "end": "2026-08-20T12:00:00Z"},
+        )
+    assert response.status_code == 503
+
+
+@pytest.mark.anyio
+async def test_control_scope_query_selects_lights_and_defaults_to_all() -> None:
+    # Given: control reads that record every scope they receive.
+    reads = FakeControlReads()
+    app = create_app(control_reads=reads)
+    history_params = {
+        "start": "2026-08-20T11:00:00Z",
+        "end": "2026-08-20T12:00:00Z",
+        "max_points": 600,
+    }
+
+    # When: history and overview are requested with and without a scope.
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        lights_history = await client.get(
+            "/api/monitoring/control/Veg%20Room/history",
+            params={**history_params, "scope": "lights"},
+        )
+        default_history = await client.get(
+            "/api/monitoring/control/Veg%20Room/history", params=history_params
+        )
+        lights_overview = await client.get(
+            "/api/monitoring/control/Veg%20Room/overview",
+            params={**history_params, "scope": "lights"},
+        )
+        default_overview = await client.get(
+            "/api/monitoring/control/Veg%20Room/overview", params=history_params
+        )
+
+    # Then: the requested scope reaches the read service and omission stays the full scope.
+    assert [response.status_code for response in (
+        lights_history, default_history, lights_overview, default_overview
+    )] == [200, 200, 200, 200]
+    assert reads.history_scopes == ["lights", "all"]
+    assert reads.overview_scopes == ["lights", "all"]
+    lights_payload = lights_history.json()
+    assert lights_payload["climate"] == []
+    assert lights_payload["devices"] == []
+    assert lights_payload["pid"] == []
+    overview_payload = lights_overview.json()
+    assert overview_payload["requested_pid"] == []
+    assert overview_payload["relays"] == []
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "path",
+    (
+        "/api/monitoring/control/Veg%20Room/history",
+        "/api/monitoring/control/Veg%20Room/tail",
+        "/api/monitoring/control/Veg%20Room/overview",
+    ),
+)
+async def test_control_routes_reject_unknown_scope_as_client_error(path: str) -> None:
+    # Given: control reads that must never be reached by an invalid scope.
+    reads = FakeControlReads()
+    app = create_app(control_reads=reads)
+
+    # When: a caller supplies an unsupported scope.
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        response = await client.get(
+            path,
+            params={
+                "start": "2026-08-20T11:00:00Z",
+                "end": "2026-08-20T12:00:00Z",
+                "scope": "relays",
+            },
+        )
+
+    # Then: the request is a client error through the monitoring contract and no read ran.
+    assert response.status_code == 400
+    assert "scope" in response.json()["detail"]
+    assert reads.history_scopes == [] and reads.overview_scopes == []
 
 
 @final
@@ -584,9 +801,13 @@ class RepositoryControlReads:
         self._repository = repository
 
     async def history(
-        self, location: str, history_range: ControlHistoryRange, max_points: int | None = None
+        self,
+        location: str,
+        history_range: ControlHistoryRange,
+        max_points: int | None = None,
+        scope: ControlReadScope = "all",
     ) -> ControlHistoryEnvelope:
-        return await self._repository.read(location, history_range, max_points)
+        return await self._repository.read(location, history_range, max_points, scope)
 
     async def publications(self, location: str) -> ControlPublicationResponse:
         del location

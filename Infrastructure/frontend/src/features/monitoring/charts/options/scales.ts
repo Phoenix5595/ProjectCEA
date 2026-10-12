@@ -142,6 +142,19 @@ function readTokenXStroke(): string {
   return value === '' ? 'rgba(200, 214, 194, 0.9)' : value
 }
 
+const OVERVIEW_DATE_FORMATS = {
+  year: new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Toronto', year: 'numeric' }),
+  month: new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Toronto', month: 'short', year: 'numeric',
+  }),
+  day: new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Toronto', month: 'short', day: 'numeric',
+  }),
+  time: new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Toronto', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  }),
+}
+
 /** Build scales and axes for every family present in the data. */
 export function buildScales(data: AlignedData): ChartScales {
   const families = new Set<ChartFamily>()
@@ -156,6 +169,16 @@ export function buildScales(data: AlignedData): ChartScales {
       ticks: { stroke: 'rgba(128, 128, 128, 0.25)' },
     },
   ]
+  if (data.overview !== undefined) {
+    axes[0].values = (self, ticks) => {
+      const span = (self.scales.x.max ?? 0) - (self.scales.x.min ?? 0)
+      const format = span > 730 * 86_400_000 ? OVERVIEW_DATE_FORMATS.year
+        : span > 90 * 86_400_000 ? OVERVIEW_DATE_FORMATS.month
+        : span > 2 * 86_400_000 ? OVERVIEW_DATE_FORMATS.day
+        : OVERVIEW_DATE_FORMATS.time
+      return ticks.map(tick => format.format(new Date(tick)))
+    }
+  }
 
   const seriesBounds = familySoftBounds(data)
   const defaultFamilyForUnit = defaultFamily(data)

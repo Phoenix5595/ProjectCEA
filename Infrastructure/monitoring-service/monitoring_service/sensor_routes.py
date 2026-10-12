@@ -6,6 +6,10 @@ from datetime import UTC, datetime, timedelta
 from typing import Protocol
 
 from fastapi import APIRouter, Depends, Query
+from monitoring_service.history_overview_models import (
+    HistoryOverviewRange,
+    HistoryOverviewSensorResponse,
+)
 
 from monitoring_service.sensor_models import (
     LiveSensorValue,
@@ -33,6 +37,9 @@ class SensorReads(Protocol):
         self, room: str, monitoring_range: MonitoringRange
     ) -> tuple[SensorStatistics, ...]: ...
     async def live(self, room: str, node: str) -> tuple[LiveSensorValue, ...]: ...
+    async def overview(
+        self, room: str, history_range: HistoryOverviewRange, max_points: int = 600
+    ) -> HistoryOverviewSensorResponse: ...
 
 
 def _range(start: str | None, end: str | None) -> MonitoringRange:
@@ -50,6 +57,21 @@ def get_sensor_reads() -> SensorReads:
     if sensor_reads is None:
         raise MonitoringValidationError("sensor monitoring resources are unavailable")
     return sensor_reads
+
+
+@router.get(
+    "/api/sensors/monitoring/overview/{location}",
+    response_model=HistoryOverviewSensorResponse,
+)
+async def overview_read(
+    location: str,
+    start: str | None = Query(default=None),
+    end: str | None = Query(default=None),
+    max_points: int = Query(default=600, ge=10, le=1000),
+    reads: SensorReads = Depends(get_sensor_reads),
+) -> HistoryOverviewSensorResponse:
+    history_range = HistoryOverviewRange.from_absolute(start, end)
+    return await reads.overview(location, history_range, max_points)
 
 
 @router.get("/api/sensors/monitoring/range/{location}", response_model=MonitoringResponse)

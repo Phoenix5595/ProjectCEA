@@ -49,6 +49,15 @@ class FlowerGrowPlanRequest(BaseModel):
     auto_mode_transition: bool = True
 
 
+class CalendarCurrentRunResponse(BaseModel):
+    """Full room span of the unique canonical plan containing Toronto today."""
+
+    location: str
+    grow_plan_id: UUID
+    start_date: date
+    end_date: date
+
+
 class FlowerCalendarModeTransitionUpdate(BaseModel):
     enabled: bool
 

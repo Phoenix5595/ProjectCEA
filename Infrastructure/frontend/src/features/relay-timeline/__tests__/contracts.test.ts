@@ -72,6 +72,42 @@ describe('relay timeline Zod contract', () => {
       })
     ).toThrow()
   })
+
+  it('parses requested-percent extrema as optional nullable 0..100 values', () => {
+    const load = (bounds?: { min: number | null; max: number | null }): unknown => ({
+      device_id: 101,
+      device_name: 'veg_heater',
+      timestamp: START,
+      requested_percent: 40,
+      aggregated: true,
+      interval_seconds: 60,
+      ...(bounds === undefined
+        ? {}
+        : { requested_min_percent: bounds.min, requested_max_percent: bounds.max }),
+    })
+
+    // Older raw responses without the fields remain accepted; explicit nulls
+    // say the range is unknown; both sides must stay inside 0..100.
+    expect(RelayTimelineResponse.parse({ ...responseFixture(), load: [load()] }).load[0]).toEqual(
+      expect.objectContaining({ requested_percent: 40, aggregated: true })
+    )
+    expect(
+      RelayTimelineResponse.parse({ ...responseFixture(), load: [load({ min: null, max: null })] })
+        .load[0]
+    ).toEqual(
+      expect.objectContaining({ requested_min_percent: null, requested_max_percent: null })
+    )
+    expect(
+      RelayTimelineResponse.parse({ ...responseFixture(), load: [load({ min: 30, max: 80 })] })
+        .load[0]
+    ).toEqual(expect.objectContaining({ requested_min_percent: 30, requested_max_percent: 80 }))
+    expect(() =>
+      RelayTimelineResponse.parse({ ...responseFixture(), load: [load({ min: 101, max: null })] })
+    ).toThrow()
+    expect(() =>
+      RelayTimelineResponse.parse({ ...responseFixture(), load: [load({ min: null, max: -1 })] })
+    ).toThrow()
+  })
 })
 
 describe('MonitoringApi.relayTimeline', () => {

@@ -1,11 +1,18 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 
 import type { ControlSnapshotResponse } from '../../services/api/devices'
 import type { DeviceRegistryEntry } from '../../types/device'
+import { HistoryOverviewView } from '../history-overview'
 import { MonitoringApi, monitoringRequestContextFromSearchParams } from '../monitoring/api'
-import { TimeRangeToolbar } from '../monitoring/components/TimeRangeToolbar'
-import type { MonitoringRange } from '../monitoring/state'
+import type { MonitoringRequestContext } from '../monitoring/api'
+import {
+  MAX_RANGE_MS,
+  TimeRangeToolbar,
+  parseUrlRange,
+  withSerializedRange,
+} from '../monitoring/components'
+import type { FixedRange, MonitoringRange } from '../monitoring/state'
 
 import type { RelayTimelineResponse } from './contracts'
 import {
@@ -14,12 +21,6 @@ import {
   formatDuration,
   formatRequestedResolution,
   MAX_RELAY_TIMELINE_TRANSITIONS,
-} from './intervals'
-import type {
-  RelayIntervalSummary,
-  RelayStateInterval,
-  RelayTimelineWindow,
-  RequestedOutputSegment,
 } from './intervals'
 import { RelayTimelineChart } from './RelayTimelineChart'
 import type { RelayTimelineChartHandle, RelayTimelineChartLane } from './RelayTimelineChart'
@@ -36,6 +37,17 @@ interface RelayPidTimelineProps {
   readonly registry: readonly DeviceRegistryEntry[]
   readonly snapshot: ControlSnapshotResponse | null
   readonly snapshotLoading: boolean
+}
+
+interface RelayTimelineDetailProps {
+  readonly location: string
+  readonly cluster: string
+  readonly registry: readonly DeviceRegistryEntry[]
+  readonly snapshot: ControlSnapshotResponse | null
+  readonly snapshotLoading: boolean
+  readonly range: MonitoringRange
+  readonly onRangeChange: (next: MonitoringRange) => void
+  readonly requestContext: MonitoringRequestContext | undefined
 }
 
 interface CurrentRelayLane {
@@ -102,123 +114,6 @@ function matchesAssignment(
   )
 }
 
-function makePreviewLane(range: RelayTimelineWindow): RelayTimelineChartLane {
-  const start = range.start.getTime()
-  const duration = range.end.getTime() - start
-  const position = (fraction: number): number => start + Math.round(duration * fraction)
-  const reason = 'Synthetic preview; not a sampled observation'
-  const intervals: RelayStateInterval[] = [
-    {
-      start: position(0),
-      end: position(0.08),
-      state: 'unknown',
-      partialStart: true,
-      partialEnd: false,
-      reason,
-    },
-    {
-      start: position(0.08),
-      end: position(0.24),
-      state: 'off',
-      partialStart: true,
-      partialEnd: false,
-      reason,
-    },
-    {
-      start: position(0.24),
-      end: position(0.44),
-      state: 'on',
-      partialStart: false,
-      partialEnd: false,
-      reason,
-    },
-    {
-      start: position(0.44),
-      end: position(0.59),
-      state: 'off',
-      partialStart: false,
-      partialEnd: false,
-      reason,
-    },
-    {
-      start: position(0.59),
-      end: position(0.82),
-      state: 'on',
-      partialStart: false,
-      partialEnd: true,
-      reason,
-    },
-    {
-      start: position(0.82),
-      end: position(1),
-      state: 'unknown',
-      partialStart: false,
-      partialEnd: true,
-      reason,
-    },
-  ]
-  const requestedOutput: RequestedOutputSegment[] = [
-    {
-      start: position(0),
-      end: position(0.3),
-      requestedPercent: 25,
-      aggregated: false,
-      intervalSeconds: (duration * 0.3) / 1000,
-    },
-    {
-      start: position(0.3),
-      end: position(0.55),
-      requestedPercent: 50,
-      aggregated: false,
-      intervalSeconds: (duration * 0.25) / 1000,
-    },
-    {
-      start: position(0.55),
-      end: position(0.82),
-      requestedPercent: 75,
-      aggregated: false,
-      intervalSeconds: (duration * 0.27) / 1000,
-    },
-    {
-      start: position(0.82),
-      end: position(1),
-      requestedPercent: 35,
-      aggregated: false,
-      intervalSeconds: (duration * 0.18) / 1000,
-    },
-  ]
-  const knownHours = (duration * 0.74) / 3_600_000
-  const completeOnSeconds = (duration * 0.2) / 1000
-  const completeOffSeconds = (duration * 0.15) / 1000
-  const summary: RelayIntervalSummary = {
-    onTransitions: 2,
-    offTransitions: 1,
-    cyclesPerHour: knownHours > 0 ? 2 / knownHours : null,
-    knownObservationHours: knownHours,
-    knownPercent: 74,
-    completeOnDurationsSeconds: [completeOnSeconds],
-    completeOffDurationsSeconds: [completeOffSeconds],
-    meanOnDurationSeconds: completeOnSeconds,
-    meanOffDurationSeconds: completeOffSeconds,
-    onSeconds: (duration * 0.43) / 1000,
-    offSeconds: (duration * 0.31) / 1000,
-    coverageComplete: false,
-  }
-
-  return {
-    key: 'preview:heating',
-    label: 'Heating relay',
-    deviceName: 'preview-heating-relay',
-    deviceType: 'heating',
-    channel: 0,
-    physicalRelay: 0,
-    preview: true,
-    intervals,
-    requestedOutput,
-    summary,
-  }
-}
-
 function latestRequestedPoint(
   lane: CurrentRelayLane,
   points: RelayTimelineResponse['load'],
@@ -239,6 +134,26 @@ function latestRequestedPoint(
   return latest
 }
 
+/**
+ * A fixed range beyond the detailed seven-day limit renders the bounded
+ * all-history overview; live windows and short fixed ranges stay detailed.
+ */
+function isOverviewRange(range: MonitoringRange): range is FixedRange {
+  return (
+    range.kind === 'fixed' && range.end.getTime() - range.start.getTime() > MAX_RANGE_MS
+  )
+}
+
+/** Parse the section URL before mounting any reader; 'none' falls back to live. */
+function resolveRelayRange(searchParams: URLSearchParams): MonitoringRange {
+  const parsed = parseUrlRange(searchParams, null)
+  return parsed.kind === 'live'
+    ? { kind: 'live', duration: parsed.duration }
+    : parsed.kind === 'fixed'
+      ? { kind: 'fixed', start: parsed.start, end: parsed.end }
+      : { kind: 'live', duration: LIVE_RANGE_DEFAULT_MS }
+}
+
 export function RelayPidTimeline({
   location,
   cluster,
@@ -246,22 +161,99 @@ export function RelayPidTimeline({
   snapshot,
   snapshotLoading,
 }: RelayPidTimelineProps) {
-  const [searchParams] = useSearchParams()
-  const scenario = searchParams.get('scenario') ?? undefined
-  const fixtureSession = searchParams.get('fixtureSession') ?? undefined
+  const [searchParams, setSearchParams] = useSearchParams()
   const requestContext = useMemo(
     () => monitoringRequestContextFromSearchParams(new URLSearchParams(searchParams.toString())),
     [searchParams]
   )
+  // Parse the URL before mounting any reader: a long fixed range goes straight
+  // to the overview branch and never triggers raw relay timeline pagination.
+  const [range, setRange] = useState<MonitoringRange>(() => resolveRelayRange(searchParams))
+  const rangeRef = useRef(range)
+  rangeRef.current = range
+
+  const applyRange = useCallback(
+    (next: MonitoringRange): void => {
+      // Switching into or out of the overview branch unmounts the branch-local
+      // toolbar before its own URL effect can run, so the URL is kept in step
+      // here. A write that only reproduces the current URL adds no history
+      // entry.
+      if (isOverviewRange(next) || isOverviewRange(rangeRef.current)) {
+        const merged = withSerializedRange(searchParams, next)
+        if (merged.toString() !== searchParams.toString()) setSearchParams(merged)
+      }
+      setRange(next)
+    },
+    [setSearchParams, searchParams]
+  )
+
+  if (isOverviewRange(range)) {
+    return (
+      <section
+        className="min-w-0 rounded-lg border border-border-subtle bg-surface-primary p-2"
+        aria-label="Relay and PID automation timeline"
+      >
+        <div className="mb-2">
+          <h2 className="text-base font-bold text-text-default">
+            Relay observations &amp; requested PID output
+          </h2>
+          <p className="mt-1 text-xs text-text-subtle">
+            Recorded GPIO lane time aggregated into fixed buckets shows physical ON/OFF/unknown
+            duration. Requested PID output and lights are summarized, not measured physical load.
+          </p>
+        </div>
+        <TimeRangeToolbar
+          maxRangeMs={null}
+          suppressInitialUrlParse={true}
+          range={range}
+          isLive={false}
+          onLive={duration => applyRange({ kind: 'live', duration })}
+          onFixedRange={(start, end) => applyRange({ kind: 'fixed', start, end })}
+          onPause={() => undefined}
+          onResume={() => undefined}
+          defaultDuration={LIVE_RANGE_DEFAULT_MS}
+        />
+        <HistoryOverviewView
+          room={location}
+          range={range}
+          requestContext={requestContext}
+          controlOnly={true}
+          onDetail={(start, end) => applyRange({ kind: 'fixed', start, end })}
+        />
+      </section>
+    )
+  }
+  return (
+    <RelayTimelineDetail
+      location={location}
+      cluster={cluster}
+      registry={registry}
+      snapshot={snapshot}
+      snapshotLoading={snapshotLoading}
+      range={range}
+      onRangeChange={applyRange}
+      requestContext={requestContext}
+    />
+  )
+}
+
+function RelayTimelineDetail({
+  location,
+  cluster,
+  registry,
+  snapshot,
+  snapshotLoading,
+  range,
+  onRangeChange,
+  requestContext,
+}: RelayTimelineDetailProps) {
+  const [searchParams] = useSearchParams()
+  const scenario = searchParams.get('scenario') ?? undefined
+  const fixtureSession = searchParams.get('fixtureSession') ?? undefined
   const monitoringApi = useMemo(() => new MonitoringApi(requestContext), [requestContext])
   const chartRef = useRef<RelayTimelineChartHandle>(null)
   const requestId = useRef(0)
-  const [range, setRange] = useState<MonitoringRange>({
-    kind: 'live',
-    duration: LIVE_RANGE_DEFAULT_MS,
-  })
   const [paused, setPaused] = useState(false)
-  const [previewEnabled, setPreviewEnabled] = useState(true)
   const [nowMs, setNowMs] = useState(() => Date.now())
   const [queryNowMs, setQueryNowMs] = useState(() => Date.now())
   const [history, setHistory] = useState<LoadedTimeline | null>(null)
@@ -535,23 +527,18 @@ export function RelayPidTimeline({
       }
     })
   }, [currentHistory, currentLanes, displayRange, isLive, paused, snapshot, sourceCoverageComplete])
-  const previewLane = useMemo(() => makePreviewLane(displayRange), [displayRange])
-  const previewOutputPercent =
-    previewLane.requestedOutput[previewLane.requestedOutput.length - 1]?.requestedPercent ?? null
-  const showPreview =
-    previewEnabled && currentLanes.length === 0 && !snapshotLoading && snapshot !== null
 
   const outputAvailable = chartLanes.some(lane => lane.requestedOutput.length > 0)
   const onLive = (duration: number): void => {
     const now = Date.now()
     setPaused(false)
-    setRange({ kind: 'live', duration })
     setNowMs(now)
     setQueryNowMs(now)
+    onRangeChange({ kind: 'live', duration })
   }
   const onFixedRange = (start: Date, end: Date): void => {
     setPaused(false)
-    setRange({ kind: 'fixed', start, end })
+    onRangeChange({ kind: 'fixed', start, end })
   }
   const onPause = (): void => {
     const now = Date.now()
@@ -582,6 +569,8 @@ export function RelayPidTimeline({
         </p>
       </div>
       <TimeRangeToolbar
+        maxRangeMs={null}
+        suppressInitialUrlParse={true}
         range={range}
         isLive={isLive}
         onLive={onLive}
@@ -648,52 +637,14 @@ export function RelayPidTimeline({
       )}
 
       {currentLanes.length === 0 ? (
-        <>
-          <div
-            className="mt-3 rounded border border-border-subtle bg-surface-secondary px-3 py-4 text-sm text-text-subtle"
-            role="status"
-          >
-            {snapshotLoading && snapshot === null
-              ? 'Loading current relay assignments…'
-              : 'No assigned non-light relays are available in this room/main cluster.'}
-          </div>
-          {cluster === 'main' && !snapshotLoading && snapshot !== null && (
-            <button
-              type="button"
-              aria-pressed={previewEnabled}
-              className="mt-2 rounded border border-border-subtle px-2 py-1 text-xs text-text-default hover:bg-surface-hover"
-              onClick={() => setPreviewEnabled(enabled => !enabled)}
-            >
-              {previewEnabled ? 'Disable beta synthetic example' : 'Enable beta synthetic example'}
-            </button>
-          )}
-          {showPreview && (
-            <div
-              className="mt-3 rounded border border-accent-subtle bg-surface-secondary p-2"
-              role="group"
-              aria-label="Illustrative relay timeline preview"
-            >
-              <p className="mb-2 text-xs text-text-subtle">
-                <strong>Example preview — synthetic data.</strong> This illustrative heating lane is
-                not assigned hardware, a relay observation, or recorded PID output.
-              </p>
-              {previewOutputPercent !== null && (
-                <p className="mt-2 text-sm text-text-default" role="status">
-                  Example requested PID output at the range end:{' '}
-                  <strong>{previewOutputPercent.toFixed(0)}%</strong> · synthetic only.
-                </p>
-              )}
-              <div className="min-w-0 overflow-auto">
-                <RelayTimelineChart
-                  ref={chartRef}
-                  lanes={[previewLane]}
-                  range={displayRange}
-                  viewportKey={`${viewKey}:preview`}
-                />
-              </div>
-            </div>
-          )}
-        </>
+        <div
+          className="mt-3 rounded border border-border-subtle bg-surface-secondary px-3 py-4 text-sm text-text-subtle"
+          role="status"
+        >
+          {snapshotLoading && snapshot === null
+            ? 'Loading current relay assignments…'
+            : 'No assigned non-light relays are available in this room/main cluster.'}
+        </div>
       ) : currentHistory ? (
         <>
           {chartLanes.some(lane => lane.intervals[0]?.state === 'unknown') && (

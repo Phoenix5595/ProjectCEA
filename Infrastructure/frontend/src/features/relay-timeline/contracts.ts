@@ -75,6 +75,13 @@ export const RelayTimelineLoadPoint = z
     device_name: z.string(),
     timestamp: utcDate,
     requested_percent: z.number().finite().min(0).max(100).nullable(),
+    // Valid requested-percent extrema over the samples the point represents:
+    // raw points repeat requested_percent on both sides; an aggregated point
+    // is null when any represented fraction was invalid or ownership was
+    // ambiguous, so a recorded invalid fraction never invents an in-range
+    // extremum.
+    requested_min_percent: z.number().finite().min(0).max(100).nullable().optional(),
+    requested_max_percent: z.number().finite().min(0).max(100).nullable().optional(),
     aggregated: z.boolean(),
     interval_seconds: z.number().int().positive(),
   })

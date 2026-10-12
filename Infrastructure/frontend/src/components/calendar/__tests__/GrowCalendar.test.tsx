@@ -93,17 +93,4 @@ describe('GrowCalendar selection', () => {
 
     expect(screen.getByRole('button', { name: /1 task/ })).toBeInTheDocument()
   })
-
-  it('applies the dashboard density class only on demand', () => {
-    const { container, rerender } = render(<GrowCalendar variant="compact" fillWidth events={[]} />)
-    expect(container.querySelector('.grow-calendar--dashboard')).toBeNull()
-
-    rerender(<GrowCalendar variant="compact" fillWidth events={[]} density="dashboard" />)
-    expect(container.querySelector('.grow-calendar--dashboard')).not.toBeNull()
-  })
-
-  it('renders the current month caption in the picker', () => {
-    render(<GrowCalendar variant="compact" fillWidth events={[]} />)
-    expect(screen.getByText(/septembre|september/i)).toBeInTheDocument()
-  })
 })

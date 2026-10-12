@@ -177,7 +177,7 @@ export const UPlotChart = memo(
         }
         const data = feed.getData()
         const plot = new uPlot(
-          buildOptions(
+          initializeOverviewScales(buildOptions(
             data,
             width,
             height,
@@ -228,14 +228,18 @@ export const UPlotChart = memo(
             },
             () => feed.getData().photoperiod,
             () => feed.getData()
-          ),
+          ), feed),
           PERFORMANCE_MARKS_ENABLED
             ? measureMonitoringConversion(() => toUPlotData(data))
             : toUPlotData(data),
           container
         )
         plotRef.current = plot
+        readyRef.current = true
         lastAppliedStructuralRevisionRef.current = structural.revision
+        if (data.overview !== undefined) {
+          lastAppliedViewportRevisionRef.current = structural.viewportRevision
+        }
         structural.series.forEach((series, index) => {
           const show = visibilityRef.current.get(series.key)
           if (show !== undefined) plot.setSeries(index + 1, { show }, false)
@@ -358,8 +362,26 @@ export const UPlotChart = memo(
   })
 )
 
+function initializeOverviewScales(options: uPlot.Options, feed: MonitoringChartFeed): uPlot.Options {
+  const range = feed.getStructuralSnapshot().range
+  if (feed.getData().overview !== undefined && range.kind === 'fixed') {
+    const scales = options.scales ?? (options.scales = {})
+    const x = scales.x ?? (scales.x = {})
+    // Set before construction: ready/zoom hooks must see the real requested
+    // extent, including empty outer buckets, not just populated midpoints.
+    x.min = range.start.getTime()
+    x.max = range.end.getTime()
+  }
+  return options
+}
+
 function fullDataRange(feed: MonitoringChartFeed): { min: number; max: number } | null {
-  const x = feed.getData().x
+  const data = feed.getData()
+  const range = feed.getStructuralSnapshot().range
+  if (data.overview !== undefined && range.kind === 'fixed') {
+    return { min: range.start.getTime(), max: range.end.getTime() }
+  }
+  const x = data.x
   const start = x[0]
   const end = x[x.length - 1]
   return start === undefined || end === undefined ? null : { min: start, max: end }

@@ -7,7 +7,17 @@
  * renders bounded presets, a live/paused indicator with Pause/Resume, absolute
  * Toronto wall-time inputs (with DST gap/fold handling), a Now action, Reset
  * Zoom, a timezone label, inline validation, and URL state via
- * `useSearchParams` so browser back/forward restores the range.
+ * `useSearchParams` so browser back/forward restores the range. `maxRangeMs`
+ * caps fixed ranges (the default seven days; `null` for all-history pages),
+ * and `suppressInitialUrlParse` lets pages hand an already-parsed range to
+ * freshly mounted branch-local toolbars without a stale URL re-read.
+ *
+ * On historical routes (`historical`) the live preset group is replaced by the
+ * fixed history presets plus the Calendar-backed "Current run" action: every
+ * preset resolves to a `now`-anchored fixed range, the five-day minimum hands
+ * off to regular Monitoring through `onMonitoringRoute`, and the current-run
+ * button stays disabled with an honest explanation until the calendar returns
+ * exactly one current run.
  */
 import { useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
@@ -15,6 +25,7 @@ import { useSearchParams } from 'react-router-dom'
 import type { MonitoringRange } from '../state'
 
 import { MonitoringToolbarStatus } from './MonitoringToolbarStatus'
+import type { ToolbarMonitoring } from './TimeRangeToolbar.monitoring'
 export type { ToolbarMonitoring } from './TimeRangeToolbar.monitoring'
 import {
   AbsoluteRangeFeedback,
@@ -30,12 +41,38 @@ import {
 } from '../../../utils/torontoWallTime'
 
 import {
+  HISTORICAL_PRESETS,
   PRESETS,
+  MAX_RANGE_MS,
+  historicalPresetRange,
   offsetLabel,
   parseUrlRange,
-  serializeRange,
   validateRange,
+  withSerializedRange,
+  type HistoricalPreset,
+  type MaxRangeCap,
 } from './timeRangeToolbar.time'
+
+export interface HistoricalCurrentRunControl {
+  /** Enabled only when the calendar returned exactly one current run. */
+  readonly ready: boolean
+  /** Honest loading/absent/ambiguous/error explanation, or the ready action summary. */
+  readonly title: string
+  /** Apply the unique-run range (room calendar start → now). */
+  readonly onSelect: () => void
+}
+
+/**
+ * Historical-route toolbar behavior. Presence replaces the live preset group
+ * with the fixed history presets and switches the toolbar to the historical
+ * range contract.
+ */
+export interface HistoricalToolbarControl {
+  /** Route the five-day minimum handoff to the sector's regular Monitoring page. */
+  readonly onMonitoringRoute: (start: Date, end: Date) => void
+  /** Calendar current-run state behind the trailing preset action. */
+  readonly currentRun: HistoricalCurrentRunControl
+}
 
 export interface TimeRangeToolbarProps {
   range: MonitoringRange
@@ -47,7 +84,20 @@ export interface TimeRangeToolbarProps {
   onResetZoom?: () => void
   now?: () => Date
   defaultDuration?: number
-  monitoring?: import('./TimeRangeToolbar.monitoring').ToolbarMonitoring
+  /** Fixed-range cap; `null` opts the page into unlimited fixed ranges
+   * (all-history overview pages). Live windows stay detailed and capped. */
+  maxRangeMs?: MaxRangeCap
+  /**
+   * Skip the URL read on first mount and treat the incoming `range` as
+   * authoritative. Range-owning pages pass this on toolbars that appear after a
+   * mode change so a toolbar mounted during a pending router transition cannot
+   * re-apply a stale URL range and fight the owner.
+   */
+  suppressInitialUrlParse?: boolean
+  /** Historical-route preset group and current-run control; undefined on the
+   * regular Monitoring routes, which keep the live preset group. */
+  historical?: HistoricalToolbarControl
+  monitoring?: ToolbarMonitoring
 }
 
 export function TimeRangeToolbar({
@@ -59,9 +109,13 @@ export function TimeRangeToolbar({
   onResetZoom,
   now,
   defaultDuration,
+  maxRangeMs,
+  suppressInitialUrlParse,
+  historical,
   monitoring,
 }: TimeRangeToolbarProps) {
   const [searchParams, setSearchParams] = useSearchParams()
+  const maxCapMs = maxRangeMs === undefined ? MAX_RANGE_MS : maxRangeMs
   const nowFn = now ?? (() => new Date())
   const live = range.kind === 'live'
   const effectiveEnd = live ? nowFn() : range.end
@@ -109,23 +163,41 @@ export function TimeRangeToolbar({
     const current = searchParams.toString()
     if (current === lastWrittenRef.current) return
     lastWrittenRef.current = current
-    const parsed = parseUrlRange(searchParams)
+    const firstRead = !initializedRef.current
+    initializedRef.current = true
+    if (firstRead && suppressInitialUrlParse) return
+    const parsed = parseUrlRange(searchParams, maxCapMs)
+    const defaultDurationMs = defaultDuration ?? PRESETS[1].duration
+    // When the parsed range already equals the owned range, applying it again
+    // would only hand the parent a duplicate value; arming the write-skip for
+    // an apply that never happens would then swallow the next genuine URL
+    // write, so neither happens for an equal parse. A parameterless URL equals
+    // the default live window for an owner already on it.
+    const parseEqualsRange =
+      (parsed.kind === 'live' && range.kind === 'live' && parsed.duration === range.duration) ||
+      (parsed.kind === 'fixed' &&
+        range.kind === 'fixed' &&
+        parsed.start.getTime() === range.start.getTime() &&
+        parsed.end.getTime() === range.end.getTime()) ||
+      (parsed.kind === 'none' &&
+        range.kind === 'live' &&
+        range.duration === defaultDurationMs)
     if (parsed.kind === 'live') {
-      skipNextWriteRef.current = true
       setSelectedDuration(parsed.duration)
-      callbacksRef.current.onLive(parsed.duration)
-    } else if (parsed.kind === 'fixed') {
-      skipNextWriteRef.current = true
-      callbacksRef.current.onFixedRange(parsed.start, parsed.end)
-    } else if (initializedRef.current) {
+    } else if (parsed.kind === 'none' && !firstRead) {
       const duration = defaultDuration ?? PRESETS[1].duration
-      skipNextWriteRef.current = true
       setSelectedDuration(duration)
       setPaused(false)
-      callbacksRef.current.onLive(duration)
     }
-    initializedRef.current = true
-  }, [defaultDuration, searchParams])
+    if (parsed.kind !== 'none' && !parseEqualsRange) {
+      skipNextWriteRef.current = true
+      if (parsed.kind === 'live') callbacksRef.current.onLive(parsed.duration)
+      else callbacksRef.current.onFixedRange(parsed.start, parsed.end)
+    } else if (parsed.kind === 'none' && !firstRead) {
+      skipNextWriteRef.current = true
+      callbacksRef.current.onLive(defaultDuration ?? PRESETS[1].duration)
+    }
+  }, [maxCapMs, defaultDuration, range, searchParams])
 
   // Write the URL only after the initial read and when the range actually
   // changes, so the mount read is never overwritten by the default range.
@@ -137,12 +209,7 @@ export function TimeRangeToolbar({
       skipNextWriteRef.current = false
       return
     }
-    const serialized = serializeRange(range)
-    const nextSearchParams = new URLSearchParams(searchParams)
-    nextSearchParams.delete('range')
-    nextSearchParams.delete('start')
-    nextSearchParams.delete('end')
-    new URLSearchParams(serialized).forEach((value, key) => nextSearchParams.set(key, value))
+    const nextSearchParams = withSerializedRange(searchParams, range)
     const nextSerialized = nextSearchParams.toString()
     if (nextSerialized === searchParams.toString()) return
     lastWrittenRef.current = nextSerialized
@@ -157,6 +224,23 @@ export function TimeRangeToolbar({
     setSelectedDuration(duration)
     setError(null)
     callbacksRef.current.onLive(duration)
+  }
+
+  /**
+   * Historical presets always resolve to a `now`-anchored fixed range: day and
+   * week presets subtract a fixed span, month presets subtract Toronto
+   * calendar months. The five-day minimum routes to regular Monitoring; every
+   * other preset stays on the Historical page as a fixed range.
+   */
+  function applyHistoricalPreset(preset: HistoricalPreset): void {
+    const rangeNow = nowFn()
+    const next = historicalPresetRange(preset, rangeNow)
+    if (next === null || historical === undefined) return
+    setPaused(false)
+    setError(null)
+    setFallFold(null)
+    if (preset.route === 'monitoring') historical.onMonitoringRoute(next.start, next.end)
+    else callbacksRef.current.onFixedRange(next.start, next.end)
   }
 
   function handleNow(): void {
@@ -210,7 +294,7 @@ export function TimeRangeToolbar({
       setError(null)
       return
     }
-    const validation = validateRange(startRes.utc, endRes.utc)
+    const validation = validateRange(startRes.utc, endRes.utc, maxCapMs)
     if (validation !== null) {
       setError(validation)
       return
@@ -229,26 +313,52 @@ export function TimeRangeToolbar({
   }
 
   const errorId = 'mon-toolbar-error'
-  const inputError = fixedInputError(startInput, endInput)
+  const inputError = fixedInputError(startInput, endInput, maxCapMs)
   const formError = error ?? inputError
   return (
     <div className="mon-toolbar">
       <div className="mon-toolbar__controls">
         <div className="mon-toolbar__presets" role="group" aria-label="Time range presets">
-          {PRESETS.map(p => (
-            <button
-              key={p.label}
-              type="button"
-              className="mon-toolbar__preset"
-              aria-pressed={live && range.duration === p.duration}
-              onClick={() => applyPreset(p.duration)}
-            >
-              {p.label}
-            </button>
-          ))}
-          <button type="button" className="mon-toolbar__now" onClick={handleNow}>
-            Now
-          </button>
+          {historical === undefined ? (
+            <>
+              {PRESETS.map(p => (
+                <button
+                  key={p.label}
+                  type="button"
+                  className="mon-toolbar__preset"
+                  aria-pressed={live && range.duration === p.duration}
+                  onClick={() => applyPreset(p.duration)}
+                >
+                  {p.label}
+                </button>
+              ))}
+              <button type="button" className="mon-toolbar__now" onClick={handleNow}>
+                Now
+              </button>
+            </>
+          ) : (
+            <>
+              {HISTORICAL_PRESETS.map(p => (
+                <button
+                  key={p.label}
+                  type="button"
+                  className="mon-toolbar__preset"
+                  onClick={() => applyHistoricalPreset(p)}
+                >
+                  {p.label}
+                </button>
+              ))}
+              <button
+                type="button"
+                className="mon-toolbar__now"
+                disabled={!historical.currentRun.ready}
+                title={historical.currentRun.title}
+                onClick={() => historical.currentRun.onSelect()}
+              >
+                Current run
+              </button>
+            </>
+          )}
         </div>
         <AbsoluteRangeForm
           startInput={startInput}

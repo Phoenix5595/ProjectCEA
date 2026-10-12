@@ -10,6 +10,11 @@
  * DST resolution uses a fixed-point search over candidate offsets: a wall
  * time is valid when exactly one UTC instant round-trips to it, ambiguous
  * (fall fold) when two do, and nonexistent (spring gap) when none do.
+ *
+ * The historical-range helpers build on that core:
+ * `subtractTorontoCalendarMonths` (whole-month subtraction with day clamp and
+ * deterministic DST) and `torontoMidnightUtc` (Toronto midnight of a calendar
+ * date).
  */
 import { formatInTimeZone, toZonedTime } from 'date-fns-tz'
 
@@ -161,4 +166,50 @@ export function torontoDateString(instantMs: number): string {
   const c = torontoWallComponents(instantMs)
   const pad = (value: number): string => String(value).padStart(2, '0')
   return `${c.y}-${pad(c.mo + 1)}-${pad(c.d)}`
+}
+
+/**
+ * Subtract whole Toronto calendar months from a UTC instant, keeping the
+ * Toronto wall clock (never a fixed millisecond count), clamping the day of
+ * month to the target month's length, and resolving DST through
+ * `resolveRecurringWallTime` (fall fold → first EDT occurrence; spring gap →
+ * shifted forward by the offset jump). Returns null when the target wall time
+ * cannot be resolved — never a UTC fallback.
+ */
+export function subtractTorontoCalendarMonths(end: Date, months: number): Date | null {
+  if (!(end instanceof Date) || Number.isNaN(end.getTime())) return null
+  if (!Number.isInteger(months)) return null
+  const wall = torontoWallComponents(end.getTime())
+  const total = wall.y * 12 + wall.mo - months
+  const y = Math.floor(total / 12)
+  const mo = ((total % 12) + 12) % 12
+  const dayLimit = new Date(Date.UTC(y, mo + 1, 0)).getUTCDate()
+  const resolved = resolveRecurringWallTime({
+    y,
+    mo,
+    d: Math.min(wall.d, dayLimit),
+    h: wall.h,
+    min: wall.min,
+  })
+  if (resolved.utc !== null) {
+    resolved.utc.setUTCSeconds(end.getUTCSeconds(), end.getUTCMilliseconds())
+  }
+  return resolved.utc
+}
+
+/**
+ * UTC instant of Toronto-local midnight for a `YYYY-MM-DD` calendar date, or
+ * null when the string or date does not exist — never an invented offset.
+ */
+export function torontoMidnightUtc(dateStr: string): Date | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr)
+  if (m === null) return null
+  const resolved = resolveWallTime({
+    y: Number(m[1]),
+    mo: Number(m[2]) - 1,
+    d: Number(m[3]),
+    h: 0,
+    min: 0,
+  })
+  return resolved.kind === 'valid' ? resolved.utc : null
 }

@@ -26,7 +26,9 @@ from app.events.mutation_dependencies import get_mutation_event_sink, get_mutati
 from app.events.mutation_diff import safe_allowlisted_diff
 from app.events.operational_models import EntityContext, JsonValue
 from app.events.operational_ports import OperationalEventSink
+from app.repositories.calendar import GrowPlanCurrentRunAmbiguousError
 from app.schemas.calendar import (
+    CalendarCurrentRunResponse,
     CalendarEventCreate,
     CalendarEventUpdate,
     FlowerCalendarModeTransitionUpdate,
@@ -94,6 +96,29 @@ def _mode_event_dto(row: dict[str, Any]) -> dict[str, Any]:
 @router.get("/rooms")
 async def list_rooms(database: DatabaseManager = Depends(get_database)) -> list[dict[str, Any]]:
     return await database.calendar_repo.list_room_profiles()
+
+
+@router.get("/current-run", response_model=CalendarCurrentRunResponse | None)
+async def get_current_run(
+    location: str,
+    database: DatabaseManager = Depends(get_database),
+) -> CalendarCurrentRunResponse | None:
+    """Read the room's current calendar span without consulting sensor history."""
+    try:
+        run = await database.calendar_repo.get_current_run(location)
+    except GrowPlanCurrentRunAmbiguousError as error:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "current_run_ambiguous", "detail": str(error)},
+        ) from error
+    if run is None:
+        return None
+    return CalendarCurrentRunResponse(
+        location=run.location,
+        grow_plan_id=run.grow_plan_id,
+        start_date=run.start_date,
+        end_date=run.end_date,
+    )
 
 
 @router.get("/flower-mode-transitions")

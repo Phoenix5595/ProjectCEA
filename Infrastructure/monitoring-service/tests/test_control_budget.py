@@ -20,6 +20,8 @@ def _setpoint_row(
         "timestamp": timestamp,
         "mode": "day",
         "effective_heating_setpoint": heating,
+        "effective_heating_setpoint_min": heating,
+        "effective_heating_setpoint_max": heating,
         "nominal_heating_setpoint": heating,
         "ramp_progress_heating": ramp_progress,
         "effective_cooling_setpoint": None,
@@ -93,6 +95,10 @@ class DenseControlDatabase:
                     "control_reason_last": "idle" if 4 <= index < 8 else "schedule",
                     "pid_output_last": 12.5,
                     "duty_cycle_percent_last": 30.0,
+                    "pid_output_min": 12.5,
+                    "pid_output_max": 12.5,
+                    "duty_cycle_percent_min": 30.0,
+                    "duty_cycle_percent_max": 30.0,
                 }
                 for index in range(12)
             ]
@@ -160,6 +166,10 @@ class AggregateControlDatabase:
                     "control_reason_last": "schedule",
                     "pid_output_last": 15.0,
                     "duty_cycle_percent_last": 25.0,
+                    "pid_output_min": 0.05,
+                    "pid_output_max": 0.95,
+                    "duty_cycle_percent_min": 5.0,
+                    "duty_cycle_percent_max": 45.0,
                 }
             ]
         return []
@@ -204,6 +214,9 @@ async def test_budgeted_history_preserves_step_holds_ramp_endpoints_and_phase_tr
         (NOW, 20.0),
         (NOW + timedelta(minutes=8), 25.0),
     ]
+    # Raw held samples collapse into steps whose extrema merge the collapsed pairs.
+    assert [step.minimum for step in climate.steps] == [20.0, 25.0]
+    assert [step.maximum for step in climate.steps] == [20.0, 25.0]
     assert [
         (linear.start, linear.end, linear.start_value, linear.end_value)
         for linear in climate.linear
@@ -221,6 +234,8 @@ async def test_budgeted_history_preserves_step_holds_ramp_endpoints_and_phase_tr
     ]
     assert len(device_points) <= 10
     assert len(response.pid[0].points) == 1
+    assert response.pid[0].points[0].pid_output_min == 12.5
+    assert response.pid[0].points[0].duty_cycle_percent_max == 30.0
     assert [point.phase for point in response.photoperiod] == ["SUN", "MOON"]
 
 
@@ -239,6 +254,12 @@ async def test_budgeted_history_uses_aggregated_last_value_sources_for_long_wind
     assert any("monitoring_automation_state_5min" in query for query in database.queries)
     assert response.climate[0].provenance.is_aggregated is True
     assert response.climate[0].steps[0].value == 21.0
+    assert response.climate[0].steps[0].minimum == 21.0
+    assert response.climate[0].steps[0].maximum == 21.0
+    assert response.pid[0].points[0].pid_output_min == 0.05
+    assert response.pid[0].points[0].pid_output_max == 0.95
+    assert response.pid[0].points[0].duty_cycle_percent_min == 5.0
+    assert response.pid[0].points[0].duty_cycle_percent_max == 45.0
     assert response.devices[0].provenance.is_aggregated is True
 
 
@@ -532,3 +553,98 @@ async def test_light_missing_rows_never_gain_fabricated_samples() -> None:
         (start + timedelta(minutes=11), 0.0),
     ]
     assert light.linear == ()
+
+
+@final
+class AggregateSetpointDatabase:
+    """Serves canned aggregate setpoint rows without touching a live database."""
+
+    def __init__(self, setpoint_rows: list[dict[str, str | float | datetime | None]]) -> None:
+        self.setpoint_rows = setpoint_rows
+
+    async def fetch(
+        self, query: str, *_: str | int | float | datetime
+    ) -> list[dict[str, str | float | datetime | int | None]]:
+        if "monitoring_effective_setpoints_" in query:
+            return self.setpoint_rows
+        return []
+
+
+@final
+class PidExtremaDatabase:
+    """Serves requested-output buckets whose extrema only discarded points hold."""
+
+    async def fetch(
+        self, query: str, *_: str | int | float | datetime
+    ) -> list[dict[str, str | float | datetime | int | None]]:
+        if "monitoring_automation_state" in query:
+            return [
+                {
+                    "bucket": NOW + timedelta(minutes=index),
+                    "device_name": "heater_v_1",
+                    "device_state_last": 1,
+                    "device_mode_last": "auto",
+                    "control_reason_last": "schedule",
+                    "pid_output_last": 0.2 + index / 20,
+                    "duty_cycle_percent_last": None,
+                    "pid_output_min": 0.05 if index == 2 else 0.2 + index / 20,
+                    "pid_output_max": 0.95 if index == 7 else 0.2 + index / 20,
+                    "duty_cycle_percent_min": None,
+                    "duty_cycle_percent_max": float("nan") if index == 9 else None,
+                }
+                for index in range(11)
+            ]
+        return []
+
+
+@pytest.mark.anyio
+async def test_pid_budget_reduction_never_discards_recorded_extrema() -> None:
+    # Given: eleven requested-output buckets whose trough (0.05) and peak (0.95)
+    # live only in buckets the uniform downsample would discard.
+    history_range = ControlHistoryRange(start=NOW, end=NOW + timedelta(minutes=11))
+    repository = ControlHistoryRepository(PidExtremaDatabase())
+
+    # When: the semantic budget retains only three of the eleven transitions.
+    response = await repository.read("Veg Room", history_range, max_points=3)
+    points = response.pid[0].points
+
+    # Then: the retained representatives carry the discarded spans' extrema,
+    # while their retained last values and count of transitions stay unchanged.
+    assert [(point.timestamp, point.pid_output) for point in points] == [
+        (NOW, 0.2),
+        (NOW + timedelta(minutes=5), 0.45),
+        (NOW + timedelta(minutes=10), 0.7),
+    ]
+    assert points[0].pid_output_min == 0.05
+    assert points[0].pid_output_max == 0.4
+    assert points[1].pid_output_min == 0.45
+    assert points[1].pid_output_max == 0.95
+    # A non-finite recorded duty maximum is an invalid sample, never an extremum.
+    assert points[1].duty_cycle_percent_max is None
+    assert points[2].pid_output_min == 0.7
+    assert points[2].pid_output_max == 0.7
+
+
+@pytest.mark.anyio
+async def test_same_value_climate_steps_merge_collapsed_bucket_extrema() -> None:
+    # Given: aggregate buckets that hold the same effective value but different
+    # recorded bucket extrema, so value-only collapsing would hide a peak and a trough.
+    lows = [19.5, 19.0, 20.0, 20.2]
+    highs = [20.5, 21.0, 20.2, 20.4]
+    rows = []
+    for index in range(4):
+        row = _setpoint_row(NOW + timedelta(minutes=5 * index), 20.0, None)
+        row["effective_heating_setpoint_min"] = lows[index]
+        row["effective_heating_setpoint_max"] = highs[index]
+        rows.append(row)
+    repository = ControlHistoryRepository(AggregateSetpointDatabase(rows))
+    history_range = ControlHistoryRange(start=NOW - timedelta(days=2), end=NOW)
+
+    # When: the point budget reduces the repeated held values into one step.
+    response = await repository.read("Veg Room", history_range, max_points=10)
+    steps = response.climate[0].steps
+
+    # Then: the retained step reports the merged extrema of every collapsed bucket.
+    assert [(step.timestamp, step.value) for step in steps] == [(NOW, 20.0)]
+    assert steps[0].minimum == 19.0
+    assert steps[0].maximum == 21.0

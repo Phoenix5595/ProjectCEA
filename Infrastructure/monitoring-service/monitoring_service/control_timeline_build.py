@@ -21,7 +21,11 @@ from monitoring_service.control_models import (
     SAMPLE_SUPPORTED_SPAN,
     TimelineProvenanceModel,
 )
-from monitoring_service.control_timeline_budget import budget_control_history
+from monitoring_service.control_timeline_budget import (
+    budget_control_history,
+    merge_maximum,
+    merge_minimum,
+)
 from monitoring_service.photoperiod_history import build_photoperiod_history
 from shared.monitoring_contracts import Quality
 
@@ -82,7 +86,11 @@ def build_control_history_envelope(
         origin="recorded", quality=Quality.UNAVAILABLE, is_aggregated=False
     )
     climate_builders = _build_climate_timelines(
-        setpoint_rows, provenance, unavailable_provenance, max_points is not None
+        setpoint_rows,
+        provenance,
+        unavailable_provenance,
+        max_points is not None,
+        setpoints_are_aggregated,
     )
     lights = _build_light_timelines(
         light_rows,
@@ -123,6 +131,7 @@ def _build_climate_timelines(
     provenance: TimelineProvenanceModel,
     unavailable_provenance: TimelineProvenanceModel,
     preserve_gaps: bool,
+    aggregated: bool,
 ) -> dict[str, list[ClimateTimelinePointOut]]:
     climate: dict[str, list[ClimateTimelinePointOut]] = {}
     if not rows:
@@ -138,12 +147,18 @@ def _build_climate_timelines(
         for timestamp, siblings in sorted(climate_rows[metric].items()):
             selected_row: ControlRecord | None = None
             effective: float | None = None
+            minimum: float | None = None
+            maximum: float | None = None
             for row in siblings:
+                low, high = _climate_row_extrema(row, effective_column, aggregated)
+                minimum = merge_minimum(minimum, low)
+                maximum = merge_maximum(maximum, high)
+                if selected_row is not None:
+                    continue
                 candidate = _finite_float(row[effective_column])
                 if candidate is not None:
                     selected_row = row
                     effective = candidate
-                    break
             if selected_row is not None:
                 climate.setdefault(metric, []).append(
                     ClimateTimelinePointOut(
@@ -154,6 +169,8 @@ def _build_climate_timelines(
                         nominal_value=_optional_float(selected_row[nominal_column]),
                         ramp_progress=_optional_float(selected_row[ramp_column]),
                         mode=_optional_string(selected_row["mode"]),
+                        minimum=minimum,
+                        maximum=maximum,
                     )
                 )
             elif preserve_gaps and metric in climate:
@@ -164,9 +181,29 @@ def _build_climate_timelines(
                         provenance=unavailable_provenance,
                         metric=metric,
                         mode=_optional_string(siblings[0]["mode"]),
+                        minimum=minimum,
+                        maximum=maximum,
                     )
                 )
     return climate
+
+
+def _climate_row_extrema(
+    row: ControlRecord, effective_column: str, aggregated: bool
+) -> tuple[float | None, float | None]:
+    """Return the extrema one setpoint row contributes to its bucket/timestamp.
+
+    Aggregate rows carry the read model's recorded min/max over every non-null
+    sample they summarized; raw rows contribute their own single sample. Every
+    represented sample stays inside the emitted extremum pair.
+    """
+    if aggregated:
+        return (
+            _finite_float(row.get(f"{effective_column}_min")),
+            _finite_float(row.get(f"{effective_column}_max")),
+        )
+    value = _finite_float(row[effective_column])
+    return value, value
 
 
 def _build_light_timelines(
@@ -216,6 +253,8 @@ def _build_light_timelines(
                     LightTimelinePointOut(
                         timestamp=timestamp,
                         value=effective,
+                        minimum=effective,
+                        maximum=effective,
                         provenance=provenance,
                         device_name=device,
                         nominal_value=_optional_float(selected_row["nominal_light_intensity"]),
@@ -272,6 +311,10 @@ def _build_device_timelines(
                 device_name=device,
                 pid_output=_optional_float(row["pid_output_last"]),
                 duty_cycle_percent=_optional_float(row["duty_cycle_percent_last"]),
+                pid_output_min=_finite_float(row.get("pid_output_min")),
+                pid_output_max=_finite_float(row.get("pid_output_max")),
+                duty_cycle_percent_min=_finite_float(row.get("duty_cycle_percent_min")),
+                duty_cycle_percent_max=_finite_float(row.get("duty_cycle_percent_max")),
             )
         )
     return (

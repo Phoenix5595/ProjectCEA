@@ -69,15 +69,16 @@ Required tokens are listed in `src/features/monitoring/designTokens.ts` (`REQUIR
 
 ### Chart region
 
-- Two chart regions per room: climate, and CO₂/pressure/device/PID/light.
+- Two chart regions per room: environmental climate, and CO₂/pressure/light intensity. Relay/device state, requested PID and other non-light automation tracking render only on Automation.
 - Sensor mean is a solid line; bucket min/max is a translucent envelope.
 - Legend swatches are keyboard-focusable buttons with `aria-pressed`; click or Enter/Space toggles a series. A reset action restores all series.
-- Time controls offer presets plus absolute start/end entry, enforce 5m–7d, expose Reset Zoom, and support drag-to-zoom.
+- Detailed time controls retain their 5m–7d bounds and drag-to-zoom. Historical adds 5 days (Monitoring), 7 days, 2 weeks, one/three Toronto calendar months and the room's current calendar run. A sub-seven-day drag first snaps to seven days; a second short drag switches to Monitoring at the selected range.
 
 ### Table and card
 
 - Semantic HTML tables retain Grafana ordering, units, and Last Update rows. Tables double as the chart's accessible data alternative.
 - Cards wrap each chart region and table with existing surface/border tokens.
+- Historical uses the finest fitting 1–12-hour bucket with an explicit 1000-point budget; partial edge buckets count. Keep min/max envelopes and sensor-only statistics below the two graphs, with the established 780px/320px chart heights and no internally scrolling wrappers.
 
 ### Climate timeline compact and expanded states
 
@@ -108,7 +109,7 @@ Required tokens are listed in `src/features/monitoring/designTokens.ts` (`REQUIR
 
 - The climate periods table is permanent and remains the primary fine-tuning interface. Operators can edit period names, times, targets, and ramps there without opening the graph. The expanded graph is supplementary.
 - Compact Control is a read-only view of saved scheduled and runtime-effective trajectories. Expand creates an unsaved draft overlay. Review validates that draft, and Apply is the only path that persists it. Discard removes the draft without changing saved authority.
-- Monitoring consumes the saved rich trajectory only. It never reads Control draft state, and it does not actuate devices. Historical monitoring remains authoritative where recorded data overlaps the saved projection.
+- Monitoring consumes only saved light trajectories and recorded environmental sensors, never Control draft state or non-light automation tracking, and never actuates devices. Recorded phase transitions and their separate coverage remain historical authority; a current schedule or projection cannot recolor the past.
 - The rich trajectory envelope is additive to legacy monitoring contracts. Consumers that need only scalar `value` and `quality` fields can continue using the legacy series; rich consumers must preserve `source`, `trajectory_kind`, revision scope, and explicit UTC/timezone window metadata. Draft envelopes must not be published as saved monitoring data.
 - The projection assumes an indefinite runtime override remains active until the finite requested window ends when no expiry is available. The assumption is surfaced as a warning and an unavailable runtime state creates a visible gap rather than an invented continuation.
 

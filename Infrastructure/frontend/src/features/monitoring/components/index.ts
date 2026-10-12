@@ -6,19 +6,33 @@
  * import from one module.
  */
 export { TimeRangeToolbar } from './TimeRangeToolbar'
-export type { TimeRangeToolbarProps } from './TimeRangeToolbar'
+export type {
+  HistoricalCurrentRunControl,
+  HistoricalToolbarControl,
+  TimeRangeToolbarProps,
+} from './TimeRangeToolbar'
 export { AbsoluteRangeForm } from './TimeRangeToolbar.inputs'
 export type { AbsoluteRangeFormProps, FallFoldState } from './TimeRangeToolbar.inputs'
 export {
+  HISTORICAL_PRESETS,
   MAX_RANGE_MS,
+  MIN_HISTORY_MS,
   MIN_RANGE_MS,
   PRESETS,
+  historicalPresetRange,
   offsetLabel,
   parseUrlRange,
   serializeRange,
   validateRange,
+  withSerializedRange,
 } from './timeRangeToolbar.time'
-export type { ParsedUrlRange, Preset, ToolbarRange } from './timeRangeToolbar.time'
+export type {
+  HistoricalPreset,
+  MaxRangeCap,
+  ParsedUrlRange,
+  Preset,
+  ToolbarRange,
+} from './timeRangeToolbar.time'
 export { SensorValueTable } from './SensorValueTable'
 export type { SensorValueTableProps } from './SensorValueTable'
 export { RoomAveragesTable } from './RoomAveragesTable'

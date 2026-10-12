@@ -296,7 +296,9 @@ WITH relay_assignment_predecessors AS (
 )
 """
 
-RELAY_RAW_PID_LOAD_SQL = _RELAY_ASSIGNMENT_INTERVALS + """
+RELAY_RAW_PID_LOAD_SQL = (
+    _RELAY_ASSIGNMENT_INTERVALS
+    + """
 , relay_matched_pid_samples AS (
     SELECT s.id, s.timestamp, s.device_name, s.pid_output,
            COUNT(DISTINCT assignment.device_id)::bigint AS owner_count,
@@ -316,13 +318,15 @@ RELAY_RAW_PID_LOAD_SQL = _RELAY_ASSIGNMENT_INTERVALS + """
 SELECT id, timestamp, device_name,
        CASE WHEN owner_count = 1 THEN device_id ELSE NULL END AS device_id,
        CASE WHEN owner_count = 1 THEN pid_output ELSE NULL END AS pid_output,
+       CASE WHEN owner_count = 1 THEN pid_output ELSE NULL END AS pid_output_min,
+       CASE WHEN owner_count = 1 THEN pid_output ELSE NULL END AS pid_output_max,
        owner_count,
        COUNT(*) OVER ()::bigint AS total_count
 FROM relay_matched_pid_samples
 ORDER BY timestamp, device_id NULLS LAST, device_name, id
 LIMIT $5
 """
-
+)
 
 
 def _aggregated_pid_load_sql(table_name: str, interval_seconds: int) -> str:
@@ -334,12 +338,16 @@ def _aggregated_pid_load_sql(table_name: str, interval_seconds: int) -> str:
         raise ValueError("unsupported relay timeline aggregate table")
     if interval_seconds not in {60, 300}:
         raise ValueError("unsupported relay timeline aggregate interval")
-    return _RELAY_ASSIGNMENT_INTERVALS + f"""
+    return (
+        _RELAY_ASSIGNMENT_INTERVALS
+        + f"""
 , relay_matched_pid_samples AS (
     SELECT aggregate.last_observed_at AS timestamp,
            aggregate.device_name,
            aggregate.pid_output_count,
            aggregate.pid_output_last,
+           aggregate.pid_output_min,
+           aggregate.pid_output_max,
            ownership.owner_count,
            ownership.device_id
     FROM {table_name} AS aggregate
@@ -376,12 +384,17 @@ SELECT timestamp, device_name,
        CASE WHEN owner_count = 1 THEN device_id ELSE NULL END AS device_id,
        CASE WHEN owner_count = 1 AND pid_output_count > 0
             THEN pid_output_last ELSE NULL END AS pid_output,
+       CASE WHEN owner_count = 1 THEN pid_output_min ELSE NULL END AS pid_output_min,
+       CASE WHEN owner_count = 1 THEN pid_output_max ELSE NULL END AS pid_output_max,
        owner_count,
        COUNT(*) OVER ()::bigint AS total_count
 FROM relay_matched_pid_samples
 ORDER BY timestamp, device_id NULLS LAST, device_name
 LIMIT $5
 """
+    )
+
+
 RELAY_1MIN_PID_LOAD_SQL = _aggregated_pid_load_sql("monitoring_automation_state_1min", 60)
 RELAY_5MIN_PID_LOAD_SQL = _aggregated_pid_load_sql("monitoring_automation_state_5min", 300)
 
@@ -402,6 +415,7 @@ class RelayTimelineCursor:
 
 class RelayTimelineCursorError(ValueError):
     """A relay timeline cursor is malformed or bound to another request."""
+
 
 def encode_cursor(cursor: RelayTimelineCursor) -> str:
     """Encode a location/range-bound stable page position as an opaque URL token."""
@@ -556,7 +570,9 @@ def raw_load_points(
     truncated = total_count > MAX_RELAY_LOAD_ROWS or any(
         _as_int(row.get("owner_count")) != 1 for row in rows
     )
-    points = [row for row in rows[:MAX_RELAY_LOAD_ROWS] if isinstance(row.get("timestamp"), datetime)]
+    points = [
+        row for row in rows[:MAX_RELAY_LOAD_ROWS] if isinstance(row.get("timestamp"), datetime)
+    ]
     groups: dict[tuple[int | None, str], list[tuple[int, Mapping[str, object]]]] = defaultdict(list)
     for position, row in enumerate(points):
         device_name = row.get("device_name")
@@ -587,8 +603,18 @@ def raw_load_points(
                 if _requested_percent(group[index][1].get("pid_output")) is not None
             ]
             if finite_indices:
-                keep.add(min(finite_indices, key=lambda index: _requested_percent(group[index][1].get("pid_output")) or 0.0))
-                keep.add(max(finite_indices, key=lambda index: _requested_percent(group[index][1].get("pid_output")) or 0.0))
+                keep.add(
+                    min(
+                        finite_indices,
+                        key=lambda index: _requested_percent(group[index][1].get("pid_output")),
+                    )
+                )
+                keep.add(
+                    max(
+                        finite_indices,
+                        key=lambda index: _requested_percent(group[index][1].get("pid_output")),
+                    )
+                )
         for index, (_, row) in enumerate(group):
             is_null = _requested_percent(row.get("pid_output")) is None
             previous_null = (
@@ -605,29 +631,41 @@ def raw_load_points(
                 keep.add(index)
         selected.extend(group[index] for index in sorted(keep))
 
-    selected.sort(key=lambda entry: (entry[1]["timestamp"], entry[1].get("device_id") or -1, str(entry[1].get("device_name"))))
+    selected.sort(
+        key=lambda entry: (
+            entry[1]["timestamp"],
+            entry[1].get("device_id") or -1,
+            str(entry[1].get("device_name")),
+        )
+    )
     if len(selected) > MAX_RELAY_LOAD_ROWS:
         selected = selected[:MAX_RELAY_LOAD_ROWS]
         truncated = True
-    result = tuple(
-        RelayTimelineLoadPoint(
-            device_id=(
-                row.get("device_id")
-                if isinstance(row.get("device_id"), int)
-                and not isinstance(row.get("device_id"), bool)
-                else None
-            ),
-            device_name=str(row["device_name"]),
-            timestamp=row["timestamp"],
-            requested_percent=(
-                None if _as_int(row.get("owner_count")) != 1 else _requested_percent(row.get("pid_output"))
-            ),
-            aggregated=False,
-            interval_seconds=1,
+    result: list[RelayTimelineLoadPoint] = []
+    for _, row in selected:
+        qualified = _as_int(row.get("owner_count")) == 1
+        percent = _requested_percent(row.get("pid_output")) if qualified else None
+        # A raw load point is one recorded sample: its valid extrema are the
+        # sample itself, and dense-group reduction already retains the samples
+        # holding each group's requested-percent peak and trough.
+        result.append(
+            RelayTimelineLoadPoint(
+                device_id=(
+                    row.get("device_id")
+                    if isinstance(row.get("device_id"), int)
+                    and not isinstance(row.get("device_id"), bool)
+                    else None
+                ),
+                device_name=str(row["device_name"]),
+                timestamp=row["timestamp"],
+                requested_percent=percent,
+                requested_min_percent=percent,
+                requested_max_percent=percent,
+                aggregated=False,
+                interval_seconds=1,
+            )
         )
-        for _, row in selected
-    )
-    return result, truncated
+    return tuple(result), truncated
 
 
 def aggregate_load_points(
@@ -644,6 +682,9 @@ def aggregate_load_points(
         device_name = row.get("device_name")
         if not isinstance(timestamp, datetime) or not isinstance(device_name, str):
             continue
+        qualified = _as_int(row.get("owner_count")) == 1
+        percent = _requested_percent(row.get("pid_output")) if qualified else None
+        minimum, maximum = _valid_requested_percent_extrema(row) if qualified else (None, None)
         result.append(
             RelayTimelineLoadPoint(
                 device_id=(
@@ -654,17 +695,33 @@ def aggregate_load_points(
                 ),
                 device_name=device_name,
                 timestamp=timestamp,
-                requested_percent=(
-                    None
-                    if _as_int(row.get("owner_count")) != 1
-                    else _requested_percent(row.get("pid_output"))
-                ),
+                requested_percent=percent,
+                requested_min_percent=minimum,
+                requested_max_percent=maximum,
                 aggregated=True,
                 interval_seconds=interval_seconds,
             )
         )
     result.sort(key=lambda point: (point.timestamp, point.device_id or -1, point.device_name))
     return tuple(result), truncated
+
+
+def _valid_requested_percent_extrema(
+    row: Mapping[str, object],
+) -> tuple[float | None, float | None]:
+    """Return aggregate percent extrema only when every sampled fraction is valid.
+
+    The existing 1min/5min requested-output aggregates keep min/max over all
+    non-null recorded fractions, including samples outside 0..1. Whenever the
+    bucket's own bounds leave the valid range, validity cannot be proven
+    without a raw scan, so no extremum is reported — an out-of-range recorded
+    fraction must never be clamped into a plausible in-range bound.
+    """
+    low = _requested_percent(row.get("pid_output_min"))
+    high = _requested_percent(row.get("pid_output_max"))
+    if low is None or high is None:
+        return None, None
+    return low, high
 
 
 def _requested_percent(value: object) -> float | None:

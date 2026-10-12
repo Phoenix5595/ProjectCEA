@@ -45,7 +45,8 @@ function parseEventDate(iso: string): Date {
 }
 
 export function isGrowPlanPhase(ev: CalendarEventDto): boolean {
-  if (ev.metadata?.grow_plan_id) return true
+  // Authoritative top-level plan UUID; metadata.grow_plan_id kept for legacy rows only.
+  if (ev.growPlanId != null || ev.metadata?.grow_plan_id != null) return true
   return GROW_PHASE_TYPES.has(ev.eventType)
 }
 

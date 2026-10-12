@@ -13,6 +13,7 @@ export interface CalendarEventDto {
   editable: boolean
   colorKey: string
   numericId?: number
+  growPlanId?: string
   notes?: string
   metadata?: Record<string, unknown>
 }
@@ -20,6 +21,9 @@ export interface CalendarEventDto {
 /** Generated OpenAPI request contracts for manual event writes. */
 export type CalendarEventCreate = components['schemas']['CalendarEventCreate']
 export type CalendarEventUpdate = components['schemas']['CalendarEventUpdate']
+
+/** Unique room-specific calendar run; the GET response can also be null. */
+export type CalendarCurrentRunResponse = components['schemas']['CalendarCurrentRunResponse']
 
 export interface CalendarRoomProfile {
   location: string

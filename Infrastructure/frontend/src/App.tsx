@@ -1,5 +1,5 @@
-import { lazy, Suspense } from 'react'
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { lazy, type ReactNode, Suspense } from 'react'
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { Toaster } from 'sonner'
 
 import { ErrorBoundary } from './components/ErrorBoundary'
@@ -7,6 +7,7 @@ import Layout from './components/Layout'
 import { ThemeSwitcher } from './components/ThemeSwitcher'
 import { ControlActionsProvider } from './contexts/ControlActionsContext'
 import { ThemeProvider } from './contexts/ThemeContext'
+import { parseUrlRange, withSerializedRange } from './features/monitoring/components'
 
 const Dashboard = lazy(() => import('./pages/Dashboard'))
 const DeviceConfig = lazy(() => import('./pages/DeviceConfig'))
@@ -21,6 +22,27 @@ const LaboratoryOverview = lazy(() => import('./pages/LaboratoryOverview'))
 const VegetationOverview = lazy(() => import('./pages/VegetationOverview'))
 const FlowerOverview = lazy(() => import('./pages/FlowerOverview'))
 const CalendarSettings = lazy(() => import('./pages/CalendarSettings'))
+
+
+/** Historical entry points start in a fixed overview, never a live reader. */
+function HistoricalEntry({ children }: { children: ReactNode }) {
+  const location = useLocation()
+  const params = new URLSearchParams(location.search)
+  const parsed = parseUrlRange(params, null)
+  if (parsed.kind === 'fixed') {
+    if (parsed.end.getTime() - parsed.start.getTime() < 5 * 24 * 60 * 60 * 1000) {
+      return <Navigate to={`${location.pathname.replace(/\/historical$/, '/monitoring')}${location.search}`} replace />
+    }
+    return children
+  }
+  const end = new Date()
+  const query = withSerializedRange(params, {
+    kind: 'fixed',
+    start: new Date(end.getTime() - 31 * 24 * 60 * 60 * 1000),
+    end,
+  })
+  return <Navigate to={`${location.pathname}?${query}`} replace />
+}
 
 function App() {
   return (
@@ -61,11 +83,13 @@ function App() {
 
                   <Route path="/vegetation" element={<VegetationOverview />} />
                   <Route path="/vegetation/monitoring" element={<VegetationMonitoring />} />
+                  <Route path="/vegetation/historical" element={<HistoricalEntry><VegetationMonitoring /></HistoricalEntry>} />
                   <Route path="/vegetation/control" element={<VegetationControl />} />
                   <Route path="/vegetation/automation" element={<VegetationAutomation />} />
 
                   <Route path="/flower" element={<FlowerOverview />} />
                   <Route path="/flower/monitoring" element={<FlowerMonitoring />} />
+                  <Route path="/flower/historical" element={<HistoricalEntry><FlowerMonitoring /></HistoricalEntry>} />
                   <Route path="/flower/soil" element={<FlowerSoil />} />
                   <Route path="/flower/control" element={<FlowerControl />} />
                   <Route path="/flower/automation" element={<FlowerAutomation />} />

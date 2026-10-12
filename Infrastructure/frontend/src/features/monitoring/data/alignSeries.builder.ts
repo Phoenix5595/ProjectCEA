@@ -8,7 +8,14 @@ import type { Origin, Quality, UnitFamily } from '../api'
 import type { ChartFamily } from '../charts/options/family'
 import type { SeriesSpec } from '../config'
 
-import { alignControlPoints, alignDeviceStates, alignLinear, alignPid } from './alignSeries.series'
+import {
+  alignControlPoints,
+  alignDeviceStates,
+  alignLinear,
+  alignPid,
+  alignStepsWithBounds,
+  type ScalarAlignment,
+} from './alignSeries.series'
 import type {
   AlignedBand,
   AlignedSeries,
@@ -144,12 +151,85 @@ export function buildSensorSeries(
   ]
 }
 
-export function bandForSensor(metric: string): AlignedBand {
+export function bandFor(source: SeriesSource, metric: string): AlignedBand {
   return {
-    key: seriesKey('sensor', metric, 'band'),
-    minKey: seriesKey('sensor', metric, 'min'),
-    maxKey: seriesKey('sensor', metric, 'max'),
+    key: seriesKey(source, metric, 'band'),
+    minKey: seriesKey(source, metric, 'min'),
+    maxKey: seriesKey(source, metric, 'max'),
   }
+}
+
+export function bandForSensor(metric: string): AlignedBand {
+  return bandFor('sensor', metric)
+}
+
+/** True when at least one slot of the alignment carries a known extremum. */
+function hasKnownExtrema(aligned: ScalarAlignment): boolean {
+  return aligned.min.some(value => value !== null) || aligned.max.some(value => value !== null)
+}
+
+/**
+ * Emit the two invisible bound series plus the shared min/max band for one
+ * bucketed scalar control/PID series, matching the sensor-envelope
+ * conventions exactly: the scale width-0 strokes, the band fills with the
+ * shared envelope token, and the min/max roles keep them out of the legend
+ * and the cursor tooltip so the envelope stays subordinate to the primary
+ * series. The caller only emits this when the display grid rebuckets on the
+ * client or the source itself is aggregated — a raw exact series keeps
+ * rendering its line alone.
+ */
+function buildEnvelopeSeries(input: {
+  source: SeriesSource
+  metric: string
+  kind: SeriesKind
+  family: ChartFamily
+  label: string
+  aligned: ScalarAlignment
+  origin: Origin
+  quality: Quality
+  isAggregated: boolean
+  unit?: string
+  unitFamily?: UnitFamily
+}): { series: AlignedSeries[]; band: AlignedBand } {
+  return {
+    series: [
+      mkSeries({
+        key: seriesKey(input.source, input.metric, 'min'),
+        label: `${input.label} min`,
+        kind: input.kind,
+        metric: input.metric,
+        role: 'min',
+        family: input.family,
+        y: input.aligned.min,
+        origin: input.origin,
+        quality: input.quality,
+        isAggregated: input.isAggregated,
+        unit: input.unit,
+        unitFamily: input.unitFamily,
+      }),
+      mkSeries({
+        key: seriesKey(input.source, input.metric, 'max'),
+        label: `${input.label} max`,
+        kind: input.kind,
+        metric: input.metric,
+        role: 'max',
+        family: input.family,
+        y: input.aligned.max,
+        origin: input.origin,
+        quality: input.quality,
+        isAggregated: input.isAggregated,
+        unit: input.unit,
+        unitFamily: input.unitFamily,
+      }),
+    ],
+    band: bandFor(input.source, input.metric),
+  }
+}
+
+/** One drawable series plus the optional envelope that explains its buckets. */
+interface ControlCandidate {
+  series: AlignedSeries
+  envelope?: { series: AlignedSeries[]; band: AlignedBand }
 }
 
 export function buildControlSeries(
@@ -159,32 +239,54 @@ export function buildControlSeries(
   end: number,
   aggregated: boolean,
   presentation?: SeriesPresentation
-): AlignedSeries[] {
+): { series: AlignedSeries[]; bands: AlignedBand[] } {
   const source: SeriesSource = cs.kind
   const family = controlFamily(cs)
+  // The envelope only appears for genuinely bucketed series: a client
+  // rebucketed grid, or source buckets that carry recorded extrema.
   const isAgg = aggregated || cs.seriesIsAggregated
+  const displayName = presentation?.label ?? cs.name
+  const candidates: ControlCandidate[] = []
   if (cs.metric.endsWith('_setpoint')) {
-    const candidates: AlignedSeries[] = []
     if (cs.steps.length > 0) {
-      candidates.push(
-        mkSeries({
-          key: seriesKey(source, cs.metric, 'step'),
-          label: cs.name,
-          kind: 'step',
-          metric: cs.metric,
-          role: 'step',
-          family,
-          y: alignDeviceStates(cs.steps, x, start, end, aggregated),
-          origin: cs.seriesOrigin,
-          quality: cs.seriesQuality,
-          isAggregated: isAgg,
-          presentation,
-        })
-      )
+      const aligned = alignStepsWithBounds(cs.steps, x, start, end, aggregated)
+      const stepSeries = mkSeries({
+        key: seriesKey(source, cs.metric, 'step'),
+        label: cs.name,
+        kind: 'step',
+        metric: cs.metric,
+        role: 'step',
+        family,
+        y: aligned.y,
+        origin: cs.seriesOrigin,
+        quality: cs.seriesQuality,
+        isAggregated: isAgg,
+        presentation,
+      })
+      candidates.push({
+        series: stepSeries,
+        ...(isAgg && hasKnownExtrema(aligned)
+          ? {
+              envelope: buildEnvelopeSeries({
+                source,
+                metric: cs.metric,
+                kind: 'step',
+                family,
+                label: displayName,
+                aligned,
+                origin: cs.seriesOrigin,
+                quality: cs.seriesQuality,
+                isAggregated: isAgg,
+              }),
+            }
+          : {}),
+      })
     }
     if (cs.linear.length > 0) {
-      candidates.push(
-        mkSeries({
+      candidates.push({
+        // Linear targets are exact sampled ramps, not bucketed scalars, so
+        // they never take an envelope.
+        series: mkSeries({
           key: seriesKey(source, cs.metric, 'linear'),
           label: cs.name,
           kind: 'linear',
@@ -196,47 +298,92 @@ export function buildControlSeries(
           quality: cs.seriesQuality,
           isAggregated: isAgg,
           presentation,
-        })
-      )
-    }
-    candidates.push(
-      mkSeries({
-        key: seriesKey(source, cs.metric, 'point'),
-        label: cs.name,
-        kind: 'point',
-        metric: cs.metric,
-        role: 'point',
-        family,
-        y: alignControlPoints(cs, x, start, end, aggregated),
-        origin: cs.seriesOrigin,
-        quality: cs.seriesQuality,
-        isAggregated: isAgg,
-        presentation,
+        }),
       })
-    )
-    const selected = candidates.filter(candidate =>
-      candidate.y.some(value => value !== null && Number.isFinite(value))
-    )
-    return cs.trajectoryKind === null ? selected.slice(0, 1) : selected
-  }
-  const out: AlignedSeries[] = [
-    mkSeries({
+    }
+    const alignedPoints = alignControlPoints(cs, x, start, end, aggregated)
+    const pointSeries = mkSeries({
       key: seriesKey(source, cs.metric, 'point'),
       label: cs.name,
       kind: 'point',
       metric: cs.metric,
       role: 'point',
       family,
-      y: alignControlPoints(cs, x, start, end, aggregated),
+      y: alignedPoints.y,
       origin: cs.seriesOrigin,
       quality: cs.seriesQuality,
       isAggregated: isAgg,
       presentation,
-    }),
+    })
+    // A setpoint series above already merged its samples into steps; the
+    // point fallback is only rendered when no step representation exists,
+    // and only it may then carry the envelope for the same metric.
+    const pointEnvelope =
+      cs.steps.length === 0 && isAgg && hasKnownExtrema(alignedPoints)
+        ? buildEnvelopeSeries({
+            source,
+            metric: cs.metric,
+            kind: 'point',
+            family,
+            label: displayName,
+            aligned: alignedPoints,
+            origin: cs.seriesOrigin,
+            quality: cs.seriesQuality,
+            isAggregated: isAgg,
+          })
+        : undefined
+    candidates.push({
+      series: pointSeries,
+      ...(pointEnvelope === undefined ? {} : { envelope: pointEnvelope }),
+    })
+    const surviving = candidates.filter(candidate =>
+      candidate.series.y.some(value => value !== null && Number.isFinite(value))
+    )
+    const chosen = cs.trajectoryKind === null ? surviving.slice(0, 1) : surviving
+    return {
+      series: chosen.flatMap(candidate => [
+        candidate.series,
+        ...(candidate.envelope?.series ?? []),
+      ]),
+      bands: chosen.flatMap(candidate => (candidate.envelope ? [candidate.envelope.band] : [])),
+    }
+  }
+  const aligned = alignControlPoints(cs, x, start, end, aggregated)
+  const series: ControlCandidate[] = [
+    {
+      series: mkSeries({
+        key: seriesKey(source, cs.metric, 'point'),
+        label: cs.name,
+        kind: 'point',
+        metric: cs.metric,
+        role: 'point',
+        family,
+        y: aligned.y,
+        origin: cs.seriesOrigin,
+        quality: cs.seriesQuality,
+        isAggregated: isAgg,
+        presentation,
+      }),
+      ...(isAgg && hasKnownExtrema(aligned)
+        ? {
+            envelope: buildEnvelopeSeries({
+              source,
+              metric: cs.metric,
+              kind: 'point',
+              family,
+              label: displayName,
+              aligned,
+              origin: cs.seriesOrigin,
+              quality: cs.seriesQuality,
+              isAggregated: isAgg,
+            }),
+          }
+        : {}),
+    },
   ]
   if (cs.steps.length > 0) {
-    out.push(
-      mkSeries({
+    series.push({
+      series: mkSeries({
         key: seriesKey(source, cs.metric, 'step'),
         label: `${cs.name} (step)`,
         kind: 'step',
@@ -248,12 +395,12 @@ export function buildControlSeries(
         quality: cs.seriesQuality,
         isAggregated: isAgg,
         presentation,
-      })
-    )
+      }),
+    })
   }
   if (cs.linear.length > 0) {
-    out.push(
-      mkSeries({
+    series.push({
+      series: mkSeries({
         key: seriesKey(source, cs.metric, 'linear'),
         label: `${cs.name} (ramp)`,
         kind: 'linear',
@@ -265,10 +412,13 @@ export function buildControlSeries(
         quality: cs.seriesQuality,
         isAggregated: isAgg,
         presentation,
-      })
-    )
+      }),
+    })
   }
-  return out
+  return {
+    series: series.flatMap(candidate => [candidate.series, ...(candidate.envelope?.series ?? [])]),
+    bands: series.flatMap(candidate => (candidate.envelope ? [candidate.envelope.band] : [])),
+  }
 }
 
 export function buildDeviceSeries(
@@ -308,12 +458,19 @@ export function buildPidSeries(
   end: number,
   aggregated: boolean,
   presentation?: SeriesPresentation
-): AlignedSeries[] {
+): { series: AlignedSeries[]; bands: AlignedBand[] } {
   const family: ChartFamily = 'device'
+  // PID observations are always read from bucketed sources; the envelope
+  // only matters once the client rebuckets or the buckets themselves carry
+  // recorded extrema. Duty cycle stays exactly duty cycle: no new duty
+  // extrema are exposed.
   const isAgg = aggregated || ps.seriesIsAggregated
-  const out: AlignedSeries[] = []
+  const series: AlignedSeries[] = []
+  const bands: AlignedBand[] = []
   if (ps.pidOutputs.length > 0) {
-    out.push(
+    const aligned = alignPid(ps.pidOutputs, x, start, end, aggregated)
+    const label = presentation?.label ?? `${ps.name} - PID Output`
+    series.push(
       mkSeries({
         key: seriesKey('pid', ps.metric, 'pid_output'),
         label: `${ps.name} - PID Output`,
@@ -321,7 +478,7 @@ export function buildPidSeries(
         metric: ps.metric,
         role: 'pid_output',
         family,
-        y: alignPid(ps.pidOutputs, x, start, end, aggregated),
+        y: aligned.y,
         origin: ps.seriesOrigin,
         quality: ps.seriesQuality,
         isAggregated: isAgg,
@@ -330,9 +487,26 @@ export function buildPidSeries(
         presentation,
       })
     )
+    if (isAgg && hasKnownExtrema(aligned)) {
+      const envelope = buildEnvelopeSeries({
+        source: 'pid',
+        metric: ps.metric,
+        kind: 'point',
+        family,
+        label,
+        aligned,
+        origin: ps.seriesOrigin,
+        quality: ps.seriesQuality,
+        isAggregated: isAgg,
+        unit: '%',
+        unitFamily: 'percent',
+      })
+      series.push(...envelope.series)
+      bands.push(envelope.band)
+    }
   }
   if (ps.dutyCycles.length > 0) {
-    out.push(
+    series.push(
       mkSeries({
         key: seriesKey('pid', ps.metric, 'duty'),
         label: `${ps.name} - Duty Cycle`,
@@ -340,7 +514,7 @@ export function buildPidSeries(
         metric: ps.metric,
         role: 'duty',
         family,
-        y: alignPid(ps.dutyCycles, x, start, end, aggregated),
+        y: alignPid(ps.dutyCycles, x, start, end, aggregated).y,
         origin: ps.seriesOrigin,
         quality: ps.seriesQuality,
         isAggregated: isAgg,
@@ -350,7 +524,7 @@ export function buildPidSeries(
       })
     )
   }
-  return out
+  return { series, bands }
 }
 
 interface MkSeriesInput {

@@ -6,7 +6,9 @@ import {
   resolveRecurringWallTime,
   resolveWallTime,
   resolveWallTimeWithChoice,
+  subtractTorontoCalendarMonths,
   torontoDateString,
+  torontoMidnightUtc,
   torontoWallComponents,
 } from '../torontoWallTime'
 
@@ -123,5 +125,63 @@ describe('torontoWallComponents and torontoDateString', () => {
 
   it('exports the Toronto zone identifier used by both features', () => {
     expect(TORONTO_TZ).toBe('America/Toronto')
+  })
+})
+
+describe('subtractTorontoCalendarMonths', () => {
+  it('subtracts whole Toronto calendar months keeping the wall clock', () => {
+    // Toronto 2026-07-15 14:00 EDT (18:00Z) minus one month.
+    expect(subtractTorontoCalendarMonths(new Date('2026-07-15T18:00:00.000Z'), 1)?.toISOString())
+      .toBe('2026-06-15T18:00:00.000Z')
+  })
+
+  it('clamps the day of month to the target month length', () => {
+    // Toronto 2026-03-31 10:00 EDT minus one month → 2026-02-28 10:00 EST.
+    expect(subtractTorontoCalendarMonths(new Date('2026-03-31T14:00:00.000Z'), 1)?.toISOString())
+      .toBe('2026-02-28T15:00:00.000Z')
+  })
+
+  it('preserves seconds and milliseconds when clamping the calendar day across DST', () => {
+    expect(subtractTorontoCalendarMonths(new Date('2026-03-31T14:00:47.123Z'), 1)?.toISOString())
+      .toBe('2026-02-28T15:00:47.123Z')
+  })
+
+  it('keeps the wall clock across an offset change instead of a fixed millisecond count', () => {
+    // Toronto 2026-04-01 10:00 EDT minus one month → 2026-03-01 10:00 EST.
+    const start = subtractTorontoCalendarMonths(new Date('2026-04-01T14:00:00.000Z'), 1)
+    expect(start?.toISOString()).toBe('2026-03-01T15:00:00.000Z')
+    expect(new Date('2026-04-01T14:00:00.000Z').getTime() - (start?.getTime() ?? 0)).toBe(
+      31 * 24 * 3600_000 - 3600_000
+    )
+  })
+
+  it('resolves a spring-gap target by shifting the wall clock forward', () => {
+    // Toronto 2026-04-08 02:30 EDT minus one month lands in the 2026-03-08 gap.
+    expect(subtractTorontoCalendarMonths(new Date('2026-04-08T06:30:00.000Z'), 1)?.toISOString())
+      .toBe('2026-03-08T07:30:00.000Z')
+  })
+
+  it('resolves a fall-fold target to the first EDT occurrence', () => {
+    // Toronto 2026-12-01 01:30 EST minus one month lands on the 2026-11-01 fold.
+    expect(subtractTorontoCalendarMonths(new Date('2026-12-01T06:30:00.000Z'), 1)?.toISOString())
+      .toBe('2026-11-01T05:30:00.000Z')
+  })
+
+  it('returns null for invalid input instead of a fallback instant', () => {
+    expect(subtractTorontoCalendarMonths(new Date(Number.NaN), 1)).toBeNull()
+    expect(subtractTorontoCalendarMonths(new Date('2026-07-15T18:00:00.000Z'), 1.5)).toBeNull()
+  })
+})
+
+describe('torontoMidnightUtc', () => {
+  it('resolves the Toronto midnight of a calendar date in summer and winter', () => {
+    expect(torontoMidnightUtc('2026-07-01')?.toISOString()).toBe('2026-07-01T04:00:00.000Z')
+    expect(torontoMidnightUtc('2026-01-15')?.toISOString()).toBe('2026-01-15T05:00:00.000Z')
+  })
+
+  it('returns null for malformed or nonexistent dates', () => {
+    expect(torontoMidnightUtc('2026-7-1')).toBeNull()
+    expect(torontoMidnightUtc('2026-02-30')).toBeNull()
+    expect(torontoMidnightUtc('not-a-date')).toBeNull()
   })
 })

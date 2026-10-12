@@ -410,6 +410,84 @@ describe('requested PID output step segments', () => {
     expect(result[0]).toMatchObject({ requestedPercent: 50, aggregated: true, intervalSeconds: 60 })
   })
 
+  it('carries recorded bucket extrema without touching the exact requested percent', () => {
+    const result = buildRequestedOutputSegments({
+      deviceType: DEVICE.deviceType,
+      deviceId: DEVICE.deviceId,
+      deviceName: DEVICE.deviceName,
+      range: range(0, 240),
+      points: [
+        {
+          device_id: DEVICE.deviceId,
+          device_name: DEVICE.deviceName,
+          timestamp: new Date(BASE_MS + 60_000),
+          requested_percent: 50,
+          requested_min_percent: 30,
+          requested_max_percent: 80,
+          aggregated: true,
+          interval_seconds: 60,
+        },
+        {
+          device_id: DEVICE.deviceId,
+          device_name: DEVICE.deviceName,
+          timestamp: new Date(BASE_MS + 120_000),
+          requested_percent: 25,
+          requested_min_percent: 25,
+          requested_max_percent: 25,
+          aggregated: false,
+          interval_seconds: 30,
+        },
+      ],
+    })
+
+    // An aggregated segment keeps its bucket range next to the retained output.
+    expect(result[0]).toMatchObject({
+      requestedPercent: 50,
+      aggregated: true,
+      intervalSeconds: 60,
+      requestedMinPercent: 30,
+      requestedMaxPercent: 80,
+    })
+    // A raw segment stays the exact recorded output; its only extremum is
+    // itself, and the chart draws it exactly.
+    expect(result[1]).toMatchObject({
+      requestedPercent: 25,
+      aggregated: false,
+      intervalSeconds: 30,
+      requestedMinPercent: 25,
+      requestedMaxPercent: 25,
+    })
+  })
+
+  it('keeps unknown bucket ranges absent instead of collapsing them to zero', () => {
+    const result = buildRequestedOutputSegments({
+      deviceType: DEVICE.deviceType,
+      deviceId: DEVICE.deviceId,
+      deviceName: DEVICE.deviceName,
+      range: range(0, 240),
+      points: [
+        {
+          device_id: DEVICE.deviceId,
+          device_name: DEVICE.deviceName,
+          timestamp: new Date(BASE_MS + 60_000),
+          requested_percent: 40,
+          requested_min_percent: null,
+          requested_max_percent: null,
+          aggregated: true,
+          interval_seconds: 60,
+        },
+      ],
+    })
+
+    expect(result[0]).toMatchObject({
+      requestedPercent: 40,
+      aggregated: true,
+      intervalSeconds: 60,
+      requestedMinPercent: null,
+      requestedMaxPercent: null,
+    })
+  })
+
   it('smoothly connects adjacent samples and preserves the sample values at boundaries', () => {
     const segments = [
       { start: 0, end: 10, requestedPercent: 20, aggregated: false, intervalSeconds: 10 },

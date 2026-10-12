@@ -22,6 +22,7 @@ from monitoring_service.control_models import (
     ControlHistoryEnvelope,
     ControlHistoryRange,
     ControlPublicationResponse,
+    ControlReadScope,
     CurrentPublicationResponse,
     ProjectionPublicationResponse,
     RelayTimelineLoadPoint,
@@ -49,6 +50,11 @@ from monitoring_service.relay_timeline import (
     raw_load_points,
 )
 from monitoring_service.rich_trajectory_models import RichTrajectoryEnvelope
+from monitoring_service.history_overview_models import (
+    HistoryOverviewControlResponse,
+    HistoryOverviewRange,
+)
+from monitoring_service.history_overview_repository import HistoryOverviewRepository
 from monitoring_service.control_timeline_build import build_control_history_envelope
 from shared.monitoring_contracts import (
     CurrentSnapshot,
@@ -92,21 +98,35 @@ class ControlHistoryRepository:
         self._database = database
 
     async def read(
-        self, location: str, history_range: ControlHistoryRange, max_points: int | None = None
+        self,
+        location: str,
+        history_range: ControlHistoryRange,
+        max_points: int | None = None,
+        scope: ControlReadScope = "all",
     ) -> ControlHistoryEnvelope:
-        """Return climate, light, device, PID, and photoperiod timelines for the window."""
-        sources = select_control_history_sources(history_range, max_points)
+        """Return the selected timelines for the window.
+
+        ``all`` reads climate, light, device, PID, and photoperiod facts; the
+        ``lights`` scope reads only recorded light intensity and its
+        photoperiod metadata, leaving the climate, device and PID timelines
+        empty instead of querying unavailable automation sources.
+        """
+        sources = select_control_history_sources(history_range, max_points, scope)
         try:
             async with request_observation():
-                setpoint_rows = await self._database.fetch(
-                    sources.setpoints_sql, location, history_range.start, history_range.end
-                )
+                setpoint_rows: Sequence[Mapping[str, object] | asyncpg.Record] = ()
+                state_rows: Sequence[Mapping[str, object] | asyncpg.Record] = ()
+                if sources.setpoints_sql is not None:
+                    setpoint_rows = await self._database.fetch(
+                        sources.setpoints_sql, location, history_range.start, history_range.end
+                    )
                 light_rows = await self._database.fetch(
                     sources.light_sql, location, history_range.start, history_range.end
                 )
-                state_rows = await self._database.fetch(
-                    sources.state_sql, location, history_range.start, history_range.end
-                )
+                if sources.state_sql is not None:
+                    state_rows = await self._database.fetch(
+                        sources.state_sql, location, history_range.start, history_range.end
+                    )
                 photoperiod_rows = await self._database.fetch(
                     PHOTOPERIOD_SQL, location, history_range.start, history_range.end
                 )
@@ -124,7 +144,9 @@ class ControlHistoryRepository:
                     photoperiod_rows,
                     sources.setpoints_are_aggregated,
                     max_points,
-                    derive_interval_seconds(
+                    None
+                    if scope == "lights"
+                    else derive_interval_seconds(
                         history_range.end - history_range.start,
                         sources.source_interval_seconds,
                         max_points,
@@ -462,14 +484,35 @@ class RuntimeControlReads:
     def __init__(self, resources: RuntimeReadResources) -> None:
         self._resources = resources
 
+    async def overview(
+        self,
+        location: str,
+        history_range: HistoryOverviewRange,
+        max_points: int = 600,
+        scope: ControlReadScope = "all",
+    ) -> HistoryOverviewControlResponse:
+        """Resolve only the owned database for fixed historical summaries."""
+        database = self._resources.database
+        if database is None:
+            raise MonitoringUnavailableError("history overview aggregate coverage is unavailable")
+        return await HistoryOverviewRepository(database).control(
+            location, history_range, max_points, scope
+        )
+
     async def history(
-        self, location: str, history_range: ControlHistoryRange, max_points: int | None = None
+        self,
+        location: str,
+        history_range: ControlHistoryRange,
+        max_points: int | None = None,
+        scope: ControlReadScope = "all",
     ) -> ControlHistoryEnvelope:
         """Read recorded history only when the service database client is available."""
         database = self._resources.database
         if database is None:
             raise RuntimeError("monitoring database resource is unavailable")
-        return await ControlHistoryRepository(database).read(location, history_range, max_points)
+        return await ControlHistoryRepository(database).read(
+            location, history_range, max_points, scope
+        )
 
     async def relay_timeline(
         self,

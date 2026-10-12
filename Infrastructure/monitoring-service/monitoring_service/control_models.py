@@ -29,6 +29,12 @@ ControlRecord = Mapping[str, ControlRecordValue] | asyncpg.Record
 # outage; legacy dedicated room samples reuse the same bounded support span.
 SAMPLE_SUPPORTED_SPAN: Final[timedelta] = timedelta(seconds=60)
 
+# Recorded-control read scope. ``all`` keeps the complete automation-facing
+# surface (climate, light, device, requested-PID and photoperiod facts), while
+# ``lights`` selects only recorded light intensity and its photoperiod
+# metadata so rooms without automation/PID history stay readable.
+ControlReadScope = Literal["all", "lights"]
+
 
 class ControlReadModel(BaseModel):
     """Strict immutable base for the monitoring-service control read surface."""
@@ -86,6 +92,10 @@ class TimelineStepOut(ControlReadModel):
     timestamp: AwareDatetime
     value: float | None
     provenance: TimelineProvenanceModel
+    # Extrema of every recorded sample the step represents, including samples
+    # dropped by budget reduction; null when no finite sample is represented.
+    minimum: float | None = None
+    maximum: float | None = None
 
 
 class TimelineLinearOut(ControlReadModel):
@@ -105,6 +115,9 @@ class ClimateTimelinePointOut(ControlReadModel):
     ramp_progress: float | None = None
     mode: str | None = None
     device_name: str | None = None
+    # Extrema of the recorded samples this bucket/timestamp represents.
+    minimum: float | None = None
+    maximum: float | None = None
 
 
 class LightTimelinePointOut(ControlReadModel):
@@ -115,6 +128,8 @@ class LightTimelinePointOut(ControlReadModel):
     nominal_value: float | None = None
     ramp_progress: float | None = None
     mode: str | None = None
+    minimum: float | None = None
+    maximum: float | None = None
 
 
 class ClimateTimelineSeriesOut(ControlReadModel):
@@ -157,6 +172,12 @@ class PidTimelinePointOut(ControlReadModel):
     device_name: str
     pid_output: float | None = None
     duty_cycle_percent: float | None = None
+    # Aggregate bucket extrema over recorded requested outputs, mirroring the
+    # existing pid_output/duty_cycle_percent value semantics.
+    pid_output_min: float | None = None
+    pid_output_max: float | None = None
+    duty_cycle_percent_min: float | None = None
+    duty_cycle_percent_max: float | None = None
 
 
 class PidTimelineSeriesOut(ControlReadModel):
@@ -267,6 +288,11 @@ class RelayTimelineLoadPoint(ControlReadModel):
     device_name: str
     timestamp: AwareDatetime
     requested_percent: FiniteFloat | None = Field(ge=0, le=100)
+    # Valid requested-percent extrema over the samples the point represents.
+    # Null unless the source proves every represented fraction is valid, so a
+    # recorded invalid fraction never invents an in-range extremum.
+    requested_min_percent: FiniteFloat | None = Field(default=None, ge=0, le=100)
+    requested_max_percent: FiniteFloat | None = Field(default=None, ge=0, le=100)
     aggregated: bool
     interval_seconds: int = Field(ge=1)
 

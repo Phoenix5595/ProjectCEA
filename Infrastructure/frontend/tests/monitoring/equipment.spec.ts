@@ -9,7 +9,6 @@ interface EquipmentRoom {
   readonly path: '/flower/monitoring' | '/vegetation/monitoring'
   readonly equipmentLabel: string
   readonly climateLabel: string
-  readonly heaterName: string
 }
 
 interface PlotSeries {
@@ -40,14 +39,12 @@ const ROOMS: readonly EquipmentRoom[] = [
     path: '/flower/monitoring',
     equipmentLabel: 'Flower atmosphere & equipment',
     climateLabel: 'Flower climate conditions',
-    heaterName: 'Heater Flower',
   },
   {
     room: 'Veg Room',
     path: '/vegetation/monitoring',
     equipmentLabel: 'Veg atmosphere & equipment',
     climateLabel: 'Veg climate conditions',
-    heaterName: 'Heater Veg',
   },
 ]
 
@@ -318,19 +315,9 @@ async function equipmentHistoryScenario(
     if (budgetedName === undefined || rawName === undefined || projection.trajectory === undefined) {
       throw new Error('equipment-history fixture is incomplete')
     }
-    const budgeted = history.lights.find(series => series.name === budgetedName)
-    const raw = history.lights.find(series => series.name === rawName)
-    expect(budgeted?.points).toEqual([])
-    expect(budgeted?.steps.length).toBeGreaterThan(0)
-    expect(budgeted?.linear.length).toBeGreaterThan(0)
-    expect(raw?.points.length).toBeGreaterThan(0)
-    expect(history.climate.find(series => series.name === 'heating')?.points[0]?.metric).toBe(
-      'heating_setpoint'
-    )
-    expect(history.devices.some(series => series.name === budgetedName)).toBe(true)
-    expect(history.pid.some(series => series.name === budgetedName)).toBe(true)
-    expect(history.devices.some(series => series.name === room.heaterName)).toBe(true)
-    expect(history.pid.some(series => series.name === room.heaterName)).toBe(true)
+    expect(history.climate).toEqual([])
+    expect(history.devices).toEqual([])
+    expect(history.pid).toEqual([])
 
     const equipment = page.locator(`section[aria-label="${room.equipmentLabel}"]`)
     const climate = page.locator(`section[aria-label="${room.climateLabel}"]`)
@@ -356,9 +343,7 @@ async function equipmentHistoryScenario(
 
     const headers = await table.getByRole('columnheader').allTextContents()
     expect(headers.some(label => /setpoint/i.test(label))).toBe(false)
-    expect(headers).toContain(`${room.heaterName} - State`)
-    expect(headers).toContain(`${room.heaterName} - PID Output`)
-    expect(headers).toContain(`${room.heaterName} - Duty Cycle`)
+    expect(headers.some(label => / - (State|PID Output|Duty Cycle)( min|max)?$/.test(label))).toBe(false)
     expect(headers).not.toContain(`${budgetedName} - Intensity`)
 
     await expect(table.getByText('18.0% (recorded/exact)').first()).toBeVisible()

@@ -20,6 +20,9 @@ FLOWER_PHASE_TYPES = frozenset(
     }
 )
 
+VEG_PHASE_TYPES = frozenset({"clone_window", "pot_veg", "bed_veg"})
+GROW_PLAN_PHASE_TYPES = VEG_PHASE_TYPES | FLOWER_PHASE_TYPES
+
 
 @dataclass
 class PhaseRange:

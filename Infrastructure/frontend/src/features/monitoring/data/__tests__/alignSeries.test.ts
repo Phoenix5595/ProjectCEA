@@ -20,10 +20,11 @@ import type {
 } from '../../api'
 import type { MonitoringRange } from '../../state'
 import { alignSeries, alignSeriesBase, applyLiveTail } from '../alignSeries'
+import { buildControlSeries, buildPidSeries } from '../alignSeries.builder'
 import { mergeControlSeries } from '../alignSeries.control'
-import { composePhotoperiod } from '../alignSeries.series'
+import { alignControlPoints, alignStepsWithBounds, composePhotoperiod } from '../alignSeries.series'
 import { seriesKey } from '../alignSeries.types'
-import type { AlignInput } from '../alignSeries.types'
+import type { AlignInput, NormControlSeries, NormPidSeries } from '../alignSeries.types'
 import { lightValueAt } from '../lightTrajectory'
 
 const START = new Date('2026-08-02T11:00:00.000Z')
@@ -909,4 +910,391 @@ describe('alignSeries', () => {
     })
   })
 
+})
+
+describe('bucketed control extrema', () => {
+  // Three-slot coarse grid over a three-minute window: slot 0 covers [0, 60s).
+  const X = [0, 60_000, 120_000]
+  const WINDOW = { start: 0, end: 180_000 }
+
+  /** Normalized climate/setpoint input with optional recorded extrema. */
+  function norm(input: {
+    metric: string
+    seriesAggregated?: boolean
+    points?: Array<{
+      t: number
+      value: number | null
+      aggregated?: boolean
+      minimum?: number | null
+      maximum?: number | null
+    }>
+    steps?: Array<{
+      t: number
+      value: number | null
+      aggregated?: boolean
+      minimum?: number | null
+      maximum?: number | null
+    }>
+  }): NormControlSeries {
+    const isAggregated = input.seriesAggregated ?? false
+    const bind = (sample: {
+      aggregated?: boolean
+      minimum?: number | null
+      maximum?: number | null
+    }): { isAggregated: boolean; minimum?: number | null; maximum?: number | null } => ({
+      isAggregated: sample.aggregated ?? isAggregated,
+      ...(sample.minimum === undefined ? {} : { minimum: sample.minimum }),
+      ...(sample.maximum === undefined ? {} : { maximum: sample.maximum }),
+    })
+    return {
+      name: input.metric,
+      metric: input.metric,
+      kind: 'climate',
+      trajectoryKind: null,
+      points: (input.points ?? []).map(point => ({
+        t: point.t,
+        value: point.value,
+        origin: 'recorded',
+        quality: 'exact',
+        ...bind(point),
+      })),
+      steps: (input.steps ?? []).map(step => ({
+        t: step.t,
+        value: step.value,
+        origin: 'recorded',
+        quality: 'exact',
+        ...bind(step),
+      })),
+      linear: [],
+      seriesOrigin: 'recorded',
+      seriesQuality: 'exact',
+      seriesIsAggregated: isAggregated,
+    }
+  }
+
+  it('preserves recorded source bounds when the client rebuckets an aggregated series', () => {
+    const aligned = alignControlPoints(
+      norm({
+        metric: 'heating_setpoint',
+        seriesAggregated: true,
+        points: [
+          { t: 5_000, value: 20, minimum: 18, maximum: 30 },
+          { t: 65_000, value: 22, minimum: 21, maximum: 23 },
+          { t: 175_000, value: 19, minimum: 19, maximum: 19 },
+        ],
+      }),
+      X,
+      WINDOW.start,
+      WINDOW.end,
+      true
+    )
+
+    expect(aligned.y).toEqual([20, 22, 19])
+    expect(aligned.min).toEqual([18, 21, 19])
+    expect(aligned.max).toEqual([30, 23, 19])
+  })
+
+  it('supplies raw values as the bounds themselves when the client reduces them', () => {
+    const aligned = alignControlPoints(
+      norm({
+        metric: 'heating_setpoint',
+        points: [
+          { t: 5_000, value: 30 },
+          { t: 40_000, value: 24 },
+          { t: 70_000, value: 18 },
+        ],
+      }),
+      X,
+      WINDOW.start,
+      WINDOW.end,
+      true
+    )
+
+    // Slot 0 merged two raw samples: the mean hides nothing, and the bounds
+    // stay the exact recorded values, never a fabricated zero.
+    expect(aligned.y).toEqual([27, 18, null])
+    expect(aligned.min).toEqual([24, 18, null])
+    expect(aligned.max).toEqual([30, 18, null])
+  })
+
+  it('keeps unknown aggregate extrema null instead of borrowing the retained value or zero', () => {
+    const aligned = alignControlPoints(
+      norm({
+        metric: 'heating_setpoint',
+        seriesAggregated: true,
+        points: [
+          // Aggregated sample without proven bounds: its retained value is a
+          // last, not an extremum, so nothing is known about its range.
+          { t: 5_000, value: 22 },
+          { t: 50_000, value: 21, minimum: 20, maximum: 26 },
+        ],
+      }),
+      X,
+      WINDOW.start,
+      WINDOW.end,
+      true
+    )
+
+    expect(aligned.y[0]).toBeCloseTo(21.5, 10)
+    expect(aligned.min[0]).toBe(20)
+    expect(aligned.max[0]).toBe(26)
+    expect(aligned.min[1]).toBeNull()
+    expect(aligned.max[1]).toBeNull()
+  })
+
+  it('maps source bounds one to one without rebucketing and leaves gaps null', () => {
+    const aligned = alignControlPoints(
+      norm({
+        metric: 'heating_setpoint',
+        seriesAggregated: true,
+        points: [
+          { t: 0, value: 22, minimum: 20, maximum: 25 },
+          { t: 60_000, value: 21 },
+        ],
+      }),
+      X,
+      WINDOW.start,
+      WINDOW.end,
+      false
+    )
+
+    expect(aligned.y).toEqual([22, 21, null])
+    expect(aligned.min).toEqual([20, null, null])
+    expect(aligned.max).toEqual([25, null, null])
+  })
+
+  it('surfaces hold-hidden step peaks on a coarse grid while keeping the band aligned', () => {
+    const aligned = alignStepsWithBounds(
+      norm({
+        metric: 'heating_setpoint',
+        seriesAggregated: true,
+        steps: [
+          { t: 0, value: 21, minimum: 19, maximum: 23 },
+          // Transient setpoint spike: hold-forward hides it from slot 1's
+          // line, only the span bounds reveal it.
+          { t: 40_000, value: 30, minimum: 30, maximum: 30 },
+          { t: 95_000, value: 20, minimum: 20, maximum: 20 },
+        ],
+      }).steps,
+      X,
+      WINDOW.start,
+      WINDOW.end,
+      true
+    )
+
+    expect(aligned.y).toEqual([21, 30, 20])
+    expect(aligned.min).toEqual([19, 20, 20])
+    expect(aligned.max).toEqual([30, 30, 20])
+
+    const fine = alignStepsWithBounds(
+      [
+        {
+          t: 0,
+          value: 21,
+          origin: 'recorded',
+          quality: 'exact',
+          isAggregated: true,
+          minimum: 19,
+          maximum: 23,
+        },
+        {
+          t: 60_000,
+          value: 20,
+          origin: 'recorded',
+          quality: 'exact',
+          isAggregated: true,
+          minimum: 20,
+          maximum: 20,
+        },
+      ],
+      X,
+      WINDOW.start,
+      WINDOW.end,
+      false
+    )
+    expect(fine.y).toEqual([21, 20, 20])
+    expect(fine.min).toEqual([19, 20, 20])
+    expect(fine.max).toEqual([23, 20, 20])
+  })
+
+  it('renders a hidden aggregate peak through the full aligned series', () => {
+    const at = (minute: number): Date => new Date(START.getTime() + minute * 60_000)
+    const series: ClimateTimelineSeries = {
+      name: 'Heating Setpoint',
+      provenance: { origin: 'recorded', quality: 'exact', is_aggregated: true },
+      projection: null,
+      warnings: [],
+      steps: [0, 15, 30, 45, 60, 75, 90, 105].map(minute => ({
+        timestamp: at(minute),
+        value: 22,
+        minimum: minute === 45 ? 18 : 21,
+        maximum: minute === 45 ? 30 : 23,
+        provenance: { origin: 'recorded', quality: 'exact', is_aggregated: true },
+      })),
+      points: [],
+      linear: [],
+    }
+    const out = alignSeries({
+      series: [],
+      controlHistory: controlResponse([series]),
+      projectionHistory: null,
+      photoperiod: [],
+      live: [],
+      range: fixedRange(),
+      now: NOW,
+      maxPoints: 5,
+    })
+
+    expect(out.aggregated).toBe(true)
+    const perMetric = out.series.filter(
+      candidate => candidate.source === 'climate' && candidate.metric === 'heating_setpoint'
+    )
+    expect(perMetric.map(candidate => candidate.role)).toEqual(['step', 'min', 'max'])
+    // The mean/hold line cannot show the 11:35 transient: the recorded bucket
+    // extrema do, exactly where the grid hides it.
+    expect(perMetric.find(candidate => candidate.role === 'step')?.y).toEqual(
+      [22, 22, 22, 22, 22]
+    )
+    expect(perMetric.find(candidate => candidate.role === 'max')?.y).toEqual([23, 30, 23, 23, 23])
+    expect(perMetric.find(candidate => candidate.role === 'min')?.y).toEqual([21, 18, 21, 21, 21])
+    expect(out.bands).toEqual([
+      {
+        key: seriesKey('climate', 'heating_setpoint', 'band'),
+        minKey: seriesKey('climate', 'heating_setpoint', 'min'),
+        maxKey: seriesKey('climate', 'heating_setpoint', 'max'),
+      },
+    ])
+  })
+
+  it('emits one envelope per pid output and never for the duty or raw series', () => {
+    const bucketed: NormPidSeries = {
+      name: 'Heater Flower',
+      metric: 'heater_flower_pid',
+      pidOutputs: [
+        {
+          t: 0,
+          value: 50,
+          origin: 'recorded',
+          quality: 'exact',
+          isAggregated: true,
+          minimum: 30,
+          maximum: 80,
+        },
+        {
+          t: 60_000,
+          value: 40,
+          origin: 'recorded',
+          quality: 'exact',
+          isAggregated: true,
+          minimum: 40,
+          maximum: 40,
+        },
+      ],
+      dutyCycles: [
+        { t: 0, value: 50, origin: 'recorded', quality: 'exact', isAggregated: true },
+      ],
+      seriesOrigin: 'recorded',
+      seriesQuality: 'exact',
+      seriesIsAggregated: true,
+    }
+
+    const built = buildPidSeries(bucketed, X, WINDOW.start, WINDOW.end, false)
+    const envelope = built.series.filter(series => series.role === 'min' || series.role === 'max')
+    expect(envelope.map(series => series.label)).toEqual([
+      'Heater Flower - PID Output min',
+      'Heater Flower - PID Output max',
+    ])
+    expect(envelope[0]?.y).toEqual([30, 40, null])
+    expect(envelope[1]?.y).toEqual([80, 40, null])
+    // Unclamped extrema stay unclamped: a represented sample never vanishes.
+    expect(built.series.find(series => series.role === 'pid_output')?.y).toEqual([50, 40, null])
+    const duty = built.series.find(series => series.role === 'duty')
+    expect(duty?.y).toEqual([50, null, null])
+    expect(built.bands).toEqual([
+      {
+        key: seriesKey('pid', 'heater_flower_pid', 'band'),
+        minKey: seriesKey('pid', 'heater_flower_pid', 'min'),
+        maxKey: seriesKey('pid', 'heater_flower_pid', 'max'),
+      },
+    ])
+
+    const raw: NormPidSeries = {
+      ...bucketed,
+      seriesIsAggregated: false,
+      pidOutputs: [
+        { t: 0, value: 50, origin: 'recorded', quality: 'exact', isAggregated: false },
+        { t: 60_000, value: 40, origin: 'recorded', quality: 'exact', isAggregated: false },
+      ],
+      dutyCycles: [],
+    }
+    const rawBuilt = buildPidSeries(raw, X, WINDOW.start, WINDOW.end, false)
+    expect(rawBuilt.series.some(series => series.role === 'min' || series.role === 'max'))
+      .toBe(false)
+    expect(rawBuilt.bands).toEqual([])
+    expect(rawBuilt.series.find(series => series.role === 'pid_output')?.y).toEqual([50, 40, null])
+  })
+
+  it('emits the control envelope only for genuinely bucketed series', () => {
+    const bucketed = buildControlSeries(
+      norm({
+        metric: 'heating_setpoint',
+        seriesAggregated: true,
+        steps: [{ t: 0, value: 22, minimum: 20, maximum: 25 }],
+      }),
+      X,
+      WINDOW.start,
+      WINDOW.end,
+      false
+    )
+    expect(bucketed.series.map(series => series.role)).toEqual(['step', 'min', 'max'])
+    // A step series holds its value forward, and the band holds its recorded
+    // bucket extrema with it.
+    expect(bucketed.series.find(series => series.role === 'min')?.y).toEqual([20, 20, 20])
+    expect(bucketed.series.find(series => series.role === 'max')?.y).toEqual([25, 25, 25])
+    expect(bucketed.bands).toHaveLength(1)
+
+    const raw = buildControlSeries(
+      norm({
+        metric: 'heating_setpoint',
+        steps: [{ t: 0, value: 22 }],
+      }),
+      X,
+      WINDOW.start,
+      WINDOW.end,
+      false
+    )
+    expect(raw.series.map(series => series.role)).toEqual(['step'])
+    expect(raw.bands).toEqual([])
+
+    // Aggregated provenance with no proven extrema anywhere adds no noise.
+    const noExtrema = buildControlSeries(
+      norm({
+        metric: 'heating_setpoint',
+        seriesAggregated: true,
+        steps: [{ t: 0, value: 22 }],
+      }),
+      X,
+      WINDOW.start,
+      WINDOW.end,
+      false
+    )
+    expect(noExtrema.series.map(series => series.role)).toEqual(['step'])
+    expect(noExtrema.bands).toEqual([])
+
+    // A client rebucketed raw series supplies its bounds from the raw values.
+    const reduced = buildControlSeries(
+      norm({
+        metric: 'heating_setpoint',
+        steps: [{ t: 0, value: 22 }],
+      }),
+      X,
+      WINDOW.start,
+      WINDOW.end,
+      true
+    )
+    expect(reduced.series.map(series => series.role)).toEqual(['step', 'min', 'max'])
+    // The hold keeps the single raw sample's own extremum everywhere.
+    expect(reduced.series.find(series => series.role === 'max')?.y).toEqual([22, 22, 22])
+    expect(reduced.series.find(series => series.role === 'min')?.y).toEqual([22, 22, 22])
+  })
 })

@@ -8,6 +8,11 @@ from math import ceil
 from typing import Final, Protocol
 
 import asyncpg
+from monitoring_service.history_overview_models import (
+    HistoryOverviewRange,
+    HistoryOverviewSensorResponse,
+)
+from monitoring_service.history_overview_repository import HistoryOverviewRepository
 
 from monitoring_service.sensor_models import (
     LiveSensorValue,
@@ -68,6 +73,14 @@ class SensorMonitoringRepository:
         self._redis = redis
         self._watermark_cache = (
             CaggWatermarkCache(_CAGG_RELATIONS) if watermark_cache is None else watermark_cache
+        )
+
+    async def overview(
+        self, room: str, history_range: HistoryOverviewRange, max_points: int = 600
+    ) -> HistoryOverviewSensorResponse:
+        """Read bounded historical summaries without Redis or detailed polling."""
+        return await HistoryOverviewRepository(self._database).sensor(
+            room, history_range, max_points
         )
 
     async def series(

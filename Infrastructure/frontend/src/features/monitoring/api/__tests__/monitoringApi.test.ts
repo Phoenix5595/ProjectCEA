@@ -104,6 +104,31 @@ const controlPayload = {
   ],
 }
 
+const lightsControlPayload = {
+  ...controlPayload,
+  climate: [],
+  lights: [
+    {
+      name: 'light_f_1',
+      metric: 'light_f_1',
+      provenance: { origin: 'recorded', quality: 'exact', is_aggregated: false },
+      projection: null,
+      warnings: [],
+      points: [
+        {
+          timestamp: '2026-08-02T11:00:00.000Z',
+          value: 40,
+          nominal_value: 40,
+          device_name: 'light_f_1',
+          provenance: { origin: 'recorded', quality: 'exact', is_aggregated: false },
+        },
+      ],
+      steps: [],
+      linear: [],
+    },
+  ],
+}
+
 const controlProjectionPayload = {
   quality: 'estimated',
   value: [
@@ -197,6 +222,70 @@ describe('monitoring api boundary', () => {
       ...controlProjectionPayload, trajectory: { ...trajectory, warnings: [{ ...warning, end: undefined }] },
     }))
     await expect(api.controlProjection('Flower Room')).rejects.toBeInstanceOf(MonitoringParseError)
+  })
+
+  it('rejects legacy non-light payloads in light-only history and tail reads', async () => {
+    const fetchMock = vi.mocked(fetch)
+    const api = new MonitoringApi(undefined, undefined, 'lights')
+    const start = '2026-08-02T11:00:00.000Z'
+    const end = '2026-08-02T12:00:00.000Z'
+
+
+    // A stale backend that ignores the scope query cannot feed room graphs.
+    for (const stale of [controlPayload, {
+      ...lightsControlPayload,
+      pid: [
+        {
+          name: 'Heater Flower - PID Output',
+          provenance: { origin: 'recorded', quality: 'exact', is_aggregated: false },
+          warnings: [],
+          points: [
+            {
+              timestamp: '2026-08-02T11:00:00.000Z',
+              provenance: { origin: 'recorded', quality: 'exact', is_aggregated: false },
+              device_name: 'heater_f',
+              pid_output: 15,
+            },
+          ],
+        },
+      ],
+    }]) {
+      fetchMock.mockResolvedValueOnce(jsonResponse(stale))
+      await expect(api.controlRange('Flower Room', start, end, 1000)).rejects.toBeInstanceOf(
+        MonitoringParseError
+      )
+      fetchMock.mockResolvedValueOnce(jsonResponse(stale))
+      await expect(api.controlTail('Flower Room', start, end)).rejects.toBeInstanceOf(
+        MonitoringParseError
+      )
+    }
+  })
+
+  it('keeps the all scope unscoped and accepting the full automation payload', async () => {
+    const fetchMock = vi.mocked(fetch)
+    const api = new MonitoringApi()
+    const start = '2026-08-02T11:00:00.000Z'
+    const end = '2026-08-02T12:00:00.000Z'
+
+    fetchMock.mockResolvedValueOnce(jsonResponse(controlPayload))
+    await api.controlRange('Flower Room', start, end, 1000)
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      expect.stringContaining(
+        '/api/monitoring/control/Flower%20Room/history?start=2026-08-02T11%3A00%3A00.000Z&end=2026-08-02T12%3A00%3A00.000Z&max_points=1000'
+      ),
+      expect.any(Object)
+    )
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      expect.not.stringContaining('scope='),
+      expect.any(Object)
+    )
+
+    fetchMock.mockResolvedValueOnce(jsonResponse(controlPayload))
+    await api.controlTail('Flower Room', start, end)
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      expect.not.stringContaining('scope='),
+      expect.any(Object)
+    )
   })
 
   it('serializes optional point budgets for supported range routes', async () => {

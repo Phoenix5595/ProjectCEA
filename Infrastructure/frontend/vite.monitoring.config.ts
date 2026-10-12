@@ -43,6 +43,7 @@ import {
   GROUPED_CONSOLE_EVENTS,
 } from './src/features/event-log/config/fixtures.ts'
 import { FIXTURE_PORT, FIXTURE_WS_ORIGIN } from './src/features/monitoring/config/originGuard.ts'
+import { historyOverviewFixtureReply } from './tests/monitoring/historyOverviewFixtures.ts'
 import {
   DASHBOARD_DEVICES,
   DASHBOARD_LIGHT_INTENSITIES,
@@ -103,6 +104,9 @@ function isDelayedHistoryPath(pathname: string): boolean {
 
 const scenarioCounters = new Map<string, number>()
 const MISSING_FIXTURE_SESSION = 'missing-session'
+
+/** Deterministic grow-plan id carried by the calendar phase fixture rows (UUID form). */
+const CALENDAR_FIXTURE_GROW_PLAN_ID = '3f2c9a1e-5d47-4b8e-9c6a-7ab90f43d2e1'
 
 function nextLiveFixtureSequence(url: string, node: string): number {
   const query = url.split('?')[1] ?? ''
@@ -1104,6 +1108,79 @@ function relayTimelinePidFixture(req: { url?: string; method?: string; body?: st
   }
 }
 
+/** Keep scoped room-history fixture bodies free of non-light control tracking. */
+function lightOnlyHistoryFixture(body: unknown, url: string): unknown {
+  if (new URL(url, 'http://fixture.invalid').searchParams.get('scope') !== 'lights') return body
+  const history = body as Record<string, unknown>
+  return {
+    ...history,
+    climate: [],
+    devices: [],
+    pid: [],
+    cursors: Array.isArray(history.cursors)
+      ? history.cursors.filter(cursor =>
+          typeof cursor !== 'object' || cursor === null ||
+          !('source' in cursor) || cursor.source !== 'automation_state'
+        )
+      : history.cursors,
+  }
+}
+
+/** Current-run reads derive their dates from the existing calendar fixture phases. */
+function calendarCurrentRunFixtureReply(
+  req: { url?: string; method?: string },
+  scenario: string | null
+): FixtureReply | null {
+  const url = new URL(req.url ?? '/', 'http://127.0.0.1')
+  if (url.pathname !== '/api/calendar/current-run') return null
+  if (req.method !== 'GET') return { status: 405, body: { detail: 'GET required' } }
+  if (scenario === 'calendar-no-current-run') return { status: 200, body: null }
+  if (scenario === 'calendar-ambiguous-current-run') {
+    return { status: 409, body: { detail: 'Multiple current calendar grow plans' } }
+  }
+  const location = url.searchParams.get('location')
+  const calendar = FIXTURE_ROUTES.find(route => route.re.test('/api/calendar/events'))!
+  const data = calendar.handler({ url: '/api/calendar/events', method: 'GET' }, scenario) as {
+    items: Array<{
+      location: string
+      grow_plan_id?: string
+      event_type: string
+      start_date: string
+      end_date: string | null
+      deleted_at: string | null
+    }>
+  }
+  const phases: Record<string, true> = {
+    clone_window: true, pot_veg: true, bed_veg: true, flip_to_flower: true,
+    flower_stretch: true, flower_bulk: true, flower_ripen: true, drying: true, harvest: true,
+  }
+  const plans = new Map<string, { location: string; grow_plan_id: string; start_date: string; end_date: string }>()
+  for (const event of data.items) {
+    if (event.location !== location || !event.grow_plan_id || event.deleted_at ||
+        phases[event.event_type] !== true) continue
+    const end = event.end_date ?? event.start_date
+    const plan = plans.get(event.grow_plan_id)
+    if (plan) {
+      if (event.start_date < plan.start_date) plan.start_date = event.start_date
+      if (end > plan.end_date) plan.end_date = end
+    } else {
+      plans.set(event.grow_plan_id, {
+        location: event.location, grow_plan_id: event.grow_plan_id,
+        start_date: event.start_date, end_date: end,
+      })
+    }
+  }
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Toronto', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(new Date())
+  const dateParts = Object.fromEntries(parts.map(part => [part.type, part.value]))
+  const today = `${dateParts.year}-${dateParts.month}-${dateParts.day}`
+  const active = [...plans.values()].filter(plan => plan.start_date <= today && plan.end_date >= today)
+  return active.length > 1
+    ? { status: 409, body: { detail: 'Multiple current calendar grow plans' } }
+    : { status: 200, body: active[0] ?? null }
+}
+
 const FIXTURE_ROUTES: FixtureRoute[] = [
   ...SOIL_FIXTURE_ROUTES,
   {
@@ -1146,14 +1223,20 @@ const FIXTURE_ROUTES: FixtureRoute[] = [
     re: /^\/api\/monitoring\/control\/([^/]+)\/tail$/,
     handler: (req, scenario) => {
       const { start, end } = parseRange(req.url ?? '')
-      return controlTailFixture(roomFrom(req.url ?? '', 3), start, end, scenario)
+      return lightOnlyHistoryFixture(
+        controlTailFixture(roomFrom(req.url ?? '', 3), start, end, scenario),
+        req.url ?? ''
+      )
     },
   },
   {
     re: /^\/api\/monitoring\/control\/([^/]+)\/history$/,
     handler: (req, scenario) => {
       const { start, end } = parseRange(req.url ?? '')
-      return controlRangeFixture(roomFrom(req.url ?? '', 3), start, end, scenario)
+      return lightOnlyHistoryFixture(
+        controlRangeFixture(roomFrom(req.url ?? '', 3), start, end, scenario),
+        req.url ?? ''
+      )
     },
   },
   {
@@ -1448,11 +1531,13 @@ const FIXTURE_ROUTES: FixtureRoute[] = [
             cluster: 'main',
             editable: false,
             notes: null,
-            metadata: { grow_plan_id: 'gp-fixture' },
+            // Authoritative top-level plan UUID; metadata mirrors the real backend rows.
+            grow_plan_id: CALENDAR_FIXTURE_GROW_PLAN_ID,
+            metadata: { grow_plan_id: CALENDAR_FIXTURE_GROW_PLAN_ID },
             deleted_at: null,
           },
           {
-            id: 14,
+            id: 13,
             source: 'mode_transition',
             event_type: 'flower_ripen',
             title: 'Flower ripen',
@@ -1462,11 +1547,12 @@ const FIXTURE_ROUTES: FixtureRoute[] = [
             cluster: 'main',
             editable: false,
             notes: null,
-            metadata: { grow_plan_id: 'gp-fixture' },
+            grow_plan_id: CALENDAR_FIXTURE_GROW_PLAN_ID,
+            metadata: { grow_plan_id: CALENDAR_FIXTURE_GROW_PLAN_ID },
             deleted_at: null,
           },
           {
-            id: 15,
+            id: 14,
             source: 'manual',
             event_type: 'planned_task',
             title: 'Water transplant mix',
@@ -1871,6 +1957,29 @@ function monitoringPreviewPlugin(): Plugin {
             res.setHeader('Content-Type', 'application/json')
             res.end(body)
           }
+          return
+        }
+
+        const currentRunReply = calendarCurrentRunFixtureReply(
+          { url: req.url ?? '/', method: req.method }, scenario
+        )
+        if (currentRunReply !== null) {
+          res.statusCode = currentRunReply.status ?? 200
+          res.setHeader('Content-Type', 'application/json')
+          res.end(JSON.stringify(currentRunReply.body))
+          return
+        }
+
+        // Bounded all-history overview fixtures: GET-only, one guarded reply
+        // per overview route (sensor/control).
+        const overviewReply = historyOverviewFixtureReply(
+          { url: req.url ?? '/', method: req.method },
+          scenario
+        )
+        if (overviewReply !== null) {
+          res.statusCode = overviewReply.status
+          res.setHeader('Content-Type', 'application/json')
+          res.end(JSON.stringify(overviewReply.body))
           return
         }
 
