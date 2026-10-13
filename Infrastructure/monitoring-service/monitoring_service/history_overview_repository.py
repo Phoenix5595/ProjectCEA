@@ -184,6 +184,7 @@ class HistoryOverviewRepository:
                 history_range.start,
                 history_range.end,
                 buckets_json,
+                bucket.seconds,
             )
         grouped: defaultdict[tuple[Node, str, str, str], defaultdict[int, _SummaryState]] = (
             defaultdict(lambda: defaultdict(_SummaryState))
@@ -256,6 +257,7 @@ class HistoryOverviewRepository:
                     history_range.start,
                     history_range.end,
                     buckets_json,
+                    bucket.seconds,
                 )
                 lights, _ = _control_series_groups(light_rows, bounds)
             else:
@@ -265,6 +267,7 @@ class HistoryOverviewRepository:
                     history_range.start,
                     history_range.end,
                     buckets_json,
+                    bucket.seconds,
                 )
                 lights, requested_pid = _control_series_groups(control_rows, bounds)
                 relay_rows = await self._fetch_guarded(
@@ -273,6 +276,7 @@ class HistoryOverviewRepository:
                     history_range.start,
                     history_range.end,
                     buckets_json,
+                    bucket.seconds,
                 )
                 relays = _relay_series_groups(relay_rows, bounds)
         return HistoryOverviewControlResponse(

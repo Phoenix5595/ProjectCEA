@@ -5,7 +5,7 @@ safe-coverage state of the exact material that serves the request, so a
 source and its guards always share one snapshot:
 
 * ``monitoring_overview_coverage`` verified-contiguous bounds per tier,
-* native ``monitoring_cagg_watermark`` materialization watermark as an upper
+* native ``monitoring_history_cagg_watermark`` materialization watermark as an upper
   materialization bound plus pending invalidation overlap per tier,
 * below-coverage regions proven raw-empty inside the same statement,
 * relay support state through ``monitoring_relay_overview_hourly_ready`` and
@@ -205,13 +205,13 @@ cov AS (
           WHERE model_name = 'monitoring_measurement_1hour') AS h_from,
         (SELECT covered_through FROM monitoring_overview_coverage
           WHERE model_name = 'monitoring_measurement_1hour') AS h_through,
-        (SELECT MIN(materialization_watermark) FROM monitoring_cagg_watermark
+        (SELECT MIN(materialization_watermark) FROM monitoring_history_cagg_watermark
           WHERE cagg_name = 'monitoring_measurement_1hour') AS h_wm,
         (SELECT covered_from FROM monitoring_overview_coverage
           WHERE model_name = 'monitoring_measurement_1day') AS d_from,
         (SELECT covered_through FROM monitoring_overview_coverage
           WHERE model_name = 'monitoring_measurement_1day') AS d_through,
-        (SELECT MIN(materialization_watermark) FROM monitoring_cagg_watermark
+        (SELECT MIN(materialization_watermark) FROM monitoring_history_cagg_watermark
           WHERE cagg_name = 'monitoring_measurement_1day') AS d_wm
 ),
 bounds AS (
@@ -239,7 +239,7 @@ pending AS (
     SELECT
         EXISTS (
             SELECT 1
-            FROM monitoring_cagg_watermark
+            FROM monitoring_history_cagg_watermark
             WHERE cagg_name = 'monitoring_measurement_1hour'
               AND invalidation_source IS NOT NULL
               AND invalidation_start < LEAST(bounds.h_through, bounds.range_end)
@@ -247,7 +247,7 @@ pending AS (
         ) AS h_pending,
         EXISTS (
             SELECT 1
-            FROM monitoring_cagg_watermark
+            FROM monitoring_history_cagg_watermark
             WHERE cagg_name = 'monitoring_measurement_1day'
               AND invalidation_source IS NOT NULL
               AND invalidation_start < LEAST(bounds.d_through, bounds.range_end)
@@ -256,12 +256,15 @@ pending AS (
         EXISTS (
             SELECT 1
             FROM buckets
-            WHERE b1 - b0 >= INTERVAL '1 day'
+            WHERE b1 - b0 >= INTERVAL '24 hours'
         ) AS uses_daily
     FROM bounds
 ),
 below_empty AS (
-    SELECT NOT EXISTS (
+    SELECT CASE
+        WHEN LEAST(bounds.range_end, bounds.cov_from_min) <= bounds.range_start
+        THEN TRUE
+        ELSE NOT EXISTS (
         SELECT 1
         FROM measurement
         JOIN sensor ON sensor.sensor_id = measurement.sensor_id
@@ -277,7 +280,7 @@ below_empty AS (
           AND measurement.time >= bounds.range_start
           AND measurement.time
               < LEAST(bounds.range_end, bounds.cov_from_min)
-    ) AS empty
+    ) END AS empty
     FROM bounds
 ),
 room_sensors AS (
@@ -297,7 +300,10 @@ room_sensors AS (
     WHERE room.name = $1
 ),
 above_empty AS (
-    SELECT NOT EXISTS (
+    SELECT CASE
+        WHEN COALESCE(bounds.cov_through_max, bounds.range_start) >= bounds.range_end
+        THEN TRUE
+        ELSE NOT EXISTS (
         SELECT 1 FROM (
             SELECT time AS observed_at, sensor_id FROM measurement
             UNION ALL
@@ -307,7 +313,7 @@ above_empty AS (
         ) AS facts JOIN room_sensors USING (sensor_id)
         WHERE facts.observed_at >= COALESCE(bounds.cov_through_max, bounds.range_start)
           AND facts.observed_at < bounds.range_end
-    ) AS empty FROM bounds
+    ) END AS empty FROM bounds
 ),
 """
     + _SENSOR_PIECES
@@ -327,11 +333,11 @@ day_rows AS (
     FROM monitoring_measurement_1day AS c
     JOIN buckets AS b
       ON c.bucket >= b.b0
-     AND c.bucket + INTERVAL '1 day' <= b.b1
+     AND c.bucket + INTERVAL '24 hours' <= b.b1
     CROSS JOIN bounds
     WHERE c.bucket >= bounds.d_from
-      AND c.bucket + INTERVAL '1 day' <= bounds.d_through
-      AND c.bucket + INTERVAL '1 day' <= bounds.d_wm
+      AND c.bucket + INTERVAL '24 hours' <= bounds.d_through
+      AND c.bucket + INTERVAL '24 hours' <= bounds.d_wm
 ),
 hour_rows AS (
     SELECT
@@ -345,10 +351,17 @@ hour_rows AS (
         TRUE AS present
     FROM monitoring_measurement_1hour AS c
     JOIN buckets AS b
-      ON c.bucket >= b.b0
+      ON time_bucket($9::bigint * INTERVAL '1 second', c.bucket,
+                     '1970-01-01T00:00:00Z'::timestamptz) =
+         time_bucket($9::bigint * INTERVAL '1 second', b.b0,
+                     '1970-01-01T00:00:00Z'::timestamptz)
+     AND c.bucket >= b.b0
      AND c.bucket + INTERVAL '1 hour' <= b.b1
     CROSS JOIN bounds
     WHERE c.bucket >= bounds.h_from
+      AND c.bucket >= bounds.range_start
+      AND c.bucket < bounds.range_end
+      AND c.sensor_id IN (SELECT sensor_id FROM room_sensors)
       AND c.bucket + INTERVAL '1 hour' <= bounds.h_through
       AND c.bucket + INTERVAL '1 hour' <= bounds.h_wm
       AND NOT EXISTS (
@@ -357,7 +370,7 @@ hour_rows AS (
           WHERE dr.idx = b.idx
             AND dr.sensor_id = c.sensor_id
             AND dr.bucket <= c.bucket
-            AND dr.bucket + INTERVAL '1 day' > c.bucket
+            AND dr.bucket + INTERVAL '24 hours' > c.bucket
       )
 ),
 raw_rows AS (
@@ -370,18 +383,18 @@ raw_rows AS (
         measurement.value::NUMERIC AS min_value,
         measurement.value::NUMERIC AS max_value,
         TRUE AS present
-    FROM measurement
-    JOIN sensor ON sensor.sensor_id = measurement.sensor_id
-    JOIN device ON device.device_id = sensor.device_id
-    LEFT JOIN rack ON rack.rack_id = device.rack_id
-    JOIN room ON room.room_id = rack.room_id
-    JOIN node_patterns
-      ON node_patterns.pattern <> ''
-     AND sensor.name LIKE node_patterns.pattern
-    JOIN raw_pieces AS rp
-      ON measurement.time >= rp.lo
-     AND measurement.time < rp.hi
-    WHERE room.name = $1
+    FROM raw_pieces AS rp
+    CROSS JOIN room_sensors AS requested
+    CROSS JOIN LATERAL (
+        SELECT raw.sensor_id, raw.value
+        FROM measurement AS raw
+        WHERE raw.sensor_id = requested.sensor_id
+          AND raw.time >= rp.lo
+          AND raw.time < rp.hi
+        -- Keep the piece bounds parameterized; flattening this lookup can
+        -- scan retained history before applying the dynamic time window.
+        OFFSET 0
+    ) AS measurement
 ),
 merged AS (
     SELECT
@@ -492,13 +505,13 @@ _CONTROL_FAMILY_TEMPLATE: Final[str] = """
           WHERE model_name = '{hour_model}') AS h_from,
         (SELECT covered_through FROM monitoring_overview_coverage
           WHERE model_name = '{hour_model}') AS h_through,
-        (SELECT MIN(materialization_watermark) FROM monitoring_cagg_watermark
+        (SELECT MIN(materialization_watermark) FROM monitoring_history_cagg_watermark
           WHERE cagg_name = '{hour_model}') AS h_wm,
         (SELECT covered_from FROM monitoring_overview_coverage
           WHERE model_name = '{day_model}') AS d_from,
         (SELECT covered_through FROM monitoring_overview_coverage
           WHERE model_name = '{day_model}') AS d_through,
-        (SELECT MIN(materialization_watermark) FROM monitoring_cagg_watermark
+        (SELECT MIN(materialization_watermark) FROM monitoring_history_cagg_watermark
           WHERE cagg_name = '{day_model}') AS d_wm
 ),
 {p}_bounds AS (
@@ -526,7 +539,7 @@ _CONTROL_FAMILY_TEMPLATE: Final[str] = """
     SELECT
         EXISTS (
             SELECT 1
-            FROM monitoring_cagg_watermark
+            FROM monitoring_history_cagg_watermark
             WHERE cagg_name = '{hour_model}'
               AND invalidation_source IS NOT NULL
               AND invalidation_start < LEAST({p}_bounds.h_through,
@@ -536,7 +549,7 @@ _CONTROL_FAMILY_TEMPLATE: Final[str] = """
         ) AS h_pending,
         EXISTS (
             SELECT 1
-            FROM monitoring_cagg_watermark
+            FROM monitoring_history_cagg_watermark
             WHERE cagg_name = '{day_model}'
               AND invalidation_source IS NOT NULL
               AND invalidation_start < LEAST({p}_bounds.d_through,
@@ -547,12 +560,15 @@ _CONTROL_FAMILY_TEMPLATE: Final[str] = """
         EXISTS (
             SELECT 1
             FROM buckets
-            WHERE b1 - b0 >= INTERVAL '1 day'
+            WHERE b1 - b0 >= INTERVAL '24 hours'
         ) AS uses_daily
     FROM {p}_bounds
 ),
 {p}_below_empty AS (
-    SELECT NOT EXISTS (
+    SELECT CASE
+        WHEN LEAST({p}_bounds.range_end, {p}_bounds.cov_from_min)
+             <= {p}_bounds.range_start THEN TRUE
+        ELSE NOT EXISTS (
         SELECT 1
         FROM {raw_table} AS facts
         CROSS JOIN {p}_bounds
@@ -562,11 +578,14 @@ _CONTROL_FAMILY_TEMPLATE: Final[str] = """
           AND facts."timestamp"
               < LEAST({p}_bounds.range_end, {p}_bounds.cov_from_min)
           AND {beyond_probe}
-    ) AS empty
+    ) END AS empty
     FROM {p}_bounds
 ),
 {p}_above_empty AS (
-    SELECT NOT EXISTS (
+    SELECT CASE
+        WHEN COALESCE({p}_bounds.cov_through_max, {p}_bounds.range_start)
+             >= {p}_bounds.range_end THEN TRUE
+        ELSE NOT EXISTS (
         SELECT 1 FROM (
             SELECT "timestamp" AS observed_at FROM {raw_table} AS facts
              WHERE facts.location = $1 AND {beyond_probe}
@@ -578,7 +597,7 @@ _CONTROL_FAMILY_TEMPLATE: Final[str] = """
         WHERE facts.observed_at >= COALESCE({p}_bounds.cov_through_max,
                                             {p}_bounds.range_start)
           AND facts.observed_at < {p}_bounds.range_end
-    ) AS empty FROM {p}_bounds
+    ) END AS empty FROM {p}_bounds
 ),
 {p}_bucket_marks AS (
     SELECT DISTINCT b.b0, b.b1, b.partial, b.idx, marks.ts
@@ -654,12 +673,12 @@ _CONTROL_FAMILY_TEMPLATE: Final[str] = """
     FROM {hour_day_table} AS c
     JOIN buckets AS b
       ON c.bucket >= b.b0
-     AND c.bucket + INTERVAL '1 day' <= b.b1
+     AND c.bucket + INTERVAL '24 hours' <= b.b1
     CROSS JOIN {p}_bounds
     WHERE c.location = $1
       AND c.bucket >= {p}_bounds.d_from
-      AND c.bucket + INTERVAL '1 day' <= {p}_bounds.d_through
-      AND c.bucket + INTERVAL '1 day' <= {p}_bounds.d_wm
+      AND c.bucket + INTERVAL '24 hours' <= {p}_bounds.d_through
+      AND c.bucket + INTERVAL '24 hours' <= {p}_bounds.d_wm
 ),
 {p}_hour_rows AS (
     SELECT
@@ -672,11 +691,17 @@ _CONTROL_FAMILY_TEMPLATE: Final[str] = """
         TRUE AS present
     FROM {hour_table} AS c
     JOIN buckets AS b
-      ON c.bucket >= b.b0
+      ON time_bucket($5::bigint * INTERVAL '1 second', c.bucket,
+                     '1970-01-01T00:00:00Z'::timestamptz) =
+         time_bucket($5::bigint * INTERVAL '1 second', b.b0,
+                     '1970-01-01T00:00:00Z'::timestamptz)
+     AND c.bucket >= b.b0
      AND c.bucket + INTERVAL '1 hour' <= b.b1
     CROSS JOIN {p}_bounds
     WHERE c.location = $1
       AND c.bucket >= {p}_bounds.h_from
+      AND c.bucket >= {p}_bounds.range_start
+      AND c.bucket < {p}_bounds.range_end
       AND c.bucket + INTERVAL '1 hour' <= {p}_bounds.h_through
       AND c.bucket + INTERVAL '1 hour' <= {p}_bounds.h_wm
       AND NOT EXISTS (
@@ -687,7 +712,7 @@ _CONTROL_FAMILY_TEMPLATE: Final[str] = """
             AND dr.cluster = c.cluster
             AND dr.device_name = c.device_name
             AND dr.bucket <= c.bucket
-            AND dr.bucket + INTERVAL '1 day' > c.bucket
+            AND dr.bucket + INTERVAL '24 hours' > c.bucket
       )
 ),
 {p}_raw_rows AS (
@@ -698,12 +723,16 @@ _CONTROL_FAMILY_TEMPLATE: Final[str] = """
         facts.device_name,
         {raw_value_select},
         TRUE AS present
-    FROM {raw_table} AS facts
-    JOIN {p}_raw_pieces AS rp
-      ON facts."timestamp" >= rp.lo
-     AND facts."timestamp" < rp.hi
-    WHERE facts.location = $1
-      AND {raw_predicate}
+    FROM {p}_raw_pieces AS rp
+    CROSS JOIN LATERAL (
+        SELECT {raw_projection}
+        FROM {raw_table} AS facts
+        WHERE facts.location = $1
+          AND facts."timestamp" >= rp.lo
+          AND facts."timestamp" < rp.hi
+          AND {raw_predicate}
+        OFFSET 0
+    ) AS facts
     GROUP BY rp.idx, facts.location, facts.cluster, facts.device_name
 ),
 {p}_merged AS (
@@ -769,6 +798,9 @@ _LIGHT_FAMILY_SQL: Final[str] = _CONTROL_FAMILY_TEMPLATE.format(
         " OR facts.nominal_light_intensity IS NOT NULL"
         " OR facts.ramp_progress_light IS NOT NULL)"
     ),
+    raw_projection=(
+        "facts.location, facts.cluster, facts.device_name, facts.effective_light_intensity"
+    ),
     raw_value_select=(
         "count(facts.effective_light_intensity)::BIGINT AS sample_count,"
         " sum(facts.effective_light_intensity::NUMERIC) AS value_sum,"
@@ -798,6 +830,7 @@ _PID_FAMILY_SQL: Final[str] = _CONTROL_FAMILY_TEMPLATE.format(
     ),
     beyond_probe="facts.location = $1",
     raw_predicate="facts.location = $1",
+    raw_projection="facts.location, facts.cluster, facts.device_name, facts.pid_output",
     raw_value_select=(
         "count(*) FILTER (WHERE facts.pid_output::double precision"
         " >= 0::double precision"
@@ -998,7 +1031,7 @@ ORDER BY kind DESC
 # A lights-scope overview reuses the recorded light family (hour/day CAGG
 # rows plus the exact start-fragment and bounded 24 hour tail raw pieces) with
 # only its own guard terms, so it never queries or gates requested-PID/relay
-# derived readiness. $1 location, $2 start, $3 end, $4 bucket-bounds JSON.
+# derived readiness. $1 location, $2 start, $3 end, $4 bounds JSON, $5 bucket seconds.
 LIGHT_OVERVIEW_STATEMENT: Final[str] = _single_family_statement("light", _LIGHT_FAMILY_SQL)
 
 # -- relay statement --------------------------------------------------------
@@ -1007,7 +1040,7 @@ LIGHT_OVERVIEW_STATEMENT: Final[str] = _single_family_statement("light", _LIGHT_
 # recent piece span, all under one request observation watermark. Unknown
 # elapsed time is honest: buckets without recorded owner time report only
 # elapsed microseconds for that lane, and coverage_complete is false when
-# unknown time remains. $1 location, $2 start, $3 end, $4 bucket-bounds JSON.
+# unknown time remains. $1 location, $2 start, $3 end, $4 bounds JSON, $5 bucket seconds.
 _RELAY_MARKS: Final[str] = """            (GREATEST(b.b0, LEAST(b.b1, relay_bounds.h_from))),
             (GREATEST(b.b0, LEAST(b.b1, relay_bounds.h_through))),
             (GREATEST(b.b0, LEAST(b.b1, relay_bounds.d_from))),
@@ -1038,7 +1071,7 @@ relay_cov AS (
           WHERE model_name = 'monitoring_relay_duration_1day') AS d_from,
         (SELECT covered_through FROM monitoring_overview_coverage
           WHERE model_name = 'monitoring_relay_duration_1day') AS d_through,
-        (SELECT MIN(materialization_watermark) FROM monitoring_cagg_watermark
+        (SELECT MIN(materialization_watermark) FROM monitoring_history_cagg_watermark
           WHERE cagg_name = 'monitoring_relay_duration_1day') AS d_wm
 ),
 relay_bounds AS (
@@ -1078,7 +1111,7 @@ relay_ready AS (
 relay_day_pending AS (
     SELECT EXISTS (
         SELECT 1
-        FROM monitoring_cagg_watermark
+        FROM monitoring_history_cagg_watermark
         WHERE cagg_name = 'monitoring_relay_duration_1day'
           AND invalidation_source IS NOT NULL
           AND invalidation_start < LEAST(relay_bounds.d_through,
@@ -1089,7 +1122,7 @@ relay_day_pending AS (
     EXISTS (
         SELECT 1
         FROM buckets
-        WHERE b1 - b0 >= INTERVAL '1 day'
+        WHERE b1 - b0 >= INTERVAL '24 hours'
     ) AS uses_daily
     FROM relay_bounds
 ),
@@ -1172,13 +1205,13 @@ relay_day_rows AS (
     FROM monitoring_relay_duration_1day AS c
     JOIN buckets AS b
       ON c.bucket >= b.b0
-     AND c.bucket + INTERVAL '1 day' <= b.b1
+     AND c.bucket + INTERVAL '24 hours' <= b.b1
     CROSS JOIN relay_bounds
     CROSS JOIN relay_watermark
     WHERE c.location = $1
       AND c.bucket >= relay_bounds.d_from
-      AND c.bucket + INTERVAL '1 day' <= relay_bounds.d_through
-      AND c.bucket + INTERVAL '1 day' <= relay_bounds.d_wm
+      AND c.bucket + INTERVAL '24 hours' <= relay_bounds.d_through
+      AND c.bucket + INTERVAL '24 hours' <= relay_bounds.d_wm
       AND c.source_watermark <= relay_watermark.wm
 ),
 relay_hour_rows AS (
@@ -1195,13 +1228,19 @@ relay_hour_rows AS (
         c.off_microseconds
     FROM monitoring_relay_duration_1hour AS c
     JOIN buckets AS b
-      ON c.bucket >= b.b0
+      ON time_bucket($5::bigint * INTERVAL '1 second', c.bucket,
+                     '1970-01-01T00:00:00Z'::timestamptz) =
+         time_bucket($5::bigint * INTERVAL '1 second', b.b0,
+                     '1970-01-01T00:00:00Z'::timestamptz)
+     AND c.bucket >= b.b0
      AND c.bucket + INTERVAL '1 hour' <= b.b1
     CROSS JOIN relay_bounds
     CROSS JOIN relay_watermark
     WHERE c.location = $1
       AND c.active
       AND c.bucket >= relay_bounds.h_from
+      AND c.bucket >= relay_bounds.range_start
+      AND c.bucket < relay_bounds.range_end
       AND c.bucket + INTERVAL '1 hour' <= relay_bounds.h_through
       AND c.source_watermark <= relay_watermark.wm
       AND NOT EXISTS (
@@ -1215,7 +1254,7 @@ relay_hour_rows AS (
             AND dr.device_name = c.device_name
             AND dr.device_type = c.device_type
             AND dr.bucket <= c.bucket
-            AND dr.bucket + INTERVAL '1 day' > c.bucket
+            AND dr.bucket + INTERVAL '24 hours' > c.bucket
       )
 ),
 relay_slices AS (

@@ -60,6 +60,16 @@ the implementation's schema and writer/HTTP smoke run only in the guarded
 - Coverage, native invalidations/watermarks and rebuild faults gate the actual
   sources used by the request. Missing, dirty or unverified source history
   returns 503; `/ready` alone is not Historical readiness proof.
+- Historical native metadata comes from `monitoring_history_cagg_watermark`,
+  restricted to the seven new continuous aggregates. It does not scan the
+  deployed legacy materialization-coverage fallback or change detailed read models.
+  Native invalidation spans below PostgreSQL's minimum timestamp remain outside
+  every readable range instead of causing timestamp-decoding failures.
+- Aggregate-hour joins use the request's explicit epoch-aligned bucket width;
+  raw edge/tail lookups stay parameterized by their bounded time spans. Empty
+  coverage-probe intervals short-circuit without scanning retained raw history.
+- Verified daily frontiers and relay UTC-day spans advance by exactly 24 hours,
+  including Toronto DST transitions. UI calendar presets still use Toronto dates.
 - The additive sources and stopped operator jobs are prepared by
   `../database/monitoring_history_overview.sql` and its relay include, separately
   from deployment. Production preparation/backfill/job activation requires

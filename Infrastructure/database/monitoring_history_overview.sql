@@ -153,6 +153,46 @@ BEGIN
 END
 $existing_object_preflight$;
 
+-- Historical reads must use native metadata only, not the deployed legacy
+-- coverage fallback that scans unrelated materializations on every request.
+-- An invalidation endpoint below PostgreSQL 15's minimum finite timestamp
+-- can occur when native refresh splits its initial unbounded range. Such a
+-- span has no representable observations; map that endpoint to -infinity.
+CREATE OR REPLACE VIEW public.monitoring_history_cagg_watermark AS
+SELECT
+    cagg.user_view_name::TEXT AS cagg_name,
+    _timescaledb_functions.to_timestamp(
+        _timescaledb_functions.cagg_watermark(cagg.mat_hypertable_id)
+    ) AS materialization_watermark,
+    invalidation.invalidation_source,
+    CASE WHEN invalidation.lowest_modified_value < -210866803200000000::BIGINT
+         THEN '-infinity'::TIMESTAMPTZ
+         ELSE _timescaledb_functions.to_timestamp(invalidation.lowest_modified_value)
+    END AS invalidation_start,
+    CASE WHEN invalidation.greatest_modified_value < -210866803200000000::BIGINT
+         THEN '-infinity'::TIMESTAMPTZ
+         ELSE _timescaledb_functions.to_timestamp(invalidation.greatest_modified_value)
+    END AS invalidation_end
+FROM _timescaledb_catalog.continuous_agg AS cagg
+LEFT JOIN LATERAL (
+    SELECT 'materialization'::TEXT AS invalidation_source,
+           log.lowest_modified_value, log.greatest_modified_value
+      FROM _timescaledb_catalog.continuous_aggs_materialization_invalidation_log AS log
+     WHERE log.materialization_id = cagg.mat_hypertable_id
+    UNION ALL
+    SELECT 'hypertable'::TEXT AS invalidation_source,
+           log.lowest_modified_value, log.greatest_modified_value
+      FROM _timescaledb_catalog.continuous_aggs_hypertable_invalidation_log AS log
+     WHERE log.hypertable_id = cagg.raw_hypertable_id
+) AS invalidation ON TRUE
+WHERE cagg.user_view_schema = 'public'
+  AND cagg.user_view_name IN (
+      'monitoring_measurement_1hour', 'monitoring_measurement_1day',
+      'monitoring_light_intensity_1hour', 'monitoring_light_intensity_1day',
+      'monitoring_requested_pid_1hour', 'monitoring_requested_pid_1day',
+      'monitoring_relay_duration_1day'
+  );
+
 -- ------------------------------------------------------------------ §4: shared failure-acknowledgement gate
 -- Contract: public.monitoring_overview_unacknowledged_failures(config JSONB)
 -- RETURNS BOOLEAN, STABLE SECURITY INVOKER, read-only, fully qualified.
@@ -1014,11 +1054,11 @@ BEGIN
             IF v_no_work IS NOT TRUE THEN
                 v_hour_ready := EXISTS (
                     SELECT 1
-                      FROM public.monitoring_cagg_watermark
+                      FROM public.monitoring_history_cagg_watermark
                      WHERE cagg_name = v_hour_view
                        AND materialization_watermark >= v_hour_cand_end
                 ) AND NOT EXISTS (
-                    SELECT 1 FROM public.monitoring_cagg_watermark
+                    SELECT 1 FROM public.monitoring_history_cagg_watermark
                      WHERE cagg_name = v_hour_view
                        AND invalidation_start < v_hour_cand_end
                        AND invalidation_end >= v_hour_front
@@ -1284,15 +1324,15 @@ BEGIN
             --     (measurement/light_intensity/requested_pid) with
             --     bucket keys proving the day-hour-rollup row identity.
             -----------------------------------------------------------------
-            v_day_cand_end := v_day_front + INTERVAL '1 day';
+            v_day_cand_end := v_day_front + INTERVAL '24 hours';
             v_day_ready := v_day_cand_end <= v_hour_front
                 AND v_day_cand_end <= now() - INTERVAL '26 hours'
                 AND EXISTS (
-                    SELECT 1 FROM public.monitoring_cagg_watermark
+                    SELECT 1 FROM public.monitoring_history_cagg_watermark
                      WHERE cagg_name = v_day_view
                        AND materialization_watermark >= v_day_cand_end
                 ) AND NOT EXISTS (
-                    SELECT 1 FROM public.monitoring_cagg_watermark
+                    SELECT 1 FROM public.monitoring_history_cagg_watermark
                      WHERE cagg_name = v_day_view
                        AND invalidation_start < v_day_cand_end
                        AND invalidation_end >= v_day_front
@@ -1300,7 +1340,7 @@ BEGIN
 
             IF v_day_ready THEN
                 IF EXISTS (
-                    SELECT 1 FROM public.monitoring_cagg_watermark
+                    SELECT 1 FROM public.monitoring_history_cagg_watermark
                      WHERE cagg_name = v_hour_view
                        AND invalidation_start < v_day_cand_end
                        AND invalidation_end >= v_day_front

@@ -1181,7 +1181,7 @@ AS $empty_span$
              ORDER BY observed_at, observation_id LIMIT 1
         ), range_end)) AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' AS through
     )
-    SELECT CASE WHEN through <= range_start + INTERVAL '1 day' THEN through
+    SELECT CASE WHEN through <= range_start + INTERVAL '24 hours' THEN through
         ELSE date_trunc('day', LEAST(through, COALESCE((
             SELECT bucket FROM public.monitoring_relay_duration_1hour
              WHERE active
@@ -1298,7 +1298,7 @@ BEGIN
               FROM public.relay_observation;
             v_empty_through := public.monitoring_relay_empty_span_end(
                 v_claim_from, v_prior.dirty_through, v_watermark);
-            IF v_empty_through > v_claim_from + INTERVAL '1 day' THEN
+            IF v_empty_through > v_claim_from + INTERVAL '24 hours' THEN
                 IF v_prior.covered_from IS NOT NULL
                    AND v_empty_through < v_prior.covered_from THEN
                     v_cvg_from := v_claim_from;
@@ -1566,15 +1566,15 @@ BEGIN
             v_daily_front := COALESCE(v_daily_through, v_cvg_from);
 
             FOR v_walk_i IN 1..24 LOOP
-                EXIT WHEN (v_daily_front + INTERVAL '1 day') > v_cvg_through;
+                EXIT WHEN (v_daily_front + INTERVAL '24 hours') > v_cvg_through;
                 EXIT WHEN NOT EXISTS (
-                    SELECT 1 FROM public.monitoring_cagg_watermark
+                    SELECT 1 FROM public.monitoring_history_cagg_watermark
                      WHERE cagg_name = 'monitoring_relay_duration_1day'
-                       AND materialization_watermark >= v_daily_front + INTERVAL '1 day');
+                       AND materialization_watermark >= v_daily_front + INTERVAL '24 hours');
                 EXIT WHEN EXISTS (
-                    SELECT 1 FROM public.monitoring_cagg_watermark
+                    SELECT 1 FROM public.monitoring_history_cagg_watermark
                      WHERE cagg_name = 'monitoring_relay_duration_1day'
-                       AND invalidation_start < v_daily_front + INTERVAL '1 day'
+                       AND invalidation_start < v_daily_front + INTERVAL '24 hours'
                        AND invalidation_end >= v_daily_front);
 
                 SELECT NOT EXISTS (
@@ -1588,7 +1588,7 @@ BEGIN
                        FROM public.monitoring_relay_duration_1hour AS prior_row
                       WHERE prior_row.active
                         AND prior_row.bucket >= v_daily_front
-                        AND prior_row.bucket < v_daily_front + INTERVAL '1 day'
+                        AND prior_row.bucket < v_daily_front + INTERVAL '24 hours'
                       GROUP BY 1, 2, 3, 4, 5, 6
                      EXCEPT ALL
                      SELECT prior_row.location, prior_row.cluster,
@@ -1600,7 +1600,7 @@ BEGIN
                             prior_row.source_watermark
                        FROM public.monitoring_relay_duration_1day AS prior_row
                       WHERE prior_row.bucket >= v_daily_front
-                        AND prior_row.bucket < v_daily_front + INTERVAL '1 day')
+                        AND prior_row.bucket < v_daily_front + INTERVAL '24 hours')
                     UNION ALL
                     (SELECT prior_row.location, prior_row.cluster,
                             prior_row.channel, prior_row.device_id,
@@ -1611,7 +1611,7 @@ BEGIN
                             prior_row.source_watermark
                        FROM public.monitoring_relay_duration_1day AS prior_row
                       WHERE prior_row.bucket >= v_daily_front
-                        AND prior_row.bucket < v_daily_front + INTERVAL '1 day'
+                        AND prior_row.bucket < v_daily_front + INTERVAL '24 hours'
                      EXCEPT ALL
                      SELECT prior_row.location, prior_row.cluster,
                             prior_row.channel, prior_row.device_id,
@@ -1623,7 +1623,7 @@ BEGIN
                        FROM public.monitoring_relay_duration_1hour AS prior_row
                       WHERE prior_row.active
                         AND prior_row.bucket >= v_daily_front
-                        AND prior_row.bucket < v_daily_front + INTERVAL '1 day'
+                        AND prior_row.bucket < v_daily_front + INTERVAL '24 hours'
                       GROUP BY 1, 2, 3, 4, 5, 6)
                 ) INTO v_daily_ok;
 
@@ -1631,7 +1631,7 @@ BEGIN
                     EXIT;
                 END IF;
 
-                v_daily_front := v_daily_front + INTERVAL '1 day';
+                v_daily_front := v_daily_front + INTERVAL '24 hours';
             END LOOP;
 
             IF v_daily_front > v_cvg_from THEN
