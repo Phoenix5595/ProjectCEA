@@ -24,7 +24,7 @@ async def exercise_calendar_sync(api, archives, pool, sink, database):
     key = os.environ['CALENDAR_SYNC_ENCRYPTION_KEY']
     worker = CalendarSyncWorker(database)
     with loopback_dav() as (origin,state):
-        target = origin+'/dav/calendars/fixture/growing/'
+        target = origin+'/dav/calendars/fixture/culture/'
         connection_body = {'caldav_base_url':origin+'/dav/','username':'fixture',
                            'app_password':'fixture-only-password','target_calendar_url':target}
         # Deleted local events cannot become new resources during mirror-all.
@@ -40,7 +40,7 @@ async def exercise_calendar_sync(api, archives, pool, sink, database):
         async with fixture_http_client() as dav:
             assert (await dav.put(target+'unrelated.ics',content=foreign,headers={'If-None-Match':'*'})).status_code==201
             tested = await api.post('/api/calendar/sync/connections/test',json={k:v for k,v in connection_body.items() if k!='target_calendar_url'})
-            assert tested.status_code==200 and tested.json()[0]['name']=='Growing',tested.text
+            assert tested.status_code==200 and tested.json()[0]['name']=='Culture',tested.text
             saved = await api.post('/api/calendar/sync/connections',json=connection_body)
             assert saved.status_code==200 and not saved.json()['enabled'],saved.text
             connection = saved.json()
@@ -57,7 +57,7 @@ async def exercise_calendar_sync(api, archives, pool, sink, database):
             remote_ids = [entry for payload in state.calendars.values() for entry in calendar_identity(payload)]
             assert all(remote_ids.count((row['ical_uid'],str(row['id'])))==1 for row in identities_before)
             assert not any(uid==deleted_uid for uid,_ in remote_ids)
-            assert state.calendars['/dav/calendars/fixture/growing/unrelated.ics']==foreign
+            assert state.calendars['/dav/calendars/fixture/culture/unrelated.ics']==foreign
             print('Explicit rebuilt mirror preserves IDs/UIDs, excludes deleted rows and unrelated remote events')
             started = time.monotonic()
             normal = await api.post('/api/calendar/events',json={'location':'Flower Room','title':'Normal & confirmed <event>',

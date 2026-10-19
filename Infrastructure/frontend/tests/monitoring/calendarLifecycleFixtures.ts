@@ -44,7 +44,7 @@ export function calendarLifecycleFixtureReply(
   if (pathname === '/api/calendar/sync/connections' && method === 'GET') return { status: 200, body: state.connection }
   if (pathname === '/api/calendar/sync/connections/test' && method === 'POST') {
     if (scenario === 'calendar-unavailable') return { status: 503, body: { detail: { code: 'calendar_transport_failed' } } }
-    return { status: 200, body: [{ name: 'Growing', url: `${origin}/fixture-dav/Growing/`, files_root_url: `${origin}/fixture-dav/Files/`, principal_url: `${origin}/fixture-dav/principal/` }] }
+    return { status: 200, body: [{ name: 'Culture', url: `${origin}/fixture-dav/Culture/`, files_root_url: `${origin}/fixture-dav/Files/`, principal_url: `${origin}/fixture-dav/principal/` }] }
   }
   if (pathname === '/api/calendar/sync/connections' && method === 'POST') {
     const body = JSON.parse(request.body ?? '{}') as Record<string, unknown>

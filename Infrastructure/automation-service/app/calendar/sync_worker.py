@@ -63,7 +63,7 @@ def serialize_calendar_event(row: dict[str, Any]) -> bytes:
         event.add("description", row["notes"])
     calendar = ICalendar()
     calendar.add("version", "2.0")
-    calendar.add("prodid", "-//SJCEA//Growing//EN")
+    calendar.add("prodid", "-//SJCEA//Culture//EN")
     calendar.add_component(event)
     return calendar.to_ical()
 

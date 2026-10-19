@@ -62,11 +62,11 @@ const STEPS: Array<{ id: GuideStep; title: string; body: ReactNode }> = [
   },
   {
     id: 'calendar',
-    title: 'Create the Growing calendar.',
+    title: 'Create the Culture calendar.',
     body: (
       <p>
-        In Nextcloud, open Calendar and create a calendar named exactly Growing. The Pi writes grow events only to this
-        calendar.
+        In Nextcloud, open Calendar and create a calendar named exactly Culture (or reuse an existing one with that
+        name). The Pi writes grow events only to this calendar and never removes events it did not create.
       </p>
     ),
   },
@@ -87,7 +87,7 @@ const STEPS: Array<{ id: GuideStep; title: string; body: ReactNode }> = [
     body: (
       <p>
         CalDAV base URL: https://&lt;machine&gt;.&lt;tailnet&gt;.ts.net/remote.php/dav/. Username: your Nextcloud login
-        name. App password: the password from step 5. Press Test, choose Growing, press Save, then Reconnect and mirror
+        name. App password: the password from step 5. Press Test, choose Culture, press Save, then Reconnect and mirror
         all local events.
       </p>
     ),

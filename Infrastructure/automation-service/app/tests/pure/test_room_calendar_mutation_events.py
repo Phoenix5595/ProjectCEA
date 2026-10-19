@@ -425,7 +425,7 @@ async def test_calendar_sync_event_redacts_credentials_and_urls(
     )
     async def discover(_base_url: str, _username: str, _password: str) -> SimpleNamespace:
         return SimpleNamespace(
-            calendars=[{"url": "https://calendar.example.test/team/", "name": "Growing"}],
+            calendars=[{"url": "https://calendar.example.test/team/", "name": "Culture"}],
             files_root_url=None,
             instance_id="test-instance",
         )

@@ -30,7 +30,7 @@ async def scenario(calendar, archives, pool, _sink, _database):
         saved = await calendar.post('/api/calendar/sync/connections', json={
             'caldav_base_url': origin + '/dav/', 'username': 'fixture',
             'app_password': 'fixture-only-password',
-            'target_calendar_url': origin + '/dav/calendars/fixture/growing/',
+            'target_calendar_url': origin + '/dav/calendars/fixture/culture/',
         })
         _assert(saved.status_code == 200, saved.text)
         connection = saved.json()

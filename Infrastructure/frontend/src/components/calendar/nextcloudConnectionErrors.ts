@@ -21,7 +21,7 @@ const ERROR_HELP: Record<string, CalendarErrorHelp> = {
     step: 'https',
   },
   calendar_collection_unavailable: {
-    message: 'Nextcloud answered but the calendar was not found. Check the base URL ends in /remote.php/dav/ and a calendar named "Growing" exists.',
+    message: 'Nextcloud answered but the calendar was not found. Check the base URL ends in /remote.php/dav/ and a calendar named "Culture" exists.',
     step: 'calendar',
   },
   calendar_files_unavailable: {

@@ -99,7 +99,7 @@ describe('CalendarSettings', () => {
       enabled: true,
       caldav_base_url: 'https://nc.tail.ts.net/remote.php/dav',
       account_email: 'a',
-      target_calendar_url: 'https://nc.tail.ts.net/remote.php/dav/calendars/a/growing/',
+      target_calendar_url: 'https://nc.tail.ts.net/remote.php/dav/calendars/a/culture/',
     })
     render(<CalendarSettings />)
 
@@ -112,7 +112,7 @@ describe('CalendarSettings', () => {
       enabled: true,
       caldav_base_url: 'https://nc.tail.ts.net/remote.php/dav',
       account_email: 'a',
-      target_calendar_url: 'https://nc.tail.ts.net/remote.php/dav/calendars/a/growing/',
+      target_calendar_url: 'https://nc.tail.ts.net/remote.php/dav/calendars/a/culture/',
     })
     mocks.apiClient.testCalendarSyncConnection.mockRejectedValue({
       response: { status: 400, data: { detail: { code: 'calendar_auth_failed' } } },

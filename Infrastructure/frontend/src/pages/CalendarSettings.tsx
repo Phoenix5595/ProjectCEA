@@ -79,7 +79,7 @@ export default function CalendarSettings() {
         app_password: appPassword,
       })
       setCalendars(list)
-      setTargetCalendarUrl(list.find(calendar => calendar.name === 'Growing')?.url ?? '')
+      setTargetCalendarUrl(list.find(calendar => calendar.name.toLowerCase() === 'culture')?.url ?? '')
       setConnectionValidated(true)
       setErrorHelp(null)
       toast.success(`Found ${list.length} calendar(s)`)
@@ -282,11 +282,11 @@ export default function CalendarSettings() {
           </button>
           {mirrorPreview && (
             <div className="space-y-2 text-sm text-text-default">
-              <p>Mirror {mirrorPreview.event_count} non-deleted local events into Growing.</p>
+              <p>Mirror {mirrorPreview.event_count} non-deleted local events into Culture.</p>
               <p>Back up the existing Calendar collection before reconnecting.</p>
               <label className="flex items-start gap-2">
                 <input type="checkbox" checked={backupConfirmed} onChange={event => setBackupConfirmed(event.target.checked)} />
-                <span>I have backed up the existing Growing calendar.</span>
+                <span>I have backed up the existing Culture calendar.</span>
               </label>
               <button
                 type="button"

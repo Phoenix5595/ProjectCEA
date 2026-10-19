@@ -49,6 +49,8 @@ from shared.nextcloud_dav import DavError, validate_dav_url
 logger = get_logger(__name__)
 
 router = APIRouter(prefix="/api/calendar", tags=["calendar"])
+# Display name (case-insensitive) of the only Nextcloud calendar the Pi writes to.
+TARGET_CALENDAR_NAME = "Culture"
 
 
 def get_database() -> DatabaseManager:
@@ -649,7 +651,8 @@ async def create_sync_connection(
             + "/"
         )
         if not any(
-            calendar["url"] == target and calendar["name"].casefold() == "growing"
+            calendar["url"] == target
+            and calendar["name"].casefold() == TARGET_CALENDAR_NAME.casefold()
             for calendar in discovery.calendars
         ):
             raise DavError("calendar_collection_unavailable")
@@ -725,7 +728,7 @@ async def reconnect_and_mirror(
             raise DavError("calendar_instance_changed")
         if not any(
             calendar["url"] == connection["target_calendar_url"]
-            and calendar["name"].casefold() == "growing"
+            and calendar["name"].casefold() == TARGET_CALENDAR_NAME.casefold()
             for calendar in discovery.calendars
         ):
             raise DavError("calendar_collection_unavailable")

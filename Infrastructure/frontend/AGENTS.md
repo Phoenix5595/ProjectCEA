@@ -36,7 +36,7 @@ the backup prerequisite. The password field is masked and cleared on save;
 connection failures do not undo durable local Calendar events. The page has a
 collapsible Nextcloud-over-Tailscale guide (`components/calendar/NextcloudTailscaleGuide.tsx`;
 open until a connection is saved) that documents backend limits: HTTPS on port 443,
-exact `/remote.php/dav/` URL (no redirects), a `Growing` calendar, Files access.
+exact `/remote.php/dav/` URL (no redirects), a `Culture` calendar, Files access.
 Test/Save errors map `detail.code` to plain messages and a highlighted guide step
 via `components/calendar/nextcloudConnectionErrors.ts`; keep that table in sync with
 the automation calendar routes' error codes. Use placeholders, never a real tailnet name.

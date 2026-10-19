@@ -120,10 +120,10 @@ def loopback_dav() -> Iterator[tuple[str, DAVState]]:
                 href = path
                 if state.missing_calendar:
                     return b'<d:multistatus xmlns:d="DAV:"/>'
-                return ('<d:multistatus xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav"><d:response><d:href>/dav/calendars/fixture/growing/</d:href><d:propstat><d:prop><d:resourcetype><d:collection/><c:calendar/></d:resourcetype><d:displayname>Growing</d:displayname></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response></d:multistatus>').encode()
-            elif path == "/dav/calendars/fixture/growing":
+                return ('<d:multistatus xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav"><d:response><d:href>/dav/calendars/fixture/culture/</d:href><d:propstat><d:prop><d:resourcetype><d:collection/><c:calendar/></d:resourcetype><d:displayname>Culture</d:displayname></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response></d:multistatus>').encode()
+            elif path == "/dav/calendars/fixture/culture":
                 href = path
-                props = '<d:resourcetype><d:collection/><c:calendar/></d:resourcetype><d:displayname>Growing</d:displayname>'
+                props = '<d:resourcetype><d:collection/><c:calendar/></d:resourcetype><d:displayname>Culture</d:displayname>'
             elif path == "/dav/files/fixture":
                 href = path
                 permissions = "G" if state.files_readonly else "GCK"
