@@ -26,7 +26,7 @@ disabled Load button with the `Export first` hint.
 - `src/config/env.ts` is the single source of truth for API base URLs. Default routing goes through Caddy `:8080`; per-service `VITE_*_URL` overrides are emergency escape hatches only.
 - `src/services/api.ts` builds the three axios clients (backend, automation, weather) and attaches domain method modules (`services/api/{devices,sensors,schedules,pid}.ts`).
 - Monitoring history/overview/control reads use the dedicated `src/features/monitoring/api/` client (`MONITORING_API_URL` from `src/config/env.ts`, default Caddy `:8080` → `monitoring-service :8005`); Zod runtime parsing applies to every response.
-- `src/generated/api.ts` is the OpenAPI-generated TypeScript contract. Regenerate it with `npm run api:generate`.
+- `src/generated/api.ts` is the OpenAPI-generated TypeScript contract. Regenerate it with `npm run api:generate` only after `npm run build`: automation-service registers the frontend static routes (`/`, `/favicon.ico`, `/logo.png`, …) only when `dist/` exists, so generating without it produces a spurious contract diff.
 
 Nextcloud Calendar credentials are available under **Devices → System Settings
 → Nextcloud Calendar** (`/devices?tab=settings&settings_tab=calendar`), with the
