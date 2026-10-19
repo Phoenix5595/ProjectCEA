@@ -123,30 +123,62 @@ current_alembic_heads() {
   printf '%s\n' "$rows" | python3 -c 'import json, sys; print(json.dumps(sorted(line.strip() for line in sys.stdin if line.strip())))'
 }
 
-manifest_migration_head() {
-  python3 - "$1/deploy_manifest.json" <<'PY'
+manifest_schema_metadata() {
+  python3 - "$1/deploy_manifest.json" "${2:-current}" <<'PY'
 import json
 import sys
 from pathlib import Path
 
-manifest = Path(sys.argv[1])
-if not manifest.is_file():
-    print("null")
+manifest_path = Path(sys.argv[1])
+section = sys.argv[2]
+manifest = json.loads(manifest_path.read_text(encoding="utf-8")) if manifest_path.is_file() else {}
+metadata = manifest if section == "current" else manifest.get("previous_schema")
+if (
+    not isinstance(metadata, dict)
+    or "migration_head" not in metadata
+    or "alembic_heads" not in metadata
+    or not isinstance(metadata["alembic_heads"], list)
+):
+    print(json.dumps({"known": False}, separators=(",", ":")))
 else:
-    value = json.loads(manifest.read_text(encoding="utf-8")).get("migration_head")
-    print("null" if value is None else value)
+    print(
+        json.dumps(
+            {
+                "known": True,
+                "migration_head": metadata["migration_head"],
+                "alembic_heads": sorted(str(head) for head in metadata["alembic_heads"]),
+            },
+            separators=(",", ":"),
+        )
+    )
 PY
 }
 
-manifest_alembic_heads() {
-  python3 - "$1/deploy_manifest.json" <<'PY'
+schema_metadata_known() {
+  python3 - "$1" <<'PY'
 import json
 import sys
-from pathlib import Path
 
-manifest = Path(sys.argv[1])
-value = json.loads(manifest.read_text(encoding="utf-8")).get("alembic_heads", []) if manifest.is_file() else []
-print(json.dumps(sorted(str(item) for item in value)))
+print("true" if json.loads(sys.argv[1]).get("known") is True else "false")
+PY
+}
+
+schema_metadata_head() {
+  python3 - "$1" <<'PY'
+import json
+import sys
+
+value = json.loads(sys.argv[1])["migration_head"]
+print("null" if value is None else str(value))
+PY
+}
+
+schema_metadata_alembic_heads() {
+  python3 - "$1" <<'PY'
+import json
+import sys
+
+print(json.dumps(sorted(json.loads(sys.argv[1])["alembic_heads"])))
 PY
 }
 
@@ -237,30 +269,87 @@ restore_systemd_backup() {
   local backup_dir="$1"
   local relative backed_up_file
   [[ -d "$backup_dir" ]] || return 0
-  sudo mkdir -p "$SYSTEMD_DIR"
+  if ! sudo mkdir -p "$SYSTEMD_DIR"; then
+    return 1
+  fi
   if [[ -f "$backup_dir/created.txt" ]]; then
+    if [[ ! -r "$backup_dir/created.txt" ]]; then
+      return 1
+    fi
     while IFS= read -r relative; do
       [[ -n "$relative" && "$relative" != /* && "$relative" != *".."* ]] || continue
-      sudo rm -f -- "$SYSTEMD_DIR/$relative"
+      if ! sudo rm -f -- "$SYSTEMD_DIR/$relative"; then
+        return 1
+      fi
     done < "$backup_dir/created.txt"
   fi
-  backed_up_file="$(find "$backup_dir" -type f ! -name created.txt ! -name Caddyfile ! -name Caddyfile.created -print -quit)"
-  if [[ -n "$backed_up_file" ]]; then
-    sudo rsync -a --exclude=created.txt --exclude=Caddyfile --exclude=Caddyfile.created "$backup_dir/" "$SYSTEMD_DIR/"
+  if ! backed_up_file="$(find "$backup_dir" -type f ! -name created.txt ! -name Caddyfile ! -name Caddyfile.created -print -quit)"; then
+    return 1
   fi
-  sudo systemctl daemon-reload
+  if [[ -n "$backed_up_file" ]] && ! sudo rsync -a --exclude=created.txt --exclude=Caddyfile --exclude=Caddyfile.created "$backup_dir/" "$SYSTEMD_DIR/"; then
+    return 1
+  fi
+  sudo systemctl daemon-reload || return 1
+  return 0
 }
 
 restore_caddyfile() {
   local backup_dir="$1"
   if [[ -f "$backup_dir/Caddyfile" ]]; then
-    sudo install -d -o root -g root -m 0755 "$(dirname "$CADDY_FILE")"
-    sudo install -m 0644 -o root -g root "$backup_dir/Caddyfile" "$CADDY_FILE"
-    sudo systemctl restart caddy
+    sudo install -d -o root -g root -m 0755 "$(dirname "$CADDY_FILE")" || return 1
+    sudo install -m 0644 -o root -g root "$backup_dir/Caddyfile" "$CADDY_FILE" || return 1
+    sudo systemctl restart caddy || return 1
   elif [[ -f "$backup_dir/Caddyfile.created" ]]; then
-    sudo rm -f -- "$CADDY_FILE"
-    sudo systemctl restart caddy
+    sudo rm -f -- "$CADDY_FILE" || return 1
+    sudo systemctl restart caddy || return 1
   fi
+  return 0
+}
+
+restore_release_config_chain() {
+  local current_release="$1"
+  local target_release="$2"
+  local current_index=-1 target_index=-1 index release_id backup_dir
+  local -a release_ids=() restore_ids=()
+  if [[ "$current_release" == "$RELEASES/"* && "$target_release" == "$RELEASES/"* ]]; then
+    local release_names
+    if ! release_names="$(find "$RELEASES" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | LC_ALL=C sort)"; then
+      return 1
+    fi
+    mapfile -t release_ids <<< "$release_names"
+    for index in "${!release_ids[@]}"; do
+      if [[ "${release_ids[$index]}" == "$(basename "$current_release")" ]]; then
+        current_index="$index"
+      fi
+      if [[ "${release_ids[$index]}" == "$(basename "$target_release")" ]]; then
+        target_index="$index"
+      fi
+    done
+  fi
+  if (( current_index >= 0 && target_index >= 0 && target_index < current_index )); then
+    for ((index = current_index; index > target_index; index--)); do
+      restore_ids+=("${release_ids[$index]}")
+    done
+  elif [[ "$current_release" != "$target_release" ]]; then
+    restore_ids+=("$(basename "$current_release")")
+  fi
+
+  for release_id in "${restore_ids[@]}"; do
+    backup_dir="$SYSTEMD_BACKUP_ROOT/$release_id"
+    if [[ ! -d "$backup_dir" ]]; then
+      log_rollback "rollback_blocked" "configuration_backup_missing:$release_id" "$RB_TGT" "$CURRENT" >/dev/null
+      echo "rollback_blocked:configuration_backup_missing:$release_id" >&2
+      return 1
+    fi
+    if ! restore_systemd_backup "$backup_dir"; then
+      log_rollback "rollback_manual_fail" "systemd_restore_failed:$release_id" "$RB_TGT" "$CURRENT" >/dev/null
+      return 1
+    fi
+    if ! restore_caddyfile "$backup_dir"; then
+      log_rollback "rollback_manual_fail" "caddy_restore_failed:$release_id" "$RB_TGT" "$CURRENT" >/dev/null
+      return 1
+    fi
+  done
 }
 
 run_health_checks() {
@@ -365,8 +454,19 @@ if ! CURRENT_HEAD="$(db_migrate "$CURRENT" head)"; then
   echo "rollback_blocked:migration_head_unavailable" >&2
   exit 1
 fi
-TARGET_HEAD="$(manifest_migration_head "$RB_TGT")"
-TARGET_ALEMBIC="$(manifest_alembic_heads "$RB_TGT")"
+TARGET_METADATA="$(manifest_schema_metadata "$RB_TGT" current)"
+TARGET_METADATA_KNOWN="$(schema_metadata_known "$TARGET_METADATA")"
+if [[ "$TARGET_METADATA_KNOWN" != "true" ]]; then
+  TARGET_METADATA="$(manifest_schema_metadata "$CURRENT" previous)"
+  TARGET_METADATA_KNOWN="$(schema_metadata_known "$TARGET_METADATA")"
+fi
+if [[ "$TARGET_METADATA_KNOWN" != "true" ]]; then
+  log_rollback "rollback_blocked" "schema_metadata_unknown" "$RB_TGT" "$CURRENT" >/dev/null
+  echo "rollback_blocked:schema_metadata_unknown" >&2
+  exit 1
+fi
+TARGET_HEAD="$(schema_metadata_head "$TARGET_METADATA")"
+TARGET_ALEMBIC="$(schema_metadata_alembic_heads "$TARGET_METADATA")"
 if ! CURRENT_ALEMBIC="$(current_alembic_heads)" || ! alembic_heads_equal "$TARGET_ALEMBIC" "$CURRENT_ALEMBIC"; then
   BACKUP_DUMP="$MIGRATION_BACKUP_DIR/pre-$(basename "$CURRENT").dump"
   log_rollback "rollback_blocked" "alembic_heads_mismatch" "$RB_TGT" "$CURRENT" >/dev/null
@@ -402,9 +502,10 @@ if [[ "$SCHEMA_RELATION" == "newer" ]]; then
     exit 1
   fi
 fi
-BACKUP_DIR="$SYSTEMD_BACKUP_ROOT/$(basename "$CURRENT")"
-restore_systemd_backup "$BACKUP_DIR"
-restore_caddyfile "$BACKUP_DIR"
+if ! restore_release_config_chain "$CURRENT" "$RB_TGT"; then
+  log_rollback "rollback_manual_fail" "configuration_restore_failed" "$RB_TGT" "$CURRENT" >/dev/null
+  exit 1
+fi
 sudo ln -sfn "$RB_TGT" "$CURRENT_SYMLINK"
 log_rollback "rollback_manual_symlink" "switched_to_target" "$RB_TGT" "$CURRENT" >/dev/null
 

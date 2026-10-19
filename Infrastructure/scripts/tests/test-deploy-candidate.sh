@@ -31,6 +31,7 @@ readonly SYSTEMD_DIR="$SANDBOX/systemd"
 readonly SYSTEMD_BACKUP_ROOT="$SANDBOX/systemd-backups"
 readonly CADDY_DIR="$SANDBOX/caddy"
 readonly CADDY_FILE="$CADDY_DIR/Caddyfile"
+readonly AUTOMATION_STOPPED_FILE="$SANDBOX/automation-stopped"
 readonly REHEARSAL_DIR="$SANDBOX/rehearsals"
 readonly MIGRATION_BACKUP_DIR="$SANDBOX/db-backups"
 readonly POSTGRES_ENV_FILE="$SANDBOX/postgres.env"
@@ -73,6 +74,7 @@ mkdir -p "$BIN_DIRECTORY" "$RELEASES" "$STATE_DIR" \
   "$ARCHIVE_ROOT/Infrastructure/scripts" "$ARCHIVE_ROOT/Infrastructure/frontend/dist" \
   "$ARCHIVE_ROOT/Infrastructure/can-processor-service" "$ARCHIVE_ROOT/Infrastructure/grow-archive-service" \
   "$ARCHIVE_ROOT/Infrastructure/caddy"
+cp -a "$REPO_ROOT/pyproject.toml" "$ARCHIVE_ROOT/pyproject.toml"
 cp -a "$REPO_ROOT/Infrastructure/services.yaml" "$ARCHIVE_ROOT/Infrastructure/services.yaml"
 cp -a "$REPO_ROOT/Infrastructure/scripts/service_list.py" "$ARCHIVE_ROOT/Infrastructure/scripts/"
 cp -a "$REPO_ROOT/Infrastructure/scripts/sync_systemd_units.sh" "$ARCHIVE_ROOT/Infrastructure/scripts/"
@@ -89,6 +91,7 @@ printf '# archive Caddy configuration\n' > "$ARCHIVE_ROOT/Infrastructure/caddy/C
 for rel in "$REL_A" "$REL_B" "$REL_C" "$REL_D"; do
   mkdir -p "$rel"
   cp -a "$ARCHIVE_ROOT/Infrastructure" "$rel/"
+  cp -a "$ARCHIVE_ROOT/pyproject.toml" "$rel/pyproject.toml"
   printf '# release Caddy configuration: %s\n' "$(basename "$rel")" > "$rel/Infrastructure/caddy/Caddyfile"
   printf '\n# fixture release: %s\n' "$(basename "$rel")" >> "$rel/Infrastructure/cea-backend.service"
   printf '{"release_id":"%s","git_sha":"%s","alembic_heads":[],"migration_head":null}\n' \
@@ -130,6 +133,11 @@ case "${1:-}" in
         *) install_args+=("$1"); shift ;;
       esac
     done
+    last_index=$((${#install_args[@]} - 1))
+    if [[ "${DEPLOY_TEST_FAIL_CADDY_INSTALL:-0}" == "1" && "${install_args[$last_index]:-}" == "${DEPLOY_CADDY_FILE:-}" && ! -e "${EVENT_LOG}.caddy-install-failed" ]]; then
+      touch "${EVENT_LOG}.caddy-install-failed"
+      exit 42
+    fi
     exec install "${install_args[@]}"
     ;;
   python3)
@@ -152,6 +160,10 @@ cat > "$BIN_DIRECTORY/ruff" <<'RUFF'
 #!/usr/bin/env bash
 if [[ "${DEPLOY_TEST_LINT_FAILURE:-0}" == "1" ]]; then
   exit 1
+fi
+if [[ ! -s "$PWD/pyproject.toml" ]]; then
+  printf 'release pyproject.toml is missing from Ruff working directory\n' >&2
+  exit 2
 fi
 exit 0
 RUFF
@@ -243,6 +255,13 @@ case "${1:-}" in
     ;;
   restart|start|stop)
     printf 'systemctl %s\n' "$*" >> "$EVENT_LOG"
+    if [[ "${2:-}" == "automation-service.service" ]]; then
+      if [[ "${1:-}" == "stop" ]]; then
+        : > "$AUTOMATION_STOPPED_FILE"
+      else
+        rm -f "$AUTOMATION_STOPPED_FILE"
+      fi
+    fi
     if [[ "${DEPLOY_TEST_FAIL_UNIT:-}" == "${2:-}" && ! -e "$EVENT_LOG.restart-failed" ]]; then
       touch "$EVENT_LOG.restart-failed"
       exit 1
@@ -277,7 +296,13 @@ done
 printf 'curl %s\n' "$url" >> "$EVENT_LOG"
 
 if [[ "$url" == "${DEPLOY_CADDY_HEALTH_URL:-http://127.0.0.1:8080/}" ]]; then
-  code="${DEPLOY_TEST_CADDY_CODE:-200}"
+  if [[ "${DEPLOY_TEST_CADDY_CODE+x}" == "x" ]]; then
+    code="$DEPLOY_TEST_CADDY_CODE"
+  elif [[ -e "$AUTOMATION_STOPPED_FILE" ]]; then
+    code="502"
+  else
+    code="200"
+  fi
   body='{"status":"caddy"}'
 else
   state="$(cat "$HEALTH_STATE_FILE" 2>/dev/null || echo not_ready)"
@@ -315,7 +340,7 @@ case "${1:-}" in
     fi
     ;;
   archive)
-    tar -C "$DEPLOY_TEST_ARCHIVE_ROOT" -cf - Infrastructure
+    tar -C "$DEPLOY_TEST_ARCHIVE_ROOT" -cf - Infrastructure pyproject.toml
     ;;
   *)
     echo "unexpected git invocation: $*" >&2
@@ -449,7 +474,7 @@ base_environment() {
   export DEPLOY_PG_DUMP="$PG_DUMP_STUB"
   export PIP_CACHE_DIR
   export POSTGRES_DB="monitoring_test_deploy_candidates"
-  export EVENT_LOG HEALTH_STATE_FILE HEALTH_DELAYED_CALLS_FILE
+  export EVENT_LOG HEALTH_STATE_FILE HEALTH_DELAYED_CALLS_FILE AUTOMATION_STOPPED_FILE
   export DEPLOY_TEST_ARCHIVE_ROOT="$ARCHIVE_ROOT"
   export DEPLOY_TEST_DB_HEAD_FILE="$DB_HEAD_FILE"
   export DB_HEAD_FILE ALEMBIC_HEADS_FILE EXPECTED_GIT_SHA
@@ -475,6 +500,7 @@ run_frontend_build_key_sandbox() {
   expect_success bash "$DEPLOY_SCRIPT"
   [[ -f "$FRONTEND_BUILD_PROOF" ]] || fail 'frontend build did not receive the API key'
   [[ "$(current_target)" == "$REL_B" ]] || fail 'frontend build scenario did not activate its candidate'
+  [[ -s "$REL_B/pyproject.toml" ]] || fail 'exact-commit staging omitted the root Ruff configuration'
   assert_npm_package_record npm-ci 'sudo env CI=true npm ci --silent --no-audit --no-fund ' 'npm notice fetched retry-package' \
     'npm WARN retry GET https://registry.example.test/retry-package attempt 2' 0
   assert_npm_package_record npm-build 'sudo env CI=true VITE_CEA_API_KEY=\<redacted\> npm run build ' 'npm notice built frontend' \
@@ -712,7 +738,7 @@ clear_state() {
   rm -f "$STATE_FILE" "$EVENT_LOG" "$PACKAGE_LOG" "$HEALTH_STATE_FILE" "$HEALTH_DELAYED_CALLS_FILE"
   rm -f "$STATE_DIR/deploy-packages.log"
   rm -f "$CURRENT"
-  rm -f "$EVENT_LOG.restart-failed"
+  rm -f "$EVENT_LOG.restart-failed" "$EVENT_LOG.caddy-install-failed" "$AUTOMATION_STOPPED_FILE"
   rm -rf "$SYSTEMD_DIR" "$SYSTEMD_BACKUP_ROOT" "$REHEARSAL_DIR" "$MIGRATION_BACKUP_DIR"
   mkdir -p "$SYSTEMD_DIR" "$CADDY_DIR" "$REHEARSAL_DIR" "$MIGRATION_BACKUP_DIR"
   printf '# pre-release Caddy configuration\n' > "$CADDY_FILE"
@@ -721,7 +747,7 @@ clear_state() {
   printf 'POSTGRES_PASSWORD=test\n' > "$POSTGRES_ENV_FILE"
   unset HEALTH_DELAYED_URL HEALTH_DELAYED_FAILURES ROLLBACK_HEALTH_TIMEOUT_SECONDS
   unset DEPLOY_TEST_DIRTY_TRACKED DEPLOY_TEST_UNTRACKED_ONLY DEPLOY_TEST_LINT_FAILURE DEPLOY_TEST_DOWNTIME
-  unset DEPLOY_TEST_NOT_FOUND_UNIT DEPLOY_TEST_CADDY_CODE DEPLOY_TEST_FAIL_UNIT
+  unset DEPLOY_TEST_NOT_FOUND_UNIT DEPLOY_TEST_CADDY_CODE DEPLOY_TEST_FAIL_UNIT DEPLOY_TEST_FAIL_CADDY_INSTALL
 }
 
 set_current() {
@@ -739,6 +765,9 @@ set_current() {
     mkdir -p "$SYSTEMD_DIR/$(dirname "$relative")"
     cp -a "$override_file" "$SYSTEMD_DIR/$relative"
   done
+  local backup_dir="$SYSTEMD_BACKUP_ROOT/$(basename "$1")"
+  mkdir -p "$backup_dir"
+  [[ -f "$backup_dir/created.txt" ]] || : > "$backup_dir/created.txt"
 }
 
 write_state_json() {
@@ -790,6 +819,7 @@ create_identity_fixture() {
   cp -R "$IDENTITY_REPO/Infrastructure/." "$IDENTITY_TARGET/Infrastructure/"
   cp -R "$REL_D/Infrastructure/." "$IDENTITY_TARGET/Infrastructure/"
   cp "$IDENTITY_REPO/Infrastructure/caddy/Caddyfile" "$IDENTITY_TARGET/Infrastructure/caddy/Caddyfile"
+  cp -a "$ARCHIVE_ROOT/pyproject.toml" "$IDENTITY_TARGET/pyproject.toml"
   ln -sfn "$IDENTITY_PREVIOUS" "$IDENTITY_CURRENT"
 }
 
@@ -1077,7 +1107,10 @@ export ROLLBACK_HEALTH_TIMEOUT_SECONDS=2
 base_environment
 SECONDS=0
 expect_failure bash "$ROLLBACK_SCRIPT"
-[[ "$SECONDS" -le 3 ]] || fail 'scenario 5c: health timeout exceeded its shared bound'
+echo "scenario 5c: rollback took ${SECONDS}s with a 2s health timeout"
+# Unbounded per-URL waits would take ~14 URLs x 2s; the shared deadline keeps the
+# whole run near timeout + fixed rollback overhead (python/systemd/caddy stubs).
+[[ "$SECONDS" -le 6 ]] || fail 'scenario 5c: health timeout exceeded its shared bound'
 [[ "$(state_field candidate_release_id)" == "rel-B" ]] || \
   fail 'scenario 5c: timeout cleared the active candidate'
 [[ "$(state_field candidate_release_path)" == "$REL_B" ]] || \
@@ -1310,13 +1343,29 @@ printf 'ready\n' > "$HEALTH_STATE_FILE"
 base_environment
 export TARGET="$REL_B"
 export DEPLOY_TEST_DOWNTIME=1
+printf '05_relay_observation\n' > "$ALEMBIC_HEADS_FILE"
+printf '{"release_id":"rel-A","git_sha":"%s"}\n' "$EXPECTED_GIT_SHA" > "$REL_A/deploy_manifest.json"
 mkdir -p "$REHEARSAL_DIR"
 printf '{"set_sha256":"test-set-sha","result":"pass"}\n' > "$REHEARSAL_DIR/test-set-sha.json"
 expect_success bash "$DEPLOY_SCRIPT"
 assert_event_before 'systemctl stop grow-archive-service.service' 'db_migrate apply --json --allow-downtime'
 assert_event_before 'db_migrate apply --json --allow-downtime' 'deploy_symlink_switched'
+assert_event_before 'systemctl restart automation-service.service' 'curl http://127.0.0.1:8080/'
 [[ "$(current_target)" == "$REL_B" ]] || fail 'rehearsed downtime deploy did not activate the candidate'
 [[ -s "$MIGRATION_BACKUP_DIR/pre-rel-B.dump" ]] || fail 'downtime deploy did not retain its pre-migration dump'
+python3 - "$REL_B/deploy_manifest.json" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+manifest = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+assert manifest["migration_head"] == "0001_test_migration", manifest
+assert manifest["alembic_heads"] == ["05_relay_observation"], manifest
+assert manifest["previous_schema"] == {
+    "migration_head": None,
+    "alembic_heads": ["05_relay_observation"],
+}, manifest
+PY
 [[ "$(cat "$CADDY_FILE")" == "$(cat "$REL_B/Infrastructure/caddy/Caddyfile")" ]] || \
   fail 'candidate Caddyfile was not installed'
 [[ -s "$SYSTEMD_BACKUP_ROOT/rel-B/Caddyfile" ]] || fail 'pre-deploy Caddyfile was not backed up'
@@ -1366,6 +1415,53 @@ grep -Fq 'load_state_not_found' "$EVENT_LOG" || fail 'not-found unit was not rep
 [[ "$(cat "$EVENT_LOG")" == *"systemctl restart grow-archive-service.service"* ]] || \
   fail 'a not-found unit prevented later service restarts'
 pass 'not-found units are skipped without stopping the restart loop'
+
+# --- Deploy hardening: Caddy install failure rolls back stopped services and schema ---
+clear_state
+set_current "$REL_A"
+write_state_json "rel-A" "$REL_A" "$REL_C"
+printf 'ready\n' > "$HEALTH_STATE_FILE"
+base_environment
+export TARGET="$REL_B"
+export DEPLOY_TEST_DOWNTIME=1
+export DEPLOY_TEST_FAIL_CADDY_INSTALL=1
+mkdir -p "$REHEARSAL_DIR"
+printf '{"set_sha256":"test-set-sha","result":"pass"}\n' > "$REHEARSAL_DIR/test-set-sha.json"
+expect_failure bash "$DEPLOY_SCRIPT"
+grep -Fq 'caddy_install_failed' "$EVENT_LOG" || fail 'Caddy install failure was not reported'
+assert_event_before 'db_migrate apply --json --allow-downtime' 'db_migrate down --to none'
+assert_event_before 'db_migrate down --to none' 'rollback_auto_symlink'
+[[ "$(current_target)" == "$REL_A" ]] || fail 'Caddy install failure left the candidate active'
+[[ "$(cat "$DB_HEAD_FILE")" == "null" ]] || fail 'Caddy install failure did not reverse migrations'
+cmp -s "$CADDY_FILE" "$REL_A/Infrastructure/caddy/Caddyfile" || fail 'Caddy install failure did not restore Caddy'
+pass 'Caddy install failure triggers automatic schema and service rollback'
+
+# --- Rollback hardening: an explicit non-adjacent target unwinds every newer backup ---
+clear_state
+set_current "$REL_C"
+write_state_json "rel-C" "$REL_C" "$REL_B"
+printf 'ready\n' > "$HEALTH_STATE_FILE"
+base_environment
+printf '{"release_id":"rel-A","git_sha":"%s","alembic_heads":[],"migration_head":null}\n' \
+  "$EXPECTED_GIT_SHA" > "$REL_A/deploy_manifest.json"
+mkdir -p "$SYSTEMD_BACKUP_ROOT/rel-B" "$SYSTEMD_BACKUP_ROOT/rel-C"
+cp "$REL_A/Infrastructure/caddy/Caddyfile" "$SYSTEMD_BACKUP_ROOT/rel-B/Caddyfile"
+cp "$REL_A/Infrastructure/cea-backend.service" "$SYSTEMD_BACKUP_ROOT/rel-B/cea-backend.service"
+: > "$SYSTEMD_BACKUP_ROOT/rel-B/created.txt"
+cp "$REL_B/Infrastructure/caddy/Caddyfile" "$SYSTEMD_BACKUP_ROOT/rel-C/Caddyfile"
+cp "$REL_B/Infrastructure/cea-backend.service" "$SYSTEMD_BACKUP_ROOT/rel-C/cea-backend.service"
+printf 'introduced-by-c.service\n' > "$SYSTEMD_BACKUP_ROOT/rel-C/created.txt"
+printf 'C-only unit\n' > "$SYSTEMD_DIR/introduced-by-c.service"
+expect_success bash "$ROLLBACK_SCRIPT" "$REL_A"
+[[ "$(current_target)" == "$REL_A" ]] || fail 'non-adjacent rollback did not switch to its requested target'
+cmp -s "$CADDY_FILE" "$REL_A/Infrastructure/caddy/Caddyfile" || fail 'non-adjacent rollback did not restore target Caddy'
+cmp -s "$SYSTEMD_DIR/cea-backend.service" "$REL_A/Infrastructure/cea-backend.service" || \
+  fail 'non-adjacent rollback did not unwind intervening unit files'
+[[ ! -e "$SYSTEMD_DIR/introduced-by-c.service" ]] || fail 'non-adjacent rollback did not remove an intervening created unit'
+[[ "$(grep -c 'systemctl restart caddy' "$EVENT_LOG")" -eq 2 ]] || \
+  fail 'non-adjacent rollback did not restore each intervening Caddy backup'
+pass 'explicit non-adjacent rollback unwinds configuration backups newest-first'
+
 printf ']' >> "$EVIDENCE_STATES"
 
 EVIDENCE_DIR="$SANDBOX/evidence"

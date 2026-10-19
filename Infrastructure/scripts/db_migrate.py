@@ -281,11 +281,20 @@ def _run_alembic(release: Path, database: Database) -> None:
     binary = os.environ.get("DB_MIGRATE_ALEMBIC") or str(default_binary)
     config = service_dir / "alembic.ini"
     command = [binary, "-c", str(config), "upgrade", "heads"]
+    environment = database.environment.copy()
+    python_paths = [
+        str(release / "Infrastructure"),
+        str(service_dir),
+    ]
+    existing_pythonpath = environment.get("PYTHONPATH")
+    if existing_pythonpath:
+        python_paths.append(existing_pythonpath)
+    environment["PYTHONPATH"] = os.pathsep.join(python_paths)
     result = subprocess.run(
         command,
         cwd=service_dir,
         check=False,
-        env=database.environment,
+        env=environment,
         capture_output=True,
         text=True,
     )

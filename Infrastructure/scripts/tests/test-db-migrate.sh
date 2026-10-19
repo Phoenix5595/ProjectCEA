@@ -176,6 +176,12 @@ if [[ "$#" -ne 4 || "$1" != '-c' || "$2" != */alembic.ini || "$3" != 'upgrade' |
   printf 'unexpected Alembic arguments: %s\n' "$*" >&2
   exit 1
 fi
+service_dir="${2%/alembic.ini}"
+expected_pythonpath="$(dirname "$service_dir"):$service_dir"
+if [[ "${PYTHONPATH:-}" != "$expected_pythonpath" && "${PYTHONPATH:-}" != "$expected_pythonpath:"* ]]; then
+  printf 'unexpected Alembic PYTHONPATH: %s\n' "${PYTHONPATH:-}" >&2
+  exit 1
+fi
 psql -X --no-psqlrc --set=ON_ERROR_STOP=1 --dbname="$POSTGRES_DB" \
   --command="INSERT INTO public.dbmigrate_order (event) VALUES ('alembic')" >/dev/null
 SH

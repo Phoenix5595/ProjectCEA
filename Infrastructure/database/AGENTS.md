@@ -16,6 +16,10 @@ PostgreSQL + TimescaleDB for normalized metadata, time-series measurements, cont
 | `grow_data_lifecycle_expiry_cursor.sql` | Nongrow expiry cursor and archive-load/artifact indexes |
 | `grow_data_source_compression.sql` | Owner-applied source policy change: remove retention jobs and set three-month compression policies on existing source hypertables, preserving enabled settings and skipping plain relations with `NOTICE` |
 
+## Versioned migrations
+
+Schema changes ship as `migrations/NNNN_name.sql` files applied by `Infrastructure/scripts/db_migrate.py` during `deploy.sh` (rules in [`migrations/README.md`](migrations/README.md)); the ledger is `public.schema_migration`. Each deploy also runs `alembic upgrade heads` for automation-service; automation startup only verifies the head. `0001_alembic_stamp_side_branch` records `010_canonicalize_device_names` on databases (production) that applied the `009→010` alembic branch without recording it, so alembic never re-runs `009_seed_device_registry`; alembic `011_merge_heads` then joins the two heads. Do not edit applied migration files (SHA-256 checked).
+
 Historical note (2026-10-18): retired Grafana-only SQL migrations, views and verification scripts were removed: `grafana_performance_migration.sql`, `grafana_optimized_views.sql`, `grow_history_guards.sql`, `migrate_get_sensor_routing_1min_through_6h.sql`, `verify_get_sensor_routing.sql`, `verify_performance.sql`, `timescaledb_continuous_aggregates.sql`, and `timescaledb_compression.sql`. `latest_sensor_values` remains defined but has no in-repo consumer.
 
 ## Completed one-off operations (2026-10-19)

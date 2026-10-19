@@ -26,7 +26,7 @@ Stable cross-service contracts for ProjectCEA. For current architecture, see `AR
 ## Deployment Safety
 
 - `deploy.sh` and `rollback-deploy.sh` share an exclusive `flock(1)` on `/var/lock/projectcea-deploy.lock`.
-- Deploys export an exact committed revision, run read-only lint, and record `release_id`, full `git_sha`, `alembic_heads`, `migration_head`, `deployed_at`, and `health_ok` in the release manifest.
+- Deploys export an exact committed revision, run read-only lint, and record `release_id`, full `git_sha`, `alembic_heads`, `migration_head`, `previous_schema`, `deployed_at`, and `health_ok` in the release manifest. `previous_schema` preserves the SQL and Alembic heads from immediately before deploy for rollback to pre-Phase-2 releases.
 - Migrations apply before unit/drop-in and Caddy synchronization. Downtime migrations require a recent passing rehearsal and create `/var/lib/projectcea/backups/pre-<RELEASE_ID>.dump`.
 - Per-release systemd and Caddy backups are restored by automatic or manual rollback. Manual rollback refuses newer SQL schema unless `--with-down-migrations` is given; Alembic head mismatches require restoring the pre-deploy dump.
 

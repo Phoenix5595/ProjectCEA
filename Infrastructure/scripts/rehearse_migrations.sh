@@ -163,7 +163,7 @@ postgres_local psql -X --no-psqlrc --set=ON_ERROR_STOP=1 --dbname="$DB_NAME" \
 DURATIONS+=("pre_restore=$(elapsed_seconds "$STEP_START")")
 
 STEP_START="$(date +%s%N)"
-postgres_local pg_restore --exit-on-error --dbname="$DB_NAME" "$DUMP_FILE"
+postgres_local pg_restore --exit-on-error --dbname="$DB_NAME" < "$DUMP_FILE"
 DURATIONS+=("restore=$(elapsed_seconds "$STEP_START")")
 
 STEP_START="$(date +%s%N)"

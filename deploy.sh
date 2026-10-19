@@ -269,30 +269,41 @@ restore_systemd_backup() {
   local backup_dir="$1"
   local relative backed_up_file
   [[ -d "$backup_dir" ]] || return 0
-  sudo mkdir -p "$SYSTEMD_DIR"
+  if ! sudo mkdir -p "$SYSTEMD_DIR"; then
+    return 1
+  fi
   if [[ -f "$backup_dir/created.txt" ]]; then
+    if [[ ! -r "$backup_dir/created.txt" ]]; then
+      return 1
+    fi
     while IFS= read -r relative; do
       [[ -n "$relative" && "$relative" != /* && "$relative" != *".."* ]] || continue
-      sudo rm -f -- "$SYSTEMD_DIR/$relative"
+      if ! sudo rm -f -- "$SYSTEMD_DIR/$relative"; then
+        return 1
+      fi
     done < "$backup_dir/created.txt"
   fi
-  backed_up_file="$(find "$backup_dir" -type f ! -name created.txt ! -name Caddyfile ! -name Caddyfile.created -print -quit)"
-  if [[ -n "$backed_up_file" ]]; then
-    sudo rsync -a --exclude=created.txt --exclude=Caddyfile --exclude=Caddyfile.created "$backup_dir/" "$SYSTEMD_DIR/"
+  if ! backed_up_file="$(find "$backup_dir" -type f ! -name created.txt ! -name Caddyfile ! -name Caddyfile.created -print -quit)"; then
+    return 1
   fi
-  sudo systemctl daemon-reload
+  if [[ -n "$backed_up_file" ]] && ! sudo rsync -a --exclude=created.txt --exclude=Caddyfile --exclude=Caddyfile.created "$backup_dir/" "$SYSTEMD_DIR/"; then
+    return 1
+  fi
+  sudo systemctl daemon-reload || return 1
+  return 0
 }
 
 restore_caddyfile() {
   local backup_dir="$1"
   if [[ -f "$backup_dir/Caddyfile" ]]; then
-    sudo install -d -o root -g root -m 0755 "$(dirname "$CADDY_FILE")"
-    sudo install -m 0644 -o root -g root "$backup_dir/Caddyfile" "$CADDY_FILE"
-    sudo systemctl restart caddy
+    sudo install -d -o root -g root -m 0755 "$(dirname "$CADDY_FILE")" || return 1
+    sudo install -m 0644 -o root -g root "$backup_dir/Caddyfile" "$CADDY_FILE" || return 1
+    sudo systemctl restart caddy || return 1
   elif [[ -f "$backup_dir/Caddyfile.created" ]]; then
-    sudo rm -f -- "$CADDY_FILE"
-    sudo systemctl restart caddy
+    sudo rm -f -- "$CADDY_FILE" || return 1
+    sudo systemctl restart caddy || return 1
   fi
+  return 0
 }
 
 load_postgres_environment() {
@@ -347,30 +358,62 @@ current_alembic_heads() {
   printf '%s\n' "$rows" | python3 -c 'import json, sys; print(json.dumps(sorted(line.strip() for line in sys.stdin if line.strip())))'
 }
 
-manifest_migration_head() {
-  python3 - "$1/deploy_manifest.json" <<'PY'
+manifest_schema_metadata() {
+  python3 - "$1/deploy_manifest.json" "${2:-current}" <<'PY'
 import json
 import sys
 from pathlib import Path
 
-manifest = Path(sys.argv[1])
-if not manifest.is_file():
-    print("null")
+manifest_path = Path(sys.argv[1])
+section = sys.argv[2]
+manifest = json.loads(manifest_path.read_text(encoding="utf-8")) if manifest_path.is_file() else {}
+metadata = manifest if section == "current" else manifest.get("previous_schema")
+if (
+    not isinstance(metadata, dict)
+    or "migration_head" not in metadata
+    or "alembic_heads" not in metadata
+    or not isinstance(metadata["alembic_heads"], list)
+):
+    print(json.dumps({"known": False}, separators=(",", ":")))
 else:
-    value = json.loads(manifest.read_text(encoding="utf-8")).get("migration_head")
-    print("null" if value is None else value)
+    print(
+        json.dumps(
+            {
+                "known": True,
+                "migration_head": metadata["migration_head"],
+                "alembic_heads": sorted(str(head) for head in metadata["alembic_heads"]),
+            },
+            separators=(",", ":"),
+        )
+    )
 PY
 }
 
-manifest_alembic_heads() {
-  python3 - "$1/deploy_manifest.json" <<'PY'
+schema_metadata_known() {
+  python3 - "$1" <<'PY'
 import json
 import sys
-from pathlib import Path
 
-manifest = Path(sys.argv[1])
-value = json.loads(manifest.read_text(encoding="utf-8")).get("alembic_heads", []) if manifest.is_file() else []
-print(json.dumps(sorted(str(item) for item in value)))
+print("true" if json.loads(sys.argv[1]).get("known") is True else "false")
+PY
+}
+
+schema_metadata_head() {
+  python3 - "$1" <<'PY'
+import json
+import sys
+
+value = json.loads(sys.argv[1])["migration_head"]
+print("null" if value is None else str(value))
+PY
+}
+
+schema_metadata_alembic_heads() {
+  python3 - "$1" <<'PY'
+import json
+import sys
+
+print(json.dumps(sorted(json.loads(sys.argv[1])["alembic_heads"])))
 PY
 }
 
@@ -411,7 +454,7 @@ PY
 
 rollback_previous() {
   local target_release="${PREVIOUS_RELEASE:-}"
-  local migration_head target_head relation target_alembic current_alembic db_release backup_dir restore_to
+  local migration_head target_head relation target_alembic current_alembic db_release backup_dir restore_to target_metadata metadata_known
   if [[ -z "$target_release" || ! -d "$target_release/Infrastructure" ]]; then
     log_event "rollback_auto_fail" "no_previous_release_or_missing_dir" >/dev/null
     return 1
@@ -422,8 +465,30 @@ rollback_previous() {
     log_event "rollback_auto_fail" "migration_head_unavailable" >/dev/null
     return 1
   fi
-  target_head="$(manifest_migration_head "$target_release")" || return 1
-  target_alembic="$(manifest_alembic_heads "$target_release")" || return 1
+  target_metadata="$(manifest_schema_metadata "$target_release" current)" || return 1
+  metadata_known="$(schema_metadata_known "$target_metadata")" || return 1
+  if [[ "$metadata_known" != "true" ]]; then
+    if [[ "${PREDEPLOY_MIGRATION_HEAD+x}" == x && "${PREDEPLOY_ALEMBIC_HEADS+x}" == x ]]; then
+      target_head="$PREDEPLOY_MIGRATION_HEAD"
+      target_alembic="$PREDEPLOY_ALEMBIC_HEADS"
+      metadata_known="true"
+    else
+      target_metadata="$(manifest_schema_metadata "$db_release" previous)" || return 1
+      metadata_known="$(schema_metadata_known "$target_metadata")" || return 1
+      if [[ "$metadata_known" == "true" ]]; then
+        target_head="$(schema_metadata_head "$target_metadata")" || return 1
+        target_alembic="$(schema_metadata_alembic_heads "$target_metadata")" || return 1
+      fi
+    fi
+  else
+    target_head="$(schema_metadata_head "$target_metadata")" || return 1
+    target_alembic="$(schema_metadata_alembic_heads "$target_metadata")" || return 1
+  fi
+  if [[ "$metadata_known" != "true" ]]; then
+    log_event "rollback_auto_blocked" "schema_metadata_unknown" >/dev/null
+    echo "rollback_blocked:schema_metadata_unknown" >&2
+    return 1
+  fi
   if ! current_alembic="$(current_alembic_heads)" || ! alembic_heads_equal "$target_alembic" "$current_alembic"; then
     backup_dir="$MIGRATION_BACKUP_DIR/pre-$(basename "$db_release").dump"
     log_event "rollback_auto_blocked" "alembic_heads_mismatch" >/dev/null
@@ -490,7 +555,7 @@ if [[ -L "$CURRENT_SYMLINK" || -e "$CURRENT_SYMLINK" ]]; then
 fi
 export RELEASE_ID TARGET PREVIOUS_RELEASE SOURCE FULL_SHA
 
-dirty_status="$(git -C "$SOURCE" status --porcelain=v1 -- Infrastructure deploy.sh rollback-deploy.sh finalize-deploy.sh)" || {
+dirty_status="$(git -C "$SOURCE" status --porcelain=v1 -- Infrastructure pyproject.toml deploy.sh rollback-deploy.sh finalize-deploy.sh)" || {
   log_event "deploy_blocked" "dirty_tracked_inputs"
   echo "deploy_blocked:dirty_tracked_inputs" >&2
   exit 1
@@ -529,7 +594,7 @@ log_event "deploy_start" ""
 if [[ "$DEPLOY_SKIP_STAGING" != "1" ]]; then
   echo "[1/7] Exporting exact commit $FULL_SHA..."
   STAGE="$(mktemp -d)"
-  if ! git -C "$SOURCE" archive "$FULL_SHA" Infrastructure | tar -x -C "$STAGE"; then
+  if ! git -C "$SOURCE" archive "$FULL_SHA" Infrastructure pyproject.toml | tar -x -C "$STAGE"; then
     log_event "deploy_blocked" "git_archive_failed"
     echo "[deploy] cannot export Infrastructure from $FULL_SHA" >&2
     exit 1
@@ -537,6 +602,7 @@ if [[ "$DEPLOY_SKIP_STAGING" != "1" ]]; then
   sudo mkdir -p "$TARGET"
   sudo rsync -a --delete "$STAGE/Infrastructure/" "$TARGET/Infrastructure/"
   sudo chown -R root:root "$TARGET"
+  sudo install -m 0644 -o root -g root "$STAGE/pyproject.toml" "$TARGET/pyproject.toml"
 fi
 
 SERVICE_LIST="$TARGET/Infrastructure/scripts/service_list.py"
@@ -613,6 +679,7 @@ for required_file in \
   Infrastructure/scripts/sync_systemd_units.sh \
   Infrastructure/service-error-handler@.service \
   Infrastructure/caddy/Caddyfile \
+  pyproject.toml \
   Infrastructure/can-processor-service/setup_can.sh \
   Infrastructure/grow-archive-service/requirements.txt \
   Infrastructure/frontend/package.json \
@@ -630,6 +697,17 @@ if [[ -z "$DB_MIGRATE_OVERRIDE" && ! -s "$TARGET/Infrastructure/scripts/db_migra
 fi
 
 load_postgres_environment
+if ! PREDEPLOY_MIGRATION_HEAD="$(db_migrate "$TARGET" head)"; then
+  log_event "deploy_blocked" "predeploy_migration_head_failed"
+  echo "[deploy] cannot read pre-deploy SQL migration head" >&2
+  exit 1
+fi
+if ! PREDEPLOY_ALEMBIC_HEADS="$(current_alembic_heads)"; then
+  log_event "deploy_blocked" "predeploy_alembic_heads_failed"
+  echo "[deploy] cannot read pre-deploy Alembic heads" >&2
+  exit 1
+fi
+export PREDEPLOY_MIGRATION_HEAD PREDEPLOY_ALEMBIC_HEADS
 echo "[6/7] Planning and applying database migrations..."
 if ! MIGRATION_PLAN="$(db_migrate "$TARGET" plan --json)"; then
   log_event "deploy_blocked" "migration_plan_failed"
@@ -712,24 +790,32 @@ if ! sudo "$CADDY_BIN" validate --config "$CADDY_CONFIG" --adapter caddyfile; th
   exit 1
 fi
 if ! cmp -s "$CADDY_CONFIG" "$CADDY_FILE"; then
-  sudo mkdir -p "$(dirname "$CADDY_FILE")" "$SYSTEMD_BACKUP_DIR"
-  if [[ -f "$CADDY_FILE" ]]; then
-    sudo cp -a "$CADDY_FILE" "$SYSTEMD_BACKUP_DIR/Caddyfile"
-  else
-    sudo touch "$SYSTEMD_BACKUP_DIR/Caddyfile.created"
+  if ! sudo mkdir -p "$(dirname "$CADDY_FILE")" "$SYSTEMD_BACKUP_DIR"; then
+    log_event "deploy_blocked" "caddy_backup_directory_failed"
+    rollback_previous || true
+    exit 1
   fi
-  sudo install -m 0644 -o root -g root "$CADDY_CONFIG" "$CADDY_FILE"
+  if [[ -f "$CADDY_FILE" ]]; then
+    if ! sudo cp -a "$CADDY_FILE" "$SYSTEMD_BACKUP_DIR/Caddyfile"; then
+      log_event "deploy_blocked" "caddy_backup_failed"
+      rollback_previous || true
+      exit 1
+    fi
+  elif ! sudo touch "$SYSTEMD_BACKUP_DIR/Caddyfile.created"; then
+    log_event "deploy_blocked" "caddy_backup_marker_failed"
+    rollback_previous || true
+    exit 1
+  fi
+  if ! sudo install -m 0644 -o root -g root "$CADDY_CONFIG" "$CADDY_FILE"; then
+    log_event "deploy_blocked" "caddy_install_failed"
+    rollback_previous || true
+    exit 1
+  fi
   if ! sudo systemctl restart caddy; then
     log_event "deploy_blocked" "caddy_restart_failed"
     rollback_previous || true
     exit 1
   fi
-fi
-CADDY_CODE="$(curl -s -o /dev/null -w "%{http_code}" "$CADDY_HEALTH_URL" 2>/dev/null || echo "000")"
-if [[ "$CADDY_CODE" != "200" ]]; then
-  log_event "deploy_blocked" "caddy_health_failed" "caddy" "$CADDY_CODE"
-  rollback_previous || true
-  exit 1
 fi
 
 echo "[8/7] Switching release symlink..."
@@ -757,6 +843,22 @@ if ! restart_services "$SERVICE_LIST"; then
   echo "[deploy] service restart failed; automatic rollback was attempted" >&2
   exit 1
 fi
+CADDY_CODE="$(curl -s -o /dev/null -w "%{http_code}" "$CADDY_HEALTH_URL" 2>/dev/null || echo "000")"
+if [[ "$CADDY_CODE" != "200" ]]; then
+  log_event "deploy_blocked" "caddy_health_failed" "caddy" "$CADDY_CODE"
+  if rollback_previous; then
+    python3 "$STATE_HELPER" clear-candidate "$STATE_JSON" >/dev/null || true
+    export CANDIDATE_RELEASE_ID="$RELEASE_ID"
+    export CANDIDATE_RELEASE_PATH="$TARGET"
+    log_event "candidate-rejected" "caddy_health_failed" >/dev/null
+  else
+    if [[ "$(readlink -f "$CURRENT_SYMLINK" 2>/dev/null || true)" == "$TARGET" ]]; then
+      python3 "$STATE_HELPER" set-candidate "$STATE_JSON" "$RELEASE_ID" "$TARGET" >/dev/null || true
+    fi
+    log_event "candidate-rollback-blocked" "caddy_health_failed" >/dev/null
+  fi
+  exit 1
+fi
 
 echo "[10/10] Health and readiness checks..."
 if ! run_health_checks "$SERVICE_LIST"; then
@@ -777,13 +879,19 @@ fi
 
 MANIFEST_PATH="$CURRENT_SYMLINK/deploy_manifest.json"
 SERVICES_JSON="$(python3 "$SERVICE_LIST" --list-deploy-managed-units | python3 -c 'import json, sys; print(json.dumps([unit.removesuffix(".service") for unit in map(str.strip, sys.stdin) if unit]))')"
+MIGRATION_HEAD_JSON="$(python3 -c 'import json,sys; value=sys.argv[1]; print(json.dumps(None if value == "null" else value))' "$MIGRATION_HEAD")"
+PREDEPLOY_MIGRATION_HEAD_JSON="$(python3 -c 'import json,sys; value=sys.argv[1]; print(json.dumps(None if value == "null" else value))' "$PREDEPLOY_MIGRATION_HEAD")"
 echo "Writing deploy manifest to $MANIFEST_PATH..."
 sudo tee "$MANIFEST_PATH" >/dev/null <<EOF
 {
   "release_id": "$RELEASE_ID",
   "git_sha": "$FULL_SHA",
   "alembic_heads": $ALEMBIC_HEADS,
-  "migration_head": $MIGRATION_HEAD,
+  "migration_head": $MIGRATION_HEAD_JSON,
+  "previous_schema": {
+    "migration_head": $PREDEPLOY_MIGRATION_HEAD_JSON,
+    "alembic_heads": $PREDEPLOY_ALEMBIC_HEADS
+  },
   "deployed_at": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
   "services": $SERVICES_JSON,
   "health_ok": true
