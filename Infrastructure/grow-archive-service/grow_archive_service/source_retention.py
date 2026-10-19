@@ -13,7 +13,6 @@ from .schema import SourceStream
 # deliberate conservative superset: an ambiguous predecessor must not vanish.
 ANCHOR_COLUMNS = {
     'measurement': ('sensor_id',),
-    'actuator_events': ('device_id',),
     'automation_state': ('location', 'cluster', 'device_name'),
     'effective_setpoints': ('location', 'cluster', 'device_name', 'mode'),
     'control_history': ('location', 'cluster', 'device_name', 'channel'),

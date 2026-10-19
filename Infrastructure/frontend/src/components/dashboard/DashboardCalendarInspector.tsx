@@ -128,7 +128,6 @@ export default function DashboardCalendarInspector({
   const [pending, setPending] = useState(false)
   const [lifecycle, setLifecycle] = useState<GrowLifecycle | null>(null)
   const [closePreview, setClosePreview] = useState<GrowClosePreview | null>(null)
-  const [scopeTable, setScopeTable] = useState<'measurement' | 'actuator_events'>('measurement')
   const [scopeIdentity, setScopeIdentity] = useState('')
   const [scopeStart, setScopeStart] = useState('')
   const [scopeEnd, setScopeEnd] = useState('')
@@ -636,8 +635,8 @@ export default function DashboardCalendarInspector({
                           await apiClient.createArchiveScopeCorrection({
                             dataset_id: closePreview.lifecycle.dataset_id,
                             expected_revision: closePreview.lifecycle.dataset_id ? closePreview.lifecycle.data_revision : null,
-                            source_table: scopeTable,
-                            source_identity: scopeTable === 'measurement' ? { sensor_id: identityId } : { device_id: identityId },
+                            source_table: 'measurement',
+                            source_identity: { sensor_id: identityId },
                             start: new Date(scopeStart).toISOString(),
                             end: new Date(scopeEnd).toISOString(),
                             room: scopeRoom,
@@ -651,10 +650,6 @@ export default function DashboardCalendarInspector({
                       }}
                     >
                       <p>Correct unresolved room assignment (reopen first for grow-associated changes).</p>
-                      <select aria-label="Scope source" value={scopeTable} onChange={event => setScopeTable(event.target.value as 'measurement' | 'actuator_events')}>
-                        <option value="measurement">Sensor measurement</option>
-                        <option value="actuator_events">Device actuator event</option>
-                      </select>
                       <input aria-label="Source identity ID" inputMode="numeric" value={scopeIdentity} onChange={event => setScopeIdentity(event.target.value)} />
                       <label>Start <input type="datetime-local" required value={scopeStart} onChange={event => setScopeStart(event.target.value)} /></label>
                       <label>End <input type="datetime-local" required value={scopeEnd} onChange={event => setScopeEnd(event.target.value)} /></label>

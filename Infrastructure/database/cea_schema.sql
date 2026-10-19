@@ -137,13 +137,6 @@ SELECT create_hypertable('measurement', 'time',
 CREATE INDEX IF NOT EXISTS idx_measurement_sensor_time 
     ON measurement (sensor_id, time DESC);
 
--- Time index for chunking and time-range queries
-CREATE INDEX IF NOT EXISTS idx_measurement_time 
-    ON measurement (time DESC);
-
--- Sensor index for sensor lookups
-CREATE INDEX IF NOT EXISTS idx_measurement_sensor_id 
-    ON measurement (sensor_id);
 
 -- ============================================
 -- Performance Optimization Indexes
@@ -201,23 +194,6 @@ CREATE TABLE IF NOT EXISTS crop_batch (
 -- (location, cluster, temperature, humidity, co2, vpd, mode, updated_at)
 -- See Infrastructure/database/SETPOINTS_TABLE_EXPLANATION.md for details.
 
--- Actuator Events: Device control events
-CREATE TABLE IF NOT EXISTS actuator_events (
-    event_id SERIAL PRIMARY KEY,
-    device_id INTEGER NOT NULL REFERENCES device(device_id) ON DELETE CASCADE,
-    action TEXT NOT NULL,
-    value REAL,
-    time TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
--- Create hypertable for actuator_events (time-series)
-SELECT create_hypertable('actuator_events', 'time',
-    chunk_time_interval => INTERVAL '1 day',
-    if_not_exists => TRUE);
-
--- Index for actuator_events
-CREATE INDEX IF NOT EXISTS idx_actuator_events_device_time 
-    ON actuator_events (device_id, time DESC);
 
 -- ============================================
 -- Climate Periods: Time-based climate periods per location/cluster
@@ -257,51 +233,6 @@ CREATE INDEX IF NOT EXISTS idx_climate_periods_mode
 CREATE INDEX IF NOT EXISTS idx_climate_periods_time 
     ON climate_periods (start_time, end_time);
 
--- ============================================
--- Continuous Aggregates
--- ============================================
-
--- Hourly aggregates: min, max, avg per sensor per hour
-CREATE MATERIALIZED VIEW IF NOT EXISTS measurement_hourly
-WITH (timescaledb.continuous) AS
-SELECT 
-    time_bucket('1 hour', time) AS time,
-    sensor_id,
-    AVG(value) AS avg_value,
-    MIN(value) AS min_value,
-    MAX(value) AS max_value,
-    COUNT(*) AS reading_count
-FROM measurement
-GROUP BY time, sensor_id;
-
--- Add refresh policy for hourly aggregates
--- Refresh every hour, keep last 7 days of raw data
-SELECT add_continuous_aggregate_policy('measurement_hourly',
-    start_offset => INTERVAL '7 days',
-    end_offset => INTERVAL '1 hour',
-    schedule_interval => INTERVAL '1 hour',
-    if_not_exists => TRUE);
-
--- Daily aggregates: min, max, avg per sensor per day
-CREATE MATERIALIZED VIEW IF NOT EXISTS measurement_daily
-WITH (timescaledb.continuous) AS
-SELECT 
-    time_bucket('1 day', time) AS time,
-    sensor_id,
-    AVG(value) AS avg_value,
-    MIN(value) AS min_value,
-    MAX(value) AS max_value,
-    COUNT(*) AS reading_count
-FROM measurement
-GROUP BY time, sensor_id;
-
--- Add refresh policy for daily aggregates
--- Refresh every day, keep last 30 days of raw data
-SELECT add_continuous_aggregate_policy('measurement_daily',
-    start_offset => INTERVAL '30 days',
-    end_offset => INTERVAL '1 day',
-    schedule_interval => INTERVAL '1 day',
-    if_not_exists => TRUE);
 
 -- ============================================
 -- Helper Views for Common Queries
@@ -346,10 +277,6 @@ COMMENT ON TABLE sensor IS 'Individual sensors with name, unit, data_type, chann
 COMMENT ON TABLE measurement IS 'Unified time-series table for all sensor readings (hypertable)';
 COMMENT ON TABLE crop_batch IS 'Track crop batches per room';
 COMMENT ON TABLE setpoints IS 'Room-level setpoints with timestamps';
-COMMENT ON TABLE actuator_events IS 'Device control events (hypertable)';
-
-COMMENT ON VIEW measurement_hourly IS 'Hourly aggregates: min, max, avg per sensor per hour';
-COMMENT ON VIEW measurement_daily IS 'Daily aggregates: min, max, avg per sensor per day';
 COMMENT ON VIEW measurement_with_metadata IS 'Measurement data with full metadata joins';
 
 -- ============================================

@@ -13,7 +13,7 @@
 --   * room/rack/device/sensor/sensor_registry/crop_batch  -> cea_schema.sql
 --   * room_modes/flower_submodes                          -> app/migrations.py
 --   * calendar_event                                      -> add_calendar_tables.sql
---   * measurement/actuator_events                         -> cea_schema.sql
+--   * measurement                                         -> cea_schema.sql
 --   * automation_state/effective_setpoints/control_history/
 --     pid_parameter_history/config_versions               -> alembic 001/002/005/006/007
 --   * relay_observation                                   -> alembic 05_relay_observation
@@ -25,10 +25,10 @@
 -- have no repository definition and are intentionally absent; the preflight
 -- records them as absent and blocks if they ever appear without a descriptor.
 --
--- Hypertable primary keys: the repository baseline for actuator_events,
--- automation_state and control_history is a non-observation-time primary key
--- that create_hypertable rejects; this fixture applies the verified composite
--- (observation time, key) variant documented in source_schema.json.
+-- Hypertable primary keys: repository baseline keys for automation_state and
+-- control_history omit the partitioning timestamp; this fixture uses the verified
+-- composite variants (timestamp, id) and (id, timestamp), respectively,
+-- documented in source_schema.json.
 -- Column order, types and nullability are unchanged and every repository
 -- index keeps its name.
 --
@@ -231,25 +231,6 @@ CREATE INDEX idx_measurement_sensor_time ON measurement (sensor_id, time DESC);
 CREATE INDEX idx_measurement_time ON measurement (time DESC);
 CREATE INDEX idx_measurement_sensor_id ON measurement (sensor_id);
 
--- Repository baseline PK (event_id) cannot coexist with the TimescaleDB
--- hypertable (unique indexes must include the partitioning column), so this
--- disposable fixture uses the verified composite variant (time, event_id);
--- source_schema.json documents both the baseline and the exact variant and
--- blocks every other live shape.
-CREATE TABLE actuator_events (
-    event_id SERIAL,
-    device_id INTEGER NOT NULL REFERENCES device(device_id) ON DELETE CASCADE,
-    action TEXT NOT NULL,
-    value REAL,
-    time TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    PRIMARY KEY (time, event_id)
-);
-
-SELECT create_hypertable('actuator_events', 'time',
-    chunk_time_interval => INTERVAL '1 day',
-    if_not_exists => TRUE);
-
-CREATE INDEX idx_actuator_events_device_time ON actuator_events (device_id, time DESC);
 
 CREATE TABLE automation_state (
     id BIGSERIAL,
@@ -349,7 +330,7 @@ CREATE TABLE control_history (
     setpoint REAL,
     load_percent REAL,
     manual_expires_at TIMESTAMPTZ,
-    PRIMARY KEY (timestamp, id)
+    PRIMARY KEY (id, timestamp)
 );
 
 SELECT create_hypertable('control_history', 'timestamp', if_not_exists => TRUE);
@@ -597,17 +578,6 @@ VALUES
     ('2026-01-05 00:09:00+00', 5, 24.5::real, 'ok'),
     ('2026-01-05 00:10:00+00', 7, 12.25::real, 'ok');
 
-INSERT INTO actuator_events (event_id, device_id, action, value, time)
-VALUES
-    (1, 1, 'heater_on', 3.4028235e38::real, '2026-01-05 00:00:00.000001+00'),
-    (2, 1, 'heater_off', -3.4028235e38::real, '2026-01-05 00:01:00+00'),
-    (3, 1, 'heater_on', 1.1754943508222875e-38::real, '2026-01-05 00:02:00+00'),
-    (4, 1, 'heater_on', (-1.1754943508222875e-38::real / 2::real), '2026-01-05 00:03:00+00'),
-    (5, 1, 'heater_on', '-0'::real, '2026-01-05 00:04:00+00'),
-    (6, 1, 'heater_on', NULL, '2026-01-05 00:05:00+00'),
-    (7, 1, 'heater_on', NULL, '2026-01-05 00:05:00+00'),
-    (8, 4, 'vent_open', 50.0::real, '2026-01-05 00:06:00+00');
-SELECT setval(pg_get_serial_sequence('actuator_events', 'event_id'), 8, TRUE);
 
 INSERT INTO automation_state (
     id, timestamp, location, cluster, device_name, device_state, device_mode,

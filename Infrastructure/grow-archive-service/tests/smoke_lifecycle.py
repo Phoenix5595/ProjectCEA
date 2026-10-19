@@ -184,34 +184,30 @@ async def _publish_freshness_fixture(client: redis.Redis, stop: asyncio.Event) -
 async def _assign_remaining_identities(
     client: httpx.AsyncClient, conn: asyncpg.Connection
 ) -> None:
-    for table, key, room_by_identity in (
-        ("measurement", "sensor_id", {1: "Flower Room", 2: "Flower Room", 5: "Veg Room", 7: "Veg Room"}),
-        ("actuator_events", "device_id", {1: "Flower Room", 4: "Veg Room"}),
-    ):
-        rows = await conn.fetch(
-            f"SELECT {key} AS identity,min(time) AS first,max(time) AS last "
-            f"FROM {table} GROUP BY {key} ORDER BY {key}"
-        )
-        for row in rows:
-            identity = int(row["identity"])
-            if table == "measurement" and identity == 1:
-                # exercise_scope_corrections already stored this exact identity's
-                # full fixture interval and proved partial-overlap rejection.
-                continue
-            if identity not in room_by_identity:
-                raise SmokeFailure(f"fixture has an unclassified {table} identity {identity}")
-            body = {
-                "dataset_id": None,
-                "expected_revision": None,
-                "source_table": table,
-                "source_identity": {key: identity},
-                "start": (row["first"] - timedelta(seconds=1)).isoformat(),
-                "end": (row["last"] + timedelta(seconds=1)).isoformat(),
-                "room": room_by_identity[identity],
-            }
-            response = await client.post("/api/archives/scope-corrections", json=body)
-            _assert(response.status_code == 200, f"dated fixture attribution failed: {response.text}")
-
+    room_by_identity = {1: "Flower Room", 2: "Flower Room", 5: "Veg Room", 7: "Veg Room"}
+    rows = await conn.fetch(
+        "SELECT sensor_id AS identity,min(time) AS first,max(time) AS last "
+        "FROM measurement GROUP BY sensor_id ORDER BY sensor_id"
+    )
+    for row in rows:
+        identity = int(row["identity"])
+        if identity == 1:
+            # exercise_scope_corrections already stored this exact identity's
+            # full fixture interval and proved partial-overlap rejection.
+            continue
+        if identity not in room_by_identity:
+            raise SmokeFailure(f"fixture has an unclassified measurement identity {identity}")
+        body = {
+            "dataset_id": None,
+            "expected_revision": None,
+            "source_table": "measurement",
+            "source_identity": {"sensor_id": identity},
+            "start": (row["first"] - timedelta(seconds=1)).isoformat(),
+            "end": (row["last"] + timedelta(seconds=1)).isoformat(),
+            "room": room_by_identity[identity],
+        }
+        response = await client.post("/api/archives/scope-corrections", json=body)
+        _assert(response.status_code == 200, f"dated fixture attribution failed: {response.text}")
 
 async def _assert_toronto_boundaries(conn: asyncpg.Connection) -> None:
     samples = ((date(2026, 3, 8), 23), (date(2026, 11, 1), 25))
@@ -376,8 +372,6 @@ async def _exercise_calendar_membership(
     _assert(not preview_body["conflicts"], f"valid grow preview has conflicts: {preview_body['conflicts']}")
     _assert(preview_body["affected_counts"]["raw_by_table"]["measurement"] == 9,
             "overlapping same-grow windows must count the nine Flower-assigned raw measurements once")
-    _assert(preview_body["affected_counts"]["raw_by_table"]["actuator_events"] == 7,
-            "raw actuator event membership count must be exact")
     _assert(any(
         window["phase_type"] == "bed_veg" and window["room"] == "Flower Room"
         for window in preview_body["phase_windows"]

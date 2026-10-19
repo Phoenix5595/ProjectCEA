@@ -62,7 +62,7 @@ def time_predicate(time_column: str | None, *, alias: str = 'm') -> str:
 
 def identity_room_sql(stream: SourceStream, *, alias: str = 'm') -> str:
     """Same override-first/frozen-only qualification used by Calendar close-preview."""
-    identity = 'sensor_id' if stream.name == 'measurement' else 'device_id'
+    identity = 'sensor_id'
     time = f'{alias}."{stream.time_column}"'
     value = f'jsonb_build_object(\'{identity}\',{alias}."{identity}")'
     override = ("SELECT o.room FROM archive_scope_override o WHERE "
@@ -79,7 +79,7 @@ def identity_room_sql(stream: SourceStream, *, alias: str = 'm') -> str:
 def ownership_sql(stream: SourceStream, *, alias: str = 'm') -> tuple[str, str]:
     """Return resolved room and raw role expressions without touching field values."""
     columns = {column.name for column in stream.columns}
-    if stream.name in ('measurement', 'actuator_events'):
+    if stream.name == 'measurement':
         return identity_room_sql(stream, alias=alias), "'observation'::text"
     if stream.name == 'calendar_mode_application':
         room = f'(SELECT e.location FROM calendar_event e WHERE e.id={alias}.event_id)'
@@ -96,7 +96,7 @@ def selection_sql(stream: SourceStream, *, alias: str = 'm', include_null_time: 
     room, role = ownership_sql(stream, alias=alias)
     time = f'{alias}."{stream.time_column}"'
     room_match = f'({room}=w.room OR {room} IS NULL)'
-    if stream.name in ('measurement', 'actuator_events'):
+    if stream.name == 'measurement':
         room_match = f'{room}=w.room'
     if include_null_time:
         return f'{time} IS NULL AND ({room}=ANY($1::text[]) OR {room} IS NULL)', "'context'::text"
@@ -109,9 +109,9 @@ async def require_resolved_scope(conn, streams: Sequence[SourceStream], windows:
     rooms, starts, ends = window_arrays(windows)
     unresolved = []
     for stream in streams:
-        if stream.name not in ('measurement', 'actuator_events'):
+        if stream.name != 'measurement':
             continue
-        identity = 'sensor_id' if stream.name == 'measurement' else 'device_id'
+        identity = 'sensor_id'
         rows = await conn.fetch(
             f'SELECT m."{identity}" AS identity,min(m."{stream.time_column}") AS start_at,'
             f'max(m."{stream.time_column}")+interval \'1 microsecond\' AS end_at,count(*) AS rows '
@@ -129,9 +129,9 @@ async def identity_snapshots(conn, streams: Sequence[SourceStream], windows: Seq
     snapshots: list[dict[str, Any]] = []
     rooms, starts, ends = window_arrays(windows)
     for stream in streams:
-        if stream.name not in ('measurement', 'actuator_events'):
+        if stream.name != 'measurement':
             continue
-        identity = 'sensor_id' if stream.name == 'measurement' else 'device_id'
+        identity = 'sensor_id'
         ids = await conn.fetch(
             f'SELECT DISTINCT m."{identity}" AS identity FROM public."{stream.name}" m '
             f'WHERE {time_predicate(stream.time_column)} AND {identity_room_sql(stream)}=ANY($1::text[])',
@@ -139,20 +139,12 @@ async def identity_snapshots(conn, streams: Sequence[SourceStream], windows: Seq
         )
         for row in ids:
             value = row['identity']
-            if stream.name == 'measurement':
-                meta = await conn.fetchrow(
-                    'SELECT s.name,s.unit,s.data_type,s.device_id,d.name AS device_name,'
-                    'd.type AS device_type,d.rack_id,r.name AS rack_name,rm.name AS registry_room_at_capture '
-                    'FROM sensor s JOIN device d USING(device_id) LEFT JOIN rack r USING(rack_id) '
-                    'LEFT JOIN room rm USING(room_id) WHERE s.sensor_id=$1', value,
-                )
-            else:
-                meta = await conn.fetchrow(
-                    'SELECT d.name AS device_name,d.type AS device_type,d.rack_id,'
-                    'r.name AS rack_name,rm.name AS registry_room_at_capture '
-                    'FROM device d LEFT JOIN rack r USING(rack_id) LEFT JOIN room rm USING(room_id) '
-                    'WHERE d.device_id=$1', value,
-                )
+            meta = await conn.fetchrow(
+                'SELECT s.name,s.unit,s.data_type,s.device_id,d.name AS device_name,'
+                'd.type AS device_type,d.rack_id,r.name AS rack_name,rm.name AS registry_room_at_capture '
+                'FROM sensor s JOIN device d USING(device_id) LEFT JOIN rack r USING(rack_id) '
+                'LEFT JOIN room rm USING(room_id) WHERE s.sensor_id=$1', value,
+            )
             if meta is None:
                 raise ArchiveError('grow_scope_unresolved')
             assignments = await conn.fetch(

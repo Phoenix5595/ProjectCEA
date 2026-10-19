@@ -24,7 +24,6 @@ BEGIN
         SELECT source_table, time_column, segment_columns
         FROM (VALUES
             ('measurement', 'time', 'sensor_id'),
-            ('actuator_events', 'time', 'device_id'),
             ('automation_state', 'timestamp', 'location,cluster,device_name'),
             ('effective_setpoints', 'timestamp', 'location,cluster,device_name,mode'),
             ('control_history', 'timestamp', 'location,cluster,device_name,channel'),

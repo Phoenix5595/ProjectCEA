@@ -75,14 +75,6 @@ async def run(database_url: str) -> None:
                     "INSERT INTO archive_scope_override(source_table,source_identity,start_at,end_at,room,confirmed_at) "
                     "VALUES('measurement',jsonb_build_object('sensor_id',$1::integer),$2,$3,$4,clock_timestamp())",
                     sensor['sensor_id'], start, end, sensor['room'] or 'Flower Room')
-            devices = await conn.fetch(
-                'SELECT d.device_id,rm.name AS room FROM device d '
-                'LEFT JOIN rack r USING(rack_id) LEFT JOIN room rm USING(room_id)')
-            for device in devices:
-                await conn.execute(
-                    "INSERT INTO archive_scope_override(source_table,source_identity,start_at,end_at,room,confirmed_at) "
-                    "VALUES('actuator_events',jsonb_build_object('device_id',$1::integer),$2,$3,$4,clock_timestamp())",
-                    device['device_id'], start, end, device['room'] or 'Flower Room')
 
             flower_sensor = await conn.fetchrow(
                 "SELECT s.sensor_id,s.name FROM sensor s JOIN device d USING(device_id) "

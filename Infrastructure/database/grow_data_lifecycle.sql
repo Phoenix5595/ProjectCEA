@@ -459,49 +459,34 @@ CREATE TABLE IF NOT EXISTS public.archive_scope_override (
     room TEXT NOT NULL,
     confirmed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     CONSTRAINT archive_scope_override_source_table_check
-        CHECK (source_table IN ('measurement', 'actuator_events')),
+        CHECK (source_table = 'measurement'),
     CONSTRAINT archive_scope_override_bounds CHECK (start_at < end_at),
     CONSTRAINT archive_scope_override_room_check CHECK (btrim(room) <> ''),
-    -- Exactly one real integer identity: sensor_id for measurement,
-    -- device_id for actuator_events; no extra keys, no string values.
+    -- Exactly one positive integer sensor identity; no extra keys or strings.
     CONSTRAINT archive_scope_override_identity_shape CHECK (
-        (source_table = 'measurement'
-            AND source_identity ? 'sensor_id'
-            AND jsonb_typeof(source_identity -> 'sensor_id') = 'number'
-            AND (source_identity - 'sensor_id') = '{}'::JSONB)
-        OR (source_table = 'actuator_events'
-            AND source_identity ? 'device_id'
-            AND jsonb_typeof(source_identity -> 'device_id') = 'number'
-            AND (source_identity - 'device_id') = '{}'::JSONB)
+        source_identity ? 'sensor_id'
+        AND jsonb_typeof(source_identity -> 'sensor_id') = 'number'
+        AND (source_identity - 'sensor_id') = '{}'::JSONB
     ),
     CONSTRAINT archive_scope_override_identity_positive CHECK (
-        CASE source_table
-            WHEN 'measurement' THEN (source_identity ->> 'sensor_id')::BIGINT > 0
-            WHEN 'actuator_events' THEN (source_identity ->> 'device_id')::BIGINT > 0
-        END
+        (source_identity ->> 'sensor_id')::BIGINT > 0
     ),
     -- Date-bounded and exactly non-overlapping per identity; partial overlap of
     -- another correction for the same identity is rejected.
     CONSTRAINT archive_scope_override_no_overlap EXCLUDE USING gist (
         source_table WITH =,
-        (CASE source_table
-            WHEN 'measurement' THEN (source_identity ->> 'sensor_id')::BIGINT
-            WHEN 'actuator_events' THEN (source_identity ->> 'device_id')::BIGINT
-        END) WITH =,
+        ((source_identity ->> 'sensor_id')::BIGINT) WITH =,
         tstzrange(start_at, end_at, '[)') WITH &&
     )
 );
 
 COMMENT ON TABLE public.archive_scope_override IS
-    'Owner-confirmed dated room assignment for unresolved measurement/actuator identities; never a general room-history editor.';
+    'Owner-confirmed dated room assignment for unresolved measurement identities; never a general room-history editor.';
 
 CREATE INDEX IF NOT EXISTS archive_scope_override_identity_idx
     ON public.archive_scope_override (
         source_table,
-        (CASE source_table
-            WHEN 'measurement' THEN (source_identity ->> 'sensor_id')::BIGINT
-            WHEN 'actuator_events' THEN (source_identity ->> 'device_id')::BIGINT
-        END),
+        ((source_identity ->> 'sensor_id')::BIGINT),
         start_at,
         end_at
     );

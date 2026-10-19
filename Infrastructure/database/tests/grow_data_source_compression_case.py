@@ -167,21 +167,16 @@ async def _prepare_fixture(conn: asyncpg.Connection) -> dict[str, tuple[bool, tu
         expected_count=2,
     )
 
-    # Production has these relations as plain PostgreSQL tables. Recreate the
-    # fixture's hypertables in that shape so the actual migration's skip branch
-    # is exercised without changing the shared fixture used by other cases.
-    await conn.execute("DROP TABLE public.actuator_events CASCADE")
-    await conn.execute("CREATE TABLE public.actuator_events (event_id BIGINT, time TIMESTAMPTZ)")
+    # Production has control_history as a plain PostgreSQL table. Recreate that
+    # fixture relation in the same shape so the migration's skip branch is
+    # exercised without changing the shared fixture used by other cases.
     await conn.execute("DROP TABLE public.control_history CASCADE")
     await conn.execute("CREATE TABLE public.control_history (id BIGINT, timestamp TIMESTAMPTZ)")
-    for table in ("actuator_events", "control_history"):
-        if await conn.fetchval(
-            "SELECT EXISTS (SELECT 1 FROM timescaledb_information.hypertables "
-            "WHERE hypertable_schema = 'public' AND hypertable_name = $1)",
-            table,
-        ):
-            raise CompressionProofFailure(f"public.{table} is still a hypertable in the proof fixture")
-    return prior_settings
+    if await conn.fetchval(
+        "SELECT EXISTS (SELECT 1 FROM timescaledb_information.hypertables "
+        "WHERE hypertable_schema = 'public' AND hypertable_name = 'control_history')"
+    ):
+        raise CompressionProofFailure("public.control_history is still a hypertable in the proof fixture")
 
 
 async def _run(url: str) -> None:
@@ -215,9 +210,8 @@ async def _run(url: str) -> None:
             "grow_data_source_compression.sql failed in the disposable database: "
             f"{completed.stderr.strip()}"
         )
-    for table in ("actuator_events", "control_history"):
-        if f"Skipping public.{table}: relation exists but is not a TimescaleDB hypertable" not in completed.stderr:
-            raise CompressionProofFailure(f"missing NOTICE for plain public.{table}: {completed.stderr}")
+    if "Skipping public.control_history: relation exists but is not a TimescaleDB hypertable" not in completed.stderr:
+        raise CompressionProofFailure(f"missing NOTICE for plain public.control_history: {completed.stderr}")
 
     conn = await asyncpg.connect(url, timeout=8)
     try:
@@ -248,7 +242,7 @@ async def _run(url: str) -> None:
         plain_policy_count = await conn.fetchval(
             "SELECT count(*) FROM timescaledb_information.jobs "
             "WHERE hypertable_schema = 'public' "
-            "AND hypertable_name IN ('actuator_events','control_history') "
+            "AND hypertable_name = 'control_history' "
             "AND proc_name IN ('policy_retention','policy_compression')"
         )
         if int(plain_policy_count or 0) != 0:
@@ -256,15 +250,15 @@ async def _run(url: str) -> None:
         plain_relation_count = await conn.fetchval(
             "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
             "WHERE n.nspname = 'public' AND c.relkind = 'r' "
-            "AND c.relname IN ('actuator_events','control_history')"
+            "AND c.relname = 'control_history'"
         )
-        if int(plain_relation_count or 0) != 2:
-            raise CompressionProofFailure("plain source relations were not preserved")
+        if int(plain_relation_count or 0) != 1:
+            raise CompressionProofFailure("plain control_history relation was not preserved")
     finally:
         await conn.close()
 
     print(
-        "grow source compression proof passed: plain actuator_events/control_history skipped; "
+        "grow source compression proof passed: plain control_history skipped; "
         "2-year retention removed; 7-day policies replaced with 3 months; "
         "existing compression settings preserved"
     )

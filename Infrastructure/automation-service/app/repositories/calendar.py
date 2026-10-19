@@ -121,7 +121,6 @@ _ROOM_SOURCE_STREAMS = (
 )
 _IDENTITY_SOURCE_STREAMS = (
     ("measurement", "time", "sensor_id", "sensor_id"),
-    ("actuator_events", "time", "device_id", "device_id"),
 )
 _OPTIONAL_SOURCE_STREAMS = (
     "light_state_history",

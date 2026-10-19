@@ -17,7 +17,7 @@ class ScopeAssignmentRequest(BaseModel):
     model_config = ConfigDict(extra='forbid')
     dataset_id: UUID | None = None
     expected_revision: StrictInt | None = Field(default=None, gt=0)
-    source_table: Literal['measurement','actuator_events']
+    source_table: Literal['measurement']
     source_identity: dict[str, StrictInt]
     start: AwareDatetime
     end: AwareDatetime
@@ -27,7 +27,7 @@ class ScopeAssignmentRequest(BaseModel):
 class ScopeAssignmentResponse(BaseModel):
     model_config = ConfigDict(extra='forbid')
     override_id: int
-    source_table: Literal['measurement','actuator_events']
+    source_table: Literal['measurement']
     source_identity: dict[str,int]
     start: datetime
     end: datetime

@@ -1,10 +1,11 @@
 {
   "format": "sj-cea-source-schema/1",
+  "version": 2,
   "description": "Checked-in lossless capture descriptors for every grow-lifecycle source stream. Repository DDL is the authority; production is never queried to build or validate this file. The per-stream fingerprint covers ordered columns plus type/nullability/generation, the primary key (and verified hybrid variants), unique constraints and the hypertable flag; the catalog fingerprint covers the whole stream list.",
   "timescaledb": {
     "minimum_version": "2.28.3"
   },
-  "catalog_fingerprint": "015b068a234ceb89d196731afea67c76c9a9a74593c801574ce02f1d41caa3c9",
+  "catalog_fingerprint": "4c0bb8bcf9516d9e050d50fa4acb657d7b64fda12e8d8776bc36c64b79a44a6a",
   "streams": [
     {
       "name": "measurement",
@@ -113,110 +114,6 @@
       ],
       "notes": null,
       "fingerprint": "61ca38b681c4e781aa22699fa4c7ce41ec710db691cfc1653be6c8703eb771cd"
-    },
-    {
-      "name": "actuator_events",
-      "status": "defined",
-      "core": true,
-      "relation": "public.actuator_events",
-      "source_files": [
-        "Infrastructure/database/cea_schema.sql:210-225"
-      ],
-      "time_column": "time",
-      "stable_ordering": [
-        "event_id"
-      ],
-      "ownership": {
-        "mode": "registry_join",
-        "detail": "Snapshot device -> rack -> room."
-      },
-      "default_record_role": "observation",
-      "hypertable": true,
-      "chunk_interval": "1 day",
-      "columns": [
-        {
-          "name": "event_id",
-          "type": "integer",
-          "not_null": true,
-          "generation": "serial"
-        },
-        {
-          "name": "device_id",
-          "type": "integer",
-          "not_null": true,
-          "generation": null
-        },
-        {
-          "name": "action",
-          "type": "text",
-          "not_null": true,
-          "generation": null
-        },
-        {
-          "name": "value",
-          "type": "real",
-          "not_null": false,
-          "generation": null
-        },
-        {
-          "name": "time",
-          "type": "timestamp with time zone",
-          "not_null": true,
-          "generation": null
-        }
-      ],
-      "primary_key": [
-        "event_id"
-      ],
-      "unique_constraints": [],
-      "foreign_keys": [
-        {
-          "columns": [
-            "device_id"
-          ],
-          "references": "public.device(device_id)",
-          "on_delete": "cascade"
-        }
-      ],
-      "checks": [],
-      "indexes": [
-        {
-          "name": "actuator_events_pkey",
-          "columns": [
-            "time",
-            "event_id"
-          ],
-          "partial": null,
-          "note": "Verified disposable-fixture shape; the documented baseline repository primary key cannot coexist with the TimescaleDB partitioning column."
-        },
-        {
-          "name": "idx_actuator_events_device_time",
-          "columns": [
-            "device_id",
-            "time DESC"
-          ],
-          "partial": null
-        }
-      ],
-      "notes": "Repository baseline primary key (event_id) cannot coexist with this source's TimescaleDB hypertable (unique indexes must include the partitioning column). The verified disposable fixture uses primary key (time, event_id); preflight accepts the baseline key only as an unbound descriptor shape and the exact listed variant, and blocks every other live shape until a verified descriptor is supplied. Column order, types and nullability are unchanged; all six repository indexes keep their names.",
-      "fingerprint": "791600f1f5a0192df9003e9029d2100d485467c6d1f013f3d63de79e81818300",
-      "primary_key_variants": [
-        [
-          "time",
-          "event_id"
-        ]
-      ],
-      "baseline_incompatibility": {
-        "baseline_primary_key": [
-          "event_id"
-        ],
-        "reason": "repository primary key does not include the TimescaleDB partitioning column; create_hypertable rejects it",
-        "disposable_variant": [
-          "time",
-          "event_id"
-        ],
-        "variance_verified_in": "Infrastructure/database/tests/fixtures/grow_data_lifecycle_fixture.sql"
-      }
     },
     {
       "name": "automation_state",
@@ -782,8 +679,8 @@
         {
           "name": "control_history_pkey",
           "columns": [
-            "timestamp",
-            "id"
+            "id",
+            "timestamp"
           ],
           "partial": null,
           "note": "Verified disposable-fixture shape; the documented baseline repository primary key cannot coexist with the TimescaleDB partitioning column."
@@ -811,12 +708,12 @@
           "partial": "manual_expires_at IS NOT NULL AND mode = 'manual'"
         }
       ],
-      "notes": "Repository baseline primary key (id) cannot coexist with this source's TimescaleDB hypertable. The verified disposable fixture uses primary key (timestamp, id); preflight accepts the baseline key or exactly the listed variant and blocks every other live shape until a verified descriptor is supplied. Column order, types and nullability are unchanged.",
-      "fingerprint": "45a37f9f39d4a85f6c16abbf8653da08d23de9d3f01db704aafe8d157b5ad437",
+      "notes": "Repository baseline primary key (id) cannot coexist with this source's TimescaleDB hypertable. The verified disposable fixture uses primary key (id, timestamp); preflight accepts the baseline key or exactly the listed variant and blocks every other live shape until a verified descriptor is supplied. Column order, types and nullability are unchanged.",
+      "fingerprint": "7890937c71bb86e31f6945bd14eae4d20e86307004b2272e4aea9e9f82ae109b",
       "primary_key_variants": [
         [
-          "timestamp",
-          "id"
+          "id",
+          "timestamp"
         ]
       ],
       "baseline_incompatibility": {
@@ -825,8 +722,8 @@
         ],
         "reason": "repository primary key does not include the TimescaleDB partitioning column; create_hypertable rejects it",
         "disposable_variant": [
-          "timestamp",
-          "id"
+          "id",
+          "timestamp"
         ],
         "variance_verified_in": "Infrastructure/database/tests/fixtures/grow_data_lifecycle_fixture.sql"
       }

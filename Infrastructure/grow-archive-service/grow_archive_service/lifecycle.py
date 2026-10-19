@@ -70,7 +70,7 @@ logger = get_logger(__name__)
 
 FLOWER_ROOM: Final = "Flower Room"
 VEG_ROOM: Final = "Veg Room"
-IDENTITY_STREAMS: Final = frozenset({"measurement", "actuator_events"})
+IDENTITY_STREAMS: Final = frozenset({"measurement"})
 
 #: Forward expiry window and bounded delete slices.
 EXPIRY_DELETE_SLICE: Final = timedelta(hours=1)
@@ -877,7 +877,7 @@ class LifecycleService:
             table = row["source_table"]
             if table not in IDENTITY_STREAMS:
                 continue
-            identity = self._identity_value(table, row["source_identity"])
+            identity = self._identity_value(row["source_identity"])
             if identity is None:
                 continue
             assignments.append(
@@ -896,7 +896,7 @@ class LifecycleService:
                 table = item.get("source_table")
                 if table not in IDENTITY_STREAMS:
                     continue
-                identity = self._identity_value(table, item.get("source_identity"))
+                identity = self._identity_value(item.get("source_identity"))
                 if identity is None:
                     continue
                 try:
@@ -912,8 +912,8 @@ class LifecycleService:
         return _IdentityRoomIndex(assignments)
 
     @staticmethod
-    def _identity_value(source_table: str, identity: object) -> int | None:
-        key = "sensor_id" if source_table == "measurement" else "device_id"
+    def _identity_value(identity: object) -> int | None:
+        key = "sensor_id"
         if not isinstance(identity, Mapping):
             return None
         value = identity.get(key)
@@ -955,10 +955,8 @@ class LifecycleService:
                 continue
             columns = {column.name for column in descriptor.columns}
             if descriptor.name in IDENTITY_STREAMS:
-                identity_column = "sensor_id" if descriptor.name == "measurement" else "device_id"
-                bound_column = (
-                    binding.sensor_column if identity_column == "sensor_id" else binding.device_column
-                )
+                identity_column = "sensor_id"
+                bound_column = binding.sensor_column
                 if bound_column != identity_column or identity_column not in columns:
                     continue
             else:
@@ -1076,7 +1074,7 @@ class LifecycleService:
             relation = f"public.{self._sql_identifier(descriptor.name)}"
             time_column = self._sql_identifier(binding.time_column)
             if descriptor.name in IDENTITY_STREAMS:
-                identity_column = "sensor_id" if descriptor.name == "measurement" else "device_id"
+                identity_column = "sensor_id"
                 identity_sql = self._sql_identifier(identity_column)
                 ids = sorted(set().union(*(
                     identity_index.identities_for_room(descriptor.name, room) for room in rooms
@@ -1251,7 +1249,7 @@ class LifecycleService:
         if alias not in ("m", "a"):
             raise ValueError("untrusted SQL alias")
         if descriptor.name in IDENTITY_STREAMS:
-            key = "sensor_id" if descriptor.name == "measurement" else "device_id"
+            key = "sensor_id"
             ids = (
                 identity_index.identities_for_room(descriptor.name, room)
                 if start is None or end is None

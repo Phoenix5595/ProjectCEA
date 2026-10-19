@@ -199,10 +199,10 @@ WHERE cagg.user_view_schema = 'public'
 --   * config must be a JSONB object containing a JSON-boolean `enabled` and a
 --     JSON object `acknowledged_failures` whose values are nonnegative
 --     integers and whose keys are only known overview logical names.
---   * Returns TRUE when any native TimescaleDB job backing a known logical
---     name has recorded more failures than its acknowledged count (missing
---     acknowledgement = 0; a job that does not exist counts as 0 failures).
---     Continuous-aggregate policy jobs resolve through
+--   * Returns TRUE only when a logical name has recorded more failures than
+--     its acknowledged count AND a backing job has at least three consecutive
+--     failures (maximum across backing jobs). Jobs that do not exist count as
+--     0 failures. Continuous-aggregate policy jobs resolve through
 --     timescaledb_information.continuous_aggregates.materialization_hypertable_name
 --     matched against the job's underlying hypertable; custom jobs resolve by
 --     their public proc name. Procedures still gate their own `enabled` flag
@@ -271,6 +271,7 @@ DECLARE
     entry_value JSONB;
     entry_count NUMERIC;
     recorded_failures INTEGER;
+    consecutive_failures INTEGER;
     acknowledged_count NUMERIC;
 BEGIN
     IF config IS NULL OR jsonb_typeof(config) <> 'object' THEN
@@ -313,16 +314,20 @@ BEGIN
         FROM unnest(custom_job_names) AS job_name
     LOOP
         IF is_custom THEN
-            SELECT COALESCE(SUM(job_stats.total_failures), 0)
-            INTO recorded_failures
+            SELECT COALESCE(SUM(job_stats.total_failures), 0),
+                   COALESCE(MAX(background_stats.consecutive_failures), 0)
+            INTO recorded_failures, consecutive_failures
             FROM _timescaledb_catalog.bgw_job AS background_job
-            JOIN timescaledb_information.job_stats AS job_stats
+            LEFT JOIN timescaledb_information.job_stats AS job_stats
               ON job_stats.job_id = background_job.id
+            LEFT JOIN _timescaledb_internal.bgw_job_stat AS background_stats
+              ON background_stats.job_id = background_job.id
             WHERE background_job.proc_schema = 'public'
               AND background_job.proc_name = logical_name;
         ELSE
-            SELECT COALESCE(SUM(job_stats.total_failures), 0)
-            INTO recorded_failures
+            SELECT COALESCE(SUM(job_stats.total_failures), 0),
+                   COALESCE(MAX(background_stats.consecutive_failures), 0)
+            INTO recorded_failures, consecutive_failures
             FROM timescaledb_information.continuous_aggregates AS cagg
             JOIN _timescaledb_catalog.hypertable AS materialized
               ON materialized.schema_name = cagg.materialization_hypertable_schema
@@ -333,6 +338,8 @@ BEGIN
              AND refresh_job.proc_schema = '_timescaledb_functions'
             LEFT JOIN timescaledb_information.job_stats AS job_stats
               ON job_stats.job_id = refresh_job.id
+            LEFT JOIN _timescaledb_internal.bgw_job_stat AS background_stats
+              ON background_stats.job_id = refresh_job.id
             WHERE cagg.view_schema = 'public'
               AND cagg.view_name = logical_name;
         END IF;
@@ -340,7 +347,8 @@ BEGIN
         acknowledged_count := COALESCE(
             ((acknowledged -> logical_name) #>> '{}')::NUMERIC, 0);
 
-        IF recorded_failures > acknowledged_count THEN
+        IF recorded_failures > acknowledged_count
+           AND consecutive_failures >= 3 THEN
             RETURN TRUE;
         END IF;
     END LOOP;

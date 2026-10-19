@@ -25,7 +25,7 @@ _PRIVATE_PROGRESS_KEY = re.compile(r'(?:secret|password|credential|authorization
 @dataclass(frozen=True, slots=True)
 class ScopeCorrection:
     override_id: int
-    source_table: str
+    source_table: Literal['measurement']
     source_identity: Mapping[str, int]
     start: datetime
     end: datetime
@@ -396,12 +396,12 @@ class ArchiveRepository:
 
     async def confirm_scope_assignment(
         self, dataset_id: UUID | None, expected_revision: int | None,
-        source_table: Literal['measurement', 'actuator_events'],
+        source_table: Literal['measurement'],
         source_identity: Mapping[str, int], start: datetime, end: datetime, room: str,
     ) -> ScopeCorrection:
-        if source_table not in ('measurement', 'actuator_events'):
+        if source_table != 'measurement':
             raise ArchiveError('archive_scope_correction_invalid', status_code=400)
-        key = 'sensor_id' if source_table == 'measurement' else 'device_id'
+        key = 'sensor_id'
         if (set(source_identity) != {key} or type(source_identity[key]) is not int
                 or source_identity[key] <= 0 or start.tzinfo is None or end.tzinfo is None
                 or start.utcoffset() is None or end.utcoffset() is None or start >= end
@@ -420,16 +420,10 @@ class ArchiveRepository:
                 raise ArchiveError('archive_correction_requires_source', status_code=409)
             if not await conn.fetchval('SELECT EXISTS(SELECT 1 FROM room WHERE name=$1)',room):
                 raise ArchiveError('archive_scope_room_invalid',status_code=400)
-            if source_table == 'measurement':
-                placement = await conn.fetchrow(
-                    'SELECT s.sensor_id,d.device_id,r.name AS room FROM sensor s '
-                    'JOIN device d USING(device_id) LEFT JOIN rack k USING(rack_id) '
-                    'LEFT JOIN room r USING(room_id) WHERE s.sensor_id=$1',source_identity[key])
-            else:
-                placement = await conn.fetchrow(
-                    'SELECT d.device_id,r.name AS room FROM device d '
-                    'LEFT JOIN rack k USING(rack_id) LEFT JOIN room r USING(room_id) WHERE d.device_id=$1',
-                    source_identity[key])
+            placement = await conn.fetchrow(
+                'SELECT s.sensor_id,d.device_id,r.name AS room FROM sensor s '
+                'JOIN device d USING(device_id) LEFT JOIN rack k USING(rack_id) '
+                'LEFT JOIN room r USING(room_id) WHERE s.sensor_id=$1', source_identity[key])
             if placement is None:
                 raise ArchiveError('archive_scope_identity_invalid',status_code=400)
             rooms = {room}

@@ -71,7 +71,7 @@ DAY_START = date(2026, 1, 5)  # Toronto-local day; window is [midnight, midnight
 
 STREAM_TIME_COLUMNS = {
     'measurement': 'time', 'automation_state': 'timestamp', 'effective_setpoints': 'timestamp',
-    'actuator_events': 'time', 'control_history': 'timestamp', 'relay_observation': 'observed_at',
+    'control_history': 'timestamp', 'relay_observation': 'observed_at',
     'monitoring_room_photoperiod': 'observed_at', 'monitoring_photoperiod_coverage': 'observed_at',
 }
 
@@ -138,7 +138,7 @@ def _strides(duration_seconds: float) -> dict[str, float]:
 
 
 async def attribute_flower_scope(pool: asyncpg.Pool, start: datetime, end: datetime) -> None:
-    """Dated owner-confirmed scope corrections for every Flower identity."""
+    """Dated owner-confirmed scope corrections for every Flower sensor."""
     async with pool.acquire() as conn:
         rows = await conn.fetch(
             'SELECT s.sensor_id FROM sensor s JOIN device d USING(device_id) '
@@ -148,14 +148,6 @@ async def attribute_flower_scope(pool: asyncpg.Pool, start: datetime, end: datet
                 "INSERT INTO archive_scope_override(source_table,source_identity,start_at,end_at,room,confirmed_at) "
                 "VALUES('measurement',jsonb_build_object('sensor_id',$1::integer),$2,$3,'Flower Room',clock_timestamp())",
                 row['sensor_id'], start, end)
-        devices = await conn.fetch(
-            'SELECT d.device_id FROM device d JOIN rack r USING(rack_id) JOIN room rm USING(room_id) '
-            'WHERE rm.name=$1', 'Flower Room')
-        for row in devices:
-            await conn.execute(
-                "INSERT INTO archive_scope_override(source_table,source_identity,start_at,end_at,room,confirmed_at) "
-                "VALUES('actuator_events',jsonb_build_object('device_id',$1::integer),$2,$3,'Flower Room',clock_timestamp())",
-                row['device_id'], start, end)
 
 
 async def seed_representative_day(pool: asyncpg.Pool, start: datetime, end: datetime) -> dict[str, int]:
@@ -200,15 +192,8 @@ async def seed_representative_day(pool: asyncpg.Pool, start: datetime, end: date
                 "CROSS JOIN LATERAL (SELECT $1::timestamptz + "
                 "make_interval(secs => g * $7::double precision) AS ts) sample",
                 start, *FLOWER_LIGHT_LANES[0], 'DAY', effective_rows, strides['effective'])
-            # Context cadences at the documented per-minute rate (1440 rows
-            # per stream/device); PK (time,event_id)/(timestamp,id) stays
-            # legal with an explicit minute step.
+            # Control-history rows follow the documented per-minute cadence.
             for device in FLOWER_DEVICES:
-                await conn.execute(
-                    "INSERT INTO actuator_events(device_id,action,value,time) "
-                    "SELECT $2,'report',((extract(epoch from g)::int / 60) % 100) * 0.5::real,g "
-                    "FROM generate_series($1::timestamptz,$3::timestamptz - interval '1 microsecond',interval '1 minute') g",
-                    start, device, end)
                 await conn.execute(
                     "INSERT INTO control_history(timestamp,location,cluster,device_name,channel,"
                     "old_state,new_state,mode,reason,setpoint) "

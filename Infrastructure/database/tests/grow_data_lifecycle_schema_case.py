@@ -158,14 +158,16 @@ async def run_drift_probes(pool) -> None:
 
         # 3. Type drift blocks.
         await conn.execute(
-            "ALTER TABLE public.actuator_events ALTER COLUMN value TYPE DOUBLE PRECISION"
+            "ALTER TABLE public.config_versions ALTER COLUMN config_type TYPE CHARACTER VARYING"
         )
         expect_blocked(
             await run_schema_preflight(conn),
-            "actuator_events",
+            "config_versions",
             "schema_type_mismatch",
         )
-        await conn.execute("ALTER TABLE public.actuator_events ALTER COLUMN value TYPE REAL")
+        await conn.execute(
+            "ALTER TABLE public.config_versions ALTER COLUMN config_type TYPE TEXT"
+        )
 
         # 4. Nullability drift blocks.
         await conn.execute(

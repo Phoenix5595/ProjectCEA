@@ -52,6 +52,9 @@ READ_MODELS_SQL = DATABASE / "monitoring_read_models.sql"
 OVERVIEW_SQL = DATABASE / "monitoring_history_overview.sql"
 LIFECYCLE_SQL = DATABASE / "grow_data_lifecycle.sql"
 EXPIRY_CURSOR_SQL = DATABASE / "grow_data_lifecycle_expiry_cursor.sql"
+ACKNOWLEDGE_FAILURES_SQL = DATABASE / "monitoring_acknowledge_failures.sql"
+GATE_MIGRATION_SQL = DATABASE / "migrations/0006_monitoring_gate_auto_clear.sql"
+GATE_MIGRATION_DOWN_SQL = DATABASE / "migrations/0006_monitoring_gate_auto_clear.down.sql"
 
 # Bounded old windows (fixture CHECK allows 2020-01-01 .. now()+1day).
 W_OLD_START = datetime(2026, 2, 7, 0, 0, tzinfo=UTC)   # 48h archived window
@@ -108,6 +111,108 @@ async def install_canonical_sql(database_url: str) -> None:
     for path in (LIFECYCLE_SQL, EXPIRY_CURSOR_SQL):
         await _apply_file(database_url, path)
         await _apply_file(database_url, path)
+
+
+async def prove_monitoring_failure_gate(database_url: str, pool: asyncpg.Pool) -> None:
+    database_name = _parse_database_url(database_url)["database"]
+    for path in (GATE_MIGRATION_SQL, GATE_MIGRATION_DOWN_SQL, GATE_MIGRATION_SQL):
+        await _apply_file(database_url, path)
+    print("monitoring gate migration proof: forward, down, and forward applied")
+    async with pool.acquire() as conn:
+        job_id = await conn.fetchval(
+            "SELECT job_id FROM timescaledb_information.jobs "
+            "WHERE proc_schema='public' "
+            "AND proc_name='monitoring_refresh_overview_incremental' "
+            "ORDER BY job_id LIMIT 1")
+    _assert(job_id is not None, "overview incremental job is missing")
+
+    def set_job_stats(*, total_runs: int, total_successes: int, total_failures: int,
+                      consecutive_failures: int, last_run_success: bool) -> None:
+        sql = f"""
+            INSERT INTO _timescaledb_internal.bgw_job_stat (
+                job_id, last_start, last_finish, next_start, last_successful_finish,
+                last_run_success, total_runs, total_duration, total_duration_failures,
+                total_successes, total_failures, total_crashes, consecutive_failures,
+                consecutive_crashes, flags)
+            VALUES (
+                {job_id}, now() - interval '1 minute', now(),
+                now() + interval '5 minutes', now(), {str(last_run_success).upper()},
+                {total_runs}, interval '1 second', interval '1 second',
+                {total_successes}, {total_failures}, 0, {consecutive_failures}, 0, 0)
+            ON CONFLICT (job_id) DO UPDATE SET
+                last_start=EXCLUDED.last_start,
+                last_finish=EXCLUDED.last_finish,
+                next_start=EXCLUDED.next_start,
+                last_successful_finish=EXCLUDED.last_successful_finish,
+                last_run_success=EXCLUDED.last_run_success,
+                total_runs=EXCLUDED.total_runs,
+                total_duration=EXCLUDED.total_duration,
+                total_duration_failures=EXCLUDED.total_duration_failures,
+                total_successes=EXCLUDED.total_successes,
+                total_failures=EXCLUDED.total_failures,
+                total_crashes=EXCLUDED.total_crashes,
+                consecutive_failures=EXCLUDED.consecutive_failures,
+                consecutive_crashes=EXCLUDED.consecutive_crashes,
+                flags=EXCLUDED.flags
+        """
+        result = subprocess.run(
+            ["sudo", "-u", "postgres", "psql", "-X", "--no-psqlrc",
+             "--set=ON_ERROR_STOP=1", "--host=/var/run/postgresql",
+             f"--dbname={database_name}", "--command", sql],
+            check=False, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        _assert(result.returncode == 0,
+                f"could not seed disposable TimescaleDB job stats: {result.stdout}")
+
+
+    set_job_stats(
+        total_runs=2, total_successes=1, total_failures=1,
+        consecutive_failures=0, last_run_success=True)
+    async with pool.acquire() as conn:
+        after_success = await conn.fetchval(
+            "SELECT public.monitoring_overview_unacknowledged_failures(config) "
+            "FROM timescaledb_information.jobs WHERE job_id=$1",
+            job_id)
+    _assert(after_success is False, "a success after one failure still tripped the gate")
+    print("monitoring gate proof: one failure followed by success -> false")
+
+    set_job_stats(
+        total_runs=5, total_successes=1, total_failures=4,
+        consecutive_failures=3, last_run_success=False)
+    async with pool.acquire() as conn:
+        after_three_failures = await conn.fetchval(
+            "SELECT public.monitoring_overview_unacknowledged_failures(config) "
+            "FROM timescaledb_information.jobs WHERE job_id=$1",
+            job_id)
+    _assert(after_three_failures is True, "three consecutive failures did not trip the gate")
+    print("monitoring gate proof: three consecutive failures -> true")
+
+    process = subprocess.run(
+        ["psql", "-X", "--no-psqlrc", "--set=ON_ERROR_STOP=1",
+         "--file", str(ACKNOWLEDGE_FAILURES_SQL), database_url],
+        check=False, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    _assert(process.returncode == 0,
+            f"monitoring failure acknowledgement script failed: {process.stdout}")
+    process = subprocess.run(
+        ["psql", "-X", "--no-psqlrc", "--set=ON_ERROR_STOP=1",
+         "--file", str(ACKNOWLEDGE_FAILURES_SQL), database_url],
+        check=False, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    _assert(process.returncode == 0,
+            f"second monitoring failure acknowledgement run failed: {process.stdout}")
+    async with pool.acquire() as conn:
+        remaining = await conn.fetchval(
+            "SELECT COALESCE(bool_or(public.monitoring_overview_unacknowledged_failures(config)), false) "
+            "FROM timescaledb_information.jobs "
+            "WHERE proc_schema='public' "
+            "AND proc_name IN ('monitoring_refresh_overview_incremental', "
+            "'monitoring_rebuild_relay_overview')")
+        all_scheduled = await conn.fetchval(
+            "SELECT bool_and(scheduled) FROM timescaledb_information.jobs "
+            "WHERE proc_schema='public' "
+            "AND proc_name IN ('monitoring_refresh_overview_incremental', "
+            "'monitoring_rebuild_relay_overview')")
+    _assert(remaining is False, "owner acknowledgement did not clear the failure gate")
+    _assert(all_scheduled is True, "owner acknowledgement did not resume paused overview jobs")
+    print("monitoring gate proof: acknowledgement cleared gate and was idempotent")
 
 
 async def _materialize_measurement_family(conn: asyncpg.Connection, lo: datetime, hi: datetime) -> None:
@@ -371,6 +476,7 @@ async def run(database_url: str) -> None:
         await validate(pool, before)
         await validate_static_state(pool, coverage_before, jobs_before, owners_before, privileges_before)
         await freshness_proof(database_url)
+        await prove_monitoring_failure_gate(database_url, pool)
         print("Actual derived-repair proof passed: native preflight, four negative blocks before any delete, "
               "bounded disposable source-row removal recorded in archive_availability, "
               "Toronto-day automation_state/effective_setpoints refreshes split at source-chunk boundaries, "

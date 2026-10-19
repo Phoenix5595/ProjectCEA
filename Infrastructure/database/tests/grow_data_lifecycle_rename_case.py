@@ -296,7 +296,6 @@ def _json_object(value: object) -> dict[str, object]:
 
 
 EXPECTED_RENAME_HYPERTABLES = frozenset({
-    "actuator_events",
     "automation_state",
     "control_history",
     "effective_setpoints",

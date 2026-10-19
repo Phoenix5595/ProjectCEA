@@ -52,7 +52,7 @@ BEGIN
 END;
 $$;
 -- ------------------------------------------------------------------
--- 2. Source stream inventory: exactly the 12 defined streams exist as
+-- 2. Source stream inventory: exactly the 11 defined streams exist as
 --    ordinary tables and the four descriptor-unavailable streams do not.
 -- ------------------------------------------------------------------
 DO $$
@@ -62,7 +62,7 @@ DECLARE
 BEGIN
     SELECT COALESCE(string_agg(r.source_stream, ', ' ORDER BY r.source_stream), '<none>')
       INTO missing
-      FROM (VALUES ('measurement'), ('actuator_events'),
+      FROM (VALUES ('measurement'),
                    ('automation_state'), ('effective_setpoints'),
                    ('control_history'), ('relay_observation'),
                    ('monitoring_room_photoperiod'), ('monitoring_photoperiod_coverage'),
@@ -99,7 +99,7 @@ BEGIN
     JOIN pg_namespace n ON n.oid = c.relnamespace
     WHERE n.nspname = 'public'
       AND c.relname = ANY (ARRAY[
-          'measurement', 'actuator_events', 'automation_state',
+          'measurement', 'automation_state',
           'effective_setpoints', 'control_history', 'relay_observation',
           'monitoring_room_photoperiod', 'monitoring_photoperiod_coverage',
           'mode_transition_history', 'pid_parameter_history',
@@ -107,7 +107,7 @@ BEGIN
       ])
       AND NOT t.tgisinternal;
     IF source_trigger_count <> 0 THEN
-        RAISE EXCEPTION 'expected no non-internal triggers on the 12 source tables, found %',
+        RAISE EXCEPTION 'expected no non-internal triggers on the 11 source tables, found %',
             source_trigger_count;
     END IF;
 END;
@@ -161,9 +161,8 @@ BEGIN
     FOR stream_name, expected_key IN
         SELECT s.stream_name, s.key_names
         FROM (VALUES
-            ('actuator_events', 'time,event_id'),
             ('automation_state', 'timestamp,id'),
-            ('control_history', 'timestamp,id')
+            ('control_history', 'id,timestamp')
         ) AS s(stream_name, key_names)
     LOOP
         SELECT count(*) INTO found_count

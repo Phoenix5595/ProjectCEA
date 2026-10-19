@@ -6,7 +6,7 @@ PostgreSQL + TimescaleDB for normalized metadata, time-series measurements, cont
 
 | File | Responsibility |
 |---|---|
-| `cea_schema.sql` | Core tables: `room`, `rack`, `device`, `sensor`, `measurement` hypertable, `climate_periods`, `actuator_events`; `measurement_with_metadata` view |
+| `cea_schema.sql` | Core tables: `room`, `rack`, `device`, `sensor`, `measurement` hypertable, `climate_periods`; `measurement_with_metadata` view |
 | `migrate_latest_sensor_values_lateral.sql` | `latest_sensor_values` view, retained with no in-repo consumer |
 | `monitoring_read_models.sql` | Canonical base read models for the native monitoring feature: `monitoring_measurement_1min/5min`, `monitoring_effective_setpoints_1min/5min`, `monitoring_automation_state_1min/5min` aggregates, photoperiod coverage, and monitoring helpers |
 | `monitoring_history_overview.sql` | Canonical hour/day overview aggregates (`monitoring_measurement_1hour/1day`, `monitoring_light_intensity_1hour/1day`, `monitoring_requested_pid_1hour/1day`), coverage/watermark tables; includes `monitoring_relay_history_overview.sql` |
@@ -19,6 +19,7 @@ PostgreSQL + TimescaleDB for normalized metadata, time-series measurements, cont
 ## Versioned migrations
 
 Schema changes ship as `migrations/NNNN_name.sql` files applied by `Infrastructure/scripts/db_migrate.py` during `deploy.sh` (rules in [`migrations/README.md`](migrations/README.md)); the ledger is `public.schema_migration`. Each deploy also runs `alembic upgrade heads` for automation-service; automation startup only verifies the head. `0001_alembic_stamp_side_branch` records `010_canonicalize_device_names` on databases (production) that applied the `009→010` alembic branch without recording it, so alembic never re-runs `009_seed_device_registry`; alembic `011_merge_heads` then joins the two heads. Do not edit applied migration files (SHA-256 checked).
+- Alembic `001_baseline` still describes `control_history` with an id-only primary key; migration `0002_control_history_hypertable` rebuilds it as a 7-day hypertable with `PRIMARY KEY (id, "timestamp")`. IDs remain sequence-generated, but only the composite key enforces row uniqueness; do not use id-only conflict targets. Do not edit the applied Alembic revision to resolve this schema transition.
 
 Historical note (2026-10-18): retired Grafana-only SQL migrations, views and verification scripts were removed: `grafana_performance_migration.sql`, `grafana_optimized_views.sql`, `grow_history_guards.sql`, `migrate_get_sensor_routing_1min_through_6h.sql`, `verify_get_sensor_routing.sql`, `verify_performance.sql`, `timescaledb_continuous_aggregates.sql`, and `timescaledb_compression.sql`. `latest_sensor_values` remains defined but has no in-repo consumer.
 
@@ -55,10 +56,10 @@ Backend API ladder (`app/repositories/sensor_repository.py`):
 | Span | Tier |
 |---|---|
 | < 2 h | raw |
-| >= 2 h | `measurement_1min` |
-| >= 24 h | `measurement_5min` |
-| >= 7 d | `measurement_hourly` |
-| >= 30 d | `measurement_daily` |
+| >= 2 h | `monitoring_measurement_1min` |
+| >= 24 h | `monitoring_measurement_5min` |
+| >= 7 d | `monitoring_measurement_1hour` |
+| >= 30 d | `monitoring_measurement_1day` |
 
 ## Operational event durability
 
@@ -94,6 +95,8 @@ The file is referenced only by the disposable test harness (`Infrastructure/data
 ## Monitoring policy activation
 
 `monitoring_read_models_activate_policies.sql` remains a supervised, manually reviewed action (it stays a checked-in file; only its application is gated). It requires all six backfill markers and complete catalog coverage before any `add_continuous_aggregate_policy` call.
+
+- `monitoring_acknowledge_failures.sql` is an owner-run, transactional and idempotent recovery script: it acknowledges current per-logical-name failure totals, resumes paused overview jobs, and rolls back if the shared failure gate still trips.
 
 ## Rollback irreversibility
 

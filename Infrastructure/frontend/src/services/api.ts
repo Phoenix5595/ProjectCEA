@@ -522,7 +522,7 @@ class ApiClient implements ApiClientCore {
   async createArchiveScopeCorrection(body: {
     dataset_id: string | null
     expected_revision: number | null
-    source_table: 'measurement' | 'actuator_events'
+    source_table: 'measurement'
     source_identity: Record<string, number>
     start: string
     end: string
