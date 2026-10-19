@@ -18,17 +18,11 @@ PostgreSQL + TimescaleDB for normalized metadata, time-series measurements, cont
 
 Historical note (2026-10-18): retired Grafana-only SQL migrations, views and verification scripts were removed: `grafana_performance_migration.sql`, `grafana_optimized_views.sql`, `grow_history_guards.sql`, `migrate_get_sensor_routing_1min_through_6h.sql`, `verify_get_sensor_routing.sql`, `verify_performance.sql`, `timescaledb_continuous_aggregates.sql`, and `timescaledb_compression.sql`. `latest_sensor_values` remains defined but has no in-repo consumer.
 
-## Owner-run replica decommission
-
-The production procedure for the former Iskra standby, replication slot, role,
-`pg_hba.conf` rule, and primary settings is
-[`ISKRA_REPLICA_DECOMMISSION.md`](ISKRA_REPLICA_DECOMMISSION.md). It is for the
-database owner; agents and automated tests must not execute it.
-
 ## Completed one-off operations (2026-10-19)
 
 - Pre-August purge: all pre-2026-08-01 (Toronto) rows of the ten time-series streams were removed from production, keeping the latest/predecessor anchors; static/config/registry/Calendar tables untouched. The one-off script and its proof were removed afterwards.
 - Database rename: production is now `sj_cea` (was `cea_sensors`); deployed with the grow-lifecycle release, which also applied `grow_data_lifecycle.sql`, `grow_data_lifecycle_expiry_cursor.sql` and `grow_data_source_compression.sql`, installed `grow-archive-service`, and added the `/api/archives` Caddy route. The single-use deploy/rename helpers and runbook were removed after finalize.
+- Iskra/Grafana decommission: replication slot `iskra_recovery`, roles `cea_repl`, `grafana`, `probe_role` and `monitoring_role_probe_rsnd`, the Iskra `pg_hba.conf` rules (backup `pg_hba.conf.bak-20261019-iskra`) and the leftover test databases (`cea_sensors_test`, `fullinstall_*`, `syntaxcheck*`, `monitoring_test_probe2`, `monitoring_test_rsnd_probe`) were removed. Only `postgres` and `sj_cea` remain.
 - Retired Grafana-era objects dropped from production: legacy CAGGs `measurement_1min/5min/hourly/daily`, views `measurement_*_grafana`, functions `get_sensor_data_optimized`/`get_sensor_stats`. Fresh installs still recreate the legacy CAGGs via alembic `005_phase5a_reconcile` and `cea_schema.sql` until a new revision removes them.
 - Restoring a dump of this TimescaleDB database: create an empty database owned by `cea_user`, `CREATE EXTENSION timescaledb; SELECT timescaledb_pre_restore();`, then `sudo -u postgres pg_restore -d <db> <dump>` **single-job** (`-j 2` breaks TimescaleDB catalog foreign keys), then `SELECT timescaledb_post_restore();` (~22 min for a 737 MB dump). Errors about the retired `grafana` role are expected.
 - TimescaleDB 2.28.3: `refresh_continuous_aggregate` on CAGGs ordering `last()` by an anonymous `ROW(...)` fails across more than one source chunk ("input of anonymous composite types is not implemented"); refresh such CAGGs per source chunk (`derived_refresh.py` does).
