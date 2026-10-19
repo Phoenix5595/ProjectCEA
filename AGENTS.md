@@ -67,8 +67,8 @@ Do not extend these commands to contact production endpoints, databases, Redis, 
 
 ## Working Tree Discipline
 
-- Do not stage, commit, reset, clean, stash, or overwrite files outside the task allowlist.
-- Documentation edits are limited to the paths listed in `.omo/evidence/agents-knowledge-base-refresh/T1/tracked-allowlist.txt`.
+- Keep changes scoped to the current task and preserve unrelated user changes. Do not stage, commit, reset, clean, stash, or overwrite unrelated files.
+- All plans MUST be executed on a dedicated non-main branch in a separate Git worktree. Before editing application code, record and verify the base commit, branch and worktree path. Never implement a plan directly in the main checkout or reuse an unrelated worktree. Preserve unrelated changes; integration into main requires explicit user authorization.
 - Local instruction changes in `.opencode/` and `.cursor/` are never staged.
 
 ---
