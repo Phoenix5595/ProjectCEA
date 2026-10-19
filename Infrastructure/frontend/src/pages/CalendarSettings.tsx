@@ -1,6 +1,12 @@
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 
+import {
+  calendarErrorCode,
+  describeCalendarError,
+  type CalendarErrorHelp,
+} from '@/components/calendar/nextcloudConnectionErrors'
+import { NextcloudTailscaleGuide } from '@/components/calendar/NextcloudTailscaleGuide'
 import { Input } from '@/components/ui/input'
 import {
   Select,
@@ -28,6 +34,8 @@ export default function CalendarSettings() {
   const [reconnecting, setReconnecting] = useState(false)
   const [flowerCalendarTransitionsEnabled, setFlowerCalendarTransitionsEnabled] = useState(true)
   const [savingFlowerCalendarTransitions, setSavingFlowerCalendarTransitions] = useState(false)
+  const [guideOpen, setGuideOpen] = useState(true)
+  const [errorHelp, setErrorHelp] = useState<CalendarErrorHelp | null>(null)
 
   useEffect(() => {
     void apiClient
@@ -35,6 +43,7 @@ export default function CalendarSettings() {
       .then(row => {
         setConnection(row)
         if (row) {
+          setGuideOpen(false)
           setCaldavBaseUrl(row.caldav_base_url)
           setUsername(row.account_email ?? '')
           setTargetCalendarUrl(row.target_calendar_url)
@@ -72,11 +81,19 @@ export default function CalendarSettings() {
       setCalendars(list)
       setTargetCalendarUrl(list.find(calendar => calendar.name === 'Growing')?.url ?? '')
       setConnectionValidated(true)
+      setErrorHelp(null)
       toast.success(`Found ${list.length} calendar(s)`)
-    } catch {
+    } catch (error) {
       setConnectionValidated(false)
-      toast.error('Connection test failed')
+      showConnectionError(error)
     }
+  }
+
+  const showConnectionError = (error: unknown) => {
+    const help = describeCalendarError(calendarErrorCode(error))
+    setErrorHelp(help)
+    if (help.step !== null) setGuideOpen(true)
+    toast.error(help.message)
   }
 
   const handleSave = async () => {
@@ -92,9 +109,11 @@ export default function CalendarSettings() {
       setMirrorPreview(null)
       setAppPassword('')
       setConnectionValidated(false)
+      setErrorHelp(null)
+      setGuideOpen(false)
       toast.success('Credentials saved securely—reconnect to mirror local events')
-    } catch {
-      toast.error('Failed to save connection')
+    } catch (error) {
+      showConnectionError(error)
     }
   }
 
@@ -159,6 +178,11 @@ export default function CalendarSettings() {
           />
         </label>
       </div>
+      <NextcloudTailscaleGuide
+        open={guideOpen}
+        onOpenChange={setGuideOpen}
+        highlightStep={errorHelp?.step ?? null}
+      />
       {connection && (
         <p className="text-sm text-text-secondary mb-4">
           {connection.enabled ? 'Connected: ' : 'Saved—awaiting reconnect: '}{String(connection.display_name ?? connection.account_email ?? 'Nextcloud')}
@@ -170,20 +194,20 @@ export default function CalendarSettings() {
           placeholder="CalDAV base URL"
           aria-label="CalDAV base URL"
           value={caldavBaseUrl}
-          onChange={e => { setCaldavBaseUrl(e.target.value); setConnectionValidated(false) }}
+          onChange={e => { setCaldavBaseUrl(e.target.value); setConnectionValidated(false); setErrorHelp(null) }}
         />
         <Input
           placeholder="Username"
           aria-label="Username"
           value={username}
-          onChange={e => { setUsername(e.target.value); setConnectionValidated(false) }}
+          onChange={e => { setUsername(e.target.value); setConnectionValidated(false); setErrorHelp(null) }}
         />
         <Input
           type="password"
           placeholder="App password"
           aria-label="App password"
           value={appPassword}
-          onChange={e => { setAppPassword(e.target.value); setConnectionValidated(false) }}
+          onChange={e => { setAppPassword(e.target.value); setConnectionValidated(false); setErrorHelp(null) }}
         />
         <div className="flex gap-2">
           <button
@@ -194,6 +218,16 @@ export default function CalendarSettings() {
             Test
           </button>
         </div>
+        {errorHelp && (
+          <p role="alert" className="text-sm text-status-danger-text">
+            {errorHelp.message}
+            {errorHelp.step && (
+              <>
+                {' '}See <a className="underline" href={`#nextcloud-guide-${errorHelp.step}`}>guide step</a>.
+              </>
+            )}
+          </p>
+        )}
         {calendars.length > 0 && (
           <Select
             value={targetCalendarUrl || '__none__'}

@@ -33,7 +33,13 @@ Nextcloud Calendar credentials are available under **Devices → System Settings
 existing `/settings/calendar` surface retained. Test fresh URL/username/app
 password, save encrypted credentials, then explicitly reconnect/mirror after
 the backup prerequisite. The password field is masked and cleared on save;
-connection failures do not undo durable local Calendar events.
+connection failures do not undo durable local Calendar events. The page has a
+collapsible Nextcloud-over-Tailscale guide (`components/calendar/NextcloudTailscaleGuide.tsx`;
+open until a connection is saved) that documents backend limits: HTTPS on port 443,
+exact `/remote.php/dav/` URL (no redirects), a `Growing` calendar, Files access.
+Test/Save errors map `detail.code` to plain messages and a highlighted guide step
+via `components/calendar/nextcloudConnectionErrors.ts`; keep that table in sync with
+the automation calendar routes' error codes. Use placeholders, never a real tailnet name.
 - `src/config/clusterTopology.ts` mirrors `Infrastructure/shared/cluster_topology.py`: device cluster is always `main`; Flower Room has sensor sub-clusters `front` and `back`; unsplit rooms reuse `main` as a sensor URL sentinel.
 - Operational event SSE uses `fetch` with `Accept: text/event-stream` and `X-API-Key`. Native `EventSource` and query-token keys are not used.
 
