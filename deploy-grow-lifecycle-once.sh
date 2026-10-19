@@ -290,8 +290,12 @@ stop_release_services() {
   local release="$1" helper unit
   helper="$release/Infrastructure/scripts/service_list.py"
   [[ -f "$helper" ]] || { echo "[grow-lifecycle-once] missing service_list.py for $release" >&2; return 1; }
+  local load_state
   while IFS= read -r unit; do
     [[ -n "$unit" ]] || continue
+    # The new release lists grow-archive-service before its unit is installed.
+    load_state="$("$SUDO_BIN" "$SYSTEMCTL_BIN" show -p LoadState --value "$unit" 2>/dev/null || true)"
+    [[ "$load_state" == 'not-found' ]] && continue
     "$SUDO_BIN" "$SYSTEMCTL_BIN" stop "$unit" || return
   done < <("$PYTHON_BIN" "$helper" --list-deploy-managed-units)
 }
@@ -334,9 +338,10 @@ restore_after_failed_deploy() {
     safe_to_restart=0
   fi
   if [[ -d "$target" ]] && ! stop_release_services "$target"; then
-    echo '[grow-lifecycle-once] unable to stop all candidate units; previous services will remain stopped' >&2
+    # A failed stop must not leave lights/climate down: the previous release is
+    # still restarted below once the rename rollback has restored cea_sensors.
+    echo '[grow-lifecycle-once] unable to stop all candidate units; continuing recovery' >&2
     cleanup_failed=1
-    safe_to_restart=0
   fi
   if [[ "$rename_attempted" == 1 ]] && ! "$RENAME_SCRIPT" rollback; then
     echo '[grow-lifecycle-once] database rename rollback failed; previous services will remain stopped' >&2

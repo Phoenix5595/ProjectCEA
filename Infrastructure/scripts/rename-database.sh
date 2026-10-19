@@ -581,10 +581,17 @@ save_units() {
 }
 
 stop_units() {
-  local state_directory="$1" unit
+  local state_directory="$1" unit load_state
   save_units "$state_directory"
   while IFS= read -r unit; do
     [[ -n "$unit" ]] || continue
+    # The service list can name units this host does not have yet (e.g. a new
+    # service installed later in the same deploy); there is nothing to stop.
+    load_state="$(run_root "$SYSTEMCTL" show -p LoadState --value "$unit" 2>/dev/null || true)"
+    if [[ "$load_state" == 'not-found' ]]; then
+      printf '[db-rename] skipping %s: unit is not installed\n' "$unit"
+      continue
+    fi
     run_root "$SYSTEMCTL" stop "$unit" || { fail "could not stop $unit"; return 1; }
   done < <(run_root cat "$state_directory/all-units.txt")
 }
