@@ -119,9 +119,7 @@ _ROOM_SOURCE_STREAMS = (
     ("pid_parameter_history", "timestamp", "location", False),
     ("config_versions", "timestamp", "location", True),
 )
-_IDENTITY_SOURCE_STREAMS = (
-    ("measurement", "time", "sensor_id", "sensor_id"),
-)
+_IDENTITY_SOURCE_STREAMS = (("measurement", "time", "sensor_id", "sensor_id"),)
 _OPTIONAL_SOURCE_STREAMS = (
     "light_state_history",
     "pid_adjustments",
