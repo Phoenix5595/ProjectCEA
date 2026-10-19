@@ -32,6 +32,7 @@ database owner; agents and automated tests must not execute it.
 - Retired Grafana-era objects dropped from production: legacy CAGGs `measurement_1min/5min/hourly/daily`, views `measurement_*_grafana`, functions `get_sensor_data_optimized`/`get_sensor_stats`. Fresh installs still recreate the legacy CAGGs via alembic `005_phase5a_reconcile` and `cea_schema.sql` until a new revision removes them.
 - Restoring a dump of this TimescaleDB database: create an empty database owned by `cea_user`, `CREATE EXTENSION timescaledb; SELECT timescaledb_pre_restore();`, then `sudo -u postgres pg_restore -d <db> <dump>` **single-job** (`-j 2` breaks TimescaleDB catalog foreign keys), then `SELECT timescaledb_post_restore();` (~22 min for a 737 MB dump). Errors about the retired `grafana` role are expected.
 - TimescaleDB 2.28.3: `refresh_continuous_aggregate` on CAGGs ordering `last()` by an anonymous `ROW(...)` fails across more than one source chunk ("input of anonymous composite types is not implemented"); refresh such CAGGs per source chunk (`derived_refresh.py` does).
+
 ## Redis live vs Postgres time series
 
 - Redis holds live state (`sensor:{name}`, 10 s TTL) and streams (`sensor:raw`, `stream:control`, `cea:events:operational`). `sensor:raw` and `stream:control` cap at 100,000 entries; `cea:events:operational` caps at 50,000 entries or 24 hours.
