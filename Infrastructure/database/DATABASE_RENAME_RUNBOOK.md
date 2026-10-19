@@ -14,6 +14,7 @@ The regular `deploy.sh`, `rollback-deploy.sh` and `finalize-deploy.sh` are not c
 | `~/.pgpass` database field | `cea_sensors` | `sj_cea` | Yes |
 | Release | current | new grow-lifecycle release | Yes (previous release restored) |
 | `grow-archive-service.service` | not installed | installed, `ARCHIVE_LIFECYCLE_ENABLED=false` | Yes (unit removed) |
+| `/etc/caddy/Caddyfile` | no `/api/archives` route | repo `Infrastructure/caddy/Caddyfile` (adds `/api/archives*` → 127.0.0.1:8006); installed manually after the 2026-10-19 deploy, backup `/etc/caddy/Caddyfile.bak.20261019-grow-lifecycle`; Caddy's admin API is off, so `systemctl reload caddy` fails — validate as root (`sudo caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile`) then `systemctl restart caddy` | Manual (restore the backup + restart) |
 | `grow_data_lifecycle.sql`, `grow_data_lifecycle_expiry_cursor.sql` | not applied | applied to `sj_cea` | **No** — forward-only: new archive tables, new `calendar_event` / `calendar_sync_connection` columns with defaults, trigger `sj_calendar_bind_pending` |
 | Source retention/compression policies | Existing retention policies (including 2 years on `measurement` and `effective_setpoints`) and compression policies (90 days on `measurement`, 7 days on `effective_setpoints`); `control_history` and `actuator_events` are plain tables | Retention policies removed; compression policy set to 3 months for source hypertables; existing compression settings/chunks retained; plain tables skipped with `NOTICE` | **No** — policy changes are not reversed |
 
