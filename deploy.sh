@@ -847,23 +847,6 @@ if ! restart_services "$SERVICE_LIST"; then
   echo "[deploy] service restart failed; automatic rollback was attempted" >&2
   exit 1
 fi
-CADDY_CODE="$(curl -s -o /dev/null -w "%{http_code}" "$CADDY_HEALTH_URL" 2>/dev/null || echo "000")"
-if [[ "$CADDY_CODE" != "200" ]]; then
-  log_event "deploy_blocked" "caddy_health_failed" "caddy" "$CADDY_CODE"
-  if rollback_previous; then
-    python3 "$STATE_HELPER" clear-candidate "$STATE_JSON" >/dev/null || true
-    export CANDIDATE_RELEASE_ID="$RELEASE_ID"
-    export CANDIDATE_RELEASE_PATH="$TARGET"
-    log_event "candidate-rejected" "caddy_health_failed" >/dev/null
-  else
-    if [[ "$(readlink -f "$CURRENT_SYMLINK" 2>/dev/null || true)" == "$TARGET" ]]; then
-      python3 "$STATE_HELPER" set-candidate "$STATE_JSON" "$RELEASE_ID" "$TARGET" >/dev/null || true
-    fi
-    log_event "candidate-rollback-blocked" "caddy_health_failed" >/dev/null
-  fi
-  exit 1
-fi
-
 echo "[10/10] Health and readiness checks..."
 if ! run_health_checks "$SERVICE_LIST"; then
   if rollback_previous; then
@@ -878,6 +861,30 @@ if ! run_health_checks "$SERVICE_LIST"; then
     log_event "candidate-rollback-blocked" "health_checks_failed" >/dev/null
   fi
   echo "=== DEPLOY FAILED (health/readiness); automatic rollback was attempted ===" >&2
+  exit 1
+fi
+
+# Caddy proxies / to automation-service, so check it only after every backend is
+# healthy and ready; retry briefly to absorb Caddy's own upstream reconnect.
+CADDY_CODE="000"
+for _attempt in $(seq 1 "${DEPLOY_CADDY_HEALTH_ATTEMPTS:-10}"); do
+  CADDY_CODE="$(curl -s -o /dev/null -m 5 -w "%{http_code}" "$CADDY_HEALTH_URL" 2>/dev/null || echo "000")"
+  [[ "$CADDY_CODE" == "200" ]] && break
+  sleep 1
+done
+if [[ "$CADDY_CODE" != "200" ]]; then
+  log_event "deploy_blocked" "caddy_health_failed" "caddy" "$CADDY_CODE"
+  if rollback_previous; then
+    python3 "$STATE_HELPER" clear-candidate "$STATE_JSON" >/dev/null || true
+    export CANDIDATE_RELEASE_ID="$RELEASE_ID"
+    export CANDIDATE_RELEASE_PATH="$TARGET"
+    log_event "candidate-rejected" "caddy_health_failed" >/dev/null
+  else
+    if [[ "$(readlink -f "$CURRENT_SYMLINK" 2>/dev/null || true)" == "$TARGET" ]]; then
+      python3 "$STATE_HELPER" set-candidate "$STATE_JSON" "$RELEASE_ID" "$TARGET" >/dev/null || true
+    fi
+    log_event "candidate-rollback-blocked" "caddy_health_failed" >/dev/null
+  fi
   exit 1
 fi
 
