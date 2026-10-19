@@ -4,6 +4,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, model_validator
 
+from shared.pid_limits import PidLimits
+
 
 class AppConfig(BaseModel):
     """Validate YAML-owned hardware, control, and sensor metadata only."""
@@ -49,29 +51,6 @@ class AppConfig(BaseModel):
 
         pid_limits = control.get("pid_limits")
         if isinstance(pid_limits, dict):
-            for device_type, limits in pid_limits.items():
-                if not isinstance(limits, dict):
-                    continue
-                for parameter in ("kp", "ki", "kd"):
-                    min_key = f"{parameter}_min"
-                    max_key = f"{parameter}_max"
-                    min_value = limits.get(min_key)
-                    max_value = limits.get(max_key)
-                    if isinstance(min_value, (int, float)) and min_value < 0:
-                        raise ValueError(
-                            f"control.pid_limits.{device_type}.{min_key} must be non-negative"
-                        )
-                    if isinstance(max_value, (int, float)) and max_value < 0:
-                        raise ValueError(
-                            f"control.pid_limits.{device_type}.{max_key} must be non-negative"
-                        )
-                    if (
-                        isinstance(min_value, (int, float))
-                        and isinstance(max_value, (int, float))
-                        and min_value > max_value
-                    ):
-                        raise ValueError(
-                            f"control.pid_limits.{device_type}.{min_key} must be <= {max_key}"
-                        )
+            PidLimits.model_validate(pid_limits)
 
         return values
