@@ -15,7 +15,6 @@ PostgreSQL + TimescaleDB for normalized metadata, time-series measurements, cont
 | `grow_data_lifecycle.sql` | Grow/Veg lifecycle catalog, archive jobs and availability records; source rows stay in their normal tables |
 | `grow_data_lifecycle_expiry_cursor.sql` | Nongrow expiry cursor and archive-load/artifact indexes |
 | `grow_data_source_compression.sql` | Owner-applied source policy change: remove retention jobs and set three-month compression policies on existing source hypertables, preserving enabled settings and skipping plain relations with `NOTICE` |
-| `operator_purge_history_before_2026_08.sql` | Dry-run-first owner purge of only the ten approved timestamped history streams before 2026-08-01 00:00 America/Toronto; drops eligible full hypertable chunks while restoring protected rows, uses row-wise fallback for cutoff chunks/plain tables, and refreshes canonical/legacy aggregates plus relay read models |
 
 Historical note (2026-10-18): retired Grafana-only SQL migrations, views and verification scripts were removed: `grafana_performance_migration.sql`, `grafana_optimized_views.sql`, `grow_history_guards.sql`, `migrate_get_sensor_routing_1min_through_6h.sql`, `verify_get_sensor_routing.sql`, `verify_performance.sql`, `timescaledb_continuous_aggregates.sql`, and `timescaledb_compression.sql`. `latest_sensor_values` remains defined but has no in-repo consumer.
 
@@ -26,15 +25,13 @@ The production procedure for the former Iskra standby, replication slot, role,
 [`ISKRA_REPLICA_DECOMMISSION.md`](ISKRA_REPLICA_DECOMMISSION.md). It is for the
 database owner; agents and automated tests must not execute it.
 
-## Owner-run grow-lifecycle deploy with database rename
+## Completed one-off operations (2026-10-19)
 
-The single-use procedure that deploys the grow lifecycle release, renames
-`cea_sensors` to `sj_cea`, applies the lifecycle schema and source compression
-policy changes, and installs `grow-archive-service` is
-[`DATABASE_RENAME_RUNBOOK.md`](DATABASE_RENAME_RUNBOOK.md)
-(`deploy-grow-lifecycle-once.sh`, `Infrastructure/scripts/rename-database.sh`).
-Owner-run only; all of these files are deleted after finalize.
-
+- Pre-August purge: all pre-2026-08-01 (Toronto) rows of the ten time-series streams were removed from production, keeping the latest/predecessor anchors; static/config/registry/Calendar tables untouched. The one-off script and its proof were removed afterwards.
+- Database rename: production is now `sj_cea` (was `cea_sensors`); deployed with the grow-lifecycle release, which also applied `grow_data_lifecycle.sql`, `grow_data_lifecycle_expiry_cursor.sql` and `grow_data_source_compression.sql`, installed `grow-archive-service`, and added the `/api/archives` Caddy route. The single-use deploy/rename helpers and runbook were removed after finalize.
+- Retired Grafana-era objects dropped from production: legacy CAGGs `measurement_1min/5min/hourly/daily`, views `measurement_*_grafana`, functions `get_sensor_data_optimized`/`get_sensor_stats`. Fresh installs still recreate the legacy CAGGs via alembic `005_phase5a_reconcile` and `cea_schema.sql` until a new revision removes them.
+- Restoring a dump of this TimescaleDB database: create an empty database owned by `cea_user`, `CREATE EXTENSION timescaledb; SELECT timescaledb_pre_restore();`, then `sudo -u postgres pg_restore -d <db> <dump>` **single-job** (`-j 2` breaks TimescaleDB catalog foreign keys), then `SELECT timescaledb_post_restore();` (~22 min for a 737 MB dump). Errors about the retired `grafana` role are expected.
+- TimescaleDB 2.28.3: `refresh_continuous_aggregate` on CAGGs ordering `last()` by an anonymous `ROW(...)` fails across more than one source chunk ("input of anonymous composite types is not implemented"); refresh such CAGGs per source chunk (`derived_refresh.py` does).
 ## Redis live vs Postgres time series
 
 - Redis holds live state (`sensor:{name}`, 10 s TTL) and streams (`sensor:raw`, `stream:control`, `cea:events:operational`). `sensor:raw` and `stream:control` cap at 100,000 entries; `cea:events:operational` caps at 50,000 entries or 24 hours.
@@ -106,55 +103,6 @@ Removing or disabling a retention policy stops future deletion, but it cannot re
 ## Min/max preservation
 
 Every continuous aggregate keeps `avg_value`, `min_value`, and `max_value`. Removing min/max would hide fast swings (for example, humidity spikes), so all consumers expose the envelope.
-
-## Owner-operated history purge before August 2026
-
-`operator_purge_history_before_2026_08.sql` is an operator-only purge with a
-fixed Toronto cutoff. Its fixed allowlist is exactly the ten
-`source_retention.ANCHOR_COLUMNS` observation streams; it preserves their
-latest/predecessor anchors and stream-specific guards. IDs and registries,
-static setpoint/PID/period configuration, schedules/rules, Calendar/config,
-archives, users and current-state tables are never targets. For each
-hypertable range wholly before the cutoff, apply preserves every non-removable
-row byte-for-byte, drops the exact range with TimescaleDB 2.28 `drop_chunks`,
-then restores preserved rows in the same per-range transaction. The cutoff-
-containing chunk and plain tables use row-wise deletion; compressed chunks
-reaching that path are decompressed first, and the normal three-month policy
-owns later recompression. Canonical and legacy measurement CAGGs are refreshed,
-and the relay read model rebuilt after source deletion. ROW()-keyed aggregate
-refresh windows are split at source-chunk boundaries to avoid the TimescaleDB
-2.28 anonymous-composite failure across chunks. Dry-run reports, per stream,
-chunk count/bytes to drop, anchors and other protected rows to restore,
-row-wise/total deletions, rows kept, and min/max times.
-Chunk ranges and daily row-wise batches commit independently; after a timeout
-or lock refusal, the owner can review the report and safely rerun apply.
-The default mode is read-only:
-
-```bash
-DB='cea_sensors'   # production name until the sj_cea rename is deployed; then 'sj_cea'
-psql -X --no-psqlrc --set=ON_ERROR_STOP=1 --set=apply=0 \
-  --dbname="$DB" \
-  --file=Infrastructure/database/operator_purge_history_before_2026_08.sql
-```
-
-Review the full dry-run report before any deletion. **Only the database owner
-may run apply.** Apply requires the exact `current_database()` confirmation:
-
-```bash
-CONFIRM_DATABASE="$(psql -X --no-psqlrc --tuples-only --no-align \
-  --dbname="$DB" --command='SELECT current_database()')"
-psql -X --no-psqlrc --set=ON_ERROR_STOP=1 --set=apply=1 \
-  --set="confirm_database=$CONFIRM_DATABASE" --dbname="$DB" \
-  --file=Infrastructure/database/operator_purge_history_before_2026_08.sql
-```
-
-Run directly with psql autocommit; do not wrap it in `BEGIN` or use
-`--single-transaction`. The guarded disposable proof acquires the shared
-database-harness lock itself:
-
-```bash
-bash Infrastructure/database/tests/test-purge-history-before-2026-08.sh
-```
 
 ## Grow archive schema and source lifecycle
 
