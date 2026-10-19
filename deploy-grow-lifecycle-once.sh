@@ -313,7 +313,9 @@ apply_schema() {
     "$TARGET/Infrastructure/database/grow_data_lifecycle_expiry_cursor.sql"; do
     schema_attempted=1
     write_once_state schema_applying "$TARGET" "$PREVIOUS_RELEASE" "$rename_attempted" "$schema_attempted" "$unit_installed" "$compression_attempted" || return 1
-    "$SUDO_BIN" -u cea_user env "PGPASSWORD=$POSTGRES_PASSWORD" "$PSQL_BIN" \
+    # cea_user is a database role only (no OS account); connect over TCP with
+    # its password as the invoking operator.
+    env "PGPASSWORD=$POSTGRES_PASSWORD" "$PSQL_BIN" \
       -X --set=ON_ERROR_STOP=1 \
       --host="${POSTGRES_HOST:-localhost}" --port="${POSTGRES_PORT:-5432}" \
       --username=cea_user --dbname=sj_cea --file="$sql_file" || return 1
@@ -579,7 +581,7 @@ if ! write_once_state compression_applying "$TARGET" "$PREVIOUS_RELEASE" "$renam
   restore_after_failed_deploy "$PREVIOUS_RELEASE" "$rename_attempted" "$schema_attempted" "$unit_installed" "$TARGET" "$compression_attempted" || true
   exit 1
 fi
-if ! "$SUDO_BIN" -u cea_user env "PGPASSWORD=$POSTGRES_PASSWORD" "$PSQL_BIN" \
+if ! env "PGPASSWORD=$POSTGRES_PASSWORD" "$PSQL_BIN" \
   -X --set=ON_ERROR_STOP=1 \
   --host="${POSTGRES_HOST:-localhost}" --port="${POSTGRES_PORT:-5432}" \
   --username=cea_user --dbname=sj_cea \

@@ -91,9 +91,13 @@ session_count() {
   query_scalar "SELECT count(*) FROM pg_stat_activity WHERE datname = '${name}' AND pid <> pg_backend_pid()"
 }
 
+# Production reports the TimescaleDB scheduler with backend_type
+# 'TimescaleDB Background Worker Scheduler' (not 'background worker'); match
+# every non-client backend attached to the database (scheduler, job workers,
+# autovacuum) — client sessions are never matched here.
 timescale_worker_count() {
   local name="$1"
-  query_scalar "SELECT count(*) FROM pg_stat_activity WHERE datname = '${name}' AND backend_type = 'background worker'"
+  query_scalar "SELECT count(*) FROM pg_stat_activity WHERE datname = '${name}' AND backend_type <> 'client backend'"
 }
 
 set_database_allow_connections() {
@@ -110,7 +114,7 @@ timescaledb_worker_action() {
 
 terminate_timescale_worker_sessions() {
   local database="$1"
-  admin_psql --command="SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '${database}' AND backend_type = 'background worker' AND pid <> pg_backend_pid()" >/dev/null
+  admin_psql --command="SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '${database}' AND backend_type <> 'client backend' AND pid <> pg_backend_pid()" >/dev/null
 }
 
 resume_timescaledb_database() {
@@ -154,7 +158,8 @@ needle = sys.argv[2].encode()
 if not root.is_dir():
     raise SystemExit(0)
 for path in sorted(root.rglob("*")):
-    if not path.is_file():
+    # .wants/ entries are symlinks to the unit files; handle each real file once.
+    if path.is_symlink() or not path.is_file():
         continue
     for number, line in enumerate(path.read_bytes().splitlines(), 1):
         if needle in line:
@@ -177,7 +182,7 @@ pattern = re.compile(rb"POSTGRES_DB=cea_sensors(?=$|[\s\"'])")
 if not root.is_dir():
     raise SystemExit(0)
 for path in sorted(root.rglob("*")):
-    if not path.is_file():
+    if path.is_symlink() or not path.is_file():
         continue
     if pattern.search(path.read_bytes()):
         print(path)
@@ -440,7 +445,7 @@ timescaledb_preflight() {
   [[ "$allow" == 't' ]] || { fail 'database connections are disabled; the TimescaleDB worker cannot be safely quiesced'; return 1; }
   version="$(query_database_scalar "$OLD_DATABASE" "SELECT COALESCE((SELECT extversion FROM pg_extension WHERE extname = 'timescaledb'), 'missing')")"
   functions="$(query_database_scalar "$OLD_DATABASE" "SELECT (to_regprocedure('_timescaledb_functions.stop_background_workers()') IS NOT NULL AND to_regprocedure('_timescaledb_functions.restart_background_workers()') IS NOT NULL)")"
-  workers="$(admin_psql --command="SELECT COALESCE(application_name, '(unknown)') || E'\\t' || COALESCE(backend_type, '(unknown)') || E'\\t' || COALESCE(usename, '(unknown)') || E'\\t' || COALESCE(state, '(unknown)') FROM pg_stat_activity WHERE datname = '${OLD_DATABASE}' AND backend_type = 'background worker' ORDER BY application_name, pid")"
+  workers="$(admin_psql --command="SELECT COALESCE(application_name, '(unknown)') || E'\\t' || COALESCE(backend_type, '(unknown)') || E'\\t' || COALESCE(usename, '(unknown)') || E'\\t' || COALESCE(state, '(unknown)') FROM pg_stat_activity WHERE datname = '${OLD_DATABASE}' AND backend_type <> 'client backend' ORDER BY application_name, pid")"
   printf 'TimescaleDB extension version: %s\n' "$version"
   [[ "$version" != 'missing' && "$functions" == 't' ]] || { fail 'TimescaleDB 2.28 worker stop/restart functions are unavailable'; return 1; }
   if [[ -z "$workers" ]]; then
@@ -478,7 +483,7 @@ preflight() {
   fi
   printf 'Database preflight: %s exists; %s does not.\n' "$OLD_DATABASE" "$NEW_DATABASE"
   printf 'Sessions connected to %s grouped by application_name/usename:\n' "$OLD_DATABASE"
-  grouped="$(admin_psql --command="SELECT COALESCE(application_name, '(unknown)') || E'\\t' || COALESCE(usename, '(unknown)') || E'\\t' || COALESCE(backend_type, '(unknown)') || E'\\t' || count(*)::text FROM pg_stat_activity WHERE datname = '${OLD_DATABASE}' GROUP BY 1,2,3 ORDER BY 1,2,3")"
+  grouped="$(admin_psql --command="SELECT COALESCE(application_name, '(unknown)') || E'\\t' || COALESCE(usename, '(unknown)') || E'\\t' || COALESCE(backend_type, '(unknown)') || E'\\t' || count(*)::text FROM pg_stat_activity WHERE datname = '${OLD_DATABASE}' GROUP BY application_name, usename, backend_type ORDER BY 1")"
   if [[ -z "$grouped" ]]; then printf '  none\n'; else printf '%s\n' "$grouped"; fi
   print_config_matches
   role_rename_capability

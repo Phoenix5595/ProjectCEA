@@ -89,6 +89,8 @@ It stops the candidate units, renames back to `cea_sensors`, restores the backed
 
 If automatic or manual recovery reports incomplete: check the current symlink (`readlink /opt/projectcea/current`), `rename-database.sh preflight` (DB name), `/var/lib/projectcea/db-rename/active` (recorded backups), and `systemctl status` of each unit before acting. Last resort: restore `~/cea_sensors-pre-rename.dump` and `/root/systemd-before-rename-*`.
 
+Restoring a dump of this TimescaleDB database (proven 2026-10-19 on a disposable copy, ~22 min for the 737 MB pre-rename dump): create an empty database owned by `cea_user`, `CREATE EXTENSION timescaledb; SELECT timescaledb_pre_restore();`, then `sudo -u postgres pg_restore -d <db> <dump>` **single-job** (`-j 2` breaks TimescaleDB catalog foreign keys), then `SELECT timescaledb_post_restore();`. Errors about the retired `grafana` role are expected.
+
 ## Do not
 
 - Run `rename-database.sh apply` outside the wrapper, or terminate client sessions with `--terminate-remaining` without knowing what they are.

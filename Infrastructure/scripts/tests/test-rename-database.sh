@@ -144,20 +144,20 @@ case "$command_text" in
   *"ALTER DATABASE \"sj_cea\" WITH ALLOW_CONNECTIONS true"*)
     printf 't\n' > "$ALLOW_CONNECTIONS_FILE"
     ;;
-  *"SELECT pg_terminate_backend(pid)"*"backend_type = 'background worker'"*)
+  *"SELECT pg_terminate_backend(pid)"*"backend_type <> 'client backend'"*)
     printf '0\n' > "$WORKER_COUNT_FILE"
     ;;
   *"SELECT pg_terminate_backend(pid)"*"AND pid <> pg_backend_pid()"*)
     printf '0\n' > "$SESSION_COUNT_FILE"
     ;;
-  *"count(*) FROM pg_stat_activity WHERE datname = 'cea_sensors' AND backend_type = 'background worker'"*)
+  *"count(*) FROM pg_stat_activity WHERE datname = 'cea_sensors' AND backend_type <> 'client backend'"*)
     cat "$WORKER_COUNT_FILE"
     ;;
-  *"count(*) FROM pg_stat_activity WHERE datname = 'sj_cea' AND backend_type = 'background worker'"*)
+  *"count(*) FROM pg_stat_activity WHERE datname = 'sj_cea' AND backend_type <> 'client backend'"*)
     cat "$WORKER_COUNT_FILE"
     ;;
-  *"WHERE datname = 'cea_sensors' AND backend_type = 'background worker' ORDER BY application_name, pid"*)
-    [[ "$(cat "$WORKER_COUNT_FILE")" == '0' ]] || printf 'timescaledb scheduler\tbackground worker\tpostgres\tactive\n'
+  *"WHERE datname = 'cea_sensors' AND backend_type <> 'client backend' ORDER BY application_name, pid"*)
+    [[ "$(cat "$WORKER_COUNT_FILE")" == '0' ]] || printf 'TimescaleDB Background Worker Scheduler\tTimescaleDB Background Worker Scheduler\tpostgres\tidle\n'
     ;;
   *"count(*) FROM pg_stat_activity WHERE datname = 'cea_sensors' AND pid"*) cat "$SESSION_COUNT_FILE" ;;
   *"count(*) FROM pg_stat_activity WHERE datname = 'sj_cea' AND pid"*) cat "$SESSION_COUNT_FILE" ;;
@@ -241,7 +241,7 @@ grep -Fq "$MONITORING_ENV_FILE:1 database=cea_sensors" "$SANDBOX/preflight.out" 
 grep -Fq 'Database ALLOW_CONNECTIONS: t' "$SANDBOX/preflight.out" || fail 'preflight omitted the database connection setting'
 grep -Fq 'TimescaleDB extension version: 2.28.0' "$SANDBOX/preflight.out" || fail 'preflight omitted the TimescaleDB version'
 grep -Fq 'TimescaleDB scheduler/bgworker session attached: yes' "$SANDBOX/preflight.out" || fail 'preflight omitted the worker-session status'
-grep -Fq 'timescaledb scheduler' "$SANDBOX/preflight.out" || fail 'preflight omitted worker application_name'
+grep -Fq 'TimescaleDB Background Worker Scheduler' "$SANDBOX/preflight.out" || fail 'preflight omitted worker application_name'
 if grep -Fq "$PASSWORD_MARKER" "$SANDBOX/preflight.out" || grep -Fq "$MONITORING_PASSWORD_MARKER" "$SANDBOX/preflight.out"; then
   fail 'preflight printed a database password'
 fi
@@ -294,7 +294,7 @@ enable = next(i for i, line in enumerate(lines[rename + 1:], rename + 1) if 'ALT
 restart = next(i for i, line in enumerate(lines[enable + 1:], enable + 1) if "SELECT _timescaledb_functions.restart_background_workers()" in line)
 if not stop < disable < rename < enable < restart:
     raise SystemExit("TimescaleDB workers/connections were not quiesced and restored around rename")
-if any("pg_terminate_backend(pid)" in line and "backend_type = 'background worker'" not in line for line in lines):
+if any("pg_terminate_backend(pid)" in line and "backend_type <> 'client backend'" not in line for line in lines):
     raise SystemExit("the default apply path terminated a non-worker client session")
 PY
 grep -Fq 'POSTGRES_DB=sj_cea' "$SYSTEMD_DIRECTORY/automation-service.service.d/override.conf" || fail 'apply did not rewrite the drop-in'
